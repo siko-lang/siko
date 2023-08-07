@@ -13,7 +13,6 @@ import Siko.MIR.Backend.Lowering.Naming
 import Siko.MIR.Backend.Lowering.Type
 import Siko.MIR.Backend.MemberInfo as M
 import Siko.MIR.Backend.Ownership.Converter
-import Siko.MIR.Backend.Ownership.FunctionGroupInferenceData as D
 import Siko.MIR.Backend.Query as Q
 import Siko.MIR.Backend.TypeVariableInfo
 import Siko.MIR.Data as MD
@@ -23,15 +22,15 @@ import Siko.MIR.Identity as I
 import Siko.MIR.Program as MP
 import Siko.MIR.Type as MT
 
-data LoweringContext a = { function_id :: I.Identity,
-                           provider :: a,
-                           borrowers :: [ME.ExprId],
-                           filter_info :: FilterInfo,
-                           type_cache :: Map TypeVariableInfo LT.Type,
-                           type_lowering_info_cache :: Map TypeVariableInfo TypeLoweringInfo
-                         }
+data LoweringContext = { function_id :: I.Identity,
+                         provider :: LoweringDataProviderInstance,
+                         borrowers :: [ME.ExprId],
+                         filter_info :: FilterInfo,
+                         type_cache :: Map TypeVariableInfo LT.Type,
+                         type_lowering_info_cache :: Map TypeVariableInfo TypeLoweringInfo
+                       }
 
-getTypeLoweringInfo a :: (LoweringDataProvider a) => LoweringContext a -> TypeVariableInfo -> (LoweringContext a, TypeLoweringInfo)
+getTypeLoweringInfo :: LoweringContext -> TypeVariableInfo -> (LoweringContext, TypeLoweringInfo)
 getTypeLoweringInfo lowering_context info = do
     case Map.get lowering_context.type_lowering_info_cache info of
         Some lowering_info -> (lowering_context, lowering_info)
@@ -42,11 +41,10 @@ getTypeLoweringInfo lowering_context info = do
             lowering_context <- lowering_context { type_lowering_info_cache = type_lowering_info_cache }
             (lowering_context, lowering_info)
 
-getType a :: (LoweringDataProvider a) =>
-             Context ->
-             LoweringContext a ->
-             TypeVariableInfo ->
-             MT.Type -> (Context, LoweringContext a, LT.Type)
+getType :: Context ->
+           LoweringContext ->
+           TypeVariableInfo ->
+           MT.Type -> (Context, LoweringContext, LT.Type)
 getType context lowering_context info mir_type = do
     case Map.get lowering_context.type_cache info of
         Some ty -> (context, lowering_context, ty)
@@ -68,7 +66,7 @@ lowerRangeKind range_kind = case range_kind of
     ME.Inclusive -> LE.Inclusive
     ME.Exclusive -> LE.Exclusive
 
-getTypeVariableInfoByExprId a :: (LoweringDataProvider a) => LoweringContext a -> ME.ExprId -> TypeVariableInfo
+getTypeVariableInfoByExprId :: LoweringContext -> ME.ExprId -> TypeVariableInfo
 getTypeVariableInfoByExprId lowering_context id = getTypeVariableInfo lowering_context.provider id lowering_context.function_id
 
 lowerChecker :: TypeLoweringInfo -> Context -> ME.Checker -> (Context, LE.Checker)
@@ -83,13 +81,13 @@ lowerChecker lowering_info context checker = do
             (context, LE.VariantChecker index (lowerVar var) type)
         ME.WildcardChecker var -> (context, LE.WildcardChecker (lowerVar var))
 
-lowerCase a :: (LoweringDataProvider a) => (LoweringContext a, TypeLoweringInfo, Context) -> ME.Case -> ((LoweringContext a, TypeLoweringInfo, Context), LE.Case)
+lowerCase :: (LoweringContext, TypeLoweringInfo, Context) -> ME.Case -> ((LoweringContext, TypeLoweringInfo, Context), LE.Case)
 lowerCase (lowering_context, lowering_info, context) c = do
     (context, checker) <- lowerChecker lowering_info context c.checker
     (lowering_context, context, body) <- lowerExpr lowering_context context c.body
     ((lowering_context, lowering_info, context), LE.Case checker body)
 
-lowerExpr a :: (LoweringDataProvider a) => LoweringContext a -> Context -> ME.Expr -> (LoweringContext a, Context, LE.Expr)
+lowerExpr :: LoweringContext -> Context -> ME.Expr -> (LoweringContext, Context, LE.Expr)
 lowerExpr lowering_context context expr = do
     ME.Expr s_expr expr_type expr_id <- expr
     expr_info <- getTypeVariableInfoByExprId lowering_context expr_id

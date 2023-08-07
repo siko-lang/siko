@@ -137,7 +137,7 @@ lowerRecord :: Context ->
 lowerRecord context lowering_info mir_id lir_id = do
     trace2 "Lowering record {} {} {}" % (mir_id, lir_id, lowering_info)
     mir_record <- Q.getRecord mir_id
-    filter_info <- buildFilterInfoFromTypeLoweringInfo lowering_info
+    filter_info <- buildFilterInfo lowering_info
     (context, fields) <- List.mapSE context mir_record.fields (lowerField lowering_info filter_info)
     lifetimes <- collectLifetimes lowering_info.ownershipinfos
     (context, external_info, implicit_member_lifetime) <- case mir_record.external_info of
@@ -163,7 +163,7 @@ lowerAdt :: Context ->
 lowerAdt context lowering_info mir_id lir_id = do
     trace2 "Lowering adt {} {} {}" % (mir_id, lir_id, lowering_info)
     mir_adt <- Q.getAdt mir_id
-    filter_info <- buildFilterInfoFromTypeLoweringInfo lowering_info
+    filter_info <- buildFilterInfo lowering_info
     (context, variants) <- List.mapSE context mir_adt.variants (lowerVariant lowering_info filter_info)
     lifetimes <- collectLifetimes lowering_info.ownershipinfos
     (context, external_class_impls) <- List.mapS context mir_adt.external_class_impls (processExternalClassImpl lowering_info mir_id)

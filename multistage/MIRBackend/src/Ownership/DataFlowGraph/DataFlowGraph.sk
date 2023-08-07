@@ -18,7 +18,7 @@ data NodeKey = ExprKey E.ExprId
 data ExprNodeKind = FnCall I.Identity
                   | Loop
                   | Other
-                  deriving (Show)
+                  deriving (PartialEq, Eq, Show)
 
 data ExprNode = { expr_id :: E.ExprId,
                   tv_info :: TypeVariableInfo,
@@ -28,22 +28,22 @@ data ExprNode = { expr_id :: E.ExprId,
                   local_forbidden_borrows :: [Path],
                   merged_forbidden_borrows :: Set Path,
                   ownership_vars :: [OwnershipTypeVariable]
-                } deriving (Show)
+                } deriving (PartialEq, Eq, Show)
 
 data VarNode = { var :: E.Var,
                  tv_info :: TypeVariableInfo,
                  incoming :: [Int],
                  outgoing :: [Int]
-               } deriving (Show)
+               } deriving (PartialEq, Eq, Show)
 
 data EndNode = { tv_info :: TypeVariableInfo,
                  incoming :: [Int]
-               } deriving (Show)
+               } deriving (PartialEq, Eq, Show)
 
 data Node = Expr ExprNode
           | Var VarNode
           | End EndNode
-          deriving (Show)
+          deriving (PartialEq, Eq, Show)
 
 data EdgeKind = VarRef
               | Converter
@@ -69,18 +69,18 @@ data EdgeKind = VarRef
               | RecordChecker
               | WildcardChecker
               | Result
-              deriving (Show)
+              deriving (PartialEq, Eq, Show)
 
 data Edge = { from :: NodeKey,
               to :: NodeKey,
               kind :: EdgeKind
-            } deriving (Show)
+            } deriving (PartialEq, Eq, Show)
 
 data DataFlowGraph = { nodes :: Map NodeKey Node,
                        edges :: [Edge],
                        ownership :: Map OwnershipTypeVariable M.OwnershipKind,
                        allocator :: A.Allocator
-                     }
+                     } deriving (PartialEq, Eq, Show)
 
 createGraph :: DataFlowGraph
 createGraph = DataFlowGraph Map.empty [] Map.empty A.createAllocator
@@ -227,3 +227,16 @@ isValidBorrow graph key path = do
     case node of
         Expr expr_node -> not (Set.contains expr_node.merged_forbidden_borrows path)
         _ -> panic "isValidBorrow: borrowing node is not expr node!"
+
+getMembers :: DataFlowGraph -> [M.MemberInfo]
+getMembers graph = List.fold [] graph.edges (\members, edge -> case edge.kind of
+        FieldAccess member_info -> List.push members member_info
+        RecordCtorField _ member_info -> List.push members member_info
+        VariantCtorField _ adt_member_info field_member_info -> do
+            members <- List.push members adt_member_info
+            List.push members field_member_info
+        VariantChecker member_info -> List.push members member_info
+        _ -> members)
+
+getOwnershipInfo :: DataFlowGraph -> [M.OwnershipInfo]
+getOwnershipInfo graph = M.toOwnershipInfo graph.ownership

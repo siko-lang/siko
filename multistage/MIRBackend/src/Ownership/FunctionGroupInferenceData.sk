@@ -427,7 +427,7 @@ toDataFlowProfile function_group_inference_data function_id no_return = do
                 None -> filtered_ownershipinfos // FIXME: investigate, why is this possible??
             (filtered_ownershipinfos, relevant_ownership_vars, ownership_values, index + 1, result_only_vars)
     filtered_ownershipinfos <- filtered_ownershipinfos |> List.sort |> List.dedup
-    dataflow_profile <- DataFlowProfile dataflow_profile_base.args dataflow_profile_base.result dataflow_profile_base.members dataflow_profile_base.converters filtered_ownershipinfos
+    dataflow_profile <- Legacy (LegacyDataFlowProfile dataflow_profile_base.args dataflow_profile_base.result dataflow_profile_base.members dataflow_profile_base.converters filtered_ownershipinfos)
     dataflow_profile
 
 instance Apply FunctionInferenceInfo where
@@ -512,18 +512,6 @@ instance Apply FunctionGroupInferenceData where
 
 instance MemberOwner FunctionGroupInferenceData where
     getMembers function_group_inference_data = function_group_inference_data.members
-
-buildFilterInfoFromInferenceInfo :: FunctionGroupInferenceData -> FilterInfo
-buildFilterInfoFromInferenceInfo function_group_inference_data = do
-    ownershipinfos <- M.toOwnershipInfo function_group_inference_data.ownership_values
-    sources <- Map.fold [] function_group_inference_data.dataflow_profiles (\sources, (_, dataflow_profile) -> do
-        sources <- List.push sources dataflow_profile.result
-        sources <- sources + dataflow_profile.args
-        sources)
-    sources <- Map.fold sources function_group_inference_data.expr_type_variables (\sources, (_, info) -> List.push sources info)
-    sources <- Map.fold sources function_group_inference_data.var_type_variables (\sources, (_, info) -> List.push sources info)
-    filter_info <- buildFilterInfo function_group_inference_data.members ownershipinfos sources
-    filter_info
 
 checkInitials :: FunctionGroupInferenceData -> String -> ()
 checkInitials function_group_inference_data phase = do

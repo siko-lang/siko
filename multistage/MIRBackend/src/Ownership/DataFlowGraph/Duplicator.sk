@@ -1,0 +1,65 @@
+module Siko.MIR.Backend.Ownership.DataFlowGraph.Duplicator where
+
+import Siko.MIR.Backend.Duplicator
+import Siko.MIR.Backend.Ownership.DataFlowGraph
+
+instance Duplicable NodeKey where
+    duplicate duplicator key = (duplicator, key)
+
+instance Duplicable ExprNode where
+    duplicate duplicator node = do
+        (duplicator, tv_info) <- duplicate duplicator node.tv_info
+        (duplicator, ownership_vars) <- duplicate duplicator node.ownership_vars
+        (duplicator, node { tv_info = tv_info, ownership_vars = ownership_vars })
+
+instance Duplicable VarNode where
+    duplicate duplicator node = do
+        (duplicator, tv_info) <- duplicate duplicator node.tv_info
+        (duplicator, node { tv_info = tv_info })
+
+instance Duplicable EndNode where
+    duplicate duplicator node = do
+        (duplicator, tv_info) <- duplicate duplicator node.tv_info
+        (duplicator, node { tv_info = tv_info })
+
+instance Duplicable Node where
+    duplicate duplicator node = case node of
+        Expr n -> do
+            (duplicator, n) <- duplicate duplicator n
+            (duplicator, Expr n)
+        Var n -> do
+            (duplicator, n) <- duplicate duplicator n
+            (duplicator, Var n)
+        End n -> do
+            (duplicator, n) <- duplicate duplicator n
+            (duplicator, End n)
+
+instance Duplicable EdgeKind where
+    duplicate duplicator kind = case kind of
+        FieldAccess info -> do
+            (duplicator, info) <- duplicate duplicator info
+            (duplicator, FieldAccess info)
+        RecordCtorField index info -> do
+            (duplicator, info) <- duplicate duplicator info
+            (duplicator, RecordCtorField index info)
+        VariantCtorField index info1 info2 -> do
+            (duplicator, info1) <- duplicate duplicator info1
+            (duplicator, info2) <- duplicate duplicator info2
+            (duplicator, VariantCtorField index info1 info2)
+        VariantChecker info -> do
+            (duplicator, info) <- duplicate duplicator info
+            (duplicator, VariantChecker info)
+        other -> (duplicator, other)
+
+instance Duplicable Edge where
+    duplicate duplicator edge = do
+        (duplicator, kind) <- duplicate duplicator edge.kind
+        (duplicator, edge { kind = kind })
+
+instance Duplicable DataFlowGraph where
+    duplicate duplicator graph = do
+        (duplicator, nodes) <- duplicate duplicator graph.nodes
+        (duplicator, edges) <- duplicate duplicator graph.edges
+        (duplicator, ownership) <- duplicate duplicator graph.ownership
+        allocator <- duplicator.allocator
+        (duplicator, graph { nodes = nodes, edges = edges, ownership = ownership, allocator = allocator })

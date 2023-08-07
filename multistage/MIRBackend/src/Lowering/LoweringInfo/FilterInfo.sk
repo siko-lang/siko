@@ -1,4 +1,7 @@
-module Siko.MIR.Backend.Lowering.LoweringInfo.FilterInfo where
+module Siko.MIR.Backend.Lowering.LoweringInfo.FilterInfo(FilterInfo(..),
+                                                         FilterInfoSource,
+                                                         buildFilterInfo,
+                                                         getRelevants) where
 
 import Map
 import Map
@@ -8,10 +11,15 @@ import Siko.MIR.Backend.GroupDependencyMap
 import Siko.MIR.Backend.Lowering.LoweringInfo
 import Siko.MIR.Backend.MemberInfo as M
 import Siko.MIR.Backend.OrderedDependencyMap
+import Siko.MIR.Backend.Ownership.DataFlowGraph as DFG
+import Siko.MIR.Backend.Ownership.FunctionGroupInferenceData
 import Siko.MIR.Backend.OwnershipDependencyMap
 import Siko.MIR.Backend.TypeVariableInfo
 import Siko.Trace
 import Siko.Util.DependencyProcessor
+
+class FilterInfoSource a where
+    buildFilterInfo a :: a -> FilterInfo
 
 data FilterInfo = { deps_map :: Map GroupTypeVariable [TypeVariableInfo],
                     group_index_map :: GroupIndexMap TypeVariableInfo,
@@ -20,14 +28,34 @@ data FilterInfo = { deps_map :: Map GroupTypeVariable [TypeVariableInfo],
                     groups :: [DependencyGroup TypeVariableInfo]
                   }
 
-buildFilterInfoFromTypeLoweringInfo :: TypeLoweringInfo -> FilterInfo
-buildFilterInfoFromTypeLoweringInfo lowering_info = buildFilterInfo lowering_info.members lowering_info.ownershipinfos [lowering_info.root]
+instance FilterInfoSource TypeLoweringInfo where
+    buildFilterInfo lowering_info = build lowering_info.members lowering_info.ownershipinfos [lowering_info.root]
 
-buildFilterInfoFromFunctionLoweringInfo :: FunctionLoweringInfo -> FilterInfo
-buildFilterInfoFromFunctionLoweringInfo lowering_info = buildFilterInfo lowering_info.members lowering_info.ownershipinfos (List.push lowering_info.args lowering_info.result)
+instance FilterInfoSource FunctionLoweringInfo where
+    buildFilterInfo lowering_info = build lowering_info.members lowering_info.ownershipinfos (List.push lowering_info.args lowering_info.result)
 
-buildFilterInfo :: [M.MemberInfo] -> [M.OwnershipInfo] -> [TypeVariableInfo] -> FilterInfo
-buildFilterInfo members ownershipinfos sources = do
+instance FilterInfoSource DFG.DataFlowGraph where
+    buildFilterInfo data_flow_graph = do
+        members <- DFG.getMembers data_flow_graph
+        ownershipinfos <- DFG.getOwnershipInfo data_flow_graph
+        sources <- DFG.getSources data_flow_graph
+        sources <- List.push sources DFG.EndKey
+        sources <- List.map sources (\s -> DFG.getTypeVariableInfo data_flow_graph s)
+        build members ownershipinfos sources
+
+instance FilterInfoSource FunctionGroupInferenceData where
+    buildFilterInfo function_group_inference_data = do
+        ownershipinfos <- M.toOwnershipInfo function_group_inference_data.ownership_values
+        sources <- Map.fold [] function_group_inference_data.dataflow_profiles (\sources, (_, dataflow_profile) -> do
+            sources <- List.push sources dataflow_profile.result
+            sources <- sources + dataflow_profile.args
+            sources)
+        sources <- Map.fold sources function_group_inference_data.expr_type_variables (\sources, (_, info) -> List.push sources info)
+        sources <- Map.fold sources function_group_inference_data.var_type_variables (\sources, (_, info) -> List.push sources info)
+        build function_group_inference_data.members ownershipinfos sources
+
+build :: [M.MemberInfo] -> [M.OwnershipInfo] -> [TypeVariableInfo] -> FilterInfo
+build members ownershipinfos sources = do
     deps_map <- M.getInfoDependencyMap members
     kind_map <- M.toOwnershipKind ownershipinfos
     info_dep_map <- getInfoDependencyMap sources members deps_map
@@ -140,5 +168,6 @@ collectBorrows filter_info relevants group_index = do
 getRelevants :: FilterInfo -> [TypeVariableInfo] -> [TypeVariableInfo]
 getRelevants filter_info sources = do
     List.fold sources sources (\relevants, source -> do
-        group_index <- getGroupIndex filter_info.group_index_map source
-        collectBorrows filter_info relevants group_index)
+        case getGroupIndexOpt filter_info.group_index_map source of
+            Some group_index -> collectBorrows filter_info relevants group_index
+            None -> [])

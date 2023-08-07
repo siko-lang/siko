@@ -17,6 +17,17 @@ data Duplicator = { ownership_vars :: Map OwnershipTypeVariable OwnershipTypeVar
 class Duplicable a where
     duplicate a :: Duplicator -> a -> (Duplicator, a)
 
+instance (Duplicable k, Duplicable v, Ord k) => Duplicable Map k v where
+    duplicate duplicator map = do
+        Map.mapS duplicator map (\duplicator, (k, v) -> do
+            (duplicator, k) <- duplicate duplicator k
+            (duplicator, v) <- duplicate duplicator v
+            (duplicator, k, v))
+
+instance (Duplicable a) => Duplicable [a] where
+    duplicate duplicator list = do
+        List.mapS duplicator list duplicate
+
 remapBorrow :: Duplicator -> BorrowId -> BorrowId
 remapBorrow duplicator id = case get duplicator.inverse_borrows id of
     Some id -> id

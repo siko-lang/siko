@@ -1,9 +1,9 @@
 module Siko.MIR.Backend.Ownership.DataFlowProfile(DataFlowProfile(..),
                                                   normalizeDataFlowProfile,
                                                   enforceUnknownArgOwnership,
-                                                  duplicateDataFlowProfile) where
+                                                  duplicateDataFlowProfile,
+                                                  LegacyDataFlowProfile) where
 
-import Map
 import Siko.MIR.Backend.Allocator
 import Siko.MIR.Backend.Duplicator
 import Siko.MIR.Backend.EqualitySolver
@@ -11,18 +11,32 @@ import Siko.MIR.Backend.Lowering.Normalizer
 import Siko.MIR.Backend.MemberInfo as M
 import Siko.MIR.Backend.OrderedDependencyMap
 import Siko.MIR.Backend.Ownership.Converter
-import Siko.MIR.Backend.Ownership.FunctionGroupInferenceData
+import Siko.MIR.Backend.Ownership.DataFlowGraph as DFG
 import Siko.MIR.Backend.TypeVariableInfo
 
-data DataFlowProfile = { args :: [TypeVariableInfo],
-                         result :: TypeVariableInfo,
-                         members :: [M.MemberInfo],
-                         converters :: [Converter],
-                         ownershipinfos :: [M.OwnershipInfo]
-                       } deriving (PartialEq, Eq, Show)
+data DataFlowProfile = Legacy LegacyDataFlowProfile
+                     | GraphBased DFG.DataFlowGraph
+                     deriving (PartialEq, Eq, Show)
+
+data LegacyDataFlowProfile = { args :: [TypeVariableInfo],
+                               result :: TypeVariableInfo,
+                               members :: [M.MemberInfo],
+                               converters :: [Converter],
+                               ownershipinfos :: [M.OwnershipInfo]
+                             } deriving (PartialEq, Eq, Show)
 
 normalizeDataFlowProfile :: DataFlowProfile -> DataFlowProfile
-normalizeDataFlowProfile dataflow_profile = do
+normalizeDataFlowProfile Legacy dataflow_profile = Legacy (normalizeLegacyDataFlowProfile dataflow_profile)
+normalizeDataFlowProfile GraphBased dataflow_graph = GraphBased (normalizeGraphBasedDataFlowProfile dataflow_graph)
+
+normalizeGraphBasedDataFlowProfile :: DFG.DataFlowGraph -> DFG.DataFlowGraph
+normalizeGraphBasedDataFlowProfile dataflow_graph = do
+    duplicator <- createNormalizer
+    (duplicator, dataflow_graph) <- duplicate duplicator dataflow_graph
+    dataflow_graph
+
+normalizeLegacyDataFlowProfile :: LegacyDataFlowProfile -> LegacyDataFlowProfile
+normalizeLegacyDataFlowProfile dataflow_profile = do
     deps_map <- getOrderedDependencyMap dataflow_profile.members
     duplicator <- createNormalizer
     (visited, duplicator) <- processTypeVariableInfo [] deps_map duplicator dataflow_profile.result
@@ -35,10 +49,14 @@ normalizeDataFlowProfile dataflow_profile = do
     (duplicator, ownershipinfos) <- List.mapS duplicator dataflow_profile.ownershipinfos duplicate
     members <- members |> List.sort
     ownershipinfos <- ownershipinfos |> List.sort
-    DataFlowProfile args result members converters ownershipinfos
+    LegacyDataFlowProfile args result members converters ownershipinfos
 
 enforceUnknownArgOwnership :: DataFlowProfile -> DataFlowProfile
-enforceUnknownArgOwnership dataflow_profile = do
+enforceUnknownArgOwnership Legacy dataflow_profile = Legacy (enforceUnknownArgOwnershipLegacy dataflow_profile)
+enforceUnknownArgOwnership GraphBased dataflow_profile = GraphBased (panic "enforceUnknownArgOwnership not yet implemented")
+
+enforceUnknownArgOwnershipLegacy :: LegacyDataFlowProfile -> LegacyDataFlowProfile
+enforceUnknownArgOwnershipLegacy dataflow_profile = do
     arg_ownership_vars <- List.fold [] dataflow_profile.args (\arg_ownership_vars, info -> List.push arg_ownership_vars info.ownership_var)
     ownershipinfos <- List.map dataflow_profile.ownershipinfos (\info -> if List.contains arg_ownership_vars info.var
         then info { kind = M.Unknown }
@@ -47,16 +65,30 @@ enforceUnknownArgOwnership dataflow_profile = do
     dataflow_profile { ownershipinfos = ownershipinfos }
 
 duplicateDataFlowProfile :: Allocator -> DataFlowProfile -> (Allocator, DataFlowProfile)
-duplicateDataFlowProfile allocator dataflow_profile = do
+duplicateDataFlowProfile allocator (Legacy dataflow_profile) = do
+    (allocator, dataflow_profile) <- duplicateLegacyDataFlowProfile allocator dataflow_profile
+    (allocator, Legacy dataflow_profile)
+duplicateDataFlowProfile allocator (GraphBased dataflow_graph) = do
+    duplicator <- createDuplicator allocator
+    (duplicator, dataflow_graph) <- duplicate duplicator dataflow_graph
+    (duplicator.allocator, GraphBased dataflow_graph)
+
+duplicateLegacyDataFlowProfile :: Allocator -> LegacyDataFlowProfile -> (Allocator, LegacyDataFlowProfile)
+duplicateLegacyDataFlowProfile allocator dataflow_profile = do
     duplicator <- createDuplicator allocator
     (duplicator, args) <- List.mapS duplicator dataflow_profile.args duplicate
     (duplicator, result) <- duplicate duplicator dataflow_profile.result
     (duplicator, members) <- List.mapS duplicator dataflow_profile.members duplicate
     (duplicator, converters) <- List.mapS duplicator dataflow_profile.converters duplicate
     (duplicator, ownershipinfos) <- List.mapS duplicator dataflow_profile.ownershipinfos duplicate
-    (duplicator.allocator, DataFlowProfile args result members converters ownershipinfos)
+    (duplicator.allocator, LegacyDataFlowProfile args result members converters ownershipinfos)
+// instance Apply DataFlowProfile where
+//     apply applier (Legacy dataflow_profile) = do
+//         dataflow_profile <- apply applier dataflow_profile
+//         Legacy dataflow_profile
+//     apply applier (GraphBased _) = panic "Apply not yet implemented"
 
-instance Apply DataFlowProfile where
+instance Apply LegacyDataFlowProfile where
     apply applier dataflow_profile = do
         args <- apply applier dataflow_profile.args
         result <- apply applier dataflow_profile.result
@@ -65,7 +97,11 @@ instance Apply DataFlowProfile where
         ownershipinfos <- apply applier dataflow_profile.ownershipinfos
         members <- List.dedup (List.sort members)
         converters <- List.dedup (List.sort converters)
-        DataFlowProfile args result members converters ownershipinfos
+        LegacyDataFlowProfile args result members converters ownershipinfos
 
 instance MemberOwner DataFlowProfile where
+    getMembers (Legacy dataflow_profile) = getMembers dataflow_profile
+    getMembers (GraphBased dataflow_profile) = DFG.getMembers dataflow_profile
+
+instance MemberOwner LegacyDataFlowProfile where
     getMembers dataflow_profile = dataflow_profile.members
