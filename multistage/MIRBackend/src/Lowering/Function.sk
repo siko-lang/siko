@@ -19,6 +19,7 @@ import Siko.MIR.Backend.Ownership.BorrowInfo
 import Siko.MIR.Backend.Ownership.CallContext as CC
 import Siko.MIR.Backend.Ownership.ControlFlowGraph.BorrowChecker as CFGBorrow
 import Siko.MIR.Backend.Ownership.ControlFlowGraph.Builder as CFGB
+import Siko.MIR.Backend.Ownership.ControlFlowGraph
 import Siko.MIR.Backend.Ownership.ControlFlowGraph.Visualizer as CFGVisualizer
 import Siko.MIR.Backend.Ownership.Converter
 import Siko.MIR.Backend.Ownership.DataFlowGraph.Builder as DFGB
@@ -94,7 +95,7 @@ lowerNormalFunction2 lowering_info mir_id lir_id info dataflow_profile_store = d
     data_flow_graph <- DFGB.build info.body (I.short mir_id)
     data_flow_graph <- DFGI.process data_flow_graph control_flow_graph (I.short mir_id)
     DFGVisualizer.visualize data_flow_graph (I.short mir_id)
-    borrows <- []
+    borrows <- getBorrows control_flow_graph
     filter_info <- buildFilterInfo data_flow_graph
     lowering_context <- LoweringContext mir_id (GraphBased data_flow_graph) borrows filter_info Map.empty Map.empty
     lowering_context
@@ -108,6 +109,7 @@ lowerFunction context lowering_info mir_id lir_id = do
     function <- Q.getFunction mir_id
     context <- case function.kind of
         MF.Normal info -> do
+            //lowerNormalFunction lowering_info mir_id lir_id info context.dataflow_profile_store
             lowering_context <- lowerNormalFunction2 lowering_info mir_id lir_id info context.dataflow_profile_store
             (lowering_context, context, lir_body) <- lowerExpr lowering_context context info.body
             lir_kind <- LF.Normal lir_body

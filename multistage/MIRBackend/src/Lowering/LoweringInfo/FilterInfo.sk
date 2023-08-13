@@ -38,9 +38,10 @@ instance FilterInfoSource DFG.DataFlowGraph where
     buildFilterInfo data_flow_graph = do
         members <- DFG.getMembers data_flow_graph
         ownershipinfos <- DFG.getOwnershipInfo data_flow_graph
-        sources <- DFG.getSources data_flow_graph
-        sources <- List.push sources DFG.EndKey
-        sources <- List.map sources (\s -> DFG.getTypeVariableInfo data_flow_graph s)
+        sources <- Map.fold [] data_flow_graph.nodes (\sources, (key, node) -> case node of
+            DFG.Expr expr_node -> List.push sources expr_node.tv_info
+            DFG.Var var_node -> List.push sources var_node.tv_info
+            DFG.End end_node -> List.push sources end_node.tv_info)
         build members ownershipinfos sources
 
 instance FilterInfoSource FunctionGroupInferenceData where
@@ -170,4 +171,4 @@ getRelevants filter_info sources = do
     List.fold sources sources (\relevants, source -> do
         case getGroupIndexOpt filter_info.group_index_map source of
             Some group_index -> collectBorrows filter_info relevants group_index
-            None -> [])
+            None -> panic "Source {} not found in group_index_map" % source)
