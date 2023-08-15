@@ -42,6 +42,7 @@ getExprKey key = case key of
 processEdge :: Context -> Int -> Context
 processEdge context edge_id = do
     edge <- DFG.getEdge context.data_flow_graph edge_id
+    //println "Process edge {}" % edge
     context <- case edge.kind of
         DFG.Converter -> do
             from_info <- DFG.getTypeVariableInfo context.data_flow_graph edge.from
@@ -127,6 +128,7 @@ setBorrow context var borrow_id = do
 processNode :: Context -> DFG.NodeKey -> Context
 processNode context key = do
     node <- DFG.getNode context.data_flow_graph key
+    //println "Processing node {}" % key
     case node of
         DFG.Expr n -> do
             context <- case n.kind of
@@ -140,7 +142,7 @@ processNode context key = do
                 DFG.Other -> context
             List.fold context n.outgoing processEdge
         DFG.Var n -> List.fold context n.outgoing processEdge
-        DFG.End n -> context
+        DFG.End n -> List.fold context n.outgoing processEdge
 
 updateDataFlowGraph :: DFG.DataFlowGraph -> CFG.ControlFlowGraph -> (DFG.DataFlowGraph, Map OwnershipTypeVariable (Set Path))
 updateDataFlowGraph data_flow_graph control_flow_graph = do
@@ -175,7 +177,6 @@ process :: DFG.DataFlowGraph -> CFG.ControlFlowGraph -> String -> DFG.DataFlowGr
 process data_flow_graph control_flow_graph name = do
     sources <- DFG.getSources data_flow_graph
     (data_flow_graph, forbidden_borrow_map) <- updateDataFlowGraph data_flow_graph control_flow_graph
-    println "Processing {}" % name
     context <- Context data_flow_graph control_flow_graph forbidden_borrow_map Map.empty
     context <- List.fold context sources processNode
     //println "--------------------------------------"

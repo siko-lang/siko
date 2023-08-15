@@ -6,6 +6,7 @@ import Siko.MIR.Backend.Allocator as A
 import Siko.MIR.Backend.BorrowId
 import Siko.MIR.Backend.MemberInfo as M
 import Siko.MIR.Backend.Ownership.Path
+import Siko.MIR.Backend.Duplicator
 import Siko.MIR.Backend.TypeVariableInfo
 import Siko.MIR.Expr as E
 import Siko.MIR.Identity as I
@@ -13,6 +14,7 @@ import Siko.MIR.Identity as I
 data NodeKey = ExprKey E.ExprId
              | VarKey E.Var
              | EndKey
+             | Merged E.ExprId Int
              deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
 data ExprNodeKind = FnCall I.Identity
@@ -37,7 +39,8 @@ data VarNode = { var :: E.Var,
                } deriving (PartialEq, Eq, Show)
 
 data EndNode = { tv_info :: TypeVariableInfo,
-                 incoming :: [Int]
+                 incoming :: [Int],
+                 outgoing :: [Int]
                } deriving (PartialEq, Eq, Show)
 
 data Node = Expr ExprNode
@@ -177,7 +180,11 @@ addOutgoingEdge graph key index = do
             var_node <- var_node { outgoing = outgoing }
             nodes <- Map.put graph.nodes key (Var var_node)
             graph { nodes = nodes }
-        Some (End end_node) -> panic "Outgoing edge from end node!"
+        Some (End end_node) -> do
+            outgoing <- List.push end_node.outgoing index
+            end_node <- end_node { outgoing = outgoing }
+            nodes <- Map.put graph.nodes key (End end_node)
+            graph { nodes = nodes }
         None -> panic "addOutgoingEdge: key {} not found in data flow graph" % key
 
 addNode :: DataFlowGraph -> NodeKey -> Node -> DataFlowGraph
@@ -240,3 +247,43 @@ getMembers graph = List.fold [] graph.edges (\members, edge -> case edge.kind of
 
 getOwnershipInfo :: DataFlowGraph -> [M.OwnershipInfo]
 getOwnershipInfo graph = M.toOwnershipInfo graph.ownership
+
+mergeCallGraph  :: E.ExprId -> DataFlowGraph -> DataFlowGraph -> [E.ExprId] -> E.ExprId -> DataFlowGraph
+mergeCallGraph source_expr_id target source arg_ids result = do
+    allocator <- target.allocator
+    duplicator <- createDuplicator allocator
+    (duplicator, source) <- duplicate duplicator source
+    target <- target { allocator = duplicator.allocator }
+    key_map <- Map.empty
+    (key_map, target) <- Map.fold (key_map, target) source.nodes (\(key_map, target), (key, node) -> do
+        (key_map, new_key) <- case Map.get key_map key of
+            Some new_key -> (key_map, new_key)
+            None -> do
+                new_key <- Merged source_expr_id (Map.getSize key_map)
+                key_map <- Map.put key_map key new_key
+                (key_map, new_key)
+        node <- case node of
+            Expr expr_node -> Expr (expr_node { incoming = [], outgoing = [] })
+            Var var_node -> Var (var_node { incoming = [], outgoing = [] })
+            End end_node -> End (end_node { incoming = [], outgoing = [] })
+        (key_map, addNode target new_key node))
+    new_edges <- List.fold [] source.edges (\new_edges, edge -> do
+        from <- Option.unwrap (Map.get key_map edge.from)
+        to <- Option.unwrap (Map.get key_map edge.to)
+        edge <- edge { from = from, to = to }
+        List.push new_edges edge)
+    target <- target { edges = target.edges + new_edges }
+    target <- List.foldE target arg_ids (\target, index, arg_id -> do
+        kind <- FnCallArg index
+        from <- ExprKey arg_id
+        to <- VarKey (E.Arg index)
+        to <- Option.unwrap (Map.get key_map to)
+        edge <- Edge from to kind
+        addEdge target edge)
+    kind <- Result
+    from <- EndKey
+    from <- Option.unwrap (Map.get key_map from)
+    to <- ExprKey result
+    edge <- Edge from to kind
+    target <- addEdge target edge
+    target

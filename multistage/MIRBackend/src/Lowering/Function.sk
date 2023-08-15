@@ -89,12 +89,13 @@ lowerNormalFunction2 :: FunctionLoweringInfo ->
                         MF.FunctionInfo ->
                         DataFlowProfileStore -> LoweringContext
 lowerNormalFunction2 lowering_info mir_id lir_id info dataflow_profile_store = do
-    control_flow_graph <- CFGB.build info.body (I.short mir_id)
+    name <- (I.short mir_id)
+    control_flow_graph <- CFGB.build info.body name
     control_flow_graph <- CFGBorrow.checkBorrows control_flow_graph
-    CFGVisualizer.visualize control_flow_graph (I.short mir_id)
-    data_flow_graph <- DFGB.build info.body (I.short mir_id)
-    data_flow_graph <- DFGI.process data_flow_graph control_flow_graph (I.short mir_id)
-    DFGVisualizer.visualize data_flow_graph (I.short mir_id)
+    CFGVisualizer.visualize control_flow_graph name
+    data_flow_graph <- DFGB.build info.body name dataflow_profile_store
+    data_flow_graph <- DFGI.process data_flow_graph control_flow_graph name
+    DFGVisualizer.visualize data_flow_graph name
     borrows <- getBorrows control_flow_graph
     filter_info <- buildFilterInfo data_flow_graph
     lowering_context <- LoweringContext mir_id (GraphBased data_flow_graph) borrows filter_info Map.empty Map.empty

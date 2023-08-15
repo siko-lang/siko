@@ -6,22 +6,25 @@ import Siko.MIR.Backend.MemberInfo as M
 import Siko.MIR.Backend.Ownership.ControlFlowGraph as CFG
 import Siko.MIR.Backend.Ownership.DataFlowGraph as DFG
 import Siko.MIR.Backend.Ownership.DataFlowGraph.Equality
+import Siko.MIR.Backend.Ownership.DataFlowProfile
 import Siko.MIR.Backend.Query as Q
 import Siko.MIR.Backend.TypeVariableInfo
+import Siko.MIR.Backend.Ownership.DataFlowProfileStore
 import Siko.MIR.Expr as E
 import Siko.MIR.Function as F
 import Siko.MIR.Identity as I
 import Siko.MIR.Type as T
 
-data Context = { graph :: DFG.DataFlowGraph,
+data Context = { dataflow_profile_store :: DataFlowProfileStore,
+                 graph :: DFG.DataFlowGraph,
                  expr_info_map :: Map E.ExprId TypeVariableInfo,
                  var_info_map :: Map E.Var TypeVariableInfo,
                  expr_kinds :: Map E.ExprId DFG.ExprNodeKind,
                  returns :: [E.ExprId]
                }
 
-createContext :: Context
-createContext = Context DFG.createGraph Map.empty Map.empty Map.empty []
+createContext :: DataFlowProfileStore -> Context
+createContext dataflow_profile_store = Context dataflow_profile_store DFG.createGraph Map.empty Map.empty Map.empty []
 
 getNextOwnershipTypeVariable :: Context -> (Context, OwnershipTypeVariable)
 getNextOwnershipTypeVariable context = do
@@ -128,13 +131,13 @@ addVarInfo context var info = do
     context <- context { var_info_map = var_info_map }
     context
 
-build :: E.Expr -> String -> DFG.DataFlowGraph
-build expr name = do
-    context <- createContext
+build :: E.Expr -> String -> DataFlowProfileStore -> DFG.DataFlowGraph
+build expr name dataflow_profile_store = do
+    context <- createContext dataflow_profile_store
     context <- buildDataFlowGraph context expr
     (context, end_tv_info) <- getNextTypeVariableInfo context
     graph <- context.graph
-    graph <- DFG.addNode graph DFG.EndKey (DFG.End (DFG.EndNode end_tv_info []))
+    graph <- DFG.addNode graph DFG.EndKey (DFG.End (DFG.EndNode end_tv_info [] []))
     E.Expr _ _ body_id <- expr
     edge <- DFG.Edge (DFG.ExprKey body_id) DFG.EndKey DFG.Result
     graph <- DFG.addEdge graph edge
@@ -187,10 +190,19 @@ buildDataFlowGraph context expr = do
                         field_member_info <- M.MemberInfo kind record_info.arg_group_var arg_info
                         kind <- DFG.VariantCtorField index adt_member_info field_member_info
                         addEdge context kind arg_id expr_id)
-                _ -> List.foldE context info.args (\context, index, arg -> do
-                        E.Expr _ _ arg_id <- arg
-                        kind <- DFG.FnCallArg index
-                        addEdge context kind arg_id expr_id)
+                F.Normal _ -> do
+                    case getDataFlowProfile context.dataflow_profile_store info.id of
+                        Some (GraphBased call_data_flow_graph) -> do
+                            arg_ids <- List.map info.args (\E.Expr _ _ arg_id -> arg_id)
+                            graph <- DFG.mergeCallGraph expr_id context.graph call_data_flow_graph arg_ids expr_id
+                            context { graph = graph }
+                        Some _ -> panic "Data flow profile is not graph based!"
+                        None -> panic "Data flow profile for {} not found, recursive?" % info.id
+                F.Extern _ -> do
+                    List.foldE context info.args (\context, index, arg -> do
+                                E.Expr _ _ arg_id <- arg
+                                kind <- DFG.FnCallArg index
+                                addEdge context kind arg_id expr_id)
         E.IntegerLiteral _ -> context
         E.StringLiteral _ -> context
         E.FloatLiteral _ -> context

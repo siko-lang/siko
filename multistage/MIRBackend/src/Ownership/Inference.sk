@@ -153,12 +153,13 @@ createNormalFunctionDataFlowProfile2 :: I.Identity ->
                                         [I.Identity] -> DataFlowProfile
 createNormalFunctionDataFlowProfile2 function_id info function_type dataflow_profile_store group = do
     trace "Ownership inference - processing {}" % function_id
-    control_flow_graph <- CFGB.build info.body (I.short function_id)
+    name <- (I.short function_id)
+    control_flow_graph <- CFGB.build info.body name
     control_flow_graph <- CFGBorrow.checkBorrows control_flow_graph
-    CFGVisualizer.visualize control_flow_graph (I.short function_id)
-    data_flow_graph <- DFGB.build info.body (I.short function_id)
-    data_flow_graph <- DFGI.process data_flow_graph control_flow_graph (I.short function_id)
-    DFGVisualizer.visualize data_flow_graph (I.short function_id)
+    CFGVisualizer.visualize control_flow_graph name
+    data_flow_graph <- DFGB.build info.body name dataflow_profile_store
+    data_flow_graph <- DFGI.process data_flow_graph control_flow_graph name
+    DFGVisualizer.visualize data_flow_graph name
     GraphBased data_flow_graph
 
 createSingleNormalFunctionDataFlowProfile :: I.Identity ->

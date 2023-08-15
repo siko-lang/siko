@@ -48,7 +48,7 @@ instance Solver.Apply DFG.DataFlowGraph where
         edges <- Solver.apply applier graph.edges
         DFG.DataFlowGraph nodes edges graph.ownership graph.allocator
 
-data EqualCollector = { branches :: Map DFG.NodeKey [TypeVariableInfo] }
+data EqualCollector = { branches :: Map DFG.NodeKey [TypeVariableInfo], equals :: [Solver.Equal] }
 
 addBranch :: EqualCollector -> DFG.NodeKey -> TypeVariableInfo -> EqualCollector
 addBranch collector key info = do
@@ -57,7 +57,7 @@ addBranch collector key info = do
 
 processEquals :: DFG.DataFlowGraph -> DFG.DataFlowGraph
 processEquals graph = do
-    collector <- EqualCollector Map.empty
+    collector <- EqualCollector Map.empty []
     collector <- Map.fold collector graph.nodes (\collector, (key, node) -> case node of
         DFG.Expr n -> case n.kind of
             DFG.FnCall _ -> collector
@@ -68,7 +68,20 @@ processEquals graph = do
             then helper collector n.tv_info n.incoming key graph
             else collector
         DFG.End n -> helper collector n.tv_info n.incoming key graph)
-    equals <- Map.fold [] collector.branches (\equals, (key, infos) -> do
+    collector <- List.fold collector graph.edges (\collector, edge -> do
+        case edge.kind of
+            DFG.Result -> do
+                from_info <- DFG.getTypeVariableInfo graph edge.from
+                to_info <- DFG.getTypeVariableInfo graph edge.to
+                equals <- Solver.addEqual collector.equals from_info to_info
+                collector { equals = equals }
+            DFG.FnCallArg _ -> do
+                from_info <- DFG.getTypeVariableInfo graph edge.from
+                to_info <- DFG.getTypeVariableInfo graph edge.to
+                equals <- Solver.addEqual collector.equals from_info to_info
+                collector { equals = equals }
+            _ -> collector)
+    equals <- Map.fold collector.equals collector.branches (\equals, (key, infos) -> do
         first <- List.atIndex infos 0
         List.fold equals infos (\equals, info -> Solver.addEqual equals info first))
     Solver.processEquals equals graph
