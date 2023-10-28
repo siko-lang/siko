@@ -5,19 +5,14 @@ import Map
 import Set
 import Siko.MIR.Backend.Allocator as A
 import Siko.MIR.Backend.Duplicator
-import Siko.MIR.Backend.Lowering.LoweringInfo
+import Siko.MIR.Backend.Lowering.FunctionLoweringInfo
 import Siko.MIR.Backend.Lowering.LoweringInfo.Singularizer as S
 import Siko.MIR.Backend.Lowering.Normalizer
+import Siko.MIR.Backend.Lowering.TypeLoweringInfo
 import Siko.MIR.Backend.MemberInfo as M
 import Siko.MIR.Backend.OrderedDependencyMap
 import Siko.MIR.Backend.TypeVariableInfo
 import Siko.Trace
-
-instance Duplicable LifetimeDependency where
-    duplicate duplicator dep = do
-        (duplicator, from) <- duplicate duplicator dep.from
-        (duplicator, to) <- duplicate duplicator dep.to
-        (duplicator, LifetimeDependency from to)
 
 normalizeFunctionLoweringInfo :: FunctionLoweringInfo -> (FunctionLoweringInfo, Duplicator)
 normalizeFunctionLoweringInfo lowering_info = do

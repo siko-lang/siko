@@ -4,9 +4,10 @@ import Map
 import Set
 import Siko.MIR.Backend.Allocator as A
 import Siko.MIR.Backend.BorrowId
-import Siko.MIR.Backend.MemberInfo as M
-import Siko.MIR.Backend.Ownership.Path
 import Siko.MIR.Backend.Duplicator
+import Siko.MIR.Backend.MemberInfo as M
+import Siko.MIR.Backend.Ownership.OwnershipStore as OS
+import Siko.MIR.Backend.Ownership.Path
 import Siko.MIR.Backend.TypeVariableInfo
 import Siko.MIR.Expr as E
 import Siko.MIR.Identity as I
@@ -81,12 +82,12 @@ data Edge = { from :: NodeKey,
 
 data DataFlowGraph = { nodes :: Map NodeKey Node,
                        edges :: [Edge],
-                       ownership :: Map OwnershipTypeVariable M.OwnershipKind,
+                       ownership_store :: OS.OwnershipStore,
                        allocator :: A.Allocator
                      } deriving (PartialEq, Eq, Show)
 
 createGraph :: DataFlowGraph
-createGraph = DataFlowGraph Map.empty [] Map.empty A.createAllocator
+createGraph = DataFlowGraph Map.empty [] OS.createOwnershipStore A.createAllocator
 
 getNextOwnershipTypeVariable :: DataFlowGraph -> (DataFlowGraph, OwnershipTypeVariable)
 getNextOwnershipTypeVariable graph = do
@@ -219,14 +220,11 @@ getEdge graph index = List.atIndex graph.edges index
 
 setOwnership :: DataFlowGraph -> OwnershipTypeVariable -> M.OwnershipKind -> DataFlowGraph
 setOwnership graph ownership_var kind = do
-    ownership <- Map.put graph.ownership ownership_var kind
-    graph { ownership = ownership }
+    ownership_store <- OS.setOwnership graph.ownership_store ownership_var kind
+    graph { ownership_store = ownership_store }
 
 getOwnership :: DataFlowGraph -> OwnershipTypeVariable -> M.OwnershipKind
-getOwnership graph ownership_var = do
-    case Map.get graph.ownership ownership_var of
-        Some kind -> kind
-        None -> M.Unknown
+getOwnership graph ownership_var = OS.getOwnership graph.ownership_store ownership_var
 
 isValidBorrow :: DataFlowGraph -> NodeKey -> Path -> Bool
 isValidBorrow graph key path = do
@@ -246,9 +244,13 @@ getMembers graph = List.fold [] graph.edges (\members, edge -> case edge.kind of
         _ -> members)
 
 getOwnershipInfo :: DataFlowGraph -> [M.OwnershipInfo]
-getOwnershipInfo graph = M.toOwnershipInfo graph.ownership
+getOwnershipInfo graph = OS.getOwnershipInfo graph.ownership_store
 
-mergeCallGraph  :: E.ExprId -> DataFlowGraph -> DataFlowGraph -> [E.ExprId] -> E.ExprId -> DataFlowGraph
+mergeCallGraph :: E.ExprId ->
+                  DataFlowGraph ->
+                  DataFlowGraph ->
+                  [E.ExprId] ->
+                  E.ExprId -> DataFlowGraph
 mergeCallGraph source_expr_id target source arg_ids result = do
     allocator <- target.allocator
     duplicator <- createDuplicator allocator

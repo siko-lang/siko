@@ -5,39 +5,29 @@ import Siko.LIR.Function as LF
 import Siko.LIR.Program as LP
 import Siko.LIR.Type as LT
 import Siko.MIR.Backend.BorrowId
+import Siko.MIR.Backend.Duplicator
+import Siko.MIR.Backend.EqualitySolver as Solver
 import Siko.MIR.Backend.Lowering.Context
 import Siko.MIR.Backend.Lowering.Expr
+import Siko.MIR.Backend.Lowering.FunctionLoweringInfo
 import Siko.MIR.Backend.Lowering.LoweringDataProvider
-import Siko.MIR.Backend.Lowering.LoweringInfo
 import Siko.MIR.Backend.Lowering.LoweringInfo.FilterInfo
-import Siko.MIR.Backend.Lowering.Naming
 import Siko.MIR.Backend.Lowering.Type
-import Siko.MIR.Backend.MemberInfo as M
-import Siko.MIR.Backend.OrderedDependencyMap
-import Siko.MIR.Backend.Ownership.BorrowChecker
-import Siko.MIR.Backend.Ownership.BorrowInfo
-import Siko.MIR.Backend.Ownership.CallContext as CC
+import Siko.MIR.Backend.Lowering.TypeLoweringInfo
+import Siko.MIR.Backend.Ownership.ControlFlowGraph
 import Siko.MIR.Backend.Ownership.ControlFlowGraph.BorrowChecker as CFGBorrow
 import Siko.MIR.Backend.Ownership.ControlFlowGraph.Builder as CFGB
-import Siko.MIR.Backend.Ownership.ControlFlowGraph
 import Siko.MIR.Backend.Ownership.ControlFlowGraph.Visualizer as CFGVisualizer
-import Siko.MIR.Backend.Ownership.Converter
+import Siko.MIR.Backend.Ownership.DataFlowGraph as DFG
 import Siko.MIR.Backend.Ownership.DataFlowGraph.Builder as DFGB
 import Siko.MIR.Backend.Ownership.DataFlowGraph.Inference as DFGI
 import Siko.MIR.Backend.Ownership.DataFlowGraph.Visualizer as DFGVisualizer
 import Siko.MIR.Backend.Ownership.DataFlowProfileStore
-import Siko.MIR.Backend.Ownership.DumpOwnership
-import Siko.MIR.Backend.Ownership.EqualityGeneration
-import Siko.MIR.Backend.Ownership.FunctionGroupInferenceData
-import Siko.MIR.Backend.Ownership.Inference.ConstraintCollection
-import Siko.MIR.Backend.Ownership.Inference.ConstraintProcessor
-import Siko.MIR.Backend.Ownership.Initializer
-import Siko.MIR.Backend.OwnershipDependencyMap
 import Siko.MIR.Backend.Query as Q
 import Siko.MIR.Backend.TypeVariableInfo
+import Siko.MIR.Expr as ME
 import Siko.MIR.Function as MF
 import Siko.MIR.Identity as I
-import Siko.MIR.Program as MP
 import Siko.Trace
 
 lowerLifetimeDependency :: LifetimeDependency -> LF.LifetimeDependency
@@ -52,54 +42,35 @@ lowerNormalFunction :: FunctionLoweringInfo ->
                        MF.FunctionInfo ->
                        DataFlowProfileStore -> LoweringContext
 lowerNormalFunction lowering_info mir_id lir_id info dataflow_profile_store = do
-    (function_group_inference_data, external_borrows) <- createInferenceInfoFromLoweringInfo lowering_info mir_id
-    function_group_inference_data <- initializeTypeVariables function_group_inference_data mir_id info.body
-    checkInitials function_group_inference_data "after initializeTypeVariables"
-    //trace2 "after initializeTypeVariables {} {}" % (lir_id, function_group_inference_data)
-    (equals, function_group_inference_data) <- processFunctionEqualities mir_id [] [] function_group_inference_data dataflow_profile_store info.body
-    function_group_inference_data <- processEqualities equals function_group_inference_data
-    checkInitials function_group_inference_data "after processEqualities"
-    //trace2 "after processEqualities {} {}" % (lir_id, function_group_inference_data)
-    borrow_info <- checkBorrows info.body
-    function_group_inference_data <- updateOwnershipDepMap function_group_inference_data
-    function_group_inference_data <- unpackOwnerships mir_id function_group_inference_data external_borrows
-    checkInitials function_group_inference_data "after unpackOwnerships"
-    //trace2 "after unpackOwnerships {} {}" % (lir_id, function_group_inference_data)
-    function_group_inference_data <- updateGroupDependencyMapInfo function_group_inference_data
-    converter_merge_info_base <- createConverterMergeInfoBase function_group_inference_data.converters
-    function_group_inference_data <- createDataFlowProfileBase function_group_inference_data mir_id converter_merge_info_base
-    function_group_inference_data <- CC.createBaseCallContexts function_group_inference_data
-    (function_group_inference_data, constraint_data, result_vars) <- collectConstraints mir_id borrow_info function_group_inference_data info.body
-    function_group_inference_data <- processConstraints mir_id function_group_inference_data constraint_data result_vars Full
-    //trace2 "after processConstraints {} {}" % (lir_id, function_group_inference_data)
-    if MP.isDebugged mir_id
-    then do
-        println "inference data {}" % function_group_inference_data
-        println "Borrow info {}" % borrow_info
-        dumpOwnership function_group_inference_data mir_id info.body
-    else ()
-    checkInitials function_group_inference_data "after processConstraints"
-    filter_info <- buildFilterInfo function_group_inference_data
-    lowering_context <- LoweringContext mir_id (Legacy function_group_inference_data) borrow_info.borrows filter_info Map.empty Map.empty
-    lowering_context
-
-lowerNormalFunction2 :: FunctionLoweringInfo ->
-                        I.Identity ->
-                        LP.Identity ->
-                        MF.FunctionInfo ->
-                        DataFlowProfileStore -> LoweringContext
-lowerNormalFunction2 lowering_info mir_id lir_id info dataflow_profile_store = do
-    name <- (I.short mir_id)
+    name <- show lir_id
     control_flow_graph <- CFGB.build info.body name
     control_flow_graph <- CFGBorrow.checkBorrows control_flow_graph
     CFGVisualizer.visualize control_flow_graph name
     data_flow_graph <- DFGB.build info.body name dataflow_profile_store
+    data_flow_graph <- injectLoweringInfo lowering_info data_flow_graph
     data_flow_graph <- DFGI.process data_flow_graph control_flow_graph name
     DFGVisualizer.visualize data_flow_graph name
     borrows <- getBorrows control_flow_graph
     filter_info <- buildFilterInfo data_flow_graph
     lowering_context <- LoweringContext mir_id (GraphBased data_flow_graph) borrows filter_info Map.empty Map.empty
     lowering_context
+
+injectLoweringInfo :: FunctionLoweringInfo -> DFG.DataFlowGraph -> DFG.DataFlowGraph
+injectLoweringInfo lowering_info data_flow_graph = do
+    lowering_info <- unpackOwnership lowering_info
+    duplicator <- createDuplicator data_flow_graph.allocator
+    (duplicator, lowering_info) <- duplicate duplicator lowering_info
+    data_flow_graph <- List.fold data_flow_graph lowering_info.ownershipinfos (\data_flow_graph, info -> do
+        DFG.setOwnership data_flow_graph info.var info.kind)
+    equals <- []
+    equals <- List.foldE equals lowering_info.args (\equals, index, arg_info -> do
+        arg_key <- ME.Arg index
+        arg_key <- DFG.VarKey arg_key
+        dfg_arg_info <- DFG.getTypeVariableInfo data_flow_graph arg_key
+        Solver.addEqual equals dfg_arg_info arg_info)
+    equals <- Solver.addEqual equals (DFG.getTypeVariableInfo data_flow_graph DFG.EndKey) lowering_info.result
+    data_flow_graph <- Solver.processEquals equals data_flow_graph
+    data_flow_graph
 
 lowerFunction :: Context ->
                  FunctionLoweringInfo ->
@@ -111,7 +82,7 @@ lowerFunction context lowering_info mir_id lir_id = do
     context <- case function.kind of
         MF.Normal info -> do
             //lowerNormalFunction lowering_info mir_id lir_id info context.dataflow_profile_store
-            lowering_context <- lowerNormalFunction2 lowering_info mir_id lir_id info context.dataflow_profile_store
+            lowering_context <- lowerNormalFunction lowering_info mir_id lir_id info context.dataflow_profile_store
             (lowering_context, context, lir_body) <- lowerExpr lowering_context context info.body
             lir_kind <- LF.Normal lir_body
             (context, lir_function_type, lifetimes) <- lowerFunctionType context lowering_info function.type
@@ -142,21 +113,3 @@ lowerFunction context lowering_info mir_id lir_id = do
             context
     //trace "Lowering done"
     context
-
-unpackOwnerships :: I.Identity -> FunctionGroupInferenceData -> [BorrowId] -> FunctionGroupInferenceData
-unpackOwnerships function_id function_group_inference_data external_borrows = do
-    // Ownership information is present in the lowering info
-    // in a packed way. For example an owned record implies
-    // that every field of the record is also owned.
-    // The ownership inference does not know this, thus we 'unpack'
-    // the ownerships, i.e. fill out member ownerships which are implied from
-    // the arguments, result.
-    function_inference_info <- getFunctionInferenceInfo function_group_inference_data function_id
-    vars <- List.fold [] function_inference_info.args (\vars, info -> do
-        vars <- List.push vars info.arg_group_var
-        vars)
-    vars <- List.push vars function_inference_info.result.arg_group_var
-    List.fold function_group_inference_data vars (\function_group_inference_data, var -> do
-        case Map.get function_group_inference_data.ownership_dep_map_info.ownership_dep_map var of
-            Some ownership_vars -> List.fold function_group_inference_data ownership_vars (\function_group_inference_data, var -> enforceOwner function_group_inference_data var external_borrows)
-            None -> function_group_inference_data)

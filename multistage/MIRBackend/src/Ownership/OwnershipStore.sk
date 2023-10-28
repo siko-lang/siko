@@ -1,0 +1,51 @@
+module Siko.MIR.Backend.Ownership.OwnershipStore where
+
+import Map
+import Siko.MIR.Backend.Duplicator
+import Siko.MIR.Backend.EqualitySolver as Solver
+import Siko.MIR.Backend.MemberInfo as M
+import Siko.MIR.Backend.TypeVariableInfo
+
+data OwnershipStore = { ownership :: Map OwnershipTypeVariable M.OwnershipKind } deriving (PartialEq, Eq, Show)
+
+createOwnershipStore :: OwnershipStore
+createOwnershipStore = OwnershipStore Map.empty
+
+setOwnership :: OwnershipStore -> OwnershipTypeVariable -> M.OwnershipKind -> OwnershipStore
+setOwnership store ownership_var kind = do
+    ownership <- Map.put store.ownership ownership_var kind
+    store { ownership = ownership }
+
+getOwnership :: OwnershipStore -> OwnershipTypeVariable -> M.OwnershipKind
+getOwnership store ownership_var = do
+    case Map.get store.ownership ownership_var of
+        Some kind -> kind
+        None -> M.Unknown
+
+getOwnershipInfo :: OwnershipStore -> [M.OwnershipInfo]
+getOwnershipInfo store = M.toOwnershipInfo store.ownership
+
+instance Duplicable OwnershipStore where
+    duplicate duplicator store = do
+        (duplicator, ownership) <- duplicate duplicator store.ownership
+        (duplicator, store { ownership = ownership })
+
+instance Solver.Apply OwnershipStore where
+    apply applier store = do
+        merged_ownership_values <- Map.fold Map.empty store.ownership (\merged_ownership_values, (var, kind) -> do
+            new_var <- Solver.apply applier var
+            merged_ownership_values <- Map.add merged_ownership_values new_var kind
+            merged_ownership_values)
+        ownership_values <- Map.fold Map.empty merged_ownership_values (\ownership_values, (var, kinds) -> do
+            kinds <- kinds |> List.sort |> List.dedup
+            kinds <- List.filter kinds (\kind -> case kind of
+                M.Unknown -> False
+                _ -> True)
+            kind <- if List.contains kinds M.Owner
+            then M.Owner
+            else case List.getLength kinds of
+                0 -> M.Unknown
+                1 -> List.atIndex kinds 0
+                _ -> panic "Merging ownership values in OwnershipStore apply is NYI {}" % kinds
+            Map.put ownership_values var kind)
+        store { ownership = ownership_values }

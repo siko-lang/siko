@@ -1,4 +1,4 @@
-module Siko.MIR.Backend.Lowering.LoweringInfo where
+module Siko.MIR.Backend.Lowering.TypeLoweringInfo where
 
 import Map
 import Map
@@ -6,6 +6,7 @@ import Set
 import Siko.MIR.Backend.Allocator
 import Siko.MIR.Backend.BorrowId
 import Siko.MIR.Backend.Duplicator
+import Siko.MIR.Backend.Lowering.FunctionLoweringInfo
 import Siko.MIR.Backend.Lowering.LoweringDataProvider
 import Siko.MIR.Backend.Lowering.LoweringInfo.Filter
 import Siko.MIR.Backend.Lowering.LoweringInfo.FilterInfo
@@ -13,36 +14,11 @@ import Siko.MIR.Backend.MemberInfo as M
 import Siko.MIR.Backend.OwnershipDependencyMap
 import Siko.MIR.Backend.TypeVariableInfo
 
-data LifetimeDependency = { from :: BorrowId,
-                            to :: BorrowId
-                          } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
-
-data FunctionLoweringInfo = { members :: [M.MemberInfo],
-                              args :: [TypeVariableInfo],
-                              result :: TypeVariableInfo,
-                              ownershipinfos :: [M.OwnershipInfo],
-                              allocator :: Allocator,
-                              lifetime_dependencies :: [LifetimeDependency]
-                            } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
-
 data TypeLoweringInfo = { members :: [M.MemberInfo],
                           root :: TypeVariableInfo,
                           ownershipinfos :: [M.OwnershipInfo],
                           allocator :: Allocator
                         } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
-
-convertToFunctionLoweringInfo a :: (LoweringDataProvider a) =>
-                                   a ->
-                                   [TypeVariableInfo] ->
-                                   TypeVariableInfo ->
-                                   FilterInfo ->
-                                   [LifetimeDependency] -> FunctionLoweringInfo
-convertToFunctionLoweringInfo provider args result filter_info lifetime_dependencies = do
-    //println "Creating function lowering info"
-    lowering_info <- FunctionLoweringInfo (getMembers provider) args result (getOwnershipInfo provider) (getAllocator provider) lifetime_dependencies
-    //println "Unfiltered {}" % lowering_info
-    sources <- List.push args result
-    filterFunctionLoweringInfo lowering_info sources filter_info
 
 createTypeLoweringInfoFromInferenceInfo a :: (LoweringDataProvider a) => a -> TypeVariableInfo -> FilterInfo -> TypeLoweringInfo
 createTypeLoweringInfoFromInferenceInfo provider root filter_info = do
@@ -83,15 +59,6 @@ normalizeRef lowering_info = do
             M.OwnershipInfo v M.Owner -> if v == rootvar
                 then (List.push ownershipinfos ownershipinfo, None, True)
                 else (List.push ownershipinfos ownershipinfo, ref, found)
-
-getLoweringInfoForArg :: FunctionLoweringInfo -> Int -> FilterInfo -> TypeLoweringInfo
-getLoweringInfoForArg lowering_info index filter_info = do
-    arg <- List.atIndex lowering_info.args index
-    createTypeLoweringInfoFromFunctionLoweringInfo lowering_info arg filter_info
-
-getLoweringInfoForResult :: FunctionLoweringInfo -> FilterInfo -> TypeLoweringInfo
-getLoweringInfoForResult lowering_info filter_info = do
-    createTypeLoweringInfoFromFunctionLoweringInfo lowering_info lowering_info.result filter_info
 
 createEmptyTypeLoweringInfo :: TypeLoweringInfo
 createEmptyTypeLoweringInfo = do

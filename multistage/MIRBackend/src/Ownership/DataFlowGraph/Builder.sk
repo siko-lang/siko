@@ -7,9 +7,9 @@ import Siko.MIR.Backend.Ownership.ControlFlowGraph as CFG
 import Siko.MIR.Backend.Ownership.DataFlowGraph as DFG
 import Siko.MIR.Backend.Ownership.DataFlowGraph.Equality
 import Siko.MIR.Backend.Ownership.DataFlowProfile
+import Siko.MIR.Backend.Ownership.DataFlowProfileStore
 import Siko.MIR.Backend.Query as Q
 import Siko.MIR.Backend.TypeVariableInfo
-import Siko.MIR.Backend.Ownership.DataFlowProfileStore
 import Siko.MIR.Expr as E
 import Siko.MIR.Function as F
 import Siko.MIR.Identity as I
@@ -200,9 +200,9 @@ buildDataFlowGraph context expr = do
                         None -> panic "Data flow profile for {} not found, recursive?" % info.id
                 F.Extern _ -> do
                     List.foldE context info.args (\context, index, arg -> do
-                                E.Expr _ _ arg_id <- arg
-                                kind <- DFG.FnCallArg index
-                                addEdge context kind arg_id expr_id)
+                        E.Expr _ _ arg_id <- arg
+                        kind <- DFG.FnCallArg index
+                        addEdge context kind arg_id expr_id)
         E.IntegerLiteral _ -> context
         E.StringLiteral _ -> context
         E.FloatLiteral _ -> context

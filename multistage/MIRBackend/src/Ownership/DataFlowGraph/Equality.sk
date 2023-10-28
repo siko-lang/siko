@@ -46,9 +46,12 @@ instance Solver.Apply DFG.DataFlowGraph where
     apply applier graph = do
         nodes <- Solver.apply applier graph.nodes
         edges <- Solver.apply applier graph.edges
-        DFG.DataFlowGraph nodes edges graph.ownership graph.allocator
+        ownership_store <- Solver.apply applier graph.ownership_store
+        DFG.DataFlowGraph nodes edges ownership_store graph.allocator
 
-data EqualCollector = { branches :: Map DFG.NodeKey [TypeVariableInfo], equals :: [Solver.Equal] }
+data EqualCollector = { branches :: Map DFG.NodeKey [TypeVariableInfo],
+                        equals :: [Solver.Equal]
+                      }
 
 addBranch :: EqualCollector -> DFG.NodeKey -> TypeVariableInfo -> EqualCollector
 addBranch collector key info = do

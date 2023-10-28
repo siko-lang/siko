@@ -1,0 +1,80 @@
+module Siko.MIR.Backend.Lowering.FunctionLoweringInfo where
+
+import Map
+import Map
+import Set
+import Siko.MIR.Backend.Allocator
+import Siko.MIR.Backend.BorrowId
+import Siko.MIR.Backend.Duplicator
+import Siko.MIR.Backend.Lowering.LoweringDataProvider
+import Siko.MIR.Backend.Lowering.LoweringInfo.Filter
+import Siko.MIR.Backend.Lowering.LoweringInfo.FilterInfo
+import Siko.MIR.Backend.Lowering.TypeLoweringInfo
+import Siko.MIR.Backend.MemberInfo as M
+import Siko.MIR.Backend.OwnershipDependencyMap
+import Siko.MIR.Backend.TypeVariableInfo
+
+data LifetimeDependency = { from :: BorrowId,
+                            to :: BorrowId
+                          } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+data FunctionLoweringInfo = { members :: [M.MemberInfo],
+                              args :: [TypeVariableInfo],
+                              result :: TypeVariableInfo,
+                              ownershipinfos :: [M.OwnershipInfo],
+                              allocator :: Allocator,
+                              lifetime_dependencies :: [LifetimeDependency]
+                            } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+instance Duplicable LifetimeDependency where
+    duplicate duplicator dep = do
+        (duplicator, from) <- duplicate duplicator dep.from
+        (duplicator, to) <- duplicate duplicator dep.to
+        (duplicator, LifetimeDependency from to)
+
+instance Duplicable FunctionLoweringInfo where
+    duplicate duplicator lowering_info = do
+        (duplicator, members) <- duplicate duplicator lowering_info.members
+        (duplicator, args) <- duplicate duplicator lowering_info.args
+        (duplicator, result) <- duplicate duplicator lowering_info.result
+        (duplicator, ownershipinfos) <- duplicate duplicator lowering_info.ownershipinfos
+        (duplicator, lifetime_dependencies) <- duplicate duplicator lowering_info.lifetime_dependencies
+        (duplicator, FunctionLoweringInfo members args result ownershipinfos duplicator.allocator lifetime_dependencies)
+
+convertToFunctionLoweringInfo a :: (LoweringDataProvider a) =>
+                                   a ->
+                                   [TypeVariableInfo] ->
+                                   TypeVariableInfo ->
+                                   FilterInfo ->
+                                   [LifetimeDependency] -> FunctionLoweringInfo
+convertToFunctionLoweringInfo provider args result filter_info lifetime_dependencies = do
+    //println "Creating function lowering info"
+    lowering_info <- FunctionLoweringInfo (getMembers provider) args result (getOwnershipInfo provider) (getAllocator provider) lifetime_dependencies
+    //println "Unfiltered {}" % lowering_info
+    sources <- List.push args result
+    filterFunctionLoweringInfo lowering_info sources filter_info
+
+getLoweringInfoForArg :: FunctionLoweringInfo -> Int -> FilterInfo -> TypeLoweringInfo
+getLoweringInfoForArg lowering_info index filter_info = do
+    arg <- List.atIndex lowering_info.args index
+    createTypeLoweringInfoFromFunctionLoweringInfo lowering_info arg filter_info
+
+getLoweringInfoForResult :: FunctionLoweringInfo -> FilterInfo -> TypeLoweringInfo
+getLoweringInfoForResult lowering_info filter_info = do
+    createTypeLoweringInfoFromFunctionLoweringInfo lowering_info lowering_info.result filter_info
+
+unpackOwnership :: FunctionLoweringInfo -> FunctionLoweringInfo
+unpackOwnership lowering_info = do
+    ownership_kinds <- M.toOwnershipKind lowering_info.ownershipinfos
+    ownership_kinds <- addTypeVariableInfo ownership_kinds lowering_info.result
+    ownership_kinds <- List.fold ownership_kinds lowering_info.args addTypeVariableInfo
+    ownership_kinds <- List.fold ownership_kinds lowering_info.members (\ks, m -> addTypeVariableInfo ks m.info)
+    lowering_info { ownershipinfos = M.toOwnershipInfo ownership_kinds }
+    where
+        addTypeVariableInfo :: Map OwnershipTypeVariable M.OwnershipKind -> TypeVariableInfo -> Map OwnershipTypeVariable M.OwnershipKind
+        addTypeVariableInfo ownership_kinds info = addVar ownership_kinds info.ownership_var
+
+        addVar :: Map OwnershipTypeVariable M.OwnershipKind -> OwnershipTypeVariable -> Map OwnershipTypeVariable M.OwnershipKind
+        addVar ownership_kinds var = case Map.get ownership_kinds var of
+            Some _ -> ownership_kinds
+            None -> Map.put ownership_kinds var M.Owner

@@ -1,0 +1,260 @@
+module Siko.MIR.Backend.Ownership.Inference.Legacy where
+
+import Map
+import Siko.Config
+import Siko.LIR.Program as LP
+import Siko.MIR.Backend.Allocator
+import Siko.MIR.Backend.Lowering
+import Siko.MIR.Backend.MemberInfo as M
+import Siko.MIR.Backend.Ownership.BorrowChecker
+import Siko.MIR.Backend.Ownership.CallContext.Legacy as CC
+import Siko.MIR.Backend.Ownership.ControlFlowGraph.BorrowChecker as CFGBorrow
+import Siko.MIR.Backend.Ownership.ControlFlowGraph.Builder as CFGB
+import Siko.MIR.Backend.Ownership.ControlFlowGraph.Visualizer as CFGVisualizer
+import Siko.MIR.Backend.Ownership.Converter
+import Siko.MIR.Backend.Ownership.DataFlowGraph.Builder as DFGB
+import Siko.MIR.Backend.Ownership.DataFlowGraph.Inference as DFGI
+import Siko.MIR.Backend.Ownership.DataFlowGraph.Visualizer as DFGVisualizer
+import Siko.MIR.Backend.Ownership.DataFlowProfile
+import Siko.MIR.Backend.Ownership.DataFlowProfileStore
+import Siko.MIR.Backend.Ownership.DumpOwnership.Legacy
+import Siko.MIR.Backend.Ownership.EqualityGeneration.Legacy
+import Siko.MIR.Backend.Ownership.ExternProcessor
+import Siko.MIR.Backend.Ownership.FunctionGroupInferenceData.Legacy
+import Siko.MIR.Backend.Ownership.Inference.ConstraintCollection.Legacy
+import Siko.MIR.Backend.Ownership.Inference.ConstraintProcessor.Legacy
+import Siko.MIR.Backend.Ownership.Initializer.Legacy
+import Siko.MIR.Backend.Query as Q
+import Siko.MIR.Backend.TypeVariableInfo
+import Siko.MIR.Data as D
+import Siko.MIR.Expr as E
+import Siko.MIR.Function as F
+import Siko.MIR.Identity as I
+import Siko.MIR.Program as P
+import Siko.MIR.Type as T
+import Siko.Trace
+import Siko.Util.DependencyProcessor
+
+data Context = { dataflow_profile_store :: DataFlowProfileStore } deriving (Move)
+
+createRecordCtorDataFlowProfile :: T.Type -> DataFlowProfile
+createRecordCtorDataFlowProfile type = case type of
+    T.Record id -> do
+        record <- Q.getRecord id
+        allocator <- createAllocator
+        (allocator, result) <- getNextTypeVariableInfo allocator
+        ownershipinfos <- []
+        (allocator, args, members, ownershipinfos) <- List.fold (allocator, [], [], ownershipinfos) record.fields (\(allocator, args, members, ownershipinfos), field -> do
+            (allocator, arg_info) <- getNextTypeVariableInfo allocator
+            member <- M.MemberInfo (M.Field field.index) result.arg_group_var arg_info
+            members <- List.push members member
+            args <- List.push args arg_info
+            ownershipinfos <- if Q.isCopyable (T.getIdentity field.type)
+            then List.push ownershipinfos (M.OwnershipInfo arg_info.ownership_var M.Owner)
+            else ownershipinfos
+            (allocator, args, members, ownershipinfos))
+        Legacy (LegacyDataFlowProfile args result members [] ownershipinfos)
+    t -> panic "createRecordCtorDataFlowProfile: not a record: {}" % t
+
+createVariantctorDataFlowProfile :: Int -> T.Type -> DataFlowProfile
+createVariantctorDataFlowProfile index type = case type of
+    T.Adt id -> do
+        adt <- Q.getAdt id
+        allocator <- createAllocator
+        (allocator, result) <- getNextTypeVariableInfo allocator
+        (allocator, args, members, ownershipinfos, current) <- List.fold (allocator, [], [], [], 0) adt.variants (\(allocator, args, members, ownershipinfos, current), variant -> case variant.type of
+            T.Record id -> do
+                (allocator, record_result) <- getNextTypeVariableInfo allocator
+                ownershipinfos <- List.push ownershipinfos (M.OwnershipInfo record_result.ownership_var M.Owner)
+                members <- List.push members (M.MemberInfo (M.Variant current) result.arg_group_var record_result)
+                if current == index
+                then do
+                    record <- Q.getRecord id
+                    (allocator, args, members, ownershipinfos) <- List.fold (allocator, args, members, ownershipinfos) record.fields (\(allocator, args, members, ownershipinfos), field -> do
+                        (allocator, arg_info) <- getNextTypeVariableInfo allocator
+                        member <- M.MemberInfo (M.Field field.index) record_result.arg_group_var arg_info
+                        members <- List.push members member
+                        args <- List.push args arg_info
+                        ownershipinfos <- if Q.isCopyable (T.getIdentity field.type)
+                        then List.push ownershipinfos (M.OwnershipInfo arg_info.ownership_var M.Owner)
+                        else ownershipinfos
+                        (allocator, args, members, ownershipinfos))
+                    (allocator, args, members, ownershipinfos, current + 1)
+                else (allocator, args, members, ownershipinfos, current + 1)
+            _ -> panic "createVariantctorDataFlowProfile: not a record")
+        Legacy (LegacyDataFlowProfile args result members [] ownershipinfos)
+    _ -> panic "createVariantctorDataFlowProfile: not an adt"
+
+processDataFlowProfile :: Context -> DataFlowProfile -> I.Identity -> (Context, Bool)
+processDataFlowProfile context dataflow_profile function_id = do
+    //trace "processDataFlowProfile - processing {}" % function_id
+    dataflow_profile <- normalizeDataFlowProfile dataflow_profile
+    //trace "processDataFlowProfile - normalization done"
+    dataflow_profile_store <- context.dataflow_profile_store
+    config <- getConfig ()
+    if config.print_dataflow_profile
+    then println "Function data flow profile added for {}/{}" % (function_id, dataflow_profile)
+    else ()
+    (dataflow_profile_store, added) <- addDataFlowProfile dataflow_profile_store function_id dataflow_profile
+    //trace "processDataFlowProfile - added done"
+    context <- context { dataflow_profile_store = dataflow_profile_store }
+    (context, added)
+
+prepareSingleFunctionInferenceInfo :: I.Identity ->
+                                      F.FunctionInfo ->
+                                      F.FunctionType ->
+                                      [I.Identity] ->
+                                      DataFlowProfileStore -> FunctionGroupInferenceData
+prepareSingleFunctionInferenceInfo function_id info function_type group dataflow_profile_store = do
+    arg_count <- getLength function_type.args
+    function_group_inference_data <- createInferenceInfo
+    function_group_inference_data <- addFunctionInferenceInfo function_group_inference_data function_id arg_count
+    //trace "initializeTypeVariables {}" % function_id
+    function_group_inference_data <- initializeTypeVariables function_group_inference_data function_id info.body
+    //trace "processEqualities {}" % function_id
+    (equals, function_group_inference_data) <- processFunctionEqualities function_id group [] function_group_inference_data dataflow_profile_store info.body
+    function_group_inference_data <- processEqualities equals function_group_inference_data
+    function_group_inference_data <- updateOwnershipDepMap function_group_inference_data
+    function_group_inference_data <- updateGroupDependencyMapInfo function_group_inference_data
+    function_group_inference_data <- CC.createBaseCallContexts function_group_inference_data
+    converter_merge_info_base <- createConverterMergeInfoBase function_group_inference_data.converters
+    function_group_inference_data <- createDataFlowProfileBase function_group_inference_data function_id converter_merge_info_base
+    function_group_inference_data
+
+createNormalFunctionDataFlowProfile :: I.Identity ->
+                                       F.FunctionInfo ->
+                                       F.FunctionType ->
+                                       DataFlowProfileStore ->
+                                       [I.Identity] -> DataFlowProfile
+createNormalFunctionDataFlowProfile function_id info function_type dataflow_profile_store group = do
+    trace "Ownership inference - processing {}" % function_id
+    function_group_inference_data <- prepareSingleFunctionInferenceInfo function_id info function_type group dataflow_profile_store
+    //trace "checkBorrows {}" % function_id
+    borrow_info <- checkBorrows info.body
+    //trace "inferOwnership {}" % function_id
+    (function_group_inference_data, constraint_data, result_vars) <- collectConstraints function_id borrow_info function_group_inference_data info.body
+    function_group_inference_data <- processConstraints function_id function_group_inference_data constraint_data result_vars Partial
+    //trace "Processing {}" % function_id
+    no_return <- T.isNever function_type.result
+    dataflow_profile <- toDataFlowProfile function_group_inference_data function_id no_return
+    if P.isDebugged function_id
+    then do
+        println "dataflow_profile: {}" % dataflow_profile
+        println "inference data {}" % function_group_inference_data
+        dumpOwnership function_group_inference_data function_id info.body
+    else ()
+    dataflow_profile <- enforceUnknownArgOwnership dataflow_profile
+    dataflow_profile
+
+createSingleNormalFunctionDataFlowProfile :: I.Identity ->
+                                             F.FunctionInfo ->
+                                             FunctionGroupInferenceData ->
+                                             F.FunctionType ->
+                                             DataFlowProfileStore ->
+                                             [I.Identity] -> (DataFlowProfile, FunctionGroupInferenceData)
+createSingleNormalFunctionDataFlowProfile function_id info function_group_inference_data function_type dataflow_profile_store group = do
+    trace "Ownership inference - processing {}" % function_id
+    //trace "checkBorrows {}" % function_id
+    borrow_info <- checkBorrows info.body
+    //trace "inferOwnership {}" % function_id
+    (function_group_inference_data, constraint_data, result_vars) <- collectConstraints function_id borrow_info function_group_inference_data info.body
+    function_group_inference_data <- processConstraints function_id function_group_inference_data constraint_data result_vars Partial
+    //trace "Processing {}" % function_id
+    no_return <- T.isNever function_type.result
+    dataflow_profile <- toDataFlowProfile function_group_inference_data function_id no_return
+    dataflow_profile <- enforceUnknownArgOwnership dataflow_profile
+    (dataflow_profile, function_group_inference_data)
+
+processFunction :: Context -> [I.Identity] -> I.Identity -> (Context, Bool)
+processFunction context group function_id = do
+    function <- Q.getFunction function_id
+    case function.kind of
+        F.Normal info -> do
+            trace "Ownership inference - processing {}" % function_id
+            dataflow_profile <- createNormalFunctionDataFlowProfile function_id info function.type context.dataflow_profile_store group
+            processDataFlowProfile context dataflow_profile function_id
+        F.VariantCtor index -> do
+            dataflow_profile <- createVariantctorDataFlowProfile index function.type.result
+            //trace2 "Variant ctor {} = {}" % (function_id, dataflow_profile)
+            processDataFlowProfile context dataflow_profile function_id
+        F.RecordCtor -> do
+            dataflow_profile <- createRecordCtorDataFlowProfile function.type.result
+            //trace2 "Record ctor {} = {}" % (function_id, dataflow_profile)
+            processDataFlowProfile context dataflow_profile function_id
+        F.Extern type_mapping -> do
+            dataflow_profile <- createExternDataFlowProfile function_id function.type type_mapping
+            //trace2 "Extern {} = {}" % (function_id, dataflow_profile)
+            processDataFlowProfile context dataflow_profile function_id
+
+processFunctionGroup :: Int ->
+                        Int ->
+                        Context ->
+                        [I.Identity] -> (Int, Context)
+processFunctionGroup index group_count context group = do
+    trace2 "processFunctionGroup {}/{} ({}%) {}" % (index, group_count, index * 100 / group_count, group)
+    if getLength group == 1
+    then do
+        function_id <- atIndex group 0
+        (context, _) <- processFunction context group function_id
+        (index + 1, context)
+    else do
+        function_group_inference_data <- prepareInferenceInfo context.dataflow_profile_store group
+        loop (context, function_group_inference_data) <- (context, function_group_inference_data) do
+            (context, more, function_group_inference_data) <- List.fold (context, False, function_group_inference_data) group (\(context, more, function_group_inference_data), function_id -> do
+                (context, added, function_group_inference_data) <- processSingleFunction context group function_group_inference_data function_id
+                more <- if added then True else more
+                (context, more, function_group_inference_data))
+            if more
+            then (context, function_group_inference_data)
+            else break (index + 1, context)
+    where
+        processSingleFunction :: Context ->
+                                 [I.Identity] ->
+                                 FunctionGroupInferenceData ->
+                                 I.Identity -> (Context, Bool, FunctionGroupInferenceData)
+        processSingleFunction context group function_group_inference_data function_id = do
+            function <- Q.getFunction function_id
+            case function.kind of
+                F.Normal info -> do
+                    trace "Ownership inference - processing {}" % function_id
+                    (dataflow_profile, function_group_inference_data) <- createSingleNormalFunctionDataFlowProfile function_id info function_group_inference_data function.type context.dataflow_profile_store group
+                    (context, added) <- processDataFlowProfile context dataflow_profile function_id
+                    (context, added, function_group_inference_data)
+                _ -> panic "Function is not a normal function in a function group!"
+
+        prepareInferenceInfo :: DataFlowProfileStore -> [I.Identity] -> FunctionGroupInferenceData
+        prepareInferenceInfo dataflow_profile_store group = do
+            function_group_inference_data <- createInferenceInfo
+            function_group_inference_data <- List.fold function_group_inference_data group (\function_group_inference_data, function_id -> do
+                function <- Q.getFunction function_id
+                case function.kind of
+                    F.Normal info -> do
+                        arg_count <- getLength function.type.args
+                        function_group_inference_data <- addFunctionInferenceInfo function_group_inference_data function_id arg_count
+                        function_group_inference_data <- initializeTypeVariables function_group_inference_data function_id info.body
+                        function_group_inference_data
+                    _ -> panic "Groupped function is not normal!")
+            (equals, function_group_inference_data) <- List.fold ([], function_group_inference_data) group (\(equals, function_group_inference_data), function_id -> do
+                function <- Q.getFunction function_id
+                case function.kind of
+                    F.Normal info -> processFunctionEqualities function_id group equals function_group_inference_data dataflow_profile_store info.body
+                    _ -> panic "Groupped function is not normal!")
+            function_group_inference_data <- processEqualities equals function_group_inference_data
+            converter_merge_info_base <- createConverterMergeInfoBase function_group_inference_data.converters
+            function_group_inference_data <- updateOwnershipDepMap function_group_inference_data
+            function_group_inference_data <- updateGroupDependencyMapInfo function_group_inference_data
+            function_group_inference_data <- List.fold function_group_inference_data group (\function_group_inference_data, function_id -> createDataFlowProfileBase function_group_inference_data function_id converter_merge_info_base)
+            function_group_inference_data <- CC.createBaseCallContexts function_group_inference_data
+            function_group_inference_data
+
+processProgram :: [DependencyGroup I.Identity] -> LP.Program
+processProgram function_groups = do
+    trace "Ownership inference started"
+    context <- Context createDataFlowProfileStore
+    group_count <- getLength function_groups
+    (_, context) <- List.fold (1, context) function_groups (\(index, context), group -> processFunctionGroup index group_count context group.items)
+    trace "Ownership inference ended"
+    trace "Lowering started"
+    lir_program <- lowerProgram context.dataflow_profile_store
+    trace "Lowering ended"
+    lir_program
