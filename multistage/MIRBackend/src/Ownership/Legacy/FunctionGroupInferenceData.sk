@@ -3,13 +3,13 @@ module Siko.MIR.Backend.Ownership.FunctionGroupInferenceData.Legacy where
 import Map
 import Set
 import Siko.MIR.Backend.Allocator
-import Siko.MIR.Backend.BorrowId
 import Siko.MIR.Backend.EqualitySolver
 import Siko.MIR.Backend.GroupDependencyMap
 import Siko.MIR.Backend.Lowering.FunctionLoweringInfo
 import Siko.MIR.Backend.Lowering.LoweringInfo.FilterInfo
 import Siko.MIR.Backend.Lowering.TypeLoweringInfo
 import Siko.MIR.Backend.MemberInfo as M
+import Siko.MIR.Backend.Ownership.Borrow as BU
 import Siko.MIR.Backend.Ownership.CallContext.Legacy as CC
 import Siko.MIR.Backend.Ownership.Converter
 import Siko.MIR.Backend.Ownership.DataFlowProfile
@@ -22,14 +22,14 @@ import Siko.Trace
 import Siko.Util.DependencyProcessor
 
 data Borrow = Local E.ExprId
-            | External BorrowId
-            | Internal BorrowId
+            | External BU.BorrowId
+            | Internal BU.BorrowId
             deriving (PartialEq, Eq, PartialOrd, Ord, Show)
 
 data BorrowSet = { borrows :: Set Borrow } deriving (Show, PartialEq, Eq, PartialOrd, Ord)
 
-data FunctionConverterBorrow = { from :: BorrowId,
-                                 to :: BorrowId
+data FunctionConverterBorrow = { from :: BU.BorrowId,
+                                 to :: BU.BorrowId
                                } deriving (Show)
 
 data FunctionInferenceInfo = { args :: [TypeVariableInfo],
@@ -62,9 +62,9 @@ data FunctionGroupInferenceData = { expr_type_variables :: Map GlobalExprId Type
                                     allocator :: Allocator,
                                     function_converters :: Map GlobalExprId [Converter],
                                     group_function_converters :: Map I.Identity [Converter],
-                                    borrow_sets :: Map BorrowId BorrowSet,
-                                    external_borrows :: Map BorrowId BorrowId,
-                                    interrnal_borrows :: Map BorrowId BorrowId,
+                                    borrow_sets :: Map BU.BorrowId BorrowSet,
+                                    external_borrows :: Map BU.BorrowId BU.BorrowId,
+                                    interrnal_borrows :: Map BU.BorrowId BU.BorrowId,
                                     initials :: Map OwnershipTypeVariable M.OwnershipKind,
                                     dataflow_profile_bases :: Map I.Identity DataFlowProfileBase,
                                     function_converter_borrows :: Map E.ExprId [FunctionConverterBorrow],
@@ -76,7 +76,7 @@ data FunctionGroupInferenceData = { expr_type_variables :: Map GlobalExprId Type
 instance Show FunctionGroupInferenceData where
     show function_group_inference_data = "FunctionGroupInferenceData(ownership_values {}, members {}, converters {}, borrow_sets {}, initials {})" % (function_group_inference_data.ownership_values, function_group_inference_data.members, function_group_inference_data.converters, function_group_inference_data.borrow_sets, function_group_inference_data.initials)
 
-createInferenceInfoFromLoweringInfo :: FunctionLoweringInfo -> I.Identity -> (FunctionGroupInferenceData, [BorrowId])
+createInferenceInfoFromLoweringInfo :: FunctionLoweringInfo -> I.Identity -> (FunctionGroupInferenceData, [BU.BorrowId])
 createInferenceInfoFromLoweringInfo lowering_info function_id = do
     expr_type_variables <- Map.empty
     var_type_variables <- Map.empty
@@ -185,7 +185,7 @@ createInferenceInfo = do
                                createOwnershipDependencyMapInfo
                                createGroupDependencyMapInfo
 
-createBorrowSet :: FunctionGroupInferenceData -> Borrow -> (FunctionGroupInferenceData, BorrowId)
+createBorrowSet :: FunctionGroupInferenceData -> Borrow -> (FunctionGroupInferenceData, BU.BorrowId)
 createBorrowSet function_group_inference_data borrow = do
     allocator <- function_group_inference_data.allocator
     (allocator, id) <- getNextBorrowId allocator
@@ -194,10 +194,10 @@ createBorrowSet function_group_inference_data borrow = do
     borrow_sets <- Map.put function_group_inference_data.borrow_sets id borrow_set
     (function_group_inference_data { allocator = allocator, borrow_sets = borrow_sets }, id)
 
-createBorrowSetForExpr :: FunctionGroupInferenceData -> E.ExprId -> (FunctionGroupInferenceData, BorrowId)
+createBorrowSetForExpr :: FunctionGroupInferenceData -> E.ExprId -> (FunctionGroupInferenceData, BU.BorrowId)
 createBorrowSetForExpr function_group_inference_data expr_id = createBorrowSet function_group_inference_data (Local expr_id)
 
-createBorrowSetForExternal :: FunctionGroupInferenceData -> BorrowId -> (FunctionGroupInferenceData, BorrowId)
+createBorrowSetForExternal :: FunctionGroupInferenceData -> BU.BorrowId -> (FunctionGroupInferenceData, BU.BorrowId)
 createBorrowSetForExternal function_group_inference_data external_id = do
     case Map.get function_group_inference_data.external_borrows external_id of
         Some id -> (function_group_inference_data, id)
@@ -206,7 +206,7 @@ createBorrowSetForExternal function_group_inference_data external_id = do
             external_borrows <- Map.put function_group_inference_data.external_borrows external_id id
             (function_group_inference_data { external_borrows = external_borrows }, id)
 
-createBorrowSetForInternal :: FunctionGroupInferenceData -> BorrowId -> (FunctionGroupInferenceData, BorrowId)
+createBorrowSetForInternal :: FunctionGroupInferenceData -> BU.BorrowId -> (FunctionGroupInferenceData, BU.BorrowId)
 createBorrowSetForInternal function_group_inference_data external_id = do
     case Map.get function_group_inference_data.interrnal_borrows external_id of
         Some id -> (function_group_inference_data, id)
@@ -220,7 +220,7 @@ isExternalBorrowSet borrow_set = Set.fold True borrow_set.borrows (\is_external,
         External _ -> is_external
         _ -> False)
 
-containsBorrows :: FunctionGroupInferenceData -> BorrowId -> BorrowId -> Bool
+containsBorrows :: FunctionGroupInferenceData -> BU.BorrowId -> BU.BorrowId -> Bool
 containsBorrows function_group_inference_data needle haystack = do
     if haystack == needle
     then True
@@ -233,7 +233,7 @@ containsBorrows function_group_inference_data needle haystack = do
             rest <- needle_set.borrows - haystack_set.borrows
             Set.isEmpty rest
 
-mergeBorrowSets :: FunctionGroupInferenceData -> BorrowId -> BorrowId -> (FunctionGroupInferenceData, BorrowId)
+mergeBorrowSets :: FunctionGroupInferenceData -> BU.BorrowId -> BU.BorrowId -> (FunctionGroupInferenceData, BU.BorrowId)
 mergeBorrowSets function_group_inference_data id1 id2 = do
     set1 <- getBorrowSet function_group_inference_data id1
     set2 <- getBorrowSet function_group_inference_data id2
@@ -244,7 +244,7 @@ mergeBorrowSets function_group_inference_data id1 id2 = do
     borrow_sets <- Map.put function_group_inference_data.borrow_sets id merged_set
     (function_group_inference_data { allocator = allocator, borrow_sets = borrow_sets }, id)
 
-cloneBorrowSet :: FunctionGroupInferenceData -> BorrowId -> (FunctionGroupInferenceData, BorrowId)
+cloneBorrowSet :: FunctionGroupInferenceData -> BU.BorrowId -> (FunctionGroupInferenceData, BU.BorrowId)
 cloneBorrowSet function_group_inference_data id = do
     set <- getBorrowSet function_group_inference_data id
     allocator <- function_group_inference_data.allocator
@@ -253,7 +253,7 @@ cloneBorrowSet function_group_inference_data id = do
     borrow_sets <- Map.put function_group_inference_data.borrow_sets new_id merged_set
     (function_group_inference_data { allocator = allocator, borrow_sets = borrow_sets }, new_id)
 
-getBorrowSet :: FunctionGroupInferenceData -> BorrowId -> BorrowSet
+getBorrowSet :: FunctionGroupInferenceData -> BU.BorrowId -> BorrowSet
 getBorrowSet function_group_inference_data id = case Map.get function_group_inference_data.borrow_sets id of
     Some borrow_set -> borrow_set
     None -> panic "No borrow set found for {}" % id
@@ -320,7 +320,7 @@ maybeAddOwnership function_group_inference_data var kind = do
             Some kind) var function_group_inference_data.ownership_values
     function_group_inference_data { ownership_values = ownership_values }
 
-enforceOwner :: FunctionGroupInferenceData -> OwnershipTypeVariable -> [BorrowId] -> FunctionGroupInferenceData
+enforceOwner :: FunctionGroupInferenceData -> OwnershipTypeVariable -> [BU.BorrowId] -> FunctionGroupInferenceData
 enforceOwner function_group_inference_data var external_borrows = do
     kind <- case Map.get function_group_inference_data.ownership_values var of
         Some old -> case old of

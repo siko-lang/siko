@@ -4,7 +4,6 @@ import Map
 import Siko.LIR.Function as LF
 import Siko.LIR.Program as LP
 import Siko.LIR.Type as LT
-import Siko.MIR.Backend.BorrowId
 import Siko.MIR.Backend.Duplicator
 import Siko.MIR.Backend.EqualitySolver as Solver
 import Siko.MIR.Backend.Lowering.Context
@@ -14,6 +13,7 @@ import Siko.MIR.Backend.Lowering.LoweringDataProvider
 import Siko.MIR.Backend.Lowering.LoweringInfo.FilterInfo
 import Siko.MIR.Backend.Lowering.Type
 import Siko.MIR.Backend.Lowering.TypeLoweringInfo
+import Siko.MIR.Backend.Ownership.Borrow as B
 import Siko.MIR.Backend.Ownership.ControlFlowGraph
 import Siko.MIR.Backend.Ownership.ControlFlowGraph.BorrowChecker as CFGBorrow
 import Siko.MIR.Backend.Ownership.ControlFlowGraph.Builder as CFGB
@@ -30,11 +30,11 @@ import Siko.MIR.Function as MF
 import Siko.MIR.Identity as I
 import Siko.Trace
 
-lowerLifetimeDependency :: LifetimeDependency -> LF.LifetimeDependency
+lowerLifetimeDependency :: B.LifetimeDependency -> LF.LifetimeDependency
 lowerLifetimeDependency dep = LF.LifetimeDependency (toLifetime dep.from) (toLifetime dep.to)
     where
-        toLifetime :: BorrowId -> LT.Lifetime
-        toLifetime BorrowId i = LT.Lifetime i
+        toLifetime :: B.BorrowId -> LT.Lifetime
+        toLifetime B.BorrowId i = LT.Lifetime i
 
 lowerNormalFunction :: FunctionLoweringInfo ->
                        I.Identity ->
@@ -48,11 +48,18 @@ lowerNormalFunction lowering_info mir_id lir_id info dataflow_profile_store = do
     CFGVisualizer.visualize control_flow_graph name
     data_flow_graph <- DFGB.build info.body name dataflow_profile_store
     data_flow_graph <- injectLoweringInfo lowering_info data_flow_graph
-    data_flow_graph <- DFGI.process data_flow_graph control_flow_graph name
+    (data_flow_graph, ownership_dep_map_info, borrow_map) <- DFGI.process data_flow_graph control_flow_graph name
     DFGVisualizer.visualize data_flow_graph name
     borrows <- getBorrows control_flow_graph
     filter_info <- buildFilterInfo data_flow_graph
-    lowering_context <- LoweringContext mir_id (GraphBased data_flow_graph) borrows filter_info Map.empty Map.empty
+    lowering_context <- LoweringContext mir_id
+                                        (GraphBased data_flow_graph)
+                                        borrows
+                                        filter_info
+                                        Map.empty
+                                        Map.empty
+                                        ownership_dep_map_info
+                                        borrow_map
     lowering_context
 
 injectLoweringInfo :: FunctionLoweringInfo -> DFG.DataFlowGraph -> DFG.DataFlowGraph

@@ -1,0 +1,31 @@
+module Siko.MIR.Backend.Ownership.Borrow where
+
+import Map
+import Set
+import Siko.MIR.Backend.Ownership.Path
+
+data BorrowId = BorrowId Int deriving (PartialEq, Eq, PartialOrd, Ord)
+
+instance Show BorrowId where
+    show (BorrowId id) = show id
+
+data BorrowKind = Local Path
+                | External BorrowId
+                deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+data BorrowMap = { borrows :: Map BorrowId (Set BorrowKind) }
+
+createBorrowMap :: BorrowMap
+createBorrowMap = BorrowMap Map.empty
+
+addBorrow :: BorrowMap -> BorrowId -> BorrowKind -> BorrowMap
+addBorrow borrow_map borrow_id borrow_kind = do
+    borrows <- Map.addUnique borrow_map.borrows borrow_id borrow_kind
+    borrow_map { borrows = borrows }
+
+getBorrows :: BorrowMap -> BorrowId -> Set BorrowKind
+getBorrows borrow_map borrow_id = Option.expect (Map.get borrow_map.borrows borrow_id) "Borrow not found in borrow map"
+
+data LifetimeDependency = { from :: BorrowId,
+                            to :: BorrowId
+                          } deriving (PartialEq, Eq, PartialOrd, Ord, Show)

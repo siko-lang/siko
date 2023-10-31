@@ -4,8 +4,8 @@ module Siko.MIR.Backend.Ownership.Inference.ConstraintProcessor.Legacy(processCo
 import Map
 import Map
 import Set
-import Siko.MIR.Backend.BorrowId
 import Siko.MIR.Backend.MemberInfo as M
+import Siko.MIR.Backend.Ownership.Borrow as BU
 import Siko.MIR.Backend.Ownership.CallContext.Legacy as CC
 import Siko.MIR.Backend.Ownership.FunctionGroupInferenceData.Legacy
 import Siko.MIR.Backend.Ownership.Inference.Constraint.Legacy as C
@@ -104,7 +104,7 @@ isValidBorrow context ownership_var expr_id = do
             Some invalid_borrows -> not (List.contains invalid_borrows expr_id)
             None -> True
 
-isInternal :: Context -> BorrowId -> Bool
+isInternal :: Context -> BU.BorrowId -> Bool
 isInternal context borrow_id = do
     borrow_set <- getBorrowSet context.function_group_inference_data borrow_id
     borrows <- borrow_set.borrows |> Set.iter |> List.toList
@@ -112,7 +112,7 @@ isInternal context borrow_id = do
         Internal _ -> is_internal
         _ -> False)
 
-canPropagateBorrow :: Context -> OwnershipTypeVariable -> BorrowId -> Bool
+canPropagateBorrow :: Context -> OwnershipTypeVariable -> BU.BorrowId -> Bool
 canPropagateBorrow context ownership_var borrow_id = do
     borrow_set <- getBorrowSet context.function_group_inference_data borrow_id
     borrows <- borrow_set.borrows |> Set.iter |> List.toList
@@ -138,7 +138,7 @@ processCallContext :: Context ->
                       Int ->
                       OwnershipTypeVariable ->
                       OwnershipTypeVariable ->
-                      Option BorrowId -> Context
+                      Option BU.BorrowId -> Context
 processCallContext context call_id index from to to_borrow = do
     context <- eraseFunctionConverterBorrow context index
     case Map.get context.constraint_data.call_context_map call_id of
@@ -247,8 +247,8 @@ eraseFunctionConverterBorrow context index = do
 
 addFunctionConverterBorrow :: Context ->
                               Int ->
-                              BorrowId ->
-                              BorrowId -> Context
+                              BU.BorrowId ->
+                              BU.BorrowId -> Context
 addFunctionConverterBorrow context index a b = do
     //debugPrint context "addFunctionConverterBorrow {} {} {}" % (index, a, b)
     function_converter_borrows <- Map.put context.function_converter_borrows index [FunctionConverterBorrow a b]

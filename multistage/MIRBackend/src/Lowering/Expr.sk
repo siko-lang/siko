@@ -1,6 +1,7 @@
 module Siko.MIR.Backend.Lowering.Expr where
 
 import Map
+import Set
 import Siko.LIR.Expr as LE
 import Siko.LIR.Type as LT
 import Siko.MIR.Backend.Allocator
@@ -13,7 +14,9 @@ import Siko.MIR.Backend.Lowering.Naming
 import Siko.MIR.Backend.Lowering.Type
 import Siko.MIR.Backend.Lowering.TypeLoweringInfo
 import Siko.MIR.Backend.MemberInfo as M
+import Siko.MIR.Backend.Ownership.Borrow as B
 import Siko.MIR.Backend.Ownership.Converter
+import Siko.MIR.Backend.OwnershipDependencyMap
 import Siko.MIR.Backend.Query as Q
 import Siko.MIR.Backend.TypeVariableInfo
 import Siko.MIR.Data as MD
@@ -28,7 +31,9 @@ data LoweringContext = { function_id :: I.Identity,
                          borrowers :: [ME.ExprId],
                          filter_info :: FilterInfo,
                          type_cache :: Map TypeVariableInfo LT.Type,
-                         type_lowering_info_cache :: Map TypeVariableInfo TypeLoweringInfo
+                         type_lowering_info_cache :: Map TypeVariableInfo TypeLoweringInfo,
+                         ownership_dep_map_info :: OwnershipDependencyMapInfo,
+                         borrow_map :: B.BorrowMap
                        }
 
 getTypeLoweringInfo :: LoweringContext -> TypeVariableInfo -> (LoweringContext, TypeLoweringInfo)
@@ -103,7 +108,23 @@ lowerExpr lowering_context context expr = do
             args_info <- List.map f_info.args (\arg -> do
                 ME.Expr _ arg_type arg_id <- arg
                 getTypeVariableInfoByExprId lowering_context arg_id)
-            lifetime_dependencies <- getLifetimeDependency lowering_context.provider expr_id
+            result_ownership_vars :: [OwnershipTypeVariable] <- getOwnershipVars lowering_context.ownership_dep_map_info.ownership_dep_map expr_info
+            args_ownership_vars :: [OwnershipTypeVariable] <- List.fold [] args_info (\args_ownership_vars, info -> args_ownership_vars + getOwnershipVars lowering_context.ownership_dep_map_info.ownership_dep_map info)
+            args_ownership :: [M.OwnershipKind] <- List.map args_ownership_vars (\v -> getOwnershipValue lowering_context.provider v)
+            result_ownership :: [M.OwnershipKind] <- List.map result_ownership_vars (\v -> getOwnershipValue lowering_context.provider v)
+            ownership <- args_ownership + result_ownership |> List.sort |> List.dedup
+            borrow_set_map <- List.fold Map.empty ownership (\borrow_set_map, kind -> case kind of
+                M.Borrower id -> do
+                    borrows <- B.getBorrows lowering_context.borrow_map id
+                    Map.put borrow_set_map id borrows
+                _ -> borrow_set_map)
+            lifetime_dependencies <- Map.fold [] borrow_set_map (\lifetime_dependencies, (to, to_borrows) -> do
+                Map.fold lifetime_dependencies borrow_set_map (\lifetime_dependencies, (from, from_borrows) -> do
+                    if from == to
+                    then lifetime_dependencies
+                    else if Set.containsAll to_borrows from_borrows
+                        then List.push lifetime_dependencies (B.LifetimeDependency from to)
+                        else lifetime_dependencies))
             lowering_info <- convertToFunctionLoweringInfo lowering_context.provider args_info expr_info lowering_context.filter_info lifetime_dependencies
             if MP.isDebugged lowering_context.function_id
             then do
