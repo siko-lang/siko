@@ -1,6 +1,7 @@
 module Siko.MIR.Backend.Lowering.Function where
 
 import Map
+import Siko.Config
 import Siko.LIR.Function as LF
 import Siko.LIR.Program as LP
 import Siko.LIR.Type as LT
@@ -42,14 +43,19 @@ lowerNormalFunction :: FunctionLoweringInfo ->
                        MF.FunctionInfo ->
                        DataFlowProfileStore -> LoweringContext
 lowerNormalFunction lowering_info mir_id lir_id info dataflow_profile_store = do
+    config <- getConfig ()
     name <- show lir_id
     control_flow_graph <- CFGB.build info.body name
     control_flow_graph <- CFGBorrow.checkBorrows control_flow_graph
-    CFGVisualizer.visualize control_flow_graph name
+    if config.dump_mir_graphs
+    then CFGVisualizer.visualize control_flow_graph name
+    else ()
     data_flow_graph <- DFGB.build info.body name dataflow_profile_store
     data_flow_graph <- injectLoweringInfo lowering_info data_flow_graph
     (data_flow_graph, ownership_dep_map_info, borrow_map) <- DFGI.process data_flow_graph control_flow_graph name
-    DFGVisualizer.visualize data_flow_graph name
+    if config.dump_mir_graphs
+    then DFGVisualizer.visualize data_flow_graph name
+    else ()
     borrows <- getBorrows control_flow_graph
     filter_info <- buildFilterInfo data_flow_graph
     lowering_context <- LoweringContext mir_id

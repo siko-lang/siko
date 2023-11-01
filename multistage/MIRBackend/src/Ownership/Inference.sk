@@ -98,13 +98,18 @@ createNormalFunctionDataFlowProfile :: I.Identity ->
                                        [I.Identity] -> DataFlowProfile
 createNormalFunctionDataFlowProfile function_id info function_type dataflow_profile_store group = do
     trace "Ownership inference - processing {}" % function_id
+    config <- getConfig ()
     name <- (I.short function_id)
     control_flow_graph <- CFGB.build info.body name
     control_flow_graph <- CFGBorrow.checkBorrows control_flow_graph
-    CFGVisualizer.visualize control_flow_graph name
+    if config.dump_mir_graphs
+    then CFGVisualizer.visualize control_flow_graph name
+    else ()
     data_flow_graph <- DFGB.build info.body name dataflow_profile_store
     (data_flow_graph, ownership_dep_map_info, borrow_map) <- DFGI.process data_flow_graph control_flow_graph name
-    DFGVisualizer.visualize data_flow_graph name
+    if config.dump_mir_graphs
+    then DFGVisualizer.visualize data_flow_graph name
+    else ()
     GraphBased data_flow_graph
 
 processFunction :: Context -> [I.Identity] -> I.Identity -> (Context, Bool)
