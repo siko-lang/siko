@@ -4,6 +4,7 @@ import Map
 import Siko.Config
 import Siko.LIR.Program as LP
 import Siko.MIR.Backend.Allocator
+import Siko.MIR.Backend.EqualitySolver as Solver
 import Siko.MIR.Backend.Lowering
 import Siko.MIR.Backend.MemberInfo as M
 import Siko.MIR.Backend.Ownership.ControlFlowGraph.BorrowChecker as CFGBorrow
@@ -15,6 +16,7 @@ import Siko.MIR.Backend.Ownership.DataFlowGraph.Visualizer as DFGVisualizer
 import Siko.MIR.Backend.Ownership.DataFlowProfile
 import Siko.MIR.Backend.Ownership.DataFlowProfileStore
 import Siko.MIR.Backend.Ownership.ExternProcessor
+import Siko.MIR.Backend.OwnershipDependencyMap
 import Siko.MIR.Backend.Query as Q
 import Siko.MIR.Backend.TypeVariableInfo
 import Siko.MIR.Data as D
@@ -106,7 +108,9 @@ createNormalFunctionDataFlowProfile function_id info function_type dataflow_prof
     then CFGVisualizer.visualize control_flow_graph name
     else ()
     data_flow_graph <- DFGB.build info.body name dataflow_profile_store
-    (data_flow_graph, ownership_dep_map_info, borrow_map) <- DFGI.process data_flow_graph control_flow_graph name
+    members <- Solver.getMembers data_flow_graph
+    ownership_dep_map_info <- calculateOwnershipDepMap members
+    (data_flow_graph, borrow_map) <- DFGI.process data_flow_graph control_flow_graph name ownership_dep_map_info
     if config.dump_mir_graphs
     then DFGVisualizer.visualize data_flow_graph name
     else ()

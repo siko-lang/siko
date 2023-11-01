@@ -2,6 +2,7 @@ module Siko.MIR.Backend.EqualitySolver(processEquals,
                                        addEqual,
                                        Equal(..),
                                        Apply,
+                                       Applier,
                                        apply,
                                        MemberOwner,
                                        getMembers) where
@@ -112,7 +113,7 @@ addEqual equals info1 info2 = do
     equals <- List.push equals (EqualGroup info1.arg_group_var info2.arg_group_var)
     equals
 
-processEquals a :: (MemberOwner a, Apply a) => [Equal] -> a -> a
+processEquals a :: (MemberOwner a, Apply a) => [Equal] -> a -> (Applier, a)
 processEquals equals owner = do
     applier <- addEquals equals (Applier Map.empty Map.empty)
     members <- getMembers owner
@@ -120,7 +121,9 @@ processEquals equals owner = do
         members <- apply applier members
         equals <- getEqualsFromMemberInfos members
         if List.isEmpty equals
-        then break apply applier owner
+        then break do
+                result <- apply applier owner
+                (applier, result)
         else (members, addEquals equals applier, count + 1)
 
 getEqualsFromMemberInfos :: [M.MemberInfo] -> [Equal]

@@ -5,6 +5,7 @@ import Map
 import Set
 import Siko.MIR.Backend.Allocator
 import Siko.MIR.Backend.Duplicator
+import Siko.MIR.Backend.EqualitySolver as Solver
 import Siko.MIR.Backend.Lowering.LoweringDataProvider
 import Siko.MIR.Backend.Lowering.LoweringInfo.Filter
 import Siko.MIR.Backend.Lowering.LoweringInfo.FilterInfo
@@ -21,6 +22,14 @@ data FunctionLoweringInfo = { members :: [M.MemberInfo],
                               allocator :: Allocator,
                               lifetime_dependencies :: [LifetimeDependency]
                             } deriving (PartialEq, Eq, PartialOrd, Ord, Show)
+
+instance Solver.Apply FunctionLoweringInfo where
+    apply applier lowering_info = do
+        members <- Solver.apply applier lowering_info.members
+        args <- Solver.apply applier lowering_info.args
+        result <- Solver.apply applier lowering_info.result
+        ownershipinfos <- Solver.apply applier lowering_info.ownershipinfos
+        FunctionLoweringInfo members args result ownershipinfos lowering_info.allocator lowering_info.lifetime_dependencies
 
 instance Duplicable LifetimeDependency where
     duplicate duplicator dep = do

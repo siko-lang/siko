@@ -14,6 +14,7 @@ import Siko.MIR.Backend.Lowering.LoweringDataProvider
 import Siko.MIR.Backend.Lowering.LoweringInfo.FilterInfo
 import Siko.MIR.Backend.Lowering.Type
 import Siko.MIR.Backend.Lowering.TypeLoweringInfo
+import Siko.MIR.Backend.MemberInfo as M
 import Siko.MIR.Backend.Ownership.Borrow as B
 import Siko.MIR.Backend.Ownership.ControlFlowGraph
 import Siko.MIR.Backend.Ownership.ControlFlowGraph.BorrowChecker as CFGBorrow
@@ -24,6 +25,7 @@ import Siko.MIR.Backend.Ownership.DataFlowGraph.Builder as DFGB
 import Siko.MIR.Backend.Ownership.DataFlowGraph.Inference as DFGI
 import Siko.MIR.Backend.Ownership.DataFlowGraph.Visualizer as DFGVisualizer
 import Siko.MIR.Backend.Ownership.DataFlowProfileStore
+import Siko.MIR.Backend.OwnershipDependencyMap
 import Siko.MIR.Backend.Query as Q
 import Siko.MIR.Backend.TypeVariableInfo
 import Siko.MIR.Expr as ME
@@ -51,8 +53,8 @@ lowerNormalFunction lowering_info mir_id lir_id info dataflow_profile_store = do
     then CFGVisualizer.visualize control_flow_graph name
     else ()
     data_flow_graph <- DFGB.build info.body name dataflow_profile_store
-    data_flow_graph <- injectLoweringInfo lowering_info data_flow_graph
-    (data_flow_graph, ownership_dep_map_info, borrow_map) <- DFGI.process data_flow_graph control_flow_graph name
+    (ownership_dep_map_info, data_flow_graph) <- injectLoweringInfo lowering_info data_flow_graph
+    (data_flow_graph, borrow_map) <- DFGI.process data_flow_graph control_flow_graph name ownership_dep_map_info
     if config.dump_mir_graphs
     then DFGVisualizer.visualize data_flow_graph name
     else ()
@@ -68,7 +70,7 @@ lowerNormalFunction lowering_info mir_id lir_id info dataflow_profile_store = do
                                         borrow_map
     lowering_context
 
-injectLoweringInfo :: FunctionLoweringInfo -> DFG.DataFlowGraph -> DFG.DataFlowGraph
+injectLoweringInfo :: FunctionLoweringInfo -> DFG.DataFlowGraph -> (OwnershipDependencyMapInfo, DFG.DataFlowGraph)
 injectLoweringInfo lowering_info data_flow_graph = do
     lowering_info <- unpackOwnership lowering_info
     duplicator <- createDuplicator data_flow_graph.allocator
@@ -82,8 +84,17 @@ injectLoweringInfo lowering_info data_flow_graph = do
         dfg_arg_info <- DFG.getTypeVariableInfo data_flow_graph arg_key
         Solver.addEqual equals dfg_arg_info arg_info)
     equals <- Solver.addEqual equals (DFG.getTypeVariableInfo data_flow_graph DFG.EndKey) lowering_info.result
-    data_flow_graph <- Solver.processEquals equals data_flow_graph
-    data_flow_graph
+    (applier, data_flow_graph) <- Solver.processEquals equals data_flow_graph
+    members <- Solver.getMembers data_flow_graph
+    ownership_dep_map_info <- calculateOwnershipDepMap members
+    lowering_info <- Solver.apply applier lowering_info
+    data_flow_graph <- List.fold data_flow_graph lowering_info.args (\data_flow_graph, arg_info -> do
+        ownership_vars <- getOwnershipVars ownership_dep_map_info.ownership_dep_map arg_info
+        List.fold data_flow_graph ownership_vars (\data_flow_graph, var -> do
+            case DFG.getOwnership data_flow_graph var of
+                M.Unknown -> DFG.setOwnership data_flow_graph var M.Owner
+                _ -> data_flow_graph))
+    (ownership_dep_map_info, data_flow_graph)
 
 lowerFunction :: Context ->
                  FunctionLoweringInfo ->

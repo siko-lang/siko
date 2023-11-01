@@ -198,8 +198,11 @@ updateDataFlowGraph ownership_dep_map_info data_flow_graph control_flow_graph = 
             node -> (key, node))
     (data_flow_graph { nodes = nodes }, forbidden_borrow_map)
 
-process :: DFG.DataFlowGraph -> CFG.ControlFlowGraph -> String -> (DFG.DataFlowGraph, OwnershipDependencyMapInfo, B.BorrowMap)
-process data_flow_graph control_flow_graph name = do
+process :: DFG.DataFlowGraph ->
+           CFG.ControlFlowGraph ->
+           String ->
+           OwnershipDependencyMapInfo -> (DFG.DataFlowGraph, B.BorrowMap)
+process data_flow_graph control_flow_graph name ownership_dep_map_info = do
     sources <- DFG.getSources data_flow_graph
     members <- Solver.getMembers data_flow_graph
     ownership_dep_map_info <- calculateOwnershipDepMap members
@@ -211,4 +214,4 @@ process data_flow_graph control_flow_graph name = do
     context <- Context data_flow_graph control_flow_graph forbidden_borrow_map borrow_map
     context <- List.fold context sources processNode
     //println "--------------------------------------"
-    (context.data_flow_graph, ownership_dep_map_info, context.borrow_map)
+    (context.data_flow_graph, context.borrow_map)
