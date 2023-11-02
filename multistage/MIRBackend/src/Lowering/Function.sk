@@ -77,6 +77,8 @@ injectLoweringInfo lowering_info data_flow_graph = do
     (duplicator, lowering_info) <- duplicate duplicator lowering_info
     data_flow_graph <- List.fold data_flow_graph lowering_info.ownershipinfos (\data_flow_graph, info -> do
         DFG.setOwnership data_flow_graph info.var info.kind)
+    extra_members <- data_flow_graph.extra_members + lowering_info.members
+    data_flow_graph <- data_flow_graph { extra_members = extra_members }
     equals <- []
     equals <- List.foldE equals lowering_info.args (\equals, index, arg_info -> do
         arg_key <- ME.Arg index

@@ -83,11 +83,12 @@ data Edge = { from :: NodeKey,
 data DataFlowGraph = { nodes :: Map NodeKey Node,
                        edges :: [Edge],
                        ownership_store :: OS.OwnershipStore,
+                       extra_members :: [M.MemberInfo],
                        allocator :: A.Allocator
                      } deriving (PartialEq, Eq, Show)
 
 createGraph :: DataFlowGraph
-createGraph = DataFlowGraph Map.empty [] OS.createOwnershipStore A.createAllocator
+createGraph = DataFlowGraph Map.empty [] OS.createOwnershipStore [] A.createAllocator
 
 getNextOwnershipTypeVariable :: DataFlowGraph -> (DataFlowGraph, OwnershipTypeVariable)
 getNextOwnershipTypeVariable graph = do
@@ -234,7 +235,8 @@ isValidBorrow graph key path = do
         _ -> panic "isValidBorrow: borrowing node is not expr node!"
 
 getMembers :: DataFlowGraph -> [M.MemberInfo]
-getMembers graph = List.fold [] graph.edges (\members, edge -> case edge.kind of
+getMembers graph = do
+    members <- List.fold graph.extra_members graph.edges (\members, edge -> case edge.kind of
         FieldAccess member_info -> List.push members member_info
         RecordCtorField _ member_info -> List.push members member_info
         VariantCtorField _ adt_member_info field_member_info -> do
@@ -242,6 +244,7 @@ getMembers graph = List.fold [] graph.edges (\members, edge -> case edge.kind of
             List.push members field_member_info
         VariantChecker member_info -> List.push members member_info
         _ -> members)
+    members |> List.sort |> List.dedup
 
 getOwnershipInfo :: DataFlowGraph -> [M.OwnershipInfo]
 getOwnershipInfo graph = OS.getOwnershipInfo graph.ownership_store
