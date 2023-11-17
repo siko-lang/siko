@@ -20,6 +20,7 @@ data NodeKey = ExprKey E.ExprId
 
 data ExprNodeKind = FnCall I.Identity
                   | Loop
+                  | Literal
                   | Other
                   deriving (PartialEq, Eq, Show)
 
@@ -292,3 +293,13 @@ mergeCallGraph source_expr_id target source arg_ids result = do
     edge <- Edge from to kind
     target <- addEdge target edge
     target
+
+getConverterMap :: DataFlowGraph -> Map OwnershipTypeVariable [(NodeKey, NodeKey)]
+getConverterMap graph = List.fold Map.empty graph.edges (processEdge graph)
+    where
+        processEdge :: DataFlowGraph -> Map OwnershipTypeVariable [(NodeKey, NodeKey)] -> Edge -> Map OwnershipTypeVariable [(NodeKey, NodeKey)]
+        processEdge graph converter_map edge = case edge.kind of
+            Converter -> do
+                from_info <- getTypeVariableInfo graph edge.from
+                Map.add converter_map from_info.ownership_var (edge.from, edge.to)
+            _ -> converter_map

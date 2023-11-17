@@ -80,7 +80,6 @@ run_multistage: multistage
 	multi_mirlowering
 	multi_mirbackend
 	multi_transpiler
-	./print_dfg.sh
 
 .PHONY: self
 self: multistage

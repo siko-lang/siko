@@ -203,10 +203,10 @@ buildDataFlowGraph context expr = do
                         E.Expr _ _ arg_id <- arg
                         kind <- DFG.FnCallArg index
                         addEdge context kind arg_id expr_id)
-        E.IntegerLiteral _ -> context
-        E.StringLiteral _ -> context
-        E.FloatLiteral _ -> context
-        E.CharLiteral _ -> context
+        E.IntegerLiteral _ -> addExprKind context expr_id DFG.Literal
+        E.StringLiteral _ -> addExprKind context expr_id DFG.Literal
+        E.FloatLiteral _ -> addExprKind context expr_id DFG.Literal
+        E.CharLiteral _ -> addExprKind context expr_id DFG.Literal
         E.VarDecl info -> do
             E.Expr _ _ rhs_expr_id <- info.rhs
             context <- buildDataFlowGraph context info.rhs

@@ -253,24 +253,16 @@ initState :: FileId -> ParserState
 initState file_id = do
     ParserState 0 [] file_id
 
-step :: ParserState -> ParserState
-step state = do
-    state { index = state.index + 1 }
-
-addModule :: ParserState -> Module -> ParserState
-addModule state mod = state { modules = List.push state.modules mod }
-
-expect :: ParserState -> Result ParserState (ParserState, ParserError)
-expect state =
-    if True
-    then Ok (step state)
-    else Err (state, ParserError)
-
 parseModule :: ParserState -> Result ParserState (ParserState, ParserError)
 parseModule state = do
-    state <- try expect state
-    state <- addModule state Module
-    Ok state
+    res1 <- if True
+    then Ok (state { index = state.index + 1 })
+    else Err (state, ParserError)
+    case res1 of
+        Ok state -> do
+            state <- state { modules = state.modules }
+            Ok state
+        Err (state, err) -> Err (state, err)
 
 boo a = ()
 
@@ -282,3 +274,4 @@ main = do
                 Err (state, err) -> state
     boo file_id
     ()
+

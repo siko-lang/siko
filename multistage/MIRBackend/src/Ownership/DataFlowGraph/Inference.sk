@@ -7,16 +7,21 @@ import Siko.MIR.Backend.MemberInfo as M
 import Siko.MIR.Backend.Ownership.Borrow as B
 import Siko.MIR.Backend.Ownership.ControlFlowGraph as CFG
 import Siko.MIR.Backend.Ownership.DataFlowGraph as DFG
-import Siko.MIR.Backend.Ownership.Path
+import Siko.MIR.Backend.Ownership.Path as P
 import Siko.MIR.Backend.OwnershipDependencyMap
 import Siko.MIR.Backend.Query as Q
 import Siko.MIR.Backend.TypeVariableInfo
 import Siko.MIR.Function as F
+import Siko.Util.DependencyProcessor
+
+data InferenceMode = Full | Partial
 
 data Context = { data_flow_graph :: DFG.DataFlowGraph,
                  control_flow_graph :: CFG.ControlFlowGraph,
-                 forbidden_borrow_map :: Map OwnershipTypeVariable (Set Path),
-                 borrow_map :: B.BorrowMap
+                 forbidden_borrow_map :: Map OwnershipTypeVariable (Set P.Path),
+                 borrow_map :: B.BorrowMap,
+                 converter_map :: Map OwnershipTypeVariable [(DFG.NodeKey, DFG.NodeKey)],
+                 mode :: InferenceMode
                }
 
 getNextBorrowId :: Context -> (Context, B.BorrowId)
@@ -33,6 +38,11 @@ addBorrow context borrow_id borrow_kind = do
 isBorrow :: Context -> DFG.NodeKey -> Bool
 isBorrow context key = case key of
     DFG.ExprKey id -> CFG.isBorrow context.control_flow_graph id
+    _ -> False
+
+isMerged :: Context -> DFG.NodeKey -> Bool
+isMerged context key = case key of
+    DFG.Merged _ _ -> True
     _ -> False
 
 getExprKey :: DFG.NodeKey -> CFG.NodeKey
@@ -53,86 +63,79 @@ checkBorrows context to borrow_id = do
         B.External _ -> is_valid)
     (user_borrows, is_valid)
 
-processEdge :: Context -> Int -> Context
-processEdge context edge_id = do
-    edge <- DFG.getEdge context.data_flow_graph edge_id
-    //println "Process edge {}" % edge
-    context <- case edge.kind of
-        DFG.Converter -> do
-            from_info <- DFG.getTypeVariableInfo context.data_flow_graph edge.from
-            from <- DFG.getOwnership context.data_flow_graph from_info.ownership_var
-            to_info <- DFG.getTypeVariableInfo context.data_flow_graph edge.to
-            to <- DFG.getOwnership context.data_flow_graph to_info.ownership_var
-            case (from, to) of
-                (M.Owner, M.Unknown) -> do
-                    is_borrow <- isBorrow context edge.from
-                    if is_borrow
-                    then do
-                        user_path <- case CFG.getUser context.control_flow_graph (getExprKey edge.from) of
-                            Some path -> path
-                            None -> panic "Borrowing node is not a user! {}" % edge.from
-                        if DFG.isValidBorrow context.data_flow_graph edge.to user_path
-                        then do
-                            (context, borrow_id) <- getNextBorrowId context
-                            context <- addBorrow context borrow_id (B.Local user_path)
-                            context <- setBorrow context to_info.ownership_var borrow_id
-                            context
-                        else do
-                            println "O/U: invalid borrow, promoting to owner {}" % to_info.ownership_var
-                            setOwner context to_info.ownership_var
-                    else setOwner context to_info.ownership_var
-                (M.Owner, M.Owner) -> context
-                (M.Owner, M.Borrower borrow_id) -> do
-                    is_borrow <- isBorrow context edge.from
-                    if is_borrow
-                    then do
-                        user_path <- case CFG.getUser context.control_flow_graph (getExprKey edge.from) of
-                            Some path -> path
-                            None -> panic "Borrowing node is not a user! {}" % edge.from
-                        if DFG.isValidBorrow context.data_flow_graph edge.to user_path
-                        then addBorrow context borrow_id (B.Local user_path)
-                        else do
-                            println "O/B1 {}" % borrow_id
-                            println "Invalid borrow, promoting to owner {}" % to_info.ownership_var
-                            setOwner context to_info.ownership_var
+processConverter :: Context -> DFG.NodeKey -> DFG.NodeKey -> Context
+processConverter context from_node to_node = do
+    from_info <- DFG.getTypeVariableInfo context.data_flow_graph from_node
+    from <- DFG.getOwnership context.data_flow_graph from_info.ownership_var
+    to_info <- DFG.getTypeVariableInfo context.data_flow_graph to_node
+    to <- DFG.getOwnership context.data_flow_graph to_info.ownership_var
+    //println "Processing converter {} -> {} / {} -> {}" % (from, to, from_info.ownership_var, to_info.ownership_var)
+    case (from, to) of
+        (M.Owner, M.Unknown) -> do
+            is_borrow <- isBorrow context from_node
+            if is_borrow
+            then do
+                user_path <- case CFG.getUser context.control_flow_graph (getExprKey from_node) of
+                    Some path -> path
+                    None -> panic "Borrowing node is not a user! {}" % from_node
+                if DFG.isValidBorrow context.data_flow_graph to_node user_path
+                then do
+                    (context, borrow_id) <- getNextBorrowId context
+                    context <- addBorrow context borrow_id (B.Local user_path)
+                    context <- setBorrow context to_info.ownership_var borrow_id
+                    context
+                else do
+                    println "O/U: invalid borrow, promoting to owner {}" % to_info.ownership_var
+                    setOwner context to_info.ownership_var
+            else setOwner context to_info.ownership_var
+        (M.Owner, M.Owner) -> context
+        (M.Owner, M.Borrower borrow_id) -> do
+            if isMerged context from_node
+            then context
+            else do
+                is_borrow <- isBorrow context from_node
+                if is_borrow
+                then do
+                    user_path <- case CFG.getUser context.control_flow_graph (getExprKey from_node) of
+                        Some path -> path
+                        None -> panic "Borrowing node is not a user! {}" % from_node
+                    if DFG.isValidBorrow context.data_flow_graph to_node user_path
+                    then addBorrow context borrow_id (B.Local user_path)
                     else do
-                        println "O/B2 {}" % borrow_id
+                        println "O/B1 {}" % borrow_id
                         println "Invalid borrow, promoting to owner {}" % to_info.ownership_var
                         setOwner context to_info.ownership_var
-                (M.Borrower borrow_id, M.Unknown) -> do
-                    (user_borrows, is_valid) <- checkBorrows context edge.to borrow_id
-                    if is_valid
-                    then setBorrow context to_info.ownership_var borrow_id
-                    else do
-                        println "B/U {}" % borrow_id
-                        println "Invalid borrow, promoting to owner {}" % to_info.ownership_var
-                        setOwner context to_info.ownership_var
-                (M.Borrower borrow_id, M.Owner) -> context
-                (M.Borrower borrow_id1, M.Borrower borrow_id2) -> do
-                    (user_borrows, is_valid) <- checkBorrows context edge.to borrow_id1
-                    if is_valid
-                    then do
-                        user_borrows2 <- B.getBorrows context.borrow_map borrow_id2
-                        if Set.containsAll user_borrows2 user_borrows
-                        then context
-                        else do
-                            (context, merged_borrow_id) <- getNextBorrowId context
-                            context <- setBorrow context to_info.ownership_var merged_borrow_id
-                            context <- Set.fold context user_borrows (\context, user_borrow -> addBorrow context merged_borrow_id user_borrow)
-                            Set.fold context user_borrows2 (\context, user_borrow -> addBorrow context merged_borrow_id user_borrow)
-                    else do
-                        println "B/B {} -> {}" % (borrow_id1, borrow_id2)
-                        println "Invalid borrow, promoting to owner {}" % to_info.ownership_var
-                        setOwner context to_info.ownership_var
-                (M.Unknown, _) -> context
-        DFG.VarDeclTuple -> do
-            to_info <- DFG.getTypeVariableInfo context.data_flow_graph edge.to
-            setOwner context to_info.ownership_var
-        DFG.LoopVarBody -> return context
-        _ -> do
-            //println "Processing edge {}" % edge
-            context
-    processNode context edge.to
+                else do
+                    user_borrows <- B.getBorrows context.borrow_map borrow_id
+                    println "O/B2 {} = {}" % (borrow_id, user_borrows)
+                    println "Invalid borrow ({}, {}), promoting to owner {}" % (from_node, from_info.ownership_var, to_info.ownership_var)
+                    setOwner context to_info.ownership_var
+        (M.Borrower borrow_id, M.Unknown) -> do
+            (user_borrows, is_valid) <- checkBorrows context to_node borrow_id
+            if is_valid
+            then setBorrow context to_info.ownership_var borrow_id
+            else do
+                println "B/U {}" % borrow_id
+                println "Invalid borrow, promoting to owner {}" % to_info.ownership_var
+                setOwner context to_info.ownership_var
+        (M.Borrower borrow_id, M.Owner) -> context
+        (M.Borrower borrow_id1, M.Borrower borrow_id2) -> do
+            (user_borrows, is_valid) <- checkBorrows context to_node borrow_id1
+            if is_valid
+            then do
+                user_borrows2 <- B.getBorrows context.borrow_map borrow_id2
+                if Set.containsAll user_borrows2 user_borrows
+                then context
+                else do
+                    (context, merged_borrow_id) <- getNextBorrowId context
+                    context <- setBorrow context to_info.ownership_var merged_borrow_id
+                    context <- Set.fold context user_borrows (\context, user_borrow -> addBorrow context merged_borrow_id user_borrow)
+                    Set.fold context user_borrows2 (\context, user_borrow -> addBorrow context merged_borrow_id user_borrow)
+            else do
+                println "B/B {} -> {}" % (borrow_id1, borrow_id2)
+                println "Invalid borrow, promoting to owner {}" % to_info.ownership_var
+                setOwner context to_info.ownership_var
+        (M.Unknown, _) -> context
 
 setOwner :: Context -> OwnershipTypeVariable -> Context
 setOwner context var = do
@@ -155,7 +158,7 @@ processNode context key = do
     //println "Processing node {}" % key
     case node of
         DFG.Expr n -> do
-            context <- case n.kind of
+            case n.kind of
                 DFG.FnCall id -> do
                     function <- Q.getFunction id
                     case function.kind of
@@ -164,11 +167,24 @@ processNode context key = do
                         _ -> context
                 DFG.Loop -> context
                 DFG.Other -> context
-            List.fold context n.outgoing processEdge
-        DFG.Var n -> List.fold context n.outgoing processEdge
-        DFG.End n -> List.fold context n.outgoing processEdge
+                DFG.Literal -> setOwner context n.tv_info.ownership_var
+        DFG.Var n -> context
+        DFG.End n -> context
 
-updateDataFlowGraph :: OwnershipDependencyMapInfo -> DFG.DataFlowGraph -> CFG.ControlFlowGraph -> (DFG.DataFlowGraph, Map OwnershipTypeVariable (Set Path))
+processEdge :: Context -> DFG.Edge -> Context
+processEdge context edge = do
+    //println "Process edge {}" % edge
+    case edge.kind of
+        DFG.Converter -> context
+        DFG.VarDeclTuple -> do
+            to_info <- DFG.getTypeVariableInfo context.data_flow_graph edge.to
+            setOwner context to_info.ownership_var
+        DFG.LoopVarBody -> return context
+        DFG.VariantCtorField _ record_info _ -> do
+            setOwner context record_info.info.ownership_var
+        _ -> context
+
+updateDataFlowGraph :: OwnershipDependencyMapInfo -> DFG.DataFlowGraph -> CFG.ControlFlowGraph -> (DFG.DataFlowGraph, Map OwnershipTypeVariable (Set P.Path))
 updateDataFlowGraph ownership_dep_map_info data_flow_graph control_flow_graph = do
     (forbidden_borrow_map, nodes) <- Map.mapS Map.empty data_flow_graph.nodes (\forbidden_borrow_map, (key, node) -> do
         case node of
@@ -198,20 +214,72 @@ updateDataFlowGraph ownership_dep_map_info data_flow_graph control_flow_graph = 
             node -> (key, node))
     (data_flow_graph { nodes = nodes }, forbidden_borrow_map)
 
-process :: DFG.DataFlowGraph ->
+buildDependencyMap :: DFG.DataFlowGraph -> [DependencyGroup OwnershipTypeVariable]
+buildDependencyMap data_flow_graph = do
+    vars :: Set OwnershipTypeVariable <- Set.empty
+    members <- DFG.getMembers data_flow_graph
+    vars <- List.fold vars members (\vars, member -> do
+        Set.put vars member.info.ownership_var)
+    vars <- Map.fold vars data_flow_graph.nodes (\vars, (key, node) -> do
+        case node of
+            DFG.Expr n -> Set.put vars n.tv_info.ownership_var
+            DFG.Var n -> Set.put vars n.tv_info.ownership_var
+            DFG.End n -> Set.put vars n.tv_info.ownership_var)
+    vars <- List.fold vars data_flow_graph.edges (\vars, edge -> do
+        from_info <- DFG.getTypeVariableInfo data_flow_graph edge.from
+        to_info <- DFG.getTypeVariableInfo data_flow_graph edge.to
+        vars <-Set.put vars from_info.ownership_var
+        vars <- Set.put vars to_info.ownership_var
+        vars)
+    deps_map :: Map OwnershipTypeVariable [OwnershipTypeVariable] <- Map.empty
+    deps_map <- Set.fold deps_map vars (\deps_map, v -> Map.put deps_map v [])
+    deps_map <- List.fold deps_map data_flow_graph.edges (\deps_map, edge -> do
+        from_info <- DFG.getTypeVariableInfo data_flow_graph edge.from
+        to_info <- DFG.getTypeVariableInfo data_flow_graph edge.to
+        case edge.kind of
+            DFG.Converter -> Map.add deps_map to_info.ownership_var from_info.ownership_var
+            _ -> deps_map)
+    groups <- processDependencies deps_map
+    //println "deps_map {}" % deps_map
+    //println "Groups {}" % groups
+    groups
+
+processGroup :: Context -> DependencyGroup OwnershipTypeVariable -> Context
+processGroup context group = List.fold context group.items processOwnershipTypeVariable
+
+processOwnershipTypeVariable :: Context -> OwnershipTypeVariable -> Context
+processOwnershipTypeVariable context var = do
+    //println "processOwnershipTypeVariable {}" % var
+    context <- case context.mode of
+        Full -> do
+            case DFG.getOwnership context.data_flow_graph var of
+                M.Unknown -> setOwner context var
+                _ -> context
+        Partial -> context
+    case Map.get context.converter_map var of
+        Some converters -> List.fold context converters (\context, (from, to) -> processConverter context from to)
+        None -> context
+
+process :: InferenceMode -> DFG.DataFlowGraph ->
            CFG.ControlFlowGraph ->
            String ->
            OwnershipDependencyMapInfo -> (DFG.DataFlowGraph, B.BorrowMap)
-process data_flow_graph control_flow_graph name ownership_dep_map_info = do
+process mode data_flow_graph control_flow_graph name ownership_dep_map_info = do
+    groups <- buildDependencyMap data_flow_graph
     sources <- DFG.getSources data_flow_graph
-    members <- Solver.getMembers data_flow_graph
+    members <- DFG.getMembers data_flow_graph
     ownership_dep_map_info <- calculateOwnershipDepMap members
     (data_flow_graph, forbidden_borrow_map) <- updateDataFlowGraph ownership_dep_map_info data_flow_graph control_flow_graph
     borrow_map <- Map.fold B.createBorrowMap data_flow_graph.ownership_store.ownership (\borrow_map, (var, kind) -> do
         case kind of
             M.Borrower id -> B.addBorrow borrow_map id (B.External id)
             _ -> borrow_map)
-    context <- Context data_flow_graph control_flow_graph forbidden_borrow_map borrow_map
-    context <- List.fold context sources processNode
+    converter_map <- DFG.getConverterMap data_flow_graph
+    context <- Context data_flow_graph control_flow_graph forbidden_borrow_map borrow_map converter_map mode
+    node_keys <- Map.getKeys context.data_flow_graph.nodes
+    edges <- context.data_flow_graph.edges
+    context <- List.fold context node_keys processNode
+    context <- List.fold context edges processEdge
+    context <- List.fold context groups processGroup
     //println "--------------------------------------"
     (context.data_flow_graph, context.borrow_map)

@@ -1,0 +1,93 @@
+module Siko.MIR.Format where
+
+import Siko.Format
+import Siko.MIR.Expr as E
+import Siko.MIR.Identity
+import Siko.Util.Format as UF
+import Siko.Util.SharedString as SS
+
+instance Format Identity where
+    format qn = [Chunk "{}" % qn]
+
+instance Format E.Var where
+    format var = [Chunk "{}" % var]
+
+instance Format E.Expr where
+    format (E.Expr expr _ _ ) = format expr
+
+instance Format E.Checker where
+    format checker = case checker of
+        E.IntegerChecker lit -> [Chunk "i:{}" % lit]
+        E.StringChecker lit -> [Chunk "s:{}" % lit]
+        E.CharChecker lit -> [Chunk "c:{}" % lit]
+        E.CharRangeChecker s e kind -> [Chunk "{}:{}:{}" % (s, e, kind)]
+        E.VariantChecker i v type -> [Chunk "v:{} {} :: {}" % (i, v, type)]
+        E.WildcardChecker v -> [Chunk "w({})" % v]
+
+instance Format E.Case where
+    format c = do
+        checker <- format c.checker
+        body <- format c.body
+        body <- addImplicitBlock body
+        checker + [Chunk " -> "] + body
+
+instance Format E.SimpleExpr where
+    format expr = case expr of
+        E.StaticFunctionCall info -> do
+            name <- format info.id
+            args <- formatList info.args (Chunk " ")
+            name + [Chunk " "] + args
+        E.If info -> do
+            cond <- format info.cond
+            true <- format info.true_branch
+            false <- format info.false_branch
+            total_length <- List.getLength cond + List.getLength true + List.getLength false
+            if List.contains true StartOfBlock || List.contains false StartOfBlock || total_length > 5
+            then [Chunk "if "] + cond + [StartOfItem, Chunk "then "] + (addImplicitBlock true) + [EndOfItem, StartOfItem, Chunk "else "] + (addImplicitBlock false) + [EndOfItem]
+            else [Chunk "if "] + cond + [Chunk " then "] + true + [Chunk " else "] + false
+        E.List info -> do
+            if List.getLength info.items > 3
+            then do
+                args <- formatList2 info.items [Chunk ",", Break]
+                [Chunk "[", PushOffset] + args + [Chunk "]", PopOffset]
+            else do
+                args <- formatList info.items (Chunk ", ")
+                [Chunk "["] + args + [Chunk "]"]
+        E.IntegerLiteral lit -> [Chunk (show lit.value)]
+        E.FloatLiteral lit -> [Chunk (show lit.value)]
+        E.StringLiteral lit -> [Chunk ("\"{}\"" % UF.escapeString lit.value)]
+        E.CharLiteral lit -> [Chunk "{}" % UF.escapeChar lit.value]
+        E.Do info -> do
+            items <- formatBlock info.items
+            [Chunk "do"] + items
+        E.VarDecl info -> do
+            pat <- format info.var
+            E.Expr _ rhs_type _ <- info.rhs
+            rhs <- format info.rhs
+            pat + [Chunk " :: {} <- " % rhs_type] + rhs
+        E.FieldAccess info -> do
+            receiver <- format info.receiver
+            receiver + [Chunk ".", Chunk "{}" % info.index]
+        E.CaseOf info -> do
+            body <- format info.body
+            cases <- formatBlock info.cases
+            [Chunk "case "] + body + [Chunk " of"] + cases
+        E.Return info -> do
+            arg <- format info.arg
+            [Chunk "return "] + arg
+        E.Continue info -> do
+            arg <- format info.arg
+            [Chunk "continue "] + arg
+        E.Break info -> do
+            arg <- format info.arg
+            [Chunk "break "] + arg
+        E.Loop info -> do
+            var <- format info.var
+            init <- format info.initializer
+            body <- format info.body
+            [Chunk "loop "] + var + [Chunk " <- "] + init + [Chunk " "] + body
+        E.VarRef info -> do
+            var <- format info.var
+            [Chunk "$"] + var
+        E.Converter info -> format info.arg
+
