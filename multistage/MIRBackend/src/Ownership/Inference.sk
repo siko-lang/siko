@@ -7,6 +7,7 @@ import Siko.MIR.Backend.Allocator
 import Siko.MIR.Backend.EqualitySolver as Solver
 import Siko.MIR.Backend.Lowering
 import Siko.MIR.Backend.MemberInfo as M
+import Siko.MIR.Backend.Ownership.DataFlowGraph.DataFlowProfile
 import Siko.MIR.Backend.Ownership.ControlFlowGraph.BorrowChecker as CFGBorrow
 import Siko.MIR.Backend.Ownership.ControlFlowGraph.Builder as CFGB
 import Siko.MIR.Backend.Ownership.ControlFlowGraph.Visualizer as CFGVisualizer
@@ -46,7 +47,7 @@ createRecordCtorDataFlowProfile type = case type of
             then List.push ownershipinfos (M.OwnershipInfo arg_info.ownership_var M.Owner)
             else ownershipinfos
             (allocator, args, members, ownershipinfos))
-        Legacy (LegacyDataFlowProfile args result members [] ownershipinfos)
+        DataFlowProfile args result members [] ownershipinfos
     t -> panic "createRecordCtorDataFlowProfile: not a record: {}" % t
 
 createVariantctorDataFlowProfile :: Int -> T.Type -> DataFlowProfile
@@ -75,7 +76,7 @@ createVariantctorDataFlowProfile index type = case type of
                     (allocator, args, members, ownershipinfos, current + 1)
                 else (allocator, args, members, ownershipinfos, current + 1)
             _ -> panic "createVariantctorDataFlowProfile: not a record")
-        Legacy (LegacyDataFlowProfile args result members [] ownershipinfos)
+        DataFlowProfile args result members [] ownershipinfos
     _ -> panic "createVariantctorDataFlowProfile: not an adt"
 
 processDataFlowProfile :: Context -> DataFlowProfile -> I.Identity -> (Context, Bool)
@@ -114,7 +115,7 @@ createNormalFunctionDataFlowProfile function_id info function_type dataflow_prof
     if config.dump_mir_graphs
     then DFGVisualizer.visualize data_flow_graph name
     else ()
-    GraphBased data_flow_graph
+    toDataFlowProfile data_flow_graph
 
 processFunction :: Context -> [I.Identity] -> I.Identity -> (Context, Bool)
 processFunction context group function_id = do

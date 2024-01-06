@@ -53,7 +53,7 @@ createRecordCtorDataFlowProfile type = case type of
             then List.push ownershipinfos (M.OwnershipInfo arg_info.ownership_var M.Owner)
             else ownershipinfos
             (allocator, args, members, ownershipinfos))
-        Legacy (LegacyDataFlowProfile args result members [] ownershipinfos)
+        DataFlowProfile args result members [] ownershipinfos
     t -> panic "createRecordCtorDataFlowProfile: not a record: {}" % t
 
 createVariantctorDataFlowProfile :: Int -> T.Type -> DataFlowProfile
@@ -82,7 +82,7 @@ createVariantctorDataFlowProfile index type = case type of
                     (allocator, args, members, ownershipinfos, current + 1)
                 else (allocator, args, members, ownershipinfos, current + 1)
             _ -> panic "createVariantctorDataFlowProfile: not a record")
-        Legacy (LegacyDataFlowProfile args result members [] ownershipinfos)
+        DataFlowProfile args result members [] ownershipinfos
     _ -> panic "createVariantctorDataFlowProfile: not an adt"
 
 processDataFlowProfile :: Context -> DataFlowProfile -> I.Identity -> (Context, Bool)

@@ -59,9 +59,6 @@ mergeDataFlowProfile :: Context ->
                         Bool -> Context
 mergeDataFlowProfile context args expr_id dataflow_profile in_group = do
     // arg equality
-    dataflow_profile <- case dataflow_profile of
-        Legacy dataflow_profile -> dataflow_profile
-        GraphBased _ -> panic "GraphBased data flow in equality generation!"
     context <- List.zipS context dataflow_profile.args args (\context, info_arg, arg_expr -> do
         E.Expr _ _ arg_id <- arg_expr
         expr_info <- getTypeVariableInfoByExprId context.function_group_inference_data arg_id context.function_id
