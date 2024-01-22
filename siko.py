@@ -29,13 +29,17 @@ class Processor(object):
 
     def processExpr(self, expr):
         if isinstance(expr, Syntax.Block):
+            self.addInstruction("<block begin>")
             last = None
             for s in expr.statements:
                 last = self.processExpr(s)
+            self.addInstruction("<block end>")
             return last
         elif isinstance(expr, Syntax.LetStatement):
             id = self.processExpr(expr.rhs)
             return self.addInstruction("Let %s = $%s" % (expr.var_name, id))
+        elif isinstance(expr, Syntax.ExprStatement):
+            return self.processExpr(expr.expr)
         elif isinstance(expr, Syntax.MemberCall):
             id = self.processExpr(expr.receiver)
             args = self.processArgs(expr.args)
@@ -52,6 +56,14 @@ class Processor(object):
             return self.addInstruction("$%s.%s" % (id, expr.name))
         elif isinstance(expr, Syntax.VarRef):
             return self.addInstruction("%s" % expr.name)
+        elif isinstance(expr, Syntax.If):
+            cond = self.processExpr(expr.cond)
+            true_branch = self.processExpr(expr.true_branch)
+            if expr.false_branch:
+                false_branch = self.processExpr(expr.false_branch)
+                return self.addInstruction("if $%s { $%s } else { $%s }" % (cond, true_branch, false_branch))
+            else:
+                return self.addInstruction("if $%s { $%s }" % (cond, true_branch))
         else:
             print("Expr not handled", type(expr))
 

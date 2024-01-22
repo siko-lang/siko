@@ -27,6 +27,12 @@ class MemberCall(SyntaxBase):
         self.receiver = None
         self.args = []
 
+class If(SyntaxBase):
+    def __init__(self):
+        self.cond = None
+        self.true_branch = None
+        self.false_branch = None
+
 class VarRef(SyntaxBase):
     def __init__(self):
         self.name = None
@@ -39,6 +45,10 @@ class LetStatement(SyntaxBase):
     def __init__(self):
         self.var_name = None
         self.rhs = None
+
+class ExprStatement(SyntaxBase):
+    def __init__(self):
+        self.expr = None
 
 class Block(SyntaxBase):
     def __init__(self):

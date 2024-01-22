@@ -154,6 +154,18 @@ class Parser(object):
             r = Syntax.VarRef()
             r.name = name
             return r
+        elif self.peek("leftcurly"):
+            e = self.parseBlock()
+            return e
+        elif self.peek("if"):
+            self.expect("if")
+            if_expr = Syntax.If()
+            if_expr.cond = self.parseExpr()
+            if_expr.true_branch = self.parseBlock()
+            if self.peek("else"):
+                self.expect("else")
+                if_expr.false_branch = self.parseBlock()
+            return if_expr
         else:
             self.error("expected expr, found %s" % self.tokens[self.index].type)
 
@@ -168,15 +180,22 @@ class Parser(object):
             self.expect("equal")
             let_s.rhs = self.parseExpr()
             return let_s
+        else:
+            expr = self.parseExpr()
+            s = Syntax.ExprStatement()
+            s.expr = expr
+            return s
 
     def parseBlock(self):
+        self.expect("leftcurly")
         block = Syntax.Block()
         while not self.peek("rightcurly"):
             s = self.parseStatement()
             block.statements.append(s)
             if self.peek("rightcurly"):
-                return block
+                break
             self.expect("semicolon")
+        self.expect("rightcurly")
         return block
 
     def parseClassMemberFunction(self):
@@ -200,9 +219,7 @@ class Parser(object):
             self.expect("equal")
             self.expect("extern")
         else:
-            self.expect("leftcurly")
             fn.body = self.parseBlock()
-            self.expect("rightcurly")
         return fn
 
     def parseConstraints(self):

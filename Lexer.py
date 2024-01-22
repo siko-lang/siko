@@ -33,6 +33,10 @@ class Lexer(object):
                     self.addToken(Token.Keyword(self.current))
                 case "let":
                     self.addToken(Token.Keyword(self.current))
+                case "if":
+                    self.addToken(Token.Keyword(self.current))
+                case "else":
+                    self.addToken(Token.Keyword(self.current))
                 case _:
                     if self.current[0].isupper():
                         self.addToken(Token.TypeIdentifier(self.current))
