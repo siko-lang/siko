@@ -75,11 +75,13 @@ class Parser(object):
         self.expect("rightcurly")
 
     def parseImport(self):
+        i = Syntax.Import()
         self.expect("import")
-        name = self.parseModuleName()
+        i.module = self.parseModuleName()
         if self.peek("as"):
             self.expect("as")
-            self.parseName()
+            i.alias = self.parseTypeName()
+        return i
 
     def parseItem(self):
         if self.peek("extern"):
@@ -87,9 +89,9 @@ class Parser(object):
         elif self.peek("enum"):
             self.parseEnum()
         elif self.peek("class"):
-            self.parseClass()
+            return self.parseClass()
         elif self.peek("import"):
-            self.parseImport()
+            return self.parseImport()
         elif self.peek("fn"):
             return self.parseFunction()
         else:
@@ -157,6 +159,32 @@ class Parser(object):
         elif self.peek("leftcurly"):
             e = self.parseBlock()
             return e
+        elif self.peek("break"):
+            self.expect("break")
+            e = Syntax.Break()
+            e.arg = self.parseExpr()
+            return e
+        elif self.peek("continue"):
+            self.expect("continue")
+            e = Syntax.Continue()
+            e.arg = self.parseExpr()
+            return e
+        elif self.peek("return"):
+            self.expect("return")
+            e = Syntax.Return()
+            e.arg = self.parseExpr()
+            return e
+        elif self.peek("loop"):
+            self.expect("loop")
+            var = self.parseName()
+            self.expect("equal")
+            init = self.parseExpr()
+            body = self.parseBlock()
+            loop_expr = Syntax.Loop()
+            loop_expr.var = var
+            loop_expr.init = init
+            loop_expr.body = body
+            return loop_expr
         elif self.peek("if"):
             self.expect("if")
             if_expr = Syntax.If()
@@ -238,24 +266,30 @@ class Parser(object):
         return ty
 
     def parseClassField(self):
-        name = self.parseName()
+        field = Syntax.Field()
+        field.name = self.parseName()
         self.expect("colon")
-        self.parseType()
+        field.ty = self.parseType()
+        return field
 
     def parseClass(self):
+        c = Syntax.Class()
         self.expect("class")
-        name = self.parseName()
+        c.name = self.parseTypeName()
         if self.peek("leftbracket"):
             self.parseConstraints()
         self.expect("leftcurly")
         while not self.peek("rightcurly"):
-            if self.peek("string"):
-                self.parseClassField()
+            if self.peek("varid"):
+                field = self.parseClassField()
+                c.fields.append(field)
             elif self.peek("fn"):
-                self.parseClassMemberFunction()
+                fn = self.parseClassMemberFunction()
+                c.methods.append(fn)
             else:
-                self.error("expected class item found %s", self.tokens[self.index].type)
+                self.error("expected class item found %s" % self.tokens[self.index].type)
         self.expect("rightcurly")
+        return c
 
     def parseExternClass(self):
         self.expect("extern")

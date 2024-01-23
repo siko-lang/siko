@@ -1,0 +1,312 @@
+module Siko.Parser.Lexer
+{
+
+import Siko.Parser.Error
+import Siko.Parser.Layout
+import Siko.Parser.Token
+import Siko.Syntax.Location
+
+class SpannedString {
+    value: String
+    span: Span
+}
+
+class Lexer {
+    chars: [Char]
+    index: Int
+    line_offset: Int
+    line_index: Int
+    tokens: List[TokenInfo]
+    errors: List[LexerError]
+
+    emptyState(cs: List[Char]) -> LexerState {
+        Lexer(cs, 0, 0, 1, [], [])
+    }
+
+    fn updateSpan(self: Lexer, s: SpannedString) -> SpannedString {
+        let span = s.span;
+        let span = span(end: Position(self.line_index, self.line_offset));
+        s(span: span)
+    }
+
+    fn addChar(self: Lexer, s: SpannedString, c: Char) -> (LexerState, SpannedString) {
+        let v = s.value + "{}" % c; // FIXME: optimize this!
+        let s = s(value: v);
+        let s <- self.updateSpan(s);
+        (self.step(), s)
+    }
+
+    fn isDone(self: Lexer) -> Bool {
+        self.index >= self.chars.len()
+    }
+
+    fn peek(self: Lexer) -> Char {
+        self.chars.at(self.index)
+    }
+}
+
+step :: LexerState -> LexerState
+step state = do
+    c <- peek state
+    (line_offset, line_index) <- if c == '\n'
+    then (0, state.line_index + 1)
+    else (state.line_offset + 1, state.line_index)
+    state { index = state.index + 1, line_offset = line_offset, line_index = line_index }
+
+startSpan :: LexerState -> Span
+startSpan state = Span (Position state.line_index state.line_offset) (Position state.line_index state.line_offset)
+
+addToken :: LexerState -> Token -> Span -> LexerState
+addToken state token span = do
+    state { tokens = push state.tokens (TokenInfo token span) }
+
+addError :: LexerState -> LexerError -> LexerState
+addError state error = state { errors = push state.errors error }
+
+isIdentifier :: Char -> Bool
+isIdentifier c = case c of
+    'a'..='z'
+     | 'A'..='Z'
+     | '0'..='9'
+     | '_' -> True
+    _ -> False
+
+isOperator :: Char -> Bool
+isOperator c = case c of
+    '|'
+     | '>'
+     | '<'
+     | '&'
+     | '*'
+     | '+'
+     | '-'
+     | '/'
+     | '='
+     | '!'
+     | '\\'
+     | ':'
+     | '.'
+     | '%' -> True
+    _ -> False
+
+isInteger :: Char -> Bool
+isInteger c = case c of
+    '0'..='9' -> True
+    _ -> False
+
+isIntegerLiteral :: String -> Bool
+isIntegerLiteral s = chars s |> List.iter |> Iterator.fold (\is_integer, c -> if isInteger c
+        then is_integer
+        else False) True
+
+consumeWhile :: LexerState -> (Char -> Bool) -> (LexerState, SpannedString)
+consumeWhile state cond = do
+    s <- startSpannedString (startSpan state)
+    loop (state, s) <- (state, s) do
+        if not (isDone state)
+        then do
+            c <- peek state
+            case c of
+                _ if cond c -> addChar state s c
+                _ -> break (state, s)
+        else break (state, s)
+
+consumeSingle :: LexerState -> Token -> LexerState
+consumeSingle state token = do
+    span <- startSpan state
+    state <- step state
+    addToken state token span
+
+consumeString :: LexerState -> LexerState
+consumeString state = do
+    s <- startSpannedString (startSpan state)
+    state <- step state
+    (state, s) <- loop (state, s) <- (state, s) do
+        if not (isDone state)
+        then do
+            c <- peek state
+            case c of
+                '"' -> do
+                    state <- step state
+                    s <- updateSpan state s
+                    break (state, s)
+                '\\' -> do
+                    state <- step state
+                    c <- peek state
+                    c <- case c of
+                        'n' -> Some '\n'
+                        't' -> Some '\t'
+                        'r' -> Some '\r'
+                        '\\' -> Some '\\'
+                        '"' -> Some '"'
+                        _ -> None
+                    (state, s) <- case c of
+                        Some c -> addChar state s c
+                        None -> do
+                            span <- startSpan state
+                            state <- addError state (InvalidEscapeSequence span)
+                            (step state, s)
+                    (state, s)
+                _ -> addChar state s c
+        else break (state, s)
+    addToken state (StringLiteral s.value) s.span
+
+consumeChar :: LexerState -> LexerState
+consumeChar state = do
+    s <- startSpannedString (startSpan state)
+    state <- step state
+    (state, s) <- loop (state, s) <- (state, s) do
+        if not (isDone state)
+        then do
+            c <- peek state
+            case c of
+                '\'' -> do
+                    state <- step state
+                    s <- updateSpan state s
+                    break (state, s)
+                '\\' -> do
+                    state <- step state
+                    c <- peek state
+                    c <- case c of
+                        'n' -> Some '\n'
+                        't' -> Some '\t'
+                        'r' -> Some '\r'
+                        '\\' -> Some '\\'
+                        '\'' -> Some '\''
+                        _ -> None
+                    (state, s) <- case c of
+                        Some c -> addChar state s c
+                        None -> do
+                            span <- startSpan state
+                            state <- addError state (InvalidEscapeSequence span)
+                            (step state, s)
+                    (state, s)
+                _ -> addChar state s c
+        else break (state, s)
+    cs <- chars s.value
+    c <- atIndex cs 0
+    // TODO: check for invalid length
+    addToken state (CharLiteral c) s.span
+
+consumeIdentifier :: LexerState -> LexerState
+consumeIdentifier state = do
+    first <- peek state
+    starts_with_number <- case first of
+        '0'..'9' -> True
+        _ -> False
+    starts_with_upper_case <- isUppercase first
+    (state, s) <- consumeWhile state isIdentifier
+    special <- case s.value of
+        "module" -> KeywordModule
+        "where" -> KeywordWhere
+        "do" -> KeywordDo
+        "class" -> KeywordClass
+        "instance" -> KeywordInstance
+        "extern" -> KeywordExtern
+        "data" -> KeywordData
+        "deriving" -> KeywordDeriving
+        "import" -> KeywordImport
+        "hiding" -> KeywordHiding
+        "as" -> KeywordAs
+        "if" -> KeywordIf
+        "then" -> KeywordThen
+        "else" -> KeywordElse
+        "return" -> KeywordReturn
+        "try" -> KeywordTry
+        "loop" -> KeywordLoop
+        "continue" -> KeywordContinue
+        "break" -> KeywordBreak
+        "case" -> KeywordCase
+        "of" -> KeywordOf
+        "effect" -> KeywordEffect
+        "with" -> KeywordWith
+        "using" -> KeywordUsing
+        "_" -> Wildcard
+        _ -> if isIntegerLiteral s.value
+            then return addToken state (IntegerLiteral s.value) s.span
+            else if starts_with_number
+                then return addError state (InvalidIdent s.span)
+                else if starts_with_upper_case
+                    then return addToken state (TypeIdentifier s.value) s.span
+                    else return addToken state (VarIdentifier s.value) s.span
+    addToken state special s.span
+
+consumeOperator :: LexerState -> LexerState
+consumeOperator state = do
+    (state, s) <- consumeWhile state isOperator
+    op <- case s.value of
+        "=" -> Equal
+        "==" -> DoubleEqual
+        "!=" -> NotEqual
+        "->" -> RightArrow
+        "<-" -> LeftArrow
+        "!" -> ExclamationMark
+        "&" -> Ampersand
+        "." -> Dot
+        ".." -> DoubleDot
+        "..=" -> InclusiveRange
+        ":" -> Colon
+        "::" -> DoubleColon
+        "=>" -> DoubleRightArrow
+        "|" -> Pipe
+        "&&" -> And
+        "||" -> Or
+        "<" -> LessThan
+        ">" -> GreaterThan
+        "<=" -> LessOrEqualThan
+        ">=" -> GreaterOrEqualThan
+        "+" -> Add
+        "-" -> Sub
+        "*" -> Mul
+        "/" -> Div
+        "|>" -> PipeForward
+        "%" -> Percent
+        "\\" -> Backslash
+        "//" -> do
+            (state, _) <- consumeWhile state \c -> c != '\n'
+            return state
+        "--" -> do
+            (state, _) <- consumeWhile state \c -> c != '\n'
+            return state
+        _ -> return addError state (InvalidOperator s.span)
+    addToken state op s.span
+
+processNextChar :: LexerState -> LexerState
+processNextChar state = do
+    c <- peek state
+    case c of
+        _ if isIdentifier c -> consumeIdentifier state
+        _ if isOperator c -> consumeOperator state
+        '"' -> consumeString state
+        '\'' -> consumeChar state
+        '(' -> consumeSingle state LParen
+        ')' -> consumeSingle state RParen
+        '[' -> consumeSingle state LBracket
+        ']' -> consumeSingle state RBracket
+        '{' -> consumeSingle state LCurly
+        '}' -> consumeSingle state RCurly
+        ',' -> consumeSingle state Comma
+        '~' -> consumeSingle state Tilde
+        '@' -> consumeSingle state At
+        '\n' -> step state
+        '\r' -> step state
+        ' ' -> step state
+        '\t' -> step state
+        _ -> do
+            span <- startSpan state
+            state <- step state
+            addError state (UnsupportedCharacter span)
+
+lex :: String -> ([TokenInfo], [LexerError])
+lex input = do
+    cs <- String.chars input
+    state <- emptyState cs
+    state <- loop state <- state do
+        if not (isDone state)
+        then processNextChar state
+        else break state
+    (tokens, errors) <- processLayout state.tokens
+    errors <- errors + state.errors
+    (tokens, errors)
+
+}

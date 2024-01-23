@@ -3,13 +3,18 @@
 import sys
 import Parser
 import Syntax
+import NameResolver
 
-program = Syntax.Program()
+def compile():
+    program = Syntax.Program()
 
-for f in sys.argv[1:]:
-    print("Parsing ", f)
-    parser = Parser.Parser()
-    parser.parse(program, f)
+    for f in sys.argv[1:]:
+        print("Parsing ", f)
+        parser = Parser.Parser()
+        parser.parse(program, f)
+
+    resolver = NameResolver.Resolver()
+    resolver.resolve(program)
 
 class Processor(object):
     def __init__(self):
@@ -61,19 +66,34 @@ class Processor(object):
             true_branch = self.processExpr(expr.true_branch)
             if expr.false_branch:
                 false_branch = self.processExpr(expr.false_branch)
-                return self.addInstruction("if $%s { $%s } else { $%s }" % (cond, true_branch, false_branch))
+                return self.addInstruction("if $%s then $%s else $%s" % (cond, true_branch, false_branch))
             else:
-                return self.addInstruction("if $%s { $%s }" % (cond, true_branch))
+                return self.addInstruction("if $%s then $%s" % (cond, true_branch))
+        elif isinstance(expr, Syntax.Loop):
+            init = self.processExpr(expr.init)
+            body = self.processExpr(expr.body)
+            return self.addInstruction("loop %s = $%s $%s" % (expr.var, init, body))
+        elif isinstance(expr, Syntax.Break):
+            arg = self.processExpr(expr.arg)
+            return self.addInstruction("break $%s" % arg)
+        elif isinstance(expr, Syntax.Continue):
+            arg = self.processExpr(expr.arg)
+            return self.addInstruction("continue $%s" % arg)
+        elif isinstance(expr, Syntax.Return):
+            arg = self.processExpr(expr.arg)
+            return self.addInstruction("return $%s" % arg)
         else:
             print("Expr not handled", type(expr))
 
-for m in program.modules:
-    print("Processing module %s" % m.name)
-    for item in m.items:
-        if isinstance(item, Syntax.Function):
-            fn = item
-            print("Processing fn %s" % fn.name)
-            processor = Processor()
-            processor.processExpr(fn.body)
-            for (index, i) in enumerate(processor.instructions):
-                print("$%d. %s" % (index, i))
+# for m in program.modules:
+#     print("Processing module %s" % m.name)
+#     for item in m.items:
+#         if isinstance(item, Syntax.Function):
+#             fn = item
+#             print("Processing fn %s" % fn.name)
+#             processor = Processor()
+#             processor.processExpr(fn.body)
+#             for (index, i) in enumerate(processor.instructions):
+#                 print("$%d. %s" % (index, i))
+            
+compile()

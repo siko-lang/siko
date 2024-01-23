@@ -11,6 +11,11 @@ class SyntaxBase(SerializableMixin):
     def __init__(self):
         pass
 
+class Import(SyntaxBase):
+    def __init__(self):
+        self.module = None
+        self.alias = None
+
 class FunctionCall(SyntaxBase):
     def __init__(self):
         self.id = None
@@ -32,6 +37,24 @@ class If(SyntaxBase):
         self.cond = None
         self.true_branch = None
         self.false_branch = None
+
+class Loop(SyntaxBase):
+    def __init__(self):
+        self.var = None
+        self.init = None
+        self.body = None
+
+class Break(SyntaxBase):
+    def __init__(self):
+        self.arg = None
+
+class Continue(SyntaxBase):
+    def __init__(self):
+        self.arg = None
+
+class Return(SyntaxBase):
+    def __init__(self):
+        self.arg = None
 
 class VarRef(SyntaxBase):
     def __init__(self):
@@ -69,6 +92,17 @@ class Function(SyntaxBase):
         self.args = []
         self.return_type = None
         self.body = None
+
+class Field(object):
+    def __init__(self):
+        self.name = None
+        self.type = None
+
+class Class(object):
+    def __init__(self):
+        self.name = None
+        self.fields = []
+        self.methods = []
 
 class Module(SyntaxBase):
     def __init__(self):
