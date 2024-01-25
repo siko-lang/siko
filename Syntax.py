@@ -11,6 +11,10 @@ class SyntaxBase(SerializableMixin):
     def __init__(self):
         pass
 
+class BoolLiteral(SyntaxBase):
+    def __init__(self):
+        self.value = None
+
 class Import(SyntaxBase):
     def __init__(self):
         self.module = None

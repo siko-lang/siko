@@ -1,5 +1,12 @@
 import Syntax
 
+class TempVar(object):
+    def __init__(self):
+        self.value = 0
+
+    def __str__(self):
+        return "$tmp_%s" % self.value
+
 class InstructionId(object):
     def __init__(self):
         self.value = 0
@@ -56,7 +63,7 @@ class Bind(BaseInstruction):
         self.rhs = None
 
     def __str__(self):
-        return "Let %s = %s" % (self.name, self.rhs)
+        return "%s = %s" % (self.name, self.rhs)
 
 class MemberAccess(BaseInstruction):
     def __init__(self):
