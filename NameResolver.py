@@ -85,11 +85,13 @@ class Resolver(object):
         self.moduleResolvers = {}
 
     def resolveFunction(self, moduleName, fn):
+        print("Resolving fn %s" % fn.name)
         moduleResolver = self.moduleResolvers[moduleName]
         envs = []
         envs.append(Environment())
         for arg in fn.args:
             arg.name = envs[-1].addVar(arg.name)
+        fn.return_type.name = moduleResolver.resolveName(fn.return_type.name)
         for instruction in fn.body.instructions:
             if isinstance(instruction, IR.BlockBegin):
                 env = Environment()
@@ -112,6 +114,13 @@ class Resolver(object):
                     else:
                         print("Unknown fn %s" % instruction.name)
         fn.body.dump()
+
+    def resolveClass(self, moduleName, clazz):
+        moduleResolver = self.moduleResolvers[moduleName]
+        for f in clazz.fields:
+            f.type.name = moduleResolver.resolveName(f.type.name)
+        for m in clazz.methods:
+            self.resolveFunction(moduleName, m)
 
     def getModuleResolver(self, name):
         if name not in self.moduleResolvers:
@@ -155,3 +164,5 @@ class Resolver(object):
             for item in m.items:
                 if isinstance(item, Syntax.Function):
                     self.resolveFunction(m.name, item)
+                if isinstance(item, Syntax.Class):
+                    self.resolveClass(m.name, item)

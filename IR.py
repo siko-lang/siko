@@ -122,6 +122,13 @@ class Return(BaseInstruction):
     def __str__(self):
         return "return %s" % self.arg
 
+class BoolLiteral(BaseInstruction):
+    def __init__(self):
+        self.value = None
+    
+    def __str__(self):
+        return "bool %s" % self.value
+
 class Body(object):
     def __init__(self):
         self.instructions = []
@@ -226,6 +233,10 @@ class Processor(object):
             ret = Return()
             ret.arg = arg
             return self.addInstruction(ret)
+        elif isinstance(expr, Syntax.BoolLiteral):
+            b = BoolLiteral()
+            b.value = expr.value
+            return self.addInstruction(b)
         else:
             print("Expr not handled", type(expr))
 
@@ -241,6 +252,14 @@ def convertProgram(program):
                 body = Body()
                 body.instructions = processor.instructions
                 fn.body = body
+            if isinstance(item, Syntax.Class):
+                for m in item.methods:
+                    #print("Processing fn %s" % fn.name)
+                    processor = Processor()
+                    processor.processExpr(m.body)
+                    body = Body()
+                    body.instructions = processor.instructions
+                    m.body = body
                 #fn.body.dump()
 
                 

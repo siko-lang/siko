@@ -194,6 +194,16 @@ class Parser(object):
                 self.expect("else")
                 if_expr.false_branch = self.parseBlock()
             return if_expr
+        elif self.peek("true"):
+            self.expect("true")
+            e = Syntax.BoolLiteral()
+            e.value = True
+            return e
+        elif self.peek("false"):
+            self.expect("false")
+            e = Syntax.BoolLiteral()
+            e.value = False
+            return e
         else:
             self.error("expected expr, found %s" % self.tokens[self.index].type)
 
@@ -227,7 +237,7 @@ class Parser(object):
         return block
 
     def parseClassMemberFunction(self):
-        self.parseFunction()
+        return self.parseFunction()
 
     def parseFunction(self):
         fn = Syntax.Function()
@@ -269,7 +279,7 @@ class Parser(object):
         field = Syntax.Field()
         field.name = self.parseName()
         self.expect("colon")
-        field.ty = self.parseType()
+        field.type = self.parseType()
         return field
 
     def parseClass(self):
