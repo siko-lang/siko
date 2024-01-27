@@ -77,8 +77,6 @@ class Typechecker(object):
         unitType.value = "Main.Unit"
         boolType = NamedType()
         boolType.value = "Main.Bool"
-        print("Type checking %s" % fn.name)
-        self.initialize(fn)
         for i in fn.body.instructions:
             if isinstance(i, IR.BlockBegin):
                 continue
@@ -107,9 +105,22 @@ class Typechecker(object):
             else:
                 print("Not handled", type(i))
 
+    def finalize(self, fn):
+        for i in fn.body.instructions:
+            if isinstance(i, IR.BlockBegin):
+                continue
+            if isinstance(i, IR.BlockEnd):
+                continue
+            type = self.types[i.id]
+            type = self.substitution.apply(type)
+            print("%30s : %s" % (i, type))
+
 def checkFunction(f):
     checker = Typechecker()
+    print("Type checking %s" % f.name)
+    checker.initialize(f)
     checker.check(f)
+    checker.finalize(f)
 
 def checkProgram(program):
     for m in program.modules:
