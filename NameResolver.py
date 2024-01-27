@@ -26,14 +26,6 @@ class Environment(object):
             else:
                 return None
 
-class QualifiedName(object):
-    def __init__(self):
-        self.module = None
-        self.name = None
-
-    def __str__(self):
-        return "%s.%s" % (self.module, self.name)
-
 class ResolvedItem(object):
     def __init__(self):
         self.name = None
@@ -52,7 +44,7 @@ class ModuleResolver(object):
         if name not in self.localItems:
             self.localItems[name] = []
         resolvedItem = ResolvedItem()
-        qualifiedName = QualifiedName()
+        qualifiedName = Util.QualifiedName()
         qualifiedName.module = self.module
         qualifiedName.name = name
         resolvedItem.name = qualifiedName
@@ -60,11 +52,13 @@ class ModuleResolver(object):
         self.localItems[name].append(resolvedItem)
 
     def addImportedItem(self, name, item):
+        #print("addImportedItem ", name, type(name))
         if name not in self.importedItems:
             self.importedItems[name] = []
         self.importedItems[name].append(item)
 
     def resolveName(self, name):
+        #print("resolveName ", name, type(name))
         if name in self.localItems:
             items = self.localItems[name]
             if len(items) > 1:
@@ -117,9 +111,9 @@ class Resolver(object):
                 else:
                     item = moduleResolver.resolveName(instruction.name)
                     if item:
-                        instruction.name = item
+                        instruction.name = item.name
                     else:
-                        Util.error("Unknown fn %s" % instruction.name)
+                        Util.error("Unknown fn %s %s" % (instruction.name, type(instruction.name)))
         #fn.body.dump()
 
     def resolveClass(self, moduleName, clazz):
@@ -159,6 +153,9 @@ class Resolver(object):
                         for (name, items) in sourceResolver.localItems.items():
                             for item in items:
                                 targetResolver.addImportedItem(name, item)
+                            for item in items:
+                                fullName = "%s.%s" % (sourceResolver.module, name)
+                                targetResolver.addImportedItem(fullName, item)
     
     def resolve(self, program):
         for m in program.modules:
@@ -171,6 +168,14 @@ class Resolver(object):
         for m in program.modules:
             for item in m.items:
                 if isinstance(item, Syntax.Function):
+                    qualifiedName = Util.QualifiedName()
+                    qualifiedName.module = m.name
+                    qualifiedName.name = item.name
+                    program.functions[qualifiedName] = item
                     self.resolveFunction(m.name, item)
                 if isinstance(item, Syntax.Class):
+                    qualifiedName = Util.QualifiedName()
+                    qualifiedName.module = m.name
+                    qualifiedName.name = item.name
+                    program.classes[qualifiedName] = item
                     self.resolveClass(m.name, item)

@@ -118,4 +118,6 @@ class Module(SyntaxBase):
 class Program(SyntaxBase):
     def __init__(self):
         self.modules = []
+        self.functions = {}
+        self.classes = {}
     

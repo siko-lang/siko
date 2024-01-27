@@ -1,4 +1,5 @@
 import Syntax
+import Util
 
 class TempVar(object):
     def __init__(self):
@@ -148,6 +149,9 @@ class Block(object):
         self.id = None
         self.instructions = []
 
+    def getLast(self):
+        return self.instructions[-1]
+
     def dump(self):
         for (index, i) in enumerate(self.instructions):
            print("$%d. %s" % (index, i))
@@ -190,8 +194,12 @@ class Processor(object):
             if isinstance(lastStatement, Syntax.ExprStatement):
                 if lastStatement.has_semicolon:
                     unit = NamedFunctionCall()
-                    unit.name = "Main.Unit"
-                    last = self.addInstruction(unit)
+                    unit.name = str(Util.getUnit())
+                    self.addInstruction(unit)
+        else:
+            unit = NamedFunctionCall()
+            unit.name = str(Util.getUnit())
+            self.addInstruction(unit)
         self.current.pop()
         return block.id
 

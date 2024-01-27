@@ -36,6 +36,7 @@ class TypeVar(object):
 
 class Typechecker(object):
     def __init__(self):
+        self.program = None
         self.substitution = Substitution()
         self.nextVar = 0
         self.types = {}
@@ -64,41 +65,46 @@ class Typechecker(object):
         #print("Unifying %s/%s" % (type1, type2))
         type1 = self.substitution.apply(type1)
         type2 = self.substitution.apply(type2)
-        print("Unifying2 %s/%s" % (type1, type2))
+        #print("Unifying2 %s/%s" % (type1, type2))
         if isinstance(type1, TypeVar):
             self.substitution.add(type1, type2)
         elif isinstance(type2, TypeVar):
             self.substitution.add(type2, type1)
         elif isinstance(type1, NamedType) and isinstance(type2, NamedType):
             if type1.value != type2.value:
-                Util.error("Type mismatch %s/%s" % (type1, type2))
+                print("Type mismatch named %s/%s" % (type(type1.value), type(type2.value)))
+                Util.error("Type mismatch named %s/%s" % (type1, type2))
         else:
             Util.error("Type mismatch %s/%s" % (type1, type2))
 
     def check(self, fn):
         block = fn.body.getFirst()
         self.checkBlock(block, fn)
+        returnType = NamedType()
+        returnType.value = fn.return_type.name.name
+        self.unify(self.types[block.getLast().id], returnType)
 
     def checkBlock(self, block, fn):
         unitType = NamedType()
-        unitType.value = "Main.Unit"
+        unitType.value = Util.getUnit()
         boolType = NamedType()
-        boolType.value = "Main.Bool"
+        boolType.value = Util.getBool()
         for i in block.instructions:
             if isinstance(i, IR.BlockRef):
                 block = fn.body.getBlock(i)
                 self.checkBlock(block, fn)
-                if len(block.instructions) > 0:
-                    last = block.instructions[-1]
+                last = block.getLast()
                 self.unify(self.types[last.id], self.types[i.id])
             elif isinstance(i, IR.NamedFunctionCall):
                 #print("Checking function call for %s" % i.name)
                 #print("%s" % i.name.item.return_type.name)
                 returnType = NamedType()
-                if isinstance(i.name.item, Syntax.Function):
-                    returnType.value = i.name.item.return_type.name
-                if isinstance(i.name.item, Syntax.Class):
+                if i.name in self.program.functions:
+                    item = self.program.functions[i.name]
+                    returnType.value = item.return_type.name.name
+                elif i.name in self.program.classes:
                     returnType.value = i.name
+                #print("return type %s [%s]" % (returnType, i.name))
                 self.unify(self.types[i.id], returnType)
             elif isinstance(i, IR.Bind):
                 self.unify(self.types[i.name], self.types[i.rhs])
@@ -122,8 +128,9 @@ class Typechecker(object):
                 type = self.substitution.apply(type)
                 print("%5s %30s : %s" % (i.id, i, type))
 
-def checkFunction(f):
+def checkFunction(f, program):
     checker = Typechecker()
+    checker.program = program
     print("Type checking %s" % f.name)
     checker.initialize(f)
     checker.check(f)
@@ -133,7 +140,7 @@ def checkProgram(program):
     for m in program.modules:
         for item in m.items:
             if isinstance(item, Syntax.Function):
-                checkFunction(item)
+                checkFunction(item, program)
             if isinstance(item, Syntax.Class):
                 for m in item.methods:
-                    checkFunction(m)
+                    checkFunction(m, program)
