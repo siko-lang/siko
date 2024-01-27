@@ -18,19 +18,12 @@ class BaseInstruction(object):
     def __init__(self):
         self.id = 0
 
-class BlockBegin(BaseInstruction):
+class BlockRef(BaseInstruction):
     def __init__(self):
-        super().__init__()
+        self.value = 0
 
     def __str__(self):
-        return "<block begin>"
-
-class BlockEnd(BaseInstruction):
-    def __init__(self):
-        super().__init__()
-
-    def __str__(self):
-        return "<block end>"
+        return "block ref: #%s" % self.value
 
 class NamedFunctionCall(BaseInstruction):
     def __init__(self):
@@ -131,6 +124,28 @@ class BoolLiteral(BaseInstruction):
 
 class Body(object):
     def __init__(self):
+        self.blocks = []
+
+    def dump(self):
+        for b in self.blocks:
+           print("#%d. block:" % b.id)
+           b.dump()
+
+    def getFirst(self):
+        for b in self.blocks:
+            if b.id == 0:
+                return b
+        return None
+
+    def getBlock(self, blockref):
+        for b in self.blocks:
+            if b.id == blockref.value:
+                return b
+        return None
+
+class Block(object):
+    def __init__(self):
+        self.id = None
         self.instructions = []
 
     def dump(self):
@@ -139,14 +154,19 @@ class Body(object):
 
 class Processor(object):
     def __init__(self):
-        self.instructions = []
+        self.blocks = []
+        self.current = []
+
+    def currentBlock(self):
+        return self.current[-1]        
 
     def addInstruction(self, instruction):
-        index = len(self.instructions)
+        block = self.currentBlock()
+        index = len(block.instructions)
         id = InstructionId()
         id.value = index
         instruction.id = id
-        self.instructions.append(instruction)
+        block.instructions.append(instruction)
         return id
 
     def processArgs(self, eargs):
@@ -156,22 +176,34 @@ class Processor(object):
         args = map(lambda x: str(x), args)
         return args
 
+    def processBlock(self, expr):
+        block = Block()
+        block.id = len(self.blocks)
+        self.blocks.append(block)
+        self.current.append(block)
+        last = None
+        lastStatement = None
+        for s in expr.statements:
+            lastStatement = s
+            last = self.processExpr(s)
+        if lastStatement:
+            if isinstance(lastStatement, Syntax.ExprStatement):
+                if lastStatement.has_semicolon:
+                    unit = NamedFunctionCall()
+                    unit.name = "Main.Unit"
+                    last = self.addInstruction(unit)
+        self.current.pop()
+        return block.id
+
     def processExpr(self, expr):
         if isinstance(expr, Syntax.Block):
-            self.addInstruction(BlockBegin())
-            last = None
-            lastStatement = None
-            for s in expr.statements:
-                lastStatement = s
-                last = self.processExpr(s)
-            if lastStatement:
-                if isinstance(lastStatement, Syntax.ExprStatement):
-                    if lastStatement.has_semicolon or (not lastStatement.has_semicolon and lastStatement.requires_semicolon):
-                        unit = NamedFunctionCall()
-                        unit.name = "Main.Unit"
-                        last = self.addInstruction(unit)
-            self.addInstruction(BlockEnd())
-            return last
+            first = len(self.blocks) == 0
+            id = self.processBlock(expr)
+            if not first:
+                blockref = BlockRef()
+                blockref.value = id
+                return self.addInstruction(blockref)
+            return id
         elif isinstance(expr, Syntax.LetStatement):
             id = self.processExpr(expr.rhs)
             bind = Bind()
@@ -191,6 +223,11 @@ class Processor(object):
         elif isinstance(expr, Syntax.FunctionCall):
             args = self.processArgs(expr.args)
             if isinstance(expr.id, Syntax.VarRef):
+                call = NamedFunctionCall()
+                call.name = expr.id.name
+                call.args = args
+                return self.addInstruction(call)
+            elif isinstance(expr.id, Syntax.TypeRef):
                 call = NamedFunctionCall()
                 call.name = expr.id.name
                 call.args = args
@@ -258,16 +295,17 @@ def convertProgram(program):
                 processor = Processor()
                 processor.processExpr(fn.body)
                 body = Body()
-                body.instructions = processor.instructions
+                body.blocks = processor.blocks
                 fn.body = body
+                #fn.body.dump()
             if isinstance(item, Syntax.Class):
                 for m in item.methods:
-                    #print("Processing fn %s" % fn.name)
+                    #print("Processing method %s" % m.name)
                     processor = Processor()
                     processor.processExpr(m.body)
                     body = Body()
-                    body.instructions = processor.instructions
+                    body.blocks = processor.blocks
                     m.body = body
-                #fn.body.dump()
+                
 
                 

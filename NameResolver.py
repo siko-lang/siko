@@ -87,28 +87,31 @@ class Resolver(object):
     def resolveFunction(self, moduleName, fn):
         #print("Resolving fn %s" % fn.name)
         moduleResolver = self.moduleResolvers[moduleName]
-        envs = []
-        envs.append(Environment())
+        env = Environment()
         for arg in fn.args:
-            arg.name = envs[-1].addVar(arg.name)
+            arg.name = env.addVar(arg.name)
         fn.return_type.name = moduleResolver.resolveName(fn.return_type.name)
-        for instruction in fn.body.instructions:
-            if isinstance(instruction, IR.BlockBegin):
-                env = Environment()
-                env.parent = envs[-1]
-                envs.append(env)
-            if isinstance(instruction, IR.BlockEnd):
-                envs.pop()
+        block = fn.body.getFirst()
+        self.resolveBlock(env, moduleResolver, block, fn)
+    
+    def resolveBlock(self, penv, moduleResolver, block, fn):
+        #print("Processing block ", block.id)
+        env = Environment()
+        env.parent = penv
+        for instruction in block.instructions:
             if isinstance(instruction, IR.Bind):
-                instruction.name = envs[-1].addVar(instruction.name)
+                instruction.name = env.addVar(instruction.name)
+            if isinstance(instruction, IR.BlockRef):
+                b = fn.body.getBlock(instruction)
+                self.resolveBlock(env, moduleResolver, b, fn)
             elif isinstance(instruction, IR.VarRef):
-                var = envs[-1].resolveVar(instruction.name)
+                var = env.resolveVar(instruction.name)
                 if var:
                     instruction.name = var
                 else:
                     Util.error("Undefined var %s" % instruction.name)
             elif isinstance(instruction, IR.NamedFunctionCall):
-                var = envs[-1].resolveVar(instruction.name)
+                var = env.resolveVar(instruction.name)
                 if var:
                     instruction.name = var
                 else:

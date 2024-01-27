@@ -1,5 +1,6 @@
 import Syntax
 import IR
+import Util
 
 class Substitution(object):
     def __init__(self):
@@ -50,39 +51,47 @@ class Typechecker(object):
             namedType = NamedType()
             namedType.value = arg.type.name
             self.types[arg.name] = namedType
-        for i in fn.body.instructions:
-            if isinstance(i, IR.BlockBegin):
-                continue
-            if isinstance(i, IR.BlockEnd):
-                continue
-            if isinstance(i, IR.Bind):
+        for block in fn.body.blocks:
+            for i in block.instructions:
+                if isinstance(i, IR.Bind):
+                    v = self.getNextVar()
+                    self.types[i.name] = v
                 v = self.getNextVar()
-                self.types[i.name] = v
-            v = self.getNextVar()
-            self.types[i.id] = v
-            #print("Initializing %s = %s" % (i.id, v))
+                self.types[i.id] = v
+                #print("Initializing %s = %s" % (i.id, v))
 
     def unify(self, type1, type2):
         #print("Unifying %s/%s" % (type1, type2))
         type1 = self.substitution.apply(type1)
         type2 = self.substitution.apply(type2)
-        #print("Unifying2 %s/%s" % (type1, type2))
+        print("Unifying2 %s/%s" % (type1, type2))
         if isinstance(type1, TypeVar):
             self.substitution.add(type1, type2)
         elif isinstance(type2, TypeVar):
             self.substitution.add(type2, type1)
+        elif isinstance(type1, NamedType) and isinstance(type2, NamedType):
+            if type1.value != type2.value:
+                Util.error("Type mismatch %s/%s" % (type1, type2))
+        else:
+            Util.error("Type mismatch %s/%s" % (type1, type2))
 
     def check(self, fn):
+        block = fn.body.getFirst()
+        self.checkBlock(block, fn)
+
+    def checkBlock(self, block, fn):
         unitType = NamedType()
         unitType.value = "Main.Unit"
         boolType = NamedType()
         boolType.value = "Main.Bool"
-        for i in fn.body.instructions:
-            if isinstance(i, IR.BlockBegin):
-                continue
-            if isinstance(i, IR.BlockEnd):
-                continue
-            if isinstance(i, IR.NamedFunctionCall):
+        for i in block.instructions:
+            if isinstance(i, IR.BlockRef):
+                block = fn.body.getBlock(i)
+                self.checkBlock(block, fn)
+                if len(block.instructions) > 0:
+                    last = block.instructions[-1]
+                self.unify(self.types[last.id], self.types[i.id])
+            elif isinstance(i, IR.NamedFunctionCall):
                 #print("Checking function call for %s" % i.name)
                 #print("%s" % i.name.item.return_type.name)
                 returnType = NamedType()
@@ -106,14 +115,12 @@ class Typechecker(object):
                 print("Not handled", type(i))
 
     def finalize(self, fn):
-        for i in fn.body.instructions:
-            if isinstance(i, IR.BlockBegin):
-                continue
-            if isinstance(i, IR.BlockEnd):
-                continue
-            type = self.types[i.id]
-            type = self.substitution.apply(type)
-            print("%30s : %s" % (i, type))
+        for block in fn.body.blocks:
+            print("#%d. block:" % block.id)
+            for i in block.instructions:
+                type = self.types[i.id]
+                type = self.substitution.apply(type)
+                print("%5s %30s : %s" % (i.id, i, type))
 
 def checkFunction(f):
     checker = Typechecker()
