@@ -76,6 +76,8 @@ class LetStatement(SyntaxBase):
 class ExprStatement(SyntaxBase):
     def __init__(self):
         self.expr = None
+        self.requires_semicolon = False
+        self.has_semicolon = False
 
 class Block(SyntaxBase):
     def __init__(self):

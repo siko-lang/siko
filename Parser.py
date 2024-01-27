@@ -2,8 +2,7 @@ import Lexer
 import Token
 import Syntax
 import json
-
-import sys
+import Util
 
 class Parser(object):
     def __init__(self):
@@ -15,9 +14,7 @@ class Parser(object):
         self.index += 1
 
     def error(self, msg):
-        print(msg)
-        assert False
-        sys.exit(1)
+        Util.error(msg)
 
     def expect(self, ty):
         if self.tokens[self.index].type == ty:
@@ -145,6 +142,28 @@ class Parser(object):
                 break
         return receiver
 
+    def parseIf(self):
+        self.expect("if")
+        if_expr = Syntax.If()
+        if_expr.cond = self.parseExpr()
+        if_expr.true_branch = self.parseBlock()
+        if self.peek("else"):
+            self.expect("else")
+            if_expr.false_branch = self.parseBlock()
+        return if_expr
+
+    def parseLoop(self):
+        self.expect("loop")
+        var = self.parseName()
+        self.expect("equal")
+        init = self.parseExpr()
+        body = self.parseBlock()
+        loop_expr = Syntax.Loop()
+        loop_expr.var = var
+        loop_expr.init = init
+        loop_expr.body = body
+        return loop_expr
+
     def parsePrimary(self):
         if self.peek("typeid"):
             name = self.parseQualifiedName()
@@ -175,25 +194,9 @@ class Parser(object):
             e.arg = self.parseExpr()
             return e
         elif self.peek("loop"):
-            self.expect("loop")
-            var = self.parseName()
-            self.expect("equal")
-            init = self.parseExpr()
-            body = self.parseBlock()
-            loop_expr = Syntax.Loop()
-            loop_expr.var = var
-            loop_expr.init = init
-            loop_expr.body = body
-            return loop_expr
+            return self.parseLoop()
         elif self.peek("if"):
-            self.expect("if")
-            if_expr = Syntax.If()
-            if_expr.cond = self.parseExpr()
-            if_expr.true_branch = self.parseBlock()
-            if self.peek("else"):
-                self.expect("else")
-                if_expr.false_branch = self.parseBlock()
-            return if_expr
+            return self.parseIf()
         elif self.peek("true"):
             self.expect("true")
             e = Syntax.BoolLiteral()
@@ -210,6 +213,13 @@ class Parser(object):
     def parseExpr(self):
         return self.parseFunctionCall()
 
+    def maybeParseSemicolon(self):
+        if self.peek("semicolon"):
+            self.expect("semicolon")
+            return True
+        else:
+            return False
+
     def parseStatement(self):
         if self.peek("let"):
             self.expect("let")
@@ -217,10 +227,34 @@ class Parser(object):
             let_s.var_name = self.parseName()
             self.expect("equal")
             let_s.rhs = self.parseExpr()
+            self.expect("semicolon")
             return let_s
+        elif self.peek("leftcurly"):
+            expr = self.parseBlock()
+            s = Syntax.ExprStatement()
+            s.requires_semicolon = False
+            s.has_semicolon = self.maybeParseSemicolon()
+            s.expr = expr
+            return s
+        elif self.peek("if"):
+            expr = self.parseIf()
+            s = Syntax.ExprStatement()
+            s.requires_semicolon = False
+            s.has_semicolon = self.maybeParseSemicolon()
+            s.expr = expr
+            return s
+        elif self.peek("loop"):
+            expr = self.parseLoop()
+            s = Syntax.ExprStatement()
+            s.requires_semicolon = False
+            s.has_semicolon = self.maybeParseSemicolon()
+            s.expr = expr
+            return s
         else:
             expr = self.parseExpr()
             s = Syntax.ExprStatement()
+            s.requires_semicolon = True
+            s.has_semicolon = self.maybeParseSemicolon()
             s.expr = expr
             return s
 
@@ -232,7 +266,10 @@ class Parser(object):
             block.statements.append(s)
             if self.peek("rightcurly"):
                 break
-            self.expect("semicolon")
+            else:
+                if isinstance(s, Syntax.ExprStatement):
+                    if s.requires_semicolon and not s.has_semicolon:
+                        self.error("Non trailing expr requires semicolon!")
         self.expect("rightcurly")
         return block
 

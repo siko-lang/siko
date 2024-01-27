@@ -66,7 +66,7 @@ class Typechecker(object):
         #print("Unifying %s/%s" % (type1, type2))
         type1 = self.substitution.apply(type1)
         type2 = self.substitution.apply(type2)
-        print("Unifying2 %s/%s" % (type1, type2))
+        #print("Unifying2 %s/%s" % (type1, type2))
         if isinstance(type1, TypeVar):
             self.substitution.add(type1, type2)
         elif isinstance(type2, TypeVar):
@@ -88,7 +88,10 @@ class Typechecker(object):
                 #print("Checking function call for %s" % i.name)
                 #print("%s" % i.name.item.return_type.name)
                 returnType = NamedType()
-                returnType.value = i.name.item.return_type.name
+                if isinstance(i.name.item, Syntax.Function):
+                    returnType.value = i.name.item.return_type.name
+                if isinstance(i.name.item, Syntax.Class):
+                    returnType.value = i.name
                 self.unify(self.types[i.id], returnType)
             elif isinstance(i, IR.Bind):
                 self.unify(self.types[i.name], self.types[i.rhs])
@@ -103,7 +106,6 @@ class Typechecker(object):
                 self.unify(self.types[i.id], self.types[i.false_branch])
             else:
                 print("Not handled", type(i))
-
 
 def checkFunction(f):
     checker = Typechecker()

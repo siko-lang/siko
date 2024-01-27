@@ -160,8 +160,16 @@ class Processor(object):
         if isinstance(expr, Syntax.Block):
             self.addInstruction(BlockBegin())
             last = None
+            lastStatement = None
             for s in expr.statements:
+                lastStatement = s
                 last = self.processExpr(s)
+            if lastStatement:
+                if isinstance(lastStatement, Syntax.ExprStatement):
+                    if lastStatement.has_semicolon or (not lastStatement.has_semicolon and lastStatement.requires_semicolon):
+                        unit = NamedFunctionCall()
+                        unit.name = "Main.Unit"
+                        last = self.addInstruction(unit)
             self.addInstruction(BlockEnd())
             return last
         elif isinstance(expr, Syntax.LetStatement):

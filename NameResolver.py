@@ -1,5 +1,6 @@
 import Syntax
 import IR
+import Util
 
 nextVar = 0
 
@@ -67,17 +68,16 @@ class ModuleResolver(object):
         if name in self.localItems:
             items = self.localItems[name]
             if len(items) > 1:
-                print("%s is ambiguous" % name)
+                Util.error("%s is ambiguous" % name)
             return items[0]
         else:
             if name in self.importedItems:
                 items = self.importedItems[name]
                 if len(items) > 1:
-                    print("%s is ambiguous" % name)
+                    Util.error("%s is ambiguous" % name)
                 return items[0]
             else:
                 return None
-
 
 class Resolver(object):
     def __init__(self):
@@ -102,7 +102,11 @@ class Resolver(object):
             if isinstance(instruction, IR.Bind):
                 instruction.name = envs[-1].addVar(instruction.name)
             elif isinstance(instruction, IR.VarRef):
-                instruction.name = envs[-1].resolveVar(instruction.name)
+                var = envs[-1].resolveVar(instruction.name)
+                if var:
+                    instruction.name = var
+                else:
+                    Util.error("Undefined var %s" % instruction.name)
             elif isinstance(instruction, IR.NamedFunctionCall):
                 var = envs[-1].resolveVar(instruction.name)
                 if var:
@@ -112,7 +116,7 @@ class Resolver(object):
                     if item:
                         instruction.name = item
                     else:
-                        print("Unknown fn %s" % instruction.name)
+                        Util.error("Unknown fn %s" % instruction.name)
         #fn.body.dump()
 
     def resolveClass(self, moduleName, clazz):
@@ -152,14 +156,15 @@ class Resolver(object):
                         for (name, items) in sourceResolver.localItems.items():
                             for item in items:
                                 targetResolver.addImportedItem(name, item)
-                            for item in items:
-                                name = item.name.module + "." + name
-                                targetResolver.addImportedItem(name, item)
     
     def resolve(self, program):
         for m in program.modules:
             self.localItems(m)
         self.processImports(program)
+        for moduleName, resolver in self.moduleResolvers.items():
+            for (name, items) in resolver.localItems.items():
+                for item in items:
+                    resolver.addImportedItem("%s.%s" % (moduleName, name), item)
         for m in program.modules:
             for item in m.items:
                 if isinstance(item, Syntax.Function):
