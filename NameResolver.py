@@ -85,7 +85,7 @@ class Resolver(object):
         self.moduleResolvers = {}
 
     def resolveFunction(self, moduleName, fn):
-        print("Resolving fn %s" % fn.name)
+        #print("Resolving fn %s" % fn.name)
         moduleResolver = self.moduleResolvers[moduleName]
         envs = []
         envs.append(Environment())
@@ -113,7 +113,7 @@ class Resolver(object):
                         instruction.name = item
                     else:
                         print("Unknown fn %s" % instruction.name)
-        fn.body.dump()
+        #fn.body.dump()
 
     def resolveClass(self, moduleName, clazz):
         moduleResolver = self.moduleResolvers[moduleName]

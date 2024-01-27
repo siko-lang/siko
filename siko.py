@@ -4,6 +4,7 @@ import sys
 import Parser
 import Syntax
 import NameResolver
+import Typechecker
 import IR
 
 def compile():
@@ -18,5 +19,7 @@ def compile():
 
     resolver = NameResolver.Resolver()
     resolver.resolve(program)
+
+    Typechecker.checkProgram(program)
 
 compile()
