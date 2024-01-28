@@ -101,6 +101,13 @@ class Typechecker(object):
             returnType = NamedType()
             if i.name in self.program.functions:
                 item = self.program.functions[i.name]
+                if len(item.args) != len(i.args):
+                    Util.error("fn %s expected %d args found %d" % (i.name, len(item.args), len(i.args)))
+                for (index, i_arg) in enumerate(i.args):
+                    fn_arg = item.args[index]
+                    arg_type = NamedType()
+                    arg_type.value = fn_arg.type.name
+                    self.unify(self.types[i_arg], arg_type)
                 returnType.value = item.return_type.name.name
             elif i.name in self.program.classes:
                 returnType.value = i.name
@@ -124,6 +131,13 @@ class Typechecker(object):
                 clazz = self.program.classes[ty.value]
                 found = False
                 for method in clazz.methods:
+                    if len(method.args) != len(i.args):
+                        Util.error("method %s expected %d args found %d" % (i.name, len(method.args), len(i.args)))
+                    for (index, i_arg) in enumerate(i.args):
+                        method_arg = method.args[index]
+                        arg_type = NamedType()
+                        arg_type.value = method_arg.type.name
+                        self.unify(self.types[i_arg], arg_type)
                     if method.name == i.name:
                         found = True
                         returnType = NamedType()
@@ -143,7 +157,7 @@ class Typechecker(object):
                         found = True
                         fieldType = NamedType()
                         fieldType.value = field.type.name.name
-                        print("field type %s [%s]" % (fieldType, i.name))
+                        #print("field type %s [%s]" % (fieldType, i.name))
                         self.unify(self.types[i.id], fieldType)
                 if not found:
                     Util.error("field %s not found on %s" % (i.name, ty.value))
@@ -157,16 +171,16 @@ class Typechecker(object):
 
     def finalize(self, fn):
         for block in fn.body.blocks:
-            print("#%d. block:" % block.id)
+            #print("#%d. block:" % block.id)
             for i in block.instructions:
                 type = self.types[i.id]
                 type = self.substitution.apply(type)
-                print("%5s %30s : %s" % (i.id, i, type))
+                #print("%5s %30s : %s" % (i.id, i, type))
 
 def checkFunction(f, program):
     checker = Typechecker()
     checker.program = program
-    print("Type checking %s" % f.name)
+    #print("Type checking %s" % f.name)
     checker.initialize(f)
     checker.check(f)
     checker.finalize(f)

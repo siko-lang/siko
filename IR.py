@@ -32,7 +32,8 @@ class NamedFunctionCall(BaseInstruction):
         self.args = []
 
     def __str__(self):
-        return "%s(%s)" % (self.name, ", ".join(self.args))
+        args = map(lambda x: str(x), self.args)
+        return "%s(%s)" % (self.name, ", ".join(args))
 
 class DynamicFunctionCall(BaseInstruction):
     def __init__(self):
@@ -40,7 +41,8 @@ class DynamicFunctionCall(BaseInstruction):
         self.args = []
 
     def __str__(self):
-        return "%s(%s)" % (self.callable, ", ".join(self.args))
+        args = map(lambda x: str(x), self.args)
+        return "%s(%s)" % (self.callable, ", ".join(args))
 
 class MethodCall(BaseInstruction):
     def __init__(self):
@@ -49,7 +51,8 @@ class MethodCall(BaseInstruction):
         self.args = []
 
     def __str__(self):
-        return "%s.%s(%s)" % (self.receiver, self.name, ", ".join(self.args))
+        args = map(lambda x: str(x), self.args)
+        return "%s.%s(%s)" % (self.receiver, self.name, ", ".join(args))
 
 class Bind(BaseInstruction):
     def __init__(self):
@@ -177,7 +180,6 @@ class Processor(object):
         args = []
         for arg in eargs:
             args.append(self.processExpr(arg))
-        args = map(lambda x: str(x), args)
         return args
 
     def processBlock(self, expr):

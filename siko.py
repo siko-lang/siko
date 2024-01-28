@@ -11,7 +11,7 @@ def compile():
     program = Syntax.Program()
 
     for f in sys.argv[1:]:
-        print("Parsing ", f)
+        #print("Parsing ", f)
         parser = Parser.Parser()
         parser.parse(program, f)
 

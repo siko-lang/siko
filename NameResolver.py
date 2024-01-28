@@ -84,6 +84,7 @@ class Resolver(object):
         env = Environment()
         for arg in fn.args:
             arg.name = env.addVar(arg.name)
+            arg.type = moduleResolver.resolveName(arg.type.name)
         fn.return_type.name = moduleResolver.resolveName(fn.return_type.name)
         block = fn.body.getFirst()
         self.resolveBlock(env, moduleResolver, block, fn)
