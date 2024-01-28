@@ -27,6 +27,11 @@ class NamedType(object):
     def __str__(self):
         return "Named:%s" % self.value
 
+unitType = NamedType()
+unitType.value = Util.getUnit()
+boolType = NamedType()
+boolType.value = Util.getBool()
+
 class TypeVar(object):
     def __init__(self):
         self.value = None
@@ -84,41 +89,71 @@ class Typechecker(object):
         returnType.value = fn.return_type.name.name
         self.unify(self.types[block.getLast().id], returnType)
 
+    def checkInstruction(self, block, fn, i):
+        if isinstance(i, IR.BlockRef):
+            block = fn.body.getBlock(i)
+            self.checkBlock(block, fn)
+            last = block.getLast()
+            self.unify(self.types[last.id], self.types[i.id])
+        elif isinstance(i, IR.NamedFunctionCall):
+            #print("Checking function call for %s" % i.name)
+            #print("%s" % i.name.item.return_type.name)
+            returnType = NamedType()
+            if i.name in self.program.functions:
+                item = self.program.functions[i.name]
+                returnType.value = item.return_type.name.name
+            elif i.name in self.program.classes:
+                returnType.value = i.name
+            #print("return type %s [%s]" % (returnType, i.name))
+            self.unify(self.types[i.id], returnType)
+        elif isinstance(i, IR.Bind):
+            self.unify(self.types[i.name], self.types[i.rhs])
+            self.unify(self.types[i.id], unitType)
+        elif isinstance(i, IR.VarRef):
+            self.unify(self.types[i.id], self.types[i.name])
+        elif isinstance(i, IR.BoolLiteral):
+            self.unify(self.types[i.id], boolType)
+        elif isinstance(i, IR.If):
+            self.unify(self.types[i.cond], boolType)
+            self.unify(self.types[i.id], self.types[i.true_branch])
+            self.unify(self.types[i.id], self.types[i.false_branch])
+        elif isinstance(i, IR.MethodCall):
+            ty = self.types[i.receiver]
+            ty = self.substitution.apply(ty)
+            if isinstance(ty, NamedType):
+                clazz = self.program.classes[ty.value]
+                found = False
+                for method in clazz.methods:
+                    if method.name == i.name:
+                        found = True
+                        returnType = NamedType()
+                        returnType.value = method.return_type.name.name
+                        #print("method return type %s [%s]" % (returnType, i.name))
+                        self.unify(self.types[i.id], returnType)
+                if not found:
+                    Util.error("method %s not found on %s" % (i.name, ty.value))
+        elif isinstance(i, IR.MemberAccess):
+            ty = self.types[i.receiver]
+            ty = self.substitution.apply(ty)
+            if isinstance(ty, NamedType):
+                clazz = self.program.classes[ty.value]
+                found = False
+                for field in clazz.fields:
+                    if field.name == i.name:
+                        found = True
+                        fieldType = NamedType()
+                        fieldType.value = field.type.name.name
+                        print("field type %s [%s]" % (fieldType, i.name))
+                        self.unify(self.types[i.id], fieldType)
+                if not found:
+                    Util.error("field %s not found on %s" % (i.name, ty.value))
+        else:
+            print("Not handled", type(i))
+
     def checkBlock(self, block, fn):
-        unitType = NamedType()
-        unitType.value = Util.getUnit()
-        boolType = NamedType()
-        boolType.value = Util.getBool()
+        
         for i in block.instructions:
-            if isinstance(i, IR.BlockRef):
-                block = fn.body.getBlock(i)
-                self.checkBlock(block, fn)
-                last = block.getLast()
-                self.unify(self.types[last.id], self.types[i.id])
-            elif isinstance(i, IR.NamedFunctionCall):
-                #print("Checking function call for %s" % i.name)
-                #print("%s" % i.name.item.return_type.name)
-                returnType = NamedType()
-                if i.name in self.program.functions:
-                    item = self.program.functions[i.name]
-                    returnType.value = item.return_type.name.name
-                elif i.name in self.program.classes:
-                    returnType.value = i.name
-                #print("return type %s [%s]" % (returnType, i.name))
-                self.unify(self.types[i.id], returnType)
-            elif isinstance(i, IR.Bind):
-                self.unify(self.types[i.name], self.types[i.rhs])
-                self.unify(self.types[i.id], unitType)
-            elif isinstance(i, IR.VarRef):
-                self.unify(self.types[i.id], self.types[i.name])
-            elif isinstance(i, IR.BoolLiteral):
-                self.unify(self.types[i.id], boolType)
-            elif isinstance(i, IR.If):
-                self.unify(self.types[i.cond], boolType)
-                self.unify(self.types[i.id], self.types[i.true_branch])
-                self.unify(self.types[i.id], self.types[i.false_branch])
-            else:
-                print("Not handled", type(i))
+            self.checkInstruction(block, fn, i)
 
     def finalize(self, fn):
         for block in fn.body.blocks:
