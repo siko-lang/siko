@@ -130,15 +130,16 @@ class Typechecker(object):
             if isinstance(ty, NamedType):
                 clazz = self.program.classes[ty.value]
                 found = False
+                total_args = [i.receiver] + i.args
                 for method in clazz.methods:
-                    if len(method.args) != len(i.args):
-                        Util.error("method %s expected %d args found %d" % (i.name, len(method.args), len(i.args)))
-                    for (index, i_arg) in enumerate(i.args):
-                        method_arg = method.args[index]
-                        arg_type = NamedType()
-                        arg_type.value = method_arg.type.name
-                        self.unify(self.types[i_arg], arg_type)
                     if method.name == i.name:
+                        if len(method.args) != len(total_args):
+                            Util.error("method %s expected %d args found %d" % (method.name, len(method.args), len(total_args)))
+                        for (index, i_arg) in enumerate(total_args):
+                            method_arg = method.args[index]
+                            arg_type = NamedType()
+                            arg_type.value = method_arg.type.name
+                            self.unify(self.types[i_arg], arg_type)
                         found = True
                         returnType = NamedType()
                         returnType.value = method.return_type.name.name

@@ -84,7 +84,11 @@ class Resolver(object):
         env = Environment()
         for arg in fn.args:
             arg.name = env.addVar(arg.name)
-            arg.type = moduleResolver.resolveName(arg.type.name)
+            arg_type = moduleResolver.resolveName(arg.type.name)
+            if arg_type is None:
+                Util.error("Failed to resolve type %s" % arg.type.name)
+            else:
+                arg.type = arg_type
         fn.return_type.name = moduleResolver.resolveName(fn.return_type.name)
         block = fn.body.getFirst()
         self.resolveBlock(env, moduleResolver, block, fn)
