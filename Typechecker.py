@@ -111,6 +111,22 @@ class Typechecker(object):
                 returnType.value = item.return_type.name.name
             elif i.name in self.program.classes:
                 returnType.value = i.name
+            else:
+                (clazz, method_name) = i.name.name.split(".")
+                clazz_name = Util.QualifiedName()
+                clazz_name.module = i.name.module
+                clazz_name.name = clazz
+                clazz = self.program.classes[clazz_name]
+                for method in clazz.methods:
+                    if method.name == method_name:
+                        if len(method.args) != len(i.args):
+                            Util.error("fn %s expected %d args found %d" % (i.name, len(method.args), len(i.args)))
+                        for (index, i_arg) in enumerate(i.args):
+                            fn_arg = method.args[index]
+                            arg_type = NamedType()
+                            arg_type.value = fn_arg.type.name
+                            self.unify(self.types[i_arg], arg_type)
+                        returnType.value = method.return_type.name.name
             #print("return type %s [%s]" % (returnType, i.name))
             self.unify(self.types[i.id], returnType)
         elif isinstance(i, IR.Bind):

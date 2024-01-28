@@ -141,6 +141,9 @@ class Resolver(object):
             if isinstance(item, Syntax.Function):
                 resolver.addLocalItem(item.name, item)
             if isinstance(item, Syntax.Class):
+                for method in item.methods:
+                    name = "%s.%s" % (item.name, method.name)
+                    resolver.addLocalItem(name, method)    
                 resolver.addLocalItem(item.name, item)
 
     def processImports(self, program):
