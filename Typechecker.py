@@ -110,6 +110,14 @@ class Typechecker(object):
                     self.unify(self.types[i_arg], arg_type)
                 returnType.value = item.return_type.name.name
             elif i.name in self.program.classes:
+                clazz = self.program.classes[i.name]
+                if len(clazz.fields) != len(i.args):
+                    Util.error("clazz ctor %s expected %d args found %d" % (i.name, len(clazz.fields), len(i.args)))
+                for (index, i_arg) in enumerate(i.args):
+                    fn_arg = clazz.fields[index]
+                    arg_type = NamedType()
+                    arg_type.value = fn_arg.type.name.name
+                    self.unify(self.types[i_arg], arg_type)
                 returnType.value = i.name
             else:
                 (clazz, method_name) = i.name.name.split(".")
