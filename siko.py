@@ -6,6 +6,7 @@ import Syntax
 import NameResolver
 import Typechecker
 import IR
+import Borrowchecker
 
 def compile():
     program = Syntax.Program()
@@ -21,5 +22,7 @@ def compile():
     resolver.resolve(program)
 
     Typechecker.checkProgram(program)
+
+    Borrowchecker.processProgram(program)
 
 compile()
