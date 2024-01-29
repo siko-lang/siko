@@ -190,7 +190,6 @@ class Typechecker(object):
             print("Not handled", type(i))
 
     def checkBlock(self, block, fn):
-        
         for i in block.instructions:
             self.checkInstruction(block, fn, i)
 

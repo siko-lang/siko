@@ -5,13 +5,14 @@ class Usage(object):
     def __init__(self):
         self.id = None
         self.path = None
+        self.block_path = None
 
     def __str__(self):
         if self.path:
             path = ".".join(self.path)
-            return "%s.%s" % (self.id, path)
+            return "%s.%s/%s" % (self.id, path, self.block_path)
         else:
-            return str(self.id)
+            return "%s/%s" % (self.id, self.block_path)
 
 class UsageSet(object):
     def __init__(self):
@@ -34,15 +35,17 @@ class UsageHolder(object):
     def addDef(self, var):
         self.usagesets[var] = UsageSet()
 
-    def addUsage(self, id, var):
+    def addUsage(self, id, var, block_path):
         usage = Usage()
         usage.id = id
+        usage.block_path = block_path
         self.usagesets[var].addUsage(usage)
 
-    def addMemberUsage(self, id, var, path):
+    def addMemberUsage(self, id, var, path, block_path):
         usage = Usage()
         usage.id = id
         usage.path = path
+        usage.block_path = block_path
         self.usagesets[var].addUsage(usage)
 
     def __str__(self):
@@ -56,15 +59,20 @@ class UsageHolder(object):
 
 class Borrowchecker(object):
     def __init__(self):
-        pass
+        self.fn = None
+        self.usages = None
 
-    def checkBlock(self, usages, block):
+    def checkBlock(self, block, block_path):
+        print("#%d. block:" % block.id)
+        block_path = block_path + [block.id]
         for (index, i) in enumerate(block.instructions):
             if isinstance(i, IR.Bind):
-                usages.addDef(i.name)
+                self.usages.addDef(i.name)
+            if isinstance(i, IR.BlockRef):
+                self.checkBlock(self.fn.body.getBlock(i), block_path)
             if isinstance(i, IR.VarRef):
                 path = []
-                while True:
+                while index + 1 < len(block.instructions):
                     next = block.instructions[index + 1]
                     if isinstance(next, IR.MemberAccess):
                         path.append(next.name)
@@ -72,17 +80,19 @@ class Borrowchecker(object):
                     else:
                         break
                 if len(path) == 0:
-                    usages.addUsage(i.id, i.name)
+                    self.usages.addUsage(i.id, i.name, block_path)
                 else:
-                    usages.addMemberUsage(i.id, i.name, path)
-            print("%5s %25s %10s" % (i.id, i, usages))
+                    self.usages.addMemberUsage(i.id, i.name, path, block_path)
+            print("%5s %25s" % (i.id, i))
 
     def checkFn(self, fn):
         print("Borrow check ", fn.name)
-        usages = UsageHolder()
+        self.fn = fn
+        self.usages = UsageHolder()
         for arg in fn.args:
-            usages.addDef(arg.name)
-        self.checkBlock(usages, fn.body.getFirst())
+            self.usages.addDef(arg.name)
+        self.checkBlock(fn.body.getFirst(), [])
+        print("Usages %s" % self.usages)
 
 def checkFn(fn):
     borrowchecker = Borrowchecker()

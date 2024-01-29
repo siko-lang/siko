@@ -163,15 +163,16 @@ class Processor(object):
     def __init__(self):
         self.blocks = []
         self.current = []
+        self.index = 0
 
     def currentBlock(self):
         return self.current[-1]        
 
     def addInstruction(self, instruction):
         block = self.currentBlock()
-        index = len(block.instructions)
         id = InstructionId()
-        id.value = index
+        id.value = self.index
+        self.index += 1
         instruction.id = id
         block.instructions.append(instruction)
         return id
