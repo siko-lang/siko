@@ -22,9 +22,13 @@ class BaseInstruction(object):
 class BlockRef(BaseInstruction):
     def __init__(self):
         self.value = 0
+        self.conditional = False
 
     def __str__(self):
-        return "block ref: #%s" % self.value
+        if self.conditional:
+            return "cond block ref: #%s" % self.value
+        else:
+            return "block ref: #%s" % self.value
 
 class NamedFunctionCall(BaseInstruction):
     def __init__(self):
@@ -206,13 +210,14 @@ class Processor(object):
         self.current.pop()
         return block.id
 
-    def processExpr(self, expr):
+    def processExpr(self, expr, conditional = False):
         if isinstance(expr, Syntax.Block):
             first = len(self.blocks) == 0
             id = self.processBlock(expr)
             if not first:
                 blockref = BlockRef()
                 blockref.value = id
+                blockref.conditional = conditional
                 return self.addInstruction(blockref)
             return id
         elif isinstance(expr, Syntax.LetStatement):
@@ -262,9 +267,9 @@ class Processor(object):
         elif isinstance(expr, Syntax.If):
             if_instr = If()
             if_instr.cond = self.processExpr(expr.cond)
-            if_instr.true_branch = self.processExpr(expr.true_branch)
+            if_instr.true_branch = self.processExpr(expr.true_branch, conditional=True)
             if expr.false_branch:
-                if_instr.false_branch = self.processExpr(expr.false_branch)
+                if_instr.false_branch = self.processExpr(expr.false_branch, conditional=True)
             return self.addInstruction(if_instr)
         elif isinstance(expr, Syntax.Loop):
             init = self.processExpr(expr.init)

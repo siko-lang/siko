@@ -137,6 +137,9 @@ class Lexer(object):
                     elif isNumber(current):
                         self.current += current
                         self.step()
+                    elif current == '_':
+                        self.current += current
+                        self.step()
                     else:
                         print("Unsupported character '%s'" % current)
                         self.step()

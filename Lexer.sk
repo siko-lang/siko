@@ -9,107 +9,113 @@ import Siko.Syntax.Location
 class SpannedString {
     value: String
     span: Span
+
+    fn start(span: Span) -> SpannedString {
+        SpannedString("", span)
+    }
 }
 
 class Lexer {
     chars: [Char]
     index: Int
-    line_offset: Int
-    line_index: Int
+    lineOffset: Int
+    lineIndex: Int
     tokens: List[TokenInfo]
     errors: List[LexerError]
 
-    emptyState(cs: List[Char]) -> LexerState {
+    emptyState(cs: List[Char]) -> Lexer {
         Lexer(cs, 0, 0, 1, [], [])
     }
 
-    fn updateSpan(self: Lexer, s: SpannedString) -> SpannedString {
-        let span = s.span;
-        let span = span(end: Position(self.line_index, self.line_offset));
-        s(span: span)
+    fn updateSpan(self, s: SpannedString) -> SpannedString {
+        s.span.end = Position(self.lineIndex, self.lineOffset);
+        s
     }
 
-    fn addChar(self: Lexer, s: SpannedString, c: Char) -> (LexerState, SpannedString) {
-        let v = s.value + "{}" % c; // FIXME: optimize this!
-        let s = s(value: v);
-        let s <- self.updateSpan(s);
-        (self.step(), s)
+    fn addChar(self, s: SpannedString, c: Char) -> (Self, SpannedString) {
+        s.value.push(c);
+        self.updateSpan(s);
+        self.step();
+        (self, s)
     }
 
-    fn isDone(self: Lexer) -> Bool {
+    fn isDone(self) -> Bool {
         self.index >= self.chars.len()
     }
 
-    fn peek(self: Lexer) -> Char {
+    fn peek(self) -> Char {
         self.chars.at(self.index)
     }
+
+    fn step(self) -> Self {
+        let c = self.peek();
+        let (lineOffset, lineIndex) = if c == '\n' {
+            (0, self.lineIndex + 1)
+        } else {
+            (self.lineOffset + 1, self.lineIndex)
+        }
+        self(index: self.index + 1, 
+             lineOffset: lineOffset, 
+             lineIndex: lineIndex)
+    }
+
+    fn startSpan(self) -> Span {
+        let pos = Position(self.lineIndex, self.lineOffset);
+        Span(pos, pos)   
+    }
+
+    fn addToken(self, token: Token, span: Span) -> Self {
+        self.tokens.push(TokenInfo(token, span));
+        self
+    }
+
+    fn addError(self, error: LexerError) -> Self {
+        self.errors.push(error);
+        self
+    }
+
+    fn isIdentifier(c: Char) -> Bool {
+        match c {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '_' => true,
+            _ => false
+        }
+    }
+
+    fn isOperator(c: Char) -> Bool {
+        match c {
+            '|' | '>' | '<' | '&' | '*' | '+' | '-' | '/' | '=' | '!' | '\\' | ':' | '.' | '%' => true,
+            _ => false
+        }
+    }
+
+    fn isInteger(c: Char) -> Bool {
+        match c {
+            '0'..='9' => true,
+            _ => false
+        }
+    }
+
+    fn isIntegerLiteral(s: String) -> Bool {
+        s.chars().iter().fold(true, |isInt, c| if isInteger(c) { isInt } else { false })
+    }
+
+    fn consumeWhile(self, cond: fn(Char) -> Bool) -> (Self, SpannedString) {
+        let s = SpannedString.start(self.startSpan());
+        loop (self, s) = (self, s) {
+            if not self.isDone() {
+                let c = self.peek();
+                match c {
+                    _ if cond(c) => {
+                        let s = self.addChar(s, c);
+                        (self, s) }
+                    _ -> break (self, s)
+                }
+            } else { break (self, s)}
+        }
+    }
+
 }
 
-step :: LexerState -> LexerState
-step state = do
-    c <- peek state
-    (line_offset, line_index) <- if c == '\n'
-    then (0, state.line_index + 1)
-    else (state.line_offset + 1, state.line_index)
-    state { index = state.index + 1, line_offset = line_offset, line_index = line_index }
-
-startSpan :: LexerState -> Span
-startSpan state = Span (Position state.line_index state.line_offset) (Position state.line_index state.line_offset)
-
-addToken :: LexerState -> Token -> Span -> LexerState
-addToken state token span = do
-    state { tokens = push state.tokens (TokenInfo token span) }
-
-addError :: LexerState -> LexerError -> LexerState
-addError state error = state { errors = push state.errors error }
-
-isIdentifier :: Char -> Bool
-isIdentifier c = case c of
-    'a'..='z'
-     | 'A'..='Z'
-     | '0'..='9'
-     | '_' -> True
-    _ -> False
-
-isOperator :: Char -> Bool
-isOperator c = case c of
-    '|'
-     | '>'
-     | '<'
-     | '&'
-     | '*'
-     | '+'
-     | '-'
-     | '/'
-     | '='
-     | '!'
-     | '\\'
-     | ':'
-     | '.'
-     | '%' -> True
-    _ -> False
-
-isInteger :: Char -> Bool
-isInteger c = case c of
-    '0'..='9' -> True
-    _ -> False
-
-isIntegerLiteral :: String -> Bool
-isIntegerLiteral s = chars s |> List.iter |> Iterator.fold (\is_integer, c -> if isInteger c
-        then is_integer
-        else False) True
-
-consumeWhile :: LexerState -> (Char -> Bool) -> (LexerState, SpannedString)
-consumeWhile state cond = do
-    s <- startSpannedString (startSpan state)
-    loop (state, s) <- (state, s) do
-        if not (isDone state)
-        then do
-            c <- peek state
-            case c of
-                _ if cond c -> addChar state s c
-                _ -> break (state, s)
-        else break (state, s)
 
 consumeSingle :: LexerState -> Token -> LexerState
 consumeSingle state token = do
@@ -192,8 +198,8 @@ consumeIdentifier :: LexerState -> LexerState
 consumeIdentifier state = do
     first <- peek state
     starts_with_number <- case first of
-        '0'..'9' -> True
-        _ -> False
+        '0'..'9' -> true
+        _ -> false
     starts_with_upper_case <- isUppercase first
     (state, s) <- consumeWhile state isIdentifier
     special <- case s.value of

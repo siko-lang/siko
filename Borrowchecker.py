@@ -1,5 +1,6 @@
 import IR
 import copy
+import CFG
 
 class Usage(object):
     def __init__(self):
@@ -62,41 +63,42 @@ class Borrowchecker(object):
         self.fn = None
         self.usages = None
 
-    def checkBlock(self, block, block_path):
-        print("#%d. block:" % block.id)
-        block_path = block_path + [block.id]
-        for (index, i) in enumerate(block.instructions):
-            if isinstance(i, IR.Bind):
-                self.usages.addDef(i.name)
-            if isinstance(i, IR.BlockRef):
-                self.checkBlock(self.fn.body.getBlock(i), block_path)
-            if isinstance(i, IR.VarRef):
-                path = []
-                while index + 1 < len(block.instructions):
-                    next = block.instructions[index + 1]
-                    if isinstance(next, IR.MemberAccess):
-                        path.append(next.name)
-                        index += 1
-                    else:
-                        break
-                if len(path) == 0:
-                    self.usages.addUsage(i.id, i.name, block_path)
-                else:
-                    self.usages.addMemberUsage(i.id, i.name, path, block_path)
-            print("%5s %25s" % (i.id, i))
+    # def checkBlock(self, block, block_path):
+    #     print("#%d. block:" % block.id)
+    #     block_path = block_path + [block.id]
+    #     for (index, i) in enumerate(block.instructions):
+    #         if isinstance(i, IR.Bind):
+    #             self.usages.addDef(i.name)
+    #         if isinstance(i, IR.BlockRef):
+    #             self.checkBlock(self.fn.body.getBlock(i), block_path)
+    #         if isinstance(i, IR.VarRef):
+    #             path = []
+    #             while index + 1 < len(block.instructions):
+    #                 next = block.instructions[index + 1]
+    #                 if isinstance(next, IR.MemberAccess):
+    #                     path.append(next.name)
+    #                     index += 1
+    #                 else:
+    #                     break
+    #             if len(path) == 0:
+    #                 self.usages.addUsage(i.id, i.name, block_path)
+    #             else:
+    #                 self.usages.addMemberUsage(i.id, i.name, path, block_path)
+    #         print("%5s %25s" % (i.id, i))
 
-    def checkFn(self, fn):
-        print("Borrow check ", fn.name)
-        self.fn = fn
-        self.usages = UsageHolder()
-        for arg in fn.args:
-            self.usages.addDef(arg.name)
-        self.checkBlock(fn.body.getFirst(), [])
-        print("Usages %s" % self.usages)
+    # def checkFn(self, fn):
+    #     print("Borrow check ", fn.name)
+    #     self.fn = fn
+    #     self.usages = UsageHolder()
+    #     for arg in fn.args:
+    #         self.usages.addDef(arg.name)
+    #     self.checkBlock(fn.body.getFirst(), [])
+    #     #print("Usages %s" % self.usages)
 
 def checkFn(fn):
     borrowchecker = Borrowchecker()
-    borrowchecker.checkFn(fn)
+    cfg = CFG.CFG()
+    cfg.build(fn)
 
 def processProgram(program):
     for (name, fn) in program.functions.items():
