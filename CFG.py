@@ -78,6 +78,8 @@ class CFG(object):
             elif isinstance(i, IR.Return):
                 self.processGenericInstruction(i, last)
                 return
+            elif isinstance(i, IR.Loop):
+                
             elif isinstance(i, IR.If):
                 if_key = IfKey()
                 if_key.id = i.id

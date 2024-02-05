@@ -108,6 +108,10 @@ class Resolver(object):
                 self.resolveBlock(env, moduleResolver, b, fn)
                 b = fn.body.getBlock(instruction.false_branch)
                 self.resolveBlock(env, moduleResolver, b, fn)
+            if isinstance(instruction, IR.Loop):
+                instruction.var = env.addVar(instruction.var)
+                b = fn.body.getBlock(instruction.body)
+                self.resolveBlock(env, moduleResolver, b, fn)
             elif isinstance(instruction, IR.VarRef):
                 var = env.resolveVar(instruction.name)
                 if var:

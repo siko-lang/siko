@@ -274,7 +274,7 @@ class Processor(object):
             return self.addInstruction(if_instr)
         elif isinstance(expr, Syntax.Loop):
             init = self.processExpr(expr.init)
-            body = self.processExpr(expr.body)
+            body = self.processExpr(expr.body, packBlock=False)
             loop = Loop()
             loop.var = expr.var
             loop.init = init

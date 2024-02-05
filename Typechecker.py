@@ -62,6 +62,9 @@ class Typechecker(object):
                 if isinstance(i, IR.Bind):
                     v = self.getNextVar()
                     self.types[i.name] = v
+                elif isinstance(i, IR.Loop):
+                    v = self.getNextVar()
+                    self.types[i.var] = v
                 v = self.getNextVar()
                 self.types[i.id] = v
                 #print("Initializing %s = %s" % (i.id, v))
@@ -99,6 +102,12 @@ class Typechecker(object):
             returnType = NamedType()
             returnType.value = fn.return_type.name.name
             self.unify(self.types[i.arg], returnType)
+        elif isinstance(i, IR.Loop):
+            body_block = fn.body.getBlock(i.body)
+            self.checkBlock(body_block, fn)
+            last = body_block.getLast()
+            self.unify(self.types[i.init], self.types[i.var])
+            self.unify(self.types[i.init], self.types[last.id])
         elif isinstance(i, IR.NamedFunctionCall):
             #print("Checking function call for %s" % i.name)
             #print("%s" % i.name.item.return_type.name)
