@@ -146,8 +146,14 @@ class Typechecker(object):
             self.unify(self.types[i.id], boolType)
         elif isinstance(i, IR.If):
             self.unify(self.types[i.cond], boolType)
-            self.unify(self.types[i.id], self.types[i.true_branch])
-            self.unify(self.types[i.id], self.types[i.false_branch])
+            true_block = fn.body.getBlock(i.true_branch)
+            self.checkBlock(true_block, fn)
+            true_block_last = true_block.getLast()
+            self.unify(self.types[true_block_last.id], self.types[i.id])
+            false_block = fn.body.getBlock(i.false_branch)
+            self.checkBlock(false_block, fn)
+            false_block_last = false_block.getLast()
+            self.unify(self.types[false_block_last.id], self.types[i.id])
         elif isinstance(i, IR.MethodCall):
             ty = self.types[i.receiver]
             ty = self.substitution.apply(ty)

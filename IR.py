@@ -22,13 +22,9 @@ class BaseInstruction(object):
 class BlockRef(BaseInstruction):
     def __init__(self):
         self.value = 0
-        self.conditional = False
 
     def __str__(self):
-        if self.conditional:
-            return "cond block ref: #%s" % self.value
-        else:
-            return "block ref: #%s" % self.value
+        return "block ref: #%s" % self.value
 
 class NamedFunctionCall(BaseInstruction):
     def __init__(self):
@@ -146,8 +142,11 @@ class Body(object):
         return None
 
     def getBlock(self, blockref):
+        value = blockref
+        if isinstance(blockref, BlockRef):
+            value = blockref.value
         for b in self.blocks:
-            if b.id == blockref.value:
+            if b.id == value:
                 return b
         return None
 
@@ -210,14 +209,12 @@ class Processor(object):
         self.current.pop()
         return block.id
 
-    def processExpr(self, expr, conditional = False):
+    def processExpr(self, expr, packBlock = True):
         if isinstance(expr, Syntax.Block):
-            first = len(self.blocks) == 0
             id = self.processBlock(expr)
-            if not first:
+            if packBlock:
                 blockref = BlockRef()
                 blockref.value = id
-                blockref.conditional = conditional
                 return self.addInstruction(blockref)
             return id
         elif isinstance(expr, Syntax.LetStatement):
@@ -267,9 +264,9 @@ class Processor(object):
         elif isinstance(expr, Syntax.If):
             if_instr = If()
             if_instr.cond = self.processExpr(expr.cond)
-            if_instr.true_branch = self.processExpr(expr.true_branch, conditional=True)
+            if_instr.true_branch = self.processExpr(expr.true_branch, packBlock=False)
             if expr.false_branch:
-                if_instr.false_branch = self.processExpr(expr.false_branch, conditional=True)
+                if_instr.false_branch = self.processExpr(expr.false_branch, packBlock=False)
             return self.addInstruction(if_instr)
         elif isinstance(expr, Syntax.Loop):
             init = self.processExpr(expr.init)
@@ -309,7 +306,7 @@ def convertProgram(program):
                 fn = item
                 #print("Processing fn %s" % fn.name)
                 processor = Processor()
-                processor.processExpr(fn.body)
+                processor.processExpr(fn.body, packBlock=False)
                 body = Body()
                 body.blocks = processor.blocks
                 fn.body = body
@@ -318,7 +315,7 @@ def convertProgram(program):
                 for m in item.methods:
                     #print("Processing method %s" % m.name)
                     processor = Processor()
-                    processor.processExpr(m.body)
+                    processor.processExpr(m.body, packBlock=False)
                     body = Body()
                     body.blocks = processor.blocks
                     m.body = body

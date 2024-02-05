@@ -103,6 +103,11 @@ class Resolver(object):
             if isinstance(instruction, IR.BlockRef):
                 b = fn.body.getBlock(instruction)
                 self.resolveBlock(env, moduleResolver, b, fn)
+            if isinstance(instruction, IR.If):
+                b = fn.body.getBlock(instruction.true_branch)
+                self.resolveBlock(env, moduleResolver, b, fn)
+                b = fn.body.getBlock(instruction.false_branch)
+                self.resolveBlock(env, moduleResolver, b, fn)
             elif isinstance(instruction, IR.VarRef):
                 var = env.resolveVar(instruction.name)
                 if var:

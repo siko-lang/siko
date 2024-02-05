@@ -108,20 +108,21 @@ class Lexer {
                     _ if cond(c) => {
                         let s = self.addChar(s, c);
                         (self, s) }
-                    _ -> break (self, s)
+                    _ => break (self, s)
                 }
             } else { break (self, s)}
         }
     }
 
+    fn consumeSingle(self, token: Token) -> LexerState {
+        let span = self.startSpan();
+        self.step();
+        self.addToken(token, span)
+    }
+
 }
 
 
-consumeSingle :: LexerState -> Token -> LexerState
-consumeSingle state token = do
-    span <- startSpan state
-    state <- step state
-    addToken state token span
 
 consumeString :: LexerState -> LexerState
 consumeString state = do

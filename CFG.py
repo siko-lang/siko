@@ -53,15 +53,10 @@ class CFG(object):
 
     def processBlock(self, block):
         last = None
-        cond_block_results = {}
         for i in block.instructions:
             if isinstance(i, IR.BlockRef):
                 b = self.fn.body.getBlock(i)
-                block_last = self.processBlock(b)
-                if i.conditional:
-                    cond_block_results[i.id] = block_last
-                else:
-                    last = block_last
+                last = self.processBlock(b)
             elif isinstance(i, IR.NamedFunctionCall):
                 last = self.processGenericInstruction(i, last)
             elif isinstance(i, IR.Bind):
@@ -78,13 +73,15 @@ class CFG(object):
                 if_end = Node()
                 if_end.kind = "if_end"
                 self.addNode(if_key, if_end)
-                true_last = cond_block_results[i.true_branch]
+                true_block = self.fn.body.getBlock(i.true_branch)
+                true_last = self.processBlock(true_block)
                 if true_last:
                     edge = Edge()
                     edge.from_node = true_last
                     edge.to_node = if_key
                     self.addEdge(edge)
-                false_last = cond_block_results[i.false_branch]
+                false_block = self.fn.body.getBlock(i.false_branch)
+                false_last = self.processBlock(false_block)
                 if false_last:
                     edge = Edge()
                     edge.from_node = false_last
