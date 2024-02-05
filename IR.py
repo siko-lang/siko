@@ -202,6 +202,10 @@ class Processor(object):
                     unit = NamedFunctionCall()
                     unit.name = str(Util.getUnit())
                     self.addInstruction(unit)
+            else:
+                unit = NamedFunctionCall()
+                unit.name = str(Util.getUnit())
+                self.addInstruction(unit)
         else:
             unit = NamedFunctionCall()
             unit.name = str(Util.getUnit())

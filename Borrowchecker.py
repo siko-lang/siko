@@ -99,6 +99,7 @@ def checkFn(fn):
     borrowchecker = Borrowchecker()
     cfg = CFG.CFG()
     cfg.build(fn)
+    cfg.printDot()
 
 def processProgram(program):
     for (name, fn) in program.functions.items():

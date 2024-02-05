@@ -95,6 +95,10 @@ class Typechecker(object):
             self.checkBlock(block, fn)
             last = block.getLast()
             self.unify(self.types[last.id], self.types[i.id])
+        elif isinstance(i, IR.Return):
+            returnType = NamedType()
+            returnType.value = fn.return_type.name.name
+            self.unify(self.types[i.arg], returnType)
         elif isinstance(i, IR.NamedFunctionCall):
             #print("Checking function call for %s" % i.name)
             #print("%s" % i.name.item.return_type.name)
@@ -193,7 +197,7 @@ class Typechecker(object):
                 if not found:
                     Util.error("field %s not found on %s" % (i.name, ty.value))
         else:
-            print("Not handled", type(i))
+            print("Typecheck not handled", type(i))
 
     def checkBlock(self, block, fn):
         for i in block.instructions:
