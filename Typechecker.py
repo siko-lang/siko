@@ -102,6 +102,12 @@ class Typechecker(object):
             returnType = NamedType()
             returnType.value = fn.return_type.name.name
             self.unify(self.types[i.arg], returnType)
+        elif isinstance(i, IR.Break):
+            pass # TODO
+            #self.unify(self.types[i.arg], returnType)
+        elif isinstance(i, IR.Continue):
+            pass # TODO
+            #self.unify(self.types[i.arg], returnType)
         elif isinstance(i, IR.Loop):
             body_block = fn.body.getBlock(i.body)
             self.checkBlock(body_block, fn)

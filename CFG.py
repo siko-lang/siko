@@ -4,8 +4,25 @@ import Util
 class EndKey(object):
     def __init__(self):
         pass
+    
+    def __str__(self):
+        return "<end>"
 
 class IfKey(object):
+    def __init__(self):
+        self.id = None
+
+    def __str__(self):
+        return str(self.id)
+
+class LoopStart(object):
+    def __init__(self):
+        self.id = None
+
+    def __str__(self):
+        return str(self.id)
+
+class LoopEnd(object):
     def __init__(self):
         self.id = None
 
@@ -77,9 +94,76 @@ class CFG(object):
                 last = self.processGenericInstruction(i, last)
             elif isinstance(i, IR.Return):
                 self.processGenericInstruction(i, last)
-                return
+                last = None
+            elif isinstance(i, IR.Break):
+                instr_key = InstructionKey()
+                instr_key.id = i.id
+                instr_node = Node()
+                instr_node.kind = str(i)
+                self.addNode(instr_key, instr_node)
+                edge = Edge()
+                edge.from_node = instr_key
+                edge.to_node = self.loop_ends[-1]
+                self.addEdge(edge)
+                if last:
+                    edge = Edge()
+                    edge.from_node = last
+                    edge.to_node = instr_key
+                    self.addEdge(edge)
+                last = None
+            elif isinstance(i, IR.Continue):
+                instr_key = InstructionKey()
+                instr_key.id = i.id
+                instr_node = Node()
+                instr_node.kind = str(i)
+                self.addNode(instr_key, instr_node)
+                edge = Edge()
+                edge.from_node = instr_key
+                edge.to_node = self.loop_starts[-1]
+                self.addEdge(edge)
+                if last:
+                    edge = Edge()
+                    edge.from_node = last
+                    edge.to_node = instr_key
+                    self.addEdge(edge)
+                last = None
             elif isinstance(i, IR.Loop):
-                
+                loop_start_key = LoopStart()
+                loop_start_key.id = i.id
+                loop_start_node = Node()
+                loop_start_node.kind = "loop_start"
+                self.loop_starts.append(loop_start_key)
+                self.addNode(loop_start_key, loop_start_node)
+                if last:
+                    edge = Edge()
+                    edge.from_node = last
+                    edge.to_node = loop_start_key
+                    self.addEdge(edge)
+                loop_var_key = LoopStart()
+                loop_var_key.id = i.id
+                loop_var_node = Node()
+                loop_var_node.kind = "loop_var %s" % i.var
+                self.addNode(loop_var_key, loop_var_node)
+                edge = Edge()
+                edge.from_node = loop_start_key
+                edge.to_node = loop_var_key
+                self.addEdge(edge)
+                loop_end_key = LoopEnd()
+                loop_end_key.id = i.id
+                loop_end_node = Node()
+                loop_end_node.kind = "loop_end"
+                self.addNode(loop_end_key, loop_end_node)
+                self.loop_ends.append(loop_end_key)
+                loop_body = self.fn.body.getBlock(i.body)
+                loop_last = self.processBlock(loop_body, loop_var_key)
+                if loop_last:
+                    edge = Edge()
+                    edge.from_node = loop_last
+                    edge.to_node = loop_start_key
+                    self.addEdge(edge)
+                self.loop_starts.pop()
+                self.loop_ends.pop()
+                last = loop_end_key
             elif isinstance(i, IR.If):
                 if_key = IfKey()
                 if_key.id = i.id
