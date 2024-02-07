@@ -1,6 +1,7 @@
 import IR
 import copy
 import CFG
+import CFGBuilder
 
 class Usage(object):
     def __init__(self):
@@ -97,8 +98,8 @@ class Borrowchecker(object):
 
 def checkFn(fn):
     borrowchecker = Borrowchecker()
-    cfg = CFG.CFG()
-    cfg.build(fn)
+    cfgbuilder = CFGBuilder.CFGBuilder()
+    cfg = cfgbuilder.build(fn)
     cfg.printDot()
 
 def processProgram(program):
