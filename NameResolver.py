@@ -6,6 +6,7 @@ nextVar = 0
 
 class Environment(object):
     def __init__(self):
+        self.varList = []
         self.vars = {}
         self.parent = None
 
@@ -14,6 +15,7 @@ class Environment(object):
         tmpvar = IR.TempVar()
         tmpvar.value = nextVar
         self.vars[var] = tmpvar
+        self.varList.append(tmpvar)
         nextVar+=1
         return self.vars[var]
 
@@ -109,7 +111,9 @@ class Resolver(object):
                 b = fn.body.getBlock(instruction.false_branch)
                 self.resolveBlock(env, moduleResolver, b, fn)
             if isinstance(instruction, IR.Loop):
-                instruction.var = env.addVar(instruction.var)
+                loop_env = Environment()
+                loop_env.parent = env
+                instruction.var = loop_env.addVar(instruction.var)
                 b = fn.body.getBlock(instruction.body)
                 self.resolveBlock(env, moduleResolver, b, fn)
             elif isinstance(instruction, IR.VarRef):
@@ -128,6 +132,12 @@ class Resolver(object):
                         instruction.name = item.name
                     else:
                         Util.error("Unknown fn %s %s" % (instruction.name, type(instruction.name)))
+        vars = env.varList
+        vars.reverse()
+        for var in vars:
+            i = IR.DropVar()
+            i.name = var
+            block.addInstruction(i)
         #fn.body.dump()
 
     def resolveClass(self, moduleName, clazz):

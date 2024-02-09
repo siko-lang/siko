@@ -22,10 +22,23 @@ class TempVar(object):
 
 class InstructionId(object):
     def __init__(self):
+        self.block = 0
         self.value = 0
 
+    def prev(self):
+        p = InstructionId()
+        p.block = self.block
+        p.value = self.value - 1
+        return p
+    
+    def __eq__(self, other):
+        return self.block == other.block and self.value == other.value
+
+    def __hash__(self):
+        return self.block.__hash__()
+
     def __str__(self):
-        return "$%s" % self.value
+        return "$%s.%s" % (self.block, self.value)
 
 class BaseInstruction(object):
     def __init__(self):
@@ -88,6 +101,13 @@ class VarRef(BaseInstruction):
         
     def __str__(self):
         return "%s" % (self.name)
+
+class DropVar(BaseInstruction):
+    def __init__(self):
+        self.name = None
+        
+    def __str__(self):
+        return "drop(%s)" % (self.name)
 
 class If(BaseInstruction):
     def __init__(self):
@@ -153,6 +173,9 @@ class Body(object):
                 return b
         return None
 
+    def getInstruction(self, id):
+        return self.blocks[id.block].instructions[id.value]
+
     def getBlock(self, blockref):
         value = blockref
         if isinstance(blockref, BlockRef):
@@ -167,6 +190,15 @@ class Block(object):
         self.id = None
         self.instructions = []
 
+    def addInstruction(self, instruction):
+        index = len(self.instructions)
+        id = InstructionId()
+        id.value = index
+        id.block = self.id
+        instruction.id = id
+        self.instructions.append(instruction)
+        return id
+
     def getLast(self):
         return self.instructions[-1]
 
@@ -178,19 +210,12 @@ class Processor(object):
     def __init__(self):
         self.blocks = []
         self.current = []
-        self.index = 0
 
     def currentBlock(self):
         return self.current[-1]        
 
     def addInstruction(self, instruction):
-        block = self.currentBlock()
-        id = InstructionId()
-        id.value = self.index
-        self.index += 1
-        instruction.id = id
-        block.instructions.append(instruction)
-        return id
+        return self.currentBlock().addInstruction(instruction)
 
     def processArgs(self, eargs):
         args = []

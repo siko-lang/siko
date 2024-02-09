@@ -4,8 +4,9 @@ import CFG
 import CFGBuilder
 
 class WholePath(object):
-    def __init__(self):
+    def __init__(self, isDrop = False):
         self.var = None
+        self.is_drop = isDrop
 
     def __str__(self):
         return "whole(%s)" % (self.var)
@@ -97,6 +98,7 @@ class Borrowchecker(object):
         self.cfg = cfg
         self.usages = {}
         self.borrows = set()
+        self.cancelled_drops = set()
 
     def check(self):
         sources = self.cfg.getSources()
@@ -128,6 +130,11 @@ class Borrowchecker(object):
         print("Invalidate %s %s" % (usage, usages))
         for prev_usage in usages.usages:
             if self.invalidates(usage.path, prev_usage.path):
+                if isinstance(usage.path, WholePath):
+                    if usage.path.is_drop and prev_usage.id not in self.borrows:
+                        # the current usage is a drop and the prev is a move
+                        self.cancelled_drops.add(usage.id)
+                        continue
                 print("%s invalidates %s" % (usage, prev_usage))
                 self.borrows.add(prev_usage.id)
             else:
@@ -180,15 +187,17 @@ class Borrowchecker(object):
 
 def checkFn(fn):
     print("Checking %s" % fn.name)
+    fn.body.dump()
     cfgbuilder = CFGBuilder.CFGBuilder()
     cfg = cfgbuilder.build(fn)
     borrowchecker = Borrowchecker(cfg, fn)
     borrowchecker.check()
-    fn.body.dump()
     borrowchecker.printUsages()
     for b in borrowchecker.borrows:
         cfg.getNode(b).color = "#cf03fc"
         print("   Borrow %s" % b)
+    for c in borrowchecker.cancelled_drops:
+        cfg.getNode(c).color = "#ff99ff"
     cfg.printDot()
 
 def processProgram(program):
