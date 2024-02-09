@@ -154,5 +154,6 @@ class CFGBuilder(object):
         self.fn = fn
         self.cfg = CFG.CFG(fn.name)
         self.processBlock(self.fn.body.getFirst())
+        self.cfg.updateEdges()
         return self.cfg
 
