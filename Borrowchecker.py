@@ -55,6 +55,12 @@ class Usage(object):
         self.id = None
         self.path = None
 
+    def __eq__(self, other):
+        return self.id == other.id and self.path == other.path
+
+    def __hash__(self):
+        return self.id.__hash__()
+
     def __str__(self):
         return "%s:%s" % (self.id, self.path)
 
@@ -75,6 +81,9 @@ class UsageSet(object):
 
     def __eq__(self, other):
         return self.usages == other.usages
+
+    def __hash__(self):
+        return self.usages.__hash__()
 
     def __str__(self):
         ss = []
