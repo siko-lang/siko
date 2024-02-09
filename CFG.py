@@ -46,6 +46,7 @@ class Node(object):
         self.kind = None
         self.incoming = []
         self.outgoing = []
+        self.usage = None
 
 class CFG(object):
     def __init__(self, name):
@@ -58,6 +59,16 @@ class CFG(object):
 
     def addEdge(self, edge):
         self.edges.append(edge)
+
+    def getNode(self, key):
+        return self.nodes[key]
+
+    def getSources(self):
+        sources = []
+        for (key, node) in self.nodes.items():
+            if len(node.incoming) == 0:
+                sources.append(key)
+        return sources
 
     def printDot(self):
         f = open("dots/cfg_%s.dot" % self.name, "w")

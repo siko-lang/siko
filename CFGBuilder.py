@@ -1,6 +1,7 @@
 import IR
 import Util
 import CFG
+import Borrowchecker
 
 class CFGBuilder(object):
     def __init__(self):
@@ -35,7 +36,19 @@ class CFGBuilder(object):
             elif isinstance(i, IR.Bind):
                 last = self.processGenericInstruction(i, last)
             elif isinstance(i, IR.VarRef):
-                last = self.processGenericInstruction(i, last)
+                instr_key = CFG.InstructionKey()
+                instr_key.id = i.id
+                instr_node = CFG.Node()
+                instr_node.kind = str(i)
+                instr_node.usage = Borrowchecker.WholePath()
+                instr_node.usage.var = i.name
+                self.cfg.addNode(instr_key, instr_node)
+                if last:
+                    edge = CFG.Edge()
+                    edge.from_node = last
+                    edge.to_node = instr_key
+                    self.cfg.addEdge(edge)
+                last = instr_key
             elif isinstance(i, IR.MemberAccess):
                 last = self.processGenericInstruction(i, last)
             elif isinstance(i, IR.BoolLiteral):

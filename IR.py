@@ -8,6 +8,18 @@ class TempVar(object):
     def __str__(self):
         return "$tmp_%s" % self.value
 
+    def __eq__(self, other):
+        if isinstance(other, TempVar):
+            return self.value == other.value
+        else:
+            return False
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def __hash__(self):
+        return self.value.__hash__()
+
 class InstructionId(object):
     def __init__(self):
         self.value = 0

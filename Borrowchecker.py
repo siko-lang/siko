@@ -3,104 +3,128 @@ import copy
 import CFG
 import CFGBuilder
 
+class WholePath(object):
+    def __init__(self):
+        self.var = None
+
+    def __str__(self):
+        return "whole(%s)" % (self.var)
+
+    def __eq__(self, other):
+        if isinstance(other, WholePath):
+            return self.var == other.var
+        else:
+            return False
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def __hash__(self):
+        return self.var.__hash__()
+
+class PartialPath(object):
+    def __init__(self):
+        self.var = None
+        self.fields = []
+
+    def __str__(self):
+        fields = ".".join(self.fields)
+        return "partial(%s.%s)" % (self.var, fields)
+
+    def __eq__(self, other):
+        if isinstance(other, PartialPath):
+            if self.var != other.var:
+                return False
+            if len(self.fields) != len(other.fields):
+                return False
+            for (index, v) in enumerate(self.fields):
+                if v != other.fields[index]:
+                    return False
+            return True
+        else:
+            return False
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def __hash__(self):
+        return self.var.__hash__()
+
 class Usage(object):
     def __init__(self):
         self.id = None
         self.path = None
-        self.block_path = None
-
-    def __str__(self):
-        if self.path:
-            path = ".".join(self.path)
-            return "%s.%s/%s" % (self.id, path, self.block_path)
-        else:
-            return "%s/%s" % (self.id, self.block_path)
-
-class UsageSet(object):
-    def __init__(self):
-        self.usages = []
-
-    def len(self):
-        return len(self.usages)
-
-    def __str__(self):
-        usages = map(lambda x: str(x), self.usages)
-        return ", ".join(usages)
-
-    def addUsage(self, id):
-        self.usages.append(id)
-
-class UsageHolder(object):
-    def __init__(self):
-        self.usagesets = {}
-
-    def addDef(self, var):
-        self.usagesets[var] = UsageSet()
-
-    def addUsage(self, id, var, block_path):
-        usage = Usage()
-        usage.id = id
-        usage.block_path = block_path
-        self.usagesets[var].addUsage(usage)
-
-    def addMemberUsage(self, id, var, path, block_path):
-        usage = Usage()
-        usage.id = id
-        usage.path = path
-        usage.block_path = block_path
-        self.usagesets[var].addUsage(usage)
-
-    def __str__(self):
-        values = []
-        for (key, value) in self.usagesets.items():
-            if value.len() > 0:
-                values.append("%s: %s" % (key, value))
-            else:
-                values.append("%s" % key)
-        return "{%s}" % ", ".join(values)
 
 class Borrowchecker(object):
-    def __init__(self):
-        self.fn = None
-        self.usages = None
+    def __init__(self, cfg, fn):
+        self.fn = fn
+        self.cfg = cfg
+        self.usages = {}
+        self.borrows = set()
 
-    # def checkBlock(self, block, block_path):
-    #     print("#%d. block:" % block.id)
-    #     block_path = block_path + [block.id]
-    #     for (index, i) in enumerate(block.instructions):
-    #         if isinstance(i, IR.Bind):
-    #             self.usages.addDef(i.name)
-    #         if isinstance(i, IR.BlockRef):
-    #             self.checkBlock(self.fn.body.getBlock(i), block_path)
-    #         if isinstance(i, IR.VarRef):
-    #             path = []
-    #             while index + 1 < len(block.instructions):
-    #                 next = block.instructions[index + 1]
-    #                 if isinstance(next, IR.MemberAccess):
-    #                     path.append(next.name)
-    #                     index += 1
-    #                 else:
-    #                     break
-    #             if len(path) == 0:
-    #                 self.usages.addUsage(i.id, i.name, block_path)
-    #             else:
-    #                 self.usages.addMemberUsage(i.id, i.name, path, block_path)
-    #         print("%5s %25s" % (i.id, i))
+    def check(self):
+        sources = self.cfg.getSources()
+        for source in sources:
+            self.processNode(source)
 
-    # def checkFn(self, fn):
-    #     print("Borrow check ", fn.name)
-    #     self.fn = fn
-    #     self.usages = UsageHolder()
-    #     for arg in fn.args:
-    #         self.usages.addDef(arg.name)
-    #     self.checkBlock(fn.body.getFirst(), [])
-    #     #print("Usages %s" % self.usages)
+    def invalidates(self, current, other):
+        if current.var != other.var:
+            return False
+        else:
+            if isinstance(current, WholePath) and isinstance(other, WholePath):
+                return True
+            if isinstance(current, WholePath) and isinstance(other, PartialPath):
+                return True
+            if isinstance(current, PartialPath) and isinstance(other, WholePath):
+                return True
+            if isinstance(current, PartialPath) and isinstance(other, PartialPath):
+                c_len = len(current.fields)
+                o_len = len(other.fields)
+                min_len = min(c_len, o_len)
+                current.fields[:min_len] == other.fields[:min_len]
+
+    def invalidate(self, usage, usages):
+        for prev_usage in usages:
+            if self.invalidates(usage, prev_usage):
+                self.borrows.insert(prev_usage.id)
+
+    def processUsages(self, usage, node, key):
+        usages = set()
+        for incoming in node.incoming:
+            edge = self.cfg.edges[incoming]
+            if edge.from_node in self.usages:
+                usages += self.usages[edge.from_node]
+        if usage:
+            self.invalidate(usage, usages)
+            usages.add(usage)
+        if key in self.usages:
+            old_usages = self.usages[key]
+            if old_usages == usages:
+                return False
+            self.usages[key] = usages
+        else:
+            self.usages[key] = usages
+        return True
+
+    def getNodeUsage(self, node):
+        return node.usage
+
+    def processNode(self, key):
+        node = self.cfg.getNode(key)
+        usage = self.getNodeUsage(node)
+        updatedUsages = self.processUsages(usage, node, key)
+        if updatedUsages:
+            for outgoing in node.outgoing:
+                edge = self.cfg.edges[outgoing]
+                self.processNode(edge.to_node)
+        pass
 
 def checkFn(fn):
-    borrowchecker = Borrowchecker()
     cfgbuilder = CFGBuilder.CFGBuilder()
     cfg = cfgbuilder.build(fn)
     cfg.printDot()
+    borrowchecker = Borrowchecker(cfg, fn)
+    borrowchecker.check()
 
 def processProgram(program):
     for (name, fn) in program.functions.items():
