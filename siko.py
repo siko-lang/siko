@@ -7,6 +7,7 @@ import NameResolver
 import Typechecker
 import IR
 import Borrowchecker
+import Ownershipinference
 
 def compile():
     program = Syntax.Program()
@@ -24,5 +25,7 @@ def compile():
     Typechecker.checkProgram(ir_program)
 
     Borrowchecker.processProgram(ir_program)
+
+    Ownershipinference.infer(ir_program)
 
 compile()
