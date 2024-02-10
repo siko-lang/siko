@@ -183,7 +183,7 @@ class Borrowchecker(object):
 
 def checkFn(fn):
     #print("Checking %s" % fn.name)
-    # fn.body.dump()
+    #fn.body.dump()
     cfgbuilder = CFGBuilder.CFGBuilder()
     cfg = cfgbuilder.build(fn)
     borrowchecker = Borrowchecker(cfg, fn)

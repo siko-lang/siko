@@ -54,11 +54,15 @@ class BlockRef(BaseInstruction):
 class NamedFunctionCall(BaseInstruction):
     def __init__(self):
         self.name = None
+        self.ctor = False
         self.args = []
 
     def __str__(self):
         args = map(lambda x: str(x), self.args)
-        return "%s(%s)" % (self.name, ", ".join(args))
+        if self.ctor:
+            return "%s(%s)/ctor" % (self.name, ", ".join(args))
+        else:
+            return "%s(%s)" % (self.name, ", ".join(args))
 
 class DynamicFunctionCall(BaseInstruction):
     def __init__(self):

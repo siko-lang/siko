@@ -107,7 +107,7 @@ class Typechecker(object):
                 Util.error("field %s not found on %s" % (field_name, ty.value))
         Util.error("field %s not found on %s" % (field_name, ty))
 
-    def checkInstruction(self, block, fn, i):
+    def checkInstruction(self, block, fn, i, instr_index):
         if isinstance(i, IR.BlockRef):
             block = fn.body.getBlock(i)
             self.checkBlock(block, fn)
@@ -132,19 +132,32 @@ class Typechecker(object):
             self.unify(self.types[i.init], self.types[i.var])
             self.unify(self.types[i.init], self.types[last.id])
         elif isinstance(i, IR.NamedFunctionCall):
-            #print("Checking function call for %s %s" % (i.name, type(i.name)))
+            # print("Checking function call for %s %s" % (i.name, type(i.name)))
             #print("%s" % i.name.item.return_type.name)
             returnType = NamedType()
-            item = self.program.functions[i.name]
-            if len(item.args) != len(i.args):
-                Util.error("fn %s expected %d args found %d" % (i.name, len(item.args), len(i.args)))
-            for (index, i_arg) in enumerate(i.args):
-                fn_arg = item.args[index]
-                arg_type = NamedType()
-                arg_type.value = fn_arg.type.name
-                self.unify(self.types[i_arg], arg_type)
-            returnType.value = item.return_type.name.name
-            self.unify(self.types[i.id], returnType)
+            if i.name in self.program.functions:
+                item = self.program.functions[i.name]
+                if len(item.args) != len(i.args):
+                    Util.error("fn %s expected %d args found %d" % (i.name, len(item.args), len(i.args)))
+                for (index, i_arg) in enumerate(i.args):
+                    fn_arg = item.args[index]
+                    arg_type = NamedType()
+                    arg_type.value = fn_arg.type.name
+                    self.unify(self.types[i_arg], arg_type)
+                returnType.value = item.return_type.name.name
+                self.unify(self.types[i.id], returnType)
+            elif i.name in self.program.classes:
+                i.ctor = True
+                clazz = self.program.classes[i.name]
+                if len(clazz.fields) != len(i.args):
+                    Util.error("clazz ctor %s expected %d args found %d" % (i.name, len(clazz.fields), len(i.args)))
+                for (index, i_arg) in enumerate(i.args):
+                    fn_arg = clazz.fields[index]
+                    arg_type = NamedType()
+                    arg_type.value = fn_arg.type.name.name
+                    self.unify(self.types[i_arg], arg_type)
+                returnType.value = i.name
+                self.unify(self.types[i.id], returnType)
         elif isinstance(i, IR.Bind):
             self.unify(self.types[i.name], self.types[i.rhs])
             self.unify(self.types[i.id], unitType)
@@ -181,8 +194,14 @@ class Typechecker(object):
                         found = True
                         returnType = NamedType()
                         returnType.value = method.return_type.name.name
-                        #print("method return type %s [%s]" % (returnType, i.name))
+                        # print("method return type %s [%s]" % (returnType, i.name))
                         self.unify(self.types[i.id], returnType)
+                named_call = IR.NamedFunctionCall()
+                named_call.id = i.id
+                fn_name = Util.QualifiedName(ty.value.moduleName, i.name, ty.value.name)
+                named_call.name = fn_name
+                named_call.args = [i.receiver] + i.args
+                block.instructions[i.id.value] = named_call
                 if not found:
                     Util.error("method %s not found on %s" % (i.name, ty.value))
         elif isinstance(i, IR.MemberAccess):
@@ -200,8 +219,8 @@ class Typechecker(object):
             print("Typecheck not handled", type(i))
 
     def checkBlock(self, block, fn):
-        for i in block.instructions:
-            self.checkInstruction(block, fn, i)
+        for (index, i) in enumerate(block.instructions):
+            self.checkInstruction(block, fn, i, index)
 
     def finalize(self, fn):
         for block in fn.body.blocks:
@@ -214,13 +233,11 @@ class Typechecker(object):
 def checkFunction(f, program):
     checker = Typechecker()
     checker.program = program
-    #print("Type checking %s" % f.name)
+    # print("Type checking %s" % f.name)
     checker.initialize(f)
     checker.check(f)
     checker.finalize(f)
 
 def checkProgram(program):
-    for m in program.modules:
-        for item in m.items:
-            if isinstance(item, Syntax.Function):
-                checkFunction(item, program)
+    for (name, f) in program.functions.items():
+        checkFunction(f, program)

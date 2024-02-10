@@ -32,7 +32,7 @@ class CFGBuilder(object):
             elif isinstance(i, IR.NamedFunctionCall):
                 last = self.processGenericInstruction(i, last)
             elif isinstance(i, IR.MethodCall):
-                last = self.processGenericInstruction(i, last)
+                Util.error("method call in CFG!")
             elif isinstance(i, IR.Bind):
                 last = self.processGenericInstruction(i, last)
             elif isinstance(i, IR.VarRef):

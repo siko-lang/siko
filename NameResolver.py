@@ -79,7 +79,7 @@ class Resolver(object):
         self.moduleResolvers = {}
 
     def resolveFunction(self, moduleName, fn):
-        #print("Resolving fn %s" % fn.name)
+        # print("Resolving fn %s" % fn.name)
         moduleResolver = self.moduleResolvers[moduleName]
         env = Environment()
         for arg in fn.args:
@@ -200,6 +200,7 @@ class Resolver(object):
                 for item in items:
                     resolver.addImportedItem("%s.%s" % (moduleName, name), item)
         for m in program.modules:
+            # print("Processing m", m.name, len(m.items))
             for item in m.items:
                 if isinstance(item, Syntax.Function):
                     qualifiedName = Util.QualifiedName(m.name, item.name)
