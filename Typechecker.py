@@ -132,46 +132,18 @@ class Typechecker(object):
             self.unify(self.types[i.init], self.types[i.var])
             self.unify(self.types[i.init], self.types[last.id])
         elif isinstance(i, IR.NamedFunctionCall):
-            #print("Checking function call for %s" % i.name)
+            #print("Checking function call for %s %s" % (i.name, type(i.name)))
             #print("%s" % i.name.item.return_type.name)
             returnType = NamedType()
-            if i.name in self.program.functions:
-                item = self.program.functions[i.name]
-                if len(item.args) != len(i.args):
-                    Util.error("fn %s expected %d args found %d" % (i.name, len(item.args), len(i.args)))
-                for (index, i_arg) in enumerate(i.args):
-                    fn_arg = item.args[index]
-                    arg_type = NamedType()
-                    arg_type.value = fn_arg.type.name
-                    self.unify(self.types[i_arg], arg_type)
-                returnType.value = item.return_type.name.name
-            elif i.name in self.program.classes:
-                clazz = self.program.classes[i.name]
-                if len(clazz.fields) != len(i.args):
-                    Util.error("clazz ctor %s expected %d args found %d" % (i.name, len(clazz.fields), len(i.args)))
-                for (index, i_arg) in enumerate(i.args):
-                    fn_arg = clazz.fields[index]
-                    arg_type = NamedType()
-                    arg_type.value = fn_arg.type.name.name
-                    self.unify(self.types[i_arg], arg_type)
-                returnType.value = i.name
-            else:
-                (clazz, method_name) = i.name.name.split(".")
-                clazz_name = Util.QualifiedName()
-                clazz_name.module = i.name.module
-                clazz_name.name = clazz
-                clazz = self.program.classes[clazz_name]
-                for method in clazz.methods:
-                    if method.name == method_name:
-                        if len(method.args) != len(i.args):
-                            Util.error("fn %s expected %d args found %d" % (i.name, len(method.args), len(i.args)))
-                        for (index, i_arg) in enumerate(i.args):
-                            fn_arg = method.args[index]
-                            arg_type = NamedType()
-                            arg_type.value = fn_arg.type.name
-                            self.unify(self.types[i_arg], arg_type)
-                        returnType.value = method.return_type.name.name
-            #print("return type %s [%s]" % (returnType, i.name))
+            item = self.program.functions[i.name]
+            if len(item.args) != len(i.args):
+                Util.error("fn %s expected %d args found %d" % (i.name, len(item.args), len(i.args)))
+            for (index, i_arg) in enumerate(i.args):
+                fn_arg = item.args[index]
+                arg_type = NamedType()
+                arg_type.value = fn_arg.type.name
+                self.unify(self.types[i_arg], arg_type)
+            returnType.value = item.return_type.name.name
             self.unify(self.types[i.id], returnType)
         elif isinstance(i, IR.Bind):
             self.unify(self.types[i.name], self.types[i.rhs])
@@ -252,6 +224,3 @@ def checkProgram(program):
         for item in m.items:
             if isinstance(item, Syntax.Function):
                 checkFunction(item, program)
-            if isinstance(item, Syntax.Class):
-                for m in item.methods:
-                    checkFunction(m, program)

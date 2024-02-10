@@ -218,6 +218,12 @@ class Block(object):
         for (index, i) in enumerate(self.instructions):
            print("$%d. %s" % (index, i))
 
+class Program(object):
+    def __init__(self):
+        self.modules = []
+        self.functions = {}
+        self.classes = {}
+
 class Processor(object):
     def __init__(self):
         self.blocks = []

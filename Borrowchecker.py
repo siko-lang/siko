@@ -181,7 +181,6 @@ class Borrowchecker(object):
                 print("   Usages for %s" % id)
                 print("   %s" % usage)
 
-
 def checkFn(fn):
     #print("Checking %s" % fn.name)
     # fn.body.dump()
@@ -199,6 +198,3 @@ def checkFn(fn):
 def processProgram(program):
     for (name, fn) in program.functions.items():
         checkFn(fn)
-    for (_, clazz) in program.classes.items():
-        for m in clazz.methods:
-            checkFn(m)

@@ -19,10 +19,10 @@ def compile():
     IR.convertProgram(program)
 
     resolver = NameResolver.Resolver()
-    resolver.resolve(program)
+    ir_program = resolver.resolve(program)
 
-    Typechecker.checkProgram(program)
+    Typechecker.checkProgram(ir_program)
 
-    Borrowchecker.processProgram(program)
+    Borrowchecker.processProgram(ir_program)
 
 compile()

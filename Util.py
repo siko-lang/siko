@@ -1,38 +1,34 @@
 import sys
 
 class QualifiedName(object):
-    def __init__(self):
-        self.module = None
-        self.name = None
+    def __init__(self, moduleName, name, className = None):
+        self.moduleName = moduleName
+        self.name = name
+        self.className = className
 
     def __str__(self):
-        return "%s.%s" % (self.module, self.name)
+        if self.className:
+            return "%s.%s.%s" % (self.moduleName, self.className, self.name)
+        else:
+            return "%s.%s" % (self.moduleName, self.name)
 
     def __eq__(self, other):
-        """Overrides the default implementation"""
-        if isinstance(other, QualifiedName):
-            return self.name == other.name and self.module == other.module
-        return False
-    
+        return self.moduleName == other.moduleName and self.name == other.name and self.className == other.className
+
     def __ne__(self, other):
-        """Overrides the default implementation (unnecessary in Python 3)"""
         return not self.__eq__(other)
 
     def __hash__(self):
-        return hash(self.__str__())
-
+        return self.name.__hash__()
+    
 def error(msg):
     print(msg)
     sys.exit(1)
 
 def getBool():
-    name = QualifiedName()
-    name.module = "Bool"
-    name.name = "Bool"
+    name = QualifiedName("Bool", "Bool")
     return name
 
 def getUnit():
-    name = QualifiedName()
-    name.module = "Unit"
-    name.name = "Unit"
+    name = QualifiedName("Unit", "Unit")
     return name

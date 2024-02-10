@@ -46,9 +46,7 @@ class ModuleResolver(object):
         if name not in self.localItems:
             self.localItems[name] = []
         resolvedItem = ResolvedItem()
-        qualifiedName = Util.QualifiedName()
-        qualifiedName.module = self.module
-        qualifiedName.name = name
+        qualifiedName = Util.QualifiedName(self.module, name)
         resolvedItem.name = qualifiedName
         resolvedItem.item = item
         self.localItems[name].append(resolvedItem)
@@ -146,11 +144,13 @@ class Resolver(object):
             block.addInstruction(i)
         #fn.body.dump()
 
-    def resolveClass(self, moduleName, clazz):
+    def resolveClass(self, moduleName, clazz, ir_program):
         moduleResolver = self.moduleResolvers[moduleName]
         for f in clazz.fields:
             f.type.name = moduleResolver.resolveName(f.type.name)
         for m in clazz.methods:
+            methodName = Util.QualifiedName(moduleName, m.name, clazz.name)
+            ir_program.functions[methodName] = m
             self.resolveFunction(moduleName, m)
 
     def getModuleResolver(self, name):
@@ -191,6 +191,7 @@ class Resolver(object):
                                 targetResolver.addImportedItem(fullName, item)
     
     def resolve(self, program):
+        ir_program = IR.Program()
         for m in program.modules:
             self.localItems(m)
         self.processImports(program)
@@ -201,14 +202,11 @@ class Resolver(object):
         for m in program.modules:
             for item in m.items:
                 if isinstance(item, Syntax.Function):
-                    qualifiedName = Util.QualifiedName()
-                    qualifiedName.module = m.name
-                    qualifiedName.name = item.name
-                    program.functions[qualifiedName] = item
+                    qualifiedName = Util.QualifiedName(m.name, item.name)
+                    ir_program.functions[qualifiedName] = item
                     self.resolveFunction(m.name, item)
                 if isinstance(item, Syntax.Class):
-                    qualifiedName = Util.QualifiedName()
-                    qualifiedName.module = m.name
-                    qualifiedName.name = item.name
-                    program.classes[qualifiedName] = item
-                    self.resolveClass(m.name, item)
+                    qualifiedName = Util.QualifiedName(m.name, item.name)
+                    ir_program.classes[qualifiedName] = item
+                    self.resolveClass(m.name, item, ir_program)
+        return ir_program
