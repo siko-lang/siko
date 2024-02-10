@@ -190,11 +190,10 @@ def checkFn(fn):
     borrowchecker = Borrowchecker(cfg, fn)
     borrowchecker.check()
     # borrowchecker.printUsages()
-    # for b in borrowchecker.borrows:
-    #     cfg.getNode(b).color = "#cf03fc"
-    #     print("   Borrow %s" % b)
-    # for c in borrowchecker.cancelled_drops:
-    #     cfg.getNode(c).color = "#ff99ff"
+    for b in borrowchecker.borrows:
+        cfg.getNode(b).color = "#cf03fc"
+    for c in borrowchecker.cancelled_drops:
+        cfg.getNode(c).color = "#ff99ff"
     cfg.printDot()
 
 def processProgram(program):
