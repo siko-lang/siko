@@ -167,6 +167,13 @@ class Return(BaseInstruction):
     def __str__(self):
         return "return %s" % self.arg
 
+class Converter(BaseInstruction):
+    def __init__(self):
+        self.arg = None
+    
+    def __str__(self):
+        return "convert %s" % self.arg
+
 class BoolLiteral(BaseInstruction):
     def __init__(self):
         self.value = None
