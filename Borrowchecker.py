@@ -103,13 +103,12 @@ class Borrowchecker(object):
     def check(self):
         sources = self.cfg.getSources()
         for source in sources:
-            print("Checking source %s" % source)
+            #print("Checking source %s" % source)
             self.processNode(source)
 
     def invalidates(self, current, other):
-        print("Invalidate %s === %s" % (current, other))
+        #print("Invalidate %s === %s" % (current, other))
         if current.var != other.var:
-            print()
             return False
         else:
             if isinstance(current, WholePath) and isinstance(other, WholePath):
@@ -127,7 +126,7 @@ class Borrowchecker(object):
                 return c == o
 
     def invalidate(self, usage, usages):
-        print("Invalidate %s %s" % (usage, usages))
+        #print("Invalidate %s %s" % (usage, usages))
         for prev_usage in usages.usages:
             if self.invalidates(usage.path, prev_usage.path):
                 if isinstance(usage.path, WholePath):
@@ -135,10 +134,8 @@ class Borrowchecker(object):
                         # the current usage is a drop and the prev is a move
                         self.cancelled_drops.add(usage.id)
                         continue
-                print("%s invalidates %s" % (usage, prev_usage))
+                #print("%s invalidates %s" % (usage, prev_usage))
                 self.borrows.add(prev_usage.id)
-            else:
-                print("%s does not invalidate %s" % (usage, prev_usage))
 
     def processUsages(self, usage, node, key):
         usages = UsageSet()
@@ -169,7 +166,7 @@ class Borrowchecker(object):
             return None
 
     def processNode(self, key):
-        print("processNode ", key)
+        #print("processNode ", key)
         node = self.cfg.getNode(key)
         usage = self.getNodeUsage(node, key)
         updatedUsages = self.processUsages(usage, node, key)
@@ -186,18 +183,18 @@ class Borrowchecker(object):
 
 
 def checkFn(fn):
-    print("Checking %s" % fn.name)
-    fn.body.dump()
+    #print("Checking %s" % fn.name)
+    # fn.body.dump()
     cfgbuilder = CFGBuilder.CFGBuilder()
     cfg = cfgbuilder.build(fn)
     borrowchecker = Borrowchecker(cfg, fn)
     borrowchecker.check()
-    borrowchecker.printUsages()
-    for b in borrowchecker.borrows:
-        cfg.getNode(b).color = "#cf03fc"
-        print("   Borrow %s" % b)
-    for c in borrowchecker.cancelled_drops:
-        cfg.getNode(c).color = "#ff99ff"
+    # borrowchecker.printUsages()
+    # for b in borrowchecker.borrows:
+    #     cfg.getNode(b).color = "#cf03fc"
+    #     print("   Borrow %s" % b)
+    # for c in borrowchecker.cancelled_drops:
+    #     cfg.getNode(c).color = "#ff99ff"
     cfg.printDot()
 
 def processProgram(program):

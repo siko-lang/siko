@@ -36,7 +36,6 @@ class CFGBuilder(object):
             elif isinstance(i, IR.Bind):
                 last = self.processGenericInstruction(i, last)
             elif isinstance(i, IR.VarRef):
-                print("Varref added", i.id)
                 instr_key = CFG.InstructionKey()
                 instr_key.id = i.id
                 instr_node = CFG.Node()
@@ -65,32 +64,22 @@ class CFGBuilder(object):
                     self.cfg.addEdge(edge)
                 last = instr_key
             elif isinstance(i, IR.MemberAccess):
-                prev_id = i.id
-                while True:
-                    prev_id = prev_id.prev()
-                    prev = self.fn.body.getInstruction(prev_id)
-                    if isinstance(prev, IR.VarRef):
-                        break
-                    elif isinstance(prev, IR.MemberAccess):
-                        continue
-                    else:
-                        break
-                prev_key = CFG.InstructionKey()
-                prev_key.id = prev_id
-                prev = self.cfg.getNode(prev_key)
-                if prev and prev.usage:
-                    if isinstance(prev.usage, Borrowchecker.WholePath):
-                        new_usage = Borrowchecker.PartialPath()
-                        new_usage.var = prev.usage.var
-                        new_usage.fields.append(i.name)
-                        prev.usage = new_usage
-                    elif isinstance(prev.usage, Borrowchecker.PartialPath):
-                        new_usage = Borrowchecker.PartialPath()
-                        new_usage.var = prev.usage.var
-                        new_usage.fields.append(i.name)
-                        prev.usage = new_usage
-                else:
-                    last = self.processGenericInstruction(i, last)
+                last = self.processGenericInstruction(i, last)
+            elif isinstance(i, IR.ValueRef):
+                instr_key = CFG.InstructionKey()
+                instr_key.id = i.id
+                instr_node = CFG.Node()
+                instr_node.kind = str(i)
+                instr_node.usage = Borrowchecker.PartialPath()
+                instr_node.usage.var = i.name
+                instr_node.usage.fields = i.fields
+                self.cfg.addNode(instr_key, instr_node)
+                if last:
+                    edge = CFG.Edge()
+                    edge.from_node = last
+                    edge.to_node = instr_key
+                    self.cfg.addEdge(edge)
+                last = instr_key
             elif isinstance(i, IR.BoolLiteral):
                 last = self.processGenericInstruction(i, last)
             elif isinstance(i, IR.Return):

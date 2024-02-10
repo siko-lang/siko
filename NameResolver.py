@@ -122,6 +122,12 @@ class Resolver(object):
                     instruction.name = var
                 else:
                     Util.error("Undefined var %s" % instruction.name)
+            elif isinstance(instruction, IR.ValueRef):
+                var = env.resolveVar(instruction.name)
+                if var:
+                    instruction.name = var
+                else:
+                    Util.error("Undefined var %s" % instruction.name)
             elif isinstance(instruction, IR.NamedFunctionCall):
                 var = env.resolveVar(instruction.name)
                 if var:

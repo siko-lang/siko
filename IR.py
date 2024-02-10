@@ -102,6 +102,18 @@ class VarRef(BaseInstruction):
     def __str__(self):
         return "%s" % (self.name)
 
+class ValueRef(BaseInstruction):
+    def __init__(self):
+        self.name = None
+        self.fields = []
+
+    def __str__(self):
+        if len(self.fields) > 0:
+            fields = ".".join(self.fields)
+            return "%s.%s" % (self.name, fields)
+        else:
+            return "%s" % self.name
+
 class DropVar(BaseInstruction):
     def __init__(self):
         self.name = None
@@ -293,11 +305,32 @@ class Processor(object):
                 call.args = args
                 return self.addInstruction(call)
         elif isinstance(expr, Syntax.MemberAccess):
-            receiver = self.processExpr(expr.receiver)
-            access = MemberAccess()
-            access.receiver = receiver
-            access.name = expr.name
-            return self.addInstruction(access)
+            isValueRef = True
+            fields = [expr.name]
+            var = None
+            current = expr
+            while True:
+                if isinstance(current.receiver, Syntax.VarRef):
+                    var = current.receiver.name
+                    break
+                if isinstance(current.receiver, Syntax.MemberAccess):
+                    fields.append(current.receiver.name)
+                    current = current.receiver
+                    continue
+                isValueRef = False
+                break
+            if isValueRef:
+                fields.reverse()
+                value_ref= ValueRef()
+                value_ref.name = var
+                value_ref.fields = fields
+                return self.addInstruction(value_ref)
+            else:
+                receiver = self.processExpr(expr.receiver)
+                access = MemberAccess()
+                access.receiver = receiver
+                access.name = expr.name
+                return self.addInstruction(access)
         elif isinstance(expr, Syntax.VarRef):
             ref = VarRef()
             ref.name = expr.name

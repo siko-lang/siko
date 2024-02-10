@@ -92,6 +92,21 @@ class Typechecker(object):
         returnType.value = fn.return_type.name.name
         self.unify(self.types[block.getLast().id], returnType)
 
+    def getFieldType(self, ty, field_name):
+        if isinstance(ty, NamedType):
+            clazz = self.program.classes[ty.value]
+            found = False
+            for field in clazz.fields:
+                if field.name == field_name:
+                    found = True
+                    fieldType = NamedType()
+                    fieldType.value = field.type.name.name
+                    #print("field type %s [%s]" % (fieldType, i.name))
+                    return fieldType
+            if not found:
+                Util.error("field %s not found on %s" % (field_name, ty.value))
+        Util.error("field %s not found on %s" % (field_name, ty))
+
     def checkInstruction(self, block, fn, i):
         if isinstance(i, IR.BlockRef):
             block = fn.body.getBlock(i)
@@ -102,6 +117,8 @@ class Typechecker(object):
             returnType = NamedType()
             returnType.value = fn.return_type.name.name
             self.unify(self.types[i.arg], returnType)
+        elif isinstance(i, IR.DropVar):
+            pass
         elif isinstance(i, IR.Break):
             pass # TODO
             #self.unify(self.types[i.arg], returnType)
@@ -199,18 +216,14 @@ class Typechecker(object):
         elif isinstance(i, IR.MemberAccess):
             ty = self.types[i.receiver]
             ty = self.substitution.apply(ty)
-            if isinstance(ty, NamedType):
-                clazz = self.program.classes[ty.value]
-                found = False
-                for field in clazz.fields:
-                    if field.name == i.name:
-                        found = True
-                        fieldType = NamedType()
-                        fieldType.value = field.type.name.name
-                        #print("field type %s [%s]" % (fieldType, i.name))
-                        self.unify(self.types[i.id], fieldType)
-                if not found:
-                    Util.error("field %s not found on %s" % (i.name, ty.value))
+            fieldType = self.getFieldType(ty, i.name)
+            self.unify(self.types[i.id], fieldType)
+        elif isinstance(i, IR.ValueRef):
+            currentType = self.types[i.name]
+            currentType = self.substitution.apply(currentType)
+            for field in i.fields:
+                currentType = self.getFieldType(currentType, field)
+            self.unify(self.types[i.id], currentType)
         else:
             print("Typecheck not handled", type(i))
 
