@@ -1,5 +1,33 @@
 import IR
 import Util
+import DependencyProcessor
+
+def getDepsForInstruction(i):
+    if isinstance(i, IR.ValueRef):
+        return [i.bind_id]
+    elif isinstance(i, IR.VarRef):
+        if i.name.arg:
+            return []
+        else:
+            return [i.bind_id]
+    elif isinstance(i, IR.Bind):
+        return [i.rhs]
+    elif isinstance(i, IR.NamedFunctionCall):
+        return i.args
+    elif isinstance(i, IR.DropVar):
+        return []
+    elif isinstance(i, IR.Converter):
+        return [i.arg]
+    elif isinstance(i, IR.BoolLiteral):
+        return []
+    elif isinstance(i, IR.If):
+        true_branch = self.fn.body.getBlock(i.true_branch)
+        false_branch = self.fn.body.getBlock(i.false_branch)
+        t_id = true_branch.getLast().id
+        f_id = false_branch.getLast().id
+        return [t_id, f_id]
+    else:
+        Util.error("OI: getDepsForInstruction not handling %s %s" % (type(i), i))
 
 class Substitution(object):
     def __init__(self):
@@ -7,10 +35,12 @@ class Substitution(object):
         self.group_vars = {}
 
     def addOwnershipVar(self, ownership_var, other):
-        self.ownership_vars[ownership_var] = other
+        if ownership_var != other:
+            self.ownership_vars[ownership_var] = other
 
     def addGroupVar(self, group_var, other):
-        self.group_vars[group_var] = other
+        if group_var != other:
+            self.group_vars[group_var] = other
 
     def applyOwnershipVar(self, var):
         res = var
@@ -75,6 +105,7 @@ class InferenceEngine(object):
         print("Inference for %s" % fn.name)
         self.initialize()
         self.mergeGroups()
+        self.createPaths()
         self.dump()
 
     def nextOwnershipVar(self):
@@ -139,6 +170,21 @@ class InferenceEngine(object):
                 self.unifyGroup(i_g, v_g)
             elif isinstance(i, IR.ValueRef):
                 pass
+            elif isinstance(i, IR.BoolLiteral):
+                pass
+            elif isinstance(i, IR.If):
+                true_branch = self.fn.body.getBlock(i.true_branch)
+                false_branch = self.fn.body.getBlock(i.false_branch)
+                self.processBlock(true_branch)
+                self.processBlock(false_branch)
+                t_id = true_branch.getLast().id
+                f_id = false_branch.getLast().id
+                t_o = self.i_ownership_vars[t_id]
+                t_g = self.i_group_vars[t_id]
+                f_o = self.i_ownership_vars[f_id]
+                f_g = self.i_group_vars[f_id]
+                self.unifyOwnership(t_o, f_o)
+                self.unifyGroup(t_g, f_g)
             elif isinstance(i, IR.DropVar):
                 pass
             elif isinstance(i, IR.Converter):
@@ -146,12 +192,38 @@ class InferenceEngine(object):
                 arg_g = self.i_group_vars[i.arg]
                 self.unifyGroup(i_g, arg_g)
             else:
-                Util.error("Ownership inference not handling %s %s" % (type(i), i))
+                Util.error("OI: grouping not handling %s %s" % (type(i), i))
 
     def mergeGroups(self):
         block = self.fn.body.getFirst()
         self.processBlock(block)
 
+    def createPaths(self):
+        all_dependencies = {}
+        paths = {}
+        for block in self.fn.body.blocks:
+            for i in block.instructions:
+                all_dependencies[i.id] = getDepsForInstruction(i)
+        groups = DependencyProcessor.processDependencies(all_dependencies)
+        for g in groups:
+            for item in g.items:
+                item_paths = []
+                deps = all_dependencies[item]
+                if len(deps) == 0:
+                    item_paths = [[item]]
+                else:
+                    for dep in deps:
+                        if dep in g.items:
+                            continue
+                        dep_paths = paths[dep]
+                        for dep_path in dep_paths:
+                            item_paths.append(dep_path + [item])
+                paths[item] = item_paths
+        for (i, paths) in paths.items():
+            print("root %s" % i)
+            for path in paths:
+                print("path", path)
+    
     def dump(self):
         for block in self.fn.body.blocks:
             print("#%s block" % block.id)

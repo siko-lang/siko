@@ -93,7 +93,7 @@ class Graph(object):
         index = 0
         for n in self.nodes:
             nodeIds.append(n.id)
-        for id in self.nodeIds:
+        for id in nodeIds:
             self.dfs(id)
         return self.sccs
 

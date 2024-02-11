@@ -44,6 +44,9 @@ class InstructionId(object):
     def __str__(self):
         return "$%s.%s" % (self.block, self.value)
 
+    def __repr__(self) -> str:
+        return self.__str__()
+
 class BaseInstruction(object):
     def __init__(self):
         self.id = 0
@@ -106,21 +109,23 @@ class MemberAccess(BaseInstruction):
 class VarRef(BaseInstruction):
     def __init__(self):
         self.name = None
+        self.bind_id = None
         
     def __str__(self):
-        return "%s" % (self.name)
+        return "%s/%s" % (self.name, self.bind_id)
 
 class ValueRef(BaseInstruction):
     def __init__(self):
         self.name = None
+        self.bind_id = None
         self.fields = []
 
     def __str__(self):
         if len(self.fields) > 0:
             fields = ".".join(self.fields)
-            return "%s.%s" % (self.name, fields)
+            return "%s.%s/%s" % (self.name, fields, self.bind_id)
         else:
-            return "%s" % self.name
+            return "%s/%s" % (self.name, self.bind_id)
 
 class DropVar(BaseInstruction):
     def __init__(self):
@@ -290,10 +295,10 @@ class Processor(object):
         self.current.pop()
         return block.id
 
-    def processExpr(self, expr, rootBlock = False):
+    def processExpr(self, expr, rootBlock = False, packBlock=True):
         if isinstance(expr, Syntax.Block):
             id = self.processBlock(expr, rootBlock)
-            if not rootBlock:
+            if packBlock:
                 blockref = BlockRef()
                 blockref.value = id
                 return self.addInstruction(blockref)
@@ -372,9 +377,9 @@ class Processor(object):
         elif isinstance(expr, Syntax.If):
             if_instr = If()
             if_instr.cond = self.processExpr(expr.cond)
-            if_instr.true_branch = self.processExpr(expr.true_branch, rootBlock=False)
+            if_instr.true_branch = self.processExpr(expr.true_branch, rootBlock=False, packBlock=False)
             if expr.false_branch:
-                if_instr.false_branch = self.processExpr(expr.false_branch, rootBlock=False)
+                if_instr.false_branch = self.processExpr(expr.false_branch, rootBlock=False, packBlock=False)
             return self.addInstruction(if_instr)
         elif isinstance(expr, Syntax.Loop):
             init = self.processExpr(expr.init)
@@ -425,7 +430,7 @@ def convertProgram(program):
                     arg.name = arg_name
                     arg_bind.rhs = arg_ref_id
                     block.addInstruction(arg_bind)
-                processor.processExpr(fn.body, rootBlock=True)
+                processor.processExpr(fn.body, rootBlock=True, packBlock=False)
                 body = Body()
                 body.blocks = processor.blocks
                 fn.body = body
@@ -445,7 +450,7 @@ def convertProgram(program):
                         arg.name = arg_name
                         arg_bind.rhs = arg_ref_id
                         block.addInstruction(arg_bind)
-                    processor.processExpr(m.body, rootBlock=True)
+                    processor.processExpr(m.body, rootBlock=True, packBlock=False)
                     body = Body()
                     body.blocks = processor.blocks
                     m.body = body

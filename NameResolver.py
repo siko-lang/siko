@@ -10,7 +10,7 @@ class Environment(object):
         self.vars = {}
         self.parent = None
 
-    def addVar(self, var, argIndex = None):
+    def addVar(self, var, argIndex = None, bind_id = None):
         global nextVar
         tmpvar = IR.TempVar()
         if argIndex is not None:
@@ -19,9 +19,9 @@ class Environment(object):
         else:
             nextVar+=1
             tmpvar.value = nextVar
-        self.vars[var] = tmpvar
+        self.vars[var] = (tmpvar, bind_id)
         self.varList.append(tmpvar)
-        return self.vars[var]
+        return self.vars[var][0]
 
     def resolveVar(self, var):
         if var in self.vars:
@@ -103,7 +103,7 @@ class Resolver(object):
         env.parent = penv
         for instruction in block.instructions:
             if isinstance(instruction, IR.Bind):
-                instruction.name = env.addVar(instruction.name)
+                instruction.name = env.addVar(instruction.name, bind_id=instruction.id)
             elif isinstance(instruction, IR.BlockRef):
                 b = fn.body.getBlock(instruction)
                 self.resolveBlock(env, moduleResolver, b, fn)
@@ -115,25 +115,27 @@ class Resolver(object):
             elif isinstance(instruction, IR.Loop):
                 loop_env = Environment()
                 loop_env.parent = env
-                instruction.var = loop_env.addVar(instruction.var)
+                instruction.var = loop_env.addVar(instruction.var, bind_id=instruction.id)
                 b = fn.body.getBlock(instruction.body)
                 self.resolveBlock(env, moduleResolver, b, fn)
             elif isinstance(instruction, IR.VarRef):
                 var = env.resolveVar(instruction.name)
                 if var:
-                    instruction.name = var
+                    instruction.name = var[0]
+                    instruction.bind_id = var[1]
                 else:
                     Util.error("Undefined var %s" % instruction.name)
             elif isinstance(instruction, IR.ValueRef):
                 var = env.resolveVar(instruction.name)
                 if var:
-                    instruction.name = var
+                    instruction.name = var[0]
+                    instruction.bind_id = var[1]
                 else:
                     Util.error("Undefined var %s" % instruction.name)
             elif isinstance(instruction, IR.NamedFunctionCall):
                 var = env.resolveVar(instruction.name)
                 if var:
-                    instruction.name = var
+                    instruction.name = var[0]
                 else:
                     item = moduleResolver.resolveName(instruction.name)
                     if item:
@@ -146,7 +148,7 @@ class Resolver(object):
             i = IR.DropVar()
             i.name = var
             block.addInstruction(i)
-        #fn.body.dump()
+        # fn.body.dump()
 
     def resolveClass(self, moduleName, clazz, ir_program):
         moduleResolver = self.moduleResolvers[moduleName]
