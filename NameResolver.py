@@ -100,15 +100,15 @@ class Resolver(object):
         for instruction in block.instructions:
             if isinstance(instruction, IR.Bind):
                 instruction.name = env.addVar(instruction.name)
-            if isinstance(instruction, IR.BlockRef):
+            elif isinstance(instruction, IR.BlockRef):
                 b = fn.body.getBlock(instruction)
                 self.resolveBlock(env, moduleResolver, b, fn)
-            if isinstance(instruction, IR.If):
+            elif isinstance(instruction, IR.If):
                 b = fn.body.getBlock(instruction.true_branch)
                 self.resolveBlock(env, moduleResolver, b, fn)
                 b = fn.body.getBlock(instruction.false_branch)
                 self.resolveBlock(env, moduleResolver, b, fn)
-            if isinstance(instruction, IR.Loop):
+            elif isinstance(instruction, IR.Loop):
                 loop_env = Environment()
                 loop_env.parent = env
                 instruction.var = loop_env.addVar(instruction.var)
