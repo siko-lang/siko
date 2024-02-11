@@ -10,13 +10,17 @@ class Environment(object):
         self.vars = {}
         self.parent = None
 
-    def addVar(self, var):
+    def addVar(self, var, argIndex = None):
         global nextVar
         tmpvar = IR.TempVar()
-        tmpvar.value = nextVar
+        if argIndex is not None:
+            tmpvar.value = argIndex
+            tmpvar.arg = True
+        else:
+            nextVar+=1
+            tmpvar.value = nextVar
         self.vars[var] = tmpvar
         self.varList.append(tmpvar)
-        nextVar+=1
         return self.vars[var]
 
     def resolveVar(self, var):
@@ -82,8 +86,8 @@ class Resolver(object):
         # print("Resolving fn %s" % fn.name)
         moduleResolver = self.moduleResolvers[moduleName]
         env = Environment()
-        for arg in fn.args:
-            arg.name = env.addVar(arg.name)
+        for (index, arg) in enumerate(fn.args):
+            arg.name = env.addVar(arg.name, argIndex=index)
             arg_type = moduleResolver.resolveName(arg.type.name)
             if arg_type is None:
                 Util.error("Failed to resolve type %s" % arg.type.name)

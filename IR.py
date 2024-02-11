@@ -4,9 +4,13 @@ import Util
 class TempVar(object):
     def __init__(self):
         self.value = 0
+        self.arg = False
 
     def __str__(self):
-        return "$tmp_%s" % self.value
+        if self.arg:
+            return "$arg_%s" % self.value
+        else:
+            return "$tmp_%s" % self.value
 
     def __eq__(self, other):
         if isinstance(other, TempVar):
@@ -252,11 +256,18 @@ class Processor(object):
             args.append(self.processExpr(arg))
         return args
 
-    def processBlock(self, expr):
+    def createBlock(self):
         block = Block()
         block.id = len(self.blocks)
         self.blocks.append(block)
         self.current.append(block)
+        return block
+
+    def processBlock(self, expr, rootBlock=False):
+        if rootBlock:
+            block = self.currentBlock()
+        else:
+            block = self.createBlock()
         last = None
         lastStatement = None
         for s in expr.statements:
@@ -279,10 +290,10 @@ class Processor(object):
         self.current.pop()
         return block.id
 
-    def processExpr(self, expr, packBlock = True):
+    def processExpr(self, expr, rootBlock = False):
         if isinstance(expr, Syntax.Block):
-            id = self.processBlock(expr)
-            if packBlock:
+            id = self.processBlock(expr, rootBlock)
+            if not rootBlock:
                 blockref = BlockRef()
                 blockref.value = id
                 return self.addInstruction(blockref)
@@ -361,13 +372,13 @@ class Processor(object):
         elif isinstance(expr, Syntax.If):
             if_instr = If()
             if_instr.cond = self.processExpr(expr.cond)
-            if_instr.true_branch = self.processExpr(expr.true_branch, packBlock=False)
+            if_instr.true_branch = self.processExpr(expr.true_branch, rootBlock=False)
             if expr.false_branch:
-                if_instr.false_branch = self.processExpr(expr.false_branch, packBlock=False)
+                if_instr.false_branch = self.processExpr(expr.false_branch, rootBlock=False)
             return self.addInstruction(if_instr)
         elif isinstance(expr, Syntax.Loop):
             init = self.processExpr(expr.init)
-            body = self.processExpr(expr.body, packBlock=False)
+            body = self.processExpr(expr.body, rootBlock=False)
             loop = Loop()
             loop.var = expr.var
             loop.init = init
@@ -403,7 +414,18 @@ def convertProgram(program):
                 fn = item
                 #print("Processing fn %s" % fn.name)
                 processor = Processor()
-                processor.processExpr(fn.body, packBlock=False)
+                block = processor.createBlock()
+                for (index, arg) in enumerate(fn.args):
+                    arg_name = "arg_%s" % index
+                    arg_ref = VarRef()
+                    arg_ref.name = arg_name
+                    arg_ref_id = block.addInstruction(arg_ref)
+                    arg_bind = Bind()
+                    arg_bind.name = arg.name
+                    arg.name = arg_name
+                    arg_bind.rhs = arg_ref_id
+                    block.addInstruction(arg_bind)
+                processor.processExpr(fn.body, rootBlock=True)
                 body = Body()
                 body.blocks = processor.blocks
                 fn.body = body
@@ -412,7 +434,18 @@ def convertProgram(program):
                 for m in item.methods:
                     #print("Processing method %s" % m.name)
                     processor = Processor()
-                    processor.processExpr(m.body, packBlock=False)
+                    block = processor.createBlock()
+                    for (index, arg) in enumerate(m.args):
+                        arg_name = "arg_%s" % index
+                        arg_ref = VarRef()
+                        arg_ref.name = arg_name
+                        arg_ref_id = block.addInstruction(arg_ref)
+                        arg_bind = Bind()
+                        arg_bind.name = arg.name
+                        arg.name = arg_name
+                        arg_bind.rhs = arg_ref_id
+                        block.addInstruction(arg_bind)
+                    processor.processExpr(m.body, rootBlock=True)
                     body = Body()
                     body.blocks = processor.blocks
                     m.body = body

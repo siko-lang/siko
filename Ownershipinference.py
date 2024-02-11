@@ -92,6 +92,11 @@ class InferenceEngine(object):
         return v
 
     def initialize(self):
+        for arg in self.fn.args:
+            ownershipVar = self.nextOwnershipVar()
+            groupVar = self.nextGroupVar()
+            self.v_ownership_vars[arg.name] = ownershipVar
+            self.v_group_vars[arg.name] = groupVar    
         for block in self.fn.body.blocks:
             for i in block.instructions:
                 if isinstance(i, IR.Bind):
