@@ -341,7 +341,10 @@ class Processor(object):
                 value_ref= ValueRef()
                 value_ref.name = var
                 value_ref.fields = fields
-                return self.addInstruction(value_ref)
+                ref_id = self.addInstruction(value_ref)
+                converter = Converter()
+                converter.arg = ref_id
+                return self.addInstruction(converter)
             else:
                 receiver = self.processExpr(expr.receiver)
                 access = MemberAccess()
@@ -351,7 +354,10 @@ class Processor(object):
         elif isinstance(expr, Syntax.VarRef):
             ref = VarRef()
             ref.name = expr.name
-            return self.addInstruction(ref)
+            ref_id = self.addInstruction(ref)
+            converter = Converter()
+            converter.arg = ref_id
+            return self.addInstruction(converter)
         elif isinstance(expr, Syntax.If):
             if_instr = If()
             if_instr.cond = self.processExpr(expr.cond)

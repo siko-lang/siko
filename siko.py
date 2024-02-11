@@ -8,7 +8,6 @@ import Typechecker
 import IR
 import Borrowchecker
 import Ownershipinference
-import AddConverter
 
 def compile():
     program = Syntax.Program()
@@ -26,8 +25,6 @@ def compile():
     Typechecker.checkProgram(ir_program)
 
     Borrowchecker.processProgram(ir_program)
-
-    AddConverter.process(ir_program)
 
     Ownershipinference.infer(ir_program)
 
