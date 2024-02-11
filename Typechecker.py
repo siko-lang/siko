@@ -36,6 +36,15 @@ class TypeVar(object):
     def __init__(self):
         self.value = None
     
+    def __eq__(self, other):
+        return self.value == other.value
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def __hash__(self):
+        return self.value.__hash__()
+
     def __str__(self):
         return "$tv.%s" % self.value
 
