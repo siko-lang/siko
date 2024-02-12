@@ -130,9 +130,13 @@ class ValueRef(BaseInstruction):
 class DropVar(BaseInstruction):
     def __init__(self):
         self.name = None
+        self.cancelled = False
         
     def __str__(self):
-        return "drop(%s)" % (self.name)
+        if self.cancelled:
+            return "drop(%s)/Inactive" % (self.name)
+        else:
+            return "drop(%s)/Active" % (self.name)
 
 class If(BaseInstruction):
     def __init__(self):

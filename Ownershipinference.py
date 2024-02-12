@@ -2,7 +2,7 @@ import IR
 import Util
 import DependencyProcessor
 
-def getDepsForInstruction(i):
+def getDepsForInstruction(i, fn):
     if isinstance(i, IR.ValueRef):
         return [i.bind_id]
     elif isinstance(i, IR.VarRef):
@@ -12,6 +12,9 @@ def getDepsForInstruction(i):
             return [i.bind_id]
     elif isinstance(i, IR.Bind):
         return [i.rhs]
+    elif isinstance(i, IR.BlockRef):
+        b = fn.body.getBlock(i.value)
+        return [b.getLast().id]
     elif isinstance(i, IR.NamedFunctionCall):
         return i.args
     elif isinstance(i, IR.DropVar):
@@ -21,8 +24,8 @@ def getDepsForInstruction(i):
     elif isinstance(i, IR.BoolLiteral):
         return []
     elif isinstance(i, IR.If):
-        true_branch = self.fn.body.getBlock(i.true_branch)
-        false_branch = self.fn.body.getBlock(i.false_branch)
+        true_branch = fn.body.getBlock(i.true_branch)
+        false_branch = fn.body.getBlock(i.false_branch)
         t_id = true_branch.getLast().id
         f_id = false_branch.getLast().id
         return [t_id, f_id]
@@ -187,6 +190,16 @@ class InferenceEngine(object):
                 self.unifyGroup(t_g, f_g)
             elif isinstance(i, IR.DropVar):
                 pass
+            elif isinstance(i, IR.BlockRef):
+                b = self.fn.body.getBlock(i.value)
+                self.processBlock(b)
+                l_id = b.getLast().id
+                i_o = self.i_ownership_vars[i.id]
+                i_g = self.i_group_vars[i.id]
+                l_o = self.i_ownership_vars[l_id]
+                l_g = self.i_group_vars[l_id]
+                self.unifyOwnership(i_o, l_o)
+                self.unifyGroup(i_g, l_g)
             elif isinstance(i, IR.Converter):
                 i_g = self.i_group_vars[i.id]
                 arg_g = self.i_group_vars[i.arg]
@@ -203,7 +216,7 @@ class InferenceEngine(object):
         paths = {}
         for block in self.fn.body.blocks:
             for i in block.instructions:
-                all_dependencies[i.id] = getDepsForInstruction(i)
+                all_dependencies[i.id] = getDepsForInstruction(i, self.fn)
         groups = DependencyProcessor.processDependencies(all_dependencies)
         for g in groups:
             for item in g.items:

@@ -192,6 +192,7 @@ def checkFn(fn):
     for b in borrowchecker.borrows:
         cfg.getNode(b).color = "#cf03fc"
     for c in borrowchecker.cancelled_drops:
+        fn.body.getInstruction(c.id).cancelled = True
         cfg.getNode(c).color = "#ff99ff"
     cfg.printDot()
 
