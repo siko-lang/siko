@@ -14,7 +14,7 @@ def getDepsForInstruction(i, fn):
         return [i.rhs]
     elif isinstance(i, IR.BlockRef):
         b = fn.body.getBlock(i.value)
-        return [b.getLastNonDrop().id]
+        return [b.getLastReal().id]
     elif isinstance(i, IR.NamedFunctionCall):
         return i.args
     elif isinstance(i, IR.DropVar):
@@ -98,6 +98,7 @@ class GroupVar(object):
 class InferenceEngine(object):
     def __init__(self):
         self.fn = None
+        self.arg_instructions = []
         self.next = 0
         self.i_ownership_vars = {}
         self.i_group_vars = {}
@@ -167,6 +168,8 @@ class InferenceEngine(object):
             elif isinstance(i, IR.NamedFunctionCall):
                 pass
             elif isinstance(i, IR.VarRef):
+                if i.name.arg:
+                    self.arg_instructions.append(i.id)
                 i_o = self.i_ownership_vars[i.id]
                 i_g = self.i_group_vars[i.id]
                 v_o = self.v_ownership_vars[i.name]
@@ -182,8 +185,8 @@ class InferenceEngine(object):
                 false_branch = self.fn.body.getBlock(i.false_branch)
                 self.processBlock(true_branch)
                 self.processBlock(false_branch)
-                t_id = true_branch.getLastNonDrop().id
-                f_id = false_branch.getLastNonDrop().id
+                t_id = true_branch.getLastReal().id
+                f_id = false_branch.getLastReal().id
                 t_o = self.i_ownership_vars[t_id]
                 t_g = self.i_group_vars[t_id]
                 f_o = self.i_ownership_vars[f_id]
@@ -195,7 +198,7 @@ class InferenceEngine(object):
             elif isinstance(i, IR.BlockRef):
                 b = self.fn.body.getBlock(i.value)
                 self.processBlock(b)
-                l_id = b.getLastNonDrop().id
+                l_id = b.getLastReal().id
                 i_o = self.i_ownership_vars[i.id]
                 i_g = self.i_group_vars[i.id]
                 l_o = self.i_ownership_vars[l_id]
@@ -216,6 +219,7 @@ class InferenceEngine(object):
         self.processBlock(block)
 
     def createPaths(self):
+        end_instruction = self.fn.body.getFirst().getLastReal()
         all_dependencies = {}
         paths = {}
         for block in self.fn.body.blocks:
@@ -237,9 +241,11 @@ class InferenceEngine(object):
                             item_paths.append(dep_path + [item])
                 paths[item] = item_paths
         for (i, paths) in paths.items():
-            print("root %s" % i)
             for path in paths:
-                print("path", path)
+                if path[0] in self.arg_instructions:
+                    if path[-1] == end_instruction.id:
+                        print("root %s" % i)
+                        print("path", path)
     
     def dump(self):
         for block in self.fn.body.blocks:

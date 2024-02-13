@@ -21,7 +21,6 @@ def initGraph(graph, item_id_map, all_dependencies):
                graph.addNeighbour(item_id, dep_id)
 
 def processDependencies(all_dependencies):
-    print(all_dependencies)
     graph = SCC.Graph()
     (item_id_map, id_item_map) = createIdMaps(graph, all_dependencies)
     initGraph(graph, item_id_map, all_dependencies)

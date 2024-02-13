@@ -245,11 +245,14 @@ class Block(object):
     def getLast(self):
         return self.instructions[-1]
 
-    def getLastNonDrop(self):
+    def getLastReal(self):
         last = None
         for i in self.instructions:
-            if not isinstance(i, DropVar):
-                last = i
+            if isinstance(i, DropVar):
+                continue
+            if isinstance(i, Nop):
+                continue
+            last = i
         return last
 
     def dump(self):
