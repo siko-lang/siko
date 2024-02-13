@@ -138,6 +138,13 @@ class DropVar(BaseInstruction):
         else:
             return "drop(%s)/Active" % (self.name)
 
+class Nop(BaseInstruction):
+    def __init__(self):
+        pass
+
+    def __str__(self):
+        return "nop"
+
 class If(BaseInstruction):
     def __init__(self):
         self.cond = None

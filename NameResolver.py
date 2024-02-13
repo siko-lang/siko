@@ -20,7 +20,7 @@ class Environment(object):
             nextVar+=1
             tmpvar.value = nextVar
         self.vars[var] = (tmpvar, bind_id)
-        self.varList.append(tmpvar)
+        self.varList.append((tmpvar, bind_id))
         return self.vars[var][0]
 
     def resolveVar(self, var):
@@ -144,9 +144,10 @@ class Resolver(object):
                         Util.error("Unknown fn %s %s" % (instruction.name, type(instruction.name)))
         vars = env.varList
         vars.reverse()
-        for var in vars:
+        for (var, bind_id) in vars:
             i = IR.DropVar()
             i.name = var
+            i.bind_id = bind_id
             block.addInstruction(i)
         # fn.body.dump()
 

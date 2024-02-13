@@ -23,6 +23,8 @@ def getDepsForInstruction(i, fn):
         return [i.arg]
     elif isinstance(i, IR.BoolLiteral):
         return []
+    elif isinstance(i, IR.Nop):
+        return []
     elif isinstance(i, IR.If):
         true_branch = fn.body.getBlock(i.true_branch)
         false_branch = fn.body.getBlock(i.false_branch)
@@ -204,6 +206,8 @@ class InferenceEngine(object):
                 i_g = self.i_group_vars[i.id]
                 arg_g = self.i_group_vars[i.arg]
                 self.unifyGroup(i_g, arg_g)
+            elif isinstance(i, IR.Nop):
+                pass
             else:
                 Util.error("OI: grouping not handling %s %s" % (type(i), i))
 

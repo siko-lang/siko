@@ -196,6 +196,28 @@ def checkFn(fn):
         cfg.getNode(c).color = "#ff99ff"
     cfg.printDot()
 
+def cleanDrops(program):
+    for (name, fn) in program.functions.items():
+        for b in fn.body.blocks:
+            for (index, i) in enumerate(b.instructions):
+                if isinstance(i, IR.DropVar):
+                    if i.cancelled:
+                        nop = IR.Nop()
+                        nop.id = i.id
+                        b.instructions[index] = nop
+                    else:
+                        ref = IR.VarRef()
+                        ref.name = i.name
+                        ref.id = i.id
+                        ref.bind_id = i.bind_id
+                        b.instructions[index] = ref
+            while True:
+                if isinstance(b.instructions[-1], IR.Nop):
+                    b.instructions.pop()
+                else:
+                    break
+
 def processProgram(program):
     for (name, fn) in program.functions.items():
         checkFn(fn)
+    cleanDrops(program)
