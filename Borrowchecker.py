@@ -205,12 +205,6 @@ def cleanDrops(program):
                         nop = IR.Nop()
                         nop.id = i.id
                         b.instructions[index] = nop
-                    else:
-                        ref = IR.VarRef()
-                        ref.name = i.name
-                        ref.id = i.id
-                        ref.bind_id = i.bind_id
-                        b.instructions[index] = ref
             while True:
                 if isinstance(b.instructions[-1], IR.Nop):
                     b.instructions.pop()

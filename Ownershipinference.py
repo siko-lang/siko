@@ -14,7 +14,7 @@ def getDepsForInstruction(i, fn):
         return [i.rhs]
     elif isinstance(i, IR.BlockRef):
         b = fn.body.getBlock(i.value)
-        return [b.getLast().id]
+        return [b.getLastNonDrop().id]
     elif isinstance(i, IR.NamedFunctionCall):
         return i.args
     elif isinstance(i, IR.DropVar):
@@ -182,8 +182,8 @@ class InferenceEngine(object):
                 false_branch = self.fn.body.getBlock(i.false_branch)
                 self.processBlock(true_branch)
                 self.processBlock(false_branch)
-                t_id = true_branch.getLast().id
-                f_id = false_branch.getLast().id
+                t_id = true_branch.getLastNonDrop().id
+                f_id = false_branch.getLastNonDrop().id
                 t_o = self.i_ownership_vars[t_id]
                 t_g = self.i_group_vars[t_id]
                 f_o = self.i_ownership_vars[f_id]
@@ -195,7 +195,7 @@ class InferenceEngine(object):
             elif isinstance(i, IR.BlockRef):
                 b = self.fn.body.getBlock(i.value)
                 self.processBlock(b)
-                l_id = b.getLast().id
+                l_id = b.getLastNonDrop().id
                 i_o = self.i_ownership_vars[i.id]
                 i_g = self.i_group_vars[i.id]
                 l_o = self.i_ownership_vars[l_id]

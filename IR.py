@@ -245,6 +245,13 @@ class Block(object):
     def getLast(self):
         return self.instructions[-1]
 
+    def getLastNonDrop(self):
+        last = None
+        for i in self.instructions:
+            if not isinstance(i, DropVar):
+                last = i
+        return last
+
     def dump(self):
         for (index, i) in enumerate(self.instructions):
            print("$%d. %s" % (index, i))
