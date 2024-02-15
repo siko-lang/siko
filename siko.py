@@ -7,7 +7,8 @@ import NameResolver
 import Typechecker
 import IR
 import Borrowchecker
-import Ownershipinference
+import DataFlowPath
+import Equality
 
 def compile():
     program = Syntax.Program()
@@ -26,6 +27,7 @@ def compile():
 
     Borrowchecker.processProgram(ir_program)
 
-    Ownershipinference.infer(ir_program)
+    Equality.infer(ir_program)
+    DataFlowPath.infer(ir_program)
 
 compile()

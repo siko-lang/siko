@@ -102,6 +102,7 @@ class MemberAccess(BaseInstruction):
     def __init__(self):
         self.receiver = None
         self.name = None
+        self.index = 0
         
     def __str__(self):
         return "%s.%s" % (self.receiver, self.name)
@@ -119,6 +120,7 @@ class ValueRef(BaseInstruction):
         self.name = None
         self.bind_id = None
         self.fields = []
+        self.indices = []
 
     def __str__(self):
         if len(self.fields) > 0:

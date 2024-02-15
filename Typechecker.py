@@ -105,13 +105,13 @@ class Typechecker(object):
         if isinstance(ty, NamedType):
             clazz = self.program.classes[ty.value]
             found = False
-            for field in clazz.fields:
+            for (index, field) in enumerate(clazz.fields):
                 if field.name == field_name:
                     found = True
                     fieldType = NamedType()
                     fieldType.value = field.type.name.name
                     #print("field type %s [%s]" % (fieldType, i.name))
-                    return fieldType
+                    return (index, fieldType)
             if not found:
                 Util.error("field %s not found on %s" % (field_name, ty.value))
         Util.error("field %s not found on %s" % (field_name, ty))
@@ -218,13 +218,15 @@ class Typechecker(object):
         elif isinstance(i, IR.MemberAccess):
             ty = self.types[i.receiver]
             ty = self.substitution.apply(ty)
-            fieldType = self.getFieldType(ty, i.name)
+            (index, fieldType) = self.getFieldType(ty, i.name)
+            i.index = index
             self.unify(self.types[i.id], fieldType)
         elif isinstance(i, IR.ValueRef):
             currentType = self.types[i.name]
             currentType = self.substitution.apply(currentType)
             for field in i.fields:
-                currentType = self.getFieldType(currentType, field)
+                (index, currentType) = self.getFieldType(currentType, field)
+                i.indices.append(index)
             self.unify(self.types[i.id], currentType)
         else:
             print("Typecheck not handled", type(i))
