@@ -53,6 +53,7 @@ class InstructionId(object):
 class BaseInstruction(object):
     def __init__(self):
         self.id = 0
+        self.tv_info = None
 
 class BlockRef(BaseInstruction):
     def __init__(self):
