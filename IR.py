@@ -12,6 +12,9 @@ class TempVar(object):
         else:
             return "$tmp_%s" % self.value
 
+    def __repr__(self):
+        return self.__str__()
+
     def __eq__(self, other):
         if isinstance(other, TempVar):
             return self.value == other.value
@@ -111,6 +114,7 @@ class VarRef(BaseInstruction):
     def __init__(self):
         self.name = None
         self.bind_id = None
+        self.borrow = False
         
     def __str__(self):
         return "%s/%s" % (self.name, self.bind_id)
@@ -121,6 +125,7 @@ class ValueRef(BaseInstruction):
         self.bind_id = None
         self.fields = []
         self.indices = []
+        self.borrow = False
 
     def __str__(self):
         if len(self.fields) > 0:

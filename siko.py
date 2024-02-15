@@ -9,6 +9,7 @@ import IR
 import Borrowchecker
 import DataFlowPath
 import Equality
+import ForbiddenBorrows
 
 def compile():
     program = Syntax.Program()
@@ -29,5 +30,6 @@ def compile():
 
     Equality.infer(ir_program)
     DataFlowPath.infer(ir_program)
+    ForbiddenBorrows.infer(ir_program)
 
 compile()

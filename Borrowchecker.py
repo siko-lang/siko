@@ -190,6 +190,8 @@ def checkFn(fn):
     borrowchecker.check()
     # borrowchecker.printUsages()
     for b in borrowchecker.borrows:
+        if isinstance(b, CFG.InstructionKey):
+            fn.body.getInstruction(b.id).borrow = True
         cfg.getNode(b).color = "#cf03fc"
     for c in borrowchecker.cancelled_drops:
         fn.body.getInstruction(c.id).cancelled = True
