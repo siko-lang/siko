@@ -62,6 +62,16 @@ class InferenceEngine(object):
                     tv_info = self.nextTypeVariableInfo()
                     i.member_infos[-1].info.group_var = i.tv_info.group_var
                     self.tv_info_vars[i.name] = tv_info
+                if isinstance(i, IR.NamedFunctionCall):
+                    if i.ctor:
+                        for (index, arg) in enumerate(i.args):
+                            member_info = MemberInfo.MemberInfo()
+                            member_info.root = i.tv_info.group_var
+                            member_info.kind = MemberInfo.MemberKind()
+                            member_info.kind.type = "field"
+                            member_info.kind.index = index
+                            member_info.info = self.nextTypeVariableInfo()
+                            i.member_infos.append(member_info)
 
     def unifyOwnership(self, o1, o2):
         o1 = self.substitution.applyOwnershipVar(o1)
@@ -95,7 +105,11 @@ class InferenceEngine(object):
             if isinstance(i, IR.Bind):
                 self.unifyInstrAndVar(i.rhs, i.name)
             elif isinstance(i, IR.NamedFunctionCall):
-                pass
+                if i.ctor:
+                    for (index, arg) in enumerate(i.args):
+                        member_info = i.member_infos[index]
+                        arg_info = self.getInstructionTypeVariableInfo(arg)
+                        self.unify(arg_info, member_info.info)
             elif isinstance(i, IR.VarRef):
                 self.unifyInstrAndVar(i.id, i.name)
             elif isinstance(i, IR.ValueRef):
