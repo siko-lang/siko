@@ -1,6 +1,7 @@
 import IR
 import Util
 import TypeVariableInfo
+import MemberInfo
 
 class InferenceEngine(object):
     def __init__(self):
@@ -11,10 +12,11 @@ class InferenceEngine(object):
 
     def inferFn(self, fn):
         self.fn = fn
-        print("Equality for %s" % fn.name)
+        #print("Equality for %s" % fn.name)
         self.initialize()
         self.mergeGroups()
-        self.dump()
+        self.finalize()
+        #self.dump()
 
     def nextOwnershipVar(self):
         n = self.next
@@ -38,20 +40,28 @@ class InferenceEngine(object):
 
     def initialize(self):
         for arg in self.fn.args:
-            ownershipVar = self.nextOwnershipVar()
-            groupVar = self.nextGroupVar()
             tv_info = self.nextTypeVariableInfo()
             self.tv_info_vars[arg.name] = tv_info
         for block in self.fn.body.blocks:
             for i in block.instructions:
+                i.tv_info = self.nextTypeVariableInfo()
                 if isinstance(i, IR.Bind):
-                    ownershipVar = self.nextOwnershipVar()
-                    groupVar = self.nextGroupVar()
                     tv_info = self.nextTypeVariableInfo()
                     self.tv_info_vars[i.name] = tv_info
-                ownershipVar = self.nextOwnershipVar()
-                groupVar = self.nextGroupVar()
-                i.tv_info = self.nextTypeVariableInfo()
+                if isinstance(i, IR.ValueRef):
+                    root = self.nextGroupVar()
+                    for index in i.indices:
+                        member_info = MemberInfo.MemberInfo()
+                        member_info.root = root
+                        member_info.kind = MemberInfo.MemberKind()
+                        member_info.kind.type = "field"
+                        member_info.kind.index = index
+                        member_info.info = self.nextTypeVariableInfo()
+                        root = member_info.info.group_var
+                        i.member_infos.append(member_info)
+                    tv_info = self.nextTypeVariableInfo()
+                    i.member_infos[-1].info.group_var = i.tv_info.group_var
+                    self.tv_info_vars[i.name] = tv_info
 
     def unifyOwnership(self, o1, o2):
         o1 = self.substitution.applyOwnershipVar(o1)
@@ -119,15 +129,20 @@ class InferenceEngine(object):
     def mergeGroups(self):
         block = self.fn.body.getFirst()
         self.processBlock(block)
-
+    
+    def finalize(self):
+        for block in self.fn.body.blocks:
+            for i in block.instructions:
+                for member_info in i.member_infos:
+                    member_info.root = self.substitution.applyGroupVar(member_info.root)
+                    member_info.info = self.substitution.applyTypeVariableInfo(member_info.info)
+                i.tv_info = self.substitution.applyTypeVariableInfo(i.tv_info)
+    
     def dump(self):
-        print("%s" % self.substitution.ownership_vars)
-        print("%s" % self.substitution.group_vars)
         for block in self.fn.body.blocks:
             print("#%s block" % block.id)
             for i in block.instructions:
-                i.tv_info = self.substitution.applyTypeVariableInfo(i.tv_info)
-                print("%5s %35s - %4s" % (i.id, i, i.tv_info))
+                print("%5s %35s - %4s %s" % (i.id, i, i.tv_info, i.member_infos))
 
 def infer(program):
     for f in program.functions.values():

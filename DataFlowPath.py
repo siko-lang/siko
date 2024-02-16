@@ -63,7 +63,7 @@ class InferenceEngine(object):
 
     def inferFn(self, fn):
         self.fn = fn
-        print("DataFlowPath for %s" % fn.name)
+        #print("DataFlowPath for %s" % fn.name)
         self.createPaths()
 
     def processPath(self, path):

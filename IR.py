@@ -54,9 +54,11 @@ class BaseInstruction(object):
     def __init__(self):
         self.id = 0
         self.tv_info = None
+        self.member_infos = []
 
 class BlockRef(BaseInstruction):
     def __init__(self):
+        super().__init__()
         self.value = 0
 
     def __str__(self):
@@ -64,6 +66,7 @@ class BlockRef(BaseInstruction):
 
 class NamedFunctionCall(BaseInstruction):
     def __init__(self):
+        super().__init__()
         self.name = None
         self.ctor = False
         self.args = []
@@ -77,6 +80,7 @@ class NamedFunctionCall(BaseInstruction):
 
 class DynamicFunctionCall(BaseInstruction):
     def __init__(self):
+        super().__init__()
         self.callable = None
         self.args = []
 
@@ -86,6 +90,7 @@ class DynamicFunctionCall(BaseInstruction):
 
 class MethodCall(BaseInstruction):
     def __init__(self):
+        super().__init__()
         self.receiver = None
         self.name = None
         self.args = []
@@ -96,6 +101,7 @@ class MethodCall(BaseInstruction):
 
 class Bind(BaseInstruction):
     def __init__(self):
+        super().__init__()
         self.name = None
         self.rhs = None
 
@@ -104,6 +110,7 @@ class Bind(BaseInstruction):
 
 class MemberAccess(BaseInstruction):
     def __init__(self):
+        super().__init__()
         self.receiver = None
         self.name = None
         self.index = 0
@@ -113,6 +120,7 @@ class MemberAccess(BaseInstruction):
 
 class VarRef(BaseInstruction):
     def __init__(self):
+        super().__init__()
         self.name = None
         self.bind_id = None
         self.borrow = False
@@ -122,6 +130,7 @@ class VarRef(BaseInstruction):
 
 class ValueRef(BaseInstruction):
     def __init__(self):
+        super().__init__()
         self.name = None
         self.bind_id = None
         self.fields = []
@@ -137,6 +146,7 @@ class ValueRef(BaseInstruction):
 
 class DropVar(BaseInstruction):
     def __init__(self):
+        super().__init__()
         self.name = None
         self.cancelled = False
         
@@ -148,13 +158,14 @@ class DropVar(BaseInstruction):
 
 class Nop(BaseInstruction):
     def __init__(self):
-        pass
+        super().__init__()
 
     def __str__(self):
         return "nop"
 
 class If(BaseInstruction):
     def __init__(self):
+        super().__init__()
         self.cond = None
         self.true_branch = None
         self.false_branch = None
@@ -167,6 +178,7 @@ class If(BaseInstruction):
 
 class Loop(BaseInstruction):
     def __init__(self):
+        super().__init__()
         self.var = None
         self.init = None
         self.body = None
@@ -176,6 +188,7 @@ class Loop(BaseInstruction):
 
 class Break(BaseInstruction):
     def __init__(self):
+        super().__init__()
         self.arg = None
 
     def __str__(self):
@@ -183,6 +196,7 @@ class Break(BaseInstruction):
 
 class Continue(BaseInstruction):
     def __init__(self):
+        super().__init__()
         self.arg = None
     
     def __str__(self):
@@ -190,6 +204,7 @@ class Continue(BaseInstruction):
 
 class Return(BaseInstruction):
     def __init__(self):
+        super().__init__()
         self.arg = None
     
     def __str__(self):
@@ -197,6 +212,7 @@ class Return(BaseInstruction):
 
 class Converter(BaseInstruction):
     def __init__(self):
+        super().__init__()
         self.arg = None
     
     def __str__(self):
@@ -204,6 +220,7 @@ class Converter(BaseInstruction):
 
 class BoolLiteral(BaseInstruction):
     def __init__(self):
+        super().__init__()
         self.value = None
     
     def __str__(self):

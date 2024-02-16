@@ -31,7 +31,7 @@ class InferenceEngine(object):
         for block in fn.body.blocks:
             print("%s. block:" % block.id)
             for i in block.instructions:
-                print("   %s %s %s" % (i.id, i, all_witnessed_moves[i.id]))
+                print("   %4s %35s %10s %s %s" % (i.id, i, i.tv_info, i.member_infos, all_witnessed_moves[i.id]))
 
 def infer(program):
     for f in program.functions.values():
