@@ -79,6 +79,9 @@ class InferenceEngine(object):
     def setOwner(self, var):
         self.ownerships[var] = Owner()
 
+    def setBorrow(self, var):
+        self.ownerships[var] = Borrow()
+
     def getOwnership(self, var):
         if var in self.ownerships:
             return self.ownerships[var]
@@ -122,15 +125,12 @@ class InferenceEngine(object):
                     for member in i.members:
                         dep_map[i.tv_info.ownership_var].append(member.info.ownership_var)
         groups = DependencyProcessor.processDependencies(dep_map)
-        print(groups)
-        for (id, constraint) in constraints.items():
-            print(id, constraint)
+        #print(groups)
+        #for (id, constraint) in constraints.items():
+            #print(id, constraint)
         for group in groups:
             for item in group.items:
-                print("Checking %s", item)
-                if item not in constraints:
-                    print("No constraints??")
-                else:
+                if item in constraints:
                     constraint = constraints[item]
                     if isinstance(constraint, CtorConstraint):
                         self.setOwner(constraint.var)
@@ -139,7 +139,24 @@ class InferenceEngine(object):
                         if isinstance(from_o, Owner):
                             self.setOwner(constraint.to_var)
                     if isinstance(constraint, FieldAccessConstraint):
-                        pass
+                        parents = []
+                        for member in constraint.members:
+                            parents.append(member.info.ownership_var)
+                        parents.append(constraint.root)
+                        parents.reverse()
+                        final = Owner()
+                        for parent in parents:
+                            parent_o = self.getOwnership(parent)
+                            if isinstance(parent_o, Unknown):
+                                final = Unknown()
+                                break
+                            if isinstance(parent_o, Borrow):
+                                final = Borrow()
+                                break
+                        if isinstance(final, Owner):
+                            self.setOwner(constraint.var)
+                        elif isinstance(final, Borrow):
+                            self.setBorrow(constraint.var)
 
     def dump(self):
         for block in self.fn.body.blocks:
