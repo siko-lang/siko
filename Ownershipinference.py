@@ -145,12 +145,10 @@ class InferenceEngine(object):
         for block in self.fn.body.blocks:
             print("#%s block" % block.id)
             for i in block.instructions:
-                members = []
                 member_ownerships = {}
-                if isinstance(i, IR.ValueRef):
-                    members = i.members
-                    for member in i.members:
-                        member_ownerships[member.info.ownership_var] = self.getOwnership(member.info.ownership_var)
+                members = i.members
+                for member in i.members:
+                    member_ownerships[member.info.ownership_var] = self.getOwnership(member.info.ownership_var)
                 ownership = self.getOwnership(i.tv_info.ownership_var)
                 print("%5s %35s %10s %s %s %s" % (i.id, i, i.tv_info, ownership, members, member_ownerships))
 

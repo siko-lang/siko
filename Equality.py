@@ -12,11 +12,12 @@ class InferenceEngine(object):
 
     def inferFn(self, fn):
         self.fn = fn
-        print("Equality for %s" % fn.name)
+        #print("Equality for %s" % fn.name)
         self.initialize()
-        self.mergeGroups()
+        self.mergeInstructions()
+        self.mergeMembers()
         self.finalize()
-        self.dump()
+        #self.dump()
 
     def nextOwnershipVar(self):
         n = self.next
@@ -142,16 +143,44 @@ class InferenceEngine(object):
             else:
                 Util.error("OI: grouping not handling %s %s" % (type(i), i))
 
-    def mergeGroups(self):
+    def mergeInstructions(self):
         block = self.fn.body.getFirst()
         self.processBlock(block)
     
+    def mergeMembers(self):
+        while True:
+            member_map = {}
+            for block in self.fn.body.blocks:
+                for i in block.instructions:
+                    for member in i.members:
+                        member.root = self.substitution.applyGroupVar(member.root)
+                        member_map[(member.root, member.kind.index)] = []
+            
+            for block in self.fn.body.blocks:
+                for i in block.instructions:
+                    for member in i.members:
+                        member.info = self.substitution.applyTypeVariableInfo(member.info)
+                        member_map[(member.root, member.kind.index)].append(member.info)
+        
+            unified = False
+            for entries in member_map.values():
+                entries = list(set(entries))
+                if len(entries) > 1:
+                    first = entries[0]
+                    first = self.substitution.applyTypeVariableInfo(first)
+                    for entry in entries:
+                        entry = self.substitution.applyTypeVariableInfo(entry)
+                        self.unify(first, entry)
+                        unified = True
+            if not unified:
+                break
+
     def finalize(self):
         for block in self.fn.body.blocks:
             for i in block.instructions:
-                for member_info in i.members:
-                    member_info.root = self.substitution.applyGroupVar(member_info.root)
-                    member_info.info = self.substitution.applyTypeVariableInfo(member_info.info)
+                for member in i.members:
+                    member.root = self.substitution.applyGroupVar(member.root)
+                    member.info = self.substitution.applyTypeVariableInfo(member.info)
                 i.tv_info = self.substitution.applyTypeVariableInfo(i.tv_info)
     
     def dump(self):

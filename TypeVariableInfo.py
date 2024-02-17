@@ -89,3 +89,5 @@ class TypeVariableInfo(object):
     def __hash__(self):
         return self.ownership_var.__hash__()
     
+    def __repr__(self) -> str:
+        return self.__str__()
