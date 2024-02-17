@@ -11,6 +11,7 @@ import DataFlowPath
 import Equality
 import ForbiddenBorrows
 import Ownershipinference
+import Transpiler
 
 def compile():
     program = Syntax.Program()
@@ -33,5 +34,6 @@ def compile():
     DataFlowPath.infer(ir_program)
     ForbiddenBorrows.infer(ir_program)
     Ownershipinference.infer(ir_program)
+    Transpiler.transpile(ir_program)
 
 compile()
