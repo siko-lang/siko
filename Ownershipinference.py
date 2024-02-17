@@ -6,6 +6,7 @@ class ConverterConstraint(object):
     def __init__(self):
         self.from_var = None
         self.to_var = None
+        self.borrow = False
 
     def __str__(self):
         return "converter %s -> %s" % (self.from_var, self.to_var)
@@ -107,6 +108,7 @@ class InferenceEngine(object):
                 elif isinstance(i, IR.Converter):
                     arg = self.fn.body.getInstruction(i.arg)
                     constraint = ConverterConstraint()
+                    constraint.borrow = arg.borrow
                     constraint.from_var = arg.tv_info.ownership_var
                     constraint.to_var = i.tv_info.ownership_var
                     constraints[i.tv_info.ownership_var] = constraint
@@ -137,7 +139,10 @@ class InferenceEngine(object):
                     if isinstance(constraint, ConverterConstraint):
                         from_o = self.getOwnership(constraint.from_var)
                         if isinstance(from_o, Owner):
-                            self.setOwner(constraint.to_var)
+                            if constraint.borrow:
+                                self.setOwner(constraint.to_var)
+                            else:
+                                self.setBorrow(constraint.to_var)
                     if isinstance(constraint, FieldAccessConstraint):
                         parents = []
                         for member in constraint.members:

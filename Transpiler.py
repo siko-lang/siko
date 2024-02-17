@@ -22,7 +22,7 @@ class Transpiler(object):
 
     def initialize(self, program):
         self.program = program
-        self.output = open("main.rs", "w")
+        self.output = open("src/main.rs", "w")
 
     def print(self, m):
         self.output.write(m)
@@ -41,9 +41,12 @@ class Transpiler(object):
         indent = self.indentLevel * " "
         return indent
     
-    def addInstr(self, i, value):
+    def addInstr(self, i, value, partial=False):
         indent = self.indentLevel * " "
-        self.print("%slet %s = %s;\n" % (self.getIndent(), ii(i.id), value))
+        if partial:
+            self.print("%slet %s = %s\n" % (self.getIndent(), ii(i.id), value))
+        else:
+            self.print("%slet %s = %s;\n" % (self.getIndent(), ii(i.id), value))
 
     def processBlock(self, fn, block_id):
         self.print("%slet %s = {\n" % (self.getIndent(), bi(block_id)));
@@ -86,16 +89,23 @@ class Transpiler(object):
                 else:
                     self.addInstr(i, "false")
             elif isinstance(i, IR.ValueRef):
-                v = vi(i.name)
+                start = ""
+                if i.borrow:
+                    start = "&"
+                v = start + vi(i.name)
                 for field in i.fields:
                     v += ".%s" % field
                 self.addInstr(i, v)
             elif isinstance(i, IR.Nop):
                 pass
             elif isinstance(i, IR.If):
-                self.processBlock(fn, i.true_branch)
-                self.processBlock(fn, i.false_branch)
-                self.addInstr(i, "if %s { %s } else { %s }" % (ii(i.cond), bi(i.true_branch), bi(i.false_branch)))
+                tb = fn.body.getBlock(i.true_branch)
+                fb = fn.body.getBlock(i.false_branch)
+                self.addInstr(i, "if %s {" % (ii(i.cond)), partial=True)
+                self.transpileBlock(fn, tb)
+                self.print("%s} else {\n" % self.getIndent())
+                self.transpileBlock(fn, fb)
+                self.print("%s};\n" % self.getIndent())
             else:
                 Util.error("Transpiler not handling %s" % i)
         last = block.getLastReal()
@@ -124,6 +134,8 @@ def transpile(program):
     transpiler.initialize(program)
     transpiler.print("#![allow(non_camel_case_types)]\n")
     transpiler.print("#![allow(unused_variables)]\n")
+    transpiler.print("#![allow(dead_code)]\n")
+    transpiler.print("#![allow(non_snake_case)]\n")
     transpiler.print("\n\n")
     for c in program.classes.values():
         transpiler.transpileClass(c)
