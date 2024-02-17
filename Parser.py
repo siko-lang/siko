@@ -80,17 +80,17 @@ class Parser(object):
             i.alias = self.parseTypeName()
         return i
 
-    def parseItem(self):
+    def parseItem(self, module_name):
         if self.peek("extern"):
             self.parseExternClass()
         elif self.peek("enum"):
             self.parseEnum()
         elif self.peek("class"):
-            return self.parseClass()
+            return self.parseClass(module_name)
         elif self.peek("import"):
             return self.parseImport()
         elif self.peek("fn"):
-            return self.parseFunction()
+            return self.parseFunction(module_name)
         else:
             self.error("Expected module item, found %s" % self.tokens[self.index].type)
 
@@ -273,11 +273,12 @@ class Parser(object):
         self.expect("rightcurly")
         return block
 
-    def parseClassMemberFunction(self):
-        return self.parseFunction()
+    def parseClassMemberFunction(self, module_name):
+        return self.parseFunction(module_name)
 
-    def parseFunction(self):
+    def parseFunction(self, module_name):
         fn = Syntax.Function()
+        fn.module_name = module_name
         self.expect("fn")
         name = self.parseName()
         fn.name = name
@@ -319,8 +320,9 @@ class Parser(object):
         field.type = self.parseType()
         return field
 
-    def parseClass(self):
+    def parseClass(self, module_name):
         c = Syntax.Class()
+        c.module_name = module_name
         self.expect("class")
         c.name = self.parseTypeName()
         if self.peek("leftbracket"):
@@ -331,7 +333,7 @@ class Parser(object):
                 field = self.parseClassField()
                 c.fields.append(field)
             elif self.peek("fn"):
-                fn = self.parseClassMemberFunction()
+                fn = self.parseClassMemberFunction(module_name)
                 c.methods.append(fn)
             else:
                 self.error("expected class item found %s" % self.tokens[self.index].type)
@@ -349,7 +351,7 @@ class Parser(object):
         m.name = name
         self.expect("leftcurly")
         while not self.peek("rightcurly"):
-            item = self.parseItem()
+            item = self.parseItem(name)
             if item:
                 m.items.append(item)
         self.expect("rightcurly")

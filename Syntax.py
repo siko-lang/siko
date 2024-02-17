@@ -94,6 +94,7 @@ class Arg(SyntaxBase):
 
 class Function(SyntaxBase):
     def __init__(self):
+        self.module_name = None
         self.name = None
         self.args = []
         self.return_type = None
@@ -106,6 +107,7 @@ class Field(object):
 
 class Class(object):
     def __init__(self):
+        self.module_name = None
         self.name = None
         self.fields = []
         self.methods = []
