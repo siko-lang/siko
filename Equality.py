@@ -12,11 +12,11 @@ class InferenceEngine(object):
 
     def inferFn(self, fn):
         self.fn = fn
-        #print("Equality for %s" % fn.name)
+        print("Equality for %s" % fn.name)
         self.initialize()
         self.mergeGroups()
         self.finalize()
-        #self.dump()
+        self.dump()
 
     def nextOwnershipVar(self):
         n = self.next
@@ -113,7 +113,9 @@ class InferenceEngine(object):
             elif isinstance(i, IR.VarRef):
                 self.unifyInstrAndVar(i.id, i.name)
             elif isinstance(i, IR.ValueRef):
-                pass
+                bind = self.fn.body.getInstruction(i.bind_id)
+                self.tv_info_vars[bind.name].group_var
+                self.unifyGroup(self.tv_info_vars[bind.name].group_var, i.members[0].root)
             elif isinstance(i, IR.BoolLiteral):
                 pass
             elif isinstance(i, IR.If):
