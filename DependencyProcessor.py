@@ -4,6 +4,12 @@ class DependencyGroup(object):
     def __init__(self):
         self.items = []
 
+    def __str__(self):
+        return str(self.items)
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
 def createIdMaps(graph, all_dependencies):
     id_item_map = {}
     item_id_map = {}

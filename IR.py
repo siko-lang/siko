@@ -54,7 +54,7 @@ class BaseInstruction(object):
     def __init__(self):
         self.id = 0
         self.tv_info = None
-        self.member_infos = []
+        self.members = []
 
 class BlockRef(BaseInstruction):
     def __init__(self):
@@ -243,6 +243,14 @@ class Body(object):
 
     def getInstruction(self, id):
         return self.blocks[id.block].instructions[id.value]
+
+    def getAllMembers(self):
+        members = []
+        for b in self.blocks:
+            for i in b.instructions:
+                for m in i.members:
+                    members.append(m)
+        return members
 
     def getBlock(self, blockref):
         value = blockref

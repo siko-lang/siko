@@ -58,9 +58,9 @@ class InferenceEngine(object):
                         member_info.kind.index = index
                         member_info.info = self.nextTypeVariableInfo()
                         root = member_info.info.group_var
-                        i.member_infos.append(member_info)
+                        i.members.append(member_info)
                     tv_info = self.nextTypeVariableInfo()
-                    i.member_infos[-1].info.group_var = i.tv_info.group_var
+                    i.members[-1].info.group_var = i.tv_info.group_var
                     self.tv_info_vars[i.name] = tv_info
                 if isinstance(i, IR.NamedFunctionCall):
                     if i.ctor:
@@ -71,7 +71,7 @@ class InferenceEngine(object):
                             member_info.kind.type = "field"
                             member_info.kind.index = index
                             member_info.info = self.nextTypeVariableInfo()
-                            i.member_infos.append(member_info)
+                            i.members.append(member_info)
 
     def unifyOwnership(self, o1, o2):
         o1 = self.substitution.applyOwnershipVar(o1)
@@ -107,7 +107,7 @@ class InferenceEngine(object):
             elif isinstance(i, IR.NamedFunctionCall):
                 if i.ctor:
                     for (index, arg) in enumerate(i.args):
-                        member_info = i.member_infos[index]
+                        member_info = i.members[index]
                         arg_info = self.getInstructionTypeVariableInfo(arg)
                         self.unify(arg_info, member_info.info)
             elif isinstance(i, IR.VarRef):
@@ -147,7 +147,7 @@ class InferenceEngine(object):
     def finalize(self):
         for block in self.fn.body.blocks:
             for i in block.instructions:
-                for member_info in i.member_infos:
+                for member_info in i.members:
                     member_info.root = self.substitution.applyGroupVar(member_info.root)
                     member_info.info = self.substitution.applyTypeVariableInfo(member_info.info)
                 i.tv_info = self.substitution.applyTypeVariableInfo(i.tv_info)
@@ -156,7 +156,7 @@ class InferenceEngine(object):
         for block in self.fn.body.blocks:
             print("#%s block" % block.id)
             for i in block.instructions:
-                print("%5s %35s - %4s %s" % (i.id, i, i.tv_info, i.member_infos))
+                print("%5s %35s - %4s %s" % (i.id, i, i.tv_info, i.members))
 
 def infer(program):
     for f in program.functions.values():
