@@ -15,11 +15,15 @@ import Transpiler
 
 def compile():
     program = Syntax.Program()
-
-    for f in sys.argv[1:]:
-        #print("Parsing ", f)
+    args = sys.argv[1:]
+    while True:
+        name = args.pop(0)
+        if name=="-o":
+            break
         parser = Parser.Parser()
-        parser.parse(program, f)
+        parser.parse(program, name)
+
+    output = args.pop()
 
     IR.convertProgram(program)
 
@@ -34,6 +38,6 @@ def compile():
     DataFlowPath.infer(ir_program)
     ForbiddenBorrows.infer(ir_program)
     Ownershipinference.infer(ir_program)
-    Transpiler.transpile(ir_program)
+    Transpiler.transpile(ir_program, output)
 
 compile()

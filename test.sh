@@ -1,1 +1,0 @@
-./siko.py test.sk

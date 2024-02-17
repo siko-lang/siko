@@ -73,9 +73,9 @@ class InferenceEngine(object):
 
     def inferFn(self, fn):
         self.fn = fn
-        print("Inference for %s" % fn.name)
+        #print("Inference for %s" % fn.name)
         self.initialize()
-        self.dump()
+        #self.dump()
 
     def setOwner(self, var):
         self.ownerships[var] = Owner()

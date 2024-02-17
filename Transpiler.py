@@ -20,9 +20,9 @@ class Transpiler(object):
         self.output = None
         self.indentLevel = 0
 
-    def initialize(self, program):
+    def initialize(self, program, output):
         self.program = program
-        self.output = open("src/main.rs", "w")
+        self.output = open(output, "w")
 
     def print(self, m):
         self.output.write(m)
@@ -129,9 +129,9 @@ class Transpiler(object):
             self.print("    %s: %s,\n" % (field.name, self.transpileType(field.type)))
         self.print("}\n\n")
 
-def transpile(program):
+def transpile(program, output):
     transpiler = Transpiler()
-    transpiler.initialize(program)
+    transpiler.initialize(program, output)
     transpiler.print("#![allow(non_camel_case_types)]\n")
     transpiler.print("#![allow(unused_variables)]\n")
     transpiler.print("#![allow(dead_code)]\n")
