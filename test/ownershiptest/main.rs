@@ -35,7 +35,7 @@ fn Main_main() -> () {
     let i_0_7 = Main_Person{name: i_0_4, address: i_0_6};
     let tmp_2 = i_0_7;
     let i_0_9 = &tmp_2.address.city;
-    let i_0_10 = /* convert */i_0_9;
+    let i_0_10 = /* clone ! */i_0_9.clone();
     let i_0_11 = tmp_2.address;
     let i_0_12 = /* move */i_0_11;
     let i_0_13 = ();

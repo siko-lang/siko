@@ -119,13 +119,6 @@ class Resolver(object):
                 instruction.var = loop_env.addVar(instruction.var, bind_id=instruction.id)
                 b = fn.body.getBlock(instruction.body)
                 self.resolveBlock(env, moduleResolver, b, fn)
-            elif isinstance(instruction, IR.VarRef):
-                var = env.resolveVar(instruction.name)
-                if var:
-                    instruction.name = var[0]
-                    instruction.bind_id = var[1]
-                else:
-                    Util.error("Undefined var %s" % instruction.name)
             elif isinstance(instruction, IR.ValueRef):
                 var = env.resolveVar(instruction.name)
                 if var:

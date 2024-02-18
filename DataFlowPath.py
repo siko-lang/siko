@@ -71,9 +71,7 @@ class InferenceEngine(object):
         prev = None
         for p in path:
             instruction = self.fn.body.getInstruction(p)
-            if isinstance(instruction, IR.VarRef):
-                pass
-            elif isinstance(instruction, IR.Bind):
+            if isinstance(instruction, IR.Bind):
                 pass
             elif isinstance(instruction, IR.MemberAccess):
                 value = FieldAccess(value, instruction.index)
@@ -103,7 +101,7 @@ class InferenceEngine(object):
         paths = {}
         for block in self.fn.body.blocks:
             for i in block.instructions:
-                if isinstance(i, IR.VarRef):
+                if isinstance(i, IR.ValueRef):
                     if i.name.arg:
                         arg_instructions.append(i.id)
         groups = DependencyProcessor.processDependencies(all_dependencies)

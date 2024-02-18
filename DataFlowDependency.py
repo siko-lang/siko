@@ -3,8 +3,6 @@ import IR
 
 def getDepsForInstruction(i, fn):
     if isinstance(i, IR.ValueRef):
-        return [i.bind_id]
-    elif isinstance(i, IR.VarRef):
         if i.name.arg:
             return []
         else:

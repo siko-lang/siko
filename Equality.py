@@ -60,9 +60,8 @@ class InferenceEngine(object):
                         member_info.info = self.nextTypeVariableInfo()
                         root = member_info.info.group_var
                         i.members.append(member_info)
-                    tv_info = self.nextTypeVariableInfo()
-                    i.members[-1].info.group_var = i.tv_info.group_var
-                    self.tv_info_vars[i.name] = tv_info
+                    if len(i.members) != 0:
+                        i.members[-1].info.group_var = i.tv_info.group_var
                 if isinstance(i, IR.NamedFunctionCall):
                     if i.ctor:
                         for (index, arg) in enumerate(i.args):
@@ -111,12 +110,11 @@ class InferenceEngine(object):
                         member_info = i.members[index]
                         arg_info = self.getInstructionTypeVariableInfo(arg)
                         self.unify(arg_info, member_info.info)
-            elif isinstance(i, IR.VarRef):
-                self.unifyInstrAndVar(i.id, i.name)
             elif isinstance(i, IR.ValueRef):
-                bind = self.fn.body.getInstruction(i.bind_id)
-                self.tv_info_vars[bind.name].group_var
-                self.unifyGroup(self.tv_info_vars[bind.name].group_var, i.members[0].root)
+                if len(i.members) == 0:
+                    self.unifyGroup(self.tv_info_vars[i.name].group_var, i.tv_info.group_var)    
+                else:
+                    self.unifyGroup(self.tv_info_vars[i.name].group_var, i.members[0].root)
             elif isinstance(i, IR.BoolLiteral):
                 pass
             elif isinstance(i, IR.If):

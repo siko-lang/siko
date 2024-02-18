@@ -122,16 +122,6 @@ class MemberAccess(BaseInstruction):
     def __str__(self):
         return "%s.%s" % (self.receiver, self.name)
 
-class VarRef(BaseInstruction):
-    def __init__(self):
-        super().__init__()
-        self.name = None
-        self.bind_id = None
-        self.borrow = False
-        
-    def __str__(self):
-        return "%s/%s" % (self.name, self.bind_id)
-
 class ValueRef(BaseInstruction):
     def __init__(self):
         super().__init__()
@@ -426,8 +416,9 @@ class Processor(object):
                 access.name = expr.name
                 return self.addInstruction(access)
         elif isinstance(expr, Syntax.VarRef):
-            ref = VarRef()
+            ref = ValueRef()
             ref.name = expr.name
+            ref.fields = []
             ref_id = self.addInstruction(ref)
             converter = Converter()
             converter.arg = ref_id
@@ -480,8 +471,9 @@ def convertProgram(program):
                 block = processor.createBlock()
                 for (index, arg) in enumerate(fn.args):
                     arg_name = "arg_%s" % index
-                    arg_ref = VarRef()
+                    arg_ref = ValueRef()
                     arg_ref.name = arg_name
+                    arg_ref.fields = []
                     arg_ref_id = block.addInstruction(arg_ref)
                     arg_bind = Bind()
                     arg_bind.name = arg.name
@@ -500,8 +492,9 @@ def convertProgram(program):
                     block = processor.createBlock()
                     for (index, arg) in enumerate(m.args):
                         arg_name = "arg_%s" % index
-                        arg_ref = VarRef()
+                        arg_ref = ValueRef()
                         arg_ref.name = arg_name
+                        arg_ref.fields = []
                         arg_ref_id = block.addInstruction(arg_ref)
                         arg_bind = Bind()
                         arg_bind.name = arg.name

@@ -58,12 +58,7 @@ class Transpiler(object):
     def transpileBlock(self, fn, block):
         self.indentLevel += 4
         for i in block.instructions:
-            if isinstance(i, IR.VarRef):
-                start = ""
-                if i.borrow:
-                    start = "&"
-                self.addInstr(i, "%s%s" % (start, vi(i.name)))
-            elif isinstance(i, IR.NamedFunctionCall):
+            if isinstance(i, IR.NamedFunctionCall):
                 if str(i.name) == Util.getUnit():
                     self.addInstr(i, "()")
                 else:

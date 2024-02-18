@@ -1,6 +1,7 @@
 import IR
 import Util
 import DependencyProcessor
+import BorrowUtil
 
 class ConverterConstraint(object):
     def __init__(self):
@@ -58,7 +59,7 @@ class Unknown(object):
 
 class Borrow(object):
     def __init__(self):
-        pass
+        self.borrow_id = None
 
     def __str__(self) -> str:
         return "borrow"
@@ -70,6 +71,7 @@ class InferenceEngine(object):
     def __init__(self):
         self.fn = None
         self.ownerships = {}
+        self.borrow_map = BorrowUtil.BorrowMap()
 
     def inferFn(self, fn):
         self.fn = fn
@@ -81,9 +83,11 @@ class InferenceEngine(object):
         #print("Set owner", var)
         self.ownerships[var] = Owner()
 
-    def setBorrow(self, var):
+    def setBorrow(self, var, borrow_id):
         #print("Set borrow", var)
-        self.ownerships[var] = Borrow()
+        b = Borrow()
+        b.borrow_id = borrow_id
+        self.ownerships[var] = b
 
     def getOwnership(self, var):
         if var in self.ownerships:
@@ -91,7 +95,76 @@ class InferenceEngine(object):
         else:
             return Unknown()
 
-    def run(self):
+    def processFieldAccessConstraint(self, constraint):
+        #print("FieldAccessConstraint %s" % constraint)
+        parents = []
+        for member in constraint.members:
+            parents.append(member.info.ownership_var)
+        parents.append(constraint.root)
+        parents.reverse()
+        final = Owner()
+        #print("parents", parents)
+        #print("ownerships", self.ownerships)
+        for parent in parents:
+            parent_o = self.getOwnership(parent)
+            if isinstance(parent_o, Unknown):
+                final = Unknown()
+                break
+            if isinstance(parent_o, Borrow):
+                final = Borrow()
+                break
+        #print("Final", final)
+        if isinstance(final, Owner):
+            self.setOwner(constraint.var)
+        elif isinstance(final, Borrow):
+            self.setBorrow(constraint.var)
+
+    def checkBorrows(self, target_var, borrow_id):
+        user_borrows = self.borrow_map.getBorrows(borrow_id)
+        is_valid = True
+        for user_borrow in user_borrows:
+            if user_borrow.external_borrow:
+                pass # always valid
+            if user_borrow.local_borrow:
+                forbidden_borrows = self.fn.forbidden_borrows[target_var]
+                #print("Borrow %s %s %s" % (constraint.to_var, forbidden_borrows, arg.usage))
+                if user_borrow.local_borrow in forbidden_borrows:
+                    is_valid = False
+        return (user_borrows, is_valid)
+
+    def processConverterConstraint(self, constraint):
+        from_o = self.getOwnership(constraint.from_var)
+        to_o = self.getOwnership(constraint.to_var)
+        if isinstance(from_o, Owner) and isinstance(to_o, Unknown):
+            self.setOwner(constraint.to_var)
+        if isinstance(from_o, Owner) and isinstance(to_o, Borrow):
+            pass # TODO
+        if isinstance(from_o, Owner) and isinstance(to_o, Owner):
+            pass # nothing to do
+        if isinstance(from_o, Borrow) and isinstance(to_o, Unknown):
+            (user_borrows, is_valid) = self.checkBorrows(constraint.to_var, from_o.borrow_id)
+            if is_valid:
+                self.setBorrow(constraint.to_var, from_o.borrow_id)
+            else:
+                self.setOwner(constraint.to_var)
+        if isinstance(from_o, Borrow) and isinstance(to_o, Borrow):
+            pass # TODO
+        if isinstance(from_o, Borrow) and isinstance(to_o, Owner):
+            pass # TODO
+
+    def processConstraints(self, groups, constraints):
+        for group in groups:
+            for item in group.items:
+                if item in constraints:
+                    constraint = constraints[item]
+                    if isinstance(constraint, CtorConstraint):
+                        self.setOwner(constraint.var)
+                    if isinstance(constraint, ConverterConstraint):
+                        self.processConverterConstraint(constraint)
+                    if isinstance(constraint, FieldAccessConstraint):
+                        self.processFieldAccessConstraint(constraint)
+
+    def collectConstraints(self):
         dep_map = {}
         constraints = {}
         for block in self.fn.body.blocks:
@@ -121,6 +194,7 @@ class InferenceEngine(object):
                     constraints[i.tv_info.ownership_var] = constraint
                 elif isinstance(i, IR.ValueRef):
                     root_instruction = self.fn.body.getInstruction(i.bind_id)
+                    root_instruction = self.fn.body.getInstruction(root_instruction.rhs)
                     constraint = FieldAccessConstraint()
                     constraint.root = root_instruction.tv_info.ownership_var
                     constraint.members = i.members
@@ -128,49 +202,16 @@ class InferenceEngine(object):
                     constraints[i.tv_info.ownership_var] = constraint
                     for member in i.members:
                         dep_map[i.tv_info.ownership_var].append(member.info.ownership_var)
+                    dep_map[i.tv_info.ownership_var].append(constraint.root)
         groups = DependencyProcessor.processDependencies(dep_map)
+        return (groups, constraints)
+
+    def run(self):
         #print(groups)
         #for (id, constraint) in constraints.items():
             #print(id, constraint)
-        for group in groups:
-            for item in group.items:
-                if item in constraints:
-                    constraint = constraints[item]
-                    if isinstance(constraint, CtorConstraint):
-                        self.setOwner(constraint.var)
-                    if isinstance(constraint, ConverterConstraint):
-                        from_o = self.getOwnership(constraint.from_var)
-                        if isinstance(from_o, Owner):
-                            arg = self.fn.body.getInstruction(constraint.source_id)
-                            if arg.borrow:
-                                forbidden_borrows = self.fn.forbidden_borrows[constraint.to_var]
-                                #print("Borrow %s %s %s" % (constraint.to_var, forbidden_borrows, arg.usage))
-                                if arg.usage in forbidden_borrows:
-                                    #print("Promoting to owner %s" % constraint.to_var)
-                                    self.setOwner(constraint.to_var)    
-                                else:
-                                    self.setBorrow(constraint.to_var)
-                            else:
-                                self.setOwner(constraint.to_var)
-                    if isinstance(constraint, FieldAccessConstraint):
-                        parents = []
-                        for member in constraint.members:
-                            parents.append(member.info.ownership_var)
-                        parents.append(constraint.root)
-                        parents.reverse()
-                        final = Owner()
-                        for parent in parents:
-                            parent_o = self.getOwnership(parent)
-                            if isinstance(parent_o, Unknown):
-                                final = Unknown()
-                                break
-                            if isinstance(parent_o, Borrow):
-                                final = Borrow()
-                                break
-                        if isinstance(final, Owner):
-                            self.setOwner(constraint.var)
-                        elif isinstance(final, Borrow):
-                            self.setBorrow(constraint.var)
+        (groups, constraints) = self.collectConstraints()
+        self.processConstraints(groups, constraints)
         self.fn.ownerships = self.ownerships
 
     def dump(self):

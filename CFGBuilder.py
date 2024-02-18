@@ -35,20 +35,6 @@ class CFGBuilder(object):
                 Util.error("method call in CFG!")
             elif isinstance(i, IR.Bind):
                 last = self.processGenericInstruction(i, last)
-            elif isinstance(i, IR.VarRef):
-                instr_key = CFG.InstructionKey()
-                instr_key.id = i.id
-                instr_node = CFG.Node()
-                instr_node.kind = str(i)
-                instr_node.usage = Path.WholePath()
-                instr_node.usage.var = i.name
-                self.cfg.addNode(instr_key, instr_node)
-                if last:
-                    edge = CFG.Edge()
-                    edge.from_node = last
-                    edge.to_node = instr_key
-                    self.cfg.addEdge(edge)
-                last = instr_key
             elif isinstance(i, IR.DropVar):
                 instr_key = CFG.DropKey()
                 instr_key.id = i.id
@@ -70,7 +56,10 @@ class CFGBuilder(object):
                 instr_key.id = i.id
                 instr_node = CFG.Node()
                 instr_node.kind = str(i)
-                instr_node.usage = Path.PartialPath()
+                if len(i.fields) == 0:
+                    instr_node.usage = Path.WholePath()
+                else:
+                    instr_node.usage = Path.PartialPath()
                 instr_node.usage.var = i.name
                 instr_node.usage.fields = i.fields
                 self.cfg.addNode(instr_key, instr_node)

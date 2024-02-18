@@ -17,7 +17,7 @@ def test(entry):
     if r.returncode != 0:
         failure += 1
         return
-    subprocess.run(["rustc", output_path, "-o", rust_output_path])
+    r = subprocess.run(["rustc", output_path, "-o", rust_output_path])
     if r.returncode != 0:
         failure += 1
         return
