@@ -39,7 +39,10 @@ class InstructionId(object):
         return p
     
     def __eq__(self, other):
-        return self.block == other.block and self.value == other.value
+        if isinstance(other, InstructionId):
+            return self.block == other.block and self.value == other.value
+        else:
+            return False
 
     def __hash__(self):
         return self.block.__hash__()

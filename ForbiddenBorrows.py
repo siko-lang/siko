@@ -40,12 +40,12 @@ class InferenceEngine(object):
                         forbidden_borrows[ownership_var] = set()
                     for witnessed_move in witnessed_moves:
                         forbidden_borrows[ownership_var].add(witnessed_move)
-        print("forbidden_borrows", forbidden_borrows)
+        #print("forbidden_borrows", forbidden_borrows)
         fn.forbidden_borrows = forbidden_borrows
-        for block in fn.body.blocks:
-            print("%s. block:" % block.id)
-            for i in block.instructions:
-                print("   %4s %35s %10s %s %s" % (i.id, i, i.tv_info, i.members, all_witnessed_moves[i.id]))
+        # for block in fn.body.blocks:
+        #     print("%s. block:" % block.id)
+        #     for i in block.instructions:
+        #         print("   %4s %35s %10s %s %s" % (i.id, i, i.tv_info, i.members, all_witnessed_moves[i.id]))
 
 def infer(program):
     for f in program.functions.values():

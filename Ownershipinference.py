@@ -74,8 +74,8 @@ class InferenceEngine(object):
     def inferFn(self, fn):
         self.fn = fn
         #print("Inference for %s" % fn.name)
-        self.initialize()
-        self.dump()
+        self.run()
+        #self.dump()
 
     def setOwner(self, var):
         self.ownerships[var] = Owner()
@@ -89,7 +89,7 @@ class InferenceEngine(object):
         else:
             return Unknown()
 
-    def initialize(self):
+    def run(self):
         dep_map = {}
         constraints = {}
         for block in self.fn.body.blocks:
@@ -142,10 +142,14 @@ class InferenceEngine(object):
                             arg = self.fn.body.getInstruction(constraint.source_id)
                             if arg.borrow:
                                 forbidden_borrows = self.fn.forbidden_borrows[constraint.to_var]
-                                print("Borrow %s %s %s" % (constraint.to_var, forbidden_borrows, arg.usage))
-                                self.setOwner(constraint.to_var)
+                                #print("Borrow %s %s %s" % (constraint.to_var, forbidden_borrows, arg.usage))
+                                if arg.usage in forbidden_borrows:
+                                    print("Promoting to owner %s" % constraint.to_var)
+                                    self.setOwner(constraint.to_var)    
+                                else:
+                                    self.setBorrow(constraint.to_var)
                             else:
-                                self.setBorrow(constraint.to_var)
+                                self.setOwner(constraint.to_var)
                     if isinstance(constraint, FieldAccessConstraint):
                         parents = []
                         for member in constraint.members:
