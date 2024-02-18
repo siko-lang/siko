@@ -55,6 +55,7 @@ class BaseInstruction(object):
         self.id = 0
         self.tv_info = None
         self.members = []
+        self.moves = []
 
 class BlockRef(BaseInstruction):
     def __init__(self):

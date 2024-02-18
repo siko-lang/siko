@@ -2,54 +2,7 @@ import IR
 import copy
 import CFG
 import CFGBuilder
-
-class WholePath(object):
-    def __init__(self, isDrop = False):
-        self.var = None
-        self.is_drop = isDrop
-
-    def __str__(self):
-        return "whole(%s)" % (self.var)
-
-    def __eq__(self, other):
-        if isinstance(other, WholePath):
-            return self.var == other.var
-        else:
-            return False
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
-
-    def __hash__(self):
-        return self.var.__hash__()
-
-class PartialPath(object):
-    def __init__(self):
-        self.var = None
-        self.fields = []
-
-    def __str__(self):
-        fields = ".".join(self.fields)
-        return "partial(%s.%s)" % (self.var, fields)
-
-    def __eq__(self, other):
-        if isinstance(other, PartialPath):
-            if self.var != other.var:
-                return False
-            if len(self.fields) != len(other.fields):
-                return False
-            for (index, v) in enumerate(self.fields):
-                if v != other.fields[index]:
-                    return False
-            return True
-        else:
-            return False
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
-
-    def __hash__(self):
-        return self.var.__hash__()
+import Path
 
 class Usage(object):
     def __init__(self):
@@ -111,13 +64,13 @@ class Borrowchecker(object):
         if current.var != other.var:
             return False
         else:
-            if isinstance(current, WholePath) and isinstance(other, WholePath):
+            if isinstance(current, Path.WholePath) and isinstance(other, Path.WholePath):
                 return True
-            if isinstance(current, WholePath) and isinstance(other, PartialPath):
+            if isinstance(current, Path.WholePath) and isinstance(other, Path.PartialPath):
                 return True
-            if isinstance(current, PartialPath) and isinstance(other, WholePath):
+            if isinstance(current, Path.PartialPath) and isinstance(other, Path.WholePath):
                 return True
-            if isinstance(current, PartialPath) and isinstance(other, PartialPath):
+            if isinstance(current, Path.PartialPath) and isinstance(other, Path.PartialPath):
                 c_len = len(current.fields)
                 o_len = len(other.fields)
                 min_len = min(c_len, o_len)
@@ -129,7 +82,7 @@ class Borrowchecker(object):
         #print("Invalidate %s %s" % (usage, usages))
         for prev_usage in usages.usages:
             if self.invalidates(usage.path, prev_usage.path):
-                if isinstance(usage.path, WholePath):
+                if isinstance(usage.path, Path.WholePath):
                     if usage.path.is_drop and prev_usage.id not in self.borrows:
                         # the current usage is a drop and the prev is a move
                         self.cancelled_drops.add(usage.id)
@@ -175,6 +128,28 @@ class Borrowchecker(object):
                 edge = self.cfg.edges[outgoing]
                 self.processNode(edge.to_node)
 
+    def update(self):
+        borrows = set()
+        for b in self.borrows:
+            if isinstance(b, CFG.InstructionKey):
+                self.fn.body.getInstruction(b.id).borrow = True
+                borrows.add(b.id)
+        for c in self.cancelled_drops:
+            self.fn.body.getInstruction(c.id).cancelled = True
+        for (key, node) in self.cfg.nodes.items():
+            #print("key %s, usage %s/%s" % (key, node.usage, type(node.usage)))
+            #print("all usages: %s" % self.usages[key])
+            if isinstance(key, CFG.InstructionKey):
+                witnessed_usages = self.usages[key]
+                moves = set()
+                for witnessed_usage in witnessed_usages.usages:
+                    if witnessed_usage.id.id not in borrows:
+                        moves.add(witnessed_usage.path)
+                instruction = self.fn.body.getInstruction(key.id)    
+                instruction.moves = moves
+                if node.usage is not None:
+                    instruction.usage = node.usage
+
     def printUsages(self):
         for (id, usage) in self.usages.items():
             if usage.len() > 0:
@@ -188,10 +163,9 @@ def checkFn(fn):
     cfg = cfgbuilder.build(fn)
     borrowchecker = Borrowchecker(cfg, fn)
     borrowchecker.check()
+    borrowchecker.update()
     # borrowchecker.printUsages()
     for b in borrowchecker.borrows:
-        if isinstance(b, CFG.InstructionKey):
-            fn.body.getInstruction(b.id).borrow = True
         cfg.getNode(b).color = "#cf03fc"
     for c in borrowchecker.cancelled_drops:
         fn.body.getInstruction(c.id).cancelled = True

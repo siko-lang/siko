@@ -1,7 +1,7 @@
 import IR
 import Util
 import CFG
-import Borrowchecker
+import Path
 
 class CFGBuilder(object):
     def __init__(self):
@@ -40,7 +40,7 @@ class CFGBuilder(object):
                 instr_key.id = i.id
                 instr_node = CFG.Node()
                 instr_node.kind = str(i)
-                instr_node.usage = Borrowchecker.WholePath()
+                instr_node.usage = Path.WholePath()
                 instr_node.usage.var = i.name
                 self.cfg.addNode(instr_key, instr_node)
                 if last:
@@ -54,7 +54,7 @@ class CFGBuilder(object):
                 instr_key.id = i.id
                 instr_node = CFG.Node()
                 instr_node.kind = str(i)
-                instr_node.usage = Borrowchecker.WholePath(isDrop=True)
+                instr_node.usage = Path.WholePath(isDrop=True)
                 instr_node.usage.var = i.name
                 self.cfg.addNode(instr_key, instr_node)
                 if last:

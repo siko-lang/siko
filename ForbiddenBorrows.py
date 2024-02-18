@@ -10,7 +10,6 @@ class InferenceEngine(object):
     def inferFn(self, fn):
         #print("Forbidden borrows ", fn.name)
         self.fn = fn
-
         members = self.fn.body.getAllMembers()
         ownership_dep_map = MemberInfo.calculateOwnershipDepMap(members)
         #print("ownership_dep_map", ownership_dep_map)
@@ -28,12 +27,8 @@ class InferenceEngine(object):
                     ownership_vars = []
                 ownership_vars.append(instruction.tv_info.ownership_var)
                 witnessed_moves = set()
-                if isinstance(instruction, IR.VarRef):
-                    if not instruction.borrow:
-                        witnessed_moves.add(instruction.name)
-                if isinstance(instruction, IR.ValueRef):
-                    if not instruction.borrow:
-                        witnessed_moves.add(instruction.name)
+                for move in instruction.moves:
+                    witnessed_moves.add(move)
                 deps = all_dependencies[item]
                 for dep in deps:
                     for w in all_witnessed_moves[dep]:
@@ -45,11 +40,12 @@ class InferenceEngine(object):
                         forbidden_borrows[ownership_var] = set()
                     for witnessed_move in witnessed_moves:
                         forbidden_borrows[ownership_var].add(witnessed_move)
-        # print("forbidden_borrows", forbidden_borrows)
-        # for block in fn.body.blocks:
-        #     print("%s. block:" % block.id)
-        #     for i in block.instructions:
-        #         print("   %4s %35s %10s %s %s" % (i.id, i, i.tv_info, i.members, all_witnessed_moves[i.id]))
+        print("forbidden_borrows", forbidden_borrows)
+        fn.forbidden_borrows = forbidden_borrows
+        for block in fn.body.blocks:
+            print("%s. block:" % block.id)
+            for i in block.instructions:
+                print("   %4s %35s %10s %s %s" % (i.id, i, i.tv_info, i.members, all_witnessed_moves[i.id]))
 
 def infer(program):
     for f in program.functions.values():

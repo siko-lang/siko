@@ -6,7 +6,7 @@ class ConverterConstraint(object):
     def __init__(self):
         self.from_var = None
         self.to_var = None
-        self.borrow = False
+        self.source_id = None
 
     def __str__(self):
         return "converter %s -> %s" % (self.from_var, self.to_var)
@@ -75,7 +75,7 @@ class InferenceEngine(object):
         self.fn = fn
         #print("Inference for %s" % fn.name)
         self.initialize()
-        #self.dump()
+        self.dump()
 
     def setOwner(self, var):
         self.ownerships[var] = Owner()
@@ -108,7 +108,7 @@ class InferenceEngine(object):
                 elif isinstance(i, IR.Converter):
                     arg = self.fn.body.getInstruction(i.arg)
                     constraint = ConverterConstraint()
-                    constraint.borrow = arg.borrow
+                    constraint.source_id = i.arg
                     constraint.from_var = arg.tv_info.ownership_var
                     constraint.to_var = i.tv_info.ownership_var
                     constraints[i.tv_info.ownership_var] = constraint
@@ -139,7 +139,10 @@ class InferenceEngine(object):
                     if isinstance(constraint, ConverterConstraint):
                         from_o = self.getOwnership(constraint.from_var)
                         if isinstance(from_o, Owner):
-                            if constraint.borrow:
+                            arg = self.fn.body.getInstruction(constraint.source_id)
+                            if arg.borrow:
+                                forbidden_borrows = self.fn.forbidden_borrows[constraint.to_var]
+                                print("Borrow %s %s %s" % (constraint.to_var, forbidden_borrows, arg.usage))
                                 self.setOwner(constraint.to_var)
                             else:
                                 self.setBorrow(constraint.to_var)

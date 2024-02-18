@@ -2,6 +2,7 @@
 
 import os
 import subprocess
+import sys
 
 success = 0
 failure = 0
@@ -22,6 +23,13 @@ def test(entry):
         return
     success += 1
 
+filters = []
+for arg in sys.argv[1:]:
+    filters.append(arg)
+
 for entry in os.listdir("./test"):
+    if len(filters) > 0 and entry not in filters:
+        continue
     test(entry)
+    
 print("Success %s/%s - %.2f%%" % (success, success + failure, success/(success+failure)*100))
