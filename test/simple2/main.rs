@@ -4,6 +4,7 @@
 #![allow(non_snake_case)]
 
 
+#[derive(Clone)]
 struct Main_Test {
 }
 

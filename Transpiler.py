@@ -1,5 +1,6 @@
 import IR
 import Util
+import Ownershipinference
 
 def ii(id):
     id = "i_%s_%s" % (id.block, id.value)
@@ -85,7 +86,16 @@ class Transpiler(object):
             elif isinstance(i, IR.DropVar):
                 pass
             elif isinstance(i, IR.Converter):
-                self.addInstr(i, "/*convert*/%s" % (ii(i.arg)))
+                arg = fn.body.getInstruction(i.arg)
+                arg_o = fn.ownerships[arg.tv_info.ownership_var]
+                res_o = fn.ownerships[i.tv_info.ownership_var]
+                if isinstance(arg_o,  Ownershipinference.Owner) and isinstance(res_o, Ownershipinference.Owner):
+                    if arg.borrow:
+                        self.addInstr(i, "/* clone ! */%s.clone()" % (ii(i.arg)))
+                    else:
+                        self.addInstr(i, "/* move */%s" % (ii(i.arg)))
+                else:
+                    self.addInstr(i, "/* convert */%s" % (ii(i.arg)))
             elif isinstance(i, IR.BlockRef):
                 self.processBlock(fn, i.value)
                 self.addInstr(i, "%s" % (bi(i.value)))
@@ -130,6 +140,7 @@ class Transpiler(object):
         self.print("}\n\n")
 
     def transpileClass(self, c):
+        self.print("#[derive(Clone)]\n")
         self.print("struct %s_%s {\n" % (c.module_name, c.name))
         for field in c.fields:
             self.print("    %s: %s,\n" % (field.name, self.transpileType(field.type)))

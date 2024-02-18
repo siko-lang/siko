@@ -70,7 +70,7 @@ class CFGBuilder(object):
                 instr_key.id = i.id
                 instr_node = CFG.Node()
                 instr_node.kind = str(i)
-                instr_node.usage = Borrowchecker.PartialPath()
+                instr_node.usage = Path.PartialPath()
                 instr_node.usage.var = i.name
                 instr_node.usage.fields = i.fields
                 self.cfg.addNode(instr_key, instr_node)

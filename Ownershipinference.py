@@ -78,9 +78,11 @@ class InferenceEngine(object):
         #self.dump()
 
     def setOwner(self, var):
+        #print("Set owner", var)
         self.ownerships[var] = Owner()
 
     def setBorrow(self, var):
+        #print("Set borrow", var)
         self.ownerships[var] = Borrow()
 
     def getOwnership(self, var):
@@ -144,7 +146,7 @@ class InferenceEngine(object):
                                 forbidden_borrows = self.fn.forbidden_borrows[constraint.to_var]
                                 #print("Borrow %s %s %s" % (constraint.to_var, forbidden_borrows, arg.usage))
                                 if arg.usage in forbidden_borrows:
-                                    print("Promoting to owner %s" % constraint.to_var)
+                                    #print("Promoting to owner %s" % constraint.to_var)
                                     self.setOwner(constraint.to_var)    
                                 else:
                                     self.setBorrow(constraint.to_var)
@@ -169,6 +171,7 @@ class InferenceEngine(object):
                             self.setOwner(constraint.var)
                         elif isinstance(final, Borrow):
                             self.setBorrow(constraint.var)
+        self.fn.ownerships = self.ownerships
 
     def dump(self):
         for block in self.fn.body.blocks:
