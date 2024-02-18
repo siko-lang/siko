@@ -70,11 +70,13 @@ class Borrow(object):
 class InferenceEngine(object):
     def __init__(self):
         self.fn = None
+        self.classes = None
         self.ownerships = {}
         self.borrow_map = BorrowUtil.BorrowMap()
 
-    def inferFn(self, fn):
+    def inferFn(self, fn, classes):
         self.fn = fn
+        self.classes = classes
         #print("Inference for %s" % fn.name)
         self.run()
         #self.dump()
@@ -212,7 +214,26 @@ class InferenceEngine(object):
             #print(id, constraint)
         (groups, constraints) = self.collectConstraints()
         self.processConstraints(groups, constraints)
-        self.fn.ownerships = self.ownerships
+        for block in self.fn.body.blocks:
+            for (index, i) in enumerate(block.instructions):
+                if isinstance(i, IR.Converter):
+                    arg = self.fn.body.getInstruction(i.arg)
+                    arg_o = self.ownerships[arg.tv_info.ownership_var]
+                    res_o = self.ownerships[i.tv_info.ownership_var]
+                    if isinstance(arg_o,  Owner) and isinstance(res_o, Owner):
+                        if arg.borrow:
+                            clazz = self.classes[arg.type.value]
+                            if "Clone" not in clazz.derives:
+                                Util.error("Cannot be cloned! %s" % arg.type)
+                            clone = IR.Clone()
+                            clone.id = i.id
+                            clone.arg = i.arg
+                            block.instructions[index] = clone
+                        else:
+                            move = IR.Move()
+                            move.id = i.id
+                            move.arg = i.arg
+                            block.instructions[index] = move
 
     def dump(self):
         for block in self.fn.body.blocks:
@@ -228,4 +249,4 @@ class InferenceEngine(object):
 def infer(program):
     for f in program.functions.values():
         engine = InferenceEngine()
-        engine.inferFn(f)
+        engine.inferFn(f, program.classes)

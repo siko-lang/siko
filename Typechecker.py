@@ -246,6 +246,7 @@ class Typechecker(object):
             for i in block.instructions:
                 type = self.types[i.id]
                 type = self.substitution.apply(type)
+                i.type = type
                 #print("%5s %30s : %s" % (i.id, i, type))
 
 def checkFunction(f, program):

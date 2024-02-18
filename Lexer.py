@@ -49,6 +49,8 @@ class Lexer(object):
                     self.addToken(Token.Keyword(self.current))
                 case "true":
                     self.addToken(Token.Keyword(self.current))
+                case "derive":
+                    self.addToken(Token.Keyword(self.current))
                 case _:
                     if self.current[0].isupper():
                         self.addToken(Token.TypeIdentifier(self.current))
@@ -114,6 +116,10 @@ class Lexer(object):
                 case '=':
                     self.endToken()
                     self.addToken(Token.Equal())
+                    self.step()
+                case '@':
+                    self.endToken()
+                    self.addToken(Token.At())
                     self.step()
                 case '+':
                     self.endToken()

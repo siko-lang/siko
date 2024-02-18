@@ -111,6 +111,7 @@ class Class(object):
         self.name = None
         self.fields = []
         self.methods = []
+        self.derives = []
 
 class Module(SyntaxBase):
     def __init__(self):

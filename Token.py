@@ -48,6 +48,9 @@ def Semicolon():
 def Colon():
     return Token("colon", None)
 
+def At():
+    return Token("@", None)
+
 def Comma():
     return Token("comma", None)
 

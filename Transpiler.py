@@ -81,16 +81,11 @@ class Transpiler(object):
             elif isinstance(i, IR.DropVar):
                 pass
             elif isinstance(i, IR.Converter):
-                arg = fn.body.getInstruction(i.arg)
-                arg_o = fn.ownerships[arg.tv_info.ownership_var]
-                res_o = fn.ownerships[i.tv_info.ownership_var]
-                if isinstance(arg_o,  Ownershipinference.Owner) and isinstance(res_o, Ownershipinference.Owner):
-                    if arg.borrow:
-                        self.addInstr(i, "/* clone ! */%s.clone()" % (ii(i.arg)))
-                    else:
-                        self.addInstr(i, "/* move */%s" % (ii(i.arg)))
-                else:
-                    self.addInstr(i, "/* convert */%s" % (ii(i.arg)))
+                self.addInstr(i, "/* convert */%s" % (ii(i.arg)))
+            elif isinstance(i, IR.Move):
+                self.addInstr(i, "/* move */%s" % (ii(i.arg)))
+            elif isinstance(i, IR.Clone):
+                self.addInstr(i, "/* clone! */%s.clone()" % (ii(i.arg)))
             elif isinstance(i, IR.BlockRef):
                 self.processBlock(fn, i.value)
                 self.addInstr(i, "%s" % (bi(i.value)))

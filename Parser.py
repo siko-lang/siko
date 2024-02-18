@@ -81,12 +81,24 @@ class Parser(object):
         return i
 
     def parseItem(self, module_name):
+        derives = []
+        if self.peek("@"):
+            self.expect("@")
+            self.expect("derive")
+            self.expect("leftparen")
+            while True:
+                d = self.parseTypeName()
+                derives.append(d)
+                if self.peek("rightparen"):
+                    break
+                self.expect("comma")
+            self.expect("rightparen")
         if self.peek("extern"):
-            self.parseExternClass()
+            self.parseExternClass(module_name, derives)
         elif self.peek("enum"):
             self.parseEnum()
         elif self.peek("class"):
-            return self.parseClass(module_name)
+            return self.parseClass(module_name, derives)
         elif self.peek("import"):
             return self.parseImport()
         elif self.peek("fn"):
@@ -325,9 +337,10 @@ class Parser(object):
         field.type = self.parseType()
         return field
 
-    def parseClass(self, module_name):
+    def parseClass(self, module_name, derives):
         c = Syntax.Class()
         c.module_name = module_name
+        c.derives = derives
         self.expect("class")
         c.name = self.parseTypeName()
         if self.peek("leftbracket"):
@@ -345,9 +358,9 @@ class Parser(object):
         self.expect("rightcurly")
         return c
 
-    def parseExternClass(self):
+    def parseExternClass(self, module_name, derives):
         self.expect("extern")
-        return self.parseClass()
+        return self.parseClass(module_name, derives)
 
     def parseModule(self):
         self.expect("module")

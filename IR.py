@@ -59,6 +59,7 @@ class BaseInstruction(object):
         self.tv_info = None
         self.members = []
         self.moves = []
+        self.type = None
 
 class BlockRef(BaseInstruction):
     def __init__(self):
@@ -211,6 +212,22 @@ class Converter(BaseInstruction):
     
     def __str__(self):
         return "convert %s" % self.arg
+
+class Clone(BaseInstruction):
+    def __init__(self):
+        super().__init__()
+        self.arg = None
+    
+    def __str__(self):
+        return "clone %s" % self.arg
+
+class Move(BaseInstruction):
+    def __init__(self):
+        super().__init__()
+        self.arg = None
+    
+    def __str__(self):
+        return "move %s" % self.arg
 
 class BoolLiteral(BaseInstruction):
     def __init__(self):
