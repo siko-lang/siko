@@ -214,6 +214,7 @@ class InferenceEngine(object):
             #print(id, constraint)
         (groups, constraints) = self.collectConstraints()
         self.processConstraints(groups, constraints)
+        self.dump();
         for block in self.fn.body.blocks:
             for (index, i) in enumerate(block.instructions):
                 if isinstance(i, IR.Converter):
@@ -221,19 +222,21 @@ class InferenceEngine(object):
                     arg_o = self.ownerships[arg.tv_info.ownership_var]
                     res_o = self.ownerships[i.tv_info.ownership_var]
                     if isinstance(arg_o,  Owner) and isinstance(res_o, Owner):
-                        if arg.borrow:
-                            clazz = self.classes[arg.type.value]
-                            if "Clone" not in clazz.derives:
-                                Util.error("Cannot be cloned! %s" % arg.type)
-                            clone = IR.Clone()
-                            clone.id = i.id
-                            clone.arg = i.arg
-                            block.instructions[index] = clone
-                        else:
-                            move = IR.Move()
-                            move.id = i.id
-                            move.arg = i.arg
-                            block.instructions[index] = move
+                        move = IR.Move()
+                        move.id = i.id
+                        move.tv_info = i.tv_info
+                        move.arg = i.arg
+                        block.instructions[index] = move
+                    if isinstance(arg_o,  Borrow) and isinstance(res_o, Owner):
+                        clazz = self.classes[arg.type.value]
+                        if "Clone" not in clazz.derives:
+                            self.dump()
+                            Util.error("Cannot be cloned! %s at %s" % (arg.type, i))
+                        clone = IR.Clone()
+                        clone.id = i.id
+                        clone.tv_info = i.tv_info
+                        clone.arg = i.arg
+                        block.instructions[index] = clone
 
     def dump(self):
         for block in self.fn.body.blocks:

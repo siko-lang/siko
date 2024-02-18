@@ -13,7 +13,7 @@ fn Main_main() -> () {
         let i_1_0 = Main_Object{};
         let tmp_1 = i_1_0;
         let i_1_2 = &tmp_1;
-        let i_1_3 = /* clone! */i_1_2.clone();
+        let i_1_3 = /* move */i_1_2;
         let tmp_2 = i_1_3;
         let i_1_5 = tmp_1;
         let i_1_6 = /* move */i_1_5;
