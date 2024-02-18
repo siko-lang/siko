@@ -10,9 +10,6 @@ struct String_String {
 struct Bool_Bool {
 }
 
-struct Unit_Unit {
-}
-
 struct Main_Address {
     city: String_String,
     street: String_String,
@@ -23,43 +20,46 @@ struct Main_Person {
     address: Main_Address,
 }
 
-fn Main_check(arg_0: Main_Address) -> Unit_Unit {
+struct Main_Unit {
+}
+
+fn Main_check(arg_0: Main_Address) -> () {
     let i_0_0 = arg_0;
     let tmp_1 = i_0_0;
-    let i_0_2 = Unit_Unit{};
+    let i_0_2 = ();
     i_0_2
 }
 
-fn Main_foo() -> Unit_Unit {
-    let i_0_0 = Unit_Unit{};
+fn Main_foo() -> () {
+    let i_0_0 = ();
     i_0_0
 }
 
-fn Main_bar() -> Unit_Unit {
-    let i_0_0 = Unit_Unit{};
+fn Main_bar() -> () {
+    let i_0_0 = ();
     i_0_0
 }
 
-fn Main_loop_init_fn() -> Unit_Unit {
-    let i_0_0 = Unit_Unit{};
+fn Main_loop_init_fn() -> () {
+    let i_0_0 = ();
     i_0_0
 }
 
 fn Main_id(arg_0: Main_Address) -> String_String {
     let i_0_0 = arg_0;
     let tmp_2 = i_0_0;
-    let i_0_2 = Unit_Unit{};
-    let i_0_3 = Unit_Unit{};
+    let i_0_2 = Main_Unit{};
+    let i_0_3 = Main_Unit{};
     let tmp_3 = i_0_3;
-    let i_0_5 = Unit_Unit{};
+    let i_0_5 = Main_Unit{};
     let tmp_4 = i_0_5;
     let i_0_7 = tmp_4;
     let i_0_8 = /*convert*/i_0_7;
     let i_0_9 = Main_eat(i_0_8);
-    let i_0_10 = Unit_Unit{};
+    let i_0_10 = Main_Unit{};
     let tmp_5 = i_0_10;
     let _block_1 = {
-        let i_1_0 = Unit_Unit{};
+        let i_1_0 = Main_Unit{};
         let tmp_6 = i_1_0;
         let _block_2 = {
             let i_2_0 = true;
@@ -101,14 +101,14 @@ fn Main_id(arg_0: Main_Address) -> String_String {
     i_0_12
 }
 
-fn Main_eat(arg_0: Unit_Unit) -> Unit_Unit {
+fn Main_eat(arg_0: Main_Unit) -> () {
     let i_0_0 = arg_0;
     let tmp_11 = i_0_0;
-    let i_0_2 = Unit_Unit{};
+    let i_0_2 = ();
     i_0_2
 }
 
-fn Main_main() -> Unit_Unit {
+fn Main_main() -> () {
     let i_0_0 = String_String{};
     let i_0_1 = String_String{};
     let i_0_2 = Main_Address{city: i_0_0, street: i_0_1};
@@ -122,7 +122,7 @@ fn Main_main() -> Unit_Unit {
     let i_0_10 = /*convert*/i_0_9;
     let i_0_11 = tmp_13.address;
     let i_0_12 = /*convert*/i_0_11;
-    let i_0_13 = Unit_Unit{};
+    let i_0_13 = ();
     i_0_13
 }
 

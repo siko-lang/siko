@@ -93,7 +93,8 @@ class Resolver(object):
                 Util.error("Failed to resolve type %s" % arg.type.name)
             else:
                 arg.type = arg_type
-        fn.return_type.name = moduleResolver.resolveName(fn.return_type.name)
+        if fn.return_type.name != Util.getUnit():
+            fn.return_type.name = moduleResolver.resolveName(fn.return_type.name)
         block = fn.body.getFirst()
         self.resolveBlock(env, moduleResolver, block, fn)
     
@@ -133,15 +134,18 @@ class Resolver(object):
                 else:
                     Util.error("Undefined var %s" % instruction.name)
             elif isinstance(instruction, IR.NamedFunctionCall):
-                var = env.resolveVar(instruction.name)
-                if var:
-                    instruction.name = var[0]
+                if instruction.name == Util.getUnit():
+                    pass # TODO
                 else:
-                    item = moduleResolver.resolveName(instruction.name)
-                    if item:
-                        instruction.name = item.name
+                    var = env.resolveVar(instruction.name)
+                    if var:
+                        instruction.name = var[0]
                     else:
-                        Util.error("Unknown fn %s %s" % (instruction.name, type(instruction.name)))
+                        item = moduleResolver.resolveName(instruction.name)
+                        if item:
+                            instruction.name = item.name
+                        else:
+                            Util.error("Unknown fn %s %s" % (instruction.name, type(instruction.name)))
         vars = env.varList
         vars.reverse()
         for (var, bind_id) in vars:

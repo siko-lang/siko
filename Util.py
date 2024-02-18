@@ -30,5 +30,5 @@ def getBool():
     return name
 
 def getUnit():
-    name = QualifiedName("Unit", "Unit")
+    name = "()"
     return name

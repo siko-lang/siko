@@ -289,8 +289,13 @@ class Parser(object):
             if not self.peek("rightparen"):
                 self.expect("comma")
         self.expect("rightparen")
-        self.expect("rightarrow")
-        fn.return_type = self.parseType()
+        if self.peek("rightarrow"):
+            self.expect("rightarrow")
+            fn.return_type = self.parseType()
+        else:
+            empty_tuple = Syntax.Type()
+            empty_tuple.name = "()"
+            fn.return_type = empty_tuple
         if self.peek("equal"):
             self.expect("equal")
             self.expect("extern")

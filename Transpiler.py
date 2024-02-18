@@ -60,20 +60,23 @@ class Transpiler(object):
             if isinstance(i, IR.VarRef):
                 self.addInstr(i, "%s" % vi(i.name))
             elif isinstance(i, IR.NamedFunctionCall):
-                if i.ctor:
-                    clazz = self.program.classes[i.name]
-                    call_args = []
-                    for (index, arg) in enumerate(i.args):
-                        field = clazz.fields[index]
-                        call_args.append("%s: %s" % (field.name, ii(arg)))
-                    call_args = ", ".join(call_args)
-                    self.addInstr(i, "%s{%s}" % (self.transpileFnName(i.name), call_args))
-                else:    
-                    call_args = []
-                    for arg in i.args:
-                        call_args.append("%s" % ii(arg))
-                    call_args = ", ".join(call_args)
-                    self.addInstr(i, "%s(%s)" % (self.transpileFnName(i.name), call_args))
+                if str(i.name) == Util.getUnit():
+                    self.addInstr(i, "()")
+                else:
+                    if i.ctor:
+                        clazz = self.program.classes[i.name]
+                        call_args = []
+                        for (index, arg) in enumerate(i.args):
+                            field = clazz.fields[index]
+                            call_args.append("%s: %s" % (field.name, ii(arg)))
+                        call_args = ", ".join(call_args)
+                        self.addInstr(i, "%s{%s}" % (self.transpileFnName(i.name), call_args))
+                    else:    
+                        call_args = []
+                        for arg in i.args:
+                            call_args.append("%s" % ii(arg))
+                        call_args = ", ".join(call_args)
+                        self.addInstr(i, "%s(%s)" % (self.transpileFnName(i.name), call_args))
             elif isinstance(i, IR.Bind):
                 self.print("%slet %s = %s;\n" % (self.getIndent(), vi(i.name), ii(i.rhs)))
             elif isinstance(i, IR.DropVar):

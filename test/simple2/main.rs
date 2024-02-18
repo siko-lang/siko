@@ -4,14 +4,11 @@
 #![allow(non_snake_case)]
 
 
-struct Unit_Unit {
-}
-
 struct Main_Test {
 }
 
-fn Main_main() -> Unit_Unit {
-    let i_0_0 = Unit_Unit{};
+fn Main_main() -> () {
+    let i_0_0 = ();
     i_0_0
 }
 

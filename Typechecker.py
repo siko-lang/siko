@@ -98,7 +98,10 @@ class Typechecker(object):
         block = fn.body.getFirst()
         self.checkBlock(block, fn)
         returnType = NamedType()
-        returnType.value = fn.return_type.name.name
+        if fn.return_type.name == Util.getUnit():
+            returnType.value = fn.return_type
+        else:
+            returnType.value = fn.return_type.name.name
         self.unify(self.types[block.getLast().id], returnType)
 
     def getFieldType(self, ty, field_name):
@@ -153,7 +156,8 @@ class Typechecker(object):
                     arg_type = NamedType()
                     arg_type.value = fn_arg.type.name
                     self.unify(self.types[i_arg], arg_type)
-                returnType.value = item.return_type.name.name
+                if item.return_type.name != Util.getUnit():
+                    returnType.value = item.return_type.name.name
                 self.unify(self.types[i.id], returnType)
             elif i.name in self.program.classes:
                 i.ctor = True
