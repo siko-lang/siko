@@ -1,6 +1,5 @@
 import Compiler.IR as IR
 import Compiler.Util as Util
-import Compiler.Ownership.Ownershipinference as Ownershipinference
 
 def ii(id):
     id = "i_%s_%s" % (id.block, id.value)

@@ -75,7 +75,7 @@ class InferenceEngine(object):
         borrow_id.value = id
         return borrow_id
 
-    def inferFn(self, fn, classes):
+    def infer(self, fn, classes):
         self.fn = fn
         self.classes = classes
         #print("Inference for %s" % fn.name)
@@ -199,24 +199,20 @@ class InferenceEngine(object):
                         constraint = CtorConstraint()
                         constraint.var = i.tv_info.ownership_var
                         constraints[i.tv_info.ownership_var] = constraint
-                # elif isinstance(i, IR.Converter):
-                #     arg = self.fn.body.getInstruction(i.arg)
-                #     constraint = ConverterConstraint()
-                #     constraint.source_id = i.arg
-                #     constraint.from_var = arg.tv_info.ownership_var
-                #     constraint.to_var = i.tv_info.ownership_var
-                #     constraints[i.tv_info.ownership_var] = constraint
-                #     dep_map[i.tv_info.ownership_var] = [arg.tv_info.ownership_var]
                 elif isinstance(i, IR.Bind):
                     constraint = CtorConstraint()
                     constraint.var = i.tv_info.ownership_var
                     constraints[i.tv_info.ownership_var] = constraint
                 elif isinstance(i, IR.ValueRef):
-                    root_instruction = self.fn.body.getInstruction(i.bind_id)
-                    root_instruction = self.fn.body.getInstruction(root_instruction.rhs)
+                    if i.bind_id is None:
+                        root = self.fn.ownership_signature.args[i.name.value].ownership_var
+                    else:
+                        root_instruction = self.fn.body.getInstruction(i.bind_id)
+                        root_instruction = self.fn.body.getInstruction(root_instruction.rhs)
+                        root = root_instruction.tv_info.ownership_var
                     constraint = FieldAccessConstraint()
                     constraint.borrow = i.borrow
-                    constraint.root = root_instruction.tv_info.ownership_var
+                    constraint.root = root
                     constraint.members = i.members
                     constraint.var = i.tv_info.ownership_var
                     constraint.instruction_id = i.id
@@ -271,8 +267,3 @@ class InferenceEngine(object):
                 if isinstance(ownership, Borrow):
                     borrows = self.borrow_map.getBorrows(ownership.borrow_id)
                 print("%5s %35s %10s %s %s %s %s" % (i.id, i, i.tv_info, ownership, members, member_ownerships, borrows))
-
-def infer(program):
-    for f in program.functions.values():
-        engine = InferenceEngine()
-        engine.inferFn(f, program.classes)

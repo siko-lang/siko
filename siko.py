@@ -8,9 +8,8 @@ import Compiler.Typechecker as Typechecker
 import Compiler.IR as IR
 import Compiler.Ownership.Borrowchecker as Borrowchecker
 import Compiler.Ownership.DataFlowPath as DataFlowPath
-import Compiler.Ownership.Equality as Equality
 import Compiler.Ownership.ForbiddenBorrows as ForbiddenBorrows
-import Compiler.Ownership.Ownershipinference as Ownershipinference
+import Compiler.Ownership.Monomorphizer as Monomorphizer
 import Compiler.Transpiler as Transpiler
 
 def compile():
@@ -34,10 +33,7 @@ def compile():
 
     Borrowchecker.processProgram(ir_program)
 
-    Equality.infer(ir_program)
-    DataFlowPath.infer(ir_program)
-    ForbiddenBorrows.infer(ir_program)
-    Ownershipinference.infer(ir_program)
+    Monomorphizer.monomorphize(ir_program)
     Transpiler.transpile(ir_program, output)
 
 compile()

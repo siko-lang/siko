@@ -99,6 +99,7 @@ class Function(SyntaxBase):
         self.args = []
         self.return_type = None
         self.body = None
+        self.ownership_signature = None
 
 class Field(object):
     def __init__(self):

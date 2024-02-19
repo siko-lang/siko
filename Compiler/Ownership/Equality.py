@@ -1,48 +1,41 @@
 import Compiler.IR as IR
 import Compiler.Util as Util
+import Compiler.Ownership.Signatures as Signatures
 import Compiler.Ownership.TypeVariableInfo as TypeVariableInfo
 import Compiler.Ownership.MemberInfo as MemberInfo
 
-class InferenceEngine(object):
+class EqualityEngine(object):
     def __init__(self):
         self.fn = None
-        self.next = 0
         self.tv_info_vars = {}
         self.substitution = TypeVariableInfo.Substitution()
 
-    def inferFn(self, fn):
+    def process(self, fn):
         self.fn = fn
-        #print("Equality for %s" % fn.name)
+        print("Equality for %s/%s" % (fn.name, fn.ownership_signature))
         self.initialize()
         self.mergeInstructions()
         self.mergeMembers()
         self.finalize()
-        #self.dump()
+        self.dump()
 
     def nextOwnershipVar(self):
-        n = self.next
-        self.next += 1
-        v = TypeVariableInfo.OwnershipVar()
-        v.value = n
-        return v
+        return self.fn.ownership_signature.allocator.nextOwnershipVar()
 
     def nextGroupVar(self):
-        n = self.next
-        self.next += 1
-        v = TypeVariableInfo.GroupVar()
-        v.value = n
-        return v
+        return self.fn.ownership_signature.allocator.nextGroupVar()
 
     def nextTypeVariableInfo(self):
-        tv_info = TypeVariableInfo.TypeVariableInfo()
-        tv_info.ownership_var = self.nextOwnershipVar()
-        tv_info.group_var = self.nextGroupVar()
-        return tv_info
+        return self.fn.ownership_signature.allocator.nextTypeVariableInfo()
 
     def initialize(self):
-        for arg in self.fn.args:
-            tv_info = self.nextTypeVariableInfo()
-            self.tv_info_vars[arg.name] = tv_info
+        if self.fn.ownership_signature is None:
+            self.fn.ownership_signature = Signatures.FunctionOwnershipSignature()
+            self.fn.ownership_signature.result = self.nextTypeVariableInfo()
+            for arg in self.fn.args:
+                self.fn.ownership_signature.args.append(self.nextTypeVariableInfo())
+        for (index, arg) in enumerate(self.fn.args):
+            self.tv_info_vars[arg.name] = self.fn.ownership_signature.args[index]
         for block in self.fn.body.blocks:
             for i in block.instructions:
                 i.tv_info = self.nextTypeVariableInfo()
@@ -140,6 +133,8 @@ class InferenceEngine(object):
     def mergeInstructions(self):
         block = self.fn.body.getFirst()
         self.processBlock(block)
+        ret = self.getInstructionTypeVariableInfo(block.getLastReal().id)
+        self.unify(self.fn.ownership_signature.result, ret)
     
     def mergeMembers(self):
         while True:
@@ -176,14 +171,15 @@ class InferenceEngine(object):
                     member.root = self.substitution.applyGroupVar(member.root)
                     member.info = self.substitution.applyTypeVariableInfo(member.info)
                 i.tv_info = self.substitution.applyTypeVariableInfo(i.tv_info)
+        args = []
+        for arg in self.fn.ownership_signature.args:
+            args.append(self.substitution.applyTypeVariableInfo(arg))
+        self.fn.ownership_signature.args = args
+        self.fn.ownership_signature.result = self.substitution.applyTypeVariableInfo(self.fn.ownership_signature.result)
     
     def dump(self):
+        print("Sig:", self.fn.ownership_signature)
         for block in self.fn.body.blocks:
             print("#%s block" % block.id)
             for i in block.instructions:
                 print("%5s %35s - %4s %s" % (i.id, i, i.tv_info, i.members))
-
-def infer(program):
-    for f in program.functions.values():
-        engine = InferenceEngine()
-        engine.inferFn(f)

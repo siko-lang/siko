@@ -1,3 +1,5 @@
+from functools import total_ordering
+
 
 class Substitution(object):
     def __init__(self):
@@ -6,11 +8,17 @@ class Substitution(object):
 
     def addOwnershipVar(self, ownership_var, other):
         if ownership_var != other:
-            self.ownership_vars[ownership_var] = other
+            if ownership_var < other:
+                self.ownership_vars[other] = ownership_var
+            else:
+                self.ownership_vars[ownership_var] = other
 
     def addGroupVar(self, group_var, other):
         if group_var != other:
-            self.group_vars[group_var] = other
+            if group_var < other:
+                self.group_vars[other] = group_var
+            else:
+                self.group_vars[group_var] = other
 
     def applyOwnershipVar(self, var):
         res = var
@@ -34,6 +42,7 @@ class Substitution(object):
         res.group_var = self.applyGroupVar(info.group_var)
         return res
 
+@total_ordering
 class OwnershipVar(object):
     def __init__(self):
         self.value = 0
@@ -53,6 +62,10 @@ class OwnershipVar(object):
     def __hash__(self):
         return self.value.__hash__()
 
+    def __lt__(self, other):
+        return self.value < other.value
+
+@total_ordering
 class GroupVar(object):
     def __init__(self):
         self.value = 0
@@ -72,10 +85,13 @@ class GroupVar(object):
     def __hash__(self):
         return self.value.__hash__()
 
+    def __lt__(self, other):
+        return self.value < other.value
+
 class TypeVariableInfo(object):
     def __init__(self):
-        self.ownership_var = None
-        self.group_var = None
+        self.ownership_var = OwnershipVar()
+        self.group_var = GroupVar()
 
     def __str__(self):
         return "(%s, %s)" % (self.ownership_var, self.group_var)

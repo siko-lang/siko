@@ -3,11 +3,11 @@ import Compiler.Ownership.DataFlowDependency as DataFlowDependency
 import Compiler.DependencyProcessor as DependencyProcessor
 import Compiler.Ownership.MemberInfo as MemberInfo
 
-class InferenceEngine(object):
+class ForbiddenBorrowsEngine(object):
     def __init__(self):
         self.fn = None
 
-    def inferFn(self, fn):
+    def process(self, fn):
         #print("Forbidden borrows ", fn.name)
         self.fn = fn
         members = self.fn.body.getAllMembers()
@@ -51,8 +51,3 @@ class InferenceEngine(object):
         #     print("%s. block:" % block.id)
         #     for i in block.instructions:
         #         print("   %4s %35s %10s %s %s" % (i.id, i, i.tv_info, i.members, all_witnessed_moves[i.id]))
-
-def infer(program):
-    for f in program.functions.values():
-        engine = InferenceEngine()
-        engine.inferFn(f)
