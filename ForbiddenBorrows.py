@@ -25,6 +25,11 @@ class InferenceEngine(object):
                     ownership_vars = list(ownership_dep_map[instruction.tv_info.group_var])
                 else:
                     ownership_vars = []
+                if isinstance(instruction, IR.ValueRef):
+                    if instruction.bind_id is not None:
+                        bind = self.fn.body.getInstruction(instruction.bind_id)
+                        bind_rhs = self.fn.body.getInstruction(bind.rhs)
+                        ownership_vars.append(bind_rhs.tv_info.ownership_var)
                 ownership_vars.append(instruction.tv_info.ownership_var)
                 witnessed_moves = set()
                 for move in instruction.moves:

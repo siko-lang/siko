@@ -16,8 +16,6 @@ def getDepsForInstruction(i, fn):
         return i.args
     elif isinstance(i, IR.DropVar):
         return []
-    elif isinstance(i, IR.Converter):
-        return [i.arg]
     elif isinstance(i, IR.BoolLiteral):
         return []
     elif isinstance(i, IR.Nop):

@@ -177,8 +177,6 @@ class Typechecker(object):
         elif isinstance(i, IR.Bind):
             self.unify(self.types[i.name], self.types[i.rhs])
             self.unify(self.types[i.id], unitType)
-        elif isinstance(i, IR.Converter):
-            self.unify(self.types[i.id], self.types[i.arg])
         elif isinstance(i, IR.BoolLiteral):
             self.unify(self.types[i.id], boolType)
         elif isinstance(i, IR.If):

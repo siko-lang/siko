@@ -112,7 +112,7 @@ class InferenceEngine(object):
                         self.unify(arg_info, member_info.info)
             elif isinstance(i, IR.ValueRef):
                 if len(i.members) == 0:
-                    self.unifyGroup(self.tv_info_vars[i.name].group_var, i.tv_info.group_var)    
+                    self.unifyGroup(self.tv_info_vars[i.name].group_var, i.tv_info.group_var)
                 else:
                     self.unifyGroup(self.tv_info_vars[i.name].group_var, i.members[0].root)
             elif isinstance(i, IR.BoolLiteral):
@@ -132,10 +132,6 @@ class InferenceEngine(object):
                 self.processBlock(b)
                 l_id = b.getLastReal().id
                 self.unifyInstrs(i.id, l_id)
-            elif isinstance(i, IR.Converter):
-                info1 = self.getInstructionTypeVariableInfo(i.id)
-                info2 = self.getInstructionTypeVariableInfo(i.arg)
-                self.unifyGroup(info1.group_var, info2.group_var)
             elif isinstance(i, IR.Nop):
                 pass
             else:

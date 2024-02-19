@@ -131,6 +131,8 @@ class ValueRef(BaseInstruction):
         self.fields = []
         self.indices = []
         self.borrow = False
+        self.move = False
+        self.clone = False
 
     def __str__(self):
         if len(self.fields) > 0:
@@ -204,30 +206,6 @@ class Return(BaseInstruction):
     
     def __str__(self):
         return "return %s" % self.arg
-
-class Converter(BaseInstruction):
-    def __init__(self):
-        super().__init__()
-        self.arg = None
-    
-    def __str__(self):
-        return "convert %s" % self.arg
-
-class Clone(BaseInstruction):
-    def __init__(self):
-        super().__init__()
-        self.arg = None
-    
-    def __str__(self):
-        return "clone %s" % self.arg
-
-class Move(BaseInstruction):
-    def __init__(self):
-        super().__init__()
-        self.arg = None
-    
-    def __str__(self):
-        return "move %s" % self.arg
 
 class BoolLiteral(BaseInstruction):
     def __init__(self):
@@ -422,10 +400,7 @@ class Processor(object):
                 value_ref= ValueRef()
                 value_ref.name = var
                 value_ref.fields = fields
-                ref_id = self.addInstruction(value_ref)
-                converter = Converter()
-                converter.arg = ref_id
-                return self.addInstruction(converter)
+                return self.addInstruction(value_ref)
             else:
                 receiver = self.processExpr(expr.receiver)
                 access = MemberAccess()
@@ -436,10 +411,7 @@ class Processor(object):
             ref = ValueRef()
             ref.name = expr.name
             ref.fields = []
-            ref_id = self.addInstruction(ref)
-            converter = Converter()
-            converter.arg = ref_id
-            return self.addInstruction(converter)
+            return self.addInstruction(ref)
         elif isinstance(expr, Syntax.If):
             if_instr = If()
             if_instr.cond = self.processExpr(expr.cond)

@@ -78,8 +78,6 @@ class InferenceEngine(object):
             elif isinstance(instruction, IR.ValueRef):
                 for i in instruction.indices:
                     value = FieldAccess(value, i)
-            elif isinstance(instruction, IR.Converter):
-                pass
             elif isinstance(instruction, IR.NamedFunctionCall):
                 if instruction.ctor:
                     for (arg_index, arg) in enumerate(instruction.args):

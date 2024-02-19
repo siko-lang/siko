@@ -71,8 +71,6 @@ class CFGBuilder(object):
                 last = instr_key
             elif isinstance(i, IR.BoolLiteral):
                 last = self.processGenericInstruction(i, last)
-            elif isinstance(i, IR.Converter):
-                last = self.processGenericInstruction(i, last)
             elif isinstance(i, IR.Return):
                 self.processGenericInstruction(i, last)
                 last = None

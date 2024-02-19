@@ -80,12 +80,6 @@ class Transpiler(object):
                 self.print("%slet %s = %s;\n" % (self.getIndent(), vi(i.name), ii(i.rhs)))
             elif isinstance(i, IR.DropVar):
                 pass
-            elif isinstance(i, IR.Converter):
-                self.addInstr(i, "/* convert */%s" % (ii(i.arg)))
-            elif isinstance(i, IR.Move):
-                self.addInstr(i, "/* move */%s" % (ii(i.arg)))
-            elif isinstance(i, IR.Clone):
-                self.addInstr(i, "/* clone! */%s.clone()" % (ii(i.arg)))
             elif isinstance(i, IR.BlockRef):
                 self.processBlock(fn, i.value)
                 self.addInstr(i, "%s" % (bi(i.value)))
@@ -96,11 +90,13 @@ class Transpiler(object):
                     self.addInstr(i, "false")
             elif isinstance(i, IR.ValueRef):
                 start = ""
-                if i.borrow:
+                if not i.clone and i.borrow:
                     start = "&"
                 v = start + vi(i.name)
                 for field in i.fields:
                     v += ".%s" % field
+                if i.clone:
+                    v = v + ".clone()"
                 self.addInstr(i, v)
             elif isinstance(i, IR.Nop):
                 pass
