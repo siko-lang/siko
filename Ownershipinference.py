@@ -254,8 +254,8 @@ class InferenceEngine(object):
                 if i.clone:
                     clazz = self.classes[i.type.value]
                     if "Clone" not in clazz.derives:
-                        self.dump()
-                        Util.error("Cannot be cloned! %s at %s" % (arg.type, i))
+                        # self.dump()
+                        Util.error("Cannot be cloned! %s at %s" % (i.type, i))
 
     def dump(self):
         print("forbidden", self.fn.forbidden_borrows)
