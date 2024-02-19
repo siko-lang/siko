@@ -186,6 +186,9 @@ class InferenceEngine(object):
     def collectConstraints(self):
         dep_map = {}
         constraints = {}
+        for arg in self.fn.ownership_signature.args:
+            dep_map[arg.ownership_var] = []
+        dep_map[self.fn.ownership_signature.result.ownership_var] = []
         for block in self.fn.body.blocks:
             for i in block.instructions:
                 if isinstance(i, IR.ValueRef):
@@ -231,10 +234,19 @@ class InferenceEngine(object):
         return (groups, constraints)
 
     def run(self):
-        #print(groups)
-        #for (id, constraint) in constraints.items():
-            #print(id, constraint)
         (groups, constraints) = self.collectConstraints()
+        #print(groups)
+        # for (id, constraint) in constraints.items():
+        #     print(id, constraint)
+        for external_borrow in self.fn.ownership_signature.borrows:
+            borrow_id = self.getNextBorrowId()
+            self.borrow_map.addExternalBorrow(borrow_id, external_borrow.borrow_id)
+            self.setBorrow(external_borrow.ownership_var, borrow_id)
+        for arg in self.fn.ownership_signature.args:
+            o = self.getOwnership(arg.ownership_var)
+            if isinstance(o, Unknown):
+                #print("Setting arg to owner", arg.ownership_var)
+                self.setOwner(arg.ownership_var)
         self.processConstraints(groups, constraints)
         # self.dump();
         for c in constraints.values():

@@ -1,10 +1,29 @@
 import Compiler.Ownership.Allocator as Allocator
 
+class ExternalBorrow(object):
+    def __init__(self) -> None:
+        self.ownership_var = None
+        self.borrow_id = None
+
+    def __str__(self):
+        return "(%s/%s)" % (self.ownership_var, self.borrow_id)
+    
+    def __repr__(self) -> str:
+        return self.__str__()
+    
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, ExternalBorrow):
+            return False
+        return self.ownership_var == other.ownership_var and self.borrow_id == other.borrow_id
+    
+    def __hash__(self):
+        return self.ownership_var.__hash__()
+
 class FunctionOwnershipSignature(object):
     def __init__(self):
         self.name = None
         self.args = []
-        self.result = []
+        self.result = None
         self.members = []
         self.borrows = []
         self.allocator = Allocator.Allocator()

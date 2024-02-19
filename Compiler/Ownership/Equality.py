@@ -12,12 +12,12 @@ class EqualityEngine(object):
 
     def process(self, fn):
         self.fn = fn
-        print("Equality for %s/%s" % (fn.name, fn.ownership_signature))
+        #print("Equality for %s/%s" % (fn.name, fn.ownership_signature))
         self.initialize()
         self.mergeInstructions()
         self.mergeMembers()
         self.finalize()
-        self.dump()
+        #self.dump()
 
     def nextOwnershipVar(self):
         return self.fn.ownership_signature.allocator.nextOwnershipVar()

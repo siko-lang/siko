@@ -34,7 +34,7 @@ fn Main_test1() -> () {
     let _block_1 = {
         let i_1_0 = Main_Object{};
         let tmp_1 = i_1_0;
-        let i_1_2 = tmp_1.clone();
+        let i_1_2 = &tmp_1;
         let tmp_2 = i_1_2;
         let i_1_4 = tmp_1;
         let i_1_5 = tmp_2;

@@ -19,7 +19,9 @@ class Monomorphizer(object):
 
     def processFunction(self, signature):
         if signature not in self.functions:
-            print("Processing fn %s" % signature)
+            if str(signature.name) == "()":
+                return
+            # print("Processing fn %s" % signature)
             fn = self.program.functions[signature.name]
             fn = copy.deepcopy(fn)
             self.functions[signature] = fn
@@ -38,8 +40,8 @@ class Monomorphizer(object):
                             for arg in i.args:
                                 arg_instr = fn.body.getInstruction(arg)
                                 signature.args.append(arg_instr.tv_info)
-                                signature.result = i.tv_info
-                                signature.allocator = copy.deepcopy(fn.ownership_signature.allocator)
+                            signature.result = i.tv_info
+                            signature.allocator = copy.deepcopy(fn.ownership_signature.allocator)
                             signature.name = i.name
                             self.addFunction(signature)
 
@@ -47,7 +49,7 @@ class Monomorphizer(object):
         print("Processing class %s" % signature)
 
     def processQueue(self):
-        while True:
+        while len(self.queue) > 0:
             first = self.queue.pop(0)
             if isinstance(first, Signatures.FunctionOwnershipSignature):
                 self.processFunction(first)
