@@ -1,17 +1,17 @@
 #!/bin/python3
 
 import sys
-import Parser
-import Syntax
-import NameResolver
-import Typechecker
-import IR
-import Borrowchecker
-import DataFlowPath
-import Equality
-import ForbiddenBorrows
-import Ownershipinference
-import Transpiler
+import Compiler.Parser as Parser
+import Compiler.Syntax as Syntax
+import Compiler.NameResolver as NameResolver
+import Compiler.Typechecker as Typechecker
+import Compiler.IR as IR
+import Compiler.Ownership.Borrowchecker as Borrowchecker
+import Compiler.Ownership.DataFlowPath as DataFlowPath
+import Compiler.Ownership.Equality as Equality
+import Compiler.Ownership.ForbiddenBorrows as ForbiddenBorrows
+import Compiler.Ownership.Ownershipinference as Ownershipinference
+import Compiler.Transpiler as Transpiler
 
 def compile():
     program = Syntax.Program()
