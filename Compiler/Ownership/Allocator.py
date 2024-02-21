@@ -2,10 +2,11 @@ import Compiler.Ownership.TypeVariableInfo as TypeVariableInfo
 
 class Allocator(object):
     def __init__(self):
-        self.next = 0
+        self._nextOwnershipVar = 0
+        self._nextGroupVar = 0
 
     def __str__(self):
-        return "allocator(%s)" % self.next
+        return "allocator(%s/%s)" % (self._nextOwnershipVar, self._nextGroupVar)
 
     def __repr__(self) -> str:
         return self.__str__()
@@ -13,18 +14,18 @@ class Allocator(object):
     def __eq__(self, other) -> bool:
         if not isinstance(self, Allocator):
             return False
-        return self.next == other.next
+        return self._nextOwnershipVar == other._nextOwnershipVar and self._nextGroupVar == other._nextGroupVar
 
     def nextOwnershipVar(self):
-        n = self.next
-        self.next += 1
+        n = self._nextOwnershipVar
+        self._nextOwnershipVar += 1
         v = TypeVariableInfo.OwnershipVar()
         v.value = n
         return v
 
     def nextGroupVar(self):
-        n = self.next
-        self.next += 1
+        n = self._nextGroupVar
+        self._nextGroupVar += 1
         v = TypeVariableInfo.GroupVar()
         v.value = n
         return v

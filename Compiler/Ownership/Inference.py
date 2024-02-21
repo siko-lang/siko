@@ -81,6 +81,7 @@ class InferenceEngine(object):
         #print("Inference for %s" % fn.name)
         self.run()
         #self.dump()
+        return self.ownerships
 
     def setOwner(self, var):
         #print("Set owner", var)

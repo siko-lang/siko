@@ -101,6 +101,9 @@ class Function(SyntaxBase):
         self.body = None
         self.ownership_signature = None
 
+    def getAllMembers(self):
+        return self.body.getAllMembers() + self.ownership_signature.members
+
 class Field(object):
     def __init__(self):
         self.name = None

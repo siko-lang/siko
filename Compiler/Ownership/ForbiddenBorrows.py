@@ -7,11 +7,9 @@ class ForbiddenBorrowsEngine(object):
     def __init__(self):
         self.fn = None
 
-    def process(self, fn):
+    def process(self, fn, ownership_dep_map):
         #print("Forbidden borrows ", fn.name)
         self.fn = fn
-        members = self.fn.body.getAllMembers()
-        ownership_dep_map = MemberInfo.calculateOwnershipDepMap(members)
         #print("ownership_dep_map", ownership_dep_map)
         all_dependencies = DataFlowDependency.getDataFlowDependencies(fn)
         groups = DependencyProcessor.processDependencies(all_dependencies)

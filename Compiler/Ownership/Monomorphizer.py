@@ -5,6 +5,8 @@ import Compiler.IR as IR
 import Compiler.Ownership.Inference as Inference
 import Compiler.Ownership.Equality as Equality
 import Compiler.Ownership.ForbiddenBorrows as ForbiddenBorrows
+import Compiler.Ownership.MemberInfo as MemberInfo
+import Compiler.Ownership.Normalizer as Normalizer
 import copy
 
 class Monomorphizer(object):
@@ -21,17 +23,21 @@ class Monomorphizer(object):
         if signature not in self.functions:
             if str(signature.name) == "()":
                 return
-            # print("Processing fn %s" % signature)
+            #print("Processing fn %s" % signature)
             fn = self.program.functions[signature.name]
             fn = copy.deepcopy(fn)
             self.functions[signature] = fn
             fn.ownership_signature = copy.deepcopy(signature)
             equality = Equality.EqualityEngine()
             equality.process(fn)
+            members = fn.getAllMembers()
+            #fn.body.dump()
+            #print("members", members)
+            ownership_dep_map = MemberInfo.calculateOwnershipDepMap(members)
             forbidden_borrows = ForbiddenBorrows.ForbiddenBorrowsEngine()
-            forbidden_borrows.process(fn)
+            forbidden_borrows.process(fn, ownership_dep_map)
             inference = Inference.InferenceEngine()
-            inference.infer(fn, self.program.classes)
+            ownerships = inference.infer(fn, self.program.classes)
             for block in fn.body.blocks:
                 for i in block.instructions:
                     if isinstance(i, IR.NamedFunctionCall):
@@ -43,6 +49,10 @@ class Monomorphizer(object):
                             signature.result = i.tv_info
                             signature.allocator = copy.deepcopy(fn.ownership_signature.allocator)
                             signature.name = i.name
+                            signature = Normalizer.normalizeFunctionOwnershipSignature(signature, 
+                                                                                       ownership_dep_map,
+                                                                                       members,
+                                                                                       ownerships)
                             self.addFunction(signature)
 
     def processClass(self, signature):

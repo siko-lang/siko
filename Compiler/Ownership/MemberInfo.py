@@ -5,7 +5,14 @@ class MemberKind(object):
         self.type = None
         self.index = 0
 
-    
+    def __eq__(self, other) -> bool:
+        if not isinstance(self, MemberKind):
+            return False
+        return self.type == other.type and self.index == other.index
+
+    def __hash__(self) -> int:
+        self.type.__hash__()
+
 class MemberInfo(object):
     def __init__(self):
         self.root = None
@@ -17,6 +24,14 @@ class MemberInfo(object):
 
     def __repr__(self) -> str:
         return self.__str__()
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(self, MemberInfo):
+            return False
+        return self.root == other.root and self.kind == other.kind and self.info == other.info
+
+    def __hash__(self) -> int:
+        self.root.__hash__()
 
 def getGroupDependencyMap(members):
     dep_map = {}
