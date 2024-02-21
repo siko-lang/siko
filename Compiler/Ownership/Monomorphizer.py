@@ -23,7 +23,7 @@ class Monomorphizer(object):
         if signature not in self.functions:
             if str(signature.name) == "()":
                 return
-            #print("Processing fn %s" % signature)
+            print("Processing fn %s" % signature)
             fn = self.program.functions[signature.name]
             fn = copy.deepcopy(fn)
             self.functions[signature] = fn

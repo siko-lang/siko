@@ -13,7 +13,7 @@ class BorrowId(object):
         return self.value.__hash__()
 
     def __str__(self):
-        return "$borrow.%s" % self.value
+        return "($borrow.%s)" % self.value
 
     def __repr__(self):
         return self.__str__()
@@ -43,7 +43,27 @@ class BorrowKind(object):
 
     def __repr__(self):
         return self.__str__()
-    
+
+class ExternalBorrow(object):
+    def __init__(self):
+        self.ownership_var = None
+        self.borrow_id = None
+
+    def __eq__(self, other):
+        return self.ownership_var == other.ownership_var and self.borrow_id == other.borrow_id
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def __hash__(self):
+        return self.ownership_var.__hash__()
+
+    def __str__(self):
+        return "(#external.%s/%s)" % (self.ownership_var, self.borrow_id)
+
+    def __repr__(self):
+        return self.__str__()
+
 class BorrowMap(object):
     def __init__(self):
         self.borrows = {}

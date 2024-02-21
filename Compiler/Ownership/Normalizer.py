@@ -1,6 +1,7 @@
 import Compiler.Ownership.Signatures as Signatures
 import Compiler.Ownership.Inference as Inference
 import Compiler.Ownership.MemberInfo as MemberInfo
+import Compiler.Ownership.BorrowUtil as BorrrowUtil
 import Compiler.Ownership.Allocator as Allocator
 import Compiler.Ownership.TypeVariableInfo as TypeVariableInfo
 import copy
@@ -10,6 +11,7 @@ class Normalizer(object):
         self.allocator = Allocator.Allocator()
         self.ownership_vars = {}
         self.group_vars = {}
+        self.borrows = {}
 
     def normalizeOwnershipVar(self, var):
         if var in self.ownership_vars:
@@ -26,6 +28,15 @@ class Normalizer(object):
             group_var = self.allocator.nextGroupVar()
             self.group_vars[var] = group_var
         return group_var
+
+    def normalizeBorrow(self, borrow):
+        if borrow in self.borrows:
+            b = self.borrows[borrow]
+        else:
+            b = copy.deepcopy(borrow)
+            b.value = self.allocator.nextBorrowVar()
+            self.borrows[borrow] = b
+        return b
 
     def normalize(self, info):
         res = copy.deepcopy(info)
@@ -98,10 +109,17 @@ def normalizeFunctionOwnershipSignature(signature, ownership_dep_map, members, o
     for arg in signature.args:
         ordered_members += collectChildMembers(normalizer, arg.group_var, only_borrowing_members)
     #print("Ordered members", ordered_members)
+    normalized_borrows = []
+    for borrower in borrows:
+        borrow = ownerships[borrower]
+        normalized_borrow = BorrrowUtil.ExternalBorrow()
+        normalized_borrow.borrow_id = normalizer.normalizeBorrow(borrow.borrow_id)
+        normalized_borrow.ownership_var = normalizer.normalizeOwnershipVar(borrower)
+        normalized_borrows.append(normalized_borrow)
     signature.args = normalized_args
     signature.members = ordered_members
     signature.result = normalized_result
     signature.allocator = normalizer.allocator
-    signature.borrows = borrows
+    signature.borrows = normalized_borrows
     #print("Signature2", signature)
     return signature

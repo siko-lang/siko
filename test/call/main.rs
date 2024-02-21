@@ -45,8 +45,22 @@ fn Main_main() -> () {
     let i_0_11 = tmp_4;
     let i_0_12 = Main_foo(i_0_11);
     let i_0_13 = tmp_2;
-    let i_0_14 = ();
-    i_0_14
+    let i_0_14 = Main_Foo{};
+    let i_0_15 = Main_Other{f: i_0_14};
+    let tmp_5 = i_0_15;
+    let i_0_17 = Main_Foo{};
+    let i_0_18 = Main_Other2{f: i_0_17};
+    let tmp_6 = i_0_18;
+    let i_0_20 = &tmp_5;
+    let i_0_21 = Main_Object{o: i_0_20};
+    let tmp_7 = i_0_21;
+    let i_0_23 = &tmp_7;
+    let i_0_24 = Main_foo(i_0_23);
+    let i_0_25 = tmp_7;
+    let i_0_26 = Main_foo(i_0_25);
+    let i_0_27 = tmp_5;
+    let i_0_28 = ();
+    i_0_28
 }
 
 fn main() {
