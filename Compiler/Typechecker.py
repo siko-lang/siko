@@ -101,10 +101,7 @@ class Typechecker(object):
         block = fn.body.getFirst()
         self.checkBlock(block, fn)
         returnType = NamedType()
-        if fn.return_type.name == Util.getUnit():
-            returnType.value = fn.return_type
-        else:
-            returnType.value = fn.return_type.name.name
+        returnType.value = fn.return_type
         self.unify(self.types[block.getLast().id], returnType)
 
     def getFieldType(self, ty, field_name):
@@ -126,14 +123,14 @@ class Typechecker(object):
         if isinstance(i, IR.BlockRef):
             block = fn.body.getBlock(i)
             self.checkBlock(block, fn)
-            last = block.getLast()
+            last = block.getLastReal()
             self.unify(self.types[last.id], self.types[i.id])
         elif isinstance(i, IR.Return):
             returnType = NamedType()
             returnType.value = fn.return_type.name.name
             self.unify(self.types[i.arg], returnType)
         elif isinstance(i, IR.DropVar):
-            pass
+            self.unify(self.types[i.id], unitType)
         elif isinstance(i, IR.Break):
             pass # TODO
             #self.unify(self.types[i.arg], returnType)
@@ -159,8 +156,7 @@ class Typechecker(object):
                     arg_type = NamedType()
                     arg_type.value = fn_arg.type.name
                     self.unify(self.types[i_arg], arg_type)
-                if item.return_type.name != Util.getUnit():
-                    returnType.value = item.return_type.name.name
+                returnType.value = item.return_type
                 self.unify(self.types[i.id], returnType)
             elif i.name in self.program.classes:
                 i.ctor = True
@@ -174,6 +170,11 @@ class Typechecker(object):
                     self.unify(self.types[i_arg], arg_type)
                 returnType.value = i.name
                 self.unify(self.types[i.id], returnType)
+            elif str(i.name) == ".()":
+                returnType.value = i.name
+                self.unify(self.types[i.id], returnType)
+            else:   
+                Util.error("TYPECHECK, Function not found!! %s" % i.name)
         elif isinstance(i, IR.Bind):
             self.unify(self.types[i.name], self.types[i.rhs])
             self.unify(self.types[i.id], unitType)

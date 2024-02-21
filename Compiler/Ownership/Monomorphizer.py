@@ -21,7 +21,7 @@ class Monomorphizer(object):
 
     def processFunction(self, signature):
         if signature not in self.functions:
-            if str(signature.name) == "()":
+            if signature.name == Util.getUnit():
                 return
             print("Processing fn %s" % signature)
             fn = self.program.functions[signature.name]
@@ -40,6 +40,10 @@ class Monomorphizer(object):
             ownerships = inference.infer(fn, self.program.classes)
             for block in fn.body.blocks:
                 for i in block.instructions:
+                    print("i", i)
+                    print("type!!", i.type)
+                    print("type!!", type(i.type))
+                    print("info %s", i.tv_info)
                     if isinstance(i, IR.NamedFunctionCall):
                         if not i.ctor:
                             signature = Signatures.FunctionOwnershipSignature()

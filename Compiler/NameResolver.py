@@ -93,8 +93,10 @@ class Resolver(object):
                 Util.error("Failed to resolve type %s" % arg.type.name)
             else:
                 arg.type = arg_type
-        if fn.return_type.name != Util.getUnit():
-            fn.return_type.name = moduleResolver.resolveName(fn.return_type.name)
+        if fn.return_type.name == "()":
+            fn.return_type = Util.getUnit()
+        else:
+            fn.return_type = moduleResolver.resolveName(fn.return_type.name)
         block = fn.body.getFirst()
         self.resolveBlock(env, moduleResolver, block, fn)
     

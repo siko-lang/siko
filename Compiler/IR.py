@@ -325,15 +325,15 @@ class Processor(object):
             if isinstance(lastStatement, Syntax.ExprStatement):
                 if lastStatement.has_semicolon:
                     unit = NamedFunctionCall()
-                    unit.name = str(Util.getUnit())
+                    unit.name = Util.getUnit()
                     self.addInstruction(unit)
             else:
                 unit = NamedFunctionCall()
-                unit.name = str(Util.getUnit())
+                unit.name = Util.getUnit()
                 self.addInstruction(unit)
         else:
             unit = NamedFunctionCall()
-            unit.name = str(Util.getUnit())
+            unit.name = Util.getUnit()
             self.addInstruction(unit)
         self.current.pop()
         return block.id

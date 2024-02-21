@@ -13,7 +13,10 @@ class QualifiedName(object):
             return "%s.%s" % (self.moduleName, self.name)
 
     def __eq__(self, other):
-        return self.moduleName == other.moduleName and self.name == other.name and self.className == other.className
+        if isinstance(other, QualifiedName):
+            return self.moduleName == other.moduleName and self.name == other.name and self.className == other.className
+        else:
+            return False
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -30,5 +33,5 @@ def getBool():
     return name
 
 def getUnit():
-    name = "()"
+    name = QualifiedName("", "()")
     return name
