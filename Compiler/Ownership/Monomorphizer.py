@@ -16,6 +16,9 @@ class Monomorphizer(object):
         self.classes = {}
         self.queue = []
 
+    def addClass(self, signature):
+        self.queue.append(signature)
+
     def addFunction(self, signature):
         self.queue.append(signature)
 
@@ -40,10 +43,16 @@ class Monomorphizer(object):
             ownerships = inference.infer(fn, self.program.classes)
             for block in fn.body.blocks:
                 for i in block.instructions:
-                    print("i", i)
-                    print("type!!", i.type)
-                    print("type!!", type(i.type))
-                    print("info %s", i.tv_info)
+                    if i.type is None:
+                        continue
+                    signature = Signatures.ClassInstantiationSignature()
+                    signature.name = i.type
+                    signature = Normalizer.normalizeClassOwnershipSignature(signature, 
+                                                                            i.tv_info,
+                                                                            ownership_dep_map,
+                                                                            members,
+                                                                            ownerships)
+                    self.addClass(signature)
                     if isinstance(i, IR.NamedFunctionCall):
                         if not i.ctor:
                             signature = Signatures.FunctionOwnershipSignature()
@@ -60,7 +69,9 @@ class Monomorphizer(object):
                             self.addFunction(signature)
 
     def processClass(self, signature):
-        print("Processing class %s" % signature)
+        if signature not in self.classes:
+            print("Processing class %s" % signature)
+            self.classes[signature] = ()
 
     def processQueue(self):
         while len(self.queue) > 0:

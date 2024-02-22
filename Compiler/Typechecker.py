@@ -24,6 +24,21 @@ class NamedType(object):
     def __init__(self):
         self.value = None
 
+    def setType(self, ty):
+        if isinstance(ty, Util.QualifiedName):
+            self.value = ty
+        else:
+            raise "Not qualified name! %s" % type(ty)
+
+    def __eq__(self, other):
+        if isinstance(other, NamedType):
+            return self.value == other.value
+        else:
+            return False
+    
+    def __hash__(self) -> int:
+        return self.value.__hash__()
+
     def __str__(self):
         return "Named:%s" % self.value
 
@@ -67,7 +82,7 @@ class Typechecker(object):
     def initialize(self, fn):
         for arg in fn.args:
             namedType = NamedType()
-            namedType.value = arg.type.name
+            namedType.setType(arg.type.name)
             self.types[arg.name] = namedType
         for block in fn.body.blocks:
             for i in block.instructions:
@@ -101,7 +116,7 @@ class Typechecker(object):
         block = fn.body.getFirst()
         self.checkBlock(block, fn)
         returnType = NamedType()
-        returnType.value = fn.return_type
+        returnType.setType(fn.return_type)
         self.unify(self.types[block.getLast().id], returnType)
 
     def getFieldType(self, ty, field_name):
@@ -112,7 +127,7 @@ class Typechecker(object):
                 if field.name == field_name:
                     found = True
                     fieldType = NamedType()
-                    fieldType.value = field.type.name.name
+                    fieldType.setType(field.type.name.name)
                     #print("field type %s [%s]" % (fieldType, i.name))
                     return (index, fieldType)
             if not found:
@@ -127,7 +142,7 @@ class Typechecker(object):
             self.unify(self.types[last.id], self.types[i.id])
         elif isinstance(i, IR.Return):
             returnType = NamedType()
-            returnType.value = fn.return_type.name.name
+            returnType.setType(fn.return_type.name.name)
             self.unify(self.types[i.arg], returnType)
         elif isinstance(i, IR.DropVar):
             self.unify(self.types[i.id], unitType)
@@ -154,9 +169,9 @@ class Typechecker(object):
                 for (index, i_arg) in enumerate(i.args):
                     fn_arg = item.args[index]
                     arg_type = NamedType()
-                    arg_type.value = fn_arg.type.name
+                    arg_type.setType(fn_arg.type.name)
                     self.unify(self.types[i_arg], arg_type)
-                returnType.value = item.return_type
+                returnType.setType(item.return_type)
                 self.unify(self.types[i.id], returnType)
             elif i.name in self.program.classes:
                 i.ctor = True
@@ -166,12 +181,12 @@ class Typechecker(object):
                 for (index, i_arg) in enumerate(i.args):
                     fn_arg = clazz.fields[index]
                     arg_type = NamedType()
-                    arg_type.value = fn_arg.type.name.name
+                    arg_type.setType(fn_arg.type.name.name)
                     self.unify(self.types[i_arg], arg_type)
-                returnType.value = i.name
+                returnType.setType(i.name)
                 self.unify(self.types[i.id], returnType)
             elif str(i.name) == ".()":
-                returnType.value = i.name
+                returnType = unitType
                 self.unify(self.types[i.id], returnType)
             else:   
                 Util.error("TYPECHECK, Function not found!! %s" % i.name)
@@ -204,11 +219,11 @@ class Typechecker(object):
                         for (index, i_arg) in enumerate(total_args):
                             method_arg = method.args[index]
                             arg_type = NamedType()
-                            arg_type.value = method_arg.type.name
+                            arg_type.setType(method_arg.type.name)
                             self.unify(self.types[i_arg], arg_type)
                         found = True
                         returnType = NamedType()
-                        returnType.value = method.return_type.name.name
+                        returnType.setType(method.return_type.name.name)
                         # print("method return type %s [%s]" % (returnType, i.name))
                         self.unify(self.types[i.id], returnType)
                 named_call = IR.NamedFunctionCall()

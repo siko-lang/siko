@@ -26,7 +26,7 @@ struct Main_Object {
 fn Main_foo(arg_0: Main_Object) -> () {
     let i_0_0 = arg_0;
     let tmp_1 = i_0_0;
-    let i_0_2 = _()();
+    let i_0_2 = ();
     i_0_2
 }
 
@@ -59,7 +59,7 @@ fn Main_main() -> () {
     let i_0_25 = tmp_7;
     let i_0_26 = Main_foo(i_0_25);
     let i_0_27 = tmp_5;
-    let i_0_28 = _()();
+    let i_0_28 = ();
     i_0_28
 }
 

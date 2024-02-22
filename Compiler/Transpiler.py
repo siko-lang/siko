@@ -58,7 +58,7 @@ class Transpiler(object):
         self.indentLevel += 4
         for i in block.instructions:
             if isinstance(i, IR.NamedFunctionCall):
-                if str(i.name) == Util.getUnit():
+                if str(i.name) == str(Util.getUnit()):
                     self.addInstr(i, "()")
                 else:
                     if i.ctor:
