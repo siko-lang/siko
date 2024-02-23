@@ -96,7 +96,7 @@ class Resolver(object):
         if fn.return_type.name == "()":
             fn.return_type = Util.getUnit()
         else:
-            fn.return_type = moduleResolver.resolveName(fn.return_type.name)
+            fn.return_type = moduleResolver.resolveName(fn.return_type.name).name
         block = fn.body.getFirst()
         self.resolveBlock(env, moduleResolver, block, fn)
     

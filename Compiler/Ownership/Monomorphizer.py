@@ -55,6 +55,17 @@ class Monomorphizer(object):
                 arg.type = tsignature
                 arg.ownership = ownerships[arg_tv_info.ownership_var]
                 self.addClass(tsignature)
+            rsignature = Signatures.ClassInstantiationSignature()
+            rsignature.name = fn.return_type
+            ret_tv_info = copy.deepcopy(signature.result)
+            rsignature = Normalizer.normalizeClassOwnershipSignature(rsignature, 
+                                                                     ret_tv_info,
+                                                                     ownership_dep_map,
+                                                                     members,
+                                                                     borrow_provider)
+            self.addClass(rsignature)
+            fn.return_type = rsignature
+            fn.return_ownership = ownerships[ret_tv_info.ownership_var]
             for block in fn.body.blocks:
                 for i in block.instructions:
                     if i.type is None:

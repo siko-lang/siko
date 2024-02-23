@@ -118,7 +118,7 @@ class Typechecker(object):
         self.checkBlock(block, fn)
         returnType = NamedType()
         returnType.setType(fn.return_type)
-        self.unify(self.types[block.getLast().id], returnType)
+        self.unify(self.types[block.getLastReal().id], returnType)
 
     def getFieldType(self, ty, field_name):
         if isinstance(ty, NamedType):
@@ -156,7 +156,7 @@ class Typechecker(object):
         elif isinstance(i, IR.Loop):
             body_block = fn.body.getBlock(i.body)
             self.checkBlock(body_block, fn)
-            last = body_block.getLast()
+            last = body_block.getLastReal()
             self.unify(self.types[i.init], self.types[i.var])
             self.unify(self.types[i.init], self.types[last.id])
         elif isinstance(i, IR.NamedFunctionCall):
@@ -200,11 +200,11 @@ class Typechecker(object):
             self.unify(self.types[i.cond], boolType)
             true_block = fn.body.getBlock(i.true_branch)
             self.checkBlock(true_block, fn)
-            true_block_last = true_block.getLast()
+            true_block_last = true_block.getLastReal()
             self.unify(self.types[true_block_last.id], self.types[i.id])
             false_block = fn.body.getBlock(i.false_branch)
             self.checkBlock(false_block, fn)
-            false_block_last = false_block.getLast()
+            false_block_last = false_block.getLastReal()
             self.unify(self.types[false_block_last.id], self.types[i.id])
         elif isinstance(i, IR.MethodCall):
             ty = self.types[i.receiver]
