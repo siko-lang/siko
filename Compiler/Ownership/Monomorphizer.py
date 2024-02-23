@@ -103,6 +103,8 @@ class Monomorphizer(object):
             print("Processing class %s" % signature)
             clazz = self.program.classes[signature.name]
             clazz = copy.deepcopy(clazz)
+            for borrow in signature.borrows:
+                clazz.lifetimes.append("'l%s" % borrow.borrow_id.value)
             fields = []
             field_infos = {}
             for member in signature.members:
@@ -126,6 +128,17 @@ class Monomorphizer(object):
                                                                          copy.deepcopy(signature.members),
                                                                          borrow_provider)
                 f.type = fsignature
+                if info.group_var in ownership_dep_map:
+                    dep_ownership_vars = ownership_dep_map[info.group_var]
+                    dep_lifetimes = []
+                    for borrow in signature.borrows:
+                        if borrow.ownership_var in dep_ownership_vars:
+                            dep_lifetimes.append("'l%s" % borrow.borrow_id.value)
+                    if len(dep_lifetimes) > 0:
+                        f.dep_lifetimes = dep_lifetimes
+                for borrow in signature.borrows:
+                    if borrow.ownership_var == info.ownership_var:
+                        f.lifetime = "'l%s" % borrow.borrow_id.value
                 self.addClass(fsignature)
                 fields.append(f)
             clazz.fields = fields

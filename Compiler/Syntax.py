@@ -109,6 +109,8 @@ class Field(object):
     def __init__(self):
         self.name = None
         self.type = None
+        self.lifetime = None
+        self.dep_lifetimes = None
 
 class Class(object):
     def __init__(self):
@@ -117,6 +119,7 @@ class Class(object):
         self.fields = []
         self.methods = []
         self.derives = []
+        self.lifetimes = []
 
 class Module(SyntaxBase):
     def __init__(self):

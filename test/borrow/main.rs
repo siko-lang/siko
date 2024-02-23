@@ -5,22 +5,22 @@
 
 
 #[derive(Clone)]
-struct Main_Object_0 {
+struct Main_Object_0<> {
 }
 
 #[derive(Clone)]
-struct Main_Name_0 {
+struct Main_Name_0<> {
 }
 
 #[derive(Clone)]
-struct Main_Address_0 {
-    street: Main_Name_0,
+struct Main_Address_0<'l0> {
+    street: &'l0 Main_Name_0,
     city: Main_Name_0,
 }
 
 #[derive(Clone)]
-struct Main_Person_0 {
-    address: Main_Address_0,
+struct Main_Person_0<'l0> {
+    address: Main_Address_0<'l0>,
 }
 
 fn Main_main_0() -> () {

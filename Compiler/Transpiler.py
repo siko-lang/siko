@@ -167,9 +167,15 @@ class Transpiler(object):
         if sig.name == Util.getBool():
             return
         self.print("#[derive(Clone)]\n")
-        self.print("struct %s {\n" % (self.transpileType(sig)))
+        self.print("struct %s<%s> {\n" % (self.transpileType(sig), ", ".join(c.lifetimes)))
         for field in c.fields:
-            self.print("    %s: %s,\n" % (field.name, self.transpileType(field.type)))
+            dep_lifetimes = ""
+            if field.dep_lifetimes is not None:
+                dep_lifetimes = "<%s>" % (", ".join(field.dep_lifetimes))
+            if field.lifetime:
+                self.print("    %s: &%s %s%s,\n" % (field.name, field.lifetime, self.transpileType(field.type), dep_lifetimes))
+            else:
+                self.print("    %s: %s%s,\n" % (field.name, self.transpileType(field.type), dep_lifetimes))
         self.print("}\n\n")
 
 def transpile(classes, functions, output):
