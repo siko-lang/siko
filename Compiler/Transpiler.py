@@ -77,12 +77,14 @@ class Transpiler(object):
     def addInstr(self, i, value, partial=False):
         indent = self.indentLevel * " "
         ty = self.transpileType(i.type_signature)
+        prefix = ""
         if isinstance(i.ownership, Inference.Borrow):
             ty = "&%s" % ty
+            prefix = "&"
         if partial:
-            self.print("%slet %s : %s = %s\n" % (self.getIndent(), ii(i.id), ty, value))
+            self.print("%slet %s : %s = %s%s\n" % (self.getIndent(), ii(i.id), ty, prefix, value))
         else:
-            self.print("%slet %s : %s = %s;\n" % (self.getIndent(), ii(i.id), ty, value))
+            self.print("%slet %s : %s = %s%s;\n" % (self.getIndent(), ii(i.id), ty, prefix, value))
 
     def processBlock(self, fn, block_id):
         self.print("%slet %s = {\n" % (self.getIndent(), bi(block_id)));
@@ -124,10 +126,7 @@ class Transpiler(object):
                 else:
                     self.addInstr(i, "false")
             elif isinstance(i, IR.ValueRef):
-                start = ""
-                if not i.clone and i.borrow:
-                    start = "&"
-                v = start + vi(i.name)
+                v = vi(i.name)
                 for field in i.fields:
                     v += ".%s" % field
                 if i.clone:

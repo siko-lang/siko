@@ -5,16 +5,16 @@
 
 
 #[derive(Clone)]
-struct Main_Foo_0 {
+struct Main_Foo_0<> {
 }
 
 #[derive(Clone)]
-struct Main_Other_0 {
+struct Main_Other_0<> {
     f: Main_Foo_0,
 }
 
 #[derive(Clone)]
-struct Main_Object_0 {
+struct Main_Object_0<> {
     o: Main_Other_0,
 }
 
@@ -34,7 +34,7 @@ fn Main_main_0() -> () {
 }
 
 fn Main_foo_0(arg_0: &Main_Object_0) -> () {
-    let i_0_0 : &Main_Object_0 = arg_0;
+    let i_0_0 : &Main_Object_0 = &arg_0;
     let tmp_1 = i_0_0;
     let i_0_2 : () = ();
     i_0_2

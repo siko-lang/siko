@@ -5,17 +5,17 @@
 
 
 #[derive(Clone)]
-struct Main_String_0 {
+struct Main_String_0<> {
 }
 
 #[derive(Clone)]
-struct Main_Address_0 {
+struct Main_Address_0<> {
     city: Main_String_0,
     street: Main_String_0,
 }
 
 #[derive(Clone)]
-struct Main_Person_0 {
+struct Main_Person_0<> {
     name: Main_String_0,
     address: Main_Address_0,
 }

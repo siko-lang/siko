@@ -106,9 +106,13 @@ def collectChildMembers(normalizer, var, members):
         normalized_child = copy.deepcopy(child)
         normalized_child.root = normalizer.normalizeGroupVar(child.root)
         normalized_child.info = normalizer.normalize(child.info)
-        normalized_children.append(normalized_child)
+        if normalized_child not in normalized_children:
+            normalized_children.append(normalized_child)
     for child in children:
-        normalized_children += collectChildMembers(normalizer, child.info.group_var, members)
+        sub = collectChildMembers(normalizer, child.info.group_var, members)
+        for m in sub:
+            if m not in normalized_children:
+                normalized_children.append(m)
     return normalized_children
 
 def normalizeFunctionOwnershipSignature(signature, ownership_dep_map, members, borrow_provider):
@@ -129,7 +133,10 @@ def normalizeFunctionOwnershipSignature(signature, ownership_dep_map, members, b
         normalized_args.append(normalizer.normalize(arg))
     normalized_result = normalizer.normalize(signature.result)
     for arg in signature.args:
-        ordered_members += collectChildMembers(normalizer, arg.group_var, only_borrowing_members)
+        sub = collectChildMembers(normalizer, arg.group_var, only_borrowing_members)
+        for m in sub:
+            if m not in ordered_members:
+                ordered_members.append(m)
     #print("Ordered members", ordered_members)
     normalized_borrows = []
     for borrower in borrows:
@@ -137,7 +144,8 @@ def normalizeFunctionOwnershipSignature(signature, ownership_dep_map, members, b
         normalized_borrow = BorrrowUtil.ExternalBorrow()
         normalized_borrow.borrow_id = normalizer.normalizeBorrow(borrow_id)
         normalized_borrow.ownership_var = normalizer.normalizeOwnershipVar(borrower)
-        normalized_borrows.append(normalized_borrow)
+        if normalized_borrow not in normalized_borrows:
+            normalized_borrows.append(normalized_borrow)
     signature.args = normalized_args
     signature.members = ordered_members
     signature.result = normalized_result
@@ -162,7 +170,8 @@ def normalizeClassOwnershipSignature(signature, info, ownership_dep_map, members
         normalized_borrow = BorrrowUtil.ExternalBorrow()
         normalized_borrow.borrow_id = normalizer.normalizeBorrow(borrow_id)
         normalized_borrow.ownership_var = normalizer.normalizeOwnershipVar(borrower)
-        normalized_borrows.append(normalized_borrow)
+        if normalized_borrow not in normalized_borrows:
+            normalized_borrows.append(normalized_borrow)
     signature.root = normalized_root
     signature.members = ordered_members
     signature.allocator = normalizer.allocator

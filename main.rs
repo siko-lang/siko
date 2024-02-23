@@ -5,59 +5,47 @@
 
 
 #[derive(Clone)]
-struct String_String_0 {
+struct String_String_0<> {
 }
 
 #[derive(Clone)]
-struct Main_Address_0 {
+struct Main_Address_0<> {
     city: String_String_0,
     street: String_String_0,
 }
 
 #[derive(Clone)]
-struct Main_Person_0 {
+struct Main_Person_0<> {
     name: String_String_0,
     address: Main_Address_0,
 }
 
 #[derive(Clone)]
-struct Main_Unit_0 {
+struct Main_Unit_0<> {
 }
 
 #[derive(Clone)]
-struct Main_Address_1 {
-    city: String_String_0,
+struct Main_Address_1<'l0> {
+    city: &'l0 String_String_0,
     street: String_String_0,
 }
 
 #[derive(Clone)]
-struct Main_Person_1 {
+struct Main_Person_1<'l0> {
     name: String_String_0,
-    address: Main_Address_2,
+    address: Main_Address_1<'l0>,
 }
 
 #[derive(Clone)]
-struct Main_Address_3 {
+struct Main_Address_2<'l0> {
     city: String_String_0,
-    street: String_String_0,
+    street: &'l0 String_String_0,
 }
 
 #[derive(Clone)]
-struct Main_Person_2 {
+struct Main_Person_2<'l0> {
     name: String_String_0,
-    address: Main_Address_4,
-}
-
-#[derive(Clone)]
-struct Main_Address_2 {
-    city: String_String_0,
-    street: String_String_0,
-}
-
-#[derive(Clone)]
-struct Main_Address_4 {
-    city: String_String_0,
-    street: String_String_0,
+    address: Main_Address_2<'l0>,
 }
 
 fn Main_main_0() -> () {
@@ -78,7 +66,7 @@ fn Main_main_0() -> () {
 }
 
 fn Main_id_0(arg_0: &Main_Address_0) -> String_String_0 {
-    let i_0_0 : &Main_Address_0 = arg_0;
+    let i_0_0 : &Main_Address_0 = &arg_0;
     let tmp_1 = i_0_0;
     let i_0_2 : Main_Unit_0 = Main_Unit_0{};
     let i_0_3 : Main_Unit_0 = Main_Unit_0{};
@@ -95,7 +83,7 @@ fn Main_id_0(arg_0: &Main_Address_0) -> String_String_0 {
         let _block_2 = {
             let i_2_0 : bool = true;
             let i_2_1 : String_String_0 = if i_2_0 {
-                let i_3_0 : &String_String_0 = tmp_1.city;
+                let i_3_0 : &String_String_0 = &tmp_1.city;
                 let i_3_1 : String_String_0 = String_String_0{};
                 let i_3_2 : Main_Address_1 = Main_Address_1{city: i_3_0, street: i_3_1};
                 let tmp_6 = i_3_2;
@@ -107,11 +95,11 @@ fn Main_id_0(arg_0: &Main_Address_0) -> String_String_0 {
                 i_3_8
             } else {
                 let i_4_0 : String_String_0 = String_String_0{};
-                let i_4_1 : &String_String_0 = tmp_1.street;
-                let i_4_2 : Main_Address_3 = Main_Address_3{city: i_4_0, street: i_4_1};
+                let i_4_1 : &String_String_0 = &tmp_1.street;
+                let i_4_2 : Main_Address_2 = Main_Address_2{city: i_4_0, street: i_4_1};
                 let tmp_8 = i_4_2;
                 let i_4_4 : String_String_0 = String_String_0{};
-                let i_4_5 : Main_Address_3 = tmp_8;
+                let i_4_5 : Main_Address_2 = tmp_8;
                 let i_4_6 : Main_Person_2 = Main_Person_2{name: i_4_4, address: i_4_5};
                 let tmp_9 = i_4_6;
                 let i_4_8 : String_String_0 = tmp_9.address.city;
