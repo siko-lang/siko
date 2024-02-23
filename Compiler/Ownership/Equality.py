@@ -118,6 +118,7 @@ class EqualityEngine(object):
                 t_id = true_branch.getLastReal().id
                 f_id = false_branch.getLastReal().id
                 self.unifyInstrs(t_id, f_id)
+                self.unifyInstrs(t_id, i.id)
             elif isinstance(i, IR.DropVar):
                 pass
             elif isinstance(i, IR.BlockRef):

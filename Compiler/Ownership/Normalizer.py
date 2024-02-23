@@ -133,7 +133,7 @@ def normalizeFunctionOwnershipSignature(signature, ownership_dep_map, members, b
     #print("Ordered members", ordered_members)
     normalized_borrows = []
     for borrower in borrows:
-        borrow_id = borrow_provider.getBorrow[borrower]
+        borrow_id = borrow_provider.getBorrow(borrower)
         normalized_borrow = BorrrowUtil.ExternalBorrow()
         normalized_borrow.borrow_id = normalizer.normalizeBorrow(borrow_id)
         normalized_borrow.ownership_var = normalizer.normalizeOwnershipVar(borrower)

@@ -31,5 +31,7 @@ for entry in os.listdir("./test"):
     if len(filters) > 0 and entry not in filters:
         continue
     test(entry)
-    
-print("Success %s/%s - %.2f%%" % (success, success + failure, success/(success+failure)*100))
+percent = 0
+if (success+failure) != 0:
+    percent = success/(success+failure)*100
+print("Success %s/%s - %.2f%%" % (success, success + failure, percent))

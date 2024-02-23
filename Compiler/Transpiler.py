@@ -42,6 +42,8 @@ class Transpiler(object):
             type_name = type.name
             if str(type_name) == ".()":
                 return "()"
+            if str(type_name) == "Bool.Bool":
+                return "bool"
             if type_name not in self.type_names:
                 self.type_names[type_name] = []
             instances = self.type_names[type_name]
@@ -162,6 +164,8 @@ class Transpiler(object):
         self.print("}\n\n")
 
     def transpileClass(self, sig, c):
+        if sig.name == Util.getBool():
+            return
         self.print("#[derive(Clone)]\n")
         self.print("struct %s {\n" % (self.transpileType(sig)))
         for field in c.fields:

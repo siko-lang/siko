@@ -203,6 +203,10 @@ class InferenceEngine(object):
                     constraint = CtorConstraint()
                     constraint.var = i.tv_info.ownership_var
                     constraints[i.tv_info.ownership_var] = constraint
+                elif isinstance(i, IR.BoolLiteral):
+                    constraint = CtorConstraint()
+                    constraint.var = i.tv_info.ownership_var
+                    constraints[i.tv_info.ownership_var] = constraint
                 elif isinstance(i, IR.NamedFunctionCall):
                     if i.ctor:
                         constraint = CtorConstraint()

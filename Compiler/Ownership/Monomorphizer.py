@@ -34,7 +34,6 @@ class Monomorphizer(object):
             equality = Equality.EqualityEngine()
             equality.process(fn)
             members = fn.getAllMembers()
-            #fn.body.dump()
             #print("members", members)
             ownership_dep_map = MemberInfo.calculateOwnershipDepMap(members)
             forbidden_borrows = ForbiddenBorrows.ForbiddenBorrowsEngine()
