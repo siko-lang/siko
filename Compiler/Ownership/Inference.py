@@ -60,6 +60,27 @@ class Borrow(object):
     def __repr__(self) -> str:
         return self.__str__()
 
+class ConstraintHolder(object):
+    def __init__(self):
+        self.constraints = {}
+    
+    def addConstraint(self, var, constraint):
+        if var not in self.constraints:
+            self.constraints[var] = []
+        self.constraints[var].append(constraint)
+
+    def getConstraints(self, var):
+        if var in self.constraints:
+            return self.constraints[var]
+        else:
+            return []
+
+    def getAll(self):
+        all = []
+        for (_, cs) in self.constraints.items():
+            all += cs
+        return all
+
 class InferenceEngine(object):
     def __init__(self):
         self.fn = None
@@ -100,15 +121,15 @@ class InferenceEngine(object):
             return Unknown()
 
     def processFieldAccessConstraint(self, constraint):
-        # print("FieldAccessConstraint %s" % constraint)
+        #print("FieldAccessConstraint %s" % constraint)
         parents = []
         for member in constraint.members:
             parents.append(member.info.ownership_var)
         parents.append(constraint.root)
         parents.reverse()
         constraint.final = Owner()
-        # print("parents", parents)
-        # print("ownerships", self.ownerships)
+        #print("parents", parents)
+        #print("ownerships", self.ownerships)
         for parent in parents:
             parent_o = self.getOwnership(parent)
             if isinstance(parent_o, Unknown):
@@ -154,31 +175,10 @@ class InferenceEngine(object):
                     is_valid = False
         return (user_borrows, is_valid)
 
-    def processConverterConstraint(self, constraint):
-        from_o = self.getOwnership(constraint.from_var)
-        to_o = self.getOwnership(constraint.to_var)
-        if isinstance(from_o, Owner) and isinstance(to_o, Unknown):
-            self.setOwner(constraint.to_var)
-        if isinstance(from_o, Owner) and isinstance(to_o, Borrow):
-            pass # TODO
-        if isinstance(from_o, Owner) and isinstance(to_o, Owner):
-            pass # nothing to do
-        if isinstance(from_o, Borrow) and isinstance(to_o, Unknown):
-            (user_borrows, is_valid) = self.checkBorrows(constraint.to_var, from_o.borrow_id)
-            if is_valid:
-                self.setBorrow(constraint.to_var, from_o.borrow_id)
-            else:
-                self.setOwner(constraint.to_var)
-        if isinstance(from_o, Borrow) and isinstance(to_o, Borrow):
-            pass # TODO
-        if isinstance(from_o, Borrow) and isinstance(to_o, Owner):
-            pass # TODO
-
     def processConstraints(self, groups, constraints):
         for group in groups:
             for item in group.items:
-                if item in constraints:
-                    constraint = constraints[item]
+                for constraint in constraints.getConstraints(item):
                     if isinstance(constraint, CtorConstraint):
                         self.setOwner(constraint.var)
                     if isinstance(constraint, FieldAccessConstraint):
@@ -186,7 +186,7 @@ class InferenceEngine(object):
 
     def collectConstraints(self):
         dep_map = {}
-        constraints = {}
+        constraints = ConstraintHolder()
         for arg in self.fn.ownership_signature.args:
             dep_map[arg.ownership_var] = []
         dep_map[self.fn.ownership_signature.result.ownership_var] = []
@@ -202,25 +202,25 @@ class InferenceEngine(object):
                     # TODO FIXME
                     constraint = CtorConstraint()
                     constraint.var = i.tv_info.ownership_var
-                    constraints[i.tv_info.ownership_var] = constraint
+                    constraints.addConstraint(i.tv_info.ownership_var, constraint)
                 elif isinstance(i, IR.BoolLiteral):
                     constraint = CtorConstraint()
                     constraint.var = i.tv_info.ownership_var
-                    constraints[i.tv_info.ownership_var] = constraint
+                    constraints.addConstraint(i.tv_info.ownership_var, constraint)
                 elif isinstance(i, IR.NamedFunctionCall):
                     if i.ctor:
                         constraint = CtorConstraint()
                         constraint.var = i.tv_info.ownership_var
-                        constraints[i.tv_info.ownership_var] = constraint
+                        constraints.addConstraint(i.tv_info.ownership_var, constraint)
                     else:
                         # TODO FIXME
                         constraint = CtorConstraint()
                         constraint.var = i.tv_info.ownership_var
-                        constraints[i.tv_info.ownership_var] = constraint
+                        constraints.addConstraint(i.tv_info.ownership_var, constraint)
                 elif isinstance(i, IR.Bind):
                     constraint = CtorConstraint()
                     constraint.var = i.tv_info.ownership_var
-                    constraints[i.tv_info.ownership_var] = constraint
+                    constraints.addConstraint(i.tv_info.ownership_var, constraint)
                 elif isinstance(i, IR.ValueRef):
                     if i.bind_id is None:
                         root = self.fn.ownership_signature.args[i.name.value].ownership_var
@@ -241,7 +241,7 @@ class InferenceEngine(object):
                         constraint.usage = Path.PartialPath()
                         constraint.usage.var = i.name
                         constraint.usage.fields = i.fields
-                    constraints[i.tv_info.ownership_var] = constraint
+                    constraints.addConstraint(i.tv_info.ownership_var, constraint)
                     for member in i.members:
                         dep_map[i.tv_info.ownership_var].append(member.info.ownership_var)
                     dep_map[i.tv_info.ownership_var].append(constraint.root)
@@ -264,11 +264,11 @@ class InferenceEngine(object):
                 self.setOwner(arg.ownership_var)
         self.processConstraints(groups, constraints)
         # self.dump();
-        for c in constraints.values():
+        for c in constraints.getAll():
             if isinstance(c, FieldAccessConstraint):
                 i = self.fn.body.getInstruction(c.instruction_id)
                 res_o = self.ownerships[i.tv_info.ownership_var]
-                # print("final %s, res %s, %s" % (c.final, res_o, i.tv_info))
+                #print("final %s, res %s, %s, %s, borrow:%s" % (c.final, res_o, i.tv_info, c.instruction_id, i.borrow))
                 if isinstance(c.final,  Owner) and isinstance(res_o, Owner):
                     if i.borrow:
                         i.clone = True
