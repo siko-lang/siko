@@ -26,7 +26,7 @@ class Monomorphizer(object):
         if signature not in self.functions:
             if signature.name == Util.getUnit():
                 return
-            print("Processing fn %s" % signature)
+            #print("Processing fn %s" % signature)
             fn = self.program.functions[signature.name]
             fn = copy.deepcopy(fn)
             fn.ownership_signature = copy.deepcopy(signature)
@@ -52,6 +52,7 @@ class Monomorphizer(object):
                                                                          members,
                                                                          ownerships)
                 arg.type = tsignature
+                arg.ownership = ownerships[arg_tv_info.ownership_var]
                 self.addClass(tsignature)
             for block in fn.body.blocks:
                 for i in block.instructions:
@@ -80,13 +81,14 @@ class Monomorphizer(object):
                                                                                        ownership_dep_map,
                                                                                        members,
                                                                                        ownerships)
+                            i.name = signature
                             self.addFunction(signature)
 
     def processClass(self, signature):
         if signature not in self.classes:
             if signature.name == Util.getUnit():
                 return
-            print("Processing class %s" % signature)
+            #print("Processing class %s" % signature)
             clazz = self.program.classes[signature.name]
             clazz = copy.deepcopy(clazz)
             fields = []

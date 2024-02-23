@@ -44,7 +44,7 @@ class Normalizer(object):
         res.group_var = self.normalizeGroupVar(info.group_var)
         return res
 
-def filterOutBorrowingMembers(groups, ownership_dep_map, members, ownerships):
+def filterOutBorrowingMembers(groups, ownership_dep_map, members, ownerships, borrows):
     #print("groups", groups)
     #print("ownership_dep_map", ownership_dep_map)
     #print("members", members)
@@ -59,7 +59,6 @@ def filterOutBorrowingMembers(groups, ownership_dep_map, members, ownerships):
                     #print("member is relevant", member)
                     relevant_members.append(member)
     #print("relevant_members", relevant_members)
-    borrows = []
     for member in relevant_members:
         if isinstance(ownerships[member.info.ownership_var], Inference.Borrow):
             borrows.append(member.info.ownership_var)
@@ -101,9 +100,12 @@ def normalizeFunctionOwnershipSignature(signature, ownership_dep_map, members, o
     #print("ownership_dep_map", ownership_dep_map)
     #print("members", members)
     groups = []
+    borrows = []
     for arg in signature.args:
         groups.append(arg.group_var)
-    (only_borrowing_members, borrows) = filterOutBorrowingMembers(groups, ownership_dep_map, members, ownerships)
+        if isinstance(ownerships[arg.ownership_var], Inference.Borrow):
+            borrows.append(arg.ownership_var)
+    (only_borrowing_members, borrows) = filterOutBorrowingMembers(groups, ownership_dep_map, members, ownerships, borrows)
     ordered_members = []
     normalized_args = []
     for arg in signature.args:
@@ -132,7 +134,8 @@ def normalizeClassOwnershipSignature(signature, info, ownership_dep_map, members
     #print("Signature", signature)
     #print("ownership_dep_map", ownership_dep_map)
     #print("members", members)
-    (only_borrowing_members, borrows) = filterOutBorrowingMembers([info.group_var], ownership_dep_map, members, ownerships)
+    borrows = []
+    (only_borrowing_members, borrows) = filterOutBorrowingMembers([info.group_var], ownership_dep_map, members, ownerships, borrows)
     normalized_root = normalizer.normalize(info)
     ordered_members = collectChildMembers(normalizer, info.group_var, only_borrowing_members)
     #print("Ordered members", ordered_members)

@@ -4,17 +4,13 @@
 #![allow(non_snake_case)]
 
 
-#[derive(Clone)]
-struct Main_Test {
-}
-
-fn Main_main() -> () {
-    let i_0_0 = ();
+fn Main_main_0() -> () {
+    let i_0_0 : () = ();
     i_0_0
 }
 
 fn main() {
-    Main_main();
+    Main_main_0();
 }
 
 

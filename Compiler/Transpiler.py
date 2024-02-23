@@ -24,6 +24,7 @@ class Transpiler(object):
         self.output = None
         self.indentLevel = 0
         self.type_names = {}
+        self.function_names = {}
 
     def initialize(self, classes, output):
         self.classes = classes
@@ -56,10 +57,16 @@ class Transpiler(object):
         name = name.replace(".", "_")
         return name
 
-    def transpileFnName(self, n):
-        name = str(n)
-        name = name.replace(".", "_")
-        return name
+    def transpileFnName(self, sig):
+        if sig.name not in self.function_names:
+            self.function_names[sig.name] = []
+        instances = self.function_names[sig.name]
+        for (index, i) in enumerate(instances):
+            if i == sig:
+                return "%s_%s_%s" % (sig.name.moduleName, sig.name.name, index)
+        index = len(instances)
+        instances.append(sig)
+        return "%s_%s_%s" % (sig.name.moduleName, sig.name.name, index)
     
     def getIndent(self):
         indent = self.indentLevel * " "
@@ -85,7 +92,7 @@ class Transpiler(object):
         self.indentLevel += 4
         for i in block.instructions:
             if isinstance(i, IR.NamedFunctionCall):
-                if str(i.name) == str(Util.getUnit()):
+                if i.name.name == Util.getUnit():
                     self.addInstr(i, "()")
                 else:
                     if i.ctor:
@@ -140,13 +147,16 @@ class Transpiler(object):
         self.print("%s%s\n" % (self.getIndent(), ii(last.id)))
         self.indentLevel -= 4
 
-    def transpileFn(self, fn):
+    def transpileFn(self, sig, fn):
         fn_args = []
         for arg in fn.args:
-            fn_args.append("%s: %s" % (vi(arg.name), self.transpileType(arg.type)))
+            ty = self.transpileType(arg.type)
+            if isinstance(arg.ownership, Inference.Borrow):
+                ty = "&%s" % ty
+            fn_args.append("%s: %s" % (vi(arg.name), ty))
         fn_args = ", ".join(fn_args)
         fn_result = self.transpileType(fn.return_type)
-        self.print("fn %s_%s(%s) -> %s {\n" % (fn.module_name, fn.name, fn_args, fn_result))
+        self.print("fn %s(%s) -> %s {\n" % (self.transpileFnName(sig), fn_args, fn_result))
         first_block = fn.body.getFirst()
         self.transpileBlock(fn, first_block)    
         self.print("}\n\n")
@@ -168,10 +178,10 @@ def transpile(classes, functions, output):
     transpiler.print("\n\n")
     for (sig, c) in classes.items():
         transpiler.transpileClass(sig, c)
-    for f in functions.values():
-        transpiler.transpileFn(f)
+    for (sig, f) in functions.items():
+        transpiler.transpileFn(sig, f)
     transpiler.print("fn main() {\n")
-    transpiler.print("    Main_main();\n")
+    transpiler.print("    Main_main_0();\n")
     transpiler.print("}\n")
     transpiler.print("\n\n")
     transpiler.output.close()

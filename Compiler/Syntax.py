@@ -91,6 +91,7 @@ class Arg(SyntaxBase):
     def __init__(self):
         self.name = None
         self.type = None
+        self.ownership = None
 
 class Function(SyntaxBase):
     def __init__(self):
