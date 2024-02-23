@@ -88,7 +88,7 @@ class Resolver(object):
         env = Environment()
         for (index, arg) in enumerate(fn.args):
             arg.name = env.addVar(arg.name, argIndex=index)
-            arg_type = moduleResolver.resolveName(arg.type.name)
+            arg_type = moduleResolver.resolveName(arg.type.name).name
             if arg_type is None:
                 Util.error("Failed to resolve type %s" % arg.type.name)
             else:

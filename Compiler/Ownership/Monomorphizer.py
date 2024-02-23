@@ -29,8 +29,8 @@ class Monomorphizer(object):
             print("Processing fn %s" % signature)
             fn = self.program.functions[signature.name]
             fn = copy.deepcopy(fn)
-            self.functions[signature] = fn
             fn.ownership_signature = copy.deepcopy(signature)
+            self.functions[signature] = fn
             equality = Equality.EqualityEngine()
             equality.process(fn)
             members = fn.getAllMembers()
@@ -41,6 +41,18 @@ class Monomorphizer(object):
             forbidden_borrows.process(fn, ownership_dep_map)
             inference = Inference.InferenceEngine()
             ownerships = inference.infer(fn, self.program.classes)
+            #print("ownerships", ownerships)
+            for (index, arg) in enumerate(fn.args):
+                arg_tv_info = signature.args[index]
+                tsignature = Signatures.ClassInstantiationSignature()
+                tsignature.name = arg.type
+                tsignature = Normalizer.normalizeClassOwnershipSignature(tsignature, 
+                                                                         arg_tv_info,
+                                                                         ownership_dep_map,
+                                                                         members,
+                                                                         ownerships)
+                arg.type = tsignature
+                self.addClass(tsignature)
             for block in fn.body.blocks:
                 for i in block.instructions:
                     if i.type is None:
@@ -53,6 +65,7 @@ class Monomorphizer(object):
                                                                             members,
                                                                             ownerships)
                     i.type_signature = signature
+                    i.ownership = ownerships[i.tv_info.ownership_var]
                     self.addClass(signature)
                     if isinstance(i, IR.NamedFunctionCall):
                         if not i.ctor:

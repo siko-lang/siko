@@ -1,6 +1,7 @@
 import Compiler.IR as IR
 import Compiler.Util as Util
 import Compiler.Typechecker as Typechecker
+import Compiler.Ownership.Inference as Inference
 import Compiler.Ownership.Signatures as Signatures
 import Compiler.Syntax as Syntax
 
@@ -67,6 +68,8 @@ class Transpiler(object):
     def addInstr(self, i, value, partial=False):
         indent = self.indentLevel * " "
         ty = self.transpileType(i.type_signature)
+        if isinstance(i.ownership, Inference.Borrow):
+            ty = "&%s" % ty
         if partial:
             self.print("%slet %s : %s = %s\n" % (self.getIndent(), ii(i.id), ty, value))
         else:

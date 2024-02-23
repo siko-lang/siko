@@ -61,6 +61,7 @@ class BaseInstruction(object):
         self.moves = []
         self.type = None
         self.type_signature = None
+        self.ownership = None
 
 class BlockRef(BaseInstruction):
     def __init__(self):

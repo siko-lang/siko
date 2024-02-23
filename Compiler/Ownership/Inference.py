@@ -198,8 +198,18 @@ class InferenceEngine(object):
                 dep_map[i.tv_info.ownership_var] = []
         for block in self.fn.body.blocks:
             for i in block.instructions:
-                if isinstance(i, IR.NamedFunctionCall):
+                if isinstance(i, IR.DropVar):
+                    # TODO FIXME
+                    constraint = CtorConstraint()
+                    constraint.var = i.tv_info.ownership_var
+                    constraints[i.tv_info.ownership_var] = constraint
+                elif isinstance(i, IR.NamedFunctionCall):
                     if i.ctor:
+                        constraint = CtorConstraint()
+                        constraint.var = i.tv_info.ownership_var
+                        constraints[i.tv_info.ownership_var] = constraint
+                    else:
+                        # TODO FIXME
                         constraint = CtorConstraint()
                         constraint.var = i.tv_info.ownership_var
                         constraints[i.tv_info.ownership_var] = constraint

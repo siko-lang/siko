@@ -83,7 +83,7 @@ class Typechecker(object):
     def initialize(self, fn):
         for arg in fn.args:
             namedType = NamedType()
-            namedType.setType(arg.type.name)
+            namedType.setType(arg.type)
             self.types[arg.name] = namedType
         for block in fn.body.blocks:
             for i in block.instructions:
@@ -170,7 +170,7 @@ class Typechecker(object):
                 for (index, i_arg) in enumerate(i.args):
                     fn_arg = item.args[index]
                     arg_type = NamedType()
-                    arg_type.setType(fn_arg.type.name)
+                    arg_type.setType(fn_arg.type)
                     self.unify(self.types[i_arg], arg_type)
                 returnType.setType(item.return_type)
                 self.unify(self.types[i.id], returnType)
