@@ -153,7 +153,7 @@ class Resolver(object):
     def resolveClass(self, moduleName, clazz, ir_program):
         moduleResolver = self.moduleResolvers[moduleName]
         for f in clazz.fields:
-            f.type.name = moduleResolver.resolveName(f.type.name)
+            f.type.name = moduleResolver.resolveName(f.type.name).name
         for m in clazz.methods:
             methodName = Util.QualifiedName(moduleName, m.name, clazz.name)
             ir_program.functions[methodName] = m

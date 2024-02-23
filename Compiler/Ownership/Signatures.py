@@ -49,9 +49,10 @@ class ClassInstantiationSignature(object):
         self.root = None
         self.members = []
         self.borrows = []
+        self.allocator = Allocator.Allocator()
 
     def __str__(self):
-        return "(%s/%s/%s/%s)" % (self.name, self.root, self.members, self.borrows)
+        return "(%s/%s/%s/%s/%s)" % (self.name, self.root, self.members, self.borrows, self.allocator)
     
     def __repr__(self) -> str:
         return self.__str__()
@@ -59,7 +60,8 @@ class ClassInstantiationSignature(object):
     def __eq__(self, other) -> bool:
         if not isinstance(other, ClassInstantiationSignature):
             return False
-        return self.name == other.name and self.root == other.root and self.members == other.members and self.borrows == other.borrows
+        return self.name == other.name and self.root == other.root and self.members == other.members and \
+            self.borrows == other.borrows and self.allocator == other.allocator
     
     def __hash__(self):
         return self.name.__hash__()

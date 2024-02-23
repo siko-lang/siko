@@ -46,12 +46,13 @@ class Monomorphizer(object):
                     if i.type is None:
                         continue
                     signature = Signatures.ClassInstantiationSignature()
-                    signature.name = i.type
+                    signature.name = i.type.value
                     signature = Normalizer.normalizeClassOwnershipSignature(signature, 
                                                                             i.tv_info,
                                                                             ownership_dep_map,
                                                                             members,
                                                                             ownerships)
+                    i.type_signature = signature
                     self.addClass(signature)
                     if isinstance(i, IR.NamedFunctionCall):
                         if not i.ctor:
@@ -70,8 +71,34 @@ class Monomorphizer(object):
 
     def processClass(self, signature):
         if signature not in self.classes:
+            if signature.name == Util.getUnit():
+                return
             print("Processing class %s" % signature)
-            self.classes[signature] = ()
+            clazz = self.program.classes[signature.name]
+            clazz = copy.deepcopy(clazz)
+            fields = []
+            field_infos = {}
+            for member in signature.members:
+                if member.root == signature.root.group_var:
+                    field_infos[member.kind.index] = member.info
+            for (index, f) in enumerate(clazz.fields):
+                #print("process field", type(f.type.name))
+                fsignature = Signatures.ClassInstantiationSignature()
+                fsignature.name = f.type.name
+                if index in field_infos:
+                    info = field_infos[index]
+                else:
+                    info = fsignature.allocator.nextTypeVariableInfo()
+                fsignature = Normalizer.normalizeClassOwnershipSignature(fsignature, 
+                                                                        info,
+                                                                        {},
+                                                                        copy.deepcopy(signature.members),
+                                                                        {})
+                f.type = fsignature
+                self.addClass(fsignature)
+                fields.append(f)
+            clazz.fields = fields
+            self.classes[signature] = clazz
 
     def processQueue(self):
         while len(self.queue) > 0:
@@ -90,3 +117,4 @@ def monomorphize(program):
     monomorphizer.program = program
     monomorphizer.addFunction(main_sig)
     monomorphizer.processQueue()
+    return (monomorphizer.classes, monomorphizer.functions)

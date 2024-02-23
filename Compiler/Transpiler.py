@@ -1,5 +1,8 @@
 import Compiler.IR as IR
 import Compiler.Util as Util
+import Compiler.Typechecker as Typechecker
+import Compiler.Ownership.Signatures as Signatures
+import Compiler.Syntax as Syntax
 
 def ii(id):
     id = "i_%s_%s" % (id.block, id.value)
@@ -19,16 +22,36 @@ class Transpiler(object):
     def __init__(self):
         self.output = None
         self.indentLevel = 0
+        self.type_names = {}
 
-    def initialize(self, program, output):
-        self.program = program
+    def initialize(self, classes, output):
+        self.classes = classes
         self.output = open(output, "w")
 
     def print(self, m):
         self.output.write(m)
 
     def transpileType(self, type):
-        name = str(type.name)
+        if isinstance(type, Typechecker.NamedType):
+            type = type.value
+        if isinstance(type, Syntax.Type):
+            type = type.name
+        if isinstance(type, Signatures.ClassInstantiationSignature):
+            type_name = type.name
+            if str(type_name) == ".()":
+                return "()"
+            if type_name not in self.type_names:
+                self.type_names[type_name] = []
+            instances = self.type_names[type_name]
+            for (index, i) in enumerate(instances):
+                if i == type:
+                    return "%s_%s_%s" % (type_name.moduleName, type_name.name, index)
+            index = len(instances)
+            instances.append(type)
+            return "%s_%s_%s" % (type_name.moduleName, type_name.name, index)
+        if str(type) == ".()":
+            return "()"
+        name = str(type)
         name = name.replace(".", "_")
         return name
 
@@ -43,10 +66,11 @@ class Transpiler(object):
     
     def addInstr(self, i, value, partial=False):
         indent = self.indentLevel * " "
+        ty = self.transpileType(i.type_signature)
         if partial:
-            self.print("%slet %s = %s\n" % (self.getIndent(), ii(i.id), value))
+            self.print("%slet %s : %s = %s\n" % (self.getIndent(), ii(i.id), ty, value))
         else:
-            self.print("%slet %s = %s;\n" % (self.getIndent(), ii(i.id), value))
+            self.print("%slet %s : %s = %s;\n" % (self.getIndent(), ii(i.id), ty, value))
 
     def processBlock(self, fn, block_id):
         self.print("%slet %s = {\n" % (self.getIndent(), bi(block_id)));
@@ -62,13 +86,13 @@ class Transpiler(object):
                     self.addInstr(i, "()")
                 else:
                     if i.ctor:
-                        clazz = self.program.classes[i.name]
+                        clazz = self.classes[i.type_signature]
                         call_args = []
                         for (index, arg) in enumerate(i.args):
                             field = clazz.fields[index]
                             call_args.append("%s: %s" % (field.name, ii(arg)))
                         call_args = ", ".join(call_args)
-                        self.addInstr(i, "%s{%s}" % (self.transpileFnName(i.name), call_args))
+                        self.addInstr(i, "%s{%s}" % (self.transpileType(i.type_signature), call_args))
                     else:    
                         call_args = []
                         for arg in i.args:
@@ -124,24 +148,24 @@ class Transpiler(object):
         self.transpileBlock(fn, first_block)    
         self.print("}\n\n")
 
-    def transpileClass(self, c):
+    def transpileClass(self, sig, c):
         self.print("#[derive(Clone)]\n")
-        self.print("struct %s_%s {\n" % (c.module_name, c.name))
+        self.print("struct %s {\n" % (self.transpileType(sig)))
         for field in c.fields:
             self.print("    %s: %s,\n" % (field.name, self.transpileType(field.type)))
         self.print("}\n\n")
 
-def transpile(program, output):
+def transpile(classes, functions, output):
     transpiler = Transpiler()
-    transpiler.initialize(program, output)
+    transpiler.initialize(classes, output)
     transpiler.print("#![allow(non_camel_case_types)]\n")
     transpiler.print("#![allow(unused_variables)]\n")
     transpiler.print("#![allow(dead_code)]\n")
     transpiler.print("#![allow(non_snake_case)]\n")
     transpiler.print("\n\n")
-    for c in program.classes.values():
-        transpiler.transpileClass(c)
-    for f in program.functions.values():
+    for (sig, c) in classes.items():
+        transpiler.transpileClass(sig, c)
+    for f in functions.values():
         transpiler.transpileFn(f)
     transpiler.print("fn main() {\n")
     transpiler.print("    Main_main();\n")

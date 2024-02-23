@@ -28,7 +28,8 @@ class NamedType(object):
         if isinstance(ty, Util.QualifiedName):
             self.value = ty
         else:
-            raise "Not qualified name! %s" % type(ty)
+            print("Not qualified name! %s" % type(ty))
+            raise 45
 
     def __eq__(self, other):
         if isinstance(other, NamedType):
@@ -127,7 +128,7 @@ class Typechecker(object):
                 if field.name == field_name:
                     found = True
                     fieldType = NamedType()
-                    fieldType.setType(field.type.name.name)
+                    fieldType.setType(field.type.name)
                     #print("field type %s [%s]" % (fieldType, i.name))
                     return (index, fieldType)
             if not found:
@@ -181,7 +182,7 @@ class Typechecker(object):
                 for (index, i_arg) in enumerate(i.args):
                     fn_arg = clazz.fields[index]
                     arg_type = NamedType()
-                    arg_type.setType(fn_arg.type.name.name)
+                    arg_type.setType(fn_arg.type.name)
                     self.unify(self.types[i_arg], arg_type)
                 returnType.setType(i.name)
                 self.unify(self.types[i.id], returnType)

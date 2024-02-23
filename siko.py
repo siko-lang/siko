@@ -33,7 +33,7 @@ def compile():
 
     Borrowchecker.processProgram(ir_program)
 
-    Monomorphizer.monomorphize(ir_program)
-    Transpiler.transpile(ir_program, output)
+    (classes, functions) = Monomorphizer.monomorphize(ir_program)
+    Transpiler.transpile(classes, functions, output)
 
 compile()
