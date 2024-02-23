@@ -20,13 +20,7 @@ struct Main_Address_0 {
 
 #[derive(Clone)]
 struct Main_Person_0 {
-    address: Main_Address_1,
-}
-
-#[derive(Clone)]
-struct Main_Address_1 {
-    street: Main_Name_0,
-    city: Main_Name_0,
+    address: Main_Address_0,
 }
 
 fn Main_main_0() -> () {

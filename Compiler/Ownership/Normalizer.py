@@ -6,6 +6,23 @@ import Compiler.Ownership.Allocator as Allocator
 import Compiler.Ownership.TypeVariableInfo as TypeVariableInfo
 import copy
 
+class BorrowProvider(object):
+    def __init__(self):
+        self.ownership_map = None
+        self.borrow_list = None
+
+    def getBorrow(self, var):
+        if self.ownership_map is not None:
+            if var in self.ownership_map:
+                o = self.ownership_map[var]
+                if isinstance(o, Inference.Borrow):
+                    return o.borrow_id
+        if self.borrow_list is not None:
+            for b in self.borrow_list:
+                if b.ownership_var == var:
+                    return b.borrow_id
+        return None
+
 class Normalizer(object):
     def __init__(self):
         self.allocator = Allocator.Allocator()
@@ -44,7 +61,7 @@ class Normalizer(object):
         res.group_var = self.normalizeGroupVar(info.group_var)
         return res
 
-def filterOutBorrowingMembers(groups, ownership_dep_map, members, ownerships, borrows):
+def filterOutBorrowingMembers(groups, ownership_dep_map, members, borrow_provider, borrows):
     #print("groups", groups)
     #print("ownership_dep_map", ownership_dep_map)
     #print("members", members)
@@ -60,7 +77,7 @@ def filterOutBorrowingMembers(groups, ownership_dep_map, members, ownerships, bo
                     relevant_members.append(member)
     #print("relevant_members", relevant_members)
     for member in relevant_members:
-        if isinstance(ownerships[member.info.ownership_var], Inference.Borrow):
+        if borrow_provider.getBorrow(member.info.ownership_var) is not None:
             borrows.append(member.info.ownership_var)
     #print("Borrows", borrows)
     only_borrowing_members = []
@@ -94,7 +111,7 @@ def collectChildMembers(normalizer, var, members):
         normalized_children += collectChildMembers(normalizer, child.info.group_var, members)
     return normalized_children
 
-def normalizeFunctionOwnershipSignature(signature, ownership_dep_map, members, ownerships):
+def normalizeFunctionOwnershipSignature(signature, ownership_dep_map, members, borrow_provider):
     normalizer = Normalizer()
     #print("Signature", signature)
     #print("ownership_dep_map", ownership_dep_map)
@@ -103,9 +120,9 @@ def normalizeFunctionOwnershipSignature(signature, ownership_dep_map, members, o
     borrows = []
     for arg in signature.args:
         groups.append(arg.group_var)
-        if isinstance(ownerships[arg.ownership_var], Inference.Borrow):
+        if borrow_provider.getBorrow(arg.ownership_var) is not None:
             borrows.append(arg.ownership_var)
-    (only_borrowing_members, borrows) = filterOutBorrowingMembers(groups, ownership_dep_map, members, ownerships, borrows)
+    (only_borrowing_members, borrows) = filterOutBorrowingMembers(groups, ownership_dep_map, members, borrow_provider, borrows)
     ordered_members = []
     normalized_args = []
     for arg in signature.args:
@@ -116,9 +133,9 @@ def normalizeFunctionOwnershipSignature(signature, ownership_dep_map, members, o
     #print("Ordered members", ordered_members)
     normalized_borrows = []
     for borrower in borrows:
-        borrow = ownerships[borrower]
+        borrow_id = borrow_provider.getBorrow[borrower]
         normalized_borrow = BorrrowUtil.ExternalBorrow()
-        normalized_borrow.borrow_id = normalizer.normalizeBorrow(borrow.borrow_id)
+        normalized_borrow.borrow_id = normalizer.normalizeBorrow(borrow_id)
         normalized_borrow.ownership_var = normalizer.normalizeOwnershipVar(borrower)
         normalized_borrows.append(normalized_borrow)
     signature.args = normalized_args
@@ -129,21 +146,21 @@ def normalizeFunctionOwnershipSignature(signature, ownership_dep_map, members, o
     #print("Signature2", signature)
     return signature
 
-def normalizeClassOwnershipSignature(signature, info, ownership_dep_map, members, ownerships):
+def normalizeClassOwnershipSignature(signature, info, ownership_dep_map, members, borrow_provider):
     normalizer = Normalizer()
     #print("Signature", signature)
     #print("ownership_dep_map", ownership_dep_map)
     #print("members", members)
     borrows = []
-    (only_borrowing_members, borrows) = filterOutBorrowingMembers([info.group_var], ownership_dep_map, members, ownerships, borrows)
+    (only_borrowing_members, borrows) = filterOutBorrowingMembers([info.group_var], ownership_dep_map, members, borrow_provider, borrows)
     normalized_root = normalizer.normalize(info)
     ordered_members = collectChildMembers(normalizer, info.group_var, only_borrowing_members)
     #print("Ordered members", ordered_members)
     normalized_borrows = []
     for borrower in borrows:
-        borrow = ownerships[borrower]
+        borrow_id = borrow_provider.getBorrow(borrower)
         normalized_borrow = BorrrowUtil.ExternalBorrow()
-        normalized_borrow.borrow_id = normalizer.normalizeBorrow(borrow.borrow_id)
+        normalized_borrow.borrow_id = normalizer.normalizeBorrow(borrow_id)
         normalized_borrow.ownership_var = normalizer.normalizeOwnershipVar(borrower)
         normalized_borrows.append(normalized_borrow)
     signature.root = normalized_root

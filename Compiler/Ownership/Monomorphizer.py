@@ -26,7 +26,7 @@ class Monomorphizer(object):
         if signature not in self.functions:
             if signature.name == Util.getUnit():
                 return
-            #print("Processing fn %s" % signature)
+            print("Processing fn %s" % signature)
             fn = self.program.functions[signature.name]
             fn = copy.deepcopy(fn)
             fn.ownership_signature = copy.deepcopy(signature)
@@ -41,6 +41,8 @@ class Monomorphizer(object):
             forbidden_borrows.process(fn, ownership_dep_map)
             inference = Inference.InferenceEngine()
             ownerships = inference.infer(fn, self.program.classes)
+            borrow_provider = Normalizer.BorrowProvider()
+            borrow_provider.ownership_map = ownerships
             #print("ownerships", ownerships)
             for (index, arg) in enumerate(fn.args):
                 arg_tv_info = signature.args[index]
@@ -50,7 +52,7 @@ class Monomorphizer(object):
                                                                          arg_tv_info,
                                                                          ownership_dep_map,
                                                                          members,
-                                                                         ownerships)
+                                                                         borrow_provider)
                 arg.type = tsignature
                 arg.ownership = ownerships[arg_tv_info.ownership_var]
                 self.addClass(tsignature)
@@ -64,7 +66,7 @@ class Monomorphizer(object):
                                                                             i.tv_info,
                                                                             ownership_dep_map,
                                                                             members,
-                                                                            ownerships)
+                                                                            borrow_provider)
                     i.type_signature = signature
                     i.ownership = ownerships[i.tv_info.ownership_var]
                     self.addClass(signature)
@@ -80,7 +82,7 @@ class Monomorphizer(object):
                             signature = Normalizer.normalizeFunctionOwnershipSignature(signature, 
                                                                                        ownership_dep_map,
                                                                                        members,
-                                                                                       ownerships)
+                                                                                       borrow_provider)
                             i.name = signature
                             self.addFunction(signature)
 
@@ -88,7 +90,7 @@ class Monomorphizer(object):
         if signature not in self.classes:
             if signature.name == Util.getUnit():
                 return
-            #print("Processing class %s" % signature)
+            print("Processing class %s" % signature)
             clazz = self.program.classes[signature.name]
             clazz = copy.deepcopy(clazz)
             fields = []
@@ -96,6 +98,10 @@ class Monomorphizer(object):
             for member in signature.members:
                 if member.root == signature.root.group_var:
                     field_infos[member.kind.index] = member.info
+            ownership_dep_map = MemberInfo.calculateOwnershipDepMap(signature.members)
+            borrow_provider = Normalizer.BorrowProvider()
+            borrow_provider.borrow_list = signature.borrows
+            allocator = copy.deepcopy(signature.allocator)
             for (index, f) in enumerate(clazz.fields):
                 #print("process field", type(f.type.name))
                 fsignature = Signatures.ClassInstantiationSignature()
@@ -103,12 +109,12 @@ class Monomorphizer(object):
                 if index in field_infos:
                     info = field_infos[index]
                 else:
-                    info = fsignature.allocator.nextTypeVariableInfo()
+                    info = allocator.nextTypeVariableInfo()
                 fsignature = Normalizer.normalizeClassOwnershipSignature(fsignature, 
-                                                                        info,
-                                                                        {},
-                                                                        copy.deepcopy(signature.members),
-                                                                        {})
+                                                                         info,
+                                                                         ownership_dep_map,
+                                                                         copy.deepcopy(signature.members),
+                                                                         borrow_provider)
                 f.type = fsignature
                 self.addClass(fsignature)
                 fields.append(f)
