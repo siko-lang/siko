@@ -11,6 +11,7 @@ import Compiler.Ownership.DataFlowPath as DataFlowPath
 import Compiler.Ownership.ForbiddenBorrows as ForbiddenBorrows
 import Compiler.Ownership.Monomorphizer as Monomorphizer
 import Compiler.Transpiler as Transpiler
+import Compiler.Ownership.DataFlowProfileInference as DataFlowProfileInference
 
 def compile():
     program = Syntax.Program()
@@ -32,6 +33,8 @@ def compile():
     Typechecker.checkProgram(ir_program)
 
     Borrowchecker.processProgram(ir_program)
+
+    DataFlowProfileInference.infer(ir_program)
 
     (classes, functions) = Monomorphizer.monomorphize(ir_program)
     Transpiler.transpile(classes, functions, output)

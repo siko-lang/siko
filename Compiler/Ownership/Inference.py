@@ -82,8 +82,8 @@ class ConstraintHolder(object):
         return all
 
 class InferenceEngine(object):
-    def __init__(self):
-        self.fn = None
+    def __init__(self, fn):
+        self.fn = fn
         self.classes = None
         self.ownerships = {}
         self.borrow_map = BorrowUtil.BorrowMap()
@@ -96,10 +96,9 @@ class InferenceEngine(object):
         borrow_id.value = id
         return borrow_id
 
-    def infer(self, fn, classes):
-        self.fn = fn
+    def infer(self,  classes):
         self.classes = classes
-        print("Inference for %s" % fn.name)
+        #print("Inference for %s" % self.fn.name)
         self.run()
         #self.dump()
         return self.ownerships
@@ -248,6 +247,19 @@ class InferenceEngine(object):
         groups = DependencyProcessor.processDependencies(dep_map)
         return (groups, constraints)
 
+    def setOwnerIfUnknown(self, var):
+        o = self.getOwnership(var)
+        if isinstance(o, Unknown):
+            #print("Setting unknown to owner", var)
+            self.setOwner(var)
+
+    def unpackOwners(self):
+        for arg in self.fn.ownership_signature.args:
+            self.setOwnerIfUnknown(arg.ownership_var)
+        self.setOwnerIfUnknown(self.fn.ownership_signature.result.ownership_var)
+        for member in self.fn.ownership_signature.members:
+            self.setOwnerIfUnknown(member.info.ownership_var)
+
     def run(self):
         (groups, constraints) = self.collectConstraints()
         #print(groups)
@@ -257,17 +269,12 @@ class InferenceEngine(object):
             borrow_id = self.getNextBorrowId()
             self.borrow_map.addExternalBorrow(borrow_id, external_borrow.borrow_id)
             self.setBorrow(external_borrow.ownership_var, borrow_id)
-        for arg in self.fn.ownership_signature.args:
-            o = self.getOwnership(arg.ownership_var)
-            if isinstance(o, Unknown):
-                #print("Setting arg to owner", arg.ownership_var)
-                self.setOwner(arg.ownership_var)
         self.processConstraints(groups, constraints)
-        self.dump();
+        #self.dump();
         for c in constraints.getAll():
             if isinstance(c, FieldAccessConstraint):
                 i = self.fn.body.getInstruction(c.instruction_id)
-                res_o = self.ownerships[i.tv_info.ownership_var]
+                res_o = self.getOwnership(i.tv_info.ownership_var)
                 #print("final %s, res %s, %s, %s, borrow:%s" % (c.final, res_o, i.tv_info, c.instruction_id, i.borrow))
                 if isinstance(c.final,  Owner) and isinstance(res_o, Owner):
                     if i.borrow:

@@ -175,6 +175,9 @@ class EqualityEngine(object):
         args = []
         for arg in self.fn.ownership_signature.args:
             args.append(self.substitution.applyTypeVariableInfo(arg))
+        for member in self.fn.ownership_signature.members:
+            member.root = self.substitution.applyGroupVar(member.root)
+            member.info = self.substitution.applyTypeVariableInfo(member.info)
         self.fn.ownership_signature.args = args
         self.fn.ownership_signature.result = self.substitution.applyTypeVariableInfo(self.fn.ownership_signature.result)
     

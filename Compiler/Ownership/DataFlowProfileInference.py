@@ -46,10 +46,13 @@ class InferenceEngine(object):
             ownership_dep_map = MemberInfo.calculateOwnershipDepMap(members)
             forbidden_borrows = ForbiddenBorrows.ForbiddenBorrowsEngine()
             forbidden_borrows.process(fn, ownership_dep_map)
-            inference = Inference.InferenceEngine()
-            ownerships = inference.infer(fn, self.program.classes)
+            inference = Inference.InferenceEngine(fn)
+            ownerships = inference.infer(self.program.classes)
             paths = DataFlowPath.infer(fn)
-            print("%s has paths %s" % (name, paths))
+            #print("%s has paths %s" % (name, paths))
+            #print("ownerships", ownerships)
+            #print("sig", fn.ownership_signature)
+            #Util.error("end")
         else:
             Util.error("Multi function groups NYI in data flow profile inference")
 
