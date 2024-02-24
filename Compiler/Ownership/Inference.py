@@ -99,7 +99,7 @@ class InferenceEngine(object):
     def infer(self, fn, classes):
         self.fn = fn
         self.classes = classes
-        #print("Inference for %s" % fn.name)
+        print("Inference for %s" % fn.name)
         self.run()
         #self.dump()
         return self.ownerships
@@ -263,7 +263,7 @@ class InferenceEngine(object):
                 #print("Setting arg to owner", arg.ownership_var)
                 self.setOwner(arg.ownership_var)
         self.processConstraints(groups, constraints)
-        # self.dump();
+        self.dump();
         for c in constraints.getAll():
             if isinstance(c, FieldAccessConstraint):
                 i = self.fn.body.getInstruction(c.instruction_id)

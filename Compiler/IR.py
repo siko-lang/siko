@@ -17,7 +17,7 @@ class TempVar(object):
 
     def __eq__(self, other):
         if isinstance(other, TempVar):
-            return self.value == other.value
+            return self.value == other.value and self.arg == other.arg
         else:
             return False
 

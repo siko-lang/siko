@@ -5,10 +5,13 @@ import Compiler.Ownership.DataFlowDependency as DataFlowDependency
 
 class Value(object):
     def __init__(self):
-        pass
+        self.source = None
 
     def __str__(self):
-        return "Value"
+        return "(Value/%s)" % (self.source)
+
+    def __repr__(self) -> str:
+        return self.__str__()
 
     def normalize(self):
         return (self, False)
@@ -23,6 +26,9 @@ class FieldAccess(object):
 
     def __str__(self):
         return "(%s.%s)" % (self.receiver, self.index)
+
+    def __repr__(self) -> str:
+        return self.__str__()
 
     def normalize(self):
         if isinstance(self.receiver, Record):
@@ -49,6 +55,9 @@ class Record(object):
     def __str__(self):
         return "record(%s/%s)" % (self.value, self.index)
     
+    def __repr__(self) -> str:
+        return self.__str__()
+    
     def normalize(self):
         (value, normalized) = self.value.normalize()
         self.value = value
@@ -64,10 +73,13 @@ class InferenceEngine(object):
     def inferFn(self, fn):
         self.fn = fn
         #print("DataFlowPath for %s" % fn.name)
-        self.createPaths()
+        return self.createPaths()
 
     def processPath(self, path):
+        root = self.fn.body.getInstruction(path[0])
         value = Value()
+        if isinstance(root, IR.ValueRef):
+            value.source = root.name.value
         prev = None
         for p in path:
             instruction = self.fn.body.getInstruction(p)
@@ -136,7 +148,6 @@ class InferenceEngine(object):
                             final_paths.append(path)
         return final_paths
 
-def infer(program):
-    for f in program.functions.values():
-        engine = InferenceEngine()
-        engine.inferFn(f)
+def infer(f):
+    engine = InferenceEngine()
+    return engine.inferFn(f)

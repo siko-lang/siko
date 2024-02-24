@@ -12,6 +12,9 @@ class QualifiedName(object):
         else:
             return "%s.%s" % (self.moduleName, self.name)
 
+    def __repr__(self) -> str:
+        return self.__str__()
+
     def __eq__(self, other):
         if isinstance(other, QualifiedName):
             return self.moduleName == other.moduleName and self.name == other.name and self.className == other.className
