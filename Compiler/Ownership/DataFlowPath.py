@@ -99,6 +99,7 @@ class InferenceEngine(object):
         value = Value()
         if isinstance(root, IR.ValueRef):
             value.source = root.name.value
+            index = root.name.value
         prev = None
         for p in path:
             instruction = self.fn.body.getInstruction(p)
@@ -121,7 +122,7 @@ class InferenceEngine(object):
             else:
                 print("Processing path element %s %s %s" % (p, instruction, type(instruction)))
             prev = p
-        return value
+        return (value, index)
 
     def createPaths(self):
         arg_instructions = []
@@ -155,7 +156,7 @@ class InferenceEngine(object):
                     if path[-1] == end_instruction.id:
                         #print("root %s" % i)
                         #print("path", path)
-                        path = self.processPath(path)
+                        (path, index) = self.processPath(path)
                         #print("processed path", path)
                         #print("processed path is %s" % path.isValid())
                         more = True
@@ -164,24 +165,25 @@ class InferenceEngine(object):
                         #print("Normalized", path)
                         #print("Normalized", path.isValid())
                         if path.isValid():
-                            path = splitPath(path, Allocator.Allocator())
+                            path = splitPath(path, index, Allocator.Allocator())
                             final_paths.append(path)
         return final_paths
 
 class DataFlowPath(object):
-    def __init__(self, arg, result, src, dest):
+    def __init__(self, index, arg, result, src, dest):
+        self.index = 0
         self.arg = arg
         self.result = result
         self.src = src
         self.dest = dest
 
     def __str__(self):
-        return "path(%s/%s/%s/%s)" % (self.arg, self.result, self.src, self.dest)
+        return "path(%s/%s/%s/%s/%s)" % (self.index, self.arg, self.result, self.src, self.dest)
 
     def __repr__(self) -> str:
         return self.__str__()
 
-def splitPath(path, allocator):
+def splitPath(path, index, allocator):
     arg = allocator.nextTypeVariableInfo()
     result = allocator.nextTypeVariableInfo()
     dest_members = []
@@ -201,7 +203,7 @@ def splitPath(path, allocator):
         else:
             break
     src_members = path.buildSource(arg, allocator)
-    return DataFlowPath(arg, result, src_members, dest_members)
+    return DataFlowPath(index, arg, result, src_members, dest_members)
 
 def infer(f):
     engine = InferenceEngine()

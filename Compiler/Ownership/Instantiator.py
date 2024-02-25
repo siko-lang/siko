@@ -38,8 +38,7 @@ class Instantiator(object):
         res.group_var = self.instantiateGroupVar(info.group_var)
         return res
 
-def instantiateFunctionOwnershipSignature(signature, allocator):
-    instantiator = Instantiator(allocator)
+def instantiateFunctionOwnershipSignature(signature, instantiator):
     args = []
     for arg in signature.args:
         args.append(instantiator.instantiate(arg))
@@ -63,4 +62,32 @@ def instantiateFunctionOwnershipSignature(signature, allocator):
     signature.allocator = None
     signature.borrows = borrows
     signature.owners = owners
-    return (signature, instantiator.allocator)
+    return (signature, instantiator)
+
+def instantiatePath(path, instantiator):
+    path.arg = instantiator.instantiate(path.arg)
+    path.result = instantiator.instantiate(path.result)
+    src = []
+    for member in path.src:
+        member.root = instantiator.instantiateGroupVar(member.root)
+        member.info = instantiator.instantiate(member.info)
+        src.append(member)
+    dest = []
+    for member in path.dest:
+        member.root = instantiator.instantiateGroupVar(member.root)
+        member.info = instantiator.instantiate(member.info)
+        dest.append(member)
+    path.src = src
+    path.dest = dest
+    return (path, instantiator)
+
+def instantiateProfile(profile, allocator):
+    instantiator = Instantiator(allocator)
+    (signature, instantiator) = instantiateFunctionOwnershipSignature(profile.signature, instantiator)
+    paths = []
+    for path in profile.paths:
+        (path, instantiator) = instantiatePath(path, instantiator)
+        paths.append(path)
+    profile.signature = signature
+    profile.paths = paths
+    return (profile, allocator)

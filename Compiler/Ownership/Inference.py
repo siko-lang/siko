@@ -216,7 +216,7 @@ class InferenceEngine(object):
                             pass # TODO
                         else:
                             profile = self.profile_store.getProfile(i.name)
-                            print("Profile for %s/%s" % (profile, i.name))
+                            #print("Profile for %s/%s" % (profile, i.name))
                             constraint = CtorConstraint()
                             constraint.var = i.tv_info.ownership_var
                             constraints.addConstraint(i.tv_info.ownership_var, constraint)
