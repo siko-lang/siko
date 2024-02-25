@@ -7,6 +7,8 @@ import Compiler.Ownership.Inference as Inference
 import Compiler.Ownership.Equality as Equality
 import Compiler.Ownership.ForbiddenBorrows as ForbiddenBorrows
 import Compiler.Ownership.MemberInfo as MemberInfo
+import Compiler.Ownership.Normalizer as Normalizer
+import Compiler.Ownership.DataFlowProfile as DataFlowProfile
 import copy
 
 def createFunctionGroups(program):
@@ -29,7 +31,7 @@ def createFunctionGroups(program):
 
 class InferenceEngine(object):
     def __init__(self) -> None:
-        self.dataflowpaths = {}
+        self.profiles = {}
         self.program = None
 
     def processGroup(self, group):
@@ -48,7 +50,21 @@ class InferenceEngine(object):
             forbidden_borrows.process(fn, ownership_dep_map)
             inference = Inference.InferenceEngine(fn)
             ownerships = inference.infer(self.program.classes)
+            ownership_provider = Normalizer.OwnershipProvider()
+            ownership_provider.ownership_map = ownerships
             paths = DataFlowPath.infer(fn)
+            signature = fn.ownership_signature
+            signature.name = name
+            signature = Normalizer.normalizeFunctionOwnershipSignature(signature, 
+                                                                        ownership_dep_map,
+                                                                        members,
+                                                                        ownership_provider,
+                                                                        onlyBorrow=False)
+            
+            profile = DataFlowProfile.DataFlowProfile()
+            profile.paths = paths
+            profile.signature = signature
+            self.profiles[name] = profile
             #print("%s has paths %s" % (name, paths))
             #print("ownerships", ownerships)
             #print("sig", fn.ownership_signature)

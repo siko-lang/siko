@@ -41,8 +41,8 @@ class Monomorphizer(object):
             inference = Inference.InferenceEngine(fn)
             inference.unpackOwners()
             ownerships = inference.infer(self.program.classes)
-            borrow_provider = Normalizer.BorrowProvider()
-            borrow_provider.ownership_map = ownerships
+            ownership_provider = Normalizer.OwnershipProvider()
+            ownership_provider.ownership_map = ownerships
             #print("ownerships", ownerships)
             for (index, arg) in enumerate(fn.args):
                 arg_tv_info = signature.args[index]
@@ -52,7 +52,7 @@ class Monomorphizer(object):
                                                                          arg_tv_info,
                                                                          ownership_dep_map,
                                                                          members,
-                                                                         borrow_provider)
+                                                                         ownership_provider)
                 arg.type = tsignature
                 arg.ownership = ownerships[arg_tv_info.ownership_var]
                 self.addClass(tsignature)
@@ -63,7 +63,7 @@ class Monomorphizer(object):
                                                                      ret_tv_info,
                                                                      ownership_dep_map,
                                                                      members,
-                                                                     borrow_provider)
+                                                                     ownership_provider)
             self.addClass(rsignature)
             fn.return_type = rsignature
             fn.return_ownership = ownerships[ret_tv_info.ownership_var]
@@ -77,7 +77,7 @@ class Monomorphizer(object):
                                                                             i.tv_info,
                                                                             ownership_dep_map,
                                                                             members,
-                                                                            borrow_provider)
+                                                                            ownership_provider)
                     i.type_signature = signature
                     i.ownership = ownerships[i.tv_info.ownership_var]
                     self.addClass(signature)
@@ -93,7 +93,7 @@ class Monomorphizer(object):
                             signature = Normalizer.normalizeFunctionOwnershipSignature(signature, 
                                                                                        ownership_dep_map,
                                                                                        members,
-                                                                                       borrow_provider)
+                                                                                       ownership_provider, onlyBorrow=True)
                             i.name = signature
                             self.addFunction(signature)
 
@@ -112,8 +112,8 @@ class Monomorphizer(object):
                 if member.root == signature.root.group_var:
                     field_infos[member.kind.index] = member.info
             ownership_dep_map = MemberInfo.calculateOwnershipDepMap(signature.members)
-            borrow_provider = Normalizer.BorrowProvider()
-            borrow_provider.borrow_list = signature.borrows
+            ownership_provider = Normalizer.OwnershipProvider()
+            ownership_provider.borrow_list = signature.borrows
             allocator = copy.deepcopy(signature.allocator)
             for (index, f) in enumerate(clazz.fields):
                 #print("process field", type(f.type.name))
@@ -127,7 +127,7 @@ class Monomorphizer(object):
                                                                          info,
                                                                          ownership_dep_map,
                                                                          copy.deepcopy(signature.members),
-                                                                         borrow_provider)
+                                                                         ownership_provider)
                 f.type = fsignature
                 if info.group_var in ownership_dep_map:
                     dep_ownership_vars = ownership_dep_map[info.group_var]

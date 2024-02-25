@@ -26,10 +26,11 @@ class FunctionOwnershipSignature(object):
         self.result = None
         self.members = []
         self.borrows = []
+        self.owners = []
         self.allocator = Allocator.Allocator()
 
     def __str__(self):
-        return "(%s/%s/%s/%s/%s/%s)" % (self.name, self.args, self.result, self.members, self.borrows, self.allocator)
+        return "(%s/%s/%s/%s/%s/%s/%s)" % (self.name, self.args, self.result, self.members, self.borrows, self.owners, self.allocator)
     
     def __repr__(self) -> str:
         return self.__str__()
@@ -38,7 +39,8 @@ class FunctionOwnershipSignature(object):
         if not isinstance(other, FunctionOwnershipSignature):
             return False
         return self.name == other.name and self.args == other.args and self.result == other.result and \
-            self.members == other.members and self.borrows == other.borrows and self.allocator == other.allocator
+            self.members == other.members and self.borrows == other.borrows and \
+            self.owners == other.owners and self.allocator == other.allocator
     
     def __hash__(self):
         return self.name.__hash__()
