@@ -27,7 +27,7 @@ def createFunctionGroups(program):
         dep_map[key] = list(deps)
     #print("depmap", dep_map)
     groups = DependencyProcessor.processDependencies(dep_map)
-    print("Function groups", groups)
+    #print("Function groups", groups)
     return groups
 
 class InferenceEngine(object):
@@ -36,10 +36,10 @@ class InferenceEngine(object):
         self.program = None
 
     def processGroup(self, group):
-        print("Processing group", group)
+        #print("Processing group", group)
         if len(group.items) == 1:
             name = group.items[0]
-            print("Processing fn", name)
+            #print("Processing fn", name)
             fn = self.program.functions[name]
             fn = copy.deepcopy(fn)
             equality = Equality.EqualityEngine(fn, self.profile_store)

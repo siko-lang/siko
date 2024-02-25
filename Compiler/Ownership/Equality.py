@@ -15,12 +15,12 @@ class EqualityEngine(object):
         self.profiles = []
 
     def process(self):
-        print("Equality for %s/%s" % (self.fn.name, self.fn.ownership_signature))
+        #print("Equality for %s/%s" % (self.fn.name, self.fn.ownership_signature))
         self.initialize()
         self.mergeInstructions()
         self.mergeMembers()
         self.finalize()
-        self.dump()
+        #self.dump()
 
     def nextOwnershipVar(self):
         return self.fn.ownership_signature.allocator.nextOwnershipVar()
@@ -188,10 +188,14 @@ class EqualityEngine(object):
         args = []
         for arg in sig.args:
             args.append(self.substitution.applyTypeVariableInfo(arg))
+        owners = []
+        for owner in sig.owners:
+            owners.append(self.substitution.applyOwnershipVar(owner))
         for member in sig.members:
             member.root = self.substitution.applyGroupVar(member.root)
             member.info = self.substitution.applyTypeVariableInfo(member.info)
         sig.args = args
+        sig.owners = owners
         sig.result = self.substitution.applyTypeVariableInfo(sig.result)
 
     def finalize(self):
@@ -204,6 +208,9 @@ class EqualityEngine(object):
         self.applySignature(self.fn.ownership_signature)
         for profile in self.profiles:
             self.applySignature(profile.signature)
+        for profile in self.profiles:
+            for owner in profile.signature.owners:
+                self.fn.ownership_signature.owners.append(owner)
     
     def dump(self):
         print("Sig:", self.fn.ownership_signature)
