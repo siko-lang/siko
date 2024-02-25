@@ -10,11 +10,12 @@ import Compiler.Ownership.Normalizer as Normalizer
 import copy
 
 class Monomorphizer(object):
-    def __init__(self) -> None:
-        self.program = None
+    def __init__(self, program, profile_store):
+        self.program = program
         self.functions = {}
         self.classes = {}
         self.queue = []
+        self.profile_store = profile_store
 
     def addClass(self, signature):
         self.queue.append(signature)
@@ -31,8 +32,8 @@ class Monomorphizer(object):
             fn = copy.deepcopy(fn)
             fn.ownership_signature = copy.deepcopy(signature)
             self.functions[signature] = fn
-            equality = Equality.EqualityEngine()
-            equality.process(fn)
+            equality = Equality.EqualityEngine(fn, self.profile_store)
+            equality.process()
             members = fn.getAllMembers()
             #print("members", members)
             ownership_dep_map = MemberInfo.calculateOwnershipDepMap(members)
@@ -153,13 +154,12 @@ class Monomorphizer(object):
             if isinstance(first, Signatures.ClassInstantiationSignature):
                 self.processClass(first)
 
-def monomorphize(program):
+def monomorphize(program, profile_store):
     main_name = Util.QualifiedName("Main", "main")
     main_sig = Signatures.FunctionOwnershipSignature()
     main_sig.name = main_name
     main_sig.result = main_sig.allocator.nextTypeVariableInfo()
-    monomorphizer = Monomorphizer()
-    monomorphizer.program = program
+    monomorphizer = Monomorphizer(program, profile_store)
     monomorphizer.addFunction(main_sig)
     monomorphizer.processQueue()
     return (monomorphizer.classes, monomorphizer.functions)

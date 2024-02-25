@@ -5,14 +5,14 @@ import Compiler.Ownership.TypeVariableInfo as TypeVariableInfo
 import Compiler.Ownership.MemberInfo as MemberInfo
 
 class EqualityEngine(object):
-    def __init__(self):
-        self.fn = None
+    def __init__(self, fn, profile_store):
+        self.fn = fn
         self.tv_info_vars = {}
         self.substitution = TypeVariableInfo.Substitution()
+        self.profile_store = profile_store
 
-    def process(self, fn):
-        self.fn = fn
-        #print("Equality for %s/%s" % (fn.name, fn.ownership_signature))
+    def process(self):
+        #print("Equality for %s/%s" % (self.fn.name, self.fn.ownership_signature))
         self.initialize()
         self.mergeInstructions()
         self.mergeMembers()

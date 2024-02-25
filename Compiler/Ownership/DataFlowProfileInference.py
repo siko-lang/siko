@@ -9,6 +9,7 @@ import Compiler.Ownership.ForbiddenBorrows as ForbiddenBorrows
 import Compiler.Ownership.MemberInfo as MemberInfo
 import Compiler.Ownership.Normalizer as Normalizer
 import Compiler.Ownership.DataFlowProfile as DataFlowProfile
+import Compiler.Ownership.DataFlowProfileStore as DataFlowProfileStore
 import copy
 
 def createFunctionGroups(program):
@@ -31,7 +32,7 @@ def createFunctionGroups(program):
 
 class InferenceEngine(object):
     def __init__(self) -> None:
-        self.profiles = {}
+        self.profile_store = DataFlowProfileStore.DataFlowProfileStore()
         self.program = None
 
     def processGroup(self, group):
@@ -41,8 +42,8 @@ class InferenceEngine(object):
             print("Processing fn", name)
             fn = self.program.functions[name]
             fn = copy.deepcopy(fn)
-            equality = Equality.EqualityEngine()
-            equality.process(fn)
+            equality = Equality.EqualityEngine(fn, self.profile_store)
+            equality.process()
             members = fn.getAllMembers()
             #print("members", members)
             ownership_dep_map = MemberInfo.calculateOwnershipDepMap(members)
@@ -64,7 +65,7 @@ class InferenceEngine(object):
             profile = DataFlowProfile.DataFlowProfile()
             profile.paths = paths
             profile.signature = signature
-            self.profiles[name] = profile
+            self.profile_store.addProfile(name, profile)
             #print("%s has paths %s" % (name, paths))
             #print("ownerships", ownerships)
             #print("sig", fn.ownership_signature)
@@ -81,5 +82,6 @@ def infer(program):
     engine = InferenceEngine()
     engine.program = program
     engine.processGroups(groups)
+    return engine.profile_store
 
     
