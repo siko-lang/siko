@@ -34,11 +34,11 @@ def compile():
 
     Borrowchecker.processProgram(ir_program)
 
-    print("Building data flow profiles")
+    #print("Building data flow profiles")
 
     profile_store = DataFlowProfileInference.infer(ir_program)
 
-    print("Building data flow profiles done")
+    #print("Building data flow profiles done")
 
     (classes, functions) = Monomorphizer.monomorphize(ir_program, profile_store)
     Transpiler.transpile(classes, functions, output)

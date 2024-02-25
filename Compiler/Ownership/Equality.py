@@ -207,6 +207,8 @@ class EqualityEngine(object):
                     first = self.substitution.applyTypeVariableInfo(first)
                     for entry in entries:
                         entry = self.substitution.applyTypeVariableInfo(entry)
+                        if entry == first:
+                            continue
                         self.unify(first, entry)
                         unified = True
             if not unified:
