@@ -2,6 +2,8 @@ import Compiler.IR as IR
 import Compiler.Util as Util
 import Compiler.DependencyProcessor as DependencyProcessor
 import Compiler.Ownership.DataFlowDependency as DataFlowDependency
+import Compiler.Ownership.MemberInfo as MemberInfo
+import Compiler.Ownership.Allocator as Allocator
 
 class Value(object):
     def __init__(self):
@@ -18,6 +20,9 @@ class Value(object):
 
     def isValid(self):
         return True
+
+    def buildSource(self, arg, allocator):
+        return []
 
 class FieldAccess(object):
     def __init__(self, receiver, index):
@@ -46,6 +51,20 @@ class FieldAccess(object):
                 return False
         else:
             return True
+
+    def buildSource(self, arg, allocator):
+        member = MemberInfo.MemberInfo()
+        members = self.receiver.buildSource(arg, allocator)
+        if isinstance(self.receiver, Value):
+            member.root = arg.group_var
+        else:
+            member.root = members[-1].info.group_var
+        member.kind = MemberInfo.MemberKind()
+        member.kind.index = self.index
+        member.kind.type = MemberInfo.FieldKind
+        member.info = allocator.nextTypeVariableInfo()
+        members.append(member)
+        return members
 
 class Record(object):
     def __init__(self, value, index):
@@ -145,8 +164,44 @@ class InferenceEngine(object):
                         #print("Normalized", path)
                         #print("Normalized", path.isValid())
                         if path.isValid():
+                            path = splitPath(path, Allocator.Allocator())
                             final_paths.append(path)
         return final_paths
+
+class DataFlowPath(object):
+    def __init__(self, arg, result, src, dest):
+        self.arg = arg
+        self.result = result
+        self.src = src
+        self.dest = dest
+
+    def __str__(self):
+        return "path(%s/%s/%s/%s)" % (self.arg, self.result, self.src, self.dest)
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+def splitPath(path, allocator):
+    arg = allocator.nextTypeVariableInfo()
+    result = allocator.nextTypeVariableInfo()
+    dest_members = []
+    while True:
+        if isinstance(path, Record):
+            member = MemberInfo.MemberInfo()
+            if len(dest_members) == 0: # first
+                member.root = result.group_var
+            else:
+                member.root = dest_members[-1].info.group_var
+            member.kind = MemberInfo.MemberKind()
+            member.kind.index = path.index
+            member.kind.type = MemberInfo.FieldKind
+            member.info = allocator.nextTypeVariableInfo()
+            dest_members.append(member)
+            path = path.value
+        else:
+            break
+    src_members = path.buildSource(arg, allocator)
+    return DataFlowPath(arg, result, src_members, dest_members)
 
 def infer(f):
     engine = InferenceEngine()

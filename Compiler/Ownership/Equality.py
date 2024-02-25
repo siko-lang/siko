@@ -51,7 +51,7 @@ class EqualityEngine(object):
                         member_info = MemberInfo.MemberInfo()
                         member_info.root = root
                         member_info.kind = MemberInfo.MemberKind()
-                        member_info.kind.type = "field"
+                        member_info.kind.type = MemberInfo.FieldKind
                         member_info.kind.index = index
                         member_info.info = self.nextTypeVariableInfo()
                         root = member_info.info.group_var
@@ -64,7 +64,7 @@ class EqualityEngine(object):
                             member_info = MemberInfo.MemberInfo()
                             member_info.root = i.tv_info.group_var
                             member_info.kind = MemberInfo.MemberKind()
-                            member_info.kind.type = "field"
+                            member_info.kind.type = MemberInfo.FieldKind
                             member_info.kind.index = index
                             member_info.info = self.nextTypeVariableInfo()
                             i.members.append(member_info)

@@ -1,5 +1,7 @@
 import Compiler.DependencyProcessor as DependencyProcessor
 
+FieldKind = "field"
+
 class MemberKind(object):
     def __init__(self):
         self.type = None

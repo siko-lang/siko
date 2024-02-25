@@ -49,8 +49,8 @@ class InferenceEngine(object):
             ownership_dep_map = MemberInfo.calculateOwnershipDepMap(members)
             forbidden_borrows = ForbiddenBorrows.ForbiddenBorrowsEngine()
             forbidden_borrows.process(fn, ownership_dep_map)
-            inference = Inference.InferenceEngine(fn)
-            ownerships = inference.infer(self.program.classes)
+            inference = Inference.InferenceEngine(fn, self.profile_store, self.program.classes)
+            ownerships = inference.infer()
             ownership_provider = Normalizer.OwnershipProvider()
             ownership_provider.ownership_map = ownerships
             paths = DataFlowPath.infer(fn)

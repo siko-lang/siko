@@ -82,9 +82,10 @@ class ConstraintHolder(object):
         return all
 
 class InferenceEngine(object):
-    def __init__(self, fn):
+    def __init__(self, fn, profile_store, classes):
         self.fn = fn
-        self.classes = None
+        self.profile_store = profile_store
+        self.classes = classes
         self.ownerships = {}
         self.borrow_map = BorrowUtil.BorrowMap()
         self.next_borrow_id = 0
@@ -96,8 +97,7 @@ class InferenceEngine(object):
         borrow_id.value = id
         return borrow_id
 
-    def infer(self,  classes):
-        self.classes = classes
+    def infer(self):
         #print("Inference for %s" % self.fn.name)
         self.run()
         #self.dump()
@@ -212,10 +212,14 @@ class InferenceEngine(object):
                         constraint.var = i.tv_info.ownership_var
                         constraints.addConstraint(i.tv_info.ownership_var, constraint)
                     else:
-                        # TODO FIXME
-                        constraint = CtorConstraint()
-                        constraint.var = i.tv_info.ownership_var
-                        constraints.addConstraint(i.tv_info.ownership_var, constraint)
+                        if i.name == Util.getUnit():
+                            pass # TODO
+                        else:
+                            profile = self.profile_store.getProfile(i.name)
+                            print("Profile for %s/%s" % (profile, i.name))
+                            constraint = CtorConstraint()
+                            constraint.var = i.tv_info.ownership_var
+                            constraints.addConstraint(i.tv_info.ownership_var, constraint)
                 elif isinstance(i, IR.Bind):
                     constraint = CtorConstraint()
                     constraint.var = i.tv_info.ownership_var
