@@ -3,6 +3,8 @@ import Compiler.Util as Util
 import Compiler.Ownership.Signatures as Signatures
 import Compiler.Ownership.TypeVariableInfo as TypeVariableInfo
 import Compiler.Ownership.MemberInfo as MemberInfo
+import Compiler.Ownership.Instantiator as Instantiator
+import copy
 
 class EqualityEngine(object):
     def __init__(self, fn, profile_store):
@@ -10,14 +12,15 @@ class EqualityEngine(object):
         self.tv_info_vars = {}
         self.substitution = TypeVariableInfo.Substitution()
         self.profile_store = profile_store
+        self.profiles = []
 
     def process(self):
-        #print("Equality for %s/%s" % (self.fn.name, self.fn.ownership_signature))
+        print("Equality for %s/%s" % (self.fn.name, self.fn.ownership_signature))
         self.initialize()
         self.mergeInstructions()
         self.mergeMembers()
         self.finalize()
-        #self.dump()
+        self.dump()
 
     def nextOwnershipVar(self):
         return self.fn.ownership_signature.allocator.nextOwnershipVar()
@@ -103,6 +106,22 @@ class EqualityEngine(object):
                         member_info = i.members[index]
                         arg_info = self.getInstructionTypeVariableInfo(arg)
                         self.unify(arg_info, member_info.info)
+                else:
+                    if i.name == Util.getUnit():
+                        pass # TODO, remove this
+                    else:
+                        profile = self.profile_store.getProfile(i.name)
+                        profile = copy.deepcopy(profile)
+                        (signature, allocator) = Instantiator.instantiateFunctionOwnershipSignature(profile.signature, self.fn.ownership_signature.allocator)
+                        self.fn.ownership_signature.allocator = allocator
+                        profile.signature = signature
+                        self.profiles.append(profile)
+                        for (index, arg) in enumerate(i.args):
+                            sig_arg_info = profile.signature.args[index]
+                            arg_info = self.getInstructionTypeVariableInfo(arg)
+                            self.unify(arg_info, sig_arg_info)
+                        res_info = self.getInstructionTypeVariableInfo(i.id)
+                        self.unify(res_info, profile.signature.result)
             elif isinstance(i, IR.ValueRef):
                 if len(i.members) == 0:
                     self.unifyGroup(self.tv_info_vars[i.name].group_var, i.tv_info.group_var)
@@ -165,6 +184,16 @@ class EqualityEngine(object):
             if not unified:
                 break
 
+    def applySignature(self, sig):
+        args = []
+        for arg in sig.args:
+            args.append(self.substitution.applyTypeVariableInfo(arg))
+        for member in sig.members:
+            member.root = self.substitution.applyGroupVar(member.root)
+            member.info = self.substitution.applyTypeVariableInfo(member.info)
+        sig.args = args
+        sig.result = self.substitution.applyTypeVariableInfo(sig.result)
+
     def finalize(self):
         for block in self.fn.body.blocks:
             for i in block.instructions:
@@ -172,17 +201,14 @@ class EqualityEngine(object):
                     member.root = self.substitution.applyGroupVar(member.root)
                     member.info = self.substitution.applyTypeVariableInfo(member.info)
                 i.tv_info = self.substitution.applyTypeVariableInfo(i.tv_info)
-        args = []
-        for arg in self.fn.ownership_signature.args:
-            args.append(self.substitution.applyTypeVariableInfo(arg))
-        for member in self.fn.ownership_signature.members:
-            member.root = self.substitution.applyGroupVar(member.root)
-            member.info = self.substitution.applyTypeVariableInfo(member.info)
-        self.fn.ownership_signature.args = args
-        self.fn.ownership_signature.result = self.substitution.applyTypeVariableInfo(self.fn.ownership_signature.result)
+        self.applySignature(self.fn.ownership_signature)
+        for profile in self.profiles:
+            self.applySignature(profile.signature)
     
     def dump(self):
         print("Sig:", self.fn.ownership_signature)
+        for profile in self.profiles:
+            print("Profile sig:", profile.signature)
         for block in self.fn.body.blocks:
             print("#%s block" % block.id)
             for i in block.instructions:
