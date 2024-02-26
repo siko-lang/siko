@@ -98,7 +98,7 @@ class InferenceEngine(object):
         return borrow_id
 
     def infer(self):
-        #print("Inference for %s" % self.fn.name)
+        print("Inference for %s" % self.fn.name)
         self.run()
         #self.dump()
         return self.ownerships
@@ -219,10 +219,18 @@ class InferenceEngine(object):
                             constraints.addConstraint(i.tv_info.ownership_var, constraint)
                         else:
                             profile = self.profile_store.getProfile(i.name)
+                            for path in profile.paths:
+                                constraint = FieldAccessConstraint()
+                                constraint.borrow = False
+                                constraint.root = path.arg.ownership_var
+                                constraint.members = path.src
+                                if len(path.dest) == 0:
+                                    constraint.var = path.result.ownership_var
+                                else:
+                                    constraint.var = path.dest[-1].ownership_var
+                                constraint.instruction_id = None
+                                constraints.addConstraint(path.arg.ownership_var, constraint)
                             #print("Profile for %s/%s" % (profile, i.name))
-                            constraint = CtorConstraint()
-                            constraint.var = i.tv_info.ownership_var
-                            constraints.addConstraint(i.tv_info.ownership_var, constraint)
                 elif isinstance(i, IR.Bind):
                     constraint = CtorConstraint()
                     constraint.var = i.tv_info.ownership_var
@@ -283,9 +291,11 @@ class InferenceEngine(object):
             self.borrow_map.addExternalBorrow(borrow_id, external_borrow.borrow_id)
             self.setBorrow(external_borrow.ownership_var, borrow_id)
         self.processConstraints(groups, constraints)
-        #self.dump();
+        self.dump();
         for c in constraints.getAll():
             if isinstance(c, FieldAccessConstraint):
+                if c.instruction_id == None:
+                    continue
                 i = self.fn.body.getInstruction(c.instruction_id)
                 res_o = self.getOwnership(i.tv_info.ownership_var)
                 #print("final %s, res %s, %s, %s, borrow:%s" % (c.final, res_o, i.tv_info, c.instruction_id, i.borrow))

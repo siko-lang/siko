@@ -27,7 +27,7 @@ class Monomorphizer(object):
         if signature not in self.functions:
             if signature.name == Util.getUnit():
                 return
-            #print("Processing fn %s" % signature)
+            print("Processing fn %s" % signature)
             fn = self.program.functions[signature.name]
             fn = copy.deepcopy(fn)
             fn.ownership_signature = copy.deepcopy(signature)

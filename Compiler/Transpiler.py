@@ -80,7 +80,8 @@ class Transpiler(object):
         prefix = ""
         if isinstance(i.ownership, Inference.Borrow):
             ty = "&%s" % ty
-            prefix = "&"
+            if isinstance(i, IR.ValueRef):
+                prefix = "&"
         if partial:
             self.print("%slet %s : %s = %s%s\n" % (self.getIndent(), ii(i.id), ty, prefix, value))
         else:
@@ -157,6 +158,8 @@ class Transpiler(object):
             fn_args.append("%s: %s" % (vi(arg.name), ty))
         fn_args = ", ".join(fn_args)
         fn_result = self.transpileType(fn.return_type)
+        if isinstance(fn.return_ownership, Inference.Borrow):
+            fn_result = "&%s" % fn_result
         self.print("fn %s(%s) -> %s {\n" % (self.transpileFnName(sig), fn_args, fn_result))
         first_block = fn.body.getFirst()
         self.transpileBlock(fn, first_block)    
