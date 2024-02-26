@@ -23,6 +23,16 @@ class Monomorphizer(object):
     def addFunction(self, signature):
         self.queue.append(signature)
 
+    def getDepLifetimes(self, var, ownership_dep_map, ownerships):
+        dep_lifetimes = []
+        if var in ownership_dep_map:
+            dep_vars = ownership_dep_map[var]
+            for v in dep_vars:
+                o = ownerships[v]
+                if isinstance(o, Inference.Borrow):
+                    dep_lifetimes.append("'l%s" % o.borrow_id.value)
+        return dep_lifetimes
+    
     def processFunction(self, signature):
         if signature not in self.functions:
             if signature.name == Util.getUnit():
@@ -59,6 +69,7 @@ class Monomorphizer(object):
                 arg.ownership = ownerships[arg_tv_info.ownership_var]
                 if isinstance(arg.ownership, Inference.Borrow):
                     arg.lifetime = "'l%s" % arg.ownership.borrow_id.value
+                arg.dep_lifetimes = self.getDepLifetimes(arg_tv_info.ownership_var, ownership_dep_map, ownerships)
                 self.addClass(tsignature)
             rsignature = Signatures.ClassInstantiationSignature()
             rsignature.name = fn.return_type
@@ -73,6 +84,7 @@ class Monomorphizer(object):
             fn.return_ownership = ownerships[ret_tv_info.ownership_var]
             if isinstance(fn.return_ownership, Inference.Borrow):
                 fn.return_lifetime = "'l%s" % fn.return_ownership.borrow_id.value
+            fn.return_dep_lifetimes = self.getDepLifetimes(ret_tv_info.ownership_var, ownership_dep_map, ownerships)
             for block in fn.body.blocks:
                 for i in block.instructions:
                     if i.type is None:

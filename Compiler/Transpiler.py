@@ -154,13 +154,19 @@ class Transpiler(object):
         lifetimes = []
         for arg in fn.args:
             ty = self.transpileType(arg.type)
-            if isinstance(arg.ownership, Inference.Borrow):
-                lifetimes.append(arg.lifetime)
+            if len(arg.dep_lifetimes) > 0:
+                lifetimes += arg.dep_lifetimes
+                ty = "%s<%s>" % (ty, ", ".join(arg.dep_lifetimes))
+            if arg.lifetime:
                 ty = "&%s %s" % (arg.lifetime, ty)
+                lifetimes.append(arg.lifetime)
             fn_args.append("%s: %s" % (vi(arg.name), ty))
         fn_args = ", ".join(fn_args)
         fn_result = self.transpileType(fn.return_type)
-        if isinstance(fn.return_ownership, Inference.Borrow):
+        if len(fn.return_dep_lifetimes) > 0:
+            lifetimes += fn.return_dep_lifetimes
+            fn_result = "%s<%s>" % (ty, ", ".join(fn.return_dep_lifetimes))
+        if fn.return_lifetime:
             lifetimes.append(fn.return_lifetime)
             fn_result = "&%s %s" % (fn.return_lifetime, fn_result)
         if len(lifetimes) > 0:

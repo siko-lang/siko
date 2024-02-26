@@ -92,6 +92,8 @@ class Arg(SyntaxBase):
         self.name = None
         self.type = None
         self.ownership = None
+        self.lifetime = None
+        self.dep_lifetimes = []
 
 class Function(SyntaxBase):
     def __init__(self):
@@ -101,6 +103,8 @@ class Function(SyntaxBase):
         self.return_type = None
         self.body = None
         self.ownership_signature = None
+        self.return_lifetime = None
+        self.return_dep_lifetimes = []
 
     def getAllMembers(self):
         return self.body.getAllMembers() + self.ownership_signature.members
