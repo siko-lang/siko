@@ -214,6 +214,9 @@ class InferenceEngine(object):
                     else:
                         if i.name == Util.getUnit():
                             pass # TODO
+                            constraint = CtorConstraint()
+                            constraint.var = i.tv_info.ownership_var
+                            constraints.addConstraint(i.tv_info.ownership_var, constraint)
                         else:
                             profile = self.profile_store.getProfile(i.name)
                             #print("Profile for %s/%s" % (profile, i.name))
@@ -257,10 +260,16 @@ class InferenceEngine(object):
             #print("Setting unknown to owner", var)
             self.setOwner(var)
 
-    def unpackOwners(self):
+    def unpackOwners(self, ownership_dep_map):
+        def processInfo(info):
+            self.setOwnerIfUnknown(info.ownership_var)
+            if info.group_var in ownership_dep_map:
+                vars = ownership_dep_map[info.group_var]
+                for var in vars:
+                    self.setOwnerIfUnknown(var)
         for arg in self.fn.ownership_signature.args:
-            self.setOwnerIfUnknown(arg.ownership_var)
-        self.setOwnerIfUnknown(self.fn.ownership_signature.result.ownership_var)
+            processInfo(arg)
+        processInfo(self.fn.ownership_signature.result)
         for member in self.fn.ownership_signature.members:
             self.setOwnerIfUnknown(member.info.ownership_var)
 

@@ -38,9 +38,10 @@ class Monomorphizer(object):
             #print("members", members)
             ownership_dep_map = MemberInfo.calculateOwnershipDepMap(members)
             forbidden_borrows = ForbiddenBorrows.ForbiddenBorrowsEngine()
+            #print("ownership_dep_map", ownership_dep_map)
             forbidden_borrows.process(fn, ownership_dep_map)
             inference = Inference.InferenceEngine(fn, self.profile_store, self.program.classes)
-            inference.unpackOwners()
+            inference.unpackOwners(ownership_dep_map)
             ownerships = inference.infer()
             ownership_provider = Normalizer.OwnershipProvider()
             ownership_provider.ownership_map = ownerships
