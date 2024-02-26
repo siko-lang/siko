@@ -164,7 +164,7 @@ class InferenceEngine(object):
                     for b in prev_user_borrows:
                         self.borrow_map.addKind(merged, b)
                     self.setBorrow(constraint.var, merged)
-                else:
+                elif isinstance(prev, Unknown):
                     self.setBorrow(constraint.var, constraint.final.borrow_id)
             else:
                 self.setOwner(constraint.var)
