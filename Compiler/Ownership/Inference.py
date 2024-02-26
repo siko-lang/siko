@@ -289,7 +289,7 @@ class InferenceEngine(object):
         processInfo(self.fn.ownership_signature.result)
         for member in self.fn.ownership_signature.members:
             self.setOwnerIfUnknown(member.info.ownership_var)
-
+        
     def run(self):
         (groups, constraints) = self.collectConstraints()
         #print(groups)
@@ -299,6 +299,8 @@ class InferenceEngine(object):
             borrow_id = self.getNextBorrowId()
             self.borrow_map.addExternalBorrow(borrow_id, external_borrow.borrow_id)
             self.setBorrow(external_borrow.ownership_var, borrow_id)
+        for var in self.fn.ownership_signature.owners:
+            self.setOwner(var)
         self.processConstraints(groups, constraints)
         #self.dump();
         for c in constraints.getAll():
