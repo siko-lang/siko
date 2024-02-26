@@ -151,16 +151,23 @@ class Transpiler(object):
 
     def transpileFn(self, sig, fn):
         fn_args = []
+        lifetimes = []
         for arg in fn.args:
             ty = self.transpileType(arg.type)
             if isinstance(arg.ownership, Inference.Borrow):
+                lifetimes.append(arg.lifetime)
                 ty = "&%s %s" % (arg.lifetime, ty)
             fn_args.append("%s: %s" % (vi(arg.name), ty))
         fn_args = ", ".join(fn_args)
         fn_result = self.transpileType(fn.return_type)
         if isinstance(fn.return_ownership, Inference.Borrow):
+            lifetimes.append(fn.return_lifetime)
             fn_result = "&%s %s" % (fn.return_lifetime, fn_result)
-        self.print("fn %s(%s) -> %s {\n" % (self.transpileFnName(sig), fn_args, fn_result))
+        if len(lifetimes) > 0:
+            lifetimes = list(set(lifetimes))
+            self.print("fn %s<%s>(%s) -> %s {\n" % (self.transpileFnName(sig), ", ".join(lifetimes), fn_args, fn_result))
+        else:
+            self.print("fn %s(%s) -> %s {\n" % (self.transpileFnName(sig), fn_args, fn_result))
         first_block = fn.body.getFirst()
         self.transpileBlock(fn, first_block)    
         self.print("}\n\n")

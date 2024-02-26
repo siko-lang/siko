@@ -33,7 +33,7 @@ fn Main_main_0() -> () {
     i_0_10
 }
 
-fn Main_foo_0(arg_0: &Main_Object_0) -> () {
+fn Main_foo_0<'l0>(arg_0: &'l0 Main_Object_0) -> () {
     let i_0_0 : &Main_Object_0 = &arg_0;
     let tmp_1 = i_0_0;
     let i_0_2 : () = ();

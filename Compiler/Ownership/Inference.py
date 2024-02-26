@@ -237,7 +237,7 @@ class InferenceEngine(object):
                                 if len(path.dest) == 0:
                                     constraint.var = path.result.ownership_var
                                 else:
-                                    constraint.var = path.dest[-1].ownership_var
+                                    constraint.var = path.dest[-1].info.ownership_var
                                 constraint.instruction_id = None
                                 constraints.addConstraint(path.arg.ownership_var, constraint)
                 elif isinstance(i, IR.Bind):
