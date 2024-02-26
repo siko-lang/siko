@@ -165,25 +165,26 @@ class InferenceEngine(object):
                         #print("Normalized", path)
                         #print("Normalized", path.isValid())
                         if path.isValid():
-                            path = splitPath(path, index, Allocator.Allocator())
+                            path = splitPath(path, index, self.fn.ownership_signature.allocator)
                             final_paths.append(path)
         return final_paths
 
 class DataFlowPath(object):
     def __init__(self, index, arg, result, src, dest):
-        self.index = 0
+        self.index = index
         self.arg = arg
         self.result = result
         self.src = src
         self.dest = dest
 
     def __str__(self):
-        return "path(%s/%s/%s/%s/%s)" % (self.index, self.arg, self.result, self.src, self.dest)
+        return "path(%s/arg:%s/result:%s/%s/%s)" % (self.index, self.arg, self.result, self.src, self.dest)
 
     def __repr__(self) -> str:
         return self.__str__()
 
 def splitPath(path, index, allocator):
+    #print("Splitpath", path, index)
     arg = allocator.nextTypeVariableInfo()
     result = allocator.nextTypeVariableInfo()
     dest_members = []

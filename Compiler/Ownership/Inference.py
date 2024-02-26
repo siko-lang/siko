@@ -82,9 +82,9 @@ class ConstraintHolder(object):
         return all
 
 class InferenceEngine(object):
-    def __init__(self, fn, profile_store, classes):
+    def __init__(self, fn, profiles, classes):
         self.fn = fn
-        self.profile_store = profile_store
+        self.profiles = profiles
         self.classes = classes
         self.ownerships = {}
         self.borrow_map = BorrowUtil.BorrowMap()
@@ -98,7 +98,7 @@ class InferenceEngine(object):
         return borrow_id
 
     def infer(self):
-        print("Inference for %s" % self.fn.name)
+        #print("Inference for %s" % self.fn.name)
         self.run()
         #self.dump()
         return self.ownerships
@@ -155,7 +155,17 @@ class InferenceEngine(object):
         elif isinstance(constraint.final, Borrow):
             (user_borrows, is_valid) = self.checkBorrows(constraint.var, constraint.final.borrow_id)
             if is_valid:
-                self.setBorrow(constraint.var, constraint.final.borrow_id)
+                prev = self.getOwnership(constraint.var)
+                if isinstance(prev, Borrow):
+                    prev_user_borrows = self.borrow_map.getBorrows(prev.borrow_id)
+                    merged = self.getNextBorrowId()
+                    for b in user_borrows:
+                        self.borrow_map.addKind(merged, b)
+                    for b in prev_user_borrows:
+                        self.borrow_map.addKind(merged, b)
+                    self.setBorrow(constraint.var, merged)
+                else:
+                    self.setBorrow(constraint.var, constraint.final.borrow_id)
             else:
                 self.setOwner(constraint.var)
 
@@ -218,7 +228,7 @@ class InferenceEngine(object):
                             constraint.var = i.tv_info.ownership_var
                             constraints.addConstraint(i.tv_info.ownership_var, constraint)
                         else:
-                            profile = self.profile_store.getProfile(i.name)
+                            profile = self.profiles[i.id]
                             for path in profile.paths:
                                 constraint = FieldAccessConstraint()
                                 constraint.borrow = False
@@ -230,7 +240,6 @@ class InferenceEngine(object):
                                     constraint.var = path.dest[-1].ownership_var
                                 constraint.instruction_id = None
                                 constraints.addConstraint(path.arg.ownership_var, constraint)
-                            #print("Profile for %s/%s" % (profile, i.name))
                 elif isinstance(i, IR.Bind):
                     constraint = CtorConstraint()
                     constraint.var = i.tv_info.ownership_var
@@ -291,7 +300,7 @@ class InferenceEngine(object):
             self.borrow_map.addExternalBorrow(borrow_id, external_borrow.borrow_id)
             self.setBorrow(external_borrow.ownership_var, borrow_id)
         self.processConstraints(groups, constraints)
-        self.dump();
+        #self.dump();
         for c in constraints.getAll():
             if isinstance(c, FieldAccessConstraint):
                 if c.instruction_id == None:

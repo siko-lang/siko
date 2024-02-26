@@ -3,6 +3,7 @@ import Compiler.Util as Util
 import Compiler.Ownership.Signatures as Signatures
 import Compiler.Ownership.TypeVariableInfo as TypeVariableInfo
 import Compiler.Ownership.MemberInfo as MemberInfo
+import Compiler.Ownership.DataFlowPath as DataFlowPath
 import Compiler.Ownership.Instantiator as Instantiator
 import copy
 
@@ -12,15 +13,20 @@ class EqualityEngine(object):
         self.tv_info_vars = {}
         self.substitution = TypeVariableInfo.Substitution()
         self.profile_store = profile_store
-        self.profiles = []
+        self.profiles = {}
+        self.paths = []
 
-    def process(self):
+    def process(self, buildPath):
         #print("Equality for %s/%s" % (self.fn.name, self.fn.ownership_signature))
         self.initialize()
+        if buildPath:
+            self.paths = DataFlowPath.infer(self.fn)
+            #print("path before", self.paths)
         self.mergeInstructions()
         self.mergeMembers()
         self.finalize()
         #self.dump()
+        return self.profiles
 
     def nextOwnershipVar(self):
         return self.fn.ownership_signature.allocator.nextOwnershipVar()
@@ -114,13 +120,12 @@ class EqualityEngine(object):
                         profile = copy.deepcopy(profile)
                         (profile, allocator) = Instantiator.instantiateProfile(profile, self.fn.ownership_signature.allocator)
                         self.fn.ownership_signature.allocator = allocator
-                        self.profiles.append(profile)
+                        self.profiles[i.id]= profile
                         res_info = self.getInstructionTypeVariableInfo(i.id)
                         for path in profile.paths:
                             arg = i.args[path.index]
                             arg_info = self.getInstructionTypeVariableInfo(arg)
                             self.unify(arg_info, path.arg)
-                            self.unify(res_info, path.result)    
                         for (index, arg) in enumerate(i.args):
                             sig_arg_info = profile.signature.args[index]
                             arg_info = self.getInstructionTypeVariableInfo(arg)
@@ -159,11 +164,17 @@ class EqualityEngine(object):
         self.processBlock(block)
         ret = self.getInstructionTypeVariableInfo(block.getLastReal().id)
         self.unify(self.fn.ownership_signature.result, ret)
-    
+        for (index, arg) in enumerate(self.fn.ownership_signature.args):
+            for path in self.paths:
+                if path.index == index:
+                    self.unify(path.arg, arg)
+        for path in self.paths:
+            self.unify(self.fn.ownership_signature.result, path.result)
+
     def mergeMembers(self):
         while True:
             member_map = {}
-            for profile in self.profiles:
+            for profile in self.profiles.values():
                 for member in profile.signature.members:
                     member.root = self.substitution.applyGroupVar(member.root)
                     member_map[(member.root, member.kind.index)] = []
@@ -175,13 +186,21 @@ class EqualityEngine(object):
                         member.root = self.substitution.applyGroupVar(member.root)
                         member_map[(member.root, member.kind.index)] = []
             
+            for path in self.paths:
+                for member in path.src:
+                    member.root = self.substitution.applyGroupVar(member.root)
+                    member_map[(member.root, member.kind.index)] = []
+                for member in path.dest:
+                    member.root = self.substitution.applyGroupVar(member.root)
+                    member_map[(member.root, member.kind.index)] = []
+            
             for block in self.fn.body.blocks:
                 for i in block.instructions:
                     for member in i.members:
                         member.root = self.substitution.applyGroupVar(member.root)
                         member_map[(member.root, member.kind.index)] = []
 
-            for profile in self.profiles:
+            for profile in self.profiles.values():
                 for member in profile.signature.members:
                     member.root = self.substitution.applyGroupVar(member.root)
                     member_map[(member.root, member.kind.index)].append(member.info)
@@ -192,6 +211,14 @@ class EqualityEngine(object):
                     for member in path.dest:
                         member.root = self.substitution.applyGroupVar(member.root)
                         member_map[(member.root, member.kind.index)].append(member.info)
+
+            for path in self.paths:
+                for member in path.src:
+                    member.root = self.substitution.applyGroupVar(member.root)
+                    member_map[(member.root, member.kind.index)].append(member.info)
+                for member in path.dest:
+                    member.root = self.substitution.applyGroupVar(member.root)
+                    member_map[(member.root, member.kind.index)].append(member.info)
 
             for block in self.fn.body.blocks:
                 for i in block.instructions:
@@ -236,9 +263,9 @@ class EqualityEngine(object):
                     member.info = self.substitution.applyTypeVariableInfo(member.info)
                 i.tv_info = self.substitution.applyTypeVariableInfo(i.tv_info)
         self.applySignature(self.fn.ownership_signature)
-        for profile in self.profiles:
+        for profile in self.profiles.values():
             self.applySignature(profile.signature)
-        for profile in self.profiles:
+        for profile in self.profiles.values():
             for owner in profile.signature.owners:
                 self.fn.ownership_signature.owners.append(owner)
             for path in profile.paths:
@@ -250,10 +277,19 @@ class EqualityEngine(object):
                 for member in path.dest:
                     member.root = self.substitution.applyGroupVar(member.root)
                     member.info = self.substitution.applyTypeVariableInfo(member.info)
-    
+        for path in self.paths:
+            path.arg = self.substitution.applyTypeVariableInfo(path.arg)
+            path.result = self.substitution.applyTypeVariableInfo(path.result)
+            for member in path.src:
+                member.root = self.substitution.applyGroupVar(member.root)
+                member.info = self.substitution.applyTypeVariableInfo(member.info)
+            for member in path.dest:
+                member.root = self.substitution.applyGroupVar(member.root)
+                member.info = self.substitution.applyTypeVariableInfo(member.info)
+
     def dump(self):
         print("Sig:", self.fn.ownership_signature)
-        for profile in self.profiles:
+        for profile in self.profiles.values():
             print("Profile sig:", profile.signature)
             print("Paths", profile.paths)
         for block in self.fn.body.blocks:

@@ -3,6 +3,7 @@ class DataFlowProfileStore(object):
         self.profiles = {}
 
     def addProfile(self, name, profile):
+        #print("addProfile: %s -> %s" % (name, profile))
         self.profiles[name] = profile
 
     def getProfile(self, name):

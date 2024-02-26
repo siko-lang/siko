@@ -128,8 +128,23 @@ def collectChildMembers(normalizer, var, members):
                 normalized_children.append(m)
     return normalized_children
 
-def normalizeFunctionOwnershipSignature(signature, ownership_dep_map, members, ownership_provider, onlyBorrow):
+def normalizeFunctionProfile(signature, paths, ownership_dep_map, members, ownership_provider, onlyBorrow):
     normalizer = Normalizer()
+    signature = normalizeFunctionOwnershipSignature(signature, ownership_dep_map, members, ownership_provider, onlyBorrow, normalizer=normalizer)
+    for path in paths:
+        path.arg = normalizer.normalize(path.arg)
+        path.result = normalizer.normalize(path.result)
+        for member in path.src:
+            member.root = normalizer.normalizeGroupVar(member.root)
+            member.info = normalizer.normalize(member.info)
+        for member in path.dest:
+            member.root = normalizer.normalizeGroupVar(member.root)
+            member.info = normalizer.normalize(member.info)
+    return (signature, paths)
+
+def normalizeFunctionOwnershipSignature(signature, ownership_dep_map, members, ownership_provider, onlyBorrow, normalizer = None):
+    if not normalizer:
+        normalizer = Normalizer()
     #print("Signature", signature)
     #print("ownership_dep_map", ownership_dep_map)
     #print("members", members)

@@ -82,5 +82,10 @@ class BorrowMap(object):
         external_borrow.external_borrow = externalid
         self.borrows[borrowid].add(external_borrow)
     
+    def addKind(self, borrowid, kind):
+        if borrowid not in self.borrows:
+            self.borrows[borrowid] = set()
+        self.borrows[borrowid].add(kind)
+
     def getBorrows(self, borrowid):
         return self.borrows[borrowid]

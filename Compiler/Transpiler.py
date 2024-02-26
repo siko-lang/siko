@@ -154,12 +154,12 @@ class Transpiler(object):
         for arg in fn.args:
             ty = self.transpileType(arg.type)
             if isinstance(arg.ownership, Inference.Borrow):
-                ty = "&%s" % ty
+                ty = "&%s %s" % (arg.lifetime, ty)
             fn_args.append("%s: %s" % (vi(arg.name), ty))
         fn_args = ", ".join(fn_args)
         fn_result = self.transpileType(fn.return_type)
         if isinstance(fn.return_ownership, Inference.Borrow):
-            fn_result = "&%s" % fn_result
+            fn_result = "&%s %s" % (fn.return_lifetime, fn_result)
         self.print("fn %s(%s) -> %s {\n" % (self.transpileFnName(sig), fn_args, fn_result))
         first_block = fn.body.getFirst()
         self.transpileBlock(fn, first_block)    

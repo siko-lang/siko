@@ -44,13 +44,13 @@ fn Main_main_0() -> () {
     let i_0_2 : Main_Address_0 = Main_Address_0{city: i_0_0, street: i_0_1};
     let tmp_7 = i_0_2;
     let i_0_4 : &Main_Address_0 = &tmp_7;
-    let i_0_5 : String_String_0 = Main_id_0(i_0_4);
+    let i_0_5 : &String_String_0 = Main_id_0(i_0_4);
     let i_0_6 : Main_Address_0 = tmp_7;
     let i_0_7 : () = ();
     i_0_7
 }
 
-fn Main_id_0(arg_0: &Main_Address_0) -> String_String_0 {
+fn Main_id_0(arg_0: &'l0 Main_Address_0) -> String_String_0 {
     let i_0_0 : &Main_Address_0 = &arg_0;
     let tmp_1 = i_0_0;
     let i_0_2 : bool = true;

@@ -27,20 +27,20 @@ class Monomorphizer(object):
         if signature not in self.functions:
             if signature.name == Util.getUnit():
                 return
-            print("Processing fn %s" % signature)
+            #print("Processing fn %s" % signature)
             fn = self.program.functions[signature.name]
             fn = copy.deepcopy(fn)
             fn.ownership_signature = copy.deepcopy(signature)
             self.functions[signature] = fn
             equality = Equality.EqualityEngine(fn, self.profile_store)
-            equality.process()
+            profiles = equality.process(buildPath=False)
             members = fn.getAllMembers()
             #print("members", members)
             ownership_dep_map = MemberInfo.calculateOwnershipDepMap(members)
             forbidden_borrows = ForbiddenBorrows.ForbiddenBorrowsEngine()
             #print("ownership_dep_map", ownership_dep_map)
             forbidden_borrows.process(fn, ownership_dep_map)
-            inference = Inference.InferenceEngine(fn, self.profile_store, self.program.classes)
+            inference = Inference.InferenceEngine(fn, profiles, self.program.classes)
             inference.unpackOwners(ownership_dep_map)
             ownerships = inference.infer()
             ownership_provider = Normalizer.OwnershipProvider()
@@ -57,6 +57,8 @@ class Monomorphizer(object):
                                                                          ownership_provider)
                 arg.type = tsignature
                 arg.ownership = ownerships[arg_tv_info.ownership_var]
+                if isinstance(arg.ownership, Inference.Borrow):
+                    arg.lifetime = "'l%s" % arg.ownership.borrow_id.value
                 self.addClass(tsignature)
             rsignature = Signatures.ClassInstantiationSignature()
             rsignature.name = fn.return_type
@@ -69,6 +71,8 @@ class Monomorphizer(object):
             self.addClass(rsignature)
             fn.return_type = rsignature
             fn.return_ownership = ownerships[ret_tv_info.ownership_var]
+            if isinstance(fn.return_ownership, Inference.Borrow):
+                fn.return_lifetime = "'l%s" % fn.return_ownership.borrow_id.value
             for block in fn.body.blocks:
                 for i in block.instructions:
                     if i.type is None:

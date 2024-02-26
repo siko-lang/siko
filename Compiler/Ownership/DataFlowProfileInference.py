@@ -1,7 +1,6 @@
 import Compiler.IR as IR
 import Compiler.Util as Util
 import Compiler.DependencyProcessor as DependencyProcessor
-import Compiler.Ownership.DataFlowPath as DataFlowPath
 import Compiler.Ownership.Equality as Equality
 import Compiler.Ownership.Inference as Inference
 import Compiler.Ownership.Equality as Equality
@@ -43,24 +42,25 @@ class InferenceEngine(object):
             fn = self.program.functions[name]
             fn = copy.deepcopy(fn)
             equality = Equality.EqualityEngine(fn, self.profile_store)
-            equality.process()
+            profiles = equality.process(buildPath=True)
+            paths = equality.paths
             members = fn.getAllMembers()
             #print("members", members)
             ownership_dep_map = MemberInfo.calculateOwnershipDepMap(members)
             forbidden_borrows = ForbiddenBorrows.ForbiddenBorrowsEngine()
             forbidden_borrows.process(fn, ownership_dep_map)
-            inference = Inference.InferenceEngine(fn, self.profile_store, self.program.classes)
+            inference = Inference.InferenceEngine(fn, profiles, self.program.classes)
             ownerships = inference.infer()
             ownership_provider = Normalizer.OwnershipProvider()
             ownership_provider.ownership_map = ownerships
-            paths = DataFlowPath.infer(fn)
+            #print("paths", paths)
             signature = fn.ownership_signature
             signature.name = name
-            signature = Normalizer.normalizeFunctionOwnershipSignature(signature, 
-                                                                        ownership_dep_map,
-                                                                        members,
-                                                                        ownership_provider,
-                                                                        onlyBorrow=False)
+            (signature, paths) = Normalizer.normalizeFunctionProfile(signature, paths,
+                                                                     ownership_dep_map,
+                                                                     members,
+                                                                     ownership_provider,
+                                                                     onlyBorrow=False)
             
             profile = DataFlowProfile.DataFlowProfile()
             profile.paths = paths
