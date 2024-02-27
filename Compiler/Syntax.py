@@ -110,6 +110,16 @@ class Function(SyntaxBase):
     def getAllMembers(self):
         return self.body.getAllMembers() + self.ownership_signature.members
 
+class Enum(object):
+    def __init__(self):
+        self.name = None
+        self.variants = []
+
+class Variant(object):
+    def __init__(self):
+        self.name = None
+        self.items = []
+
 class Field(object):
     def __init__(self):
         self.name = None

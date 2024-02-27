@@ -58,18 +58,32 @@ class Parser(object):
         return name
 
     def parseEnumVariant(self):
-        name = self.parseName()
-        self.expect("leftparen")
-        arg = self.parseType()
-        self.expect("rightparen")
+        variant = Syntax.Variant()
+        variant.name = self.parseTypeName()
+        if self.peek("leftparen"):
+            self.expect("leftparen")
+            while True:
+                item = self.parseType()
+                variant.items.append(item)
+                if self.peek("comma"):
+                    self.expect("comma")
+                elif self.peek("rightparen"):
+                    break
+            self.expect("rightparen")
+        if self.peek("comma"):
+            self.expect("comma")
+        return variant
 
     def parseEnum(self):
         self.expect("enum")
-        name = self.parseName()
+        enum = Syntax.Enum()
+        enum.name = self.parseTypeName()
         self.expect("leftcurly")
         while not self.peek("rightcurly"):
-            self.parseEnumVariant()
+            variant = self.parseEnumVariant()
+            enum.variants.append(variant)
         self.expect("rightcurly")
+        return enum
 
     def parseImport(self):
         i = Syntax.Import()
@@ -96,7 +110,7 @@ class Parser(object):
         if self.peek("extern"):
             self.parseExternClass(module_name, derives)
         elif self.peek("enum"):
-            self.parseEnum()
+            return self.parseEnum()
         elif self.peek("class"):
             return self.parseClass(module_name, derives)
         elif self.peek("import"):
