@@ -3,6 +3,7 @@ import Compiler.Util as Util
 import Compiler.Typechecker as Typechecker
 import Compiler.Ownership.Inference as Inference
 import Compiler.Ownership.Signatures as Signatures
+import Compiler.Ownership.Lifetime as Lifetime
 import Compiler.Syntax as Syntax
 
 def ii(id):
@@ -156,7 +157,7 @@ class Transpiler(object):
             ty = self.transpileType(arg.type)
             if len(arg.dep_lifetimes) > 0:
                 lifetimes += arg.dep_lifetimes
-                ty = "%s<%s>" % (ty, ", ".join(arg.dep_lifetimes))
+                ty = "%s<%s>" % (ty, Lifetime.asList(arg.dep_lifetimes))
             if arg.lifetime:
                 ty = "&%s %s" % (arg.lifetime, ty)
                 lifetimes.append(arg.lifetime)
@@ -165,13 +166,22 @@ class Transpiler(object):
         fn_result = self.transpileType(fn.return_type)
         if len(fn.return_dep_lifetimes) > 0:
             lifetimes += fn.return_dep_lifetimes
-            fn_result = "%s<%s>" % (ty, ", ".join(fn.return_dep_lifetimes))
+            fn_result = "%s<%s>" % (ty, Lifetime.asList(fn.return_dep_lifetimes))
         if fn.return_lifetime:
             lifetimes.append(fn.return_lifetime)
             fn_result = "&%s %s" % (fn.return_lifetime, fn_result)
         if len(lifetimes) > 0:
             lifetimes = list(set(lifetimes))
-            self.print("fn %s<%s>(%s) -> %s {\n" % (self.transpileFnName(sig), ", ".join(lifetimes), fn_args, fn_result))
+            lifetime_deps = {}
+            for lifetime in lifetimes:
+                lifetime_deps[lifetime] = set()
+            for (f, t) in fn.lifetime_dependencies:
+                lifetime_deps[t].add(f)
+            lifetime_decls = []
+            for (l, deps) in lifetime_deps.items():
+                decl = "%s: %s" % (l, Lifetime.asList(deps))
+                lifetime_decls.append(decl)
+            self.print("fn %s<%s>(%s) -> %s {\n" % (self.transpileFnName(sig), ", ".join(lifetime_decls), fn_args, fn_result))
         else:
             self.print("fn %s(%s) -> %s {\n" % (self.transpileFnName(sig), fn_args, fn_result))
         first_block = fn.body.getFirst()
@@ -182,11 +192,11 @@ class Transpiler(object):
         if sig.name == Util.getBool():
             return
         self.print("#[derive(Clone)]\n")
-        self.print("struct %s<%s> {\n" % (self.transpileType(sig), ", ".join(c.lifetimes)))
+        self.print("struct %s<%s> {\n" % (self.transpileType(sig), Lifetime.asList(c.lifetimes)))
         for field in c.fields:
             dep_lifetimes = ""
             if field.dep_lifetimes is not None:
-                dep_lifetimes = "<%s>" % (", ".join(field.dep_lifetimes))
+                dep_lifetimes = "<%s>" % (Lifetime.asList(field.dep_lifetimes))
             if field.lifetime:
                 self.print("    %s: &%s %s%s,\n" % (field.name, field.lifetime, self.transpileType(field.type), dep_lifetimes))
             else:

@@ -50,7 +50,7 @@ fn Main_main_0() -> () {
     i_0_7
 }
 
-fn Main_id_0<'l0>(arg_0: &'l0 Main_Address_0) -> String_String_0 {
+fn Main_id_0<'l0: >(arg_0: &'l0 Main_Address_0) -> String_String_0 {
     let i_0_0 : &Main_Address_0 = &arg_0;
     let tmp_1 = i_0_0;
     let i_0_2 : bool = true;

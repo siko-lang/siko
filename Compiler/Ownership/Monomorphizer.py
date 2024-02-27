@@ -7,6 +7,7 @@ import Compiler.Ownership.Equality as Equality
 import Compiler.Ownership.ForbiddenBorrows as ForbiddenBorrows
 import Compiler.Ownership.MemberInfo as MemberInfo
 import Compiler.Ownership.Normalizer as Normalizer
+import Compiler.Ownership.Lifetime as Lifetime
 import copy
 
 class Monomorphizer(object):
@@ -23,14 +24,21 @@ class Monomorphizer(object):
     def addFunction(self, signature):
         self.queue.append(signature)
 
-    def getDepLifetimes(self, var, ownership_dep_map, ownerships):
-        dep_lifetimes = []
+    def getAllBorrows(self, var, ownership_dep_map, ownerships):
+        borrows = []
         if var in ownership_dep_map:
             dep_vars = ownership_dep_map[var]
             for v in dep_vars:
                 o = ownerships[v]
                 if isinstance(o, Inference.Borrow):
-                    dep_lifetimes.append("'l%s" % o.borrow_id.value)
+                    borrows.append(o.borrow_id)
+        return borrows
+
+    def getDepLifetimes(self, var, ownership_dep_map, ownerships):
+        dep_lifetimes = []
+        borrows = self.getAllBorrows(var, ownership_dep_map, ownerships)
+        for b in borrows:
+            dep_lifetimes.append("'l%s" % b.value)
         return dep_lifetimes
     
     def processFunction(self, signature):
@@ -53,9 +61,12 @@ class Monomorphizer(object):
             inference = Inference.InferenceEngine(fn, profiles, self.program.classes)
             inference.unpackOwners(ownership_dep_map)
             ownerships = inference.infer()
+            borrow_map = inference.borrow_map
             ownership_provider = Normalizer.OwnershipProvider()
             ownership_provider.ownership_map = ownerships
             #print("ownerships", ownerships)
+            arg_borrows = []
+            result_borrows = []
             for (index, arg) in enumerate(fn.args):
                 arg_tv_info = signature.args[index]
                 tsignature = Signatures.ClassInstantiationSignature()
@@ -68,7 +79,9 @@ class Monomorphizer(object):
                 arg.type = tsignature
                 arg.ownership = ownerships[arg_tv_info.ownership_var]
                 if isinstance(arg.ownership, Inference.Borrow):
-                    arg.lifetime = "'l%s" % arg.ownership.borrow_id.value
+                    arg.lifetime = Lifetime.Lifetime(arg.ownership.borrow_id)
+                    arg_borrows.append(arg.ownership.borrow_id)
+                arg_borrows += self.getAllBorrows(arg_tv_info.ownership_var, ownership_dep_map, ownerships)
                 arg.dep_lifetimes = self.getDepLifetimes(arg_tv_info.ownership_var, ownership_dep_map, ownerships)
                 self.addClass(tsignature)
             rsignature = Signatures.ClassInstantiationSignature()
@@ -83,7 +96,17 @@ class Monomorphizer(object):
             fn.return_type = rsignature
             fn.return_ownership = ownerships[ret_tv_info.ownership_var]
             if isinstance(fn.return_ownership, Inference.Borrow):
-                fn.return_lifetime = "'l%s" % fn.return_ownership.borrow_id.value
+                result_borrows.append(fn.return_ownership.borrow_id)
+                fn.return_lifetime = Lifetime.Lifetime(fn.return_ownership.borrow_id)
+            result_borrows += self.getAllBorrows(ret_tv_info.ownership_var, ownership_dep_map, ownerships)
+            lifetime_dependencies = []
+            for to_id in result_borrows:
+                to_borrows = borrow_map.getBorrows(to_id)
+                for from_id in arg_borrows:
+                    from_borrows = borrow_map.getBorrows(from_id)
+                    if from_borrows.issubset(to_borrows):
+                        lifetime_dependencies.append((Lifetime.Lifetime(to_id), Lifetime.Lifetime(from_id)))
+            fn.lifetime_dependencies = lifetime_dependencies
             fn.return_dep_lifetimes = self.getDepLifetimes(ret_tv_info.ownership_var, ownership_dep_map, ownerships)
             for block in fn.body.blocks:
                 for i in block.instructions:
@@ -123,7 +146,7 @@ class Monomorphizer(object):
             clazz = self.program.classes[signature.name]
             clazz = copy.deepcopy(clazz)
             for borrow in signature.borrows:
-                clazz.lifetimes.append("'l%s" % borrow.borrow_id.value)
+                clazz.lifetimes.append(Lifetime.Lifetime(borrow.borrow_id))
             fields = []
             field_infos = {}
             for member in signature.members:
@@ -152,12 +175,12 @@ class Monomorphizer(object):
                     dep_lifetimes = []
                     for borrow in signature.borrows:
                         if borrow.ownership_var in dep_ownership_vars:
-                            dep_lifetimes.append("'l%s" % borrow.borrow_id.value)
+                            dep_lifetimes.append(Lifetime.Lifetime(borrow.borrow_id))
                     if len(dep_lifetimes) > 0:
                         f.dep_lifetimes = dep_lifetimes
                 for borrow in signature.borrows:
                     if borrow.ownership_var == info.ownership_var:
-                        f.lifetime = "'l%s" % borrow.borrow_id.value
+                        f.lifetime = Lifetime.Lifetime(borrow.borrow_id)
                 self.addClass(fsignature)
                 fields.append(f)
             clazz.fields = fields

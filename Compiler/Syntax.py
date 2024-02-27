@@ -105,6 +105,7 @@ class Function(SyntaxBase):
         self.ownership_signature = None
         self.return_lifetime = None
         self.return_dep_lifetimes = []
+        self.lifetime_dependencies = []
 
     def getAllMembers(self):
         return self.body.getAllMembers() + self.ownership_signature.members

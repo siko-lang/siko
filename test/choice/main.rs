@@ -22,7 +22,7 @@ fn Main_main_0() -> () {
     i_0_9
 }
 
-fn Main_choice_0<'l4, 'l1, 'l0>(arg_0: &'l0 Main_Address_0, arg_1: &'l1 Main_Address_0) -> &'l4 Main_Address_0 {
+fn Main_choice_0<'l0: 'l4, 'l1: 'l4, 'l4: >(arg_0: &'l0 Main_Address_0, arg_1: &'l1 Main_Address_0) -> &'l4 Main_Address_0 {
     let i_0_0 : &Main_Address_0 = &arg_0;
     let tmp_1 = i_0_0;
     let i_0_2 : &Main_Address_0 = &arg_1;
