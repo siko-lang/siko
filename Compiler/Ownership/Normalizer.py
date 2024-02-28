@@ -157,12 +157,14 @@ def normalizeFunctionOwnershipSignature(signature, ownership_dep_map, members, o
             borrows.append(arg.ownership_var)
         if ownership_provider.isOwner(arg.ownership_var):
             owners.append(arg.ownership_var)
+    groups.append(signature.result.group_var)
     if ownership_provider.getBorrow(signature.result.ownership_var) is not None:
         borrows.append(signature.result.ownership_var)
     if ownership_provider.isOwner(signature.result.ownership_var):
         owners.append(signature.result.ownership_var)
     (filtered_members, borrows, owners) = filterOutMembers(groups, ownership_dep_map, members,
                                                            ownership_provider, borrows, owners, onlyBorrow)
+    #print("filtered_members", filtered_members)
     ordered_members = []
     normalized_args = []
     for arg in signature.args:
@@ -173,6 +175,10 @@ def normalizeFunctionOwnershipSignature(signature, ownership_dep_map, members, o
         for m in sub:
             if m not in ordered_members:
                 ordered_members.append(m)
+    sub = collectChildMembers(normalizer, signature.result.group_var, filtered_members)
+    for m in sub:
+        if m not in ordered_members:
+            ordered_members.append(m)
     #print("Ordered members", ordered_members)
     normalized_borrows = []
     for borrower in borrows:

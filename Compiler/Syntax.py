@@ -107,8 +107,12 @@ class Function(SyntaxBase):
         self.return_dep_lifetimes = []
         self.lifetime_dependencies = []
 
-    def getAllMembers(self):
-        return self.body.getAllMembers() + self.ownership_signature.members
+    def getAllMembers(self, paths):
+        path_members = []
+        for p in paths:
+            path_members += p.src
+            path_members += p.dest
+        return self.body.getAllMembers() + self.ownership_signature.members + path_members
 
 class Enum(object):
     def __init__(self):

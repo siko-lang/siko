@@ -44,8 +44,12 @@ class InferenceEngine(object):
             equality = Equality.EqualityEngine(fn, self.profile_store)
             profiles = equality.process(buildPath=True)
             paths = equality.paths
-            members = fn.getAllMembers()
+            all_paths = []
+            for profile in profiles.values():
+                all_paths += profile.paths
+            members = fn.getAllMembers(all_paths)
             #print("members", members)
+            #print("paths", paths)
             ownership_dep_map = MemberInfo.calculateOwnershipDepMap(members)
             forbidden_borrows = ForbiddenBorrows.ForbiddenBorrowsEngine()
             forbidden_borrows.process(fn, ownership_dep_map)
@@ -53,9 +57,7 @@ class InferenceEngine(object):
             ownerships = inference.infer()
             ownership_provider = Normalizer.OwnershipProvider()
             ownership_provider.ownership_map = ownerships
-            #print("paths", paths)
             signature = fn.ownership_signature
-            signature.name = name
             (signature, paths) = Normalizer.normalizeFunctionProfile(signature, paths,
                                                                      ownership_dep_map,
                                                                      members,

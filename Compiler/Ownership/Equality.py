@@ -17,8 +17,8 @@ class EqualityEngine(object):
         self.paths = []
 
     def process(self, buildPath):
-        #print("Equality for %s/%s" % (self.fn.name, self.fn.ownership_signature))
         self.initialize()
+        #print("Equality for %s/%s" % (self.fn.name, self.fn.ownership_signature))
         if buildPath:
             self.paths = DataFlowPath.infer(self.fn)
             #print("path before", self.paths)
@@ -40,6 +40,7 @@ class EqualityEngine(object):
     def initialize(self):
         if self.fn.ownership_signature is None:
             self.fn.ownership_signature = Signatures.FunctionOwnershipSignature()
+            self.fn.ownership_signature.name = self.fn.name
             self.fn.ownership_signature.result = self.nextTypeVariableInfo()
             for arg in self.fn.args:
                 self.fn.ownership_signature.args.append(self.nextTypeVariableInfo())
