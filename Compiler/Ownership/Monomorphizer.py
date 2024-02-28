@@ -45,7 +45,7 @@ class Monomorphizer(object):
         if signature not in self.functions:
             if signature.name == Util.getUnit():
                 return
-            print("Processing fn %s" % signature)
+            #print("Processing fn %s" % signature)
             fn = self.program.functions[signature.name]
             fn = copy.deepcopy(fn)
             fn.ownership_signature = copy.deepcopy(signature)
@@ -56,7 +56,7 @@ class Monomorphizer(object):
             for profile in profiles.values():
                 all_paths += profile.paths
             members = fn.getAllMembers(all_paths)
-            print("members", members)
+            #print("members", members)
             ownership_dep_map = MemberInfo.calculateOwnershipDepMap(members)
             forbidden_borrows = ForbiddenBorrows.ForbiddenBorrowsEngine()
             #print("ownership_dep_map", ownership_dep_map)
@@ -67,7 +67,7 @@ class Monomorphizer(object):
             borrow_map = inference.borrow_map
             ownership_provider = Normalizer.OwnershipProvider()
             ownership_provider.ownership_map = ownerships
-            print("ownerships", ownerships)
+            #print("ownerships", ownerships)
             arg_borrows = []
             result_borrows = []
             for (index, arg) in enumerate(fn.args):
@@ -139,7 +139,6 @@ class Monomorphizer(object):
                                                                                        members,
                                                                                        ownership_provider, onlyBorrow=True)
                             i.name = signature
-                            print("WTF", signature)
                             self.addFunction(signature)
 
     def processClass(self, signature):

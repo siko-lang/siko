@@ -8,9 +8,9 @@ class ForbiddenBorrowsEngine(object):
         self.fn = None
 
     def process(self, fn, ownership_dep_map):
-        print("Forbidden borrows ", fn.name)
+        #print("Forbidden borrows ", fn.name)
         self.fn = fn
-        print("ownership_dep_map", ownership_dep_map)
+        #print("ownership_dep_map", ownership_dep_map)
         all_dependencies = DataFlowDependency.getDataFlowDependencies(fn)
         groups = DependencyProcessor.processDependencies(all_dependencies)
         all_witnessed_moves = {}

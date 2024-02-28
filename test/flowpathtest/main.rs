@@ -50,13 +50,13 @@ fn Main_main_0() -> () {
     i_0_15
 }
 
-fn Main_process_0<'l0: >(arg_0: &'l0 Main_Person_0) -> Main_Person_0 {
+fn Main_process_0<'l0: 'l2, 'l2: >(arg_0: &'l0 Main_Person_0) -> &'l0 Main_Person_0<'l2> {
     let i_0_0 : &Main_Person_0 = &arg_0;
     let tmp_1 = i_0_0;
     let i_0_2 : Main_Name_0 = Main_Name_0{};
-    let i_0_3 : Main_Name_0 = tmp_1.address.street.clone();
-    let i_0_4 : Main_Address_0 = Main_Address_0{city: i_0_2, street: i_0_3};
-    let i_0_5 : Main_Person_0 = Main_Person_0{address: i_0_4};
+    let i_0_3 : &Main_Name_0 = &tmp_1.address.street;
+    let i_0_4 : Main_Address_1 = Main_Address_1{city: i_0_2, street: i_0_3};
+    let i_0_5 : Main_Person_1 = Main_Person_1{address: i_0_4};
     i_0_5
 }
 

@@ -302,7 +302,7 @@ class InferenceEngine(object):
         for var in self.fn.ownership_signature.owners:
             self.setOwner(var)
         self.processConstraints(groups, constraints)
-        self.dump();
+        #self.dump();
         for c in constraints.getAll():
             if isinstance(c, FieldAccessConstraint):
                 if c.instruction_id == None:

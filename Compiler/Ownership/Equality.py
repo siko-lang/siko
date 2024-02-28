@@ -175,6 +175,9 @@ class EqualityEngine(object):
     def mergeMembers(self):
         while True:
             member_map = {}
+            for member in self.fn.ownership_signature.members:
+                member.root = self.substitution.applyGroupVar(member.root)
+                member_map[(member.root, member.kind.index)] = []
             for profile in self.profiles.values():
                 for member in profile.signature.members:
                     member.root = self.substitution.applyGroupVar(member.root)
@@ -226,7 +229,11 @@ class EqualityEngine(object):
                     for member in i.members:
                         member.info = self.substitution.applyTypeVariableInfo(member.info)
                         member_map[(member.root, member.kind.index)].append(member.info)
-        
+            
+            for member in self.fn.ownership_signature.members:
+                member.root = self.substitution.applyGroupVar(member.root)
+                member_map[(member.root, member.kind.index)].append(member.info)
+
             unified = False
             for entries in member_map.values():
                 entries = list(set(entries))
