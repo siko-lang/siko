@@ -50,7 +50,7 @@ fn Main_main_0() -> () {
     i_0_15
 }
 
-fn Main_process_0<'l0: 'l2, 'l2: >(arg_0: &'l0 Main_Person_0) -> &'l0 Main_Person_0<'l2> {
+fn Main_process_0<'l0: 'l2, 'l2: >(arg_0: &'l0 Main_Person_0) -> Main_Person_1<'l2> {
     let i_0_0 : &Main_Person_0 = &arg_0;
     let tmp_1 = i_0_0;
     let i_0_2 : Main_Name_0 = Main_Name_0{};

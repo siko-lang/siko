@@ -90,6 +90,11 @@ class Monomorphizer(object):
             rsignature = Signatures.ClassInstantiationSignature()
             rsignature.name = fn.return_type
             ret_tv_info = copy.deepcopy(signature.result)
+            fn.return_ownership = ownerships[ret_tv_info.ownership_var]
+            if isinstance(fn.return_ownership, Inference.Borrow):
+                result_borrows.append(fn.return_ownership.borrow_id)
+                fn.return_lifetime = Lifetime.Lifetime(fn.return_ownership.borrow_id)
+            result_borrows += self.getAllBorrows(ret_tv_info.ownership_var, ownership_dep_map, ownerships)
             rsignature = Normalizer.normalizeClassOwnershipSignature(rsignature, 
                                                                      ret_tv_info,
                                                                      ownership_dep_map,
@@ -97,11 +102,6 @@ class Monomorphizer(object):
                                                                      ownership_provider)
             self.addClass(rsignature)
             fn.return_type = rsignature
-            fn.return_ownership = ownerships[ret_tv_info.ownership_var]
-            if isinstance(fn.return_ownership, Inference.Borrow):
-                result_borrows.append(fn.return_ownership.borrow_id)
-                fn.return_lifetime = Lifetime.Lifetime(fn.return_ownership.borrow_id)
-            result_borrows += self.getAllBorrows(ret_tv_info.ownership_var, ownership_dep_map, ownerships)
             lifetime_dependencies = []
             for to_id in result_borrows:
                 to_borrows = borrow_map.getBorrows(to_id)

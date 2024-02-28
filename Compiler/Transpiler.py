@@ -166,7 +166,7 @@ class Transpiler(object):
         fn_result = self.transpileType(fn.return_type)
         if len(fn.return_dep_lifetimes) > 0:
             lifetimes += fn.return_dep_lifetimes
-            fn_result = "%s<%s>" % (ty, Lifetime.asList(fn.return_dep_lifetimes))
+            fn_result = "%s<%s>" % (fn_result, Lifetime.asList(fn.return_dep_lifetimes))
         if fn.return_lifetime:
             lifetimes.append(fn.return_lifetime)
             fn_result = "&%s %s" % (fn.return_lifetime, fn_result)
