@@ -13,6 +13,7 @@ import copy
 
 def createFunctionGroups(program):
     dep_map = {}
+    recursive_fns = set()
     for (key, function) in program.functions.items():
         deps = set()
         for block in function.body.blocks:
@@ -22,68 +23,88 @@ def createFunctionGroups(program):
                         continue
                     if i.ctor:
                         continue
+                    if i.name == key:
+                        recursive_fns.add(key)
                     deps.add(i.name)
         dep_map[key] = list(deps)
     #print("depmap", dep_map)
     groups = DependencyProcessor.processDependencies(dep_map)
     #print("Function groups", groups)
-    return groups
+    return (groups, recursive_fns)
+
 
 class InferenceEngine(object):
     def __init__(self) -> None:
         self.profile_store = DataFlowProfileStore.DataFlowProfileStore()
         self.program = None
 
-    def processGroup(self, group):
+    def createDataFlowProfile(self, name, group_profiles):
+        fn = self.program.functions[name]
+        fn = copy.deepcopy(fn)
+        equality = Equality.EqualityEngine(fn, self.profile_store, group_profiles)
+        profiles = equality.process(buildPath=True)
+        paths = equality.paths
+        all_paths = []
+        for profile in profiles.values():
+            all_paths += profile.paths
+        members = fn.getAllMembers(all_paths)
+        #print("members", members)
+        #print("paths", paths)
+        ownership_dep_map = MemberInfo.calculateOwnershipDepMap(members)
+        forbidden_borrows = ForbiddenBorrows.ForbiddenBorrowsEngine()
+        forbidden_borrows.process(fn, ownership_dep_map)
+        inference = Inference.InferenceEngine(fn, profiles, self.program.classes)
+        ownerships = inference.infer()
+        ownership_provider = Normalizer.OwnershipProvider()
+        ownership_provider.ownership_map = ownerships
+        signature = fn.ownership_signature
+        (signature, paths) = Normalizer.normalizeFunctionProfile(signature, paths,
+                                                                 ownership_dep_map,
+                                                                 members,
+                                                                 ownership_provider,
+                                                                 onlyBorrow=False)
+        
+        profile = DataFlowProfile.DataFlowProfile()
+        profile.paths = paths
+        profile.signature = signature
+        return profile
+
+    def processGroup(self, group, recursive_fns):
         #print("Processing group", group)
         if len(group.items) == 1:
-            name = group.items[0]
             #print("Processing fn", name)
-            fn = self.program.functions[name]
-            fn = copy.deepcopy(fn)
-            equality = Equality.EqualityEngine(fn, self.profile_store)
-            profiles = equality.process(buildPath=True)
-            paths = equality.paths
-            all_paths = []
-            for profile in profiles.values():
-                all_paths += profile.paths
-            members = fn.getAllMembers(all_paths)
-            #print("members", members)
-            #print("paths", paths)
-            ownership_dep_map = MemberInfo.calculateOwnershipDepMap(members)
-            forbidden_borrows = ForbiddenBorrows.ForbiddenBorrowsEngine()
-            forbidden_borrows.process(fn, ownership_dep_map)
-            inference = Inference.InferenceEngine(fn, profiles, self.program.classes)
-            ownerships = inference.infer()
-            ownership_provider = Normalizer.OwnershipProvider()
-            ownership_provider.ownership_map = ownerships
-            signature = fn.ownership_signature
-            (signature, paths) = Normalizer.normalizeFunctionProfile(signature, paths,
-                                                                     ownership_dep_map,
-                                                                     members,
-                                                                     ownership_provider,
-                                                                     onlyBorrow=False)
-            
-            profile = DataFlowProfile.DataFlowProfile()
-            profile.paths = paths
-            profile.signature = signature
-            self.profile_store.addProfile(name, profile)
-            #print("%s has paths %s" % (name, paths))
-            #print("ownerships", ownerships)
-            #print("sig", fn.ownership_signature)
-            #Util.error("end")
+            name = group.items[0]
+            if name in recursive_fns:
+                group_profiles = {}
+                change = True
+                while change:
+                    change = False
+                    for name in group.items:
+                        profile = self.createDataFlowProfile(name, group_profiles)
+                        if name in group_profiles:
+                            prev = group_profiles[name]
+                            if prev != profile:
+                                change = True
+                        else:
+                            change = True
+                        group_profiles[name] = profile    
+                for name in group.items:
+                    self.profile_store.addProfile(name, group_profiles[name])
+            else:
+                profile = self.createDataFlowProfile(name, {})
+                self.profile_store.addProfile(name, profile)
         else:
             Util.error("Multi function groups NYI in data flow profile inference")
 
-    def processGroups(self, groups):
+    def processGroups(self, groups, recursive_fns):
         for group in groups:
-            self.processGroup(group)
+            self.processGroup(group, recursive_fns)
 
 def infer(program):
-    groups = createFunctionGroups(program)
+    (groups, recursive_fns) = createFunctionGroups(program)
     engine = InferenceEngine()
     engine.program = program
-    engine.processGroups(groups)
+    engine.processGroups(groups, recursive_fns)
     return engine.profile_store
 
     

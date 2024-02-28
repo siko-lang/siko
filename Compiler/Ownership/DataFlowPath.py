@@ -183,6 +183,12 @@ class DataFlowPath(object):
     def __repr__(self) -> str:
         return self.__str__()
 
+    def __eq__(self, other) -> bool:
+        return self.index == other.index and self.arg == other.arg and self.result == other.result and self.src == other.src and self.dest == other.dest
+
+    def __hash__(self):
+        return self.index.__hash__()
+
 def splitPath(path, index, allocator):
     #print("Splitpath", path, index)
     arg = allocator.nextTypeVariableInfo()

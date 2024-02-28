@@ -8,12 +8,13 @@ import Compiler.Ownership.Instantiator as Instantiator
 import copy
 
 class EqualityEngine(object):
-    def __init__(self, fn, profile_store):
+    def __init__(self, fn, profile_store, group_profiles):
         self.fn = fn
         self.tv_info_vars = {}
         self.substitution = TypeVariableInfo.Substitution()
         self.profile_store = profile_store
         self.profiles = {}
+        self.group_profiles = group_profiles
         self.paths = []
 
     def process(self, buildPath):
@@ -117,21 +118,27 @@ class EqualityEngine(object):
                     if i.name == Util.getUnit():
                         pass # TODO, remove this
                     else:
-                        profile = self.profile_store.getProfile(i.name)
-                        profile = copy.deepcopy(profile)
-                        (profile, allocator) = Instantiator.instantiateProfile(profile, self.fn.ownership_signature.allocator)
-                        self.fn.ownership_signature.allocator = allocator
-                        self.profiles[i.id]= profile
-                        res_info = self.getInstructionTypeVariableInfo(i.id)
-                        for path in profile.paths:
-                            arg = i.args[path.index]
-                            arg_info = self.getInstructionTypeVariableInfo(arg)
-                            self.unify(arg_info, path.arg)
-                        for (index, arg) in enumerate(i.args):
-                            sig_arg_info = profile.signature.args[index]
-                            arg_info = self.getInstructionTypeVariableInfo(arg)
-                            self.unify(arg_info, sig_arg_info)
-                        self.unify(res_info, profile.signature.result)
+                        profile = None
+                        if i.name in self.profile_store.profiles:
+                            profile = self.profile_store.getProfile(i.name)
+                        else:
+                            if i.name in self.group_profiles:
+                                profile = self.group_profiles[i.name]
+                        if profile:
+                            profile = copy.deepcopy(profile)
+                            (profile, allocator) = Instantiator.instantiateProfile(profile, self.fn.ownership_signature.allocator)
+                            self.fn.ownership_signature.allocator = allocator
+                            self.profiles[i.id]= profile
+                            res_info = self.getInstructionTypeVariableInfo(i.id)
+                            for path in profile.paths:
+                                arg = i.args[path.index]
+                                arg_info = self.getInstructionTypeVariableInfo(arg)
+                                self.unify(arg_info, path.arg)
+                            for (index, arg) in enumerate(i.args):
+                                sig_arg_info = profile.signature.args[index]
+                                arg_info = self.getInstructionTypeVariableInfo(arg)
+                                self.unify(arg_info, sig_arg_info)
+                            self.unify(res_info, profile.signature.result)
             elif isinstance(i, IR.ValueRef):
                 if len(i.members) == 0:
                     self.unifyGroup(self.tv_info_vars[i.name].group_var, i.tv_info.group_var)

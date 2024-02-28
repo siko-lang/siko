@@ -228,18 +228,19 @@ class InferenceEngine(object):
                             constraint.var = i.tv_info.ownership_var
                             constraints.addConstraint(i.tv_info.ownership_var, constraint)
                         else:
-                            profile = self.profiles[i.id]
-                            for path in profile.paths:
-                                constraint = FieldAccessConstraint()
-                                constraint.borrow = False
-                                constraint.root = path.arg.ownership_var
-                                constraint.members = path.src
-                                if len(path.dest) == 0:
-                                    constraint.var = path.result.ownership_var
-                                else:
-                                    constraint.var = path.dest[-1].info.ownership_var
-                                constraint.instruction_id = None
-                                constraints.addConstraint(path.arg.ownership_var, constraint)
+                            if i.id in self.profiles:
+                                profile = self.profiles[i.id]
+                                for path in profile.paths:
+                                    constraint = FieldAccessConstraint()
+                                    constraint.borrow = False
+                                    constraint.root = path.arg.ownership_var
+                                    constraint.members = path.src
+                                    if len(path.dest) == 0:
+                                        constraint.var = path.result.ownership_var
+                                    else:
+                                        constraint.var = path.dest[-1].info.ownership_var
+                                    constraint.instruction_id = None
+                                    constraints.addConstraint(path.arg.ownership_var, constraint)
                 elif isinstance(i, IR.Bind):
                     constraint = CtorConstraint()
                     constraint.var = i.tv_info.ownership_var

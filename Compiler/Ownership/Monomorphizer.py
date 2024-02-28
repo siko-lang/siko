@@ -50,7 +50,7 @@ class Monomorphizer(object):
             fn = copy.deepcopy(fn)
             fn.ownership_signature = copy.deepcopy(signature)
             self.functions[signature] = fn
-            equality = Equality.EqualityEngine(fn, self.profile_store)
+            equality = Equality.EqualityEngine(fn, self.profile_store, {})
             profiles = equality.process(buildPath=False)
             all_paths = []
             for profile in profiles.values():
