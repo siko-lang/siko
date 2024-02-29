@@ -4,7 +4,7 @@ import Compiler.Typechecker as Typechecker
 import Compiler.Ownership.Inference as Inference
 import Compiler.Ownership.Signatures as Signatures
 import Compiler.Ownership.Lifetime as Lifetime
-import Compiler.Syntax as Syntax
+import Compiler.Syntax.Syntax as Syntax
 
 def ii(id):
     id = "i_%s_%s" % (id.block, id.value)

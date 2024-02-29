@@ -1,4 +1,4 @@
-import Compiler.Syntax as Syntax
+import Compiler.Syntax.Syntax as Syntax
 import Compiler.IR.IR as IR
 import Compiler.IR.Instruction as Instruction
 import Compiler.Util as Util

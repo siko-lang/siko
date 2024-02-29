@@ -1,6 +1,6 @@
 import Compiler.Lexer as Lexer
 import Compiler.Token as Token
-import Compiler.Syntax as Syntax
+import Compiler.Syntax.Syntax as Syntax
 import json
 import Compiler.Util as Util
 
