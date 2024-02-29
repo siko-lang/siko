@@ -1,26 +1,26 @@
 import Compiler.Util as Util
-import Compiler.IR as IR
+import Compiler.IR.Instruction as Instruction
 
 def getDepsForInstruction(i, fn):
-    if isinstance(i, IR.ValueRef):
+    if isinstance(i, Instruction.ValueRef):
         if i.name.arg:
             return []
         else:
             return [i.bind_id]
-    elif isinstance(i, IR.Bind):
+    elif isinstance(i, Instruction.Bind):
         return [i.rhs]
-    elif isinstance(i, IR.BlockRef):
+    elif isinstance(i, Instruction.BlockRef):
         b = fn.body.getBlock(i.value)
         return [b.getLastReal().id]
-    elif isinstance(i, IR.NamedFunctionCall):
+    elif isinstance(i, Instruction.NamedFunctionCall):
         return i.args
-    elif isinstance(i, IR.DropVar):
+    elif isinstance(i, Instruction.DropVar):
         return []
-    elif isinstance(i, IR.BoolLiteral):
+    elif isinstance(i, Instruction.BoolLiteral):
         return []
-    elif isinstance(i, IR.Nop):
+    elif isinstance(i, Instruction.Nop):
         return []
-    elif isinstance(i, IR.If):
+    elif isinstance(i, Instruction.If):
         true_branch = fn.body.getBlock(i.true_branch)
         false_branch = fn.body.getBlock(i.false_branch)
         t_id = true_branch.getLast().id

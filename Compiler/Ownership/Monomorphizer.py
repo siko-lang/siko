@@ -1,7 +1,7 @@
 import Compiler.Ownership.Signatures as Signatures
 import Compiler.Ownership.TypeVariableInfo as TypeVariableInfo
 import Compiler.Util as Util
-import Compiler.IR as IR
+import Compiler.IR.Instruction as Instruction
 import Compiler.Ownership.Inference as Inference
 import Compiler.Ownership.Equality as Equality
 import Compiler.Ownership.ForbiddenBorrows as ForbiddenBorrows
@@ -125,7 +125,7 @@ class Monomorphizer(object):
                     i.type_signature = signature
                     i.ownership = ownerships[i.tv_info.ownership_var]
                     self.addClass(signature)
-                    if isinstance(i, IR.NamedFunctionCall):
+                    if isinstance(i, Instruction.NamedFunctionCall):
                         if not i.ctor:
                             signature = Signatures.FunctionOwnershipSignature()
                             for arg in i.args:

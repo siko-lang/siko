@@ -1,7 +1,6 @@
-import Compiler.IR as IR
+import Compiler.IR.Instruction as Instruction
 import Compiler.Ownership.DataFlowDependency as DataFlowDependency
 import Compiler.DependencyProcessor as DependencyProcessor
-import Compiler.Ownership.MemberInfo as MemberInfo
 
 class ForbiddenBorrowsEngine(object):
     def __init__(self):
@@ -23,7 +22,7 @@ class ForbiddenBorrowsEngine(object):
                     ownership_vars = list(ownership_dep_map[instruction.tv_info.group_var])
                 else:
                     ownership_vars = []
-                if isinstance(instruction, IR.ValueRef):
+                if isinstance(instruction, Instruction.ValueRef):
                     if instruction.bind_id is not None:
                         bind = self.fn.body.getInstruction(instruction.bind_id)
                         bind_rhs = self.fn.body.getInstruction(bind.rhs)

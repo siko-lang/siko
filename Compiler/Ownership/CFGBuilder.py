@@ -1,4 +1,4 @@
-import Compiler.IR as IR
+import Compiler.IR.Instruction as Instruction
 import Compiler.Util as Util
 import Compiler.Ownership.CFG as CFG
 import Compiler.Ownership.Path as Path
@@ -26,16 +26,16 @@ class CFGBuilder(object):
 
     def processBlock(self, block, last = None):
         for i in block.instructions:
-            if isinstance(i, IR.BlockRef):
+            if isinstance(i, Instruction.BlockRef):
                 b = self.fn.body.getBlock(i)
                 last = self.processBlock(b, last)
-            elif isinstance(i, IR.NamedFunctionCall):
+            elif isinstance(i, Instruction.NamedFunctionCall):
                 last = self.processGenericInstruction(i, last)
-            elif isinstance(i, IR.MethodCall):
+            elif isinstance(i, Instruction.MethodCall):
                 Util.error("method call in CFG!")
-            elif isinstance(i, IR.Bind):
+            elif isinstance(i, Instruction.Bind):
                 last = self.processGenericInstruction(i, last)
-            elif isinstance(i, IR.DropVar):
+            elif isinstance(i, Instruction.DropVar):
                 instr_key = CFG.DropKey()
                 instr_key.id = i.id
                 instr_node = CFG.Node()
@@ -49,9 +49,9 @@ class CFGBuilder(object):
                     edge.to_node = instr_key
                     self.cfg.addEdge(edge)
                 last = instr_key
-            elif isinstance(i, IR.MemberAccess):
+            elif isinstance(i, Instruction.MemberAccess):
                 last = self.processGenericInstruction(i, last)
-            elif isinstance(i, IR.ValueRef):
+            elif isinstance(i, Instruction.ValueRef):
                 instr_key = CFG.InstructionKey()
                 instr_key.id = i.id
                 instr_node = CFG.Node()
@@ -69,12 +69,12 @@ class CFGBuilder(object):
                     edge.to_node = instr_key
                     self.cfg.addEdge(edge)
                 last = instr_key
-            elif isinstance(i, IR.BoolLiteral):
+            elif isinstance(i, Instruction.BoolLiteral):
                 last = self.processGenericInstruction(i, last)
-            elif isinstance(i, IR.Return):
+            elif isinstance(i, Instruction.Return):
                 self.processGenericInstruction(i, last)
                 last = None
-            elif isinstance(i, IR.Break):
+            elif isinstance(i, Instruction.Break):
                 instr_key = CFG.InstructionKey()
                 instr_key.id = i.id
                 instr_node = CFG.Node()
@@ -90,7 +90,7 @@ class CFGBuilder(object):
                     edge.to_node = instr_key
                     self.cfg.addEdge(edge)
                 last = None
-            elif isinstance(i, IR.Continue):
+            elif isinstance(i, Instruction.Continue):
                 instr_key = CFG.InstructionKey()
                 instr_key.id = i.id
                 instr_node = CFG.Node()
@@ -106,7 +106,7 @@ class CFGBuilder(object):
                     edge.to_node = instr_key
                     self.cfg.addEdge(edge)
                 last = None
-            elif isinstance(i, IR.Loop):
+            elif isinstance(i, Instruction.Loop):
                 loop_start_key = CFG.LoopStart()
                 loop_start_key.id = i.id
                 loop_start_node = CFG.Node()
@@ -143,7 +143,7 @@ class CFGBuilder(object):
                 self.loop_starts.pop()
                 self.loop_ends.pop()
                 last = loop_end_key
-            elif isinstance(i, IR.If):
+            elif isinstance(i, Instruction.If):
                 if_key = CFG.IfKey()
                 if_key.id = i.id
                 if_end = CFG.Node()

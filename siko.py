@@ -5,7 +5,7 @@ import Compiler.Parser as Parser
 import Compiler.Syntax as Syntax
 import Compiler.NameResolver as NameResolver
 import Compiler.Typechecker as Typechecker
-import Compiler.IR as IR
+import Compiler.IR.Builder as Builder
 import Compiler.Ownership.Borrowchecker as Borrowchecker
 import Compiler.Ownership.DataFlowPath as DataFlowPath
 import Compiler.Ownership.ForbiddenBorrows as ForbiddenBorrows
@@ -25,7 +25,7 @@ def compile():
 
     output = args.pop()
 
-    IR.convertProgram(program)
+    Builder.convertProgram(program)
 
     resolver = NameResolver.Resolver()
     ir_program = resolver.resolve(program)

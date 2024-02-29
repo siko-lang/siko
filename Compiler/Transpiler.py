@@ -1,4 +1,4 @@
-import Compiler.IR as IR
+import Compiler.IR.Instruction as Instruction
 import Compiler.Util as Util
 import Compiler.Typechecker as Typechecker
 import Compiler.Ownership.Inference as Inference
@@ -81,7 +81,7 @@ class Transpiler(object):
         prefix = ""
         if isinstance(i.ownership, Inference.Borrow):
             ty = "&%s" % ty
-            if isinstance(i, IR.ValueRef):
+            if isinstance(i, Instruction.ValueRef):
                 prefix = "&"
         if partial:
             self.print("%slet %s : %s = %s%s\n" % (self.getIndent(), ii(i.id), ty, prefix, value))
@@ -97,7 +97,7 @@ class Transpiler(object):
     def transpileBlock(self, fn, block):
         self.indentLevel += 4
         for i in block.instructions:
-            if isinstance(i, IR.NamedFunctionCall):
+            if isinstance(i, Instruction.NamedFunctionCall):
                 if i.name.name == Util.getUnit():
                     self.addInstr(i, "()")
                 else:
@@ -115,28 +115,28 @@ class Transpiler(object):
                             call_args.append("%s" % ii(arg))
                         call_args = ", ".join(call_args)
                         self.addInstr(i, "%s(%s)" % (self.transpileFnName(i.name), call_args))
-            elif isinstance(i, IR.Bind):
+            elif isinstance(i, Instruction.Bind):
                 self.print("%slet %s = %s;\n" % (self.getIndent(), vi(i.name), ii(i.rhs)))
-            elif isinstance(i, IR.DropVar):
+            elif isinstance(i, Instruction.DropVar):
                 pass
-            elif isinstance(i, IR.BlockRef):
+            elif isinstance(i, Instruction.BlockRef):
                 self.processBlock(fn, i.value)
                 self.addInstr(i, "%s" % (bi(i.value)))
-            elif isinstance(i, IR.BoolLiteral):
+            elif isinstance(i, Instruction.BoolLiteral):
                 if i.value:
                     self.addInstr(i, "true")
                 else:
                     self.addInstr(i, "false")
-            elif isinstance(i, IR.ValueRef):
+            elif isinstance(i, Instruction.ValueRef):
                 v = vi(i.name)
                 for field in i.fields:
                     v += ".%s" % field
                 if i.clone:
                     v = v + ".clone()"
                 self.addInstr(i, v)
-            elif isinstance(i, IR.Nop):
+            elif isinstance(i, Instruction.Nop):
                 pass
-            elif isinstance(i, IR.If):
+            elif isinstance(i, Instruction.If):
                 tb = fn.body.getBlock(i.true_branch)
                 fb = fn.body.getBlock(i.false_branch)
                 self.addInstr(i, "if %s {" % (ii(i.cond)), partial=True)

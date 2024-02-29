@@ -1,4 +1,4 @@
-import Compiler.IR as IR
+import Compiler.IR.IR as IR
 import Compiler.Util as Util
 
 class EndKey(object):

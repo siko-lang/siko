@@ -1,5 +1,4 @@
-import Compiler.IR as IR
-import copy
+import Compiler.IR.Instruction as Instruction
 import Compiler.Ownership.CFG as CFG
 import Compiler.Ownership.CFGBuilder as CFGBuilder
 import Compiler.Ownership.Path as Path
@@ -176,13 +175,13 @@ def cleanDrops(program):
     for (name, fn) in program.functions.items():
         for b in fn.body.blocks:
             for (index, i) in enumerate(b.instructions):
-                if isinstance(i, IR.DropVar):
+                if isinstance(i, Instruction.DropVar):
                     if i.cancelled:
-                        nop = IR.Nop()
+                        nop = Instruction.Nop()
                         nop.id = i.id
                         b.instructions[index] = nop
             while True:
-                if isinstance(b.instructions[-1], IR.Nop):
+                if isinstance(b.instructions[-1], Instruction.Nop):
                     b.instructions.pop()
                 else:
                     break

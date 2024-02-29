@@ -1,4 +1,4 @@
-import Compiler.IR as IR
+import Compiler.IR.Instruction as Instruction
 import Compiler.Util as Util
 import Compiler.DependencyProcessor as DependencyProcessor
 import Compiler.Ownership.BorrowUtil as BorrowUtil
@@ -201,22 +201,22 @@ class InferenceEngine(object):
         dep_map[self.fn.ownership_signature.result.ownership_var] = []
         for block in self.fn.body.blocks:
             for i in block.instructions:
-                if isinstance(i, IR.ValueRef):
+                if isinstance(i, Instruction.ValueRef):
                     for member in i.members:
                         dep_map[member.info.ownership_var] = []
                 dep_map[i.tv_info.ownership_var] = []
         for block in self.fn.body.blocks:
             for i in block.instructions:
-                if isinstance(i, IR.DropVar):
+                if isinstance(i, Instruction.DropVar):
                     # TODO FIXME
                     constraint = CtorConstraint()
                     constraint.var = i.tv_info.ownership_var
                     constraints.addConstraint(i.tv_info.ownership_var, constraint)
-                elif isinstance(i, IR.BoolLiteral):
+                elif isinstance(i, Instruction.BoolLiteral):
                     constraint = CtorConstraint()
                     constraint.var = i.tv_info.ownership_var
                     constraints.addConstraint(i.tv_info.ownership_var, constraint)
-                elif isinstance(i, IR.NamedFunctionCall):
+                elif isinstance(i, Instruction.NamedFunctionCall):
                     if i.ctor:
                         constraint = CtorConstraint()
                         constraint.var = i.tv_info.ownership_var
@@ -241,11 +241,11 @@ class InferenceEngine(object):
                                         constraint.var = path.dest[-1].info.ownership_var
                                     constraint.instruction_id = None
                                     constraints.addConstraint(path.arg.ownership_var, constraint)
-                elif isinstance(i, IR.Bind):
+                elif isinstance(i, Instruction.Bind):
                     constraint = CtorConstraint()
                     constraint.var = i.tv_info.ownership_var
                     constraints.addConstraint(i.tv_info.ownership_var, constraint)
-                elif isinstance(i, IR.ValueRef):
+                elif isinstance(i, Instruction.ValueRef):
                     if i.bind_id is None:
                         root = self.fn.ownership_signature.args[i.name.value].ownership_var
                     else:

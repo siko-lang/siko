@@ -1,5 +1,6 @@
 import Compiler.Syntax as Syntax
-import Compiler.IR as IR
+import Compiler.IR.IR as IR
+import Compiler.IR.Instruction as Instruction
 import Compiler.Util as Util
 
 nextVar = 0
@@ -105,30 +106,30 @@ class Resolver(object):
         env = Environment()
         env.parent = penv
         for instruction in block.instructions:
-            if isinstance(instruction, IR.Bind):
+            if isinstance(instruction, Instruction.Bind):
                 instruction.name = env.addVar(instruction.name, bind_id=instruction.id)
-            elif isinstance(instruction, IR.BlockRef):
+            elif isinstance(instruction, Instruction.BlockRef):
                 b = fn.body.getBlock(instruction)
                 self.resolveBlock(env, moduleResolver, b, fn)
-            elif isinstance(instruction, IR.If):
+            elif isinstance(instruction, Instruction.If):
                 b = fn.body.getBlock(instruction.true_branch)
                 self.resolveBlock(env, moduleResolver, b, fn)
                 b = fn.body.getBlock(instruction.false_branch)
                 self.resolveBlock(env, moduleResolver, b, fn)
-            elif isinstance(instruction, IR.Loop):
+            elif isinstance(instruction, Instruction.Loop):
                 loop_env = Environment()
                 loop_env.parent = env
                 instruction.var = loop_env.addVar(instruction.var, bind_id=instruction.id)
                 b = fn.body.getBlock(instruction.body)
                 self.resolveBlock(env, moduleResolver, b, fn)
-            elif isinstance(instruction, IR.ValueRef):
+            elif isinstance(instruction, Instruction.ValueRef):
                 var = env.resolveVar(instruction.name)
                 if var:
                     instruction.name = var[0]
                     instruction.bind_id = var[1]
                 else:
                     Util.error("Undefined var %s" % instruction.name)
-            elif isinstance(instruction, IR.NamedFunctionCall):
+            elif isinstance(instruction, Instruction.NamedFunctionCall):
                 if instruction.name == Util.getUnit():
                     pass # TODO
                 else:
@@ -144,7 +145,7 @@ class Resolver(object):
         vars = env.varList
         vars.reverse()
         for (var, bind_id) in vars:
-            i = IR.DropVar()
+            i = Instruction.DropVar()
             i.name = var
             i.bind_id = bind_id
             block.addInstruction(i)

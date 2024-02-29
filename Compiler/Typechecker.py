@@ -1,5 +1,4 @@
-import Compiler.Syntax as Syntax
-import Compiler.IR as IR
+import Compiler.IR.Instruction as Instruction
 import Compiler.Util as Util
 
 class Substitution(object):
@@ -87,10 +86,10 @@ class Typechecker(object):
             self.types[arg.name] = namedType
         for block in fn.body.blocks:
             for i in block.instructions:
-                if isinstance(i, IR.Bind):
+                if isinstance(i, Instruction.Bind):
                     v = self.getNextVar()
                     self.types[i.name] = v
-                elif isinstance(i, IR.Loop):
+                elif isinstance(i, Instruction.Loop):
                     v = self.getNextVar()
                     self.types[i.var] = v
                 v = self.getNextVar()
@@ -136,30 +135,30 @@ class Typechecker(object):
         Util.error("field %s not found on %s" % (field_name, ty))
 
     def checkInstruction(self, block, fn, i, instr_index):
-        if isinstance(i, IR.BlockRef):
+        if isinstance(i, Instruction.BlockRef):
             block = fn.body.getBlock(i)
             self.checkBlock(block, fn)
             last = block.getLastReal()
             self.unify(self.types[last.id], self.types[i.id])
-        elif isinstance(i, IR.Return):
+        elif isinstance(i, Instruction.Return):
             returnType = NamedType()
             returnType.setType(fn.return_type.name.name)
             self.unify(self.types[i.arg], returnType)
-        elif isinstance(i, IR.DropVar):
+        elif isinstance(i, Instruction.DropVar):
             self.unify(self.types[i.id], unitType)
-        elif isinstance(i, IR.Break):
+        elif isinstance(i, Instruction.Break):
             pass # TODO
             #self.unify(self.types[i.arg], returnType)
-        elif isinstance(i, IR.Continue):
+        elif isinstance(i, Instruction.Continue):
             pass # TODO
             #self.unify(self.types[i.arg], returnType)
-        elif isinstance(i, IR.Loop):
+        elif isinstance(i, Instruction.Loop):
             body_block = fn.body.getBlock(i.body)
             self.checkBlock(body_block, fn)
             last = body_block.getLastReal()
             self.unify(self.types[i.init], self.types[i.var])
             self.unify(self.types[i.init], self.types[last.id])
-        elif isinstance(i, IR.NamedFunctionCall):
+        elif isinstance(i, Instruction.NamedFunctionCall):
             # print("Checking function call for %s %s" % (i.name, type(i.name)))
             #print("%s" % i.name.item.return_type.name)
             returnType = NamedType()
@@ -191,12 +190,12 @@ class Typechecker(object):
                 self.unify(self.types[i.id], returnType)
             else:   
                 Util.error("TYPECHECK, Function not found!! %s" % i.name)
-        elif isinstance(i, IR.Bind):
+        elif isinstance(i, Instruction.Bind):
             self.unify(self.types[i.name], self.types[i.rhs])
             self.unify(self.types[i.id], unitType)
-        elif isinstance(i, IR.BoolLiteral):
+        elif isinstance(i, Instruction.BoolLiteral):
             self.unify(self.types[i.id], boolType)
-        elif isinstance(i, IR.If):
+        elif isinstance(i, Instruction.If):
             self.unify(self.types[i.cond], boolType)
             true_block = fn.body.getBlock(i.true_branch)
             self.checkBlock(true_block, fn)
@@ -206,7 +205,7 @@ class Typechecker(object):
             self.checkBlock(false_block, fn)
             false_block_last = false_block.getLastReal()
             self.unify(self.types[false_block_last.id], self.types[i.id])
-        elif isinstance(i, IR.MethodCall):
+        elif isinstance(i, Instruction.MethodCall):
             ty = self.types[i.receiver]
             ty = self.substitution.apply(ty)
             if isinstance(ty, NamedType):
@@ -227,7 +226,7 @@ class Typechecker(object):
                         returnType.setType(method.return_type.name.name)
                         # print("method return type %s [%s]" % (returnType, i.name))
                         self.unify(self.types[i.id], returnType)
-                named_call = IR.NamedFunctionCall()
+                named_call = Instruction.NamedFunctionCall()
                 named_call.id = i.id
                 fn_name = Util.QualifiedName(ty.value.moduleName, i.name, ty.value.name)
                 named_call.name = fn_name
@@ -235,13 +234,13 @@ class Typechecker(object):
                 block.instructions[i.id.value] = named_call
                 if not found:
                     Util.error("method %s not found on %s" % (i.name, ty.value))
-        elif isinstance(i, IR.MemberAccess):
+        elif isinstance(i, Instruction.MemberAccess):
             ty = self.types[i.receiver]
             ty = self.substitution.apply(ty)
             (index, fieldType) = self.getFieldType(ty, i.name)
             i.index = index
             self.unify(self.types[i.id], fieldType)
-        elif isinstance(i, IR.ValueRef):
+        elif isinstance(i, Instruction.ValueRef):
             currentType = self.types[i.name]
             currentType = self.substitution.apply(currentType)
             for field in i.fields:

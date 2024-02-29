@@ -1,4 +1,4 @@
-import Compiler.IR as IR
+import Compiler.IR.Instruction as Instruction
 import Compiler.Util as Util
 import Compiler.DependencyProcessor as DependencyProcessor
 import Compiler.Ownership.Equality as Equality
@@ -18,7 +18,7 @@ def createFunctionGroups(program):
         deps = set()
         for block in function.body.blocks:
             for i in block.instructions:
-                if isinstance(i, IR.NamedFunctionCall):
+                if isinstance(i, Instruction.NamedFunctionCall):
                     if i.name == Util.getUnit():
                         continue
                     if i.ctor:

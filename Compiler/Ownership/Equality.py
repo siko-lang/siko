@@ -1,4 +1,4 @@
-import Compiler.IR as IR
+import Compiler.IR.Instruction as Instruction
 import Compiler.Util as Util
 import Compiler.Ownership.Signatures as Signatures
 import Compiler.Ownership.TypeVariableInfo as TypeVariableInfo
@@ -50,10 +50,10 @@ class EqualityEngine(object):
         for block in self.fn.body.blocks:
             for i in block.instructions:
                 i.tv_info = self.nextTypeVariableInfo()
-                if isinstance(i, IR.Bind):
+                if isinstance(i, Instruction.Bind):
                     tv_info = self.nextTypeVariableInfo()
                     self.tv_info_vars[i.name] = tv_info
-                if isinstance(i, IR.ValueRef):
+                if isinstance(i, Instruction.ValueRef):
                     root = self.nextGroupVar()
                     for index in i.indices:
                         member_info = MemberInfo.MemberInfo()
@@ -66,7 +66,7 @@ class EqualityEngine(object):
                         i.members.append(member_info)
                     if len(i.members) != 0:
                         i.members[-1].info.group_var = i.tv_info.group_var
-                if isinstance(i, IR.NamedFunctionCall):
+                if isinstance(i, Instruction.NamedFunctionCall):
                     if i.ctor:
                         for (index, arg) in enumerate(i.args):
                             member_info = MemberInfo.MemberInfo()
@@ -106,9 +106,9 @@ class EqualityEngine(object):
 
     def processBlock(self, block):
         for i in block.instructions:
-            if isinstance(i, IR.Bind):
+            if isinstance(i, Instruction.Bind):
                 self.unifyInstrAndVar(i.rhs, i.name)
-            elif isinstance(i, IR.NamedFunctionCall):
+            elif isinstance(i, Instruction.NamedFunctionCall):
                 if i.ctor:
                     for (index, arg) in enumerate(i.args):
                         member_info = i.members[index]
@@ -139,14 +139,14 @@ class EqualityEngine(object):
                                 arg_info = self.getInstructionTypeVariableInfo(arg)
                                 self.unify(arg_info, sig_arg_info)
                             self.unify(res_info, profile.signature.result)
-            elif isinstance(i, IR.ValueRef):
+            elif isinstance(i, Instruction.ValueRef):
                 if len(i.members) == 0:
                     self.unifyGroup(self.tv_info_vars[i.name].group_var, i.tv_info.group_var)
                 else:
                     self.unifyGroup(self.tv_info_vars[i.name].group_var, i.members[0].root)
-            elif isinstance(i, IR.BoolLiteral):
+            elif isinstance(i, Instruction.BoolLiteral):
                 pass
-            elif isinstance(i, IR.If):
+            elif isinstance(i, Instruction.If):
                 true_branch = self.fn.body.getBlock(i.true_branch)
                 false_branch = self.fn.body.getBlock(i.false_branch)
                 self.processBlock(true_branch)
@@ -155,14 +155,14 @@ class EqualityEngine(object):
                 f_id = false_branch.getLastReal().id
                 self.unifyInstrs(t_id, f_id)
                 self.unifyInstrs(t_id, i.id)
-            elif isinstance(i, IR.DropVar):
+            elif isinstance(i, Instruction.DropVar):
                 pass
-            elif isinstance(i, IR.BlockRef):
+            elif isinstance(i, Instruction.BlockRef):
                 b = self.fn.body.getBlock(i.value)
                 self.processBlock(b)
                 l_id = b.getLastReal().id
                 self.unifyInstrs(i.id, l_id)
-            elif isinstance(i, IR.Nop):
+            elif isinstance(i, Instruction.Nop):
                 pass
             else:
                 Util.error("OI: grouping not handling %s %s" % (type(i), i))

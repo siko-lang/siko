@@ -1,5 +1,4 @@
-import Compiler.IR as IR
-import Compiler.Util as Util
+import Compiler.IR.Instruction as Instruction
 import Compiler.DependencyProcessor as DependencyProcessor
 import Compiler.Ownership.DataFlowDependency as DataFlowDependency
 import Compiler.Ownership.MemberInfo as MemberInfo
@@ -97,27 +96,27 @@ class InferenceEngine(object):
     def processPath(self, path):
         root = self.fn.body.getInstruction(path[0])
         value = Value()
-        if isinstance(root, IR.ValueRef):
+        if isinstance(root, Instruction.ValueRef):
             value.source = root.name.value
             index = root.name.value
         prev = None
         for p in path:
             instruction = self.fn.body.getInstruction(p)
-            if isinstance(instruction, IR.Bind):
+            if isinstance(instruction, Instruction.Bind):
                 pass
-            elif isinstance(instruction, IR.MemberAccess):
+            elif isinstance(instruction, Instruction.MemberAccess):
                 value = FieldAccess(value, instruction.index)
-            elif isinstance(instruction, IR.ValueRef):
+            elif isinstance(instruction, Instruction.ValueRef):
                 for i in instruction.indices:
                     value = FieldAccess(value, i)
-            elif isinstance(instruction, IR.NamedFunctionCall):
+            elif isinstance(instruction, Instruction.NamedFunctionCall):
                 if instruction.ctor:
                     for (arg_index, arg) in enumerate(instruction.args):
                         if arg == prev:
                             value = Record(value, arg_index)
-            elif isinstance(instruction, IR.If):
+            elif isinstance(instruction, Instruction.If):
                 pass
-            elif isinstance(instruction, IR.BlockRef):
+            elif isinstance(instruction, Instruction.BlockRef):
                 pass
             else:
                 print("Processing path element %s %s %s" % (p, instruction, type(instruction)))
@@ -131,7 +130,7 @@ class InferenceEngine(object):
         paths = {}
         for block in self.fn.body.blocks:
             for i in block.instructions:
-                if isinstance(i, IR.ValueRef):
+                if isinstance(i, Instruction.ValueRef):
                     if i.name.arg:
                         arg_instructions.append(i.id)
         groups = DependencyProcessor.processDependencies(all_dependencies)
