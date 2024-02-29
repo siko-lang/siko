@@ -31,6 +31,8 @@ class CFGBuilder(object):
                 last = self.processBlock(b, last)
             elif isinstance(i, Instruction.NamedFunctionCall):
                 last = self.processGenericInstruction(i, last)
+            elif isinstance(i, Instruction.Tuple):
+                last = self.processGenericInstruction(i, last)
             elif isinstance(i, Instruction.MethodCall):
                 Util.error("method call in CFG!")
             elif isinstance(i, Instruction.Bind):

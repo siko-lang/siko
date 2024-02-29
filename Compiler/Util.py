@@ -34,7 +34,3 @@ def error(msg):
 def getBool():
     name = QualifiedName("Bool", "Bool")
     return name
-
-def getUnit():
-    name = QualifiedName("", "()")
-    return name

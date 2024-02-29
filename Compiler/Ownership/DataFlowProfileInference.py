@@ -19,8 +19,6 @@ def createFunctionGroups(program):
         for block in function.body.blocks:
             for i in block.instructions:
                 if isinstance(i, Instruction.NamedFunctionCall):
-                    if i.name == Util.getUnit():
-                        continue
                     if i.ctor:
                         continue
                     if i.name == key:

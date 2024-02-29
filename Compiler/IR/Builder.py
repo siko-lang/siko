@@ -40,16 +40,13 @@ class Builder(object):
         if lastStatement:
             if isinstance(lastStatement, Syntax.ExprStatement):
                 if lastStatement.has_semicolon:
-                    unit = Instruction.NamedFunctionCall()
-                    unit.name = Util.getUnit()
+                    unit = Instruction.Tuple()
                     self.addInstruction(unit)
             else:
-                unit = Instruction.NamedFunctionCall()
-                unit.name = Util.getUnit()
+                unit = Instruction.Tuple()
                 self.addInstruction(unit)
         else:
-            unit = Instruction.NamedFunctionCall()
-            unit.name = Util.getUnit()
+            unit = Instruction.Tuple()
             self.addInstruction(unit)
         self.current.pop()
         return block.id

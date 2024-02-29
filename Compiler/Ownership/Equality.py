@@ -115,30 +115,27 @@ class EqualityEngine(object):
                         arg_info = self.getInstructionTypeVariableInfo(arg)
                         self.unify(arg_info, member_info.info)
                 else:
-                    if i.name == Util.getUnit():
-                        pass # TODO, remove this
+                    profile = None
+                    if i.name in self.profile_store.profiles:
+                        profile = self.profile_store.getProfile(i.name)
                     else:
-                        profile = None
-                        if i.name in self.profile_store.profiles:
-                            profile = self.profile_store.getProfile(i.name)
-                        else:
-                            if i.name in self.group_profiles:
-                                profile = self.group_profiles[i.name]
-                        if profile:
-                            profile = copy.deepcopy(profile)
-                            (profile, allocator) = Instantiator.instantiateProfile(profile, self.fn.ownership_signature.allocator)
-                            self.fn.ownership_signature.allocator = allocator
-                            self.profiles[i.id]= profile
-                            res_info = self.getInstructionTypeVariableInfo(i.id)
-                            for path in profile.paths:
-                                arg = i.args[path.index]
-                                arg_info = self.getInstructionTypeVariableInfo(arg)
-                                self.unify(arg_info, path.arg)
-                            for (index, arg) in enumerate(i.args):
-                                sig_arg_info = profile.signature.args[index]
-                                arg_info = self.getInstructionTypeVariableInfo(arg)
-                                self.unify(arg_info, sig_arg_info)
-                            self.unify(res_info, profile.signature.result)
+                        if i.name in self.group_profiles:
+                            profile = self.group_profiles[i.name]
+                    if profile:
+                        profile = copy.deepcopy(profile)
+                        (profile, allocator) = Instantiator.instantiateProfile(profile, self.fn.ownership_signature.allocator)
+                        self.fn.ownership_signature.allocator = allocator
+                        self.profiles[i.id]= profile
+                        res_info = self.getInstructionTypeVariableInfo(i.id)
+                        for path in profile.paths:
+                            arg = i.args[path.index]
+                            arg_info = self.getInstructionTypeVariableInfo(arg)
+                            self.unify(arg_info, path.arg)
+                        for (index, arg) in enumerate(i.args):
+                            sig_arg_info = profile.signature.args[index]
+                            arg_info = self.getInstructionTypeVariableInfo(arg)
+                            self.unify(arg_info, sig_arg_info)
+                        self.unify(res_info, profile.signature.result)
             elif isinstance(i, Instruction.ValueRef):
                 if len(i.members) == 0:
                     self.unifyGroup(self.tv_info_vars[i.name].group_var, i.tv_info.group_var)
@@ -164,6 +161,8 @@ class EqualityEngine(object):
                 self.unifyInstrs(i.id, l_id)
             elif isinstance(i, Instruction.Nop):
                 pass
+            elif isinstance(i, Instruction.Tuple):
+                pass # TODO
             else:
                 Util.error("OI: grouping not handling %s %s" % (type(i), i))
 

@@ -20,6 +20,8 @@ def getDepsForInstruction(i, fn):
         return []
     elif isinstance(i, Instruction.Nop):
         return []
+    elif isinstance(i, Instruction.Tuple):
+        return i.args
     elif isinstance(i, Instruction.If):
         true_branch = fn.body.getBlock(i.true_branch)
         false_branch = fn.body.getBlock(i.false_branch)

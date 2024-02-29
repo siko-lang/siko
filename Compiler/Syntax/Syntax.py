@@ -83,10 +83,6 @@ class Block(SyntaxBase):
     def __init__(self):
         self.statements = []
 
-class Type(SyntaxBase):
-    def __init__(self):
-        self.name = None
-
 class Arg(SyntaxBase):
     def __init__(self):
         self.name = None

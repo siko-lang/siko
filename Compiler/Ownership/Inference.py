@@ -3,6 +3,7 @@ import Compiler.Util as Util
 import Compiler.DependencyProcessor as DependencyProcessor
 import Compiler.Ownership.BorrowUtil as BorrowUtil
 import Compiler.Ownership.Path as Path
+import Compiler.Syntax.Type as Type
 
 class CtorConstraint(object):
     def __init__(self):
@@ -222,25 +223,19 @@ class InferenceEngine(object):
                         constraint.var = i.tv_info.ownership_var
                         constraints.addConstraint(i.tv_info.ownership_var, constraint)
                     else:
-                        if i.name == Util.getUnit():
-                            pass # TODO
-                            constraint = CtorConstraint()
-                            constraint.var = i.tv_info.ownership_var
-                            constraints.addConstraint(i.tv_info.ownership_var, constraint)
-                        else:
-                            if i.id in self.profiles:
-                                profile = self.profiles[i.id]
-                                for path in profile.paths:
-                                    constraint = FieldAccessConstraint()
-                                    constraint.borrow = False
-                                    constraint.root = path.arg.ownership_var
-                                    constraint.members = path.src
-                                    if len(path.dest) == 0:
-                                        constraint.var = path.result.ownership_var
-                                    else:
-                                        constraint.var = path.dest[-1].info.ownership_var
-                                    constraint.instruction_id = None
-                                    constraints.addConstraint(path.arg.ownership_var, constraint)
+                        if i.id in self.profiles:
+                            profile = self.profiles[i.id]
+                            for path in profile.paths:
+                                constraint = FieldAccessConstraint()
+                                constraint.borrow = False
+                                constraint.root = path.arg.ownership_var
+                                constraint.members = path.src
+                                if len(path.dest) == 0:
+                                    constraint.var = path.result.ownership_var
+                                else:
+                                    constraint.var = path.dest[-1].info.ownership_var
+                                constraint.instruction_id = None
+                                constraints.addConstraint(path.arg.ownership_var, constraint)
                 elif isinstance(i, Instruction.Bind):
                     constraint = CtorConstraint()
                     constraint.var = i.tv_info.ownership_var
@@ -317,10 +312,11 @@ class InferenceEngine(object):
                 if isinstance(c.final, Borrow) and isinstance(res_o, Owner):
                     i.clone = True
                 if i.clone:
-                    clazz = self.classes[i.type.value]
-                    if "Clone" not in clazz.derives:
-                        # self.dump()
-                        Util.error("Cannot be cloned! %s at %s" % (i.type, i))
+                    if isinstance(i.type.kind, Type.Named):
+                        clazz = self.classes[i.type.kind.name]
+                        if "Clone" not in clazz.derives:
+                            # self.dump()
+                            Util.error("Cannot be cloned! %s at %s" % (i.type, i))
 
     def dump(self):
         print("forbidden", self.fn.forbidden_borrows)

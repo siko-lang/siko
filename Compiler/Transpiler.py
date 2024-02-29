@@ -4,7 +4,7 @@ import Compiler.Typechecker as Typechecker
 import Compiler.Ownership.Inference as Inference
 import Compiler.Ownership.Signatures as Signatures
 import Compiler.Ownership.Lifetime as Lifetime
-import Compiler.Syntax.Syntax as Syntax
+import Compiler.Syntax.Type as Type
 
 def ii(id):
     id = "i_%s_%s" % (id.block, id.value)
@@ -35,10 +35,6 @@ class Transpiler(object):
         self.output.write(m)
 
     def transpileType(self, type):
-        if isinstance(type, Typechecker.NamedType):
-            type = type.value
-        if isinstance(type, Syntax.Type):
-            type = type.name
         if isinstance(type, Signatures.ClassInstantiationSignature):
             type_name = type.name
             if str(type_name) == ".()":
@@ -54,11 +50,8 @@ class Transpiler(object):
             index = len(instances)
             instances.append(type)
             return "%s_%s_%s" % (type_name.moduleName, type_name.name, index)
-        if str(type) == ".()":
+        if isinstance(type.kind, Type.Tuple):
             return "()"
-        name = str(type)
-        name = name.replace(".", "_")
-        return name
 
     def transpileFnName(self, sig):
         if sig.name not in self.function_names:
@@ -98,23 +91,20 @@ class Transpiler(object):
         self.indentLevel += 4
         for i in block.instructions:
             if isinstance(i, Instruction.NamedFunctionCall):
-                if i.name.name == Util.getUnit():
-                    self.addInstr(i, "()")
-                else:
-                    if i.ctor:
-                        clazz = self.classes[i.type_signature]
-                        call_args = []
-                        for (index, arg) in enumerate(i.args):
-                            field = clazz.fields[index]
-                            call_args.append("%s: %s" % (field.name, ii(arg)))
-                        call_args = ", ".join(call_args)
-                        self.addInstr(i, "%s{%s}" % (self.transpileType(i.type_signature), call_args))
-                    else:    
-                        call_args = []
-                        for arg in i.args:
-                            call_args.append("%s" % ii(arg))
-                        call_args = ", ".join(call_args)
-                        self.addInstr(i, "%s(%s)" % (self.transpileFnName(i.name), call_args))
+                if i.ctor:
+                    clazz = self.classes[i.type_signature]
+                    call_args = []
+                    for (index, arg) in enumerate(i.args):
+                        field = clazz.fields[index]
+                        call_args.append("%s: %s" % (field.name, ii(arg)))
+                    call_args = ", ".join(call_args)
+                    self.addInstr(i, "%s{%s}" % (self.transpileType(i.type_signature), call_args))
+                else:    
+                    call_args = []
+                    for arg in i.args:
+                        call_args.append("%s" % ii(arg))
+                    call_args = ", ".join(call_args)
+                    self.addInstr(i, "%s(%s)" % (self.transpileFnName(i.name), call_args))
             elif isinstance(i, Instruction.Bind):
                 self.print("%slet %s = %s;\n" % (self.getIndent(), vi(i.name), ii(i.rhs)))
             elif isinstance(i, Instruction.DropVar):
@@ -127,6 +117,9 @@ class Transpiler(object):
                     self.addInstr(i, "true")
                 else:
                     self.addInstr(i, "false")
+            elif isinstance(i, Instruction.Tuple):
+                # TODO
+                self.addInstr(i, "()")
             elif isinstance(i, Instruction.ValueRef):
                 v = vi(i.name)
                 for field in i.fields:

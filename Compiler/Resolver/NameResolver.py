@@ -1,4 +1,5 @@
 import Compiler.Syntax.Syntax as Syntax
+import Compiler.Syntax.Type as Type
 import Compiler.IR.IR as IR
 import Compiler.IR.Instruction as Instruction
 import Compiler.Util as Util
@@ -41,6 +42,9 @@ class ResolvedItem(object):
     def __str__(self):
         return str(self.name)
 
+    def __repr__(self) -> str:
+        return self.__str__()
+
 class ModuleResolver(object):
     def __init__(self):
         self.module = None
@@ -78,6 +82,21 @@ class ModuleResolver(object):
             else:
                 return None
 
+    def resolveType(self, ty):
+        if isinstance(ty.kind, Type.Named):
+            if isinstance(ty.kind.name, Util.QualifiedName):
+                raise 5
+            name = self.resolveName(ty.kind.name)
+            if name is None:
+                Util.error("Failed to resolve type %s" % ty)
+            ty.kind.name = name.name
+            for arg in ty.kind.args:
+                self.resolveType(arg)
+        if isinstance(ty.kind, Type.Tuple):
+            for item in ty.kind.items:
+                self.resolveType(item)
+        return ty
+
 class Resolver(object):
     def __init__(self):
         self.modules = []
@@ -89,15 +108,8 @@ class Resolver(object):
         env = Environment()
         for (index, arg) in enumerate(fn.args):
             arg.name = env.addVar(arg.name, argIndex=index)
-            arg_type = moduleResolver.resolveName(arg.type.name).name
-            if arg_type is None:
-                Util.error("Failed to resolve type %s" % arg.type.name)
-            else:
-                arg.type = arg_type
-        if fn.return_type.name == "()":
-            fn.return_type = Util.getUnit()
-        else:
-            fn.return_type = moduleResolver.resolveName(fn.return_type.name).name
+            arg.type = moduleResolver.resolveType(arg.type)
+        fn.return_type = moduleResolver.resolveType(fn.return_type)
         block = fn.body.getFirst()
         self.resolveBlock(env, moduleResolver, block, fn)
     
@@ -130,18 +142,15 @@ class Resolver(object):
                 else:
                     Util.error("Undefined var %s" % instruction.name)
             elif isinstance(instruction, Instruction.NamedFunctionCall):
-                if instruction.name == Util.getUnit():
-                    pass # TODO
+                var = env.resolveVar(instruction.name)
+                if var:
+                    instruction.name = var[0]
                 else:
-                    var = env.resolveVar(instruction.name)
-                    if var:
-                        instruction.name = var[0]
+                    item = moduleResolver.resolveName(instruction.name)
+                    if item:
+                        instruction.name = item.name
                     else:
-                        item = moduleResolver.resolveName(instruction.name)
-                        if item:
-                            instruction.name = item.name
-                        else:
-                            Util.error("Unknown fn %s %s" % (instruction.name, type(instruction.name)))
+                        Util.error("Unknown fn %s %s" % (instruction.name, type(instruction.name)))
         vars = env.varList
         vars.reverse()
         for (var, bind_id) in vars:
@@ -154,7 +163,7 @@ class Resolver(object):
     def resolveClass(self, moduleName, clazz, ir_program):
         moduleResolver = self.moduleResolvers[moduleName]
         for f in clazz.fields:
-            f.type.name = moduleResolver.resolveName(f.type.name).name
+            f.type = moduleResolver.resolveType(f.type)
         for m in clazz.methods:
             methodName = Util.QualifiedName(moduleName, m.name, clazz.name)
             ir_program.functions[methodName] = m

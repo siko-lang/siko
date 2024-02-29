@@ -56,6 +56,15 @@ class NamedFunctionCall(BaseInstruction):
         else:
             return "%s(%s)" % (self.name, ", ".join(args))
 
+class Tuple(BaseInstruction):
+    def __init__(self):
+        super().__init__()
+        self.args = []
+
+    def __str__(self):
+        args = map(lambda x: str(x), self.args)
+        return "(%s)" % (", ".join(args))
+
 class DynamicFunctionCall(BaseInstruction):
     def __init__(self):
         super().__init__()

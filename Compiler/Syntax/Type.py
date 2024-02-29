@@ -6,7 +6,7 @@ class Named(object):
 
     def __str__(self) -> str:
         if len(self.args) == 0:
-            return self.name
+            return "%s" % self.name
         else:
             args = []
             for a in self.args:

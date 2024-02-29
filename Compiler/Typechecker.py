@@ -1,5 +1,6 @@
 import Compiler.IR.Instruction as Instruction
 import Compiler.Util as Util
+import Compiler.Syntax.Type as Type
 
 class Substitution(object):
     def __init__(self):
@@ -11,7 +12,7 @@ class Substitution(object):
     def apply(self, ty):
         res = ty
         while True:
-            if isinstance(res, TypeVar):
+            if isinstance(res.kind, Type.Var):
                 if res in self.substitutions:
                     res = self.substitutions[res]
                 else:
@@ -19,52 +20,8 @@ class Substitution(object):
             else:
                 return res
 
-class NamedType(object):
-    def __init__(self):
-        self.value = None
-
-    def setType(self, ty):
-        if isinstance(ty, Util.QualifiedName):
-            self.value = ty
-        else:
-            print("Not qualified name! %s" % type(ty))
-            raise 45
-
-    def __eq__(self, other):
-        if isinstance(other, NamedType):
-            return self.value == other.value
-        else:
-            return False
-    
-    def __hash__(self) -> int:
-        return self.value.__hash__()
-
-    def __str__(self):
-        return "Named:%s" % self.value
-
-unitType = NamedType()
-unitType.value = Util.getUnit()
-boolType = NamedType()
-boolType.value = Util.getBool()
-
-class TypeVar(object):
-    def __init__(self):
-        self.value = None
-    
-    def __eq__(self, other):
-        return self.value == other.value
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
-
-    def __hash__(self):
-        return self.value.__hash__()
-
-    def __str__(self):
-        return "$tv.%s" % self.value
-
-    def __repr__(self):
-        return self.__str__()
+unitType = Type.Type(Type.Tuple([]))
+boolType = Type.Type(Type.Named(Util.getBool(), []))
 
 class Typechecker(object):
     def __init__(self):
@@ -74,16 +31,13 @@ class Typechecker(object):
         self.types = {}
 
     def getNextVar(self):
-        v = TypeVar()
-        v.value = self.nextVar
+        v = Type.Var(self.nextVar)
         self.nextVar += 1
-        return v
+        return Type.Type(v)
 
     def initialize(self, fn):
         for arg in fn.args:
-            namedType = NamedType()
-            namedType.setType(arg.type)
-            self.types[arg.name] = namedType
+            self.types[arg.name] = arg.type
         for block in fn.body.blocks:
             for i in block.instructions:
                 if isinstance(i, Instruction.Bind):
@@ -101,37 +55,38 @@ class Typechecker(object):
         type1 = self.substitution.apply(type1)
         type2 = self.substitution.apply(type2)
         #print("Unifying2 %s/%s" % (type1, type2))
-        if isinstance(type1, TypeVar):
+        if isinstance(type1.kind, Type.Var):
             self.substitution.add(type1, type2)
-        elif isinstance(type2, TypeVar):
+        elif isinstance(type2.kind, Type.Var):
             self.substitution.add(type2, type1)
-        elif isinstance(type1, NamedType) and isinstance(type2, NamedType):
-            if type1.value != type2.value:
-                print("Type mismatch named %s/%s" % (type(type1.value), type(type2.value)))
+        elif isinstance(type1.kind, Type.Named) and isinstance(type2.kind, Type.Named):
+            if type1.kind.name != type2.kind.name:
                 Util.error("Type mismatch named %s/%s" % (type1, type2))
+            for (arg1, arg2) in zip(type1.kind.args, type2.kind.args):
+                self.unify(arg1, arg2)
+        elif isinstance(type1.kind, Type.Tuple) and isinstance(type2.kind, Type.Tuple):
+            if len(type1.kind.items) != len(type2.kind.items):
+                Util.error("Type mismatch named %s/%s" % (type1, type2))
+            for (arg1, arg2) in zip(type1.kind.items, type2.kind.items):
+                self.unify(arg1, arg2)
         else:
             Util.error("Type mismatch %s/%s" % (type1, type2))
 
     def check(self, fn):
         block = fn.body.getFirst()
         self.checkBlock(block, fn)
-        returnType = NamedType()
-        returnType.setType(fn.return_type)
-        self.unify(self.types[block.getLastReal().id], returnType)
+        self.unify(self.types[block.getLastReal().id], fn.return_type)
 
     def getFieldType(self, ty, field_name):
-        if isinstance(ty, NamedType):
-            clazz = self.program.classes[ty.value]
+        if isinstance(ty.kind, Type.Named):
+            clazz = self.program.classes[ty.kind.name]
             found = False
             for (index, field) in enumerate(clazz.fields):
                 if field.name == field_name:
                     found = True
-                    fieldType = NamedType()
-                    fieldType.setType(field.type.name)
-                    #print("field type %s [%s]" % (fieldType, i.name))
-                    return (index, fieldType)
+                    return (index, field.type)
             if not found:
-                Util.error("field %s not found on %s" % (field_name, ty.value))
+                Util.error("field %s not found on %s" % (field_name, ty))
         Util.error("field %s not found on %s" % (field_name, ty))
 
     def checkInstruction(self, block, fn, i, instr_index):
@@ -141,9 +96,7 @@ class Typechecker(object):
             last = block.getLastReal()
             self.unify(self.types[last.id], self.types[i.id])
         elif isinstance(i, Instruction.Return):
-            returnType = NamedType()
-            returnType.setType(fn.return_type.name.name)
-            self.unify(self.types[i.arg], returnType)
+            self.unify(self.types[i.arg], fn.return_type)
         elif isinstance(i, Instruction.DropVar):
             self.unify(self.types[i.id], unitType)
         elif isinstance(i, Instruction.Break):
@@ -152,6 +105,9 @@ class Typechecker(object):
         elif isinstance(i, Instruction.Continue):
             pass # TODO
             #self.unify(self.types[i.arg], returnType)
+        elif isinstance(i, Instruction.Tuple):
+            # TODO
+            self.unify(self.types[i.id], unitType)
         elif isinstance(i, Instruction.Loop):
             body_block = fn.body.getBlock(i.body)
             self.checkBlock(body_block, fn)
@@ -161,18 +117,14 @@ class Typechecker(object):
         elif isinstance(i, Instruction.NamedFunctionCall):
             # print("Checking function call for %s %s" % (i.name, type(i.name)))
             #print("%s" % i.name.item.return_type.name)
-            returnType = NamedType()
             if i.name in self.program.functions:
                 item = self.program.functions[i.name]
                 if len(item.args) != len(i.args):
                     Util.error("fn %s expected %d args found %d" % (i.name, len(item.args), len(i.args)))
                 for (index, i_arg) in enumerate(i.args):
                     fn_arg = item.args[index]
-                    arg_type = NamedType()
-                    arg_type.setType(fn_arg.type)
-                    self.unify(self.types[i_arg], arg_type)
-                returnType.setType(item.return_type)
-                self.unify(self.types[i.id], returnType)
+                    self.unify(self.types[i_arg], fn_arg.type)
+                self.unify(self.types[i.id], item.return_type)
             elif i.name in self.program.classes:
                 i.ctor = True
                 clazz = self.program.classes[i.name]
@@ -180,14 +132,8 @@ class Typechecker(object):
                     Util.error("clazz ctor %s expected %d args found %d" % (i.name, len(clazz.fields), len(i.args)))
                 for (index, i_arg) in enumerate(i.args):
                     fn_arg = clazz.fields[index]
-                    arg_type = NamedType()
-                    arg_type.setType(fn_arg.type.name)
-                    self.unify(self.types[i_arg], arg_type)
-                returnType.setType(i.name)
-                self.unify(self.types[i.id], returnType)
-            elif str(i.name) == ".()":
-                returnType = unitType
-                self.unify(self.types[i.id], returnType)
+                    self.unify(self.types[i_arg], fn_arg.type)
+                self.unify(self.types[i.id], Type.Type(Type.Named(i.name, [])))
             else:   
                 Util.error("TYPECHECK, Function not found!! %s" % i.name)
         elif isinstance(i, Instruction.Bind):
@@ -208,8 +154,8 @@ class Typechecker(object):
         elif isinstance(i, Instruction.MethodCall):
             ty = self.types[i.receiver]
             ty = self.substitution.apply(ty)
-            if isinstance(ty, NamedType):
-                clazz = self.program.classes[ty.value]
+            if isinstance(ty.kind, Type.Named):
+                clazz = self.program.classes[ty.kind.name]
                 found = False
                 total_args = [i.receiver] + i.args
                 for method in clazz.methods:
@@ -218,22 +164,18 @@ class Typechecker(object):
                             Util.error("method %s expected %d args found %d" % (method.name, len(method.args), len(total_args)))
                         for (index, i_arg) in enumerate(total_args):
                             method_arg = method.args[index]
-                            arg_type = NamedType()
-                            arg_type.setType(method_arg.type.name)
-                            self.unify(self.types[i_arg], arg_type)
+                            self.unify(self.types[i_arg], method_arg.type)
                         found = True
-                        returnType = NamedType()
-                        returnType.setType(method.return_type.name.name)
                         # print("method return type %s [%s]" % (returnType, i.name))
-                        self.unify(self.types[i.id], returnType)
+                        self.unify(self.types[i.id], method.return_type)
                 named_call = Instruction.NamedFunctionCall()
                 named_call.id = i.id
-                fn_name = Util.QualifiedName(ty.value.moduleName, i.name, ty.value.name)
+                fn_name = Util.QualifiedName(ty.kind.name.moduleName, i.name, ty.kind.name.name)
                 named_call.name = fn_name
                 named_call.args = [i.receiver] + i.args
                 block.instructions[i.id.value] = named_call
                 if not found:
-                    Util.error("method %s not found on %s" % (i.name, ty.value))
+                    Util.error("method %s not found on %s" % (i.name, ty))
         elif isinstance(i, Instruction.MemberAccess):
             ty = self.types[i.receiver]
             ty = self.substitution.apply(ty)

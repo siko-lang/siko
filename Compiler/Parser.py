@@ -1,7 +1,6 @@
 import Compiler.Lexer as Lexer
-import Compiler.Token as Token
 import Compiler.Syntax.Syntax as Syntax
-import json
+import Compiler.Syntax.Type as Type
 import Compiler.Util as Util
 
 class Parser(object):
@@ -319,8 +318,7 @@ class Parser(object):
             self.expect("rightarrow")
             fn.return_type = self.parseType()
         else:
-            empty_tuple = Syntax.Type()
-            empty_tuple.name = "()"
+            empty_tuple = Type.Type(Type.Tuple([]))
             fn.return_type = empty_tuple
         if self.peek("equal"):
             self.expect("equal")
@@ -335,13 +333,28 @@ class Parser(object):
         self.expect("rightbracket")
 
     def parseType(self):
-        name = self.parseQualifiedName()
-        if self.peek("leftbracket"):
-            self.expect("leftbracket")
-            self.parseType()
-            self.expect("rightbracket")
-        ty = Syntax.Type()
-        ty.name = name
+        if self.peek("typeid"):
+            name = self.parseQualifiedName()
+            args = []
+            if self.peek("leftbracket"):
+                self.expect("leftbracket")
+                args.append(self.parseType())
+                self.expect("rightbracket")
+            kind = Type.Named(name, args)
+            ty = Type.Type(kind)
+        elif self.peek("leftparen"):
+            self.expect("leftparen")
+            items = []
+            while True:
+                item = self.parseType()
+                items.append(item)
+                if self.peek("rightparen"):
+                    break
+                else:
+                    self.expect("comma")
+            self.expect("rightparen")
+            kind = Type.Tuple(items)
+            ty = Type.Type(kind)
         return ty
 
     def parseClassField(self):
