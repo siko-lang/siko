@@ -71,30 +71,27 @@ class InferenceEngine(object):
 
     def processGroup(self, group, recursive_fns):
         #print("Processing group", group)
-        if len(group.items) == 1:
+        if len(group.items) == 1 and group.items[0] not in recursive_fns:
             #print("Processing fn", name)
             name = group.items[0]
-            if name in recursive_fns:
-                group_profiles = {}
-                change = True
-                while change:
-                    change = False
-                    for name in group.items:
-                        profile = self.createDataFlowProfile(name, group_profiles)
-                        if name in group_profiles:
-                            prev = group_profiles[name]
-                            if prev != profile:
-                                change = True
-                        else:
-                            change = True
-                        group_profiles[name] = profile    
-                for name in group.items:
-                    self.profile_store.addProfile(name, group_profiles[name])
-            else:
-                profile = self.createDataFlowProfile(name, {})
-                self.profile_store.addProfile(name, profile)
+            profile = self.createDataFlowProfile(name, {})
+            self.profile_store.addProfile(name, profile)
         else:
-            Util.error("Multi function groups NYI in data flow profile inference")
+            group_profiles = {}
+            change = True
+            while change:
+                change = False
+                for name in group.items:
+                    profile = self.createDataFlowProfile(name, group_profiles)
+                    if name in group_profiles:
+                        prev = group_profiles[name]
+                        if prev != profile:
+                            change = True
+                    else:
+                        change = True
+                    group_profiles[name] = profile    
+            for name in group.items:
+                self.profile_store.addProfile(name, group_profiles[name])
 
     def processGroups(self, groups, recursive_fns):
         for group in groups:
