@@ -8,7 +8,7 @@ import Compiler.Ownership.ForbiddenBorrows as ForbiddenBorrows
 import Compiler.Ownership.MemberInfo as MemberInfo
 import Compiler.Ownership.Normalizer as Normalizer
 import Compiler.Ownership.Lifetime as Lifetime
-import Compiler.Syntax.Type as Type
+import Compiler.Syntax.Type as SyntaxType
 import copy
 
 class Monomorphizer(object):
@@ -70,7 +70,7 @@ class Monomorphizer(object):
             arg_borrows = []
             result_borrows = []
             for (index, arg) in enumerate(fn.args):
-                if isinstance(arg.type.kind, Type.Named):
+                if isinstance(arg.type.kind, SyntaxType.Named):
                     arg_tv_info = signature.args[index]
                     tsignature = Signatures.ClassInstantiationSignature()
                     tsignature.name = arg.type.kind.name
@@ -87,7 +87,7 @@ class Monomorphizer(object):
                     arg_borrows += self.getAllBorrows(arg_tv_info.ownership_var, ownership_dep_map, ownerships)
                     arg.dep_lifetimes = self.getDepLifetimes(arg_tv_info.ownership_var, ownership_dep_map, ownerships)
                     self.addClass(tsignature)
-            if isinstance(fn.return_type.kind, Type.Named):
+            if isinstance(fn.return_type.kind, SyntaxType.Named):
                 rsignature = Signatures.ClassInstantiationSignature()
                 rsignature.name = fn.return_type.kind.name
                 ret_tv_info = copy.deepcopy(signature.result)
@@ -114,9 +114,9 @@ class Monomorphizer(object):
                 fn.return_dep_lifetimes = self.getDepLifetimes(ret_tv_info.ownership_var, ownership_dep_map, ownerships)
             for block in fn.body.blocks:
                 for i in block.instructions:
-                    if isinstance(i.type.kind, Type.Tuple):
+                    if isinstance(i.type.kind, SyntaxType.Tuple):
                         i.type_signature = i.type
-                    if isinstance(i.type.kind, Type.Named):
+                    if isinstance(i.type.kind, SyntaxType.Named):
                         signature = Signatures.ClassInstantiationSignature()
                         signature.name = i.type.kind.name
                         signature = Normalizer.normalizeClassOwnershipSignature(signature, 
@@ -161,7 +161,7 @@ class Monomorphizer(object):
             allocator = copy.deepcopy(signature.allocator)
             for (index, f) in enumerate(clazz.fields):
                 #print("process field", type(f.type.name))
-                if isinstance(f.type.kind, Type.Named):
+                if isinstance(f.type.kind, SyntaxType.Named):
                     fsignature = Signatures.ClassInstantiationSignature()
                     fsignature.name = f.type.kind.name
                     if index in field_infos:

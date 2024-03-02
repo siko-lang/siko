@@ -1,6 +1,6 @@
 import Compiler.IR.Instruction as Instruction
 import Compiler.Util as Util
-import Compiler.Syntax.Type as Type
+import Compiler.Syntax.Type as SyntaxType
 
 class Substitution(object):
     def __init__(self):
@@ -12,7 +12,7 @@ class Substitution(object):
     def apply(self, ty):
         res = ty
         while True:
-            if isinstance(res.kind, Type.Var):
+            if isinstance(res.kind, SyntaxType.Var):
                 if res in self.substitutions:
                     res = self.substitutions[res]
                 else:
@@ -20,8 +20,8 @@ class Substitution(object):
             else:
                 return res
 
-unitType = Type.Type(Type.Tuple([]))
-boolType = Type.Type(Type.Named(Util.getBool(), []))
+unitType = SyntaxType.Type(SyntaxType.Tuple([]))
+boolType = SyntaxType.Type(SyntaxType.Named(Util.getBool(), []))
 
 class Typechecker(object):
     def __init__(self):
@@ -31,9 +31,9 @@ class Typechecker(object):
         self.types = {}
 
     def getNextVar(self):
-        v = Type.Var(self.nextVar)
+        v = SyntaxType.Var(self.nextVar)
         self.nextVar += 1
-        return Type.Type(v)
+        return SyntaxType.Type(v)
 
     def initialize(self, fn):
         for arg in fn.args:
@@ -55,16 +55,16 @@ class Typechecker(object):
         type1 = self.substitution.apply(type1)
         type2 = self.substitution.apply(type2)
         #print("Unifying2 %s/%s" % (type1, type2))
-        if isinstance(type1.kind, Type.Var):
+        if isinstance(type1.kind, SyntaxType.Var):
             self.substitution.add(type1, type2)
-        elif isinstance(type2.kind, Type.Var):
+        elif isinstance(type2.kind, SyntaxType.Var):
             self.substitution.add(type2, type1)
-        elif isinstance(type1.kind, Type.Named) and isinstance(type2.kind, Type.Named):
+        elif isinstance(type1.kind, SyntaxType.Named) and isinstance(type2.kind, SyntaxType.Named):
             if type1.kind.name != type2.kind.name:
                 Util.error("Type mismatch named %s/%s" % (type1, type2))
             for (arg1, arg2) in zip(type1.kind.args, type2.kind.args):
                 self.unify(arg1, arg2)
-        elif isinstance(type1.kind, Type.Tuple) and isinstance(type2.kind, Type.Tuple):
+        elif isinstance(type1.kind, SyntaxType.Tuple) and isinstance(type2.kind, SyntaxType.Tuple):
             if len(type1.kind.items) != len(type2.kind.items):
                 Util.error("Type mismatch named %s/%s" % (type1, type2))
             for (arg1, arg2) in zip(type1.kind.items, type2.kind.items):
@@ -78,7 +78,7 @@ class Typechecker(object):
         self.unify(self.types[block.getLastReal().id], fn.return_type)
 
     def getFieldType(self, ty, field_name):
-        if isinstance(ty.kind, Type.Named):
+        if isinstance(ty.kind, SyntaxType.Named):
             clazz = self.program.classes[ty.kind.name]
             found = False
             for (index, field) in enumerate(clazz.fields):
@@ -133,7 +133,7 @@ class Typechecker(object):
                 for (index, i_arg) in enumerate(i.args):
                     fn_arg = clazz.fields[index]
                     self.unify(self.types[i_arg], fn_arg.type)
-                self.unify(self.types[i.id], Type.Type(Type.Named(i.name, [])))
+                self.unify(self.types[i.id], SyntaxType.Type(SyntaxType.Named(i.name, [])))
             else:   
                 Util.error("TYPECHECK, Function not found!! %s" % i.name)
         elif isinstance(i, Instruction.Bind):
@@ -154,7 +154,7 @@ class Typechecker(object):
         elif isinstance(i, Instruction.MethodCall):
             ty = self.types[i.receiver]
             ty = self.substitution.apply(ty)
-            if isinstance(ty.kind, Type.Named):
+            if isinstance(ty.kind, SyntaxType.Named):
                 clazz = self.program.classes[ty.kind.name]
                 found = False
                 total_args = [i.receiver] + i.args

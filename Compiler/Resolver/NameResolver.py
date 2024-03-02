@@ -1,7 +1,7 @@
 import Compiler.Syntax.Function as Function
 import Compiler.Syntax.Data as Data
 import Compiler.Syntax.Module as Module
-import Compiler.Syntax.Type as Type
+import Compiler.Syntax.Type as SyntaxType
 import Compiler.IR.IR as IR
 import Compiler.IR.Instruction as Instruction
 import Compiler.Util as Util
@@ -85,7 +85,7 @@ class ModuleResolver(object):
                 return None
 
     def resolveType(self, ty):
-        if isinstance(ty.kind, Type.Named):
+        if isinstance(ty.kind, SyntaxType.Named):
             if isinstance(ty.kind.name, Util.QualifiedName):
                 raise 5
             name = self.resolveName(ty.kind.name)
@@ -94,7 +94,7 @@ class ModuleResolver(object):
             ty.kind.name = name.name
             for arg in ty.kind.args:
                 self.resolveType(arg)
-        if isinstance(ty.kind, Type.Tuple):
+        if isinstance(ty.kind, SyntaxType.Tuple):
             for item in ty.kind.items:
                 self.resolveType(item)
         return ty

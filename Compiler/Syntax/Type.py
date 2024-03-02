@@ -1,4 +1,12 @@
 
+class GenericVarDeclaration(object):
+    def __init__(self, name):
+        self.name = name
+
+class GenericDeclaration(object):
+    def __init__(self):
+        self.generics = []
+
 class Named(object):
     def __init__(self, name, args):
         self.name = name

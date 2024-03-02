@@ -3,7 +3,7 @@ import Compiler.Util as Util
 import Compiler.DependencyProcessor as DependencyProcessor
 import Compiler.Ownership.BorrowUtil as BorrowUtil
 import Compiler.Ownership.Path as Path
-import Compiler.Syntax.Type as Type
+import Compiler.Syntax.Type as SyntaxType
 
 class CtorConstraint(object):
     def __init__(self):
@@ -312,7 +312,7 @@ class InferenceEngine(object):
                 if isinstance(c.final, Borrow) and isinstance(res_o, Owner):
                     i.clone = True
                 if i.clone:
-                    if isinstance(i.type.kind, Type.Named):
+                    if isinstance(i.type.kind, SyntaxType.Named):
                         clazz = self.classes[i.type.kind.name]
                         if "Clone" not in clazz.derives:
                             # self.dump()

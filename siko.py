@@ -1,7 +1,7 @@
 #!/bin/python3
 
 import sys
-import Compiler.Parser as Parser
+import Compiler.Parser.Parser as Parser
 import Compiler.Syntax.Program as Program
 import Compiler.Resolver.NameResolver as NameResolver
 import Compiler.Typechecker as Typechecker

@@ -4,7 +4,7 @@ import Compiler.Typechecker as Typechecker
 import Compiler.Ownership.Inference as Inference
 import Compiler.Ownership.Signatures as Signatures
 import Compiler.Ownership.Lifetime as Lifetime
-import Compiler.Syntax.Type as Type
+import Compiler.Syntax.Type as SyntaxType
 
 def ii(id):
     id = "i_%s_%s" % (id.block, id.value)
@@ -50,7 +50,7 @@ class Transpiler(object):
             index = len(instances)
             instances.append(type)
             return "%s_%s_%s" % (type_name.moduleName, type_name.name, index)
-        if isinstance(type.kind, Type.Tuple):
+        if isinstance(type.kind, SyntaxType.Tuple):
             return "()"
 
     def transpileFnName(self, sig):

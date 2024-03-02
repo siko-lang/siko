@@ -3,6 +3,7 @@ import Compiler.Syntax.Base as Base
 class Enum(Base.SyntaxBase):
     def __init__(self):
         self.name = None
+        self.generics = None
         self.variants = []
 
 class Variant(Base.SyntaxBase):
