@@ -22,14 +22,14 @@ extern class List[T] {
     fn intoExternIterator(self) -> ExternListIterator[T] = extern
 }
 
-instance[T: Show] List[T] Show {
+instance[T: Show] Show[List[T]] {
     fn show(self) -> String {
         let subs = self.map(show);
         "[]" + subs.join(", ") + "]"
     }
 }
 
-instance[T: PartialEq] List[T] PartialEq {
+instance[T: PartialEq] PartialEq[List[T]] {
     fn eq(self, other: List[T]) -> Bool {
         if self.len() != other.len() {
             False
@@ -44,9 +44,9 @@ instance[T: PartialEq] List[T] PartialEq {
     }
 }
 
-instance[T: Eq] List[T] Eq {}
+instance[T: Eq] Eq[List[T]]
 
-instance[T: PartialOrd] List[T] PartialOrd {
+instance[T: PartialOrd] PartialOrd[List[T]] {
     fn partialCmp(self, other: List[T]) -> Option[Ordering] {
         if self.len() != other.len() {
             partialCmp(self.len(), other.len())
@@ -62,7 +62,7 @@ instance[T: PartialOrd] List[T] PartialOrd {
     }
 }
 
-instance[T: Ord] List[T] Ord {
+instance[T: Ord] Ord[List[T]] {
     fn cmp(self, other: List[T]) -> Ordering {
         if self.len() != other.len() {
             cmp(self.len(), (other.len())
@@ -78,7 +78,7 @@ instance[T: Ord] List[T] Ord {
     }
 }
 
-instance List[T] Add {
+instance[T] Add[List[T]] {
     fn add(self, other: List[T]) -> List[T] {
         self.extend(other)
     }
@@ -94,18 +94,18 @@ class ListIterator[T] {
     inner: ExternListIterator[T]
 }
 
-instance ListIterator[T] Iterator[T] {
+instance[T] Iterator[ListIterator[T], T] {
     fn next(mut self) -> (Self, Option[T]) {
         let item = self.inner.next();
         (self, item)
     }
 }
 
-trait Join[Separator > Output] {
+trait Join[T, Separator > Output] {
     fn join(self, sep: Separator) -> Output
 }
 
-instance List[String] Join[String, String] {
+instance Join[List[String], String, String] {
     fn join(self, sep: String) -> String {
         let mut result = "";
         for (index, s) in self.iter().enumerate() {

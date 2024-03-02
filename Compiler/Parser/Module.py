@@ -24,6 +24,8 @@ def parseItem(parser, module_name):
         return Data.parseClass(parser, module_name, derives)
     elif parser.peek("trait"):
         return Trait.parseTrait(parser, module_name)
+    elif parser.peek("instance"):
+        return Trait.parseInstance(parser, module_name)
     elif parser.peek("import"):
         return parseImport(parser)
     elif parser.peek("fn"):

@@ -7,3 +7,9 @@ class Trait(Base.SyntaxBase):
         self.dependent_parameters = []
         self.declarations = []
         self.methods = []
+
+class Instance(Base.SyntaxBase):
+    def __init__(self):
+        self.type = []
+        self.generics = []
+        self.methods = []

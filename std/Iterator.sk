@@ -1,9 +1,9 @@
 module Iterator {
 
-trait Iterator[>Item] {
+trait Iterator[T > Item] {
     fn next(self) -> (Self, Option[Item])
 
-    fn zip[O: Iterator[I2]](self, other: O) -> ZipIterator[Item, O] {
+    fn zip[O](self, other: O) -> ZipIterator[Item, O] {
         ZipIterator(self, other)
     }
 
@@ -15,8 +15,8 @@ trait Iterator[>Item] {
     }
 }
 
-trait IntoIterator[T] {
-    fn intoIterator(self) -> Iterator[T]
+trait[Iter: Iterator[Iter, I]] IntoIterator[T, I > Iter] {
+    fn intoIterator(self) -> Iter
 }
 
 class ZipIterator[A, B] {
@@ -24,7 +24,7 @@ class ZipIterator[A, B] {
     b: B,
 }
 
-instance ZipIterator[A: Iterator[I1], B: Iterator[I2]] Iterator[(I1, I2)] {
+instance[A, B: Iterator[A, I1], Iterator[B, I2]] Iterator[ZipIterator[A, B], (I1, I2)] {
     fn next(mut self) -> (Self, Option[(I1, I2)]) {
         let i1 = self.a.next();
         match i1 {
@@ -37,6 +37,12 @@ instance ZipIterator[A: Iterator[I1], B: Iterator[I2]] Iterator[(I1, I2)] {
             }
             None -> (self, None)
         }
+    }
+}
+
+instance[I, T: Iterator[I, T]] IntoIterator[I] {
+    fn intoIterator(self) -> I {
+        self
     }
 }
 
