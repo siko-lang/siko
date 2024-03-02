@@ -1,5 +1,9 @@
 import Compiler.Lexer as Lexer
-import Compiler.Syntax.Syntax as Syntax
+import Compiler.Syntax.Expr as Expr
+import Compiler.Syntax.Data as Data
+import Compiler.Syntax.Function as Function
+import Compiler.Syntax.Module as Module
+import Compiler.Syntax.Statement as Statement
 import Compiler.Syntax.Type as Type
 import Compiler.Util as Util
 
@@ -57,7 +61,7 @@ class Parser(object):
         return name
 
     def parseEnumVariant(self):
-        variant = Syntax.Variant()
+        variant = Data.Variant()
         variant.name = self.parseTypeName()
         if self.peek("leftparen"):
             self.expect("leftparen")
@@ -75,7 +79,7 @@ class Parser(object):
 
     def parseEnum(self):
         self.expect("enum")
-        enum = Syntax.Enum()
+        enum = Data.Enum()
         enum.name = self.parseTypeName()
         self.expect("leftcurly")
         while not self.peek("rightcurly"):
@@ -85,7 +89,7 @@ class Parser(object):
         return enum
 
     def parseImport(self):
-        i = Syntax.Import()
+        i = Module.Import()
         self.expect("import")
         i.module = self.parseModuleName()
         if self.peek("as"):
@@ -123,7 +127,7 @@ class Parser(object):
         name = self.parseName()
         self.expect("colon")
         ty = self.parseType()
-        arg = Syntax.Arg()
+        arg = Function.Arg()
         arg.name = name
         arg.type = ty
         return arg
@@ -144,7 +148,7 @@ class Parser(object):
         receiver = self.parsePrimary()
         while True:
             if self.peek("leftparen"):
-                call = Syntax.FunctionCall()
+                call = Expr.FunctionCall()
                 call.id = receiver
                 call.args = self.parseFunctionArgs()
                 receiver = call
@@ -153,13 +157,13 @@ class Parser(object):
                 name = self.parseName()
                 if self.peek("leftparen"):
                     args = self.parseFunctionArgs()
-                    m = Syntax.MemberCall()
+                    m = Expr.MemberCall()
                     m.receiver = receiver
                     m.name = name
                     m.args = args
                     receiver = m
                 else:
-                    m = Syntax.MemberAccess()
+                    m = Expr.MemberAccess()
                     m.receiver = receiver
                     m.name = name
                     receiver = m
@@ -169,7 +173,7 @@ class Parser(object):
 
     def parseIf(self):
         self.expect("if")
-        if_expr = Syntax.If()
+        if_expr = Expr.If()
         if_expr.cond = self.parseExpr()
         if_expr.true_branch = self.parseBlock()
         if self.peek("else"):
@@ -183,7 +187,7 @@ class Parser(object):
         self.expect("equal")
         init = self.parseExpr()
         body = self.parseBlock()
-        loop_expr = Syntax.Loop()
+        loop_expr = Expr.Loop()
         loop_expr.var = var
         loop_expr.init = init
         loop_expr.body = body
@@ -192,12 +196,12 @@ class Parser(object):
     def parsePrimary(self):
         if self.peek("typeid"):
             name = self.parseQualifiedName()
-            r = Syntax.TypeRef()
+            r = Expr.TypeRef()
             r.name = name
             return r
         elif self.peek("varid"):
             name = self.parseName()
-            r = Syntax.VarRef()
+            r = Expr.VarRef()
             r.name = name
             return r
         elif self.peek("leftcurly"):
@@ -205,17 +209,17 @@ class Parser(object):
             return e
         elif self.peek("break"):
             self.expect("break")
-            e = Syntax.Break()
+            e = Expr.Break()
             e.arg = self.parseExpr()
             return e
         elif self.peek("continue"):
             self.expect("continue")
-            e = Syntax.Continue()
+            e = Expr.Continue()
             e.arg = self.parseExpr()
             return e
         elif self.peek("return"):
             self.expect("return")
-            e = Syntax.Return()
+            e = Expr.Return()
             e.arg = self.parseExpr()
             return e
         elif self.peek("loop"):
@@ -224,12 +228,12 @@ class Parser(object):
             return self.parseIf()
         elif self.peek("true"):
             self.expect("true")
-            e = Syntax.BoolLiteral()
+            e = Expr.BoolLiteral()
             e.value = True
             return e
         elif self.peek("false"):
             self.expect("false")
-            e = Syntax.BoolLiteral()
+            e = Expr.BoolLiteral()
             e.value = False
             return e
         else:
@@ -248,7 +252,7 @@ class Parser(object):
     def parseStatement(self):
         if self.peek("let"):
             self.expect("let")
-            let_s = Syntax.LetStatement()
+            let_s = Statement.LetStatement()
             let_s.var_name = self.parseName()
             self.expect("equal")
             let_s.rhs = self.parseExpr()
@@ -256,28 +260,28 @@ class Parser(object):
             return let_s
         elif self.peek("leftcurly"):
             expr = self.parseBlock()
-            s = Syntax.ExprStatement()
+            s = Statement.ExprStatement()
             s.requires_semicolon = False
             s.has_semicolon = self.maybeParseSemicolon()
             s.expr = expr
             return s
         elif self.peek("if"):
             expr = self.parseIf()
-            s = Syntax.ExprStatement()
+            s = Statement.ExprStatement()
             s.requires_semicolon = False
             s.has_semicolon = self.maybeParseSemicolon()
             s.expr = expr
             return s
         elif self.peek("loop"):
             expr = self.parseLoop()
-            s = Syntax.ExprStatement()
+            s = Statement.ExprStatement()
             s.requires_semicolon = False
             s.has_semicolon = self.maybeParseSemicolon()
             s.expr = expr
             return s
         else:
             expr = self.parseExpr()
-            s = Syntax.ExprStatement()
+            s = Statement.ExprStatement()
             s.requires_semicolon = True
             s.has_semicolon = self.maybeParseSemicolon()
             s.expr = expr
@@ -285,14 +289,14 @@ class Parser(object):
 
     def parseBlock(self):
         self.expect("leftcurly")
-        block = Syntax.Block()
+        block = Function.Block()
         while not self.peek("rightcurly"):
             s = self.parseStatement()
             block.statements.append(s)
             if self.peek("rightcurly"):
                 break
             else:
-                if isinstance(s, Syntax.ExprStatement):
+                if isinstance(s, Statement.ExprStatement):
                     if s.requires_semicolon and not s.has_semicolon:
                         self.error("Non trailing expr requires semicolon!")
         self.expect("rightcurly")
@@ -302,7 +306,7 @@ class Parser(object):
         return self.parseFunction(module_name)
 
     def parseFunction(self, module_name):
-        fn = Syntax.Function()
+        fn = Function.Function()
         fn.module_name = module_name
         self.expect("fn")
         name = self.parseName()
@@ -358,14 +362,14 @@ class Parser(object):
         return ty
 
     def parseClassField(self):
-        field = Syntax.Field()
+        field = Data.Field()
         field.name = self.parseName()
         self.expect("colon")
         field.type = self.parseType()
         return field
 
     def parseClass(self, module_name, derives):
-        c = Syntax.Class()
+        c = Data.Class()
         c.module_name = module_name
         c.derives = derives
         self.expect("class")
@@ -392,7 +396,7 @@ class Parser(object):
     def parseModule(self):
         self.expect("module")
         name = self.parseModuleName()
-        m = Syntax.Module()
+        m = Module.Module()
         m.name = name
         self.expect("leftcurly")
         while not self.peek("rightcurly"):

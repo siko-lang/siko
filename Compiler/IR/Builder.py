@@ -1,4 +1,7 @@
-import Compiler.Syntax.Syntax as Syntax
+import Compiler.Syntax.Expr as Expr
+import Compiler.Syntax.Statement as Statement
+import Compiler.Syntax.Function as Function
+import Compiler.Syntax.Data as Data
 import Compiler.Util as Util
 import Compiler.IR.Instruction as Instruction
 import Compiler.IR.IR as IR
@@ -38,7 +41,7 @@ class Builder(object):
             lastStatement = s
             last = self.processExpr(s)
         if lastStatement:
-            if isinstance(lastStatement, Syntax.ExprStatement):
+            if isinstance(lastStatement, Statement.ExprStatement):
                 if lastStatement.has_semicolon:
                     unit = Instruction.Tuple()
                     self.addInstruction(unit)
@@ -52,22 +55,22 @@ class Builder(object):
         return block.id
 
     def processExpr(self, expr, rootBlock = False, packBlock=True):
-        if isinstance(expr, Syntax.Block):
+        if isinstance(expr, Function.Block):
             id = self.processBlock(expr, rootBlock)
             if packBlock:
                 blockref = Instruction.BlockRef()
                 blockref.value = id
                 return self.addInstruction(blockref)
             return id
-        elif isinstance(expr, Syntax.LetStatement):
+        elif isinstance(expr, Statement.LetStatement):
             id = self.processExpr(expr.rhs)
             bind = Instruction.Bind()
             bind.name = expr.var_name
             bind.rhs = id
             return self.addInstruction(bind)
-        elif isinstance(expr, Syntax.ExprStatement):
+        elif isinstance(expr, Statement.ExprStatement):
             return self.processExpr(expr.expr)
-        elif isinstance(expr, Syntax.MemberCall):
+        elif isinstance(expr, Expr.MemberCall):
             receiver = self.processExpr(expr.receiver)
             args = self.processArgs(expr.args)
             call = Instruction.MethodCall()
@@ -75,14 +78,14 @@ class Builder(object):
             call.name = expr.name
             call.args = args
             return self.addInstruction(call)
-        elif isinstance(expr, Syntax.FunctionCall):
+        elif isinstance(expr, Expr.FunctionCall):
             args = self.processArgs(expr.args)
-            if isinstance(expr.id, Syntax.VarRef):
+            if isinstance(expr.id, Expr.VarRef):
                 call = Instruction.NamedFunctionCall()
                 call.name = expr.id.name
                 call.args = args
                 return self.addInstruction(call)
-            elif isinstance(expr.id, Syntax.TypeRef):
+            elif isinstance(expr.id, Expr.TypeRef):
                 call = Instruction.NamedFunctionCall()
                 call.name = expr.id.name
                 call.args = args
@@ -93,16 +96,16 @@ class Builder(object):
                 call.callable = id
                 call.args = args
                 return self.addInstruction(call)
-        elif isinstance(expr, Syntax.MemberAccess):
+        elif isinstance(expr, Expr.MemberAccess):
             isValueRef = True
             fields = [expr.name]
             var = None
             current = expr
             while True:
-                if isinstance(current.receiver, Syntax.VarRef):
+                if isinstance(current.receiver, Expr.VarRef):
                     var = current.receiver.name
                     break
-                if isinstance(current.receiver, Syntax.MemberAccess):
+                if isinstance(current.receiver, Expr.MemberAccess):
                     fields.append(current.receiver.name)
                     current = current.receiver
                     continue
@@ -120,19 +123,19 @@ class Builder(object):
                 access.receiver = receiver
                 access.name = expr.name
                 return self.addInstruction(access)
-        elif isinstance(expr, Syntax.VarRef):
+        elif isinstance(expr, Expr.VarRef):
             ref = Instruction.ValueRef()
             ref.name = expr.name
             ref.fields = []
             return self.addInstruction(ref)
-        elif isinstance(expr, Syntax.If):
+        elif isinstance(expr, Expr.If):
             if_instr = Instruction.If()
             if_instr.cond = self.processExpr(expr.cond)
             if_instr.true_branch = self.processExpr(expr.true_branch, rootBlock=False, packBlock=False)
             if expr.false_branch:
                 if_instr.false_branch = self.processExpr(expr.false_branch, rootBlock=False, packBlock=False)
             return self.addInstruction(if_instr)
-        elif isinstance(expr, Syntax.Loop):
+        elif isinstance(expr, Expr.Loop):
             init = self.processExpr(expr.init)
             body = self.processExpr(expr.body, rootBlock=False)
             loop = Instruction.Loop()
@@ -140,22 +143,22 @@ class Builder(object):
             loop.init = init
             loop.body = body
             return self.addInstruction(loop)
-        elif isinstance(expr, Syntax.Break):
+        elif isinstance(expr, Expr.Break):
             arg = self.processExpr(expr.arg)
             br = Instruction.Break()
             br.arg = arg
             return self.addInstruction(br)
-        elif isinstance(expr, Syntax.Continue):
+        elif isinstance(expr, Expr.Continue):
             arg = self.processExpr(expr.arg)
             cont = Instruction.Continue()
             cont.arg = arg
             return self.addInstruction(cont)
-        elif isinstance(expr, Syntax.Return):
+        elif isinstance(expr, Expr.Return):
             arg = self.processExpr(expr.arg)
             ret = Instruction.Return()
             ret.arg = arg
             return self.addInstruction(ret)
-        elif isinstance(expr, Syntax.BoolLiteral):
+        elif isinstance(expr, Expr.BoolLiteral):
             b = Instruction.BoolLiteral()
             b.value = expr.value
             return self.addInstruction(b)
@@ -166,7 +169,7 @@ def convertProgram(program):
     for m in program.modules:
         #print("Processing module %s" % m.name)
         for item in m.items:
-            if isinstance(item, Syntax.Function):
+            if isinstance(item, Function.Function):
                 fn = item
                 #print("Processing fn %s" % fn.name)
                 processor = Builder()
@@ -187,7 +190,7 @@ def convertProgram(program):
                 body.blocks = processor.blocks
                 fn.body = body
                 #fn.body.dump()
-            if isinstance(item, Syntax.Class):
+            if isinstance(item, Data.Class):
                 for m in item.methods:
                     #print("Processing method %s" % m.name)
                     processor = Builder()

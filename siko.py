@@ -2,7 +2,7 @@
 
 import sys
 import Compiler.Parser as Parser
-import Compiler.Syntax.Syntax as Syntax
+import Compiler.Syntax.Program as Program
 import Compiler.Resolver.NameResolver as NameResolver
 import Compiler.Typechecker as Typechecker
 import Compiler.IR.Builder as Builder
@@ -14,7 +14,7 @@ import Compiler.Transpiler as Transpiler
 import Compiler.Ownership.DataFlowProfileInference as DataFlowProfileInference
 
 def compile():
-    program = Syntax.Program()
+    program = Program.Program()
     args = sys.argv[1:]
     while True:
         name = args.pop(0)

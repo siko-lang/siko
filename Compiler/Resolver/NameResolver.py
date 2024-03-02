@@ -1,4 +1,6 @@
-import Compiler.Syntax.Syntax as Syntax
+import Compiler.Syntax.Function as Function
+import Compiler.Syntax.Data as Data
+import Compiler.Syntax.Module as Module
 import Compiler.Syntax.Type as Type
 import Compiler.IR.IR as IR
 import Compiler.IR.Instruction as Instruction
@@ -179,9 +181,9 @@ class Resolver(object):
     def localItems(self, module):
         resolver = self.getModuleResolver(module.name)
         for item in module.items:
-            if isinstance(item, Syntax.Function):
+            if isinstance(item, Function.Function):
                 resolver.addLocalItem(item.name, item)
-            if isinstance(item, Syntax.Class):
+            if isinstance(item, Data.Class):
                 for method in item.methods:
                     name = "%s.%s" % (item.name, method.name)
                     resolver.addLocalItem(name, method)    
@@ -190,7 +192,7 @@ class Resolver(object):
     def processImports(self, program):
         for m in program.modules:
             for importItem in m.items:
-                if isinstance(importItem, Syntax.Import):
+                if isinstance(importItem, Module.Import):
                     sourceResolver = self.getModuleResolver(importItem.module)
                     targetResolver = self.getModuleResolver(m.name)
                     if importItem.alias:
@@ -218,11 +220,11 @@ class Resolver(object):
         for m in program.modules:
             # print("Processing m", m.name, len(m.items))
             for item in m.items:
-                if isinstance(item, Syntax.Function):
+                if isinstance(item, Function.Function):
                     qualifiedName = Util.QualifiedName(m.name, item.name)
                     ir_program.functions[qualifiedName] = item
                     self.resolveFunction(m.name, item)
-                if isinstance(item, Syntax.Class):
+                if isinstance(item, Data.Class):
                     qualifiedName = Util.QualifiedName(m.name, item.name)
                     ir_program.classes[qualifiedName] = item
                     self.resolveClass(m.name, item, ir_program)
