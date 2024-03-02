@@ -2,6 +2,7 @@
 class GenericVarDeclaration(object):
     def __init__(self, name):
         self.name = name
+        self.deps = []
 
 class GenericDeclaration(object):
     def __init__(self):
@@ -35,12 +36,12 @@ class Named(object):
 
 class Function(object):
     def __init__(self, args, result):
-        self.args = args
+        self.params = args
         self.result = result
 
     def __str__(self) -> str:
         args = []
-        for a in self.args:
+        for a in self.params:
             args.append(str(a))
         return "fn(%s) -> %s" % (", ".join(args), self.result)
 
@@ -49,7 +50,7 @@ class Function(object):
 
     def __eq__(self, other) -> bool:
         if isinstance(other, Function):
-            return self.result == other.result and self.args == other.args
+            return self.result == other.result and self.params == other.params
         else:
             return False
 

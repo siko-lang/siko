@@ -11,10 +11,12 @@ def parseFunction(parser, module_name):
     parser.expect("fn")
     name = parser.parseName()
     fn.name = name
+    if parser.peek("leftbracket"):
+        fn.generics = Type.parseGenericDeclaration(parser)
     parser.expect("leftparen")
     while not parser.peek("rightparen"):
-        arg = parseArgDef(parser)    
-        fn.args.append(arg)    
+        arg = parseParamDef(parser)    
+        fn.params.append(arg)    
         if not parser.peek("rightparen"):
             parser.expect("comma")
     parser.expect("rightparen")
@@ -28,14 +30,21 @@ def parseFunction(parser, module_name):
         parser.expect("equal")
         parser.expect("extern")
     else:
-        fn.body = parseBlock(parser)
+        if parser.peek("leftcurly"):
+            fn.body = parseBlock(parser)
     return fn
 
-def parseArgDef(parser):
+def parseParamDef(parser):
+    arg = Function.Param()
+    if parser.peek("mut"):
+        parser.expect("mut")
+        arg.mutable = True
     name = parser.parseName()
-    parser.expect("colon")
-    ty = Type.parseType(parser)
-    arg = Function.Arg()
+    if name != "self":
+        parser.expect("colon")
+        ty = Type.parseType(parser)
+    else:
+        ty = None
     arg.name = name
     arg.type = ty
     return arg

@@ -1,6 +1,7 @@
 import Compiler.Syntax.Module as Module
 import Compiler.Parser.Data as Data
 import Compiler.Parser.Function as Function
+import Compiler.Parser.Trait as Trait
 
 def parseItem(parser, module_name):
     derives = []
@@ -21,12 +22,14 @@ def parseItem(parser, module_name):
         return Data.parseEnum(parser)
     elif parser.peek("class"):
         return Data.parseClass(parser, module_name, derives)
+    elif parser.peek("trait"):
+        return Trait.parseTrait(parser, module_name)
     elif parser.peek("import"):
         return parseImport(parser)
     elif parser.peek("fn"):
         return Function.parseFunction(parser, module_name)
     else:
-        parser.error("Expected module item, found %s" % parser.tokens[parser.index].type)
+        parser.error("Expected module item, found %s/%s" % (parser.tokens[parser.index].type, parser.tokens[parser.index].value))
 
 def parseImport(parser):
     i = Module.Import()

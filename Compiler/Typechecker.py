@@ -36,8 +36,8 @@ class Typechecker(object):
         return SyntaxType.Type(v)
 
     def initialize(self, fn):
-        for arg in fn.args:
-            self.types[arg.name] = arg.type
+        for param in fn.params:
+            self.types[param.name] = param.type
         for block in fn.body.blocks:
             for i in block.instructions:
                 if isinstance(i, Instruction.Bind):
@@ -119,10 +119,10 @@ class Typechecker(object):
             #print("%s" % i.name.item.return_type.name)
             if i.name in self.program.functions:
                 item = self.program.functions[i.name]
-                if len(item.args) != len(i.args):
-                    Util.error("fn %s expected %d args found %d" % (i.name, len(item.args), len(i.args)))
+                if len(item.params) != len(i.args):
+                    Util.error("fn %s expected %d args found %d" % (i.name, len(item.params), len(i.args)))
                 for (index, i_arg) in enumerate(i.args):
-                    fn_arg = item.args[index]
+                    fn_arg = item.params[index]
                     self.unify(self.types[i_arg], fn_arg.type)
                 self.unify(self.types[i.id], item.return_type)
             elif i.name in self.program.classes:

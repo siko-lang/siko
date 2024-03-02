@@ -108,9 +108,9 @@ class Resolver(object):
         # print("Resolving fn %s" % fn.name)
         moduleResolver = self.moduleResolvers[moduleName]
         env = Environment()
-        for (index, arg) in enumerate(fn.args):
-            arg.name = env.addVar(arg.name, argIndex=index)
-            arg.type = moduleResolver.resolveType(arg.type)
+        for (index, param) in enumerate(fn.params):
+            param.name = env.addVar(param.name, argIndex=index)
+            param.type = moduleResolver.resolveType(param.type)
         fn.return_type = moduleResolver.resolveType(fn.return_type)
         block = fn.body.getFirst()
         self.resolveBlock(env, moduleResolver, block, fn)

@@ -1,0 +1,2 @@
+stdtest:
+	./stdtest.sh

@@ -51,6 +51,14 @@ class Lexer(object):
                     self.addToken(Token.Keyword(self.current))
                 case "derive":
                     self.addToken(Token.Keyword(self.current))
+                case "trait":
+                    self.addToken(Token.Keyword(self.current))
+                case "mut":
+                    self.addToken(Token.Keyword(self.current))
+                case "for":
+                    self.addToken(Token.Keyword(self.current))
+                case "in":
+                    self.addToken(Token.Keyword(self.current))
                 case _:
                     if self.current[0].isupper():
                         self.addToken(Token.TypeIdentifier(self.current))
@@ -124,6 +132,14 @@ class Lexer(object):
                 case '+':
                     self.endToken()
                     self.addToken(Token.Plus())
+                    self.step()
+                case '>':
+                    self.endToken()
+                    self.addToken(Token.GreaterThan())
+                    self.step()
+                case '<':
+                    self.endToken()
+                    self.addToken(Token.LessThan())
                     self.step()
                 case '-':
                     self.endToken()

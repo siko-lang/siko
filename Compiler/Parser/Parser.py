@@ -14,13 +14,23 @@ class Parser(object):
     def error(self, msg):
         Util.error(msg)
 
+    def dump(self):
+        for i in range(0, self.index):
+            if self.tokens[i].value:
+                print(self.tokens[i].value, end =" ")
+            else:
+                print(self.tokens[i].type, end =" ")
+        print("")
+
     def expect(self, ty):
         if self.tokens[self.index].type == ty:
             self.step()
         else:
             if self.tokens[self.index].value is None:
+                self.dump()
                 self.error("Expected %s found %s" % (ty, self.tokens[self.index].type))
             else:
+                self.dump()
                 self.error("Expected %s found %s/%s" % (ty, self.tokens[self.index].type, self.tokens[self.index].value))
 
     def peek(self, ty):
@@ -63,6 +73,7 @@ class Parser(object):
             return False
 
     def parse(self, program, filename):
+        print("Parsing ", filename)
         f = open(filename)
         chars = []
         for line in f.readlines():

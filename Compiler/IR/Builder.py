@@ -174,7 +174,7 @@ def convertProgram(program):
                 #print("Processing fn %s" % fn.name)
                 processor = Builder()
                 block = processor.createBlock()
-                for (index, arg) in enumerate(fn.args):
+                for (index, arg) in enumerate(fn.params):
                     arg_name = "arg_%s" % index
                     arg_ref = Instruction.ValueRef()
                     arg_ref.name = arg_name

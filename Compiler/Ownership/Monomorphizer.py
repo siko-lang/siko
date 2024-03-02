@@ -69,23 +69,23 @@ class Monomorphizer(object):
             #print("ownerships", ownerships)
             arg_borrows = []
             result_borrows = []
-            for (index, arg) in enumerate(fn.args):
-                if isinstance(arg.type.kind, SyntaxType.Named):
+            for (index, param) in enumerate(fn.params):
+                if isinstance(param.type.kind, SyntaxType.Named):
                     arg_tv_info = signature.args[index]
                     tsignature = Signatures.ClassInstantiationSignature()
-                    tsignature.name = arg.type.kind.name
+                    tsignature.name = param.type.kind.name
                     tsignature = Normalizer.normalizeClassOwnershipSignature(tsignature, 
                                                                             arg_tv_info,
                                                                             ownership_dep_map,
                                                                             members,
                                                                             ownership_provider)
-                    arg.type = tsignature
-                    arg.ownership = ownerships[arg_tv_info.ownership_var]
-                    if isinstance(arg.ownership, Inference.Borrow):
-                        arg.lifetime = Lifetime.Lifetime(arg.ownership.borrow_id)
-                        arg_borrows.append(arg.ownership.borrow_id)
+                    param.type = tsignature
+                    param.ownership = ownerships[arg_tv_info.ownership_var]
+                    if isinstance(param.ownership, Inference.Borrow):
+                        param.lifetime = Lifetime.Lifetime(param.ownership.borrow_id)
+                        arg_borrows.append(param.ownership.borrow_id)
                     arg_borrows += self.getAllBorrows(arg_tv_info.ownership_var, ownership_dep_map, ownerships)
-                    arg.dep_lifetimes = self.getDepLifetimes(arg_tv_info.ownership_var, ownership_dep_map, ownerships)
+                    param.dep_lifetimes = self.getDepLifetimes(arg_tv_info.ownership_var, ownership_dep_map, ownerships)
                     self.addClass(tsignature)
             if isinstance(fn.return_type.kind, SyntaxType.Named):
                 rsignature = Signatures.ClassInstantiationSignature()
@@ -130,8 +130,8 @@ class Monomorphizer(object):
                     if isinstance(i, Instruction.NamedFunctionCall):
                         if not i.ctor:
                             signature = Signatures.FunctionOwnershipSignature()
-                            for arg in i.args:
-                                arg_instr = fn.body.getInstruction(arg)
+                            for param in i.args:
+                                arg_instr = fn.body.getInstruction(param)
                                 signature.args.append(arg_instr.tv_info)
                             signature.result = i.tv_info
                             signature.allocator = copy.deepcopy(fn.ownership_signature.allocator)

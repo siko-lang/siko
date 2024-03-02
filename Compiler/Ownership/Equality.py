@@ -43,10 +43,10 @@ class EqualityEngine(object):
             self.fn.ownership_signature = Signatures.FunctionOwnershipSignature()
             self.fn.ownership_signature.name = self.fn.name
             self.fn.ownership_signature.result = self.nextTypeVariableInfo()
-            for arg in self.fn.args:
+            for param in self.fn.params:
                 self.fn.ownership_signature.args.append(self.nextTypeVariableInfo())
-        for (index, arg) in enumerate(self.fn.args):
-            self.tv_info_vars[arg.name] = self.fn.ownership_signature.args[index]
+        for (index, param) in enumerate(self.fn.params):
+            self.tv_info_vars[param.name] = self.fn.ownership_signature.args[index]
         for block in self.fn.body.blocks:
             for i in block.instructions:
                 i.tv_info = self.nextTypeVariableInfo()
@@ -68,7 +68,7 @@ class EqualityEngine(object):
                         i.members[-1].info.group_var = i.tv_info.group_var
                 if isinstance(i, Instruction.NamedFunctionCall):
                     if i.ctor:
-                        for (index, arg) in enumerate(i.args):
+                        for (index, param) in enumerate(i.args):
                             member_info = MemberInfo.MemberInfo()
                             member_info.root = i.tv_info.group_var
                             member_info.kind = MemberInfo.MemberKind()

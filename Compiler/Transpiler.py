@@ -146,15 +146,15 @@ class Transpiler(object):
     def transpileFn(self, sig, fn):
         fn_args = []
         lifetimes = []
-        for arg in fn.args:
-            ty = self.transpileType(arg.type)
-            if len(arg.dep_lifetimes) > 0:
-                lifetimes += arg.dep_lifetimes
-                ty = "%s<%s>" % (ty, Lifetime.asList(arg.dep_lifetimes))
-            if arg.lifetime:
-                ty = "&%s %s" % (arg.lifetime, ty)
-                lifetimes.append(arg.lifetime)
-            fn_args.append("%s: %s" % (vi(arg.name), ty))
+        for param in fn.params:
+            ty = self.transpileType(param.type)
+            if len(param.dep_lifetimes) > 0:
+                lifetimes += param.dep_lifetimes
+                ty = "%s<%s>" % (ty, Lifetime.asList(param.dep_lifetimes))
+            if param.lifetime:
+                ty = "&%s %s" % (param.lifetime, ty)
+                lifetimes.append(param.lifetime)
+            fn_args.append("%s: %s" % (vi(param.name), ty))
         fn_args = ", ".join(fn_args)
         fn_result = self.transpileType(fn.return_type)
         if len(fn.return_dep_lifetimes) > 0:
