@@ -1,0 +1,122 @@
+module List {
+
+extern class List[T] {
+    fn len(self) -> Int = extern
+
+    fn ensureCapacity(self, cap: Int) -> Self = extern
+
+    fn push(self, item: T) -> Self = extern
+
+    fn extend(mut self, other: List[T]) -> Self {
+        self.ensureCapacity(self.len() + other.len());
+        for i in other {
+            self.push(i)
+        }
+        self
+    }
+
+    fn iter(self) -> Iterator[T] {
+        ListIterator(self.intoExternIterator())
+    }
+
+    fn intoExternIterator(self) -> ExternListIterator[T] = extern
+}
+
+instance[T: Show] List[T] Show {
+    fn show(self) -> String {
+        let subs = self.map(show);
+        "[]" + subs.join(", ") + "]"
+    }
+}
+
+instance[T: PartialEq] List[T] PartialEq {
+    fn eq(self, other: List[T]) -> Bool {
+        if self.len() != other.len() {
+            False
+        } else {
+            for (a, b) in zip(self, other) {
+                if a != b {
+                    return False
+                }
+            }
+            True
+        }
+    }
+}
+
+instance[T: Eq] List[T] Eq {}
+
+instance[T: PartialOrd] List[T] PartialOrd {
+    fn partialCmp(self, other: List[T]) -> Option[Ordering] {
+        if self.len() != other.len() {
+            partialCmp(self.len(), other.len())
+        } else {
+            for (a, b) in zip(self, other) {
+                match partialCmp(a, b) {
+                    Some(Equal) -> continue,
+                    o -> return o
+                }
+            }
+            Some(Equal)
+        }
+    }
+}
+
+instance[T: Ord] List[T] Ord {
+    fn cmp(self, other: List[T]) -> Ordering {
+        if self.len() != other.len() {
+            cmp(self.len(), (other.len())
+        } else {
+            for (a, b) in zip(self, other) {
+                match cmp(a, b) {
+                    Equal -> continue,
+                    o -> return o
+                }
+            }
+            Equal
+        }
+    }
+}
+
+instance List[T] Add {
+    fn add(self, other: List[T]) -> List[T] {
+        self.extend(other)
+    }
+}
+
+extern class ExternListIterator[T] {
+    implicit
+
+    fn next(self) -> (Self, Option[T]) = extern
+}
+
+class ListIterator[T] {
+    inner: ExternListIterator[T]
+}
+
+instance ListIterator[T] Iterator[T] {
+    fn next(mut self) -> (Self, Option[T]) {
+        let item = self.inner.next();
+        (self, item)
+    }
+}
+
+trait Join[Separator > Output] {
+    fn join(self, sep: Separator) -> Output
+}
+
+instance List[String] Join[String, String] {
+    fn join(self, sep: String) -> String {
+        let mut result = "";
+        for (index, s) in self.iter().enumerate() {
+            if index == 0 {
+                result = s;
+            } else {
+                result = result + sep + s;
+            }
+        }
+        result
+    }
+}
+
+}
