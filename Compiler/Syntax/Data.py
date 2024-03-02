@@ -22,6 +22,7 @@ class Class(Base.SyntaxBase):
     def __init__(self):
         self.module_name = None
         self.name = None
+        self.generics = None
         self.fields = []
         self.methods = []
         self.derives = []

@@ -62,6 +62,18 @@ def parseLoop(parser):
     loop_expr.body = body
     return loop_expr
 
+def parseForLoop(parser):
+    parser.expect("for")
+    var = parser.parseName()
+    parser.expect("in")
+    init = parseExpr(parser)
+    body = Function.parseBlock(parser)
+    loop_expr = Expr.ForLoop()
+    loop_expr.var = var
+    loop_expr.init = init
+    loop_expr.body = body
+    return loop_expr
+
 def parsePrimary(parser):
     if parser.peek("typeid"):
         name = parser.parseQualifiedName()
@@ -79,20 +91,22 @@ def parsePrimary(parser):
     elif parser.peek("break"):
         parser.expect("break")
         e = Expr.Break()
-        e.arg = parser.parseExpr()
+        e.arg = parseExpr(parser)
         return e
     elif parser.peek("continue"):
         parser.expect("continue")
         e = Expr.Continue()
-        e.arg = parser.parseExpr()
+        e.arg = parseExpr(parser)
         return e
     elif parser.peek("return"):
         parser.expect("return")
         e = Expr.Return()
-        e.arg = parser.parseExpr()
+        e.arg = parseExpr(parser)
         return e
     elif parser.peek("loop"):
-        return parser.parseLoop()
+        return parseLoop(parser)
+    elif parser.peek("for"):
+        return parseForLoop(parser)
     elif parser.peek("if"):
         return parser.parseIf()
     elif parser.peek("true"):

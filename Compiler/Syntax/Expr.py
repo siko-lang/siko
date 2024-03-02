@@ -32,6 +32,12 @@ class Loop(Base.SyntaxBase):
         self.init = None
         self.body = None
 
+class ForLoop(Base.SyntaxBase):
+    def __init__(self):
+        self.var = None
+        self.init = None
+        self.body = None
+
 class Break(Base.SyntaxBase):
     def __init__(self):
         self.arg = None

@@ -1,10 +1,5 @@
 import Compiler.Syntax.Type as SyntaxType
 
-def parseConstraints(parser):
-    parser.expect("leftbracket")
-    type_arg = parser.parseName()
-    parser.expect("rightbracket")
-
 def parseType(parser):
     if parser.peek("typeid"):
         name = parser.parseQualifiedName()

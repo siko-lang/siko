@@ -10,3 +10,9 @@ class ExprStatement(Base.SyntaxBase):
         self.expr = None
         self.requires_semicolon = False
         self.has_semicolon = False
+
+class AssignStatement(Base.SyntaxBase):
+    def __init__(self):
+        self.lhs = None
+        self.rhs = None
+        

@@ -31,10 +31,26 @@ def parseStatement(parser):
         s.has_semicolon = parser.maybeParseSemicolon()
         s.expr = expr
         return s
-    else:
-        expr = Expr.parseExpr(parser)
+    elif parser.peek("for"):
+        expr = Expr.parseForLoop(parser)
         s = Statement.ExprStatement()
-        s.requires_semicolon = True
+        s.requires_semicolon = False
         s.has_semicolon = parser.maybeParseSemicolon()
         s.expr = expr
         return s
+    else:
+        lhs = Expr.parseExpr(parser)
+        if parser.peek("equal"):
+            parser.expect("equal")
+            rhs = Expr.parseExpr(parser)
+            parser.expect("semicolon")
+            s = Statement.AssignStatement()
+            s.lhs = lhs
+            s.rhs = rhs
+            return s
+        else:
+            s = Statement.ExprStatement()
+            s.requires_semicolon = True
+            s.has_semicolon = parser.maybeParseSemicolon()
+            s.expr = lhs
+            return s

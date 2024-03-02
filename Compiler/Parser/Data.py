@@ -23,7 +23,7 @@ def parseEnum(parser):
     enum = Data.Enum()
     enum.name = parser.parseTypeName()
     if parser.peek("leftbracket"):
-        enum.decl = Type.parseGenericDeclaration(parser)
+        enum.generics = Type.parseGenericDeclaration(parser)
     parser.expect("leftcurly")
     while not parser.peek("rightcurly"):
         variant = parseEnumVariant(parser)
@@ -45,12 +45,14 @@ def parseClass(parser, module_name, derives):
     parser.expect("class")
     c.name = parser.parseTypeName()
     if parser.peek("leftbracket"):
-        parser.parseConstraints()
+        c.generics = Type.parseGenericDeclaration(parser)
     parser.expect("leftcurly")
     while not parser.peek("rightcurly"):
         if parser.peek("varid"):
             field = parseClassField(parser)
             c.fields.append(field)
+            if parser.peek("comma"):
+                parser.expect("comma")
         elif parser.peek("fn"):
             fn = parseClassMemberFunction(parser, module_name)
             c.methods.append(fn)

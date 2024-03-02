@@ -12,6 +12,8 @@ class Parser(object):
         self.index += 1
 
     def error(self, msg):
+        print("Parsing ", self.filename)
+        self.dump()
         Util.error(msg)
 
     def dump(self):
@@ -27,10 +29,8 @@ class Parser(object):
             self.step()
         else:
             if self.tokens[self.index].value is None:
-                self.dump()
                 self.error("Expected %s found %s" % (ty, self.tokens[self.index].type))
             else:
-                self.dump()
                 self.error("Expected %s found %s/%s" % (ty, self.tokens[self.index].type, self.tokens[self.index].value))
 
     def peek(self, ty):
@@ -73,7 +73,7 @@ class Parser(object):
             return False
 
     def parse(self, program, filename):
-        print("Parsing ", filename)
+        self.filename = filename
         f = open(filename)
         chars = []
         for line in f.readlines():
