@@ -1,0 +1,49 @@
+module Siko.Location {
+
+@derive(Show, PartialEq, Eq, PartialOrd, Ord)
+class FileId {
+    index: Int
+}
+
+@derive(Show, PartialEq, Eq, PartialOrd, Ord)
+class Position {
+    line: Int,
+    offset: Int
+
+    fn new() -> Location {
+        Location(0, 0)
+    }
+}
+
+@derive(Show, PartialEq, Eq, PartialOrd, Ord)
+class Span {
+    start: Position,
+    end: Position
+
+    fn new() -> Span {
+        Span(Position.new(), Position.new())
+    }
+
+    fn merge(self, other: Span) -> Span {
+        let Span(s1, e1) = self;
+        let Span(s2, e2) = other;
+        assert(s1 <= s2);
+        assert(e1 <= e2);
+        Span(s1, e2)
+    }
+}
+
+@derive(Show, PartialEq, Eq, PartialOrd, Ord)
+class Location {
+    fileId: FileId,
+    span: Span
+
+    fn merge(self, other: Location) -> Location {
+        let Location(f1, s1) = self;
+        let Location(f2, s2) = other;
+        assert(f1 == f2);
+        Location(f1, s1.merge(s2))
+    }
+}
+
+}

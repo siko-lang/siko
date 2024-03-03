@@ -2,6 +2,7 @@ import Compiler.Syntax.Function as Function
 import Compiler.Syntax.Data as Data
 import Compiler.Syntax.Module as Module
 import Compiler.Syntax.Type as SyntaxType
+import Compiler.Syntax.Pattern as Pattern
 import Compiler.IR.IR as IR
 import Compiler.IR.Instruction as Instruction
 import Compiler.Util as Util
@@ -35,6 +36,21 @@ class Environment(object):
                 return self.parent.resolveVar(var)
             else:
                 return None
+
+    def processPattern(self, pattern, bind_id=None):
+        #print("processPattern", pattern, type(pattern))
+        if isinstance(pattern, Pattern.Bind):
+            self.addVar(pattern.name, bind_id)
+        elif isinstance(pattern, Pattern.Tuple):
+            for item in pattern.args:
+                self.processPattern(item, bind_id)
+        elif isinstance(pattern, Pattern.Named):
+            for item in pattern.args:
+                self.processPattern(item, bind_id)
+        elif isinstance(pattern, Pattern.Wildcard):
+            pass
+        else:
+            Util.error("Pattern in name resolver not handled %s" % pattern)
 
 class ResolvedItem(object):
     def __init__(self):
@@ -121,7 +137,7 @@ class Resolver(object):
         env.parent = penv
         for instruction in block.instructions:
             if isinstance(instruction, Instruction.Bind):
-                instruction.name = env.addVar(instruction.name, bind_id=instruction.id)
+                env.processPattern(instruction.pattern, bind_id=instruction.id)
             elif isinstance(instruction, Instruction.BlockRef):
                 b = fn.body.getBlock(instruction)
                 self.resolveBlock(env, moduleResolver, b, fn)

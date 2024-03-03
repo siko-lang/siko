@@ -89,11 +89,11 @@ class MethodCall(BaseInstruction):
 class Bind(BaseInstruction):
     def __init__(self):
         super().__init__()
-        self.name = None
+        self.pattern = None
         self.rhs = None
 
     def __str__(self):
-        return "%s = %s" % (self.name, self.rhs)
+        return "%s = %s" % (self.pattern, self.rhs)
 
 class MemberAccess(BaseInstruction):
     def __init__(self):

@@ -2,6 +2,7 @@ import Compiler.Syntax.Expr as Expr
 import Compiler.Syntax.Statement as Statement
 import Compiler.Syntax.Function as Function
 import Compiler.Syntax.Data as Data
+import Compiler.Syntax.Pattern as Pattern
 import Compiler.Util as Util
 import Compiler.IR.Instruction as Instruction
 import Compiler.IR.IR as IR
@@ -65,7 +66,7 @@ class Builder(object):
         elif isinstance(expr, Statement.LetStatement):
             id = self.processExpr(expr.rhs)
             bind = Instruction.Bind()
-            bind.name = expr.var_name
+            bind.pattern = expr.pattern
             bind.rhs = id
             return self.addInstruction(bind)
         elif isinstance(expr, Statement.ExprStatement):
@@ -181,7 +182,10 @@ def convertProgram(program):
                     arg_ref.fields = []
                     arg_ref_id = block.addInstruction(arg_ref)
                     arg_bind = Instruction.Bind()
-                    arg_bind.name = arg.name
+                    p = Pattern.Bind()
+                    p.name = arg.name
+                    p.mutable = arg.mutable
+                    arg_bind.pattern = p
                     arg.name = arg_name
                     arg_bind.rhs = arg_ref_id
                     block.addInstruction(arg_bind)
@@ -201,8 +205,11 @@ def convertProgram(program):
                         arg_ref.name = arg_name
                         arg_ref.fields = []
                         arg_ref_id = block.addInstruction(arg_ref)
+                        p = Pattern.Bind()
+                        p.name = arg.name
+                        p.mutable = arg.mutable
                         arg_bind = Instruction.Bind()
-                        arg_bind.name = arg.name
+                        arg_bind.pattern = p
                         arg.name = arg_name
                         arg_bind.rhs = arg_ref_id
                         block.addInstruction(arg_bind)
