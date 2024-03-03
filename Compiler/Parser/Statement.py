@@ -1,12 +1,13 @@
 import Compiler.Syntax.Statement as Statement
 import Compiler.Parser.Expr as Expr
+import Compiler.Parser.Pattern as Pattern
 import Compiler.Token as Token
 
 def parseStatement(parser):
     if parser.peek("let"):
         parser.expect("let")
         let_s = Statement.LetStatement()
-        let_s.var_name = parser.parseName()
+        let_s.pattern = Pattern.parsePattern(parser)
         parser.expect("equal")
         let_s.rhs = Expr.parseExpr(parser)
         parser.expect(Token.Semicolon())

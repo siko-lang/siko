@@ -27,3 +27,5 @@ class Class(Base.SyntaxBase):
         self.methods = []
         self.derives = []
         self.lifetimes = []
+        self.extern = False
+        self.implicit_member = False

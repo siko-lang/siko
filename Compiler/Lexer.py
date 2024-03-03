@@ -63,6 +63,8 @@ class Lexer(object):
                     self.addToken(Token.Keyword(self.current))
                 case "match":
                     self.addToken(Token.Keyword(self.current))
+                case "implicit":
+                    self.addToken(Token.Keyword(self.current))
                 case "and":
                     self.addToken(Token.And())
                 case "or":

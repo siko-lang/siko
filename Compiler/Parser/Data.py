@@ -58,6 +58,9 @@ def parseClass(parser, module_name, derives):
         elif parser.peek("fn"):
             fn = parseClassMemberFunction(parser, module_name)
             c.methods.append(fn)
+        elif parser.peek("implicit"):
+            c.implicit_member = True
+            parser.step()
         else:
             parser.error("expected class item found %s" % parser.tokens[parser.index].type)
     parser.expect(Token.RightCurly())
@@ -68,4 +71,6 @@ def parseClassMemberFunction(parser, module_name):
 
 def parseExternClass(parser, module_name, derives):
     parser.expect("extern")
-    return parseClass(parser, module_name, derives)
+    c = parseClass(parser, module_name, derives)
+    c.extern = True
+    return c

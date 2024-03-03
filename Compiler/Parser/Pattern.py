@@ -32,6 +32,12 @@ def parsePattern(parser):
                     break
             parser.expect(Token.RightParen())
         return p
+    elif parser.peek("mut"):
+        parser.step()
+        p = Pattern.Bind()
+        p.name = parser.parseName()
+        p.mutable = True
+        return p
     elif parser.peek("varid"):
         p = Pattern.Bind()
         p.name = parser.parseName()

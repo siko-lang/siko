@@ -2,7 +2,7 @@ import Compiler.Syntax.Base as Base
 
 class LetStatement(Base.SyntaxBase):
     def __init__(self):
-        self.var_name = None
+        self.pattern = None
         self.rhs = None
 
 class ExprStatement(Base.SyntaxBase):

@@ -12,6 +12,7 @@ class Named(Base.SyntaxBase):
 class Bind(Base.SyntaxBase):
     def __init__(self):
         self.name = None
+        self.mutable = False
 
 class Tuple(Base.SyntaxBase):
     def __init__(self):
