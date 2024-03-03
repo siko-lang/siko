@@ -58,7 +58,7 @@ def parseGenericDeclaration(parser):
             parser.expect("colon")
             deps = []
             while True:
-                dep = parseType(parser)
+                dep = parser.parseTypeName()
                 deps.append(dep)
                 if parser.peek("plus"):
                     parser.expect("plus")
@@ -66,9 +66,19 @@ def parseGenericDeclaration(parser):
                     break
             vardecl.deps = deps
         decl.generics.append(vardecl)
-        if parser.peek("rightbracket"):
-            break
-        else:
+        if parser.peek("comma"):
             parser.expect("comma")
+        else:
+            break
+    if parser.peek("rightdoublearrow"):
+        parser.expect("rightdoublearrow")
+        constraints = []
+        while True:
+            constraint = parseType(parser)
+            constraints.append(constraint)
+            if parser.peek("comma"):
+                parser.expect("comma")
+            else:
+                break
     parser.expect("rightbracket")
     return decl

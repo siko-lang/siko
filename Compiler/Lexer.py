@@ -125,7 +125,11 @@ class Lexer(object):
                     self.step()
                 case '=':
                     self.endToken()
-                    self.addToken(Token.Equal())
+                    if chars[self.index + 1] == '>':
+                        self.addToken(Token.RightDoubleArrow())
+                        self.step()
+                    else:    
+                        self.addToken(Token.Equal())
                     self.step()
                 case '@':
                     self.endToken()

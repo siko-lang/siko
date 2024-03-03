@@ -25,7 +25,7 @@ def parseFunctionCall(parser):
             parser.expect("dot")
             name = parser.parseName()
             if parser.peek("leftparen"):
-                args = parser.parseFunctionArgs()
+                args = parseFunctionArgs(parser)
                 m = Expr.MemberCall()
                 m.receiver = receiver
                 m.name = name

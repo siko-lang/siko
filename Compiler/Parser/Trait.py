@@ -5,6 +5,8 @@ import Compiler.Parser.Type as Type
 def parseTrait(parser, module_name):
     parser.expect("trait")
     trait = Trait.Trait()
+    if parser.peek("leftbracket"):
+        trait.generics = Type.parseGenericDeclaration(parser)
     trait.name = parser.parseTypeName()
     parser.expect("leftbracket")
     dependentParams = False
@@ -31,7 +33,7 @@ def parseTrait(parser, module_name):
             if parser.peek("fn"):
                 fn = Function.parseFunction(parser, module_name)
                 if fn.body is None:
-                    trait.declarations.append(fn)
+                    trait.method_declarations.append(fn)
                 else:
                     trait.methods.append(fn)
             else:

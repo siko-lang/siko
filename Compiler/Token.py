@@ -66,6 +66,9 @@ def Minus():
 def RightArrow():
     return Token("rightarrow", None)
 
+def RightDoubleArrow():
+    return Token("rightdoublearrow", None)
+
 def GreaterThan():
     return Token("greaterthan", None)
 

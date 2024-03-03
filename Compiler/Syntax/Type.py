@@ -4,9 +4,14 @@ class GenericVarDeclaration(object):
         self.name = name
         self.deps = []
 
+class GenericConstraint(object):
+    def __init__(self):
+        self.constraint = None
+
 class GenericDeclaration(object):
     def __init__(self):
         self.generics = []
+        self.constraints = []
 
 class Named(object):
     def __init__(self, name, args):
