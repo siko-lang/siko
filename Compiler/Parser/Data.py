@@ -1,5 +1,6 @@
 import Compiler.Syntax.Data as Data
 import Compiler.Parser.Type as Type
+import Compiler.Parser.Function as Function
 
 def parseEnumVariant(parser):
     variant = Data.Variant()
@@ -62,7 +63,7 @@ def parseClass(parser, module_name, derives):
     return c
 
 def parseClassMemberFunction(parser, module_name):
-    return parser.parseFunction(module_name)
+    return Function.parseFunction(parser, module_name)
 
 def parseExternClass(parser, module_name, derives):
     parser.expect("extern")

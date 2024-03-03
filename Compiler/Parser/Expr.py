@@ -1,5 +1,6 @@
 import Compiler.Syntax.Expr as Expr
 import Compiler.Parser.Function as Function
+import Compiler.Parser.Pattern as Pattern
 
 def parseFunctionArgs(parser):
     parser.expect("leftparen")
@@ -49,6 +50,24 @@ def parseIf(parser):
         parser.expect("else")
         if_expr.false_branch = Function.parseBlock(parser)
     return if_expr
+
+def parseMatch(parser):
+    parser.expect("match")
+    match_expr = Expr.Match()
+    match_expr.body = parseExpr(parser)
+    parser.expect("leftcurly")
+    while True:
+        branch = Expr.MatchBranch()
+        match_expr.branches.append(branch)
+        branch.pattern = Pattern.parsePattern(parser)
+        parser.expect("rightarrow")
+        branch.body = parseExpr(parser)
+        if parser.peek("comma"):
+            parser.expect("comma")
+        if parser.peek("rightcurly"):
+            break
+    parser.expect("rightcurly")
+    return match_expr
 
 def parseLoop(parser):
     parser.expect("loop")
@@ -105,10 +124,29 @@ def parsePrimary(parser):
         return e
     elif parser.peek("loop"):
         return parseLoop(parser)
+    elif parser.peek("match"):
+        return parseMatch(parser)
     elif parser.peek("for"):
         return parseForLoop(parser)
     elif parser.peek("if"):
         return parser.parseIf()
+    elif parser.peek("leftparen"):
+        parser.expect("leftparen")
+        items = []
+        if not parser.peek("rightparen"):
+            while True:
+                item = parseExpr(parser)
+                items.append(item)
+                if parser.peek("comma"):
+                    parser.expect("comma")
+                else:
+                    break
+        parser.expect("rightparen")
+        if len(items) == 1:
+            return items[0]
+        e = Expr.Tuple()
+        e.args = items
+        return e
     elif parser.peek("true"):
         parser.expect("true")
         e = Expr.BoolLiteral()

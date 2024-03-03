@@ -9,6 +9,10 @@ class FunctionCall(Base.SyntaxBase):
         self.id = None
         self.args = []
 
+class Tuple(Base.SyntaxBase):
+    def __init__(self):
+        self.args = []
+
 class MemberAccess(Base.SyntaxBase):
     def __init__(self):
         self.name = None
@@ -25,6 +29,16 @@ class If(Base.SyntaxBase):
         self.cond = None
         self.true_branch = None
         self.false_branch = None
+
+class MatchBranch(Base.SyntaxBase):
+    def __init__(self):
+        self.pattern = None
+        self.body = None
+
+class Match(Base.SyntaxBase):
+    def __init__(self):
+        self.body = None
+        self.branches = []
 
 class Loop(Base.SyntaxBase):
     def __init__(self):

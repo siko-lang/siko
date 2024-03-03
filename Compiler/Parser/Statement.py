@@ -38,6 +38,13 @@ def parseStatement(parser):
         s.has_semicolon = parser.maybeParseSemicolon()
         s.expr = expr
         return s
+    elif parser.peek("match"):
+        expr = Expr.parseMatch(parser)
+        s = Statement.ExprStatement()
+        s.requires_semicolon = False
+        s.has_semicolon = parser.maybeParseSemicolon()
+        s.expr = expr
+        return s
     else:
         lhs = Expr.parseExpr(parser)
         if parser.peek("equal"):

@@ -74,3 +74,9 @@ def GreaterThan():
 
 def LessThan():
     return Token("lessthan", None)
+
+def Wildcard():
+    return Token("wildcard", None)
+
+def ExclamationMark():
+    return Token("exclamationmark", None)

@@ -61,6 +61,10 @@ class Lexer(object):
                     self.addToken(Token.Keyword(self.current))
                 case "instance":
                     self.addToken(Token.Keyword(self.current))
+                case "match":
+                    self.addToken(Token.Keyword(self.current))
+                case "_":
+                    self.addToken(Token.Wildcard())
                 case _:
                     if self.current[0].isupper():
                         self.addToken(Token.TypeIdentifier(self.current))
