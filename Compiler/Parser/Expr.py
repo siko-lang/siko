@@ -84,17 +84,22 @@ def parseLoop(parser):
 
 def parseForLoop(parser):
     parser.expect("for")
-    var = parser.parseName()
+    pattern = Pattern.parsePattern(parser)
     parser.expect("in")
     init = parseExpr(parser)
     body = Function.parseBlock(parser)
     loop_expr = Expr.ForLoop()
-    loop_expr.var = var
+    loop_expr.pattern = pattern
     loop_expr.init = init
     loop_expr.body = body
     return loop_expr
 
 def parsePrimary(parser):
+    if parser.peek("string"):
+        l = Expr.StringLiteral()
+        l.value = parser.tokens[parser.index].value
+        parser.step()
+        return l
     if parser.peek("typeid"):
         name = parser.parseQualifiedName()
         r = Expr.TypeRef()
@@ -116,7 +121,8 @@ def parsePrimary(parser):
     elif parser.peek("continue"):
         parser.expect("continue")
         e = Expr.Continue()
-        e.arg = parseExpr(parser)
+        if not parser.peek(Token.Semicolon()) and not parser.peek(Token.Comma()):
+            e.arg = parseExpr(parser)
         return e
     elif parser.peek("return"):
         parser.expect("return")
@@ -161,5 +167,43 @@ def parsePrimary(parser):
     else:
         parser.error("expected expr, found %s" % parser.tokens[parser.index].type)
 
+def opsTable():
+    ops_table = [[Token.And(), Token.Or()],
+                  [Token.DoubleEqual(), Token.NotEqual()],
+                  [Token.LessThan(),
+                   Token.GreaterThan(),
+                   Token.LessThanOrEqual(),
+                   Token.GreaterThanOrEqual()],
+                  [Token.Plus(), Token.Minus()],
+                  [Token.Mul(), Token.Div()]]
+    return ops_table
+
+def callNext(parser, index):
+    if index + 1 < len(opsTable()):
+        return parseBinary(parser, index + 1)
+    else:
+        return parseFunctionCall(parser)
+
+def parseBinary(parser, index):
+    expr = callNext(parser, index)
+    while True:
+        ops = opsTable()[index]
+        matchingOp = None
+        for op in ops:
+            if parser.peek(op):
+                matchingOp = op
+                break
+        if matchingOp is not None:
+            parser.expect(op)
+            rhs = callNext(parser, index)
+            e = Expr.BinaryOp()
+            e.op = op
+            e.rhs = rhs
+            e.lhs = expr
+            expr = e
+        else:
+            break
+    return expr
+
 def parseExpr(parser):
-    return parseFunctionCall(parser)
+    return parseBinary(parser, 0)

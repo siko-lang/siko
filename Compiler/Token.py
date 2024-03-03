@@ -60,6 +60,9 @@ def Comma():
 def Equal():
     return Token("equal", None)
 
+def DoubleEqual():
+    return Token("doubleequal", None)
+
 def NotEqual():
     return Token("notequal", None)
 
@@ -68,6 +71,12 @@ def Plus():
 
 def Minus():
     return Token("minus", None)
+
+def Mul():
+    return Token("mul", None)
+
+def Div():
+    return Token("div", None)
 
 def RightArrow():
     return Token("rightarrow", None)
@@ -81,8 +90,20 @@ def GreaterThan():
 def LessThan():
     return Token("lessthan", None)
 
+def GreaterThanOrEqual():
+    return Token("greaterthanorequal", None)
+
+def LessThanOrEqual():
+    return Token("lessthanorequal", None)
+
 def Wildcard():
     return Token("wildcard", None)
 
 def ExclamationMark():
     return Token("exclamationmark", None)
+
+def And():
+    return Token("and", None)
+
+def Or():
+    return Token("or", None)

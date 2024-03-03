@@ -32,6 +32,10 @@ def parsePattern(parser):
                     break
             parser.expect(Token.RightParen())
         return p
+    elif parser.peek("varid"):
+        p = Pattern.Bind()
+        p.name = parser.parseName()
+        return p
     else:
         parser.expect("<pattern>")
         

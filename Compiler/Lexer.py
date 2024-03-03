@@ -63,6 +63,10 @@ class Lexer(object):
                     self.addToken(Token.Keyword(self.current))
                 case "match":
                     self.addToken(Token.Keyword(self.current))
+                case "and":
+                    self.addToken(Token.And())
+                case "or":
+                    self.addToken(Token.Or())
                 case "_":
                     self.addToken(Token.Wildcard())
                 case _:
@@ -123,12 +127,21 @@ class Lexer(object):
                     self.endToken()
                     self.addToken(Token.Comma())
                     self.step()
+                case '*':
+                    self.endToken()
+                    self.addToken(Token.Mul())
+                    self.step()
+                case '/':
+                    self.endToken()
+                    self.addToken(Token.Div())
+                    self.step()
                 case ':':
                     self.endToken()
                     self.addToken(Token.Colon())
                     self.step()
                 case '"':
                     self.endToken()
+                    self.step()
                     s = ""
                     while len(chars) > self.index:
                         c = chars[self.index]
@@ -144,6 +157,9 @@ class Lexer(object):
                     if chars[self.index + 1] == '>':
                         self.addToken(Token.RightDoubleArrow())
                         self.step()
+                    elif chars[self.index + 1] == '=':
+                        self.addToken(Token.DoubleEqual())
+                        self.step()
                     else:    
                         self.addToken(Token.Equal())
                     self.step()
@@ -157,11 +173,19 @@ class Lexer(object):
                     self.step()
                 case '>':
                     self.endToken()
-                    self.addToken(Token.GreaterThan())
+                    if chars[self.index + 1] == '=':
+                        self.addToken(Token.GreaterThanOrEqual())
+                        self.step()
+                    else:
+                        self.addToken(Token.GreaterThan())
                     self.step()
                 case '<':
                     self.endToken()
-                    self.addToken(Token.LessThan())
+                    if chars[self.index + 1] == '=':
+                        self.addToken(Token.LessThanOrEqual())
+                        self.step()
+                    else:
+                        self.addToken(Token.LessThan())
                     self.step()
                 case '!':
                     self.endToken()

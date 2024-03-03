@@ -48,7 +48,7 @@ class Loop(Base.SyntaxBase):
 
 class ForLoop(Base.SyntaxBase):
     def __init__(self):
-        self.var = None
+        self.pattern = None
         self.init = None
         self.body = None
 
@@ -71,3 +71,13 @@ class VarRef(Base.SyntaxBase):
 class TypeRef(Base.SyntaxBase):
     def __init__(self):
         self.name = None
+
+class StringLiteral(Base.SyntaxBase):
+    def __init__(self):
+        self.value = None
+
+class BinaryOp(Base.SyntaxBase):
+    def __init__(self):
+        self.op = None
+        self.lhs = None
+        self.rhs = None
