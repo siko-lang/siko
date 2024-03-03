@@ -15,6 +15,9 @@ def VarIdentifier(s):
 def TypeIdentifier(s):
     return Token("typeid", s)
 
+def String(s):
+    return Token("string", s)
+
 def Keyword(s):
     return Token(s, None)
 
@@ -56,6 +59,9 @@ def Comma():
 
 def Equal():
     return Token("equal", None)
+
+def NotEqual():
+    return Token("notequal", None)
 
 def Plus():
     return Token("plus", None)

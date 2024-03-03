@@ -127,6 +127,18 @@ class Lexer(object):
                     self.endToken()
                     self.addToken(Token.Colon())
                     self.step()
+                case '"':
+                    self.endToken()
+                    s = ""
+                    while len(chars) > self.index:
+                        c = chars[self.index]
+                        if c == '"':
+                            self.step()
+                            break
+                        else:
+                            s += c
+                        self.step()
+                    self.addToken(Token.String(s))
                 case '=':
                     self.endToken()
                     if chars[self.index + 1] == '>':
@@ -150,6 +162,14 @@ class Lexer(object):
                 case '<':
                     self.endToken()
                     self.addToken(Token.LessThan())
+                    self.step()
+                case '!':
+                    self.endToken()
+                    if chars[self.index + 1] == '=':
+                        self.addToken(Token.NotEqual())
+                        self.step()
+                    else:
+                        self.addToken(Token.ExclamationMark())
                     self.step()
                 case '-':
                     self.endToken()
