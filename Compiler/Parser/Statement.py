@@ -1,5 +1,6 @@
 import Compiler.Syntax.Statement as Statement
 import Compiler.Parser.Expr as Expr
+import Compiler.Token as Token
 
 def parseStatement(parser):
     if parser.peek("let"):
@@ -8,9 +9,9 @@ def parseStatement(parser):
         let_s.var_name = parser.parseName()
         parser.expect("equal")
         let_s.rhs = Expr.parseExpr(parser)
-        parser.expect("semicolon")
+        parser.expect(Token.Semicolon())
         return let_s
-    elif parser.peek("leftcurly"):
+    elif parser.peek(Token.LeftCurly()):
         expr = parser.parseBlock()
         s = Statement.ExprStatement()
         s.requires_semicolon = False
@@ -50,7 +51,7 @@ def parseStatement(parser):
         if parser.peek("equal"):
             parser.expect("equal")
             rhs = Expr.parseExpr(parser)
-            parser.expect("semicolon")
+            parser.expect(Token.Semicolon())
             s = Statement.AssignStatement()
             s.lhs = lhs
             s.rhs = rhs

@@ -4,6 +4,7 @@ import Compiler.Parser.Type as Type
 import Compiler.Syntax.Function as Function
 import Compiler.Parser.Statement as Statement
 import Compiler.Syntax.Statement as SyntaxStatement
+import Compiler.Token as Token
 
 def parseFunction(parser, module_name):
     fn = Function.Function()
@@ -11,17 +12,17 @@ def parseFunction(parser, module_name):
     parser.expect("fn")
     name = parser.parseName()
     fn.name = name
-    if parser.peek("leftbracket"):
+    if parser.peek(Token.LeftBracket()):
         fn.generics = Type.parseGenericDeclaration(parser)
-    parser.expect("leftparen")
-    while not parser.peek("rightparen"):
+    parser.expect(Token.LeftParen())
+    while not parser.peek(Token.RightParen()):
         arg = parseParamDef(parser)    
         fn.params.append(arg)    
-        if not parser.peek("rightparen"):
-            parser.expect("comma")
-    parser.expect("rightparen")
-    if parser.peek("rightarrow"):
-        parser.expect("rightarrow")
+        if not parser.peek(Token.RightParen()):
+            parser.expect(Token.Comma())
+    parser.expect(Token.RightParen())
+    if parser.peek(Token.RightArrow()):
+        parser.expect(Token.RightArrow())
         fn.return_type = Type.parseType(parser)
     else:
         empty_tuple = SyntaxType.Type(SyntaxType.Tuple([]))
@@ -30,7 +31,7 @@ def parseFunction(parser, module_name):
         parser.expect("equal")
         parser.expect("extern")
     else:
-        if parser.peek("leftcurly"):
+        if parser.peek(Token.LeftCurly()):
             fn.body = parseBlock(parser)
     return fn
 
@@ -41,7 +42,7 @@ def parseParamDef(parser):
         arg.mutable = True
     name = parser.parseName()
     if name != "self":
-        parser.expect("colon")
+        parser.expect(Token.Colon())
         ty = Type.parseType(parser)
     else:
         ty = None
@@ -50,16 +51,16 @@ def parseParamDef(parser):
     return arg
 
 def parseBlock(parser):
-    parser.expect("leftcurly")
+    parser.expect(Token.LeftCurly())
     block = Function.Block()
-    while not parser.peek("rightcurly"):
+    while not parser.peek(Token.RightCurly()):
         s = Statement.parseStatement(parser)
         block.statements.append(s)
-        if parser.peek("rightcurly"):
+        if parser.peek(Token.RightCurly()):
             break
         else:
             if isinstance(s, SyntaxStatement.ExprStatement):
                 if s.requires_semicolon and not s.has_semicolon:
                     parser.error("Non trailing expr requires semicolon!")
-    parser.expect("rightcurly")
+    parser.expect(Token.RightCurly())
     return block

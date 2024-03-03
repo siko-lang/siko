@@ -2,20 +2,21 @@ import Compiler.Syntax.Module as Module
 import Compiler.Parser.Data as Data
 import Compiler.Parser.Function as Function
 import Compiler.Parser.Trait as Trait
+import Compiler.Token as Token
 
 def parseItem(parser, module_name):
     derives = []
     if parser.peek("@"):
         parser.expect("@")
         parser.expect("derive")
-        parser.expect("leftparen")
+        parser.expect(Token.LeftParen())
         while True:
             d = parser.parseTypeName()
             derives.append(d)
-            if parser.peek("rightparen"):
+            if parser.peek(Token.RightParen()):
                 break
-            parser.expect("comma")
-        parser.expect("rightparen")
+            parser.expect(Token.Comma())
+        parser.expect(Token.RightParen())
     if parser.peek("extern"):
         Data.parseExternClass(parser, module_name, derives)
     elif parser.peek("enum"):
@@ -47,10 +48,10 @@ def parseModule(parser):
     name = parser.parseModuleName()
     m = Module.Module()
     m.name = name
-    parser.expect("leftcurly")
-    while not parser.peek("rightcurly"):
+    parser.expect(Token.LeftCurly())
+    while not parser.peek(Token.RightCurly()):
         item = parseItem(parser, name)
         if item:
             m.items.append(item)
-    parser.expect("rightcurly")
+    parser.expect(Token.RightCurly())
     return m

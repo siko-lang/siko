@@ -1,34 +1,35 @@
 import Compiler.Syntax.Trait as Trait
 import Compiler.Parser.Function as Function
 import Compiler.Parser.Type as Type
+import Compiler.Token as Token
 
 def parseTrait(parser, module_name):
     parser.expect("trait")
     trait = Trait.Trait()
-    if parser.peek("leftbracket"):
+    if parser.peek(Token.LeftBracket()):
         trait.generics = Type.parseGenericDeclaration(parser)
     trait.name = parser.parseTypeName()
-    parser.expect("leftbracket")
+    parser.expect(Token.LeftBracket())
     dependentParams = False
     while True:
         param = parser.parseTypeName()
         trait.generic_parameters.append(param)
-        if parser.peek("rightbracket"):
+        if parser.peek(Token.RightBracket()):
             break
         if parser.peek("greaterthan"):
             parser.expect("greaterthan")
             dependentParams = True
             break
-        parser.expect("comma")
+        parser.expect(Token.Comma())
     if dependentParams:
         while True:
             param = parser.parseTypeName()
             trait.dependent_parameters.append(param)
-            if parser.peek("rightbracket"):
+            if parser.peek(Token.RightBracket()):
                 break
-    parser.expect("rightbracket")
-    if parser.peek("leftcurly"):
-        parser.expect("leftcurly")
+    parser.expect(Token.RightBracket())
+    if parser.peek(Token.LeftCurly()):
+        parser.expect(Token.LeftCurly())
         while True:
             if parser.peek("fn"):
                 fn = Function.parseFunction(parser, module_name)
@@ -38,17 +39,17 @@ def parseTrait(parser, module_name):
                     trait.methods.append(fn)
             else:
                 break
-        parser.expect("rightcurly")
+        parser.expect(Token.RightCurly())
     return trait
 
 def parseInstance(parser, module_name):
     parser.expect("instance")
     instance = Trait.Instance()
-    if parser.peek("leftbracket"):
+    if parser.peek(Token.LeftBracket()):
         instance.generics = Type.parseGenericDeclaration(parser)
     instance.type = Type.parseType(parser)
-    if parser.peek("leftcurly"):
-        parser.expect("leftcurly")
+    if parser.peek(Token.LeftCurly()):
+        parser.expect(Token.LeftCurly())
         while True:
             if parser.peek("fn"):
                 fn = Function.parseFunction(parser, module_name)
@@ -58,5 +59,5 @@ def parseInstance(parser, module_name):
                     instance.methods.append(fn)
             else:
                 break
-        parser.expect("rightcurly")
+        parser.expect(Token.RightCurly())
     return instance

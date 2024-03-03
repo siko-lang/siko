@@ -1,6 +1,7 @@
 import Compiler.Lexer as Lexer
 import Compiler.Parser.Module as Module
 import Compiler.Util as Util
+import Compiler.Token as Token
 
 class Parser(object):
     def __init__(self):
@@ -25,6 +26,10 @@ class Parser(object):
         print("")
 
     def expect(self, ty):
+        if isinstance(ty, Token.Token):
+            if self.tokens[self.index].type == ty.type:
+                self.step()
+                return
         if self.tokens[self.index].type == ty:
             self.step()
         else:
@@ -34,13 +39,15 @@ class Parser(object):
                 self.error("Expected %s found %s/%s" % (ty, self.tokens[self.index].type, self.tokens[self.index].value))
 
     def peek(self, ty):
+        if isinstance(ty, Token.Token):
+            return self.tokens[self.index].type == ty.type
         return self.tokens[self.index].type == ty
 
     def parseQualifiedName(self):
         if self.peek("typeid"):
             name = self.parseTypeName()
-            while self.peek("dot"):
-                self.expect("dot")
+            while self.peek(Token.Dot()):
+                self.expect(Token.Dot())
                 name += "."
                 if self.peek("varid"):
                     name += self.parseName()
@@ -49,8 +56,8 @@ class Parser(object):
 
     def parseModuleName(self):
         name = self.parseTypeName()
-        while self.peek("dot"):
-            self.expect("dot")
+        while self.peek(Token.Dot()):
+            self.expect(Token.Dot())
             n = self.parseTypeName()
             name += n
         return name
@@ -66,8 +73,8 @@ class Parser(object):
         return name
 
     def maybeParseSemicolon(self):
-        if self.peek("semicolon"):
-            self.expect("semicolon")
+        if self.peek(Token.Semicolon()):
+            self.expect(Token.Semicolon())
             return True
         else:
             return False
