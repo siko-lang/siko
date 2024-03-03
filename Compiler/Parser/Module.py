@@ -20,7 +20,7 @@ def parseItem(parser, module_name):
     if parser.peek("extern"):
         Data.parseExternClass(parser, module_name, derives)
     elif parser.peek("enum"):
-        return Data.parseEnum(parser)
+        return Data.parseEnum(parser, module_name, derives)
     elif parser.peek("class"):
         return Data.parseClass(parser, module_name, derives)
     elif parser.peek("trait"):

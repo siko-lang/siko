@@ -5,6 +5,8 @@ class Enum(Base.SyntaxBase):
         self.name = None
         self.generics = None
         self.variants = []
+        self.derives = []
+        self.methods = []
 
 class Variant(Base.SyntaxBase):
     def __init__(self):

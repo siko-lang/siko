@@ -20,16 +20,23 @@ def parseEnumVariant(parser):
         parser.expect(Token.Comma())
     return variant
 
-def parseEnum(parser):
+def parseEnum(parser, module_name, derives):
     parser.expect("enum")
     enum = Data.Enum()
+    enum.derives = derives
     enum.name = parser.parseTypeName()
     if parser.peek(Token.LeftBracket()):
         enum.generics = Type.parseGenericDeclaration(parser)
     parser.expect(Token.LeftCurly())
     while not parser.peek(Token.RightCurly()):
-        variant = parseEnumVariant(parser)
-        enum.variants.append(variant)
+        if parser.peek("typeid"):
+            variant = parseEnumVariant(parser)
+            enum.variants.append(variant)
+        elif parser.peek("fn"):
+            fn = parseClassMemberFunction(parser, module_name)
+            enum.methods.append(fn)
+        else:
+            parser.error("expected enum item found %s" % parser.tokens[parser.index].type)
     parser.expect(Token.RightCurly())
     return enum
 

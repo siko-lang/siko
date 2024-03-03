@@ -12,18 +12,21 @@ import Compiler.Ownership.ForbiddenBorrows as ForbiddenBorrows
 import Compiler.Ownership.Monomorphizer as Monomorphizer
 import Compiler.Transpiler as Transpiler
 import Compiler.Ownership.DataFlowProfileInference as DataFlowProfileInference
+import Compiler.Util as Util
 
 def compile():
     program = Program.Program()
     args = sys.argv[1:]
-    while True:
+    if len(args) == 0:
+        Util.error("Missing args")
+    output = "main.rs"
+    while len(args) > 0:
         name = args.pop(0)
         if name=="-o":
+            output = args.pop()
             break
         parser = Parser.Parser()
         parser.parse(program, name)
-
-    output = args.pop()
 
     Builder.convertProgram(program)
 
