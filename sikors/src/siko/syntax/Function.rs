@@ -1,4 +1,4 @@
-use super::{Identifier::Identifier, Type::Type};
+use super::{Identifier::Identifier, Statement::Block, Type::Type};
 
 pub struct Parameter {
     pub name: Identifier,
@@ -8,4 +8,5 @@ pub struct Function {
     pub name: Identifier,
     pub params: Vec<Parameter>,
     pub result: Option<Type>,
+    pub body: Option<Block>,
 }

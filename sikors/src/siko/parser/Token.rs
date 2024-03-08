@@ -54,6 +54,7 @@ pub enum KeywordKind {
     With,
     Using,
     Let,
+    Derive,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

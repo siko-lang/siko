@@ -146,7 +146,11 @@ impl Lexer {
             }
         } else {
             if startsWithUpperCase {
-                self.addToken(Token::TypeIdentifier(self.current.clone()));
+                let token = match self.current.as_ref() {
+                    "Self" => Token::Keyword(KeywordKind::TypeSelf),
+                    _ => Token::TypeIdentifier(self.current.clone()),
+                };
+                self.addToken(token);
             } else {
                 let token = match self.current.as_ref() {
                     "module" => Token::Keyword(KeywordKind::Module),
@@ -160,13 +164,19 @@ impl Lexer {
                     "loop" => Token::Keyword(KeywordKind::Loop),
                     "match" => Token::Keyword(KeywordKind::Match),
                     "let" => Token::Keyword(KeywordKind::Let),
+                    "derive" => Token::Keyword(KeywordKind::Derive),
+                    "extern" => Token::Keyword(KeywordKind::Extern),
+                    "trait" => Token::Keyword(KeywordKind::Trait),
+                    "instance" => Token::Keyword(KeywordKind::Instance),
+                    "effect" => Token::Keyword(KeywordKind::Effect),
+                    "self" => Token::Keyword(KeywordKind::ValueSelf),
                     _ => Token::VarIdentifier(self.current.clone()),
                 };
                 self.addToken(token);
             }
         }
     }
-    fn processString(&mut self, c: char) {
+    fn processString(&mut self, _: char) {
         let mut literal = String::new();
         self.step();
         loop {

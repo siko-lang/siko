@@ -7,4 +7,5 @@ pub mod Module;
 pub mod Parser;
 pub mod Pattern;
 pub mod Token;
+pub mod Trait;
 pub mod Type;

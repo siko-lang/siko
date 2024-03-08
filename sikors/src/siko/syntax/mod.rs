@@ -5,4 +5,5 @@ pub mod Identifier;
 pub mod Module;
 pub mod Pattern;
 pub mod Statement;
+pub mod Trait;
 pub mod Type;

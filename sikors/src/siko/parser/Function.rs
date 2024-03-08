@@ -40,6 +40,7 @@ impl FunctionParser for Parser {
             name,
             params,
             result,
+            body: Some(body),
         }
     }
 }

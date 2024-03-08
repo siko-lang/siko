@@ -124,10 +124,10 @@ impl Parser {
     pub fn parse(&mut self) {
         let content = std::fs::read_to_string(&self.fileName).unwrap();
         let mut lexer = Lexer::new(content, self.fileId);
-        let (tokens, errors) = lexer.lex();
-        println!("Tokens {:?}", tokens);
+        let (tokens, _errors) = lexer.lex();
+        //println!("Tokens {:?}", tokens);
         self.tokens = tokens;
-        println!("Errors {:?}", errors);
+        //println!("Errors {:?}", errors);
         while !self.isDone() {
             let m = self.parseModule();
             self.modules.push(m);
