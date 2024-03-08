@@ -1,6 +1,6 @@
 use crate::siko::syntax::{
     Expr::Expr,
-    Statement::{Block, Statement},
+    Statement::{Block, Statement, StatementKind},
 };
 
 use super::{
@@ -11,7 +11,7 @@ use super::{
 
 pub trait ExprParser {
     fn parseBlock(&mut self) -> Block;
-    fn parseStatement(&mut self) -> Statement;
+    fn parseStatement(&mut self) -> (StatementKind, SemicolonRequirement);
     fn parseIf(&mut self) -> Expr;
     fn parseBinaryOp(&mut self, index: usize) -> Expr;
     fn parseExpr(&mut self) -> Expr;
@@ -20,14 +20,48 @@ pub trait ExprParser {
     fn callNext(&mut self, index: usize) -> Expr;
 }
 
+pub enum SemicolonRequirement {
+    Optional,
+    TrailingOptional,
+    Required,
+}
+
 impl ExprParser for Parser {
     fn parseBlock(&mut self) -> Block {
         let mut statements = Vec::new();
         self.expect(TokenKind::LeftBracket(BracketKind::Curly));
         while !self.check(TokenKind::RightBracket(BracketKind::Curly)) {
-            let statement = self.parseStatement();
-            self.expect(TokenKind::Misc(MiscKind::Semicolon));
-            statements.push(statement);
+            let (statementKind, requirement) = self.parseStatement();
+            let trailing = self.check(TokenKind::RightBracket(BracketKind::Curly));
+            let mut hasSemicolon = false;
+            match requirement {
+                SemicolonRequirement::Optional => {
+                    if self.check(TokenKind::Misc(MiscKind::Semicolon)) {
+                        hasSemicolon = true;
+                        self.expect(TokenKind::Misc(MiscKind::Semicolon));
+                    }
+                }
+                SemicolonRequirement::TrailingOptional => {
+                    if trailing {
+                        if self.check(TokenKind::Misc(MiscKind::Semicolon)) {
+                            hasSemicolon = true;
+                            self.expect(TokenKind::Misc(MiscKind::Semicolon));
+                        }
+                    } else {
+                        hasSemicolon = true;
+                        self.expect(TokenKind::Misc(MiscKind::Semicolon));
+                    }
+                }
+                SemicolonRequirement::Required => {
+                    hasSemicolon = true;
+                    self.expect(TokenKind::Misc(MiscKind::Semicolon));
+                }
+            }
+
+            statements.push(Statement {
+                kind: statementKind,
+                hasSemicolon,
+            });
         }
         self.expect(TokenKind::RightBracket(BracketKind::Curly));
         Block { statements }
@@ -46,27 +80,36 @@ impl ExprParser for Parser {
         Expr::If(Box::new(cond), Box::new(trueBranch), Box::new(falseBranch))
     }
 
-    fn parseStatement(&mut self) -> Statement {
+    fn parseStatement(&mut self) -> (StatementKind, SemicolonRequirement) {
         match self.peek() {
             TokenKind::Keyword(KeywordKind::If) => {
                 let expr = self.parseIf();
-                Statement::Expr(expr)
+                (StatementKind::Expr(expr), SemicolonRequirement::Optional)
             }
             TokenKind::Keyword(KeywordKind::Let) => {
                 self.expect(TokenKind::Keyword(KeywordKind::Let));
                 let pattern = self.parsePattern();
                 self.expect(TokenKind::Op(OperatorKind::Equal));
                 let rhs = self.parseExpr();
-                Statement::Let(pattern, rhs)
+                (
+                    StatementKind::Let(pattern, rhs),
+                    SemicolonRequirement::Required,
+                )
             }
             _ => {
                 let expr = self.parseExpr();
                 if self.check(TokenKind::Op(OperatorKind::Equal)) {
                     self.expect(TokenKind::Op(OperatorKind::Equal));
                     let rhs = self.parseExpr();
-                    Statement::Assign(expr, rhs)
+                    (
+                        StatementKind::Assign(expr, rhs),
+                        SemicolonRequirement::Required,
+                    )
                 } else {
-                    Statement::Expr(expr)
+                    (
+                        StatementKind::Expr(expr),
+                        SemicolonRequirement::TrailingOptional,
+                    )
                 }
             }
         }

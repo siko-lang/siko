@@ -6,8 +6,14 @@ pub struct Block {
 }
 
 #[derive(Debug)]
-pub enum Statement {
+pub enum StatementKind {
     Expr(Expr),
     Assign(Expr, Expr),
     Let(Pattern, Expr),
+}
+
+#[derive(Debug)]
+pub struct Statement {
+    pub kind: StatementKind,
+    pub hasSemicolon: bool,
 }
