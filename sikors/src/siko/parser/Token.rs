@@ -1,13 +1,13 @@
 use crate::siko::location::Location::Span;
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum BracketKind {
     Paren,
     Curly,
     Square,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum OperatorKind {
     Equal,
     DoubleEqual,
@@ -24,11 +24,11 @@ pub enum OperatorKind {
     Or,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum KeywordKind {
     Module,
-    Where,
     Class,
+    Fn,
     Enum,
     Trait,
     Instance,
@@ -55,7 +55,7 @@ pub enum KeywordKind {
     Using,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ArrowKind {
     Left,
     Right,
@@ -63,13 +63,13 @@ pub enum ArrowKind {
     DoubleLeft,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum RangeKind {
     Exclusive,
     Inclusive,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum MiscKind {
     Dot,
     Comma,
@@ -101,12 +101,31 @@ pub enum Token {
     Op(OperatorKind),
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+impl Token {
+    pub fn kind(&self) -> TokenKind {
+        match self {
+            Token::VarIdentifier(_) => TokenKind::VarIdentifier,
+            Token::TypeIdentifier(_) => TokenKind::TypeIdentifier,
+            Token::LeftBracket(k) => TokenKind::LeftBracket(*k),
+            Token::RightBracket(k) => TokenKind::RightBracket(*k),
+            Token::StringLiteral(_) => TokenKind::StringLiteral,
+            Token::IntegerLiteral(_) => TokenKind::IntegerLiteral,
+            Token::CharLiteral(_) => TokenKind::CharLiteral,
+            Token::Keyword(k) => TokenKind::Keyword(*k),
+            Token::Arrow(k) => TokenKind::Arrow(*k),
+            Token::Range(k) => TokenKind::Range(*k),
+            Token::Misc(k) => TokenKind::Misc(*k),
+            Token::Op(k) => TokenKind::Op(*k),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum TokenKind {
     VarIdentifier,
     TypeIdentifier,
-    LeftParen(BracketKind),
-    RightParen(BracketKind),
+    LeftBracket(BracketKind),
+    RightBracket(BracketKind),
     StringLiteral,
     IntegerLiteral,
     CharLiteral,
@@ -121,4 +140,10 @@ pub enum TokenKind {
 pub struct TokenInfo {
     pub token: Token,
     pub span: Span,
+}
+
+impl TokenInfo {
+    pub fn kind(&self) -> TokenKind {
+        self.token.kind()
+    }
 }

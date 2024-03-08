@@ -73,9 +73,11 @@ impl Lexer {
     }
 
     fn step(&mut self) {
-        if Some('n') == self.peek() {
+        if Some('\n') == self.peek() {
             self.position.offset = 0;
             self.position.line = self.position.line + 1;
+        } else {
+            self.position.offset += 1;
         }
         self.index = self.index + 1;
         self.span.end = self.position.clone();
@@ -111,6 +113,7 @@ impl Lexer {
     fn processIdentifier(&mut self, c: char) {
         let startsWithInteger = isInteger(c);
         let startsWithUpperCase = c.is_uppercase();
+        self.current.push(c);
         self.step();
         loop {
             match self.peek() {
@@ -145,7 +148,15 @@ impl Lexer {
             if startsWithUpperCase {
                 self.addToken(Token::TypeIdentifier(self.current.clone()));
             } else {
-                self.addToken(Token::VarIdentifier(self.current.clone()));
+                let token = match self.current.as_ref() {
+                    "module" => Token::Keyword(KeywordKind::Module),
+                    "class" => Token::Keyword(KeywordKind::Class),
+                    "enum" => Token::Keyword(KeywordKind::Enum),
+                    "fn" => Token::Keyword(KeywordKind::Fn),
+                    "import" => Token::Keyword(KeywordKind::Import),
+                    _ => Token::VarIdentifier(self.current.clone()),
+                };
+                self.addToken(token);
             }
         }
     }
@@ -170,8 +181,8 @@ impl Lexer {
 
     fn processSingle(&mut self, c: char) {
         if let Some(token) = getSingleCharToken(c) {
-            self.addToken(token);
             self.step();
+            self.addToken(token);
         }
     }
 
@@ -188,35 +199,50 @@ impl Lexer {
                     '-' => {
                         self.step();
                         match self.peek() {
-                            Some('>') => self.addToken(Token::Arrow(ArrowKind::Right)),
+                            Some('>') => {
+                                self.step();
+                                self.addToken(Token::Arrow(ArrowKind::Right))
+                            }
                             _ => self.addToken(Token::Op(OperatorKind::Sub)),
                         }
                     }
                     '>' => {
                         self.step();
                         match self.peek() {
-                            Some('=') => self.addToken(Token::Op(OperatorKind::GreaterThanOrEqual)),
+                            Some('=') => {
+                                self.step();
+                                self.addToken(Token::Op(OperatorKind::GreaterThanOrEqual))
+                            }
                             _ => self.addToken(Token::Op(OperatorKind::GreaterThan)),
                         }
                     }
                     '<' => {
                         self.step();
                         match self.peek() {
-                            Some('=') => self.addToken(Token::Op(OperatorKind::LessThanOrEqual)),
+                            Some('=') => {
+                                self.step();
+                                self.addToken(Token::Op(OperatorKind::LessThanOrEqual))
+                            }
                             _ => self.addToken(Token::Op(OperatorKind::LessThan)),
                         }
                     }
                     '=' => {
                         self.step();
                         match self.peek() {
-                            Some('=') => self.addToken(Token::Op(OperatorKind::DoubleEqual)),
+                            Some('=') => {
+                                self.step();
+                                self.addToken(Token::Op(OperatorKind::DoubleEqual))
+                            }
                             _ => self.addToken(Token::Op(OperatorKind::Equal)),
                         }
                     }
                     '.' => {
                         self.step();
                         match self.peek() {
-                            Some('.') => self.addToken(Token::Range(RangeKind::Exclusive)),
+                            Some('.') => {
+                                self.step();
+                                self.addToken(Token::Range(RangeKind::Exclusive))
+                            }
                             _ => self.addToken(Token::Misc(MiscKind::Dot)),
                         }
                     }

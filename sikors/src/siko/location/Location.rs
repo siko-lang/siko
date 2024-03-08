@@ -50,10 +50,10 @@ pub struct Location {
 }
 
 impl Location {
-    pub fn new(fileId: FileId) -> Location {
+    pub fn new(fileId: FileId, span: Span) -> Location {
         Location {
             fileId: fileId,
-            span: Span::new(),
+            span: span,
         }
     }
 
