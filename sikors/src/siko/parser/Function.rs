@@ -1,6 +1,7 @@
 use crate::siko::syntax::Function::{Function, Parameter};
 
 use super::{
+    Expr::ExprParser,
     Parser::*,
     Token::{ArrowKind, BracketKind, KeywordKind, MiscKind, TokenKind},
     Type::TypeParser,
@@ -34,8 +35,7 @@ impl FunctionParser for Parser {
         } else {
             None
         };
-        self.expect(TokenKind::LeftBracket(BracketKind::Curly));
-        self.expect(TokenKind::RightBracket(BracketKind::Curly));
+        let body = self.parseBlock();
         Function {
             name,
             params,

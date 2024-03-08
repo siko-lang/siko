@@ -53,6 +53,7 @@ pub enum KeywordKind {
     Effect,
     With,
     Using,
+    Let,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -99,6 +100,7 @@ pub enum Token {
     Range(RangeKind),
     Misc(MiscKind),
     Op(OperatorKind),
+    EOF,
 }
 
 impl Token {
@@ -116,6 +118,7 @@ impl Token {
             Token::Range(k) => TokenKind::Range(*k),
             Token::Misc(k) => TokenKind::Misc(*k),
             Token::Op(k) => TokenKind::Op(*k),
+            Token::EOF => TokenKind::EOF,
         }
     }
 }
@@ -134,6 +137,7 @@ pub enum TokenKind {
     Range(RangeKind),
     Misc(MiscKind),
     Op(OperatorKind),
+    EOF,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]

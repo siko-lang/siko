@@ -1,8 +1,10 @@
 pub mod Data;
 pub mod Error;
+pub mod Expr;
 pub mod Function;
 pub mod Lexer;
 pub mod Module;
 pub mod Parser;
+pub mod Pattern;
 pub mod Token;
 pub mod Type;

@@ -6,7 +6,6 @@ use super::{
 use crate::siko::{
     parser::{Data::DataParser, Function::FunctionParser},
     syntax::Module::{Import, Module, ModuleItem},
-    util::error,
 };
 pub trait ModuleParser {
     fn parseImport(&mut self) -> Import;
@@ -37,18 +36,11 @@ impl ModuleParser for Parser {
         let mut items = Vec::new();
         while !self.check(TokenKind::RightBracket(BracketKind::Curly)) {
             let item = match self.peek() {
-                Some(TokenKind::Keyword(KeywordKind::Class)) => {
-                    ModuleItem::Class(self.parseClass())
-                }
-                Some(TokenKind::Keyword(KeywordKind::Enum)) => ModuleItem::Enum(self.parseEnum()),
-                Some(TokenKind::Keyword(KeywordKind::Fn)) => {
-                    ModuleItem::Function(self.parseFunction())
-                }
-                Some(TokenKind::Keyword(KeywordKind::Import)) => {
-                    ModuleItem::Import(self.parseImport())
-                }
-                Some(kind) => self.reportError2("<module item>", kind),
-                None => error(format!("EOF")),
+                TokenKind::Keyword(KeywordKind::Class) => ModuleItem::Class(self.parseClass()),
+                TokenKind::Keyword(KeywordKind::Enum) => ModuleItem::Enum(self.parseEnum()),
+                TokenKind::Keyword(KeywordKind::Fn) => ModuleItem::Function(self.parseFunction()),
+                TokenKind::Keyword(KeywordKind::Import) => ModuleItem::Import(self.parseImport()),
+                kind => self.reportError2("<module item>", kind),
             };
             items.push(item);
         }

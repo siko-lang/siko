@@ -154,6 +154,12 @@ impl Lexer {
                     "enum" => Token::Keyword(KeywordKind::Enum),
                     "fn" => Token::Keyword(KeywordKind::Fn),
                     "import" => Token::Keyword(KeywordKind::Import),
+                    "if" => Token::Keyword(KeywordKind::If),
+                    "else" => Token::Keyword(KeywordKind::Else),
+                    "for" => Token::Keyword(KeywordKind::For),
+                    "loop" => Token::Keyword(KeywordKind::Loop),
+                    "match" => Token::Keyword(KeywordKind::Match),
+                    "let" => Token::Keyword(KeywordKind::Let),
                     _ => Token::VarIdentifier(self.current.clone()),
                 };
                 self.addToken(token);
@@ -257,6 +263,7 @@ impl Lexer {
                 None => break,
             }
         }
+        self.addToken(Token::EOF);
         (self.tokens.clone(), self.errors.clone())
     }
 }

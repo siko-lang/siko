@@ -1,4 +1,4 @@
-use crate::siko::{syntax::Type::*, util::error};
+use crate::siko::syntax::Type::*;
 
 use super::{
     Parser::*,
@@ -12,7 +12,7 @@ pub trait TypeParser {
 impl TypeParser for Parser {
     fn parseType(&mut self) -> Type {
         match self.peek() {
-            Some(TokenKind::TypeIdentifier) => {
+            TokenKind::TypeIdentifier => {
                 let name = self.parseTypeIdentifier();
                 let mut args = Vec::new();
                 if self.check(TokenKind::LeftBracket(BracketKind::Square)) {
@@ -30,7 +30,7 @@ impl TypeParser for Parser {
                 }
                 Type::Named(name, args)
             }
-            Some(TokenKind::LeftBracket(BracketKind::Paren)) => {
+            TokenKind::LeftBracket(BracketKind::Paren) => {
                 let mut items = Vec::new();
                 self.expect(TokenKind::LeftBracket(BracketKind::Paren));
                 while !self.check(TokenKind::RightBracket(BracketKind::Paren)) {
@@ -45,7 +45,7 @@ impl TypeParser for Parser {
                 self.expect(TokenKind::RightBracket(BracketKind::Paren));
                 Type::Tuple(items)
             }
-            Some(TokenKind::Keyword(KeywordKind::Fn)) => {
+            TokenKind::Keyword(KeywordKind::Fn) => {
                 self.expect(TokenKind::Keyword(KeywordKind::Fn));
                 let mut args = Vec::new();
                 self.expect(TokenKind::LeftBracket(BracketKind::Paren));
@@ -63,8 +63,7 @@ impl TypeParser for Parser {
                 let result = self.parseType();
                 Type::Function(args, Box::new(result))
             }
-            Some(kind) => self.reportError2("<type>", kind),
-            None => error(format!("EOF")),
+            kind => self.reportError2("<type>", kind),
         }
     }
 }

@@ -1,5 +1,5 @@
 use super::Module::ModuleParser;
-use super::Token::{MiscKind, Token, TokenInfo, TokenKind};
+use super::Token::{MiscKind, OperatorKind, Token, TokenInfo, TokenKind};
 use crate::siko::location::Location::Location;
 use crate::siko::syntax::Identifier::Identifier;
 use crate::siko::syntax::Module::Module;
@@ -12,6 +12,7 @@ pub struct Parser {
     fileId: FileId,
     modules: Vec<Module>,
     fileName: String,
+    pub opTable: Vec<Vec<OperatorKind>>,
 }
 
 impl Parser {
@@ -22,23 +23,31 @@ impl Parser {
             fileId: fileId,
             modules: Vec::new(),
             fileName: fileName,
+            opTable: vec![
+                vec![OperatorKind::And, OperatorKind::Or],
+                vec![OperatorKind::DoubleEqual, OperatorKind::NotEqual],
+                vec![
+                    OperatorKind::LessThan,
+                    OperatorKind::GreaterThan,
+                    OperatorKind::LessThanOrEqual,
+                    OperatorKind::GreaterThanOrEqual,
+                ],
+                vec![OperatorKind::Add, OperatorKind::Sub],
+                vec![OperatorKind::Mul, OperatorKind::Div],
+            ],
         }
     }
 
-    pub fn peek(&self) -> Option<TokenKind> {
-        if self.index < self.tokens.len() {
-            Some(self.tokens[self.index].kind())
-        } else {
-            None
-        }
+    pub fn peek(&self) -> TokenKind {
+        self.tokens[self.index].kind()
     }
 
     pub fn check(&self, kind: TokenKind) -> bool {
-        self.peek() == Some(kind)
+        self.peek() == kind
     }
 
     pub fn isDone(&self) -> bool {
-        self.index >= self.tokens.len()
+        self.check(TokenKind::EOF)
     }
 
     pub fn expect(&mut self, kind: TokenKind) {
