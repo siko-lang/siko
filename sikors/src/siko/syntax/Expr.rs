@@ -1,4 +1,4 @@
-use super::{Identifier::Identifier, Pattern::Pattern};
+use super::{Identifier::Identifier, Pattern::Pattern, Statement::Block};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum BinaryOp {
@@ -23,6 +23,7 @@ pub enum Expr {
     Name(Identifier),
     Call(Box<Expr>, Vec<Expr>),
     If(Box<Expr>, Box<Expr>, Box<Expr>),
+    For(Pattern, Box<Expr>, Block),
     BinaryOp(BinaryOp, Box<Expr>, Box<Expr>),
     Match(Box<Expr>, Vec<Branch>),
 }

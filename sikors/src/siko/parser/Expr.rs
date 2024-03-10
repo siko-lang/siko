@@ -13,6 +13,7 @@ pub trait ExprParser {
     fn parseBlock(&mut self) -> Block;
     fn parseStatement(&mut self) -> (StatementKind, SemicolonRequirement);
     fn parseIf(&mut self) -> Expr;
+    fn parseFor(&mut self) -> Expr;
     fn parseBinaryOp(&mut self, index: usize) -> Expr;
     fn parseExpr(&mut self) -> Expr;
     fn parseFunctionCall(&mut self) -> Expr;
@@ -80,10 +81,23 @@ impl ExprParser for Parser {
         Expr::If(Box::new(cond), Box::new(trueBranch), Box::new(falseBranch))
     }
 
+    fn parseFor(&mut self) -> Expr {
+        self.expect(TokenKind::Keyword(KeywordKind::For));
+        let pattern = self.parsePattern();
+        self.expect(TokenKind::Keyword(KeywordKind::In));
+        let source = self.parseExpr();
+        let body = self.parseBlock();
+        Expr::For(pattern, Box::new(source), body)
+    }
+
     fn parseStatement(&mut self) -> (StatementKind, SemicolonRequirement) {
         match self.peek() {
             TokenKind::Keyword(KeywordKind::If) => {
                 let expr = self.parseIf();
+                (StatementKind::Expr(expr), SemicolonRequirement::Optional)
+            }
+            TokenKind::Keyword(KeywordKind::For) => {
+                let expr = self.parseFor();
                 (StatementKind::Expr(expr), SemicolonRequirement::Optional)
             }
             TokenKind::Keyword(KeywordKind::Let) => {
@@ -164,6 +178,7 @@ impl ExprParser for Parser {
                 Expr::SelfValue
             }
             TokenKind::Keyword(KeywordKind::If) => self.parseIf(),
+            TokenKind::Keyword(KeywordKind::For) => self.parseFor(),
             kind => self.reportError2("<expr>", kind),
         }
     }

@@ -23,14 +23,20 @@ impl FunctionParser for Parser {
         self.expect(TokenKind::LeftBracket(BracketKind::Paren));
         let mut params = Vec::new();
         while !self.check(TokenKind::RightBracket(BracketKind::Paren)) {
+            let mutable = if self.check(TokenKind::Keyword(KeywordKind::Mut)) {
+                self.expect(TokenKind::Keyword(KeywordKind::Mut));
+                true
+            } else {
+                false
+            };
             let param = if self.check(TokenKind::Keyword(KeywordKind::ValueSelf)) {
                 self.expect(TokenKind::Keyword(KeywordKind::ValueSelf));
-                Parameter::SelfParam
+                Parameter::SelfParam(mutable)
             } else {
                 let name = self.parseVarIdentifier();
                 self.expect(TokenKind::Misc(MiscKind::Colon));
                 let ty = self.parseType();
-                Parameter::Named(name, ty)
+                Parameter::Named(name, ty, mutable)
             };
             params.push(param);
             if self.check(TokenKind::RightBracket(BracketKind::Paren)) {

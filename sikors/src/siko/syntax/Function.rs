@@ -5,8 +5,8 @@ use super::{
 };
 
 pub enum Parameter {
-    Named(Identifier, Type),
-    SelfParam,
+    Named(Identifier, Type, bool),
+    SelfParam(bool),
 }
 
 pub struct Function {

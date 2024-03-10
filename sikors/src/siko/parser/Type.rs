@@ -78,25 +78,34 @@ impl TypeParser for Parser {
         let mut afterParam = false;
         self.expect(TokenKind::LeftBracket(BracketKind::Square));
         while !self.check(TokenKind::RightBracket(BracketKind::Square)) {
-            let param = self.parseTypeIdentifier();
-            let mut deps = Vec::new();
-            if self.check(TokenKind::Misc(MiscKind::Colon)) {
-                self.expect(TokenKind::Misc(MiscKind::Colon));
-                loop {
-                    let dep = self.parseType();
-                    deps.push(dep);
-                    if !self.check(TokenKind::Op(OperatorKind::Add)) {
-                        break;
+            if afterParam {
+                let constraint = self.parseType();
+                constraints.push(constraint);
+            } else {
+                let param = self.parseTypeIdentifier();
+                let mut deps = Vec::new();
+                if self.check(TokenKind::Misc(MiscKind::Colon)) {
+                    self.expect(TokenKind::Misc(MiscKind::Colon));
+                    loop {
+                        let dep = self.parseType();
+                        deps.push(dep);
+                        if !self.check(TokenKind::Op(OperatorKind::Add)) {
+                            break;
+                        }
                     }
                 }
-            }
-            params.push(TypeParameter {
-                name: param,
-                constraints: deps,
-            });
-            if self.check(TokenKind::Arrow(ArrowKind::DoubleRight)) {
-                self.expect(TokenKind::Arrow(ArrowKind::DoubleRight));
-                break;
+                params.push(TypeParameter {
+                    name: param,
+                    constraints: deps,
+                });
+                if self.check(TokenKind::Misc(MiscKind::Comma)) {
+                    self.expect(TokenKind::Misc(MiscKind::Comma));
+                    continue;
+                }
+                if self.check(TokenKind::Arrow(ArrowKind::DoubleRight)) {
+                    self.expect(TokenKind::Arrow(ArrowKind::DoubleRight));
+                    afterParam = true;
+                }
             }
         }
         self.expect(TokenKind::RightBracket(BracketKind::Square));

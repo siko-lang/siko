@@ -46,6 +46,7 @@ pub enum KeywordKind {
     Return,
     Try,
     Loop,
+    While,
     For,
     Continue,
     Break,

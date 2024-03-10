@@ -161,6 +161,8 @@ impl Lexer {
                     "if" => Token::Keyword(KeywordKind::If),
                     "else" => Token::Keyword(KeywordKind::Else),
                     "for" => Token::Keyword(KeywordKind::For),
+                    "in" => Token::Keyword(KeywordKind::In),
+                    "while" => Token::Keyword(KeywordKind::While),
                     "loop" => Token::Keyword(KeywordKind::Loop),
                     "match" => Token::Keyword(KeywordKind::Match),
                     "let" => Token::Keyword(KeywordKind::Let),
@@ -170,6 +172,7 @@ impl Lexer {
                     "instance" => Token::Keyword(KeywordKind::Instance),
                     "effect" => Token::Keyword(KeywordKind::Effect),
                     "self" => Token::Keyword(KeywordKind::ValueSelf),
+                    "mut" => Token::Keyword(KeywordKind::Mut),
                     _ => Token::VarIdentifier(self.current.clone()),
                 };
                 self.addToken(token);

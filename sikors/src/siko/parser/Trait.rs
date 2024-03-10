@@ -6,6 +6,7 @@ use super::{
     Function::FunctionParser,
     Parser::Parser,
     Token::{BracketKind, KeywordKind, MiscKind, OperatorKind, TokenKind},
+    Type::TypeParser,
 };
 
 pub trait TraitParser {
@@ -16,6 +17,11 @@ pub trait TraitParser {
 impl TraitParser for Parser {
     fn parseTrait(&mut self) -> Trait {
         self.expect(TokenKind::Keyword(KeywordKind::Trait));
+        let typeParams = if self.check(TokenKind::LeftBracket(BracketKind::Square)) {
+            Some(self.parseTypeParameterDeclaration())
+        } else {
+            None
+        };
         let name = self.parseTypeIdentifier();
         let mut params = Vec::new();
         let mut depParams = Vec::new();
@@ -55,6 +61,7 @@ impl TraitParser for Parser {
         }
         Trait {
             name: name,
+            typeParams: typeParams,
             members: members,
         }
     }
