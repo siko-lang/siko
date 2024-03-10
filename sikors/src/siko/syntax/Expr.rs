@@ -19,6 +19,7 @@ pub struct Branch {
 #[derive(Debug)]
 pub enum Expr {
     Value(Identifier),
+    SelfValue,
     Name(Identifier),
     Call(Box<Expr>, Vec<Expr>),
     If(Box<Expr>, Box<Expr>, Box<Expr>),

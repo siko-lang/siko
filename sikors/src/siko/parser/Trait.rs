@@ -1,6 +1,9 @@
+use std::mem;
+
 use crate::siko::syntax::Trait::{Instance, Trait};
 
 use super::{
+    Function::FunctionParser,
     Parser::Parser,
     Token::{BracketKind, KeywordKind, MiscKind, OperatorKind, TokenKind},
 };
@@ -40,9 +43,16 @@ impl TraitParser for Parser {
                 kind => self.reportError2(", or ]", kind),
             }
         }
-
         self.expect(TokenKind::RightBracket(BracketKind::Square));
         let mut members = Vec::new();
+        if self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
+            self.expect(TokenKind::LeftBracket(BracketKind::Curly));
+            while !self.check(TokenKind::RightBracket(BracketKind::Curly)) {
+                let function = self.parseFunction();
+                members.push(function);
+            }
+            self.expect(TokenKind::RightBracket(BracketKind::Curly));
+        }
         Trait {
             name: name,
             members: members,

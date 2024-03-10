@@ -159,6 +159,10 @@ impl ExprParser for Parser {
                 let value = self.parseTypeIdentifier();
                 Expr::Name(value)
             }
+            TokenKind::Keyword(KeywordKind::ValueSelf) => {
+                self.expect(TokenKind::Keyword(KeywordKind::ValueSelf));
+                Expr::SelfValue
+            }
             TokenKind::Keyword(KeywordKind::If) => self.parseIf(),
             kind => self.reportError2("<expr>", kind),
         }

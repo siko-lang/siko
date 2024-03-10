@@ -15,13 +15,23 @@ impl FunctionParser for Parser {
     fn parseFunction(&mut self) -> Function {
         self.expect(TokenKind::Keyword(KeywordKind::Fn));
         let name = self.parseVarIdentifier();
+        let typeParams = if self.check(TokenKind::LeftBracket(BracketKind::Square)) {
+            Some(self.parseTypeParameterDeclaration())
+        } else {
+            None
+        };
         self.expect(TokenKind::LeftBracket(BracketKind::Paren));
         let mut params = Vec::new();
         while !self.check(TokenKind::RightBracket(BracketKind::Paren)) {
-            let name = self.parseVarIdentifier();
-            self.expect(TokenKind::Misc(MiscKind::Colon));
-            let ty = self.parseType();
-            let param = Parameter { name, ty };
+            let param = if self.check(TokenKind::Keyword(KeywordKind::ValueSelf)) {
+                self.expect(TokenKind::Keyword(KeywordKind::ValueSelf));
+                Parameter::SelfParam
+            } else {
+                let name = self.parseVarIdentifier();
+                self.expect(TokenKind::Misc(MiscKind::Colon));
+                let ty = self.parseType();
+                Parameter::Named(name, ty)
+            };
             params.push(param);
             if self.check(TokenKind::RightBracket(BracketKind::Paren)) {
                 break;
@@ -35,12 +45,17 @@ impl FunctionParser for Parser {
         } else {
             None
         };
-        let body = self.parseBlock();
+        let body = if self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
+            Some(self.parseBlock())
+        } else {
+            None
+        };
         Function {
             name,
+            typeParams,
             params,
             result,
-            body: Some(body),
+            body: body,
         }
     }
 }

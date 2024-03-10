@@ -249,6 +249,10 @@ impl Lexer {
                                 self.step();
                                 self.addToken(Token::Op(OperatorKind::DoubleEqual))
                             }
+                            Some('>') => {
+                                self.step();
+                                self.addToken(Token::Arrow(ArrowKind::DoubleRight))
+                            }
                             _ => self.addToken(Token::Op(OperatorKind::Equal)),
                         }
                     }

@@ -2,11 +2,12 @@ use crate::siko::syntax::Type::*;
 
 use super::{
     Parser::*,
-    Token::{ArrowKind, BracketKind, KeywordKind, MiscKind, TokenKind},
+    Token::{ArrowKind, BracketKind, KeywordKind, MiscKind, OperatorKind, TokenKind},
 };
 
 pub trait TypeParser {
     fn parseType(&mut self) -> Type;
+    fn parseTypeParameterDeclaration(&mut self) -> TypeParameterDeclaration;
 }
 
 impl TypeParser for Parser {
@@ -63,7 +64,45 @@ impl TypeParser for Parser {
                 let result = self.parseType();
                 Type::Function(args, Box::new(result))
             }
+            TokenKind::Keyword(KeywordKind::TypeSelf) => {
+                self.expect(TokenKind::Keyword(KeywordKind::TypeSelf));
+                Type::SelfType
+            }
             kind => self.reportError2("<type>", kind),
+        }
+    }
+
+    fn parseTypeParameterDeclaration(&mut self) -> TypeParameterDeclaration {
+        let mut params = Vec::new();
+        let mut constraints = Vec::new();
+        let mut afterParam = false;
+        self.expect(TokenKind::LeftBracket(BracketKind::Square));
+        while !self.check(TokenKind::RightBracket(BracketKind::Square)) {
+            let param = self.parseTypeIdentifier();
+            let mut deps = Vec::new();
+            if self.check(TokenKind::Misc(MiscKind::Colon)) {
+                self.expect(TokenKind::Misc(MiscKind::Colon));
+                loop {
+                    let dep = self.parseType();
+                    deps.push(dep);
+                    if !self.check(TokenKind::Op(OperatorKind::Add)) {
+                        break;
+                    }
+                }
+            }
+            params.push(TypeParameter {
+                name: param,
+                constraints: deps,
+            });
+            if self.check(TokenKind::Arrow(ArrowKind::DoubleRight)) {
+                self.expect(TokenKind::Arrow(ArrowKind::DoubleRight));
+                break;
+            }
+        }
+        self.expect(TokenKind::RightBracket(BracketKind::Square));
+        TypeParameterDeclaration {
+            params,
+            constraints,
         }
     }
 }

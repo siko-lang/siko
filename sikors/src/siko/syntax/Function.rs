@@ -1,11 +1,17 @@
-use super::{Identifier::Identifier, Statement::Block, Type::Type};
+use super::{
+    Identifier::Identifier,
+    Statement::Block,
+    Type::{Type, TypeParameterDeclaration},
+};
 
-pub struct Parameter {
-    pub name: Identifier,
-    pub ty: Type,
+pub enum Parameter {
+    Named(Identifier, Type),
+    SelfParam,
 }
+
 pub struct Function {
     pub name: Identifier,
+    pub typeParams: Option<TypeParameterDeclaration>,
     pub params: Vec<Parameter>,
     pub result: Option<Type>,
     pub body: Option<Block>,
