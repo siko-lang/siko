@@ -1,4 +1,8 @@
-use super::{Function::Function, Identifier::Identifier, Type::TypeParameterDeclaration};
+use super::{
+    Function::Function,
+    Identifier::Identifier,
+    Type::{Type, TypeParameterDeclaration},
+};
 
 pub struct Trait {
     pub name: Identifier,
@@ -6,4 +10,8 @@ pub struct Trait {
     pub members: Vec<Function>,
 }
 
-pub struct Instance {}
+pub struct Instance {
+    pub typeParams: Option<TypeParameterDeclaration>,
+    pub ty: Type,
+    pub members: Vec<Function>,
+}

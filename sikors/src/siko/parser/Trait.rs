@@ -1,5 +1,3 @@
-use std::mem;
-
 use crate::siko::syntax::Trait::{Instance, Trait};
 
 use super::{
@@ -83,6 +81,10 @@ impl TraitParser for Parser {
             }
             self.expect(TokenKind::RightBracket(BracketKind::Curly));
         }
-        Instance {}
+        Instance {
+            typeParams,
+            ty,
+            members,
+        }
     }
 }

@@ -84,9 +84,7 @@ impl DataParser for Parser {
                 TokenKind::TypeIdentifier => {
                     let variant = self.parseVariant();
                     variants.push(variant);
-                    if self.check(TokenKind::RightBracket(BracketKind::Curly)) {
-                        break;
-                    } else {
+                    if self.check(TokenKind::Misc(MiscKind::Comma)) {
                         self.expect(TokenKind::Misc(MiscKind::Comma));
                     }
                 }
