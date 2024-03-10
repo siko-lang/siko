@@ -26,6 +26,7 @@ impl DataParser for Parser {
         } else {
             None
         };
+        let mut hasImplicitMember = false;
         self.expect(TokenKind::LeftBracket(BracketKind::Curly));
         let mut fields = Vec::new();
         let mut methods = Vec::new();
@@ -44,6 +45,10 @@ impl DataParser for Parser {
                     }
                     fields.push(Field { name: name, ty: ty });
                 }
+                TokenKind::Keyword(KeywordKind::Implicit) => {
+                    self.expect(TokenKind::Keyword(KeywordKind::Implicit));
+                    hasImplicitMember = true
+                }
                 kind => self.reportError2("<class member>", kind),
             }
         }
@@ -55,27 +60,43 @@ impl DataParser for Parser {
             fields: fields,
             methods: methods,
             derives,
+            hasImplicitMember: hasImplicitMember,
         }
     }
 
     fn parseEnum(&mut self, derives: Vec<Derive>) -> Enum {
         self.expect(TokenKind::Keyword(KeywordKind::Enum));
         let name = self.parseTypeIdentifier();
+        let typeParams = if self.check(TokenKind::LeftBracket(BracketKind::Square)) {
+            Some(self.parseTypeParameterDeclaration())
+        } else {
+            None
+        };
         let mut variants = Vec::new();
         let mut methods = Vec::new();
         self.expect(TokenKind::LeftBracket(BracketKind::Curly));
-        while self.check(TokenKind::TypeIdentifier) {
-            let variant = self.parseVariant();
-            variants.push(variant);
-            if self.check(TokenKind::RightBracket(BracketKind::Curly)) {
-                break;
-            } else {
-                self.expect(TokenKind::Misc(MiscKind::Comma));
+        while !self.check(TokenKind::RightBracket(BracketKind::Curly)) {
+            match self.peek() {
+                TokenKind::Keyword(KeywordKind::Fn) => {
+                    let method = self.parseFunction();
+                    methods.push(method);
+                }
+                TokenKind::TypeIdentifier => {
+                    let variant = self.parseVariant();
+                    variants.push(variant);
+                    if self.check(TokenKind::RightBracket(BracketKind::Curly)) {
+                        break;
+                    } else {
+                        self.expect(TokenKind::Misc(MiscKind::Comma));
+                    }
+                }
+                kind => self.reportError2("<enum member>", kind),
             }
         }
         self.expect(TokenKind::RightBracket(BracketKind::Curly));
         Enum {
             name,
+            typeParams,
             variants,
             methods,
             derives,

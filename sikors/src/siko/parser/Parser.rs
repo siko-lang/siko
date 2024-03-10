@@ -25,7 +25,7 @@ impl Parser {
             fileName: fileName,
             opTable: vec![
                 vec![OperatorKind::And, OperatorKind::Or],
-                vec![OperatorKind::DoubleEqual, OperatorKind::NotEqual],
+                vec![OperatorKind::Equal, OperatorKind::NotEqual],
                 vec![
                     OperatorKind::LessThan,
                     OperatorKind::GreaterThan,
@@ -40,6 +40,10 @@ impl Parser {
 
     pub fn peek(&self) -> TokenKind {
         self.tokens[self.index].kind()
+    }
+
+    pub fn current(&self) -> &TokenInfo {
+        &self.tokens[self.index]
     }
 
     pub fn check(&self, kind: TokenKind) -> bool {
@@ -78,6 +82,10 @@ impl Parser {
 
     pub fn step(&mut self) {
         self.index += 1;
+    }
+
+    pub fn undo(&mut self) {
+        self.index -= 1;
     }
 
     pub fn parseTypeIdentifier(&mut self) -> Identifier {

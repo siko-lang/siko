@@ -10,7 +10,6 @@ pub enum BracketKind {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum OperatorKind {
     Equal,
-    DoubleEqual,
     NotEqual,
     LessThan,
     GreaterThan,
@@ -56,6 +55,7 @@ pub enum KeywordKind {
     Using,
     Let,
     Derive,
+    Implicit,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -75,6 +75,7 @@ pub enum RangeKind {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum MiscKind {
     Dot,
+    Equal,
     Comma,
     Colon,
     Semicolon,

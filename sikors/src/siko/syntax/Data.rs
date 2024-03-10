@@ -12,10 +12,12 @@ pub struct Class {
     pub fields: Vec<Field>,
     pub methods: Vec<Function>,
     pub derives: Vec<Derive>,
+    pub hasImplicitMember: bool,
 }
 
 pub struct Enum {
     pub name: Identifier,
+    pub typeParams: Option<TypeParameterDeclaration>,
     pub variants: Vec<Variant>,
     pub methods: Vec<Function>,
     pub derives: Vec<Derive>,

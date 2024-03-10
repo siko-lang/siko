@@ -30,7 +30,6 @@ fn getSingleCharToken(c: char) -> Option<Token> {
         '@' => Token::Misc(MiscKind::At),
         '+' => Token::Op(OperatorKind::Add),
         '*' => Token::Op(OperatorKind::Mul),
-        '!' => Token::Misc(MiscKind::ExclamationMark),
         _ => return None,
     };
     Some(token)
@@ -173,6 +172,10 @@ impl Lexer {
                     "effect" => Token::Keyword(KeywordKind::Effect),
                     "self" => Token::Keyword(KeywordKind::ValueSelf),
                     "mut" => Token::Keyword(KeywordKind::Mut),
+                    "return" => Token::Keyword(KeywordKind::Return),
+                    "continue" => Token::Keyword(KeywordKind::Continue),
+                    "break" => Token::Keyword(KeywordKind::Break),
+                    "implicit" => Token::Keyword(KeywordKind::Implicit),
                     _ => Token::VarIdentifier(self.current.clone()),
                 };
                 self.addToken(token);
@@ -250,13 +253,13 @@ impl Lexer {
                         match self.peek() {
                             Some('=') => {
                                 self.step();
-                                self.addToken(Token::Op(OperatorKind::DoubleEqual))
+                                self.addToken(Token::Op(OperatorKind::Equal))
                             }
                             Some('>') => {
                                 self.step();
                                 self.addToken(Token::Arrow(ArrowKind::DoubleRight))
                             }
-                            _ => self.addToken(Token::Op(OperatorKind::Equal)),
+                            _ => self.addToken(Token::Misc(MiscKind::Equal)),
                         }
                     }
                     '.' => {
@@ -267,6 +270,16 @@ impl Lexer {
                                 self.addToken(Token::Range(RangeKind::Exclusive))
                             }
                             _ => self.addToken(Token::Misc(MiscKind::Dot)),
+                        }
+                    }
+                    '!' => {
+                        self.step();
+                        match self.peek() {
+                            Some('=') => {
+                                self.step();
+                                self.addToken(Token::Op(OperatorKind::NotEqual))
+                            }
+                            _ => self.addToken(Token::Misc(MiscKind::ExclamationMark)),
                         }
                     }
                     '"' => {

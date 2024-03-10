@@ -8,6 +8,12 @@ pub enum BinaryOp {
     Sub,
     Mul,
     Div,
+    Equal,
+    NotEqual,
+    LessThan,
+    GreaterThan,
+    LessThanOrEqual,
+    GreaterThanOrEqual,
 }
 
 #[derive(Debug)]
@@ -23,10 +29,16 @@ pub enum Expr {
     Name(Identifier),
     FieldAccess(Box<Expr>, Identifier),
     Call(Box<Expr>, Vec<Expr>),
-    If(Box<Expr>, Box<Expr>, Box<Expr>),
-    For(Pattern, Box<Expr>, Block),
+    If(Box<Expr>, Box<Expr>, Option<Box<Expr>>),
+    For(Pattern, Box<Expr>, Box<Expr>),
     BinaryOp(BinaryOp, Box<Expr>, Box<Expr>),
     Match(Box<Expr>, Vec<Branch>),
     Block(Block),
     Tuple(Vec<Expr>),
+    StringLiteral(String),
+    IntegerLiteral(String),
+    CharLiteral(char),
+    Return(Option<Box<Expr>>),
+    Break(Option<Box<Expr>>),
+    Continue(Option<Box<Expr>>),
 }

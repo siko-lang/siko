@@ -5,7 +5,7 @@ use super::Identifier::Identifier;
 #[derive(Debug)]
 pub enum Pattern {
     Named(Identifier, Vec<Pattern>),
-    Bind(Identifier),
+    Bind(Identifier, bool),
     Tuple(Vec<Pattern>),
     StringLiteral(String, Location),
     IntegerLiteral(String, Location),

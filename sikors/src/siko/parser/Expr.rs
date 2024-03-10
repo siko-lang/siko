@@ -1,12 +1,12 @@
 use crate::siko::syntax::{
-    Expr::{Branch, Expr},
+    Expr::{BinaryOp, Branch, Expr},
     Statement::{Block, Statement, StatementKind},
 };
 
 use super::{
     Parser::*,
     Pattern::PatternParser,
-    Token::{ArrowKind, BracketKind, KeywordKind, MiscKind, OperatorKind, TokenKind},
+    Token::{ArrowKind, BracketKind, KeywordKind, MiscKind, OperatorKind, Token, TokenKind},
 };
 
 pub trait ExprParser {
@@ -73,13 +73,18 @@ impl ExprParser for Parser {
         self.expect(TokenKind::Keyword(KeywordKind::If));
         let cond = self.parseExpr();
         self.expect(TokenKind::LeftBracket(BracketKind::Curly));
+        self.undo();
         let trueBranch = self.parseExpr();
-        self.expect(TokenKind::RightBracket(BracketKind::Curly));
-        self.expect(TokenKind::Keyword(KeywordKind::Else));
-        self.expect(TokenKind::LeftBracket(BracketKind::Curly));
-        let falseBranch = self.parseExpr();
-        self.expect(TokenKind::RightBracket(BracketKind::Curly));
-        Expr::If(Box::new(cond), Box::new(trueBranch), Box::new(falseBranch))
+        let falseBranch = if self.check(TokenKind::Keyword(KeywordKind::Else)) {
+            self.expect(TokenKind::Keyword(KeywordKind::Else));
+            self.expect(TokenKind::LeftBracket(BracketKind::Curly));
+            self.undo();
+            let falseBranch = self.parseExpr();
+            Some(Box::new(falseBranch))
+        } else {
+            None
+        };
+        Expr::If(Box::new(cond), Box::new(trueBranch), falseBranch)
     }
 
     fn parseFor(&mut self) -> Expr {
@@ -87,8 +92,10 @@ impl ExprParser for Parser {
         let pattern = self.parsePattern();
         self.expect(TokenKind::Keyword(KeywordKind::In));
         let source = self.parseExpr();
-        let body = self.parseBlock();
-        Expr::For(pattern, Box::new(source), body)
+        self.expect(TokenKind::LeftBracket(BracketKind::Curly));
+        self.undo();
+        let body = self.parseExpr();
+        Expr::For(pattern, Box::new(source), Box::new(body))
     }
 
     fn parseMatch(&mut self) -> Expr {
@@ -126,7 +133,7 @@ impl ExprParser for Parser {
             TokenKind::Keyword(KeywordKind::Let) => {
                 self.expect(TokenKind::Keyword(KeywordKind::Let));
                 let pattern = self.parsePattern();
-                self.expect(TokenKind::Op(OperatorKind::Equal));
+                self.expect(TokenKind::Misc(MiscKind::Equal));
                 let rhs = self.parseExpr();
                 (
                     StatementKind::Let(pattern, rhs),
@@ -135,8 +142,8 @@ impl ExprParser for Parser {
             }
             _ => {
                 let expr = self.parseExpr();
-                if self.check(TokenKind::Op(OperatorKind::Equal)) {
-                    self.expect(TokenKind::Op(OperatorKind::Equal));
+                if self.check(TokenKind::Misc(MiscKind::Equal)) {
+                    self.expect(TokenKind::Misc(MiscKind::Equal));
                     let rhs = self.parseExpr();
                     (
                         StatementKind::Assign(expr, rhs),
@@ -181,12 +188,43 @@ impl ExprParser for Parser {
     }
 
     fn parseBinaryOp(&mut self, index: usize) -> Expr {
-        let left = self.parseFieldAccessOrCall();
+        let mut left = self.callNext(index);
+        loop {
+            let ops = &self.opTable[index];
+            let mut matchingOp = None;
+            for op in ops {
+                if self.check(TokenKind::Op(*op)) {
+                    matchingOp = Some(op.clone());
+                    break;
+                }
+            }
+            if let Some(op) = matchingOp {
+                self.expect(TokenKind::Op(op));
+                let rhs = self.callNext(index);
+                let op = match op {
+                    OperatorKind::And => BinaryOp::And,
+                    OperatorKind::Or => BinaryOp::Or,
+                    OperatorKind::Add => BinaryOp::Add,
+                    OperatorKind::Sub => BinaryOp::Sub,
+                    OperatorKind::Mul => BinaryOp::Mul,
+                    OperatorKind::Div => BinaryOp::Div,
+                    OperatorKind::Equal => BinaryOp::Equal,
+                    OperatorKind::NotEqual => BinaryOp::NotEqual,
+                    OperatorKind::LessThan => BinaryOp::LessThan,
+                    OperatorKind::GreaterThan => BinaryOp::GreaterThan,
+                    OperatorKind::LessThanOrEqual => BinaryOp::LessThanOrEqual,
+                    OperatorKind::GreaterThanOrEqual => BinaryOp::GreaterThanOrEqual,
+                };
+                left = Expr::BinaryOp(op, Box::new(left), Box::new(rhs));
+            } else {
+                break;
+            }
+        }
         return left;
     }
 
     fn callNext(&mut self, index: usize) -> Expr {
-        if index >= self.opTable.len() {
+        if index + 1 >= self.opTable.len() {
             self.parseFieldAccessOrCall()
         } else {
             self.parseBinaryOp(index + 1)
@@ -203,9 +241,69 @@ impl ExprParser for Parser {
                 let value = self.parseTypeIdentifier();
                 Expr::Name(value)
             }
+            TokenKind::StringLiteral => {
+                let tokenInfo = self.current().clone();
+                self.step();
+                if let Token::StringLiteral(value) = tokenInfo.token {
+                    Expr::StringLiteral(value)
+                } else {
+                    unreachable!()
+                }
+            }
+            TokenKind::IntegerLiteral => {
+                let tokenInfo = self.current().clone();
+                self.step();
+                if let Token::IntegerLiteral(value) = tokenInfo.token {
+                    Expr::IntegerLiteral(value)
+                } else {
+                    unreachable!()
+                }
+            }
+            TokenKind::CharLiteral => {
+                let tokenInfo = self.current().clone();
+                self.step();
+                if let Token::CharLiteral(value) = tokenInfo.token {
+                    Expr::CharLiteral(value)
+                } else {
+                    unreachable!()
+                }
+            }
             TokenKind::Keyword(KeywordKind::ValueSelf) => {
                 self.expect(TokenKind::Keyword(KeywordKind::ValueSelf));
                 Expr::SelfValue
+            }
+            TokenKind::Keyword(KeywordKind::Return) => {
+                self.expect(TokenKind::Keyword(KeywordKind::Return));
+                let arg = if self.check(TokenKind::Misc(MiscKind::Semicolon))
+                    || self.check(TokenKind::Misc(MiscKind::Comma))
+                {
+                    None
+                } else {
+                    Some(Box::new(self.parseExpr()))
+                };
+                Expr::Return(arg)
+            }
+            TokenKind::Keyword(KeywordKind::Continue) => {
+                self.expect(TokenKind::Keyword(KeywordKind::Continue));
+                let arg = if self.check(TokenKind::Misc(MiscKind::Semicolon))
+                    || self.check(TokenKind::Misc(MiscKind::Comma))
+                {
+                    None
+                } else {
+                    Some(Box::new(self.parseExpr()))
+                };
+                Expr::Continue(arg)
+            }
+            TokenKind::Keyword(KeywordKind::Break) => {
+                self.expect(TokenKind::Keyword(KeywordKind::Break));
+                let arg = if self.check(TokenKind::Misc(MiscKind::Semicolon))
+                    || self.check(TokenKind::Misc(MiscKind::Comma))
+                {
+                    None
+                } else {
+                    Some(Box::new(self.parseExpr()))
+                };
+                Expr::Break(arg)
             }
             TokenKind::Keyword(KeywordKind::If) => self.parseIf(),
             TokenKind::Keyword(KeywordKind::For) => self.parseFor(),
