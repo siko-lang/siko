@@ -159,4 +159,8 @@ impl Parser {
             self.modules.push(m);
         }
     }
+
+    pub fn modules(self) -> Vec<Module> {
+        self.modules
+    }
 }
