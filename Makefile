@@ -1,5 +1,5 @@
 stdtest:
 	./stdtest.sh
 
-test: sikors/target/release/
-	cd sikors && cargo run --release && cd .. && ./siko test.sk
+test: Siko/target/release/
+	cd Siko && cargo run --release && cd .. && ./siko test.sk
