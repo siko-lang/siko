@@ -1,3 +1,5 @@
+use crate::siko::location::Location::Location;
+
 use super::{Identifier::Identifier, Pattern::Pattern, Statement::Block};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -23,7 +25,13 @@ pub struct Branch {
 }
 
 #[derive(Debug)]
-pub enum Expr {
+pub struct Expr {
+    pub expr: SimpleExpr,
+    pub location: Location,
+}
+
+#[derive(Debug)]
+pub enum SimpleExpr {
     Value(Identifier),
     SelfValue,
     Name(Identifier),

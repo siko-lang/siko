@@ -182,7 +182,7 @@ impl Lexer {
             }
         }
     }
-    fn processString(&mut self, _: char) {
+    fn processString(&mut self) {
         let mut literal = String::new();
         self.step();
         loop {
@@ -283,7 +283,7 @@ impl Lexer {
                         }
                     }
                     '"' => {
-                        self.processString(c);
+                        self.processString();
                     }
                     _ => {
                         self.addError(LexerError::UnsupportedCharacter(c, self.span.clone()));

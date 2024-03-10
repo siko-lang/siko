@@ -1,6 +1,6 @@
 use super::Module::ModuleParser;
 use super::Token::{MiscKind, OperatorKind, Token, TokenInfo, TokenKind};
-use crate::siko::location::Location::Location;
+use crate::siko::location::Location::{Location, Span};
 use crate::siko::syntax::Identifier::Identifier;
 use crate::siko::syntax::Module::Module;
 use crate::siko::util::error;
@@ -12,6 +12,7 @@ pub struct Parser {
     fileId: FileId,
     modules: Vec<Module>,
     fileName: String,
+    spans: Vec<Span>,
     pub opTable: Vec<Vec<OperatorKind>>,
 }
 
@@ -23,6 +24,7 @@ impl Parser {
             fileId: fileId,
             modules: Vec::new(),
             fileName: fileName,
+            spans: Vec::new(),
             opTable: vec![
                 vec![OperatorKind::And, OperatorKind::Or],
                 vec![OperatorKind::Equal, OperatorKind::NotEqual],
@@ -36,6 +38,22 @@ impl Parser {
                 vec![OperatorKind::Mul, OperatorKind::Div],
             ],
         }
+    }
+
+    pub fn pushSpan(&mut self) {
+        self.spans.push(self.tokens[self.index].span);
+    }
+
+    pub fn popSpan(&mut self) -> Location {
+        let start = self.spans.pop().unwrap();
+        let merged = start.merge(self.tokens[self.index].span);
+        Location::new(self.fileId, merged)
+    }
+
+    pub fn useSpan(&self) -> Location {
+        let start = self.spans.last().unwrap();
+        let merged = start.merge(self.tokens[self.index].span);
+        Location::new(self.fileId, merged)
     }
 
     pub fn peek(&self) -> TokenKind {
