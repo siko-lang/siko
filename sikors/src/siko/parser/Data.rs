@@ -20,11 +20,26 @@ impl DataParser for Parser {
     fn parseClass(&mut self, derives: Vec<Derive>) -> Class {
         self.expect(TokenKind::Keyword(KeywordKind::Class));
         let name = self.parseTypeIdentifier();
+        let typeParams = if self.check(TokenKind::LeftBracket(BracketKind::Square)) {
+            Some(self.parseTypeParameterDeclaration())
+        } else {
+            None
+        };
         self.expect(TokenKind::LeftBracket(BracketKind::Curly));
         let mut fields = Vec::new();
+        while !self.check(TokenKind::RightBracket(BracketKind::Curly)) {
+            let name = self.parseVarIdentifier();
+            self.expect(TokenKind::Misc(MiscKind::Colon));
+            let ty = self.parseType();
+            if self.check(TokenKind::Misc(MiscKind::Comma)) {
+                self.expect(TokenKind::Misc(MiscKind::Comma));
+            }
+            fields.push(Field { name: name, ty: ty });
+        }
         self.expect(TokenKind::RightBracket(BracketKind::Curly));
         Class {
             name,
+            typeParams: typeParams,
             isExtern: false,
             fields: fields,
             derives,

@@ -81,6 +81,12 @@ impl TypeParser for Parser {
             if afterParam {
                 let constraint = self.parseType();
                 constraints.push(constraint);
+                if self.check(TokenKind::Misc(MiscKind::Comma)) {
+                    self.expect(TokenKind::Misc(MiscKind::Comma));
+                    continue;
+                } else {
+                    break;
+                }
             } else {
                 let param = self.parseTypeIdentifier();
                 let mut deps = Vec::new();

@@ -1,12 +1,12 @@
 use crate::siko::syntax::{
-    Expr::Expr,
+    Expr::{Branch, Expr},
     Statement::{Block, Statement, StatementKind},
 };
 
 use super::{
     Parser::*,
     Pattern::PatternParser,
-    Token::{BracketKind, KeywordKind, MiscKind, OperatorKind, TokenKind},
+    Token::{ArrowKind, BracketKind, KeywordKind, MiscKind, OperatorKind, TokenKind},
 };
 
 pub trait ExprParser {
@@ -14,9 +14,10 @@ pub trait ExprParser {
     fn parseStatement(&mut self) -> (StatementKind, SemicolonRequirement);
     fn parseIf(&mut self) -> Expr;
     fn parseFor(&mut self) -> Expr;
+    fn parseMatch(&mut self) -> Expr;
+    fn parseFieldAccessOrCall(&mut self) -> Expr;
     fn parseBinaryOp(&mut self, index: usize) -> Expr;
     fn parseExpr(&mut self) -> Expr;
-    fn parseFunctionCall(&mut self) -> Expr;
     fn parsePrimary(&mut self) -> Expr;
     fn callNext(&mut self, index: usize) -> Expr;
 }
@@ -90,6 +91,24 @@ impl ExprParser for Parser {
         Expr::For(pattern, Box::new(source), body)
     }
 
+    fn parseMatch(&mut self) -> Expr {
+        self.expect(TokenKind::Keyword(KeywordKind::Match));
+        let body = self.parseExpr();
+        self.expect(TokenKind::LeftBracket(BracketKind::Curly));
+        let mut branches = Vec::new();
+        while !self.check(TokenKind::RightBracket(BracketKind::Curly)) {
+            let pattern = self.parsePattern();
+            self.expect(TokenKind::Arrow(ArrowKind::Right));
+            let body = self.parseExpr();
+            if self.check(TokenKind::Misc(MiscKind::Comma)) {
+                self.expect(TokenKind::Misc(MiscKind::Comma));
+            }
+            branches.push(Branch { pattern, body });
+        }
+        self.expect(TokenKind::RightBracket(BracketKind::Curly));
+        Expr::Match(Box::new(body), branches)
+    }
+
     fn parseStatement(&mut self) -> (StatementKind, SemicolonRequirement) {
         match self.peek() {
             TokenKind::Keyword(KeywordKind::If) => {
@@ -98,6 +117,10 @@ impl ExprParser for Parser {
             }
             TokenKind::Keyword(KeywordKind::For) => {
                 let expr = self.parseFor();
+                (StatementKind::Expr(expr), SemicolonRequirement::Optional)
+            }
+            TokenKind::Keyword(KeywordKind::Match) => {
+                let expr = self.parseMatch();
                 (StatementKind::Expr(expr), SemicolonRequirement::Optional)
             }
             TokenKind::Keyword(KeywordKind::Let) => {
@@ -129,37 +152,44 @@ impl ExprParser for Parser {
         }
     }
 
+    fn parseFieldAccessOrCall(&mut self) -> Expr {
+        let mut current = self.parsePrimary();
+        loop {
+            if self.check(TokenKind::Misc(MiscKind::Dot)) {
+                self.expect(TokenKind::Misc(MiscKind::Dot));
+                let name = self.parseVarIdentifier();
+                current = Expr::FieldAccess(Box::new(current), name);
+            } else if self.check(TokenKind::LeftBracket(BracketKind::Paren)) {
+                self.expect(TokenKind::LeftBracket(BracketKind::Paren));
+                let mut args = Vec::new();
+                while !self.check(TokenKind::RightBracket(BracketKind::Paren)) {
+                    let arg = self.parseExpr();
+                    args.push(arg);
+                    if self.check(TokenKind::RightBracket(BracketKind::Paren)) {
+                        break;
+                    } else {
+                        self.expect(TokenKind::Misc(MiscKind::Comma));
+                    }
+                }
+                self.expect(TokenKind::RightBracket(BracketKind::Paren));
+                current = Expr::Call(Box::new(current), args);
+            } else {
+                break;
+            }
+        }
+        return current;
+    }
+
     fn parseBinaryOp(&mut self, index: usize) -> Expr {
-        let left = self.parseFunctionCall();
+        let left = self.parseFieldAccessOrCall();
         return left;
     }
 
     fn callNext(&mut self, index: usize) -> Expr {
         if index >= self.opTable.len() {
-            self.parseFunctionCall()
+            self.parseFieldAccessOrCall()
         } else {
             self.parseBinaryOp(index + 1)
-        }
-    }
-
-    fn parseFunctionCall(&mut self) -> Expr {
-        let callable = self.parsePrimary();
-        if self.check(TokenKind::LeftBracket(BracketKind::Paren)) {
-            self.expect(TokenKind::LeftBracket(BracketKind::Paren));
-            let mut args = Vec::new();
-            while !self.check(TokenKind::RightBracket(BracketKind::Paren)) {
-                let arg = self.parseExpr();
-                args.push(arg);
-                if self.check(TokenKind::RightBracket(BracketKind::Paren)) {
-                    break;
-                } else {
-                    self.expect(TokenKind::Misc(MiscKind::Comma));
-                }
-            }
-            self.expect(TokenKind::RightBracket(BracketKind::Paren));
-            Expr::Call(Box::new(callable), args)
-        } else {
-            callable
         }
     }
 
@@ -179,6 +209,33 @@ impl ExprParser for Parser {
             }
             TokenKind::Keyword(KeywordKind::If) => self.parseIf(),
             TokenKind::Keyword(KeywordKind::For) => self.parseFor(),
+            TokenKind::Keyword(KeywordKind::Match) => self.parseMatch(),
+            TokenKind::LeftBracket(BracketKind::Curly) => {
+                let block = self.parseBlock();
+                Expr::Block(block)
+            }
+            TokenKind::LeftBracket(BracketKind::Paren) => {
+                self.expect(TokenKind::LeftBracket(BracketKind::Paren));
+                let mut args = Vec::new();
+                let mut commaAtEnd = false;
+                while !self.check(TokenKind::RightBracket(BracketKind::Paren)) {
+                    let arg = self.parseExpr();
+                    args.push(arg);
+                    if self.check(TokenKind::RightBracket(BracketKind::Paren)) {
+                        commaAtEnd = false;
+                        break;
+                    } else {
+                        self.expect(TokenKind::Misc(MiscKind::Comma));
+                        commaAtEnd = true;
+                    }
+                }
+                self.expect(TokenKind::RightBracket(BracketKind::Paren));
+                if args.len() == 1 && !commaAtEnd {
+                    args.remove(0)
+                } else {
+                    Expr::Tuple(args)
+                }
+            }
             kind => self.reportError2("<expr>", kind),
         }
     }

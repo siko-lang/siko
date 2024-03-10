@@ -67,6 +67,22 @@ impl TraitParser for Parser {
     }
 
     fn parseInstance(&mut self) -> Instance {
+        self.expect(TokenKind::Keyword(KeywordKind::Instance));
+        let typeParams = if self.check(TokenKind::LeftBracket(BracketKind::Square)) {
+            Some(self.parseTypeParameterDeclaration())
+        } else {
+            None
+        };
+        let ty = self.parseType();
+        let mut members = Vec::new();
+        if self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
+            self.expect(TokenKind::LeftBracket(BracketKind::Curly));
+            while !self.check(TokenKind::RightBracket(BracketKind::Curly)) {
+                let function = self.parseFunction();
+                members.push(function);
+            }
+            self.expect(TokenKind::RightBracket(BracketKind::Curly));
+        }
         Instance {}
     }
 }

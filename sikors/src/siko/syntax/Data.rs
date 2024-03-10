@@ -1,7 +1,12 @@
-use super::{Identifier::Identifier, Module::Derive, Type::Type};
+use super::{
+    Identifier::Identifier,
+    Module::Derive,
+    Type::{Type, TypeParameterDeclaration},
+};
 
 pub struct Class {
     pub name: Identifier,
+    pub typeParams: Option<TypeParameterDeclaration>,
     pub isExtern: bool,
     pub fields: Vec<Field>,
     pub derives: Vec<Derive>,
