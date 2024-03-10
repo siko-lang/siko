@@ -15,4 +15,5 @@ pub struct Function {
     pub params: Vec<Parameter>,
     pub result: Option<Type>,
     pub body: Option<Block>,
+    pub isExtern: bool,
 }

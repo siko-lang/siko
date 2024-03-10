@@ -3,7 +3,7 @@ use crate::siko::syntax::Function::{Function, Parameter};
 use super::{
     Expr::ExprParser,
     Parser::*,
-    Token::{ArrowKind, BracketKind, KeywordKind, MiscKind, TokenKind},
+    Token::{ArrowKind, BracketKind, KeywordKind, MiscKind, OperatorKind, TokenKind},
     Type::TypeParser,
 };
 
@@ -51,17 +51,27 @@ impl FunctionParser for Parser {
         } else {
             None
         };
-        let body = if self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
-            Some(self.parseBlock())
+
+        let (isExtern, body) = if self.check(TokenKind::Op(OperatorKind::Equal)) {
+            self.expect(TokenKind::Op(OperatorKind::Equal));
+            self.expect(TokenKind::Keyword(KeywordKind::Extern));
+            (true, None)
         } else {
-            None
+            let body = if self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
+                Some(self.parseBlock())
+            } else {
+                None
+            };
+            (false, body)
         };
+
         Function {
             name,
             typeParams,
             params,
             result,
             body: body,
+            isExtern: isExtern,
         }
     }
 }

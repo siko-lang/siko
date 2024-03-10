@@ -4,6 +4,7 @@ use crate::siko::syntax::{
 };
 
 use super::{
+    Function::FunctionParser,
     Parser::*,
     Token::{BracketKind, KeywordKind, MiscKind, TokenKind},
     Type::TypeParser,
@@ -27,14 +28,24 @@ impl DataParser for Parser {
         };
         self.expect(TokenKind::LeftBracket(BracketKind::Curly));
         let mut fields = Vec::new();
+        let mut methods = Vec::new();
         while !self.check(TokenKind::RightBracket(BracketKind::Curly)) {
-            let name = self.parseVarIdentifier();
-            self.expect(TokenKind::Misc(MiscKind::Colon));
-            let ty = self.parseType();
-            if self.check(TokenKind::Misc(MiscKind::Comma)) {
-                self.expect(TokenKind::Misc(MiscKind::Comma));
+            match self.peek() {
+                TokenKind::Keyword(KeywordKind::Fn) => {
+                    let method = self.parseFunction();
+                    methods.push(method);
+                }
+                TokenKind::VarIdentifier => {
+                    let name = self.parseVarIdentifier();
+                    self.expect(TokenKind::Misc(MiscKind::Colon));
+                    let ty = self.parseType();
+                    if self.check(TokenKind::Misc(MiscKind::Comma)) {
+                        self.expect(TokenKind::Misc(MiscKind::Comma));
+                    }
+                    fields.push(Field { name: name, ty: ty });
+                }
+                kind => self.reportError2("<class member>", kind),
             }
-            fields.push(Field { name: name, ty: ty });
         }
         self.expect(TokenKind::RightBracket(BracketKind::Curly));
         Class {
@@ -42,6 +53,7 @@ impl DataParser for Parser {
             typeParams: typeParams,
             isExtern: false,
             fields: fields,
+            methods: methods,
             derives,
         }
     }
@@ -50,6 +62,7 @@ impl DataParser for Parser {
         self.expect(TokenKind::Keyword(KeywordKind::Enum));
         let name = self.parseTypeIdentifier();
         let mut variants = Vec::new();
+        let mut methods = Vec::new();
         self.expect(TokenKind::LeftBracket(BracketKind::Curly));
         while self.check(TokenKind::TypeIdentifier) {
             let variant = self.parseVariant();
@@ -64,6 +77,7 @@ impl DataParser for Parser {
         Enum {
             name,
             variants,
+            methods,
             derives,
         }
     }

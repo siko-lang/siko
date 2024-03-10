@@ -1,4 +1,5 @@
 use super::{
+    Function::Function,
     Identifier::Identifier,
     Module::Derive,
     Type::{Type, TypeParameterDeclaration},
@@ -9,12 +10,14 @@ pub struct Class {
     pub typeParams: Option<TypeParameterDeclaration>,
     pub isExtern: bool,
     pub fields: Vec<Field>,
+    pub methods: Vec<Function>,
     pub derives: Vec<Derive>,
 }
 
 pub struct Enum {
     pub name: Identifier,
     pub variants: Vec<Variant>,
+    pub methods: Vec<Function>,
     pub derives: Vec<Derive>,
 }
 
