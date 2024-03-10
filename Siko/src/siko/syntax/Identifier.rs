@@ -1,9 +1,17 @@
+use std::fmt::Display;
+
 use crate::siko::location::Location::*;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Identifier {
     pub name: String,
     pub location: Location,
+}
+
+impl Display for Identifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
 }
 
 impl Identifier {

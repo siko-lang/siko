@@ -17,4 +17,5 @@ fn main() {
             resolver.addModule(m);
         }
     }
+    resolver.process();
 }
