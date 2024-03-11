@@ -5,8 +5,12 @@ use super::{
 };
 
 use crate::siko::{
+    location::Location::{Location, Span},
     parser::{Data::DataParser, Function::FunctionParser},
-    syntax::Module::{Derive, Import, Module, ModuleItem},
+    syntax::{
+        Identifier::Identifier,
+        Module::{Derive, Import, Module, ModuleItem},
+    },
 };
 pub trait ModuleParser {
     fn parseImport(&mut self) -> Import;
@@ -82,6 +86,19 @@ impl ModuleParser for Parser {
             items.push(item);
         }
         self.expect(TokenKind::RightBracket(BracketKind::Curly));
+        let implicitImports = vec![
+            "String", "List", "Bool", "Int", "Char", "Result", "Option", "Ordering", "Show",
+            "Iterator",
+        ];
+        for i in implicitImports {
+            items.push(ModuleItem::Import(Import {
+                moduleName: Identifier {
+                    name: i.to_string(),
+                    location: Location::new(self.fileId, Span::new()),
+                },
+                alias: None,
+            }))
+        }
         Module { name, items }
     }
 }

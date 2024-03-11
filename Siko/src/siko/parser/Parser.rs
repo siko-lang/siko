@@ -9,7 +9,7 @@ use crate::siko::{location::Location::FileId, parser::Lexer::*};
 pub struct Parser {
     tokens: Vec<TokenInfo>,
     index: usize,
-    fileId: FileId,
+    pub fileId: FileId,
     modules: Vec<Module>,
     fileName: String,
     spans: Vec<Span>,

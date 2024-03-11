@@ -1,16 +1,14 @@
 use std::fmt::Display;
 
-use super::syntax::Identifier::Identifier;
-
 #[derive(Debug, Clone)]
 pub enum QualifiedName {
-    Module(Identifier),
-    Item(Box<QualifiedName>, Identifier),
+    Module(String),
+    Item(Box<QualifiedName>, String),
 }
 
 impl QualifiedName {
-    pub fn add(&self, item: &Identifier) -> QualifiedName {
-        QualifiedName::Item(Box::new(self.clone()), item.clone())
+    pub fn add(&self, item: String) -> QualifiedName {
+        QualifiedName::Item(Box::new(self.clone()), item)
     }
 }
 

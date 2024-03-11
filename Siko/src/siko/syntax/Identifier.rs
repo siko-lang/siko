@@ -15,6 +15,10 @@ impl Display for Identifier {
 }
 
 impl Identifier {
+    pub fn toString(&self) -> String {
+        format!("{}", self)
+    }
+
     pub fn merge(&mut self, other: Identifier) {
         self.location.merge(other.location);
     }
