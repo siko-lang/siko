@@ -6,13 +6,15 @@ use crate::siko::{
 
 use std::{collections::BTreeMap, fmt::Display};
 
+use super::ModuleResolver::ModuleResolver;
+
 #[derive(Debug)]
-struct Names {
-    names: BTreeMap<String, Vec<QualifiedName>>,
+pub struct Names {
+    pub names: BTreeMap<String, Vec<QualifiedName>>,
 }
 
 impl Names {
-    fn new() -> Names {
+    pub fn new() -> Names {
         Names {
             names: BTreeMap::new(),
         }
@@ -30,16 +32,14 @@ impl Names {
 
 pub struct Resolver {
     modules: BTreeMap<String, Module>,
-    localNames: BTreeMap<String, Names>,
-    importedNames: BTreeMap<String, Names>,
+    resolvers: BTreeMap<String, ModuleResolver>,
 }
 
 impl Resolver {
     pub fn new() -> Resolver {
         Resolver {
             modules: BTreeMap::new(),
-            localNames: BTreeMap::new(),
-            importedNames: BTreeMap::new(),
+            resolvers: BTreeMap::new(),
         }
     }
 
@@ -50,10 +50,27 @@ impl Resolver {
     pub fn process(&mut self) {
         self.collectLocalNames();
         self.processImports();
+        self.processClasses();
     }
 
-    pub fn processImports(&mut self) {
-        self.collectLocalNames();
+    fn processClasses(&mut self) {
+        for (_, m) in &self.modules {
+            let moduleResolver = self.resolvers.get(&m.name.name).unwrap();
+            for item in &m.items {
+                match item {
+                    ModuleItem::Class(c) => {
+                        println!("Processing class {}", c.name);
+                        for field in &c.fields {
+                            let ty = moduleResolver.resolveType(&field.ty);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    fn processImports(&mut self) {
         for (_, m) in &self.modules {
             //println!("Processing module {}", name);
             let mut importedNames = Names::new();
@@ -135,11 +152,12 @@ impl Resolver {
                     _ => {}
                 }
             }
-            self.importedNames.insert(m.name.toString(), importedNames);
+            let moduleResolver = self.resolvers.get_mut(&m.name.toString()).unwrap();
+            moduleResolver.importedNames = importedNames;
         }
     }
 
-    pub fn collectLocalNames(&mut self) {
+    fn collectLocalNames(&mut self) {
         for (_, m) in &self.modules {
             //println!("Processing module {}", name);
             let mut localNames = Names::new();
@@ -176,7 +194,11 @@ impl Resolver {
                     ModuleItem::Instance(_) => {}
                 }
             }
-            self.localNames.insert(m.name.toString(), localNames);
+            let moduleResolver = ModuleResolver {
+                localNames: localNames,
+                importedNames: Names::new(),
+            };
+            self.resolvers.insert(m.name.toString(), moduleResolver);
         }
     }
 }

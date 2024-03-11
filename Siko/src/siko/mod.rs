@@ -1,3 +1,4 @@
+pub mod ir;
 pub mod location;
 pub mod parser;
 pub mod qualifiedname;
