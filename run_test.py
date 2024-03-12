@@ -18,8 +18,13 @@ def test(entry):
     input_path = os.path.join("test", entry, "main.sk")
     output_path = os.path.join("test", entry, "main.rs")
     rust_output_path = os.path.join("test", entry, "main.bin")
+    std = []
+    for m in os.listdir("./std"):
+        std.append(os.path.join("./std", m))
     #r = subprocess.run(["./siko.py", input_path, "-o", output_path])
-    r = subprocess.run(["./siko", input_path])
+    args = ["./siko", input_path] + std
+    #print(args)
+    r = subprocess.run(args)
     if r.returncode != 0:
         failure += 1
         return
