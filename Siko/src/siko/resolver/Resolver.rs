@@ -21,7 +21,7 @@ use crate::siko::ir::Function::Function as IrFunction;
 
 #[derive(Debug)]
 pub struct Names {
-    pub names: BTreeMap<String, Vec<QualifiedName>>,
+    pub names: BTreeMap<String, BTreeSet<QualifiedName>>,
 }
 
 impl Names {
@@ -36,8 +36,8 @@ impl Names {
         let names = self
             .names
             .entry(format!("{}", name))
-            .or_insert_with(|| Vec::new());
-        names.push(qualifiedname.clone());
+            .or_insert_with(|| BTreeSet::new());
+        names.insert(qualifiedname.clone());
     }
 }
 
@@ -71,7 +71,7 @@ impl Resolver {
         self.processImports();
         self.processDataTypes();
         self.processFunctions();
-        self.dump();
+        //self.dump();
     }
 
     fn dump(&self) {

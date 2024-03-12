@@ -18,8 +18,7 @@ def test(entry):
     input_path = os.path.join("test", entry, "main.sk")
     output_path = os.path.join("test", entry, "main.rs")
     rust_output_path = os.path.join("test", entry, "main.bin")
-    #r = subprocess.run(["./siko.py", input_path, "-o", output_path])
-    r = subprocess.run(["./siko", input_path])
+    r = subprocess.run(["./siko.py", input_path, "-o", output_path])
     if r.returncode != 0:
         failure += 1
         return

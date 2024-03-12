@@ -95,7 +95,9 @@ impl TypeParser for Parser {
                     loop {
                         let dep = self.parseType();
                         deps.push(dep);
-                        if !self.check(TokenKind::Op(OperatorKind::Add)) {
+                        if self.check(TokenKind::Op(OperatorKind::Add)) {
+                            self.expect(TokenKind::Op(OperatorKind::Add));
+                        } else {
                             break;
                         }
                     }
