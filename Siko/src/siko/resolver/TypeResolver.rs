@@ -13,15 +13,19 @@ impl<'a> TypeResolver<'a> {
         moduleResolver: &'a ModuleResolver,
         decl: &Option<TypeParameterDeclaration>,
     ) -> TypeResolver<'a> {
-        let mut typeParameters = BTreeSet::new();
-        if let Some(decl) = decl {
-            for param in &decl.params {
-                typeParameters.insert(param.name.toString());
-            }
-        }
-        TypeResolver {
+        let mut r = TypeResolver {
             moduleResolver: moduleResolver,
-            typeParameters: typeParameters,
+            typeParameters: BTreeSet::new(),
+        };
+        r.addTypeParams(decl.as_ref());
+        r
+    }
+
+    pub fn addTypeParams(&mut self, typeParams: Option<&TypeParameterDeclaration>) {
+        if let Some(decl) = typeParams {
+            for param in &decl.params {
+                self.typeParameters.insert(param.name.toString());
+            }
         }
     }
 

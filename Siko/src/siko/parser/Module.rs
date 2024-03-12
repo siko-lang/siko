@@ -32,6 +32,7 @@ impl ModuleParser for Parser {
         Import {
             moduleName: name,
             alias,
+            implicitImport: false,
         }
     }
 
@@ -97,6 +98,7 @@ impl ModuleParser for Parser {
                     location: Location::new(self.fileId, Span::new()),
                 },
                 alias: None,
+                implicitImport: true,
             }))
         }
         Module { name, items }

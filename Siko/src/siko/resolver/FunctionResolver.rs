@@ -1,0 +1,66 @@
+use std::collections::BTreeSet;
+
+use crate::siko::ir::Function::{Function as IrFunction, Parameter as IrParameter};
+use crate::siko::ir::Type::Type as IrType;
+use crate::siko::qualifiedname::QualifiedName;
+use crate::siko::syntax::Function::{Function, Parameter};
+use crate::siko::syntax::Type::TypeParameterDeclaration;
+
+use super::Environment::Environment;
+use super::ExprResolver::ExprResolver;
+use super::ModuleResolver::ModuleResolver;
+use super::TypeResolver::TypeResolver;
+pub struct FunctionResolver<'a> {
+    moduleResolver: &'a ModuleResolver,
+    typeParams: Option<&'a TypeParameterDeclaration>,
+}
+
+impl<'a> FunctionResolver<'a> {
+    pub fn new(
+        moduleResolver: &'a ModuleResolver,
+        typeParams: Option<&'a TypeParameterDeclaration>,
+    ) -> FunctionResolver<'a> {
+        FunctionResolver {
+            moduleResolver: moduleResolver,
+            typeParams: typeParams,
+        }
+    }
+
+    pub fn resolve(&self, f: &Function, emptyVariants: &BTreeSet<QualifiedName>) -> IrFunction {
+        let mut typeResolver = TypeResolver::new(self.moduleResolver, &f.typeParams);
+        typeResolver.addTypeParams(self.typeParams);
+        let mut params = Vec::new();
+        let mut env = Environment::new();
+        for param in &f.params {
+            let irParam = match param {
+                Parameter::Named(id, ty, mutable) => {
+                    env.addArg(id.toString());
+                    IrParameter::Named(id.toString(), typeResolver.resolveType(ty), *mutable)
+                }
+                Parameter::SelfParam(mutable) => IrParameter::SelfParam(*mutable),
+            };
+
+            params.push(irParam);
+        }
+        let result = if let Some(ty) = &f.result {
+            typeResolver.resolveType(ty)
+        } else {
+            IrType::Tuple(Vec::new())
+        };
+
+        let body = if let Some(body) = &f.body {
+            let mut exprResolver = ExprResolver::new(self.moduleResolver, emptyVariants);
+            exprResolver.resolve(body, &env);
+            Some(exprResolver.body())
+        } else {
+            None
+        };
+        let irFunction = IrFunction::new(
+            self.moduleResolver.resolverName(&f.name),
+            params,
+            result,
+            body,
+        );
+        irFunction
+    }
+}

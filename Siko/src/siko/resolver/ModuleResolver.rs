@@ -24,6 +24,7 @@ impl ModuleResolver {
             }
             return names[0].clone();
         }
+        println!("Local names {:?}", self.localNames);
         error(format!("Unknown name {}", name.name));
     }
 }

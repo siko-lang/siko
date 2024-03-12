@@ -9,9 +9,16 @@ pub struct Field {
 }
 
 #[derive(Debug)]
+pub struct MethodInfo {
+    pub name: String,
+    pub fullName: QualifiedName,
+}
+
+#[derive(Debug)]
 pub struct Class {
     pub name: QualifiedName,
     pub fields: Vec<Field>,
+    pub methods: Vec<MethodInfo>,
 }
 
 impl Class {
@@ -19,6 +26,7 @@ impl Class {
         Class {
             name: name,
             fields: Vec::new(),
+            methods: Vec::new(),
         }
     }
 }
@@ -32,6 +40,7 @@ pub struct Variant {
 pub struct Enum {
     pub name: QualifiedName,
     pub variants: Vec<Variant>,
+    pub methods: Vec<MethodInfo>,
 }
 
 impl Enum {
@@ -39,6 +48,7 @@ impl Enum {
         Enum {
             name: name,
             variants: Vec::new(),
+            methods: Vec::new(),
         }
     }
 }

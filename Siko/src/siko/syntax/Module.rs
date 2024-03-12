@@ -21,6 +21,7 @@ pub enum ModuleItem {
 pub struct Import {
     pub moduleName: Identifier,
     pub alias: Option<Identifier>,
+    pub implicitImport: bool,
 }
 
 pub struct Module {
