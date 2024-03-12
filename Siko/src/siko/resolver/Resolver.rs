@@ -7,6 +7,11 @@ use crate::siko::{
 use std::{collections::BTreeMap, fmt::Display};
 
 use super::ModuleResolver::ModuleResolver;
+use super::TypeResolver::TypeResolver;
+use crate::siko::ir::Data::Class as IrClass;
+use crate::siko::ir::Data::Enum as IrEnum;
+use crate::siko::ir::Data::Field as IrField;
+use crate::siko::ir::Data::Variant as IrVariant;
 
 #[derive(Debug)]
 pub struct Names {
@@ -33,6 +38,8 @@ impl Names {
 pub struct Resolver {
     modules: BTreeMap<String, Module>,
     resolvers: BTreeMap<String, ModuleResolver>,
+    classes: BTreeMap<QualifiedName, IrClass>,
+    enums: BTreeMap<QualifiedName, IrEnum>,
 }
 
 impl Resolver {
@@ -40,6 +47,8 @@ impl Resolver {
         Resolver {
             modules: BTreeMap::new(),
             resolvers: BTreeMap::new(),
+            classes: BTreeMap::new(),
+            enums: BTreeMap::new(),
         }
     }
 
@@ -59,9 +68,46 @@ impl Resolver {
             for item in &m.items {
                 match item {
                     ModuleItem::Class(c) => {
-                        println!("Processing class {}", c.name);
+                        let mut typeResolver = TypeResolver::new(moduleResolver);
+                        if let Some(decl) = &c.typeParams {
+                            typeResolver.processTypeParameterDeclaration(&decl);
+                        }
+                        let mut irClass = IrClass::new(moduleResolver.resolverName(&c.name));
                         for field in &c.fields {
-                            let ty = moduleResolver.resolveType(&field.ty);
+                            let ty = typeResolver.resolveType(&field.ty);
+                            irClass.fields.push(IrField {
+                                name: field.name.toString(),
+                                ty,
+                            })
+                        }
+                        println!("Class {:?}", irClass);
+                        self.classes.insert(irClass.name.clone(), irClass);
+                    }
+                    ModuleItem::Enum(e) => {
+                        let mut typeResolver = TypeResolver::new(moduleResolver);
+                        if let Some(decl) = &e.typeParams {
+                            typeResolver.processTypeParameterDeclaration(&decl);
+                        }
+                        let mut irEnum = IrEnum::new(moduleResolver.resolverName(&e.name));
+                        for variant in &e.variants {
+                            let mut items = Vec::new();
+                            for item in &variant.items {
+                                let ty = typeResolver.resolveType(item);
+                                items.push(ty);
+                            }
+
+                            irEnum.variants.push(IrVariant {
+                                name: irEnum.name.add(variant.name.toString()),
+                                items: items,
+                            });
+                        }
+                        //println!("Enum {:?}", irEnum);
+                        self.enums.insert(irEnum.name.clone(), irEnum);
+                    }
+                    ModuleItem::Function(f) => {
+                        let mut typeResolver = TypeResolver::new(moduleResolver);
+                        if let Some(decl) = &f.typeParams {
+                            typeResolver.processTypeParameterDeclaration(&decl);
                         }
                     }
                     _ => {}
