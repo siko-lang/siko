@@ -1,22 +1,27 @@
 use super::ModuleResolver::ModuleResolver;
 use crate::siko::ir::Type::Type as IrType;
 use crate::siko::syntax::Type::{Type, TypeParameterDeclaration};
+use std::collections::BTreeSet;
+
 pub struct TypeResolver<'a> {
     moduleResolver: &'a ModuleResolver,
-    typeParameters: Vec<String>,
+    typeParameters: BTreeSet<String>,
 }
 
 impl<'a> TypeResolver<'a> {
-    pub fn new(moduleResolver: &'a ModuleResolver) -> TypeResolver<'a> {
+    pub fn new(
+        moduleResolver: &'a ModuleResolver,
+        decl: &Option<TypeParameterDeclaration>,
+    ) -> TypeResolver<'a> {
+        let mut typeParameters = BTreeSet::new();
+        if let Some(decl) = decl {
+            for param in &decl.params {
+                typeParameters.insert(param.name.toString());
+            }
+        }
         TypeResolver {
             moduleResolver: moduleResolver,
-            typeParameters: Vec::new(),
-        }
-    }
-
-    pub fn processTypeParameterDeclaration(&mut self, decl: &TypeParameterDeclaration) {
-        for param in &decl.params {
-            self.typeParameters.push(param.name.toString());
+            typeParameters: typeParameters,
         }
     }
 

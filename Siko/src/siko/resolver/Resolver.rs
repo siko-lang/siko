@@ -1,6 +1,9 @@
 use crate::siko::{
     qualifiedname::QualifiedName,
-    syntax::Module::{Module, ModuleItem},
+    syntax::{
+        Function::Parameter,
+        Module::{Module, ModuleItem},
+    },
     util::error,
 };
 
@@ -12,6 +15,9 @@ use crate::siko::ir::Data::Class as IrClass;
 use crate::siko::ir::Data::Enum as IrEnum;
 use crate::siko::ir::Data::Field as IrField;
 use crate::siko::ir::Data::Variant as IrVariant;
+use crate::siko::ir::Function::Function as IrFunction;
+use crate::siko::ir::Function::Parameter as IrParameter;
+use crate::siko::ir::Type::Type as IrType;
 
 #[derive(Debug)]
 pub struct Names {
@@ -40,6 +46,7 @@ pub struct Resolver {
     resolvers: BTreeMap<String, ModuleResolver>,
     classes: BTreeMap<QualifiedName, IrClass>,
     enums: BTreeMap<QualifiedName, IrEnum>,
+    functions: BTreeMap<QualifiedName, IrFunction>,
 }
 
 impl Resolver {
@@ -49,6 +56,7 @@ impl Resolver {
             resolvers: BTreeMap::new(),
             classes: BTreeMap::new(),
             enums: BTreeMap::new(),
+            functions: BTreeMap::new(),
         }
     }
 
@@ -68,10 +76,7 @@ impl Resolver {
             for item in &m.items {
                 match item {
                     ModuleItem::Class(c) => {
-                        let mut typeResolver = TypeResolver::new(moduleResolver);
-                        if let Some(decl) = &c.typeParams {
-                            typeResolver.processTypeParameterDeclaration(&decl);
-                        }
+                        let typeResolver = TypeResolver::new(moduleResolver, &c.typeParams);
                         let mut irClass = IrClass::new(moduleResolver.resolverName(&c.name));
                         for field in &c.fields {
                             let ty = typeResolver.resolveType(&field.ty);
@@ -80,14 +85,11 @@ impl Resolver {
                                 ty,
                             })
                         }
-                        println!("Class {:?}", irClass);
+                        //println!("Class {:?}", irClass);
                         self.classes.insert(irClass.name.clone(), irClass);
                     }
                     ModuleItem::Enum(e) => {
-                        let mut typeResolver = TypeResolver::new(moduleResolver);
-                        if let Some(decl) = &e.typeParams {
-                            typeResolver.processTypeParameterDeclaration(&decl);
-                        }
+                        let typeResolver = TypeResolver::new(moduleResolver, &e.typeParams);
                         let mut irEnum = IrEnum::new(moduleResolver.resolverName(&e.name));
                         for variant in &e.variants {
                             let mut items = Vec::new();
@@ -105,10 +107,29 @@ impl Resolver {
                         self.enums.insert(irEnum.name.clone(), irEnum);
                     }
                     ModuleItem::Function(f) => {
-                        let mut typeResolver = TypeResolver::new(moduleResolver);
-                        if let Some(decl) = &f.typeParams {
-                            typeResolver.processTypeParameterDeclaration(&decl);
+                        let typeResolver = TypeResolver::new(moduleResolver, &f.typeParams);
+                        let mut params = Vec::new();
+                        for param in &f.params {
+                            let irParam = match param {
+                                Parameter::Named(id, ty, mutable) => IrParameter::Named(
+                                    id.toString(),
+                                    typeResolver.resolveType(ty),
+                                    *mutable,
+                                ),
+                                Parameter::SelfParam(mutable) => IrParameter::SelfParam(*mutable),
+                            };
+                            params.push(irParam);
                         }
+                        let result = if let Some(ty) = &f.result {
+                            typeResolver.resolveType(ty)
+                        } else {
+                            IrType::Tuple(Vec::new())
+                        };
+                        let irFunction =
+                            IrFunction::new(moduleResolver.resolverName(&f.name), params, result);
+
+                        println!("Added function {:?}", irFunction);
+                        self.functions.insert(irFunction.name.clone(), irFunction);
                     }
                     _ => {}
                 }
