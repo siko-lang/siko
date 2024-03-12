@@ -42,6 +42,15 @@ pub struct InstructionId {
     id: u32,
 }
 
+impl InstructionId {
+    pub fn empty() -> InstructionId {
+        InstructionId {
+            blockId: BlockId { id: 0 },
+            id: 0,
+        }
+    }
+}
+
 impl Display for InstructionId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "({}.{})", self.blockId, self.id)
@@ -62,6 +71,8 @@ pub enum InstructionKind {
     BlockRef(BlockId),
     ValueRef(ValueKind),
     Bind(String, InstructionId),
+    Tuple(Vec<InstructionId>),
+    TupleIndex(InstructionId, u32),
 }
 
 impl InstructionKind {
@@ -78,6 +89,8 @@ impl InstructionKind {
             InstructionKind::BlockRef(id) => format!("blockref: {}", id),
             InstructionKind::ValueRef(v) => format!("{}", v),
             InstructionKind::Bind(v, rhs) => format!("${} = {}", v, rhs),
+            InstructionKind::Tuple(args) => format!("tuple({:?})", args),
+            InstructionKind::TupleIndex(id, index) => format!("tupleindex:{}.{}", id, index),
         }
     }
 }

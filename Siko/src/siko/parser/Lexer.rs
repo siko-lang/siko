@@ -176,6 +176,7 @@ impl Lexer {
                     "continue" => Token::Keyword(KeywordKind::Continue),
                     "break" => Token::Keyword(KeywordKind::Break),
                     "implicit" => Token::Keyword(KeywordKind::Implicit),
+                    "_" => Token::Misc(MiscKind::Wildcard),
                     _ => Token::VarIdentifier(self.current.clone()),
                 };
                 self.addToken(token);

@@ -123,7 +123,14 @@ impl<'a> ExprResolver<'a> {
                 let blockId = self.resolveBlock(block, env);
                 return irBlock.add(InstructionKind::BlockRef(blockId));
             }
-            SimpleExpr::Tuple(_) => todo!(),
+            SimpleExpr::Tuple(args) => {
+                let mut irArgs = Vec::new();
+                for arg in args {
+                    let argId = self.resolveExpr(arg, env, irBlock);
+                    irArgs.push(argId)
+                }
+                return irBlock.add(InstructionKind::Tuple(irArgs));
+            }
             SimpleExpr::StringLiteral(_) => todo!(),
             SimpleExpr::IntegerLiteral(_) => todo!(),
             SimpleExpr::CharLiteral(_) => todo!(),
@@ -150,10 +157,21 @@ impl<'a> ExprResolver<'a> {
                 env.addValue(name.toString(), new, bindId);
                 bindId
             }
-            Pattern::Tuple(_) => todo!(),
+            Pattern::Tuple(args) => {
+                for (index, arg) in args.iter().enumerate() {
+                    let indexId = irBlock.add(InstructionKind::TupleIndex(value, index as u32));
+                    self.resolvePattern(arg, env, irBlock, indexId);
+                }
+                InstructionId::empty()
+            }
             Pattern::StringLiteral(_, _) => todo!(),
             Pattern::IntegerLiteral(_, _) => todo!(),
-            Pattern::Wildcard => todo!(),
+            Pattern::Wildcard => {
+                let valueId = self.valueId;
+                self.valueId += 1;
+                let new = format!("wildcard_{}", valueId);
+                irBlock.add(InstructionKind::Bind(new.clone(), value))
+            }
         }
     }
 

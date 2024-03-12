@@ -54,6 +54,10 @@ impl PatternParser for Parser {
                 }
                 Pattern::Tuple(args)
             }
+            TokenKind::Misc(MiscKind::Wildcard) => {
+                self.expect(TokenKind::Misc(MiscKind::Wildcard));
+                Pattern::Wildcard
+            }
             kind => self.reportError2("<pattern>", kind),
         }
     }
