@@ -267,7 +267,22 @@ impl ExprParser for Parser {
                 self.buildExpr(SimpleExpr::Value(value))
             }
             TokenKind::TypeIdentifier => {
-                let value = self.parseTypeIdentifier();
+                let mut value = self.parseTypeIdentifier();
+                while self.check(TokenKind::Misc(MiscKind::Dot)) {
+                    value.dot(self.currentLocation());
+                    self.expect(TokenKind::Misc(MiscKind::Dot));
+                    if self.check(TokenKind::VarIdentifier) {
+                        let id = self.parseVarIdentifier();
+                        value.merge(id);
+                        break;
+                    }
+                    if self.check(TokenKind::TypeIdentifier) {
+                        let id = self.parseTypeIdentifier();
+                        value.merge(id);
+                        continue;
+                    }
+                    self.reportError2("<identifier>", self.peek());
+                }
                 self.buildExpr(SimpleExpr::Name(value))
             }
             TokenKind::StringLiteral => {

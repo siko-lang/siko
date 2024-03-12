@@ -8,6 +8,7 @@ use super::Type::Type;
 pub enum ValueKind {
     Arg(String),
     Value(String, InstructionId),
+    Implicit(InstructionId),
 }
 
 impl Display for ValueKind {
@@ -15,6 +16,7 @@ impl Display for ValueKind {
         match &self {
             ValueKind::Arg(n) => write!(f, "@arg/{}", n),
             ValueKind::Value(n, bindId) => write!(f, "${}/{}", n, bindId),
+            ValueKind::Implicit(id) => write!(f, "{}", id),
         }
     }
 }
@@ -69,10 +71,13 @@ pub enum InstructionKind {
     DynamicFunctionCall(InstructionId, Vec<InstructionId>),
     If(InstructionId, InstructionId, Option<InstructionId>),
     BlockRef(BlockId),
-    ValueRef(ValueKind),
+    ValueRef(ValueKind, Vec<String>),
     Bind(String, InstructionId),
     Tuple(Vec<InstructionId>),
     TupleIndex(InstructionId, u32),
+    StringLiteral(String),
+    IntegerLiteral(String),
+    CharLiteral(char),
 }
 
 impl InstructionKind {
@@ -87,10 +92,13 @@ impl InstructionKind {
                 None => format!("if {} {{ {} }}", cond, t),
             },
             InstructionKind::BlockRef(id) => format!("blockref: {}", id),
-            InstructionKind::ValueRef(v) => format!("{}", v),
+            InstructionKind::ValueRef(v, names) => format!("{}/{:?}", v, names),
             InstructionKind::Bind(v, rhs) => format!("${} = {}", v, rhs),
             InstructionKind::Tuple(args) => format!("tuple({:?})", args),
             InstructionKind::TupleIndex(id, index) => format!("tupleindex:{}.{}", id, index),
+            InstructionKind::StringLiteral(v) => format!("s:[{}]", v),
+            InstructionKind::IntegerLiteral(v) => format!("i:[{}]", v),
+            InstructionKind::CharLiteral(v) => format!("c:[{}]", v),
         }
     }
 }

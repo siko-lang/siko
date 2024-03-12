@@ -20,6 +20,7 @@ impl Identifier {
     }
 
     pub fn merge(&mut self, other: Identifier) {
+        self.name += &other.name;
         self.location.merge(other.location);
     }
 

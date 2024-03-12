@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 
-use crate::siko::ir::Function::{Block as IrBlock, BlockId, InstructionId, InstructionKind};
+use crate::siko::ir::Function::{
+    Block as IrBlock, BlockId, InstructionId, InstructionKind, ValueKind,
+};
 use crate::siko::qualifiedname::QualifiedName;
 use crate::siko::syntax::Expr::{Expr, SimpleExpr};
 use crate::siko::syntax::Pattern::Pattern;
@@ -63,11 +65,16 @@ impl<'a> ExprResolver<'a> {
         match &expr.expr {
             SimpleExpr::Value(name) => match env.resolve(&name.name) {
                 Some(name) => {
-                    return irBlock.add(InstructionKind::ValueRef(name));
+                    return irBlock.add(InstructionKind::ValueRef(name, Vec::new()));
                 }
                 None => error(format!("Unknown value {}", name.name)),
             },
-            SimpleExpr::SelfValue => todo!(),
+            SimpleExpr::SelfValue => {
+                return irBlock.add(InstructionKind::ValueRef(
+                    ValueKind::Arg("self".to_string()),
+                    Vec::new(),
+                ))
+            }
             SimpleExpr::Name(name) => {
                 let irName = self.moduleResolver.resolverName(name);
                 if self.emptyVariants.contains(&irName) {
@@ -75,7 +82,23 @@ impl<'a> ExprResolver<'a> {
                 }
                 error(format!("Unsupported expr"));
             }
-            SimpleExpr::FieldAccess(_, _) => todo!(),
+            SimpleExpr::FieldAccess(receiver, name) => {
+                let id;
+                let mut names = Vec::new();
+                let mut current = receiver;
+                names.push(name.toString());
+                loop {
+                    if let SimpleExpr::FieldAccess(receiver, name) = &current.expr {
+                        current = receiver;
+                        names.push(name.toString());
+                    } else {
+                        id = self.resolveExpr(&current, env, irBlock);
+                        break;
+                    }
+                }
+                names.reverse();
+                return irBlock.add(InstructionKind::ValueRef(ValueKind::Implicit(id), names));
+            }
             SimpleExpr::Call(callable, args) => {
                 let mut irArgs = Vec::new();
                 for arg in args {
@@ -89,7 +112,7 @@ impl<'a> ExprResolver<'a> {
                     }
                     SimpleExpr::Value(name) => {
                         if let Some(name) = env.resolve(&name.name) {
-                            let refId = irBlock.add(InstructionKind::ValueRef(name));
+                            let refId = irBlock.add(InstructionKind::ValueRef(name, Vec::new()));
                             return irBlock
                                 .add(InstructionKind::DynamicFunctionCall(refId, irArgs));
                         } else {
@@ -131,9 +154,11 @@ impl<'a> ExprResolver<'a> {
                 }
                 return irBlock.add(InstructionKind::Tuple(irArgs));
             }
-            SimpleExpr::StringLiteral(_) => todo!(),
-            SimpleExpr::IntegerLiteral(_) => todo!(),
-            SimpleExpr::CharLiteral(_) => todo!(),
+            SimpleExpr::StringLiteral(v) => irBlock.add(InstructionKind::StringLiteral(v.clone())),
+            SimpleExpr::IntegerLiteral(v) => {
+                irBlock.add(InstructionKind::IntegerLiteral(v.clone()))
+            }
+            SimpleExpr::CharLiteral(v) => irBlock.add(InstructionKind::CharLiteral(v.clone())),
             SimpleExpr::Return(_) => todo!(),
             SimpleExpr::Break(_) => todo!(),
             SimpleExpr::Continue(_) => todo!(),

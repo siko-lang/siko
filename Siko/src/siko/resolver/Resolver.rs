@@ -99,7 +99,7 @@ impl Resolver {
                         for method in &c.methods {
                             irClass.methods.push(MethodInfo {
                                 name: method.name.toString(),
-                                fullName: moduleResolver.resolverName(&m.name),
+                                fullName: moduleResolver.resolverName(&method.name),
                             })
                         }
                         //println!("Class {:?}", irClass);
@@ -127,7 +127,7 @@ impl Resolver {
                         for method in &e.methods {
                             irEnum.methods.push(MethodInfo {
                                 name: method.name.toString(),
-                                fullName: moduleResolver.resolverName(&m.name),
+                                fullName: moduleResolver.resolverName(&method.name),
                             })
                         }
                         //println!("Enum {:?}", irEnum);
