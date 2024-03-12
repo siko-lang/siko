@@ -46,7 +46,7 @@ impl<'a> ExprResolver<'a> {
                     let rhsId = self.resolveExpr(rhs, &mut env, &mut irBlock);
                     self.resolvePattern(pat, &mut env, &mut irBlock, rhsId);
                 }
-                StatementKind::Assign(lhs, rhs) => {}
+                StatementKind::Assign(_lhs, _rhs) => {}
                 StatementKind::Expr(expr) => {
                     self.resolveExpr(expr, &mut env, &mut irBlock);
                 }
@@ -173,7 +173,7 @@ impl<'a> ExprResolver<'a> {
         value: InstructionId,
     ) -> InstructionId {
         match pat {
-            Pattern::Named(name, args) => todo!(),
+            Pattern::Named(_name, _args) => todo!(),
             Pattern::Bind(name, _) => {
                 let valueId = self.valueId;
                 self.valueId += 1;

@@ -5,4 +5,4 @@ testdbg: Siko/target/release/
 	export RUST_BACKTRACE=1 && cd Siko && cargo run -- ../test.sk
 
 test2: Siko/target/release/
-	cd Siko && cargo run --release && cd .. && ./siko std/*
+	cd Siko && cargo run --release && cd .. && ./run_test.py
