@@ -1,6 +1,23 @@
+use std::fmt::Display;
+
 use crate::siko::qualifiedname::QualifiedName;
 
 use super::Type::Type;
+
+#[derive(Debug, Clone)]
+pub enum ValueKind {
+    Arg(String),
+    Value(String, InstructionId),
+}
+
+impl Display for ValueKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self {
+            ValueKind::Arg(n) => write!(f, "@arg/{}", n),
+            ValueKind::Value(n, bindId) => write!(f, "${}/{}", n, bindId),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum Parameter {
@@ -13,10 +30,28 @@ pub struct BlockId {
     pub id: u32,
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+impl Display for BlockId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "#{}", self.id)
+    }
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub struct InstructionId {
     blockId: BlockId,
     id: u32,
+}
+
+impl Display for InstructionId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}.{})", self.blockId, self.id)
+    }
+}
+
+impl std::fmt::Debug for InstructionId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}.{})", self.blockId, self.id)
+    }
 }
 
 #[derive(Debug)]
@@ -25,13 +60,38 @@ pub enum InstructionKind {
     DynamicFunctionCall(InstructionId, Vec<InstructionId>),
     If(InstructionId, InstructionId, Option<InstructionId>),
     BlockRef(BlockId),
-    ValueRef(String),
+    ValueRef(ValueKind),
+    Bind(String, InstructionId),
+}
+
+impl InstructionKind {
+    pub fn dump(&self) -> String {
+        match self {
+            InstructionKind::FunctionCall(name, args) => format!("{}({:?})", name, args),
+            InstructionKind::DynamicFunctionCall(callable, args) => {
+                format!("{}({:?})", callable, args)
+            }
+            InstructionKind::If(cond, t, f) => match f {
+                Some(f) => format!("if {} {{ {} }} else {{ {} }}", cond, t, f),
+                None => format!("if {} {{ {} }}", cond, t),
+            },
+            InstructionKind::BlockRef(id) => format!("blockref: {}", id),
+            InstructionKind::ValueRef(v) => format!("{}", v),
+            InstructionKind::Bind(v, rhs) => format!("${} = {}", v, rhs),
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct Instruction {
     pub id: InstructionId,
     pub kind: InstructionKind,
+}
+
+impl Instruction {
+    pub fn dump(&self) {
+        println!("    {}: {}", self.id, self.kind.dump());
+    }
 }
 
 #[derive(Debug)]
@@ -56,6 +116,13 @@ impl Block {
         self.instructions.push(Instruction { id: id, kind: kind });
         id
     }
+
+    pub fn dump(&self) {
+        println!("  Block {}:", self.id);
+        for instruction in &self.instructions {
+            instruction.dump();
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -70,6 +137,12 @@ impl Body {
 
     pub fn addBlock(&mut self, block: Block) {
         self.blocks.push(block);
+    }
+
+    pub fn dump(&self) {
+        for block in &self.blocks {
+            block.dump();
+        }
     }
 }
 
@@ -93,6 +166,13 @@ impl Function {
             params: params,
             result: result,
             body: body,
+        }
+    }
+
+    pub fn dump(&self) {
+        match &self.body {
+            Some(body) => body.dump(),
+            None => println!("<no body>"),
         }
     }
 }

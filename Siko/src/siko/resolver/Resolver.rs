@@ -71,6 +71,14 @@ impl Resolver {
         self.processImports();
         self.processDataTypes();
         self.processFunctions();
+        self.dump();
+    }
+
+    fn dump(&self) {
+        for (name, f) in &self.functions {
+            println!("Function {}", name);
+            f.dump();
+        }
     }
 
     fn processDataTypes(&mut self) {

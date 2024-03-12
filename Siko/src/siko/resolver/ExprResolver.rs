@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use crate::siko::ir::Function::{Block as IrBlock, BlockId, InstructionId, InstructionKind};
 use crate::siko::qualifiedname::QualifiedName;
@@ -41,8 +41,8 @@ impl<'a> ExprResolver<'a> {
         for statement in &block.statements {
             match &statement.kind {
                 StatementKind::Let(pat, rhs) => {
-                    self.resolvePattern(pat, &mut env);
-                    self.resolveExpr(rhs, &mut env, &mut irBlock);
+                    let rhsId = self.resolveExpr(rhs, &mut env, &mut irBlock);
+                    self.resolvePattern(pat, &mut env, &mut irBlock, rhsId);
                 }
                 StatementKind::Assign(lhs, rhs) => {}
                 StatementKind::Expr(expr) => {
@@ -133,18 +133,27 @@ impl<'a> ExprResolver<'a> {
         }
     }
 
-    fn resolvePattern(&mut self, pat: &Pattern, env: &mut Environment) {
+    fn resolvePattern(
+        &mut self,
+        pat: &Pattern,
+        env: &mut Environment,
+        irBlock: &mut IrBlock,
+        value: InstructionId,
+    ) -> InstructionId {
         match pat {
-            Pattern::Named(name, args) => {}
+            Pattern::Named(name, args) => todo!(),
             Pattern::Bind(name, _) => {
                 let valueId = self.valueId;
                 self.valueId += 1;
-                env.addValue(name.toString(), format!("{}_{}", name.name, valueId));
+                let new = format!("{}_{}", name.name, valueId);
+                let bindId = irBlock.add(InstructionKind::Bind(new.clone(), value));
+                env.addValue(name.toString(), new, bindId);
+                bindId
             }
-            Pattern::Tuple(_) => {}
-            Pattern::StringLiteral(_, _) => {}
-            Pattern::IntegerLiteral(_, _) => {}
-            Pattern::Wildcard => {}
+            Pattern::Tuple(_) => todo!(),
+            Pattern::StringLiteral(_, _) => todo!(),
+            Pattern::IntegerLiteral(_, _) => todo!(),
+            Pattern::Wildcard => todo!(),
         }
     }
 
