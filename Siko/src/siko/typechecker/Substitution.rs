@@ -72,20 +72,17 @@ impl Substitution {
                     }
                 }
             }
-            (Type::Named(_, _), Type::Var(v)) => {
+            (_, Type::Var(v)) => {
                 self.add(v.clone(), ty1);
             }
-            (Type::Var(v), Type::Named(_, _)) => {
+            (Type::Var(v), _) => {
                 self.add(v.clone(), ty2);
-            }
-            (Type::Var(v1), Type::Var(v2)) => {
-                self.add(v1.clone(), ty2);
             }
             _ => self.reportError(ty1, ty2),
         }
     }
 
-    fn reportError(&self, ty1: Type, ty2: Type) {
+    pub fn reportError(&self, ty1: Type, ty2: Type) {
         error(format!("Type mismatch {}/{}", ty1, ty2));
     }
 }

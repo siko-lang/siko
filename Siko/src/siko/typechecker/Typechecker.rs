@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, iter::zip};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    iter::zip,
+};
 
 use crate::siko::{
     ir::{
@@ -7,6 +10,7 @@ use crate::siko::{
         Type::Type,
     },
     qualifiedname::QualifiedName,
+    util::error,
 };
 
 use super::{Substitution::Substitution, TypeVarAllocator::TypeVarAllocator};
@@ -18,12 +22,19 @@ enum TypedId {
     SelfValue,
 }
 
+#[derive(Clone)]
+enum Constraint {
+    FieldConstraint(Type, String, Type),
+}
+
 pub struct Typechecker<'a> {
     functions: &'a BTreeMap<QualifiedName, Function>,
     classes: &'a BTreeMap<QualifiedName, Class>,
     enums: &'a BTreeMap<QualifiedName, Enum>,
     allocator: TypeVarAllocator,
     substitution: Substitution,
+    constraints: Vec<Constraint>,
+    receivers: BTreeMap<InstructionId, Type>,
     types: BTreeMap<TypedId, Type>,
 }
 
@@ -39,6 +50,8 @@ impl<'a> Typechecker<'a> {
             enums: enums,
             allocator: TypeVarAllocator::new(),
             substitution: Substitution::new(),
+            constraints: Vec::new(),
+            receivers: BTreeMap::new(),
             types: BTreeMap::new(),
         }
     }
@@ -46,17 +59,18 @@ impl<'a> Typechecker<'a> {
     pub fn run(&mut self, f: &Function) {
         self.initialize(f);
         self.check(f);
-        self.dump(f);
+        self.verify(f);
+        //self.dump(f);
     }
 
     pub fn initialize(&mut self, f: &Function) {
         //println!("Initializing {}", f.name);
         for param in &f.params {
             match &param {
-                Parameter::Named(name, ty, mutable) => {
+                Parameter::Named(name, ty, _) => {
                     self.types.insert(TypedId::Value(name.clone()), ty.clone());
                 }
-                Parameter::SelfParam(mutable, ty) => {
+                Parameter::SelfParam(_, ty) => {
                     self.types.insert(TypedId::SelfValue, ty.clone());
                 }
             }
@@ -64,12 +78,30 @@ impl<'a> Typechecker<'a> {
         if let Some(body) = &f.body {
             for block in &body.blocks {
                 for instruction in &block.instructions {
+                    let ty = self.allocator.next();
                     self.types
-                        .insert(TypedId::Instruction(instruction.id), self.allocator.next());
+                        .insert(TypedId::Instruction(instruction.id), ty.clone());
                     match &instruction.kind {
                         InstructionKind::Bind(name, _) => {
                             self.types
                                 .insert(TypedId::Value(name.to_string()), self.allocator.next());
+                        }
+                        InstructionKind::ValueRef(_, fields) => {
+                            let mut receiver = self.allocator.next();
+                            self.receivers.insert(instruction.id, receiver.clone());
+                            for (index, field) in fields.iter().enumerate() {
+                                let fieldType = if index == fields.len() - 1 {
+                                    ty.clone()
+                                } else {
+                                    self.allocator.next()
+                                };
+                                self.constraints.push(Constraint::FieldConstraint(
+                                    receiver,
+                                    field.clone(),
+                                    fieldType.clone(),
+                                ));
+                                receiver = fieldType;
+                            }
                         }
                         _ => {}
                     }
@@ -101,9 +133,7 @@ impl<'a> Typechecker<'a> {
     }
 
     fn instantiateType(&mut self, ty: Type) -> Type {
-        let mut vars = ty.collectVars(Vec::new());
-        vars.sort();
-        vars.dedup();
+        let vars = ty.collectVars(BTreeSet::new());
         let mut sub = Substitution::new();
         for var in &vars {
             sub.add(var.clone(), self.allocator.next());
@@ -123,6 +153,9 @@ impl<'a> Typechecker<'a> {
                             let fnType = f.getType();
                             let fnType = self.instantiateType(fnType);
                             let (fnArgs, fnResult) = fnType.splitFnType();
+                            if args.len() != fnArgs.len() {
+                                error(format!("incorrect args"));
+                            }
                             for (arg, fnArg) in zip(args, fnArgs) {
                                 self.substitution
                                     .unify(&self.getInstructionType(*arg), &fnArg);
@@ -163,25 +196,30 @@ impl<'a> Typechecker<'a> {
                             );
                         }
                         InstructionKind::ValueRef(value, fields) => {
-                            assert!(fields.is_empty());
-                            match &value {
-                                ValueKind::Arg(name) => {
-                                    self.unify(
-                                        self.getValueType(name),
-                                        self.getInstructionType(instruction.id),
-                                    );
-                                }
-                                ValueKind::Implicit(id) => self.unify(
-                                    self.getInstructionType(*id),
-                                    self.getInstructionType(instruction.id),
-                                ),
-                                ValueKind::Value(name, bindId) => self.unify(
-                                    self.getValueType(name),
-                                    self.getInstructionType(instruction.id),
-                                ),
+                            let receiverType = match &value {
+                                ValueKind::Arg(name) => self.getValueType(name),
+                                ValueKind::Implicit(id) => self.getInstructionType(*id),
+                                ValueKind::Value(name, _) => self.getValueType(name),
+                            };
+                            if fields.is_empty() {
+                                self.unify(receiverType, self.getInstructionType(instruction.id));
+                            } else {
+                                self.unify(
+                                    receiverType,
+                                    self.receivers
+                                        .get(&instruction.id)
+                                        .cloned()
+                                        .expect("no receiver found"),
+                                );
                             }
                         }
-                        InstructionKind::Bind(_, _) => {}
+                        InstructionKind::Bind(name, rhs) => {
+                            self.unify(self.getValueType(name), self.getInstructionType(*rhs));
+                            self.substitution.unify(
+                                &self.getInstructionType(instruction.id),
+                                &Type::getUnitType(),
+                            );
+                        }
                         InstructionKind::Tuple(_) => todo!(),
                         InstructionKind::TupleIndex(_, _) => todo!(),
                         InstructionKind::StringLiteral(_) => todo!(),
@@ -191,8 +229,63 @@ impl<'a> Typechecker<'a> {
                 }
             }
         }
+        for constraint in self.constraints.clone() {
+            match constraint {
+                Constraint::FieldConstraint(receiver, field, fieldType) => {
+                    let receiver = self.substitution.apply(&receiver);
+                    match &receiver {
+                        Type::Named(name, _) => {
+                            // TODO
+                            if let Some(c) = self.classes.get(name) {
+                                let mut found = false;
+                                for f in &c.fields {
+                                    if f.name == *field {
+                                        found = true;
+                                        self.unify(fieldType.clone(), f.ty.clone());
+                                        break;
+                                    }
+                                }
+                                if !found {
+                                    for m in &c.methods {
+                                        if m.name == *field {
+                                            found = true;
+                                            println!("Calling method??");
+                                            break;
+                                        }
+                                    }
+                                }
+                                if !found {
+                                    error(format!("field '{}' not found", field))
+                                }
+                            } else {
+                                error(format!("field receiver is not a class!"))
+                            }
+                        } //ty => error(format!("field receiver is not a class! {}", ty)),
+                        _ => {}
+                    }
+                }
+            }
+        }
     }
 
+    pub fn verify(&self, f: &Function) {
+        if let Some(body) = &f.body {
+            let fnType = f.getType();
+            let publicVars = fnType.collectVars(BTreeSet::new());
+            let mut vars = BTreeSet::new();
+            for block in &body.blocks {
+                for instruction in &block.instructions {
+                    let ty = self.getType(&TypedId::Instruction(instruction.id));
+                    let ty = self.substitution.apply(&ty);
+                    vars = ty.collectVars(vars);
+                }
+            }
+            if vars != publicVars {
+                self.dump(f);
+                error(format!("type check/inference failed for {}", f.name));
+            }
+        }
+    }
     pub fn dump(&self, f: &Function) {
         println!("Dumping {}", f.name);
         if let Some(body) = &f.body {

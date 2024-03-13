@@ -22,7 +22,7 @@ fn main() {
     }
     resolver.process();
     let (functions, classes, enums) = resolver.ir();
-    for (name, f) in &functions {
+    for (_, f) in &functions {
         let mut typechecker = Typechecker::new(&functions, &classes, &enums);
         typechecker.run(f);
     }

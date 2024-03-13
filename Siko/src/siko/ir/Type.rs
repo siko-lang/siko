@@ -1,4 +1,4 @@
-use std::{env::Args, fmt::Display};
+use std::{collections::BTreeSet, fmt::Display};
 
 use crate::siko::qualifiedname::QualifiedName;
 
@@ -36,7 +36,7 @@ impl Type {
         }
     }
 
-    pub fn collectVars(&self, mut vars: Vec<TypeVar>) -> Vec<TypeVar> {
+    pub fn collectVars(&self, mut vars: BTreeSet<TypeVar>) -> BTreeSet<TypeVar> {
         match &self {
             Type::Named(_, args) => {
                 for arg in args {
@@ -54,7 +54,9 @@ impl Type {
                 }
                 vars = result.collectVars(vars);
             }
-            Type::Var(v) => vars.push(v.clone()),
+            Type::Var(v) => {
+                vars.insert(v.clone());
+            }
             Type::SelfType => {}
         }
         vars

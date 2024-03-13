@@ -1,4 +1,4 @@
-use std::{env::args, fmt::Display};
+use std::fmt::Display;
 
 use crate::siko::qualifiedname::QualifiedName;
 
