@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, f32::consts::E, iter::zip};
+use std::{collections::BTreeMap, iter::zip};
 
 use crate::siko::{
     ir::{
@@ -66,6 +66,13 @@ impl<'a> Typechecker<'a> {
                 for instruction in &block.instructions {
                     self.types
                         .insert(TypedId::Instruction(instruction.id), self.allocator.next());
+                    match &instruction.kind {
+                        InstructionKind::Bind(name, _) => {
+                            self.types
+                                .insert(TypedId::Value(name.to_string()), self.allocator.next());
+                        }
+                        _ => {}
+                    }
                 }
             }
         }
@@ -82,8 +89,26 @@ impl<'a> Typechecker<'a> {
             .clone()
     }
 
+    fn getValueType(&self, v: &String) -> Type {
+        self.types
+            .get(&TypedId::Value(v.clone()))
+            .expect("not type for value")
+            .clone()
+    }
+
     fn unify(&mut self, ty1: Type, ty2: Type) {
         self.substitution.unify(&ty1, &ty2);
+    }
+
+    fn instantiateType(&mut self, ty: Type) -> Type {
+        let mut vars = ty.collectVars(Vec::new());
+        vars.sort();
+        vars.dedup();
+        let mut sub = Substitution::new();
+        for var in &vars {
+            sub.add(var.clone(), self.allocator.next());
+        }
+        sub.apply(&ty)
     }
 
     pub fn check(&mut self, f: &Function) {
@@ -94,10 +119,9 @@ impl<'a> Typechecker<'a> {
                     //println!("Type checking {}", instruction);
                     match &instruction.kind {
                         InstructionKind::FunctionCall(name, args) => {
-                            println!("Checking fn {}", name);
                             let f = self.functions.get(name).expect("Function not found");
                             let fnType = f.getType();
-                            println!("fn type {}", fnType);
+                            let fnType = self.instantiateType(fnType);
                             let (fnArgs, fnResult) = fnType.splitFnType();
                             for (arg, fnArg) in zip(args, fnArgs) {
                                 self.substitution
@@ -107,17 +131,56 @@ impl<'a> Typechecker<'a> {
                                 .unify(&self.getInstructionType(instruction.id), &fnResult);
                         }
                         InstructionKind::DynamicFunctionCall(_, _) => {}
-                        InstructionKind::If(_, _, _) => {}
-                        InstructionKind::BlockRef(_) => {}
-                        InstructionKind::ValueRef(value, fields) => match &value {
-                            ValueKind::Arg(name) => {
-                                let ty1 = self.getType(&TypedId::Value(name.clone()));
-                                let ty2 = self.getType(&&TypedId::Instruction(instruction.id));
-                                self.unify(ty1, ty2);
+                        InstructionKind::If(cond, t, f) => {
+                            self.substitution
+                                .unify(&self.getInstructionType(*cond), &Type::getBoolType());
+                            match f {
+                                Some(f) => {
+                                    self.substitution.unify(
+                                        &self.getInstructionType(*t),
+                                        &self.getInstructionType(*f),
+                                    );
+                                }
+                                None => {
+                                    self.substitution
+                                        .unify(&self.getInstructionType(*t), &Type::getUnitType());
+                                }
                             }
-                            ValueKind::Implicit(id) => {}
-                            ValueKind::Value(name, bindId) => {}
-                        },
+                            self.substitution.unify(
+                                &self.getInstructionType(*t),
+                                &self.getInstructionType(instruction.id),
+                            );
+                        }
+                        InstructionKind::BlockRef(id) => {
+                            let block = &body.blocks[id.id as usize];
+                            let last = block
+                                .instructions
+                                .last()
+                                .expect("Empty block in type check!");
+                            self.substitution.unify(
+                                &self.getInstructionType(last.id),
+                                &self.getInstructionType(instruction.id),
+                            );
+                        }
+                        InstructionKind::ValueRef(value, fields) => {
+                            assert!(fields.is_empty());
+                            match &value {
+                                ValueKind::Arg(name) => {
+                                    self.unify(
+                                        self.getValueType(name),
+                                        self.getInstructionType(instruction.id),
+                                    );
+                                }
+                                ValueKind::Implicit(id) => self.unify(
+                                    self.getInstructionType(*id),
+                                    self.getInstructionType(instruction.id),
+                                ),
+                                ValueKind::Value(name, bindId) => self.unify(
+                                    self.getValueType(name),
+                                    self.getInstructionType(instruction.id),
+                                ),
+                            }
+                        }
                         InstructionKind::Bind(_, _) => {}
                         InstructionKind::Tuple(_) => todo!(),
                         InstructionKind::TupleIndex(_, _) => todo!(),

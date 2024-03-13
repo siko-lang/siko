@@ -35,6 +35,44 @@ impl Type {
             _ => panic!("Not a function type in splitFnType"),
         }
     }
+
+    pub fn collectVars(&self, mut vars: Vec<TypeVar>) -> Vec<TypeVar> {
+        match &self {
+            Type::Named(_, args) => {
+                for arg in args {
+                    vars = arg.collectVars(vars);
+                }
+            }
+            Type::Tuple(args) => {
+                for arg in args {
+                    vars = arg.collectVars(vars);
+                }
+            }
+            Type::Function(args, result) => {
+                for arg in args {
+                    vars = arg.collectVars(vars);
+                }
+                vars = result.collectVars(vars);
+            }
+            Type::Var(v) => vars.push(v.clone()),
+            Type::SelfType => {}
+        }
+        vars
+    }
+
+    pub fn getBoolType() -> Type {
+        Type::Named(
+            QualifiedName::Item(
+                Box::new(QualifiedName::Module("Bool".to_string())),
+                "Bool".to_string(),
+            ),
+            Vec::new(),
+        )
+    }
+
+    pub fn getUnitType() -> Type {
+        Type::Tuple(Vec::new())
+    }
 }
 
 impl Display for Type {

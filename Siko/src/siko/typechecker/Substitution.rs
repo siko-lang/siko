@@ -58,10 +58,10 @@ impl Substitution {
     }
 
     pub fn unify(&mut self, ty1: &Type, ty2: &Type) {
-        println!("Unifying {}/{}", ty1, ty2);
+        //println!("Unifying {}/{}", ty1, ty2);
         let ty1 = self.apply(ty1);
         let ty2 = self.apply(ty2);
-        println!("Unifying2 {}/{}", ty1, ty2);
+        //println!("Unifying2 {}/{}", ty1, ty2);
         match (&ty1, &ty2) {
             (Type::Named(name1, args1), Type::Named(name2, args2)) => {
                 if name1 != name2 {
@@ -77,6 +77,9 @@ impl Substitution {
             }
             (Type::Var(v), Type::Named(_, _)) => {
                 self.add(v.clone(), ty2);
+            }
+            (Type::Var(v1), Type::Var(v2)) => {
+                self.add(v1.clone(), ty2);
             }
             _ => self.reportError(ty1, ty2),
         }
