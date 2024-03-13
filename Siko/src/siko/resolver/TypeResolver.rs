@@ -1,5 +1,6 @@
 use super::ModuleResolver::ModuleResolver;
-use crate::siko::ir::Type::Type as IrType;
+use crate::siko::ir::Type::{Type as IrType, TypeVar};
+use crate::siko::syntax::Identifier::Identifier;
 use crate::siko::syntax::Type::{Type, TypeParameterDeclaration};
 use std::collections::BTreeSet;
 
@@ -33,7 +34,7 @@ impl<'a> TypeResolver<'a> {
         match ty {
             Type::Named(name, args) => {
                 if self.typeParameters.contains(&name.name) {
-                    IrType::Var(name.toString())
+                    IrType::Var(TypeVar::Named(name.toString()))
                 } else {
                     let mut irArgs = Vec::new();
                     for arg in args {
@@ -59,5 +60,24 @@ impl<'a> TypeResolver<'a> {
             }
             Type::SelfType => IrType::SelfType,
         }
+    }
+
+    pub fn createDataType(
+        &self,
+        name: &Identifier,
+        typeParams: &Option<TypeParameterDeclaration>,
+    ) -> IrType {
+        let args = match &typeParams {
+            Some(typeParams) => {
+                let mut args = Vec::new();
+                for param in &typeParams.params {
+                    let arg = IrType::Var(TypeVar::Named(param.name.name.clone()));
+                    args.push(arg);
+                }
+                args
+            }
+            None => Vec::new(),
+        };
+        IrType::Named(self.moduleResolver.resolverName(name), args)
     }
 }

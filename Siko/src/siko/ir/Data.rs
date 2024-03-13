@@ -17,14 +17,16 @@ pub struct MethodInfo {
 #[derive(Debug)]
 pub struct Class {
     pub name: QualifiedName,
+    pub ty: Type,
     pub fields: Vec<Field>,
     pub methods: Vec<MethodInfo>,
 }
 
 impl Class {
-    pub fn new(name: QualifiedName) -> Class {
+    pub fn new(name: QualifiedName, ty: Type) -> Class {
         Class {
             name: name,
+            ty: ty,
             fields: Vec::new(),
             methods: Vec::new(),
         }
@@ -39,14 +41,16 @@ pub struct Variant {
 #[derive(Debug)]
 pub struct Enum {
     pub name: QualifiedName,
+    pub ty: Type,
     pub variants: Vec<Variant>,
     pub methods: Vec<MethodInfo>,
 }
 
 impl Enum {
-    pub fn new(name: QualifiedName) -> Enum {
+    pub fn new(name: QualifiedName, ty: Type) -> Enum {
         Enum {
             name: name,
+            ty: ty,
             variants: Vec::new(),
             methods: Vec::new(),
         }

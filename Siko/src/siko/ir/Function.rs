@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{env::args, fmt::Display};
 
 use crate::siko::qualifiedname::QualifiedName;
 
@@ -24,7 +24,7 @@ impl Display for ValueKind {
 #[derive(Debug)]
 pub enum Parameter {
     Named(String, Type, bool),
-    SelfParam(bool),
+    SelfParam(bool, Type),
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
@@ -115,6 +115,12 @@ impl Instruction {
     }
 }
 
+impl Display for Instruction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.id, self.kind.dump())
+    }
+}
+
 #[derive(Debug)]
 pub struct Block {
     pub id: BlockId,
@@ -188,6 +194,17 @@ impl Function {
             result: result,
             body: body,
         }
+    }
+
+    pub fn getType(&self) -> Type {
+        let mut args = Vec::new();
+        for param in &self.params {
+            match &param {
+                Parameter::Named(_, ty, _) => args.push(ty.clone()),
+                Parameter::SelfParam(_, ty) => args.push(ty.clone()),
+            }
+        }
+        Type::Function(args, Box::new(self.result.clone()))
     }
 
     pub fn dump(&self) {

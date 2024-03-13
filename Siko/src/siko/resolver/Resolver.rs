@@ -1,5 +1,5 @@
 use crate::siko::{
-    ir::Data::MethodInfo,
+    ir::{Data::MethodInfo, Function::Parameter},
     qualifiedname::QualifiedName,
     resolver::FunctionResolver::FunctionResolver,
     syntax::Module::{Module, ModuleItem},
@@ -74,6 +74,16 @@ impl Resolver {
         //self.dump();
     }
 
+    pub fn ir(
+        self,
+    ) -> (
+        BTreeMap<QualifiedName, IrFunction>,
+        BTreeMap<QualifiedName, IrClass>,
+        BTreeMap<QualifiedName, IrEnum>,
+    ) {
+        (self.functions, self.classes, self.enums)
+    }
+
     fn dump(&self) {
         for (name, f) in &self.functions {
             println!("Function {}", name);
@@ -88,14 +98,24 @@ impl Resolver {
                 match item {
                     ModuleItem::Class(c) => {
                         let typeResolver = TypeResolver::new(moduleResolver, &c.typeParams);
-                        let mut irClass = IrClass::new(moduleResolver.resolverName(&c.name));
+                        let irType = typeResolver.createDataType(&c.name, &c.typeParams);
+                        let mut irClass =
+                            IrClass::new(moduleResolver.resolverName(&c.name), irType.clone());
+                        let mut ctorParams = Vec::new();
                         for field in &c.fields {
                             let ty = typeResolver.resolveType(&field.ty);
+                            ctorParams.push(Parameter::Named(
+                                field.name.toString(),
+                                ty.clone(),
+                                false,
+                            ));
                             irClass.fields.push(IrField {
                                 name: field.name.toString(),
                                 ty,
                             })
                         }
+                        let ctor = IrFunction::new(irClass.name.clone(), ctorParams, irType, None);
+                        self.functions.insert(ctor.name.clone(), ctor);
                         for method in &c.methods {
                             irClass.methods.push(MethodInfo {
                                 name: method.name.toString(),
@@ -107,11 +127,19 @@ impl Resolver {
                     }
                     ModuleItem::Enum(e) => {
                         let typeResolver = TypeResolver::new(moduleResolver, &e.typeParams);
-                        let mut irEnum = IrEnum::new(moduleResolver.resolverName(&e.name));
+                        let irType = typeResolver.createDataType(&e.name, &e.typeParams);
+                        let mut irEnum =
+                            IrEnum::new(moduleResolver.resolverName(&e.name), irType.clone());
                         for variant in &e.variants {
                             let mut items = Vec::new();
-                            for item in &variant.items {
+                            let mut ctorParams = Vec::new();
+                            for (index, item) in variant.items.iter().enumerate() {
                                 let ty = typeResolver.resolveType(item);
+                                ctorParams.push(Parameter::Named(
+                                    format!("item{}", index),
+                                    ty.clone(),
+                                    false,
+                                ));
                                 items.push(ty);
                             }
 
@@ -122,6 +150,13 @@ impl Resolver {
                             if variant.items.is_empty() {
                                 self.emptyVariants.insert(variant.name.clone());
                             }
+                            let ctor = IrFunction::new(
+                                variant.name.clone(),
+                                ctorParams,
+                                irType.clone(),
+                                None,
+                            );
+                            self.functions.insert(ctor.name.clone(), ctor);
                             irEnum.variants.push(variant);
                         }
                         for method in &e.methods {
@@ -146,22 +181,28 @@ impl Resolver {
                 match item {
                     ModuleItem::Class(c) => {
                         for method in &c.methods {
-                            let functionResolver =
-                                FunctionResolver::new(moduleResolver, c.typeParams.as_ref());
+                            let functionResolver = FunctionResolver::new(
+                                moduleResolver,
+                                c.typeParams.as_ref(),
+                                Some(c.name.clone()),
+                            );
                             let irFunction = functionResolver.resolve(method, &self.emptyVariants);
                             self.functions.insert(irFunction.name.clone(), irFunction);
                         }
                     }
                     ModuleItem::Enum(e) => {
                         for method in &e.methods {
-                            let functionResolver =
-                                FunctionResolver::new(moduleResolver, e.typeParams.as_ref());
+                            let functionResolver = FunctionResolver::new(
+                                moduleResolver,
+                                e.typeParams.as_ref(),
+                                Some(e.name.clone()),
+                            );
                             let irFunction = functionResolver.resolve(method, &self.emptyVariants);
                             self.functions.insert(irFunction.name.clone(), irFunction);
                         }
                     }
                     ModuleItem::Function(f) => {
-                        let functionResolver = FunctionResolver::new(moduleResolver, None);
+                        let functionResolver = FunctionResolver::new(moduleResolver, None, None);
                         let irFunction = functionResolver.resolve(f, &self.emptyVariants);
                         self.functions.insert(irFunction.name.clone(), irFunction);
                     }

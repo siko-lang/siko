@@ -4,4 +4,5 @@ pub mod parser;
 pub mod qualifiedname;
 pub mod resolver;
 pub mod syntax;
+pub mod typechecker;
 pub mod util;

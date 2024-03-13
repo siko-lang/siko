@@ -1,10 +1,12 @@
 use std::collections::BTreeSet;
 
 use crate::siko::ir::Function::{Function as IrFunction, Parameter as IrParameter};
-use crate::siko::ir::Type::Type as IrType;
+use crate::siko::ir::Type::{Type as IrType, TypeVar};
 use crate::siko::qualifiedname::QualifiedName;
 use crate::siko::syntax::Function::{Function, Parameter};
+use crate::siko::syntax::Identifier::Identifier;
 use crate::siko::syntax::Type::TypeParameterDeclaration;
+use crate::siko::util::error;
 
 use super::Environment::Environment;
 use super::ExprResolver::ExprResolver;
@@ -13,16 +15,19 @@ use super::TypeResolver::TypeResolver;
 pub struct FunctionResolver<'a> {
     moduleResolver: &'a ModuleResolver,
     typeParams: Option<&'a TypeParameterDeclaration>,
+    owner: Option<Identifier>,
 }
 
 impl<'a> FunctionResolver<'a> {
     pub fn new(
         moduleResolver: &'a ModuleResolver,
         typeParams: Option<&'a TypeParameterDeclaration>,
+        owner: Option<Identifier>,
     ) -> FunctionResolver<'a> {
         FunctionResolver {
             moduleResolver: moduleResolver,
             typeParams: typeParams,
+            owner: owner,
         }
     }
 
@@ -37,7 +42,25 @@ impl<'a> FunctionResolver<'a> {
                     env.addArg(id.toString());
                     IrParameter::Named(id.toString(), typeResolver.resolveType(ty), *mutable)
                 }
-                Parameter::SelfParam(mutable) => IrParameter::SelfParam(*mutable),
+                Parameter::SelfParam(mutable) => match &self.owner {
+                    Some(owner) => {
+                        let args = match &self.typeParams {
+                            Some(typeParams) => {
+                                let mut args = Vec::new();
+                                for param in &typeParams.params {
+                                    let arg = IrType::Var(TypeVar::Named(param.name.name.clone()));
+                                    args.push(arg);
+                                }
+                                args
+                            }
+                            None => Vec::new(),
+                        };
+                        let ownerType =
+                            IrType::Named(self.moduleResolver.resolverName(owner), args);
+                        IrParameter::SelfParam(*mutable, ownerType)
+                    }
+                    None => error(format!("No owner for self type!")),
+                },
             };
 
             params.push(irParam);

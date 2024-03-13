@@ -3,7 +3,10 @@
 
 mod siko;
 
-use siko::{location::Location::FileId, parser::Parser::*, resolver::Resolver::Resolver};
+use siko::{
+    location::Location::FileId, parser::Parser::*, resolver::Resolver::Resolver,
+    typechecker::Typechecker::Typechecker,
+};
 
 use std::env::args;
 
@@ -18,4 +21,9 @@ fn main() {
         }
     }
     resolver.process();
+    let (functions, classes, enums) = resolver.ir();
+    for (name, f) in &functions {
+        let mut typechecker = Typechecker::new(&functions, &classes, &enums);
+        typechecker.run(f);
+    }
 }
