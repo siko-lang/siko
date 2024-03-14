@@ -21,7 +21,7 @@ impl Display for ValueKind {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Parameter {
     Named(String, Type, bool),
     SelfParam(bool, Type),
@@ -65,7 +65,7 @@ impl std::fmt::Debug for InstructionId {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum InstructionKind {
     FunctionCall(QualifiedName, Vec<InstructionId>),
     DynamicFunctionCall(InstructionId, Vec<InstructionId>),
@@ -103,15 +103,20 @@ impl InstructionKind {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Instruction {
     pub id: InstructionId,
     pub kind: InstructionKind,
+    pub ty: Option<Type>,
 }
 
 impl Instruction {
     pub fn dump(&self) {
-        println!("    {}: {}", self.id, self.kind.dump());
+        if let Some(ty) = &self.ty {
+            println!("    {}: {} {}", self.id, self.kind.dump(), ty);
+        } else {
+            println!("    {}: {}", self.id, self.kind.dump());
+        }
     }
 }
 
@@ -121,7 +126,7 @@ impl Display for Instruction {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Block {
     pub id: BlockId,
     pub instructions: Vec<Instruction>,
@@ -140,7 +145,11 @@ impl Block {
             blockId: self.id,
             id: self.instructions.len() as u32,
         };
-        self.instructions.push(Instruction { id: id, kind: kind });
+        self.instructions.push(Instruction {
+            id: id,
+            kind: kind,
+            ty: None,
+        });
         id
     }
 
@@ -152,7 +161,7 @@ impl Block {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Body {
     pub blocks: Vec<Block>,
 }
@@ -173,7 +182,7 @@ impl Body {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Function {
     pub name: QualifiedName,
     pub params: Vec<Parameter>,
