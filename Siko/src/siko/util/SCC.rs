@@ -118,7 +118,7 @@ impl Graph {
         }
     }
 
-    fn collectSCCs(&mut self) -> Vec<Vec<NodeId>> {
+    pub fn collectSCCs(&mut self) -> Vec<Vec<NodeId>> {
         let mut nodeIds = Vec::new();
         for n in &self.nodes {
             nodeIds.push(n.id);
@@ -129,7 +129,7 @@ impl Graph {
         return self.sccs.clone();
     }
 
-    fn addNode(&mut self) -> NodeId {
+    pub fn addNode(&mut self) -> NodeId {
         let index = self.nodes.len();
         let id = NodeId { value: index };
         let node = Node::new(id);
@@ -137,7 +137,7 @@ impl Graph {
         id
     }
 
-    fn addNeighbour(&mut self, source: NodeId, dest: NodeId) {
+    pub fn addNeighbour(&mut self, source: NodeId, dest: NodeId) {
         let node = self.getNode(source);
         node.neighbours.push(dest);
     }
