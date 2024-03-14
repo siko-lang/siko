@@ -7,8 +7,8 @@ pub enum TypecheckerError {
 impl TypecheckerError {
     pub fn report(&self) -> ! {
         match &self {
-            TypecheckerError::TypeMismatch(found, expected, l) => {
-                let slogan = format!("Expected {}, found {}", expected.yellow(), found.yellow());
+            TypecheckerError::TypeMismatch(ty1, ty2, l) => {
+                let slogan = format!("Type mismatch: {}, {}", ty1.yellow(), ty2.yellow());
                 let r = Report::new(slogan, l.clone());
                 r.print();
             }

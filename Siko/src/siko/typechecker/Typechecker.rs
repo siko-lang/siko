@@ -141,7 +141,7 @@ impl<'a> Typechecker<'a> {
                                 self.substitution.unify(
                                     &self.getInstructionType(*arg),
                                     &fnArg,
-                                    instruction.location.clone(),
+                                    body.getInstruction(*arg).location.clone(),
                                 );
                             }
                             self.substitution.unify(
@@ -167,7 +167,7 @@ impl<'a> Typechecker<'a> {
                                         self.substitution.unify(
                                             &self.getInstructionType(arg),
                                             &fnArg,
-                                            instruction.location.clone(),
+                                            body.getInstruction(arg).location.clone(),
                                         );
                                     }
                                     self.substitution.unify(
@@ -187,7 +187,7 @@ impl<'a> Typechecker<'a> {
                                         self.substitution.unify(
                                             &self.getInstructionType(*arg),
                                             &fnArg,
-                                            instruction.location.clone(),
+                                            body.getInstruction(*arg).location.clone(),
                                         );
                                     }
                                     self.substitution.unify(
@@ -202,7 +202,7 @@ impl<'a> Typechecker<'a> {
                             self.substitution.unify(
                                 &self.getInstructionType(*cond),
                                 &Type::getBoolType(),
-                                instruction.location.clone(),
+                                body.getInstruction(*cond).location.clone(),
                             );
                             match f {
                                 Some(f) => {
@@ -321,9 +321,27 @@ impl<'a> Typechecker<'a> {
                             );
                         }
                         InstructionKind::TupleIndex(_, _) => todo!(),
-                        InstructionKind::StringLiteral(_) => todo!(),
-                        InstructionKind::IntegerLiteral(_) => todo!(),
-                        InstructionKind::CharLiteral(_) => todo!(),
+                        InstructionKind::StringLiteral(_) => {
+                            self.substitution.unify(
+                                &self.getInstructionType(instruction.id),
+                                &Type::getStringType(),
+                                body.getInstruction(instruction.id).location.clone(),
+                            );
+                        }
+                        InstructionKind::IntegerLiteral(_) => {
+                            self.substitution.unify(
+                                &self.getInstructionType(instruction.id),
+                                &Type::getIntType(),
+                                body.getInstruction(instruction.id).location.clone(),
+                            );
+                        }
+                        InstructionKind::CharLiteral(_) => {
+                            self.substitution.unify(
+                                &self.getInstructionType(instruction.id),
+                                &Type::getCharType(),
+                                body.getInstruction(instruction.id).location.clone(),
+                            );
+                        }
                     }
                 }
             }

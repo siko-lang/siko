@@ -177,6 +177,10 @@ impl Body {
         self.blocks.push(block);
     }
 
+    pub fn getInstruction(&self, id: InstructionId) -> &Instruction {
+        &self.blocks[id.blockId.id as usize].instructions[id.id as usize]
+    }
+
     pub fn dump(&self) {
         for block in &self.blocks {
             block.dump();

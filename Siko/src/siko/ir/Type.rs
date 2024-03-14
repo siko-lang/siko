@@ -72,6 +72,36 @@ impl Type {
         )
     }
 
+    pub fn getIntType() -> Type {
+        Type::Named(
+            QualifiedName::Item(
+                Box::new(QualifiedName::Module("Int".to_string())),
+                "Int".to_string(),
+            ),
+            Vec::new(),
+        )
+    }
+
+    pub fn getStringType() -> Type {
+        Type::Named(
+            QualifiedName::Item(
+                Box::new(QualifiedName::Module("String".to_string())),
+                "String".to_string(),
+            ),
+            Vec::new(),
+        )
+    }
+
+    pub fn getCharType() -> Type {
+        Type::Named(
+            QualifiedName::Item(
+                Box::new(QualifiedName::Module("Char".to_string())),
+                "Char".to_string(),
+            ),
+            Vec::new(),
+        )
+    }
+
     pub fn getUnitType() -> Type {
         Type::Tuple(Vec::new())
     }
