@@ -124,228 +124,239 @@ impl<'a> Typechecker<'a> {
 
     pub fn check(&mut self, f: &Function) {
         //println!("Typechecking {}", f.name);
-        if let Some(body) = &f.body {
-            for block in &body.blocks {
-                for instruction in &block.instructions {
-                    //println!("Type checking {}", instruction);
-                    match &instruction.kind {
-                        InstructionKind::FunctionCall(name, args) => {
-                            let f = self.functions.get(name).expect("Function not found");
-                            let fnType = f.getType();
-                            let fnType = self.instantiateType(fnType);
-                            let (fnArgs, fnResult) = fnType.splitFnType();
-                            if args.len() != fnArgs.len() {
-                                error(format!("incorrect args"));
-                            }
-                            for (arg, fnArg) in zip(args, fnArgs) {
+        let body = if let Some(body) = &f.body {
+            body
+        } else {
+            return;
+        };
+        for block in &body.blocks {
+            for instruction in &block.instructions {
+                //println!("Type checking {}", instruction);
+                match &instruction.kind {
+                    InstructionKind::FunctionCall(name, args) => {
+                        let f = self.functions.get(name).expect("Function not found");
+                        let fnType = f.getType();
+                        let fnType = self.instantiateType(fnType);
+                        let (fnArgs, fnResult) = fnType.splitFnType();
+                        if args.len() != fnArgs.len() {
+                            error(format!("incorrect args"));
+                        }
+                        for (arg, fnArg) in zip(args, fnArgs) {
+                            self.substitution.unify(
+                                &self.getInstructionType(*arg),
+                                &fnArg,
+                                body.getInstruction(*arg).location.clone(),
+                            );
+                        }
+                        self.substitution.unify(
+                            &self.getInstructionType(instruction.id),
+                            &fnResult,
+                            instruction.location.clone(),
+                        );
+                    }
+                    InstructionKind::DynamicFunctionCall(callable, args) => {
+                        match self.methodSources.get(callable) {
+                            Some(name) => {
+                                let f = self.functions.get(name).expect("Function not found");
+                                let fnType = f.getType();
+                                let fnType = self.instantiateType(fnType);
+                                let (fnArgs, fnResult) = fnType.splitFnType();
+                                let mut newArgs = Vec::new();
+                                newArgs.push(*callable);
+                                newArgs.extend(args);
+                                if newArgs.len() != fnArgs.len() {
+                                    error(format!("incorrect args"));
+                                }
+                                for (arg, fnArg) in zip(newArgs, fnArgs) {
+                                    self.substitution.unify(
+                                        &self.getInstructionType(arg),
+                                        &fnArg,
+                                        body.getInstruction(arg).location.clone(),
+                                    );
+                                }
                                 self.substitution.unify(
-                                    &self.getInstructionType(*arg),
-                                    &fnArg,
-                                    body.getInstruction(*arg).location.clone(),
-                                );
-                            }
-                            self.substitution.unify(
-                                &self.getInstructionType(instruction.id),
-                                &fnResult,
-                                instruction.location.clone(),
-                            );
-                        }
-                        InstructionKind::DynamicFunctionCall(callable, args) => {
-                            match self.methodSources.get(callable) {
-                                Some(name) => {
-                                    let f = self.functions.get(name).expect("Function not found");
-                                    let fnType = f.getType();
-                                    let fnType = self.instantiateType(fnType);
-                                    let (fnArgs, fnResult) = fnType.splitFnType();
-                                    let mut newArgs = Vec::new();
-                                    newArgs.push(*callable);
-                                    newArgs.extend(args);
-                                    if newArgs.len() != fnArgs.len() {
-                                        error(format!("incorrect args"));
-                                    }
-                                    for (arg, fnArg) in zip(newArgs, fnArgs) {
-                                        self.substitution.unify(
-                                            &self.getInstructionType(arg),
-                                            &fnArg,
-                                            body.getInstruction(arg).location.clone(),
-                                        );
-                                    }
-                                    self.substitution.unify(
-                                        &self.getInstructionType(instruction.id),
-                                        &fnResult,
-                                        instruction.location.clone(),
-                                    );
-                                    self.methodCalls.insert(instruction.id, *callable);
-                                }
-                                None => {
-                                    let fnType = self.getInstructionType(*callable);
-                                    let (fnArgs, fnResult) = fnType.splitFnType();
-                                    if args.len() != fnArgs.len() {
-                                        error(format!("incorrect args"));
-                                    }
-                                    for (arg, fnArg) in zip(args, fnArgs) {
-                                        self.substitution.unify(
-                                            &self.getInstructionType(*arg),
-                                            &fnArg,
-                                            body.getInstruction(*arg).location.clone(),
-                                        );
-                                    }
-                                    self.substitution.unify(
-                                        &self.getInstructionType(instruction.id),
-                                        &fnResult,
-                                        instruction.location.clone(),
-                                    );
-                                }
-                            }
-                        }
-                        InstructionKind::If(cond, t, f) => {
-                            self.substitution.unify(
-                                &self.getInstructionType(*cond),
-                                &Type::getBoolType(),
-                                body.getInstruction(*cond).location.clone(),
-                            );
-                            match f {
-                                Some(f) => {
-                                    self.substitution.unify(
-                                        &self.getInstructionType(*t),
-                                        &self.getInstructionType(*f),
-                                        instruction.location.clone(),
-                                    );
-                                }
-                                None => {
-                                    self.substitution.unify(
-                                        &self.getInstructionType(*t),
-                                        &Type::getUnitType(),
-                                        instruction.location.clone(),
-                                    );
-                                }
-                            }
-                            self.substitution.unify(
-                                &self.getInstructionType(*t),
-                                &self.getInstructionType(instruction.id),
-                                instruction.location.clone(),
-                            );
-                        }
-                        InstructionKind::BlockRef(id) => {
-                            let block = &body.blocks[id.id as usize];
-                            let last = block
-                                .instructions
-                                .last()
-                                .expect("Empty block in type check!");
-                            self.substitution.unify(
-                                &self.getInstructionType(last.id),
-                                &self.getInstructionType(instruction.id),
-                                instruction.location.clone(),
-                            );
-                        }
-                        InstructionKind::ValueRef(value, fields) => {
-                            let mut receiverType = match &value {
-                                ValueKind::Arg(name) => self.getValueType(name),
-                                ValueKind::Implicit(id) => self.getInstructionType(*id),
-                                ValueKind::Value(name, _) => self.getValueType(name),
-                            };
-                            if fields.is_empty() {
-                                self.unify(
-                                    receiverType,
-                                    self.getInstructionType(instruction.id),
+                                    &self.getInstructionType(instruction.id),
+                                    &fnResult,
                                     instruction.location.clone(),
                                 );
-                            } else {
-                                for (index, field) in fields.iter().enumerate() {
-                                    let receiver = self.substitution.apply(&receiverType);
-                                    match &receiver {
-                                        Type::Named(name, _) => {
-                                            // TODO
-                                            if let Some(c) = self.classes.get(name) {
-                                                let mut found = false;
-                                                for f in &c.fields {
-                                                    if f.name == *field {
+                                self.methodCalls.insert(instruction.id, *callable);
+                            }
+                            None => {
+                                let fnType = self.getInstructionType(*callable);
+                                let (fnArgs, fnResult) = fnType.splitFnType();
+                                if args.len() != fnArgs.len() {
+                                    error(format!("incorrect args"));
+                                }
+                                for (arg, fnArg) in zip(args, fnArgs) {
+                                    self.substitution.unify(
+                                        &self.getInstructionType(*arg),
+                                        &fnArg,
+                                        body.getInstruction(*arg).location.clone(),
+                                    );
+                                }
+                                self.substitution.unify(
+                                    &self.getInstructionType(instruction.id),
+                                    &fnResult,
+                                    instruction.location.clone(),
+                                );
+                            }
+                        }
+                    }
+                    InstructionKind::If(cond, t, f) => {
+                        self.substitution.unify(
+                            &self.getInstructionType(*cond),
+                            &Type::getBoolType(),
+                            body.getInstruction(*cond).location.clone(),
+                        );
+                        match f {
+                            Some(f) => {
+                                self.substitution.unify(
+                                    &self.getInstructionType(*t),
+                                    &self.getInstructionType(*f),
+                                    instruction.location.clone(),
+                                );
+                            }
+                            None => {
+                                self.substitution.unify(
+                                    &self.getInstructionType(*t),
+                                    &Type::getUnitType(),
+                                    instruction.location.clone(),
+                                );
+                            }
+                        }
+                        self.substitution.unify(
+                            &self.getInstructionType(*t),
+                            &self.getInstructionType(instruction.id),
+                            instruction.location.clone(),
+                        );
+                    }
+                    InstructionKind::BlockRef(id) => {
+                        let block = &body.blocks[id.id as usize];
+                        let last = block
+                            .instructions
+                            .last()
+                            .expect("Empty block in type check!");
+                        self.substitution.unify(
+                            &self.getInstructionType(last.id),
+                            &self.getInstructionType(instruction.id),
+                            instruction.location.clone(),
+                        );
+                    }
+                    InstructionKind::ValueRef(value, fields) => {
+                        let mut receiverType = match &value {
+                            ValueKind::Arg(name) => self.getValueType(name),
+                            ValueKind::Implicit(id) => self.getInstructionType(*id),
+                            ValueKind::Value(name, _) => self.getValueType(name),
+                        };
+                        if fields.is_empty() {
+                            self.unify(
+                                receiverType,
+                                self.getInstructionType(instruction.id),
+                                instruction.location.clone(),
+                            );
+                        } else {
+                            for (index, field) in fields.iter().enumerate() {
+                                let receiver = self.substitution.apply(&receiverType);
+                                match &receiver {
+                                    Type::Named(name, _) => {
+                                        // TODO
+                                        if let Some(c) = self.classes.get(name) {
+                                            let mut found = false;
+                                            for f in &c.fields {
+                                                if f.name == *field {
+                                                    found = true;
+                                                    receiverType = f.ty.clone();
+                                                    break;
+                                                }
+                                            }
+                                            if !found && index == fields.len() - 1 {
+                                                for m in &c.methods {
+                                                    if m.name == *field {
                                                         found = true;
-                                                        receiverType = f.ty.clone();
+                                                        self.methodSources.insert(
+                                                            instruction.id,
+                                                            m.fullName.clone(),
+                                                        );
                                                         break;
                                                     }
                                                 }
-                                                if !found && index == fields.len() - 1 {
-                                                    for m in &c.methods {
-                                                        if m.name == *field {
-                                                            found = true;
-                                                            self.methodSources.insert(
-                                                                instruction.id,
-                                                                m.fullName.clone(),
-                                                            );
-                                                            break;
-                                                        }
-                                                    }
-                                                }
-                                                if !found {
-                                                    error(format!("field '{}' not found", field))
-                                                }
-                                            } else {
-                                                error(format!("field receiver is not a class!"))
                                             }
-                                        }
-                                        Type::Var(_) => error(format!("Type annotation needed!")),
-                                        ty => {
-                                            error(format!("field receiver is not a class! {}", ty))
+                                            if !found {
+                                                error(format!("field '{}' not found", field))
+                                            }
+                                        } else {
+                                            error(format!("field receiver is not a class!"))
                                         }
                                     }
+                                    Type::Var(_) => error(format!("Type annotation needed!")),
+                                    ty => error(format!("field receiver is not a class! {}", ty)),
                                 }
-                                self.unify(
-                                    receiverType,
-                                    self.getInstructionType(instruction.id),
-                                    instruction.location.clone(),
-                                );
                             }
-                        }
-                        InstructionKind::Bind(name, rhs) => {
                             self.unify(
-                                self.getValueType(name),
-                                self.getInstructionType(*rhs),
-                                instruction.location.clone(),
-                            );
-                            self.substitution.unify(
-                                &self.getInstructionType(instruction.id),
-                                &Type::getUnitType(),
+                                receiverType,
+                                self.getInstructionType(instruction.id),
                                 instruction.location.clone(),
                             );
                         }
-                        InstructionKind::Tuple(args) => {
-                            let mut argTypes = Vec::new();
-                            for arg in args {
-                                argTypes.push(self.getInstructionType(*arg));
-                            }
-                            self.substitution.unify(
-                                &self.getInstructionType(instruction.id),
-                                &Type::Tuple(argTypes),
-                                instruction.location.clone(),
-                            );
+                    }
+                    InstructionKind::Bind(name, rhs) => {
+                        self.unify(
+                            self.getValueType(name),
+                            self.getInstructionType(*rhs),
+                            instruction.location.clone(),
+                        );
+                        self.substitution.unify(
+                            &self.getInstructionType(instruction.id),
+                            &Type::getUnitType(),
+                            instruction.location.clone(),
+                        );
+                    }
+                    InstructionKind::Tuple(args) => {
+                        let mut argTypes = Vec::new();
+                        for arg in args {
+                            argTypes.push(self.getInstructionType(*arg));
                         }
-                        InstructionKind::TupleIndex(_, _) => todo!(),
-                        InstructionKind::StringLiteral(_) => {
-                            self.substitution.unify(
-                                &self.getInstructionType(instruction.id),
-                                &Type::getStringType(),
-                                body.getInstruction(instruction.id).location.clone(),
-                            );
-                        }
-                        InstructionKind::IntegerLiteral(_) => {
-                            self.substitution.unify(
-                                &self.getInstructionType(instruction.id),
-                                &Type::getIntType(),
-                                body.getInstruction(instruction.id).location.clone(),
-                            );
-                        }
-                        InstructionKind::CharLiteral(_) => {
-                            self.substitution.unify(
-                                &self.getInstructionType(instruction.id),
-                                &Type::getCharType(),
-                                body.getInstruction(instruction.id).location.clone(),
-                            );
-                        }
+                        self.substitution.unify(
+                            &self.getInstructionType(instruction.id),
+                            &Type::Tuple(argTypes),
+                            instruction.location.clone(),
+                        );
+                    }
+                    InstructionKind::TupleIndex(_, _) => todo!(),
+                    InstructionKind::StringLiteral(_) => {
+                        self.substitution.unify(
+                            &self.getInstructionType(instruction.id),
+                            &Type::getStringType(),
+                            body.getInstruction(instruction.id).location.clone(),
+                        );
+                    }
+                    InstructionKind::IntegerLiteral(_) => {
+                        self.substitution.unify(
+                            &self.getInstructionType(instruction.id),
+                            &Type::getIntType(),
+                            body.getInstruction(instruction.id).location.clone(),
+                        );
+                    }
+                    InstructionKind::CharLiteral(_) => {
+                        self.substitution.unify(
+                            &self.getInstructionType(instruction.id),
+                            &Type::getCharType(),
+                            body.getInstruction(instruction.id).location.clone(),
+                        );
                     }
                 }
             }
         }
+        let block = &body.blocks[0];
+        let last = block
+            .instructions
+            .last()
+            .expect("Empty block in type check!");
+        self.substitution.unify(
+            &self.getInstructionType(last.id),
+            &f.result,
+            last.location.clone(),
+        );
     }
 
     pub fn verify(&self, f: &Function) {

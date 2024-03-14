@@ -46,6 +46,10 @@ impl FileId {
         let content = String::from_utf8(content).expect("not utf8!");
         content.split("\n").map(|s| s.to_string()).collect()
     }
+
+    pub fn getFileName(&self) -> String {
+        self.fileManager.get(self.index)
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]

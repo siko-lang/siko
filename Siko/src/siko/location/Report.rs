@@ -30,6 +30,13 @@ impl Report {
 
     pub fn print(&self) {
         println!("{}: {}", "ERROR".red(), self.slogan);
+        println!(
+            "{} {}:{}:{}",
+            " --->".red(),
+            self.location.fileId.getFileName(),
+            self.location.span.start.line + 1,
+            self.location.span.start.offset + 1
+        );
         let lines = self.location.fileId.getLines();
         let startLine = self.location.span.start.line;
         let endLine = self.location.span.end.line;
@@ -61,7 +68,7 @@ impl Report {
                     line.clone()
                 };
 
-                println!("{}", highlighted_line);
+                println!(" {}{}", "|".red(), highlighted_line);
             }
         }
     }
