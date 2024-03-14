@@ -88,8 +88,8 @@ impl Lexer {
     }
 
     fn resetSpan(&mut self) {
-        self.span.start = self.position;
-        self.span.end = self.position;
+        self.span.start = self.position.clone();
+        self.span.end = self.position.clone();
     }
 
     fn resetCurrent(&mut self) {
@@ -99,7 +99,7 @@ impl Lexer {
     fn addToken(&mut self, token: Token) {
         self.tokens.push(TokenInfo {
             token: token,
-            span: self.span,
+            span: self.span.clone(),
         });
         self.resetSpan();
         self.resetCurrent();
@@ -136,7 +136,7 @@ impl Lexer {
             if invalidLiteral {
                 self.addError(LexerError::InvalidIdentifier(
                     self.current.clone(),
-                    self.span,
+                    self.span.clone(),
                 ));
                 self.resetSpan();
                 self.resetCurrent();
@@ -196,7 +196,7 @@ impl Lexer {
                     literal.push(c);
                     self.step();
                 }
-                None => self.addError(LexerError::UnendingStringLiteral(self.span)),
+                None => self.addError(LexerError::UnendingStringLiteral(self.span.clone())),
             }
         }
         self.addToken(Token::StringLiteral(literal));

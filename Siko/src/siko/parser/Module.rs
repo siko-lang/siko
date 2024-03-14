@@ -95,7 +95,7 @@ impl ModuleParser for Parser {
             items.push(ModuleItem::Import(Import {
                 moduleName: Identifier {
                     name: i.to_string(),
-                    location: Location::new(self.fileId, Span::new()),
+                    location: Location::new(self.fileId.clone(), Span::new()),
                 },
                 alias: None,
                 implicitImport: true,

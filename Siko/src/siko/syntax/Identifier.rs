@@ -21,11 +21,11 @@ impl Identifier {
 
     pub fn merge(&mut self, other: Identifier) {
         self.name += &other.name;
-        self.location.merge(other.location);
+        self.location.clone().merge(other.location);
     }
 
     pub fn dot(&mut self, location: Location) {
         self.name += ".";
-        self.location.merge(location);
+        self.location.clone().merge(location);
     }
 }

@@ -41,19 +41,21 @@ impl Parser {
     }
 
     pub fn pushSpan(&mut self) {
-        self.spans.push(self.tokens[self.index].span);
+        self.spans.push(self.tokens[self.index].span.clone());
     }
 
     pub fn popSpan(&mut self) -> Location {
         let start = self.spans.pop().unwrap();
-        let merged = start.merge(self.tokens[self.index].span);
-        Location::new(self.fileId, merged)
+        let merged = start.merge(self.tokens[self.index - 1].span.clone());
+        Location::new(self.fileId.clone(), merged)
     }
 
     pub fn useSpan(&self) -> Location {
         let start = self.spans.last().unwrap();
-        let merged = start.merge(self.tokens[self.index].span);
-        Location::new(self.fileId, merged)
+        let merged = start
+            .clone()
+            .merge(self.tokens[self.index - 1].span.clone());
+        Location::new(self.fileId.clone(), merged)
     }
 
     pub fn peek(&self) -> TokenKind {
@@ -109,11 +111,12 @@ impl Parser {
     pub fn parseTypeIdentifier(&mut self) -> Identifier {
         match self.tokens[self.index].token.clone() {
             Token::TypeIdentifier(v) => {
-                self.step();
-                Identifier {
+                let i = Identifier {
                     name: v,
                     location: self.currentLocation(),
-                }
+                };
+                self.step();
+                i
             }
             t => self.reportError(TokenKind::TypeIdentifier, t.kind()),
         }
@@ -122,18 +125,19 @@ impl Parser {
     pub fn parseVarIdentifier(&mut self) -> Identifier {
         match self.tokens[self.index].token.clone() {
             Token::VarIdentifier(v) => {
-                self.step();
-                Identifier {
+                let i = Identifier {
                     name: v,
                     location: self.currentLocation(),
-                }
+                };
+                self.step();
+                i
             }
             t => self.reportError(TokenKind::VarIdentifier, t.kind()),
         }
     }
 
     pub fn currentLocation(&self) -> Location {
-        Location::new(self.fileId, self.tokens[self.index].span)
+        Location::new(self.fileId.clone(), self.tokens[self.index].span.clone())
     }
 
     pub fn parseModuleName(&mut self) -> Identifier {
@@ -149,7 +153,7 @@ impl Parser {
 
     pub fn parse(&mut self) {
         let content = std::fs::read_to_string(&self.fileName).unwrap();
-        let mut lexer = Lexer::new(content, self.fileId);
+        let mut lexer = Lexer::new(content, self.fileId.clone());
         let (tokens, _errors) = lexer.lex();
         //println!("Tokens {:?}", tokens);
         self.tokens = tokens;

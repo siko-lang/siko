@@ -4,16 +4,18 @@
 mod siko;
 
 use siko::{
-    location::Location::FileId, parser::Parser::*, resolver::Resolver::Resolver,
+    location::FileManager::FileManager, parser::Parser::*, resolver::Resolver::Resolver,
     typechecker::Typechecker::Typechecker,
 };
 
 use std::{collections::BTreeMap, env::args};
 
 fn main() {
+    let fileManager = FileManager::new();
     let mut resolver = Resolver::new();
     for arg in args().skip(1) {
-        let mut parser = Parser::new(FileId::new(0), arg.to_string());
+        let fileId = fileManager.add(arg.clone());
+        let mut parser = Parser::new(fileId, arg.to_string());
         parser.parse();
         let modules = parser.modules();
         for m in modules {

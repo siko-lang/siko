@@ -1,15 +1,54 @@
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+use super::FileManager::FileManager;
+
+#[derive(Clone)]
 pub struct FileId {
-    index: i64,
+    pub index: i64,
+    pub fileManager: FileManager,
 }
 
-impl FileId {
-    pub fn new(index: i64) -> FileId {
-        FileId { index: index }
+impl std::fmt::Debug for FileId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.index)
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+impl PartialEq for FileId {
+    fn eq(&self, other: &Self) -> bool {
+        self.index == other.index
+    }
+}
+
+impl Eq for FileId {}
+
+impl PartialOrd for FileId {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.index.partial_cmp(&other.index)
+    }
+}
+
+impl Ord for FileId {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.index.cmp(&other.index)
+    }
+}
+
+impl FileId {
+    pub fn new(index: i64, fileManager: FileManager) -> FileId {
+        FileId {
+            index: index,
+            fileManager: fileManager,
+        }
+    }
+
+    pub fn getLines(&self) -> Vec<String> {
+        let fileName = self.fileManager.get(self.index);
+        let content = std::fs::read(fileName).expect("Failed to read file");
+        let content = String::from_utf8(content).expect("not utf8!");
+        content.split("\n").map(|s| s.to_string()).collect()
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Position {
     pub line: i64,
     pub offset: i64,
@@ -21,7 +60,7 @@ impl Position {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Span {
     pub start: Position,
     pub end: Position,
@@ -43,7 +82,7 @@ impl Span {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Location {
     pub fileId: FileId,
     pub span: Span,

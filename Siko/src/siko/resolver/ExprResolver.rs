@@ -11,6 +11,7 @@ use crate::siko::util::error;
 use crate::siko::{ir::Function::Body, syntax::Statement::Block};
 
 use super::Environment::Environment;
+use super::Error::ResolverError;
 use super::ModuleResolver::ModuleResolver;
 
 pub struct ExprResolver<'a> {
@@ -74,7 +75,9 @@ impl<'a> ExprResolver<'a> {
                 Some(name) => {
                     return irBlock.add(InstructionKind::ValueRef(name, Vec::new()));
                 }
-                None => error(format!("Unknown value {}", name.name)),
+                None => {
+                    ResolverError::UnknownValue(name.name.clone(), name.location.clone()).report();
+                }
             },
             SimpleExpr::SelfValue => {
                 return irBlock.add(InstructionKind::ValueRef(

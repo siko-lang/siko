@@ -1,4 +1,5 @@
 pub mod Environment;
+pub mod Error;
 pub mod ExprResolver;
 pub mod FunctionResolver;
 pub mod ModuleResolver;
