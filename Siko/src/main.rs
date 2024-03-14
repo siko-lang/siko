@@ -26,7 +26,7 @@ fn main() {
     for (_, f) in &functions {
         let mut typechecker = Typechecker::new(&functions, &classes, &enums);
         let typedFn = typechecker.run(f);
-        typedFn.dump();
+        //typedFn.dump();
         typedFunctions.insert(typedFn.name.clone(), typedFn);
     }
 }

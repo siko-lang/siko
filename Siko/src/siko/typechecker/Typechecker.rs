@@ -53,6 +53,7 @@ impl<'a> Typechecker<'a> {
 
     pub fn run(&mut self, f: &Function) -> Function {
         self.initialize(f);
+        //self.dump(f);
         self.check(f);
         self.verify(f);
         //self.dump(f);
@@ -236,12 +237,6 @@ impl<'a> Typechecker<'a> {
                                                     for m in &c.methods {
                                                         if m.name == *field {
                                                             found = true;
-                                                            self.unify(
-                                                                receiverType.clone(),
-                                                                self.getInstructionType(
-                                                                    instruction.id,
-                                                                ),
-                                                            );
                                                             self.methodSources.insert(
                                                                 instruction.id,
                                                                 m.fullName.clone(),
@@ -263,6 +258,7 @@ impl<'a> Typechecker<'a> {
                                         }
                                     }
                                 }
+                                self.unify(receiverType, self.getInstructionType(instruction.id));
                             }
                         }
                         InstructionKind::Bind(name, rhs) => {

@@ -72,6 +72,15 @@ impl Substitution {
                     }
                 }
             }
+            (Type::Tuple(args1), Type::Tuple(args2)) => {
+                if args1.len() != args2.len() {
+                    self.reportError(ty1, ty2);
+                } else {
+                    for (arg1, arg2) in zip(args1, args2) {
+                        self.unify(arg1, arg2);
+                    }
+                }
+            }
             (_, Type::Var(v)) => {
                 self.add(v.clone(), ty1);
             }

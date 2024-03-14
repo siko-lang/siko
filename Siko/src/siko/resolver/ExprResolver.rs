@@ -209,6 +209,7 @@ impl<'a> ExprResolver<'a> {
 
     pub fn resolve<'e>(&mut self, body: &Block, env: &'e Environment<'e>) {
         self.resolveBlock(body, env);
+        self.body.blocks.sort_by(|a, b| a.id.cmp(&b.id));
     }
 
     pub fn body(self) -> Body {
