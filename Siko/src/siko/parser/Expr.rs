@@ -33,6 +33,7 @@ pub enum SemicolonRequirement {
 impl ExprParser for Parser {
     fn parseBlock(&mut self) -> Block {
         let mut statements = Vec::new();
+        self.pushSpan();
         self.expect(TokenKind::LeftBracket(BracketKind::Curly));
         while !self.check(TokenKind::RightBracket(BracketKind::Curly)) {
             let (statementKind, requirement) = self.parseStatement();
@@ -68,7 +69,10 @@ impl ExprParser for Parser {
             });
         }
         self.expect(TokenKind::RightBracket(BracketKind::Curly));
-        Block { statements }
+        Block {
+            statements,
+            location: self.popSpan(),
+        }
     }
 
     fn buildExpr(&mut self, e: SimpleExpr) -> Expr {

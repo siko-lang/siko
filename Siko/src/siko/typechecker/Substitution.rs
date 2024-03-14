@@ -2,8 +2,10 @@ use std::{collections::BTreeMap, iter::zip};
 
 use crate::siko::{
     ir::Type::{Type, TypeVar},
-    util::error,
+    location::Location::Location,
 };
+
+use super::Error::TypecheckerError;
 
 pub struct Substitution {
     substitutions: BTreeMap<TypeVar, Type>,
@@ -57,7 +59,7 @@ impl Substitution {
         }
     }
 
-    pub fn unify(&mut self, ty1: &Type, ty2: &Type) {
+    pub fn unify(&mut self, ty1: &Type, ty2: &Type, location: Location) {
         //println!("Unifying {}/{}", ty1, ty2);
         let ty1 = self.apply(ty1);
         let ty2 = self.apply(ty2);
@@ -65,19 +67,19 @@ impl Substitution {
         match (&ty1, &ty2) {
             (Type::Named(name1, args1), Type::Named(name2, args2)) => {
                 if name1 != name2 {
-                    self.reportError(ty1, ty2);
+                    self.reportError(ty1, ty2, location);
                 } else {
                     for (arg1, arg2) in zip(args1, args2) {
-                        self.unify(arg1, arg2);
+                        self.unify(arg1, arg2, location.clone());
                     }
                 }
             }
             (Type::Tuple(args1), Type::Tuple(args2)) => {
                 if args1.len() != args2.len() {
-                    self.reportError(ty1, ty2);
+                    self.reportError(ty1, ty2, location);
                 } else {
                     for (arg1, arg2) in zip(args1, args2) {
-                        self.unify(arg1, arg2);
+                        self.unify(arg1, arg2, location.clone());
                     }
                 }
             }
@@ -87,11 +89,11 @@ impl Substitution {
             (Type::Var(v), _) => {
                 self.add(v.clone(), ty2);
             }
-            _ => self.reportError(ty1, ty2),
+            _ => self.reportError(ty1, ty2, location),
         }
     }
 
-    pub fn reportError(&self, ty1: Type, ty2: Type) {
-        error(format!("Type mismatch {}/{}", ty1, ty2));
+    pub fn reportError(&self, ty1: Type, ty2: Type, location: Location) {
+        TypecheckerError::TypeMismatch(format!("{}", ty1), format!("{}", ty2), location).report()
     }
 }

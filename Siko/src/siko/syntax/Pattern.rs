@@ -3,7 +3,13 @@ use crate::siko::location::Location::Location;
 use super::Identifier::Identifier;
 
 #[derive(Debug)]
-pub enum Pattern {
+pub struct Pattern {
+    pub pattern: SimplePattern,
+    pub location: Location,
+}
+
+#[derive(Debug)]
+pub enum SimplePattern {
     Named(Identifier, Vec<Pattern>),
     Bind(Identifier, bool),
     Tuple(Vec<Pattern>),

@@ -1,4 +1,4 @@
-use crate::siko::syntax::Pattern::Pattern;
+use crate::siko::syntax::Pattern::{Pattern, SimplePattern};
 
 use super::{
     Parser::Parser,
@@ -6,20 +6,29 @@ use super::{
 };
 
 pub trait PatternParser {
+    fn buildPattern(&mut self, p: SimplePattern) -> Pattern;
     fn parsePattern(&mut self) -> Pattern;
 }
 
 impl PatternParser for Parser {
+    fn buildPattern(&mut self, p: SimplePattern) -> Pattern {
+        Pattern {
+            pattern: p,
+            location: self.popSpan(),
+        }
+    }
+
     fn parsePattern(&mut self) -> Pattern {
+        self.pushSpan();
         match self.peek() {
             TokenKind::Keyword(KeywordKind::Mut) => {
                 self.expect(TokenKind::Keyword(KeywordKind::Mut));
                 let name = self.parseVarIdentifier();
-                Pattern::Bind(name, true)
+                self.buildPattern(SimplePattern::Bind(name, true))
             }
             TokenKind::VarIdentifier => {
                 let name = self.parseVarIdentifier();
-                Pattern::Bind(name, false)
+                self.buildPattern(SimplePattern::Bind(name, false))
             }
             TokenKind::TypeIdentifier => {
                 let name = self.parseTypeIdentifier();
@@ -36,7 +45,7 @@ impl PatternParser for Parser {
                     }
                     self.expect(TokenKind::RightBracket(BracketKind::Paren));
                 }
-                Pattern::Named(name, args)
+                self.buildPattern(SimplePattern::Named(name, args))
             }
             TokenKind::LeftBracket(BracketKind::Paren) => {
                 let mut args = Vec::new();
@@ -52,11 +61,11 @@ impl PatternParser for Parser {
                     }
                     self.expect(TokenKind::RightBracket(BracketKind::Paren));
                 }
-                Pattern::Tuple(args)
+                self.buildPattern(SimplePattern::Tuple(args))
             }
             TokenKind::Misc(MiscKind::Wildcard) => {
                 self.expect(TokenKind::Misc(MiscKind::Wildcard));
-                Pattern::Wildcard
+                self.buildPattern(SimplePattern::Wildcard)
             }
             kind => self.reportError2("<pattern>", kind),
         }

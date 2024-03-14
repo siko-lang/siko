@@ -9,6 +9,7 @@ use crate::siko::{
         Function::{Function, InstructionId, InstructionKind, Parameter, ValueKind},
         Type::Type,
     },
+    location::Location::Location,
     qualifiedname::QualifiedName,
     util::error,
 };
@@ -108,8 +109,8 @@ impl<'a> Typechecker<'a> {
             .clone()
     }
 
-    fn unify(&mut self, ty1: Type, ty2: Type) {
-        self.substitution.unify(&ty1, &ty2);
+    fn unify(&mut self, ty1: Type, ty2: Type, location: Location) {
+        self.substitution.unify(&ty1, &ty2, location);
     }
 
     fn instantiateType(&mut self, ty: Type) -> Type {
@@ -137,11 +138,17 @@ impl<'a> Typechecker<'a> {
                                 error(format!("incorrect args"));
                             }
                             for (arg, fnArg) in zip(args, fnArgs) {
-                                self.substitution
-                                    .unify(&self.getInstructionType(*arg), &fnArg);
+                                self.substitution.unify(
+                                    &self.getInstructionType(*arg),
+                                    &fnArg,
+                                    instruction.location.clone(),
+                                );
                             }
-                            self.substitution
-                                .unify(&self.getInstructionType(instruction.id), &fnResult);
+                            self.substitution.unify(
+                                &self.getInstructionType(instruction.id),
+                                &fnResult,
+                                instruction.location.clone(),
+                            );
                         }
                         InstructionKind::DynamicFunctionCall(callable, args) => {
                             match self.methodSources.get(callable) {
@@ -157,11 +164,17 @@ impl<'a> Typechecker<'a> {
                                         error(format!("incorrect args"));
                                     }
                                     for (arg, fnArg) in zip(newArgs, fnArgs) {
-                                        self.substitution
-                                            .unify(&self.getInstructionType(arg), &fnArg);
+                                        self.substitution.unify(
+                                            &self.getInstructionType(arg),
+                                            &fnArg,
+                                            instruction.location.clone(),
+                                        );
                                     }
-                                    self.substitution
-                                        .unify(&self.getInstructionType(instruction.id), &fnResult);
+                                    self.substitution.unify(
+                                        &self.getInstructionType(instruction.id),
+                                        &fnResult,
+                                        instruction.location.clone(),
+                                    );
                                     self.methodCalls.insert(instruction.id, *callable);
                                 }
                                 None => {
@@ -171,32 +184,46 @@ impl<'a> Typechecker<'a> {
                                         error(format!("incorrect args"));
                                     }
                                     for (arg, fnArg) in zip(args, fnArgs) {
-                                        self.substitution
-                                            .unify(&self.getInstructionType(*arg), &fnArg);
+                                        self.substitution.unify(
+                                            &self.getInstructionType(*arg),
+                                            &fnArg,
+                                            instruction.location.clone(),
+                                        );
                                     }
-                                    self.substitution
-                                        .unify(&self.getInstructionType(instruction.id), &fnResult);
+                                    self.substitution.unify(
+                                        &self.getInstructionType(instruction.id),
+                                        &fnResult,
+                                        instruction.location.clone(),
+                                    );
                                 }
                             }
                         }
                         InstructionKind::If(cond, t, f) => {
-                            self.substitution
-                                .unify(&self.getInstructionType(*cond), &Type::getBoolType());
+                            self.substitution.unify(
+                                &self.getInstructionType(*cond),
+                                &Type::getBoolType(),
+                                instruction.location.clone(),
+                            );
                             match f {
                                 Some(f) => {
                                     self.substitution.unify(
                                         &self.getInstructionType(*t),
                                         &self.getInstructionType(*f),
+                                        instruction.location.clone(),
                                     );
                                 }
                                 None => {
-                                    self.substitution
-                                        .unify(&self.getInstructionType(*t), &Type::getUnitType());
+                                    self.substitution.unify(
+                                        &self.getInstructionType(*t),
+                                        &Type::getUnitType(),
+                                        instruction.location.clone(),
+                                    );
                                 }
                             }
                             self.substitution.unify(
                                 &self.getInstructionType(*t),
                                 &self.getInstructionType(instruction.id),
+                                instruction.location.clone(),
                             );
                         }
                         InstructionKind::BlockRef(id) => {
@@ -208,6 +235,7 @@ impl<'a> Typechecker<'a> {
                             self.substitution.unify(
                                 &self.getInstructionType(last.id),
                                 &self.getInstructionType(instruction.id),
+                                instruction.location.clone(),
                             );
                         }
                         InstructionKind::ValueRef(value, fields) => {
@@ -217,7 +245,11 @@ impl<'a> Typechecker<'a> {
                                 ValueKind::Value(name, _) => self.getValueType(name),
                             };
                             if fields.is_empty() {
-                                self.unify(receiverType, self.getInstructionType(instruction.id));
+                                self.unify(
+                                    receiverType,
+                                    self.getInstructionType(instruction.id),
+                                    instruction.location.clone(),
+                                );
                             } else {
                                 for (index, field) in fields.iter().enumerate() {
                                     let receiver = self.substitution.apply(&receiverType);
@@ -258,14 +290,23 @@ impl<'a> Typechecker<'a> {
                                         }
                                     }
                                 }
-                                self.unify(receiverType, self.getInstructionType(instruction.id));
+                                self.unify(
+                                    receiverType,
+                                    self.getInstructionType(instruction.id),
+                                    instruction.location.clone(),
+                                );
                             }
                         }
                         InstructionKind::Bind(name, rhs) => {
-                            self.unify(self.getValueType(name), self.getInstructionType(*rhs));
+                            self.unify(
+                                self.getValueType(name),
+                                self.getInstructionType(*rhs),
+                                instruction.location.clone(),
+                            );
                             self.substitution.unify(
                                 &self.getInstructionType(instruction.id),
                                 &Type::getUnitType(),
+                                instruction.location.clone(),
                             );
                         }
                         InstructionKind::Tuple(args) => {
@@ -276,6 +317,7 @@ impl<'a> Typechecker<'a> {
                             self.substitution.unify(
                                 &self.getInstructionType(instruction.id),
                                 &Type::Tuple(argTypes),
+                                instruction.location.clone(),
                             );
                         }
                         InstructionKind::TupleIndex(_, _) => todo!(),

@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::siko::qualifiedname::QualifiedName;
+use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
 
 use super::Type::Type;
 
@@ -108,6 +108,7 @@ pub struct Instruction {
     pub id: InstructionId,
     pub kind: InstructionKind,
     pub ty: Option<Type>,
+    pub location: Location,
 }
 
 impl Instruction {
@@ -140,7 +141,7 @@ impl Block {
         }
     }
 
-    pub fn add(&mut self, kind: InstructionKind) -> InstructionId {
+    pub fn add(&mut self, kind: InstructionKind, location: Location) -> InstructionId {
         let id = InstructionId {
             blockId: self.id,
             id: self.instructions.len() as u32,
@@ -149,6 +150,7 @@ impl Block {
             id: id,
             kind: kind,
             ty: None,
+            location: location,
         });
         id
     }
