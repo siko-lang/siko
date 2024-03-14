@@ -272,7 +272,16 @@ impl<'a> Typechecker<'a> {
                                 &Type::getUnitType(),
                             );
                         }
-                        InstructionKind::Tuple(_) => todo!(),
+                        InstructionKind::Tuple(args) => {
+                            let mut argTypes = Vec::new();
+                            for arg in args {
+                                argTypes.push(self.getInstructionType(*arg));
+                            }
+                            self.substitution.unify(
+                                &self.getInstructionType(instruction.id),
+                                &Type::Tuple(argTypes),
+                            );
+                        }
                         InstructionKind::TupleIndex(_, _) => todo!(),
                         InstructionKind::StringLiteral(_) => todo!(),
                         InstructionKind::IntegerLiteral(_) => todo!(),
@@ -316,7 +325,7 @@ impl<'a> Typechecker<'a> {
     }
 
     pub fn generate(&self, f: &Function) -> Function {
-        println!("Generating {}", f.name);
+        //println!("Generating {}", f.name);
         let mut result = f.clone();
         if let Some(body) = &mut result.body {
             for block in &mut body.blocks {
@@ -353,9 +362,9 @@ impl<'a> Typechecker<'a> {
                             ),
                         }
                     }
-                    let ty = self.getType(&TypedId::Instruction(instruction.id));
-                    let ty = self.substitution.apply(&ty);
-                    println!("{} : {}", instruction, ty);
+                    // let ty = self.getType(&TypedId::Instruction(instruction.id));
+                    // let ty = self.substitution.apply(&ty);
+                    // println!("{} : {}", instruction, ty);
                 }
             }
         }

@@ -8,7 +8,7 @@ use siko::{
     typechecker::Typechecker::Typechecker,
 };
 
-use std::env::args;
+use std::{collections::BTreeMap, env::args};
 
 fn main() {
     let mut resolver = Resolver::new();
@@ -22,8 +22,11 @@ fn main() {
     }
     resolver.process();
     let (functions, classes, enums) = resolver.ir();
+    let mut typedFunctions = BTreeMap::new();
     for (_, f) in &functions {
         let mut typechecker = Typechecker::new(&functions, &classes, &enums);
-        typechecker.run(f);
+        let typedFn = typechecker.run(f);
+        typedFn.dump();
+        typedFunctions.insert(typedFn.name.clone(), typedFn);
     }
 }

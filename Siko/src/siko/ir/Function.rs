@@ -217,9 +217,10 @@ impl Function {
     }
 
     pub fn dump(&self) {
+        println!("{}:", self.name);
         match &self.body {
             Some(body) => body.dump(),
-            None => println!("<no body>"),
+            None => println!("  <no body>"),
         }
     }
 }

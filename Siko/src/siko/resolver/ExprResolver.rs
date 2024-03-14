@@ -40,7 +40,11 @@ impl<'a> ExprResolver<'a> {
         self.blockId += 1;
         let mut irBlock = IrBlock::new(blockId);
         let mut env = Environment::child(env);
-        for statement in &block.statements {
+        let mut lastHasSemicolon = false;
+        for (index, statement) in block.statements.iter().enumerate() {
+            if index == block.statements.len() - 1 && statement.hasSemicolon {
+                lastHasSemicolon = true;
+            }
             match &statement.kind {
                 StatementKind::Let(pat, rhs) => {
                     let rhsId = self.resolveExpr(rhs, &mut env, &mut irBlock);
@@ -51,6 +55,9 @@ impl<'a> ExprResolver<'a> {
                     self.resolveExpr(expr, &mut env, &mut irBlock);
                 }
             }
+        }
+        if block.statements.is_empty() || lastHasSemicolon {
+            irBlock.add(InstructionKind::Tuple(Vec::new()));
         }
         self.body.addBlock(irBlock);
         blockId
