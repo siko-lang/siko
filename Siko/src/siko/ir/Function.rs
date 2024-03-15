@@ -79,7 +79,7 @@ impl std::fmt::Debug for InstructionId {
 pub enum InstructionKind {
     FunctionCall(QualifiedName, Vec<InstructionId>),
     DynamicFunctionCall(InstructionId, Vec<InstructionId>),
-    If(InstructionId, InstructionId, Option<InstructionId>),
+    If(InstructionId, BlockId, Option<BlockId>),
     BlockRef(BlockId),
     ValueRef(ValueKind, Vec<String>),
     Bind(String, InstructionId),
@@ -165,6 +165,10 @@ impl Block {
         id
     }
 
+    pub fn getLastId(&self) -> InstructionId {
+        self.instructions.last().expect("Empty block!").id
+    }
+
     pub fn dump(&self) {
         println!("  Block {}:", self.id);
         for instruction in &self.instructions {
@@ -193,6 +197,10 @@ impl Body {
             InstructionKind::BlockRef(id) => &self.blocks[id.id as usize],
             _ => panic!("getBlockByRef: instruction is not block ref!"),
         }
+    }
+
+    pub fn getBlockById(&self, id: BlockId) -> &Block {
+        &self.blocks[id.id as usize]
     }
 
     pub fn getInstruction(&self, id: InstructionId) -> &Instruction {
@@ -239,7 +247,7 @@ impl Function {
 
     pub fn getBlockById(&self, id: BlockId) -> &Block {
         if let Some(body) = &self.body {
-            &body.blocks[id.id as usize]
+            body.getBlockById(id)
         } else {
             panic!("getBlockById: no body found");
         }

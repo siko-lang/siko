@@ -1,3 +1,4 @@
+use core::panic;
 use std::collections::BTreeSet;
 
 use crate::siko::ir::Function::{
@@ -160,10 +161,16 @@ impl<'a> ExprResolver<'a> {
             }
             SimpleExpr::If(cond, trueBranch, falseBranch) => {
                 let condId = self.resolveExpr(cond, env, irBlock);
-                let trueBranchId = self.resolveExpr(trueBranch, env, irBlock);
+                let trueBranchId = match &trueBranch.expr {
+                    SimpleExpr::Block(block) => self.resolveBlock(block, env),
+                    _ => panic!("If true branch is not a block!"),
+                };
                 let falseBranchId = match falseBranch {
                     Some(falseBranch) => {
-                        let falseBranchId = self.resolveExpr(falseBranch, env, irBlock);
+                        let falseBranchId = match &falseBranch.expr {
+                            SimpleExpr::Block(block) => self.resolveBlock(block, env),
+                            _ => panic!("If false branch is not a block!"),
+                        };
                         Some(falseBranchId)
                     }
                     None => None,

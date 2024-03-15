@@ -52,11 +52,11 @@ impl Builder {
                     let ifKey = Key::If(instruction.id);
                     let ifEnd = Node::new(NodeKind::IfEnd);
                     self.cfg.addNode(ifKey.clone(), ifEnd);
-                    let block = f.getBlockByRef(*trueBranch);
+                    let block = f.getBlockById(*trueBranch);
                     let trueLast = self.processBlock(block, last.clone(), f);
                     self.cfg.addEdge(Edge::new(trueLast, ifKey.clone()));
                     if let Some(falseBranch) = falseBranch {
-                        let block = f.getBlockByRef(*falseBranch);
+                        let block = f.getBlockById(*falseBranch);
                         let falseLast = self.processBlock(block, last.clone(), f);
                         self.cfg.addEdge(Edge::new(falseLast, ifKey.clone()));
                     }

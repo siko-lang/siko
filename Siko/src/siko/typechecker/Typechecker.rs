@@ -203,6 +203,7 @@ impl<'a> Typechecker<'a> {
                         }
                     }
                     InstructionKind::If(cond, t, f) => {
+                        let trueLast = &body.getBlockById(*t).getLastId();
                         self.substitution.unify(
                             &self.getInstructionType(*cond),
                             &Type::getBoolType(),
@@ -210,34 +211,31 @@ impl<'a> Typechecker<'a> {
                         );
                         match f {
                             Some(f) => {
+                                let falseLast = &body.getBlockById(*f).getLastId();
                                 self.substitution.unify(
-                                    &self.getInstructionType(*t),
-                                    &self.getInstructionType(*f),
+                                    &self.getInstructionType(*trueLast),
+                                    &self.getInstructionType(*falseLast),
                                     instruction.location.clone(),
                                 );
                             }
                             None => {
                                 self.substitution.unify(
-                                    &self.getInstructionType(*t),
+                                    &self.getInstructionType(*trueLast),
                                     &Type::getUnitType(),
                                     instruction.location.clone(),
                                 );
                             }
                         }
                         self.substitution.unify(
-                            &self.getInstructionType(*t),
+                            &self.getInstructionType(*trueLast),
                             &self.getInstructionType(instruction.id),
                             instruction.location.clone(),
                         );
                     }
                     InstructionKind::BlockRef(id) => {
-                        let block = &body.blocks[id.id as usize];
-                        let last = block
-                            .instructions
-                            .last()
-                            .expect("Empty block in type check!");
+                        let last = &body.getBlockById(*id).getLastId();
                         self.substitution.unify(
-                            &self.getInstructionType(last.id),
+                            &self.getInstructionType(*last),
                             &self.getInstructionType(instruction.id),
                             instruction.location.clone(),
                         );
