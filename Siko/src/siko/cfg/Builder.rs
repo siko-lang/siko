@@ -112,7 +112,6 @@ impl Builder {
     }
 
     pub fn build(&mut self, f: &Function) {
-        f.dump();
         let block = &f.getFirstBlock();
         self.processBlock(block, None, f);
         self.cfg.updateEdges();

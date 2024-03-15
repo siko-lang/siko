@@ -30,8 +30,8 @@ impl Display for Key {
 
 #[derive(Debug)]
 pub struct Edge {
-    from: Key,
-    to: Key,
+    pub from: Key,
+    pub to: Key,
 }
 
 impl Edge {
@@ -61,8 +61,8 @@ impl Display for NodeKind {
 #[derive(Debug)]
 pub struct Node {
     kind: NodeKind,
-    incoming: Vec<u64>,
-    outgoing: Vec<u64>,
+    pub incoming: Vec<u64>,
+    pub outgoing: Vec<u64>,
     pub usage: Option<Path>,
     pub color: String,
 }
@@ -104,6 +104,15 @@ impl CFG {
 
     pub fn getNode(&self, key: &Key) -> &Node {
         self.nodes.get(key).unwrap()
+    }
+
+    pub fn setColor(&mut self, key: &Key, color: String) {
+        let node = self.nodes.get_mut(key).unwrap();
+        node.color = color;
+    }
+
+    pub fn getEdge(&self, id: u64) -> &Edge {
+        &self.edges[id as usize]
     }
 
     pub fn getSources(&self) -> Vec<Key> {

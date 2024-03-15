@@ -4,8 +4,9 @@
 mod siko;
 
 use siko::{
-    cfg::Builder::Builder, location::FileManager::FileManager, parser::Parser::*,
-    resolver::Resolver::Resolver, typechecker::Typechecker::Typechecker,
+    cfg::Builder::Builder, location::FileManager::FileManager,
+    ownership::Borrowchecker::Borrowchecker, parser::Parser::*, resolver::Resolver::Resolver,
+    typechecker::Typechecker::Typechecker,
 };
 
 use std::{collections::BTreeMap, env::args};
@@ -33,6 +34,10 @@ fn main() {
             let mut builder = Builder::new(typedFn.name.to_string());
             builder.build(&typedFn);
             let cfg = builder.getCFG();
+            let mut borrowchecker = Borrowchecker::new(cfg);
+            borrowchecker.check();
+            borrowchecker.update();
+            let cfg = borrowchecker.cfg();
             cfg.printDot();
         }
         typedFunctions.insert(typedFn.name.clone(), typedFn);

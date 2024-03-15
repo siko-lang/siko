@@ -1,9 +1,18 @@
 use std::fmt::Display;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum Path {
     WholePath(String),
     PartialPath(String, Vec<String>),
+}
+
+impl Path {
+    pub fn getValue(&self) -> &String {
+        match self {
+            Path::WholePath(v) => v,
+            Path::PartialPath(v, _) => v,
+        }
+    }
 }
 
 impl Display for Path {
