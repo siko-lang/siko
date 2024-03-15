@@ -133,10 +133,17 @@ impl ExprParser for Parser {
         while !self.check(TokenKind::RightBracket(BracketKind::Curly)) {
             let pattern = self.parsePattern();
             self.expect(TokenKind::Arrow(ArrowKind::Right));
-            let body = self.parseExpr();
-            if self.check(TokenKind::Misc(MiscKind::Comma)) {
-                self.expect(TokenKind::Misc(MiscKind::Comma));
-            }
+            let body = if self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
+                let block = self.parseBlock();
+                let expr = self.buildExpr(SimpleExpr::Block(block));
+                expr
+            } else {
+                let expr = self.parseExpr();
+                if self.check(TokenKind::Misc(MiscKind::Comma)) {
+                    self.expect(TokenKind::Misc(MiscKind::Comma));
+                }
+                expr
+            };
             branches.push(Branch { pattern, body });
         }
         self.expect(TokenKind::RightBracket(BracketKind::Curly));
@@ -290,22 +297,12 @@ impl ExprParser for Parser {
                 self.buildExpr(SimpleExpr::Name(value))
             }
             TokenKind::StringLiteral => {
-                let tokenInfo = self.current().clone();
-                self.step();
-                if let Token::StringLiteral(value) = tokenInfo.token {
-                    self.buildExpr(SimpleExpr::StringLiteral(value))
-                } else {
-                    unreachable!()
-                }
+                let literal = self.parseStringLiteral();
+                self.buildExpr(SimpleExpr::StringLiteral(literal))
             }
             TokenKind::IntegerLiteral => {
-                let tokenInfo = self.current().clone();
-                self.step();
-                if let Token::IntegerLiteral(value) = tokenInfo.token {
-                    self.buildExpr(SimpleExpr::IntegerLiteral(value))
-                } else {
-                    unreachable!()
-                }
+                let literal = self.parseIntegerLiteral();
+                self.buildExpr(SimpleExpr::IntegerLiteral(literal))
             }
             TokenKind::CharLiteral => {
                 let tokenInfo = self.current().clone();

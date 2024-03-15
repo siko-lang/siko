@@ -1,5 +1,6 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
+use crate::siko::ir::Data::Enum;
 use crate::siko::ir::Function::{Function as IrFunction, Parameter as IrParameter};
 use crate::siko::ir::Type::{Type as IrType, TypeVar};
 use crate::siko::qualifiedname::QualifiedName;
@@ -31,7 +32,13 @@ impl<'a> FunctionResolver<'a> {
         }
     }
 
-    pub fn resolve(&self, f: &Function, emptyVariants: &BTreeSet<QualifiedName>) -> IrFunction {
+    pub fn resolve(
+        &self,
+        f: &Function,
+        emptyVariants: &BTreeSet<QualifiedName>,
+        variants: &BTreeMap<QualifiedName, QualifiedName>,
+        enums: &BTreeMap<QualifiedName, Enum>,
+    ) -> IrFunction {
         let mut typeResolver = TypeResolver::new(self.moduleResolver, &f.typeParams);
         typeResolver.addTypeParams(self.typeParams);
         let mut params = Vec::new();
@@ -72,7 +79,8 @@ impl<'a> FunctionResolver<'a> {
         };
 
         let body = if let Some(body) = &f.body {
-            let mut exprResolver = ExprResolver::new(self.moduleResolver, emptyVariants);
+            let mut exprResolver =
+                ExprResolver::new(self.moduleResolver, emptyVariants, variants, enums);
             exprResolver.resolve(body, &env);
             Some(exprResolver.body())
         } else {

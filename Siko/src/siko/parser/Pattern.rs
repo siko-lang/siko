@@ -67,6 +67,14 @@ impl PatternParser for Parser {
                 self.expect(TokenKind::Misc(MiscKind::Wildcard));
                 self.buildPattern(SimplePattern::Wildcard)
             }
+            TokenKind::IntegerLiteral => {
+                let literal = self.parseIntegerLiteral();
+                self.buildPattern(SimplePattern::IntegerLiteral(literal))
+            }
+            TokenKind::StringLiteral => {
+                let literal = self.parseStringLiteral();
+                self.buildPattern(SimplePattern::StringLiteral(literal))
+            }
             kind => self.reportError2("<pattern>", kind),
         }
     }

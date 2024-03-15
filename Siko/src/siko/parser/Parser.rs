@@ -136,6 +136,26 @@ impl Parser {
         }
     }
 
+    pub fn parseIntegerLiteral(&mut self) -> String {
+        match self.tokens[self.index].token.clone() {
+            Token::IntegerLiteral(v) => {
+                self.step();
+                v.clone()
+            }
+            t => self.reportError(TokenKind::IntegerLiteral, t.kind()),
+        }
+    }
+
+    pub fn parseStringLiteral(&mut self) -> String {
+        match self.tokens[self.index].token.clone() {
+            Token::StringLiteral(v) => {
+                self.step();
+                v.clone()
+            }
+            t => self.reportError(TokenKind::StringLiteral, t.kind()),
+        }
+    }
+
     pub fn currentLocation(&self) -> Location {
         Location::new(self.fileId.clone(), self.tokens[self.index].span.clone())
     }

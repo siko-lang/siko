@@ -70,7 +70,7 @@ impl Report {
                     } else {
                         line.yellow()
                     };
-                    println!(" {} {} {}", "|".red(), lineNumber, highlighted_line);
+                    println!(" {} {} {}", "|".red(), lineNumber + 1, highlighted_line);
                 } else {
                     if !separatorPrinted {
                         separatorPrinted = true;

@@ -6,4 +6,5 @@ pub fn error(msg: String) -> ! {
 }
 
 pub mod DependencyProcessor;
+pub mod Dot;
 pub mod SCC;

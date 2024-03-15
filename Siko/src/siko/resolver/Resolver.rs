@@ -48,6 +48,7 @@ pub struct Resolver {
     enums: BTreeMap<QualifiedName, IrEnum>,
     functions: BTreeMap<QualifiedName, IrFunction>,
     emptyVariants: BTreeSet<QualifiedName>,
+    variants: BTreeMap<QualifiedName, QualifiedName>,
 }
 
 impl Resolver {
@@ -59,6 +60,7 @@ impl Resolver {
             enums: BTreeMap::new(),
             functions: BTreeMap::new(),
             emptyVariants: BTreeSet::new(),
+            variants: BTreeMap::new(),
         }
     }
 
@@ -157,6 +159,8 @@ impl Resolver {
                                 None,
                             );
                             self.functions.insert(ctor.name.clone(), ctor);
+                            self.variants
+                                .insert(variant.name.clone(), irEnum.name.clone());
                             irEnum.variants.push(variant);
                         }
                         for method in &e.methods {
@@ -186,7 +190,12 @@ impl Resolver {
                                 c.typeParams.as_ref(),
                                 Some(c.name.clone()),
                             );
-                            let irFunction = functionResolver.resolve(method, &self.emptyVariants);
+                            let irFunction = functionResolver.resolve(
+                                method,
+                                &self.emptyVariants,
+                                &self.variants,
+                                &self.enums,
+                            );
                             self.functions.insert(irFunction.name.clone(), irFunction);
                         }
                     }
@@ -197,13 +206,23 @@ impl Resolver {
                                 e.typeParams.as_ref(),
                                 Some(e.name.clone()),
                             );
-                            let irFunction = functionResolver.resolve(method, &self.emptyVariants);
+                            let irFunction = functionResolver.resolve(
+                                method,
+                                &self.emptyVariants,
+                                &self.variants,
+                                &self.enums,
+                            );
                             self.functions.insert(irFunction.name.clone(), irFunction);
                         }
                     }
                     ModuleItem::Function(f) => {
                         let functionResolver = FunctionResolver::new(moduleResolver, None, None);
-                        let irFunction = functionResolver.resolve(f, &self.emptyVariants);
+                        let irFunction = functionResolver.resolve(
+                            f,
+                            &self.emptyVariants,
+                            &self.variants,
+                            &self.enums,
+                        );
                         self.functions.insert(irFunction.name.clone(), irFunction);
                     }
                     _ => {}

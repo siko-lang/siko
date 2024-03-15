@@ -1,6 +1,7 @@
 use core::panic;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
+use crate::siko::ir::Data::Enum;
 use crate::siko::ir::Function::{
     Block as IrBlock, BlockId, InstructionId, InstructionKind, ValueKind,
 };
@@ -12,6 +13,7 @@ use crate::siko::{ir::Function::Body, syntax::Statement::Block};
 
 use super::Environment::Environment;
 use super::Error::ResolverError;
+use super::MatchResolver::MatchResolver;
 use super::ModuleResolver::ModuleResolver;
 
 pub struct ExprResolver<'a> {
@@ -20,12 +22,16 @@ pub struct ExprResolver<'a> {
     valueId: u32,
     moduleResolver: &'a ModuleResolver,
     emptyVariants: &'a BTreeSet<QualifiedName>,
+    variants: &'a BTreeMap<QualifiedName, QualifiedName>,
+    enums: &'a BTreeMap<QualifiedName, Enum>,
 }
 
 impl<'a> ExprResolver<'a> {
     pub fn new(
         moduleResolver: &'a ModuleResolver,
         emptyVariants: &'a BTreeSet<QualifiedName>,
+        variants: &'a BTreeMap<QualifiedName, QualifiedName>,
+        enums: &'a BTreeMap<QualifiedName, Enum>,
     ) -> ExprResolver<'a> {
         ExprResolver {
             body: Body::new(),
@@ -33,6 +39,8 @@ impl<'a> ExprResolver<'a> {
             valueId: 0,
             moduleResolver: moduleResolver,
             emptyVariants: emptyVariants,
+            variants: variants,
+            enums: enums,
         }
     }
 
@@ -182,7 +190,15 @@ impl<'a> ExprResolver<'a> {
             }
             SimpleExpr::For(_, _, _) => todo!(),
             SimpleExpr::BinaryOp(_, _, _) => todo!(),
-            SimpleExpr::Match(_, _) => todo!(),
+            SimpleExpr::Match(_, branches) => {
+                let mut patterns = Vec::new();
+                for b in branches {
+                    patterns.push(b.pattern.clone());
+                }
+                let mut matchResolver = MatchResolver::new(patterns);
+                matchResolver.check(self.moduleResolver, self.variants, self.enums);
+                todo!()
+            }
             SimpleExpr::Block(block) => {
                 let blockId = self.resolveBlock(block, env);
                 return irBlock.add(InstructionKind::BlockRef(blockId), expr.location.clone());
@@ -243,8 +259,8 @@ impl<'a> ExprResolver<'a> {
                 }
                 InstructionId::empty()
             }
-            SimplePattern::StringLiteral(_, _) => todo!(),
-            SimplePattern::IntegerLiteral(_, _) => todo!(),
+            SimplePattern::StringLiteral(_) => todo!(),
+            SimplePattern::IntegerLiteral(_) => todo!(),
             SimplePattern::Wildcard => {
                 let valueId = self.valueId;
                 self.valueId += 1;
