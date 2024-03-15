@@ -3,6 +3,7 @@ use crate::siko::location::{Location::Location, Report::Painter, Report::Report}
 pub enum ResolverError {
     UnknownValue(String, Location),
     RedundantPattern(Location),
+    MissingPattern(Location),
 }
 
 impl ResolverError {
@@ -15,6 +16,11 @@ impl ResolverError {
             }
             ResolverError::RedundantPattern(l) => {
                 let slogan = format!("Redundant pattern");
+                let r = Report::new(slogan, l.clone());
+                r.print();
+            }
+            ResolverError::MissingPattern(l) => {
+                let slogan = format!("Missing pattern");
                 let r = Report::new(slogan, l.clone());
                 r.print();
             }

@@ -85,6 +85,19 @@ impl ChoiceNode {
         name
     }
 
+    pub fn checkMissing(&self) -> bool {
+        if self.choices.is_empty() {
+            self.matches.is_empty()
+        } else {
+            for (_, next) in &self.choices {
+                if next.checkMissing() {
+                    return true;
+                }
+            }
+            false
+        }
+    }
+
     pub fn addWildcards(
         &mut self,
         variants: &BTreeMap<QualifiedName, QualifiedName>,
@@ -105,15 +118,20 @@ impl ChoiceNode {
             }
             next.addWildcards(variants, enums);
         }
+        let mut fullMatch = true;
         for name in &allNames {
             if let Some(e) = variants.get(name) {
                 let e = enums.get(e).unwrap();
                 for variant in &e.variants {
                     if !allNames.contains(&variant.name) {
+                        fullMatch = false;
                         wildcardNeeded = true;
                     }
                 }
             }
+        }
+        if fullMatch {
+            self.choices.remove(&Choice::Wildcard);
         }
         if wildcardNeeded && !self.choices.contains_key(&Choice::Wildcard) {
             self.choices.insert(Choice::Wildcard, ChoiceNode::new());
@@ -212,11 +230,17 @@ impl MatchResolver {
             self.choiceTree.build(vec![branch], moduleResolver);
         }
         self.choiceTree.addWildcards(variants, enums);
+        let mut lastLocation = None;
         for (index, branch) in self.branches.clone().into_iter().enumerate() {
             let location = branch.location.clone();
+            lastLocation = Some(location.clone());
             if !self.choiceTree.apply(vec![branch], index, moduleResolver) {
                 ResolverError::RedundantPattern(location).report();
             }
+        }
+        if self.choiceTree.checkMissing() {
+            ResolverError::MissingPattern(lastLocation.expect("lastLocation was not found"))
+                .report();
         }
         let mut graph = Graph::new("matchtest".to_string());
         self.choiceTree.buildDot(&mut graph);
