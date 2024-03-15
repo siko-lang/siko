@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt::Display;
 use std::io::Write;
 
 use crate::siko::ir::Function::InstructionId;
@@ -14,6 +15,19 @@ pub enum Key {
     End,
 }
 
+impl Display for Key {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self {
+            Key::DropKey(v) => write!(f, "drop({})", v),
+            Key::Instruction(id) => write!(f, "{}", id),
+            Key::LoopEnd(id) => write!(f, "loopend({})", id),
+            Key::LoopStart(id) => write!(f, "loopstart({})", id),
+            Key::If(id) => write!(f, "if({})", id),
+            Key::End => write!(f, "End"),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Edge {
     from: Key,
@@ -27,8 +41,26 @@ impl Edge {
 }
 
 #[derive(Debug)]
+pub enum NodeKind {
+    Bind(String),
+    Generic,
+    IfEnd,
+    ValueRef,
+}
+
+impl Display for NodeKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self {
+            NodeKind::Bind(v) => write!(f, "bind({})", v),
+            NodeKind::Generic => write!(f, "generic"),
+            NodeKind::IfEnd => write!(f, "ifend"),
+            NodeKind::ValueRef => write!(f, "valueref"),
+        }
+    }
+}
+#[derive(Debug)]
 pub struct Node {
-    kind: String,
+    kind: NodeKind,
     incoming: Vec<u64>,
     outgoing: Vec<u64>,
     pub usage: Option<Path>,
@@ -36,7 +68,7 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn new(kind: String) -> Node {
+    pub fn new(kind: NodeKind) -> Node {
         Node {
             kind: kind,
             incoming: Vec::new(),
@@ -101,14 +133,18 @@ impl CFG {
         let mut keymap = BTreeMap::new();
         for (index, (key, node)) in self.nodes.iter().enumerate() {
             keymap.insert(key, index);
-            let mut label = node.kind.clone();
-            if let Some(usage) = &node.usage {
-                label = format!("{}", usage);
-            }
+            let label = if let Some(usage) = &node.usage {
+                format!("{}_{}", key, usage)
+            } else {
+                match &node.kind {
+                    NodeKind::Generic => format!("{}", key),
+                    kind => format!("{}_{}", key, kind),
+                }
+            };
             write!(
                 f,
-                "node{} [label=\"{:?}_{}\" style=\"filled\" shape=\"box\" fillcolor=\"{}\"]\n",
-                index, key, label, node.color
+                "node{} [label=\"{}\" style=\"filled\" shape=\"box\" fillcolor=\"{}\"]\n",
+                index, label, node.color
             )
             .unwrap();
         }
