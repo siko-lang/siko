@@ -30,16 +30,23 @@ fn main() {
         let mut typechecker = Typechecker::new(&functions, &classes, &enums);
         let typedFn = typechecker.run(f);
         //typedFn.dump();
-        if typedFn.body.is_some() {
-            let mut builder = Builder::new(typedFn.name.to_string());
-            builder.build(&typedFn);
+        typedFunctions.insert(typedFn.name.clone(), typedFn);
+    }
+    let mut borrowCheckedFunctions = BTreeMap::new();
+    for (name, f) in typedFunctions {
+        let borrowCheckedFn = if f.body.is_some() {
+            let mut builder = Builder::new(f.name.to_string());
+            builder.build(&f);
             let cfg = builder.getCFG();
             let mut borrowchecker = Borrowchecker::new(cfg);
             borrowchecker.check();
-            borrowchecker.update();
-            let cfg = borrowchecker.cfg();
-            cfg.printDot();
-        }
-        typedFunctions.insert(typedFn.name.clone(), typedFn);
+            let updatedFn = borrowchecker.update(&f);
+            // let cfg = borrowchecker.cfg();
+            // cfg.printDot();
+            updatedFn
+        } else {
+            f
+        };
+        borrowCheckedFunctions.insert(name, borrowCheckedFn);
     }
 }

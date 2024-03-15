@@ -5,9 +5,19 @@ use std::{
     ops::AddAssign,
 };
 
-use crate::siko::cfg::CFG::{Key, CFG};
+use crate::siko::{
+    cfg::CFG::{Key, CFG},
+    ir::Function::Function,
+};
 
 use super::Path::Path;
+
+#[derive(Debug, Clone)]
+pub struct BorrowInfo {
+    pub isBorrow: bool,
+    pub moves: BTreeSet<Path>,
+    pub usage: Option<Path>,
+}
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 struct Usage {
@@ -144,10 +154,33 @@ impl Borrowchecker {
         }
     }
 
-    pub fn update(&mut self) {
+    pub fn update(&mut self, f: &Function) -> Function {
         for b in &self.borrows {
             self.cfg.setColor(&b, "#cf03fc".to_string());
         }
+        let mut f = f.clone();
+        for (key, node) in &self.cfg.nodes {
+            let isBorrow = self.borrows.contains(key);
+            match key {
+                Key::Instruction(id) => {
+                    let witnessedUsages = self.usages.get(key).unwrap();
+                    let mut moves = BTreeSet::new();
+                    for witnessUsage in &witnessedUsages.usages {
+                        if self.borrows.contains(&witnessUsage.id) {
+                            moves.insert(witnessUsage.path.clone());
+                        }
+                    }
+                    let borrowInfo = BorrowInfo {
+                        isBorrow,
+                        moves,
+                        usage: node.usage.clone(),
+                    };
+                    f.setBorrowInfo(*id, borrowInfo);
+                }
+                _ => {}
+            }
+        }
+        f
     }
 
     pub fn cfg(self) -> CFG {

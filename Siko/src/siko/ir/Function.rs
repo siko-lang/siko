@@ -1,6 +1,9 @@
 use std::fmt::Display;
 
-use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
+use crate::siko::{
+    location::Location::Location, ownership::Borrowchecker::BorrowInfo,
+    qualifiedname::QualifiedName,
+};
 
 use super::Type::Type;
 
@@ -119,6 +122,7 @@ pub struct Instruction {
     pub kind: InstructionKind,
     pub ty: Option<Type>,
     pub location: Location,
+    pub borrowInfo: Option<BorrowInfo>,
 }
 
 impl Instruction {
@@ -161,6 +165,7 @@ impl Block {
             kind: kind,
             ty: None,
             location: location,
+            borrowInfo: None,
         });
         id
     }
@@ -189,6 +194,10 @@ impl Body {
 
     pub fn addBlock(&mut self, block: Block) {
         self.blocks.push(block);
+    }
+    pub fn setBorrowInfo(&mut self, id: InstructionId, borrowInfo: BorrowInfo) {
+        self.blocks[id.blockId.id as usize].instructions[id.id as usize].borrowInfo =
+            Some(borrowInfo);
     }
 
     pub fn getBlockByRef(&self, id: InstructionId) -> &Block {
@@ -234,6 +243,14 @@ impl Function {
             params: params,
             result: result,
             body: body,
+        }
+    }
+
+    pub fn setBorrowInfo(&mut self, id: InstructionId, borrowInfo: BorrowInfo) {
+        if let Some(body) = &mut self.body {
+            body.setBorrowInfo(id, borrowInfo)
+        } else {
+            panic!("setBorrowInfo: no body found");
         }
     }
 

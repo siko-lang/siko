@@ -81,7 +81,7 @@ impl Node {
 
 pub struct CFG {
     name: String,
-    nodes: BTreeMap<Key, Node>,
+    pub nodes: BTreeMap<Key, Node>,
     edges: Vec<Edge>,
 }
 
