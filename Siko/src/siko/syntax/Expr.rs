@@ -39,6 +39,7 @@ pub enum SimpleExpr {
     Call(Box<Expr>, Vec<Expr>),
     If(Box<Expr>, Box<Expr>, Option<Box<Expr>>),
     For(Pattern, Box<Expr>, Box<Expr>),
+    Loop(Pattern, Box<Expr>, Box<Expr>),
     BinaryOp(BinaryOp, Box<Expr>, Box<Expr>),
     Match(Box<Expr>, Vec<Branch>),
     Block(Block),

@@ -10,6 +10,7 @@ use super::Type::Type;
 #[derive(Debug, Clone)]
 pub enum ValueKind {
     Arg(String),
+    LoopVar(String),
     Value(String, InstructionId),
     Implicit(InstructionId),
 }
@@ -18,6 +19,7 @@ impl ValueKind {
     pub fn getValue(&self) -> Option<String> {
         match &self {
             ValueKind::Arg(v) => Some(v.clone()),
+            ValueKind::LoopVar(v) => Some(v.clone()),
             ValueKind::Value(v, _) => Some(v.clone()),
             ValueKind::Implicit(_) => None,
         }
@@ -28,6 +30,7 @@ impl Display for ValueKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
             ValueKind::Arg(n) => write!(f, "@arg/{}", n),
+            ValueKind::LoopVar(n) => write!(f, "loop/{}", n),
             ValueKind::Value(n, bindId) => write!(f, "${}/{}", n, bindId),
             ValueKind::Implicit(id) => write!(f, "{}", id),
         }
@@ -84,6 +87,7 @@ pub enum InstructionKind {
     DynamicFunctionCall(InstructionId, Vec<InstructionId>),
     If(InstructionId, BlockId, Option<BlockId>),
     BlockRef(BlockId),
+    Loop(String, InstructionId, BlockId),
     ValueRef(ValueKind, Vec<String>),
     Bind(String, InstructionId),
     Tuple(Vec<InstructionId>),
@@ -107,6 +111,7 @@ impl InstructionKind {
             InstructionKind::BlockRef(id) => format!("blockref: {}", id),
             InstructionKind::ValueRef(v, names) => format!("{}/{:?}", v, names),
             InstructionKind::Bind(v, rhs) => format!("${} = {}", v, rhs),
+            InstructionKind::Loop(v, init, body) => format!("loop ${} = {} {}", v, init, body),
             InstructionKind::Tuple(args) => format!("tuple({:?})", args),
             InstructionKind::TupleIndex(id, index) => format!("tupleindex:{}.{}", id, index),
             InstructionKind::StringLiteral(v) => format!("s:[{}]", v),

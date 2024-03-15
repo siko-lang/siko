@@ -32,6 +32,11 @@ impl<'a> Environment<'a> {
             .insert(old.clone(), ValueKind::Value(new, bindId));
     }
 
+    pub fn addLoopValue(&mut self, name: String) {
+        //println!("Added value {}", new);
+        self.values.insert(name.clone(), ValueKind::LoopVar(name));
+    }
+
     pub fn resolve(&self, value: &String) -> Option<ValueKind> {
         match self.values.get(value) {
             Some(v) => Some(v.clone()),

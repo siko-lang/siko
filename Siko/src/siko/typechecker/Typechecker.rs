@@ -54,7 +54,7 @@ impl<'a> Typechecker<'a> {
 
     pub fn run(&mut self, f: &Function) -> Function {
         self.initialize(f);
-        //self.dump(f);
+        self.dump(f);
         self.check(f);
         self.verify(f);
         //self.dump(f);
@@ -244,6 +244,7 @@ impl<'a> Typechecker<'a> {
                         let mut receiverType = match &value {
                             ValueKind::Arg(name) => self.getValueType(name),
                             ValueKind::Implicit(id) => self.getInstructionType(*id),
+                            ValueKind::LoopVar(name) => self.getValueType(name),
                             ValueKind::Value(name, _) => self.getValueType(name),
                         };
                         if fields.is_empty() {
@@ -342,6 +343,7 @@ impl<'a> Typechecker<'a> {
                             body.getInstruction(instruction.id).location.clone(),
                         );
                     }
+                    InstructionKind::Loop(_, _, _) => todo!(),
                 }
             }
         }

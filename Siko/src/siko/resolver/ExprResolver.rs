@@ -189,6 +189,23 @@ impl<'a> ExprResolver<'a> {
                 );
             }
             SimpleExpr::For(_, _, _) => todo!(),
+            SimpleExpr::Loop(pattern, init, body) => {
+                let initId = self.resolveExpr(&init, env, irBlock);
+                let mut loopEnv = Environment::child(env);
+                let valueId = self.valueId;
+                self.valueId += 1;
+                let name = format!("loopVar_{}", valueId);
+                loopEnv.addLoopValue(name.clone());
+                self.resolvePattern(pattern, env, irBlock, value);
+                let bodyBlockId = match &body.expr {
+                    SimpleExpr::Block(block) => self.resolveBlock(block, &loopEnv),
+                    _ => panic!("If true branch is not a block!"),
+                };
+                return irBlock.add(
+                    InstructionKind::Loop(name, initId, bodyBlockId),
+                    expr.location.clone(),
+                );
+            }
             SimpleExpr::BinaryOp(_, _, _) => todo!(),
             SimpleExpr::Match(_, branches) => {
                 let mut patterns = Vec::new();
