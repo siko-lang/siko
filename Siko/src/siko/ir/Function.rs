@@ -11,6 +11,16 @@ pub enum ValueKind {
     Implicit(InstructionId),
 }
 
+impl ValueKind {
+    pub fn getValue(&self) -> Option<String> {
+        match &self {
+            ValueKind::Arg(v) => Some(v.clone()),
+            ValueKind::Value(v, _) => Some(v.clone()),
+            ValueKind::Implicit(_) => None,
+        }
+    }
+}
+
 impl Display for ValueKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
@@ -177,6 +187,14 @@ impl Body {
         self.blocks.push(block);
     }
 
+    pub fn getBlockByRef(&self, id: InstructionId) -> &Block {
+        let i = self.getInstruction(id);
+        match &i.kind {
+            InstructionKind::BlockRef(id) => &self.blocks[id.id as usize],
+            _ => panic!("getBlockByRef: instruction is not block ref!"),
+        }
+    }
+
     pub fn getInstruction(&self, id: InstructionId) -> &Instruction {
         &self.blocks[id.blockId.id as usize].instructions[id.id as usize]
     }
@@ -208,6 +226,30 @@ impl Function {
             params: params,
             result: result,
             body: body,
+        }
+    }
+
+    pub fn getBlockByRef(&self, id: InstructionId) -> &Block {
+        if let Some(body) = &self.body {
+            body.getBlockByRef(id)
+        } else {
+            panic!("getBlockByRef: no body found");
+        }
+    }
+
+    pub fn getBlockById(&self, id: BlockId) -> &Block {
+        if let Some(body) = &self.body {
+            &body.blocks[id.id as usize]
+        } else {
+            panic!("getBlockById: no body found");
+        }
+    }
+
+    pub fn getFirstBlock(&self) -> &Block {
+        if let Some(body) = &self.body {
+            &body.blocks[0]
+        } else {
+            panic!("getFirstBlock: no body found");
         }
     }
 

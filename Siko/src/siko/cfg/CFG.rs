@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::io::Write;
 
 use crate::siko::ir::Function::InstructionId;
+use crate::siko::ownership::Path::Path;
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum Key {
@@ -19,13 +20,31 @@ pub struct Edge {
     to: Key,
 }
 
+impl Edge {
+    pub fn new(f: Key, t: Key) -> Edge {
+        Edge { from: f, to: t }
+    }
+}
+
 #[derive(Debug)]
 pub struct Node {
     kind: String,
     incoming: Vec<u64>,
     outgoing: Vec<u64>,
-    usage: Option<String>,
-    color: String,
+    pub usage: Option<Path>,
+    pub color: String,
+}
+
+impl Node {
+    pub fn new(kind: String) -> Node {
+        Node {
+            kind: kind,
+            incoming: Vec::new(),
+            outgoing: Vec::new(),
+            usage: None,
+            color: "yellow".to_string(),
+        }
+    }
 }
 
 pub struct CFG {
@@ -84,7 +103,7 @@ impl CFG {
             keymap.insert(key, index);
             let mut label = node.kind.clone();
             if let Some(usage) = &node.usage {
-                label = usage.to_string();
+                label = format!("{:?}", usage);
             }
             write!(
                 f,
