@@ -4,8 +4,8 @@
 mod siko;
 
 use siko::{
-    location::FileManager::FileManager, parser::Parser::*, resolver::Resolver::Resolver,
-    typechecker::Typechecker::Typechecker,
+    cfg::Builder::Builder, location::FileManager::FileManager, parser::Parser::*,
+    resolver::Resolver::Resolver, typechecker::Typechecker::Typechecker,
 };
 
 use std::{collections::BTreeMap, env::args};
@@ -29,6 +29,12 @@ fn main() {
         let mut typechecker = Typechecker::new(&functions, &classes, &enums);
         let typedFn = typechecker.run(f);
         //typedFn.dump();
+        if typedFn.body.is_some() {
+            let mut builder = Builder::new(typedFn.name.to_string());
+            builder.build(&typedFn);
+            let cfg = builder.getCFG();
+            cfg.printDot();
+        }
         typedFunctions.insert(typedFn.name.clone(), typedFn);
     }
 }

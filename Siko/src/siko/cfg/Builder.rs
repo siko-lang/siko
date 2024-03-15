@@ -20,6 +20,10 @@ impl Builder {
         }
     }
 
+    pub fn getCFG(self) -> CFG {
+        self.cfg
+    }
+
     fn processGenericInstruction(&mut self, i: &Instruction, last: Option<Key>) -> Key {
         let key = Key::Instruction(i.id);
         let node = Node::new(format!("{}", i));

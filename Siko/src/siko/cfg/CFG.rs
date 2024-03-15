@@ -93,7 +93,7 @@ impl CFG {
         }
     }
 
-    fn printDot(&self) {
+    pub fn printDot(&self) {
         let mut f = std::fs::File::create(format!("dots/cfg_{}.dot", self.name,))
             .expect("failed to open dot file");
         write!(f, "digraph D {{\n").unwrap();
@@ -103,7 +103,7 @@ impl CFG {
             keymap.insert(key, index);
             let mut label = node.kind.clone();
             if let Some(usage) = &node.usage {
-                label = format!("{:?}", usage);
+                label = format!("{}", usage);
             }
             write!(
                 f,
