@@ -4,8 +4,11 @@
 mod siko;
 
 use siko::{
-    cfg::Builder::Builder, location::FileManager::FileManager,
-    ownership::Borrowchecker::Borrowchecker, parser::Parser::*, resolver::Resolver::Resolver,
+    cfg::Builder::Builder,
+    location::FileManager::FileManager,
+    ownership::{dataflowprofile::Inference::infer, Borrowchecker::Borrowchecker},
+    parser::Parser::*,
+    resolver::Resolver::Resolver,
     typechecker::Typechecker::Typechecker,
 };
 
@@ -50,4 +53,6 @@ fn main() {
         };
         borrowCheckedFunctions.insert(name, borrowCheckedFn);
     }
+
+    infer(&borrowCheckedFunctions);
 }

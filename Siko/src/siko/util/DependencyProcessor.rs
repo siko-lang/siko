@@ -1,10 +1,15 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, fmt::Debug};
 
 use super::SCC::{self, Graph};
 
-#[derive(Debug)]
 pub struct DependencyGroup<T> {
     pub items: Vec<T>,
+}
+
+impl<T: Debug> Debug for DependencyGroup<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.items)
+    }
 }
 
 fn createIdMaps<T: Ord + Clone>(
