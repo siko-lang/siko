@@ -36,7 +36,7 @@ fn initGraph<T: Ord + Clone>(
 }
 
 pub fn processDependencies<T: Ord + Clone>(
-    all_dependencies: BTreeMap<T, Vec<T>>,
+    all_dependencies: &BTreeMap<T, Vec<T>>,
 ) -> Vec<DependencyGroup<T>> {
     let mut graph = Graph::new();
     let (id_item_map, item_id_map) = createIdMaps(&mut graph, &all_dependencies);
