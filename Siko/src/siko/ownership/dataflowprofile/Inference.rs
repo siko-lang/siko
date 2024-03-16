@@ -136,7 +136,7 @@ impl<'a> InferenceEngine<'a> {
 
 pub fn dataflow(functions: &BTreeMap<QualifiedName, Function>) -> DataFlowProfileStore {
     let (groups, recursive_fns) = createFunctionGroups(functions);
-    println!("Groups {:?}, recursive {:?}", groups, recursive_fns);
+    //println!("Groups {:?}, recursive {:?}", groups, recursive_fns);
     let mut engine = InferenceEngine::new(functions);
     engine.processGroups(groups, &recursive_fns);
     engine.profileStore()
