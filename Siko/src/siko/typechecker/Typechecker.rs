@@ -11,10 +11,11 @@ use crate::siko::{
     },
     location::Location::Location,
     qualifiedname::QualifiedName,
-    util::error,
 };
 
-use super::{Substitution::Substitution, TypeVarAllocator::TypeVarAllocator};
+use super::{
+    Error::TypecheckerError, Substitution::Substitution, TypeVarAllocator::TypeVarAllocator,
+};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum TypedId {
@@ -143,7 +144,12 @@ impl<'a> Typechecker<'a> {
                         let fnType = self.instantiateType(fnType);
                         let (fnArgs, fnResult) = fnType.splitFnType();
                         if args.len() != fnArgs.len() {
-                            error(format!("incorrect args"));
+                            TypecheckerError::ArgCountMismatch(
+                                fnArgs.len() as u32,
+                                args.len() as u32,
+                                instruction.location.clone(),
+                            )
+                            .report();
                         }
                         for (arg, fnArg) in zip(args, fnArgs) {
                             self.substitution.unify(
@@ -169,7 +175,12 @@ impl<'a> Typechecker<'a> {
                                 newArgs.push(*callable);
                                 newArgs.extend(args);
                                 if newArgs.len() != fnArgs.len() {
-                                    error(format!("incorrect args"));
+                                    TypecheckerError::ArgCountMismatch(
+                                        fnArgs.len() as u32,
+                                        newArgs.len() as u32,
+                                        instruction.location.clone(),
+                                    )
+                                    .report();
                                 }
                                 for (arg, fnArg) in zip(newArgs, fnArgs) {
                                     self.substitution.unify(
@@ -189,7 +200,12 @@ impl<'a> Typechecker<'a> {
                                 let fnType = self.getInstructionType(*callable);
                                 let (fnArgs, fnResult) = fnType.splitFnType();
                                 if args.len() != fnArgs.len() {
-                                    error(format!("incorrect args"));
+                                    TypecheckerError::ArgCountMismatch(
+                                        fnArgs.len() as u32,
+                                        args.len() as u32,
+                                        instruction.location.clone(),
+                                    )
+                                    .report();
                                 }
                                 for (arg, fnArg) in zip(args, fnArgs) {
                                     self.substitution.unify(
@@ -285,14 +301,23 @@ impl<'a> Typechecker<'a> {
                                                 }
                                             }
                                             if !found {
-                                                error(format!("field '{}' not found", field))
+                                                TypecheckerError::FieldNotFound(
+                                                    field.clone(),
+                                                    instruction.location.clone(),
+                                                )
+                                                .report();
                                             }
                                         } else {
-                                            error(format!("field receiver is not a class!"))
+                                            TypecheckerError::TypeAnnotationNeeded(
+                                                instruction.location.clone(),
+                                            )
+                                            .report()
                                         }
                                     }
-                                    Type::Var(_) => error(format!("Type annotation needed!")),
-                                    ty => error(format!("field receiver is not a class! {}", ty)),
+                                    _ => TypecheckerError::TypeAnnotationNeeded(
+                                        instruction.location.clone(),
+                                    )
+                                    .report(),
                                 }
                             }
                             self.unify(
@@ -425,17 +450,16 @@ impl<'a> Typechecker<'a> {
         if let Some(body) = &f.body {
             let fnType = f.getType();
             let publicVars = fnType.collectVars(BTreeSet::new());
-            let mut vars = BTreeSet::new();
             for block in &body.blocks {
                 for instruction in &block.instructions {
                     let ty = self.getType(&TypedId::Instruction(instruction.id));
                     let ty = self.substitution.apply(&ty);
-                    vars = ty.collectVars(vars);
+                    let vars = ty.collectVars(BTreeSet::new());
+                    if vars != publicVars {
+                        TypecheckerError::TypeAnnotationNeeded(instruction.location.clone())
+                            .report();
+                    }
                 }
-            }
-            if vars != publicVars {
-                self.dump(f);
-                error(format!("type check/inference failed for {}", f.name));
             }
         }
     }
