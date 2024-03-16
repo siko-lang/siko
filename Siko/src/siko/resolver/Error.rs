@@ -4,6 +4,8 @@ pub enum ResolverError {
     UnknownValue(String, Location),
     RedundantPattern(Location),
     MissingPattern(Location),
+    BreakOutsideLoop(Location),
+    ContinueOutsideLoop(Location),
 }
 
 impl ResolverError {
@@ -21,6 +23,16 @@ impl ResolverError {
             }
             ResolverError::MissingPattern(l) => {
                 let slogan = format!("Missing pattern");
+                let r = Report::new(slogan, l.clone());
+                r.print();
+            }
+            ResolverError::BreakOutsideLoop(l) => {
+                let slogan = format!("Break outside loop");
+                let r = Report::new(slogan, l.clone());
+                r.print();
+            }
+            ResolverError::ContinueOutsideLoop(l) => {
+                let slogan = format!("Continue outside loop");
                 let r = Report::new(slogan, l.clone());
                 r.print();
             }

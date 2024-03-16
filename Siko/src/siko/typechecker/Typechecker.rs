@@ -344,6 +344,9 @@ impl<'a> Typechecker<'a> {
                         );
                     }
                     InstructionKind::Loop(_, _, _) => todo!(),
+                    InstructionKind::Continue(_, _) => todo!(),
+                    InstructionKind::Break(_, _) => todo!(),
+                    InstructionKind::Return(_) => todo!(),
                 }
             }
         }

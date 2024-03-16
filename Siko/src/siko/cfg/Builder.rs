@@ -107,6 +107,9 @@ impl Builder {
                 InstructionKind::IntegerLiteral(_) => todo!(),
                 InstructionKind::CharLiteral(_) => todo!(),
                 InstructionKind::Loop(_, _, _) => todo!(),
+                InstructionKind::Continue(_, _) => todo!(),
+                InstructionKind::Break(_, _) => todo!(),
+                InstructionKind::Return(_) => todo!(),
             }
         }
         last.unwrap()

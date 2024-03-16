@@ -24,6 +24,7 @@ pub struct ExprResolver<'a> {
     emptyVariants: &'a BTreeSet<QualifiedName>,
     variants: &'a BTreeMap<QualifiedName, QualifiedName>,
     enums: &'a BTreeMap<QualifiedName, Enum>,
+    loopIds: Vec<InstructionId>,
 }
 
 impl<'a> ExprResolver<'a> {
@@ -41,6 +42,7 @@ impl<'a> ExprResolver<'a> {
             emptyVariants: emptyVariants,
             variants: variants,
             enums: enums,
+            loopIds: Vec::new(),
         }
     }
 
@@ -191,18 +193,33 @@ impl<'a> ExprResolver<'a> {
             SimpleExpr::For(_, _, _) => todo!(),
             SimpleExpr::Loop(pattern, init, body) => {
                 let initId = self.resolveExpr(&init, env, irBlock);
+                let loopBlockId = BlockId { id: self.blockId };
+                self.blockId += 1;
+                let mut loopBlock = IrBlock::new(loopBlockId);
                 let mut loopEnv = Environment::child(env);
                 let valueId = self.valueId;
                 self.valueId += 1;
                 let name = format!("loopVar_{}", valueId);
                 loopEnv.addLoopValue(name.clone());
-                self.resolvePattern(pattern, env, irBlock, value);
+                let varRefId = loopBlock.add(
+                    InstructionKind::ValueRef(ValueKind::LoopVar(name.clone()), Vec::new()),
+                    expr.location.clone(),
+                );
+                self.resolvePattern(pattern, &mut loopEnv, &mut loopBlock, varRefId);
+                let loopId = irBlock.peekNextInstructionId();
+                self.loopIds.push(loopId);
                 let bodyBlockId = match &body.expr {
                     SimpleExpr::Block(block) => self.resolveBlock(block, &loopEnv),
                     _ => panic!("If true branch is not a block!"),
                 };
+                self.loopIds.pop();
+                loopBlock.add(
+                    InstructionKind::BlockRef(bodyBlockId),
+                    expr.location.clone(),
+                );
+                self.body.addBlock(loopBlock);
                 return irBlock.add(
-                    InstructionKind::Loop(name, initId, bodyBlockId),
+                    InstructionKind::Loop(name, initId, loopBlockId),
                     expr.location.clone(),
                 );
             }
@@ -240,9 +257,41 @@ impl<'a> ExprResolver<'a> {
                 InstructionKind::CharLiteral(v.clone()),
                 expr.location.clone(),
             ),
-            SimpleExpr::Return(_) => todo!(),
-            SimpleExpr::Break(_) => todo!(),
-            SimpleExpr::Continue(_) => todo!(),
+            SimpleExpr::Return(arg) => {
+                let argId = match arg {
+                    Some(arg) => self.resolveExpr(arg, env, irBlock),
+                    None => irBlock.add(InstructionKind::Tuple(Vec::new()), expr.location.clone()),
+                };
+                return irBlock.add(InstructionKind::Return(argId), expr.location.clone());
+            }
+            SimpleExpr::Break(arg) => {
+                let argId = match arg {
+                    Some(arg) => self.resolveExpr(arg, env, irBlock),
+                    None => irBlock.add(InstructionKind::Tuple(Vec::new()), expr.location.clone()),
+                };
+                let loopId = match self.loopIds.last() {
+                    Some(loopId) => loopId,
+                    None => ResolverError::BreakOutsideLoop(expr.location.clone()).report(),
+                };
+                return irBlock.add(
+                    InstructionKind::Break(argId, *loopId),
+                    expr.location.clone(),
+                );
+            }
+            SimpleExpr::Continue(arg) => {
+                let argId = match arg {
+                    Some(arg) => self.resolveExpr(arg, env, irBlock),
+                    None => irBlock.add(InstructionKind::Tuple(Vec::new()), expr.location.clone()),
+                };
+                let loopId = match self.loopIds.last() {
+                    Some(loopId) => loopId,
+                    None => ResolverError::ContinueOutsideLoop(expr.location.clone()).report(),
+                };
+                return irBlock.add(
+                    InstructionKind::Continue(argId, *loopId),
+                    expr.location.clone(),
+                );
+            }
         }
     }
 

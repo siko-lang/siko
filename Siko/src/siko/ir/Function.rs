@@ -30,7 +30,7 @@ impl Display for ValueKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
             ValueKind::Arg(n) => write!(f, "@arg/{}", n),
-            ValueKind::LoopVar(n) => write!(f, "loop/{}", n),
+            ValueKind::LoopVar(n) => write!(f, "loop(${})", n),
             ValueKind::Value(n, bindId) => write!(f, "${}/{}", n, bindId),
             ValueKind::Implicit(id) => write!(f, "{}", id),
         }
@@ -95,6 +95,9 @@ pub enum InstructionKind {
     StringLiteral(String),
     IntegerLiteral(String),
     CharLiteral(char),
+    Continue(InstructionId, InstructionId),
+    Break(InstructionId, InstructionId),
+    Return(InstructionId),
 }
 
 impl InstructionKind {
@@ -117,6 +120,9 @@ impl InstructionKind {
             InstructionKind::StringLiteral(v) => format!("s:[{}]", v),
             InstructionKind::IntegerLiteral(v) => format!("i:[{}]", v),
             InstructionKind::CharLiteral(v) => format!("c:[{}]", v),
+            InstructionKind::Continue(id, loopId) => format!("continue({}, {})", id, loopId),
+            InstructionKind::Break(id, loopId) => format!("break({}, {})", id, loopId),
+            InstructionKind::Return(id) => format!("return({})", id),
         }
     }
 }
@@ -158,6 +164,14 @@ impl Block {
             id: id,
             instructions: Vec::new(),
         }
+    }
+
+    pub fn peekNextInstructionId(&self) -> InstructionId {
+        let id = InstructionId {
+            blockId: self.id,
+            id: self.instructions.len() as u32,
+        };
+        id
     }
 
     pub fn add(&mut self, kind: InstructionKind, location: Location) -> InstructionId {
