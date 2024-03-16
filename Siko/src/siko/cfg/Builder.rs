@@ -13,8 +13,11 @@ pub struct Builder {
 
 impl Builder {
     pub fn new(name: String) -> Builder {
+        let mut cfg = CFG::new(name);
+        let end = Node::new(NodeKind::End);
+        cfg.addNode(Key::End, end);
         Builder {
-            cfg: CFG::new(name),
+            cfg: cfg,
             loopStarts: Vec::new(),
             loopEnds: Vec::new(),
         }
@@ -179,7 +182,13 @@ impl Builder {
                     self.cfg.addEdge(edge);
                     last = None;
                 }
-                InstructionKind::Return(_) => todo!(),
+                InstructionKind::Return(_) => {
+                    if let Some(last) = last {
+                        let edge = Edge::new(last, Key::End);
+                        self.cfg.addEdge(edge);
+                    }
+                    last = None;
+                }
             }
         }
         last
@@ -187,7 +196,10 @@ impl Builder {
 
     pub fn build(&mut self, f: &Function) {
         let block = &f.getFirstBlock();
-        self.processBlock(block, None, f);
+        if let Some(last) = self.processBlock(block, None, f) {
+            let edge = Edge::new(last, Key::End);
+            self.cfg.addEdge(edge);
+        }
         self.cfg.updateEdges();
     }
 }

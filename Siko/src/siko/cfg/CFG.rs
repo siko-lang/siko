@@ -48,6 +48,7 @@ pub enum NodeKind {
     ValueRef,
     LoopStart,
     LoopEnd,
+    End,
 }
 
 impl Display for NodeKind {
@@ -59,6 +60,7 @@ impl Display for NodeKind {
             NodeKind::ValueRef => write!(f, "valueref"),
             NodeKind::LoopStart => write!(f, "loopstart"),
             NodeKind::LoopEnd => write!(f, "loopend"),
+            NodeKind::End => write!(f, "end"),
         }
     }
 }

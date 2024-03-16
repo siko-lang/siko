@@ -394,7 +394,12 @@ impl<'a> Typechecker<'a> {
                             instruction.location.clone(),
                         );
                     }
-                    InstructionKind::Return(_) => {
+                    InstructionKind::Return(arg) => {
+                        self.substitution.unify(
+                            &f.result,
+                            &self.getInstructionType(*arg),
+                            instruction.location.clone(),
+                        );
                         self.substitution.unify(
                             &self.getInstructionType(instruction.id),
                             &Type::Never,
