@@ -6,6 +6,8 @@ use crate::siko::{
     util::DependencyProcessor::{self, DependencyGroup},
 };
 
+use super::{DataFlowProfile::DataFlowProfile, DataFlowProfileStore::DataFlowProfileStore};
+
 fn createFunctionGroups(
     functions: &BTreeMap<QualifiedName, Function>,
 ) -> (Vec<DependencyGroup<QualifiedName>>, BTreeSet<QualifiedName>) {
@@ -34,75 +36,108 @@ fn createFunctionGroups(
     (groups, recursiveFns)
 }
 
-// class InferenceEngine(object):
-//     def __init__(self) -> None:
-//         self.profile_store = DataFlowProfileStore.DataFlowProfileStore()
-//         self.program = None
+struct InferenceEngine<'a> {
+    profileStore: DataFlowProfileStore,
+    functions: &'a BTreeMap<QualifiedName, Function>,
+}
 
-//     def createDataFlowProfile(self, name, group_profiles):
-//         fn = self.program.functions[name]
-//         fn = copy.deepcopy(fn)
-//         equality = Equality.EqualityEngine(fn, self.profile_store, group_profiles)
-//         profiles = equality.process(buildPath=True)
-//         paths = equality.paths
-//         all_paths = []
-//         for profile in profiles.values():
-//             all_paths += profile.paths
-//         members = fn.getAllMembers(all_paths)
-//         #print("members", members)
-//         #print("paths", paths)
-//         ownership_dep_map = MemberInfo.calculateOwnershipDepMap(members)
-//         forbidden_borrows = ForbiddenBorrows.ForbiddenBorrowsEngine()
-//         forbidden_borrows.process(fn, ownership_dep_map)
-//         inference = Inference.InferenceEngine(fn, profiles, self.program.classes)
-//         ownerships = inference.infer()
-//         ownership_provider = Normalizer.OwnershipProvider()
-//         ownership_provider.ownership_map = ownerships
-//         signature = fn.ownership_signature
-//         (signature, paths) = Normalizer.normalizeFunctionProfile(signature, paths,
-//                                                                  ownership_dep_map,
-//                                                                  members,
-//                                                                  ownership_provider,
-//                                                                  onlyBorrow=False)
+impl<'a> InferenceEngine<'a> {
+    fn new(functions: &'a BTreeMap<QualifiedName, Function>) -> InferenceEngine<'a> {
+        InferenceEngine {
+            profileStore: DataFlowProfileStore::new(),
+            functions: functions,
+        }
+    }
 
-//         profile = DataFlowProfile.DataFlowProfile()
-//         profile.paths = paths
-//         profile.signature = signature
-//         return profile
+    fn createDataFlowProfile(
+        &mut self,
+        name: &QualifiedName,
+        groupProfiles: &BTreeMap<QualifiedName, DataFlowProfile>,
+    ) -> DataFlowProfile {
+        let f = self.functions.get(name).clone();
+        DataFlowProfile::new()
+        // equality = Equality.EqualityEngine(fn, self.profile_store, group_profiles)
+        // profiles = equality.process(buildPath=True)
+        // paths = equality.paths
+        // all_paths = []
+        // for profile in profiles.values():
+        //     all_paths += profile.paths
+        // members = fn.getAllMembers(all_paths)
+        // #print("members", members)
+        // #print("paths", paths)
+        // ownership_dep_map = MemberInfo.calculateOwnershipDepMap(members)
+        // forbidden_borrows = ForbiddenBorrows.ForbiddenBorrowsEngine()
+        // forbidden_borrows.process(fn, ownership_dep_map)
+        // inference = Inference.InferenceEngine(fn, profiles, self.program.classes)
+        // ownerships = inference.infer()
+        // ownership_provider = Normalizer.OwnershipProvider()
+        // ownership_provider.ownership_map = ownerships
+        // signature = fn.ownership_signature
+        // (signature, paths) = Normalizer.normalizeFunctionProfile(signature, paths,
+        //                                                          ownership_dep_map,
+        //                                                          members,
+        //                                                          ownership_provider,
+        //                                                          onlyBorrow=False)
 
-//     def processGroup(self, group, recursive_fns):
-//         #print("Processing group", group)
-//         if len(group.items) == 1 and group.items[0] not in recursive_fns:
-//             #print("Processing fn", name)
-//             name = group.items[0]
-//             profile = self.createDataFlowProfile(name, {})
-//             self.profile_store.addProfile(name, profile)
-//         else:
-//             group_profiles = {}
-//             change = True
-//             while change:
-//                 change = False
-//                 for name in group.items:
-//                     profile = self.createDataFlowProfile(name, group_profiles)
-//                     if name in group_profiles:
-//                         prev = group_profiles[name]
-//                         if prev != profile:
-//                             change = True
-//                     else:
-//                         change = True
-//                     group_profiles[name] = profile
-//             for name in group.items:
-//                 self.profile_store.addProfile(name, group_profiles[name])
+        // profile = DataFlowProfile.DataFlowProfile()
+        // profile.paths = paths
+        // profile.signature = signature
+        // return profile
+    }
 
-//     def processGroups(self, groups, recursive_fns):
-//         for group in groups:
-//             self.processGroup(group, recursive_fns)
+    fn processGroup(
+        &mut self,
+        group: DependencyGroup<QualifiedName>,
+        recursive_fns: &BTreeSet<QualifiedName>,
+    ) {
+        //println!("Processing group {:?}", group);
+        if group.items.len() == 1 && !recursive_fns.contains(&group.items[0]) {
+            let name = &group.items[0];
+            //println!("Processing fn {}", name);
+            let profile = self.createDataFlowProfile(name, &BTreeMap::new());
+            self.profileStore.addProfile(name.clone(), profile);
+        } else {
+            let mut groupProfiles = BTreeMap::new();
+            let mut change = true;
+            while change {
+                change = false;
+                for name in &group.items {
+                    let profile = self.createDataFlowProfile(&name, &groupProfiles);
+                    if let Some(prev) = groupProfiles.get(&name) {
+                        if *prev != profile {
+                            change = true;
+                        }
+                    } else {
+                        change = true;
+                    }
+                    groupProfiles.insert(name.clone(), profile);
+                }
+            }
+            for (name, profile) in groupProfiles {
+                self.profileStore.addProfile(name, profile);
+            }
+        }
+    }
 
-pub fn infer(functions: &BTreeMap<QualifiedName, Function>) {
+    fn processGroups(
+        &mut self,
+        groups: Vec<DependencyGroup<QualifiedName>>,
+        recursive_fns: &BTreeSet<QualifiedName>,
+    ) {
+        for group in groups {
+            self.processGroup(group, recursive_fns);
+        }
+    }
+
+    fn profileStore(self) -> DataFlowProfileStore {
+        self.profileStore
+    }
+}
+
+pub fn dataflow(functions: &BTreeMap<QualifiedName, Function>) -> DataFlowProfileStore {
     let (groups, recursive_fns) = createFunctionGroups(functions);
     println!("Groups {:?}, recursive {:?}", groups, recursive_fns);
-    // engine = InferenceEngine()
-    // engine.program = program
-    // engine.processGroups(groups, recursive_fns)
-    // return engine.profile_store
+    let mut engine = InferenceEngine::new(functions);
+    engine.processGroups(groups, &recursive_fns);
+    engine.profileStore()
 }

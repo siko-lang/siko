@@ -5,14 +5,52 @@ mod siko;
 
 use siko::{
     cfg::Builder::Builder,
+    ir::Function::Function,
     location::FileManager::FileManager,
-    ownership::{dataflowprofile::Inference::infer, Borrowchecker::Borrowchecker},
+    ownership::{dataflowprofile::Inference::dataflow, Borrowchecker::Borrowchecker},
     parser::Parser::*,
+    qualifiedname::QualifiedName,
     resolver::Resolver::Resolver,
     typechecker::Typechecker::Typechecker,
 };
 
 use std::{collections::BTreeMap, env::args};
+
+fn borrowcheck(functions: BTreeMap<QualifiedName, Function>) -> BTreeMap<QualifiedName, Function> {
+    let mut result = BTreeMap::new();
+    for (name, f) in functions {
+        let borrowCheckedFn = if f.body.is_some() {
+            let mut builder = Builder::new(f.name.to_string());
+            builder.build(&f);
+            let cfg = builder.getCFG();
+            let mut borrowchecker = Borrowchecker::new(cfg);
+            borrowchecker.check();
+            let updatedFn = borrowchecker.update(&f);
+            //let cfg = borrowchecker.cfg();
+            //cfg.printDot();
+            updatedFn
+        } else {
+            f
+        };
+        result.insert(name, borrowCheckedFn);
+    }
+    result
+}
+
+fn typecheck(
+    functions: BTreeMap<QualifiedName, Function>,
+    classes: BTreeMap<QualifiedName, siko::ir::Data::Class>,
+    enums: BTreeMap<QualifiedName, siko::ir::Data::Enum>,
+) -> BTreeMap<QualifiedName, Function> {
+    let mut result = BTreeMap::new();
+    for (_, f) in &functions {
+        let mut typechecker = Typechecker::new(&functions, &classes, &enums);
+        let typedFn = typechecker.run(f);
+        //typedFn.dump();
+        result.insert(typedFn.name.clone(), typedFn);
+    }
+    result
+}
 
 fn main() {
     let fileManager = FileManager::new();
@@ -28,31 +66,7 @@ fn main() {
     }
     resolver.process();
     let (functions, classes, enums) = resolver.ir();
-    let mut typedFunctions = BTreeMap::new();
-    for (_, f) in &functions {
-        let mut typechecker = Typechecker::new(&functions, &classes, &enums);
-        let typedFn = typechecker.run(f);
-        //typedFn.dump();
-        typedFunctions.insert(typedFn.name.clone(), typedFn);
-    }
-    let mut borrowCheckedFunctions = BTreeMap::new();
-    for (name, f) in typedFunctions {
-        let borrowCheckedFn = if f.body.is_some() {
-            let mut builder = Builder::new(f.name.to_string());
-            builder.build(&f);
-            let cfg = builder.getCFG();
-            let mut borrowchecker = Borrowchecker::new(cfg);
-            borrowchecker.check();
-            let updatedFn = borrowchecker.update(&f);
-            let cfg = borrowchecker.cfg();
-            cfg.printDot();
-            updatedFn.dump();
-            updatedFn
-        } else {
-            f
-        };
-        borrowCheckedFunctions.insert(name, borrowCheckedFn);
-    }
-
-    infer(&borrowCheckedFunctions);
+    let functions = typecheck(functions, classes, enums);
+    let functions = borrowcheck(functions);
+    dataflow(&functions);
 }
