@@ -46,6 +46,8 @@ pub enum NodeKind {
     Generic,
     IfEnd,
     ValueRef,
+    LoopStart,
+    LoopEnd,
 }
 
 impl Display for NodeKind {
@@ -55,6 +57,8 @@ impl Display for NodeKind {
             NodeKind::Generic => write!(f, "generic"),
             NodeKind::IfEnd => write!(f, "ifend"),
             NodeKind::ValueRef => write!(f, "valueref"),
+            NodeKind::LoopStart => write!(f, "loopstart"),
+            NodeKind::LoopEnd => write!(f, "loopend"),
         }
     }
 }

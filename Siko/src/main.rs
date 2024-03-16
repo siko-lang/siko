@@ -41,8 +41,9 @@ fn main() {
             let mut borrowchecker = Borrowchecker::new(cfg);
             borrowchecker.check();
             let updatedFn = borrowchecker.update(&f);
-            // let cfg = borrowchecker.cfg();
-            // cfg.printDot();
+            let cfg = borrowchecker.cfg();
+            cfg.printDot();
+            updatedFn.dump();
             updatedFn
         } else {
             f

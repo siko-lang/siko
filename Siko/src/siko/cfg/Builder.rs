@@ -1,5 +1,5 @@
 use crate::siko::{
-    ir::Function::{Block, Function, Instruction, InstructionId, InstructionKind},
+    ir::Function::{Block, Function, Instruction, InstructionKind, ValueKind},
     ownership::Path::Path,
 };
 
@@ -7,8 +7,8 @@ use super::CFG::{Edge, Key, Node, NodeKind, CFG};
 
 pub struct Builder {
     cfg: CFG,
-    loopStarts: Vec<InstructionId>,
-    loopEnds: Vec<InstructionId>,
+    loopStarts: Vec<Key>,
+    loopEnds: Vec<Key>,
 }
 
 impl Builder {
@@ -40,7 +40,7 @@ impl Builder {
         key
     }
 
-    fn processBlock(&mut self, block: &Block, mut last: Option<Key>, f: &Function) -> Key {
+    fn processBlock(&mut self, block: &Block, mut last: Option<Key>, f: &Function) -> Option<Key> {
         for instruction in &block.instructions {
             match &instruction.kind {
                 InstructionKind::FunctionCall(_, _) => {
@@ -54,19 +54,31 @@ impl Builder {
                     self.cfg.addNode(ifKey.clone(), ifEnd);
                     let block = f.getBlockById(*trueBranch);
                     let trueLast = self.processBlock(block, last.clone(), f);
-                    self.cfg.addEdge(Edge::new(trueLast, ifKey.clone()));
+                    if let Some(trueLast) = trueLast {
+                        self.cfg.addEdge(Edge::new(trueLast, ifKey.clone()));
+                    }
                     if let Some(falseBranch) = falseBranch {
                         let block = f.getBlockById(*falseBranch);
                         let falseLast = self.processBlock(block, last.clone(), f);
-                        self.cfg.addEdge(Edge::new(falseLast, ifKey.clone()));
+                        if let Some(falseLast) = falseLast {
+                            self.cfg.addEdge(Edge::new(falseLast, ifKey.clone()));
+                        }
                     }
                     last = Some(ifKey);
                 }
                 InstructionKind::BlockRef(id) => {
                     let block = f.getBlockById(*id);
-                    last = Some(self.processBlock(block, last, f));
+                    last = self.processBlock(block, last, f);
                 }
                 InstructionKind::ValueRef(v, fields) => {
+                    if let ValueKind::LoopVar(_) = v {
+                        last = Some(self.processGenericInstruction(
+                            instruction,
+                            last,
+                            NodeKind::Generic,
+                        ));
+                        continue;
+                    }
                     let value = if let Some(v) = v.getValue() {
                         v
                     } else {
@@ -103,16 +115,74 @@ impl Builder {
                         Some(self.processGenericInstruction(instruction, last, NodeKind::Generic));
                 }
                 InstructionKind::TupleIndex(_, _) => todo!(),
-                InstructionKind::StringLiteral(_) => todo!(),
-                InstructionKind::IntegerLiteral(_) => todo!(),
-                InstructionKind::CharLiteral(_) => todo!(),
-                InstructionKind::Loop(_, _, _) => todo!(),
-                InstructionKind::Continue(_, _) => todo!(),
-                InstructionKind::Break(_, _) => todo!(),
+                InstructionKind::StringLiteral(_) => {
+                    last =
+                        Some(self.processGenericInstruction(instruction, last, NodeKind::Generic));
+                }
+                InstructionKind::IntegerLiteral(_) => {
+                    last =
+                        Some(self.processGenericInstruction(instruction, last, NodeKind::Generic));
+                }
+                InstructionKind::CharLiteral(_) => {
+                    last =
+                        Some(self.processGenericInstruction(instruction, last, NodeKind::Generic));
+                }
+                InstructionKind::Loop(_, _, body) => {
+                    let startKey = Key::LoopStart(instruction.id);
+                    let start = Node::new(NodeKind::LoopStart);
+                    self.cfg.addNode(startKey.clone(), start);
+                    if let Some(last) = last.clone() {
+                        let edge = Edge::new(last, startKey.clone());
+                        self.cfg.addEdge(edge);
+                    }
+                    self.loopStarts.push(startKey.clone());
+                    let endKey = Key::LoopEnd(instruction.id);
+                    let end = Node::new(NodeKind::LoopEnd);
+                    self.cfg.addNode(endKey.clone(), end);
+                    self.loopEnds.push(endKey.clone());
+                    let key = Key::Instruction(instruction.id);
+                    let loopNode = Node::new(NodeKind::Generic);
+                    self.cfg.addNode(key.clone(), loopNode);
+                    let edge = Edge::new(startKey.clone(), key.clone());
+                    self.cfg.addEdge(edge);
+                    let loopBody = f.getBlockById(*body);
+                    let loopLast = self.processBlock(loopBody, Some(key), f);
+                    if let Some(loopLast) = loopLast {
+                        let edge = Edge::new(loopLast, startKey.clone());
+                        self.cfg.addEdge(edge);
+                    }
+                    self.loopStarts.pop();
+                    self.loopEnds.pop();
+                    last = Some(endKey);
+                }
+                InstructionKind::Continue(_, _) => {
+                    let key = Key::Instruction(instruction.id);
+                    let node = Node::new(NodeKind::Generic);
+                    self.cfg.addNode(key.clone(), node);
+                    if let Some(last) = last {
+                        let edge = Edge::new(last, key.clone());
+                        self.cfg.addEdge(edge);
+                    }
+                    let edge = Edge::new(key.clone(), self.loopStarts.last().unwrap().clone());
+                    self.cfg.addEdge(edge);
+                    last = None;
+                }
+                InstructionKind::Break(_, _) => {
+                    let key = Key::Instruction(instruction.id);
+                    let node = Node::new(NodeKind::Generic);
+                    self.cfg.addNode(key.clone(), node);
+                    if let Some(last) = last {
+                        let edge = Edge::new(last, key.clone());
+                        self.cfg.addEdge(edge);
+                    }
+                    let edge = Edge::new(key.clone(), self.loopEnds.last().unwrap().clone());
+                    self.cfg.addEdge(edge);
+                    last = None;
+                }
                 InstructionKind::Return(_) => todo!(),
             }
         }
-        last.unwrap()
+        last
     }
 
     pub fn build(&mut self, f: &Function) {
