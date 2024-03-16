@@ -26,6 +26,7 @@ pub enum Type {
     Function(Vec<Type>, Box<Type>),
     Var(TypeVar),
     SelfType,
+    Never,
 }
 
 impl Type {
@@ -58,6 +59,7 @@ impl Type {
                 vars.insert(v.clone());
             }
             Type::SelfType => {}
+            Type::Never => {}
         }
         vars
     }
@@ -128,6 +130,7 @@ impl Display for Type {
             }
             Type::Var(v) => write!(f, "{}", v),
             Type::SelfType => write!(f, "Self"),
+            Type::Never => write!(f, "!"),
         }
     }
 }

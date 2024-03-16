@@ -55,6 +55,7 @@ impl Substitution {
                     None => break result,
                 },
                 Type::SelfType => break result,
+                Type::Never => break result,
             }
         }
     }
@@ -89,6 +90,8 @@ impl Substitution {
             (Type::Var(v), _) => {
                 self.add(v.clone(), ty2);
             }
+            (Type::Never, _) => {}
+            (_, Type::Never) => {}
             _ => self.reportError(ty1, ty2, location),
         }
     }

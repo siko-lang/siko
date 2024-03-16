@@ -54,7 +54,7 @@ impl<'a> Typechecker<'a> {
 
     pub fn run(&mut self, f: &Function) -> Function {
         self.initialize(f);
-        self.dump(f);
+        //self.dump(f);
         self.check(f);
         self.verify(f);
         //self.dump(f);
@@ -81,6 +81,10 @@ impl<'a> Typechecker<'a> {
                         .insert(TypedId::Instruction(instruction.id), ty.clone());
                     match &instruction.kind {
                         InstructionKind::Bind(name, _) => {
+                            self.types
+                                .insert(TypedId::Value(name.to_string()), self.allocator.next());
+                        }
+                        InstructionKind::Loop(name, _, _) => {
                             self.types
                                 .insert(TypedId::Value(name.to_string()), self.allocator.next());
                         }
@@ -326,27 +330,77 @@ impl<'a> Typechecker<'a> {
                         self.substitution.unify(
                             &self.getInstructionType(instruction.id),
                             &Type::getStringType(),
-                            body.getInstruction(instruction.id).location.clone(),
+                            instruction.location.clone(),
                         );
                     }
                     InstructionKind::IntegerLiteral(_) => {
                         self.substitution.unify(
                             &self.getInstructionType(instruction.id),
                             &Type::getIntType(),
-                            body.getInstruction(instruction.id).location.clone(),
+                            instruction.location.clone(),
                         );
                     }
                     InstructionKind::CharLiteral(_) => {
                         self.substitution.unify(
                             &self.getInstructionType(instruction.id),
                             &Type::getCharType(),
-                            body.getInstruction(instruction.id).location.clone(),
+                            instruction.location.clone(),
                         );
                     }
-                    InstructionKind::Loop(_, _, _) => todo!(),
-                    InstructionKind::Continue(_, _) => todo!(),
-                    InstructionKind::Break(_, _) => todo!(),
-                    InstructionKind::Return(_) => todo!(),
+                    InstructionKind::Loop(name, init, loopBody) => {
+                        self.substitution.unify(
+                            &self.getInstructionType(*init),
+                            &self.getValueType(name),
+                            instruction.location.clone(),
+                        );
+                        self.substitution.unify(
+                            &self.getInstructionType(*init),
+                            &self.getInstructionType(body.getBlockById(*loopBody).getLastId()),
+                            instruction.location.clone(),
+                        );
+                        self.substitution.unify(
+                            &self.getInstructionType(instruction.id),
+                            &Type::Never,
+                            instruction.location.clone(),
+                        );
+                    }
+                    InstructionKind::Continue(arg, loopId) => {
+                        let loopInstruction = body.getInstruction(*loopId);
+                        match &loopInstruction.kind {
+                            InstructionKind::Loop(_, init, _) => {
+                                self.substitution.unify(
+                                    &self.getInstructionType(*init),
+                                    &self.getInstructionType(*arg),
+                                    instruction.location.clone(),
+                                );
+                            }
+                            _ => panic!("Loop instruction is not a loop!"),
+                        }
+                        self.substitution.unify(
+                            &self.getInstructionType(instruction.id),
+                            &Type::Never,
+                            instruction.location.clone(),
+                        );
+                    }
+                    InstructionKind::Break(arg, loopId) => {
+                        self.substitution.unify(
+                            &self.getInstructionType(*loopId),
+                            &self.getInstructionType(*arg),
+                            instruction.location.clone(),
+                        );
+                        self.substitution.unify(
+                            &self.getInstructionType(instruction.id),
+                            &Type::Never,
+                            instruction.location.clone(),
+                        );
+                    }
+                    InstructionKind::Return(_) => {
+                        self.substitution.unify(
+                            &self.getInstructionType(instruction.id),
+                            &Type::Never,
+                            instruction.location.clone(),
+                        );
+                    }
                 }
             }
         }
