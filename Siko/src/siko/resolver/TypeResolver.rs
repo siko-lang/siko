@@ -1,4 +1,5 @@
 use super::ModuleResolver::ModuleResolver;
+use crate::siko::ir::ConstraintContext::ConstraintContext;
 use crate::siko::ir::Type::{Type as IrType, TypeVar};
 use crate::siko::syntax::Identifier::Identifier;
 use crate::siko::syntax::Type::{Type, TypeParameterDeclaration};
@@ -12,22 +13,20 @@ pub struct TypeResolver<'a> {
 impl<'a> TypeResolver<'a> {
     pub fn new(
         moduleResolver: &'a ModuleResolver,
-        decl: &Option<TypeParameterDeclaration>,
+        constraintContext: &'a ConstraintContext,
     ) -> TypeResolver<'a> {
         let mut r = TypeResolver {
             moduleResolver: moduleResolver,
             typeParameters: BTreeSet::new(),
         };
-        r.addTypeParams(decl.as_ref());
+        for param in &constraintContext.typeParameters {
+            r.addTypeParams(param.clone());
+        }
         r
     }
 
-    pub fn addTypeParams(&mut self, typeParams: Option<&TypeParameterDeclaration>) {
-        if let Some(decl) = typeParams {
-            for param in &decl.params {
-                self.typeParameters.insert(param.name.toString());
-            }
-        }
+    pub fn addTypeParams(&mut self, typeParam: String) {
+        self.typeParameters.insert(typeParam);
     }
 
     pub fn resolveType(&self, ty: &Type) -> IrType {

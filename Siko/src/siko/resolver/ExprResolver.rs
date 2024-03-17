@@ -6,7 +6,8 @@ use crate::siko::ir::Function::{
     Block as IrBlock, BlockId, InstructionId, InstructionKind, ValueKind,
 };
 use crate::siko::qualifiedname::QualifiedName;
-use crate::siko::syntax::Expr::{Expr, SimpleExpr};
+use crate::siko::syntax::Expr::{BinaryOp, Expr, SimpleExpr};
+use crate::siko::syntax::Identifier::Identifier;
 use crate::siko::syntax::Pattern::{Pattern, SimplePattern};
 use crate::siko::syntax::Statement::StatementKind;
 use crate::siko::{ir::Function::Body, syntax::Statement::Block};
@@ -15,6 +16,14 @@ use super::Environment::Environment;
 use super::Error::ResolverError;
 use super::MatchResolver::MatchResolver;
 use super::ModuleResolver::ModuleResolver;
+
+fn createOpName(traitName: &str, method: &str) -> QualifiedName {
+    let stdOps = Box::new(QualifiedName::Module("Std.Ops".to_string()));
+    QualifiedName::Item(
+        Box::new(QualifiedName::Item(stdOps.clone(), traitName.to_string())),
+        method.to_string(),
+    )
+}
 
 pub struct ExprResolver<'a> {
     body: Body,
@@ -223,7 +232,33 @@ impl<'a> ExprResolver<'a> {
                     expr.location.clone(),
                 );
             }
-            SimpleExpr::BinaryOp(_, _, _) => todo!(),
+            SimpleExpr::BinaryOp(op, lhs, rhs) => {
+                let lhsId = self.resolveExpr(lhs, env, irBlock);
+                let rhsId = self.resolveExpr(rhs, env, irBlock);
+                let name = match op {
+                    BinaryOp::And => createOpName("And", "and"),
+                    BinaryOp::Or => createOpName("Or", "or"),
+                    BinaryOp::Add => createOpName("Add", "add"),
+                    BinaryOp::Sub => createOpName("Sub", "sub"),
+                    BinaryOp::Mul => createOpName("Mul", "mul"),
+                    BinaryOp::Div => createOpName("Div", "div"),
+                    BinaryOp::Equal => createOpName("PartialEq", "eq"),
+                    BinaryOp::NotEqual => createOpName("PartialEq", "ne"),
+                    BinaryOp::LessThan => createOpName("PartialOrd", "lessThan"),
+                    BinaryOp::GreaterThan => createOpName("PartialOrd", "greaterThan"),
+                    BinaryOp::LessThanOrEqual => createOpName("PartialOrd", "lessOrEqual"),
+                    BinaryOp::GreaterThanOrEqual => createOpName("PartialOrd", "greaterOrEqual"),
+                };
+                let id = Identifier {
+                    name: format!("{}", name),
+                    location: expr.location.clone(),
+                };
+                let name = self.moduleResolver.resolverName(&id);
+                irBlock.add(
+                    InstructionKind::FunctionCall(name, vec![lhsId, rhsId]),
+                    expr.location.clone(),
+                )
+            }
             SimpleExpr::Match(_, branches) => {
                 let mut patterns = Vec::new();
                 for b in branches {
@@ -231,7 +266,7 @@ impl<'a> ExprResolver<'a> {
                 }
                 let mut matchResolver = MatchResolver::new(patterns);
                 matchResolver.check(self.moduleResolver, self.variants, self.enums);
-                todo!()
+                irBlock.add(InstructionKind::Tuple(vec![]), expr.location.clone())
             }
             SimpleExpr::Block(block) => {
                 let blockId = self.resolveBlock(block, env);

@@ -1,12 +1,15 @@
 use crate::siko::{
     ir::{
-        Data::MethodInfo as DataMethodInfo, Function::Parameter,
-        Trait::MethodInfo as TraitMethodInfo, TraitMethodSelector::TraitMethodSelector,
-        Type::TypeVar,
+        ConstraintContext::ConstraintContext, Data::MethodInfo as DataMethodInfo,
+        Function::Parameter, Trait::MethodInfo as TraitMethodInfo,
+        TraitMethodSelector::TraitMethodSelector, Type::TypeVar,
     },
     qualifiedname::QualifiedName,
     resolver::FunctionResolver::FunctionResolver,
-    syntax::Module::{Module, ModuleItem},
+    syntax::{
+        Module::{Module, ModuleItem},
+        Type::TypeParameterDeclaration,
+    },
     util::error,
 };
 
@@ -25,6 +28,22 @@ use crate::siko::ir::Function::Function as IrFunction;
 use crate::siko::ir::Trait::Instance as IrInstance;
 use crate::siko::ir::Trait::Trait as IrTrait;
 use crate::siko::ir::Type::Type as IrType;
+
+fn createConstraintContext(decl: &Option<TypeParameterDeclaration>) -> ConstraintContext {
+    addTypeParams(ConstraintContext::new(), decl)
+}
+
+fn addTypeParams(
+    mut context: ConstraintContext,
+    decl: &Option<TypeParameterDeclaration>,
+) -> ConstraintContext {
+    if let Some(decl) = decl {
+        for param in &decl.params {
+            context.add(param.name.name.clone());
+        }
+    }
+    context
+}
 
 #[derive(Debug)]
 pub struct Names {
@@ -119,7 +138,8 @@ impl Resolver {
             for item in &m.items {
                 match item {
                     ModuleItem::Class(c) => {
-                        let typeResolver = TypeResolver::new(moduleResolver, &c.typeParams);
+                        let constraintContext = createConstraintContext(&c.typeParams);
+                        let typeResolver = TypeResolver::new(moduleResolver, &constraintContext);
                         let irType = typeResolver.createDataType(&c.name, &c.typeParams);
                         let mut irClass =
                             IrClass::new(moduleResolver.resolverName(&c.name), irType.clone());
@@ -148,7 +168,8 @@ impl Resolver {
                         self.classes.insert(irClass.name.clone(), irClass);
                     }
                     ModuleItem::Enum(e) => {
-                        let typeResolver = TypeResolver::new(moduleResolver, &e.typeParams);
+                        let constraintContext = createConstraintContext(&e.typeParams);
+                        let typeResolver = TypeResolver::new(moduleResolver, &constraintContext);
                         let irType = typeResolver.createDataType(&e.name, &e.typeParams);
                         let mut irEnum =
                             IrEnum::new(moduleResolver.resolverName(&e.name), irType.clone());
@@ -230,7 +251,8 @@ impl Resolver {
                     }
                     ModuleItem::Instance(i) => {
                         i.id = self.instances.len() as u64;
-                        let typeResolver = TypeResolver::new(moduleResolver, &i.typeParams);
+                        let constraintContext = createConstraintContext(&i.typeParams);
+                        let typeResolver = TypeResolver::new(moduleResolver, &constraintContext);
                         let ty = typeResolver.resolveType(&i.ty);
                         let (name, args) = match ty {
                             IrType::Named(name, args) => (name, args),
@@ -270,10 +292,11 @@ impl Resolver {
                 match item {
                     ModuleItem::Class(c) => {
                         let owner = createSelfType(&c.name, c.typeParams.as_ref(), moduleResolver);
+                        let constraintContext = createConstraintContext(&c.typeParams);
                         for method in &c.methods {
                             let functionResolver = FunctionResolver::new(
                                 moduleResolver,
-                                c.typeParams.as_ref(),
+                                constraintContext.clone(),
                                 Some(owner.clone()),
                             );
                             let irFunction = functionResolver.resolve(
@@ -288,10 +311,11 @@ impl Resolver {
                     }
                     ModuleItem::Enum(e) => {
                         let owner = createSelfType(&e.name, e.typeParams.as_ref(), moduleResolver);
+                        let constraintContext = createConstraintContext(&e.typeParams);
                         for method in &e.methods {
                             let functionResolver = FunctionResolver::new(
                                 moduleResolver,
-                                e.typeParams.as_ref(),
+                                constraintContext.clone(),
                                 Some(owner.clone()),
                             );
                             let irFunction = functionResolver.resolve(
@@ -308,10 +332,25 @@ impl Resolver {
                         let name = moduleResolver.resolverName(&t.name);
                         let irTrait = self.traits.get(&name).unwrap();
                         let owner = irTrait.params.first().expect("first trait param not found");
+                        let mut constraintContext = createConstraintContext(&t.typeParams);
+                        for param in &irTrait.params {
+                            match &param {
+                                IrType::Var(TypeVar::Named(n)) => constraintContext.add(n.clone()),
+                                _ => panic!("Trait param is not type var!"),
+                            }
+                        }
+                        for dep in &irTrait.deps {
+                            match &dep {
+                                IrType::Var(TypeVar::Named(n)) => constraintContext.add(n.clone()),
+                                _ => panic!("Trait dep is not type var!"),
+                            }
+                        }
                         for method in &t.methods {
+                            let constraintContext =
+                                addTypeParams(constraintContext.clone(), &method.typeParams);
                             let functionResolver = FunctionResolver::new(
                                 moduleResolver,
-                                t.typeParams.as_ref(),
+                                constraintContext,
                                 Some(owner.clone()),
                             );
                             let irFunction = functionResolver.resolve(
@@ -327,10 +366,13 @@ impl Resolver {
                     }
                     ModuleItem::Instance(i) => {
                         let irInstance = &self.instances[i.id as usize];
+                        let constraintContext = createConstraintContext(&i.typeParams);
                         for method in &i.methods {
+                            let constraintContext =
+                                addTypeParams(constraintContext.clone(), &method.typeParams);
                             let functionResolver = FunctionResolver::new(
                                 moduleResolver,
-                                i.typeParams.as_ref(),
+                                constraintContext,
                                 Some(irInstance.types[0].clone()),
                             );
                             let irFunction = functionResolver.resolve(
@@ -350,7 +392,9 @@ impl Resolver {
                         }
                     }
                     ModuleItem::Function(f) => {
-                        let functionResolver = FunctionResolver::new(moduleResolver, None, None);
+                        let constraintContext = createConstraintContext(&f.typeParams);
+                        let functionResolver =
+                            FunctionResolver::new(moduleResolver, constraintContext, None);
                         let irFunction = functionResolver.resolve(
                             f,
                             &self.emptyVariants,

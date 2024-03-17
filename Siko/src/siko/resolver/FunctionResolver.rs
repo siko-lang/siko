@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::siko::ir::ConstraintContext::ConstraintContext;
 use crate::siko::ir::Data::Enum;
 use crate::siko::ir::Function::{Function as IrFunction, Parameter as IrParameter};
 use crate::siko::ir::Type::{Type as IrType, TypeVar};
@@ -15,7 +16,7 @@ use super::ModuleResolver::ModuleResolver;
 use super::TypeResolver::TypeResolver;
 pub struct FunctionResolver<'a> {
     moduleResolver: &'a ModuleResolver,
-    typeParams: Option<&'a TypeParameterDeclaration>,
+    constraintContext: ConstraintContext,
     owner: Option<IrType>,
 }
 
@@ -41,12 +42,12 @@ pub fn createSelfType(
 impl<'a> FunctionResolver<'a> {
     pub fn new(
         moduleResolver: &'a ModuleResolver,
-        typeParams: Option<&'a TypeParameterDeclaration>,
+        constraintContext: ConstraintContext,
         owner: Option<IrType>,
     ) -> FunctionResolver<'a> {
         FunctionResolver {
             moduleResolver: moduleResolver,
-            typeParams: typeParams,
+            constraintContext: constraintContext,
             owner: owner,
         }
     }
@@ -59,8 +60,7 @@ impl<'a> FunctionResolver<'a> {
         enums: &BTreeMap<QualifiedName, Enum>,
         name: QualifiedName,
     ) -> IrFunction {
-        let mut typeResolver = TypeResolver::new(self.moduleResolver, &f.typeParams);
-        typeResolver.addTypeParams(self.typeParams);
+        let typeResolver = TypeResolver::new(self.moduleResolver, &self.constraintContext);
         let mut params = Vec::new();
         let mut env = Environment::new();
         for param in &f.params {
