@@ -2,7 +2,7 @@ use super::TypeVariableInfo::{GroupTypeVariable, OwnershipTypeVariable, TypeVari
 use crate::siko::util::DependencyProcessor;
 use std::{collections::BTreeMap, fmt::Debug, fmt::Display};
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum MemberKind {
     Variant,
     Field,
@@ -25,12 +25,28 @@ impl Debug for MemberKind {
     }
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Clone)]
 pub struct MemberInfo {
     pub root: GroupTypeVariable,
     pub kind: MemberKind,
     pub index: u32,
     pub info: TypeVariableInfo,
+}
+
+impl MemberInfo {
+    pub fn new(
+        root: GroupTypeVariable,
+        kind: MemberKind,
+        index: u32,
+        info: TypeVariableInfo,
+    ) -> MemberInfo {
+        MemberInfo {
+            root,
+            kind,
+            index,
+            info,
+        }
+    }
 }
 
 impl Display for MemberInfo {

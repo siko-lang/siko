@@ -1,6 +1,7 @@
 pub mod Allocator;
 pub mod Borrow;
 pub mod Borrowchecker;
+pub mod Equality;
 pub mod MemberInfo;
 pub mod Path;
 pub mod Signature;

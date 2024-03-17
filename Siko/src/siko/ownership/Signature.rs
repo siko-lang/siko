@@ -2,7 +2,7 @@ use crate::siko::ownership::TypeVariableInfo::TypeVariableInfo;
 
 use super::{Allocator::Allocator, MemberInfo::MemberInfo};
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct FunctionOwnershipSignature {
     pub allocator: Allocator,
     pub args: Vec<TypeVariableInfo>,

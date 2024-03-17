@@ -93,7 +93,7 @@ impl<'a> ExprResolver<'a> {
             SimpleExpr::Value(name) => match env.resolve(&name.name) {
                 Some(name) => {
                     return irBlock.add(
-                        InstructionKind::ValueRef(name, Vec::new()),
+                        InstructionKind::ValueRef(name, Vec::new(), Vec::new()),
                         expr.location.clone(),
                     );
                 }
@@ -103,7 +103,11 @@ impl<'a> ExprResolver<'a> {
             },
             SimpleExpr::SelfValue => {
                 return irBlock.add(
-                    InstructionKind::ValueRef(ValueKind::Arg("self".to_string()), Vec::new()),
+                    InstructionKind::ValueRef(
+                        ValueKind::Arg("self".to_string()),
+                        Vec::new(),
+                        Vec::new(),
+                    ),
                     expr.location.clone(),
                 )
             }
@@ -133,7 +137,7 @@ impl<'a> ExprResolver<'a> {
                 }
                 names.reverse();
                 return irBlock.add(
-                    InstructionKind::ValueRef(ValueKind::Implicit(id), names),
+                    InstructionKind::ValueRef(ValueKind::Implicit(id), names, Vec::new()),
                     expr.location.clone(),
                 );
             }
@@ -154,7 +158,7 @@ impl<'a> ExprResolver<'a> {
                     SimpleExpr::Value(name) => {
                         if let Some(name) = env.resolve(&name.name) {
                             let refId = irBlock.add(
-                                InstructionKind::ValueRef(name, Vec::new()),
+                                InstructionKind::ValueRef(name, Vec::new(), Vec::new()),
                                 expr.location.clone(),
                             );
                             return irBlock.add(
@@ -211,7 +215,11 @@ impl<'a> ExprResolver<'a> {
                 let name = format!("loopVar_{}", valueId);
                 loopEnv.addLoopValue(name.clone());
                 let varRefId = loopBlock.add(
-                    InstructionKind::ValueRef(ValueKind::LoopVar(name.clone()), Vec::new()),
+                    InstructionKind::ValueRef(
+                        ValueKind::LoopVar(name.clone()),
+                        Vec::new(),
+                        Vec::new(),
+                    ),
                     expr.location.clone(),
                 );
                 self.resolvePattern(pattern, &mut loopEnv, &mut loopBlock, varRefId);

@@ -1,7 +1,11 @@
 use std::fmt::Display;
 
 use crate::siko::{
-    location::Location::Location, ownership::Borrowchecker::BorrowInfo,
+    location::Location::Location,
+    ownership::{
+        Borrowchecker::BorrowInfo, MemberInfo::MemberInfo, Signature::FunctionOwnershipSignature,
+        TypeVariableInfo::TypeVariableInfo,
+    },
     qualifiedname::QualifiedName,
 };
 
@@ -41,6 +45,15 @@ impl Display for ValueKind {
 pub enum Parameter {
     Named(String, Type, bool),
     SelfParam(bool, Type),
+}
+
+impl Parameter {
+    pub fn getName(&self) -> String {
+        match &self {
+            Parameter::Named(n, _, _) => n.clone(),
+            Parameter::SelfParam(_, _) => panic!("Trying to ask name for self parameter!"),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
@@ -88,7 +101,7 @@ pub enum InstructionKind {
     If(InstructionId, BlockId, Option<BlockId>),
     BlockRef(BlockId),
     Loop(String, InstructionId, BlockId),
-    ValueRef(ValueKind, Vec<String>),
+    ValueRef(ValueKind, Vec<String>, Vec<u32>),
     Bind(String, InstructionId),
     Tuple(Vec<InstructionId>),
     TupleIndex(InstructionId, u32),
@@ -112,7 +125,7 @@ impl InstructionKind {
                 None => format!("if {} {{ {} }}", cond, t),
             },
             InstructionKind::BlockRef(id) => format!("blockref: {}", id),
-            InstructionKind::ValueRef(v, names) => format!("{}/{:?}", v, names),
+            InstructionKind::ValueRef(v, names, _) => format!("{}/{:?}", v, names),
             InstructionKind::Bind(v, rhs) => format!("${} = {}", v, rhs),
             InstructionKind::Loop(v, init, body) => format!("loop ${} = {} {}", v, init, body),
             InstructionKind::Tuple(args) => format!("tuple({:?})", args),
@@ -134,6 +147,8 @@ pub struct Instruction {
     pub ty: Option<Type>,
     pub location: Location,
     pub borrowInfo: Option<BorrowInfo>,
+    pub tvInfo: Option<TypeVariableInfo>,
+    pub members: Vec<MemberInfo>,
 }
 
 impl Instruction {
@@ -185,6 +200,8 @@ impl Block {
             ty: None,
             location: location,
             borrowInfo: None,
+            tvInfo: None,
+            members: Vec::new(),
         });
         id
     }
@@ -248,6 +265,7 @@ pub struct Function {
     pub params: Vec<Parameter>,
     pub result: Type,
     pub body: Option<Body>,
+    pub signature: Option<FunctionOwnershipSignature>,
 }
 
 impl Function {
@@ -262,6 +280,7 @@ impl Function {
             params: params,
             result: result,
             body: body,
+            signature: None,
         }
     }
 

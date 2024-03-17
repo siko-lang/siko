@@ -4,7 +4,7 @@ use crate::siko::ownership::TypeVariableInfo::{GroupTypeVariable, TypeVariableIn
 
 use super::{Borrow::BorrowId, TypeVariableInfo::OwnershipTypeVariable};
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Allocator {
     nextOwnershipVar: u32,
     nextGroupVar: u32,

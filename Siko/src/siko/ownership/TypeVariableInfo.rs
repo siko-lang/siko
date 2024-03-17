@@ -6,6 +6,12 @@ pub struct Substitution {
 }
 
 impl Substitution {
+    pub fn new() -> Substitution {
+        Substitution {
+            ownershipVars: BTreeMap::new(),
+            groupVars: BTreeMap::new(),
+        }
+    }
     pub fn addOwnershipVar(&mut self, v: OwnershipTypeVariable, other: OwnershipTypeVariable) {
         if v != other {
             if v < other {

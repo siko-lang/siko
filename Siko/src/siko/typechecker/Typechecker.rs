@@ -236,7 +236,7 @@ impl<'a> Typechecker<'a> {
                             instruction.location.clone(),
                         );
                     }
-                    InstructionKind::ValueRef(value, fields) => {
+                    InstructionKind::ValueRef(value, fields, _) => {
                         let mut receiverType = match &value {
                             ValueKind::Arg(name) => self.getValueType(name),
                             ValueKind::Implicit(id) => self.getInstructionType(*id),
@@ -470,10 +470,11 @@ impl<'a> Typechecker<'a> {
                 for instruction in &mut block.instructions {
                     if self.methodSources.contains_key(&instruction.id) {
                         match &instruction.kind {
-                            InstructionKind::ValueRef(v, fields) => {
+                            InstructionKind::ValueRef(v, fields, _) => {
                                 let mut fields = fields.clone();
                                 fields.pop();
-                                instruction.kind = InstructionKind::ValueRef(v.clone(), fields);
+                                instruction.kind =
+                                    InstructionKind::ValueRef(v.clone(), fields, Vec::new());
                             }
                             kind => panic!(
                                 "Unexpected instruction kind for method source while rewriting! {}",

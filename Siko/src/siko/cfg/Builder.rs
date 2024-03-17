@@ -73,7 +73,7 @@ impl Builder {
                     let block = f.getBlockById(*id);
                     last = self.processBlock(block, last, f);
                 }
-                InstructionKind::ValueRef(v, fields) => {
+                InstructionKind::ValueRef(v, fields, _) => {
                     if let ValueKind::LoopVar(_) = v {
                         last = Some(self.processGenericInstruction(
                             instruction,
