@@ -36,6 +36,7 @@ pub struct Typechecker<'a> {
     substitution: Substitution,
     methodSources: BTreeMap<InstructionId, QualifiedName>,
     methodCalls: BTreeMap<InstructionId, InstructionId>,
+    indices: BTreeMap<InstructionId, Vec<u32>>,
     types: BTreeMap<TypedId, Type>,
 }
 
@@ -55,6 +56,7 @@ impl<'a> Typechecker<'a> {
             substitution: Substitution::new(),
             methodSources: BTreeMap::new(),
             methodCalls: BTreeMap::new(),
+            indices: BTreeMap::new(),
             types: BTreeMap::new(),
         }
     }
@@ -250,6 +252,7 @@ impl<'a> Typechecker<'a> {
                                 instruction.location.clone(),
                             );
                         } else {
+                            let mut indices = Vec::new();
                             for (index, field) in fields.iter().enumerate() {
                                 let receiver = self.substitution.apply(&receiverType);
                                 match &receiver {
@@ -257,8 +260,9 @@ impl<'a> Typechecker<'a> {
                                         // TODO
                                         if let Some(c) = self.classes.get(name) {
                                             let mut found = false;
-                                            for f in &c.fields {
+                                            for (index, f) in c.fields.iter().enumerate() {
                                                 if f.name == *field {
+                                                    indices.push(index as u32);
                                                     found = true;
                                                     receiverType = f.ty.clone();
                                                     break;
@@ -305,6 +309,7 @@ impl<'a> Typechecker<'a> {
                                     .report(),
                                 }
                             }
+                            self.indices.insert(instruction.id, indices);
                             self.unify(
                                 receiverType,
                                 self.getInstructionType(instruction.id),
@@ -468,13 +473,28 @@ impl<'a> Typechecker<'a> {
         if let Some(body) = &mut result.body {
             for block in &mut body.blocks {
                 for instruction in &mut block.instructions {
-                    if self.methodSources.contains_key(&instruction.id) {
+                    if self.indices.contains_key(&instruction.id) {
                         match &instruction.kind {
                             InstructionKind::ValueRef(v, fields, _) => {
+                                instruction.kind = InstructionKind::ValueRef(
+                                    v.clone(),
+                                    fields.clone(),
+                                    self.indices.get(&instruction.id).unwrap().clone(),
+                                );
+                            }
+                            kind => panic!(
+                                "Unexpected instruction kind for indices while rewriting! {}",
+                                kind.dump()
+                            ),
+                        }
+                    }
+                    if self.methodSources.contains_key(&instruction.id) {
+                        match &instruction.kind {
+                            InstructionKind::ValueRef(v, fields, indices) => {
                                 let mut fields = fields.clone();
                                 fields.pop();
                                 instruction.kind =
-                                    InstructionKind::ValueRef(v.clone(), fields, Vec::new());
+                                    InstructionKind::ValueRef(v.clone(), fields, indices.clone());
                             }
                             kind => panic!(
                                 "Unexpected instruction kind for method source while rewriting! {}",

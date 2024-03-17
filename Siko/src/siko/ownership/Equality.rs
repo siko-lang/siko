@@ -93,9 +93,6 @@ impl<'a> EqualityEngine<'a> {
                             );
                             root = member.info.group;
                             instruction.members.push(member);
-                            //i.members.append(member_info)
-                            // if len(i.members) != 0:
-                            //     i.members[-1].info.group_var = i.tv_info.group_var
                         }
                         instruction.members.last_mut().unwrap().info.group =
                             instruction.tvInfo.unwrap().group;
