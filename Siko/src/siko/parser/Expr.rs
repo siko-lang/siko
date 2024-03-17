@@ -1,5 +1,5 @@
 use crate::siko::syntax::{
-    Expr::{BinaryOp, Branch, Expr, SimpleExpr},
+    Expr::{BinaryOp, Branch, Expr, SimpleExpr, UnaryOp},
     Pattern::{Pattern, SimplePattern},
     Statement::{Block, Statement, StatementKind},
 };
@@ -20,6 +20,7 @@ pub trait ExprParser {
     fn parseFieldAccessOrCall(&mut self) -> Expr;
     fn parseBinaryOp(&mut self, index: usize) -> Expr;
     fn parseExpr(&mut self) -> Expr;
+    fn parseUnary(&mut self) -> Expr;
     fn parsePrimary(&mut self) -> Expr;
     fn callNext(&mut self, index: usize) -> Expr;
     fn buildExpr(&mut self, e: SimpleExpr) -> Expr;
@@ -228,7 +229,7 @@ impl ExprParser for Parser {
 
     fn parseFieldAccessOrCall(&mut self) -> Expr {
         self.pushSpan();
-        let mut current = self.parsePrimary();
+        let mut current = self.parseUnary();
         loop {
             if self.check(TokenKind::Misc(MiscKind::Dot)) {
                 self.expect(TokenKind::Misc(MiscKind::Dot));
@@ -302,7 +303,17 @@ impl ExprParser for Parser {
             self.parseBinaryOp(index + 1)
         }
     }
-
+    fn parseUnary(&mut self) -> Expr {
+        self.pushSpan();
+        match self.peek() {
+            TokenKind::Misc(MiscKind::ExclamationMark) => {
+                self.expect(TokenKind::Misc(MiscKind::ExclamationMark));
+                let expr = self.parsePrimary();
+                self.buildExpr(SimpleExpr::UnaryOp(UnaryOp::Not, Box::new(expr)))
+            }
+            _ => self.parsePrimary(),
+        }
+    }
     fn parsePrimary(&mut self) -> Expr {
         self.pushSpan();
         match self.peek() {

@@ -6,7 +6,7 @@ use crate::siko::ir::Function::{
     Block as IrBlock, BlockId, InstructionId, InstructionKind, ValueKind,
 };
 use crate::siko::qualifiedname::QualifiedName;
-use crate::siko::syntax::Expr::{BinaryOp, Expr, SimpleExpr};
+use crate::siko::syntax::Expr::{BinaryOp, Expr, SimpleExpr, UnaryOp};
 use crate::siko::syntax::Identifier::Identifier;
 use crate::siko::syntax::Pattern::{Pattern, SimplePattern};
 use crate::siko::syntax::Statement::StatementKind;
@@ -256,6 +256,21 @@ impl<'a> ExprResolver<'a> {
                 let name = self.moduleResolver.resolverName(&id);
                 irBlock.add(
                     InstructionKind::FunctionCall(name, vec![lhsId, rhsId]),
+                    expr.location.clone(),
+                )
+            }
+            SimpleExpr::UnaryOp(op, rhs) => {
+                let rhsId = self.resolveExpr(rhs, env, irBlock);
+                let name = match op {
+                    UnaryOp::Not => createOpName("Not", "not"),
+                };
+                let id = Identifier {
+                    name: format!("{}", name),
+                    location: expr.location.clone(),
+                };
+                let name = self.moduleResolver.resolverName(&id);
+                irBlock.add(
+                    InstructionKind::FunctionCall(name, vec![rhsId]),
                     expr.location.clone(),
                 )
             }

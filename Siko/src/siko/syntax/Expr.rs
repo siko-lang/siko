@@ -18,6 +18,11 @@ pub enum BinaryOp {
     GreaterThanOrEqual,
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum UnaryOp {
+    Not,
+}
+
 #[derive(Debug)]
 pub struct Branch {
     pub pattern: Pattern,
@@ -41,6 +46,7 @@ pub enum SimpleExpr {
     For(Pattern, Box<Expr>, Box<Expr>),
     Loop(Pattern, Box<Expr>, Box<Expr>),
     BinaryOp(BinaryOp, Box<Expr>, Box<Expr>),
+    UnaryOp(UnaryOp, Box<Expr>),
     Match(Box<Expr>, Vec<Branch>),
     Block(Block),
     Tuple(Vec<Expr>),
