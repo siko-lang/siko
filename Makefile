@@ -1,8 +1,8 @@
-test: Siko/target/release/
-	cd Siko && cargo build --release && cd .. && ./siko test.sk
+test: Siko/target/release/siko
+	@./siko test.sk
 
-teststd: Siko/target/release/
-	cd Siko && cargo build --release && cd .. && ./siko test.sk std/*
+Siko/target/release/siko: $(shell find Siko/src/ -type f)
+	@cd Siko && cargo build --release
 
-test2: Siko/target/release/
-	cd Siko && cargo run --release && cd .. && ./run_test.py
+teststd: Siko/target/release/siko
+	@./siko test.sk std/*

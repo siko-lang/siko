@@ -64,7 +64,7 @@ impl Substitution {
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub struct OwnershipTypeVariable {
-    value: u32,
+    pub value: u32,
 }
 
 impl Display for OwnershipTypeVariable {
@@ -75,7 +75,7 @@ impl Display for OwnershipTypeVariable {
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub struct GroupTypeVariable {
-    value: u32,
+    pub value: u32,
 }
 
 impl Display for GroupTypeVariable {

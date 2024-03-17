@@ -1,8 +1,8 @@
 use super::TypeVariableInfo::{GroupTypeVariable, OwnershipTypeVariable, TypeVariableInfo};
 use crate::siko::util::DependencyProcessor;
-use std::{collections::BTreeMap, fmt::Display};
+use std::{collections::BTreeMap, fmt::Debug, fmt::Display};
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub enum MemberKind {
     Variant,
     Field,
@@ -19,6 +19,13 @@ impl Display for MemberKind {
     }
 }
 
+impl Debug for MemberKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+#[derive(PartialEq, Eq)]
 pub struct MemberInfo {
     pub root: GroupTypeVariable,
     pub kind: MemberKind,
@@ -33,6 +40,12 @@ impl Display for MemberInfo {
             "{}/{}/{}/{}",
             self.kind, self.index, self.root, self.info
         )
+    }
+}
+
+impl Debug for MemberInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
     }
 }
 

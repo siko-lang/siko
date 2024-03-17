@@ -1,4 +1,4 @@
-use super::{DataFlowPath::DataFlowPath, Signature::FunctionOwnershipSignature};
+use super::{super::Signature::FunctionOwnershipSignature, DataFlowPath::DataFlowPath};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct DataFlowProfile {
