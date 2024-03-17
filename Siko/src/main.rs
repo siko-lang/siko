@@ -5,7 +5,7 @@ mod siko;
 
 use siko::{
     cfg::Builder::Builder,
-    ir::Function::Function,
+    ir::{Function::Function, TraitMethodSelector::TraitMethodSelector},
     location::FileManager::FileManager,
     ownership::{dataflowprofile::Inference::dataflow, Borrowchecker::Borrowchecker},
     parser::Parser::*,
@@ -41,10 +41,15 @@ fn typecheck(
     functions: BTreeMap<QualifiedName, Function>,
     classes: BTreeMap<QualifiedName, siko::ir::Data::Class>,
     enums: BTreeMap<QualifiedName, siko::ir::Data::Enum>,
+    traitMethodSelectors: BTreeMap<QualifiedName, TraitMethodSelector>,
 ) -> BTreeMap<QualifiedName, Function> {
     let mut result = BTreeMap::new();
     for (_, f) in &functions {
-        let mut typechecker = Typechecker::new(&functions, &classes, &enums);
+        let moduleName = f.name.module();
+        let traitMethodSelector = traitMethodSelectors
+            .get(&moduleName)
+            .expect("Trait method selector not found");
+        let mut typechecker = Typechecker::new(&functions, &classes, &enums, &traitMethodSelector);
         let typedFn = typechecker.run(f);
         //typedFn.dump();
         result.insert(typedFn.name.clone(), typedFn);
@@ -65,8 +70,8 @@ fn main() {
         }
     }
     resolver.process();
-    let (functions, classes, enums) = resolver.ir();
-    let functions = typecheck(functions, classes, enums);
+    let (functions, classes, enums, traitMethodSelectors) = resolver.ir();
+    let functions = typecheck(functions, classes, enums, traitMethodSelectors);
     let functions = borrowcheck(functions);
     dataflow(&functions);
 }

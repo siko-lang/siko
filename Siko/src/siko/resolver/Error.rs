@@ -2,6 +2,8 @@ use crate::siko::location::{Location::Location, Report::Painter, Report::Report}
 
 pub enum ResolverError {
     UnknownValue(String, Location),
+    UnknownName(String, Location),
+    Ambiguous(String, Location),
     RedundantPattern(Location),
     MissingPattern(Location),
     BreakOutsideLoop(Location),
@@ -14,6 +16,11 @@ impl ResolverError {
         match &self {
             ResolverError::UnknownValue(v, l) => {
                 let slogan = format!("Unknown value {}", v.yellow());
+                let r = Report::new(slogan, l.clone());
+                r.print();
+            }
+            ResolverError::UnknownName(v, l) => {
+                let slogan = format!("Unknown name {}", v.yellow());
                 let r = Report::new(slogan, l.clone());
                 r.print();
             }
@@ -39,6 +46,11 @@ impl ResolverError {
             }
             ResolverError::InvalidInstanceType(ty, l) => {
                 let slogan = format!("Invalid instance type {}", ty.yellow());
+                let r = Report::new(slogan, l.clone());
+                r.print();
+            }
+            ResolverError::Ambiguous(v, l) => {
+                let slogan = format!("Ambiguous name {}", v.yellow());
                 let r = Report::new(slogan, l.clone());
                 r.print();
             }

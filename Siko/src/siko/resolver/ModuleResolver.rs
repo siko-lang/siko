@@ -1,7 +1,6 @@
 use crate::siko::qualifiedname::QualifiedName;
+use crate::siko::resolver::Error::ResolverError;
 use crate::siko::syntax::Identifier::Identifier;
-
-use crate::siko::util::error;
 
 use super::Resolver::Names;
 
@@ -14,17 +13,16 @@ impl ModuleResolver {
     pub fn resolverName(&self, name: &Identifier) -> QualifiedName {
         if let Some(names) = self.localNames.names.get(&name.name) {
             if names.len() > 1 {
-                error(format!("Ambiguous name {}", name.name));
+                ResolverError::Ambiguous(name.toString(), name.location.clone()).report();
             }
             return names.first().unwrap().clone();
         }
         if let Some(names) = self.importedNames.names.get(&name.name) {
             if names.len() > 1 {
-                error(format!("Ambiguous name {}", name.name));
+                ResolverError::Ambiguous(name.toString(), name.location.clone()).report();
             }
             return names.first().unwrap().clone();
         }
-        println!("Local names {:?}", self.localNames);
-        error(format!("Unknown name {}", name.name));
+        ResolverError::UnknownName(name.toString(), name.location.clone()).report();
     }
 }

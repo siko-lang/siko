@@ -1,7 +1,8 @@
 use crate::siko::{
     ir::{
         Data::MethodInfo as DataMethodInfo, Function::Parameter,
-        Trait::MethodInfo as TraitMethodInfo, Type::TypeVar,
+        Trait::MethodInfo as TraitMethodInfo, TraitMethodSelector::TraitMethodSelector,
+        Type::TypeVar,
     },
     qualifiedname::QualifiedName,
     resolver::FunctionResolver::FunctionResolver,
@@ -57,6 +58,7 @@ pub struct Resolver {
     variants: BTreeMap<QualifiedName, QualifiedName>,
     traits: BTreeMap<QualifiedName, IrTrait>,
     instances: Vec<IrInstance>,
+    traitMethodSelectors: BTreeMap<QualifiedName, TraitMethodSelector>,
 }
 
 impl Resolver {
@@ -71,6 +73,7 @@ impl Resolver {
             variants: BTreeMap::new(),
             traits: BTreeMap::new(),
             instances: Vec::new(),
+            traitMethodSelectors: BTreeMap::new(),
         }
     }
 
@@ -93,8 +96,14 @@ impl Resolver {
         BTreeMap<QualifiedName, IrFunction>,
         BTreeMap<QualifiedName, IrClass>,
         BTreeMap<QualifiedName, IrEnum>,
+        BTreeMap<QualifiedName, TraitMethodSelector>,
     ) {
-        (self.functions, self.classes, self.enums)
+        (
+            self.functions,
+            self.classes,
+            self.enums,
+            self.traitMethodSelectors,
+        )
     }
 
     fn dump(&self) {
@@ -210,7 +219,10 @@ impl Resolver {
                         for method in &t.methods {
                             irTrait.methods.push(TraitMethodInfo {
                                 name: method.name.toString(),
-                                fullName: moduleResolver.resolverName(&method.name),
+                                fullName: QualifiedName::Item(
+                                    Box::new(irTrait.name.clone()),
+                                    method.name.toString(),
+                                ),
                             })
                         }
                         //println!("Trait {:?}", irTrait);
@@ -228,17 +240,20 @@ impl Resolver {
                             )
                             .report(),
                         };
-                        let mut irInstance = IrInstance::new(i.id, name, args);
+                        let mut irInstance = IrInstance::new(i.id, name.clone(), args);
                         for method in &i.methods {
                             irInstance.methods.push(TraitMethodInfo {
                                 name: method.name.toString(),
                                 fullName: QualifiedName::Instance(
-                                    Box::new(moduleResolver.resolverName(&method.name)),
+                                    Box::new(QualifiedName::Item(
+                                        Box::new(name.clone()),
+                                        method.name.toString(),
+                                    )),
                                     irInstance.id,
                                 ),
                             })
                         }
-                        println!("Instance {:?}", irInstance);
+                        //println!("Instance {:?}", irInstance);
                         self.instances.push(irInstance);
                     }
                     _ => {}
@@ -250,6 +265,7 @@ impl Resolver {
     fn processFunctions(&mut self) {
         for (_, m) in &self.modules {
             let moduleResolver = self.resolvers.get(&m.name.name).unwrap();
+            let mut traitMethodSelector = TraitMethodSelector::new();
             for item in &m.items {
                 match item {
                     ModuleItem::Class(c) => {
@@ -289,7 +305,9 @@ impl Resolver {
                         }
                     }
                     ModuleItem::Trait(t) => {
-                        let owner = createSelfType(&t.name, t.typeParams.as_ref(), moduleResolver);
+                        let name = moduleResolver.resolverName(&t.name);
+                        let irTrait = self.traits.get(&name).unwrap();
+                        let owner = irTrait.params.first().expect("first trait param not found");
                         for method in &t.methods {
                             let functionResolver = FunctionResolver::new(
                                 moduleResolver,
@@ -301,8 +319,9 @@ impl Resolver {
                                 &self.emptyVariants,
                                 &self.variants,
                                 &self.enums,
-                                moduleResolver.resolverName(&method.name),
+                                QualifiedName::Item(Box::new(name.clone()), method.name.toString()),
                             );
+                            traitMethodSelector.add(method.name.clone(), irFunction.name.clone());
                             self.functions.insert(irFunction.name.clone(), irFunction);
                         }
                     }
@@ -320,7 +339,10 @@ impl Resolver {
                                 &self.variants,
                                 &self.enums,
                                 QualifiedName::Instance(
-                                    Box::new(moduleResolver.resolverName(&method.name)),
+                                    Box::new(QualifiedName::Item(
+                                        Box::new(irInstance.traitName.clone()),
+                                        method.name.toString(),
+                                    )),
                                     irInstance.id,
                                 ),
                             );
@@ -341,6 +363,10 @@ impl Resolver {
                     _ => {}
                 }
             }
+            self.traitMethodSelectors.insert(
+                QualifiedName::Module(m.name.toString()),
+                traitMethodSelector,
+            );
         }
     }
 

@@ -9,6 +9,7 @@ use crate::siko::{
         Function::{
             Body, Function, Instruction, InstructionId, InstructionKind, Parameter, ValueKind,
         },
+        TraitMethodSelector::TraitMethodSelector,
         Type::Type,
     },
     location::Location::Location,
@@ -30,6 +31,7 @@ pub struct Typechecker<'a> {
     functions: &'a BTreeMap<QualifiedName, Function>,
     classes: &'a BTreeMap<QualifiedName, Class>,
     enums: &'a BTreeMap<QualifiedName, Enum>,
+    traitMethodSelector: &'a TraitMethodSelector,
     allocator: TypeVarAllocator,
     substitution: Substitution,
     methodSources: BTreeMap<InstructionId, QualifiedName>,
@@ -42,11 +44,13 @@ impl<'a> Typechecker<'a> {
         functions: &'a BTreeMap<QualifiedName, Function>,
         classes: &'a BTreeMap<QualifiedName, Class>,
         enums: &'a BTreeMap<QualifiedName, Enum>,
+        traitMethodSelector: &'a TraitMethodSelector,
     ) -> Typechecker<'a> {
         Typechecker {
             functions: functions,
             classes: classes,
             enums: enums,
+            traitMethodSelector: traitMethodSelector,
             allocator: TypeVarAllocator::new(),
             substitution: Substitution::new(),
             methodSources: BTreeMap::new(),
@@ -136,6 +140,7 @@ impl<'a> Typechecker<'a> {
         instruction: &Instruction,
         fnType: Type,
     ) {
+        //println!("checkFunctionCall: {}", fnType);
         let fnType = self.instantiateType(fnType);
         let (fnArgs, fnResult) = fnType.splitFnType();
         if args.len() != fnArgs.len() {
@@ -269,6 +274,15 @@ impl<'a> Typechecker<'a> {
                                                         );
                                                         break;
                                                     }
+                                                }
+                                            }
+                                            if !found {
+                                                if let Some(methodName) =
+                                                    self.traitMethodSelector.get(&field)
+                                                {
+                                                    found = true;
+                                                    self.methodSources
+                                                        .insert(instruction.id, methodName);
                                                 }
                                             }
                                             if !found {

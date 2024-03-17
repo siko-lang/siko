@@ -11,6 +11,14 @@ impl QualifiedName {
     pub fn add(&self, item: String) -> QualifiedName {
         QualifiedName::Item(Box::new(self.clone()), item)
     }
+
+    pub fn module(&self) -> QualifiedName {
+        match &self {
+            QualifiedName::Module(_) => self.clone(),
+            QualifiedName::Instance(p, _) => p.module(),
+            QualifiedName::Item(p, _) => p.module(),
+        }
+    }
 }
 
 impl Debug for QualifiedName {
