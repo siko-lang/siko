@@ -6,7 +6,9 @@ use std::{
 use crate::siko::{
     ir::{
         Data::{Class, Enum},
-        Function::{Function, InstructionId, InstructionKind, Parameter, ValueKind},
+        Function::{
+            Body, Function, Instruction, InstructionId, InstructionKind, Parameter, ValueKind,
+        },
         Type::Type,
     },
     location::Location::Location,
@@ -127,6 +129,37 @@ impl<'a> Typechecker<'a> {
         sub.apply(&ty)
     }
 
+    fn checkFunctionCall(
+        &mut self,
+        args: &Vec<InstructionId>,
+        body: &Body,
+        instruction: &Instruction,
+        fnType: Type,
+    ) {
+        let fnType = self.instantiateType(fnType);
+        let (fnArgs, fnResult) = fnType.splitFnType();
+        if args.len() != fnArgs.len() {
+            TypecheckerError::ArgCountMismatch(
+                fnArgs.len() as u32,
+                args.len() as u32,
+                instruction.location.clone(),
+            )
+            .report();
+        }
+        for (arg, fnArg) in zip(args, fnArgs) {
+            self.substitution.unify(
+                &self.getInstructionType(*arg),
+                &fnArg,
+                body.getInstruction(*arg).location.clone(),
+            );
+        }
+        self.substitution.unify(
+            &self.getInstructionType(instruction.id),
+            &fnResult,
+            instruction.location.clone(),
+        );
+    }
+
     pub fn check(&mut self, f: &Function) {
         //println!("Typechecking {}", f.name);
         let body = if let Some(body) = &f.body {
@@ -141,84 +174,22 @@ impl<'a> Typechecker<'a> {
                     InstructionKind::FunctionCall(name, args) => {
                         let f = self.functions.get(name).expect("Function not found");
                         let fnType = f.getType();
-                        let fnType = self.instantiateType(fnType);
-                        let (fnArgs, fnResult) = fnType.splitFnType();
-                        if args.len() != fnArgs.len() {
-                            TypecheckerError::ArgCountMismatch(
-                                fnArgs.len() as u32,
-                                args.len() as u32,
-                                instruction.location.clone(),
-                            )
-                            .report();
-                        }
-                        for (arg, fnArg) in zip(args, fnArgs) {
-                            self.substitution.unify(
-                                &self.getInstructionType(*arg),
-                                &fnArg,
-                                body.getInstruction(*arg).location.clone(),
-                            );
-                        }
-                        self.substitution.unify(
-                            &self.getInstructionType(instruction.id),
-                            &fnResult,
-                            instruction.location.clone(),
-                        );
+                        self.checkFunctionCall(args, body, instruction, fnType);
                     }
                     InstructionKind::DynamicFunctionCall(callable, args) => {
                         match self.methodSources.get(callable) {
                             Some(name) => {
-                                let f = self.functions.get(name).expect("Function not found");
+                                let f = self.functions.get(&name).expect("Function not found");
                                 let fnType = f.getType();
-                                let fnType = self.instantiateType(fnType);
-                                let (fnArgs, fnResult) = fnType.splitFnType();
                                 let mut newArgs = Vec::new();
                                 newArgs.push(*callable);
                                 newArgs.extend(args);
-                                if newArgs.len() != fnArgs.len() {
-                                    TypecheckerError::ArgCountMismatch(
-                                        fnArgs.len() as u32,
-                                        newArgs.len() as u32,
-                                        instruction.location.clone(),
-                                    )
-                                    .report();
-                                }
-                                for (arg, fnArg) in zip(newArgs, fnArgs) {
-                                    self.substitution.unify(
-                                        &self.getInstructionType(arg),
-                                        &fnArg,
-                                        body.getInstruction(arg).location.clone(),
-                                    );
-                                }
-                                self.substitution.unify(
-                                    &self.getInstructionType(instruction.id),
-                                    &fnResult,
-                                    instruction.location.clone(),
-                                );
+                                self.checkFunctionCall(&newArgs, body, instruction, fnType);
                                 self.methodCalls.insert(instruction.id, *callable);
                             }
                             None => {
                                 let fnType = self.getInstructionType(*callable);
-                                let (fnArgs, fnResult) = fnType.splitFnType();
-                                if args.len() != fnArgs.len() {
-                                    TypecheckerError::ArgCountMismatch(
-                                        fnArgs.len() as u32,
-                                        args.len() as u32,
-                                        instruction.location.clone(),
-                                    )
-                                    .report();
-                                }
-                                for (arg, fnArg) in zip(args, fnArgs) {
-                                    self.substitution.unify(
-                                        &self.getInstructionType(*arg),
-                                        &fnArg,
-                                        body.getInstruction(*arg).location.clone(),
-                                    );
-                                }
-                                self.substitution.unify(
-                                    &self.getInstructionType(instruction.id),
-                                    &fnResult,
-                                    instruction.location.clone(),
-                                );
+                                self.checkFunctionCall(&args, body, instruction, fnType);
                             }
                         }
                     }
