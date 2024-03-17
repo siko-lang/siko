@@ -27,27 +27,64 @@ impl Display for Choice {
     }
 }
 
-fn getChoice(p: &Pattern, moduleResolver: &ModuleResolver) -> Choice {
+fn getChoice(p: &Pattern, moduleResolver: &ModuleResolver) -> (Choice, Option<String>) {
     match &p.pattern {
-        SimplePattern::Named(n, _) => Choice::Named(moduleResolver.resolverName(n)),
-        SimplePattern::Bind(_, _) => Choice::Wildcard,
-        SimplePattern::Tuple(_) => Choice::Tuple,
-        SimplePattern::StringLiteral(v) => Choice::Literal(v.clone()),
-        SimplePattern::IntegerLiteral(v) => Choice::Literal(v.clone()),
-        SimplePattern::Wildcard => Choice::Wildcard,
+        SimplePattern::Named(n, _) => (Choice::Named(moduleResolver.resolverName(n)), None),
+        SimplePattern::Bind(n, _) => (Choice::Wildcard, Some(n.toString())),
+        SimplePattern::Tuple(_) => (Choice::Tuple, None),
+        SimplePattern::StringLiteral(v) => (Choice::Literal(v.clone()), None),
+        SimplePattern::IntegerLiteral(v) => (Choice::Literal(v.clone()), None),
+        SimplePattern::Wildcard => (Choice::Wildcard, Some("_".to_string())),
     }
 }
 
-fn extendPatterns(p: &Pattern, patterns: Vec<Pattern>) -> Vec<Pattern> {
-    match p.pattern.clone() {
-        SimplePattern::Named(_, mut args) => {
-            args.extend(patterns);
-            args
+#[derive(Clone, Debug)]
+enum Label {
+    Simple(String),
+    Bind(String, String),
+}
+
+impl Display for Label {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Label::Simple(n) => write!(f, "{}", n),
+            Label::Bind(n, b) => write!(f, "{}/{}", n, b),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct LabeledPattern {
+    pattern: Pattern,
+    label: Label,
+}
+
+fn extendPatterns(p: &LabeledPattern, patterns: Vec<LabeledPattern>) -> Vec<LabeledPattern> {
+    match p.pattern.pattern.clone() {
+        SimplePattern::Named(_, args) => {
+            let mut result = Vec::new();
+            for (index, arg) in args.into_iter().enumerate() {
+                let label = format!("{}.{}", p.label, index);
+                result.push(LabeledPattern {
+                    pattern: arg,
+                    label: Label::Simple(label),
+                });
+            }
+            result.extend(patterns);
+            result
         }
         SimplePattern::Bind(_, _) => patterns,
-        SimplePattern::Tuple(mut args) => {
-            args.extend(patterns);
-            args
+        SimplePattern::Tuple(args) => {
+            let mut result = Vec::new();
+            for (index, arg) in args.into_iter().enumerate() {
+                let label = format!("{}.{}", p.label, index);
+                result.push(LabeledPattern {
+                    pattern: arg,
+                    label: Label::Simple(label),
+                });
+            }
+            result.extend(patterns);
+            result
         }
         SimplePattern::StringLiteral(_) => patterns,
         SimplePattern::IntegerLiteral(_) => patterns,
@@ -56,13 +93,15 @@ fn extendPatterns(p: &Pattern, patterns: Vec<Pattern>) -> Vec<Pattern> {
 }
 
 pub struct ChoiceNode {
+    name: Label,
     choices: BTreeMap<Choice, ChoiceNode>,
     matches: Vec<usize>,
 }
 
 impl ChoiceNode {
-    pub fn new() -> ChoiceNode {
+    fn new(name: Label) -> ChoiceNode {
         ChoiceNode {
+            name: name,
             choices: BTreeMap::new(),
             matches: Vec::new(),
         }
@@ -70,9 +109,9 @@ impl ChoiceNode {
 
     fn buildDot(&self, graph: &mut Graph) -> String {
         let label = if self.choices.is_empty() {
-            Some(format!("{:?}", self.matches.first()))
+            Some(format!("{}/{:?}", self.name, self.matches.first()))
         } else {
-            None
+            Some(format!("{}", self.name))
         };
         let name = graph.addNode(label);
         for (choice, child) in &self.choices {
@@ -130,40 +169,47 @@ impl ChoiceNode {
                 }
             }
         }
-        if fullMatch {
+        if fullMatch && self.choices.len() > 1 {
             self.choices.remove(&Choice::Wildcard);
         }
         if wildcardNeeded && !self.choices.contains_key(&Choice::Wildcard) {
-            self.choices.insert(Choice::Wildcard, ChoiceNode::new());
+            self.choices.insert(
+                Choice::Wildcard,
+                ChoiceNode::new(Label::Simple("_".to_string())),
+            );
         }
     }
 
-    pub fn build(&mut self, mut patterns: Vec<Pattern>, moduleResolver: &ModuleResolver) {
+    fn build(&mut self, mut patterns: Vec<LabeledPattern>, moduleResolver: &ModuleResolver) {
         match patterns.first() {
             Some(_) => {
                 let p = patterns.remove(0);
-                let choice = getChoice(&p, moduleResolver);
+                let (choice, extra) = getChoice(&p.pattern, moduleResolver);
                 let patterns = extendPatterns(&p, patterns);
+                let label = match (p.label, extra) {
+                    (Label::Simple(l), Some(e)) => Label::Bind(l, e),
+                    (l, _) => l,
+                };
                 let next = self
                     .choices
                     .entry(choice)
-                    .or_insert_with(|| ChoiceNode::new());
+                    .or_insert_with(|| ChoiceNode::new(label));
                 next.build(patterns, moduleResolver);
             }
             None => {}
         }
     }
 
-    pub fn apply(
+    fn apply(
         &mut self,
-        mut patterns: Vec<Pattern>,
+        mut patterns: Vec<LabeledPattern>,
         index: usize,
         moduleResolver: &ModuleResolver,
     ) -> bool {
         match patterns.first() {
             Some(_) => {
                 let p = patterns.remove(0);
-                let choice = getChoice(&p, moduleResolver);
+                let (choice, _) = getChoice(&p.pattern, moduleResolver);
                 let patterns = extendPatterns(&p, patterns);
                 match choice {
                     Choice::Wildcard => {
@@ -215,7 +261,7 @@ pub struct MatchResolver {
 impl MatchResolver {
     pub fn new(branches: Vec<Pattern>) -> MatchResolver {
         MatchResolver {
-            choiceTree: ChoiceNode::new(),
+            choiceTree: ChoiceNode::new(Label::Simple("main".to_string())),
             branches: branches,
         }
     }
@@ -227,14 +273,27 @@ impl MatchResolver {
         enums: &BTreeMap<QualifiedName, Enum>,
     ) {
         for branch in self.branches.clone() {
-            self.choiceTree.build(vec![branch], moduleResolver);
+            self.choiceTree.build(
+                vec![LabeledPattern {
+                    pattern: branch,
+                    label: Label::Simple("root".to_string()),
+                }],
+                moduleResolver,
+            );
         }
         self.choiceTree.addWildcards(variants, enums);
         let mut lastLocation = None;
         for (index, branch) in self.branches.clone().into_iter().enumerate() {
             let location = branch.location.clone();
             lastLocation = Some(location.clone());
-            if !self.choiceTree.apply(vec![branch], index, moduleResolver) {
+            if !self.choiceTree.apply(
+                vec![LabeledPattern {
+                    pattern: branch,
+                    label: Label::Simple("root".to_string()),
+                }],
+                index,
+                moduleResolver,
+            ) {
                 ResolverError::RedundantPattern(location).report();
             }
         }
