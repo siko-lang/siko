@@ -219,6 +219,16 @@ impl Lexer {
                     '\t' => self.ignore(),
                     '\r' => self.ignore(),
                     ' ' => self.ignore(),
+                    '/' => match self.peek() {
+                        Some('/') => loop {
+                            match self.peek() {
+                                Some('\n') => break,
+                                None => break,
+                                _ => self.ignore(),
+                            }
+                        },
+                        _ => self.addToken(Token::Op(OperatorKind::Div)),
+                    },
                     '-' => {
                         self.step();
                         match self.peek() {
