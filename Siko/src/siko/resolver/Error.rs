@@ -6,6 +6,7 @@ pub enum ResolverError {
     MissingPattern(Location),
     BreakOutsideLoop(Location),
     ContinueOutsideLoop(Location),
+    InvalidInstanceType(String, Location),
 }
 
 impl ResolverError {
@@ -33,6 +34,11 @@ impl ResolverError {
             }
             ResolverError::ContinueOutsideLoop(l) => {
                 let slogan = format!("Continue outside loop");
+                let r = Report::new(slogan, l.clone());
+                r.print();
+            }
+            ResolverError::InvalidInstanceType(ty, l) => {
+                let slogan = format!("Invalid instance type {}", ty.yellow());
                 let r = Report::new(slogan, l.clone());
                 r.print();
             }

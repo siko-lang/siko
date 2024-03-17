@@ -52,9 +52,9 @@ impl<'a> InferenceEngine<'a> {
     fn createDataFlowProfile(
         &mut self,
         name: &QualifiedName,
-        groupProfiles: &BTreeMap<QualifiedName, DataFlowProfile>,
+        _groupProfiles: &BTreeMap<QualifiedName, DataFlowProfile>,
     ) -> DataFlowProfile {
-        let f = self.functions.get(name).clone();
+        let _f = self.functions.get(name).clone();
         DataFlowProfile::new()
         // equality = Equality.EqualityEngine(fn, self.profile_store, group_profiles)
         // profiles = equality.process(buildPath=True)
@@ -134,10 +134,26 @@ impl<'a> InferenceEngine<'a> {
     }
 }
 
+trait Alma {
+    fn foo(&self) -> ();
+}
+
+impl Alma for u32 {
+    fn foo(&self) -> () {
+        ()
+    }
+}
+
+trait Alma2 {
+    fn foo(&self) -> ();
+}
+
 pub fn dataflow(functions: &BTreeMap<QualifiedName, Function>) -> DataFlowProfileStore {
     let (groups, recursive_fns) = createFunctionGroups(functions);
     //println!("Groups {:?}, recursive {:?}", groups, recursive_fns);
     let mut engine = InferenceEngine::new(functions);
+    let a: u32 = 4;
+    a.foo();
     engine.processGroups(groups, &recursive_fns);
     engine.profileStore()
 }

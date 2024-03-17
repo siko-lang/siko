@@ -48,23 +48,26 @@ impl TraitParser for Parser {
             }
         }
         self.expect(TokenKind::RightBracket(BracketKind::Square));
-        let mut members = Vec::new();
+        let mut methods = Vec::new();
         if self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
             self.expect(TokenKind::LeftBracket(BracketKind::Curly));
             while !self.check(TokenKind::RightBracket(BracketKind::Curly)) {
                 let function = self.parseFunction();
-                members.push(function);
+                methods.push(function);
             }
             self.expect(TokenKind::RightBracket(BracketKind::Curly));
         }
         Trait {
             name: name,
+            params: params,
+            deps: depParams,
             typeParams: typeParams,
-            members: members,
+            methods,
         }
     }
 
     fn parseInstance(&mut self) -> Instance {
+        let location = self.currentLocation();
         self.expect(TokenKind::Keyword(KeywordKind::Instance));
         let typeParams = if self.check(TokenKind::LeftBracket(BracketKind::Square)) {
             Some(self.parseTypeParameterDeclaration())
@@ -72,19 +75,21 @@ impl TraitParser for Parser {
             None
         };
         let ty = self.parseType();
-        let mut members = Vec::new();
+        let mut methods = Vec::new();
         if self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
             self.expect(TokenKind::LeftBracket(BracketKind::Curly));
             while !self.check(TokenKind::RightBracket(BracketKind::Curly)) {
                 let function = self.parseFunction();
-                members.push(function);
+                methods.push(function);
             }
             self.expect(TokenKind::RightBracket(BracketKind::Curly));
         }
         Instance {
+            id: 0,
             typeParams,
             ty,
-            members,
+            methods,
+            location,
         }
     }
 }

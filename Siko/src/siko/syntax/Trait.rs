@@ -1,3 +1,5 @@
+use crate::siko::location::Location::Location;
+
 use super::{
     Function::Function,
     Identifier::Identifier,
@@ -6,12 +8,16 @@ use super::{
 
 pub struct Trait {
     pub name: Identifier,
+    pub params: Vec<Identifier>,
+    pub deps: Vec<Identifier>,
     pub typeParams: Option<TypeParameterDeclaration>,
-    pub members: Vec<Function>,
+    pub methods: Vec<Function>,
 }
 
 pub struct Instance {
+    pub id: u64,
     pub typeParams: Option<TypeParameterDeclaration>,
     pub ty: Type,
-    pub members: Vec<Function>,
+    pub methods: Vec<Function>,
+    pub location: Location,
 }

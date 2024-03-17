@@ -16,14 +16,33 @@ use super::TypeResolver::TypeResolver;
 pub struct FunctionResolver<'a> {
     moduleResolver: &'a ModuleResolver,
     typeParams: Option<&'a TypeParameterDeclaration>,
-    owner: Option<Identifier>,
+    owner: Option<IrType>,
+}
+
+pub fn createSelfType(
+    name: &Identifier,
+    typeParams: Option<&TypeParameterDeclaration>,
+    moduleResolver: &ModuleResolver,
+) -> IrType {
+    let args = match &typeParams {
+        Some(typeParams) => {
+            let mut args = Vec::new();
+            for param in &typeParams.params {
+                let arg = IrType::Var(TypeVar::Named(param.name.name.clone()));
+                args.push(arg);
+            }
+            args
+        }
+        None => Vec::new(),
+    };
+    IrType::Named(moduleResolver.resolverName(name), args)
 }
 
 impl<'a> FunctionResolver<'a> {
     pub fn new(
         moduleResolver: &'a ModuleResolver,
         typeParams: Option<&'a TypeParameterDeclaration>,
-        owner: Option<Identifier>,
+        owner: Option<IrType>,
     ) -> FunctionResolver<'a> {
         FunctionResolver {
             moduleResolver: moduleResolver,
@@ -38,6 +57,7 @@ impl<'a> FunctionResolver<'a> {
         emptyVariants: &BTreeSet<QualifiedName>,
         variants: &BTreeMap<QualifiedName, QualifiedName>,
         enums: &BTreeMap<QualifiedName, Enum>,
+        name: QualifiedName,
     ) -> IrFunction {
         let mut typeResolver = TypeResolver::new(self.moduleResolver, &f.typeParams);
         typeResolver.addTypeParams(self.typeParams);
@@ -50,22 +70,7 @@ impl<'a> FunctionResolver<'a> {
                     IrParameter::Named(id.toString(), typeResolver.resolveType(ty), *mutable)
                 }
                 Parameter::SelfParam(mutable) => match &self.owner {
-                    Some(owner) => {
-                        let args = match &self.typeParams {
-                            Some(typeParams) => {
-                                let mut args = Vec::new();
-                                for param in &typeParams.params {
-                                    let arg = IrType::Var(TypeVar::Named(param.name.name.clone()));
-                                    args.push(arg);
-                                }
-                                args
-                            }
-                            None => Vec::new(),
-                        };
-                        let ownerType =
-                            IrType::Named(self.moduleResolver.resolverName(owner), args);
-                        IrParameter::SelfParam(*mutable, ownerType)
-                    }
+                    Some(owner) => IrParameter::SelfParam(*mutable, owner.clone()),
                     None => error(format!("No owner for self type!")),
                 },
             };
@@ -86,12 +91,7 @@ impl<'a> FunctionResolver<'a> {
         } else {
             None
         };
-        let irFunction = IrFunction::new(
-            self.moduleResolver.resolverName(&f.name),
-            params,
-            result,
-            body,
-        );
+        let irFunction = IrFunction::new(name, params, result, body);
         irFunction
     }
 }
