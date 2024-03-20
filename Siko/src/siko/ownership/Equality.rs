@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::siko::{
-    ir::Function::{Function, InstructionId, InstructionKind},
+    ir::Function::{Block, Function, InstructionId, InstructionKind, ValueKind},
     ownership::MemberInfo::{MemberInfo, MemberKind},
     qualifiedname::QualifiedName,
 };
@@ -10,28 +10,24 @@ use super::{
     dataflowprofile::{
         DataFlowProfile::DataFlowProfile, DataFlowProfileStore::DataFlowProfileStore,
     },
-    Signature::FunctionOwnershipSignature,
-    TypeVariableInfo::{Substitution, TypeVariableInfo},
+    Instantiator::Instantiator,
+    OwnershipInferenceInfo::OwnershipInferenceInfo,
+    OwnershipInferenceInfo::TypedId,
+    TypeVariableInfo::{GroupTypeVariable, OwnershipTypeVariable, Substitution, TypeVariableInfo},
 };
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum TypedId {
-    Instruction(InstructionId),
-    Value(String),
-}
-
 pub struct EqualityEngine<'a> {
-    function: Function,
+    function: &'a Function,
     profileStore: &'a DataFlowProfileStore,
     substitution: Substitution,
     groupProfiles: &'a BTreeMap<QualifiedName, DataFlowProfile>,
-    profiles: BTreeMap<QualifiedName, DataFlowProfile>,
-    tvInfos: BTreeMap<TypedId, TypeVariableInfo>,
+    profiles: BTreeMap<InstructionId, DataFlowProfile>,
+    ownershipInferenceInfo: OwnershipInferenceInfo,
 }
 
 impl<'a> EqualityEngine<'a> {
     pub fn new(
-        function: Function,
+        function: &'a Function,
         profileStore: &'a DataFlowProfileStore,
         groupProfiles: &'a BTreeMap<QualifiedName, DataFlowProfile>,
     ) -> EqualityEngine<'a> {
@@ -41,102 +37,230 @@ impl<'a> EqualityEngine<'a> {
             substitution: Substitution::new(),
             groupProfiles: groupProfiles,
             profiles: BTreeMap::new(),
-            tvInfos: BTreeMap::new(),
+            ownershipInferenceInfo: OwnershipInferenceInfo::new(),
         }
     }
 
-    pub fn run(&mut self) {
-        self.initialize();
+    pub fn run(&mut self, initializeSignature: bool) {
+        self.initialize(initializeSignature);
+        let block = self.function.getFirstBlock();
+        self.processBlock(block); // TODO: fix this, no clone!
     }
 
-    fn initialize(&mut self) {
-        if self.function.signature.is_none() {
-            let mut signature = FunctionOwnershipSignature::new();
+    fn initialize(&mut self, initializeSignature: bool) {
+        if initializeSignature {
             for param in &self.function.params {
-                let tvInfo = signature.allocator.nextTypeVariableInfo();
-                self.tvInfos
+                let tvInfo = self.ownershipInferenceInfo.nextTypeVariableInfo();
+                self.ownershipInferenceInfo
+                    .tvInfos
                     .insert(TypedId::Value(param.getName()), tvInfo.clone());
-                signature.args.push(tvInfo);
+                self.ownershipInferenceInfo.signature.args.push(tvInfo);
             }
-            self.function.signature = Some(signature);
         }
-        for block in &mut self.function.body.as_mut().unwrap().blocks {
-            for instruction in &mut block.instructions {
-                instruction.tvInfo = Some(
-                    self.function
-                        .signature
-                        .as_mut()
-                        .unwrap()
-                        .allocator
-                        .nextTypeVariableInfo(),
-                );
+        for block in &self.function.body.as_ref().unwrap().blocks {
+            for instruction in &block.instructions {
+                let tvInfo = self.ownershipInferenceInfo.nextTypeVariableInfo();
+                self.ownershipInferenceInfo
+                    .tvInfos
+                    .insert(TypedId::Instruction(instruction.id), tvInfo);
                 match &instruction.kind {
                     InstructionKind::ValueRef(_, _, indices) => {
-                        let mut root = self
-                            .function
-                            .signature
-                            .as_mut()
-                            .unwrap()
-                            .allocator
-                            .nextGroupVar();
+                        let mut members = Vec::new();
+                        let mut root = self.ownershipInferenceInfo.nextGroupVar();
                         for index in indices {
                             let member = MemberInfo::new(
                                 root,
                                 MemberKind::Field,
                                 *index,
-                                self.function
-                                    .signature
-                                    .as_mut()
-                                    .unwrap()
-                                    .allocator
-                                    .nextTypeVariableInfo(),
+                                self.ownershipInferenceInfo.nextTypeVariableInfo(),
                             );
                             root = member.info.group;
-                            instruction.members.push(member);
+                            members.push(member);
                         }
-                        instruction.members.last_mut().unwrap().info.group =
-                            instruction.tvInfo.unwrap().group;
+                        if !members.is_empty() {
+                            members.last_mut().unwrap().info.group = tvInfo.group;
+                            self.ownershipInferenceInfo
+                                .members
+                                .insert(instruction.id, members);
+                        }
+                    }
+                    InstructionKind::Bind(name, _) => {
+                        let tvInfo = self.ownershipInferenceInfo.nextTypeVariableInfo();
+                        self.ownershipInferenceInfo
+                            .tvInfos
+                            .insert(TypedId::Value(name.clone()), tvInfo);
                     }
                     _ => {}
                 }
             }
         }
-        // if self.fn.ownership_signature is None:
-        //     self.fn.ownership_signature = Signatures.FunctionOwnershipSignature()
-        //     self.fn.ownership_signature.name = self.fn.name
-        //     self.fn.ownership_signature.result = self.nextTypeVariableInfo()
-        //     for param in self.fn.params:
-        //         self.fn.ownership_signature.args.append(self.nextTypeVariableInfo())
-        // for (index, param) in enumerate(self.fn.params):
-        //     self.tv_info_vars[param.name] = self.fn.ownership_signature.args[index]
-        // for block in self.fn.body.blocks:
-        //     for i in block.instructions:
-        //         i.tv_info = self.nextTypeVariableInfo()
-        //         if isinstance(i, Instruction.Bind):
-        //             tv_info = self.nextTypeVariableInfo()
-        //             self.tv_info_vars[i.name] = tv_info
-        //         if isinstance(i, Instruction.ValueRef):
-        //             root = self.nextGroupVar()
-        //             for index in i.indices:
-        //                 member_info = MemberInfo.MemberInfo()
-        //                 member_info.root = root
-        //                 member_info.kind = MemberInfo.MemberKind()
-        //                 member_info.kind.type = MemberInfo.FieldKind
-        //                 member_info.kind.index = index
-        //                 member_info.info = self.nextTypeVariableInfo()
-        //                 root = member_info.info.group_var
-        //                 i.members.append(member_info)
-        //             if len(i.members) != 0:
-        //                 i.members[-1].info.group_var = i.tv_info.group_var
-        //         if isinstance(i, Instruction.NamedFunctionCall):
-        //             if i.ctor:
-        //                 for (index, param) in enumerate(i.args):
-        //                     member_info = MemberInfo.MemberInfo()
-        //                     member_info.root = i.tv_info.group_var
-        //                     member_info.kind = MemberInfo.MemberKind()
-        //                     member_info.kind.type = MemberInfo.FieldKind
-        //                     member_info.kind.index = index
-        //                     member_info.info = self.nextTypeVariableInfo()
-        //                     i.members.append(member_info)
+    }
+
+    fn getInstructionTypeVariableInfo(&self, id: InstructionId) -> TypeVariableInfo {
+        self.ownershipInferenceInfo
+            .tvInfos
+            .get(&TypedId::Instruction(id))
+            .unwrap()
+            .clone()
+    }
+
+    fn getValueTypeVariableInfo(&self, v: String) -> TypeVariableInfo {
+        self.ownershipInferenceInfo
+            .tvInfos
+            .get(&&TypedId::Value(v))
+            .unwrap()
+            .clone()
+    }
+
+    fn unifyOwnership(&mut self, o1: OwnershipTypeVariable, o2: OwnershipTypeVariable) {
+        let o1 = self.substitution.applyOwnershipVar(o1);
+        let o2 = self.substitution.applyOwnershipVar(o2);
+        self.substitution.addOwnershipVar(o1, o2);
+    }
+
+    fn unifyGroup(&mut self, g1: GroupTypeVariable, g2: GroupTypeVariable) {
+        let g1 = self.substitution.applyGroupVar(g1);
+        let g2 = self.substitution.applyGroupVar(g2);
+        self.substitution.addGroupVar(g1, g2);
+    }
+
+    fn unify(&mut self, info1: TypeVariableInfo, info2: TypeVariableInfo) {
+        self.unifyOwnership(info1.owner, info2.owner);
+        self.unifyGroup(info1.group, info2.group);
+    }
+
+    fn processBlock(&mut self, block: &Block) {
+        for instruction in &block.instructions {
+            match &instruction.kind {
+                InstructionKind::FunctionCall(name, args) => {
+                    let profile;
+                    if let Some(p) = self.groupProfiles.get(name) {
+                        profile = Some(p.clone());
+                    } else {
+                        profile = self.profileStore.getProfile(name);
+                    }
+                    if let Some(profile) = profile {
+                        let mut instantiator = Instantiator::new(
+                            self.ownershipInferenceInfo.signature.allocator.clone(),
+                        );
+                        let profile = instantiator.instantiateProfile(profile);
+                        self.ownershipInferenceInfo.signature.allocator = instantiator.allocator;
+                        let resInfo = self.getInstructionTypeVariableInfo(instruction.id);
+                        for path in &profile.paths {
+                            let argId = args[path.index as usize];
+                            let argInfo = self.getInstructionTypeVariableInfo(argId);
+                            self.unify(argInfo, path.arg);
+                        }
+                        for (index, argId) in args.iter().enumerate() {
+                            let sigArgInfo = profile.signature.args[index];
+                            let argInfo = self.getInstructionTypeVariableInfo(*argId);
+                            self.unify(argInfo, sigArgInfo);
+                        }
+                        self.unify(resInfo, profile.signature.result);
+                        self.profiles.insert(instruction.id, profile);
+                    }
+                }
+                InstructionKind::DynamicFunctionCall(_, _) => {
+                    panic!("dynamic function call in equality")
+                }
+                InstructionKind::If(_, trueBranch, falseBranch) => {
+                    let trueBlock = self.function.getBlockById(*trueBranch);
+                    self.processBlock(trueBlock);
+                    if let Some(falseBranch) = falseBranch {
+                        let falseBlock = self.function.getBlockById(*falseBranch);
+                        self.processBlock(falseBlock);
+                        self.unify(
+                            self.getInstructionTypeVariableInfo(trueBlock.getLastId()),
+                            self.getInstructionTypeVariableInfo(falseBlock.getLastId()),
+                        );
+                    }
+                }
+                InstructionKind::BlockRef(id) => {
+                    let block = self.function.getBlockById(*id);
+                    self.processBlock(block);
+                    self.unify(
+                        self.getInstructionTypeVariableInfo(block.getLastId()),
+                        self.getInstructionTypeVariableInfo(instruction.id),
+                    );
+                }
+                InstructionKind::Loop(_, _, _) => todo!(),
+                InstructionKind::ValueRef(v, _, _) => {
+                    if let Some(members) = self.ownershipInferenceInfo.members.get(&instruction.id)
+                    {
+                        if let Some(name) = v.getValue() {
+                            self.unifyGroup(
+                                self.getValueTypeVariableInfo(name).group,
+                                members[0].root,
+                            );
+                        } else {
+                            match v {
+                                ValueKind::Implicit(id) => {
+                                    self.unifyGroup(
+                                        self.getInstructionTypeVariableInfo(*id).group,
+                                        members[0].root,
+                                    );
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                    } else {
+                        if let Some(name) = v.getValue() {
+                            self.unifyGroup(
+                                self.getValueTypeVariableInfo(name).group,
+                                self.getInstructionTypeVariableInfo(instruction.id).group,
+                            );
+                        } else {
+                            match v {
+                                ValueKind::Implicit(id) => {
+                                    self.unifyGroup(
+                                        self.getInstructionTypeVariableInfo(*id).group,
+                                        self.getInstructionTypeVariableInfo(instruction.id).group,
+                                    );
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                    }
+                }
+                InstructionKind::Bind(name, rhs) => self.unify(
+                    self.getValueTypeVariableInfo(name.clone()),
+                    self.getInstructionTypeVariableInfo(*rhs),
+                ),
+                InstructionKind::Tuple(_) => todo!(),
+                InstructionKind::TupleIndex(_, _) => todo!(),
+                InstructionKind::StringLiteral(_) => todo!(),
+                InstructionKind::IntegerLiteral(_) => todo!(),
+                InstructionKind::CharLiteral(_) => todo!(),
+                InstructionKind::Continue(_, _) => todo!(),
+                InstructionKind::Break(_, _) => todo!(),
+                InstructionKind::Return(_) => todo!(),
+            }
+        }
+        // for i in block.instructions:
+        //     if isinstance(i, Instruction.Bind):
+        //         self.unifyInstrAndVar(i.rhs, i.name)
+    }
+
+    pub fn dump(&self) {
+        println!("Sig: {:?}", self.ownershipInferenceInfo.signature);
+        for profile in self.profiles.values() {
+            println!("Profile sig: {:?}", profile.signature);
+            println!("Paths {:?}", profile.paths);
+        }
+        for block in &self.function.body.as_ref().unwrap().blocks {
+            println!("#%s block {}", block.id);
+            for i in &block.instructions {
+                let tvInfo = self
+                    .ownershipInferenceInfo
+                    .tvInfos
+                    .get(&TypedId::Instruction(i.id))
+                    .unwrap();
+                if let Some(members) = self.ownershipInferenceInfo.members.get(&i.id) {
+                    println!("{} - {} {:?}", i, tvInfo, members);
+                } else {
+                    println!("{} - {}", i, tvInfo);
+                }
+            }
+        }
     }
 }

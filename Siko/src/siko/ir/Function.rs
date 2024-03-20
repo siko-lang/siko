@@ -1,11 +1,7 @@
 use std::fmt::Display;
 
 use crate::siko::{
-    location::Location::Location,
-    ownership::{
-        Borrowchecker::BorrowInfo, MemberInfo::MemberInfo, Signature::FunctionOwnershipSignature,
-        TypeVariableInfo::TypeVariableInfo,
-    },
+    location::Location::Location, ownership::Borrowchecker::BorrowInfo,
     qualifiedname::QualifiedName,
 };
 
@@ -147,8 +143,6 @@ pub struct Instruction {
     pub ty: Option<Type>,
     pub location: Location,
     pub borrowInfo: Option<BorrowInfo>,
-    pub tvInfo: Option<TypeVariableInfo>,
-    pub members: Vec<MemberInfo>,
 }
 
 impl Instruction {
@@ -200,8 +194,6 @@ impl Block {
             ty: None,
             location: location,
             borrowInfo: None,
-            tvInfo: None,
-            members: Vec::new(),
         });
         id
     }
@@ -265,7 +257,6 @@ pub struct Function {
     pub params: Vec<Parameter>,
     pub result: Type,
     pub body: Option<Body>,
-    pub signature: Option<FunctionOwnershipSignature>,
 }
 
 impl Function {
@@ -280,7 +271,6 @@ impl Function {
             params: params,
             result: result,
             body: body,
-            signature: None,
         }
     }
 

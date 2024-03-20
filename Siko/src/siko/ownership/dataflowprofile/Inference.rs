@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::siko::{
     ir::Function::{Function, InstructionKind},
+    ownership::Equality::EqualityEngine,
     qualifiedname::QualifiedName,
     util::DependencyProcessor::{self, DependencyGroup},
 };
@@ -52,9 +53,14 @@ impl<'a> InferenceEngine<'a> {
     fn createDataFlowProfile(
         &mut self,
         name: &QualifiedName,
-        _groupProfiles: &BTreeMap<QualifiedName, DataFlowProfile>,
+        groupProfiles: &BTreeMap<QualifiedName, DataFlowProfile>,
     ) -> DataFlowProfile {
-        let _f = self.functions.get(name).clone();
+        let f = self.functions.get(name).unwrap();
+        if f.body.is_some() {
+            let mut equality = EqualityEngine::new(&f, &self.profileStore, groupProfiles);
+            equality.run(true);
+            //equality.dump();
+        }
         DataFlowProfile::new()
         // equality = Equality.EqualityEngine(fn, self.profile_store, group_profiles)
         // profiles = equality.process(buildPath=True)

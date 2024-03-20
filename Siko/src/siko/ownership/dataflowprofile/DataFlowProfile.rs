@@ -1,6 +1,6 @@
 use super::{super::Signature::FunctionOwnershipSignature, DataFlowPath::DataFlowPath};
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct DataFlowProfile {
     pub paths: Vec<DataFlowPath>,
     pub signature: FunctionOwnershipSignature,

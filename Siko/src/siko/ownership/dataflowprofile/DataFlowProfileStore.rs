@@ -18,9 +18,7 @@ impl DataFlowProfileStore {
         self.profiles.insert(name, profile);
     }
 
-    pub fn getProfile(&self, name: &QualifiedName) -> &DataFlowProfile {
-        self.profiles
-            .get(name)
-            .expect("data flow profile not found")
+    pub fn getProfile(&self, name: &QualifiedName) -> Option<DataFlowProfile> {
+        self.profiles.get(name).cloned()
     }
 }
