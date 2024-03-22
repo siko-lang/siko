@@ -4,16 +4,20 @@ use std::rc::Rc;
 use std::rc::Weak;
 
 use crate::siko::build::File::buildFile;
+use crate::siko::build::Parser::processFile;
 use crate::siko::build::Resolver::buildLocalNames;
 use crate::siko::build::Resolver::buildModuleResolver;
+use crate::siko::build::Resolver::buildResolvedClass;
+use crate::siko::ir::Data::Class as IrClass;
 use crate::siko::location::FileManager::FileManager;
-use crate::siko::parser::Parser::Parser;
+use crate::siko::qualifiedname::QualifiedName;
 use crate::siko::resolver::ModuleResolver::LocalNames;
 use crate::siko::resolver::ModuleResolver::ModuleResolver;
-use crate::siko::syntax::Data::{Class, Enum};
+use crate::siko::syntax::Data::Enum;
 use crate::siko::syntax::Module::{Module, ModuleItem};
 
 use super::File::File;
+use super::Parser::Class;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ArtifactKind {
@@ -23,6 +27,7 @@ pub enum ArtifactKind {
     Enum(Enum),
     LocalNames(LocalNames),
     ModuleResolver(ModuleResolver),
+    ResolvedClass(IrClass),
 }
 
 impl ArtifactKind {
@@ -30,6 +35,20 @@ impl ArtifactKind {
         match &self {
             ArtifactKind::Module(m) => m,
             _ => panic!("Not a module!"),
+        }
+    }
+
+    pub fn asClass(&self) -> &Class {
+        match &self {
+            ArtifactKind::Class(c) => c,
+            _ => panic!("Not a class!"),
+        }
+    }
+
+    pub fn asModuleResolver(&self) -> &ModuleResolver {
+        match &self {
+            ArtifactKind::ModuleResolver(m) => m,
+            _ => panic!("Not a module resolver!"),
         }
     }
 }
@@ -55,19 +74,18 @@ impl BuildArtifact {
         println!("Processing {:?}", self.key());
         match &self.kind {
             ArtifactKind::File(f) => {
-                let fileId = engine.fileManager.add(f.name.clone());
-                let mut parser = Parser::new(fileId, f.name.to_string());
-                parser.parse();
-                let modules = parser.modules();
-                for m in modules {
-                    engine.add(BuildArtifact::new(ArtifactKind::Module(m)));
-                }
+                processFile(f.name.clone(), engine);
             }
             ArtifactKind::Module(m) => {
+                let moduleName = QualifiedName::Module(m.name.toString());
                 for item in &m.items {
                     match &item {
                         ModuleItem::Class(c) => {
-                            engine.add(BuildArtifact::new(ArtifactKind::Class(c.clone())));
+                            let c = Class {
+                                name: moduleName.add(c.name.toString()),
+                                c: c.clone(),
+                            };
+                            engine.add(BuildArtifact::new(ArtifactKind::Class(c)));
                         }
                         ModuleItem::Enum(e) => {
                             engine.add(BuildArtifact::new(ArtifactKind::Enum(e.clone())));
@@ -77,12 +95,15 @@ impl BuildArtifact {
                 }
                 engine.enqueue(Key::LocalNames(m.name.toString()));
             }
-            ArtifactKind::Class(_) => {}
+            ArtifactKind::Class(c) => {
+                engine.enqueue(Key::ResolvedClass(c.name.clone()));
+            }
             ArtifactKind::Enum(_) => {}
             ArtifactKind::LocalNames(l) => {
                 engine.enqueue(Key::ModuleResolver(l.name.clone()));
             }
             ArtifactKind::ModuleResolver(_) => {}
+            ArtifactKind::ResolvedClass(_) => {}
         }
     }
 
@@ -90,10 +111,11 @@ impl BuildArtifact {
         match &self.kind {
             ArtifactKind::File(f) => Key::File(f.name.clone()),
             ArtifactKind::Module(n) => Key::Module(n.name.toString()),
-            ArtifactKind::Class(c) => Key::Class(c.name.toString()),
+            ArtifactKind::Class(c) => Key::Class(c.name.clone()),
             ArtifactKind::Enum(e) => Key::Enum(e.name.toString()),
             ArtifactKind::LocalNames(l) => Key::LocalNames(l.name.clone()),
             ArtifactKind::ModuleResolver(m) => Key::ModuleResolver(m.name.clone()),
+            ArtifactKind::ResolvedClass(c) => Key::ResolvedClass(c.name.clone()),
         }
     }
 }
@@ -102,10 +124,11 @@ impl BuildArtifact {
 pub enum Key {
     File(String),
     Module(String),
-    Class(String),
+    Class(QualifiedName),
     Enum(String),
     LocalNames(String),
     ModuleResolver(String),
+    ResolvedClass(QualifiedName),
 }
 
 impl Key {
@@ -117,23 +140,13 @@ impl Key {
             Key::Enum(_) => 3,
             Key::LocalNames(_) => 4,
             Key::ModuleResolver(_) => 5,
-        }
-    }
-
-    pub fn getName(&self) -> String {
-        match &self {
-            Key::File(n) => n.clone(),
-            Key::Module(n) => n.clone(),
-            Key::Class(n) => n.clone(),
-            Key::Enum(n) => n.clone(),
-            Key::LocalNames(n) => n.clone(),
-            Key::ModuleResolver(n) => n.clone(),
+            Key::ResolvedClass(_) => 6,
         }
     }
 
     fn build(&self, engine: &mut BuildEngine) {
         println!("Building {:?}", self);
-        match &self {
+        match self {
             Key::File(n) => {
                 buildFile(n.clone(), engine);
             }
@@ -143,13 +156,16 @@ impl Key {
             Key::ModuleResolver(n) => {
                 buildModuleResolver(n.clone(), engine);
             }
+            Key::ResolvedClass(n) => {
+                buildResolvedClass(n.clone(), engine);
+            }
             k => panic!("Building of {:?} NYI", k),
         }
     }
 }
 
 pub struct BuildEngine {
-    fileManager: FileManager,
+    pub fileManager: FileManager,
     artifacts: BTreeMap<Key, Rc<BuildArtifact>>,
     buildQueue: BTreeMap<u32, Vec<Key>>,
     queue: BTreeMap<u32, Vec<Rc<BuildArtifact>>>,

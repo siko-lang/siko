@@ -19,7 +19,7 @@ impl Display for TypeVar {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Named(QualifiedName, Vec<Type>),
     Tuple(Vec<Type>),

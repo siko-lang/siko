@@ -19,6 +19,10 @@ impl QualifiedName {
             QualifiedName::Item(p, _) => p.module(),
         }
     }
+
+    pub fn toString(&self) -> String {
+        format!("{}", self)
+    }
 }
 
 impl Debug for QualifiedName {

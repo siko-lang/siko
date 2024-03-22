@@ -2,19 +2,19 @@ use crate::siko::qualifiedname::QualifiedName;
 
 use super::Type::Type;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Field {
     pub name: String,
     pub ty: Type,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct MethodInfo {
     pub name: String,
     pub fullName: QualifiedName,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Class {
     pub name: QualifiedName,
     pub ty: Type,

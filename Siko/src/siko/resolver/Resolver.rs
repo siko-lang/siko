@@ -29,7 +29,7 @@ use crate::siko::ir::Trait::Instance as IrInstance;
 use crate::siko::ir::Trait::Trait as IrTrait;
 use crate::siko::ir::Type::Type as IrType;
 
-fn createConstraintContext(decl: &Option<TypeParameterDeclaration>) -> ConstraintContext {
+pub fn createConstraintContext(decl: &Option<TypeParameterDeclaration>) -> ConstraintContext {
     addTypeParams(ConstraintContext::new(), decl)
 }
 
