@@ -7,7 +7,7 @@ use crate::siko::{
     qualifiedname::QualifiedName,
     resolver::FunctionResolver::FunctionResolver,
     syntax::{
-        Module::{Module, ModuleItem},
+        Module::{Import, Module, ModuleItem},
         Type::TypeParameterDeclaration,
     },
     util::error,
@@ -414,6 +414,98 @@ impl Resolver {
         }
     }
 
+    pub fn processSourceModule(sourceModule: &Module, importedNames: &mut Names, i: &Import) {
+        if let Some(alias) = &i.alias {
+            let moduleName = QualifiedName::Module(alias.toString());
+            for item in &sourceModule.items {
+                match item {
+                    ModuleItem::Class(c) => {
+                        let className = moduleName.add(c.name.toString());
+                        importedNames.add(&className, &className);
+                        for m in &c.methods {
+                            let methodName = className.add(m.name.toString());
+                            importedNames.add(&methodName, &methodName);
+                        }
+                    }
+                    ModuleItem::Enum(e) => {
+                        let enumName = moduleName.add(e.name.toString());
+                        importedNames.add(&enumName, &enumName);
+                        for v in &e.variants {
+                            let variantName = enumName.add(v.name.toString());
+                            importedNames.add(&variantName, &variantName);
+                        }
+                        for m in &e.methods {
+                            let methodName = enumName.add(m.name.toString());
+                            importedNames.add(&methodName, &methodName);
+                        }
+                    }
+                    ModuleItem::Function(f) => {
+                        let functionName = moduleName.add(f.name.toString());
+                        importedNames.add(&functionName, &functionName);
+                    }
+                    ModuleItem::Import(_) => {}
+                    ModuleItem::Trait(t) => {
+                        let traitName = moduleName.add(t.name.toString());
+                        importedNames.add(&traitName, &traitName);
+                    }
+                    ModuleItem::Instance(_) => {}
+                }
+            }
+        } else {
+            let moduleName = QualifiedName::Module(sourceModule.name.toString());
+            for item in &sourceModule.items {
+                match item {
+                    ModuleItem::Class(c) => {
+                        let className = moduleName.add(c.name.toString());
+                        importedNames.add(&c.name, &className);
+                        importedNames.add(&className, &className);
+                        for m in &c.methods {
+                            let methodName = className.add(m.name.toString());
+                            importedNames.add(&m.name, &methodName);
+                            importedNames.add(&format!("{}.{}", c.name, m.name), &methodName);
+                            importedNames.add(&methodName, &methodName);
+                        }
+                    }
+                    ModuleItem::Enum(e) => {
+                        let enumName = moduleName.add(e.name.toString());
+                        importedNames.add(&e.name, &enumName);
+                        importedNames.add(&enumName, &enumName);
+                        for v in &e.variants {
+                            let variantName = enumName.add(v.name.toString());
+                            importedNames.add(&v.name, &variantName);
+                            importedNames.add(&format!("{}.{}", e.name, v.name), &variantName);
+                            importedNames.add(&variantName, &variantName);
+                        }
+                        for m in &e.methods {
+                            let methodName = enumName.add(m.name.toString());
+                            importedNames.add(&m.name, &methodName);
+                            importedNames.add(&format!("{}.{}", e.name, m.name), &methodName);
+                            importedNames.add(&methodName, &methodName);
+                        }
+                    }
+                    ModuleItem::Function(f) => {
+                        let functionName = moduleName.add(f.name.toString());
+                        importedNames.add(&f.name, &functionName);
+                        importedNames.add(&functionName, &functionName);
+                    }
+                    ModuleItem::Import(_) => {}
+                    ModuleItem::Trait(t) => {
+                        let traitName = moduleName.add(t.name.toString());
+                        importedNames.add(&t.name, &traitName);
+                        importedNames.add(&traitName, &traitName);
+                        for m in &t.methods {
+                            let methodName = traitName.add(m.name.toString());
+                            importedNames.add(&m.name, &methodName);
+                            importedNames.add(&format!("{}.{}", t.name, m.name), &methodName);
+                            importedNames.add(&methodName, &methodName);
+                        }
+                    }
+                    ModuleItem::Instance(_) => {}
+                }
+            }
+        }
+    }
+
     fn processImports(&mut self) {
         for (_, m) in &self.modules {
             //println!("Processing module {}", name);
@@ -424,120 +516,14 @@ impl Resolver {
                         let moduleName = i.moduleName.toString();
                         match self.modules.get(&moduleName) {
                             Some(sourceModule) => {
-                                if let Some(alias) = &i.alias {
-                                    let moduleName = QualifiedName::Module(alias.toString());
-                                    for item in &sourceModule.items {
-                                        match item {
-                                            ModuleItem::Class(c) => {
-                                                let className = moduleName.add(c.name.toString());
-                                                importedNames.add(&className, &className);
-                                                for m in &c.methods {
-                                                    let methodName =
-                                                        className.add(m.name.toString());
-                                                    importedNames.add(&methodName, &methodName);
-                                                }
-                                            }
-                                            ModuleItem::Enum(e) => {
-                                                let enumName = moduleName.add(e.name.toString());
-                                                importedNames.add(&enumName, &enumName);
-                                                for v in &e.variants {
-                                                    let variantName =
-                                                        enumName.add(v.name.toString());
-                                                    importedNames.add(&variantName, &variantName);
-                                                }
-                                                for m in &e.methods {
-                                                    let methodName =
-                                                        enumName.add(m.name.toString());
-                                                    importedNames.add(&methodName, &methodName);
-                                                }
-                                            }
-                                            ModuleItem::Function(f) => {
-                                                let functionName =
-                                                    moduleName.add(f.name.toString());
-                                                importedNames.add(&functionName, &functionName);
-                                            }
-                                            ModuleItem::Import(_) => {}
-                                            ModuleItem::Trait(t) => {
-                                                let traitName = moduleName.add(t.name.toString());
-                                                importedNames.add(&traitName, &traitName);
-                                            }
-                                            ModuleItem::Instance(_) => {}
-                                        }
-                                    }
-                                } else {
-                                    let moduleName = QualifiedName::Module(moduleName);
-                                    for item in &sourceModule.items {
-                                        match item {
-                                            ModuleItem::Class(c) => {
-                                                let className = moduleName.add(c.name.toString());
-                                                importedNames.add(&c.name, &className);
-                                                importedNames.add(&className, &className);
-                                                for m in &c.methods {
-                                                    let methodName =
-                                                        className.add(m.name.toString());
-                                                    importedNames.add(&m.name, &methodName);
-                                                    importedNames.add(
-                                                        &format!("{}.{}", c.name, m.name),
-                                                        &methodName,
-                                                    );
-                                                    importedNames.add(&methodName, &methodName);
-                                                }
-                                            }
-                                            ModuleItem::Enum(e) => {
-                                                let enumName = moduleName.add(e.name.toString());
-                                                importedNames.add(&e.name, &enumName);
-                                                importedNames.add(&enumName, &enumName);
-                                                for v in &e.variants {
-                                                    let variantName =
-                                                        enumName.add(v.name.toString());
-                                                    importedNames.add(&v.name, &variantName);
-                                                    importedNames.add(
-                                                        &format!("{}.{}", e.name, v.name),
-                                                        &variantName,
-                                                    );
-                                                    importedNames.add(&variantName, &variantName);
-                                                }
-                                                for m in &e.methods {
-                                                    let methodName =
-                                                        enumName.add(m.name.toString());
-                                                    importedNames.add(&m.name, &methodName);
-                                                    importedNames.add(
-                                                        &format!("{}.{}", e.name, m.name),
-                                                        &methodName,
-                                                    );
-                                                    importedNames.add(&methodName, &methodName);
-                                                }
-                                            }
-                                            ModuleItem::Function(f) => {
-                                                let functionName =
-                                                    moduleName.add(f.name.toString());
-                                                importedNames.add(&f.name, &functionName);
-                                                importedNames.add(&functionName, &functionName);
-                                            }
-                                            ModuleItem::Import(_) => {}
-                                            ModuleItem::Trait(t) => {
-                                                let traitName = moduleName.add(t.name.toString());
-                                                importedNames.add(&t.name, &traitName);
-                                                importedNames.add(&traitName, &traitName);
-                                                for m in &t.methods {
-                                                    let methodName =
-                                                        traitName.add(m.name.toString());
-                                                    importedNames.add(&m.name, &methodName);
-                                                    importedNames.add(
-                                                        &format!("{}.{}", t.name, m.name),
-                                                        &methodName,
-                                                    );
-                                                    importedNames.add(&methodName, &methodName);
-                                                }
-                                            }
-                                            ModuleItem::Instance(_) => {}
-                                        }
-                                    }
-                                }
+                                Resolver::processSourceModule(sourceModule, &mut importedNames, i);
                             }
                             None => {
                                 if !i.implicitImport {
-                                    error(format!("Imported module not found {}", moduleName));
+                                    error(format!(
+                                        "Imported module not found {}",
+                                        i.moduleName.toString()
+                                    ));
                                 }
                             }
                         };

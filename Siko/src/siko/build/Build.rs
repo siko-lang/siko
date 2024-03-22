@@ -3,19 +3,17 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 use std::rc::Weak;
 
+use crate::siko::build::File::buildFile;
+use crate::siko::build::Resolver::buildLocalNames;
+use crate::siko::build::Resolver::buildModuleResolver;
 use crate::siko::location::FileManager::FileManager;
 use crate::siko::parser::Parser::Parser;
 use crate::siko::resolver::ModuleResolver::LocalNames;
 use crate::siko::resolver::ModuleResolver::ModuleResolver;
-use crate::siko::resolver::Resolver::Resolver;
 use crate::siko::syntax::Data::{Class, Enum};
 use crate::siko::syntax::Module::{Module, ModuleItem};
 
-#[derive(Debug, PartialEq, Eq)]
-pub struct File {
-    pub name: String,
-    pub content: String,
-}
+use super::File::File;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ArtifactKind {
@@ -37,7 +35,7 @@ impl ArtifactKind {
 }
 
 pub struct BuildArtifact {
-    kind: ArtifactKind,
+    pub kind: ArtifactKind,
     used: RefCell<Vec<Weak<BuildArtifact>>>,
     usedBy: RefCell<Vec<Weak<BuildArtifact>>>,
     createdBy: RefCell<Vec<Weak<BuildArtifact>>>,
@@ -79,10 +77,12 @@ impl BuildArtifact {
                 }
                 engine.enqueue(Key::LocalNames(m.name.toString()));
             }
-            ArtifactKind::Class(c) => {}
-            ArtifactKind::Enum(e) => {}
-            ArtifactKind::LocalNames(_) => {}
-            ArtifactKind::ModuleResolver(m) => {}
+            ArtifactKind::Class(_) => {}
+            ArtifactKind::Enum(_) => {}
+            ArtifactKind::LocalNames(l) => {
+                engine.enqueue(Key::ModuleResolver(l.name.clone()));
+            }
+            ArtifactKind::ModuleResolver(_) => {}
         }
     }
 
@@ -120,26 +120,28 @@ impl Key {
         }
     }
 
+    pub fn getName(&self) -> String {
+        match &self {
+            Key::File(n) => n.clone(),
+            Key::Module(n) => n.clone(),
+            Key::Class(n) => n.clone(),
+            Key::Enum(n) => n.clone(),
+            Key::LocalNames(n) => n.clone(),
+            Key::ModuleResolver(n) => n.clone(),
+        }
+    }
+
     fn build(&self, engine: &mut BuildEngine) {
         println!("Building {:?}", self);
         match &self {
-            Key::File(name) => {
-                let content = std::fs::read(name).expect("Read file failed");
-                let content = String::from_utf8(content).expect("string conversion failed");
-                engine.add(BuildArtifact::new(ArtifactKind::File(File {
-                    name: name.clone(),
-                    content: content,
-                })));
+            Key::File(n) => {
+                buildFile(n.clone(), engine);
             }
             Key::LocalNames(n) => {
-                let m = engine.get(Key::Module(n.clone()));
-                let m = m.kind.asModule();
-                let localNames = Resolver::buildLocalNames(m);
-                let localNames = LocalNames {
-                    name: m.name.toString(),
-                    localNames: localNames,
-                };
-                engine.add(BuildArtifact::new(ArtifactKind::LocalNames(localNames)));
+                buildLocalNames(n.clone(), engine);
+            }
+            Key::ModuleResolver(n) => {
+                buildModuleResolver(n.clone(), engine);
             }
             k => panic!("Building of {:?} NYI", k),
         }
@@ -170,6 +172,10 @@ impl BuildEngine {
             .get(&key)
             .expect("Artifact not found")
             .clone()
+    }
+
+    pub fn getOpt(&self, key: Key) -> Option<Rc<BuildArtifact>> {
+        self.artifacts.get(&key).cloned()
     }
 
     pub fn enqueue(&mut self, key: Key) {
