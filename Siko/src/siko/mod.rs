@@ -1,3 +1,4 @@
+pub mod build;
 pub mod cfg;
 pub mod ir;
 pub mod location;

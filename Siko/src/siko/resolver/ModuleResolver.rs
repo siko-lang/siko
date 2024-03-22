@@ -4,7 +4,15 @@ use crate::siko::syntax::Identifier::Identifier;
 
 use super::Resolver::Names;
 
+#[derive(Debug, PartialEq, Eq)]
+pub struct LocalNames {
+    pub name: String,
+    pub localNames: Names,
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub struct ModuleResolver {
+    pub name: String,
     pub localNames: Names,
     pub importedNames: Names,
 }

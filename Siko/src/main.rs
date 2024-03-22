@@ -4,6 +4,7 @@
 mod siko;
 
 use siko::{
+    build::Build::BuildEngine,
     cfg::Builder::Builder,
     ir::{Function::Function, TraitMethodSelector::TraitMethodSelector},
     location::FileManager::FileManager,
@@ -14,7 +15,13 @@ use siko::{
     typechecker::Typechecker::Typechecker,
 };
 
-use std::{collections::BTreeMap, env::args};
+use std::{
+    collections::BTreeMap,
+    env::args,
+    io::{self, BufRead, Write},
+};
+
+use crate::siko::build::Build::Key;
 
 fn borrowcheck(functions: BTreeMap<QualifiedName, Function>) -> BTreeMap<QualifiedName, Function> {
     let mut result = BTreeMap::new();
@@ -57,7 +64,7 @@ fn typecheck(
     result
 }
 
-fn main() {
+fn main2() {
     let fileManager = FileManager::new();
     let mut resolver = Resolver::new();
     for arg in args().skip(1) {
@@ -74,4 +81,32 @@ fn main() {
     let functions = typecheck(functions, classes, enums, traitMethodSelectors);
     let functions = borrowcheck(functions);
     dataflow(&functions);
+}
+
+fn main() {
+    let mut run = true;
+    let mut engine = BuildEngine::new();
+    while run {
+        let stdin = io::stdin();
+        let mut line = String::new();
+        line = line.trim_end().to_string();
+        print!(">");
+        io::stdout().flush().expect("flush failed");
+        stdin.lock().read_line(&mut line).expect("read failed");
+        line.remove(line.len() - 1);
+        let subs: Vec<_> = line.split(" ").collect();
+        match subs[0] {
+            "quit" => {
+                run = false;
+            }
+            "add" => {
+                let filename = subs[1].to_string();
+                engine.enqueue(Key::File(filename));
+                engine.process();
+            }
+            _ => {
+                println!("Unknown command");
+            }
+        }
+    }
 }

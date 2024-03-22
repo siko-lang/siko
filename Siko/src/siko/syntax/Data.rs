@@ -5,6 +5,7 @@ use super::{
     Type::{Type, TypeParameterDeclaration},
 };
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Class {
     pub name: Identifier,
     pub typeParams: Option<TypeParameterDeclaration>,
@@ -15,6 +16,7 @@ pub struct Class {
     pub hasImplicitMember: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Enum {
     pub name: Identifier,
     pub typeParams: Option<TypeParameterDeclaration>,
@@ -23,11 +25,13 @@ pub struct Enum {
     pub derives: Vec<Derive>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Variant {
     pub name: Identifier,
     pub items: Vec<Type>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Field {
     pub name: Identifier,
     pub ty: Type,

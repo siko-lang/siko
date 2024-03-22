@@ -23,19 +23,19 @@ pub enum UnaryOp {
     Not,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Branch {
     pub pattern: Pattern,
     pub body: Expr,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Expr {
     pub expr: SimpleExpr,
     pub location: Location,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SimpleExpr {
     Value(Identifier),
     SelfValue,

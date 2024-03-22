@@ -45,7 +45,7 @@ fn addTypeParams(
     context
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Names {
     pub names: BTreeMap<String, BTreeSet<QualifiedName>>,
 }
@@ -553,63 +553,68 @@ impl Resolver {
     fn collectLocalNames(&mut self) {
         for (_, m) in &self.modules {
             //println!("Processing module {}", name);
-            let mut localNames = Names::new();
-            let moduleName = QualifiedName::Module(m.name.toString());
-            for item in &m.items {
-                match item {
-                    ModuleItem::Class(c) => {
-                        let className = moduleName.add(c.name.toString());
-                        localNames.add(&c.name, &className);
-                        localNames.add(&className, &className);
-                        for m in &c.methods {
-                            let methodName = className.add(m.name.toString());
-                            localNames.add(&m.name, &methodName);
-                            localNames.add(&format!("{}.{}", c.name, m.name), &methodName);
-                            localNames.add(&methodName, &methodName);
-                        }
-                    }
-                    ModuleItem::Enum(e) => {
-                        let enumName = moduleName.add(e.name.toString());
-                        localNames.add(&e.name, &enumName);
-                        localNames.add(&enumName, &enumName);
-                        for v in &e.variants {
-                            let variantName = enumName.add(v.name.toString());
-                            localNames.add(&v.name, &variantName);
-                            localNames.add(&format!("{}.{}", e.name, v.name), &variantName);
-                            localNames.add(&variantName, &variantName);
-                        }
-                        for m in &e.methods {
-                            let methodName = enumName.add(m.name.toString());
-                            localNames.add(&m.name, &methodName);
-                            localNames.add(&format!("{}.{}", e.name, m.name), &methodName);
-                            localNames.add(&methodName, &methodName);
-                        }
-                    }
-                    ModuleItem::Function(f) => {
-                        let functionName = moduleName.add(f.name.toString());
-                        localNames.add(&f.name, &functionName);
-                        localNames.add(&functionName, &functionName);
-                    }
-                    ModuleItem::Import(_) => {}
-                    ModuleItem::Trait(t) => {
-                        let traitName = moduleName.add(t.name.toString());
-                        localNames.add(&t.name, &traitName);
-                        localNames.add(&traitName, &traitName);
-                        for m in &t.methods {
-                            let methodName = traitName.add(m.name.toString());
-                            localNames.add(&m.name, &methodName);
-                            localNames.add(&format!("{}.{}", t.name, m.name), &methodName);
-                            localNames.add(&methodName, &methodName);
-                        }
-                    }
-                    ModuleItem::Instance(_) => {}
-                }
-            }
             let moduleResolver = ModuleResolver {
-                localNames: localNames,
+                name: m.name.toString(),
+                localNames: Resolver::buildLocalNames(m),
                 importedNames: Names::new(),
             };
             self.resolvers.insert(m.name.toString(), moduleResolver);
         }
+    }
+
+    pub fn buildLocalNames(m: &Module) -> Names {
+        let mut localNames = Names::new();
+        let moduleName = QualifiedName::Module(m.name.toString());
+        for item in &m.items {
+            match item {
+                ModuleItem::Class(c) => {
+                    let className = moduleName.add(c.name.toString());
+                    localNames.add(&c.name, &className);
+                    localNames.add(&className, &className);
+                    for m in &c.methods {
+                        let methodName = className.add(m.name.toString());
+                        localNames.add(&m.name, &methodName);
+                        localNames.add(&format!("{}.{}", c.name, m.name), &methodName);
+                        localNames.add(&methodName, &methodName);
+                    }
+                }
+                ModuleItem::Enum(e) => {
+                    let enumName = moduleName.add(e.name.toString());
+                    localNames.add(&e.name, &enumName);
+                    localNames.add(&enumName, &enumName);
+                    for v in &e.variants {
+                        let variantName = enumName.add(v.name.toString());
+                        localNames.add(&v.name, &variantName);
+                        localNames.add(&format!("{}.{}", e.name, v.name), &variantName);
+                        localNames.add(&variantName, &variantName);
+                    }
+                    for m in &e.methods {
+                        let methodName = enumName.add(m.name.toString());
+                        localNames.add(&m.name, &methodName);
+                        localNames.add(&format!("{}.{}", e.name, m.name), &methodName);
+                        localNames.add(&methodName, &methodName);
+                    }
+                }
+                ModuleItem::Function(f) => {
+                    let functionName = moduleName.add(f.name.toString());
+                    localNames.add(&f.name, &functionName);
+                    localNames.add(&functionName, &functionName);
+                }
+                ModuleItem::Import(_) => {}
+                ModuleItem::Trait(t) => {
+                    let traitName = moduleName.add(t.name.toString());
+                    localNames.add(&t.name, &traitName);
+                    localNames.add(&traitName, &traitName);
+                    for m in &t.methods {
+                        let methodName = traitName.add(m.name.toString());
+                        localNames.add(&m.name, &methodName);
+                        localNames.add(&format!("{}.{}", t.name, m.name), &methodName);
+                        localNames.add(&methodName, &methodName);
+                    }
+                }
+                ModuleItem::Instance(_) => {}
+            }
+        }
+        localNames
     }
 }

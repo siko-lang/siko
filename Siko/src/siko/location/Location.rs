@@ -41,14 +41,14 @@ impl FileId {
     }
 
     pub fn getLines(&self) -> Vec<String> {
-        let fileName = self.fileManager.get(self.index);
+        let fileName = self.fileManager.get(&self);
         let content = std::fs::read(fileName).expect("Failed to read file");
         let content = String::from_utf8(content).expect("not utf8!");
         content.split("\n").map(|s| s.to_string()).collect()
     }
 
     pub fn getFileName(&self) -> String {
-        self.fileManager.get(self.index)
+        self.fileManager.get(self)
     }
 }
 
