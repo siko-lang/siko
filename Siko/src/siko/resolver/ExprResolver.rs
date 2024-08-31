@@ -350,6 +350,10 @@ impl<'a> ExprResolver<'a> {
                     expr.location.clone(),
                 );
             }
+            SimpleExpr::Ref(arg) => {
+                let arg = self.resolveExpr(arg, env, irBlock);
+                return irBlock.add(InstructionKind::Ref(arg), expr.location.clone());
+            }
         }
     }
 

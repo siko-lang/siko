@@ -64,7 +64,7 @@ fn typecheck(
     result
 }
 
-fn main2() {
+fn main() {
     let fileManager = FileManager::new();
     let mut resolver = Resolver::new();
     for arg in args().skip(1) {
@@ -79,11 +79,11 @@ fn main2() {
     resolver.process();
     let (functions, classes, enums, traitMethodSelectors) = resolver.ir();
     let functions = typecheck(functions, classes, enums, traitMethodSelectors);
-    let functions = borrowcheck(functions);
-    dataflow(&functions);
+    //let functions = borrowcheck(functions);
+    //dataflow(&functions);
 }
 
-fn main() {
+fn main2() {
     let mut run = true;
     let mut engine = BuildEngine::new();
     while run {

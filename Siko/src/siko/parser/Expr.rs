@@ -424,6 +424,11 @@ impl ExprParser for Parser {
                     self.buildExpr(SimpleExpr::Tuple(args))
                 }
             }
+            TokenKind::Misc(MiscKind::Ampersand) => {
+                self.expect(TokenKind::Misc(MiscKind::Ampersand));
+                let arg = self.parseExpr();
+                self.buildExpr(SimpleExpr::Ref(Box::new(arg)))
+            }
             kind => self.reportError2("<expr>", kind),
         }
     }

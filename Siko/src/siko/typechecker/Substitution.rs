@@ -54,6 +54,10 @@ impl Substitution {
                     }
                     None => break result,
                 },
+                Type::Reference(arg) => {
+                    result = Type::Reference(Box::new(self.apply(arg)));
+                    break result;
+                }
                 Type::SelfType => break result,
                 Type::Never => break result,
             }

@@ -234,6 +234,7 @@ impl<'a> EqualityEngine<'a> {
                 InstructionKind::Continue(_, _) => todo!(),
                 InstructionKind::Break(_, _) => todo!(),
                 InstructionKind::Return(_) => todo!(),
+                InstructionKind::Ref(_) => todo!(),
             }
         }
         // for i in block.instructions:

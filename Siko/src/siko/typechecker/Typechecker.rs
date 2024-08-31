@@ -421,6 +421,14 @@ impl<'a> Typechecker<'a> {
                             instruction.location.clone(),
                         );
                     }
+                    InstructionKind::Ref(arg) => {
+                        let arg_type = self.getInstructionType(*arg);
+                        self.substitution.unify(
+                            &self.getInstructionType(instruction.id),
+                            &Type::Reference(Box::new(arg_type)),
+                            instruction.location.clone(),
+                        );
+                    }
                 }
             }
         }

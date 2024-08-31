@@ -189,6 +189,10 @@ impl Builder {
                     }
                     last = None;
                 }
+                InstructionKind::Ref(_) => {
+                    last =
+                        Some(self.processGenericInstruction(instruction, last, NodeKind::Generic));
+                }
             }
         }
         last

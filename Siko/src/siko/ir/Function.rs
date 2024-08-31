@@ -107,6 +107,7 @@ pub enum InstructionKind {
     Continue(InstructionId, InstructionId),
     Break(InstructionId, InstructionId),
     Return(InstructionId),
+    Ref(InstructionId),
 }
 
 impl InstructionKind {
@@ -132,6 +133,7 @@ impl InstructionKind {
             InstructionKind::Continue(id, loopId) => format!("continue({}, {})", id, loopId),
             InstructionKind::Break(id, loopId) => format!("break({}, {})", id, loopId),
             InstructionKind::Return(id) => format!("return({})", id),
+            InstructionKind::Ref(id) => format!("&({})", id),
         }
     }
 }

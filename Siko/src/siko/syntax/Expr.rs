@@ -56,4 +56,5 @@ pub enum SimpleExpr {
     Return(Option<Box<Expr>>),
     Break(Option<Box<Expr>>),
     Continue(Option<Box<Expr>>),
+    Ref(Box<Expr>),
 }

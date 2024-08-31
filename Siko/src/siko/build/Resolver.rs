@@ -81,6 +81,7 @@ pub fn buildResolvedClass(n: QualifiedName, engine: &mut BuildEngine) {
         })
     }
     let ctor = IrFunction::new(irClass.name.clone(), ctorParams, irType, None);
+    println!("ctor for {}", irClass.name);
     //self.functions.insert(ctor.name.clone(), ctor);
     for method in &c.methods {
         irClass.methods.push(MethodInfo {

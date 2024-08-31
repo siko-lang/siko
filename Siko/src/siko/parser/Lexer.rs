@@ -28,6 +28,7 @@ fn getSingleCharToken(c: char) -> Option<Token> {
         ',' => Token::Misc(MiscKind::Comma),
         ';' => Token::Misc(MiscKind::Semicolon),
         '@' => Token::Misc(MiscKind::At),
+        '&' => Token::Misc(MiscKind::Ampersand),
         '+' => Token::Op(OperatorKind::Add),
         '*' => Token::Op(OperatorKind::Mul),
         _ => return None,

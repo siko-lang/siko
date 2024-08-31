@@ -1,6 +1,7 @@
 use super::Module::ModuleParser;
 use super::Token::{MiscKind, OperatorKind, Token, TokenInfo, TokenKind};
 use crate::siko::location::Location::{Location, Span};
+use crate::siko::location::Report::{Painter, Report};
 use crate::siko::syntax::Identifier::Identifier;
 use crate::siko::syntax::Module::Module;
 use crate::siko::util::error;
@@ -174,7 +175,31 @@ impl Parser {
     pub fn parse(&mut self) {
         let content = std::fs::read_to_string(&self.fileName).unwrap();
         let mut lexer = Lexer::new(content, self.fileId.clone());
-        let (tokens, _errors) = lexer.lex();
+        let (tokens, errors) = lexer.lex();
+        let lexer_success = errors.is_empty();
+
+        for e in errors {
+            match e {
+                super::Error::LexerError::InvalidIdentifier(n, span) => {
+                    let slogan = format!("invalid identifier {}", n.yellow());
+                    let r = Report::new(slogan, Location::new(self.fileId.clone(), span));
+                    r.print();
+                }
+                super::Error::LexerError::UnsupportedCharacter(c, span) => {
+                    let slogan = format!("unsupported character {}", format!("{}", c).yellow());
+                    let r = Report::new(slogan, Location::new(self.fileId.clone(), span));
+                    r.print();
+                }
+                super::Error::LexerError::UnendingStringLiteral(span) => {
+                    let slogan = format!("unending string literal");
+                    let r = Report::new(slogan, Location::new(self.fileId.clone(), span));
+                    r.print();
+                }
+            }
+        }
+        if !lexer_success {
+            error("parse error".to_string())
+        }
         //println!("Tokens {:?}", tokens);
         self.tokens = tokens;
         //println!("Errors {:?}", errors);

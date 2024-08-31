@@ -25,6 +25,7 @@ pub enum Type {
     Tuple(Vec<Type>),
     Function(Vec<Type>, Box<Type>),
     Var(TypeVar),
+    Reference(Box<Type>),
     SelfType,
     Never,
 }
@@ -57,6 +58,9 @@ impl Type {
             }
             Type::Var(v) => {
                 vars.insert(v.clone());
+            }
+            Type::Reference(ty) => {
+                vars = ty.collectVars(vars);
             }
             Type::SelfType => {}
             Type::Never => {}
@@ -129,6 +133,7 @@ impl Display for Type {
                 write!(f, "fn({}) -> {}", args.join(", "), result)
             }
             Type::Var(v) => write!(f, "{}", v),
+            Type::Reference(ty) => write!(f, "&{}", ty),
             Type::SelfType => write!(f, "Self"),
             Type::Never => write!(f, "!"),
         }
