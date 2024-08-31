@@ -94,6 +94,7 @@ impl Substitution {
             (Type::Var(v), _) => {
                 self.add(v.clone(), ty2);
             }
+            (Type::Reference(v1), Type::Reference(v2)) => self.unify(&v1, &v2, location),
             (Type::Never, _) => {}
             (_, Type::Never) => {}
             _ => self.reportError(ty1, ty2, location),

@@ -11,7 +11,7 @@ pub struct Pattern {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SimplePattern {
     Named(Identifier, Vec<Pattern>),
-    Bind(Identifier, bool),
+    Bind(Identifier, bool), // mutable
     Tuple(Vec<Pattern>),
     StringLiteral(String),
     IntegerLiteral(String),

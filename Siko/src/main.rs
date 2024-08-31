@@ -5,10 +5,9 @@ mod siko;
 
 use siko::{
     build::Build::BuildEngine,
-    cfg::Builder::Builder,
     ir::{Function::Function, TraitMethodSelector::TraitMethodSelector},
     location::FileManager::FileManager,
-    ownership::{dataflowprofile::Inference::dataflow, Borrowchecker::Borrowchecker},
+    ownership::{BorrowChecker, DataGroups::createDataGroups},
     parser::Parser::*,
     qualifiedname::QualifiedName,
     resolver::Resolver::Resolver,
@@ -23,31 +22,10 @@ use std::{
 
 use crate::siko::build::Build::Key;
 
-fn borrowcheck(functions: BTreeMap<QualifiedName, Function>) -> BTreeMap<QualifiedName, Function> {
-    let mut result = BTreeMap::new();
-    for (name, f) in functions {
-        let borrowCheckedFn = if f.body.is_some() {
-            let mut builder = Builder::new(f.name.to_string());
-            builder.build(&f);
-            let cfg = builder.getCFG();
-            let mut borrowchecker = Borrowchecker::new(cfg);
-            borrowchecker.check();
-            let updatedFn = borrowchecker.update(&f);
-            //let cfg = borrowchecker.cfg();
-            //cfg.printDot();
-            updatedFn
-        } else {
-            f
-        };
-        result.insert(name, borrowCheckedFn);
-    }
-    result
-}
-
 fn typecheck(
     functions: BTreeMap<QualifiedName, Function>,
-    classes: BTreeMap<QualifiedName, siko::ir::Data::Class>,
-    enums: BTreeMap<QualifiedName, siko::ir::Data::Enum>,
+    classes: &BTreeMap<QualifiedName, siko::ir::Data::Class>,
+    enums: &BTreeMap<QualifiedName, siko::ir::Data::Enum>,
     traitMethodSelectors: BTreeMap<QualifiedName, TraitMethodSelector>,
 ) -> BTreeMap<QualifiedName, Function> {
     let mut result = BTreeMap::new();
@@ -56,12 +34,20 @@ fn typecheck(
         let traitMethodSelector = traitMethodSelectors
             .get(&moduleName)
             .expect("Trait method selector not found");
-        let mut typechecker = Typechecker::new(&functions, &classes, &enums, &traitMethodSelector);
+        let mut typechecker = Typechecker::new(&functions, classes, enums, &traitMethodSelector);
         let typedFn = typechecker.run(f);
         //typedFn.dump();
         result.insert(typedFn.name.clone(), typedFn);
     }
     result
+}
+
+fn borrowcheck(functions: BTreeMap<QualifiedName, Function>) {
+    for (_, f) in &functions {
+        let mut borrowchecker = BorrowChecker::BorrowChecker::new(&functions);
+        borrowchecker.run(f);
+        //typedFn.dump();
+    }
 }
 
 fn main() {
@@ -78,8 +64,10 @@ fn main() {
     }
     resolver.process();
     let (functions, classes, enums, traitMethodSelectors) = resolver.ir();
-    let functions = typecheck(functions, classes, enums, traitMethodSelectors);
-    //let functions = borrowcheck(functions);
+    let functions = typecheck(functions, &classes, &enums, traitMethodSelectors);
+    createDataGroups(&classes, &enums);
+    let functions = borrowcheck(functions);
+
     //dataflow(&functions);
 }
 

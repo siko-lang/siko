@@ -1,6 +1,7 @@
 use core::panic;
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::siko::ir;
 use crate::siko::ir::Data::Enum;
 use crate::siko::ir::Function::{
     Block as IrBlock, BlockId, InstructionId, InstructionKind, ValueKind,
@@ -55,10 +56,15 @@ impl<'a> ExprResolver<'a> {
         }
     }
 
-    pub fn resolveBlock<'e>(&mut self, block: &Block, env: &'e Environment<'e>) -> BlockId {
+    fn createBlock(&mut self) -> IrBlock {
         let blockId = BlockId { id: self.blockId };
         self.blockId += 1;
-        let mut irBlock = IrBlock::new(blockId);
+        IrBlock::new(blockId)
+    }
+
+    pub fn resolveBlock<'e>(&mut self, block: &Block, env: &'e Environment<'e>) -> BlockId {
+        let mut irBlock = self.createBlock();
+        let id = irBlock.id;
         let mut env = Environment::child(env);
         let mut lastHasSemicolon = false;
         for (index, statement) in block.statements.iter().enumerate() {
@@ -80,7 +86,7 @@ impl<'a> ExprResolver<'a> {
             irBlock.add(InstructionKind::Tuple(Vec::new()), block.location.clone());
         }
         self.body.addBlock(irBlock);
-        blockId
+        id
     }
 
     fn resolveExpr(
@@ -136,8 +142,17 @@ impl<'a> ExprResolver<'a> {
                     }
                 }
                 names.reverse();
+                let var_name = format!("tmp_{}", id.simple());
+                let bind_id = irBlock.add(
+                    InstructionKind::Bind(var_name.clone(), id),
+                    expr.location.clone(),
+                );
                 return irBlock.add(
-                    InstructionKind::ValueRef(ValueKind::Implicit(id), names, Vec::new()),
+                    InstructionKind::ValueRef(
+                        ValueKind::Value(var_name, bind_id),
+                        names,
+                        Vec::new(),
+                    ),
                     expr.location.clone(),
                 );
             }

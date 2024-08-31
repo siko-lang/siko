@@ -1,9 +1,6 @@
 use std::fmt::Display;
 
-use crate::siko::{
-    location::Location::Location, ownership::Borrowchecker::BorrowInfo,
-    qualifiedname::QualifiedName,
-};
+use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
 
 use super::Type::Type;
 
@@ -12,7 +9,6 @@ pub enum ValueKind {
     Arg(String),
     LoopVar(String),
     Value(String, InstructionId),
-    Implicit(InstructionId),
 }
 
 impl ValueKind {
@@ -21,7 +17,6 @@ impl ValueKind {
             ValueKind::Arg(v) => Some(v.clone()),
             ValueKind::LoopVar(v) => Some(v.clone()),
             ValueKind::Value(v, _) => Some(v.clone()),
-            ValueKind::Implicit(_) => None,
         }
     }
 }
@@ -32,7 +27,6 @@ impl Display for ValueKind {
             ValueKind::Arg(n) => write!(f, "@arg/{}", n),
             ValueKind::LoopVar(n) => write!(f, "loop(${})", n),
             ValueKind::Value(n, bindId) => write!(f, "${}/{}", n, bindId),
-            ValueKind::Implicit(id) => write!(f, "{}", id),
         }
     }
 }
@@ -76,6 +70,10 @@ impl InstructionId {
             id: 0,
         }
     }
+
+    pub fn simple(&self) -> String {
+        format!("{}_{}", self.blockId.id, self.id)
+    }
 }
 
 impl Display for InstructionId {
@@ -113,9 +111,9 @@ pub enum InstructionKind {
 impl InstructionKind {
     pub fn dump(&self) -> String {
         match self {
-            InstructionKind::FunctionCall(name, args) => format!("{}({:?})", name, args),
+            InstructionKind::FunctionCall(name, args) => format!("call({}({:?}))", name, args),
             InstructionKind::DynamicFunctionCall(callable, args) => {
-                format!("{}({:?})", callable, args)
+                format!("DYN_CALL{}({:?})", callable, args)
             }
             InstructionKind::If(cond, t, f) => match f {
                 Some(f) => format!("if {} {{ {} }} else {{ {} }}", cond, t, f),
@@ -144,7 +142,6 @@ pub struct Instruction {
     pub kind: InstructionKind,
     pub ty: Option<Type>,
     pub location: Location,
-    pub borrowInfo: Option<BorrowInfo>,
 }
 
 impl Instruction {
@@ -195,7 +192,6 @@ impl Block {
             kind: kind,
             ty: None,
             location: location,
-            borrowInfo: None,
         });
         id
     }
@@ -224,10 +220,6 @@ impl Body {
 
     pub fn addBlock(&mut self, block: Block) {
         self.blocks.push(block);
-    }
-    pub fn setBorrowInfo(&mut self, id: InstructionId, borrowInfo: BorrowInfo) {
-        self.blocks[id.blockId.id as usize].instructions[id.id as usize].borrowInfo =
-            Some(borrowInfo);
     }
 
     pub fn getBlockByRef(&self, id: InstructionId) -> &Block {
@@ -273,14 +265,6 @@ impl Function {
             params: params,
             result: result,
             body: body,
-        }
-    }
-
-    pub fn setBorrowInfo(&mut self, id: InstructionId, borrowInfo: BorrowInfo) {
-        if let Some(body) = &mut self.body {
-            body.setBorrowInfo(id, borrowInfo)
-        } else {
-            panic!("setBorrowInfo: no body found");
         }
     }
 

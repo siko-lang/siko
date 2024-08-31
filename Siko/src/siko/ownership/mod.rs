@@ -1,11 +1,2 @@
-pub mod Allocator;
-pub mod Borrow;
-pub mod Borrowchecker;
-pub mod Equality;
-pub mod Instantiator;
-pub mod MemberInfo;
-pub mod OwnershipInferenceInfo;
-pub mod Path;
-pub mod Signature;
-pub mod TypeVariableInfo;
-pub mod dataflowprofile;
+pub mod BorrowChecker;
+pub mod DataGroups;

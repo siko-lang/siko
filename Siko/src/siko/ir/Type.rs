@@ -31,10 +31,17 @@ pub enum Type {
 }
 
 impl Type {
-    pub fn splitFnType(self) -> (Vec<Type>, Type) {
+    pub fn getName(&self) -> Option<QualifiedName> {
+        match &self {
+            Type::Named(n, _) => Some(n.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn splitFnType(self) -> Option<(Vec<Type>, Type)> {
         match self {
-            Type::Function(args, result) => (args, *result),
-            _ => panic!("Not a function type in splitFnType"),
+            Type::Function(args, result) => Some((args, *result)),
+            _ => None,
         }
     }
 
