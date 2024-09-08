@@ -121,6 +121,7 @@ impl<'a> Typechecker<'a> {
     }
 
     fn unify(&mut self, ty1: Type, ty2: Type, location: Location) {
+        //println!("UNIFY {} {}", ty1, ty2);
         if let Err(_) = self.substitution.unify(&ty1, &ty2) {
             reportError(ty1, ty2, location);
         }

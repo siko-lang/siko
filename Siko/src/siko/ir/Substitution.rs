@@ -32,44 +32,33 @@ impl Substitution {
     }
 
     pub fn add(&mut self, var: TypeVar, ty: Type) {
+        assert_ne!(Type::Var(var.clone()), ty);
         self.substitutions.insert(var, ty);
     }
 
     pub fn apply(&self, ty: &Type) -> Type {
-        let mut prev = ty.clone();
-        let mut result = ty.clone();
-        loop {
-            match &result {
-                Type::Named(n, args) => {
-                    let newArgs = args.iter().map(|arg| self.apply(arg)).collect();
-                    result = Type::Named(n.clone(), newArgs);
-                }
-                Type::Tuple(args) => {
-                    let newArgs = args.iter().map(|arg| self.apply(arg)).collect();
-                    result = Type::Tuple(newArgs);
-                }
-                Type::Function(args, fnResult) => {
-                    let newArgs = args.iter().map(|arg| self.apply(arg)).collect();
-                    let newFnResult = self.apply(fnResult);
-                    result = Type::Function(newArgs, Box::new(newFnResult));
-                }
-                Type::Var(v) => match self.substitutions.get(&v) {
-                    Some(ty) => {
-                        result = ty.clone();
-                    }
-                    None => {}
-                },
-                Type::Reference(arg) => {
-                    result = Type::Reference(Box::new(self.apply(arg)));
-                }
-                Type::SelfType => {}
-                Type::Never => {}
+        //println!("apply {} [{}]", ty, self);
+        match &ty {
+            Type::Named(n, args) => {
+                let newArgs = args.iter().map(|arg| self.apply(arg)).collect();
+                Type::Named(n.clone(), newArgs)
             }
-            if result == prev {
-                return result;
-            } else {
-                prev = result.clone();
+            Type::Tuple(args) => {
+                let newArgs = args.iter().map(|arg| self.apply(arg)).collect();
+                Type::Tuple(newArgs)
             }
+            Type::Function(args, fnResult) => {
+                let newArgs = args.iter().map(|arg| self.apply(arg)).collect();
+                let newFnResult = self.apply(fnResult);
+                Type::Function(newArgs, Box::new(newFnResult))
+            }
+            Type::Var(v) => match self.substitutions.get(&v) {
+                Some(ty) => self.apply(ty),
+                None => ty.clone(),
+            },
+            Type::Reference(arg) => Type::Reference(Box::new(self.apply(arg))),
+            Type::SelfType => ty.clone(),
+            Type::Never => ty.clone(),
         }
     }
 
@@ -99,6 +88,13 @@ impl Substitution {
                     Ok(())
                 }
             }
+            (Type::Var(TypeVar::Named(n1)), Type::Var(TypeVar::Named(n2))) => {
+                if n1 == n2 {
+                    return Ok(());
+                } else {
+                    return Err(Error {});
+                }
+            }
             (_, Type::Var(v)) => {
                 self.add(v.clone(), ty1);
                 Ok(())
@@ -123,8 +119,12 @@ impl Substitution {
 
 impl Display for Substitution {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for (key, value) in &self.substitutions {
-            write!(f, "{}: {}", key, value)?;
+        for (index, (key, value)) in self.substitutions.iter().enumerate() {
+            if index == 0 {
+                write!(f, "{}: {}", key, value)?;
+            } else {
+                write!(f, ", {}: {}", key, value)?;
+            }
         }
         Ok(())
     }
