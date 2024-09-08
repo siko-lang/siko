@@ -1,7 +1,7 @@
 use crate::siko::{
     ir::{
         ConstraintContext::ConstraintContext, Data::MethodInfo as DataMethodInfo,
-        Function::Parameter, Trait::MethodInfo as TraitMethodInfo,
+        Function::Parameter, Program::Program, Trait::MethodInfo as TraitMethodInfo,
         TraitMethodSelector::TraitMethodSelector, Type::TypeVar,
     },
     qualifiedname::QualifiedName,
@@ -39,7 +39,7 @@ fn addTypeParams(
 ) -> ConstraintContext {
     if let Some(decl) = decl {
         for param in &decl.params {
-            context.add(param.name.name.clone());
+            context.add(IrType::Var(TypeVar::Named(param.name.name.clone())));
         }
     }
     context
@@ -70,14 +70,11 @@ impl Names {
 pub struct Resolver {
     modules: BTreeMap<String, Module>,
     resolvers: BTreeMap<String, ModuleResolver>,
-    classes: BTreeMap<QualifiedName, IrClass>,
-    enums: BTreeMap<QualifiedName, IrEnum>,
-    functions: BTreeMap<QualifiedName, IrFunction>,
+    program: Program,
     emptyVariants: BTreeSet<QualifiedName>,
     variants: BTreeMap<QualifiedName, QualifiedName>,
     traits: BTreeMap<QualifiedName, IrTrait>,
     instances: Vec<IrInstance>,
-    traitMethodSelectors: BTreeMap<QualifiedName, TraitMethodSelector>,
 }
 
 impl Resolver {
@@ -85,14 +82,11 @@ impl Resolver {
         Resolver {
             modules: BTreeMap::new(),
             resolvers: BTreeMap::new(),
-            classes: BTreeMap::new(),
-            enums: BTreeMap::new(),
-            functions: BTreeMap::new(),
+            program: Program::new(),
             emptyVariants: BTreeSet::new(),
             variants: BTreeMap::new(),
             traits: BTreeMap::new(),
             instances: Vec::new(),
-            traitMethodSelectors: BTreeMap::new(),
         }
     }
 
@@ -109,24 +103,12 @@ impl Resolver {
         //self.dump();
     }
 
-    pub fn ir(
-        self,
-    ) -> (
-        BTreeMap<QualifiedName, IrFunction>,
-        BTreeMap<QualifiedName, IrClass>,
-        BTreeMap<QualifiedName, IrEnum>,
-        BTreeMap<QualifiedName, TraitMethodSelector>,
-    ) {
-        (
-            self.functions,
-            self.classes,
-            self.enums,
-            self.traitMethodSelectors,
-        )
+    pub fn ir(self) -> Program {
+        self.program
     }
 
     fn dump(&self) {
-        for (name, f) in &self.functions {
+        for (name, f) in &self.program.functions {
             println!("Function {}", name);
             f.dump();
         }
@@ -156,8 +138,14 @@ impl Resolver {
                                 ty,
                             })
                         }
-                        let ctor = IrFunction::new(irClass.name.clone(), ctorParams, irType, None);
-                        self.functions.insert(ctor.name.clone(), ctor);
+                        let ctor = IrFunction::new(
+                            irClass.name.clone(),
+                            ctorParams,
+                            irType,
+                            None,
+                            constraintContext,
+                        );
+                        self.program.functions.insert(ctor.name.clone(), ctor);
                         for method in &c.methods {
                             irClass.methods.push(DataMethodInfo {
                                 name: method.name.toString(),
@@ -165,7 +153,7 @@ impl Resolver {
                             })
                         }
                         //println!("Class {:?}", irClass);
-                        self.classes.insert(irClass.name.clone(), irClass);
+                        self.program.classes.insert(irClass.name.clone(), irClass);
                     }
                     ModuleItem::Enum(e) => {
                         let constraintContext = createConstraintContext(&e.typeParams);
@@ -198,8 +186,9 @@ impl Resolver {
                                 ctorParams,
                                 irType.clone(),
                                 None,
+                                constraintContext.clone(),
                             );
-                            self.functions.insert(ctor.name.clone(), ctor);
+                            self.program.functions.insert(ctor.name.clone(), ctor);
                             self.variants
                                 .insert(variant.name.clone(), irEnum.name.clone());
                             irEnum.variants.push(variant);
@@ -211,7 +200,7 @@ impl Resolver {
                             })
                         }
                         //println!("Enum {:?}", irEnum);
-                        self.enums.insert(irEnum.name.clone(), irEnum);
+                        self.program.enums.insert(irEnum.name.clone(), irEnum);
                     }
                     _ => {}
                 }
@@ -303,10 +292,12 @@ impl Resolver {
                                 method,
                                 &self.emptyVariants,
                                 &self.variants,
-                                &self.enums,
+                                &self.program.enums,
                                 moduleResolver.resolverName(&method.name),
                             );
-                            self.functions.insert(irFunction.name.clone(), irFunction);
+                            self.program
+                                .functions
+                                .insert(irFunction.name.clone(), irFunction);
                         }
                     }
                     ModuleItem::Enum(e) => {
@@ -322,10 +313,12 @@ impl Resolver {
                                 method,
                                 &self.emptyVariants,
                                 &self.variants,
-                                &self.enums,
+                                &self.program.enums,
                                 moduleResolver.resolverName(&method.name),
                             );
-                            self.functions.insert(irFunction.name.clone(), irFunction);
+                            self.program
+                                .functions
+                                .insert(irFunction.name.clone(), irFunction);
                         }
                     }
                     ModuleItem::Trait(t) => {
@@ -335,13 +328,17 @@ impl Resolver {
                         let mut constraintContext = createConstraintContext(&t.typeParams);
                         for param in &irTrait.params {
                             match &param {
-                                IrType::Var(TypeVar::Named(n)) => constraintContext.add(n.clone()),
+                                IrType::Var(TypeVar::Named(_)) => {
+                                    constraintContext.add(param.clone())
+                                }
                                 _ => panic!("Trait param is not type var!"),
                             }
                         }
                         for dep in &irTrait.deps {
                             match &dep {
-                                IrType::Var(TypeVar::Named(n)) => constraintContext.add(n.clone()),
+                                IrType::Var(TypeVar::Named(_)) => {
+                                    constraintContext.add(dep.clone())
+                                }
                                 _ => panic!("Trait dep is not type var!"),
                             }
                         }
@@ -357,11 +354,13 @@ impl Resolver {
                                 method,
                                 &self.emptyVariants,
                                 &self.variants,
-                                &self.enums,
+                                &self.program.enums,
                                 QualifiedName::Item(Box::new(name.clone()), method.name.toString()),
                             );
                             traitMethodSelector.add(method.name.clone(), irFunction.name.clone());
-                            self.functions.insert(irFunction.name.clone(), irFunction);
+                            self.program
+                                .functions
+                                .insert(irFunction.name.clone(), irFunction);
                         }
                     }
                     ModuleItem::Instance(i) => {
@@ -379,7 +378,7 @@ impl Resolver {
                                 method,
                                 &self.emptyVariants,
                                 &self.variants,
-                                &self.enums,
+                                &self.program.enums,
                                 QualifiedName::Instance(
                                     Box::new(QualifiedName::Item(
                                         Box::new(irInstance.traitName.clone()),
@@ -388,7 +387,9 @@ impl Resolver {
                                     irInstance.id,
                                 ),
                             );
-                            self.functions.insert(irFunction.name.clone(), irFunction);
+                            self.program
+                                .functions
+                                .insert(irFunction.name.clone(), irFunction);
                         }
                     }
                     ModuleItem::Function(f) => {
@@ -399,15 +400,17 @@ impl Resolver {
                             f,
                             &self.emptyVariants,
                             &self.variants,
-                            &self.enums,
+                            &self.program.enums,
                             moduleResolver.resolverName(&f.name),
                         );
-                        self.functions.insert(irFunction.name.clone(), irFunction);
+                        self.program
+                            .functions
+                            .insert(irFunction.name.clone(), irFunction);
                     }
                     _ => {}
                 }
             }
-            self.traitMethodSelectors.insert(
+            self.program.traitMethodSelectors.insert(
                 QualifiedName::Module(m.name.toString()),
                 traitMethodSelector,
             );

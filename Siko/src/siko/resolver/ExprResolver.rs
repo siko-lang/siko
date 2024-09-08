@@ -1,7 +1,6 @@
 use core::panic;
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::siko::ir;
 use crate::siko::ir::Data::Enum;
 use crate::siko::ir::Function::{
     Block as IrBlock, BlockId, InstructionId, InstructionKind, ValueKind,

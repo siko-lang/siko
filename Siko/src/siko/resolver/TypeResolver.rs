@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 
 pub struct TypeResolver<'a> {
     moduleResolver: &'a ModuleResolver,
-    typeParameters: BTreeSet<String>,
+    typeParameters: BTreeSet<IrType>,
 }
 
 impl<'a> TypeResolver<'a> {
@@ -25,15 +25,16 @@ impl<'a> TypeResolver<'a> {
         r
     }
 
-    pub fn addTypeParams(&mut self, typeParam: String) {
+    pub fn addTypeParams(&mut self, typeParam: IrType) {
         self.typeParameters.insert(typeParam);
     }
 
     pub fn resolveType(&self, ty: &Type) -> IrType {
         match ty {
             Type::Named(name, args) => {
-                if self.typeParameters.contains(&name.name) {
-                    IrType::Var(TypeVar::Named(name.toString()))
+                let var = IrType::Var(TypeVar::Named(name.toString()));
+                if self.typeParameters.contains(&var) {
+                    var
                 } else {
                     let mut irArgs = Vec::new();
                     for arg in args {

@@ -4,50 +4,41 @@
 mod siko;
 
 use siko::{
-    build::Build::BuildEngine,
-    ir::{Function::Function, TraitMethodSelector::TraitMethodSelector},
-    location::FileManager::FileManager,
-    ownership::{BorrowChecker, DataGroups::createDataGroups},
-    parser::Parser::*,
-    qualifiedname::QualifiedName,
-    resolver::Resolver::Resolver,
-    typechecker::Typechecker::Typechecker,
+    ir::Program::Program, location::FileManager::FileManager,
+    monomorphizer::Monomorphizer::Monomorphizer, ownership::BorrowChecker, parser::Parser::*,
+    resolver::Resolver::Resolver, typechecker::Typechecker::Typechecker,
 };
 
-use std::{
-    collections::BTreeMap,
-    env::args,
-    io::{self, BufRead, Write},
-};
+use std::{collections::BTreeMap, env::args};
 
-use crate::siko::build::Build::Key;
-
-fn typecheck(
-    functions: BTreeMap<QualifiedName, Function>,
-    classes: &BTreeMap<QualifiedName, siko::ir::Data::Class>,
-    enums: &BTreeMap<QualifiedName, siko::ir::Data::Enum>,
-    traitMethodSelectors: BTreeMap<QualifiedName, TraitMethodSelector>,
-) -> BTreeMap<QualifiedName, Function> {
+fn typecheck(mut program: Program) -> Program {
     let mut result = BTreeMap::new();
-    for (_, f) in &functions {
+    for (_, f) in &program.functions {
         let moduleName = f.name.module();
-        let traitMethodSelector = traitMethodSelectors
+        let traitMethodSelector = &program
+            .traitMethodSelectors
             .get(&moduleName)
             .expect("Trait method selector not found");
-        let mut typechecker = Typechecker::new(&functions, classes, enums, &traitMethodSelector);
+        let mut typechecker = Typechecker::new(&program, &traitMethodSelector);
         let typedFn = typechecker.run(f);
         //typedFn.dump();
         result.insert(typedFn.name.clone(), typedFn);
     }
-    result
+    program.functions = result;
+    program
 }
 
-fn borrowcheck(functions: BTreeMap<QualifiedName, Function>) {
-    for (_, f) in &functions {
-        let mut borrowchecker = BorrowChecker::BorrowChecker::new(&functions);
+fn borrowcheck(program: &Program) {
+    for (_, f) in &program.functions {
+        let mut borrowchecker = BorrowChecker::BorrowChecker::new(&program.functions);
         borrowchecker.run(f);
         //typedFn.dump();
     }
+}
+
+fn monomorphize(program: Program) -> Program {
+    let monomorphizer = Monomorphizer::new(program);
+    monomorphizer.run()
 }
 
 fn main() {
@@ -63,38 +54,10 @@ fn main() {
         }
     }
     resolver.process();
-    let (functions, classes, enums, traitMethodSelectors) = resolver.ir();
-    let functions = typecheck(functions, &classes, &enums, traitMethodSelectors);
-    createDataGroups(&classes, &enums);
-    let functions = borrowcheck(functions);
-
+    let program = resolver.ir();
+    let program = typecheck(program);
+    let program = monomorphize(program);
+    //createDataGroups(&classes, &enums);
+    borrowcheck(&program);
     //dataflow(&functions);
-}
-
-fn main2() {
-    let mut run = true;
-    let mut engine = BuildEngine::new();
-    while run {
-        let stdin = io::stdin();
-        let mut line = String::new();
-        line = line.trim_end().to_string();
-        print!(">");
-        io::stdout().flush().expect("flush failed");
-        stdin.lock().read_line(&mut line).expect("read failed");
-        line.remove(line.len() - 1);
-        let subs: Vec<_> = line.split(" ").collect();
-        match subs[0] {
-            "quit" => {
-                run = false;
-            }
-            "add" => {
-                let filename = subs[1].to_string();
-                engine.enqueue(Key::File(filename));
-                engine.process();
-            }
-            _ => {
-                println!("Unknown command");
-            }
-        }
-    }
 }

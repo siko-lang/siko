@@ -1,15 +1,14 @@
-use std::{collections::BTreeMap, iter::zip};
+use std::{collections::BTreeMap, fmt::Display, iter::zip};
 
-use crate::siko::{
-    ir::Type::{Type, TypeVar},
-    location::Location::Location,
-};
+use crate::siko::ir::Type::{Type, TypeVar};
 
-use super::Error::TypecheckerError;
-
+#[derive(Debug)]
 pub struct Substitution {
     substitutions: BTreeMap<TypeVar, Type>,
 }
+
+#[derive(Debug)]
+pub struct Error {}
 
 impl Substitution {
     pub fn new() -> Substitution {
@@ -18,53 +17,63 @@ impl Substitution {
         }
     }
 
+    pub fn create(ty1: &Type, ty2: &Type) -> Substitution {
+        let mut sub = Substitution::new();
+        sub.unify(ty1, ty2).expect("Unification failed");
+        sub
+    }
+
+    pub fn createFrom(ty1: &Vec<Type>, ty2: &Vec<Type>) -> Substitution {
+        let mut sub = Substitution::new();
+        for (ty1, ty2) in ty1.iter().zip(ty2) {
+            sub.unify(ty1, ty2).expect("Unification failed");
+        }
+        sub
+    }
+
     pub fn add(&mut self, var: TypeVar, ty: Type) {
         self.substitutions.insert(var, ty);
     }
 
     pub fn apply(&self, ty: &Type) -> Type {
+        let mut prev = ty.clone();
         let mut result = ty.clone();
         loop {
             match &result {
                 Type::Named(n, args) => {
                     let newArgs = args.iter().map(|arg| self.apply(arg)).collect();
-                    if newArgs == *args {
-                        return result;
-                    }
                     result = Type::Named(n.clone(), newArgs);
                 }
                 Type::Tuple(args) => {
                     let newArgs = args.iter().map(|arg| self.apply(arg)).collect();
-                    if newArgs == *args {
-                        return result;
-                    }
                     result = Type::Tuple(newArgs);
                 }
                 Type::Function(args, fnResult) => {
                     let newArgs = args.iter().map(|arg| self.apply(arg)).collect();
                     let newFnResult = self.apply(fnResult);
-                    if newArgs == *args && newFnResult == **fnResult {
-                        return result;
-                    }
                     result = Type::Function(newArgs, Box::new(newFnResult));
                 }
                 Type::Var(v) => match self.substitutions.get(&v) {
                     Some(ty) => {
                         result = ty.clone();
                     }
-                    None => break result,
+                    None => {}
                 },
                 Type::Reference(arg) => {
                     result = Type::Reference(Box::new(self.apply(arg)));
-                    break result;
                 }
-                Type::SelfType => break result,
-                Type::Never => break result,
+                Type::SelfType => {}
+                Type::Never => {}
+            }
+            if result == prev {
+                return result;
+            } else {
+                prev = result.clone();
             }
         }
     }
 
-    pub fn unify(&mut self, ty1: &Type, ty2: &Type, location: Location) {
+    pub fn unify(&mut self, ty1: &Type, ty2: &Type) -> Result<(), Error> {
         //println!("Unifying {}/{}", ty1, ty2);
         let ty1 = self.apply(ty1);
         let ty2 = self.apply(ty2);
@@ -72,36 +81,51 @@ impl Substitution {
         match (&ty1, &ty2) {
             (Type::Named(name1, args1), Type::Named(name2, args2)) => {
                 if name1 != name2 {
-                    self.reportError(ty1, ty2, location);
+                    return Err(Error {});
                 } else {
                     for (arg1, arg2) in zip(args1, args2) {
-                        self.unify(arg1, arg2, location.clone());
+                        self.unify(arg1, arg2)?;
                     }
+                    Ok(())
                 }
             }
             (Type::Tuple(args1), Type::Tuple(args2)) => {
                 if args1.len() != args2.len() {
-                    self.reportError(ty1, ty2, location);
+                    return Err(Error {});
                 } else {
                     for (arg1, arg2) in zip(args1, args2) {
-                        self.unify(arg1, arg2, location.clone());
+                        self.unify(arg1, arg2)?;
                     }
+                    Ok(())
                 }
             }
             (_, Type::Var(v)) => {
                 self.add(v.clone(), ty1);
+                Ok(())
             }
             (Type::Var(v), _) => {
                 self.add(v.clone(), ty2);
+                Ok(())
             }
-            (Type::Reference(v1), Type::Reference(v2)) => self.unify(&v1, &v2, location),
-            (Type::Never, _) => {}
-            (_, Type::Never) => {}
-            _ => self.reportError(ty1, ty2, location),
+            (Type::Reference(v1), Type::Reference(v2)) => self.unify(&v1, &v2),
+            (Type::Never, _) => Ok(()),
+            (_, Type::Never) => Ok(()),
+            (Type::Function(args1, res1), Type::Function(args2, res2)) => {
+                for (arg1, arg2) in zip(args1, args2) {
+                    self.unify(arg1, arg2)?;
+                }
+                return self.unify(&res1, &res2);
+            }
+            _ => return Err(Error {}),
         }
     }
+}
 
-    pub fn reportError(&self, ty1: Type, ty2: Type, location: Location) {
-        TypecheckerError::TypeMismatch(format!("{}", ty1), format!("{}", ty2), location).report()
+impl Display for Substitution {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (key, value) in &self.substitutions {
+            write!(f, "{}: {}", key, value)?;
+        }
+        Ok(())
     }
 }

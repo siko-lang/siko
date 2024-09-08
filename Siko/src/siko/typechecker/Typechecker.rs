@@ -5,11 +5,12 @@ use std::{
 
 use crate::siko::{
     ir::{
-        Data::{Class, Enum},
         Function::{
             Block, Body, Function, Instruction, InstructionId, InstructionKind, Parameter,
             ValueKind,
         },
+        Program::Program,
+        Substitution::Substitution,
         TraitMethodSelector::TraitMethodSelector,
         Type::Type,
     },
@@ -17,9 +18,7 @@ use crate::siko::{
     qualifiedname::QualifiedName,
 };
 
-use super::{
-    Error::TypecheckerError, Substitution::Substitution, TypeVarAllocator::TypeVarAllocator,
-};
+use super::{Error::TypecheckerError, TypeVarAllocator::TypeVarAllocator};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum TypedId {
@@ -28,10 +27,12 @@ enum TypedId {
     SelfValue,
 }
 
+fn reportError(ty1: Type, ty2: Type, location: Location) {
+    TypecheckerError::TypeMismatch(format!("{}", ty1), format!("{}", ty2), location).report()
+}
+
 pub struct Typechecker<'a> {
-    functions: &'a BTreeMap<QualifiedName, Function>,
-    classes: &'a BTreeMap<QualifiedName, Class>,
-    enums: &'a BTreeMap<QualifiedName, Enum>,
+    program: &'a Program,
     traitMethodSelector: &'a TraitMethodSelector,
     allocator: TypeVarAllocator,
     substitution: Substitution,
@@ -43,15 +44,11 @@ pub struct Typechecker<'a> {
 
 impl<'a> Typechecker<'a> {
     pub fn new(
-        functions: &'a BTreeMap<QualifiedName, Function>,
-        classes: &'a BTreeMap<QualifiedName, Class>,
-        enums: &'a BTreeMap<QualifiedName, Enum>,
+        program: &'a Program,
         traitMethodSelector: &'a TraitMethodSelector,
     ) -> Typechecker<'a> {
         Typechecker {
-            functions: functions,
-            classes: classes,
-            enums: enums,
+            program: program,
             traitMethodSelector: traitMethodSelector,
             allocator: TypeVarAllocator::new(),
             substitution: Substitution::new(),
@@ -64,7 +61,7 @@ impl<'a> Typechecker<'a> {
 
     pub fn run(&mut self, f: &Function) -> Function {
         self.initialize(f);
-        self.dump(f);
+        //self.dump(f);
         self.check(f);
         self.verify(f);
         //self.dump(f);
@@ -124,7 +121,9 @@ impl<'a> Typechecker<'a> {
     }
 
     fn unify(&mut self, ty1: Type, ty2: Type, location: Location) {
-        self.substitution.unify(&ty1, &ty2, location);
+        if let Err(_) = self.substitution.unify(&ty1, &ty2) {
+            reportError(ty1, ty2, location);
+        }
     }
 
     fn instantiateType(&mut self, ty: Type) -> Type {
@@ -158,15 +157,15 @@ impl<'a> Typechecker<'a> {
             .report();
         }
         for (arg, fnArg) in zip(args, fnArgs) {
-            self.substitution.unify(
-                &self.getInstructionType(*arg),
-                &fnArg,
+            self.unify(
+                self.getInstructionType(*arg),
+                fnArg,
                 body.getInstruction(*arg).location.clone(),
             );
         }
-        self.substitution.unify(
-            &self.getInstructionType(instruction.id),
-            &fnResult,
+        self.unify(
+            self.getInstructionType(instruction.id),
+            fnResult,
             instruction.location.clone(),
         );
     }
@@ -176,14 +175,22 @@ impl<'a> Typechecker<'a> {
             //println!("Type checking {}", instruction);
             match &instruction.kind {
                 InstructionKind::FunctionCall(name, args) => {
-                    let f = self.functions.get(name).expect("Function not found");
+                    let f = self
+                        .program
+                        .functions
+                        .get(name)
+                        .expect("Function not found");
                     let fnType = f.getType();
                     self.checkFunctionCall(args, body, instruction, fnType);
                 }
                 InstructionKind::DynamicFunctionCall(callable, args) => {
                     match self.methodSources.get(callable) {
                         Some(name) => {
-                            let f = self.functions.get(&name).expect("Function not found");
+                            let f = self
+                                .program
+                                .functions
+                                .get(&name)
+                                .expect("Function not found");
                             let fnType = f.getType();
                             let mut newArgs = Vec::new();
                             newArgs.push(*callable);
@@ -199,31 +206,31 @@ impl<'a> Typechecker<'a> {
                 }
                 InstructionKind::If(cond, t, f) => {
                     let trueLast = &body.getBlockById(*t).getLastId();
-                    self.substitution.unify(
-                        &self.getInstructionType(*cond),
-                        &Type::getBoolType(),
+                    self.unify(
+                        self.getInstructionType(*cond),
+                        Type::getBoolType(),
                         body.getInstruction(*cond).location.clone(),
                     );
                     match f {
                         Some(f) => {
                             let falseLast = &body.getBlockById(*f).getLastId();
-                            self.substitution.unify(
-                                &self.getInstructionType(*trueLast),
-                                &self.getInstructionType(*falseLast),
+                            self.unify(
+                                self.getInstructionType(*trueLast),
+                                self.getInstructionType(*falseLast),
                                 instruction.location.clone(),
                             );
                         }
                         None => {
-                            self.substitution.unify(
-                                &self.getInstructionType(*trueLast),
-                                &Type::getUnitType(),
+                            self.unify(
+                                self.getInstructionType(*trueLast),
+                                Type::getUnitType(),
                                 instruction.location.clone(),
                             );
                         }
                     }
-                    self.substitution.unify(
-                        &self.getInstructionType(*trueLast),
-                        &self.getInstructionType(instruction.id),
+                    self.unify(
+                        self.getInstructionType(*trueLast),
+                        self.getInstructionType(instruction.id),
                         instruction.location.clone(),
                     );
                 }
@@ -231,9 +238,9 @@ impl<'a> Typechecker<'a> {
                     let other_block = body.getBlockById(*id);
                     self.checkBlock(body, other_block, f);
                     let last = other_block.getLastId();
-                    self.substitution.unify(
-                        &self.getInstructionType(last),
-                        &self.getInstructionType(instruction.id),
+                    self.unify(
+                        self.getInstructionType(last),
+                        self.getInstructionType(instruction.id),
                         instruction.location.clone(),
                     );
                 }
@@ -256,7 +263,7 @@ impl<'a> Typechecker<'a> {
                             match &receiver {
                                 Type::Named(name, _) => {
                                     // TODO
-                                    if let Some(c) = self.classes.get(name) {
+                                    if let Some(c) = self.program.classes.get(name) {
                                         let mut found = false;
                                         for (index, f) in c.fields.iter().enumerate() {
                                             if f.name == *field {
@@ -319,9 +326,9 @@ impl<'a> Typechecker<'a> {
                         self.getInstructionType(*rhs),
                         instruction.location.clone(),
                     );
-                    self.substitution.unify(
-                        &self.getInstructionType(instruction.id),
-                        &Type::getUnitType(),
+                    self.unify(
+                        self.getInstructionType(instruction.id),
+                        Type::getUnitType(),
                         instruction.location.clone(),
                     );
                 }
@@ -330,48 +337,48 @@ impl<'a> Typechecker<'a> {
                     for arg in args {
                         argTypes.push(self.getInstructionType(*arg));
                     }
-                    self.substitution.unify(
-                        &self.getInstructionType(instruction.id),
-                        &Type::Tuple(argTypes),
+                    self.unify(
+                        self.getInstructionType(instruction.id),
+                        Type::Tuple(argTypes),
                         instruction.location.clone(),
                     );
                 }
                 InstructionKind::TupleIndex(_, _) => todo!(),
                 InstructionKind::StringLiteral(_) => {
-                    self.substitution.unify(
-                        &self.getInstructionType(instruction.id),
-                        &Type::getStringType(),
+                    self.unify(
+                        self.getInstructionType(instruction.id),
+                        Type::getStringType(),
                         instruction.location.clone(),
                     );
                 }
                 InstructionKind::IntegerLiteral(_) => {
-                    self.substitution.unify(
-                        &self.getInstructionType(instruction.id),
-                        &Type::getIntType(),
+                    self.unify(
+                        self.getInstructionType(instruction.id),
+                        Type::getIntType(),
                         instruction.location.clone(),
                     );
                 }
                 InstructionKind::CharLiteral(_) => {
-                    self.substitution.unify(
-                        &self.getInstructionType(instruction.id),
-                        &Type::getCharType(),
+                    self.unify(
+                        self.getInstructionType(instruction.id),
+                        Type::getCharType(),
                         instruction.location.clone(),
                     );
                 }
                 InstructionKind::Loop(name, init, loopBody) => {
-                    self.substitution.unify(
-                        &self.getInstructionType(*init),
-                        &self.getValueType(name),
+                    self.unify(
+                        self.getInstructionType(*init),
+                        self.getValueType(name),
                         instruction.location.clone(),
                     );
-                    self.substitution.unify(
-                        &self.getInstructionType(*init),
-                        &self.getInstructionType(body.getBlockById(*loopBody).getLastId()),
+                    self.unify(
+                        self.getInstructionType(*init),
+                        self.getInstructionType(body.getBlockById(*loopBody).getLastId()),
                         instruction.location.clone(),
                     );
-                    self.substitution.unify(
-                        &self.getInstructionType(instruction.id),
-                        &Type::Never,
+                    self.unify(
+                        self.getInstructionType(instruction.id),
+                        Type::Never,
                         instruction.location.clone(),
                     );
                 }
@@ -379,49 +386,49 @@ impl<'a> Typechecker<'a> {
                     let loopInstruction = body.getInstruction(*loopId);
                     match &loopInstruction.kind {
                         InstructionKind::Loop(_, init, _) => {
-                            self.substitution.unify(
-                                &self.getInstructionType(*init),
-                                &self.getInstructionType(*arg),
+                            self.unify(
+                                self.getInstructionType(*init),
+                                self.getInstructionType(*arg),
                                 instruction.location.clone(),
                             );
                         }
                         _ => panic!("Loop instruction is not a loop!"),
                     }
-                    self.substitution.unify(
-                        &self.getInstructionType(instruction.id),
-                        &Type::Never,
+                    self.unify(
+                        self.getInstructionType(instruction.id),
+                        Type::Never,
                         instruction.location.clone(),
                     );
                 }
                 InstructionKind::Break(arg, loopId) => {
-                    self.substitution.unify(
-                        &self.getInstructionType(*loopId),
-                        &self.getInstructionType(*arg),
+                    self.unify(
+                        self.getInstructionType(*loopId),
+                        self.getInstructionType(*arg),
                         instruction.location.clone(),
                     );
-                    self.substitution.unify(
-                        &self.getInstructionType(instruction.id),
-                        &Type::Never,
+                    self.unify(
+                        self.getInstructionType(instruction.id),
+                        Type::Never,
                         instruction.location.clone(),
                     );
                 }
                 InstructionKind::Return(arg) => {
-                    self.substitution.unify(
-                        &f.result,
-                        &self.getInstructionType(*arg),
+                    self.unify(
+                        f.result.clone(),
+                        self.getInstructionType(*arg),
                         instruction.location.clone(),
                     );
-                    self.substitution.unify(
-                        &self.getInstructionType(instruction.id),
-                        &Type::Never,
+                    self.unify(
+                        self.getInstructionType(instruction.id),
+                        Type::Never,
                         instruction.location.clone(),
                     );
                 }
                 InstructionKind::Ref(arg) => {
                     let arg_type = self.getInstructionType(*arg);
-                    self.substitution.unify(
-                        &self.getInstructionType(instruction.id),
-                        &Type::Reference(Box::new(arg_type)),
+                    self.unify(
+                        self.getInstructionType(instruction.id),
+                        Type::Reference(Box::new(arg_type)),
                         instruction.location.clone(),
                     );
                 }
@@ -442,9 +449,9 @@ impl<'a> Typechecker<'a> {
             .instructions
             .last()
             .expect("Empty block in type check!");
-        self.substitution.unify(
-            &self.getInstructionType(last.id),
-            &f.result,
+        self.unify(
+            self.getInstructionType(last.id),
+            f.result.clone(),
             last.location.clone(),
         );
     }
@@ -534,9 +541,10 @@ impl<'a> Typechecker<'a> {
                             ),
                         }
                     }
-                    // let ty = self.getType(&TypedId::Instruction(instruction.id));
-                    // let ty = self.substitution.apply(&ty);
-                    // println!("{} : {}", instruction, ty);
+                    let ty = self.getType(&TypedId::Instruction(instruction.id));
+                    let ty = self.substitution.apply(&ty);
+                    //println!("{} : {}", instruction, ty);
+                    instruction.ty = Some(ty);
                 }
             }
         }

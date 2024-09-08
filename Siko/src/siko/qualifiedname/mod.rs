@@ -5,6 +5,7 @@ pub enum QualifiedName {
     Module(String),
     Instance(Box<QualifiedName>, u64),
     Item(Box<QualifiedName>, String),
+    Monomorphized(Box<QualifiedName>, String),
 }
 
 impl QualifiedName {
@@ -17,7 +18,12 @@ impl QualifiedName {
             QualifiedName::Module(_) => self.clone(),
             QualifiedName::Instance(p, _) => p.module(),
             QualifiedName::Item(p, _) => p.module(),
+            QualifiedName::Monomorphized(p, _) => p.module(),
         }
+    }
+
+    pub fn monomorphized(&self, args: String) -> QualifiedName {
+        QualifiedName::Monomorphized(Box::new(self.clone()), args)
     }
 
     pub fn toString(&self) -> String {
@@ -37,6 +43,14 @@ impl Display for QualifiedName {
             QualifiedName::Module(i) => write!(f, "{}", i),
             QualifiedName::Instance(p, i) => write!(f, "{}/{}", p, i),
             QualifiedName::Item(p, i) => write!(f, "{}.{}", p, i),
+            QualifiedName::Monomorphized(p, args) => write!(f, "{}/{}", p, args),
         }
     }
+}
+
+pub fn build(m: &str, name: &str) -> QualifiedName {
+    QualifiedName::Item(
+        Box::new(QualifiedName::Module(m.to_string())),
+        name.to_string(),
+    )
 }

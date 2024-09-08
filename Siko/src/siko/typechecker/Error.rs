@@ -12,17 +12,17 @@ impl TypecheckerError {
         match &self {
             TypecheckerError::TypeMismatch(ty1, ty2, l) => {
                 let slogan = format!("Type mismatch: {}, {}", ty1.yellow(), ty2.yellow());
-                let r = Report::new(slogan, l.clone());
+                let r = Report::new(slogan, Some(l.clone()));
                 r.print();
             }
             TypecheckerError::FieldNotFound(name, l) => {
                 let slogan = format!("Field not found: {}", name.yellow());
-                let r = Report::new(slogan, l.clone());
+                let r = Report::new(slogan, Some(l.clone()));
                 r.print();
             }
             TypecheckerError::TypeAnnotationNeeded(l) => {
                 let slogan = format!("Type annotation needed");
-                let r = Report::new(slogan, l.clone());
+                let r = Report::new(slogan, Some(l.clone()));
                 r.print();
             }
             TypecheckerError::ArgCountMismatch(expected, found, l) => {
@@ -31,7 +31,7 @@ impl TypecheckerError {
                     format!("{}", expected).yellow(),
                     format!("{}", found).yellow()
                 );
-                let r = Report::new(slogan, l.clone());
+                let r = Report::new(slogan, Some(l.clone()));
                 r.print();
             }
         }

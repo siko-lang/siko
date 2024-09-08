@@ -182,17 +182,17 @@ impl Parser {
             match e {
                 super::Error::LexerError::InvalidIdentifier(n, span) => {
                     let slogan = format!("invalid identifier {}", n.yellow());
-                    let r = Report::new(slogan, Location::new(self.fileId.clone(), span));
+                    let r = Report::new(slogan, Some(Location::new(self.fileId.clone(), span)));
                     r.print();
                 }
                 super::Error::LexerError::UnsupportedCharacter(c, span) => {
                     let slogan = format!("unsupported character {}", format!("{}", c).yellow());
-                    let r = Report::new(slogan, Location::new(self.fileId.clone(), span));
+                    let r = Report::new(slogan, Some(Location::new(self.fileId.clone(), span)));
                     r.print();
                 }
                 super::Error::LexerError::UnendingStringLiteral(span) => {
                     let slogan = format!("unending string literal");
-                    let r = Report::new(slogan, Location::new(self.fileId.clone(), span));
+                    let r = Report::new(slogan, Some(Location::new(self.fileId.clone(), span)));
                     r.print();
                 }
             }

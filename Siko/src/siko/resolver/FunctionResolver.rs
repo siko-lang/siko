@@ -91,7 +91,8 @@ impl<'a> FunctionResolver<'a> {
         } else {
             None
         };
-        let irFunction = IrFunction::new(name, params, result, body);
+        let irFunction =
+            IrFunction::new(name, params, result, body, self.constraintContext.clone());
         irFunction
     }
 }

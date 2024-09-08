@@ -2,19 +2,19 @@ use crate::siko::qualifiedname::QualifiedName;
 
 use super::Type::Type;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Field {
     pub name: String,
     pub ty: Type,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MethodInfo {
     pub name: String,
     pub fullName: QualifiedName,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Class {
     pub name: QualifiedName,
     pub ty: Type,
@@ -32,13 +32,13 @@ impl Class {
         }
     }
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Variant {
     pub name: QualifiedName,
     pub items: Vec<Type>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Enum {
     pub name: QualifiedName,
     pub ty: Type,

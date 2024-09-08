@@ -2,7 +2,7 @@ use super::Type::Type;
 
 #[derive(Debug, Clone)]
 pub struct ConstraintContext {
-    pub typeParameters: Vec<String>,
+    pub typeParameters: Vec<Type>,
     pub constraints: Vec<Type>,
 }
 
@@ -14,7 +14,7 @@ impl ConstraintContext {
         }
     }
 
-    pub fn add(&mut self, param: String) {
+    pub fn add(&mut self, param: Type) {
         self.typeParameters.push(param);
     }
 }

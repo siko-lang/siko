@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
 
-use super::Type::Type;
+use super::{ConstraintContext::ConstraintContext, Type::Type};
 
 #[derive(Debug, Clone)]
 pub enum ValueKind {
@@ -33,7 +33,7 @@ impl Display for ValueKind {
 
 #[derive(Debug, Clone)]
 pub enum Parameter {
-    Named(String, Type, bool),
+    Named(String, Type, bool), // mutable
     SelfParam(bool, Type),
 }
 
@@ -251,6 +251,7 @@ pub struct Function {
     pub params: Vec<Parameter>,
     pub result: Type,
     pub body: Option<Body>,
+    pub constraintContext: ConstraintContext,
 }
 
 impl Function {
@@ -259,12 +260,14 @@ impl Function {
         params: Vec<Parameter>,
         result: Type,
         body: Option<Body>,
+        constraintContext: ConstraintContext,
     ) -> Function {
         Function {
             name: name,
             params: params,
             result: result,
             body: body,
+            constraintContext: constraintContext,
         }
     }
 

@@ -17,11 +17,11 @@ impl Painter for str {
 
 pub struct Report {
     slogan: String,
-    location: Location,
+    location: Option<Location>,
 }
 
 impl Report {
-    pub fn new(slogan: String, location: Location) -> Report {
+    pub fn new(slogan: String, location: Option<Location>) -> Report {
         Report {
             slogan: slogan,
             location: location,
@@ -30,51 +30,53 @@ impl Report {
 
     pub fn print(&self) {
         println!("{}: {}", "ERROR".red(), self.slogan);
-        println!(
-            "{} {}:{}:{}",
-            " --->".red(),
-            self.location.fileId.getFileName(),
-            self.location.span.start.line + 1,
-            self.location.span.start.offset + 1
-        );
-        let lines = self.location.fileId.getLines();
-        let startLine = self.location.span.start.line;
-        let endLine = self.location.span.end.line;
-        let mut separatorPrinted = false;
-        for (lineNumber, line) in lines.iter().enumerate() {
-            let lineNumber = lineNumber as i64;
-            let distance =
-                std::cmp::min((lineNumber - startLine).abs(), (endLine - lineNumber).abs());
-            if lineNumber >= startLine && lineNumber <= endLine {
-                if distance < 3 {
-                    let highlighted_line = if lineNumber == startLine && lineNumber == endLine {
-                        let start = self.location.span.start.offset as usize;
-                        let end = self.location.span.end.offset as usize;
-                        let mut modifiedLine = String::new();
-                        modifiedLine.push_str(&line[..start]);
-                        modifiedLine.push_str(&line[start..end].yellow());
-                        modifiedLine.push_str(&line[end..]);
-                        modifiedLine
-                    } else if lineNumber == startLine {
-                        let start = self.location.span.start.offset as usize;
-                        let mut modifiedLine = String::new();
-                        modifiedLine.push_str(&line[..start]);
-                        modifiedLine.push_str(&line[start..].yellow());
-                        modifiedLine
-                    } else if lineNumber == endLine {
-                        let end = self.location.span.end.offset as usize;
-                        let mut modifiedLine = String::new();
-                        modifiedLine.push_str(&line[..end].yellow());
-                        modifiedLine.push_str(&line[end..]);
-                        modifiedLine
+        if let Some(location) = &self.location {
+            println!(
+                "{} {}:{}:{}",
+                " --->".red(),
+                location.fileId.getFileName(),
+                location.span.start.line + 1,
+                location.span.start.offset + 1
+            );
+            let lines = location.fileId.getLines();
+            let startLine = location.span.start.line;
+            let endLine = location.span.end.line;
+            let mut separatorPrinted = false;
+            for (lineNumber, line) in lines.iter().enumerate() {
+                let lineNumber = lineNumber as i64;
+                let distance =
+                    std::cmp::min((lineNumber - startLine).abs(), (endLine - lineNumber).abs());
+                if lineNumber >= startLine && lineNumber <= endLine {
+                    if distance < 3 {
+                        let highlighted_line = if lineNumber == startLine && lineNumber == endLine {
+                            let start = location.span.start.offset as usize;
+                            let end = location.span.end.offset as usize;
+                            let mut modifiedLine = String::new();
+                            modifiedLine.push_str(&line[..start]);
+                            modifiedLine.push_str(&line[start..end].yellow());
+                            modifiedLine.push_str(&line[end..]);
+                            modifiedLine
+                        } else if lineNumber == startLine {
+                            let start = location.span.start.offset as usize;
+                            let mut modifiedLine = String::new();
+                            modifiedLine.push_str(&line[..start]);
+                            modifiedLine.push_str(&line[start..].yellow());
+                            modifiedLine
+                        } else if lineNumber == endLine {
+                            let end = location.span.end.offset as usize;
+                            let mut modifiedLine = String::new();
+                            modifiedLine.push_str(&line[..end].yellow());
+                            modifiedLine.push_str(&line[end..]);
+                            modifiedLine
+                        } else {
+                            line.yellow()
+                        };
+                        println!(" {} {} {}", "|".red(), lineNumber + 1, highlighted_line);
                     } else {
-                        line.yellow()
-                    };
-                    println!(" {} {} {}", "|".red(), lineNumber + 1, highlighted_line);
-                } else {
-                    if !separatorPrinted {
-                        separatorPrinted = true;
-                        println!(" {}", "...");
+                        if !separatorPrinted {
+                            separatorPrinted = true;
+                            println!(" {}", "...");
+                        }
                     }
                 }
             }

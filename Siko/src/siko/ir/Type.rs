@@ -1,6 +1,6 @@
 use std::{collections::BTreeSet, fmt::Display};
 
-use crate::siko::qualifiedname::QualifiedName;
+use crate::siko::qualifiedname::{build, QualifiedName};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TypeVar {
@@ -19,7 +19,7 @@ impl Display for TypeVar {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Type {
     Named(QualifiedName, Vec<Type>),
     Tuple(Vec<Type>),
@@ -75,44 +75,61 @@ impl Type {
         vars
     }
 
+    pub fn isConcrete(&self) -> bool {
+        match &self {
+            Type::Named(_, args) => {
+                for arg in args {
+                    if !arg.isConcrete() {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            Type::Tuple(args) => {
+                for arg in args {
+                    if !arg.isConcrete() {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            Type::Function(args, result) => {
+                for arg in args {
+                    if !arg.isConcrete() {
+                        return false;
+                    }
+                }
+                return result.isConcrete();
+            }
+            Type::Var(v) => {
+                return false;
+            }
+            Type::Reference(ty) => {
+                return ty.isConcrete();
+            }
+            Type::SelfType => {
+                panic!("self in isConcrete")
+            }
+            Type::Never => {
+                return true;
+            }
+        }
+    }
+
     pub fn getBoolType() -> Type {
-        Type::Named(
-            QualifiedName::Item(
-                Box::new(QualifiedName::Module("Bool".to_string())),
-                "Bool".to_string(),
-            ),
-            Vec::new(),
-        )
+        Type::Named(build("Bool", "Bool"), Vec::new())
     }
 
     pub fn getIntType() -> Type {
-        Type::Named(
-            QualifiedName::Item(
-                Box::new(QualifiedName::Module("Int".to_string())),
-                "Int".to_string(),
-            ),
-            Vec::new(),
-        )
+        Type::Named(build("Int", "Int"), Vec::new())
     }
 
     pub fn getStringType() -> Type {
-        Type::Named(
-            QualifiedName::Item(
-                Box::new(QualifiedName::Module("String".to_string())),
-                "String".to_string(),
-            ),
-            Vec::new(),
-        )
+        Type::Named(build("String", "String"), Vec::new())
     }
 
     pub fn getCharType() -> Type {
-        Type::Named(
-            QualifiedName::Item(
-                Box::new(QualifiedName::Module("Char".to_string())),
-                "Char".to_string(),
-            ),
-            Vec::new(),
-        )
+        Type::Named(build("Char", "Char"), Vec::new())
     }
 
     pub fn getUnitType() -> Type {
@@ -145,4 +162,9 @@ impl Display for Type {
             Type::Never => write!(f, "!"),
         }
     }
+}
+
+pub fn formatTypes(types: &Vec<Type>) -> String {
+    let types: Vec<String> = types.iter().map(|t| format!("{}", t)).collect();
+    format!("({})", types.join(", "))
 }
