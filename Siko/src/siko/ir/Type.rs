@@ -101,7 +101,7 @@ impl Type {
                 }
                 return result.isConcrete();
             }
-            Type::Var(v) => {
+            Type::Var(_) => {
                 return false;
             }
             Type::Reference(ty) => {

@@ -101,7 +101,7 @@ impl Monomorphizer {
     }
 
     fn monomorphizeFunction(&mut self, name: QualifiedName, args: Vec<Type>) {
-        println!("MONO FN: {} {}", name, formatTypes(&args));
+        //println!("MONO FN: {} {}", name, formatTypes(&args));
         let function = self
             .program
             .functions
@@ -144,7 +144,8 @@ impl Monomorphizer {
                 .collect();
             body
         });
-        let monoName = name.monomorphized(formatTypes(&args));
+        let monoName = self.get_mono_name(&name, &args);
+        monoFn.name = monoName.clone();
         self.monomorphizedProgram.functions.insert(monoName, monoFn);
     }
 
@@ -159,7 +160,7 @@ impl Monomorphizer {
         //     instruction,
         //     instruction.ty.clone().unwrap()
         // );
-        match &instruction.kind {
+        let kind: InstructionKind = match &instruction.kind {
             InstructionKind::FunctionCall(name, args) => {
                 //println!("Calling {}", name);
                 let target_fn = self
@@ -192,10 +193,13 @@ impl Monomorphizer {
                     .map(|ty| sub.apply(&ty))
                     .collect();
                 //println!("{} type args {}", name, formatTypes(&ty_args));
+                let fn_name = self.get_mono_name(name, &ty_args);
                 self.addKey(Key::Function(name.clone(), ty_args));
+                InstructionKind::FunctionCall(fn_name, args.clone())
             }
-            _ => {}
-        }
+            k => k.clone(),
+        };
+        instruction.kind = kind;
         instruction.ty = instruction.ty.map(|ty| self.processType(sub.apply(&ty)));
         instruction
     }
@@ -238,7 +242,11 @@ impl Monomorphizer {
     }
 
     fn get_mono_name(&self, name: &QualifiedName, args: &Vec<Type>) -> QualifiedName {
-        name.monomorphized(formatTypes(args))
+        if args.is_empty() {
+            name.monomorphized(String::new())
+        } else {
+            name.monomorphized(formatTypes(args))
+        }
     }
 
     fn monomorphizeClass(&mut self, name: QualifiedName, args: Vec<Type>) {
@@ -261,6 +269,7 @@ impl Monomorphizer {
             })
             .collect();
         mono_c.methods.clear();
+        mono_c.name = name.clone();
         self.monomorphizedProgram.classes.insert(name, mono_c);
     }
 
@@ -292,6 +301,7 @@ impl Monomorphizer {
             })
             .collect();
         mono_e.methods.clear();
+        mono_e.name = monoName.clone();
         self.monomorphizedProgram.enums.insert(monoName, mono_e);
     }
 }

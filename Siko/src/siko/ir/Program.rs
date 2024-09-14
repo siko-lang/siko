@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, fmt::Display};
 
 use crate::siko::qualifiedname::QualifiedName;
 
@@ -23,5 +23,20 @@ impl Program {
             enums: BTreeMap::new(),
             traitMethodSelectors: BTreeMap::new(),
         }
+    }
+}
+
+impl Display for Program {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (_, fun) in &self.functions {
+            writeln!(f, "{}", fun)?;
+        }
+        for (_, c) in &self.classes {
+            writeln!(f, "{}", c)?;
+        }
+        for (_, e) in &self.enums {
+            writeln!(f, "{}", e)?;
+        }
+        Ok(())
     }
 }

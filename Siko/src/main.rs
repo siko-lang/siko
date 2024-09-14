@@ -57,6 +57,7 @@ fn main() {
     let program = resolver.ir();
     let program = typecheck(program);
     let program = monomorphize(program);
+    println!("after mono\n{}", program);
     //createDataGroups(&classes, &enums);
     borrowcheck(&program);
     //dataflow(&functions);

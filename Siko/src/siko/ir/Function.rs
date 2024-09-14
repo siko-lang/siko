@@ -208,6 +208,16 @@ impl Block {
     }
 }
 
+impl Display for Block {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "  Block {}:", self.id)?;
+        for instruction in &self.instructions {
+            writeln!(f, "{}", instruction)?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Body {
     pub blocks: Vec<Block>,
@@ -242,6 +252,15 @@ impl Body {
         for block in &self.blocks {
             block.dump();
         }
+    }
+}
+
+impl Display for Body {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for block in &self.blocks {
+            write!(f, "{}", block)?;
+        }
+        Ok(())
     }
 }
 
@@ -307,10 +326,20 @@ impl Function {
     }
 
     pub fn dump(&self) {
-        println!("{}:", self.name);
+        println!("{}", self.name);
         match &self.body {
             Some(body) => body.dump(),
             None => println!("  <no body>"),
+        }
+    }
+}
+
+impl Display for Function {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{}: {}", self.name, self.getType())?;
+        match &self.body {
+            Some(body) => write!(f, "{}", body),
+            None => write!(f, "  <no body>"),
         }
     }
 }

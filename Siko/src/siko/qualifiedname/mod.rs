@@ -43,7 +43,13 @@ impl Display for QualifiedName {
             QualifiedName::Module(i) => write!(f, "{}", i),
             QualifiedName::Instance(p, i) => write!(f, "{}/{}", p, i),
             QualifiedName::Item(p, i) => write!(f, "{}.{}", p, i),
-            QualifiedName::Monomorphized(p, args) => write!(f, "{}/{}", p, args),
+            QualifiedName::Monomorphized(p, args) => {
+                if args.is_empty() {
+                    write!(f, "{}", p)
+                } else {
+                    write!(f, "{}#{}", p, args)
+                }
+            }
         }
     }
 }
