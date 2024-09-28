@@ -32,8 +32,8 @@ pub fn createFunctionGroups(
     }
 
     let groups = processDependencies(&dependency_map);
-    for group in &groups {
-        println!("function group {:?}", group);
-    }
+    // for group in &groups {
+    //     println!("function group {:?}", group);
+    // }
     groups
 }

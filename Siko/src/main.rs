@@ -7,7 +7,9 @@ use siko::{
     ir::Program::Program,
     location::FileManager::FileManager,
     monomorphizer::Monomorphizer::Monomorphizer,
-    ownership::{BorrowChecker, DataLifetime::DataLifeTimeInference, FunctionGroups},
+    ownership::{
+        BorrowChecker, DataFlowProfile::DataFlowProfileBuilder, DataLifetime::DataLifeTimeInference,
+    },
     parser::Parser::*,
     resolver::Resolver::Resolver,
     typechecker::Typechecker::Typechecker,
@@ -33,7 +35,8 @@ fn typecheck(mut program: Program) -> Program {
 }
 
 fn borrowcheck(program: &Program) {
-    let function_groups = FunctionGroups::createFunctionGroups(&program.functions);
+    let mut builder = DataFlowProfileBuilder::new(program);
+    builder.process();
     for (_, f) in &program.functions {
         let mut borrowchecker = BorrowChecker::BorrowChecker::new(&program.functions);
         borrowchecker.run(f);
