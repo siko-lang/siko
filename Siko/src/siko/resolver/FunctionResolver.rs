@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::siko::ir::ConstraintContext::ConstraintContext;
 use crate::siko::ir::Data::Enum;
-use crate::siko::ir::Function::{Function as IrFunction, Parameter as IrParameter};
+use crate::siko::ir::Function::{Function as IrFunction, FunctionKind, Parameter as IrParameter};
 use crate::siko::ir::Type::{Type as IrType, TypeVar};
 use crate::siko::qualifiedname::QualifiedName;
 use crate::siko::syntax::Function::{Function, Parameter};
@@ -91,8 +91,14 @@ impl<'a> FunctionResolver<'a> {
         } else {
             None
         };
-        let irFunction =
-            IrFunction::new(name, params, result, body, self.constraintContext.clone());
+        let irFunction = IrFunction::new(
+            name,
+            params,
+            result,
+            body,
+            self.constraintContext.clone(),
+            FunctionKind::UserDefined,
+        );
         irFunction
     }
 }

@@ -17,16 +17,12 @@ pub fn createFunctionGroups(
         let deps = dependency_map
             .entry(name.clone())
             .or_insert_with(|| Vec::new());
-        if let Some(body) = &f.body {
-            for block in &body.blocks {
-                for instruction in &block.instructions {
-                    match &instruction.kind {
-                        InstructionKind::FunctionCall(name, _) => {
-                            deps.push(name.clone());
-                        }
-                        _ => {}
-                    }
+        for i in f.instructions() {
+            match &i.kind {
+                InstructionKind::FunctionCall(name, _) => {
+                    deps.push(name.clone());
                 }
+                _ => {}
             }
         }
     }

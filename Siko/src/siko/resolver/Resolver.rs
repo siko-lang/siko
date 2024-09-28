@@ -1,8 +1,12 @@
 use crate::siko::{
     ir::{
-        ConstraintContext::ConstraintContext, Data::MethodInfo as DataMethodInfo,
-        Function::Parameter, Program::Program, Trait::MethodInfo as TraitMethodInfo,
-        TraitMethodSelector::TraitMethodSelector, Type::TypeVar,
+        ConstraintContext::ConstraintContext,
+        Data::MethodInfo as DataMethodInfo,
+        Function::{FunctionKind, Parameter},
+        Program::Program,
+        Trait::MethodInfo as TraitMethodInfo,
+        TraitMethodSelector::TraitMethodSelector,
+        Type::TypeVar,
     },
     qualifiedname::QualifiedName,
     resolver::FunctionResolver::FunctionResolver,
@@ -144,6 +148,7 @@ impl Resolver {
                             irType,
                             None,
                             constraintContext,
+                            FunctionKind::ClassCtor,
                         );
                         self.program.functions.insert(ctor.name.clone(), ctor);
                         for method in &c.methods {
@@ -161,7 +166,7 @@ impl Resolver {
                         let irType = typeResolver.createDataType(&e.name, &e.typeParams);
                         let mut irEnum =
                             IrEnum::new(moduleResolver.resolverName(&e.name), irType.clone());
-                        for variant in &e.variants {
+                        for (index, variant) in e.variants.iter().enumerate() {
                             let mut items = Vec::new();
                             let mut ctorParams = Vec::new();
                             for (index, item) in variant.items.iter().enumerate() {
@@ -187,6 +192,7 @@ impl Resolver {
                                 irType.clone(),
                                 None,
                                 constraintContext.clone(),
+                                FunctionKind::VariantCtor(index as i64),
                             );
                             self.program.functions.insert(ctor.name.clone(), ctor);
                             self.variants

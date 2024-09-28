@@ -24,6 +24,14 @@ impl Program {
             traitMethodSelectors: BTreeMap::new(),
         }
     }
+
+    pub fn getEnum(&self, qn: &QualifiedName) -> Enum {
+        self.enums.get(qn).expect("enum not found").clone()
+    }
+
+    pub fn getClass(&self, qn: &QualifiedName) -> Class {
+        self.classes.get(qn).expect("class not found").clone()
+    }
 }
 
 impl Display for Program {

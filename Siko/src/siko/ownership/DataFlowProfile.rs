@@ -1,20 +1,47 @@
-use crate::siko::ir::Program::Program;
+use std::{collections::BTreeMap, fmt::Debug, fmt::Display};
 
-use super::FunctionGroups;
+use crate::siko::ir::{
+    Lifetime::Lifetime,
+    Type::{formatTypes, Type},
+};
 
-pub struct DataFlowProfileBuilder<'a> {
-    program: &'a Program,
+pub struct DataFlowProfile {
+    pub args: Vec<Type>,
+    pub result: Type,
+    pub deps: BTreeMap<Lifetime, Vec<Lifetime>>,
 }
 
-impl<'a> DataFlowProfileBuilder<'a> {
-    pub fn new(program: &'a Program) -> DataFlowProfileBuilder<'a> {
-        DataFlowProfileBuilder { program: program }
-    }
-
-    pub fn process(&mut self) {
-        let function_groups = FunctionGroups::createFunctionGroups(&self.program.functions);
-        for group in function_groups {
-            println!("Processing function group {:?}", group.items);
+impl DataFlowProfile {
+    pub fn new(args: Vec<Type>, result: Type) -> DataFlowProfile {
+        DataFlowProfile {
+            args: args,
+            result: result,
+            deps: BTreeMap::new(),
         }
+    }
+}
+
+impl Debug for DataFlowProfile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+impl Display for DataFlowProfile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut allDeps = Vec::new();
+        for (l, deps) in &self.deps {
+            let deps: Vec<_> = deps.iter().map(|l| format!("{}", l)).collect();
+            let s = format!("{}: {}", l, deps.join(", "));
+            allDeps.push(s);
+        }
+        write!(
+            f,
+            "{} -> {}: {}",
+            formatTypes(&self.args),
+            self.result,
+            allDeps.join("& ")
+        )?;
+        Ok(())
     }
 }

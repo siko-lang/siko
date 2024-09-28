@@ -8,7 +8,8 @@ use siko::{
     location::FileManager::FileManager,
     monomorphizer::Monomorphizer::Monomorphizer,
     ownership::{
-        BorrowChecker, DataFlowProfile::DataFlowProfileBuilder, DataLifetime::DataLifeTimeInference,
+        BorrowChecker, DataFlowProfileBuilder::DataFlowProfileBuilder,
+        DataLifetime::DataLifeTimeInference,
     },
     parser::Parser::*,
     resolver::Resolver::Resolver,

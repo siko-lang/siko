@@ -78,14 +78,15 @@ impl fmt::Display for MethodInfo {
 impl fmt::Display for Class {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(lifetime_info) = &self.lifetime_info {
-            writeln!(f, "class {} {} {{", self.name, lifetime_info)?;
+            writeln!(f, "class {}{} {{", self.name, lifetime_info)?;
         } else {
             writeln!(f, "class {} {{", self.name)?;
         }
-        writeln!(f, "    type: {},", self.ty)?;
+        //writeln!(f, "    type: {},", self.ty)?;
         for field in &self.fields {
             writeln!(f, "    {},", field)?;
         }
+        writeln!(f, "}}")?;
         Ok(())
     }
 }
@@ -107,6 +108,7 @@ impl fmt::Display for Enum {
         for variant in &self.variants {
             writeln!(f, "    {},", variant)?;
         }
+        writeln!(f, "}}")?;
         Ok(())
     }
 }

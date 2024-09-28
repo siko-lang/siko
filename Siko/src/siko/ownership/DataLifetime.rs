@@ -39,11 +39,13 @@ impl DataLifeTimeInference {
 
             for item in &group.items {
                 if let Some(c) = self.program.classes.get_mut(&item) {
+                    c.ty = handler.updateGroup(&c.ty);
                     for f in &mut c.fields {
                         f.ty = handler.updateGroup(&f.ty);
                     }
                 }
                 if let Some(e) = self.program.enums.get_mut(&item) {
+                    e.ty = handler.updateGroup(&e.ty);
                     for v in &mut e.variants {
                         for i in v.items.iter_mut() {
                             *i = handler.updateGroup(i);

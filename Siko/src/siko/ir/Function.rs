@@ -265,12 +265,20 @@ impl Display for Body {
 }
 
 #[derive(Debug, Clone)]
+pub enum FunctionKind {
+    UserDefined,
+    VariantCtor(i64),
+    ClassCtor,
+}
+
+#[derive(Debug, Clone)]
 pub struct Function {
     pub name: QualifiedName,
     pub params: Vec<Parameter>,
     pub result: Type,
     pub body: Option<Body>,
     pub constraintContext: ConstraintContext,
+    pub kind: FunctionKind,
 }
 
 impl Function {
@@ -280,6 +288,7 @@ impl Function {
         result: Type,
         body: Option<Body>,
         constraintContext: ConstraintContext,
+        kind: FunctionKind,
     ) -> Function {
         Function {
             name: name,
@@ -287,6 +296,7 @@ impl Function {
             result: result,
             body: body,
             constraintContext: constraintContext,
+            kind: kind,
         }
     }
 
@@ -332,6 +342,10 @@ impl Function {
             None => println!("  <no body>"),
         }
     }
+
+    pub fn instructions<'a>(&'a self) -> InstructionIterator<'a> {
+        InstructionIterator::new(self)
+    }
 }
 
 impl Display for Function {
@@ -340,6 +354,44 @@ impl Display for Function {
         match &self.body {
             Some(body) => write!(f, "{}", body),
             None => write!(f, "  <no body>"),
+        }
+    }
+}
+
+pub struct InstructionIterator<'a> {
+    f: &'a Function,
+    block: usize,
+    instruction: usize,
+}
+
+impl<'a> InstructionIterator<'a> {
+    fn new(f: &'a Function) -> InstructionIterator<'a> {
+        InstructionIterator {
+            f,
+            block: 0,
+            instruction: 0,
+        }
+    }
+}
+
+impl<'a> Iterator for InstructionIterator<'a> {
+    type Item = &'a Instruction;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(body) = &self.f.body {
+            if self.block >= body.blocks.len() {
+                return None;
+            }
+            let block = &body.blocks[self.block];
+            let item = &block.instructions[self.instruction];
+            self.instruction += 1;
+            if self.instruction >= block.instructions.len() {
+                self.instruction = 0;
+                self.block += 1;
+            }
+            return Some(item);
+        } else {
+            return None;
         }
     }
 }
