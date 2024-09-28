@@ -21,7 +21,7 @@ impl DataLifeTimeInference {
         let data_groups = createDataGroups(&self.program.classes, &self.program.enums);
         for group in data_groups {
             let mut handler = GroupLifetimeHandler::new(group.items.clone(), &lifetimeInfoHandler);
-            println!("Processing group {:?}", group.items);
+            //println!("Processing group {:?}", group.items);
             for item in &group.items {
                 if let Some(c) = self.program.classes.get_mut(&item) {
                     for f in &mut c.fields {
@@ -106,7 +106,7 @@ impl<'a> GroupLifetimeHandler<'a> {
     pub fn processType(&mut self, ty: &Type) -> Type {
         match ty {
             Type::Named(n, _, None) => {
-                println!("Looking for base {}", n);
+                //println!("Looking for base {}", n);
                 if !self.items.contains(&n) {
                     let mut lifetimes = LifetimeInfo::new();
                     let args: &LifetimeInfo = self
@@ -134,7 +134,7 @@ impl<'a> GroupLifetimeHandler<'a> {
     pub fn updateGroup(&mut self, ty: &Type) -> Type {
         match ty {
             Type::Named(n, _, None) => {
-                println!("Looking for base {}", n);
+                //println!("Looking for base {}", n);
                 if self.items.contains(&n) {
                     Type::Named(n.clone(), Vec::new(), Some(self.lifetimes.clone()))
                 } else {

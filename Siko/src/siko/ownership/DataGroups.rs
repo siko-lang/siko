@@ -39,8 +39,8 @@ pub fn createDataGroups(
     }
 
     let groups = processDependencies(&dependency_map);
-    for group in &groups {
-        println!("data group {:?}", group);
-    }
+    // for group in &groups {
+    //     println!("data group {:?}", group);
+    // }
     groups
 }

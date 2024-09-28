@@ -205,32 +205,36 @@ impl<'a> Typechecker<'a> {
                         }
                     }
                 }
-                InstructionKind::If(cond, t, f) => {
-                    let trueLast = &body.getBlockById(*t).getLastId();
+                InstructionKind::If(cond, tb, fb) => {
+                    let trueBlock = body.getBlockById(*tb);
+                    let trueLast = trueBlock.getLastId();
+                    self.checkBlock(body, trueBlock, f);
                     self.unify(
                         self.getInstructionType(*cond),
                         Type::getBoolType(),
                         body.getInstruction(*cond).location.clone(),
                     );
-                    match f {
-                        Some(f) => {
-                            let falseLast = &body.getBlockById(*f).getLastId();
+                    match fb {
+                        Some(fb) => {
+                            let falseBlock = body.getBlockById(*fb);
+                            let falseLast = falseBlock.getLastId();
+                            self.checkBlock(body, falseBlock, f);
                             self.unify(
-                                self.getInstructionType(*trueLast),
-                                self.getInstructionType(*falseLast),
+                                self.getInstructionType(trueLast),
+                                self.getInstructionType(falseLast),
                                 instruction.location.clone(),
                             );
                         }
                         None => {
                             self.unify(
-                                self.getInstructionType(*trueLast),
+                                self.getInstructionType(trueLast),
                                 Type::getUnitType(),
                                 instruction.location.clone(),
                             );
                         }
                     }
                     self.unify(
-                        self.getInstructionType(*trueLast),
+                        self.getInstructionType(trueLast),
                         self.getInstructionType(instruction.id),
                         instruction.location.clone(),
                     );
@@ -372,9 +376,12 @@ impl<'a> Typechecker<'a> {
                         self.getValueType(name),
                         instruction.location.clone(),
                     );
+                    let loopBody = body.getBlockById(*loopBody);
+                    let loopLast = loopBody.getLastId();
+                    self.checkBlock(body, loopBody, f);
                     self.unify(
                         self.getInstructionType(*init),
-                        self.getInstructionType(body.getBlockById(*loopBody).getLastId()),
+                        self.getInstructionType(loopLast),
                         instruction.location.clone(),
                     );
                     self.unify(
@@ -467,6 +474,7 @@ impl<'a> Typechecker<'a> {
                     let ty = self.substitution.apply(&ty);
                     let vars = ty.collectVars(BTreeSet::new());
                     if vars != publicVars {
+                        println!("{} {}", instruction, ty);
                         TypecheckerError::TypeAnnotationNeeded(instruction.location.clone())
                             .report();
                     }
