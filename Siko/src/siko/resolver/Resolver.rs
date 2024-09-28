@@ -244,7 +244,7 @@ impl Resolver {
                         let typeResolver = TypeResolver::new(moduleResolver, &constraintContext);
                         let ty = typeResolver.resolveType(&i.ty);
                         let (name, args) = match ty {
-                            IrType::Named(name, args) => (name, args),
+                            IrType::Named(name, args, _) => (name, args),
                             ty => ResolverError::InvalidInstanceType(
                                 format!("{}", ty),
                                 i.location.clone(),

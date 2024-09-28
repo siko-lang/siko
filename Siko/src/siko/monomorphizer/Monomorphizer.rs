@@ -213,14 +213,14 @@ impl Monomorphizer {
             panic!("non concrete type in mono {}", ty);
         }
         let r = match ty.clone() {
-            Type::Named(name, args) => {
+            Type::Named(name, args, _) => {
                 let monoName = self.get_mono_name(&name, &args);
                 if self.program.classes.contains_key(&name) {
                     self.addKey(Key::Class(name, args))
                 } else if self.program.enums.contains_key(&name) {
                     self.addKey(Key::Enum(name, args))
                 }
-                Type::Named(monoName, Vec::new())
+                Type::Named(monoName, Vec::new(), None)
             }
             Type::Tuple(args) => {
                 let args = args.into_iter().map(|arg| self.processType(arg)).collect();
@@ -233,7 +233,7 @@ impl Monomorphizer {
             Type::Var(v) => {
                 panic!("TypeVar found in monomorphization {}", v);
             }
-            Type::Reference(ty) => Type::Reference(Box::new(self.processType(*ty))),
+            Type::Reference(ty, l) => Type::Reference(Box::new(self.processType(*ty)), l.clone()),
             Type::SelfType => Type::SelfType,
             Type::Never => Type::Never,
         };
@@ -282,7 +282,7 @@ impl Monomorphizer {
             .expect("enum not found in mono");
         //println!("Enum ty {}", e.ty);
         let monoName = self.get_mono_name(&name, &args);
-        let target_ty = Type::Named(name, args);
+        let target_ty = Type::Named(name, args.clone(), None);
         let sub = Substitution::create(&target_ty, &e.ty);
         //println!("Sub {}", sub);
         let mut mono_e = e.clone();

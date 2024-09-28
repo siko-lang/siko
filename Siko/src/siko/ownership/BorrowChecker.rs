@@ -17,7 +17,7 @@ impl<'a> BorrowChecker<'a> {
         match &function.body {
             Some(body) => {
                 for b in &body.blocks {
-                    for i in &b.instructions {}
+                    for _ in &b.instructions {}
                 }
             }
             None => {}

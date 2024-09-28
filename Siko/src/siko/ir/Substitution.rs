@@ -39,9 +39,9 @@ impl Substitution {
     pub fn apply(&self, ty: &Type) -> Type {
         //println!("apply {} [{}]", ty, self);
         match &ty {
-            Type::Named(n, args) => {
+            Type::Named(n, args, lifetime) => {
                 let newArgs = args.iter().map(|arg| self.apply(arg)).collect();
-                Type::Named(n.clone(), newArgs)
+                Type::Named(n.clone(), newArgs, lifetime.clone())
             }
             Type::Tuple(args) => {
                 let newArgs = args.iter().map(|arg| self.apply(arg)).collect();
@@ -56,7 +56,7 @@ impl Substitution {
                 Some(ty) => self.apply(ty),
                 None => ty.clone(),
             },
-            Type::Reference(arg) => Type::Reference(Box::new(self.apply(arg))),
+            Type::Reference(arg, l) => Type::Reference(Box::new(self.apply(arg)), l.clone()),
             Type::SelfType => ty.clone(),
             Type::Never => ty.clone(),
         }
@@ -68,7 +68,7 @@ impl Substitution {
         let ty2 = self.apply(ty2);
         //println!("Unifying2 {}/{}", ty1, ty2);
         match (&ty1, &ty2) {
-            (Type::Named(name1, args1), Type::Named(name2, args2)) => {
+            (Type::Named(name1, args1, _), Type::Named(name2, args2, _)) => {
                 if name1 != name2 {
                     return Err(Error {});
                 } else {
@@ -103,7 +103,7 @@ impl Substitution {
                 self.add(v.clone(), ty2);
                 Ok(())
             }
-            (Type::Reference(v1), Type::Reference(v2)) => self.unify(&v1, &v2),
+            (Type::Reference(v1, _), Type::Reference(v2, _)) => self.unify(&v1, &v2),
             (Type::Never, _) => Ok(()),
             (_, Type::Never) => Ok(()),
             (Type::Function(args1, res1), Type::Function(args2, res2)) => {

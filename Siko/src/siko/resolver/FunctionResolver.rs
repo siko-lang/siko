@@ -36,7 +36,7 @@ pub fn createSelfType(
         }
         None => Vec::new(),
     };
-    IrType::Named(moduleResolver.resolverName(name), args)
+    IrType::Named(moduleResolver.resolverName(name), args, None)
 }
 
 impl<'a> FunctionResolver<'a> {

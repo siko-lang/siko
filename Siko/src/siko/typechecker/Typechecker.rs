@@ -262,7 +262,7 @@ impl<'a> Typechecker<'a> {
                         for (index, field) in fields.iter().enumerate() {
                             let receiver = self.substitution.apply(&receiverType);
                             match &receiver {
-                                Type::Named(name, _) => {
+                                Type::Named(name, _, _) => {
                                     // TODO
                                     if let Some(c) = self.program.classes.get(name) {
                                         let mut found = false;
@@ -429,7 +429,7 @@ impl<'a> Typechecker<'a> {
                     let arg_type = self.getInstructionType(*arg);
                     self.unify(
                         self.getInstructionType(instruction.id),
-                        Type::Reference(Box::new(arg_type)),
+                        Type::Reference(Box::new(arg_type), None),
                         instruction.location.clone(),
                     );
                 }

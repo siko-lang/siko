@@ -2,7 +2,7 @@ use std::fmt;
 
 use crate::siko::{ir::Type::formatTypes, qualifiedname::QualifiedName};
 
-use super::Type::Type;
+use super::{Lifetime::LifetimeInfo, Type::Type};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Field {
@@ -22,6 +22,7 @@ pub struct Class {
     pub ty: Type,
     pub fields: Vec<Field>,
     pub methods: Vec<MethodInfo>,
+    pub lifetime_info: Option<LifetimeInfo>,
 }
 
 impl Class {
@@ -31,6 +32,7 @@ impl Class {
             ty: ty,
             fields: Vec::new(),
             methods: Vec::new(),
+            lifetime_info: None,
         }
     }
 }
@@ -46,6 +48,7 @@ pub struct Enum {
     pub ty: Type,
     pub variants: Vec<Variant>,
     pub methods: Vec<MethodInfo>,
+    pub lifetime_info: Option<LifetimeInfo>,
 }
 
 impl Enum {
@@ -55,6 +58,7 @@ impl Enum {
             ty: ty,
             variants: Vec::new(),
             methods: Vec::new(),
+            lifetime_info: None,
         }
     }
 }
@@ -73,7 +77,11 @@ impl fmt::Display for MethodInfo {
 
 impl fmt::Display for Class {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "struct {} {{", self.name)?;
+        if let Some(lifetime_info) = &self.lifetime_info {
+            writeln!(f, "class {} {} {{", self.name, lifetime_info)?;
+        } else {
+            writeln!(f, "class {} {{", self.name)?;
+        }
         writeln!(f, "    type: {},", self.ty)?;
         for field in &self.fields {
             writeln!(f, "    {},", field)?;
@@ -91,7 +99,11 @@ impl fmt::Display for Variant {
 
 impl fmt::Display for Enum {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "enum {} {{", self.name)?;
+        if let Some(lifetime_info) = &self.lifetime_info {
+            writeln!(f, "enum {} {} {{", self.name, lifetime_info)?;
+        } else {
+            writeln!(f, "enum {} {{", self.name)?;
+        }
         for variant in &self.variants {
             writeln!(f, "    {},", variant)?;
         }

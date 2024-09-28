@@ -4,9 +4,13 @@
 mod siko;
 
 use siko::{
-    ir::Program::Program, location::FileManager::FileManager,
-    monomorphizer::Monomorphizer::Monomorphizer, ownership::BorrowChecker, parser::Parser::*,
-    resolver::Resolver::Resolver, typechecker::Typechecker::Typechecker,
+    ir::Program::Program,
+    location::FileManager::FileManager,
+    monomorphizer::Monomorphizer::Monomorphizer,
+    ownership::{BorrowChecker, DataLifetime::DataLifeTimeInference},
+    parser::Parser::*,
+    resolver::Resolver::Resolver,
+    typechecker::Typechecker::Typechecker,
 };
 
 use std::{collections::BTreeMap, env::args};
@@ -58,7 +62,9 @@ fn main() {
     let program = typecheck(program);
     let program = monomorphize(program);
     println!("after mono\n{}", program);
-    //createDataGroups(&classes, &enums);
+    let data_lifetime_inferer = DataLifeTimeInference::new(program);
+    let program = data_lifetime_inferer.process();
+    println!("after data lifetime\n{}", program);
     borrowcheck(&program);
     //dataflow(&functions);
 }

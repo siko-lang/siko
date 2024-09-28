@@ -17,9 +17,24 @@
 
 module Main {
 
+class String {
+
+}
+
 enum Option[T] {
     Some(T),
     None
+}
+
+class Person {
+    name: &String,
+    address: Address,
+    child: Option[Person],
+}
+
+class Family {
+    mom: Person,
+    dad: Person
 }
 
 class Address {
@@ -27,43 +42,23 @@ class Address {
 
     }
 
-    f: Option[Foo]
-}
-
-class Foo {
-    addr: Buu
-}
-
-class Ptr {
-    member: &Address
-}
-
-class Buu {
-    a: Address
-}
-
-class Stuff {
-
-}
-
-class Bar {
-
+    street: Option[&String]
 }
 
 fn id[T](a: T) -> T {
     a
 }
 
+class Env {
+    parent: Option[&Env]
+}
+
 fn main() {
-    let f = {
-        let a = Address(None);
-        let b = Ptr(&a);
-        Address(None).foo();
-        Some(Stuff());
-        Some(Bar());
-        id(Bar());
-        b
-    };
+    let name = String();
+    let address = Address(None);
+    let p = Person(&name, address, None);
+    let f = Family(p, p);
+    let e = Env(None);
 }
 
 }

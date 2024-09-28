@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use crate::siko::{
     ir::Data::{Class, Enum},
     qualifiedname::QualifiedName,
-    util::DependencyProcessor::processDependencies,
+    util::DependencyProcessor::{processDependencies, DependencyGroup},
 };
 
 pub struct DataGroup {}
@@ -11,7 +11,7 @@ pub struct DataGroup {}
 pub fn createDataGroups(
     classes: &BTreeMap<QualifiedName, Class>,
     enums: &BTreeMap<QualifiedName, Enum>,
-) {
+) -> Vec<DependencyGroup<QualifiedName>> {
     let mut dependency_map = BTreeMap::new();
 
     for (name, c) in classes {
@@ -39,7 +39,8 @@ pub fn createDataGroups(
     }
 
     let groups = processDependencies(&dependency_map);
-    for group in groups {
+    for group in &groups {
         println!("data group {:?}", group);
     }
+    groups
 }

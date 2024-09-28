@@ -41,7 +41,7 @@ impl<'a> TypeResolver<'a> {
                         irArgs.push(self.resolveType(arg));
                     }
                     let name = self.moduleResolver.resolverName(&name);
-                    IrType::Named(name, irArgs)
+                    IrType::Named(name, irArgs, None)
                 }
             }
             Type::Tuple(args) => {
@@ -58,7 +58,7 @@ impl<'a> TypeResolver<'a> {
                 }
                 IrType::Function(irArgs, Box::new(self.resolveType(result)))
             }
-            Type::Reference(ty) => IrType::Reference(Box::new(self.resolveType(ty))),
+            Type::Reference(ty) => IrType::Reference(Box::new(self.resolveType(ty)), None),
             Type::SelfType => IrType::SelfType,
         }
     }
@@ -79,6 +79,6 @@ impl<'a> TypeResolver<'a> {
             }
             None => Vec::new(),
         };
-        IrType::Named(self.moduleResolver.resolverName(name), args)
+        IrType::Named(self.moduleResolver.resolverName(name), args, None)
     }
 }
