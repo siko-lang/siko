@@ -36,6 +36,10 @@ impl<T: Clone + Ord, A: Allocator<Item = T>> Instantiator<T, A> {
             }
         }
     }
+
+    pub fn reset(&mut self) {
+        self.values.clear();
+    }
 }
 
 impl<I, T: Instantiable<Item = I>> Instantiable for Vec<T> {

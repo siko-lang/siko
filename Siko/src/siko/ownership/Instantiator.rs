@@ -1,5 +1,6 @@
 use crate::siko::{
     ir::{
+        Data::{Class, Field},
         Lifetime::{Lifetime, LifetimeInfo},
         Type::Type,
     },
@@ -15,6 +16,14 @@ impl LifetimeInstantiator {
         LifetimeInstantiator {
             instantiator: Instantiator::new(LifetimeInfo::new()),
         }
+    }
+
+    pub fn instantiate<T: Instantiable<Item = Lifetime>>(&mut self, item: &T) -> T {
+        item.instantiate(&mut self.instantiator)
+    }
+
+    pub fn reset(&mut self) {
+        self.instantiator.reset();
     }
 }
 
@@ -72,5 +81,33 @@ impl Instantiable for Type {
             Type::SelfType => Type::SelfType,
             Type::Never => Type::Never,
         }
+    }
+}
+
+impl Instantiable for Class {
+    type Item = Lifetime;
+
+    fn instantiate<A: Allocator<Item = Self::Item>>(
+        &self,
+        instantiator: &mut Instantiator<Self::Item, A>,
+    ) -> Self {
+        let mut c = self.clone();
+        c.ty = c.ty.instantiate(instantiator);
+        c.lifetime_info = c.lifetime_info.instantiate(instantiator);
+        c.fields = c.fields.instantiate(instantiator);
+        c
+    }
+}
+
+impl Instantiable for Field {
+    type Item = Lifetime;
+
+    fn instantiate<A: Allocator<Item = Self::Item>>(
+        &self,
+        instantiator: &mut Instantiator<Self::Item, A>,
+    ) -> Self {
+        let mut f = self.clone();
+        f.ty = f.ty.instantiate(instantiator);
+        f
     }
 }

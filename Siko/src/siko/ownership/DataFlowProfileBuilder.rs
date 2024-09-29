@@ -1,6 +1,6 @@
 use crate::siko::{
     ir::{Function::FunctionKind, Program::Program},
-    ownership::DataFlowProfile::DataFlowProfile,
+    ownership::{DataFlowProfile::DataFlowProfile, Instantiator::LifetimeInstantiator},
 };
 
 use super::FunctionGroups;
@@ -18,6 +18,7 @@ impl<'a> DataFlowProfileBuilder<'a> {
         let function_groups = FunctionGroups::createFunctionGroups(&self.program.functions);
         for group in function_groups {
             println!("Processing function group {:?}", group.items);
+            let mut instantiator = LifetimeInstantiator::new();
             for item in group.items {
                 let f = self
                     .program
@@ -29,9 +30,13 @@ impl<'a> DataFlowProfileBuilder<'a> {
                         for i in f.instructions() {
                             let ty = i.ty.clone().expect("no type");
                             if let Some(name) = ty.getName() {
-                                if let Some(c) = self.program.classes.get(&name) {}
+                                if let Some(c) = self.program.classes.get(&name) {
+                                    let c = instantiator.instantiate(c);
+                                    instantiator.reset();
+                                    println!("clone {}", c);
+                                }
                             }
-                            println!("{}", i);
+                            //println!("{}", i);
                         }
                     }
                     FunctionKind::VariantCtor(index) => {
@@ -43,7 +48,7 @@ impl<'a> DataFlowProfileBuilder<'a> {
                             args.push(ty.clone());
                         }
                         let profile = DataFlowProfile::new(args, e.ty.clone());
-                        println!("profile {}", profile);
+                        //println!("profile {}", profile);
                     }
                     FunctionKind::ClassCtor => {
                         let cName = f.result.getName().expect("no result type");
@@ -54,7 +59,7 @@ impl<'a> DataFlowProfileBuilder<'a> {
                             args.push(f.ty.clone());
                         }
                         let profile = DataFlowProfile::new(args, c.ty.clone());
-                        println!("profile {}", profile);
+                        //println!("profile {}", profile);
                     }
                 }
             }
