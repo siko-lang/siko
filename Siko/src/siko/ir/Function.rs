@@ -146,17 +146,18 @@ pub struct Instruction {
 
 impl Instruction {
     pub fn dump(&self) {
-        if let Some(ty) = &self.ty {
-            println!("    {}: {} {}", self.id, self.kind.dump(), ty);
-        } else {
-            println!("    {}: {}", self.id, self.kind.dump());
-        }
+        println!("    {}", self);
     }
 }
 
 impl Display for Instruction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {}", self.id, self.kind.dump())
+        if let Some(ty) = &self.ty {
+            write!(f, "{}: {} {}", self.id, self.kind.dump(), ty)?;
+        } else {
+            write!(f, "{}: {}", self.id, self.kind.dump())?;
+        }
+        Ok(())
     }
 }
 

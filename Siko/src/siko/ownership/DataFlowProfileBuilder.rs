@@ -25,7 +25,15 @@ impl<'a> DataFlowProfileBuilder<'a> {
                     .get(&item)
                     .expect("Function not found in DataFlowProfileBuilder");
                 match f.kind {
-                    FunctionKind::UserDefined => {}
+                    FunctionKind::UserDefined => {
+                        for i in f.instructions() {
+                            let ty = i.ty.clone().expect("no type");
+                            if let Some(name) = ty.getName() {
+                                if let Some(c) = self.program.classes.get(&name) {}
+                            }
+                            println!("{}", i);
+                        }
+                    }
                     FunctionKind::VariantCtor(index) => {
                         let eName = f.result.getName().expect("no result type");
                         let e = self.program.getEnum(&eName);
@@ -49,10 +57,6 @@ impl<'a> DataFlowProfileBuilder<'a> {
                         println!("profile {}", profile);
                     }
                 }
-                // for i in f.instructions() {
-                //     empty = false;
-                //     println!("{}", i);
-                // }
             }
         }
     }
