@@ -1,6 +1,6 @@
 use crate::siko::{
     ir::{
-        Data::{Class, Field},
+        Data::{Class, Enum, Field, Variant},
         Lifetime::{Lifetime, LifetimeInfo},
         Type::Type,
     },
@@ -20,6 +20,10 @@ impl LifetimeInstantiator {
 
     pub fn instantiate<T: Instantiable<Item = Lifetime>>(&mut self, item: &T) -> T {
         item.instantiate(&mut self.instantiator)
+    }
+
+    pub fn allocate(&mut self) -> Lifetime {
+        self.instantiator.allocate()
     }
 
     pub fn reset(&mut self) {
@@ -109,5 +113,33 @@ impl Instantiable for Field {
         let mut f = self.clone();
         f.ty = f.ty.instantiate(instantiator);
         f
+    }
+}
+
+impl Instantiable for Enum {
+    type Item = Lifetime;
+
+    fn instantiate<A: Allocator<Item = Self::Item>>(
+        &self,
+        instantiator: &mut Instantiator<Self::Item, A>,
+    ) -> Self {
+        let mut e = self.clone();
+        e.ty = e.ty.instantiate(instantiator);
+        e.lifetime_info = e.lifetime_info.instantiate(instantiator);
+        e.variants = e.variants.instantiate(instantiator);
+        e
+    }
+}
+
+impl Instantiable for Variant {
+    type Item = Lifetime;
+
+    fn instantiate<A: Allocator<Item = Self::Item>>(
+        &self,
+        instantiator: &mut Instantiator<Self::Item, A>,
+    ) -> Self {
+        let mut v = self.clone();
+        v.items = v.items.instantiate(instantiator);
+        v
     }
 }

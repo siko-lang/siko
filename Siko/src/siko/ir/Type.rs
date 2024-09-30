@@ -78,6 +78,30 @@ impl Type {
         vars
     }
 
+    pub fn collectLifetimes(&self) -> Vec<Lifetime> {
+        match &self {
+            Type::Named(_, _, lifetimes) => lifetimes
+                .as_ref()
+                .expect("lifetime info missing")
+                .args
+                .clone(),
+            Type::Tuple(_) => Vec::new(),
+            Type::Function(_, _) => {
+                unreachable!()
+            }
+            Type::Var(_) => {
+                unreachable!()
+            }
+            Type::Reference(ty, lifetime) => {
+                let mut lifetimes = ty.collectLifetimes();
+                lifetimes.push(lifetime.expect("no lifetime for ref"));
+                lifetimes
+            }
+            Type::SelfType => Vec::new(),
+            Type::Never => Vec::new(),
+        }
+    }
+
     pub fn isConcrete(&self) -> bool {
         match &self {
             Type::Named(_, args, _) => {

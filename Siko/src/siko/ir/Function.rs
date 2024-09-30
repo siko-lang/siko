@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::fmt::Display;
 
 use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
@@ -34,7 +35,7 @@ impl Display for ValueKind {
 #[derive(Debug, Clone)]
 pub enum Parameter {
     Named(String, Type, bool), // mutable
-    SelfParam(bool, Type),
+    SelfParam(bool, Type),     // mutable
 }
 
 impl Parameter {
@@ -42,6 +43,13 @@ impl Parameter {
         match &self {
             Parameter::Named(n, _, _) => n.clone(),
             Parameter::SelfParam(_, _) => panic!("Trying to ask name for self parameter!"),
+        }
+    }
+
+    pub fn getType(&self) -> Type {
+        match &self {
+            Parameter::Named(_, ty, _) => ty.clone(),
+            Parameter::SelfParam(_, ty) => ty.clone(),
         }
     }
 }
@@ -88,7 +96,7 @@ impl std::fmt::Debug for InstructionId {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum InstructionKind {
     FunctionCall(QualifiedName, Vec<InstructionId>),
     DynamicFunctionCall(InstructionId, Vec<InstructionId>),
@@ -106,6 +114,18 @@ pub enum InstructionKind {
     Break(InstructionId, InstructionId),
     Return(InstructionId),
     Ref(InstructionId),
+}
+
+impl Display for InstructionKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.dump())
+    }
+}
+
+impl Debug for InstructionKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.dump())
+    }
 }
 
 impl InstructionKind {

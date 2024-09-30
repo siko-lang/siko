@@ -37,6 +37,10 @@ impl<T: Clone + Ord, A: Allocator<Item = T>> Instantiator<T, A> {
         }
     }
 
+    pub fn allocate(&mut self) -> T {
+        self.allocator.allocate()
+    }
+
     pub fn reset(&mut self) {
         self.values.clear();
     }
