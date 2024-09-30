@@ -7,7 +7,7 @@ use super::{ConstraintContext::ConstraintContext, Type::Type};
 
 #[derive(Debug, Clone)]
 pub enum ValueKind {
-    Arg(String),
+    Arg(String, i64),
     LoopVar(String),
     Value(String, InstructionId),
 }
@@ -15,7 +15,7 @@ pub enum ValueKind {
 impl ValueKind {
     pub fn getValue(&self) -> Option<String> {
         match &self {
-            ValueKind::Arg(v) => Some(v.clone()),
+            ValueKind::Arg(v, _) => Some(v.clone()),
             ValueKind::LoopVar(v) => Some(v.clone()),
             ValueKind::Value(v, _) => Some(v.clone()),
         }
@@ -25,7 +25,7 @@ impl ValueKind {
 impl Display for ValueKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
-            ValueKind::Arg(n) => write!(f, "@arg/{}", n),
+            ValueKind::Arg(n, index) => write!(f, "@arg/{}/{}", n, index),
             ValueKind::LoopVar(n) => write!(f, "loop(${})", n),
             ValueKind::Value(n, bindId) => write!(f, "${}/{}", n, bindId),
         }

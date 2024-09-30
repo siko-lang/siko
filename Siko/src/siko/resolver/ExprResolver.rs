@@ -109,7 +109,7 @@ impl<'a> ExprResolver<'a> {
             SimpleExpr::SelfValue => {
                 return irBlock.add(
                     InstructionKind::ValueRef(
-                        ValueKind::Arg("self".to_string()),
+                        ValueKind::Arg("self".to_string(), 0),
                         Vec::new(),
                         Vec::new(),
                     ),

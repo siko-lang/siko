@@ -66,3 +66,18 @@ impl<I, T: Instantiable<Item = I>> Instantiable for Option<T> {
         }
     }
 }
+
+impl<I, K: Instantiable<Item = I> + Ord, V: Instantiable<Item = I>> Instantiable
+    for BTreeMap<K, V>
+{
+    type Item = I;
+    fn instantiate<A: Allocator<Item = I>>(&self, instantiator: &mut Instantiator<I, A>) -> Self {
+        let mut result = BTreeMap::new();
+        for (key, value) in self {
+            let key = key.instantiate(instantiator);
+            let value = value.instantiate(instantiator);
+            result.insert(key, value);
+        }
+        result
+    }
+}

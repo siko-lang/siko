@@ -5,6 +5,7 @@ use crate::siko::ir::{
     Type::{formatTypes, Type},
 };
 
+#[derive(Clone)]
 pub struct DataFlowProfile {
     pub args: Vec<Type>,
     pub result: Type,

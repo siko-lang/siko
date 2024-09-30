@@ -36,6 +36,7 @@ impl Class {
         }
     }
 }
+
 #[derive(Clone, Debug)]
 pub struct Variant {
     pub name: QualifiedName,

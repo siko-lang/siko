@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, fmt::Debug, fmt::Display};
+use std::{
+    collections::BTreeMap,
+    fmt::{Debug, Display},
+};
 
 use crate::siko::{
     ir::{
@@ -6,8 +9,13 @@ use crate::siko::{
         Program::Program,
         Type::Type,
     },
-    ownership::{DataFlowProfile::DataFlowProfile, Instantiator::LifetimeInstantiator},
+    ownership::{
+        DataFlowProfile::DataFlowProfile,
+        Instantiator::LifetimeInstantiator,
+        Substitution::{Apply, Substitution},
+    },
     qualifiedname::QualifiedName,
+    util::Instantiator::Instantiable,
 };
 
 use super::FunctionGroups;
@@ -149,6 +157,8 @@ impl<'a> FunctionGroupProcessor<'a> {
     }
 
     fn collectConstraints(&mut self, f: &Function) {
+        let profile = self.profiles.get(&f.name).expect("no profile found");
+        println!("Profile for {} {}", f.name, profile);
         for i in f.instructions() {
             let id = GlobalInstructionId {
                 name: f.name.clone(),
@@ -158,9 +168,9 @@ impl<'a> FunctionGroupProcessor<'a> {
                 .instruction_types
                 .get(&id)
                 .expect("no instruction type");
-            println!("{}: {} {}", id, i.kind, ty);
             match &i.kind {
                 InstructionKind::FunctionCall(name, args) => {
+                    println!("{}: {} {}", id, i.kind, ty);
                     if self.group.contains(name) {
                         panic!("Recursion NYI");
                     } else {
@@ -168,11 +178,54 @@ impl<'a> FunctionGroupProcessor<'a> {
                             .profiles
                             .get(name)
                             .expect("data flow profile not found");
+                        let profile = self.instantiator.instantiate(profile);
                         println!("profile {}", profile);
                     }
                 }
-                InstructionKind::ValueRef(ValueKind::Arg(index), _, _) => {}
-                _ => panic!("NYI"),
+                InstructionKind::ValueRef(ValueKind::Arg(_, index), _, indices) => {
+                    println!("{}: {} {}", id, i.kind, ty);
+                    let arg = &profile.args[*index as usize];
+                    let mut current = arg.clone();
+                    for index in indices {
+                        let c = self
+                            .program
+                            .getClass(&current.getName().expect("current is not a class"));
+                        let sub = Substitution::from(&current, &c.ty);
+                        let c = c.apply(&sub);
+                        let field = &c.fields[*index as usize];
+                        current = field.ty.clone();
+                    }
+                    //println!("value type {}", current);
+                    let dest_lifetimes = current.collectLifetimes();
+                    let src_lifetimes = arg.collectLifetimes();
+                    //println!("{:?} -> {:?}", src_lifetimes, dest_lifetimes);
+                    for (src, dest) in src_lifetimes.iter().zip(dest_lifetimes.iter()) {
+                        println!("{} -> {}", src, dest);
+                    }
+                }
+                InstructionKind::Ref(arg) => {
+                    println!("{}: {} {}", id, i.kind, ty);
+                    let id = GlobalInstructionId {
+                        name: f.name.clone(),
+                        id: *arg,
+                    };
+                    let arg_ty = self
+                        .instruction_types
+                        .get(&id)
+                        .expect("no instruction type");
+                    let arg_lifetimes = arg_ty.collectLifetimes();
+                    let ref_lifetimes = ty.collectLifetimes();
+                    let ref_arg_lifetimes: Vec<_> = ref_lifetimes.iter().skip(1).collect();
+                    // println!("ref ty {}, arg_ty {}", ty, arg_ty);
+                    // println!(
+                    //     "ref lt {:?}, ref {:?} lt {:?}",
+                    //     ref_lifetimes, ref_arg_lifetimes, arg_lifetimes
+                    // );
+                    for (l1, l2) in ref_arg_lifetimes.iter().zip(arg_lifetimes.iter()) {
+                        println!("{} == {}", l1, l2);
+                    }
+                }
+                _ => panic!("NYI {}", i.kind),
             }
         }
     }

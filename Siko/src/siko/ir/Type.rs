@@ -94,7 +94,7 @@ impl Type {
             }
             Type::Reference(ty, lifetime) => {
                 let mut lifetimes = ty.collectLifetimes();
-                lifetimes.push(lifetime.expect("no lifetime for ref"));
+                lifetimes.insert(0, lifetime.expect("no lifetime for ref"));
                 lifetimes
             }
             Type::SelfType => Vec::new(),

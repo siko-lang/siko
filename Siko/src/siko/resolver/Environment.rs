@@ -22,8 +22,8 @@ impl<'a> Environment<'a> {
         }
     }
 
-    pub fn addArg(&mut self, arg: String) {
-        self.values.insert(arg.clone(), ValueKind::Arg(arg));
+    pub fn addArg(&mut self, arg: String, index: i64) {
+        self.values.insert(arg.clone(), ValueKind::Arg(arg, index));
     }
 
     pub fn addValue(&mut self, old: String, new: String, bindId: InstructionId) {

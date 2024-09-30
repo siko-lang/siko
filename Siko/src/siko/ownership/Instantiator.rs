@@ -7,6 +7,8 @@ use crate::siko::{
     util::Instantiator::{Allocator, Instantiable, Instantiator},
 };
 
+use super::DataFlowProfile::DataFlowProfile;
+
 pub struct LifetimeInstantiator {
     instantiator: Instantiator<Lifetime, LifetimeInfo>,
 }
@@ -141,5 +143,20 @@ impl Instantiable for Variant {
         let mut v = self.clone();
         v.items = v.items.instantiate(instantiator);
         v
+    }
+}
+
+impl Instantiable for DataFlowProfile {
+    type Item = Lifetime;
+
+    fn instantiate<A: Allocator<Item = Self::Item>>(
+        &self,
+        instantiator: &mut Instantiator<Self::Item, A>,
+    ) -> Self {
+        let mut p = self.clone();
+        p.args = p.args.instantiate(instantiator);
+        p.deps = p.deps.instantiate(instantiator);
+        p.result = p.result.instantiate(instantiator);
+        p
     }
 }

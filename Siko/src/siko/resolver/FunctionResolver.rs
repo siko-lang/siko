@@ -63,10 +63,10 @@ impl<'a> FunctionResolver<'a> {
         let typeResolver = TypeResolver::new(self.moduleResolver, &self.constraintContext);
         let mut params = Vec::new();
         let mut env = Environment::new();
-        for param in &f.params {
+        for (index, param) in f.params.iter().enumerate() {
             let irParam = match param {
                 Parameter::Named(id, ty, mutable) => {
-                    env.addArg(id.toString());
+                    env.addArg(id.toString(), index as i64);
                     IrParameter::Named(id.toString(), typeResolver.resolveType(ty), *mutable)
                 }
                 Parameter::SelfParam(mutable) => match &self.owner {

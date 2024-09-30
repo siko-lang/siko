@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::siko::ir::{
+    Data::{Class, Field},
     Lifetime::{Lifetime, LifetimeInfo},
     Type::Type,
 };
@@ -16,7 +17,7 @@ impl Substitution {
         }
     }
 
-    pub fn from(ty1: Type, ty2: Type) -> Substitution {
+    pub fn from(ty1: &Type, ty2: &Type) -> Substitution {
         let mut sub = Substitution::new();
         let lifetimes1 = ty1.collectLifetimes();
         let lifetimes2 = ty2.collectLifetimes();
@@ -92,5 +93,22 @@ impl Apply for Type {
             Type::SelfType => Type::SelfType,
             Type::Never => Type::Never,
         }
+    }
+}
+
+impl Apply for Field {
+    fn apply(&self, sub: &Substitution) -> Self {
+        let mut f = self.clone();
+        f.ty = f.ty.apply(sub);
+        f
+    }
+}
+
+impl Apply for Class {
+    fn apply(&self, sub: &Substitution) -> Self {
+        let mut c = self.clone();
+        c.ty = c.ty.apply(sub);
+        c.fields = c.fields.apply(sub);
+        c
     }
 }
