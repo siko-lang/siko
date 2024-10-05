@@ -33,8 +33,9 @@ impl Substitution {
     }
 
     pub fn add(&mut self, from: &Lifetime, to: &Lifetime) {
+        let from = self.apply(from);
         let to = self.apply(to);
-        if to == *from {
+        if to == from {
             return;
         }
         self.vars.insert(from.clone(), to);
@@ -149,11 +150,18 @@ impl Apply for InstructionId {
     }
 }
 
+impl Apply for String {
+    fn apply(&self, sub: &Substitution) -> Self {
+        self.clone()
+    }
+}
+
 impl Apply for FunctionInferenceData {
     fn apply(&self, sub: &Substitution) -> Self {
         let mut d = self.clone();
         d.profile = d.profile.apply(sub);
         d.instruction_types = d.instruction_types.apply(sub);
+        d.value_types = d.value_types.apply(sub);
         d
     }
 }

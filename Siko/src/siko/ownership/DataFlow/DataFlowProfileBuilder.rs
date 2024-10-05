@@ -1,10 +1,7 @@
-use std::{
-    collections::BTreeMap,
-    fmt::{Debug, Display},
-};
+use std::collections::BTreeMap;
 
 use crate::siko::{
-    ir::{Function::InstructionId, Program::Program},
+    ir::Program::Program,
     ownership::{
         DataFlow::{
             DataFlowProfile::DataFlowProfile, FunctionGroupProcessor::FunctionGroupProcessor,
@@ -38,23 +35,5 @@ impl<'a> DataFlowProfileBuilder<'a> {
                 self.profiles.insert(name, data.profile);
             }
         }
-    }
-}
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
-struct GlobalInstructionId {
-    name: QualifiedName,
-    id: InstructionId,
-}
-
-impl Display for GlobalInstructionId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}/{}", self.name, self.id)
-    }
-}
-
-impl Debug for GlobalInstructionId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}/{}", self.name, self.id)
     }
 }

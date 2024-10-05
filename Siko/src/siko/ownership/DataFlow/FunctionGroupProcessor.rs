@@ -1,7 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    fmt::{Debug, Display},
-};
+use std::collections::BTreeMap;
 
 use crate::siko::{
     ir::{
@@ -116,11 +113,11 @@ impl<'a> FunctionGroupProcessor<'a> {
             }
         }
         let deps = self.deps.apply(&sub);
-        println!("Deps {:?}", deps);
-        for (name, data) in &mut self.inferenceData {
+        //println!("Deps {:?}", deps);
+        for (_, data) in &mut self.inferenceData {
             *data = data.apply(&sub);
         }
-        println!("DONE");
+        //println!("DONE");
         self.dump();
     }
 
@@ -136,6 +133,13 @@ impl<'a> FunctionGroupProcessor<'a> {
         for i in f.instructions() {
             let ty = self.instantiateType(i.ty.as_ref().expect("no type"));
             data.instruction_types.insert(i.id, ty);
+            match &i.kind {
+                InstructionKind::Bind(name, arg) => {
+                    data.value_types
+                        .insert(name.clone(), data.getInstructionType(*arg));
+                }
+                _ => {}
+            }
         }
         self.inferenceData.insert(f.name.clone(), data);
     }
@@ -144,7 +148,7 @@ impl<'a> FunctionGroupProcessor<'a> {
         let ty1_lifetimes = ty1.collectLifetimes();
         let ty2_lifetimes = ty2.collectLifetimes();
         for (l1, l2) in ty1_lifetimes.into_iter().zip(ty2_lifetimes.into_iter()) {
-            println!("{} == {}", l1, l2);
+            //println!("{} == {}", l1, l2);
             self.constraints.push(Constraint::Equal(l1, l2));
         }
     }
@@ -161,7 +165,7 @@ impl<'a> FunctionGroupProcessor<'a> {
             .get(&f.name)
             .expect("no profile found")
             .clone();
-        println!("Profile for {} {}", f.name, data.profile);
+        //println!("Profile for {} {}", f.name, data.profile);
         let last = f.getFirstBlock().getLastId();
         let last_ty = data.getInstructionType(last);
         self.unify(&data.profile.result, &last_ty);
@@ -169,22 +173,39 @@ impl<'a> FunctionGroupProcessor<'a> {
             let ty = data.getInstructionType(i.id);
             match &i.kind {
                 InstructionKind::FunctionCall(name, args) => {
-                    println!("{}: {} {}", i.id, i.kind, ty);
-                    if self.group.contains(name) {
-                        panic!("Recursion NYI");
+                    //println!("{}: {} {}", i.id, i.kind, ty);
+                    let profile = if self.group.contains(name) {
+                        self.inferenceData
+                            .get(name)
+                            .expect("inference data not found")
+                            .profile
+                            .clone()
                     } else {
                         let profile = self
                             .profiles
                             .get(name)
                             .expect("data flow profile not found");
                         let profile = self.instantiator.instantiate(profile);
-                        println!("profile {}", profile);
+                        //println!("profile {}", profile);
+                        profile
+                    };
+                    for (arg1, arg2) in args.iter().zip(profile.args.iter()) {
+                        let arg_ty = data.getInstructionType(*arg1);
+                        self.unify(&arg_ty, arg2);
                     }
+                    let result_ty = data.getInstructionType(i.id);
+                    self.unify(&result_ty, &profile.result);
                 }
-                InstructionKind::ValueRef(ValueKind::Arg(_, index), _, indices) => {
-                    println!("{}: {} {}", i.id, i.kind, ty);
-                    let arg = &data.profile.args[*index as usize];
-                    let mut current = arg.clone();
+                InstructionKind::ValueRef(value, _, indices) => {
+                    //println!("{}: {} {}", i.id, i.kind, ty);
+                    let mut current = match value {
+                        ValueKind::Arg(_, index) => {
+                            let arg = &data.profile.args[*index as usize];
+                            arg.clone()
+                        }
+                        ValueKind::LoopVar(_) => todo!(),
+                        ValueKind::Value(name, _) => data.getValueType(name),
+                    };
                     for index in indices {
                         let c = self
                             .program
@@ -195,12 +216,12 @@ impl<'a> FunctionGroupProcessor<'a> {
                         current = field.ty.clone();
                     }
                     let ty = data.getInstructionType(i.id);
-                    println!("value type {}", current);
+                    //println!("value type {}, ty {}", current, ty);
                     self.unify(&ty, &current);
                 }
                 InstructionKind::Ref(arg) => {
-                    println!("{}: {} {}", i.id, i.kind, ty);
-                    let arg_ty = data.getInstructionType(i.id);
+                    //println!("{}: {} {}", i.id, i.kind, ty);
+                    let arg_ty = data.getInstructionType(*arg);
                     let arg_lifetimes = arg_ty.collectLifetimes();
                     let ref_lifetimes = ty.collectLifetimes();
                     let ref_arg_lifetimes: Vec<_> = ref_lifetimes.into_iter().skip(1).collect();
@@ -210,12 +231,15 @@ impl<'a> FunctionGroupProcessor<'a> {
                     //     ref_lifetimes, ref_arg_lifetimes, arg_lifetimes
                     // );
                     for (l1, l2) in ref_arg_lifetimes.into_iter().zip(arg_lifetimes.into_iter()) {
-                        println!("{} == {}", l1, l2);
+                        //println!("{} == {}", l1, l2);
                         self.constraints.push(Constraint::Equal(l1, l2));
                     }
                 }
                 InstructionKind::Tuple(_) => {
-                    println!("{}: {} {}", i.id, i.kind, ty);
+                    //println!("{}: {} {}", i.id, i.kind, ty);
+                }
+                InstructionKind::Bind(id, arg) => {
+                    //println!("{}: {} {}", i.id, i.kind, ty);
                 }
                 _ => panic!("NYI {}", i.kind),
             }
