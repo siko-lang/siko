@@ -207,6 +207,10 @@ impl Block {
         id
     }
 
+    pub fn getInstruction(&self, id: InstructionId) -> &Instruction {
+        &self.instructions[id.id as usize]
+    }
+
     pub fn add(&mut self, kind: InstructionKind, location: Location) -> InstructionId {
         let id = InstructionId {
             blockId: self.id,

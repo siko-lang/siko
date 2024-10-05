@@ -4,7 +4,6 @@
 mod siko;
 
 use siko::{
-    cfg::Builder::Builder,
     ir::Program::Program,
     location::FileManager::FileManager,
     monomorphizer::Monomorphizer::Monomorphizer,
@@ -42,12 +41,8 @@ fn borrowcheck(program: &Program) {
     println!("{}", program);
     for (_, f) in &program.functions {
         if f.body.is_some() {
-            let mut cfgBuilder = Builder::new(f.name.toString(), f.result.clone());
-            cfgBuilder.build(f);
-            let controlFlowGraph = cfgBuilder.getCFG();
-            controlFlowGraph.printDot();
-            let mut borrowchecker = BorrowChecker::BorrowChecker::new(&program.functions);
-            borrowchecker.run(f);
+            let mut borrowchecker = BorrowChecker::BorrowChecker::new(f);
+            borrowchecker.check();
         }
     }
 }

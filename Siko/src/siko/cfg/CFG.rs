@@ -73,6 +73,7 @@ pub struct Node {
     pub outgoing: Vec<u64>,
     pub usage: Option<Path>,
     pub color: String,
+    pub extra: String,
 }
 
 impl Node {
@@ -84,6 +85,7 @@ impl Node {
             outgoing: Vec::new(),
             usage: None,
             color: "yellow".to_string(),
+            extra: String::new(),
         }
     }
 }
@@ -118,6 +120,11 @@ impl CFG {
     pub fn setColor(&mut self, key: &Key, color: String) {
         let node = self.nodes.get_mut(key).unwrap();
         node.color = color;
+    }
+
+    pub fn setExtra(&mut self, key: &Key, extra: String) {
+        let node = self.nodes.get_mut(key).unwrap();
+        node.extra = extra;
     }
 
     pub fn getEdge(&self, id: u64) -> &Edge {
@@ -159,7 +166,10 @@ impl CFG {
                     kind => format!("{}_{}", key, kind),
                 }
             };
-            let label = format!("{} = {}", label, node.ty);
+            let mut label = format!("{} = {}", label, node.ty);
+            if !node.extra.is_empty() {
+                label = format!("{}\n{}", label, node.extra);
+            }
             write!(
                 f,
                 "node{} [label=\"{}\" style=\"filled\" shape=\"box\" fillcolor=\"{}\"]\n",

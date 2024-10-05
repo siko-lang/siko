@@ -1,3 +1,5 @@
+use std::path;
+
 use crate::siko::{
     ir::{
         Function::{Block, Function, Instruction, InstructionKind, ValueKind},
@@ -104,9 +106,9 @@ impl Builder {
                         instruction.ty.clone().expect("ty not found"),
                     );
                     if fields.is_empty() {
-                        node.usage = Some(Path::WholePath(value));
+                        node.usage = Some(Path::WholePath(value, false));
                     } else {
-                        node.usage = Some(Path::PartialPath(value, fields.clone()));
+                        node.usage = Some(Path::PartialPath(value, fields.clone(), false));
                     }
                     self.cfg.addNode(key.clone(), node);
                     if let Some(last) = last.clone() {
@@ -214,8 +216,15 @@ impl Builder {
                     last = None;
                 }
                 InstructionKind::Ref(_) => {
-                    last =
-                        Some(self.processGenericInstruction(instruction, last, NodeKind::Generic));
+                    let prev = self.cfg.nodes.get_mut(&last.clone().unwrap()).unwrap();
+                    let usage = prev.usage.clone().unwrap();
+                    let usage = match usage {
+                        Path::WholePath(n, _) => Path::WholePath(n.clone(), true),
+                        Path::PartialPath(n, names, _) => {
+                            Path::PartialPath(n.clone(), names.clone(), true)
+                        }
+                    };
+                    prev.usage = Some(usage);
                 }
                 InstructionKind::Drop(values) => {
                     let key = Key::DropKey(instruction.id, format!("[{}]", values.join(", ")));

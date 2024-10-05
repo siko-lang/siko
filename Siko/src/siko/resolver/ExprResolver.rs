@@ -225,9 +225,7 @@ impl<'a> ExprResolver<'a> {
                 self.blockId += 1;
                 let mut loopBlock = IrBlock::new(loopBlockId);
                 let mut loopEnv = Environment::child(env);
-                let valueId = self.valueId;
-                self.valueId += 1;
-                let name = format!("loopVar_{}", valueId);
+                let name = self.createValue("loopVar");
                 loopEnv.addLoopValue(name.clone());
                 let varRefId = loopBlock.add(
                     InstructionKind::ValueRef(
@@ -368,9 +366,34 @@ impl<'a> ExprResolver<'a> {
             }
             SimpleExpr::Ref(arg) => {
                 let arg = self.resolveExpr(arg, env, irBlock);
+                let argInstr = irBlock.getInstruction(arg);
+                let arg = match &argInstr.kind {
+                    InstructionKind::ValueRef(_, _, _) => arg,
+                    _ => {
+                        let var_name = self.createValue("tmp");
+                        let bind_id = irBlock.add(
+                            InstructionKind::Bind(var_name.clone(), arg),
+                            expr.location.clone(),
+                        );
+                        irBlock.add(
+                            InstructionKind::ValueRef(
+                                ValueKind::Value(var_name, bind_id),
+                                Vec::new(),
+                                Vec::new(),
+                            ),
+                            expr.location.clone(),
+                        )
+                    }
+                };
                 return irBlock.add(InstructionKind::Ref(arg), expr.location.clone());
             }
         }
+    }
+
+    fn createValue(&mut self, name: &str) -> String {
+        let valueId = self.valueId;
+        self.valueId += 1;
+        format!("{}_{}", name, valueId)
     }
 
     fn resolvePattern(
@@ -383,9 +406,7 @@ impl<'a> ExprResolver<'a> {
         match &pat.pattern {
             SimplePattern::Named(_name, _args) => todo!(),
             SimplePattern::Bind(name, _) => {
-                let valueId = self.valueId;
-                self.valueId += 1;
-                let new = format!("{}_{}", name.name, valueId);
+                let new = self.createValue(&name.name);
                 let bindId = irBlock.add(
                     InstructionKind::Bind(new.clone(), value),
                     pat.location.clone(),
@@ -406,9 +427,7 @@ impl<'a> ExprResolver<'a> {
             SimplePattern::StringLiteral(_) => todo!(),
             SimplePattern::IntegerLiteral(_) => todo!(),
             SimplePattern::Wildcard => {
-                let valueId = self.valueId;
-                self.valueId += 1;
-                let new = format!("wildcard_{}", valueId);
+                let new = self.createValue("wildcard");
                 irBlock.add(
                     InstructionKind::Bind(new.clone(), value),
                     pat.location.clone(),
