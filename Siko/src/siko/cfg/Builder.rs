@@ -1,5 +1,8 @@
 use crate::siko::{
-    ir::Function::{Block, Function, Instruction, InstructionKind, ValueKind},
+    ir::{
+        Function::{Block, Function, Instruction, InstructionKind, ValueKind},
+        Type::Type,
+    },
     ownership::Path::Path,
 };
 
@@ -12,9 +15,9 @@ pub struct Builder {
 }
 
 impl Builder {
-    pub fn new(name: String) -> Builder {
+    pub fn new(name: String, result: Type) -> Builder {
         let mut cfg = CFG::new(name);
-        let end = Node::new(NodeKind::End);
+        let end = Node::new(NodeKind::End, result);
         cfg.addNode(Key::End, end);
         Builder {
             cfg: cfg,
@@ -34,7 +37,7 @@ impl Builder {
         kind: NodeKind,
     ) -> Key {
         let key = Key::Instruction(i.id);
-        let node = Node::new(kind);
+        let node = Node::new(kind, i.ty.clone().expect("ty not found"));
         self.cfg.addNode(key.clone(), node);
         if let Some(last) = last {
             let edge = Edge::new(last, key.clone());
@@ -53,7 +56,10 @@ impl Builder {
                 InstructionKind::DynamicFunctionCall(_, _) => todo!(),
                 InstructionKind::If(_, trueBranch, falseBranch) => {
                     let ifKey = Key::If(instruction.id);
-                    let ifEnd = Node::new(NodeKind::IfEnd);
+                    let ifEnd = Node::new(
+                        NodeKind::IfEnd,
+                        instruction.ty.clone().expect("ty not found"),
+                    );
                     self.cfg.addNode(ifKey.clone(), ifEnd);
                     let block = f.getBlockById(*trueBranch);
                     let trueLast = self.processBlock(block, last.clone(), f);
@@ -93,7 +99,10 @@ impl Builder {
                         continue;
                     };
                     let key = Key::Instruction(instruction.id);
-                    let mut node = Node::new(NodeKind::ValueRef);
+                    let mut node = Node::new(
+                        NodeKind::ValueRef,
+                        instruction.ty.clone().expect("ty not found"),
+                    );
                     if fields.is_empty() {
                         node.usage = Some(Path::WholePath(value));
                     } else {
@@ -132,7 +141,10 @@ impl Builder {
                 }
                 InstructionKind::Loop(_, _, body) => {
                     let startKey = Key::LoopStart(instruction.id);
-                    let start = Node::new(NodeKind::LoopStart);
+                    let start = Node::new(
+                        NodeKind::LoopStart,
+                        instruction.ty.clone().expect("ty not found"),
+                    );
                     self.cfg.addNode(startKey.clone(), start);
                     if let Some(last) = last.clone() {
                         let edge = Edge::new(last, startKey.clone());
@@ -140,11 +152,17 @@ impl Builder {
                     }
                     self.loopStarts.push(startKey.clone());
                     let endKey = Key::LoopEnd(instruction.id);
-                    let end = Node::new(NodeKind::LoopEnd);
+                    let end = Node::new(
+                        NodeKind::LoopEnd,
+                        instruction.ty.clone().expect("ty not found"),
+                    );
                     self.cfg.addNode(endKey.clone(), end);
                     self.loopEnds.push(endKey.clone());
                     let key = Key::Instruction(instruction.id);
-                    let loopNode = Node::new(NodeKind::Generic);
+                    let loopNode = Node::new(
+                        NodeKind::Generic,
+                        instruction.ty.clone().expect("ty not found"),
+                    );
                     self.cfg.addNode(key.clone(), loopNode);
                     let edge = Edge::new(startKey.clone(), key.clone());
                     self.cfg.addEdge(edge);
@@ -160,7 +178,10 @@ impl Builder {
                 }
                 InstructionKind::Continue(_, _) => {
                     let key = Key::Instruction(instruction.id);
-                    let node = Node::new(NodeKind::Generic);
+                    let node = Node::new(
+                        NodeKind::Generic,
+                        instruction.ty.clone().expect("ty not found"),
+                    );
                     self.cfg.addNode(key.clone(), node);
                     if let Some(last) = last {
                         let edge = Edge::new(last, key.clone());
@@ -172,7 +193,10 @@ impl Builder {
                 }
                 InstructionKind::Break(_, _) => {
                     let key = Key::Instruction(instruction.id);
-                    let node = Node::new(NodeKind::Generic);
+                    let node = Node::new(
+                        NodeKind::Generic,
+                        instruction.ty.clone().expect("ty not found"),
+                    );
                     self.cfg.addNode(key.clone(), node);
                     if let Some(last) = last {
                         let edge = Edge::new(last, key.clone());

@@ -3,6 +3,7 @@ use std::fmt::Display;
 use std::io::Write;
 
 use crate::siko::ir::Function::InstructionId;
+use crate::siko::ir::Type::Type;
 use crate::siko::ownership::Path::Path;
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -67,6 +68,7 @@ impl Display for NodeKind {
 #[derive(Debug)]
 pub struct Node {
     kind: NodeKind,
+    pub ty: Type,
     pub incoming: Vec<u64>,
     pub outgoing: Vec<u64>,
     pub usage: Option<Path>,
@@ -74,9 +76,10 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn new(kind: NodeKind) -> Node {
+    pub fn new(kind: NodeKind, ty: Type) -> Node {
         Node {
             kind: kind,
+            ty: ty,
             incoming: Vec::new(),
             outgoing: Vec::new(),
             usage: None,
@@ -156,6 +159,7 @@ impl CFG {
                     kind => format!("{}_{}", key, kind),
                 }
             };
+            let label = format!("{} = {}", label, node.ty);
             write!(
                 f,
                 "node{} [label=\"{}\" style=\"filled\" shape=\"box\" fillcolor=\"{}\"]\n",
