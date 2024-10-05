@@ -114,6 +114,7 @@ pub enum InstructionKind {
     Break(InstructionId, InstructionId),
     Return(InstructionId),
     Ref(InstructionId),
+    Drop(Vec<String>),
 }
 
 impl Display for InstructionKind {
@@ -152,6 +153,9 @@ impl InstructionKind {
             InstructionKind::Break(id, loopId) => format!("break({}, {})", id, loopId),
             InstructionKind::Return(id) => format!("return({})", id),
             InstructionKind::Ref(id) => format!("&({})", id),
+            InstructionKind::Drop(values) => {
+                format!("drop({})", values.join(", "))
+            }
         }
     }
 }
@@ -218,7 +222,13 @@ impl Block {
     }
 
     pub fn getLastId(&self) -> InstructionId {
-        self.instructions.last().expect("Empty block!").id
+        self.instructions
+            .iter()
+            .rev()
+            .skip(1)
+            .next()
+            .expect("Empty block!")
+            .id
     }
 
     pub fn dump(&self) {

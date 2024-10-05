@@ -217,6 +217,10 @@ impl Builder {
                     last =
                         Some(self.processGenericInstruction(instruction, last, NodeKind::Generic));
                 }
+                InstructionKind::Drop(_) => {
+                    last =
+                        Some(self.processGenericInstruction(instruction, last, NodeKind::Generic));
+                }
             }
         }
         last

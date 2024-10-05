@@ -241,6 +241,7 @@ impl<'a> FunctionGroupProcessor<'a> {
                 InstructionKind::Bind(_, _) => {
                     //println!("{}: {} {}", i.id, i.kind, ty);
                 }
+                InstructionKind::Drop(_) => {}
                 _ => panic!("NYI {}", i.kind),
             }
         }

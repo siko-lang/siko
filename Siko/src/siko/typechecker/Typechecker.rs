@@ -440,6 +440,13 @@ impl<'a> Typechecker<'a> {
                         instruction.location.clone(),
                     );
                 }
+                InstructionKind::Drop(_) => {
+                    self.unify(
+                        self.getInstructionType(instruction.id),
+                        Type::getUnitType(),
+                        instruction.location.clone(),
+                    );
+                }
             }
         }
     }
@@ -453,15 +460,9 @@ impl<'a> Typechecker<'a> {
         };
         let block = &body.blocks[0];
         self.checkBlock(body, block, f);
-        let last = block
-            .instructions
-            .last()
-            .expect("Empty block in type check!");
-        self.unify(
-            self.getInstructionType(last.id),
-            f.result.clone(),
-            last.location.clone(),
-        );
+        let last = block.getLastId();
+        let loc = body.getInstruction(last).location.clone();
+        self.unify(self.getInstructionType(last), f.result.clone(), loc);
     }
 
     pub fn verify(&self, f: &Function) {
@@ -473,7 +474,7 @@ impl<'a> Typechecker<'a> {
                     let ty = self.getType(&TypedId::Instruction(instruction.id));
                     let ty = self.substitution.apply(&ty);
                     let vars = ty.collectVars(BTreeSet::new());
-                    if vars != publicVars {
+                    if !vars.is_empty() && vars != publicVars {
                         println!("{} {}", instruction, ty);
                         TypecheckerError::TypeAnnotationNeeded(instruction.location.clone())
                             .report();

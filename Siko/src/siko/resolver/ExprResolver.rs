@@ -84,6 +84,7 @@ impl<'a> ExprResolver<'a> {
         if block.statements.is_empty() || lastHasSemicolon {
             irBlock.add(InstructionKind::Tuple(Vec::new()), block.location.clone());
         }
+        irBlock.add(InstructionKind::Drop(Vec::new()), block.location.clone());
         self.body.addBlock(irBlock);
         id
     }
@@ -248,6 +249,7 @@ impl<'a> ExprResolver<'a> {
                     InstructionKind::BlockRef(bodyBlockId),
                     expr.location.clone(),
                 );
+                loopBlock.add(InstructionKind::Drop(Vec::new()), expr.location.clone());
                 self.body.addBlock(loopBlock);
                 return irBlock.add(
                     InstructionKind::Loop(name, initId, loopBlockId),
