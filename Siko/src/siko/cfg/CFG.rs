@@ -8,7 +8,7 @@ use crate::siko::ownership::Path::Path;
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum Key {
-    DropKey(String),
+    DropKey(InstructionId, String),
     Instruction(InstructionId),
     LoopEnd(InstructionId),
     LoopStart(InstructionId),
@@ -19,7 +19,7 @@ pub enum Key {
 impl Display for Key {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
-            Key::DropKey(v) => write!(f, "drop({})", v),
+            Key::DropKey(id, v) => write!(f, "drop({}, {})", id, v),
             Key::Instruction(id) => write!(f, "{}", id),
             Key::LoopEnd(id) => write!(f, "loopend({})", id),
             Key::LoopStart(id) => write!(f, "loopstart({})", id),

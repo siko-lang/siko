@@ -217,9 +217,18 @@ impl Builder {
                     last =
                         Some(self.processGenericInstruction(instruction, last, NodeKind::Generic));
                 }
-                InstructionKind::Drop(_) => {
-                    last =
-                        Some(self.processGenericInstruction(instruction, last, NodeKind::Generic));
+                InstructionKind::Drop(values) => {
+                    let key = Key::DropKey(instruction.id, format!("[{}]", values.join(", ")));
+                    let node = Node::new(
+                        NodeKind::Generic,
+                        instruction.ty.clone().expect("ty not found"),
+                    );
+                    self.cfg.addNode(key.clone(), node);
+                    if let Some(last) = last {
+                        let edge = Edge::new(last, key.clone());
+                        self.cfg.addEdge(edge);
+                    }
+                    last = Some(key);
                 }
             }
         }
