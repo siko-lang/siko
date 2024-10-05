@@ -6,6 +6,7 @@ use std::{
 use crate::siko::{
     ir::{
         Function::{Function, FunctionKind, InstructionId, InstructionKind, ValueKind},
+        Lifetime::Lifetime,
         Program::Program,
         Type::Type,
     },
@@ -44,7 +45,7 @@ impl<'a> DataFlowProfileBuilder<'a> {
     }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
 struct GlobalInstructionId {
     name: QualifiedName,
     id: InstructionId,
@@ -62,12 +63,18 @@ impl Debug for GlobalInstructionId {
     }
 }
 
+enum Constraint {
+    Equal(Lifetime, Lifetime),
+}
+
 struct FunctionGroupProcessor<'a> {
     profiles: &'a mut BTreeMap<QualifiedName, DataFlowProfile>,
     group: Vec<QualifiedName>,
     program: &'a Program,
     instantiator: LifetimeInstantiator,
     instruction_types: BTreeMap<GlobalInstructionId, Type>,
+    deps: BTreeMap<Lifetime, Vec<Lifetime>>,
+    constraints: Vec<Constraint>,
 }
 
 impl<'a> FunctionGroupProcessor<'a> {
@@ -82,6 +89,8 @@ impl<'a> FunctionGroupProcessor<'a> {
             program: program,
             instantiator: LifetimeInstantiator::new(),
             instruction_types: BTreeMap::new(),
+            deps: BTreeMap::new(),
+            constraints: Vec::new(),
         }
     }
 
@@ -135,6 +144,32 @@ impl<'a> FunctionGroupProcessor<'a> {
                 _ => {}
             }
         }
+        self.apply();
+    }
+
+    fn apply(&mut self) {
+        let mut sub = Substitution::new();
+        for constraint in &self.constraints {
+            match constraint {
+                Constraint::Equal(l1, l2) => {
+                    sub.add(l1, l2);
+                }
+            }
+        }
+        let deps = self.deps.apply(&sub);
+        println!("Deps {:?}", deps);
+        for item in self.group.clone() {
+            let profile = self.profiles.get(&item).expect("profile not found");
+            println!("Processing profile");
+            let profile = profile.apply(&sub);
+            println!("applied profile {}", profile);
+            self.profiles.insert(item.clone(), profile);
+        }
+        for (_, ty) in &mut self.instruction_types {
+            *ty = ty.apply(&sub);
+        }
+        println!("DONE");
+        self.dump();
     }
 
     fn initializeTypes(&mut self, f: &Function) {
@@ -156,18 +191,54 @@ impl<'a> FunctionGroupProcessor<'a> {
         }
     }
 
+    fn unify(&mut self, ty1: &Type, ty2: &Type) {
+        let ty1_lifetimes = ty1.collectLifetimes();
+        let ty2_lifetimes = ty2.collectLifetimes();
+        for (l1, l2) in ty1_lifetimes.into_iter().zip(ty2_lifetimes.into_iter()) {
+            println!("{} == {}", l1, l2);
+            self.constraints.push(Constraint::Equal(l1, l2));
+        }
+    }
+
+    fn getInstructionType(&self, id: GlobalInstructionId) -> Type {
+        self.instruction_types
+            .get(&id)
+            .cloned()
+            .expect("no instruction type")
+    }
+
+    fn dump(&self) {
+        println!("-----------------");
+        for item in &self.group {
+            let profile = self.profiles.get(item).cloned().expect("no profile found");
+            println!("profile {} = {}", item, profile);
+        }
+        for (id, ty) in &self.instruction_types {
+            println!("{} {}", id, ty);
+        }
+        println!("-----------------");
+    }
+
     fn collectConstraints(&mut self, f: &Function) {
-        let profile = self.profiles.get(&f.name).expect("no profile found");
+        let profile = self
+            .profiles
+            .get(&f.name)
+            .cloned()
+            .expect("no profile found");
         println!("Profile for {} {}", f.name, profile);
+        let last = f.getFirstBlock().getLastId();
+        let last = GlobalInstructionId {
+            name: f.name.clone(),
+            id: last,
+        };
+        let last_ty = self.getInstructionType(last);
+        self.unify(&profile.result, &last_ty);
         for i in f.instructions() {
             let id = GlobalInstructionId {
                 name: f.name.clone(),
                 id: i.id,
             };
-            let ty = self
-                .instruction_types
-                .get(&id)
-                .expect("no instruction type");
+            let ty = self.getInstructionType(id.clone());
             match &i.kind {
                 InstructionKind::FunctionCall(name, args) => {
                     println!("{}: {} {}", id, i.kind, ty);
@@ -195,13 +266,13 @@ impl<'a> FunctionGroupProcessor<'a> {
                         let field = &c.fields[*index as usize];
                         current = field.ty.clone();
                     }
-                    //println!("value type {}", current);
-                    let dest_lifetimes = current.collectLifetimes();
-                    let src_lifetimes = arg.collectLifetimes();
-                    //println!("{:?} -> {:?}", src_lifetimes, dest_lifetimes);
-                    for (src, dest) in src_lifetimes.iter().zip(dest_lifetimes.iter()) {
-                        println!("{} -> {}", src, dest);
-                    }
+                    let id = GlobalInstructionId {
+                        name: f.name.clone(),
+                        id: i.id,
+                    };
+                    let ty = self.getInstructionType(id.clone());
+                    println!("value type {}", current);
+                    self.unify(&ty, &current);
                 }
                 InstructionKind::Ref(arg) => {
                     println!("{}: {} {}", id, i.kind, ty);
@@ -209,21 +280,22 @@ impl<'a> FunctionGroupProcessor<'a> {
                         name: f.name.clone(),
                         id: *arg,
                     };
-                    let arg_ty = self
-                        .instruction_types
-                        .get(&id)
-                        .expect("no instruction type");
+                    let arg_ty = self.getInstructionType(id);
                     let arg_lifetimes = arg_ty.collectLifetimes();
                     let ref_lifetimes = ty.collectLifetimes();
-                    let ref_arg_lifetimes: Vec<_> = ref_lifetimes.iter().skip(1).collect();
+                    let ref_arg_lifetimes: Vec<_> = ref_lifetimes.into_iter().skip(1).collect();
                     // println!("ref ty {}, arg_ty {}", ty, arg_ty);
                     // println!(
                     //     "ref lt {:?}, ref {:?} lt {:?}",
                     //     ref_lifetimes, ref_arg_lifetimes, arg_lifetimes
                     // );
-                    for (l1, l2) in ref_arg_lifetimes.iter().zip(arg_lifetimes.iter()) {
+                    for (l1, l2) in ref_arg_lifetimes.into_iter().zip(arg_lifetimes.into_iter()) {
                         println!("{} == {}", l1, l2);
+                        self.constraints.push(Constraint::Equal(l1, l2));
                     }
+                }
+                InstructionKind::Tuple(_) => {
+                    println!("{}: {} {}", id, i.kind, ty);
                 }
                 _ => panic!("NYI {}", i.kind),
             }

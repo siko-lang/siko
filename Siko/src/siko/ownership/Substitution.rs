@@ -6,6 +6,8 @@ use crate::siko::ir::{
     Type::Type,
 };
 
+use super::DataFlowProfile::DataFlowProfile;
+
 pub struct Substitution {
     vars: BTreeMap<Lifetime, Lifetime>,
 }
@@ -27,15 +29,18 @@ impl Substitution {
         sub
     }
 
-    fn add(&mut self, from: &Lifetime, to: &Lifetime) {
+    pub fn add(&mut self, from: &Lifetime, to: &Lifetime) {
         let to = self.apply(to);
+        if to == *from {
+            return;
+        }
         self.vars.insert(from.clone(), to);
     }
 
-    fn apply(&self, l: &Lifetime) -> Lifetime {
+    pub fn apply(&self, l: &Lifetime) -> Lifetime {
         let mut current = l;
         loop {
-            match self.vars.get(&l) {
+            match self.vars.get(&current) {
                 Some(l) => current = l,
                 None => return *current,
             }
@@ -59,6 +64,18 @@ impl<T: Apply> Apply for Option<T> {
 impl<T: Apply> Apply for Vec<T> {
     fn apply(&self, sub: &Substitution) -> Self {
         self.iter().map(|i| i.apply(sub)).collect()
+    }
+}
+
+impl<K: Apply + Ord, V: Apply> Apply for BTreeMap<K, V> {
+    fn apply(&self, sub: &Substitution) -> Self {
+        let mut result = BTreeMap::new();
+        for (key, value) in self {
+            let key = key.apply(sub);
+            let value = value.apply(sub);
+            result.insert(key, value);
+        }
+        result
     }
 }
 
@@ -110,5 +127,15 @@ impl Apply for Class {
         c.ty = c.ty.apply(sub);
         c.fields = c.fields.apply(sub);
         c
+    }
+}
+
+impl Apply for DataFlowProfile {
+    fn apply(&self, sub: &Substitution) -> Self {
+        let mut p = self.clone();
+        p.args = p.args.apply(sub);
+        p.result = p.result.apply(sub);
+        p.deps = p.deps.apply(sub);
+        p
     }
 }
