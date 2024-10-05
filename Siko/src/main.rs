@@ -36,8 +36,9 @@ fn typecheck(mut program: Program) -> Program {
 }
 
 fn borrowcheck(program: &Program) {
-    let mut builder = DataFlowProfileBuilder::new(program);
-    builder.process();
+    let builder = DataFlowProfileBuilder::new(program);
+    let program = builder.process();
+    println!("{}", program);
     for (_, f) in &program.functions {
         let mut borrowchecker = BorrowChecker::BorrowChecker::new(&program.functions);
         borrowchecker.run(f);

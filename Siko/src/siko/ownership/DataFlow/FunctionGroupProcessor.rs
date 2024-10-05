@@ -112,13 +112,13 @@ impl<'a> FunctionGroupProcessor<'a> {
                 }
             }
         }
-        let deps = self.deps.apply(&sub);
+        //let deps = self.deps.apply(&sub);
         //println!("Deps {:?}", deps);
         for (_, data) in &mut self.inferenceData {
             *data = data.apply(&sub);
         }
         //println!("DONE");
-        self.dump();
+        //self.dump();
     }
 
     fn initializeTypes(&mut self, f: &Function) {
@@ -238,7 +238,7 @@ impl<'a> FunctionGroupProcessor<'a> {
                 InstructionKind::Tuple(_) => {
                     //println!("{}: {} {}", i.id, i.kind, ty);
                 }
-                InstructionKind::Bind(id, arg) => {
+                InstructionKind::Bind(_, _) => {
                     //println!("{}: {} {}", i.id, i.kind, ty);
                 }
                 _ => panic!("NYI {}", i.kind),

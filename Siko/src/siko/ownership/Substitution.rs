@@ -145,13 +145,13 @@ impl Apply for DataFlowProfile {
 }
 
 impl Apply for InstructionId {
-    fn apply(&self, sub: &Substitution) -> Self {
+    fn apply(&self, _: &Substitution) -> Self {
         self.clone()
     }
 }
 
 impl Apply for String {
-    fn apply(&self, sub: &Substitution) -> Self {
+    fn apply(&self, _: &Substitution) -> Self {
         self.clone()
     }
 }

@@ -8,6 +8,7 @@ use super::{
     TraitMethodSelector::TraitMethodSelector,
 };
 
+#[derive(Clone)]
 pub struct Program {
     pub functions: BTreeMap<QualifiedName, Function>,
     pub classes: BTreeMap<QualifiedName, Class>,

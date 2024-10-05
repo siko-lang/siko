@@ -3,6 +3,7 @@ use crate::siko::{
 };
 use std::collections::BTreeMap;
 
+#[derive(Clone)]
 pub struct TraitMethodSelector {
     methods: BTreeMap<String, QualifiedName>,
 }
