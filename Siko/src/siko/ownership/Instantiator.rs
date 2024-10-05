@@ -7,7 +7,7 @@ use crate::siko::{
     util::Instantiator::{Allocator, Instantiable, Instantiator},
 };
 
-use super::DataFlowProfile::DataFlowProfile;
+use super::DataFlow::DataFlowProfile::DataFlowProfile;
 
 pub struct LifetimeInstantiator {
     instantiator: Instantiator<Lifetime, LifetimeInfo>,

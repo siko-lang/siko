@@ -2,11 +2,14 @@ use std::collections::BTreeMap;
 
 use crate::siko::ir::{
     Data::{Class, Field},
+    Function::InstructionId,
     Lifetime::{Lifetime, LifetimeInfo},
     Type::Type,
 };
 
-use super::DataFlowProfile::DataFlowProfile;
+use super::DataFlow::{
+    DataFlowProfile::DataFlowProfile, FunctionInferenceData::FunctionInferenceData,
+};
 
 pub struct Substitution {
     vars: BTreeMap<Lifetime, Lifetime>,
@@ -137,5 +140,20 @@ impl Apply for DataFlowProfile {
         p.result = p.result.apply(sub);
         p.deps = p.deps.apply(sub);
         p
+    }
+}
+
+impl Apply for InstructionId {
+    fn apply(&self, sub: &Substitution) -> Self {
+        self.clone()
+    }
+}
+
+impl Apply for FunctionInferenceData {
+    fn apply(&self, sub: &Substitution) -> Self {
+        let mut d = self.clone();
+        d.profile = d.profile.apply(sub);
+        d.instruction_types = d.instruction_types.apply(sub);
+        d
     }
 }

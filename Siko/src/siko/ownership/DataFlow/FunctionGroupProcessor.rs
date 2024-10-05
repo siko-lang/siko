@@ -5,96 +5,53 @@ use std::{
 
 use crate::siko::{
     ir::{
-        Function::{Function, FunctionKind, InstructionId, InstructionKind, ValueKind},
+        Function::{Function, FunctionKind, InstructionKind, ValueKind},
         Lifetime::Lifetime,
         Program::Program,
         Type::Type,
     },
     ownership::{
-        DataFlowProfile::DataFlowProfile,
+        DataFlow::DataFlowProfile::DataFlowProfile,
         Instantiator::LifetimeInstantiator,
         Substitution::{Apply, Substitution},
     },
     qualifiedname::QualifiedName,
-    util::Instantiator::Instantiable,
 };
 
-use super::FunctionGroups;
-
-pub struct DataFlowProfileBuilder<'a> {
-    profiles: BTreeMap<QualifiedName, DataFlowProfile>,
-    program: &'a Program,
-}
-
-impl<'a> DataFlowProfileBuilder<'a> {
-    pub fn new(program: &'a Program) -> DataFlowProfileBuilder<'a> {
-        DataFlowProfileBuilder {
-            profiles: BTreeMap::new(),
-            program: program,
-        }
-    }
-
-    pub fn process(&mut self) {
-        let function_groups = FunctionGroups::createFunctionGroups(&self.program.functions);
-        for group in function_groups {
-            println!("Processing function group {:?}", group.items);
-            let mut processor =
-                FunctionGroupProcessor::new(&mut self.profiles, group.items, self.program);
-            processor.processGroup();
-        }
-    }
-}
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
-struct GlobalInstructionId {
-    name: QualifiedName,
-    id: InstructionId,
-}
-
-impl Display for GlobalInstructionId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}/{}", self.name, self.id)
-    }
-}
-
-impl Debug for GlobalInstructionId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}/{}", self.name, self.id)
-    }
-}
+use super::FunctionInferenceData::FunctionInferenceData;
 
 enum Constraint {
     Equal(Lifetime, Lifetime),
 }
 
-struct FunctionGroupProcessor<'a> {
+pub struct FunctionGroupProcessor<'a> {
     profiles: &'a mut BTreeMap<QualifiedName, DataFlowProfile>,
+    pub inferenceData: BTreeMap<QualifiedName, FunctionInferenceData>,
     group: Vec<QualifiedName>,
     program: &'a Program,
     instantiator: LifetimeInstantiator,
-    instruction_types: BTreeMap<GlobalInstructionId, Type>,
     deps: BTreeMap<Lifetime, Vec<Lifetime>>,
     constraints: Vec<Constraint>,
 }
 
 impl<'a> FunctionGroupProcessor<'a> {
-    fn new(
+    pub fn new(
         profiles: &'a mut BTreeMap<QualifiedName, DataFlowProfile>,
         group: Vec<QualifiedName>,
         program: &'a Program,
     ) -> FunctionGroupProcessor<'a> {
         FunctionGroupProcessor {
             profiles: profiles,
+            inferenceData: BTreeMap::new(),
             group: group,
             program: program,
             instantiator: LifetimeInstantiator::new(),
-            instruction_types: BTreeMap::new(),
             deps: BTreeMap::new(),
             constraints: Vec::new(),
         }
     }
 
-    fn processGroup(&mut self) {
+    pub fn processGroup(&mut self) {
         for item in self.group.clone() {
             let f = self
                 .program
@@ -114,7 +71,8 @@ impl<'a> FunctionGroupProcessor<'a> {
                         args.push(ty.clone());
                     }
                     let profile = DataFlowProfile::new(args, e.ty.clone());
-                    self.profiles.insert(item.clone(), profile);
+                    let data = FunctionInferenceData::new(item.clone(), profile);
+                    self.inferenceData.insert(item.clone(), data);
                     //println!("profile {}", profile);
                 }
                 FunctionKind::ClassCtor => {
@@ -126,7 +84,8 @@ impl<'a> FunctionGroupProcessor<'a> {
                         args.push(f.ty.clone());
                     }
                     let profile = DataFlowProfile::new(args, c.ty.clone());
-                    self.profiles.insert(item.clone(), profile);
+                    let data = FunctionInferenceData::new(item.clone(), profile);
+                    self.inferenceData.insert(item.clone(), data);
                     //println!("profile {}", profile);
                 }
             }
@@ -158,15 +117,8 @@ impl<'a> FunctionGroupProcessor<'a> {
         }
         let deps = self.deps.apply(&sub);
         println!("Deps {:?}", deps);
-        for item in self.group.clone() {
-            let profile = self.profiles.get(&item).expect("profile not found");
-            println!("Processing profile");
-            let profile = profile.apply(&sub);
-            println!("applied profile {}", profile);
-            self.profiles.insert(item.clone(), profile);
-        }
-        for (_, ty) in &mut self.instruction_types {
-            *ty = ty.apply(&sub);
+        for (name, data) in &mut self.inferenceData {
+            *data = data.apply(&sub);
         }
         println!("DONE");
         self.dump();
@@ -180,15 +132,12 @@ impl<'a> FunctionGroupProcessor<'a> {
         }
         let result = self.instantiateType(&f.result);
         let profile = DataFlowProfile::new(args, result);
-        self.profiles.insert(f.name.clone(), profile);
+        let mut data = FunctionInferenceData::new(f.name.clone(), profile);
         for i in f.instructions() {
             let ty = self.instantiateType(i.ty.as_ref().expect("no type"));
-            let id = GlobalInstructionId {
-                name: f.name.clone(),
-                id: i.id,
-            };
-            self.instruction_types.insert(id, ty);
+            data.instruction_types.insert(i.id, ty);
         }
+        self.inferenceData.insert(f.name.clone(), data);
     }
 
     fn unify(&mut self, ty1: &Type, ty2: &Type) {
@@ -200,48 +149,27 @@ impl<'a> FunctionGroupProcessor<'a> {
         }
     }
 
-    fn getInstructionType(&self, id: GlobalInstructionId) -> Type {
-        self.instruction_types
-            .get(&id)
-            .cloned()
-            .expect("no instruction type")
-    }
-
     fn dump(&self) {
-        println!("-----------------");
-        for item in &self.group {
-            let profile = self.profiles.get(item).cloned().expect("no profile found");
-            println!("profile {} = {}", item, profile);
+        for (_, data) in &self.inferenceData {
+            data.dump();
         }
-        for (id, ty) in &self.instruction_types {
-            println!("{} {}", id, ty);
-        }
-        println!("-----------------");
     }
 
     fn collectConstraints(&mut self, f: &Function) {
-        let profile = self
-            .profiles
+        let data = self
+            .inferenceData
             .get(&f.name)
-            .cloned()
-            .expect("no profile found");
-        println!("Profile for {} {}", f.name, profile);
+            .expect("no profile found")
+            .clone();
+        println!("Profile for {} {}", f.name, data.profile);
         let last = f.getFirstBlock().getLastId();
-        let last = GlobalInstructionId {
-            name: f.name.clone(),
-            id: last,
-        };
-        let last_ty = self.getInstructionType(last);
-        self.unify(&profile.result, &last_ty);
+        let last_ty = data.getInstructionType(last);
+        self.unify(&data.profile.result, &last_ty);
         for i in f.instructions() {
-            let id = GlobalInstructionId {
-                name: f.name.clone(),
-                id: i.id,
-            };
-            let ty = self.getInstructionType(id.clone());
+            let ty = data.getInstructionType(i.id);
             match &i.kind {
                 InstructionKind::FunctionCall(name, args) => {
-                    println!("{}: {} {}", id, i.kind, ty);
+                    println!("{}: {} {}", i.id, i.kind, ty);
                     if self.group.contains(name) {
                         panic!("Recursion NYI");
                     } else {
@@ -254,8 +182,8 @@ impl<'a> FunctionGroupProcessor<'a> {
                     }
                 }
                 InstructionKind::ValueRef(ValueKind::Arg(_, index), _, indices) => {
-                    println!("{}: {} {}", id, i.kind, ty);
-                    let arg = &profile.args[*index as usize];
+                    println!("{}: {} {}", i.id, i.kind, ty);
+                    let arg = &data.profile.args[*index as usize];
                     let mut current = arg.clone();
                     for index in indices {
                         let c = self
@@ -266,21 +194,13 @@ impl<'a> FunctionGroupProcessor<'a> {
                         let field = &c.fields[*index as usize];
                         current = field.ty.clone();
                     }
-                    let id = GlobalInstructionId {
-                        name: f.name.clone(),
-                        id: i.id,
-                    };
-                    let ty = self.getInstructionType(id.clone());
+                    let ty = data.getInstructionType(i.id);
                     println!("value type {}", current);
                     self.unify(&ty, &current);
                 }
                 InstructionKind::Ref(arg) => {
-                    println!("{}: {} {}", id, i.kind, ty);
-                    let id = GlobalInstructionId {
-                        name: f.name.clone(),
-                        id: *arg,
-                    };
-                    let arg_ty = self.getInstructionType(id);
+                    println!("{}: {} {}", i.id, i.kind, ty);
+                    let arg_ty = data.getInstructionType(i.id);
                     let arg_lifetimes = arg_ty.collectLifetimes();
                     let ref_lifetimes = ty.collectLifetimes();
                     let ref_arg_lifetimes: Vec<_> = ref_lifetimes.into_iter().skip(1).collect();
@@ -295,7 +215,7 @@ impl<'a> FunctionGroupProcessor<'a> {
                     }
                 }
                 InstructionKind::Tuple(_) => {
-                    println!("{}: {} {}", id, i.kind, ty);
+                    println!("{}: {} {}", i.id, i.kind, ty);
                 }
                 _ => panic!("NYI {}", i.kind),
             }
