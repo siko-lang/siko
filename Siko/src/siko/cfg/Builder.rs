@@ -1,5 +1,3 @@
-use std::path;
-
 use crate::siko::{
     ir::{
         Function::{Block, Function, Instruction, InstructionKind, ValueKind},
@@ -90,25 +88,16 @@ impl Builder {
                         ));
                         continue;
                     }
-                    let value = if let Some(v) = v.getValue() {
-                        v
-                    } else {
-                        last = Some(self.processGenericInstruction(
-                            instruction,
-                            last,
-                            NodeKind::Generic,
-                        ));
-                        continue;
-                    };
+                    let value = v.getValue();
                     let key = Key::Instruction(instruction.id);
                     let mut node = Node::new(
                         NodeKind::ValueRef,
                         instruction.ty.clone().expect("ty not found"),
                     );
                     if fields.is_empty() {
-                        node.usage = Some(Path::WholePath(value, false));
+                        node.usage = Some(Path::WholePath(value));
                     } else {
-                        node.usage = Some(Path::PartialPath(value, fields.clone(), false));
+                        node.usage = Some(Path::PartialPath(value, fields.clone()));
                     }
                     self.cfg.addNode(key.clone(), node);
                     if let Some(last) = last.clone() {
@@ -218,13 +207,19 @@ impl Builder {
                 InstructionKind::Ref(_) => {
                     let prev = self.cfg.nodes.get_mut(&last.clone().unwrap()).unwrap();
                     let usage = prev.usage.clone().unwrap();
-                    let usage = match usage {
-                        Path::WholePath(n, _) => Path::WholePath(n.clone(), true),
-                        Path::PartialPath(n, names, _) => {
-                            Path::PartialPath(n.clone(), names.clone(), true)
-                        }
-                    };
-                    prev.usage = Some(usage);
+                    prev.usage = None;
+                    let key = Key::Instruction(instruction.id);
+                    let mut node = Node::new(
+                        NodeKind::Generic,
+                        instruction.ty.clone().expect("ty not found"),
+                    );
+                    node.usage = Some(usage);
+                    self.cfg.addNode(key.clone(), node);
+                    if let Some(last) = last {
+                        let edge = Edge::new(last, key.clone());
+                        self.cfg.addEdge(edge);
+                    }
+                    last = Some(key);
                 }
                 InstructionKind::Drop(values) => {
                     let key = Key::DropKey(instruction.id, format!("[{}]", values.join(", ")));

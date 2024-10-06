@@ -402,7 +402,7 @@ impl<'a> ExprResolver<'a> {
         env: &mut Environment,
         irBlock: &mut IrBlock,
         value: InstructionId,
-    ) -> InstructionId {
+    ) {
         match &pat.pattern {
             SimplePattern::Named(_name, _args) => todo!(),
             SimplePattern::Bind(name, _) => {
@@ -412,7 +412,6 @@ impl<'a> ExprResolver<'a> {
                     pat.location.clone(),
                 );
                 env.addValue(name.toString(), new, bindId);
-                bindId
             }
             SimplePattern::Tuple(args) => {
                 for (index, arg) in args.iter().enumerate() {
@@ -422,7 +421,6 @@ impl<'a> ExprResolver<'a> {
                     );
                     self.resolvePattern(arg, env, irBlock, indexId);
                 }
-                InstructionId::empty()
             }
             SimplePattern::StringLiteral(_) => todo!(),
             SimplePattern::IntegerLiteral(_) => todo!(),
@@ -431,7 +429,7 @@ impl<'a> ExprResolver<'a> {
                 irBlock.add(
                     InstructionKind::Bind(new.clone(), value),
                     pat.location.clone(),
-                )
+                );
             }
         }
     }

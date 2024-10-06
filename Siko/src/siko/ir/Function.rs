@@ -13,11 +13,11 @@ pub enum ValueKind {
 }
 
 impl ValueKind {
-    pub fn getValue(&self) -> Option<String> {
+    pub fn getValue(&self) -> String {
         match &self {
-            ValueKind::Arg(v, _) => Some(v.clone()),
-            ValueKind::LoopVar(v) => Some(v.clone()),
-            ValueKind::Value(v, _) => Some(v.clone()),
+            ValueKind::Arg(v, _) => v.clone(),
+            ValueKind::LoopVar(v) => v.clone(),
+            ValueKind::Value(v, _) => v.clone(),
         }
     }
 }
@@ -59,6 +59,12 @@ pub struct BlockId {
     pub id: u32,
 }
 
+impl BlockId {
+    pub fn first() -> BlockId {
+        BlockId { id: 0 }
+    }
+}
+
 impl Display for BlockId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "#{}", self.id)
@@ -72,7 +78,7 @@ pub struct InstructionId {
 }
 
 impl InstructionId {
-    pub fn empty() -> InstructionId {
+    pub fn first() -> InstructionId {
         InstructionId {
             blockId: BlockId { id: 0 },
             id: 0,
@@ -81,6 +87,10 @@ impl InstructionId {
 
     pub fn simple(&self) -> String {
         format!("{}_{}", self.blockId.id, self.id)
+    }
+
+    pub fn getBlockById(&self) -> BlockId {
+        self.blockId
     }
 }
 
@@ -356,6 +366,14 @@ impl Function {
             &body.blocks[0]
         } else {
             panic!("getFirstBlock: no body found");
+        }
+    }
+
+    pub fn getInstruction(&self, id: InstructionId) -> &Instruction {
+        if let Some(body) = &self.body {
+            body.getInstruction(id)
+        } else {
+            panic!("getInstruction: no body found");
         }
     }
 

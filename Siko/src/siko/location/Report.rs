@@ -1,8 +1,11 @@
+use std::f32::consts::E;
+
 use super::Location::Location;
 
 pub trait Painter {
     fn yellow(&self) -> String;
     fn red(&self) -> String;
+    fn blue(&self) -> String;
 }
 
 impl Painter for str {
@@ -13,34 +16,63 @@ impl Painter for str {
     fn red(&self) -> String {
         format!("\x1b[31m{}\x1b[0m", self)
     }
+
+    fn blue(&self) -> String {
+        format!("\x1b[34m{}\x1b[0m", self)
+    }
+}
+
+pub struct Entry {
+    msg: Option<String>,
+    location: Location,
+}
+
+impl Entry {
+    pub fn new(msg: Option<String>, location: Location) -> Entry {
+        Entry {
+            msg: msg,
+            location: location,
+        }
+    }
 }
 
 pub struct Report {
     slogan: String,
-    location: Option<Location>,
+    entries: Vec<Entry>,
 }
 
 impl Report {
     pub fn new(slogan: String, location: Option<Location>) -> Report {
+        let mut entries = Vec::new();
+        if let Some(loc) = location {
+            entries.push(Entry::new(None, loc));
+        }
+        Report::build(slogan, entries)
+    }
+
+    pub fn build(slogan: String, entries: Vec<Entry>) -> Report {
         Report {
             slogan: slogan,
-            location: location,
+            entries: entries,
         }
     }
 
     pub fn print(&self) {
         println!("{}: {}", "ERROR".red(), self.slogan);
-        if let Some(location) = &self.location {
+        for entry in &self.entries {
+            if let Some(msg) = &entry.msg {
+                println!("   {}", msg.blue());
+            }
             println!(
                 "{} {}:{}:{}",
                 " --->".red(),
-                location.fileId.getFileName(),
-                location.span.start.line + 1,
-                location.span.start.offset + 1
+                entry.location.fileId.getFileName(),
+                entry.location.span.start.line + 1,
+                entry.location.span.start.offset + 1
             );
-            let lines = location.fileId.getLines();
-            let startLine = location.span.start.line;
-            let endLine = location.span.end.line;
+            let lines = entry.location.fileId.getLines();
+            let startLine = entry.location.span.start.line;
+            let endLine = entry.location.span.end.line;
             let mut separatorPrinted = false;
             for (lineNumber, line) in lines.iter().enumerate() {
                 let lineNumber = lineNumber as i64;
@@ -49,21 +81,21 @@ impl Report {
                 if lineNumber >= startLine && lineNumber <= endLine {
                     if distance < 3 {
                         let highlighted_line = if lineNumber == startLine && lineNumber == endLine {
-                            let start = location.span.start.offset as usize;
-                            let end = location.span.end.offset as usize;
+                            let start = entry.location.span.start.offset as usize;
+                            let end = entry.location.span.end.offset as usize;
                             let mut modifiedLine = String::new();
                             modifiedLine.push_str(&line[..start]);
                             modifiedLine.push_str(&line[start..end].yellow());
                             modifiedLine.push_str(&line[end..]);
                             modifiedLine
                         } else if lineNumber == startLine {
-                            let start = location.span.start.offset as usize;
+                            let start = entry.location.span.start.offset as usize;
                             let mut modifiedLine = String::new();
                             modifiedLine.push_str(&line[..start]);
                             modifiedLine.push_str(&line[start..].yellow());
                             modifiedLine
                         } else if lineNumber == endLine {
-                            let end = location.span.end.offset as usize;
+                            let end = entry.location.span.end.offset as usize;
                             let mut modifiedLine = String::new();
                             modifiedLine.push_str(&line[..end].yellow());
                             modifiedLine.push_str(&line[end..]);
@@ -71,7 +103,12 @@ impl Report {
                         } else {
                             line.yellow()
                         };
-                        println!(" {} {} {}", "|".red(), lineNumber + 1, highlighted_line);
+                        println!(
+                            " {} {} {}",
+                            "|".red(),
+                            format!("{}", lineNumber + 1).blue(),
+                            highlighted_line
+                        );
                     } else {
                         if !separatorPrinted {
                             separatorPrinted = true;
