@@ -1,4 +1,4 @@
-use crate::siko::ir::Data::Enum;
+use crate::siko::hir::Data::Enum;
 use crate::siko::qualifiedname::QualifiedName;
 use crate::siko::syntax::Pattern::{Pattern, SimplePattern};
 use crate::siko::util::Dot::Graph;

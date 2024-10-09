@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::siko::ir::ConstraintContext::ConstraintContext;
-use crate::siko::ir::Data::Enum;
-use crate::siko::ir::Function::{Function as IrFunction, FunctionKind, Parameter as IrParameter};
-use crate::siko::ir::Type::{Type as IrType, TypeVar};
+use crate::siko::hir::ConstraintContext::ConstraintContext;
+use crate::siko::hir::Data::Enum;
+use crate::siko::hir::Function::{Function as IrFunction, FunctionKind, Parameter as IrParameter};
+use crate::siko::hir::Type::{Type as IrType, TypeVar};
 use crate::siko::qualifiedname::QualifiedName;
 use crate::siko::syntax::Function::{Function, Parameter};
 use crate::siko::syntax::Identifier::Identifier;

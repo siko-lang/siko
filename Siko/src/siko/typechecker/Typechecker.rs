@@ -4,7 +4,8 @@ use std::{
 };
 
 use crate::siko::{
-    ir::{
+    location::Location::Location,
+    hir::{
         Function::{
             Block, Body, Function, Instruction, InstructionId, InstructionKind, Parameter,
             ValueKind,
@@ -14,7 +15,6 @@ use crate::siko::{
         TraitMethodSelector::TraitMethodSelector,
         Type::Type,
     },
-    location::Location::Location,
     qualifiedname::QualifiedName,
 };
 

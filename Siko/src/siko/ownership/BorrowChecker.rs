@@ -8,7 +8,7 @@ use crate::siko::{
         Builder::Builder,
         CFG::{Key, CFG},
     },
-    ir::{
+    hir::{
         Function::{BlockId, Function, InstructionKind},
         Lifetime::Lifetime,
     },
@@ -159,7 +159,7 @@ impl<'a> BorrowChecker<'a> {
                             for l in lifetimes {
                                 match context.refs.get(&l) {
                                     Some(path) => {
-                                        if let Some(loc) = context.deadValues.get(path) {
+                                        if let Some(_) = context.deadValues.get(path) {
                                             let mut entries = Vec::new();
                                             entries.push(Entry::new(None, i.location.clone()));
                                             let report = Report::build(
@@ -194,9 +194,9 @@ impl<'a> BorrowChecker<'a> {
                     _ => {}
                 }
             }
-            Key::LoopEnd(instruction_id) => {}
-            Key::LoopStart(instruction_id) => {}
-            Key::If(instruction_id) => {}
+            Key::LoopEnd(_) => {}
+            Key::LoopStart(_) => {}
+            Key::If(_) => {}
             Key::End => {}
         }
 

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::siko::ir::{
+use crate::siko::hir::{
     Data::{Class, Field},
     Function::InstructionId,
     Lifetime::{Lifetime, LifetimeInfo},

@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::siko::{
-    ir::{
+    hir::{
         Function::{Function, FunctionKind, InstructionKind, ValueKind},
         Lifetime::Lifetime,
         Program::Program,

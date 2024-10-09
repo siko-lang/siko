@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::siko::{
-    ir::Data::{Class, Enum},
+    hir::Data::{Class, Enum},
     qualifiedname::QualifiedName,
     util::DependencyProcessor::{processDependencies, DependencyGroup},
 };

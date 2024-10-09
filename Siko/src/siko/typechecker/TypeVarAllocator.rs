@@ -1,4 +1,4 @@
-use crate::siko::ir::Type::{Type, TypeVar};
+use crate::siko::hir::Type::{Type, TypeVar};
 
 pub struct TypeVarAllocator {
     next: u64,

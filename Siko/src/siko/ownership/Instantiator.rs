@@ -1,5 +1,5 @@
 use crate::siko::{
-    ir::{
+    hir::{
         Data::{Class, Enum, Field, Variant},
         Lifetime::{Lifetime, LifetimeInfo},
         Type::Type,

@@ -4,13 +4,13 @@ use std::{
 };
 
 use crate::siko::{
-    ir::{
+    location::Report::{Painter, Report},
+    hir::{
         Function::{Body, Instruction, InstructionKind, Parameter},
         Program::Program,
         Substitution::Substitution,
         Type::{formatTypes, Type},
     },
-    location::Report::{Painter, Report},
     qualifiedname::{build, QualifiedName},
 };
 

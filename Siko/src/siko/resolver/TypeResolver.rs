@@ -1,6 +1,6 @@
 use super::ModuleResolver::ModuleResolver;
-use crate::siko::ir::ConstraintContext::ConstraintContext;
-use crate::siko::ir::Type::{Type as IrType, TypeVar};
+use crate::siko::hir::ConstraintContext::ConstraintContext;
+use crate::siko::hir::Type::{Type as IrType, TypeVar};
 use crate::siko::syntax::Identifier::Identifier;
 use crate::siko::syntax::Type::{Type, TypeParameterDeclaration};
 use std::collections::BTreeSet;

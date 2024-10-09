@@ -1,5 +1,3 @@
-use std::f32::consts::E;
-
 use super::Location::Location;
 
 pub trait Painter {

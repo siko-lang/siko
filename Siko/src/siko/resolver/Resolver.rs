@@ -1,5 +1,5 @@
 use crate::siko::{
-    ir::{
+    hir::{
         ConstraintContext::ConstraintContext,
         Data::MethodInfo as DataMethodInfo,
         Function::{FunctionKind, Parameter},
@@ -24,14 +24,14 @@ use std::{
 
 use super::{Error::ResolverError, ModuleResolver::ModuleResolver};
 use super::{FunctionResolver::createSelfType, TypeResolver::TypeResolver};
-use crate::siko::ir::Data::Class as IrClass;
-use crate::siko::ir::Data::Enum as IrEnum;
-use crate::siko::ir::Data::Field as IrField;
-use crate::siko::ir::Data::Variant as IrVariant;
-use crate::siko::ir::Function::Function as IrFunction;
-use crate::siko::ir::Trait::Instance as IrInstance;
-use crate::siko::ir::Trait::Trait as IrTrait;
-use crate::siko::ir::Type::Type as IrType;
+use crate::siko::hir::Data::Class as IrClass;
+use crate::siko::hir::Data::Enum as IrEnum;
+use crate::siko::hir::Data::Field as IrField;
+use crate::siko::hir::Data::Variant as IrVariant;
+use crate::siko::hir::Function::Function as IrFunction;
+use crate::siko::hir::Trait::Instance as IrInstance;
+use crate::siko::hir::Trait::Trait as IrTrait;
+use crate::siko::hir::Type::Type as IrType;
 
 pub fn createConstraintContext(decl: &Option<TypeParameterDeclaration>) -> ConstraintContext {
     addTypeParams(ConstraintContext::new(), decl)

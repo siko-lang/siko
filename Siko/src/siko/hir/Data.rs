@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::siko::{ir::Type::formatTypes, qualifiedname::QualifiedName};
+use crate::siko::{hir::Type::formatTypes, qualifiedname::QualifiedName};
 
 use super::{Lifetime::LifetimeInfo, Type::Type};
 

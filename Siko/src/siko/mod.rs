@@ -1,5 +1,5 @@
 pub mod cfg;
-pub mod ir;
+pub mod hir;
 pub mod location;
 pub mod monomorphizer;
 pub mod ownership;

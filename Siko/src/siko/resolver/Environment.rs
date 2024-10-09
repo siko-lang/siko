@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::siko::ir::Function::{InstructionId, ValueKind};
+use crate::siko::hir::Function::{InstructionId, ValueKind};
 
 pub struct Environment<'a> {
     values: BTreeMap<String, ValueKind>,

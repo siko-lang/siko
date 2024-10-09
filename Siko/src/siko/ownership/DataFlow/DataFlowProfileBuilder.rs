@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::siko::{
-    ir::{Function::Parameter, Program::Program},
+    hir::{Function::Parameter, Program::Program},
     ownership::{
         DataFlow::{
             DataFlowProfile::DataFlowProfile, FunctionGroupProcessor::FunctionGroupProcessor,

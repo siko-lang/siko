@@ -4,7 +4,7 @@
 mod siko;
 
 use siko::{
-    ir::Program::Program,
+    hir::Program::Program,
     location::FileManager::FileManager,
     monomorphizer::Monomorphizer::Monomorphizer,
     ownership::{

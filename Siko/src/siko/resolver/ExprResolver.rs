@@ -1,8 +1,8 @@
 use core::panic;
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::siko::ir::Data::Enum;
-use crate::siko::ir::Function::{
+use crate::siko::hir::Data::Enum;
+use crate::siko::hir::Function::{
     Block as IrBlock, BlockId, InstructionId, InstructionKind, ValueKind,
 };
 use crate::siko::qualifiedname::QualifiedName;
@@ -10,7 +10,7 @@ use crate::siko::syntax::Expr::{BinaryOp, Expr, SimpleExpr, UnaryOp};
 use crate::siko::syntax::Identifier::Identifier;
 use crate::siko::syntax::Pattern::{Pattern, SimplePattern};
 use crate::siko::syntax::Statement::StatementKind;
-use crate::siko::{ir::Function::Body, syntax::Statement::Block};
+use crate::siko::{hir::Function::Body, syntax::Statement::Block};
 
 use super::Environment::Environment;
 use super::Error::ResolverError;

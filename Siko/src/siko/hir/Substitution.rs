@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, fmt::Display, iter::zip};
 
-use crate::siko::ir::Type::{Type, TypeVar};
+use crate::siko::hir::Type::{Type, TypeVar};
 
 #[derive(Debug)]
 pub struct Substitution {

@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::siko::{
-    ir::{Function::InstructionId, Type::Type},
+    hir::{Function::InstructionId, Type::Type},
     qualifiedname::QualifiedName,
 };
 

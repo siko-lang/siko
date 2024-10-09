@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::io::Write;
 
-use crate::siko::ir::Function::InstructionId;
-use crate::siko::ir::Type::Type;
+use crate::siko::hir::Function::InstructionId;
+use crate::siko::hir::Type::Type;
 use crate::siko::ownership::Path::Path;
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]

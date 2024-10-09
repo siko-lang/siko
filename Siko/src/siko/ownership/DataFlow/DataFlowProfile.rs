@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, fmt::Debug, fmt::Display};
 
-use crate::siko::ir::{
+use crate::siko::hir::{
     Lifetime::Lifetime,
     Type::{formatTypes, Type},
 };

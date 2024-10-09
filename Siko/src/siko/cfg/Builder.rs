@@ -1,5 +1,5 @@
 use crate::siko::{
-    ir::{
+    hir::{
         Function::{Block, Function, Instruction, InstructionKind, ValueKind},
         Type::Type,
     },
