@@ -1,11 +1,16 @@
 use crate::siko::{
     hir::{
+        Data::Class as HirClass,
         Function::{Function as HirFunction, InstructionKind as HirInstructionKind},
         Program::Program as HirProgram,
+        Type::Type as HirType,
     },
     mir::{
+        self,
+        Data::{Class as MirClass, Field as MirField},
         Function::{BasicBlock, Function as MirFunction, Instruction, InstructionKind},
         Program::Program as MirProgram,
+        Type::Type as MirType,
     },
 };
 
@@ -30,8 +35,34 @@ pub fn lowerFunction(function: &HirFunction) -> MirFunction {
     mir_function
 }
 
+pub fn lowerType(ty: &HirType) -> MirType {
+    match ty {
+        HirType::Named(name, vec, lifetime_info) => MirType::Named(name.clone()),
+        HirType::Tuple(vec) => todo!(),
+        HirType::Function(vec, _) => todo!(),
+        HirType::Var(type_var) => todo!(),
+        HirType::Reference(_, lifetime) => todo!(),
+        HirType::SelfType => todo!(),
+        HirType::Never => todo!(),
+    }
+}
+
+pub fn lowerClass(c: &HirClass) -> MirClass {
+    let mut mirClass = MirClass::new(c.name.clone());
+    for f in &c.fields {
+        let mirField = MirField::new(f.name.clone(), lowerType(&f.ty));
+        mirClass.fields.push(mirField);
+    }
+    mirClass
+}
+
 pub fn lowerProgram(program: &HirProgram) -> MirProgram {
     let mut mir_program = MirProgram::new();
+
+    for (_, c) in &program.classes {
+        let c = lowerClass(c);
+        mir_program.classes.push(c);
+    }
 
     for (_, function) in &program.functions {
         let f = lowerFunction(function);
