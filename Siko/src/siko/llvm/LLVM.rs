@@ -32,9 +32,9 @@ pub fn getTypeName(ty: &Type) -> String {
 }
 
 impl Generator {
-    pub fn new() -> Generator {
+    pub fn new(outputFile: String) -> Generator {
         Generator {
-            output: File::create("llvm.ll").expect("Failed to open llvm.ll"),
+            output: File::create(outputFile).expect("Failed to open llvm.ll"),
         }
     }
 
@@ -79,9 +79,9 @@ impl Generator {
             self.dumpFunction(f)?;
         }
 
-        writeln!(self.output, "define void @main() {{")?;
+        writeln!(self.output, "define i32 @main() {{")?;
         writeln!(self.output, "call void @Main_main()")?;
-        writeln!(self.output, "ret void")?;
+        writeln!(self.output, "ret i32 0")?;
         writeln!(self.output, "}}\n\n")?;
         Ok(())
     }

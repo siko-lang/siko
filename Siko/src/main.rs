@@ -57,7 +57,18 @@ fn monomorphize(program: Program) -> Program {
 fn main() {
     let fileManager = FileManager::new();
     let mut resolver = Resolver::new();
+    let mut parseOutput = false;
+    let mut outputFile = "llvm.ll".to_string();
     for arg in args().skip(1) {
+        if arg == "-o" {
+            parseOutput = true;
+            continue;
+        }
+        if parseOutput {
+            outputFile = arg.clone();
+            parseOutput = false;
+            continue;
+        }
         let fileId = fileManager.add(arg.clone());
         let mut parser = Parser::new(fileId, arg.to_string());
         parser.parse();
@@ -74,7 +85,7 @@ fn main() {
     let data_lifetime_inferer = DataLifeTimeInference::new(program);
     let program = data_lifetime_inferer.process();
     let mir_program = lowerProgram(&program);
-    let mut generator = LLVM::Generator::new();
+    let mut generator = LLVM::Generator::new(outputFile);
     generator.dump(&mir_program).expect("llvm generator failed");
     //println!("after data lifetime\n{}", program);
     //borrowcheck(&program);
