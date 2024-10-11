@@ -27,6 +27,9 @@ pub fn getStructName(name: &QualifiedName) -> String {
 
 pub fn getTypeName(ty: &Type) -> String {
     match &ty {
+        Type::Void => "void".to_string(),
+        Type::I8 => "i8".to_string(),
+        Type::I32 => "i32".to_string(),
         Type::Named(n) => getStructName(n),
     }
 }
@@ -58,7 +61,35 @@ impl Generator {
         for block in &f.blocks {
             for i in &block.instructions {
                 match &i.kind {
-                    InstructionKind::FunctionCall(name) => {
+                    InstructionKind::Allocate(info) => {
+                        writeln!(
+                            self.output,
+                            "alloca {}, align {}",
+                            getTypeName(&info.var.ty),
+                            info.var.alignment.alignment
+                        )?;
+                    }
+                    InstructionKind::StoreVar(dest, src) => {
+                        writeln!(
+                            self.output,
+                            "store {} {}, ptr {}, align {}, !dbg !31",
+                            getTypeName(&src.ty),
+                            src.name,
+                            dest.name,
+                            dest.alignment.alignment,
+                        )?;
+                    }
+                    InstructionKind::StoreNumeric(dest, value) => {
+                        writeln!(
+                            self.output,
+                            "store {} {}, ptr {}, align {}, !dbg !31",
+                            getTypeName(&dest.ty),
+                            value,
+                            dest.name,
+                            dest.alignment.alignment,
+                        )?;
+                    }
+                    InstructionKind::FunctionCall(var, name) => {
                         let name = convertName(name);
                         writeln!(self.output, "call void {}()", name)?;
                     }

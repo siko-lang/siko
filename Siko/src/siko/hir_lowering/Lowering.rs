@@ -8,7 +8,9 @@ use crate::siko::{
     mir::{
         self,
         Data::{Class as MirClass, Field as MirField},
-        Function::{BasicBlock, Function as MirFunction, Instruction, InstructionKind},
+        Function::{
+            Aligment, BasicBlock, Function as MirFunction, Instruction, InstructionKind, Variable,
+        },
         Program::Program as MirProgram,
         Type::Type as MirType,
     },
@@ -18,11 +20,19 @@ pub fn lowerFunction(function: &HirFunction) -> MirFunction {
     let mut mir_function = MirFunction::new(function.name.clone());
     let mut block = BasicBlock::new();
     for instruction in function.instructions() {
+        let idVar = format!("%{}", instruction.id.getId());
         match &instruction.kind {
             HirInstructionKind::FunctionCall(name, _) => {
+                let ty = lowerType(instruction.ty.as_ref().expect("no ty"));
+                let var = Variable {
+                    name: idVar,
+                    ty: ty,
+                    alignment: Aligment { alignment: 4 },
+                };
                 block
                     .instructions
                     .push(Instruction::new(InstructionKind::FunctionCall(
+                        var,
                         name.clone(),
                     )));
             }

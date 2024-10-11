@@ -92,6 +92,10 @@ impl InstructionId {
     pub fn getBlockById(&self) -> BlockId {
         self.blockId
     }
+
+    pub fn getId(&self) -> u32 {
+        self.id
+    }
 }
 
 impl Display for InstructionId {

@@ -1,5 +1,7 @@
 use crate::siko::qualifiedname::QualifiedName;
 
+use super::Type::Type;
+
 pub struct Function {
     pub name: QualifiedName,
     pub blocks: Vec<BasicBlock>,
@@ -14,8 +16,25 @@ impl Function {
     }
 }
 
+pub struct Aligment {
+    pub alignment: u32,
+}
+
+pub struct Variable {
+    pub name: String,
+    pub ty: Type,
+    pub alignment: Aligment,
+}
+
+pub struct AllocInfo {
+    pub var: Variable,
+}
+
 pub enum InstructionKind {
-    FunctionCall(QualifiedName),
+    Allocate(AllocInfo),
+    StoreVar(Variable, Variable),
+    StoreNumeric(Variable, i64),
+    FunctionCall(Variable, QualifiedName),
 }
 
 pub struct Instruction {
