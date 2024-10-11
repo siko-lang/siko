@@ -4,22 +4,26 @@ use super::Type::Type;
 
 pub struct Function {
     pub name: QualifiedName,
+    pub result: Type,
     pub blocks: Vec<BasicBlock>,
 }
 
 impl Function {
-    pub fn new(name: QualifiedName) -> Function {
+    pub fn new(name: QualifiedName, result: Type) -> Function {
         Function {
             name: name,
+            result: result,
             blocks: Vec::new(),
         }
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct Aligment {
     pub alignment: u32,
 }
 
+#[derive(Debug, Clone)]
 pub struct Variable {
     pub name: String,
     pub ty: Type,
@@ -33,8 +37,11 @@ pub struct AllocInfo {
 pub enum InstructionKind {
     Allocate(AllocInfo),
     StoreVar(Variable, Variable),
+    LoadVar(Variable, Variable),
     StoreNumeric(Variable, i64),
     FunctionCall(Variable, QualifiedName),
+    Return(Variable),
+    ReturnVoid,
 }
 
 pub struct Instruction {

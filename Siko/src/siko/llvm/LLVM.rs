@@ -59,7 +59,8 @@ impl Generator {
         match &instruction.kind {
             InstructionKind::Allocate(info) => {
                 format!(
-                    "alloca {}, align {}",
+                    "{} = alloca {}, align {}",
+                    info.var.name,
                     getTypeName(&info.var.ty),
                     info.var.alignment.alignment
                 )
@@ -86,19 +87,38 @@ impl Generator {
                 let name = convertName(name);
                 format!("call void {}()", name)
             }
+            InstructionKind::LoadVar(dest, src) => {
+                format!(
+                    "{} = load {}, ptr {}, align {}",
+                    dest.name,
+                    getTypeName(&dest.ty),
+                    src.name,
+                    src.alignment.alignment
+                )
+            }
+            InstructionKind::Return(var) => {
+                format!("ret {} {}", getTypeName(&var.ty), var.name)
+            }
+            InstructionKind::ReturnVoid => {
+                format!("ret void")
+            }
         }
     }
 
     fn dumpFunction(&mut self, f: &Function) -> io::Result<()> {
         let name = convertName(&f.name);
-        writeln!(self.output, "define void {}() {{", name)?;
+        writeln!(
+            self.output,
+            "define {} {}() {{",
+            getTypeName(&f.result),
+            name
+        )?;
         for block in &f.blocks {
             for i in &block.instructions {
                 let i = self.dumpInstruction(i);
                 writeln!(self.output, "   {}", i)?;
             }
         }
-        writeln!(self.output, "   ret void")?;
         writeln!(self.output, "}}\n")?;
         Ok(())
     }

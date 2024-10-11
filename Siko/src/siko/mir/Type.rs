@@ -1,5 +1,6 @@
 use crate::siko::qualifiedname::QualifiedName;
 
+#[derive(Debug, Clone)]
 pub enum Type {
     Void,
     I8,
