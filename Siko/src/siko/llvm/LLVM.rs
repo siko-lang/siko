@@ -6,7 +6,7 @@ use std::{
 use crate::siko::{
     mir::{
         Data::Class,
-        Function::{Function, InstructionKind},
+        Function::{Function, Instruction, InstructionKind},
         Program::Program,
         Type::Type,
     },
@@ -55,48 +55,50 @@ impl Generator {
         Ok(())
     }
 
+    fn dumpInstruction(&mut self, instruction: &Instruction) -> String {
+        match &instruction.kind {
+            InstructionKind::Allocate(info) => {
+                format!(
+                    "alloca {}, align {}",
+                    getTypeName(&info.var.ty),
+                    info.var.alignment.alignment
+                )
+            }
+            InstructionKind::StoreVar(dest, src) => {
+                format!(
+                    "store {} {}, ptr {}, align {}, !dbg !31",
+                    getTypeName(&src.ty),
+                    src.name,
+                    dest.name,
+                    dest.alignment.alignment,
+                )
+            }
+            InstructionKind::StoreNumeric(dest, value) => {
+                format!(
+                    "store {} {}, ptr {}, align {}, !dbg !31",
+                    getTypeName(&dest.ty),
+                    value,
+                    dest.name,
+                    dest.alignment.alignment,
+                )
+            }
+            InstructionKind::FunctionCall(_, name) => {
+                let name = convertName(name);
+                format!("call void {}()", name)
+            }
+        }
+    }
+
     fn dumpFunction(&mut self, f: &Function) -> io::Result<()> {
         let name = convertName(&f.name);
         writeln!(self.output, "define void {}() {{", name)?;
         for block in &f.blocks {
             for i in &block.instructions {
-                match &i.kind {
-                    InstructionKind::Allocate(info) => {
-                        writeln!(
-                            self.output,
-                            "alloca {}, align {}",
-                            getTypeName(&info.var.ty),
-                            info.var.alignment.alignment
-                        )?;
-                    }
-                    InstructionKind::StoreVar(dest, src) => {
-                        writeln!(
-                            self.output,
-                            "store {} {}, ptr {}, align {}, !dbg !31",
-                            getTypeName(&src.ty),
-                            src.name,
-                            dest.name,
-                            dest.alignment.alignment,
-                        )?;
-                    }
-                    InstructionKind::StoreNumeric(dest, value) => {
-                        writeln!(
-                            self.output,
-                            "store {} {}, ptr {}, align {}, !dbg !31",
-                            getTypeName(&dest.ty),
-                            value,
-                            dest.name,
-                            dest.alignment.alignment,
-                        )?;
-                    }
-                    InstructionKind::FunctionCall(var, name) => {
-                        let name = convertName(name);
-                        writeln!(self.output, "call void {}()", name)?;
-                    }
-                }
+                let i = self.dumpInstruction(i);
+                writeln!(self.output, "   {}", i)?;
             }
         }
-        writeln!(self.output, "ret void")?;
+        writeln!(self.output, "   ret void")?;
         writeln!(self.output, "}}\n")?;
         Ok(())
     }
@@ -111,8 +113,8 @@ impl Generator {
         }
 
         writeln!(self.output, "define i32 @main() {{")?;
-        writeln!(self.output, "call void @Main_main()")?;
-        writeln!(self.output, "ret i32 0")?;
+        writeln!(self.output, "   call void @Main_main()")?;
+        writeln!(self.output, "   ret i32 0")?;
         writeln!(self.output, "}}\n\n")?;
         Ok(())
     }

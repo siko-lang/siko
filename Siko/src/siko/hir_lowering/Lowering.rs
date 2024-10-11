@@ -48,7 +48,7 @@ pub fn lowerFunction(function: &HirFunction) -> MirFunction {
 pub fn lowerType(ty: &HirType) -> MirType {
     match ty {
         HirType::Named(name, vec, lifetime_info) => MirType::Named(name.clone()),
-        HirType::Tuple(vec) => todo!(),
+        HirType::Tuple(vec) => MirType::Void,
         HirType::Function(vec, _) => todo!(),
         HirType::Var(type_var) => todo!(),
         HirType::Reference(_, lifetime) => todo!(),
