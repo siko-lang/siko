@@ -1,13 +1,15 @@
 use crate::siko::{
     hir::{
         Data::Class as HirClass,
-        Function::{Function as HirFunction, InstructionKind as HirInstructionKind},
+        Function::{Function as HirFunction, FunctionKind, InstructionKind as HirInstructionKind},
         Program::Program as HirProgram,
         Type::Type as HirType,
     },
     mir::{
         Data::{Field as MirField, Struct},
-        Function::{Block, Function as MirFunction, Instruction, Value, Variable},
+        Function::{
+            Block, Function as MirFunction, Instruction, Param as MirParam, Value, Variable,
+        },
         Program::Program as MirProgram,
         Type::Type as MirType,
     },
@@ -20,9 +22,17 @@ pub fn convertName(name: &QualifiedName) -> String {
 
 pub fn lowerFunction(function: &HirFunction) -> MirFunction {
     let result = lowerType(&function.result);
+    let mut args = Vec::new();
+    for arg in &function.params {
+        let arg = MirParam {
+            name: format!("%{}", arg.getName()),
+            ty: lowerType(&arg.getType()),
+        };
+        args.push(arg);
+    }
     let mut mir_function = MirFunction {
         name: convertName(&function.name),
-        args: Vec::new(),
+        args: args,
         result: lowerType(&function.result),
         blocks: Vec::new(),
     };
@@ -31,7 +41,7 @@ pub fn lowerFunction(function: &HirFunction) -> MirFunction {
         id: format!("block0"),
         instructions: Vec::new(),
     };
-    if function.name.toString() == "Int.Int" {
+    if function.kind == FunctionKind::ClassCtor {
         let var1 = Variable {
             name: "%1".to_string(),
             ty: MirType::Int64,
@@ -50,52 +60,72 @@ pub fn lowerFunction(function: &HirFunction) -> MirFunction {
             .instructions
             .push(Instruction::Return(Value::Var(var2)));
     } else {
-        let mut lastId = String::new();
-        let mut lastTy = MirType::Void;
-        for instruction in function.instructions() {
-            if let HirInstructionKind::Drop(_) = instruction.kind {
-                continue;
-            }
-            let idVar = format!("%{}", instruction.id.getId() + 1);
-            let ty = lowerType(instruction.ty.as_ref().expect("no ty"));
-            lastId = idVar.clone();
-            lastTy = ty.clone();
-            match &instruction.kind {
-                HirInstructionKind::FunctionCall(name, args) => {
-                    let args = args
-                        .iter()
-                        .map(|id| {
-                            let i = function.getInstruction(*id);
-                            let ty = lowerType(i.ty.as_ref().expect("no ty"));
-                            let name = format!("%{}", id.getId() + 1);
-                            Variable { name: name, ty: ty }
-                        })
-                        .collect();
-
-                    block.instructions.push(Instruction::Call(
-                        Variable {
-                            name: idVar,
-                            ty: ty,
-                        },
-                        convertName(name),
-                        args,
-                    ));
-                }
-                HirInstructionKind::Tuple(_) => {}
-                HirInstructionKind::Drop(_) => {}
-                k => panic!("NYI {}", k),
-            }
-        }
-        if lastTy == MirType::Void {
-            block.instructions.push(Instruction::Return(Value::Void));
-        } else {
-            let var = Variable {
-                name: lastId,
-                ty: lastTy,
+        if function.name.toString() == "Int.Int" {
+            let var1 = Variable {
+                name: "%1".to_string(),
+                ty: MirType::Int64,
+            };
+            let var2 = Variable {
+                name: "%2".to_string(),
+                ty: MirType::Int64,
             };
             block
                 .instructions
-                .push(Instruction::Return(Value::Var(var)));
+                .push(Instruction::StackAllocate(var1.clone()));
+            block
+                .instructions
+                .push(Instruction::Reference(var2.clone(), var1.clone()));
+            block
+                .instructions
+                .push(Instruction::Return(Value::Var(var2)));
+        } else {
+            let mut lastId = String::new();
+            let mut lastTy = MirType::Void;
+            for instruction in function.instructions() {
+                if let HirInstructionKind::Drop(_) = instruction.kind {
+                    continue;
+                }
+                let idVar = format!("%{}", instruction.id.getId() + 1);
+                let ty = lowerType(instruction.ty.as_ref().expect("no ty"));
+                lastId = idVar.clone();
+                lastTy = ty.clone();
+                match &instruction.kind {
+                    HirInstructionKind::FunctionCall(name, args) => {
+                        let args = args
+                            .iter()
+                            .map(|id| {
+                                let i = function.getInstruction(*id);
+                                let ty = lowerType(i.ty.as_ref().expect("no ty"));
+                                let name = format!("%{}", id.getId() + 1);
+                                Variable { name: name, ty: ty }
+                            })
+                            .collect();
+
+                        block.instructions.push(Instruction::Call(
+                            Variable {
+                                name: idVar,
+                                ty: ty,
+                            },
+                            convertName(name),
+                            args,
+                        ));
+                    }
+                    HirInstructionKind::Tuple(_) => {}
+                    HirInstructionKind::Drop(_) => {}
+                    k => panic!("NYI {}", k),
+                }
+            }
+            if lastTy == MirType::Void {
+                block.instructions.push(Instruction::Return(Value::Void));
+            } else {
+                let var = Variable {
+                    name: lastId,
+                    ty: lastTy,
+                };
+                block
+                    .instructions
+                    .push(Instruction::Return(Value::Var(var)));
+            }
         }
     }
     mir_function.blocks.push(block);

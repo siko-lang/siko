@@ -313,7 +313,7 @@ impl Display for Body {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FunctionKind {
     UserDefined,
     VariantCtor(i64),

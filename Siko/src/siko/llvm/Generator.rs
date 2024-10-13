@@ -3,7 +3,7 @@ use std::{
     io::{self, Write},
 };
 
-use crate::siko::llvm::Function::Value;
+use crate::siko::{hir_lowering::Lowering::convertName, llvm::Function::Value};
 
 use super::{
     Data::Struct,
@@ -142,7 +142,31 @@ impl Generator {
     }
 
     fn dumpFunction(&self, f: &Function, buf: &mut File) -> io::Result<()> {
-        writeln!(buf, "define {} {}() {{", getTypeName(&f.result), f.name)?;
+        let mut args = Vec::new();
+        for arg in &f.args {
+            match &arg.ty {
+                Type::Struct(name) => {
+                    let s = self.program.getStruct(name);
+                    args.push(format!(
+                        "ptr noundef byval({}) align {} {}",
+                        getStructName(name),
+                        s.alignment,
+                        arg.name,
+                    ));
+                }
+                Type::Int64 => {
+                    args.push(format!("i64 {}", arg.name));
+                }
+                _ => todo!(),
+            }
+        }
+        writeln!(
+            buf,
+            "define {} {}({}) {{",
+            getTypeName(&f.result),
+            f.name,
+            args.join(", ")
+        )?;
         for block in &f.blocks {
             for i in &block.instructions {
                 let i = self.dumpInstruction(i);

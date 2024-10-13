@@ -1,5 +1,6 @@
 use super::Type::Type;
 
+#[derive(Debug)]
 pub struct Param {
     pub name: String,
     pub ty: Type,
