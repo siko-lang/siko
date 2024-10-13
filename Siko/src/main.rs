@@ -6,7 +6,7 @@ mod siko;
 use siko::{
     hir::Program::Program,
     hir_lowering::Lowering::lowerProgram,
-    llvm::LLVM,
+    llvm::Generator::Generator,
     location::FileManager::FileManager,
     monomorphizer::Monomorphizer::Monomorphizer,
     ownership::{
@@ -84,9 +84,10 @@ fn main() {
     //println!("after mono\n{}", program);
     let data_lifetime_inferer = DataLifeTimeInference::new(program);
     let program = data_lifetime_inferer.process();
-    let mir_program = lowerProgram(&program);
-    let mut generator = LLVM::Generator::new(outputFile);
-    generator.dump(&mir_program).expect("llvm generator failed");
+    let mut mir_program = lowerProgram(&program);
+    let llvm_program = mir_program.process();
+    let mut generator = Generator::new(outputFile, llvm_program);
+    generator.dump().expect("llvm generator failed");
     //println!("after data lifetime\n{}", program);
     //borrowcheck(&program);
     //dataflow(&functions);

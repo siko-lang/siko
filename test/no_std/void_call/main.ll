@@ -3,7 +3,6 @@ define void @Main_foo() {
 }
 
 define void @Main_main() {
-   call void @Main_foo()
    ret void
 }
 

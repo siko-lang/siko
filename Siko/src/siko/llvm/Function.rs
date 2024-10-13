@@ -17,7 +17,6 @@ pub struct Block {
     pub instructions: Vec<Instruction>,
 }
 
-#[derive(Clone)]
 pub struct Variable {
     pub name: String,
     pub ty: Type,
@@ -25,13 +24,14 @@ pub struct Variable {
 
 pub enum Value {
     Void,
-    LiteralNumeric(i64),
-    Var(Variable),
-    Field(Box<Value>, String),
+    Variable(Variable),
+    Numeric(i64),
 }
 
 pub enum Instruction {
-    StackAllocate(Variable),
-    Assignment(Value, Value),
+    Allocate(Variable),
+    Store(Variable, Value),
+    LoadVar(Variable, Variable),
+    FunctionCall(Variable, String),
     Return(Value),
 }

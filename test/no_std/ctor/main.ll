@@ -1,18 +1,15 @@
-%struct.Int_Int = type { i32 }
+%struct.Int_Int = type { i64 }
 
 define %struct.Int_Int @Int_Int() {
-   %1 = alloca i32, align 4
-   %2 = load %struct.Int_Int, ptr %1, align 4
-   ret %struct.Int_Int %2
+   %1 = alloca i64, align 8
+   ret i64 %1
 }
 
 define void @Main_foo() {
-   call void @Int_Int()
    ret void
 }
 
 define void @Main_main() {
-   call void @Main_foo()
    ret void
 }
 
