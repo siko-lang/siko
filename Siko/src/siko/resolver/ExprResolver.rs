@@ -218,10 +218,16 @@ impl<'a> ExprResolver<'a> {
             SimpleExpr::If(cond, trueBranch, falseBranch) => {
                 let condId = self.resolveExpr(cond, env);
                 let currentBlockId = self.targetBlockId;
+                let contBlockId = self.createBlock();
                 let trueBlockId = self.createBlock();
                 match &trueBranch.expr {
                     SimpleExpr::Block(block) => {
+                        self.setTargetBlockId(trueBlockId);
                         self.resolveBlock(block, env);
+                        self.addInstruction(
+                            InstructionKind::Jump(contBlockId),
+                            expr.location.clone(),
+                        );
                     }
                     _ => panic!("If true branch is not a block!"),
                 };
@@ -230,7 +236,12 @@ impl<'a> ExprResolver<'a> {
                         let falseBranchId = match &falseBranch.expr {
                             SimpleExpr::Block(block) => {
                                 let falseBlockId = self.createBlock();
+                                self.setTargetBlockId(falseBlockId);
                                 self.resolveBlock(block, env);
+                                self.addInstruction(
+                                    InstructionKind::Jump(contBlockId),
+                                    expr.location.clone(),
+                                );
                                 falseBlockId
                             }
                             _ => panic!("If false branch is not a block!"),
@@ -244,7 +255,7 @@ impl<'a> ExprResolver<'a> {
                     InstructionKind::If(condId, trueBlockId, falseBranchId),
                     expr.location.clone(),
                 );
-                let contBlockId = self.createBlock();
+
                 self.setTargetBlockId(contBlockId);
                 ifId
             }
@@ -271,7 +282,6 @@ impl<'a> ExprResolver<'a> {
                     _ => panic!("If true branch is not a block!"),
                 }
                 self.loopIds.pop();
-                self.addInstruction(InstructionKind::Drop(Vec::new()), expr.location.clone());
                 loopId
             }
             SimpleExpr::BinaryOp(op, lhs, rhs) => {

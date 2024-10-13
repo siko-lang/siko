@@ -234,6 +234,9 @@ impl Builder {
                     }
                     last = Some(key);
                 }
+                InstructionKind::Jump(_) => {
+                    todo!()
+                }
             }
         }
         last

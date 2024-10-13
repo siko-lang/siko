@@ -4,7 +4,6 @@ use std::{
 };
 
 use crate::siko::{
-    location::Location::Location,
     hir::{
         Function::{
             Block, Body, Function, Instruction, InstructionId, InstructionKind, Parameter,
@@ -15,6 +14,7 @@ use crate::siko::{
         TraitMethodSelector::TraitMethodSelector,
         Type::Type,
     },
+    location::Location::Location,
     qualifiedname::QualifiedName,
 };
 
@@ -446,6 +446,9 @@ impl<'a> Typechecker<'a> {
                         Type::getUnitType(),
                         instruction.location.clone(),
                     );
+                }
+                InstructionKind::Jump(_) => {
+                    todo!()
                 }
             }
         }

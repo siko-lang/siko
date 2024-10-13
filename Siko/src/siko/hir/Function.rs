@@ -129,6 +129,7 @@ pub enum InstructionKind {
     Return(InstructionId),
     Ref(InstructionId),
     Drop(Vec<String>),
+    Jump(BlockId),
 }
 
 impl Display for InstructionKind {
@@ -169,6 +170,9 @@ impl InstructionKind {
             InstructionKind::Ref(id) => format!("&({})", id),
             InstructionKind::Drop(values) => {
                 format!("drop({})", values.join(", "))
+            }
+            InstructionKind::Jump(id) => {
+                format!("jump({})", id)
             }
         }
     }
