@@ -32,6 +32,6 @@ pub enum Instruction {
     Allocate(Variable),
     Store(Variable, Value),
     LoadVar(Variable, Variable),
-    FunctionCall(Variable, String),
+    FunctionCall(Variable, String, Vec<Variable>),
     Return(Value),
 }

@@ -36,25 +36,67 @@ pub fn lowerFunction(function: &HirFunction) -> MirFunction {
             name: "%1".to_string(),
             ty: MirType::Int64,
         };
+        let var2 = Variable {
+            name: "%2".to_string(),
+            ty: MirType::Int64,
+        };
         block
             .instructions
             .push(Instruction::StackAllocate(var1.clone()));
         block
             .instructions
-            .push(Instruction::Return(Value::Var(var1)));
+            .push(Instruction::Reference(var2.clone(), var1.clone()));
+        block
+            .instructions
+            .push(Instruction::Return(Value::Var(var2)));
     } else {
+        let mut lastId = String::new();
+        let mut lastTy = MirType::Void;
         for instruction in function.instructions() {
-            let idVar = format!("%{}", instruction.id.getId());
+            if let HirInstructionKind::Drop(_) = instruction.kind {
+                continue;
+            }
+            let idVar = format!("%{}", instruction.id.getId() + 1);
+            let ty = lowerType(instruction.ty.as_ref().expect("no ty"));
+            lastId = idVar.clone();
+            lastTy = ty.clone();
             match &instruction.kind {
-                HirInstructionKind::FunctionCall(name, _) => {
-                    let ty = lowerType(instruction.ty.as_ref().expect("no ty"));
+                HirInstructionKind::FunctionCall(name, args) => {
+                    let args = args
+                        .iter()
+                        .map(|id| {
+                            let i = function.getInstruction(*id);
+                            let ty = lowerType(i.ty.as_ref().expect("no ty"));
+                            let name = format!("%{}", id.getId() + 1);
+                            Variable { name: name, ty: ty }
+                        })
+                        .collect();
+
+                    block.instructions.push(Instruction::Call(
+                        Variable {
+                            name: idVar,
+                            ty: ty,
+                        },
+                        convertName(name),
+                        args,
+                    ));
                 }
                 HirInstructionKind::Tuple(_) => {}
                 HirInstructionKind::Drop(_) => {}
                 k => panic!("NYI {}", k),
             }
         }
-        block.instructions.push(Instruction::Return(Value::Void));
+        if lastTy == MirType::Void {
+            block.instructions.push(Instruction::Return(Value::Void));
+        } else {
+            let var = Variable {
+                name: lastId,
+                ty: lastTy,
+            };
+            block
+                .instructions
+                .push(Instruction::Return(Value::Var(var)));
+        }
     }
     mir_function.blocks.push(block);
     mir_function
@@ -62,7 +104,13 @@ pub fn lowerFunction(function: &HirFunction) -> MirFunction {
 
 pub fn lowerType(ty: &HirType) -> MirType {
     match ty {
-        HirType::Named(name, vec, lifetime_info) => MirType::Struct(name.toString()),
+        HirType::Named(name, vec, lifetime_info) => {
+            if name.toString() == "Int.Int" {
+                MirType::Int64
+            } else {
+                MirType::Struct(name.toString())
+            }
+        }
         HirType::Tuple(vec) => MirType::Void,
         HirType::Function(vec, _) => todo!(),
         HirType::Var(type_var) => todo!(),

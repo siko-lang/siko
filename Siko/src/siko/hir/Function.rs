@@ -5,7 +5,7 @@ use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
 
 use super::{ConstraintContext::ConstraintContext, Type::Type};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ValueKind {
     Arg(String, i64),
     LoopVar(String),
@@ -110,7 +110,7 @@ impl std::fmt::Debug for InstructionId {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum InstructionKind {
     FunctionCall(QualifiedName, Vec<InstructionId>),
     DynamicFunctionCall(InstructionId, Vec<InstructionId>),

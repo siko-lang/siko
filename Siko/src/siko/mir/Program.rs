@@ -140,6 +140,34 @@ impl Program {
                     let llvmInstruction = LInstruction::Allocate(var);
                     llvmBlock.instructions.push(llvmInstruction);
                 }
+                Instruction::Reference(dest, src) => {
+                    let src = LVariable {
+                        name: src.name.clone(),
+                        ty: self.lowerType(&src.ty),
+                    };
+                    let dest = LVariable {
+                        name: dest.name.clone(),
+                        ty: self.lowerType(&dest.ty),
+                    };
+                    let llvmInstruction = LInstruction::LoadVar(dest, src);
+                    llvmBlock.instructions.push(llvmInstruction);
+                }
+                Instruction::Call(dest, name, args) => {
+                    let mut llvmArgs = Vec::new();
+                    for arg in args {
+                        let arg = LVariable {
+                            name: arg.name.clone(),
+                            ty: self.lowerType(&arg.ty),
+                        };
+                        llvmArgs.push(arg);
+                    }
+                    let dest = LVariable {
+                        name: dest.name.clone(),
+                        ty: self.lowerType(&dest.ty),
+                    };
+                    let llvmInstruction = LInstruction::FunctionCall(dest, name.clone(), llvmArgs);
+                    llvmBlock.instructions.push(llvmInstruction);
+                }
                 Instruction::Assignment(lvalue, rvalue) => {
                     let dest = match lvalue {
                         Value::Void => panic!("Invalid lvalue: void"),

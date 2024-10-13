@@ -98,8 +98,27 @@ impl Generator {
                     )
                 }
             },
-            Instruction::FunctionCall(_, name) => {
-                format!("call void {}()", name)
+            Instruction::FunctionCall(res, name, args) => {
+                let mut argRefs = Vec::new();
+                for arg in args {
+                    argRefs.push(arg.name.clone());
+                }
+                if res.ty == Type::Void {
+                    format!(
+                        "call {} {}({})",
+                        getTypeName(&res.ty),
+                        name,
+                        argRefs.join(", ")
+                    )
+                } else {
+                    format!(
+                        "{} = call {} {}({})",
+                        res.name,
+                        getTypeName(&res.ty),
+                        name,
+                        argRefs.join(", ")
+                    )
+                }
             }
             Instruction::LoadVar(dest, src) => {
                 format!(

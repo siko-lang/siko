@@ -32,6 +32,8 @@ pub enum Value {
 
 pub enum Instruction {
     StackAllocate(Variable),
+    Reference(Variable, Variable),
+    Call(Variable, String, Vec<Variable>),
     Assignment(Value, Value),
     Return(Value),
 }
