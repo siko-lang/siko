@@ -6,8 +6,7 @@ use std::{
 use crate::siko::{
     hir::{
         Function::{
-            Block, Body, Function, Instruction, InstructionId, InstructionKind, Parameter,
-            ValueKind,
+            Body, Function, Instruction, InstructionId, InstructionKind, Parameter, ValueKind,
         },
         Program::Program,
         Substitution::Substitution,
@@ -210,7 +209,7 @@ impl<'a> Typechecker<'a> {
                         }
                     }
                 }
-                InstructionKind::If(cond, tb, fb) => {
+                InstructionKind::If(cond, _, _) => {
                     self.unify(
                         self.getInstructionType(*cond),
                         Type::getBoolType(),

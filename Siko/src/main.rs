@@ -83,7 +83,7 @@ fn main() {
     let program = typecheck(program);
     let program = eliminateDeadCode(program);
     let program = monomorphize(program);
-    println!("after mono\n{}", program);
+    //println!("after mono\n{}", program);
     let data_lifetime_inferer = DataLifeTimeInference::new(program);
     let program = data_lifetime_inferer.process();
     let mut mir_program = lowerProgram(&program);

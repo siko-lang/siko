@@ -125,7 +125,6 @@ impl Program {
     }
 
     fn lowerBlock(&self, block: &Block) -> LBlock {
-        let mut nextVar = 1;
         let mut llvmBlock = LBlock {
             id: block.id.clone(),
             instructions: Vec::new(),
@@ -178,7 +177,7 @@ impl Program {
                             name: variable.name.clone(),
                             ty: self.lowerType(&variable.ty),
                         },
-                        Value::Field(value, _) => {
+                        Value::Field(_, _) => {
                             todo!()
                         }
                     };
@@ -192,7 +191,7 @@ impl Program {
                             };
                             LValue::Variable(var)
                         }
-                        Value::Field(value, _) => {
+                        Value::Field(_, _) => {
                             todo!()
                         }
                     };
@@ -210,7 +209,7 @@ impl Program {
                             };
                             LValue::Variable(var)
                         }
-                        Value::Field(value, _) => unreachable!(),
+                        Value::Field(_, _) => unreachable!(),
                     };
                     let llvmInstruction = LInstruction::Return(value);
                     llvmBlock.instructions.push(llvmInstruction);

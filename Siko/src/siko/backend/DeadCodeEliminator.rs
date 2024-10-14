@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use crate::siko::{
     hir::{
-        Function::{Block, BlockId, Function, InstructionId, InstructionKind},
+        Function::{BlockId, Function, InstructionId, InstructionKind},
         Program::Program,
     },
     location::Report::Report,

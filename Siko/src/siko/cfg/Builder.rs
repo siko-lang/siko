@@ -1,6 +1,6 @@
 use crate::siko::{
     hir::{
-        Function::{Block, Function, Instruction, InstructionKind, ValueKind},
+        Function::{Block, Function, Instruction, InstructionKind},
         Type::Type,
     },
     ownership::Path::Path,
@@ -152,7 +152,7 @@ impl Builder {
                 InstructionKind::Jump(_) => {
                     todo!()
                 }
-                InstructionKind::Assign(v, _) => {}
+                InstructionKind::Assign(_, _) => {}
                 InstructionKind::DeclareVar(_) => {}
             }
         }

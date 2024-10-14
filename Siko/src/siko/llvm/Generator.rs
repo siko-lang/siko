@@ -3,7 +3,7 @@ use std::{
     io::{self, Write},
 };
 
-use crate::siko::{hir_lowering::Lowering::convertName, llvm::Function::Value};
+use crate::siko::llvm::Function::Value;
 
 use super::{
     Data::Struct,

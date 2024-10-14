@@ -134,17 +134,17 @@ pub fn lowerFunction(function: &HirFunction) -> MirFunction {
 
 pub fn lowerType(ty: &HirType) -> MirType {
     match ty {
-        HirType::Named(name, vec, lifetime_info) => {
+        HirType::Named(name, _, _) => {
             if name.toString() == "Int.Int" {
                 MirType::Int64
             } else {
                 MirType::Struct(name.toString())
             }
         }
-        HirType::Tuple(vec) => MirType::Void,
-        HirType::Function(vec, _) => todo!(),
-        HirType::Var(type_var) => todo!(),
-        HirType::Reference(_, lifetime) => todo!(),
+        HirType::Tuple(_) => MirType::Void,
+        HirType::Function(_, _) => todo!(),
+        HirType::Var(_) => todo!(),
+        HirType::Reference(_, _) => todo!(),
         HirType::SelfType => todo!(),
         HirType::Never => todo!(),
     }
