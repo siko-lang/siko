@@ -61,10 +61,10 @@ impl<'a> Typechecker<'a> {
 
     pub fn run(&mut self, f: &Function) -> Function {
         self.initialize(f);
-        //self.dump(f);
+        self.dump(f);
         self.check(f);
         self.verify(f);
-        //self.dump(f);
+        self.dump(f);
         self.generate(f)
     }
 
@@ -171,8 +171,13 @@ impl<'a> Typechecker<'a> {
         );
     }
 
-    fn checkBlock(&mut self, body: &Body, block: &Block, f: &Function) {
-        for instruction in &block.instructions {
+    fn check(&mut self, f: &Function) {
+        let body = if let Some(body) = &f.body {
+            body
+        } else {
+            return;
+        };
+        for instruction in f.instructions() {
             //println!("Type checking {}", instruction);
             match &instruction.kind {
                 InstructionKind::FunctionCall(name, args) => {
@@ -206,46 +211,14 @@ impl<'a> Typechecker<'a> {
                     }
                 }
                 InstructionKind::If(cond, tb, fb) => {
-                    let trueBlock = body.getBlockById(*tb);
-                    let trueLast = trueBlock.getLastId();
-                    self.checkBlock(body, trueBlock, f);
                     self.unify(
                         self.getInstructionType(*cond),
                         Type::getBoolType(),
                         body.getInstruction(*cond).location.clone(),
                     );
-                    match fb {
-                        Some(fb) => {
-                            let falseBlock = body.getBlockById(*fb);
-                            let falseLast = falseBlock.getLastId();
-                            self.checkBlock(body, falseBlock, f);
-                            self.unify(
-                                self.getInstructionType(trueLast),
-                                self.getInstructionType(falseLast),
-                                instruction.location.clone(),
-                            );
-                        }
-                        None => {
-                            self.unify(
-                                self.getInstructionType(trueLast),
-                                Type::getUnitType(),
-                                instruction.location.clone(),
-                            );
-                        }
-                    }
                     self.unify(
-                        self.getInstructionType(trueLast),
                         self.getInstructionType(instruction.id),
-                        instruction.location.clone(),
-                    );
-                }
-                InstructionKind::BlockRef(id) => {
-                    let other_block = body.getBlockById(*id);
-                    self.checkBlock(body, other_block, f);
-                    let last = other_block.getLastId();
-                    self.unify(
-                        self.getInstructionType(last),
-                        self.getInstructionType(instruction.id),
+                        Type::getUnitType(),
                         instruction.location.clone(),
                     );
                 }
@@ -426,20 +399,6 @@ impl<'a> Typechecker<'a> {
         }
     }
 
-    pub fn check(&mut self, f: &Function) {
-        //println!("Typechecking {}", f.name);
-        let body = if let Some(body) = &f.body {
-            body
-        } else {
-            return;
-        };
-        let block = &body.blocks[0];
-        self.checkBlock(body, block, f);
-        let last = block.getLastId();
-        let loc = body.getInstruction(last).location.clone();
-        self.unify(self.getInstructionType(last), f.result.clone(), loc);
-    }
-
     pub fn verify(&self, f: &Function) {
         if let Some(body) = &f.body {
             let fnType = f.getType();
@@ -450,6 +409,7 @@ impl<'a> Typechecker<'a> {
                     let ty = self.substitution.apply(&ty);
                     let vars = ty.collectVars(BTreeSet::new());
                     if !vars.is_empty() && vars != publicVars {
+                        self.dump(f);
                         println!("{} {}", instruction, ty);
                         TypecheckerError::TypeAnnotationNeeded(instruction.location.clone())
                             .report();

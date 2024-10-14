@@ -241,12 +241,6 @@ impl<'a> FunctionGroupProcessor<'a> {
                     //println!("{}: {} {}", i.id, i.kind, ty);
                 }
                 InstructionKind::Drop(_) => {}
-                InstructionKind::BlockRef(id) => {
-                    let last = f.getBlockById(*id).getLastId();
-                    let ty = data.getInstructionType(i.id);
-                    let blockTy = data.getInstructionType(last);
-                    self.unify(&ty, &blockTy);
-                }
                 _ => panic!("NYI {}", i.kind),
             }
         }

@@ -530,6 +530,12 @@ impl<'a> ExprResolver<'a> {
         let id = self.createBlock();
         self.setTargetBlockId(id);
         self.resolveBlock(body, env);
+        let lastId = self.body.getBlockById(self.targetBlockId).getLastId();
+        let lastInstruction = self.body.getInstruction(lastId);
+        if let InstructionKind::Return(_) = lastInstruction.kind {
+        } else {
+            self.addInstruction(InstructionKind::Return(lastId), body.location.clone());
+        }
         self.body.blocks.sort_by(|a, b| a.id.cmp(&b.id));
     }
 

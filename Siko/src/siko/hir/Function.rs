@@ -112,7 +112,6 @@ pub enum InstructionKind {
     FunctionCall(QualifiedName, Vec<InstructionId>),
     DynamicFunctionCall(InstructionId, Vec<InstructionId>),
     If(InstructionId, BlockId, Option<BlockId>),
-    BlockRef(BlockId),
     ValueRef(ValueKind, Vec<String>, Vec<u32>),
     Bind(String, InstructionId),
     Tuple(Vec<InstructionId>),
@@ -151,7 +150,6 @@ impl InstructionKind {
                 Some(f) => format!("if {} {{ {} }} else {{ {} }}", cond, t, f),
                 None => format!("if {} {{ {} }}", cond, t),
             },
-            InstructionKind::BlockRef(id) => format!("blockref: {}", id),
             InstructionKind::ValueRef(v, names, _) => format!("{}/{:?}", v, names),
             InstructionKind::Bind(v, rhs) => format!("${} = {}", v, rhs),
             InstructionKind::Tuple(args) => format!("tuple({:?})", args),
@@ -279,14 +277,6 @@ impl Body {
         self.blocks.push(block);
     }
 
-    pub fn getBlockByRef(&self, id: InstructionId) -> &Block {
-        let i = self.getInstruction(id);
-        match &i.kind {
-            InstructionKind::BlockRef(id) => &self.blocks[id.id as usize],
-            _ => panic!("getBlockByRef: instruction is not block ref!"),
-        }
-    }
-
     pub fn getBlockById(&self, id: BlockId) -> &Block {
         &self.blocks[id.id as usize]
     }
@@ -344,14 +334,6 @@ impl Function {
             body: body,
             constraintContext: constraintContext,
             kind: kind,
-        }
-    }
-
-    pub fn getBlockByRef(&self, id: InstructionId) -> &Block {
-        if let Some(body) = &self.body {
-            body.getBlockByRef(id)
-        } else {
-            panic!("getBlockByRef: no body found");
         }
     }
 

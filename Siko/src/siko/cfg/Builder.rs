@@ -69,10 +69,6 @@ impl Builder {
                     }
                     last = Some(ifKey);
                 }
-                InstructionKind::BlockRef(id) => {
-                    let block = f.getBlockById(*id);
-                    last = self.processBlock(block, last, f);
-                }
                 InstructionKind::ValueRef(v, fields, _) => {
                     let value = v.getValue();
                     let key = Key::Instruction(instruction.id);
