@@ -61,10 +61,10 @@ impl<'a> Typechecker<'a> {
 
     pub fn run(&mut self, f: &Function) -> Function {
         self.initialize(f);
-        self.dump(f);
+        //self.dump(f);
         self.check(f);
         self.verify(f);
-        self.dump(f);
+        //self.dump(f);
         self.generate(f)
     }
 
