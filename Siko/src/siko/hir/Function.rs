@@ -128,6 +128,7 @@ pub enum InstructionKind {
     Drop(Vec<String>),
     Jump(BlockId),
     Assign(String, InstructionId),
+    DeclareVar(String),
 }
 
 impl Display for InstructionKind {
@@ -173,6 +174,7 @@ impl InstructionKind {
                 format!("jump({})", id)
             }
             InstructionKind::Assign(v, arg) => format!("assign({}, {})", v, arg),
+            InstructionKind::DeclareVar(v) => format!("declare({})", v),
         }
     }
 }

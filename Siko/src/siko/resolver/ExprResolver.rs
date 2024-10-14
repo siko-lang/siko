@@ -223,6 +223,11 @@ impl<'a> ExprResolver<'a> {
             }
             SimpleExpr::If(cond, trueBranch, falseBranch) => {
                 let condId = self.resolveExpr(cond, env);
+                let name = self.createValue("if_var");
+                let declareId = self.addInstruction(
+                    InstructionKind::DeclareVar(name.clone()),
+                    expr.location.clone(),
+                );
                 let currentBlockId = self.targetBlockId;
                 let contBlockId = self.createBlock();
                 let trueBlockId = self.createBlock();
@@ -230,6 +235,13 @@ impl<'a> ExprResolver<'a> {
                     SimpleExpr::Block(block) => {
                         self.setTargetBlockId(trueBlockId);
                         self.resolveBlock(block, env);
+                        self.addInstruction(
+                            InstructionKind::Assign(
+                                name.clone(),
+                                self.body.getBlockById(trueBlockId).getLastId(),
+                            ),
+                            expr.location.clone(),
+                        );
                         self.addInstruction(
                             InstructionKind::Jump(contBlockId),
                             expr.location.clone(),
@@ -245,6 +257,13 @@ impl<'a> ExprResolver<'a> {
                                 self.setTargetBlockId(falseBlockId);
                                 self.resolveBlock(block, env);
                                 self.addInstruction(
+                                    InstructionKind::Assign(
+                                        name.clone(),
+                                        self.body.getBlockById(falseBlockId).getLastId(),
+                                    ),
+                                    expr.location.clone(),
+                                );
+                                self.addInstruction(
                                     InstructionKind::Jump(contBlockId),
                                     expr.location.clone(),
                                 );
@@ -256,14 +275,22 @@ impl<'a> ExprResolver<'a> {
                     }
                     None => None,
                 };
-                let ifId = self.addInstructionToBlock(
+                self.addInstructionToBlock(
                     currentBlockId,
                     InstructionKind::If(condId, trueBlockId, falseBranchId),
                     expr.location.clone(),
                 );
 
                 self.setTargetBlockId(contBlockId);
-                ifId
+                let ifValueId = self.addInstruction(
+                    InstructionKind::ValueRef(
+                        ValueKind::Value(name, declareId),
+                        Vec::new(),
+                        Vec::new(),
+                    ),
+                    expr.location.clone(),
+                );
+                ifValueId
             }
             SimpleExpr::For(_, _, _) => todo!(),
             SimpleExpr::Loop(pattern, init, body) => {
@@ -315,7 +342,7 @@ impl<'a> ExprResolver<'a> {
                 );
                 self.addInstruction(InstructionKind::Jump(loopBodyId), expr.location.clone());
                 self.loopInfos.pop();
-
+                self.setTargetBlockId(loopExitId);
                 finalValueId
             }
             SimpleExpr::BinaryOp(op, lhs, rhs) => {

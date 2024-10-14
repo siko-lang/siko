@@ -230,6 +230,7 @@ impl Builder {
                     todo!()
                 }
                 InstructionKind::Assign(v, _) => {}
+                InstructionKind::DeclareVar(_) => {}
             }
         }
         last

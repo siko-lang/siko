@@ -452,6 +452,9 @@ impl<'a> Typechecker<'a> {
                 InstructionKind::Assign(_, _) => {
                     todo!()
                 }
+                InstructionKind::DeclareVar(_) => {
+                    todo!()
+                }
             }
         }
     }
