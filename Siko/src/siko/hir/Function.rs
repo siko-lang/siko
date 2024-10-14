@@ -8,7 +8,6 @@ use super::{ConstraintContext::ConstraintContext, Type::Type};
 #[derive(Debug, Clone, PartialEq)]
 pub enum ValueKind {
     Arg(String, i64),
-    LoopVar(String),
     Value(String, InstructionId),
 }
 
@@ -16,7 +15,6 @@ impl ValueKind {
     pub fn getValue(&self) -> String {
         match &self {
             ValueKind::Arg(v, _) => v.clone(),
-            ValueKind::LoopVar(v) => v.clone(),
             ValueKind::Value(v, _) => v.clone(),
         }
     }
@@ -26,7 +24,6 @@ impl Display for ValueKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
             ValueKind::Arg(n, index) => write!(f, "@arg/{}/{}", n, index),
-            ValueKind::LoopVar(n) => write!(f, "loop(${})", n),
             ValueKind::Value(n, bindId) => write!(f, "${}/{}", n, bindId),
         }
     }
@@ -130,6 +127,7 @@ pub enum InstructionKind {
     Ref(InstructionId),
     Drop(Vec<String>),
     Jump(BlockId),
+    Assign(String, InstructionId),
 }
 
 impl Display for InstructionKind {
@@ -174,6 +172,7 @@ impl InstructionKind {
             InstructionKind::Jump(id) => {
                 format!("jump({})", id)
             }
+            InstructionKind::Assign(v, arg) => format!("assign({}, {})", v, arg),
         }
     }
 }
@@ -247,7 +246,6 @@ impl Block {
         self.instructions
             .iter()
             .rev()
-            .skip(1)
             .next()
             .expect("Empty block!")
             .id

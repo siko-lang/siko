@@ -252,7 +252,6 @@ impl<'a> Typechecker<'a> {
                 InstructionKind::ValueRef(value, fields, _) => {
                     let mut receiverType = match &value {
                         ValueKind::Arg(name, _) => self.getValueType(name),
-                        ValueKind::LoopVar(name) => self.getValueType(name),
                         ValueKind::Value(name, _) => self.getValueType(name),
                     };
                     if fields.is_empty() {
@@ -448,6 +447,9 @@ impl<'a> Typechecker<'a> {
                     );
                 }
                 InstructionKind::Jump(_) => {
+                    todo!()
+                }
+                InstructionKind::Assign(_, _) => {
                     todo!()
                 }
             }

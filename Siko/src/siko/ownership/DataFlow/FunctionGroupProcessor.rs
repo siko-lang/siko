@@ -203,7 +203,6 @@ impl<'a> FunctionGroupProcessor<'a> {
                             let arg = &data.profile.args[*index as usize];
                             arg.clone()
                         }
-                        ValueKind::LoopVar(_) => todo!(),
                         ValueKind::Value(name, _) => data.getValueType(name),
                     };
                     for index in indices {

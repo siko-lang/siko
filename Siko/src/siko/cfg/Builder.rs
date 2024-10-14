@@ -80,14 +80,6 @@ impl Builder {
                     last = self.processBlock(block, last, f);
                 }
                 InstructionKind::ValueRef(v, fields, _) => {
-                    if let ValueKind::LoopVar(_) = v {
-                        last = Some(self.processGenericInstruction(
-                            instruction,
-                            last,
-                            NodeKind::Generic,
-                        ));
-                        continue;
-                    }
                     let value = v.getValue();
                     let key = Key::Instruction(instruction.id);
                     let mut node = Node::new(
@@ -237,6 +229,7 @@ impl Builder {
                 InstructionKind::Jump(_) => {
                     todo!()
                 }
+                InstructionKind::Assign(v, _) => {}
             }
         }
         last
