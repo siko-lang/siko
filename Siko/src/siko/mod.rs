@@ -1,3 +1,4 @@
+pub mod backend;
 pub mod cfg;
 pub mod hir;
 pub mod hir_lowering;

@@ -96,7 +96,7 @@ impl<'a> ExprResolver<'a> {
             }
         }
         if block.statements.is_empty() || lastHasSemicolon {
-            self.addInstruction(InstructionKind::Tuple(Vec::new()), block.location.clone());
+            self.addImplicitInstruction(InstructionKind::Tuple(Vec::new()), block.location.clone());
         }
     }
 
@@ -105,7 +105,15 @@ impl<'a> ExprResolver<'a> {
         instruction: InstructionKind,
         location: Location,
     ) -> InstructionId {
-        self.addInstructionToBlock(self.targetBlockId, instruction, location)
+        self.addInstructionToBlock(self.targetBlockId, instruction, location, false)
+    }
+
+    fn addImplicitInstruction(
+        &mut self,
+        instruction: InstructionKind,
+        location: Location,
+    ) -> InstructionId {
+        self.addInstructionToBlock(self.targetBlockId, instruction, location, true)
     }
 
     fn addInstructionToBlock(
@@ -113,9 +121,10 @@ impl<'a> ExprResolver<'a> {
         id: BlockId,
         instruction: InstructionKind,
         location: Location,
+        implicit: bool,
     ) -> InstructionId {
         let irBlock = &mut self.body.blocks[id.id as usize];
-        return irBlock.add(instruction, location);
+        return irBlock.addWithImplicit(instruction, location, implicit);
     }
 
     fn resolveExpr(&mut self, expr: &Expr, env: &mut Environment) -> InstructionId {
@@ -279,6 +288,7 @@ impl<'a> ExprResolver<'a> {
                     currentBlockId,
                     InstructionKind::If(condId, trueBlockId, falseBranchId),
                     expr.location.clone(),
+                    false,
                 );
 
                 self.setTargetBlockId(contBlockId);
@@ -310,12 +320,13 @@ impl<'a> ExprResolver<'a> {
                         Vec::new(),
                     ),
                     expr.location.clone(),
+                    true,
                 );
                 self.addInstruction(InstructionKind::Jump(loopBodyId), expr.location.clone());
                 let mut loopEnv = Environment::child(env);
                 loopEnv.addTmpValue(name.clone(), bindId);
                 self.setTargetBlockId(loopBodyId);
-                let varRefId = self.addInstruction(
+                let varRefId = self.addImplicitInstruction(
                     InstructionKind::ValueRef(
                         ValueKind::Value(name.clone(), bindId),
                         Vec::new(),
@@ -333,14 +344,17 @@ impl<'a> ExprResolver<'a> {
                     SimpleExpr::Block(block) => self.resolveBlock(block, &loopEnv),
                     _ => panic!("If true branch is not a block!"),
                 }
-                self.addInstruction(
+                self.addImplicitInstruction(
                     InstructionKind::Assign(
                         name.clone(),
                         self.body.getBlockById(loopBodyId).getLastId(),
                     ),
                     init.location.clone(),
                 );
-                self.addInstruction(InstructionKind::Jump(loopBodyId), expr.location.clone());
+                self.addImplicitInstruction(
+                    InstructionKind::Jump(loopBodyId),
+                    expr.location.clone(),
+                );
                 self.loopInfos.pop();
                 self.setTargetBlockId(loopExitId);
                 finalValueId
@@ -534,7 +548,7 @@ impl<'a> ExprResolver<'a> {
         let lastInstruction = self.body.getInstruction(lastId);
         if let InstructionKind::Return(_) = lastInstruction.kind {
         } else {
-            self.addInstruction(InstructionKind::Return(lastId), body.location.clone());
+            self.addImplicitInstruction(InstructionKind::Return(lastId), body.location.clone());
         }
         self.body.blocks.sort_by(|a, b| a.id.cmp(&b.id));
     }

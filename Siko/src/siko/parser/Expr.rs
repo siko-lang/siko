@@ -236,7 +236,6 @@ impl ExprParser for Parser {
                 let name = self.parseVarIdentifier();
                 current = self.buildExpr2(SimpleExpr::FieldAccess(Box::new(current), name));
             } else if self.check(TokenKind::LeftBracket(BracketKind::Paren)) {
-                self.pushSpan();
                 self.expect(TokenKind::LeftBracket(BracketKind::Paren));
                 let mut args = Vec::new();
                 while !self.check(TokenKind::RightBracket(BracketKind::Paren)) {

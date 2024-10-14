@@ -4,6 +4,7 @@
 mod siko;
 
 use siko::{
+    backend::DeadCodeEliminator::eliminateDeadCode,
     hir::Program::Program,
     hir_lowering::Lowering::lowerProgram,
     llvm::Generator::Generator,
@@ -80,8 +81,9 @@ fn main() {
     resolver.process();
     let program = resolver.ir();
     let program = typecheck(program);
+    let program = eliminateDeadCode(program);
     let program = monomorphize(program);
-    //println!("after mono\n{}", program);
+    println!("after mono\n{}", program);
     let data_lifetime_inferer = DataLifeTimeInference::new(program);
     let program = data_lifetime_inferer.process();
     let mut mir_program = lowerProgram(&program);

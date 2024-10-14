@@ -174,6 +174,7 @@ impl InstructionKind {
 #[derive(Debug, Clone)]
 pub struct Instruction {
     pub id: InstructionId,
+    pub implicit: bool,
     pub kind: InstructionKind,
     pub ty: Option<Type>,
     pub location: Location,
@@ -223,12 +224,22 @@ impl Block {
     }
 
     pub fn add(&mut self, kind: InstructionKind, location: Location) -> InstructionId {
+        self.addWithImplicit(kind, location, false)
+    }
+
+    pub fn addWithImplicit(
+        &mut self,
+        kind: InstructionKind,
+        location: Location,
+        implicit: bool,
+    ) -> InstructionId {
         let id = InstructionId {
             blockId: self.id,
             id: self.instructions.len() as u32,
         };
         self.instructions.push(Instruction {
             id: id,
+            implicit: implicit,
             kind: kind,
             ty: None,
             location: location,
