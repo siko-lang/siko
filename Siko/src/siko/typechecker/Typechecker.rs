@@ -87,11 +87,11 @@ impl<'a> Typechecker<'a> {
                     self.types
                         .insert(TypedId::Instruction(instruction.id), ty.clone());
                     match &instruction.kind {
-                        InstructionKind::Bind(name, _) => {
+                        InstructionKind::DeclareVar(name) => {
                             self.types
                                 .insert(TypedId::Value(name.to_string()), self.allocator.next());
                         }
-                        InstructionKind::Loop(name, _, _) => {
+                        InstructionKind::Bind(name, _) => {
                             self.types
                                 .insert(TypedId::Value(name.to_string()), self.allocator.next());
                         }
@@ -369,56 +369,6 @@ impl<'a> Typechecker<'a> {
                         instruction.location.clone(),
                     );
                 }
-                InstructionKind::Loop(name, init, loopBody) => {
-                    self.unify(
-                        self.getInstructionType(*init),
-                        self.getValueType(name),
-                        instruction.location.clone(),
-                    );
-                    let loopBody = body.getBlockById(*loopBody);
-                    let loopLast = loopBody.getLastId();
-                    self.checkBlock(body, loopBody, f);
-                    self.unify(
-                        self.getInstructionType(*init),
-                        self.getInstructionType(loopLast),
-                        instruction.location.clone(),
-                    );
-                    self.unify(
-                        self.getInstructionType(instruction.id),
-                        Type::Never,
-                        instruction.location.clone(),
-                    );
-                }
-                InstructionKind::Continue(arg, loopId) => {
-                    let loopInstruction = body.getInstruction(*loopId);
-                    match &loopInstruction.kind {
-                        InstructionKind::Loop(_, init, _) => {
-                            self.unify(
-                                self.getInstructionType(*init),
-                                self.getInstructionType(*arg),
-                                instruction.location.clone(),
-                            );
-                        }
-                        _ => panic!("Loop instruction is not a loop!"),
-                    }
-                    self.unify(
-                        self.getInstructionType(instruction.id),
-                        Type::Never,
-                        instruction.location.clone(),
-                    );
-                }
-                InstructionKind::Break(arg, loopId) => {
-                    self.unify(
-                        self.getInstructionType(*loopId),
-                        self.getInstructionType(*arg),
-                        instruction.location.clone(),
-                    );
-                    self.unify(
-                        self.getInstructionType(instruction.id),
-                        Type::Never,
-                        instruction.location.clone(),
-                    );
-                }
                 InstructionKind::Return(arg) => {
                     self.unify(
                         f.result.clone(),
@@ -447,13 +397,30 @@ impl<'a> Typechecker<'a> {
                     );
                 }
                 InstructionKind::Jump(_) => {
-                    todo!()
+                    self.unify(
+                        self.getInstructionType(instruction.id),
+                        Type::getUnitType(),
+                        instruction.location.clone(),
+                    );
                 }
-                InstructionKind::Assign(_, _) => {
-                    todo!()
+                InstructionKind::Assign(name, rhs) => {
+                    self.unify(
+                        self.getValueType(name),
+                        self.getInstructionType(*rhs),
+                        instruction.location.clone(),
+                    );
+                    self.unify(
+                        self.getInstructionType(instruction.id),
+                        Type::getUnitType(),
+                        instruction.location.clone(),
+                    );
                 }
                 InstructionKind::DeclareVar(_) => {
-                    todo!()
+                    self.unify(
+                        self.getInstructionType(instruction.id),
+                        Type::getUnitType(),
+                        instruction.location.clone(),
+                    );
                 }
             }
         }
