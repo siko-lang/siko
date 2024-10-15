@@ -38,4 +38,5 @@ pub enum Instruction {
     Return(Value),
     GetFieldRef(Variable, Variable, i32),
     IntegerLiteral(Variable, String),
+    Jump(String),
 }

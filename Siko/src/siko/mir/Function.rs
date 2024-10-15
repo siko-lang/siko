@@ -37,4 +37,5 @@ pub enum Instruction {
     Assign(Variable, Value),
     Return(Variable),
     IntegerLiteral(Variable, String),
+    Jump(String),
 }

@@ -2,7 +2,7 @@ use crate::siko::{
     hir::{
         Data::Class as HirClass,
         Function::{
-            Block, Function as HirFunction, FunctionKind, InstructionId,
+            Block, BlockId, Function as HirFunction, FunctionKind, InstructionId,
             InstructionKind as HirInstructionKind,
         },
         Program::Program as HirProgram,
@@ -40,9 +40,13 @@ impl<'a> Builder<'a> {
         Variable { name: name, ty: ty }
     }
 
+    fn getBlockName(&self, blockId: BlockId) -> String {
+        format!("block{}", blockId.id)
+    }
+
     fn lowerBlock(&mut self, hirBlock: &Block) -> MirBlock {
         let mut block = MirBlock {
-            id: format!("block{}", hirBlock.id.id),
+            id: self.getBlockName(hirBlock.id),
             instructions: Vec::new(),
         };
         for instruction in &hirBlock.instructions {
@@ -58,18 +62,33 @@ impl<'a> Builder<'a> {
                         .push(Instruction::Call(idVar, convertName(name), args));
                 }
                 HirInstructionKind::Tuple(_) => {
-                    block.instructions.push(Instruction::Declare(idVar.clone()));
                     block
                         .instructions
-                        .push(Instruction::Assign(idVar, Value::Numeric(0)));
+                        .push(Instruction::IntegerLiteral(idVar, "0".to_string()));
                 }
                 HirInstructionKind::Drop(_) => {}
                 HirInstructionKind::DeclareVar(_) => {}
                 HirInstructionKind::If(_, _, _) => {}
                 HirInstructionKind::ValueRef(_, _, _) => {}
                 HirInstructionKind::Assign(_, _) => {}
-                HirInstructionKind::Bind(_, _) => {}
-                HirInstructionKind::Jump(_) => {}
+                HirInstructionKind::Bind(var, rhs) => {
+                    let i = self.function.getInstruction(*rhs);
+                    let ty = lowerType(i.ty.as_ref().expect("no ty"));
+                    let var = Variable {
+                        name: var.to_string(),
+                        ty: ty,
+                    };
+                    let rhs = self.buildInstructionVar(rhs);
+                    block.instructions.push(Instruction::Declare(var.clone()));
+                    block
+                        .instructions
+                        .push(Instruction::Assign(var, Value::Var(rhs)));
+                }
+                HirInstructionKind::Jump(blockId) => {
+                    block
+                        .instructions
+                        .push(Instruction::Jump(self.getBlockName(*blockId)));
+                }
                 HirInstructionKind::Return(v) => {
                     block
                         .instructions

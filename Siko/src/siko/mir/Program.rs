@@ -145,16 +145,8 @@ impl Program {
         for instruction in &block.instructions {
             match instruction {
                 Instruction::Declare(var) => {
-                    if var.ty.isSimple() {
-                        let tmp = self.tmpVar(var, 1);
-                        let llvmInstruction = LInstruction::Allocate(tmp.clone());
-                        llvmBlock.instructions.push(llvmInstruction);
-                        let llvmInstruction = LInstruction::LoadVar(self.lowerVar(var), tmp);
-                        llvmBlock.instructions.push(llvmInstruction);
-                    } else {
-                        let llvmInstruction = LInstruction::Allocate(self.lowerVar(var));
-                        llvmBlock.instructions.push(llvmInstruction);
-                    }
+                    let llvmInstruction = LInstruction::Allocate(self.lowerVar(var));
+                    llvmBlock.instructions.push(llvmInstruction);
                 }
                 Instruction::Reference(dest, src) => {
                     let llvmInstruction =
@@ -201,6 +193,10 @@ impl Program {
                 Instruction::IntegerLiteral(var, value) => {
                     let llvmInstruction =
                         LInstruction::IntegerLiteral(self.lowerVar(var), value.clone());
+                    llvmBlock.instructions.push(llvmInstruction);
+                }
+                Instruction::Jump(name) => {
+                    let llvmInstruction = LInstruction::Jump(name.clone());
                     llvmBlock.instructions.push(llvmInstruction);
                 }
             };

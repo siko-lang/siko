@@ -150,6 +150,9 @@ impl Generator {
             Instruction::IntegerLiteral(var, value) => {
                 format!("{} = add {} {}, 0 ", var.name, getTypeName(&var.ty), value)
             }
+            Instruction::Jump(label) => {
+                format!("br label %{}", label)
+            }
         }
     }
 

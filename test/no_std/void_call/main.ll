@@ -1,17 +1,13 @@
 define i32 @Main_foo() {
 block0:
-   %tmp_i1_1 = alloca i32, align 4
-   %i1 = load i32, ptr %tmp_i1_1, align 4
-   store i32 0, ptr %i1, align 4
+   %i1 = add i32 0, 0 
    ret i32 %i1
 }
 
 define i32 @Main_main() {
 block0:
    %i1 = call i32 @Main_foo()
-   %tmp_i2_1 = alloca i32, align 4
-   %i2 = load i32, ptr %tmp_i2_1, align 4
-   store i32 0, ptr %i2, align 4
+   %i2 = add i32 0, 0 
    ret i32 %i2
 }
 

@@ -20,27 +20,23 @@ define i32 @Main_foo2() {
 block0:
    %i1 = add i64 5, 0 
    %i2 = call %struct.Main_Struct1 @Main_Struct1(i64 %i1)
-   %tmp_i3_1 = alloca i32, align 4
-   %i3 = load i32, ptr %tmp_i3_1, align 4
-   store i32 0, ptr %i3, align 4
+   %i3 = add i32 0, 0 
    ret i32 %i3
 }
 
 define i32 @Main_main() {
 block0:
    %i1 = call i64 @Main_foo()
-   %tmp_i2_1 = alloca i32, align 4
-   %i2 = load i32, ptr %tmp_i2_1, align 4
-   store i32 0, ptr %i2, align 4
+   %i2 = add i32 0, 0 
+   %loop_var_0 = alloca i32, align 4
+   store i32 %i2, ptr %loop_var_0, align 4
+   br label %block1
 block1:
-   %tmp_i2_1 = alloca i32, align 4
-   %i2 = load i32, ptr %tmp_i2_1, align 4
-   store i32 0, ptr %i2, align 4
+   %i2 = add i32 0, 0 
+   br label %block2
 block2:
    %i2 = call i32 @Main_foo2()
-   %tmp_i3_1 = alloca i32, align 4
-   %i3 = load i32, ptr %tmp_i3_1, align 4
-   store i32 0, ptr %i3, align 4
+   %i3 = add i32 0, 0 
    ret i32 %i3
 }
 
