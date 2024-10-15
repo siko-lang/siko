@@ -112,6 +112,13 @@ pub fn lowerFunction(function: &HirFunction) -> MirFunction {
                     }
                     HirInstructionKind::Tuple(_) => {}
                     HirInstructionKind::Drop(_) => {}
+                    HirInstructionKind::DeclareVar(_) => {}
+                    HirInstructionKind::If(_, _, _) => {}
+                    HirInstructionKind::ValueRef(_, _, _) => {}
+                    HirInstructionKind::Assign(_, _) => {}
+                    HirInstructionKind::Bind(_, _) => {}
+                    HirInstructionKind::Jump(_) => {}
+                    HirInstructionKind::Return(_) => {}
                     k => panic!("NYI {}", k),
                 }
             }
@@ -146,7 +153,7 @@ pub fn lowerType(ty: &HirType) -> MirType {
         HirType::Var(_) => todo!(),
         HirType::Reference(_, _) => todo!(),
         HirType::SelfType => todo!(),
-        HirType::Never => todo!(),
+        HirType::Never => MirType::Void,
     }
 }
 

@@ -16,7 +16,7 @@ define %struct.Main_Struct1 @Main_Struct1(i64 %num) {
 
 define i64 @Main_foo() {
    %1 = call i64 @Int_Int()
-   ret i64 %1
+   ret void
 }
 
 define void @Main_foo2() {
