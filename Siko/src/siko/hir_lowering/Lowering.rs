@@ -75,6 +75,11 @@ impl<'a> Builder<'a> {
                         .instructions
                         .push(Instruction::Return(self.buildInstructionVar(v)));
                 }
+                HirInstructionKind::IntegerLiteral(v) => {
+                    block
+                        .instructions
+                        .push(Instruction::IntegerLiteral(idVar, v.to_string()));
+                }
                 k => panic!("NYI {}", k),
             }
         }

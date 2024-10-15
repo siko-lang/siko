@@ -101,7 +101,7 @@ impl Generator {
             Instruction::FunctionCall(res, name, args) => {
                 let mut argRefs = Vec::new();
                 for arg in args {
-                    argRefs.push(arg.name.clone());
+                    argRefs.push(format!("{} {}", getTypeName(&arg.ty), arg.name));
                 }
                 if res.ty == Type::Void {
                     format!(
@@ -147,6 +147,9 @@ impl Generator {
                     format!("ret i64 {}", v)
                 }
             },
+            Instruction::IntegerLiteral(var, value) => {
+                format!("{} = add {} {}, 0 ", var.name, getTypeName(&var.ty), value)
+            }
         }
     }
 

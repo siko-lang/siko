@@ -198,6 +198,11 @@ impl Program {
                         LInstruction::GetFieldRef(self.lowerVar(dest), self.lowerVar(root), *index);
                     llvmBlock.instructions.push(llvmInstruction);
                 }
+                Instruction::IntegerLiteral(var, value) => {
+                    let llvmInstruction =
+                        LInstruction::IntegerLiteral(self.lowerVar(var), value.clone());
+                    llvmBlock.instructions.push(llvmInstruction);
+                }
             };
         }
         llvmBlock

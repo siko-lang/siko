@@ -2,13 +2,6 @@
 
 %struct.Main_Struct1 = type { i64 }
 
-define i64 @Int_Int() {
-block0:
-   %tmp_var1_1 = alloca i64, align 8
-   %var1 = load i64, ptr %tmp_var1_1, align 8
-   ret i64 %var1
-}
-
 define %struct.Main_Struct1 @Main_Struct1(i64 %num) {
 block0:
    %this = alloca %struct.Main_Struct1, align 8
@@ -19,14 +12,14 @@ block0:
 
 define i64 @Main_foo() {
 block0:
-   %i1 = call i64 @Int_Int()
+   %i1 = add i64 6, 0 
    ret i64 %i1
 }
 
 define i32 @Main_foo2() {
 block0:
-   %i1 = call i64 @Int_Int()
-   %i2 = call %struct.Main_Struct1 @Main_Struct1(%i1)
+   %i1 = add i64 5, 0 
+   %i2 = call %struct.Main_Struct1 @Main_Struct1(i64 %i1)
    %tmp_i3_1 = alloca i32, align 4
    %i3 = load i32, ptr %tmp_i3_1, align 4
    store i32 0, ptr %i3, align 4

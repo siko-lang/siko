@@ -37,4 +37,5 @@ pub enum Instruction {
     FunctionCall(Variable, String, Vec<Variable>),
     Return(Value),
     GetFieldRef(Variable, Variable, i32),
+    IntegerLiteral(Variable, String),
 }

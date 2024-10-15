@@ -36,4 +36,5 @@ pub enum Instruction {
     Call(Variable, String, Vec<Variable>),
     Assign(Variable, Value),
     Return(Variable),
+    IntegerLiteral(Variable, String),
 }
