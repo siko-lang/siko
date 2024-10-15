@@ -1,6 +1,8 @@
 use std::{collections::BTreeSet, fmt::Display};
 
-use crate::siko::qualifiedname::{build, QualifiedName};
+use crate::siko::qualifiedname::{
+    getBoolTypeName, getCharTypeName, getIntTypeName, getStringTypeName, QualifiedName,
+};
 
 use super::Lifetime::{Lifetime, LifetimeInfo};
 
@@ -151,19 +153,19 @@ impl Type {
     }
 
     pub fn getBoolType() -> Type {
-        Type::Named(build("Bool", "Bool"), Vec::new(), None)
+        Type::Named(getBoolTypeName(), Vec::new(), None)
     }
 
     pub fn getIntType() -> Type {
-        Type::Named(build("Int", "Int"), Vec::new(), None)
+        Type::Named(getIntTypeName(), Vec::new(), None)
     }
 
     pub fn getStringType() -> Type {
-        Type::Named(build("String", "String"), Vec::new(), None)
+        Type::Named(getStringTypeName(), Vec::new(), None)
     }
 
     pub fn getCharType() -> Type {
-        Type::Named(build("Char", "Char"), Vec::new(), None)
+        Type::Named(getCharTypeName(), Vec::new(), None)
     }
 
     pub fn getUnitType() -> Type {

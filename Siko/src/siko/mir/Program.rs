@@ -4,7 +4,7 @@ use crate::siko::util::DependencyProcessor;
 
 use super::{
     Data::Struct,
-    Function::{Block, Function, Instruction, Param, Value},
+    Function::{Block, Function, Instruction, Param, Value, Variable},
     Type::Type,
 };
 
@@ -102,6 +102,19 @@ impl Program {
         }
     }
 
+    fn lowerVar(&self, v: &Variable) -> LVariable {
+        LVariable {
+            name: format!("%{}", v.name),
+            ty: self.lowerType(&v.ty),
+        }
+    }
+
+    fn tmpVar(&self, v: &Variable, index: u32) -> LVariable {
+        LVariable {
+            name: format!("%tmp_{}_{}", v.name, index),
+            ty: self.lowerType(&v.ty),
+        }
+    }
     fn lower(&self) -> LProgram {
         let mut program = LProgram::new();
 
@@ -131,87 +144,58 @@ impl Program {
         };
         for instruction in &block.instructions {
             match instruction {
-                Instruction::StackAllocate(variable) => {
-                    let var = LVariable {
-                        name: variable.name.clone(),
-                        ty: self.lowerType(&variable.ty),
-                    };
-                    let llvmInstruction = LInstruction::Allocate(var);
-                    llvmBlock.instructions.push(llvmInstruction);
+                Instruction::Declare(var) => {
+                    if var.ty.isSimple() {
+                        let tmp = self.tmpVar(var, 1);
+                        let llvmInstruction = LInstruction::Allocate(tmp.clone());
+                        llvmBlock.instructions.push(llvmInstruction);
+                        let llvmInstruction = LInstruction::LoadVar(self.lowerVar(var), tmp);
+                        llvmBlock.instructions.push(llvmInstruction);
+                    } else {
+                        let llvmInstruction = LInstruction::Allocate(self.lowerVar(var));
+                        llvmBlock.instructions.push(llvmInstruction);
+                    }
                 }
                 Instruction::Reference(dest, src) => {
-                    let src = LVariable {
-                        name: src.name.clone(),
-                        ty: self.lowerType(&src.ty),
-                    };
-                    let dest = LVariable {
-                        name: dest.name.clone(),
-                        ty: self.lowerType(&dest.ty),
-                    };
-                    let llvmInstruction = LInstruction::LoadVar(dest, src);
+                    let llvmInstruction =
+                        LInstruction::LoadVar(self.lowerVar(dest), self.lowerVar(src));
                     llvmBlock.instructions.push(llvmInstruction);
                 }
                 Instruction::Call(dest, name, args) => {
                     let mut llvmArgs = Vec::new();
                     for arg in args {
-                        let arg = LVariable {
-                            name: arg.name.clone(),
-                            ty: self.lowerType(&arg.ty),
-                        };
-                        llvmArgs.push(arg);
+                        llvmArgs.push(self.lowerVar(arg));
                     }
-                    let dest = LVariable {
-                        name: dest.name.clone(),
-                        ty: self.lowerType(&dest.ty),
-                    };
-                    let llvmInstruction = LInstruction::FunctionCall(dest, name.clone(), llvmArgs);
+                    let llvmInstruction =
+                        LInstruction::FunctionCall(self.lowerVar(dest), name.clone(), llvmArgs);
                     llvmBlock.instructions.push(llvmInstruction);
                 }
-                Instruction::Assignment(lvalue, rvalue) => {
-                    let dest = match lvalue {
-                        Value::Void => panic!("Invalid lvalue: void"),
-                        Value::LiteralNumeric(_) => {
-                            panic!("Invalid lvalue: literal")
-                        }
-                        Value::Var(variable) => LVariable {
-                            name: variable.name.clone(),
-                            ty: self.lowerType(&variable.ty),
+                Instruction::Assign(dest, src) => {
+                    let llvmInstruction = LInstruction::Store(
+                        self.lowerVar(dest),
+                        match src {
+                            Value::Numeric(v) => LValue::Numeric(*v),
+                            Value::Var(v) => LValue::Variable(self.lowerVar(v)),
                         },
-                        Value::Field(_, _) => {
-                            todo!()
-                        }
-                    };
-                    let src = match rvalue {
-                        Value::Void => panic!("Invalid rvalue: void"),
-                        Value::LiteralNumeric(v) => LValue::Numeric(*v),
-                        Value::Var(variable) => {
-                            let var = LVariable {
-                                name: variable.name.clone(),
-                                ty: self.lowerType(&variable.ty),
-                            };
-                            LValue::Variable(var)
-                        }
-                        Value::Field(_, _) => {
-                            todo!()
-                        }
-                    };
-                    let llvmInstruction = LInstruction::Store(dest, src);
+                    );
                     llvmBlock.instructions.push(llvmInstruction);
                 }
                 Instruction::Return(v) => {
-                    let value = match v {
-                        Value::Void => LValue::Void,
-                        Value::LiteralNumeric(v) => LValue::Numeric(*v),
-                        Value::Var(variable) => {
-                            let var = LVariable {
-                                name: variable.name.clone(),
-                                ty: self.lowerType(&variable.ty),
-                            };
-                            LValue::Variable(var)
-                        }
-                        Value::Field(_, _) => unreachable!(),
-                    };
-                    let llvmInstruction = LInstruction::Return(value);
+                    if v.ty.isSimple() {
+                        let llvmInstruction =
+                            LInstruction::Return(LValue::Variable(self.lowerVar(v)));
+                        llvmBlock.instructions.push(llvmInstruction);
+                    } else {
+                        let tmp = self.tmpVar(v, 1);
+                        let llvmInstruction = LInstruction::LoadVar(tmp.clone(), self.lowerVar(v));
+                        llvmBlock.instructions.push(llvmInstruction);
+                        let llvmInstruction = LInstruction::Return(LValue::Variable(tmp));
+                        llvmBlock.instructions.push(llvmInstruction);
+                    }
+                }
+                Instruction::GetFieldRef(dest, root, index) => {
+                    let llvmInstruction =
+                        LInstruction::GetFieldRef(self.lowerVar(dest), self.lowerVar(root), *index);
                     llvmBlock.instructions.push(llvmInstruction);
                 }
             };

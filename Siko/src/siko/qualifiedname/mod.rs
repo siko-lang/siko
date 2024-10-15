@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Display};
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum QualifiedName {
     Module(String),
     Instance(Box<QualifiedName>, u64),
@@ -31,12 +31,6 @@ impl QualifiedName {
     }
 }
 
-impl Debug for QualifiedName {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self)
-    }
-}
-
 impl Display for QualifiedName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
@@ -59,4 +53,28 @@ pub fn build(m: &str, name: &str) -> QualifiedName {
         Box::new(QualifiedName::Module(m.to_string())),
         name.to_string(),
     )
+}
+
+pub fn getBoolTypeName() -> QualifiedName {
+    build("Bool", "Bool")
+}
+
+pub fn getIntTypeName() -> QualifiedName {
+    build("Int", "Int")
+}
+
+pub fn getStringTypeName() -> QualifiedName {
+    build("String", "String")
+}
+
+pub fn getCharTypeName() -> QualifiedName {
+    build("Char", "Char")
+}
+
+pub fn getTrueName() -> QualifiedName {
+    build("Bool", "Bool").add("True".to_string())
+}
+
+pub fn getFalseName() -> QualifiedName {
+    build("Bool", "Bool").add("False".to_string())
 }

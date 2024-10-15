@@ -17,11 +17,13 @@ pub struct Block {
     pub instructions: Vec<Instruction>,
 }
 
+#[derive(Clone)]
 pub struct Variable {
     pub name: String,
     pub ty: Type,
 }
 
+#[derive(Clone)]
 pub enum Value {
     Void,
     Variable(Variable),
@@ -34,4 +36,5 @@ pub enum Instruction {
     LoadVar(Variable, Variable),
     FunctionCall(Variable, String, Vec<Variable>),
     Return(Value),
+    GetFieldRef(Variable, Variable, i32),
 }

@@ -25,16 +25,15 @@ pub struct Variable {
 }
 
 pub enum Value {
-    Void,
-    LiteralNumeric(i64),
+    Numeric(i64),
     Var(Variable),
-    Field(Box<Value>, String),
 }
 
 pub enum Instruction {
-    StackAllocate(Variable),
+    Declare(Variable),
+    GetFieldRef(Variable, Variable, i32),
     Reference(Variable, Variable),
     Call(Variable, String, Vec<Variable>),
-    Assignment(Value, Value),
-    Return(Value),
+    Assign(Variable, Value),
+    Return(Variable),
 }

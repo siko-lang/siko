@@ -78,10 +78,9 @@ impl Generator {
                 )
             }
             Instruction::Store(dest, src) => match src {
-                Value::Void => unreachable!(),
                 Value::Numeric(value) => {
                     format!(
-                        "store {} {}, ptr {}, align {}, !dbg !31",
+                        "store {} {}, ptr {}, align {}",
                         getTypeName(&dest.ty),
                         value,
                         dest.name,
@@ -90,13 +89,14 @@ impl Generator {
                 }
                 Value::Variable(src) => {
                     format!(
-                        "store {} {}, ptr {}, align {}, !dbg !31",
+                        "store {} {}, ptr {}, align {}",
                         getTypeName(&src.ty),
                         src.name,
                         dest.name,
                         self.getAlignment(&dest.ty),
                     )
                 }
+                Value::Void => unreachable!(),
             },
             Instruction::FunctionCall(res, name, args) => {
                 let mut argRefs = Vec::new();
@@ -129,6 +129,15 @@ impl Generator {
                     self.getAlignment(&src.ty),
                 )
             }
+            Instruction::GetFieldRef(dest, root, index) => {
+                format!(
+                    "{} = getelementptr inbounds {}, ptr {}, i32 0, i32 {}",
+                    dest.name,
+                    getTypeName(&root.ty),
+                    root.name,
+                    index
+                )
+            }
             Instruction::Return(value) => match value {
                 Value::Void => format!("ret void"),
                 Value::Variable(var) => {
@@ -148,14 +157,14 @@ impl Generator {
                 Type::Struct(name) => {
                     let s = self.program.getStruct(name);
                     args.push(format!(
-                        "ptr noundef byval({}) align {} {}",
+                        "ptr noundef byval({}) align {} %{}",
                         getStructName(name),
                         s.alignment,
                         arg.name,
                     ));
                 }
                 Type::Int64 => {
-                    args.push(format!("i64 {}", arg.name));
+                    args.push(format!("i64 %{}", arg.name));
                 }
                 _ => todo!(),
             }
@@ -168,6 +177,7 @@ impl Generator {
             args.join(", ")
         )?;
         for block in &f.blocks {
+            writeln!(buf, "{}:", block.id)?;
             for i in &block.instructions {
                 let i = self.dumpInstruction(i);
                 writeln!(buf, "   {}", i)?;
