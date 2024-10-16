@@ -36,7 +36,7 @@ impl<'a> Builder<'a> {
     fn buildInstructionVar(&self, id: &InstructionId) -> Variable {
         let i = self.function.getInstruction(*id);
         let ty = lowerType(i.ty.as_ref().expect("no ty"));
-        let name = format!("i{}", id.getId() + 1);
+        let name = format!("i_{}_{}", id.getBlockById().id, id.getId() + 1);
         Variable { name: name, ty: ty }
     }
 
@@ -177,10 +177,17 @@ impl<'a> Builder<'a> {
                                 ty: MirType::Int64,
                             };
                             block.instructions.push(Instruction::GetFieldRef(
-                                fieldVar,
+                                fieldVar.clone(),
                                 this.clone(),
                                 index as i32,
                             ));
+                            let argVar = Variable {
+                                name: field.name.clone(),
+                                ty: lowerType(&field.ty),
+                            };
+                            block
+                                .instructions
+                                .push(Instruction::Assign(fieldVar, Value::Var(argVar)));
                         }
                         block.instructions.push(Instruction::Return(this));
                         mirFunction.blocks.push(block);
