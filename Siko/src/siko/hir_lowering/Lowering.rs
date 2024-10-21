@@ -1,23 +1,17 @@
 use crate::siko::{
     hir::{
         Data::Class as HirClass,
-        Function::{
-            Block, BlockId, Function as HirFunction, FunctionKind, InstructionId,
-            InstructionKind as HirInstructionKind,
-        },
+        Function::{Block, BlockId, Function as HirFunction, FunctionKind, InstructionId, InstructionKind as HirInstructionKind},
         Program::Program as HirProgram,
         Type::Type as HirType,
     },
     mir::{
         Data::{Field as MirField, Struct},
-        Function::{
-            Block as MirBlock, Function as MirFunction, Instruction, Param as MirParam, Value,
-            Variable,
-        },
+        Function::{Block as MirBlock, Function as MirFunction, Instruction, Param as MirParam, Value, Variable},
         Program::Program as MirProgram,
         Type::Type as MirType,
     },
-    qualifiedname::{getIntTypeName, getTrueName, QualifiedName},
+    qualifiedname::{getTrueName, QualifiedName},
 };
 
 pub struct Builder<'a> {
@@ -57,14 +51,11 @@ impl<'a> Builder<'a> {
             match &instruction.kind {
                 HirInstructionKind::FunctionCall(name, args) => {
                     let args = args.iter().map(|id| self.buildInstructionVar(id)).collect();
-                    block
-                        .instructions
-                        .push(Instruction::Call(idVar, convertName(name), args));
+                    block.instructions.push(Instruction::Declare(idVar.clone()));
+                    block.instructions.push(Instruction::Call(idVar, convertName(name), args));
                 }
                 HirInstructionKind::Tuple(_) => {
-                    block
-                        .instructions
-                        .push(Instruction::IntegerLiteral(idVar, "0".to_string()));
+                    unreachable!()
                 }
                 HirInstructionKind::Drop(_) => {}
                 HirInstructionKind::DeclareVar(_) => {}
@@ -80,24 +71,16 @@ impl<'a> Builder<'a> {
                     };
                     let rhs = self.buildInstructionVar(rhs);
                     block.instructions.push(Instruction::Declare(var.clone()));
-                    block
-                        .instructions
-                        .push(Instruction::Assign(var, Value::Var(rhs)));
+                    block.instructions.push(Instruction::Memcpy(rhs, var));
                 }
                 HirInstructionKind::Jump(blockId) => {
-                    block
-                        .instructions
-                        .push(Instruction::Jump(self.getBlockName(*blockId)));
+                    block.instructions.push(Instruction::Jump(self.getBlockName(*blockId)));
                 }
                 HirInstructionKind::Return(v) => {
-                    block
-                        .instructions
-                        .push(Instruction::Return(self.buildInstructionVar(v)));
+                    block.instructions.push(Instruction::Return(Value::Var(self.buildInstructionVar(v))));
                 }
                 HirInstructionKind::IntegerLiteral(v) => {
-                    block
-                        .instructions
-                        .push(Instruction::IntegerLiteral(idVar, v.to_string()));
+                    block.instructions.push(Instruction::IntegerLiteral(idVar, v.to_string()));
                 }
                 k => panic!("NYI {}", k),
             }
@@ -122,7 +105,6 @@ impl<'a> Builder<'a> {
             blocks: Vec::new(),
         };
         (self.function.name.clone(), result.clone());
-
         match &self.function.name {
             name if *name == getTrueName().monomorphized("".to_string()) => {
                 let var1 = Variable {
@@ -138,60 +120,13 @@ impl<'a> Builder<'a> {
                     instructions: Vec::new(),
                 };
                 block.instructions.push(Instruction::Declare(var1.clone()));
-                block
-                    .instructions
-                    .push(Instruction::Reference(var2.clone(), var1.clone()));
-                block.instructions.push(Instruction::Return(var2));
+                block.instructions.push(Instruction::Reference(var2.clone(), var1.clone()));
+                block.instructions.push(Instruction::Return(Value::Void));
                 mirFunction.blocks.push(block);
             }
             _ => {
                 if self.function.kind == FunctionKind::ClassCtor {
-                    if self.function.name == getIntTypeName().monomorphized("".to_string()) {
-                        let var1 = Variable {
-                            name: "var1".to_string(),
-                            ty: MirType::Int64,
-                        };
-                        let mut block = MirBlock {
-                            id: format!("block0"),
-                            instructions: Vec::new(),
-                        };
-                        block.instructions.push(Instruction::Declare(var1.clone()));
-                        block.instructions.push(Instruction::Return(var1));
-                        mirFunction.blocks.push(block);
-                    } else {
-                        let mut block = MirBlock {
-                            id: format!("block0"),
-                            instructions: Vec::new(),
-                        };
-                        let this = Variable {
-                            name: "this".to_string(),
-                            ty: lowerType(&self.function.result),
-                        };
-                        let s = self
-                            .program
-                            .getClass(&self.function.result.getName().unwrap());
-                        block.instructions.push(Instruction::Declare(this.clone()));
-                        for (index, field) in s.fields.iter().enumerate() {
-                            let fieldVar = Variable {
-                                name: format!("field{}", index),
-                                ty: MirType::Int64,
-                            };
-                            block.instructions.push(Instruction::GetFieldRef(
-                                fieldVar.clone(),
-                                this.clone(),
-                                index as i32,
-                            ));
-                            let argVar = Variable {
-                                name: field.name.clone(),
-                                ty: lowerType(&field.ty),
-                            };
-                            block
-                                .instructions
-                                .push(Instruction::Assign(fieldVar, Value::Var(argVar)));
-                        }
-                        block.instructions.push(Instruction::Return(this));
-                        mirFunction.blocks.push(block);
-                    }
+                    mirFunction.blocks.push(self.createClassCtor());
                 } else {
                     if let Some(body) = self.function.body.clone() {
                         for block in &body.blocks {
@@ -207,22 +142,51 @@ impl<'a> Builder<'a> {
 
         mirFunction
     }
+
+    fn createClassCtor(&mut self) -> MirBlock {
+        let mut block = MirBlock {
+            id: format!("block0"),
+            instructions: Vec::new(),
+        };
+        let this = Variable {
+            name: "this".to_string(),
+            ty: lowerType(&self.function.result),
+        };
+        let s = self.program.getClass(&self.function.result.getName().unwrap());
+        block.instructions.push(Instruction::Declare(this.clone()));
+        for (index, field) in s.fields.iter().enumerate() {
+            let fieldVar = Variable {
+                name: format!("field{}", index),
+                ty: MirType::Int64,
+            };
+            block
+                .instructions
+                .push(Instruction::GetFieldRef(fieldVar.clone(), this.clone(), index as i32));
+            let argVar = Variable {
+                name: field.name.clone(),
+                ty: lowerType(&field.ty),
+            };
+            block.instructions.push(Instruction::Memcpy(fieldVar, argVar));
+        }
+        block.instructions.push(Instruction::Return(Value::Var(this)));
+        block
+    }
 }
 
 pub fn convertName(name: &QualifiedName) -> String {
-    format!("@{}", name.toString().replace(".", "_"))
+    format!("{}", name.toString().replace(".", "_"))
 }
 
 pub fn lowerType(ty: &HirType) -> MirType {
     match ty {
         HirType::Named(name, _, _) => {
-            if name.toString() == "Int.Int" {
+            if name.toString() == "Bool.Bool" {
                 MirType::Int64
             } else {
                 MirType::Struct(name.toString())
             }
         }
-        HirType::Tuple(_) => MirType::Int32,
+        HirType::Tuple(_) => unreachable!("Tuple in MIR"),
         HirType::Function(_, _) => todo!(),
         HirType::Var(_) => todo!(),
         HirType::Reference(_, _) => todo!(),
@@ -256,18 +220,18 @@ pub fn lowerClass(c: &HirClass) -> Struct {
 }
 
 pub fn lowerProgram(program: &HirProgram) -> MirProgram {
-    let mut mir_program = MirProgram::new();
+    let mut mirProgram = MirProgram::new();
 
     for (n, c) in &program.classes {
         let c = lowerClass(c);
-        mir_program.structs.insert(n.toString(), c);
+        mirProgram.structs.insert(n.toString(), c);
     }
 
     for (_, function) in &program.functions {
         let mut builder = Builder::new(program, function);
         let f = builder.lowerFunction();
-        mir_program.functions.push(f);
+        mirProgram.functions.push(f);
     }
 
-    mir_program
+    mirProgram
 }

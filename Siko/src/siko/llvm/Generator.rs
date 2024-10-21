@@ -70,22 +70,11 @@ impl Generator {
     fn dumpInstruction(&self, instruction: &Instruction) -> String {
         match &instruction {
             Instruction::Allocate(var) => {
-                format!(
-                    "{} = alloca {}, align {}",
-                    var.name,
-                    getTypeName(&var.ty),
-                    self.getAlignment(&var.ty),
-                )
+                format!("{} = alloca {}, align {}", var.name, getTypeName(&var.ty), self.getAlignment(&var.ty),)
             }
             Instruction::Store(dest, src) => match src {
                 Value::Numeric(value) => {
-                    format!(
-                        "store {} {}, ptr {}, align {}",
-                        getTypeName(&dest.ty),
-                        value,
-                        dest.name,
-                        self.getAlignment(&dest.ty),
-                    )
+                    format!("store i64 {}, ptr {}, align {}", value, dest.name, self.getAlignment(&dest.ty),)
                 }
                 Value::Variable(src) => {
                     format!(
@@ -98,27 +87,12 @@ impl Generator {
                 }
                 Value::Void => unreachable!(),
             },
-            Instruction::FunctionCall(res, name, args) => {
+            Instruction::FunctionCall(name, args) => {
                 let mut argRefs = Vec::new();
                 for arg in args {
-                    argRefs.push(format!("{} {}", getTypeName(&arg.ty), arg.name));
+                    argRefs.push(format!("ptr {}", arg.name));
                 }
-                if res.ty == Type::Void {
-                    format!(
-                        "call {} {}({})",
-                        getTypeName(&res.ty),
-                        name,
-                        argRefs.join(", ")
-                    )
-                } else {
-                    format!(
-                        "{} = call {} {}({})",
-                        res.name,
-                        getTypeName(&res.ty),
-                        name,
-                        argRefs.join(", ")
-                    )
-                }
+                format!("call void @{}({})", name, argRefs.join(", "))
             }
             Instruction::LoadVar(dest, src) => {
                 format!(
@@ -147,41 +121,30 @@ impl Generator {
                     format!("ret i64 {}", v)
                 }
             },
-            Instruction::IntegerLiteral(var, value) => {
-                format!("{} = add {} {}, 0 ", var.name, getTypeName(&var.ty), value)
-            }
             Instruction::Jump(label) => {
                 format!("br label %{}", label)
             }
+            Instruction::Memcpy(src, dest) => match dest.ty.getName() {
+                Some(name) => {
+                    let def = self.program.getStruct(&name);
+                    format!(
+                        "call void @llvm.memcpy.p0.p0.i64(ptr align {} {}, ptr align {} {}, i8 {}, i1 false)",
+                        def.alignment, dest.name, def.alignment, src.name, def.size
+                    )
+                }
+                None => {
+                    format!("ups {:?}", dest.ty)
+                }
+            },
         }
     }
 
     fn dumpFunction(&self, f: &Function, buf: &mut File) -> io::Result<()> {
         let mut args = Vec::new();
         for arg in &f.args {
-            match &arg.ty {
-                Type::Struct(name) => {
-                    let s = self.program.getStruct(name);
-                    args.push(format!(
-                        "ptr noundef byval({}) align {} %{}",
-                        getStructName(name),
-                        s.alignment,
-                        arg.name,
-                    ));
-                }
-                Type::Int64 => {
-                    args.push(format!("i64 %{}", arg.name));
-                }
-                _ => todo!(),
-            }
+            args.push(format!("ptr noundef %{}", arg.name,));
         }
-        writeln!(
-            buf,
-            "define {} {}({}) {{",
-            getTypeName(&f.result),
-            f.name,
-            args.join(", ")
-        )?;
+        writeln!(buf, "define {} @{}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
         for block in &f.blocks {
             writeln!(buf, "{}:", block.id)?;
             for i in &block.instructions {
@@ -204,7 +167,8 @@ impl Generator {
         }
 
         writeln!(output, "define i32 @main() {{")?;
-        writeln!(output, "   call void @Main_main()")?;
+        writeln!(output, "   %res = alloca %struct.siko_Unit, align 4")?;
+        writeln!(output, "   call void @Main_main(ptr %res)")?;
         writeln!(output, "   ret i32 0")?;
         writeln!(output, "}}\n\n")?;
         Ok(())

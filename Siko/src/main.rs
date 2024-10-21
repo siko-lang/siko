@@ -4,7 +4,7 @@
 mod siko;
 
 use siko::{
-    backend::DeadCodeEliminator::eliminateDeadCode,
+    backend::{DeadCodeEliminator::eliminateDeadCode, RemoveTuples::removeTuples},
     hir::Program::Program,
     hir_lowering::Lowering::lowerProgram,
     llvm::Generator::Generator,
@@ -86,6 +86,7 @@ fn main() {
     //println!("after mono\n{}", program);
     let data_lifetime_inferer = DataLifeTimeInference::new(program);
     let program = data_lifetime_inferer.process();
+    let program = removeTuples(&program);
     let mut mir_program = lowerProgram(&program);
     let llvm_program = mir_program.process();
     let mut generator = Generator::new(outputFile, llvm_program);

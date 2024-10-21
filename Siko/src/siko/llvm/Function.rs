@@ -27,16 +27,16 @@ pub struct Variable {
 pub enum Value {
     Void,
     Variable(Variable),
-    Numeric(i64),
+    Numeric(String),
 }
 
 pub enum Instruction {
     Allocate(Variable),
     Store(Variable, Value),
     LoadVar(Variable, Variable),
-    FunctionCall(Variable, String, Vec<Variable>),
+    FunctionCall(String, Vec<Variable>),
     Return(Value),
     GetFieldRef(Variable, Variable, i32),
-    IntegerLiteral(Variable, String),
     Jump(String),
+    Memcpy(Variable, Variable),
 }

@@ -1,18 +1,33 @@
-define i32 @Main_foo() {
+%struct.siko_Unit = type {  }
+
+define void @siko_Unit(ptr noundef %fn_result) {
 block0:
-   %i_0_1 = add i32 0, 0 
-   ret i32 %i_0_1
+   %this = alloca %struct.siko_Unit, align 4
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %this, i8 0, i1 false)
+   ret void
 }
 
-define i32 @Main_main() {
+define void @Main_foo(ptr noundef %fn_result) {
 block0:
-   %i_0_1 = call i32 @Main_foo()
-   %i_0_2 = add i32 0, 0 
-   ret i32 %i_0_2
+   %i_0_1 = alloca %struct.siko_Unit, align 4
+   call void @siko_Unit(ptr %i_0_1)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %i_0_1, i8 0, i1 false)
+   ret void
+}
+
+define void @Main_main(ptr noundef %fn_result) {
+block0:
+   %i_0_2 = alloca %struct.siko_Unit, align 4
+   %i_0_1 = alloca %struct.siko_Unit, align 4
+   call void @Main_foo(ptr %i_0_1)
+   call void @siko_Unit(ptr %i_0_2)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %i_0_2, i8 0, i1 false)
+   ret void
 }
 
 define i32 @main() {
-   call void @Main_main()
+   %res = alloca %struct.siko_Unit, align 4
+   call void @Main_main(ptr %res)
    ret i32 0
 }
 

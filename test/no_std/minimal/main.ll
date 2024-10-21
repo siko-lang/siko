@@ -2,71 +2,104 @@
 
 %struct.Main_Large = type { %struct.Main_Struct1 }
 
-%struct.Main_Struct1 = type { i64, i64, i64, i64, i64 }
+%struct.Main_Struct1 = type { %struct.Int_Int, %struct.Int_Int, %struct.Int_Int, %struct.Int_Int, %struct.Int_Int }
 
-define %struct.Main_Large @Main_Large(ptr noundef byval(%struct.Main_Struct1) align 8 %s) {
+%struct.siko_Unit = type {  }
+
+define void @siko_Unit(ptr noundef %fn_result) {
+block0:
+   %this = alloca %struct.siko_Unit, align 4
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %this, i8 0, i1 false)
+   ret void
+}
+
+define void @Main_Large(ptr noundef %s, ptr noundef %fn_result) {
 block0:
    %this = alloca %struct.Main_Large, align 8
    %field0 = getelementptr inbounds %struct.Main_Large, ptr %this, i32 0, i32 0
-   store %struct.Main_Struct1 %s, ptr %field0, align 8
-   %tmp_this_1 = load %struct.Main_Large, ptr %this, align 8
-   ret %struct.Main_Large %tmp_this_1
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %s, ptr align 8 %field0, i8 40, i1 false)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %fn_result, ptr align 8 %this, i8 40, i1 false)
+   ret void
 }
 
-define %struct.Main_Struct1 @Main_Struct1(i64 %num, i64 %num1, i64 %num2, i64 %num3, i64 %num4) {
+define void @Main_Struct1(ptr noundef %num, ptr noundef %num1, ptr noundef %num2, ptr noundef %num3, ptr noundef %num4, ptr noundef %fn_result) {
 block0:
    %this = alloca %struct.Main_Struct1, align 8
    %field0 = getelementptr inbounds %struct.Main_Struct1, ptr %this, i32 0, i32 0
-   store i64 %num, ptr %field0, align 8
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %num, ptr align 8 %field0, i8 8, i1 false)
    %field1 = getelementptr inbounds %struct.Main_Struct1, ptr %this, i32 0, i32 1
-   store i64 %num1, ptr %field1, align 8
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %num1, ptr align 8 %field1, i8 8, i1 false)
    %field2 = getelementptr inbounds %struct.Main_Struct1, ptr %this, i32 0, i32 2
-   store i64 %num2, ptr %field2, align 8
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %num2, ptr align 8 %field2, i8 8, i1 false)
    %field3 = getelementptr inbounds %struct.Main_Struct1, ptr %this, i32 0, i32 3
-   store i64 %num3, ptr %field3, align 8
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %num3, ptr align 8 %field3, i8 8, i1 false)
    %field4 = getelementptr inbounds %struct.Main_Struct1, ptr %this, i32 0, i32 4
-   store i64 %num4, ptr %field4, align 8
-   %tmp_this_1 = load %struct.Main_Struct1, ptr %this, align 8
-   ret %struct.Main_Struct1 %tmp_this_1
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %num4, ptr align 8 %field4, i8 8, i1 false)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %fn_result, ptr align 8 %this, i8 40, i1 false)
+   ret void
 }
 
-define i64 @Main_foo() {
+define void @Main_foo(ptr noundef %fn_result) {
 block0:
-   %i_0_1 = add i64 6, 0 
-   ret i64 %i_0_1
+   %i_0_1 = alloca %struct.Int_Int, align 8
+   %tmp_i_0_1_1 = getelementptr inbounds %struct.Int_Int, ptr %i_0_1, i32 0, i32 0
+   store i64 6, ptr %tmp_i_0_1_1, align 8
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %fn_result, ptr align 8 %i_0_1, i8 8, i1 false)
+   ret void
 }
 
-define i32 @Main_foo2() {
+define void @Main_foo2(ptr noundef %fn_result) {
 block0:
-   %i_0_1 = add i64 1, 0 
-   %i_0_2 = add i64 2, 0 
-   %i_0_3 = add i64 3, 0 
-   %i_0_4 = add i64 4, 0 
-   %i_0_5 = add i64 5, 0 
-   %i_0_6 = call %struct.Main_Struct1 @Main_Struct1(i64 %i_0_1, i64 %i_0_2, i64 %i_0_3, i64 %i_0_4, i64 %i_0_5)
-   %i_0_7 = call %struct.Main_Large @Main_Large(%struct.Main_Struct1 %i_0_6)
-   %i_0_8 = add i32 0, 0 
-   ret i32 %i_0_8
+   %i_0_8 = alloca %struct.siko_Unit, align 4
+   %i_0_7 = alloca %struct.Main_Large, align 8
+   %i_0_6 = alloca %struct.Main_Struct1, align 8
+   %i_0_1 = alloca %struct.Int_Int, align 8
+   %tmp_i_0_1_1 = getelementptr inbounds %struct.Int_Int, ptr %i_0_1, i32 0, i32 0
+   store i64 1, ptr %tmp_i_0_1_1, align 8
+   %i_0_2 = alloca %struct.Int_Int, align 8
+   %tmp_i_0_2_1 = getelementptr inbounds %struct.Int_Int, ptr %i_0_2, i32 0, i32 0
+   store i64 2, ptr %tmp_i_0_2_1, align 8
+   %i_0_3 = alloca %struct.Int_Int, align 8
+   %tmp_i_0_3_1 = getelementptr inbounds %struct.Int_Int, ptr %i_0_3, i32 0, i32 0
+   store i64 3, ptr %tmp_i_0_3_1, align 8
+   %i_0_4 = alloca %struct.Int_Int, align 8
+   %tmp_i_0_4_1 = getelementptr inbounds %struct.Int_Int, ptr %i_0_4, i32 0, i32 0
+   store i64 4, ptr %tmp_i_0_4_1, align 8
+   %i_0_5 = alloca %struct.Int_Int, align 8
+   %tmp_i_0_5_1 = getelementptr inbounds %struct.Int_Int, ptr %i_0_5, i32 0, i32 0
+   store i64 5, ptr %tmp_i_0_5_1, align 8
+   call void @Main_Struct1(ptr %i_0_1, ptr %i_0_2, ptr %i_0_3, ptr %i_0_4, ptr %i_0_5, ptr %i_0_6)
+   call void @Main_Large(ptr %i_0_6, ptr %i_0_7)
+   call void @siko_Unit(ptr %i_0_8)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %i_0_8, i8 0, i1 false)
+   ret void
 }
 
-define i32 @Main_main() {
+define void @Main_main(ptr noundef %fn_result) {
 block0:
-   %i_0_1 = call i64 @Main_foo()
-   %i_0_2 = add i32 0, 0 
-   %loop_var_0 = alloca i32, align 4
-   store i32 %i_0_2, ptr %loop_var_0, align 4
+   %i_2_3 = alloca %struct.siko_Unit, align 4
+   %i_2_2 = alloca %struct.siko_Unit, align 4
+   %i_1_2 = alloca %struct.siko_Unit, align 4
+   %loop_var_0 = alloca %struct.siko_Unit, align 4
+   %i_0_2 = alloca %struct.siko_Unit, align 4
+   %i_0_1 = alloca %struct.Int_Int, align 8
+   call void @Main_foo(ptr %i_0_1)
+   call void @siko_Unit(ptr %i_0_2)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %loop_var_0, ptr align 4 %i_0_2, i8 0, i1 false)
    br label %block1
 block1:
-   %i_1_2 = add i32 0, 0 
+   call void @siko_Unit(ptr %i_1_2)
    br label %block2
 block2:
-   %i_2_2 = call i32 @Main_foo2()
-   %i_2_3 = add i32 0, 0 
-   ret i32 %i_2_3
+   call void @Main_foo2(ptr %i_2_2)
+   call void @siko_Unit(ptr %i_2_3)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %i_2_3, i8 0, i1 false)
+   ret void
 }
 
 define i32 @main() {
-   call void @Main_main()
+   %res = alloca %struct.siko_Unit, align 4
+   call void @Main_main(ptr %res)
    ret i32 0
 }
 

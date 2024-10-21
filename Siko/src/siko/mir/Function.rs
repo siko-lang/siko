@@ -25,7 +25,8 @@ pub struct Variable {
 }
 
 pub enum Value {
-    Numeric(i64),
+    Void,
+    Numeric(String),
     Var(Variable),
 }
 
@@ -35,7 +36,8 @@ pub enum Instruction {
     Reference(Variable, Variable),
     Call(Variable, String, Vec<Variable>),
     Assign(Variable, Value),
-    Return(Variable),
+    Return(Value),
+    Memcpy(Variable, Variable),
     IntegerLiteral(Variable, String),
     Jump(String),
 }

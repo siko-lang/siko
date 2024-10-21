@@ -16,6 +16,9 @@ impl Program {
     }
 
     pub fn getStruct(&self, n: &String) -> Struct {
-        self.structs.get(n).cloned().expect("struct not found")
+        match self.structs.get(n) {
+            Some(s) => s.clone(),
+            None => panic!("Struct {} not found in llvm", n),
+        }
     }
 }
