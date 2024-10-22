@@ -1,3 +1,5 @@
+use std::fmt;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Void,
@@ -21,6 +23,21 @@ impl Type {
             Type::Char => true,
             Type::Struct(_) => false,
             Type::Ptr(_) => false,
+        }
+    }
+}
+
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Type::Void => write!(f, "void"),
+            Type::Int8 => write!(f, "i8"),
+            Type::Int16 => write!(f, "i16"),
+            Type::Int32 => write!(f, "i32"),
+            Type::Int64 => write!(f, "i64"),
+            Type::Char => write!(f, "char"),
+            Type::Struct(name) => write!(f, "struct {}", name),
+            Type::Ptr(inner) => write!(f, "*{}", inner),
         }
     }
 }

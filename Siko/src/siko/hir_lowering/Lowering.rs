@@ -58,9 +58,23 @@ impl<'a> Builder<'a> {
                     unreachable!()
                 }
                 HirInstructionKind::Drop(_) => {}
-                HirInstructionKind::DeclareVar(_) => {}
+                HirInstructionKind::DeclareVar(var) => {
+                    let i = self.function.getInstruction(instruction.id);
+                    let ty = lowerType(i.ty.as_ref().expect("no ty"));
+                    let var = Variable { name: var.clone(), ty: ty };
+                    block.instructions.push(Instruction::Declare(var.clone()));
+                }
                 HirInstructionKind::If(_, _, _) => {}
-                HirInstructionKind::ValueRef(_, _, _) => {}
+                HirInstructionKind::ValueRef(name, _, _) => {
+                    let i = self.function.getInstruction(instruction.id);
+                    let ty = lowerType(i.ty.as_ref().expect("no ty"));
+                    let var = Variable {
+                        name: name.getValue(),
+                        ty: ty,
+                    };
+                    block.instructions.push(Instruction::Declare(idVar.clone()));
+                    block.instructions.push(Instruction::Memcpy(var, idVar));
+                }
                 HirInstructionKind::Assign(_, _) => {}
                 HirInstructionKind::Bind(var, rhs) => {
                     let i = self.function.getInstruction(*rhs);
@@ -80,6 +94,7 @@ impl<'a> Builder<'a> {
                     block.instructions.push(Instruction::Return(Value::Var(self.buildInstructionVar(v))));
                 }
                 HirInstructionKind::IntegerLiteral(v) => {
+                    block.instructions.push(Instruction::Declare(idVar.clone()));
                     block.instructions.push(Instruction::IntegerLiteral(idVar, v.to_string()));
                 }
                 k => panic!("NYI {}", k),

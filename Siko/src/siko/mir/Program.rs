@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, fmt};
 
 use crate::siko::util::DependencyProcessor;
 
@@ -22,6 +22,17 @@ use crate::siko::llvm::Type::Type as LType;
 pub struct Program {
     pub functions: Vec<Function>,
     pub structs: BTreeMap<String, Struct>,
+}
+
+impl fmt::Display for Program {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Program:\n")?;
+        write!(f, "\nFunctions:\n")?;
+        for function in &self.functions {
+            write!(f, "{}\n", function)?;
+        }
+        Ok(())
+    }
 }
 
 fn getResultVarName() -> String {
@@ -155,7 +166,9 @@ impl Program {
         };
         for instruction in &block.instructions {
             match instruction {
-                Instruction::Declare(_) => {}
+                Instruction::Declare(_) => {
+                    // declares are processed at the beginning
+                }
                 Instruction::Reference(dest, src) => {
                     let llvmInstruction = LInstruction::LoadVar(self.lowerVar(dest), self.lowerVar(src));
                     llvmBlock.instructions.push(llvmInstruction);
@@ -204,8 +217,6 @@ impl Program {
                     llvmBlock.instructions.push(llvmInstruction);
                 }
                 Instruction::IntegerLiteral(var, value) => {
-                    let llvmInstruction = LInstruction::Allocate(self.lowerVar(var));
-                    llvmBlock.instructions.push(llvmInstruction);
                     let tmpVar = self.tmpVar(var, 1);
                     let llvmInstruction = LInstruction::GetFieldRef(tmpVar.clone(), self.lowerVar(var), 0);
                     llvmBlock.instructions.push(llvmInstruction);

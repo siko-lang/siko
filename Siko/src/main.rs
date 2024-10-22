@@ -81,7 +81,9 @@ fn main() {
     let data_lifetime_inferer = DataLifeTimeInference::new(program);
     let program = data_lifetime_inferer.process();
     let program = removeTuples(&program);
+    //println!("after backend\n {}", program);
     let mut mir_program = lowerProgram(&program);
+    //println!("mir\n{}", mir_program);
     let llvm_program = mir_program.process();
     let mut generator = Generator::new(outputFile, llvm_program);
     generator.dump().expect("llvm generator failed");
