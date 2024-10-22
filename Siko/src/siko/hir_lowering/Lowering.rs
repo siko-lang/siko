@@ -89,7 +89,6 @@ impl<'a> Builder<'a> {
     }
 
     fn lowerFunction(&mut self) -> MirFunction {
-        let result = lowerType(&self.function.result);
         let mut args = Vec::new();
         for arg in &self.function.params {
             let arg = MirParam {
@@ -104,42 +103,40 @@ impl<'a> Builder<'a> {
             result: lowerType(&self.function.result),
             blocks: Vec::new(),
         };
-        (self.function.name.clone(), result.clone());
-        match &self.function.name {
-            name if *name == getTrueName().monomorphized("".to_string()) => {
-                let var1 = Variable {
-                    name: "var1".to_string(),
-                    ty: MirType::Int64,
-                };
-                let var2 = Variable {
-                    name: "var2".to_string(),
-                    ty: MirType::Int64,
-                };
-                let mut block = MirBlock {
-                    id: format!("block0"),
-                    instructions: Vec::new(),
-                };
-                block.instructions.push(Instruction::Declare(var1.clone()));
-                block.instructions.push(Instruction::Reference(var2.clone(), var1.clone()));
-                block.instructions.push(Instruction::Return(Value::Void));
-                mirFunction.blocks.push(block);
+        match self.function.kind {
+            FunctionKind::ClassCtor => {
+                mirFunction.blocks.push(self.createClassCtor());
             }
-            _ => {
-                if self.function.kind == FunctionKind::ClassCtor {
-                    mirFunction.blocks.push(self.createClassCtor());
-                } else {
-                    if let Some(body) = self.function.body.clone() {
-                        for block in &body.blocks {
-                            let mirBlock = self.lowerBlock(block);
-                            mirFunction.blocks.push(mirBlock);
-                        }
-                    } else {
-                        panic!("No body for {:?} {:?}", self.function.name, getTrueName());
+            FunctionKind::UserDefined => {
+                if let Some(body) = self.function.body.clone() {
+                    for block in &body.blocks {
+                        let mirBlock = self.lowerBlock(block);
+                        mirFunction.blocks.push(mirBlock);
                     }
                 }
             }
+            FunctionKind::VariantCtor(_) => {
+                if self.function.name == getTrueName().monomorphized("".to_string()) {
+                    let var1 = Variable {
+                        name: "var1".to_string(),
+                        ty: MirType::Int64,
+                    };
+                    let var2 = Variable {
+                        name: "var2".to_string(),
+                        ty: MirType::Int64,
+                    };
+                    let mut block = MirBlock {
+                        id: format!("block0"),
+                        instructions: Vec::new(),
+                    };
+                    block.instructions.push(Instruction::Declare(var1.clone()));
+                    block.instructions.push(Instruction::Reference(var2.clone(), var1.clone()));
+                    block.instructions.push(Instruction::Return(Value::Void));
+                    mirFunction.blocks.push(block);
+                }
+            }
+            FunctionKind::Extern => {}
         }
-
         mirFunction
     }
 

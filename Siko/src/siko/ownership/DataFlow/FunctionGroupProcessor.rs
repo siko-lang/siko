@@ -50,11 +50,7 @@ impl<'a> FunctionGroupProcessor<'a> {
 
     pub fn processGroup(&mut self) {
         for item in self.group.clone() {
-            let f = self
-                .program
-                .functions
-                .get(&item)
-                .expect("Function not found in DataFlowProfileBuilder");
+            let f = self.program.functions.get(&item).expect("Function not found in DataFlowProfileBuilder");
             match f.kind {
                 FunctionKind::UserDefined => {
                     self.initializeTypes(f);
@@ -85,14 +81,11 @@ impl<'a> FunctionGroupProcessor<'a> {
                     self.inferenceData.insert(item.clone(), data);
                     //println!("profile {}", profile);
                 }
+                FunctionKind::Extern => {}
             }
         }
         for item in self.group.clone() {
-            let f = self
-                .program
-                .functions
-                .get(&item)
-                .expect("Function not found in DataFlowProfileBuilder");
+            let f = self.program.functions.get(&item).expect("Function not found in DataFlowProfileBuilder");
             match f.kind {
                 FunctionKind::UserDefined => {
                     self.collectConstraints(f);
@@ -135,8 +128,7 @@ impl<'a> FunctionGroupProcessor<'a> {
             data.instruction_types.insert(i.id, ty);
             match &i.kind {
                 InstructionKind::Bind(name, arg) => {
-                    data.value_types
-                        .insert(name.clone(), data.getInstructionType(*arg));
+                    data.value_types.insert(name.clone(), data.getInstructionType(*arg));
                 }
                 _ => {}
             }
@@ -160,11 +152,7 @@ impl<'a> FunctionGroupProcessor<'a> {
     }
 
     fn collectConstraints(&mut self, f: &Function) {
-        let data = self
-            .inferenceData
-            .get(&f.name)
-            .expect("no profile found")
-            .clone();
+        let data = self.inferenceData.get(&f.name).expect("no profile found").clone();
         //println!("Profile for {} {}", f.name, data.profile);
         let last = f.getFirstBlock().getLastId();
         let last_ty = data.getInstructionType(last);
@@ -175,16 +163,9 @@ impl<'a> FunctionGroupProcessor<'a> {
                 InstructionKind::FunctionCall(name, args) => {
                     //println!("{}: {} {}", i.id, i.kind, ty);
                     let profile = if self.group.contains(name) {
-                        self.inferenceData
-                            .get(name)
-                            .expect("inference data not found")
-                            .profile
-                            .clone()
+                        self.inferenceData.get(name).expect("inference data not found").profile.clone()
                     } else {
-                        let profile = self
-                            .profiles
-                            .get(name)
-                            .expect("data flow profile not found");
+                        let profile = self.profiles.get(name).expect("data flow profile not found");
                         let profile = self.instantiator.instantiate(profile);
                         //println!("profile {}", profile);
                         profile
@@ -206,9 +187,7 @@ impl<'a> FunctionGroupProcessor<'a> {
                         ValueKind::Value(name, _) => data.getValueType(name),
                     };
                     for index in indices {
-                        let c = self
-                            .program
-                            .getClass(&current.getName().expect("current is not a class"));
+                        let c = self.program.getClass(&current.getName().expect("current is not a class"));
                         let sub = Substitution::from(&current, &c.ty);
                         let c = c.apply(&sub);
                         let field = &c.fields[*index as usize];
@@ -263,9 +242,7 @@ impl<'a> FunctionGroupProcessor<'a> {
                     }
                 }
             }
-            Type::Tuple(args) => {
-                Type::Tuple(args.iter().map(|ty| self.instantiateType(ty)).collect())
-            }
+            Type::Tuple(args) => Type::Tuple(args.iter().map(|ty| self.instantiateType(ty)).collect()),
             Type::Function(_, _) => unreachable!(),
             Type::Var(_) => unreachable!(),
             Type::Reference(ty, _) => {

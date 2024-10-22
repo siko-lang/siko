@@ -5,9 +5,7 @@ use std::{
 
 use crate::siko::{
     hir::{
-        Function::{
-            Body, Function, Instruction, InstructionId, InstructionKind, Parameter, ValueKind,
-        },
+        Function::{Body, Function, Instruction, InstructionId, InstructionKind, Parameter, ValueKind},
         Program::Program,
         Substitution::Substitution,
         TraitMethodSelector::TraitMethodSelector,
@@ -42,10 +40,7 @@ pub struct Typechecker<'a> {
 }
 
 impl<'a> Typechecker<'a> {
-    pub fn new(
-        program: &'a Program,
-        traitMethodSelector: &'a TraitMethodSelector,
-    ) -> Typechecker<'a> {
+    pub fn new(program: &'a Program, traitMethodSelector: &'a TraitMethodSelector) -> Typechecker<'a> {
         Typechecker {
             program: program,
             traitMethodSelector: traitMethodSelector,
@@ -83,16 +78,13 @@ impl<'a> Typechecker<'a> {
             for block in &body.blocks {
                 for instruction in &block.instructions {
                     let ty = self.allocator.next();
-                    self.types
-                        .insert(TypedId::Instruction(instruction.id), ty.clone());
+                    self.types.insert(TypedId::Instruction(instruction.id), ty.clone());
                     match &instruction.kind {
                         InstructionKind::DeclareVar(name) => {
-                            self.types
-                                .insert(TypedId::Value(name.to_string()), self.allocator.next());
+                            self.types.insert(TypedId::Value(name.to_string()), self.allocator.next());
                         }
                         InstructionKind::Bind(name, _) => {
-                            self.types
-                                .insert(TypedId::Value(name.to_string()), self.allocator.next());
+                            self.types.insert(TypedId::Value(name.to_string()), self.allocator.next());
                         }
                         _ => {}
                     }
@@ -106,17 +98,11 @@ impl<'a> Typechecker<'a> {
     }
 
     fn getInstructionType(&self, id: InstructionId) -> Type {
-        self.types
-            .get(&TypedId::Instruction(id))
-            .expect("not type for instruction")
-            .clone()
+        self.types.get(&TypedId::Instruction(id)).expect("not type for instruction").clone()
     }
 
     fn getValueType(&self, v: &String) -> Type {
-        self.types
-            .get(&TypedId::Value(v.clone()))
-            .expect("not type for value")
-            .clone()
+        self.types.get(&TypedId::Value(v.clone())).expect("not type for value").clone()
     }
 
     fn unify(&mut self, ty1: Type, ty2: Type, location: Location) {
@@ -135,13 +121,7 @@ impl<'a> Typechecker<'a> {
         sub.apply(&ty)
     }
 
-    fn checkFunctionCall(
-        &mut self,
-        args: &Vec<InstructionId>,
-        body: &Body,
-        instruction: &Instruction,
-        fnType: Type,
-    ) {
+    fn checkFunctionCall(&mut self, args: &Vec<InstructionId>, body: &Body, instruction: &Instruction, fnType: Type) {
         //println!("checkFunctionCall: {}", fnType);
         let fnType = self.instantiateType(fnType);
         let (fnArgs, fnResult) = match fnType.splitFnType() {
@@ -149,25 +129,12 @@ impl<'a> Typechecker<'a> {
             None => return,
         };
         if args.len() != fnArgs.len() {
-            TypecheckerError::ArgCountMismatch(
-                fnArgs.len() as u32,
-                args.len() as u32,
-                instruction.location.clone(),
-            )
-            .report();
+            TypecheckerError::ArgCountMismatch(fnArgs.len() as u32, args.len() as u32, instruction.location.clone()).report();
         }
         for (arg, fnArg) in zip(args, fnArgs) {
-            self.unify(
-                self.getInstructionType(*arg),
-                fnArg,
-                body.getInstruction(*arg).location.clone(),
-            );
+            self.unify(self.getInstructionType(*arg), fnArg, body.getInstruction(*arg).location.clone());
         }
-        self.unify(
-            self.getInstructionType(instruction.id),
-            fnResult,
-            instruction.location.clone(),
-        );
+        self.unify(self.getInstructionType(instruction.id), fnResult, instruction.location.clone());
     }
 
     fn check(&mut self, f: &Function) {
@@ -180,46 +147,32 @@ impl<'a> Typechecker<'a> {
             //println!("Type checking {}", instruction);
             match &instruction.kind {
                 InstructionKind::FunctionCall(name, args) => {
-                    let f = self
-                        .program
-                        .functions
-                        .get(name)
-                        .expect("Function not found");
+                    let f = self.program.functions.get(name).expect("Function not found");
                     let fnType = f.getType();
                     self.checkFunctionCall(args, body, instruction, fnType);
                 }
-                InstructionKind::DynamicFunctionCall(callable, args) => {
-                    match self.methodSources.get(callable) {
-                        Some(name) => {
-                            let f = self
-                                .program
-                                .functions
-                                .get(&name)
-                                .expect("Function not found");
-                            let fnType = f.getType();
-                            let mut newArgs = Vec::new();
-                            newArgs.push(*callable);
-                            newArgs.extend(args);
-                            self.checkFunctionCall(&newArgs, body, instruction, fnType);
-                            self.methodCalls.insert(instruction.id, *callable);
-                        }
-                        None => {
-                            let fnType = self.getInstructionType(*callable);
-                            self.checkFunctionCall(&args, body, instruction, fnType);
-                        }
+                InstructionKind::DynamicFunctionCall(callable, args) => match self.methodSources.get(callable) {
+                    Some(name) => {
+                        let f = self.program.functions.get(&name).expect("Function not found");
+                        let fnType = f.getType();
+                        let mut newArgs = Vec::new();
+                        newArgs.push(*callable);
+                        newArgs.extend(args);
+                        self.checkFunctionCall(&newArgs, body, instruction, fnType);
+                        self.methodCalls.insert(instruction.id, *callable);
                     }
-                }
+                    None => {
+                        let fnType = self.getInstructionType(*callable);
+                        self.checkFunctionCall(&args, body, instruction, fnType);
+                    }
+                },
                 InstructionKind::If(cond, _, _) => {
                     self.unify(
                         self.getInstructionType(*cond),
                         Type::getBoolType(),
                         body.getInstruction(*cond).location.clone(),
                     );
-                    self.unify(
-                        self.getInstructionType(instruction.id),
-                        Type::getUnitType(),
-                        instruction.location.clone(),
-                    );
+                    self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
                 }
                 InstructionKind::ValueRef(value, fields, _) => {
                     let mut receiverType = match &value {
@@ -227,11 +180,7 @@ impl<'a> Typechecker<'a> {
                         ValueKind::Value(name, _) => self.getValueType(name),
                     };
                     if fields.is_empty() {
-                        self.unify(
-                            receiverType,
-                            self.getInstructionType(instruction.id),
-                            instruction.location.clone(),
-                        );
+                        self.unify(receiverType, self.getInstructionType(instruction.id), instruction.location.clone());
                     } else {
                         let mut indices = Vec::new();
                         for (index, field) in fields.iter().enumerate() {
@@ -253,60 +202,34 @@ impl<'a> Typechecker<'a> {
                                             for m in &c.methods {
                                                 if m.name == *field {
                                                     found = true;
-                                                    self.methodSources
-                                                        .insert(instruction.id, m.fullName.clone());
+                                                    self.methodSources.insert(instruction.id, m.fullName.clone());
                                                     break;
                                                 }
                                             }
                                         }
                                         if !found {
-                                            if let Some(methodName) =
-                                                self.traitMethodSelector.get(&field)
-                                            {
+                                            if let Some(methodName) = self.traitMethodSelector.get(&field) {
                                                 found = true;
-                                                self.methodSources
-                                                    .insert(instruction.id, methodName);
+                                                self.methodSources.insert(instruction.id, methodName);
                                             }
                                         }
                                         if !found {
-                                            TypecheckerError::FieldNotFound(
-                                                field.clone(),
-                                                instruction.location.clone(),
-                                            )
-                                            .report();
+                                            TypecheckerError::FieldNotFound(field.clone(), instruction.location.clone()).report();
                                         }
                                     } else {
-                                        TypecheckerError::TypeAnnotationNeeded(
-                                            instruction.location.clone(),
-                                        )
-                                        .report()
+                                        TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report()
                                     }
                                 }
-                                _ => TypecheckerError::TypeAnnotationNeeded(
-                                    instruction.location.clone(),
-                                )
-                                .report(),
+                                _ => TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(),
                             }
                         }
                         self.indices.insert(instruction.id, indices);
-                        self.unify(
-                            receiverType,
-                            self.getInstructionType(instruction.id),
-                            instruction.location.clone(),
-                        );
+                        self.unify(receiverType, self.getInstructionType(instruction.id), instruction.location.clone());
                     }
                 }
                 InstructionKind::Bind(name, rhs) => {
-                    self.unify(
-                        self.getValueType(name),
-                        self.getInstructionType(*rhs),
-                        instruction.location.clone(),
-                    );
-                    self.unify(
-                        self.getInstructionType(instruction.id),
-                        Type::getUnitType(),
-                        instruction.location.clone(),
-                    );
+                    self.unify(self.getValueType(name), self.getInstructionType(*rhs), instruction.location.clone());
+                    self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
                 }
                 InstructionKind::Tuple(args) => {
                     let mut argTypes = Vec::new();
@@ -328,30 +251,14 @@ impl<'a> Typechecker<'a> {
                     );
                 }
                 InstructionKind::IntegerLiteral(_) => {
-                    self.unify(
-                        self.getInstructionType(instruction.id),
-                        Type::getIntType(),
-                        instruction.location.clone(),
-                    );
+                    self.unify(self.getInstructionType(instruction.id), Type::getIntType(), instruction.location.clone());
                 }
                 InstructionKind::CharLiteral(_) => {
-                    self.unify(
-                        self.getInstructionType(instruction.id),
-                        Type::getCharType(),
-                        instruction.location.clone(),
-                    );
+                    self.unify(self.getInstructionType(instruction.id), Type::getCharType(), instruction.location.clone());
                 }
                 InstructionKind::Return(arg) => {
-                    self.unify(
-                        f.result.clone(),
-                        self.getInstructionType(*arg),
-                        instruction.location.clone(),
-                    );
-                    self.unify(
-                        self.getInstructionType(instruction.id),
-                        Type::Never,
-                        instruction.location.clone(),
-                    );
+                    self.unify(f.result.clone(), self.getInstructionType(*arg), instruction.location.clone());
+                    self.unify(self.getInstructionType(instruction.id), Type::Never, instruction.location.clone());
                 }
                 InstructionKind::Ref(arg) => {
                     let arg_type = self.getInstructionType(*arg);
@@ -362,37 +269,17 @@ impl<'a> Typechecker<'a> {
                     );
                 }
                 InstructionKind::Drop(_) => {
-                    self.unify(
-                        self.getInstructionType(instruction.id),
-                        Type::getUnitType(),
-                        instruction.location.clone(),
-                    );
+                    self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
                 }
                 InstructionKind::Jump(_) => {
-                    self.unify(
-                        self.getInstructionType(instruction.id),
-                        Type::getUnitType(),
-                        instruction.location.clone(),
-                    );
+                    self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
                 }
                 InstructionKind::Assign(name, rhs) => {
-                    self.unify(
-                        self.getValueType(name),
-                        self.getInstructionType(*rhs),
-                        instruction.location.clone(),
-                    );
-                    self.unify(
-                        self.getInstructionType(instruction.id),
-                        Type::getUnitType(),
-                        instruction.location.clone(),
-                    );
+                    self.unify(self.getValueType(name), self.getInstructionType(*rhs), instruction.location.clone());
+                    self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
                 }
                 InstructionKind::DeclareVar(_) => {
-                    self.unify(
-                        self.getInstructionType(instruction.id),
-                        Type::getUnitType(),
-                        instruction.location.clone(),
-                    );
+                    self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
                 }
             }
         }
@@ -410,8 +297,7 @@ impl<'a> Typechecker<'a> {
                     if !vars.is_empty() && vars != publicVars {
                         self.dump(f);
                         println!("{} {}", instruction, ty);
-                        TypecheckerError::TypeAnnotationNeeded(instruction.location.clone())
-                            .report();
+                        TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report();
                     }
                 }
             }
@@ -440,16 +326,10 @@ impl<'a> Typechecker<'a> {
                     if self.indices.contains_key(&instruction.id) {
                         match &instruction.kind {
                             InstructionKind::ValueRef(v, fields, _) => {
-                                instruction.kind = InstructionKind::ValueRef(
-                                    v.clone(),
-                                    fields.clone(),
-                                    self.indices.get(&instruction.id).unwrap().clone(),
-                                );
+                                instruction.kind =
+                                    InstructionKind::ValueRef(v.clone(), fields.clone(), self.indices.get(&instruction.id).unwrap().clone());
                             }
-                            kind => panic!(
-                                "Unexpected instruction kind for indices while rewriting! {}",
-                                kind.dump()
-                            ),
+                            kind => panic!("Unexpected instruction kind for indices while rewriting! {}", kind.dump()),
                         }
                     }
                     if self.methodSources.contains_key(&instruction.id) {
@@ -457,32 +337,21 @@ impl<'a> Typechecker<'a> {
                             InstructionKind::ValueRef(v, fields, indices) => {
                                 let mut fields = fields.clone();
                                 fields.pop();
-                                instruction.kind =
-                                    InstructionKind::ValueRef(v.clone(), fields, indices.clone());
+                                instruction.kind = InstructionKind::ValueRef(v.clone(), fields, indices.clone());
                             }
-                            kind => panic!(
-                                "Unexpected instruction kind for method source while rewriting! {}",
-                                kind.dump()
-                            ),
+                            kind => panic!("Unexpected instruction kind for method source while rewriting! {}", kind.dump()),
                         }
                     }
                     if let Some(source) = self.methodCalls.get(&instruction.id) {
                         match &instruction.kind {
                             InstructionKind::DynamicFunctionCall(_, args) => {
-                                let name = self
-                                    .methodSources
-                                    .get(source)
-                                    .expect("Method not found for call!");
+                                let name = self.methodSources.get(source).expect("Method not found for call!");
                                 let mut newArgs = Vec::new();
                                 newArgs.push(*source);
                                 newArgs.extend(args);
-                                instruction.kind =
-                                    InstructionKind::FunctionCall(name.clone(), newArgs);
+                                instruction.kind = InstructionKind::FunctionCall(name.clone(), newArgs);
                             }
-                            kind => panic!(
-                                "Unexpected instruction kind for method call while rewriting! {}",
-                                kind.dump()
-                            ),
+                            kind => panic!("Unexpected instruction kind for method call while rewriting! {}", kind.dump()),
                         }
                     }
                     let ty = self.getType(&TypedId::Instruction(instruction.id));

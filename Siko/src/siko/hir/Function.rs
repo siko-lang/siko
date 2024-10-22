@@ -39,7 +39,7 @@ impl Parameter {
     pub fn getName(&self) -> String {
         match &self {
             Parameter::Named(n, _, _) => n.clone(),
-            Parameter::SelfParam(_, _) => panic!("Trying to ask name for self parameter!"),
+            Parameter::SelfParam(_, _) => "self".to_string(),
         }
     }
 
@@ -227,12 +227,7 @@ impl Block {
         self.addWithImplicit(kind, location, false)
     }
 
-    pub fn addWithImplicit(
-        &mut self,
-        kind: InstructionKind,
-        location: Location,
-        implicit: bool,
-    ) -> InstructionId {
+    pub fn addWithImplicit(&mut self, kind: InstructionKind, location: Location, implicit: bool) -> InstructionId {
         let id = InstructionId {
             blockId: self.id,
             id: self.instructions.len() as u32,
@@ -248,12 +243,7 @@ impl Block {
     }
 
     pub fn getLastId(&self) -> InstructionId {
-        self.instructions
-            .iter()
-            .rev()
-            .next()
-            .expect("Empty block!")
-            .id
+        self.instructions.iter().rev().next().expect("Empty block!").id
     }
 
     pub fn dump(&self) {
@@ -317,6 +307,7 @@ pub enum FunctionKind {
     UserDefined,
     VariantCtor(i64),
     ClassCtor,
+    Extern,
 }
 
 #[derive(Debug, Clone)]
@@ -414,11 +405,7 @@ pub struct InstructionIterator<'a> {
 
 impl<'a> InstructionIterator<'a> {
     fn new(f: &'a Function) -> InstructionIterator<'a> {
-        InstructionIterator {
-            f,
-            block: 0,
-            instruction: 0,
-        }
+        InstructionIterator { f, block: 0, instruction: 0 }
     }
 }
 

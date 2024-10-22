@@ -10,10 +10,7 @@ use siko::{
     llvm::Generator::Generator,
     location::FileManager::FileManager,
     monomorphizer::Monomorphizer::Monomorphizer,
-    ownership::{
-        BorrowChecker, DataFlow::DataFlowProfileBuilder::DataFlowProfileBuilder,
-        DataLifetime::DataLifeTimeInference,
-    },
+    ownership::{BorrowChecker, DataFlow::DataFlowProfileBuilder::DataFlowProfileBuilder, DataLifetime::DataLifeTimeInference},
     parser::Parser::*,
     resolver::Resolver::Resolver,
     typechecker::Typechecker::Typechecker,
@@ -25,10 +22,7 @@ fn typecheck(mut program: Program) -> Program {
     let mut result = BTreeMap::new();
     for (_, f) in &program.functions {
         let moduleName = f.name.module();
-        let traitMethodSelector = &program
-            .traitMethodSelectors
-            .get(&moduleName)
-            .expect("Trait method selector not found");
+        let traitMethodSelector = &program.traitMethodSelectors.get(&moduleName).expect("Trait method selector not found");
         let mut typechecker = Typechecker::new(&program, &traitMethodSelector);
         let typedFn = typechecker.run(f);
         //typedFn.dump();
