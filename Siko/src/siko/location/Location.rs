@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use super::FileManager::FileManager;
 
 #[derive(Clone)]
@@ -9,6 +11,12 @@ pub struct FileId {
 impl std::fmt::Debug for FileId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.index)
+    }
+}
+
+impl std::fmt::Display for FileId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "#{}", self.index)
     }
 }
 
@@ -64,11 +72,18 @@ impl Position {
     }
 }
 
+impl Display for Position {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.line, self.offset)
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Span {
     pub start: Position,
     pub end: Position,
 }
+
 impl Span {
     pub fn new() -> Span {
         Span {
@@ -86,6 +101,12 @@ impl Span {
     }
 }
 
+impl Display for Span {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}-{}", self.start, self.end)
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Location {
     pub fileId: FileId,
@@ -94,25 +115,22 @@ pub struct Location {
 
 impl Location {
     pub fn new(fileId: FileId, span: Span) -> Location {
-        Location {
-            fileId: fileId,
-            span: span,
-        }
+        Location { fileId: fileId, span: span }
     }
 
     pub fn merge(self, other: Location) -> Location {
-        let Location {
-            fileId: f1,
-            span: s1,
-        } = self;
-        let Location {
-            fileId: f2,
-            span: s2,
-        } = other;
+        let Location { fileId: f1, span: s1 } = self;
+        let Location { fileId: f2, span: s2 } = other;
         assert!(f1 == f2);
         Location {
             fileId: f1,
             span: s1.merge(s2),
         }
+    }
+}
+
+impl Display for Location {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", self.fileId, self.span)
     }
 }

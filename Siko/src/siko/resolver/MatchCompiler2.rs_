@@ -1,0 +1,363 @@
+use crate::siko::hir::Data::Enum;
+use crate::siko::location::Location::Location;
+use crate::siko::qualifiedname::QualifiedName;
+use crate::siko::syntax::Pattern::{Pattern, SimplePattern};
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Display;
+
+use super::Error::ResolverError;
+use super::ModuleResolver::ModuleResolver;
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub enum Choice {
+    Variant(QualifiedName, QualifiedName),
+    Class(QualifiedName),
+    Wildcard,
+    Tuple,
+    StringLiteral(String),
+    IntegerLiteral(String),
+}
+
+impl Choice {
+    fn kind(&self) -> ChoiceKind {
+        match &self {
+            Choice::Variant(v, e) => ChoiceKind::Variant(e.clone()),
+            Choice::Class(n) => ChoiceKind::Class(n.clone()),
+            Choice::Wildcard => ChoiceKind::Wildcard,
+            Choice::Tuple => ChoiceKind::Tuple,
+            Choice::StringLiteral(_) => ChoiceKind::StringLiteral,
+            Choice::IntegerLiteral(_) => ChoiceKind::IntegerLiteral,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub enum ChoiceKind {
+    Variant(QualifiedName),
+    Class(QualifiedName),
+    Wildcard,
+    Tuple,
+    StringLiteral,
+    IntegerLiteral,
+}
+
+impl ChoiceKind {
+    fn isCompatible(&self, other: ChoiceKind) -> bool {
+        match (self, other) {
+            (ChoiceKind::Wildcard, _) => true,
+            (_, ChoiceKind::Wildcard) => true,
+            (a, b) => *a == b,
+        }
+    }
+
+    fn getKind(compiler: &MatchCompiler, pattern: &Pattern) -> ChoiceKind {
+        match pattern.pattern {
+            SimplePattern::Named(name, args) => {
+                let name = compiler.moduleResolver.resolverName(&name);
+                if let Some(e) = compiler.variants.get(&name) {
+                    //println!("{} is a variant of {}", name, e);
+                    ChoiceKind::Variant(name)
+                } else {
+                    ChoiceKind::Class(name)
+                }
+            }
+            SimplePattern::Bind(_, _) => ChoiceKind::Wildcard,
+            SimplePattern::Tuple(args) => ChoiceKind::Tuple,
+            SimplePattern::StringLiteral(v) => ChoiceKind::StringLiteral,
+            SimplePattern::IntegerLiteral(v) => ChoiceKind::IntegerLiteral,
+            SimplePattern::Wildcard => ChoiceKind::Wildcard,
+        }
+    }
+}
+
+impl Display for ChoiceKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ChoiceKind::Variant(qn) => write!(f, "variant of {}", qn),
+            ChoiceKind::Class(qn) => write!(f, "Class({})", qn),
+            ChoiceKind::Wildcard => write!(f, "Wildcard"),
+            ChoiceKind::Tuple => write!(f, "tuple"),
+            ChoiceKind::StringLiteral => write!(f, "StringLiteral"),
+            ChoiceKind::IntegerLiteral => write!(f, "IntegerLiteral"),
+        }
+    }
+}
+impl Display for Choice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self {
+            Choice::Variant(v, e) => write!(f, "variant({}, {})", v, e),
+            Choice::Class(n) => write!(f, "named({})", n),
+            Choice::Wildcard => write!(f, "wildcard"),
+            Choice::Tuple => write!(f, "tuple"),
+            Choice::StringLiteral(l) => write!(f, "string({})", l),
+            Choice::IntegerLiteral(l) => write!(f, "integer({})", l),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Path {
+    Root,
+    Variant(Box<Path>, i64),
+    Index(Box<Path>, i64),
+}
+
+impl Display for Path {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Path::Root => write!(f, "root"),
+            Path::Variant(parent, i) => write!(f, "{}.v{}", parent, i),
+            Path::Index(parent, i) => write!(f, "{}.{}", parent, i),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct Decision {
+    choice: Choice,
+    path: Path,
+}
+
+impl Display for Decision {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", self.path, self.choice)
+    }
+}
+
+#[derive(Clone)]
+struct Decisions {
+    paths: Vec<Path>,
+    choices: Vec<Choice>,
+}
+
+impl Display for Decisions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[")?;
+        for (index, d) in self.paths.iter().enumerate() {
+            if index == 0 {
+                write!(f, "{}", d)?;
+            } else {
+                write!(f, ", {}", d)?;
+            }
+        }
+        write!(f, "]")?;
+        write!(f, "[")?;
+        for (index, d) in self.choices.iter().enumerate() {
+            if index == 0 {
+                write!(f, "{}", d)?;
+            } else {
+                write!(f, ", {}", d)?;
+            }
+        }
+        write!(f, "]")?;
+        Ok(())
+    }
+}
+
+struct DecisionBuilder<'a> {
+    decisions: Decisions,
+    compiler: &'a MatchCompiler<'a>,
+}
+
+impl<'a> DecisionBuilder<'a> {
+    fn new(compiler: &'a MatchCompiler<'a>) -> DecisionBuilder<'a> {
+        DecisionBuilder {
+            decisions: Decisions {
+                paths: Vec::new(),
+                choices: Vec::new(),
+            },
+            compiler: compiler,
+        }
+    }
+
+    fn build(&mut self, pattern: Pattern, parent: Path) {
+        match pattern.pattern {
+            SimplePattern::Named(name, args) => {
+                let name = self.compiler.moduleResolver.resolverName(&name);
+                let mut choice = Choice::Class(name.clone());
+                let mut path = parent.clone();
+                if let Some(e) = self.compiler.variants.get(&name) {
+                    //println!("{} is a variant of {}", name, e);
+                    choice = Choice::Variant(name.clone(), e.clone());
+                    let enumDef = self.compiler.enums.get(e).expect("enum not found");
+                    for (index, v) in enumDef.variants.iter().enumerate() {
+                        if v.name == name {
+                            path = Path::Variant(Box::new(parent.clone()), index as i64);
+                        }
+                    }
+                }
+                self.decisions.paths.push(parent.clone());
+                self.decisions.choices.push(choice);
+                for (index, arg) in args.clone().into_iter().enumerate() {
+                    self.build(arg, Path::Index(Box::new(path.clone()), index as i64));
+                }
+            }
+            SimplePattern::Bind(_, _) => {
+                self.decisions.choices.push(Choice::Wildcard);
+                self.decisions.paths.push(parent.clone());
+            }
+            SimplePattern::Tuple(args) => {
+                self.decisions.choices.push(Choice::Tuple);
+                self.decisions.paths.push(parent.clone());
+                for (index, arg) in args.clone().into_iter().enumerate() {
+                    self.build(arg, Path::Index(Box::new(parent.clone()), index as i64));
+                }
+            }
+            SimplePattern::StringLiteral(v) => {
+                self.decisions.choices.push(Choice::StringLiteral(v.clone()));
+                self.decisions.paths.push(parent.clone());
+            }
+            SimplePattern::IntegerLiteral(v) => {
+                self.decisions.choices.push(Choice::IntegerLiteral(v.clone()));
+                self.decisions.paths.push(parent.clone());
+            }
+            SimplePattern::Wildcard => {
+                self.decisions.choices.push(Choice::Wildcard);
+                self.decisions.paths.push(parent.clone());
+            }
+        }
+    }
+}
+
+struct Match {
+    index: i64,
+}
+
+struct Node {
+    kind: ChoiceKind,
+    children: BTreeMap<Choice, Node>,
+    matches: Vec<Match>,
+}
+
+struct NodeBuilder<'a> {
+    compiler: &'a MatchCompiler<'a>,
+    root: Option<Node>,
+}
+
+impl<'a> NodeBuilder<'a> {
+    fn new(compiler: &'a MatchCompiler<'a>) -> NodeBuilder<'a> {
+        NodeBuilder {
+            compiler: compiler,
+            root: None,
+        }
+    }
+
+    pub fn add(&mut self, pattern: &Pattern, m: Match) {
+        let kind = ChoiceKind::getKind(self.compiler, pattern);
+        match self.root {
+            Some(mut node) => {
+                node.add(pattern, self.compiler, m);
+            }
+            None => {
+                let mut node = Node::new(kind);
+                node.add(pattern, self.compiler, m);
+                self.root = Some(node);
+            }
+        }
+    }
+
+    pub fn dump(&self) {
+        if let Some(root) = self.root {
+            root.dump(0);
+        }
+    }
+}
+
+impl Node {
+    pub fn new(kind: ChoiceKind, compiler: &MatchCompiler) -> Node {
+        match kind {
+            ChoiceKind::Variant(e) => {}
+            _ => {}
+        }
+        Node {
+            kind,
+            children: BTreeMap::new(),
+            matches: Vec::new(),
+        }
+    }
+
+    pub fn add(&mut self, pattern: &Pattern, compiler: &MatchCompiler, m: Match) {
+        let kind = ChoiceKind::getKind(compiler, pattern);
+        match kind {
+            ChoiceKind::Variant(_) => {}
+            ChoiceKind::Class(qualified_name) => todo!(),
+            ChoiceKind::Wildcard => todo!(),
+            ChoiceKind::Tuple => todo!(),
+            ChoiceKind::StringLiteral => todo!(),
+            ChoiceKind::IntegerLiteral => todo!(),
+        }
+        if decisions.choices.is_empty() {
+            self.matches.push(m);
+        } else {
+            let path = decisions.paths.remove(0);
+            let child = self.children.entry(choice.clone()).or_insert_with(|| Node::new(path.clone()));
+            child.add(decisions, m);
+        }
+    }
+
+    pub fn dump(&self, level: u32) {
+        let indent = " ".repeat(level as usize);
+        println!("{}Node", indent);
+        let indent = " ".repeat((level + 1) as usize);
+        println!("{}path: {}", indent, self.path);
+        let indent = " ".repeat((level + 2) as usize);
+        for (c, child) in &self.children {
+            println!("{}{}:", indent, c);
+            child.dump(level + 2);
+        }
+        for m in &self.matches {
+            println!("{} {}", indent, m.index);
+        }
+    }
+
+    fn addMissingBranches(&mut self, compiler: &MatchCompiler) {
+        let mut kinds = BTreeSet::new();
+        let mut variants = BTreeSet::new();
+        for (choice, _) in &self.children {
+            kinds.insert(choice.kind());
+            match choice {
+                Choice::Variant(variant, e) => {
+                    variants.insert(variant.clone());
+                }
+                Choice::Class(_) => {}
+                Choice::Wildcard => {}
+                Choice::Tuple => {}
+                Choice::StringLiteral(_) => {}
+                Choice::IntegerLiteral(_) => {}
+            }
+        }
+        kinds.remove(&ChoiceKind::Wildcard);
+        if kinds.len() > 1 {}
+    }
+}
+
+pub struct MatchCompiler<'a> {
+    branches: Vec<Pattern>,
+    moduleResolver: &'a ModuleResolver,
+    variants: &'a BTreeMap<QualifiedName, QualifiedName>,
+    enums: &'a BTreeMap<QualifiedName, Enum>,
+}
+
+impl<'a> MatchCompiler<'a> {
+    pub fn new(
+        branches: Vec<Pattern>,
+        moduleResolver: &'a ModuleResolver,
+        variants: &'a BTreeMap<QualifiedName, QualifiedName>,
+        enums: &'a BTreeMap<QualifiedName, Enum>,
+    ) -> MatchCompiler<'a> {
+        MatchCompiler {
+            branches: branches,
+            moduleResolver: moduleResolver,
+            variants: variants,
+            enums: enums,
+        }
+    }
+
+    pub fn check(&mut self) {
+        let mut nodeBuilder = NodeBuilder::new(self);
+        for (index, branch) in self.branches.clone().into_iter().enumerate() {
+            nodeBuilder.add(&branch, Match { index: index as i64 });
+        }
+        nodeBuilder.dump();
+    }
+}

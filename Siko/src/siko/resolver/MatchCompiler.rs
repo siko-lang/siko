@@ -116,9 +116,7 @@ impl ChoiceNode {
         let name = graph.addNode(label);
         for (choice, child) in &self.choices {
             let childName = child.buildDot(graph);
-            graph
-                .edges
-                .push((name.clone(), childName, Some(format!("{}", choice))));
+            graph.edges.push((name.clone(), childName, Some(format!("{}", choice))));
         }
 
         name
@@ -137,11 +135,7 @@ impl ChoiceNode {
         }
     }
 
-    pub fn addWildcards(
-        &mut self,
-        variants: &BTreeMap<QualifiedName, QualifiedName>,
-        enums: &BTreeMap<QualifiedName, Enum>,
-    ) {
+    pub fn addWildcards(&mut self, variants: &BTreeMap<QualifiedName, QualifiedName>, enums: &BTreeMap<QualifiedName, Enum>) {
         let mut allNames = BTreeSet::new();
         let mut wildcardNeeded = false;
         for (choice, next) in &mut self.choices {
@@ -173,10 +167,7 @@ impl ChoiceNode {
             self.choices.remove(&Choice::Wildcard);
         }
         if wildcardNeeded && !self.choices.contains_key(&Choice::Wildcard) {
-            self.choices.insert(
-                Choice::Wildcard,
-                ChoiceNode::new(Label::Simple("_".to_string())),
-            );
+            self.choices.insert(Choice::Wildcard, ChoiceNode::new(Label::Simple("_".to_string())));
         }
     }
 
@@ -190,22 +181,14 @@ impl ChoiceNode {
                     (Label::Simple(l), Some(e)) => Label::Bind(l, e),
                     (l, _) => l,
                 };
-                let next = self
-                    .choices
-                    .entry(choice)
-                    .or_insert_with(|| ChoiceNode::new(label));
+                let next = self.choices.entry(choice).or_insert_with(|| ChoiceNode::new(label));
                 next.build(patterns, moduleResolver);
             }
             None => {}
         }
     }
 
-    fn apply(
-        &mut self,
-        mut patterns: Vec<LabeledPattern>,
-        index: usize,
-        moduleResolver: &ModuleResolver,
-    ) -> bool {
+    fn apply(&mut self, mut patterns: Vec<LabeledPattern>, index: usize, moduleResolver: &ModuleResolver) -> bool {
         match patterns.first() {
             Some(_) => {
                 let p = patterns.remove(0);
@@ -253,14 +236,14 @@ impl ChoiceNode {
     }
 }
 
-pub struct MatchResolver {
+pub struct MatchCompiler {
     choiceTree: ChoiceNode,
     branches: Vec<Pattern>,
 }
 
-impl MatchResolver {
-    pub fn new(branches: Vec<Pattern>) -> MatchResolver {
-        MatchResolver {
+impl MatchCompiler {
+    pub fn new(branches: Vec<Pattern>) -> MatchCompiler {
+        MatchCompiler {
             choiceTree: ChoiceNode::new(Label::Simple("main".to_string())),
             branches: branches,
         }
@@ -282,6 +265,11 @@ impl MatchResolver {
             );
         }
         self.choiceTree.addWildcards(variants, enums);
+
+        let mut graph = Graph::new("matchtest".to_string());
+        self.choiceTree.buildDot(&mut graph);
+        graph.printDot();
+
         let mut lastLocation = None;
         for (index, branch) in self.branches.clone().into_iter().enumerate() {
             let location = branch.location.clone();
@@ -298,11 +286,7 @@ impl MatchResolver {
             }
         }
         if self.choiceTree.checkMissing() {
-            ResolverError::MissingPattern(lastLocation.expect("lastLocation was not found"))
-                .report();
+            ResolverError::MissingPattern(lastLocation.expect("lastLocation was not found")).report();
         }
-        let mut graph = Graph::new("matchtest".to_string());
-        self.choiceTree.buildDot(&mut graph);
-        graph.printDot();
     }
 }

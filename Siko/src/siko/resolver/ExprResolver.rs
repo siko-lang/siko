@@ -2,11 +2,10 @@ use core::panic;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::siko::hir::Data::Enum;
-use crate::siko::hir::Function::{
-    Block as IrBlock, BlockId, InstructionId, InstructionKind, ValueKind,
-};
+use crate::siko::hir::Function::{Block as IrBlock, BlockId, InstructionId, InstructionKind, ValueKind};
 use crate::siko::location::Location::Location;
 use crate::siko::qualifiedname::QualifiedName;
+use crate::siko::resolver::matchcompiler::Compiler::MatchCompiler;
 use crate::siko::syntax::Expr::{BinaryOp, Expr, SimpleExpr, UnaryOp};
 use crate::siko::syntax::Identifier::Identifier;
 use crate::siko::syntax::Pattern::{Pattern, SimplePattern};
@@ -15,15 +14,11 @@ use crate::siko::{hir::Function::Body, syntax::Statement::Block};
 
 use super::Environment::Environment;
 use super::Error::ResolverError;
-use super::MatchResolver::MatchResolver;
 use super::ModuleResolver::ModuleResolver;
 
 fn createOpName(traitName: &str, method: &str) -> QualifiedName {
     let stdOps = Box::new(QualifiedName::Module("Std.Ops".to_string()));
-    QualifiedName::Item(
-        Box::new(QualifiedName::Item(stdOps.clone(), traitName.to_string())),
-        method.to_string(),
-    )
+    QualifiedName::Item(Box::new(QualifiedName::Item(stdOps.clone(), traitName.to_string())), method.to_string())
 }
 
 #[derive(Debug, Clone)]
@@ -100,29 +95,15 @@ impl<'a> ExprResolver<'a> {
         }
     }
 
-    fn addInstruction(
-        &mut self,
-        instruction: InstructionKind,
-        location: Location,
-    ) -> InstructionId {
+    fn addInstruction(&mut self, instruction: InstructionKind, location: Location) -> InstructionId {
         self.addInstructionToBlock(self.targetBlockId, instruction, location, false)
     }
 
-    fn addImplicitInstruction(
-        &mut self,
-        instruction: InstructionKind,
-        location: Location,
-    ) -> InstructionId {
+    fn addImplicitInstruction(&mut self, instruction: InstructionKind, location: Location) -> InstructionId {
         self.addInstructionToBlock(self.targetBlockId, instruction, location, true)
     }
 
-    fn addInstructionToBlock(
-        &mut self,
-        id: BlockId,
-        instruction: InstructionKind,
-        location: Location,
-        implicit: bool,
-    ) -> InstructionId {
+    fn addInstructionToBlock(&mut self, id: BlockId, instruction: InstructionKind, location: Location, implicit: bool) -> InstructionId {
         let irBlock = &mut self.body.blocks[id.id as usize];
         return irBlock.addWithImplicit(instruction, location, implicit);
     }
@@ -131,10 +112,7 @@ impl<'a> ExprResolver<'a> {
         match &expr.expr {
             SimpleExpr::Value(name) => match env.resolve(&name.name) {
                 Some(name) => {
-                    return self.addInstruction(
-                        InstructionKind::ValueRef(name, Vec::new(), Vec::new()),
-                        expr.location.clone(),
-                    );
+                    return self.addInstruction(InstructionKind::ValueRef(name, Vec::new(), Vec::new()), expr.location.clone());
                 }
                 None => {
                     ResolverError::UnknownValue(name.name.clone(), name.location.clone()).report();
@@ -142,21 +120,14 @@ impl<'a> ExprResolver<'a> {
             },
             SimpleExpr::SelfValue => {
                 return self.addInstruction(
-                    InstructionKind::ValueRef(
-                        ValueKind::Arg("self".to_string(), 0),
-                        Vec::new(),
-                        Vec::new(),
-                    ),
+                    InstructionKind::ValueRef(ValueKind::Arg("self".to_string(), 0), Vec::new(), Vec::new()),
                     expr.location.clone(),
                 )
             }
             SimpleExpr::Name(name) => {
                 let irName = self.moduleResolver.resolverName(name);
                 if self.emptyVariants.contains(&irName) {
-                    return self.addInstruction(
-                        InstructionKind::FunctionCall(irName, Vec::new()),
-                        expr.location.clone(),
-                    );
+                    return self.addInstruction(InstructionKind::FunctionCall(irName, Vec::new()), expr.location.clone());
                 }
                 ResolverError::UnknownValue(name.name.clone(), name.location.clone()).report();
             }
@@ -176,16 +147,9 @@ impl<'a> ExprResolver<'a> {
                 }
                 names.reverse();
                 let var_name = format!("tmp_{}", id.simple());
-                let bind_id = self.addInstruction(
-                    InstructionKind::Bind(var_name.clone(), id),
-                    expr.location.clone(),
-                );
+                let bind_id = self.addInstruction(InstructionKind::Bind(var_name.clone(), id), expr.location.clone());
                 return self.addInstruction(
-                    InstructionKind::ValueRef(
-                        ValueKind::Value(var_name, bind_id),
-                        names,
-                        Vec::new(),
-                    ),
+                    InstructionKind::ValueRef(ValueKind::Value(var_name, bind_id), names, Vec::new()),
                     expr.location.clone(),
                 );
             }
@@ -198,45 +162,27 @@ impl<'a> ExprResolver<'a> {
                 match &callable.expr {
                     SimpleExpr::Name(name) => {
                         let irName = self.moduleResolver.resolverName(name);
-                        return self.addInstruction(
-                            InstructionKind::FunctionCall(irName, irArgs),
-                            expr.location.clone(),
-                        );
+                        return self.addInstruction(InstructionKind::FunctionCall(irName, irArgs), expr.location.clone());
                     }
                     SimpleExpr::Value(name) => {
                         if let Some(name) = env.resolve(&name.name) {
-                            let refId = self.addInstruction(
-                                InstructionKind::ValueRef(name, Vec::new(), Vec::new()),
-                                expr.location.clone(),
-                            );
-                            return self.addInstruction(
-                                InstructionKind::DynamicFunctionCall(refId, irArgs),
-                                expr.location.clone(),
-                            );
+                            let refId = self.addInstruction(InstructionKind::ValueRef(name, Vec::new(), Vec::new()), expr.location.clone());
+                            return self.addInstruction(InstructionKind::DynamicFunctionCall(refId, irArgs), expr.location.clone());
                         } else {
                             let irName = self.moduleResolver.resolverName(name);
-                            return self.addInstruction(
-                                InstructionKind::FunctionCall(irName, irArgs),
-                                expr.location.clone(),
-                            );
+                            return self.addInstruction(InstructionKind::FunctionCall(irName, irArgs), expr.location.clone());
                         }
                     }
                     _ => {
                         let callableId = self.resolveExpr(&callable, env);
-                        return self.addInstruction(
-                            InstructionKind::DynamicFunctionCall(callableId, irArgs),
-                            expr.location.clone(),
-                        );
+                        return self.addInstruction(InstructionKind::DynamicFunctionCall(callableId, irArgs), expr.location.clone());
                     }
                 }
             }
             SimpleExpr::If(cond, trueBranch, falseBranch) => {
                 let condId = self.resolveExpr(cond, env);
                 let name = self.createValue("if_var");
-                let declareId = self.addInstruction(
-                    InstructionKind::DeclareVar(name.clone()),
-                    expr.location.clone(),
-                );
+                let declareId = self.addInstruction(InstructionKind::DeclareVar(name.clone()), expr.location.clone());
                 let currentBlockId = self.targetBlockId;
                 let contBlockId = self.createBlock();
                 let trueBlockId = self.createBlock();
@@ -245,16 +191,10 @@ impl<'a> ExprResolver<'a> {
                         self.setTargetBlockId(trueBlockId);
                         self.resolveBlock(block, env);
                         self.addInstruction(
-                            InstructionKind::Assign(
-                                name.clone(),
-                                self.body.getBlockById(trueBlockId).getLastId(),
-                            ),
+                            InstructionKind::Assign(name.clone(), self.body.getBlockById(trueBlockId).getLastId()),
                             expr.location.clone(),
                         );
-                        self.addInstruction(
-                            InstructionKind::Jump(contBlockId),
-                            expr.location.clone(),
-                        );
+                        self.addInstruction(InstructionKind::Jump(contBlockId), expr.location.clone());
                     }
                     _ => panic!("If true branch is not a block!"),
                 };
@@ -266,16 +206,10 @@ impl<'a> ExprResolver<'a> {
                                 self.setTargetBlockId(falseBlockId);
                                 self.resolveBlock(block, env);
                                 self.addInstruction(
-                                    InstructionKind::Assign(
-                                        name.clone(),
-                                        self.body.getBlockById(falseBlockId).getLastId(),
-                                    ),
+                                    InstructionKind::Assign(name.clone(), self.body.getBlockById(falseBlockId).getLastId()),
                                     expr.location.clone(),
                                 );
-                                self.addInstruction(
-                                    InstructionKind::Jump(contBlockId),
-                                    expr.location.clone(),
-                                );
+                                self.addInstruction(InstructionKind::Jump(contBlockId), expr.location.clone());
                                 falseBlockId
                             }
                             _ => panic!("If false branch is not a block!"),
@@ -293,11 +227,7 @@ impl<'a> ExprResolver<'a> {
 
                 self.setTargetBlockId(contBlockId);
                 let ifValueId = self.addInstruction(
-                    InstructionKind::ValueRef(
-                        ValueKind::Value(name, declareId),
-                        Vec::new(),
-                        Vec::new(),
-                    ),
+                    InstructionKind::ValueRef(ValueKind::Value(name, declareId), Vec::new(), Vec::new()),
                     expr.location.clone(),
                 );
                 ifValueId
@@ -306,19 +236,12 @@ impl<'a> ExprResolver<'a> {
             SimpleExpr::Loop(pattern, init, body) => {
                 let initId = self.resolveExpr(&init, env);
                 let name = self.createValue("loop_var");
-                let bindId = self.addInstruction(
-                    InstructionKind::Bind(name.clone(), initId),
-                    init.location.clone(),
-                );
+                let bindId = self.addInstruction(InstructionKind::Bind(name.clone(), initId), init.location.clone());
                 let loopBodyId = self.createBlock();
                 let loopExitId = self.createBlock();
                 let finalValueId = self.addInstructionToBlock(
                     loopExitId,
-                    InstructionKind::ValueRef(
-                        ValueKind::Value(name.clone(), bindId),
-                        Vec::new(),
-                        Vec::new(),
-                    ),
+                    InstructionKind::ValueRef(ValueKind::Value(name.clone(), bindId), Vec::new(), Vec::new()),
                     expr.location.clone(),
                     true,
                 );
@@ -327,11 +250,7 @@ impl<'a> ExprResolver<'a> {
                 loopEnv.addTmpValue(name.clone(), bindId);
                 self.setTargetBlockId(loopBodyId);
                 let varRefId = self.addImplicitInstruction(
-                    InstructionKind::ValueRef(
-                        ValueKind::Value(name.clone(), bindId),
-                        Vec::new(),
-                        Vec::new(),
-                    ),
+                    InstructionKind::ValueRef(ValueKind::Value(name.clone(), bindId), Vec::new(), Vec::new()),
                     expr.location.clone(),
                 );
                 self.resolvePattern(pattern, &mut loopEnv, varRefId);
@@ -345,16 +264,10 @@ impl<'a> ExprResolver<'a> {
                     _ => panic!("If true branch is not a block!"),
                 }
                 self.addImplicitInstruction(
-                    InstructionKind::Assign(
-                        name.clone(),
-                        self.body.getBlockById(loopBodyId).getLastId(),
-                    ),
+                    InstructionKind::Assign(name.clone(), self.body.getBlockById(loopBodyId).getLastId()),
                     init.location.clone(),
                 );
-                self.addImplicitInstruction(
-                    InstructionKind::Jump(loopBodyId),
-                    expr.location.clone(),
-                );
+                self.addImplicitInstruction(InstructionKind::Jump(loopBodyId), expr.location.clone());
                 self.loopInfos.pop();
                 self.setTargetBlockId(loopExitId);
                 finalValueId
@@ -381,10 +294,7 @@ impl<'a> ExprResolver<'a> {
                     location: expr.location.clone(),
                 };
                 let name = self.moduleResolver.resolverName(&id);
-                self.addInstruction(
-                    InstructionKind::FunctionCall(name, vec![lhsId, rhsId]),
-                    expr.location.clone(),
-                )
+                self.addInstruction(InstructionKind::FunctionCall(name, vec![lhsId, rhsId]), expr.location.clone())
             }
             SimpleExpr::UnaryOp(op, rhs) => {
                 let rhsId = self.resolveExpr(rhs, env);
@@ -396,18 +306,16 @@ impl<'a> ExprResolver<'a> {
                     location: expr.location.clone(),
                 };
                 let name = self.moduleResolver.resolverName(&id);
-                self.addInstruction(
-                    InstructionKind::FunctionCall(name, vec![rhsId]),
-                    expr.location.clone(),
-                )
+                self.addInstruction(InstructionKind::FunctionCall(name, vec![rhsId]), expr.location.clone())
             }
             SimpleExpr::Match(_, branches) => {
                 let mut patterns = Vec::new();
                 for b in branches {
                     patterns.push(b.pattern.clone());
                 }
-                let mut matchResolver = MatchResolver::new(patterns);
-                matchResolver.check(self.moduleResolver, self.variants, self.enums);
+                let mut matchResolver = MatchCompiler::new(patterns, self.moduleResolver, self.variants, self.enums);
+                matchResolver.check();
+                panic!("PATTERN END");
                 self.addInstruction(InstructionKind::Tuple(vec![]), expr.location.clone())
             }
             SimpleExpr::Block(block) => {
@@ -422,59 +330,39 @@ impl<'a> ExprResolver<'a> {
                 }
                 return self.addInstruction(InstructionKind::Tuple(irArgs), expr.location.clone());
             }
-            SimpleExpr::StringLiteral(v) => self.addInstruction(
-                InstructionKind::StringLiteral(v.clone()),
-                expr.location.clone(),
-            ),
-            SimpleExpr::IntegerLiteral(v) => self.addInstruction(
-                InstructionKind::IntegerLiteral(v.clone()),
-                expr.location.clone(),
-            ),
-            SimpleExpr::CharLiteral(v) => self.addInstruction(
-                InstructionKind::CharLiteral(v.clone()),
-                expr.location.clone(),
-            ),
+            SimpleExpr::StringLiteral(v) => self.addInstruction(InstructionKind::StringLiteral(v.clone()), expr.location.clone()),
+            SimpleExpr::IntegerLiteral(v) => self.addInstruction(InstructionKind::IntegerLiteral(v.clone()), expr.location.clone()),
+            SimpleExpr::CharLiteral(v) => self.addInstruction(InstructionKind::CharLiteral(v.clone()), expr.location.clone()),
             SimpleExpr::Return(arg) => {
                 let argId = match arg {
                     Some(arg) => self.resolveExpr(arg, env),
-                    None => self
-                        .addInstruction(InstructionKind::Tuple(Vec::new()), expr.location.clone()),
+                    None => self.addInstruction(InstructionKind::Tuple(Vec::new()), expr.location.clone()),
                 };
                 return self.addInstruction(InstructionKind::Return(argId), expr.location.clone());
             }
             SimpleExpr::Break(arg) => {
                 let argId = match arg {
                     Some(arg) => self.resolveExpr(arg, env),
-                    None => self
-                        .addInstruction(InstructionKind::Tuple(Vec::new()), expr.location.clone()),
+                    None => self.addInstruction(InstructionKind::Tuple(Vec::new()), expr.location.clone()),
                 };
                 let info = match self.loopInfos.last() {
                     Some(info) => info.clone(),
                     None => ResolverError::BreakOutsideLoop(expr.location.clone()).report(),
                 };
-                self.addInstruction(
-                    InstructionKind::Assign(info.var, argId),
-                    expr.location.clone(),
-                );
-                return self
-                    .addInstruction(InstructionKind::Jump(info.exit), expr.location.clone());
+                self.addInstruction(InstructionKind::Assign(info.var, argId), expr.location.clone());
+                return self.addInstruction(InstructionKind::Jump(info.exit), expr.location.clone());
             }
             SimpleExpr::Continue(arg) => {
                 let argId = match arg {
                     Some(arg) => self.resolveExpr(arg, env),
-                    None => self
-                        .addInstruction(InstructionKind::Tuple(Vec::new()), expr.location.clone()),
+                    None => self.addInstruction(InstructionKind::Tuple(Vec::new()), expr.location.clone()),
                 };
                 let info = match self.loopInfos.last() {
                     Some(info) => info.clone(),
                     None => ResolverError::BreakOutsideLoop(expr.location.clone()).report(),
                 };
-                self.addInstruction(
-                    InstructionKind::Assign(info.var, argId),
-                    expr.location.clone(),
-                );
-                return self
-                    .addInstruction(InstructionKind::Jump(info.body), expr.location.clone());
+                self.addInstruction(InstructionKind::Assign(info.var, argId), expr.location.clone());
+                return self.addInstruction(InstructionKind::Jump(info.body), expr.location.clone());
             }
             SimpleExpr::Ref(arg) => {
                 let arg = self.resolveExpr(arg, env);
@@ -483,16 +371,9 @@ impl<'a> ExprResolver<'a> {
                     InstructionKind::ValueRef(_, _, _) => arg,
                     _ => {
                         let var_name = self.createValue("tmp");
-                        let bind_id = self.addInstruction(
-                            InstructionKind::Bind(var_name.clone(), arg),
-                            expr.location.clone(),
-                        );
+                        let bind_id = self.addInstruction(InstructionKind::Bind(var_name.clone(), arg), expr.location.clone());
                         self.addInstruction(
-                            InstructionKind::ValueRef(
-                                ValueKind::Value(var_name, bind_id),
-                                Vec::new(),
-                                Vec::new(),
-                            ),
+                            InstructionKind::ValueRef(ValueKind::Value(var_name, bind_id), Vec::new(), Vec::new()),
                             expr.location.clone(),
                         )
                     }
@@ -513,18 +394,12 @@ impl<'a> ExprResolver<'a> {
             SimplePattern::Named(_name, _args) => todo!(),
             SimplePattern::Bind(name, _) => {
                 let new = self.createValue(&name.name);
-                let bindId = self.addInstruction(
-                    InstructionKind::Bind(new.clone(), value),
-                    pat.location.clone(),
-                );
+                let bindId = self.addInstruction(InstructionKind::Bind(new.clone(), value), pat.location.clone());
                 env.addValue(name.toString(), new, bindId);
             }
             SimplePattern::Tuple(args) => {
                 for (index, arg) in args.iter().enumerate() {
-                    let indexId = self.addInstruction(
-                        InstructionKind::TupleIndex(value, index as u32),
-                        pat.location.clone(),
-                    );
+                    let indexId = self.addInstruction(InstructionKind::TupleIndex(value, index as u32), pat.location.clone());
                     self.resolvePattern(arg, env, indexId);
                 }
             }
@@ -532,10 +407,7 @@ impl<'a> ExprResolver<'a> {
             SimplePattern::IntegerLiteral(_) => todo!(),
             SimplePattern::Wildcard => {
                 let new = self.createValue("wildcard");
-                self.addInstruction(
-                    InstructionKind::Bind(new.clone(), value),
-                    pat.location.clone(),
-                );
+                self.addInstruction(InstructionKind::Bind(new.clone(), value), pat.location.clone());
             }
         }
     }

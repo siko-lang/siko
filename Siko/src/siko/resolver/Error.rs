@@ -9,6 +9,7 @@ pub enum ResolverError {
     BreakOutsideLoop(Location),
     ContinueOutsideLoop(Location),
     InvalidInstanceType(String, Location),
+    IncompatiblePattern(String, String, Location),
 }
 
 impl ResolverError {
@@ -31,6 +32,11 @@ impl ResolverError {
             }
             ResolverError::MissingPattern(l) => {
                 let slogan = format!("Missing pattern");
+                let r = Report::new(slogan, Some(l.clone()));
+                r.print();
+            }
+            ResolverError::IncompatiblePattern(found, expected, l) => {
+                let slogan = format!("Incompatible pattern: found {}, expected: {}", found.yellow(), expected.yellow());
                 let r = Report::new(slogan, Some(l.clone()));
                 r.print();
             }
