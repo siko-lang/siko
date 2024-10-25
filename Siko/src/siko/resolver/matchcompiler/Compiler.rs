@@ -19,6 +19,16 @@ impl WildcardNode {
     }
 
     fn add(&mut self, decision: Decision, decisions: Decisions) {}
+
+    fn dump(&self, level: u32, builder: &NodeBuilder) {
+        let indent = " ".repeat(level as usize);
+        if let Some(next) = &self.next {
+            println!("{}Wildcard: next {}", indent, next);
+            builder.dumpNode(next, level + 1);
+        } else {
+            println!("{}Wildcard: empty", indent);
+        }
+    }
 }
 
 struct EnumNode {
@@ -32,6 +42,16 @@ impl EnumNode {
             _ => unreachable!(),
         }
     }
+
+    fn dump(&self, level: u32, builder: &NodeBuilder) {
+        let indent = " ".repeat(level as usize);
+        println!("{}Enum:", indent);
+        let indent = " ".repeat((level + 1) as usize);
+        for (name, path) in &self.variants {
+            println!("{}{}: {}", indent, name, path);
+            builder.dumpNode(path, level + 2);
+        }
+    }
 }
 
 struct IntegerLiteralNode {
@@ -40,6 +60,15 @@ struct IntegerLiteralNode {
 
 impl IntegerLiteralNode {
     fn add(&mut self, decision: Decision, decisions: Decisions) {}
+
+    fn dump(&self, level: u32, builder: &NodeBuilder) {
+        let indent = " ".repeat(level as usize);
+        println!("{}Integer Literal:", indent);
+        for (choice, path) in &self.choices {
+            println!("{}{}: {}", indent, choice, path);
+            builder.dumpNode(path, level + 1);
+        }
+    }
 }
 
 enum Node {
@@ -67,6 +96,25 @@ impl<'a> NodeBuilder<'a> {
 
     fn build(&mut self) {
         self.buildNode(Path::Root);
+    }
+
+    fn dump(&self) {
+        self.dumpNode(&Path::Root, 0);
+    }
+
+    fn dumpNode(&self, path: &Path, level: u32) {
+        let node = self.nodes.get(path).expect("node not found");
+        match node {
+            Node::Wildcard(node) => {
+                node.dump(level, self);
+            }
+            Node::Enum(node) => {
+                node.dump(level, self);
+            }
+            Node::IntegerLiteral(node) => {
+                node.dump(level, self);
+            }
+        }
     }
 
     fn buildNode(&mut self, path: Path) {
@@ -180,5 +228,6 @@ impl<'a> MatchCompiler<'a> {
         // }
         let mut nodeBuilder = NodeBuilder::new(&self.resolver, &self.collector);
         nodeBuilder.build();
+        nodeBuilder.dump();
     }
 }
