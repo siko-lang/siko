@@ -10,19 +10,23 @@ use super::Decision::{Decision, DecisionBuilder, Decisions, Path};
 use super::Resolver::Resolver;
 
 struct WildcardNode {
-    next: Option<Path>,
+    choices: BTreeMap<Choice, Path>,
 }
 
 impl WildcardNode {
     fn new(next: Option<Path>) -> WildcardNode {
-        WildcardNode { next: next }
+        let mut choices = BTreeMap::new();
+        if let Some(next) = next {
+            choices.insert(Choice::Wildcard, next);
+        }
+        WildcardNode { choices: choices }
     }
 
     fn add(&mut self, decision: Decision, decisions: Decisions) {}
 
     fn dump(&self, level: u32, builder: &NodeBuilder) {
         let indent = " ".repeat(level as usize);
-        if let Some(next) = &self.next {
+        if let Some(next) = self.choices.get(&Choice::Wildcard) {
             println!("{}Wildcard: next {}", indent, next);
             builder.dumpNode(next, level + 1);
         } else {
@@ -32,7 +36,7 @@ impl WildcardNode {
 }
 
 struct EnumNode {
-    variants: BTreeMap<QualifiedName, Path>,
+    choices: BTreeMap<Choice, Path>,
 }
 
 impl EnumNode {
@@ -47,7 +51,7 @@ impl EnumNode {
         let indent = " ".repeat(level as usize);
         println!("{}Enum:", indent);
         let indent = " ".repeat((level + 1) as usize);
-        for (name, path) in &self.variants {
+        for (name, path) in &self.choices {
             println!("{}{}: {}", indent, name, path);
             builder.dumpNode(path, level + 2);
         }
@@ -98,6 +102,22 @@ impl<'a> NodeBuilder<'a> {
         self.buildNode(Path::Root);
     }
 
+    fn add(&mut self, index: u32, mut decisions: Vec<Decision>) {
+        let current = decisions.remove(0);
+        let node = self.nodes.get(&current.path).expect("node not found");
+        // match node {
+        //     Node::Wildcard(node) => {
+        //         node.dump(level, self);
+        //     }
+        //     Node::Enum(node) => {
+        //         node.dump(level, self);
+        //     }
+        //     Node::IntegerLiteral(node) => {
+        //         node.dump(level, self);
+        //     }
+        // }
+    }
+
     fn dump(&self) {
         self.dumpNode(&Path::Root, 0);
     }
@@ -136,26 +156,27 @@ impl<'a> NodeBuilder<'a> {
     }
 
     fn buildEnum(&mut self, enumName: QualifiedName, path: Path) -> Node {
-        let mut variants = BTreeMap::new();
+        let mut choices = BTreeMap::new();
         let e = self.resolver.enums.get(&enumName).expect("enum not found");
         for v in &e.variants {
+            let choice = Choice::Variant(v.name.clone(), enumName.clone());
             let edge = Edge {
                 path: path.clone(),
-                choice: Choice::Variant(v.name.clone(), enumName.clone()),
+                choice: choice.clone(),
             };
             match self.collector.edges.get(&edge) {
                 Some(target) => {
                     self.buildNode(target.clone());
-                    variants.insert(v.name.clone(), target.clone());
+                    choices.insert(choice.clone(), target.clone());
                 }
                 None => {
                     let target = self.getNextEnd();
                     self.nodes.insert(target.clone(), Node::Wildcard(WildcardNode::new(None)));
-                    variants.insert(v.name.clone(), target.clone());
+                    choices.insert(choice.clone(), target.clone());
                 }
             };
         }
-        Node::Enum(EnumNode { variants: variants })
+        Node::Enum(EnumNode { choices })
     }
 
     fn buildWildCard(&mut self, path: Path) -> Node {
@@ -205,7 +226,8 @@ impl<'a> MatchCompiler<'a> {
     }
 
     pub fn check(&mut self) {
-        for (index, branch) in self.branches.clone().into_iter().enumerate() {
+        let mut allDecisions = Vec::new();
+        for branch in self.branches.clone().into_iter() {
             let mut builder = DecisionBuilder::new(&self.resolver);
             builder.build(branch, Path::Root);
             println!("Decision {}", builder.decisions);
@@ -219,6 +241,7 @@ impl<'a> MatchCompiler<'a> {
                     .add(decision.path.clone(), decision.choice.kind(), decision.location.clone());
                 prev = Some(decision.clone());
             }
+            allDecisions.push(builder.decisions.decisions);
         }
         // for (p, k) in &self.collector.kinds {
         //     println!("kind {}:{}", p, k);
@@ -228,6 +251,9 @@ impl<'a> MatchCompiler<'a> {
         // }
         let mut nodeBuilder = NodeBuilder::new(&self.resolver, &self.collector);
         nodeBuilder.build();
+        for (index, decisions) in allDecisions.into_iter().enumerate() {
+            nodeBuilder.add(index as u32, decisions);
+        }
         nodeBuilder.dump();
     }
 }
