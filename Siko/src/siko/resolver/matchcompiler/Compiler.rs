@@ -14,6 +14,7 @@ pub struct MatchCompiler<'a> {
     bodyLocation: Location,
     branches: Vec<Pattern>,
     resolver: Resolver<'a>,
+    errors: Vec<ResolverError>,
 }
 
 impl<'a> MatchCompiler<'a> {
@@ -28,6 +29,7 @@ impl<'a> MatchCompiler<'a> {
             bodyLocation: bodyLocation,
             branches: branches,
             resolver: Resolver::new(moduleResolver, variants, enums),
+            errors: Vec::new(),
         }
     }
 
@@ -232,22 +234,22 @@ impl<'a> MatchCompiler<'a> {
     }
 
     pub fn check(&mut self) {
-        println!("=======================");
+        //println!("=======================");
         // let mut allDecisions = Vec::new();
         let mut allChoices = BTreeSet::new();
-        for (index, branch) in self.branches.iter().enumerate() {
+        for branch in &self.branches {
             let branch = self.resolve(branch);
             allChoices.insert(branch.clone());
-            println!("Pattern {}", branch);
+            //println!("Pattern {}", branch);
             let choices = self.generateChoices(&branch);
             for choice in choices {
-                println!("   Alt: {}", choice);
+                //println!("   Alt: {}", choice);
                 allChoices.insert(choice);
             }
         }
-        for choice in &allChoices {
-            println!("   Alt: {}", choice);
-        }
+        // for choice in &allChoices {
+        //     println!("   Alt: {}", choice);
+        // }
         let mut allMerged = BTreeSet::new();
         for (index1, choice1) in allChoices.iter().enumerate() {
             let mut merged = false;
@@ -264,9 +266,9 @@ impl<'a> MatchCompiler<'a> {
                 allMerged.insert(choice1.clone());
             }
         }
-        for choice in &allMerged {
-            println!("   merged: {}", choice);
-        }
+        // for choice in &allMerged {
+        //     println!("   merged: {}", choice);
+        // }
         for branch in self.branches.iter() {
             let resolvedBranch = self.resolve(branch);
             let mut reduced = BTreeSet::new();
@@ -276,12 +278,19 @@ impl<'a> MatchCompiler<'a> {
                 }
             }
             if reduced.len() == allMerged.len() {
-                ResolverError::RedundantPattern(branch.location.clone()).report();
+                self.errors.push(ResolverError::RedundantPattern(branch.location.clone()));
             }
             allMerged = reduced;
         }
         for m in allMerged {
-            ResolverError::MissingPattern(m.to_string(), self.bodyLocation.clone()).report();
+            self.errors.push(ResolverError::MissingPattern(m.to_string(), self.bodyLocation.clone()));
+        }
+
+        for err in &self.errors {
+            err.reportOnly();
+        }
+        if !self.errors.is_empty() {
+            std::process::exit(1);
         }
     }
 }

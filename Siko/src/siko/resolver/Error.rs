@@ -14,6 +14,11 @@ pub enum ResolverError {
 
 impl ResolverError {
     pub fn report(&self) -> ! {
+        self.reportOnly();
+        std::process::exit(1);
+    }
+
+    pub fn reportOnly(&self) {
         match &self {
             ResolverError::UnknownValue(v, l) => {
                 let slogan = format!("Unknown value {}", v.yellow());
@@ -61,6 +66,5 @@ impl ResolverError {
                 r.print();
             }
         }
-        std::process::exit(1);
     }
 }
