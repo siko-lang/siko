@@ -73,6 +73,7 @@ fn main() {
         }
     }
     resolver.process();
+    return;
     let program = resolver.ir();
     let program = typecheck(program);
     let program = eliminateDeadCode(program);

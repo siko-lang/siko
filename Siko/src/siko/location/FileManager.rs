@@ -27,7 +27,7 @@ impl FileManager {
         if let Some(id) = names.get(&fileName) {
             return id.clone();
         }
-        let id = FileId::new(self.files.borrow().len() as i64, self.clone());
+        let id = FileId::new((self.files.borrow().len() + 1) as i64, self.clone());
         names.insert(fileName.clone(), id.clone());
         let mut files = self.files.borrow_mut();
         files.insert(id.clone(), fileName);

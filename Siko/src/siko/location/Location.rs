@@ -41,6 +41,13 @@ impl Ord for FileId {
 }
 
 impl FileId {
+    pub fn empty() -> FileId {
+        FileId {
+            index: 0,
+            fileManager: FileManager::new(),
+        }
+    }
+
     pub fn new(index: i64, fileManager: FileManager) -> FileId {
         FileId {
             index: index,
@@ -114,6 +121,13 @@ pub struct Location {
 }
 
 impl Location {
+    pub fn empty() -> Location {
+        Location {
+            fileId: FileId::empty(),
+            span: Span::new(),
+        }
+    }
+
     pub fn new(fileId: FileId, span: Span) -> Location {
         Location { fileId: fileId, span: span }
     }

@@ -315,7 +315,6 @@ impl<'a> ExprResolver<'a> {
                 }
                 let mut matchResolver = MatchCompiler::new(body.location.clone(), patterns, self.moduleResolver, self.variants, self.enums);
                 matchResolver.check();
-                panic!("PATTERN END");
                 self.addInstruction(InstructionKind::Tuple(vec![]), expr.location.clone())
             }
             SimpleExpr::Block(block) => {
