@@ -308,12 +308,12 @@ impl<'a> ExprResolver<'a> {
                 let name = self.moduleResolver.resolverName(&id);
                 self.addInstruction(InstructionKind::FunctionCall(name, vec![rhsId]), expr.location.clone())
             }
-            SimpleExpr::Match(_, branches) => {
+            SimpleExpr::Match(body, branches) => {
                 let mut patterns = Vec::new();
                 for b in branches {
                     patterns.push(b.pattern.clone());
                 }
-                let mut matchResolver = MatchCompiler::new(patterns, self.moduleResolver, self.variants, self.enums);
+                let mut matchResolver = MatchCompiler::new(body.location.clone(), patterns, self.moduleResolver, self.variants, self.enums);
                 matchResolver.check();
                 panic!("PATTERN END");
                 self.addInstruction(InstructionKind::Tuple(vec![]), expr.location.clone())

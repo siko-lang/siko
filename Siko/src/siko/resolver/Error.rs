@@ -5,7 +5,7 @@ pub enum ResolverError {
     UnknownName(String, Location),
     Ambiguous(String, Location),
     RedundantPattern(Location),
-    MissingPattern(Location),
+    MissingPattern(String, Location),
     BreakOutsideLoop(Location),
     ContinueOutsideLoop(Location),
     InvalidInstanceType(String, Location),
@@ -30,8 +30,8 @@ impl ResolverError {
                 let r = Report::new(slogan, Some(l.clone()));
                 r.print();
             }
-            ResolverError::MissingPattern(l) => {
-                let slogan = format!("Missing pattern");
+            ResolverError::MissingPattern(pat, l) => {
+                let slogan = format!("Missing pattern {}", pat.yellow());
                 let r = Report::new(slogan, Some(l.clone()));
                 r.print();
             }
