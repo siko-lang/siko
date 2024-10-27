@@ -38,16 +38,47 @@ def test(root, entry):
         return
     success += 1
 
+def test_fail(root, entry):
+    print("- %s" % entry)
+    global success, failure, skipped
+    skip_path = os.path.join(root, entry, "SKIP")
+    if os.path.exists(skip_path):
+        skipped += 1
+        return
+    input_path = os.path.join(root, entry, "main.sk")
+    output_path = os.path.join(root, entry, "main.ll")
+    llvm_output_path = os.path.join(root, entry, "main.bin")
+    std = []
+    for m in os.listdir("./std"):
+        std.append(os.path.join("./std", m))
+    args = ["./siko", input_path, "-o", output_path]
+    #print(args)
+    r = subprocess.run(args, capture_output=True)
+    if r.returncode == 0:
+        failure += 1
+        return
+    output_txt_path = os.path.join(root, entry, "output.txt")
+    f = open(output_txt_path, "wb")
+    f.write(r.stdout)
+    f.close()
+    success += 1
+
 filters = []
 for arg in sys.argv[1:]:
     filters.append(arg)
 
 no_std_path = os.path.join(".", "test", "no_std")
 
+errors_path = os.path.join(".", "test", "errors")
+
 for entry in os.listdir(no_std_path):
     if len(filters) > 0 and entry not in filters:
         continue
     test(no_std_path, entry)
+for entry in os.listdir(errors_path):
+    if len(filters) > 0 and entry not in filters:
+        continue
+    test_fail(errors_path, entry)
 percent = 0
 if (success+failure) != 0:
     percent = success/(success+failure)*100

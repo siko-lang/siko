@@ -1,5 +1,6 @@
 use crate::siko::hir::Data::Enum;
 use crate::siko::location::Location::Location;
+use crate::siko::location::Report::ReportContext;
 use crate::siko::qualifiedname::QualifiedName;
 use crate::siko::resolver::Error::ResolverError;
 use crate::siko::resolver::ModuleResolver::ModuleResolver;
@@ -11,6 +12,7 @@ use std::iter::repeat;
 use super::Resolver::Resolver;
 
 pub struct MatchCompiler<'a> {
+    ctx: &'a ReportContext,
     bodyLocation: Location,
     branches: Vec<Pattern>,
     resolver: Resolver<'a>,
@@ -19,6 +21,7 @@ pub struct MatchCompiler<'a> {
 
 impl<'a> MatchCompiler<'a> {
     pub fn new(
+        ctx: &'a ReportContext,
         bodyLocation: Location,
         branches: Vec<Pattern>,
         moduleResolver: &'a ModuleResolver,
@@ -26,6 +29,7 @@ impl<'a> MatchCompiler<'a> {
         enums: &'a BTreeMap<QualifiedName, Enum>,
     ) -> MatchCompiler<'a> {
         MatchCompiler {
+            ctx: ctx,
             bodyLocation: bodyLocation,
             branches: branches,
             resolver: Resolver::new(moduleResolver, variants, enums),
@@ -287,7 +291,7 @@ impl<'a> MatchCompiler<'a> {
         }
 
         for err in &self.errors {
-            err.reportOnly();
+            err.reportOnly(self.ctx);
         }
         if !self.errors.is_empty() {
             std::process::exit(1);

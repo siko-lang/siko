@@ -17,7 +17,7 @@ pub trait DataParser {
     fn parseField(&mut self) -> Field;
 }
 
-impl DataParser for Parser {
+impl<'a> DataParser for Parser<'a> {
     fn parseClass(&mut self, derives: Vec<Derive>) -> Class {
         self.expect(TokenKind::Keyword(KeywordKind::Class));
         let name = self.parseTypeIdentifier();

@@ -11,7 +11,7 @@ use crate::siko::{
         TraitMethodSelector::TraitMethodSelector,
         Type::Type,
     },
-    location::Location::Location,
+    location::{Location::Location, Report::ReportContext},
     qualifiedname::QualifiedName,
 };
 
@@ -24,11 +24,12 @@ enum TypedId {
     SelfValue,
 }
 
-fn reportError(ty1: Type, ty2: Type, location: Location) {
-    TypecheckerError::TypeMismatch(format!("{}", ty1), format!("{}", ty2), location).report()
+fn reportError(ctx: &ReportContext, ty1: Type, ty2: Type, location: Location) {
+    TypecheckerError::TypeMismatch(format!("{}", ty1), format!("{}", ty2), location).report(ctx)
 }
 
 pub struct Typechecker<'a> {
+    ctx: &'a ReportContext,
     program: &'a Program,
     traitMethodSelector: &'a TraitMethodSelector,
     allocator: TypeVarAllocator,
@@ -40,8 +41,9 @@ pub struct Typechecker<'a> {
 }
 
 impl<'a> Typechecker<'a> {
-    pub fn new(program: &'a Program, traitMethodSelector: &'a TraitMethodSelector) -> Typechecker<'a> {
+    pub fn new(ctx: &'a ReportContext, program: &'a Program, traitMethodSelector: &'a TraitMethodSelector) -> Typechecker<'a> {
         Typechecker {
+            ctx: ctx,
             program: program,
             traitMethodSelector: traitMethodSelector,
             allocator: TypeVarAllocator::new(),
@@ -108,7 +110,7 @@ impl<'a> Typechecker<'a> {
     fn unify(&mut self, ty1: Type, ty2: Type, location: Location) {
         //println!("UNIFY {} {}", ty1, ty2);
         if let Err(_) = self.substitution.unify(&ty1, &ty2) {
-            reportError(ty1, ty2, location);
+            reportError(self.ctx, ty1, ty2, location);
         }
     }
 
@@ -129,7 +131,7 @@ impl<'a> Typechecker<'a> {
             None => return,
         };
         if args.len() != fnArgs.len() {
-            TypecheckerError::ArgCountMismatch(fnArgs.len() as u32, args.len() as u32, instruction.location.clone()).report();
+            TypecheckerError::ArgCountMismatch(fnArgs.len() as u32, args.len() as u32, instruction.location.clone()).report(self.ctx);
         }
         for (arg, fnArg) in zip(args, fnArgs) {
             self.unify(self.getInstructionType(*arg), fnArg, body.getInstruction(*arg).location.clone());
@@ -214,13 +216,13 @@ impl<'a> Typechecker<'a> {
                                             }
                                         }
                                         if !found {
-                                            TypecheckerError::FieldNotFound(field.clone(), instruction.location.clone()).report();
+                                            TypecheckerError::FieldNotFound(field.clone(), instruction.location.clone()).report(self.ctx);
                                         }
                                     } else {
-                                        TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report()
+                                        TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(self.ctx)
                                     }
                                 }
-                                _ => TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(),
+                                _ => TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(self.ctx),
                             }
                         }
                         self.indices.insert(instruction.id, indices);
@@ -297,7 +299,7 @@ impl<'a> Typechecker<'a> {
                     if !vars.is_empty() && vars != publicVars {
                         self.dump(f);
                         println!("{} {}", instruction, ty);
-                        TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report();
+                        TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(self.ctx);
                     }
                 }
             }

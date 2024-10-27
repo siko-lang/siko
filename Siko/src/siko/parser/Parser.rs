@@ -1,13 +1,14 @@
 use super::Module::ModuleParser;
 use super::Token::{MiscKind, OperatorKind, Token, TokenInfo, TokenKind};
 use crate::siko::location::Location::{Location, Span};
-use crate::siko::location::Report::{Painter, Report};
+use crate::siko::location::Report::{Report, ReportContext};
 use crate::siko::syntax::Identifier::Identifier;
 use crate::siko::syntax::Module::Module;
 use crate::siko::util::error;
 use crate::siko::{location::Location::FileId, parser::Lexer::*};
 
-pub struct Parser {
+pub struct Parser<'a> {
+    ctx: &'a ReportContext,
     tokens: Vec<TokenInfo>,
     index: usize,
     pub fileId: FileId,
@@ -17,9 +18,10 @@ pub struct Parser {
     pub opTable: Vec<Vec<OperatorKind>>,
 }
 
-impl Parser {
-    pub fn new(fileId: FileId, fileName: String) -> Parser {
+impl<'a> Parser<'a> {
+    pub fn new(ctx: &'a ReportContext, fileId: FileId, fileName: String) -> Parser<'a> {
         Parser {
+            ctx: ctx,
             tokens: Vec::new(),
             index: 0,
             fileId: fileId,
@@ -53,9 +55,7 @@ impl Parser {
 
     pub fn useSpan(&self) -> Location {
         let start = self.spans.last().unwrap();
-        let merged = start
-            .clone()
-            .merge(self.tokens[self.index - 1].span.clone());
+        let merged = start.clone().merge(self.tokens[self.index - 1].span.clone());
         Location::new(self.fileId.clone(), merged)
     }
 
@@ -181,18 +181,18 @@ impl Parser {
         for e in errors {
             match e {
                 super::Error::LexerError::InvalidIdentifier(n, span) => {
-                    let slogan = format!("invalid identifier {}", n.yellow());
-                    let r = Report::new(slogan, Some(Location::new(self.fileId.clone(), span)));
+                    let slogan = format!("invalid identifier {}", self.ctx.yellow(&n));
+                    let r = Report::new(self.ctx, slogan, Some(Location::new(self.fileId.clone(), span)));
                     r.print();
                 }
                 super::Error::LexerError::UnsupportedCharacter(c, span) => {
-                    let slogan = format!("unsupported character {}", format!("{}", c).yellow());
-                    let r = Report::new(slogan, Some(Location::new(self.fileId.clone(), span)));
+                    let slogan = format!("unsupported character {}", self.ctx.yellow(&format!("{}", c)));
+                    let r = Report::new(self.ctx, slogan, Some(Location::new(self.fileId.clone(), span)));
                     r.print();
                 }
                 super::Error::LexerError::UnendingStringLiteral(span) => {
                     let slogan = format!("unending string literal");
-                    let r = Report::new(slogan, Some(Location::new(self.fileId.clone(), span)));
+                    let r = Report::new(self.ctx, slogan, Some(Location::new(self.fileId.clone(), span)));
                     r.print();
                 }
             }

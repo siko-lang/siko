@@ -12,7 +12,7 @@ pub trait TraitParser {
     fn parseInstance(&mut self) -> Instance;
 }
 
-impl TraitParser for Parser {
+impl<'a> TraitParser for Parser<'a> {
     fn parseTrait(&mut self) -> Trait {
         self.expect(TokenKind::Keyword(KeywordKind::Trait));
         let typeParams = if self.check(TokenKind::LeftBracket(BracketKind::Square)) {

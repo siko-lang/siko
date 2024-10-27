@@ -5,14 +5,14 @@ use crate::siko::{
         Function::{BlockId, Function, InstructionId, InstructionKind},
         Program::Program,
     },
-    location::Report::Report,
+    location::Report::{Report, ReportContext},
 };
 
-pub fn eliminateDeadCode(program: Program) -> Program {
+pub fn eliminateDeadCode(ctx: &ReportContext, program: Program) -> Program {
     let mut result = program.clone();
     for (name, f) in &program.functions {
         let mut eliminator = DeadCodeEliminator::new(f);
-        let f = eliminator.process();
+        let f = eliminator.process(ctx);
         result.functions.insert(name.clone(), f);
     }
     result
@@ -31,7 +31,7 @@ impl<'a> DeadCodeEliminator<'a> {
         }
     }
 
-    fn process(&mut self) -> Function {
+    fn process(&mut self, ctx: &ReportContext) -> Function {
         if self.function.body.is_some() {
             self.processBlock(BlockId::first());
         }
@@ -40,7 +40,7 @@ impl<'a> DeadCodeEliminator<'a> {
                 if !instruction.implicit {
                     println!("unreachable code {}", instruction);
                     let slogan = format!("Unreachable code");
-                    let r = Report::new(slogan, Some(instruction.location.clone()));
+                    let r = Report::new(ctx, slogan, Some(instruction.location.clone()));
                     r.print();
                 }
             }
@@ -48,12 +48,7 @@ impl<'a> DeadCodeEliminator<'a> {
         let mut result = self.function.clone();
         if let Some(body) = &mut result.body {
             for block in &mut body.blocks {
-                let instructions: Vec<_> = block
-                    .instructions
-                    .iter()
-                    .cloned()
-                    .filter(|i| self.visited.contains(&i.id))
-                    .collect();
+                let instructions: Vec<_> = block.instructions.iter().cloned().filter(|i| self.visited.contains(&i.id)).collect();
                 block.instructions = instructions;
             }
         }

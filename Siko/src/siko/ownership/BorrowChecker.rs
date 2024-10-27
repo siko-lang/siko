@@ -12,10 +12,7 @@ use crate::siko::{
         Function::{BlockId, Function, InstructionKind},
         Lifetime::Lifetime,
     },
-    location::{
-        Location::Location,
-        Report::{Entry, Report},
-    },
+    location::{Location::Location, Report::Entry},
 };
 
 use super::Path::Path;
@@ -131,12 +128,7 @@ impl<'a> BorrowChecker<'a> {
                 );
             }
             Key::Instruction(instruction_id) => {
-                let i = self
-                    .function
-                    .body
-                    .as_ref()
-                    .expect("no body")
-                    .getInstruction(instruction_id);
+                let i = self.function.body.as_ref().expect("no body").getInstruction(instruction_id);
                 match &i.kind {
                     InstructionKind::Bind(name, _) => {
                         context.liveValues.insert(Value {
@@ -162,11 +154,8 @@ impl<'a> BorrowChecker<'a> {
                                         if let Some(_) = context.deadValues.get(path) {
                                             let mut entries = Vec::new();
                                             entries.push(Entry::new(None, i.location.clone()));
-                                            let report = Report::build(
-                                                "reference to moved/dead value".to_string(),
-                                                entries,
-                                            );
-                                            report.print();
+                                            // let report = Report::build("reference to moved/dead value".to_string(), entries);
+                                            // report.print();
                                         }
                                     }
                                     None => {}
@@ -174,19 +163,13 @@ impl<'a> BorrowChecker<'a> {
                             }
                             if let Some(loc) = context.deadValues.get(usage) {
                                 let mut entries = Vec::new();
-                                entries.push(Entry::new(
-                                    Some("It was moved here".to_string()),
-                                    loc.clone(),
-                                ));
-                                entries.push(Entry::new(
-                                    Some("Trying to move again here".to_string()),
-                                    i.location.clone(),
-                                ));
-                                let report = Report::build(
-                                    "trying to move already moved value".to_string(),
-                                    entries,
-                                );
-                                report.print();
+                                entries.push(Entry::new(Some("It was moved here".to_string()), loc.clone()));
+                                entries.push(Entry::new(Some("Trying to move again here".to_string()), i.location.clone()));
+                                // let report = Report::build(
+                                //     "trying to move already moved value".to_string(),
+                                //     entries,
+                                // );
+                                // report.print();
                             }
                             context.deadValues.insert(usage.clone(), i.location.clone());
                         }

@@ -6,15 +6,12 @@ use crate::siko::syntax::Type::{Type, TypeParameterDeclaration};
 use std::collections::BTreeSet;
 
 pub struct TypeResolver<'a> {
-    moduleResolver: &'a ModuleResolver,
+    moduleResolver: &'a ModuleResolver<'a>,
     typeParameters: BTreeSet<IrType>,
 }
 
 impl<'a> TypeResolver<'a> {
-    pub fn new(
-        moduleResolver: &'a ModuleResolver,
-        constraintContext: &'a ConstraintContext,
-    ) -> TypeResolver<'a> {
+    pub fn new(moduleResolver: &'a ModuleResolver, constraintContext: &'a ConstraintContext) -> TypeResolver<'a> {
         let mut r = TypeResolver {
             moduleResolver: moduleResolver,
             typeParameters: BTreeSet::new(),
@@ -63,11 +60,7 @@ impl<'a> TypeResolver<'a> {
         }
     }
 
-    pub fn createDataType(
-        &self,
-        name: &Identifier,
-        typeParams: &Option<TypeParameterDeclaration>,
-    ) -> IrType {
+    pub fn createDataType(&self, name: &Identifier, typeParams: &Option<TypeParameterDeclaration>) -> IrType {
         let args = match &typeParams {
             Some(typeParams) => {
                 let mut args = Vec::new();

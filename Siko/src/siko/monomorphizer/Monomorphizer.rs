@@ -4,13 +4,13 @@ use std::{
 };
 
 use crate::siko::{
-    location::Report::{Painter, Report},
     hir::{
         Function::{Body, Instruction, InstructionKind, Parameter},
         Program::Program,
         Substitution::Substitution,
         Type::{formatTypes, Type},
     },
+    location::Report::{Report, ReportContext},
     qualifiedname::{build, QualifiedName},
 };
 
@@ -31,7 +31,8 @@ impl Display for Key {
     }
 }
 
-pub struct Monomorphizer {
+pub struct Monomorphizer<'a> {
+    ctx: &'a ReportContext,
     program: Program,
     monomorphizedProgram: Program,
     queue: VecDeque<Key>,
@@ -39,9 +40,10 @@ pub struct Monomorphizer {
     processed_type: BTreeMap<Type, Type>,
 }
 
-impl Monomorphizer {
-    pub fn new(program: Program) -> Monomorphizer {
+impl<'a> Monomorphizer<'a> {
+    pub fn new(ctx: &'a ReportContext, program: Program) -> Monomorphizer<'a> {
         Monomorphizer {
+            ctx: ctx,
             program: program,
             monomorphizedProgram: Program::new(),
             queue: VecDeque::new(),
@@ -57,8 +59,8 @@ impl Monomorphizer {
                 self.addKey(Key::Function(main_name, Vec::new()));
             }
             None => {
-                let slogan = format!("No {} function found", format!("{}", main_name).yellow());
-                let r = Report::new(slogan, None);
+                let slogan = format!("No {} function found", format!("{}", self.ctx.yellow(&main_name.toString())));
+                let r = Report::new(self.ctx, slogan, None);
                 r.print();
             }
         }
@@ -102,12 +104,7 @@ impl Monomorphizer {
 
     fn monomorphizeFunction(&mut self, name: QualifiedName, args: Vec<Type>) {
         //println!("MONO FN: {} {}", name, formatTypes(&args));
-        let function = self
-            .program
-            .functions
-            .get(&name)
-            .expect("function not found in mono")
-            .clone();
+        let function = self.program.functions.get(&name).expect("function not found in mono").clone();
         let sub = Substitution::createFrom(&function.constraintContext.typeParameters, &args);
         let mut monoFn = function.clone();
         monoFn.result = self.processType(sub.apply(&monoFn.result));
@@ -115,12 +112,8 @@ impl Monomorphizer {
             .params
             .into_iter()
             .map(|param| match param {
-                Parameter::Named(name, ty, mutable) => {
-                    Parameter::Named(name, self.processType(sub.apply(&ty)), mutable)
-                }
-                Parameter::SelfParam(mutable, ty) => {
-                    Parameter::SelfParam(mutable, self.processType(sub.apply(&ty)))
-                }
+                Parameter::Named(name, ty, mutable) => Parameter::Named(name, self.processType(sub.apply(&ty)), mutable),
+                Parameter::SelfParam(mutable, ty) => Parameter::SelfParam(mutable, self.processType(sub.apply(&ty))),
             })
             .collect();
         monoFn.body = monoFn.body.map(|mut body| {
@@ -131,13 +124,7 @@ impl Monomorphizer {
                     block.instructions = block
                         .instructions
                         .into_iter()
-                        .map(|instruction| {
-                            self.monomorphizeInstruction(
-                                &sub,
-                                function.body.as_ref().unwrap(),
-                                instruction,
-                            )
-                        })
+                        .map(|instruction| self.monomorphizeInstruction(&sub, function.body.as_ref().unwrap(), instruction))
                         .collect();
                     block
                 })
@@ -149,12 +136,7 @@ impl Monomorphizer {
         self.monomorphizedProgram.functions.insert(monoName, monoFn);
     }
 
-    fn monomorphizeInstruction(
-        &mut self,
-        sub: &Substitution,
-        body: &Body,
-        mut instruction: Instruction,
-    ) -> Instruction {
+    fn monomorphizeInstruction(&mut self, sub: &Substitution, body: &Body, mut instruction: Instruction) -> Instruction {
         // println!(
         //     "MONO INSTR {} / {}",
         //     instruction,
@@ -163,35 +145,21 @@ impl Monomorphizer {
         let kind: InstructionKind = match &instruction.kind {
             InstructionKind::FunctionCall(name, args) => {
                 //println!("Calling {}", name);
-                let target_fn = self
-                    .program
-                    .functions
-                    .get(name)
-                    .expect("function not found in mono");
+                let target_fn = self.program.functions.get(name).expect("function not found in mono");
                 let fn_ty = target_fn.getType();
                 let arg_types: Vec<_> = args
                     .iter()
                     .map(|id| {
-                        let ty = body
-                            .getInstruction(*id)
-                            .ty
-                            .clone()
-                            .expect("instruction with no type");
+                        let ty = body.getInstruction(*id).ty.clone().expect("instruction with no type");
                         sub.apply(&ty)
                     })
                     .collect();
-                let result =
-                    sub.apply(&instruction.ty.clone().expect("function with no result ty"));
+                let result = sub.apply(&instruction.ty.clone().expect("function with no result ty"));
                 let context_ty = Type::Function(arg_types, Box::new(result));
                 //println!("fn type {}", fn_ty);
                 //println!("context type {}", context_ty);
                 let sub = Substitution::create(&context_ty, &fn_ty);
-                let ty_args: Vec<_> = target_fn
-                    .constraintContext
-                    .typeParameters
-                    .iter()
-                    .map(|ty| sub.apply(&ty))
-                    .collect();
+                let ty_args: Vec<_> = target_fn.constraintContext.typeParameters.iter().map(|ty| sub.apply(&ty)).collect();
                 //println!("{} type args {}", name, formatTypes(&ty_args));
                 let fn_name = self.get_mono_name(name, &ty_args);
                 self.addKey(Key::Function(name.clone(), ty_args));
@@ -251,11 +219,7 @@ impl Monomorphizer {
 
     fn monomorphizeClass(&mut self, name: QualifiedName, args: Vec<Type>) {
         //println!("MONO CLASS: {} {}", name, formatTypes(&args));
-        let c = self
-            .program
-            .classes
-            .get(&name)
-            .expect("class not found in mono");
+        let c = self.program.classes.get(&name).expect("class not found in mono");
         let name = self.get_mono_name(&name, &args);
         let mut mono_c = c.clone();
         mono_c.ty = self.processType(mono_c.ty);
@@ -275,11 +239,7 @@ impl Monomorphizer {
 
     fn monomorphizeEnum(&mut self, name: QualifiedName, args: Vec<Type>) {
         //println!("MONO ENUM: {} {}", name, formatTypes(&args));
-        let e = self
-            .program
-            .enums
-            .get(&name)
-            .expect("enum not found in mono");
+        let e = self.program.enums.get(&name).expect("enum not found in mono");
         //println!("Enum ty {}", e.ty);
         let monoName = self.get_mono_name(&name, &args);
         let target_ty = Type::Named(name, args.clone(), None);
@@ -292,11 +252,7 @@ impl Monomorphizer {
             .iter()
             .cloned()
             .map(|mut v| {
-                v.items = v
-                    .items
-                    .into_iter()
-                    .map(|i| self.processType(sub.apply(&i)))
-                    .collect();
+                v.items = v.items.into_iter().map(|i| self.processType(sub.apply(&i))).collect();
                 v
             })
             .collect();

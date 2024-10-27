@@ -18,7 +18,7 @@ pub trait ModuleParser {
     fn parseDerives(&mut self) -> Vec<Derive>;
 }
 
-impl ModuleParser for Parser {
+impl<'a> ModuleParser for Parser<'a> {
     fn parseImport(&mut self) -> Import {
         self.expect(TokenKind::Keyword(KeywordKind::Import));
         let name = self.parseModuleName();
@@ -72,24 +72,19 @@ impl ModuleParser for Parser {
                     c.isExtern = true;
                     ModuleItem::Class(c)
                 }
-                TokenKind::Keyword(KeywordKind::Class) => {
-                    ModuleItem::Class(self.parseClass(derives))
-                }
+                TokenKind::Keyword(KeywordKind::Class) => ModuleItem::Class(self.parseClass(derives)),
                 TokenKind::Keyword(KeywordKind::Enum) => ModuleItem::Enum(self.parseEnum(derives)),
                 TokenKind::Keyword(KeywordKind::Fn) => ModuleItem::Function(self.parseFunction()),
                 TokenKind::Keyword(KeywordKind::Import) => ModuleItem::Import(self.parseImport()),
                 TokenKind::Keyword(KeywordKind::Trait) => ModuleItem::Trait(self.parseTrait()),
-                TokenKind::Keyword(KeywordKind::Instance) => {
-                    ModuleItem::Instance(self.parseInstance())
-                }
+                TokenKind::Keyword(KeywordKind::Instance) => ModuleItem::Instance(self.parseInstance()),
                 kind => self.reportError2("<module item>", kind),
             };
             items.push(item);
         }
         self.expect(TokenKind::RightBracket(BracketKind::Curly));
         let implicitImports = vec![
-            "String", "List", "Bool", "Int", "Char", "Result", "Option", "Ordering", "Show",
-            "Iterator", "Std.Ops",
+            "String", "List", "Bool", "Int", "Char", "Result", "Option", "Ordering", "Show", "Iterator", "Std.Ops",
         ];
         for i in implicitImports {
             items.push(ModuleItem::Import(Import {

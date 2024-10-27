@@ -10,7 +10,7 @@ pub trait PatternParser {
     fn parsePattern(&mut self) -> Pattern;
 }
 
-impl PatternParser for Parser {
+impl<'a> PatternParser for Parser<'a> {
     fn buildPattern(&mut self, p: SimplePattern) -> Pattern {
         Pattern {
             pattern: p,

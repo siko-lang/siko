@@ -4,6 +4,7 @@ use crate::siko::hir::ConstraintContext::ConstraintContext;
 use crate::siko::hir::Data::Enum;
 use crate::siko::hir::Function::{Function as IrFunction, FunctionKind, Parameter as IrParameter};
 use crate::siko::hir::Type::{Type as IrType, TypeVar};
+use crate::siko::location::Report::ReportContext;
 use crate::siko::qualifiedname::QualifiedName;
 use crate::siko::syntax::Function::{Function, Parameter};
 use crate::siko::syntax::Identifier::Identifier;
@@ -15,7 +16,7 @@ use super::ExprResolver::ExprResolver;
 use super::ModuleResolver::ModuleResolver;
 use super::TypeResolver::TypeResolver;
 pub struct FunctionResolver<'a> {
-    moduleResolver: &'a ModuleResolver,
+    moduleResolver: &'a ModuleResolver<'a>,
     constraintContext: ConstraintContext,
     owner: Option<IrType>,
 }
@@ -46,6 +47,7 @@ impl<'a> FunctionResolver<'a> {
 
     pub fn resolve(
         &self,
+        ctx: &ReportContext,
         f: &Function,
         emptyVariants: &BTreeSet<QualifiedName>,
         variants: &BTreeMap<QualifiedName, QualifiedName>,
@@ -76,7 +78,7 @@ impl<'a> FunctionResolver<'a> {
         };
 
         let body = if let Some(body) = &f.body {
-            let mut exprResolver = ExprResolver::new(self.moduleResolver, emptyVariants, variants, enums);
+            let mut exprResolver = ExprResolver::new(ctx, self.moduleResolver, emptyVariants, variants, enums);
             exprResolver.resolve(body, &env);
             Some(exprResolver.body())
         } else {

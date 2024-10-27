@@ -1,4 +1,4 @@
-use crate::siko::location::{Location::Location, Report::Painter, Report::Report};
+use crate::siko::location::{Location::Location, Report::Report, Report::ReportContext};
 
 pub enum ResolverError {
     UnknownValue(String, Location),
@@ -9,60 +9,54 @@ pub enum ResolverError {
     BreakOutsideLoop(Location),
     ContinueOutsideLoop(Location),
     InvalidInstanceType(String, Location),
-    IncompatiblePattern(String, String, Location),
 }
 
 impl ResolverError {
-    pub fn report(&self) -> ! {
-        self.reportOnly();
+    pub fn report(&self, ctx: &ReportContext) -> ! {
+        self.reportOnly(ctx);
         std::process::exit(1);
     }
 
-    pub fn reportOnly(&self) {
+    pub fn reportOnly(&self, ctx: &ReportContext) {
         match &self {
             ResolverError::UnknownValue(v, l) => {
-                let slogan = format!("Unknown value {}", v.yellow());
-                let r = Report::new(slogan, Some(l.clone()));
+                let slogan = format!("Unknown value {}", ctx.yellow(v));
+                let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }
             ResolverError::UnknownName(v, l) => {
-                let slogan = format!("Unknown name {}", v.yellow());
-                let r = Report::new(slogan, Some(l.clone()));
+                let slogan = format!("Unknown name {}", ctx.yellow(v));
+                let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }
             ResolverError::RedundantPattern(l) => {
                 let slogan = format!("Redundant pattern");
-                let r = Report::new(slogan, Some(l.clone()));
+                let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }
             ResolverError::MissingPattern(pat, l) => {
-                let slogan = format!("Missing pattern {}", pat.yellow());
-                let r = Report::new(slogan, Some(l.clone()));
-                r.print();
-            }
-            ResolverError::IncompatiblePattern(found, expected, l) => {
-                let slogan = format!("Incompatible pattern: found {}, expected: {}", found.yellow(), expected.yellow());
-                let r = Report::new(slogan, Some(l.clone()));
+                let slogan = format!("Missing pattern {}", ctx.yellow(pat));
+                let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }
             ResolverError::BreakOutsideLoop(l) => {
                 let slogan = format!("Break outside loop");
-                let r = Report::new(slogan, Some(l.clone()));
+                let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }
             ResolverError::ContinueOutsideLoop(l) => {
                 let slogan = format!("Continue outside loop");
-                let r = Report::new(slogan, Some(l.clone()));
+                let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }
             ResolverError::InvalidInstanceType(ty, l) => {
-                let slogan = format!("Invalid instance type {}", ty.yellow());
-                let r = Report::new(slogan, Some(l.clone()));
+                let slogan = format!("Invalid instance type {}", ctx.yellow(ty));
+                let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }
             ResolverError::Ambiguous(v, l) => {
-                let slogan = format!("Ambiguous name {}", v.yellow());
-                let r = Report::new(slogan, Some(l.clone()));
+                let slogan = format!("Ambiguous name {}", ctx.yellow(v));
+                let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }
         }

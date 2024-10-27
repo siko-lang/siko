@@ -11,7 +11,7 @@ pub trait FunctionParser {
     fn parseFunction(&mut self) -> Function;
 }
 
-impl FunctionParser for Parser {
+impl<'a> FunctionParser for Parser<'a> {
     fn parseFunction(&mut self) -> Function {
         self.expect(TokenKind::Keyword(KeywordKind::Fn));
         let name = self.parseVarIdentifier();

@@ -10,7 +10,7 @@ pub trait TypeParser {
     fn parseTypeParameterDeclaration(&mut self) -> TypeParameterDeclaration;
 }
 
-impl TypeParser for Parser {
+impl<'a> TypeParser for Parser<'a> {
     fn parseType(&mut self) -> Type {
         match self.peek() {
             TokenKind::TypeIdentifier => {
@@ -122,9 +122,6 @@ impl TypeParser for Parser {
             }
         }
         self.expect(TokenKind::RightBracket(BracketKind::Square));
-        TypeParameterDeclaration {
-            params,
-            constraints,
-        }
+        TypeParameterDeclaration { params, constraints }
     }
 }

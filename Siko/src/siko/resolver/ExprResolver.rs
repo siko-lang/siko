@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::siko::hir::Data::Enum;
 use crate::siko::hir::Function::{Block as IrBlock, BlockId, InstructionId, InstructionKind, ValueKind};
 use crate::siko::location::Location::Location;
+use crate::siko::location::Report::ReportContext;
 use crate::siko::qualifiedname::QualifiedName;
 use crate::siko::resolver::matchcompiler::Compiler::MatchCompiler;
 use crate::siko::syntax::Expr::{BinaryOp, Expr, SimpleExpr, UnaryOp};
@@ -29,10 +30,11 @@ struct LoopInfo {
 }
 
 pub struct ExprResolver<'a> {
+    ctx: &'a ReportContext,
     body: Body,
     blockId: u32,
     valueId: u32,
-    moduleResolver: &'a ModuleResolver,
+    moduleResolver: &'a ModuleResolver<'a>,
     emptyVariants: &'a BTreeSet<QualifiedName>,
     variants: &'a BTreeMap<QualifiedName, QualifiedName>,
     enums: &'a BTreeMap<QualifiedName, Enum>,
@@ -42,12 +44,14 @@ pub struct ExprResolver<'a> {
 
 impl<'a> ExprResolver<'a> {
     pub fn new(
+        ctx: &'a ReportContext,
         moduleResolver: &'a ModuleResolver,
         emptyVariants: &'a BTreeSet<QualifiedName>,
         variants: &'a BTreeMap<QualifiedName, QualifiedName>,
         enums: &'a BTreeMap<QualifiedName, Enum>,
     ) -> ExprResolver<'a> {
         ExprResolver {
+            ctx: ctx,
             body: Body::new(),
             blockId: 0,
             valueId: 0,
@@ -115,7 +119,7 @@ impl<'a> ExprResolver<'a> {
                     return self.addInstruction(InstructionKind::ValueRef(name, Vec::new(), Vec::new()), expr.location.clone());
                 }
                 None => {
-                    ResolverError::UnknownValue(name.name.clone(), name.location.clone()).report();
+                    ResolverError::UnknownValue(name.name.clone(), name.location.clone()).report(self.ctx);
                 }
             },
             SimpleExpr::SelfValue => {
@@ -129,7 +133,7 @@ impl<'a> ExprResolver<'a> {
                 if self.emptyVariants.contains(&irName) {
                     return self.addInstruction(InstructionKind::FunctionCall(irName, Vec::new()), expr.location.clone());
                 }
-                ResolverError::UnknownValue(name.name.clone(), name.location.clone()).report();
+                ResolverError::UnknownValue(name.name.clone(), name.location.clone()).report(self.ctx);
             }
             SimpleExpr::FieldAccess(receiver, name) => {
                 let id;
@@ -313,7 +317,7 @@ impl<'a> ExprResolver<'a> {
                 for b in branches {
                     patterns.push(b.pattern.clone());
                 }
-                let mut matchResolver = MatchCompiler::new(body.location.clone(), patterns, self.moduleResolver, self.variants, self.enums);
+                let mut matchResolver = MatchCompiler::new(self.ctx, body.location.clone(), patterns, self.moduleResolver, self.variants, self.enums);
                 matchResolver.check();
                 self.addInstruction(InstructionKind::Tuple(vec![]), expr.location.clone())
             }
@@ -346,7 +350,7 @@ impl<'a> ExprResolver<'a> {
                 };
                 let info = match self.loopInfos.last() {
                     Some(info) => info.clone(),
-                    None => ResolverError::BreakOutsideLoop(expr.location.clone()).report(),
+                    None => ResolverError::BreakOutsideLoop(expr.location.clone()).report(self.ctx),
                 };
                 self.addInstruction(InstructionKind::Assign(info.var, argId), expr.location.clone());
                 return self.addInstruction(InstructionKind::Jump(info.exit), expr.location.clone());
@@ -358,7 +362,7 @@ impl<'a> ExprResolver<'a> {
                 };
                 let info = match self.loopInfos.last() {
                     Some(info) => info.clone(),
-                    None => ResolverError::BreakOutsideLoop(expr.location.clone()).report(),
+                    None => ResolverError::BreakOutsideLoop(expr.location.clone()).report(self.ctx),
                 };
                 self.addInstruction(InstructionKind::Assign(info.var, argId), expr.location.clone());
                 return self.addInstruction(InstructionKind::Jump(info.body), expr.location.clone());

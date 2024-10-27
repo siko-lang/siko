@@ -33,7 +33,7 @@ pub enum SemicolonRequirement {
     Required,
 }
 
-impl ExprParser for Parser {
+impl<'a> ExprParser for Parser<'a> {
     fn parseBlock(&mut self) -> Block {
         let mut statements = Vec::new();
         self.pushSpan();
@@ -108,11 +108,7 @@ impl ExprParser for Parser {
         } else {
             None
         };
-        self.buildExpr(SimpleExpr::If(
-            Box::new(cond),
-            Box::new(trueBranch),
-            falseBranch,
-        ))
+        self.buildExpr(SimpleExpr::If(Box::new(cond), Box::new(trueBranch), falseBranch))
     }
 
     fn parseFor(&mut self) -> Expr {
@@ -203,25 +199,16 @@ impl ExprParser for Parser {
                 let pattern = self.parsePattern();
                 self.expect(TokenKind::Misc(MiscKind::Equal));
                 let rhs = self.parseExpr();
-                (
-                    StatementKind::Let(pattern, rhs),
-                    SemicolonRequirement::Required,
-                )
+                (StatementKind::Let(pattern, rhs), SemicolonRequirement::Required)
             }
             _ => {
                 let expr = self.parseExpr();
                 if self.check(TokenKind::Misc(MiscKind::Equal)) {
                     self.expect(TokenKind::Misc(MiscKind::Equal));
                     let rhs = self.parseExpr();
-                    (
-                        StatementKind::Assign(expr, rhs),
-                        SemicolonRequirement::Required,
-                    )
+                    (StatementKind::Assign(expr, rhs), SemicolonRequirement::Required)
                 } else {
-                    (
-                        StatementKind::Expr(expr),
-                        SemicolonRequirement::TrailingOptional,
-                    )
+                    (StatementKind::Expr(expr), SemicolonRequirement::TrailingOptional)
                 }
             }
         }
@@ -362,9 +349,7 @@ impl ExprParser for Parser {
             }
             TokenKind::Keyword(KeywordKind::Return) => {
                 self.expect(TokenKind::Keyword(KeywordKind::Return));
-                let arg = if self.check(TokenKind::Misc(MiscKind::Semicolon))
-                    || self.check(TokenKind::Misc(MiscKind::Comma))
-                {
+                let arg = if self.check(TokenKind::Misc(MiscKind::Semicolon)) || self.check(TokenKind::Misc(MiscKind::Comma)) {
                     None
                 } else {
                     Some(Box::new(self.parseExpr()))
@@ -373,9 +358,7 @@ impl ExprParser for Parser {
             }
             TokenKind::Keyword(KeywordKind::Continue) => {
                 self.expect(TokenKind::Keyword(KeywordKind::Continue));
-                let arg = if self.check(TokenKind::Misc(MiscKind::Semicolon))
-                    || self.check(TokenKind::Misc(MiscKind::Comma))
-                {
+                let arg = if self.check(TokenKind::Misc(MiscKind::Semicolon)) || self.check(TokenKind::Misc(MiscKind::Comma)) {
                     None
                 } else {
                     Some(Box::new(self.parseExpr()))
@@ -384,9 +367,7 @@ impl ExprParser for Parser {
             }
             TokenKind::Keyword(KeywordKind::Break) => {
                 self.expect(TokenKind::Keyword(KeywordKind::Break));
-                let arg = if self.check(TokenKind::Misc(MiscKind::Semicolon))
-                    || self.check(TokenKind::Misc(MiscKind::Comma))
-                {
+                let arg = if self.check(TokenKind::Misc(MiscKind::Semicolon)) || self.check(TokenKind::Misc(MiscKind::Comma)) {
                     None
                 } else {
                     Some(Box::new(self.parseExpr()))
