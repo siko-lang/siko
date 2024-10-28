@@ -160,8 +160,9 @@ impl<'a> MatchCompiler<'a> {
                 }
             }
             (SimplePattern::Named(_, _), SimplePattern::Wildcard) => true,
-            (SimplePattern::Bind(_, _), SimplePattern::Bind(_, _)) => false,
-            (SimplePattern::Bind(_, _), SimplePattern::Wildcard) => false,
+            (SimplePattern::Bind(_, _), SimplePattern::Bind(_, _)) => true,
+            (SimplePattern::Bind(_, _), SimplePattern::Wildcard) => true,
+            (SimplePattern::Wildcard, SimplePattern::Bind(_, _)) => true,
             (SimplePattern::Tuple(args1), SimplePattern::Tuple(args2)) => {
                 if args1.len() != args2.len() {
                     return false;
@@ -178,6 +179,7 @@ impl<'a> MatchCompiler<'a> {
             (SimplePattern::StringLiteral(_), SimplePattern::Wildcard) => true,
             (SimplePattern::IntegerLiteral(val1), SimplePattern::IntegerLiteral(val2)) => val1 == val2,
             (SimplePattern::IntegerLiteral(_), SimplePattern::Wildcard) => true,
+            (SimplePattern::Wildcard, SimplePattern::Wildcard) => true,
             _ => false,
         }
     }
@@ -277,7 +279,9 @@ impl<'a> MatchCompiler<'a> {
             let resolvedBranch = self.resolve(branch);
             let mut reduced = BTreeSet::new();
             for m in &allMerged {
-                if !self.isMatch(&m, &resolvedBranch) {
+                let isMatch = self.isMatch(&m, &resolvedBranch);
+                //println!("{} ~ {} = {}", m, resolvedBranch, isMatch);
+                if !isMatch {
                     reduced.insert(m.clone());
                 }
             }
