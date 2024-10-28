@@ -44,7 +44,8 @@ impl<'a> Parser<'a> {
     }
 
     pub fn pushSpan(&mut self) {
-        self.spans.push(self.tokens[self.index].span.clone());
+        let span = self.tokens[self.index].span.clone();
+        self.spans.push(span);
     }
 
     pub fn popSpan(&mut self) -> Location {

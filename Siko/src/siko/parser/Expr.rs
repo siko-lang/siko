@@ -79,10 +79,8 @@ impl<'a> ExprParser for Parser<'a> {
     }
 
     fn buildExpr(&mut self, e: SimpleExpr) -> Expr {
-        Expr {
-            expr: e,
-            location: self.popSpan(),
-        }
+        let location = self.popSpan();
+        Expr { expr: e, location: location }
     }
 
     fn buildExpr2(&mut self, e: SimpleExpr) -> Expr {
@@ -290,9 +288,9 @@ impl<'a> ExprParser for Parser<'a> {
         }
     }
     fn parseUnary(&mut self) -> Expr {
-        self.pushSpan();
         match self.peek() {
             TokenKind::Misc(MiscKind::ExclamationMark) => {
+                self.pushSpan();
                 self.expect(TokenKind::Misc(MiscKind::ExclamationMark));
                 let expr = self.parsePrimary();
                 self.buildExpr(SimpleExpr::UnaryOp(UnaryOp::Not, Box::new(expr)))
