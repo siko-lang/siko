@@ -88,6 +88,7 @@ impl<'a> DeadCodeEliminator<'a> {
                 }
                 InstructionKind::Assign(_, _) => {}
                 InstructionKind::DeclareVar(_) => {}
+                InstructionKind::Transform(_, _) => {}
             }
         }
     }

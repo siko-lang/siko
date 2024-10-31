@@ -24,12 +24,7 @@ impl Builder {
         self.cfg
     }
 
-    fn processGenericInstruction(
-        &mut self,
-        i: &Instruction,
-        last: Option<Key>,
-        kind: NodeKind,
-    ) -> Key {
+    fn processGenericInstruction(&mut self, i: &Instruction, last: Option<Key>, kind: NodeKind) -> Key {
         let key = Key::Instruction(i.id);
         let node = Node::new(kind, i.ty.clone().expect("ty not found"));
         self.cfg.addNode(key.clone(), node);
@@ -44,16 +39,12 @@ impl Builder {
         for instruction in &block.instructions {
             match &instruction.kind {
                 InstructionKind::FunctionCall(_, _) => {
-                    last =
-                        Some(self.processGenericInstruction(instruction, last, NodeKind::Generic));
+                    last = Some(self.processGenericInstruction(instruction, last, NodeKind::Generic));
                 }
                 InstructionKind::DynamicFunctionCall(_, _) => todo!(),
                 InstructionKind::If(_, trueBranch, falseBranch) => {
                     let ifKey = Key::If(instruction.id);
-                    let ifEnd = Node::new(
-                        NodeKind::IfEnd,
-                        instruction.ty.clone().expect("ty not found"),
-                    );
+                    let ifEnd = Node::new(NodeKind::IfEnd, instruction.ty.clone().expect("ty not found"));
                     self.cfg.addNode(ifKey.clone(), ifEnd);
                     let block = f.getBlockById(*trueBranch);
                     let trueLast = self.processBlock(block, last.clone(), f);
@@ -72,10 +63,7 @@ impl Builder {
                 InstructionKind::ValueRef(v, fields, _) => {
                     let value = v.getValue();
                     let key = Key::Instruction(instruction.id);
-                    let mut node = Node::new(
-                        NodeKind::ValueRef,
-                        instruction.ty.clone().expect("ty not found"),
-                    );
+                    let mut node = Node::new(NodeKind::ValueRef, instruction.ty.clone().expect("ty not found"));
                     if fields.is_empty() {
                         node.usage = Some(Path::WholePath(value));
                     } else {
@@ -89,28 +77,20 @@ impl Builder {
                     last = Some(key);
                 }
                 InstructionKind::Bind(v, _) => {
-                    last = Some(self.processGenericInstruction(
-                        instruction,
-                        last,
-                        NodeKind::Bind(v.clone()),
-                    ));
+                    last = Some(self.processGenericInstruction(instruction, last, NodeKind::Bind(v.clone())));
                 }
                 InstructionKind::Tuple(_) => {
-                    last =
-                        Some(self.processGenericInstruction(instruction, last, NodeKind::Generic));
+                    last = Some(self.processGenericInstruction(instruction, last, NodeKind::Generic));
                 }
                 InstructionKind::TupleIndex(_, _) => todo!(),
                 InstructionKind::StringLiteral(_) => {
-                    last =
-                        Some(self.processGenericInstruction(instruction, last, NodeKind::Generic));
+                    last = Some(self.processGenericInstruction(instruction, last, NodeKind::Generic));
                 }
                 InstructionKind::IntegerLiteral(_) => {
-                    last =
-                        Some(self.processGenericInstruction(instruction, last, NodeKind::Generic));
+                    last = Some(self.processGenericInstruction(instruction, last, NodeKind::Generic));
                 }
                 InstructionKind::CharLiteral(_) => {
-                    last =
-                        Some(self.processGenericInstruction(instruction, last, NodeKind::Generic));
+                    last = Some(self.processGenericInstruction(instruction, last, NodeKind::Generic));
                 }
                 InstructionKind::Return(_) => {
                     if let Some(last) = last {
@@ -124,10 +104,7 @@ impl Builder {
                     let usage = prev.usage.clone().unwrap();
                     prev.usage = None;
                     let key = Key::Instruction(instruction.id);
-                    let mut node = Node::new(
-                        NodeKind::Generic,
-                        instruction.ty.clone().expect("ty not found"),
-                    );
+                    let mut node = Node::new(NodeKind::Generic, instruction.ty.clone().expect("ty not found"));
                     node.usage = Some(usage);
                     self.cfg.addNode(key.clone(), node);
                     if let Some(last) = last {
@@ -138,10 +115,7 @@ impl Builder {
                 }
                 InstructionKind::Drop(values) => {
                     let key = Key::DropKey(instruction.id, format!("[{}]", values.join(", ")));
-                    let node = Node::new(
-                        NodeKind::Generic,
-                        instruction.ty.clone().expect("ty not found"),
-                    );
+                    let node = Node::new(NodeKind::Generic, instruction.ty.clone().expect("ty not found"));
                     self.cfg.addNode(key.clone(), node);
                     if let Some(last) = last {
                         let edge = Edge::new(last, key.clone());
@@ -154,6 +128,7 @@ impl Builder {
                 }
                 InstructionKind::Assign(_, _) => {}
                 InstructionKind::DeclareVar(_) => {}
+                InstructionKind::Transform(_, _) => {}
             }
         }
         last

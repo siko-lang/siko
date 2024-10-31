@@ -283,6 +283,9 @@ impl<'a> Typechecker<'a> {
                 InstructionKind::DeclareVar(_) => {
                     self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
                 }
+                InstructionKind::Transform(_, ty) => {
+                    self.unify(self.getInstructionType(instruction.id), ty.clone(), instruction.location.clone());
+                }
             }
         }
     }

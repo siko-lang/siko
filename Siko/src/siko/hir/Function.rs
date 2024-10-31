@@ -125,6 +125,7 @@ pub enum InstructionKind {
     Jump(BlockId),
     Assign(String, InstructionId),
     DeclareVar(String),
+    Transform(InstructionId, Type),
 }
 
 impl Display for InstructionKind {
@@ -167,6 +168,7 @@ impl InstructionKind {
             }
             InstructionKind::Assign(v, arg) => format!("assign({}, {})", v, arg),
             InstructionKind::DeclareVar(v) => format!("declare({})", v),
+            InstructionKind::Transform(arg, targetType) => format!("transform({}, {})", arg, targetType),
         }
     }
 }

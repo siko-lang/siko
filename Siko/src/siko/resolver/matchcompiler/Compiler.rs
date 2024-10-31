@@ -1,39 +1,34 @@
-use crate::siko::hir::Data::Enum;
+use crate::siko::hir::Function::{BlockId, InstructionId, InstructionKind};
+use crate::siko::hir::Type::Type;
 use crate::siko::location::Location::Location;
-use crate::siko::location::Report::ReportContext;
 use crate::siko::qualifiedname::QualifiedName;
 use crate::siko::resolver::Error::ResolverError;
-use crate::siko::resolver::ModuleResolver::ModuleResolver;
+use crate::siko::resolver::ExprResolver::ExprResolver;
 use crate::siko::syntax::Identifier::Identifier;
 use crate::siko::syntax::Pattern::{Pattern, SimplePattern};
 use std::collections::{BTreeMap, BTreeSet};
 use std::iter::repeat;
 
-use super::Resolver::Resolver;
-
-pub struct MatchCompiler<'a> {
-    ctx: &'a ReportContext,
+pub struct MatchCompiler<'a, 'b> {
+    resolver: &'a mut ExprResolver<'b>,
+    bodyId: InstructionId,
     bodyLocation: Location,
     branches: Vec<Pattern>,
-    resolver: Resolver<'a>,
     errors: Vec<ResolverError>,
+    nextVar: i32,
+    nodes: BTreeMap<InstructionId, Node>,
 }
 
-impl<'a> MatchCompiler<'a> {
-    pub fn new(
-        ctx: &'a ReportContext,
-        bodyLocation: Location,
-        branches: Vec<Pattern>,
-        moduleResolver: &'a ModuleResolver,
-        variants: &'a BTreeMap<QualifiedName, QualifiedName>,
-        enums: &'a BTreeMap<QualifiedName, Enum>,
-    ) -> MatchCompiler<'a> {
+impl<'a, 'b> MatchCompiler<'a, 'b> {
+    pub fn new(resolver: &'a mut ExprResolver<'b>, bodyId: InstructionId, bodyLocation: Location, branches: Vec<Pattern>) -> MatchCompiler<'a, 'b> {
         MatchCompiler {
-            ctx: ctx,
             bodyLocation: bodyLocation,
+            bodyId: bodyId,
             branches: branches,
-            resolver: Resolver::new(moduleResolver, variants, enums),
+            resolver: resolver,
             errors: Vec::new(),
+            nextVar: 1,
+            nodes: BTreeMap::new(),
         }
     }
 
@@ -159,10 +154,10 @@ impl<'a> MatchCompiler<'a> {
                     false
                 }
             }
-            (SimplePattern::Named(_, _), SimplePattern::Wildcard) => true,
-            (SimplePattern::Bind(_, _), SimplePattern::Bind(_, _)) => true,
-            (SimplePattern::Bind(_, _), SimplePattern::Wildcard) => true,
-            (SimplePattern::Wildcard, SimplePattern::Bind(_, _)) => true,
+            (_, SimplePattern::Wildcard) => true,
+            (_, SimplePattern::Bind(_, _)) => true,
+            (SimplePattern::Wildcard, _) => true,
+            (SimplePattern::Bind(_, _), _) => true,
             (SimplePattern::Tuple(args1), SimplePattern::Tuple(args2)) => {
                 if args1.len() != args2.len() {
                     return false;
@@ -174,12 +169,8 @@ impl<'a> MatchCompiler<'a> {
                 }
                 true
             }
-            (SimplePattern::Tuple(_), SimplePattern::Wildcard) => true,
             (SimplePattern::StringLiteral(val1), SimplePattern::StringLiteral(val2)) => val1 == val2,
-            (SimplePattern::StringLiteral(_), SimplePattern::Wildcard) => true,
             (SimplePattern::IntegerLiteral(val1), SimplePattern::IntegerLiteral(val2)) => val1 == val2,
-            (SimplePattern::IntegerLiteral(_), SimplePattern::Wildcard) => true,
-            (SimplePattern::Wildcard, SimplePattern::Wildcard) => true,
             _ => false,
         }
     }
@@ -235,11 +226,13 @@ impl<'a> MatchCompiler<'a> {
             }
             (SimplePattern::Wildcard, _) => Some(pat2.clone()),
             (_, SimplePattern::Wildcard) => Some(pat1.clone()),
+            (SimplePattern::Bind(_, _), _) => Some(pat2.clone()),
+            (_, SimplePattern::Bind(_, _)) => Some(pat1.clone()),
             _ => None,
         }
     }
 
-    pub fn check(&mut self) {
+    fn check(&mut self) -> Vec<Pattern> {
         //println!("=======================");
         // let mut allDecisions = Vec::new();
         let mut allChoices = BTreeSet::new();
@@ -275,30 +268,174 @@ impl<'a> MatchCompiler<'a> {
         // for choice in &allMerged {
         //     println!("   merged: {}", choice);
         // }
+        let mut remaining = allMerged.clone();
         for branch in self.branches.iter() {
             let resolvedBranch = self.resolve(branch);
             let mut reduced = BTreeSet::new();
-            for m in &allMerged {
+            for m in &remaining {
                 let isMatch = self.isMatch(&m, &resolvedBranch);
                 //println!("{} ~ {} = {}", m, resolvedBranch, isMatch);
                 if !isMatch {
                     reduced.insert(m.clone());
                 }
             }
-            if reduced.len() == allMerged.len() {
+            if reduced.len() == remaining.len() {
                 self.errors.push(ResolverError::RedundantPattern(branch.location.clone()));
             }
-            allMerged = reduced;
+            remaining = reduced;
         }
-        for m in allMerged {
+        for m in remaining {
             self.errors.push(ResolverError::MissingPattern(m.to_string(), self.bodyLocation.clone()));
         }
 
         for err in &self.errors {
-            err.reportOnly(self.ctx);
+            err.reportOnly(self.resolver.ctx);
         }
         if !self.errors.is_empty() {
             std::process::exit(1);
         }
+        allMerged.into_iter().collect()
     }
+
+    pub fn compile(&mut self) {
+        let patterns = self.check();
+        for pattern in &patterns {
+            println!("Compiling {}", pattern);
+            self.compilePattern(pattern, self.bodyId);
+        }
+    }
+
+    fn allocateVar(&mut self) -> String {
+        let v = self.nextVar;
+        self.nextVar += 1;
+        format!("pattern_var_{}", v)
+    }
+
+    fn compilePattern(&mut self, pattern: &Pattern, root: InstructionId) {
+        match &pattern.pattern {
+            SimplePattern::Named(id, args) => {
+                let variantName = self.resolver.moduleResolver.resolverName(id);
+                if let Some(enumName) = self.resolver.variants.get(&variantName) {
+                    if !self.nodes.contains_key(&root) {
+                        let mut cases = BTreeMap::new();
+                        let e = self.resolver.enums.get(enumName).expect("enum not found");
+                        for variant in &e.variants {
+                            let blockId = self.resolver.createBlock();
+                            let instruction = InstructionKind::Transform(root, Type::Tuple(variant.items.clone()));
+                            let transformId = self.resolver.addInstructionToBlock(blockId, instruction, pattern.location.clone(), false);
+                            let mut argIds = Vec::new();
+                            for (index, arg) in args.iter().enumerate() {
+                                let argId = self.resolver.addInstructionToBlock(
+                                    blockId,
+                                    InstructionKind::TupleIndex(transformId, index as u32),
+                                    arg.location.clone(),
+                                    false,
+                                );
+                                argIds.push(argId);
+                            }
+                            let case = Case::Variant(variant.name.clone(), argIds);
+                            cases.insert(case, blockId);
+                        }
+                        let switch = Switch { var: root, cases: cases };
+                        self.nodes.insert(root, Node::Switch(switch));
+                    }
+                    if let Node::Switch(switch) = self.nodes.get(&root).cloned().expect("switch node not found") {
+                        for (case, _) in &switch.cases {
+                            if let Case::Variant(variant, argIds) = case {
+                                if *variant == variantName {
+                                    for (index, arg) in args.iter().enumerate() {
+                                        self.compilePattern(arg, argIds[index].clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            SimplePattern::Bind(value, _) => {
+                println!("WUT {} {}", value.toString(), root);
+                if !self.nodes.contains_key(&root) {
+                    let blockId = self.resolver.createBlock();
+                    let instruction = InstructionKind::Bind(value.toString(), root);
+                    self.resolver.addInstructionToBlock(blockId, instruction, pattern.location.clone(), false);
+                    let bind = Bind {
+                        var: root,
+                        name: value.toString(),
+                        blockId: blockId,
+                    };
+                    self.nodes.insert(root, Node::Bind(bind));
+                }
+            }
+            SimplePattern::Tuple(args) => {
+                if !self.nodes.contains_key(&root) {
+                    let blockId = self.resolver.createBlock();
+                    let mut argIds = Vec::new();
+                    for (index, arg) in args.iter().enumerate() {
+                        let argId = self.resolver.addInstructionToBlock(
+                            blockId,
+                            InstructionKind::TupleIndex(root, index as u32),
+                            arg.location.clone(),
+                            false,
+                        );
+                        argIds.push(argId);
+                    }
+                    let tuple = Tuple {
+                        var: root,
+                        args: argIds,
+                        blockId: blockId,
+                    };
+                    self.nodes.insert(root, Node::Tuple(tuple));
+                }
+                if let Node::Tuple(tuple) = self.nodes.get(&root).cloned().expect("tuple node not found") {
+                    for (index, arg) in args.iter().enumerate() {
+                        self.compilePattern(arg, tuple.args[index].clone());
+                    }
+                }
+            }
+            SimplePattern::StringLiteral(v) => {
+                println!("switch {} case string literal {}", root, v)
+            }
+            SimplePattern::IntegerLiteral(v) => {
+                println!("switch {} case integer literal {}", root, v)
+            }
+            SimplePattern::Wildcard => {
+                println!("switch {} case default", root)
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+struct Tuple {
+    var: InstructionId,
+    args: Vec<InstructionId>,
+    blockId: BlockId,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Case {
+    Variant(QualifiedName, Vec<InstructionId>),
+    Integer(String),
+    String(String),
+    Default,
+}
+
+#[derive(Clone)]
+struct Switch {
+    var: InstructionId,
+    cases: BTreeMap<Case, BlockId>,
+}
+
+#[derive(Clone)]
+struct Bind {
+    var: InstructionId,
+    name: String,
+    blockId: BlockId,
+}
+
+#[derive(Clone)]
+enum Node {
+    Tuple(Tuple),
+    Switch(Switch),
+    Bind(Bind),
 }

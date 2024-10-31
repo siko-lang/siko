@@ -30,14 +30,14 @@ struct LoopInfo {
 }
 
 pub struct ExprResolver<'a> {
-    ctx: &'a ReportContext,
+    pub ctx: &'a ReportContext,
     body: Body,
     blockId: u32,
     valueId: u32,
-    moduleResolver: &'a ModuleResolver<'a>,
+    pub moduleResolver: &'a ModuleResolver<'a>,
     emptyVariants: &'a BTreeSet<QualifiedName>,
-    variants: &'a BTreeMap<QualifiedName, QualifiedName>,
-    enums: &'a BTreeMap<QualifiedName, Enum>,
+    pub variants: &'a BTreeMap<QualifiedName, QualifiedName>,
+    pub enums: &'a BTreeMap<QualifiedName, Enum>,
     loopInfos: Vec<LoopInfo>,
     targetBlockId: BlockId,
 }
@@ -64,7 +64,7 @@ impl<'a> ExprResolver<'a> {
         }
     }
 
-    fn createBlock(&mut self) -> BlockId {
+    pub fn createBlock(&mut self) -> BlockId {
         let blockId = BlockId { id: self.blockId };
         self.blockId += 1;
         let irBlock = IrBlock::new(blockId);
@@ -99,15 +99,15 @@ impl<'a> ExprResolver<'a> {
         }
     }
 
-    fn addInstruction(&mut self, instruction: InstructionKind, location: Location) -> InstructionId {
+    pub fn addInstruction(&mut self, instruction: InstructionKind, location: Location) -> InstructionId {
         self.addInstructionToBlock(self.targetBlockId, instruction, location, false)
     }
 
-    fn addImplicitInstruction(&mut self, instruction: InstructionKind, location: Location) -> InstructionId {
+    pub fn addImplicitInstruction(&mut self, instruction: InstructionKind, location: Location) -> InstructionId {
         self.addInstructionToBlock(self.targetBlockId, instruction, location, true)
     }
 
-    fn addInstructionToBlock(&mut self, id: BlockId, instruction: InstructionKind, location: Location, implicit: bool) -> InstructionId {
+    pub fn addInstructionToBlock(&mut self, id: BlockId, instruction: InstructionKind, location: Location, implicit: bool) -> InstructionId {
         let irBlock = &mut self.body.blocks[id.id as usize];
         return irBlock.addWithImplicit(instruction, location, implicit);
     }
@@ -313,12 +313,13 @@ impl<'a> ExprResolver<'a> {
                 self.addInstruction(InstructionKind::FunctionCall(name, vec![rhsId]), expr.location.clone())
             }
             SimpleExpr::Match(body, branches) => {
+                let bodyId = self.resolveExpr(body, env);
                 let mut patterns = Vec::new();
                 for b in branches {
                     patterns.push(b.pattern.clone());
                 }
-                let mut matchResolver = MatchCompiler::new(self.ctx, body.location.clone(), patterns, self.moduleResolver, self.variants, self.enums);
-                matchResolver.check();
+                let mut matchResolver = MatchCompiler::new(self, bodyId, body.location.clone(), patterns);
+                matchResolver.compile();
                 self.addInstruction(InstructionKind::Tuple(vec![]), expr.location.clone())
             }
             SimpleExpr::Block(block) => {

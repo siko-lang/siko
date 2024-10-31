@@ -99,7 +99,7 @@ impl<'a> Resolver<'a> {
         self.processDataTypes();
         self.processTraits();
         self.processFunctions();
-        //self.dump();
+        self.dump();
     }
 
     pub fn ir(self) -> Program {
