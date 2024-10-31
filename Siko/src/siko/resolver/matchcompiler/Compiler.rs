@@ -7,7 +7,65 @@ use crate::siko::resolver::ExprResolver::ExprResolver;
 use crate::siko::syntax::Identifier::Identifier;
 use crate::siko::syntax::Pattern::{Pattern, SimplePattern};
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::iter::repeat;
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum DataPath {
+    Root,
+    Tuple(Box<DataPath>, i64),
+    TupleIndex(Box<DataPath>, i64),
+    Variant(Box<DataPath>, QualifiedName),
+    IntegerLiteral(Box<DataPath>, String),
+    StringLiteral(Box<DataPath>, String),
+    Class(Box<DataPath>, QualifiedName),
+    Wildcard(Box<DataPath>),
+}
+
+impl fmt::Display for DataPath {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            DataPath::Root => write!(f, "Root"),
+            DataPath::Tuple(path, len) => write!(f, "{}/tuple{}", path, len),
+            DataPath::TupleIndex(path, index) => write!(f, "{}.t{}", path, index),
+            DataPath::Variant(path, name) => write!(f, "{}.{}", path, name),
+            DataPath::IntegerLiteral(path, literal) => write!(f, "{}[int:{}]", path, literal),
+            DataPath::StringLiteral(path, literal) => write!(f, "{}[str:\"{}\"]", path, literal),
+            DataPath::Class(path, name) => write!(f, "{}.{}", path, name),
+            DataPath::Wildcard(path) => write!(f, "{}._", path),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct DecisionPath {
+    decisions: Vec<DataPath>,
+}
+
+impl DecisionPath {
+    pub fn new() -> DecisionPath {
+        DecisionPath { decisions: Vec::new() }
+    }
+
+    pub fn add(&self, path: DataPath) -> DecisionPath {
+        let mut d = self.clone();
+        d.decisions.push(path);
+        d
+    }
+}
+
+impl fmt::Display for DecisionPath {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let decisions = self
+            .decisions
+            .iter()
+            .map(|path| format!("{}", path))
+            .collect::<Vec<String>>()
+            .join(" -> ");
+
+        write!(f, "{}", decisions)
+    }
+}
 
 pub struct MatchCompiler<'a, 'b> {
     resolver: &'a mut ExprResolver<'b>,
@@ -17,6 +75,7 @@ pub struct MatchCompiler<'a, 'b> {
     errors: Vec<ResolverError>,
     nextVar: i32,
     nodes: BTreeMap<InstructionId, Node>,
+    bindings: BTreeMap<DecisionPath, String>,
 }
 
 impl<'a, 'b> MatchCompiler<'a, 'b> {
@@ -29,6 +88,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
             errors: Vec::new(),
             nextVar: 1,
             nodes: BTreeMap::new(),
+            bindings: BTreeMap::new(),
         }
     }
 
@@ -137,8 +197,44 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         }
     }
 
-    pub fn isMatch(&self, prev: &Pattern, next: &Pattern) -> bool {
-        match (&prev.pattern, &next.pattern) {
+    fn generateDecisions(&mut self, pattern: &Pattern, parentData: &DataPath, decision: &DecisionPath) -> DecisionPath {
+        //println!("generateDecisions: {}, {}, {}", pattern, parentData, decision);
+        match &pattern.pattern {
+            SimplePattern::Named(origId, args) => {
+                let name = self.resolver.moduleResolver.resolverName(&origId);
+                if let Some(_) = self.resolver.variants.get(&name) {
+                    let path = DataPath::Variant(Box::new(parentData.clone()), name);
+                    let mut decision = decision.add(path.clone());
+                    for arg in args {
+                        decision = self.generateDecisions(arg, &path, &decision);
+                    }
+                    decision
+                } else {
+                    decision.add(DataPath::Class(Box::new(parentData.clone()), name))
+                }
+            }
+            SimplePattern::Bind(name, _) => {
+                self.bindings.insert(decision.clone(), name.toString());
+                decision.add(DataPath::Wildcard(Box::new(parentData.clone())))
+            }
+            SimplePattern::Tuple(args) => {
+                let mut decision = decision.clone();
+                let path = DataPath::Tuple(Box::new(parentData.clone()), args.len() as i64);
+                decision = decision.add(path.clone());
+                for (index, arg) in args.iter().enumerate() {
+                    let path = DataPath::TupleIndex(Box::new(parentData.clone()), index as i64);
+                    decision = self.generateDecisions(arg, &path, &decision);
+                }
+                decision
+            }
+            SimplePattern::StringLiteral(v) => decision.add(DataPath::StringLiteral(Box::new(parentData.clone()), v.clone())),
+            SimplePattern::IntegerLiteral(v) => decision.add(DataPath::IntegerLiteral(Box::new(parentData.clone()), v.clone())),
+            SimplePattern::Wildcard => decision.add(DataPath::Wildcard(Box::new(parentData.clone()))),
+        }
+    }
+
+    pub fn isMatch(&self, this: &Pattern, other: &Pattern) -> bool {
+        match (&this.pattern, &other.pattern) {
             (SimplePattern::Named(id1, args1), SimplePattern::Named(id2, args2)) => {
                 if id1 == id2 {
                     if args1.len() != args2.len() {
@@ -154,8 +250,6 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     false
                 }
             }
-            (_, SimplePattern::Wildcard) => true,
-            (_, SimplePattern::Bind(_, _)) => true,
             (SimplePattern::Wildcard, _) => true,
             (SimplePattern::Bind(_, _), _) => true,
             (SimplePattern::Tuple(args1), SimplePattern::Tuple(args2)) => {
@@ -175,63 +269,6 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         }
     }
 
-    fn isMissingPattern(&self, alt: &Pattern) -> bool {
-        for branch in &self.branches {
-            if self.isMatch(alt, &branch) {
-                return false;
-            }
-        }
-        true
-    }
-
-    fn merge(&self, pat1: &Pattern, pat2: &Pattern) -> Option<Pattern> {
-        match (&pat1.pattern, &pat2.pattern) {
-            (SimplePattern::Named(id1, args1), SimplePattern::Named(id2, args2)) => {
-                if id1 == id2 {
-                    let mut args = Vec::new();
-                    if args1.len() != args2.len() {
-                        return None;
-                    }
-                    for (arg1, arg2) in args1.iter().zip(args2.iter()) {
-                        if let Some(arg) = self.merge(arg1, arg2) {
-                            args.push(arg)
-                        } else {
-                            return None;
-                        }
-                    }
-                    Some(Pattern {
-                        pattern: SimplePattern::Named(id1.clone(), args),
-                        location: pat1.location.clone(),
-                    })
-                } else {
-                    None
-                }
-            }
-            (SimplePattern::Tuple(args1), SimplePattern::Tuple(args2)) => {
-                let mut args = Vec::new();
-                if args1.len() != args2.len() {
-                    return None;
-                }
-                for (arg1, arg2) in args1.iter().zip(args2.iter()) {
-                    if let Some(arg) = self.merge(arg1, arg2) {
-                        args.push(arg)
-                    } else {
-                        return None;
-                    }
-                }
-                Some(Pattern {
-                    pattern: SimplePattern::Tuple(args),
-                    location: pat1.location.clone(),
-                })
-            }
-            (SimplePattern::Wildcard, _) => Some(pat2.clone()),
-            (_, SimplePattern::Wildcard) => Some(pat1.clone()),
-            (SimplePattern::Bind(_, _), _) => Some(pat2.clone()),
-            (_, SimplePattern::Bind(_, _)) => Some(pat1.clone()),
-            _ => None,
-        }
-    }
-
     fn check(&mut self) -> Vec<Pattern> {
         //println!("=======================");
         // let mut allDecisions = Vec::new();
@@ -246,34 +283,12 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                 allChoices.insert(choice);
             }
         }
-        // for choice in &allChoices {
-        //     println!("   Alt: {}", choice);
-        // }
-        let mut allMerged = BTreeSet::new();
-        for (index1, choice1) in allChoices.iter().enumerate() {
-            let mut merged = false;
-            for (index2, choice2) in allChoices.iter().enumerate() {
-                if index1 == index2 {
-                    continue;
-                }
-                if let Some(mergedPat) = self.merge(choice1, choice2) {
-                    allMerged.insert(mergedPat);
-                    merged = true;
-                }
-            }
-            if !merged {
-                allMerged.insert(choice1.clone());
-            }
-        }
-        // for choice in &allMerged {
-        //     println!("   merged: {}", choice);
-        // }
-        let mut remaining = allMerged.clone();
+        let mut remaining = allChoices.clone();
         for branch in self.branches.iter() {
             let resolvedBranch = self.resolve(branch);
             let mut reduced = BTreeSet::new();
             for m in &remaining {
-                let isMatch = self.isMatch(&m, &resolvedBranch);
+                let isMatch = self.isMatch(&resolvedBranch, &m);
                 //println!("{} ~ {} = {}", m, resolvedBranch, isMatch);
                 if !isMatch {
                     reduced.insert(m.clone());
@@ -294,7 +309,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         if !self.errors.is_empty() {
             std::process::exit(1);
         }
-        allMerged.into_iter().collect()
+        allChoices.into_iter().collect()
     }
 
     pub fn compile(&mut self) {
@@ -353,7 +368,6 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                 }
             }
             SimplePattern::Bind(value, _) => {
-                println!("WUT {} {}", value.toString(), root);
                 if !self.nodes.contains_key(&root) {
                     let blockId = self.resolver.createBlock();
                     let instruction = InstructionKind::Bind(value.toString(), root);
