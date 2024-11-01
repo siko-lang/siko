@@ -121,6 +121,8 @@ pub struct MatchCompiler<'a, 'b> {
     bodyLocation: Location,
     branches: Vec<Pattern>,
     errors: Vec<ResolverError>,
+    usedPatterns: BTreeSet<i64>,
+    missingPatterns: BTreeSet<Pattern>,
     nextVar: i32,
     nodes: BTreeMap<DecisionPath, Node>,
 }
@@ -134,6 +136,8 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
             resolver: resolver,
             errors: Vec::new(),
             nextVar: 1,
+            usedPatterns: BTreeSet::new(),
+            missingPatterns: BTreeSet::new(),
             nodes: BTreeMap::new(),
         }
     }
@@ -285,83 +289,6 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         }
     }
 
-    pub fn isMatch(&self, this: &Pattern, other: &Pattern) -> bool {
-        match (&this.pattern, &other.pattern) {
-            (SimplePattern::Named(id1, args1), SimplePattern::Named(id2, args2)) => {
-                if id1 == id2 {
-                    if args1.len() != args2.len() {
-                        return false;
-                    }
-                    for (arg1, arg2) in args1.iter().zip(args2.iter()) {
-                        if !self.isMatch(arg1, arg2) {
-                            return false;
-                        }
-                    }
-                    true
-                } else {
-                    false
-                }
-            }
-            (SimplePattern::Wildcard, _) => true,
-            (SimplePattern::Bind(_, _), _) => true,
-            (SimplePattern::Tuple(args1), SimplePattern::Tuple(args2)) => {
-                if args1.len() != args2.len() {
-                    return false;
-                }
-                for (arg1, arg2) in args1.iter().zip(args2.iter()) {
-                    if !self.isMatch(arg1, arg2) {
-                        return false;
-                    }
-                }
-                true
-            }
-            (SimplePattern::StringLiteral(val1), SimplePattern::StringLiteral(val2)) => val1 == val2,
-            (SimplePattern::IntegerLiteral(val1), SimplePattern::IntegerLiteral(val2)) => val1 == val2,
-            _ => false,
-        }
-    }
-
-    // fn check(&mut self) -> Vec<Pattern> {
-    //     let mut allChoices = BTreeSet::new();
-    //     for branch in &self.branches {
-    //         let branch = self.resolve(branch);
-    //         allChoices.insert(branch.clone());
-    //         //println!("Pattern {}", branch);
-    //         let choices = self.generateChoices(&branch);
-    //         for choice in choices {
-    //             //println!("   Alt: {}", choice);
-    //             allChoices.insert(choice);
-    //         }
-    //     }
-    //     let mut remaining = allChoices.clone();
-    //     for branch in self.branches.iter() {
-    //         let resolvedBranch = self.resolve(branch);
-    //         let mut reduced = BTreeSet::new();
-    //         for m in &remaining {
-    //             let isMatch = self.isMatch(&resolvedBranch, &m);
-    //             //println!("{} ~ {} = {}", m, resolvedBranch, isMatch);
-    //             if !isMatch {
-    //                 reduced.insert(m.clone());
-    //             }
-    //         }
-    //         if reduced.len() == remaining.len() {
-    //             self.errors.push(ResolverError::RedundantPattern(branch.location.clone()));
-    //         }
-    //         remaining = reduced;
-    //     }
-    //     for m in remaining {
-    //         self.errors.push(ResolverError::MissingPattern(m.to_string(), self.bodyLocation.clone()));
-    //     }
-
-    //     for err in &self.errors {
-    //         err.reportOnly(self.resolver.ctx);
-    //     }
-    //     if !self.errors.is_empty() {
-    //         std::process::exit(1);
-    //     }
-    //     allChoices.into_iter().collect()
-    // }
-
     pub fn compile(&mut self) {
         let mut matches = Vec::new();
 
@@ -425,6 +352,16 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
 
         let mut node = self.buildNode(pendingPaths, &DecisionPath::new(), &dataTypes, &matches);
         node.add(self, &matches);
+
+        for (index, branch) in self.branches.clone().iter().enumerate() {
+            if !self.usedPatterns.contains(&(index as i64)) {
+                self.errors.push(ResolverError::RedundantPattern(branch.location.clone()));
+            }
+        }
+
+        for m in &self.missingPatterns {
+            self.errors.push(ResolverError::MissingPattern(m.to_string(), self.bodyLocation.clone()));
+        }
 
         for err in &self.errors {
             err.reportOnly(self.resolver.ctx);
@@ -623,11 +560,14 @@ impl Node {
                         }
                     }
                 }
-                if let Some(m) = localMatch {
-                    if m.kind == MatchKind::Alternative {
-                        compiler
-                            .errors
-                            .push(ResolverError::MissingPattern(m.pattern.to_string(), compiler.bodyLocation.clone()));
+                if let Some(m) = &localMatch {
+                    match &m.kind {
+                        MatchKind::Alternative => {
+                            compiler.missingPatterns.insert(m.pattern.clone());
+                        }
+                        MatchKind::UserDefined(index) => {
+                            compiler.usedPatterns.insert(*index);
+                        }
                     }
                     //println!("FINAL MATCH {} for {}, bindings: {}", end.decisionPath, m.kind, m.bindings);
                 }
