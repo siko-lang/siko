@@ -412,16 +412,27 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                 }
             }
         }
-        for (path, ty) in &dataTypes {
-            println!("{} {}", path, ty);
-        }
-        for m in &matches {
-            println!("Decision {}", m.decisionPath);
-        }
+
+        // for (path, ty) in &dataTypes {
+        //     println!("{} {}", path, ty);
+        // }
+        // for m in &matches {
+        //     println!("Decision {}", m.decisionPath);
+        // }
+
         let mut pendingPaths = Vec::new();
         pendingPaths.push(DataPath::Root);
+
         let mut node = self.buildNode(pendingPaths, &DecisionPath::new(), &dataTypes, &matches);
-        node.add(&matches);
+        node.add(self, &matches);
+
+        for err in &self.errors {
+            err.reportOnly(self.resolver.ctx);
+        }
+
+        if !self.errors.is_empty() {
+            std::process::exit(1);
+        }
     }
 
     fn buildNode(
@@ -579,12 +590,12 @@ enum Node {
 }
 
 impl Node {
-    fn add(&mut self, matches: &Vec<Match>) {
+    fn add(&mut self, compiler: &mut MatchCompiler, matches: &Vec<Match>) {
         match self {
-            Node::Tuple(tuple) => tuple.next.add(matches),
+            Node::Tuple(tuple) => tuple.next.add(compiler, matches),
             Node::Switch(switch) => {
                 for (_, node) in &mut switch.cases {
-                    node.add(matches);
+                    node.add(compiler, matches);
                 }
             }
             Node::Bind(_) => todo!(),
@@ -613,7 +624,12 @@ impl Node {
                     }
                 }
                 if let Some(m) = localMatch {
-                    println!("FINAL MATCH {} for {}, bindings: {}", end.decisionPath, m.kind, m.bindings);
+                    if m.kind == MatchKind::Alternative {
+                        compiler
+                            .errors
+                            .push(ResolverError::MissingPattern(m.pattern.to_string(), compiler.bodyLocation.clone()));
+                    }
+                    //println!("FINAL MATCH {} for {}, bindings: {}", end.decisionPath, m.kind, m.bindings);
                 }
             }
         }
@@ -649,7 +665,7 @@ fn removePaths(path: &DataPath, mut nodeDecisionPath: DecisionPath) -> DecisionP
     nodeDecisionPath
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 enum MatchKind {
     UserDefined(i64),
     Alternative,
