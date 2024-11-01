@@ -377,8 +377,10 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
             }
         }
 
-        for m in &self.missingPatterns {
-            self.errors.push(ResolverError::MissingPattern(m.to_string(), self.bodyLocation.clone()));
+        let missingPatterns: Vec<_> = self.missingPatterns.iter().map(|p| p.to_string()).collect();
+        if !missingPatterns.is_empty() {
+            self.errors
+                .push(ResolverError::MissingPattern(missingPatterns, self.bodyLocation.clone()));
         }
 
         for err in &self.errors {

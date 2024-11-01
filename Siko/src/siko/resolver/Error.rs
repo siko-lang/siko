@@ -5,7 +5,7 @@ pub enum ResolverError {
     UnknownName(String, Location),
     Ambiguous(String, Location),
     RedundantPattern(Location),
-    MissingPattern(String, Location),
+    MissingPattern(Vec<String>, Location),
     BreakOutsideLoop(Location),
     ContinueOutsideLoop(Location),
     InvalidInstanceType(String, Location),
@@ -34,8 +34,9 @@ impl ResolverError {
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }
-            ResolverError::MissingPattern(pat, l) => {
-                let slogan = format!("Missing pattern {}", ctx.yellow(pat));
+            ResolverError::MissingPattern(patterns, l) => {
+                let pats: Vec<_> = patterns.iter().map(|p| ctx.yellow(p)).collect();
+                let slogan = format!("Missing pattern(s): {}", pats.join(", "));
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }
