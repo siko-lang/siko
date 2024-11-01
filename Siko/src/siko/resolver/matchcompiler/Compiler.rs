@@ -1,5 +1,4 @@
-use crate::siko::hir::Function::{BlockId, InstructionId, InstructionKind};
-use crate::siko::hir::Type::Type;
+use crate::siko::hir::Function::{BlockId, InstructionId};
 use crate::siko::location::Location::Location;
 use crate::siko::qualifiedname::QualifiedName;
 use crate::siko::resolver::Error::ResolverError;
@@ -15,7 +14,7 @@ pub enum DataPath {
     Root,
     Tuple(Box<DataPath>, i64),
     TupleIndex(Box<DataPath>, i64),
-    Variant(Box<DataPath>, QualifiedName),
+    Variant(Box<DataPath>, QualifiedName, QualifiedName),
     IntegerLiteral(Box<DataPath>, String),
     StringLiteral(Box<DataPath>, String),
     Class(Box<DataPath>, QualifiedName),
@@ -28,11 +27,32 @@ impl fmt::Display for DataPath {
             DataPath::Root => write!(f, "Root"),
             DataPath::Tuple(path, len) => write!(f, "{}/tuple{}", path, len),
             DataPath::TupleIndex(path, index) => write!(f, "{}.t{}", path, index),
-            DataPath::Variant(path, name) => write!(f, "{}.{}", path, name),
+            DataPath::Variant(path, name, _) => write!(f, "{}.{}", path, name),
             DataPath::IntegerLiteral(path, literal) => write!(f, "{}[int:{}]", path, literal),
             DataPath::StringLiteral(path, literal) => write!(f, "{}[str:\"{}\"]", path, literal),
             DataPath::Class(path, name) => write!(f, "{}.{}", path, name),
             DataPath::Wildcard(path) => write!(f, "{}._", path),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum DataType {
+    Class(QualifiedName),
+    Enum(QualifiedName),
+    Tuple(i64),
+    Integer,
+    String,
+}
+
+impl fmt::Display for DataType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            DataType::Class(name) => write!(f, "Class({})", name),
+            DataType::Enum(name) => write!(f, "Enum({})", name),
+            DataType::Tuple(size) => write!(f, "Tuple({})", size),
+            DataType::Integer => write!(f, "Integer"),
+            DataType::String => write!(f, "String"),
         }
     }
 }
@@ -74,7 +94,7 @@ pub struct MatchCompiler<'a, 'b> {
     branches: Vec<Pattern>,
     errors: Vec<ResolverError>,
     nextVar: i32,
-    nodes: BTreeMap<InstructionId, Node>,
+    nodes: BTreeMap<DecisionPath, Node>,
     bindings: BTreeMap<DecisionPath, String>,
 }
 
@@ -202,8 +222,8 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         match &pattern.pattern {
             SimplePattern::Named(origId, args) => {
                 let name = self.resolver.moduleResolver.resolverName(&origId);
-                if let Some(_) = self.resolver.variants.get(&name) {
-                    let path = DataPath::Variant(Box::new(parentData.clone()), name);
+                if let Some(enumName) = self.resolver.variants.get(&name) {
+                    let path = DataPath::Variant(Box::new(parentData.clone()), name, enumName.clone());
                     let mut decision = decision.add(path.clone());
                     for arg in args {
                         decision = self.generateDecisions(arg, &path, &decision);
@@ -270,8 +290,6 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
     }
 
     fn check(&mut self) -> Vec<Pattern> {
-        //println!("=======================");
-        // let mut allDecisions = Vec::new();
         let mut allChoices = BTreeSet::new();
         for branch in &self.branches {
             let branch = self.resolve(branch);
@@ -314,9 +332,149 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
 
     pub fn compile(&mut self) {
         let patterns = self.check();
+        let mut dataTypes = BTreeMap::new();
+        let mut allDecisions = Vec::new();
         for pattern in &patterns {
-            println!("Compiling {}", pattern);
-            self.compilePattern(pattern, self.bodyId);
+            let decision = self.generateDecisions(pattern, &DataPath::Root, &DecisionPath::new());
+            for path in &decision.decisions {
+                match path {
+                    DataPath::Root => {}
+                    DataPath::Tuple(parent, count) => {
+                        dataTypes.insert(parent.clone(), DataType::Tuple(*count));
+                    }
+                    DataPath::TupleIndex(_, _) => {}
+                    DataPath::Variant(parent, _, enumName) => {
+                        dataTypes.insert(parent.clone(), DataType::Enum(enumName.clone()));
+                    }
+                    DataPath::IntegerLiteral(parent, _) => {
+                        dataTypes.insert(parent.clone(), DataType::Integer);
+                    }
+                    DataPath::StringLiteral(parent, _) => {
+                        dataTypes.insert(parent.clone(), DataType::String);
+                    }
+                    DataPath::Class(parent, name) => {
+                        dataTypes.insert(parent.clone(), DataType::Class(name.clone()));
+                    }
+                    DataPath::Wildcard(_) => {}
+                }
+            }
+            allDecisions.push(decision);
+        }
+        for (path, ty) in &dataTypes {
+            println!("{} {}", path, ty);
+        }
+        for decision in &allDecisions {
+            println!("Decision {}", decision);
+        }
+        let mut pendingPaths = Vec::new();
+        pendingPaths.push(DataPath::Root);
+        self.buildNode(pendingPaths, &DecisionPath::new(), &dataTypes, &allDecisions);
+    }
+
+    fn buildNode(
+        &mut self,
+        mut pendingPaths: Vec<DataPath>,
+        currentDecision: &DecisionPath,
+        dataTypes: &BTreeMap<Box<DataPath>, DataType>,
+        allDecisions: &Vec<DecisionPath>,
+    ) -> Node {
+        let currentPath = pendingPaths.remove(0);
+        if let Some(ty) = dataTypes.get(&currentPath) {
+            //println!("Building node for {}, {}", currentPath, ty);
+            //println!("Decision path {}", currentDecision);
+            match ty {
+                DataType::Class(className) => todo!(),
+                DataType::Enum(enumName) => {
+                    let e = self.resolver.enums.get(enumName).expect("enumName not found");
+                    let mut cases = BTreeMap::new();
+                    for variant in &e.variants {
+                        let casePath = DataPath::Variant(Box::new(currentPath.clone()), variant.name.clone(), enumName.clone());
+                        let currentDecision = currentDecision.add(casePath.clone());
+                        let pendings = pendingPaths.clone();
+                        pendingPaths.insert(0, casePath.clone());
+                        let node = self.buildNode(pendings, &currentDecision, dataTypes, allDecisions);
+                        cases.insert(Case::Variant(variant.name.clone()), node);
+                    }
+                    let switch = Switch { cases: cases };
+                    Node::Switch(switch)
+                }
+                DataType::Tuple(size) => {
+                    let currentDecision = currentDecision.add(DataPath::Tuple(Box::new(currentPath.clone()), *size));
+                    let args = std::iter::repeat(Node::Wildcard).take(*size as usize).collect();
+                    let mut pendings = Vec::new();
+                    for index in 0..*size {
+                        let argPath = DataPath::TupleIndex(Box::new(currentPath.clone()), index);
+                        pendings.insert(0, argPath);
+                    }
+                    pendings.reverse();
+                    pendings.extend(pendingPaths.clone());
+                    self.buildNode(pendings, &currentDecision, dataTypes, allDecisions);
+                    let tuple = Tuple { args: args, next: None };
+                    Node::Tuple(tuple)
+                }
+                DataType::Integer => {
+                    let mut cases = BTreeMap::new();
+                    for decision in allDecisions {
+                        if decision.decisions.starts_with(&currentDecision.decisions[..]) {
+                            if decision.decisions.len() > currentDecision.decisions.len() + 1 {
+                                match &decision.decisions[currentDecision.decisions.len()] {
+                                    DataPath::IntegerLiteral(_, value) => {
+                                        let path = DataPath::IntegerLiteral(Box::new(currentPath.clone()), value.clone());
+                                        let mut pendingPaths = pendingPaths.clone();
+                                        pendingPaths.insert(0, path.clone());
+                                        let currentDecision = &currentDecision.add(path);
+                                        let node = self.buildNode(pendingPaths, currentDecision, dataTypes, allDecisions);
+                                        cases.insert(Case::Integer(value.clone()), node);
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                    let path = DataPath::Wildcard(Box::new(currentPath.clone()));
+                    let mut pendingPaths = pendingPaths.clone();
+                    pendingPaths.insert(0, path.clone());
+                    let currentDecision = &currentDecision.add(path);
+                    let node = self.buildNode(pendingPaths, currentDecision, dataTypes, allDecisions);
+                    cases.insert(Case::Default, node);
+                    let switch = Switch { cases: cases };
+                    Node::Switch(switch)
+                }
+                DataType::String => {
+                    let mut cases = BTreeMap::new();
+                    for decision in allDecisions {
+                        if decision.decisions.starts_with(&currentDecision.decisions[..]) {
+                            if decision.decisions.len() >= currentDecision.decisions.len() + 1 {
+                                match &decision.decisions[currentDecision.decisions.len()] {
+                                    DataPath::StringLiteral(_, value) => {
+                                        let path = DataPath::StringLiteral(Box::new(currentPath.clone()), value.clone());
+                                        let mut pendingPaths = pendingPaths.clone();
+                                        pendingPaths.insert(0, path.clone());
+                                        let currentDecision = &currentDecision.add(path);
+                                        let node = self.buildNode(pendingPaths, currentDecision, dataTypes, allDecisions);
+                                        cases.insert(Case::Integer(value.clone()), node);
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                    let path = DataPath::Wildcard(Box::new(currentPath.clone()));
+                    let mut pendingPaths = pendingPaths.clone();
+                    pendingPaths.insert(0, path.clone());
+                    let currentDecision = &currentDecision.add(path);
+                    let node = self.buildNode(pendingPaths, currentDecision, dataTypes, allDecisions);
+                    cases.insert(Case::Default, node);
+                    let switch = Switch { cases: cases };
+                    Node::Switch(switch)
+                }
+            }
+        } else {
+            if pendingPaths.is_empty() {
+                println!("END {}", currentDecision);
+                return Node::Wildcard;
+            }
+            self.buildNode(pendingPaths, currentDecision, dataTypes, allDecisions)
         }
     }
 
@@ -326,109 +484,108 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         format!("pattern_var_{}", v)
     }
 
-    fn compilePattern(&mut self, pattern: &Pattern, root: InstructionId) {
-        match &pattern.pattern {
-            SimplePattern::Named(id, args) => {
-                let variantName = self.resolver.moduleResolver.resolverName(id);
-                if let Some(enumName) = self.resolver.variants.get(&variantName) {
-                    if !self.nodes.contains_key(&root) {
-                        let mut cases = BTreeMap::new();
-                        let e = self.resolver.enums.get(enumName).expect("enum not found");
-                        for variant in &e.variants {
-                            let blockId = self.resolver.createBlock();
-                            let instruction = InstructionKind::Transform(root, Type::Tuple(variant.items.clone()));
-                            let transformId = self.resolver.addInstructionToBlock(blockId, instruction, pattern.location.clone(), false);
-                            let mut argIds = Vec::new();
-                            for (index, arg) in args.iter().enumerate() {
-                                let argId = self.resolver.addInstructionToBlock(
-                                    blockId,
-                                    InstructionKind::TupleIndex(transformId, index as u32),
-                                    arg.location.clone(),
-                                    false,
-                                );
-                                argIds.push(argId);
-                            }
-                            let case = Case::Variant(variant.name.clone(), argIds);
-                            cases.insert(case, blockId);
-                        }
-                        let switch = Switch { var: root, cases: cases };
-                        self.nodes.insert(root, Node::Switch(switch));
-                    }
-                    if let Node::Switch(switch) = self.nodes.get(&root).cloned().expect("switch node not found") {
-                        for (case, _) in &switch.cases {
-                            if let Case::Variant(variant, argIds) = case {
-                                if *variant == variantName {
-                                    for (index, arg) in args.iter().enumerate() {
-                                        self.compilePattern(arg, argIds[index].clone());
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            SimplePattern::Bind(value, _) => {
-                if !self.nodes.contains_key(&root) {
-                    let blockId = self.resolver.createBlock();
-                    let instruction = InstructionKind::Bind(value.toString(), root);
-                    self.resolver.addInstructionToBlock(blockId, instruction, pattern.location.clone(), false);
-                    let bind = Bind {
-                        var: root,
-                        name: value.toString(),
-                        blockId: blockId,
-                    };
-                    self.nodes.insert(root, Node::Bind(bind));
-                }
-            }
-            SimplePattern::Tuple(args) => {
-                if !self.nodes.contains_key(&root) {
-                    let blockId = self.resolver.createBlock();
-                    let mut argIds = Vec::new();
-                    for (index, arg) in args.iter().enumerate() {
-                        let argId = self.resolver.addInstructionToBlock(
-                            blockId,
-                            InstructionKind::TupleIndex(root, index as u32),
-                            arg.location.clone(),
-                            false,
-                        );
-                        argIds.push(argId);
-                    }
-                    let tuple = Tuple {
-                        var: root,
-                        args: argIds,
-                        blockId: blockId,
-                    };
-                    self.nodes.insert(root, Node::Tuple(tuple));
-                }
-                if let Node::Tuple(tuple) = self.nodes.get(&root).cloned().expect("tuple node not found") {
-                    for (index, arg) in args.iter().enumerate() {
-                        self.compilePattern(arg, tuple.args[index].clone());
-                    }
-                }
-            }
-            SimplePattern::StringLiteral(v) => {
-                println!("switch {} case string literal {}", root, v)
-            }
-            SimplePattern::IntegerLiteral(v) => {
-                println!("switch {} case integer literal {}", root, v)
-            }
-            SimplePattern::Wildcard => {
-                println!("switch {} case default", root)
-            }
-        }
-    }
+    // fn compilePattern(&mut self, pattern: &Pattern, root: InstructionId) {
+    //     match &pattern.pattern {
+    //         SimplePattern::Named(id, args) => {
+    //             let variantName = self.resolver.moduleResolver.resolverName(id);
+    //             if let Some(enumName) = self.resolver.variants.get(&variantName) {
+    //                 if !self.nodes.contains_key(&root) {
+    //                     let mut cases = BTreeMap::new();
+    //                     let e = self.resolver.enums.get(enumName).expect("enum not found");
+    //                     for variant in &e.variants {
+    //                         let blockId = self.resolver.createBlock();
+    //                         let instruction = InstructionKind::Transform(root, Type::Tuple(variant.items.clone()));
+    //                         let transformId = self.resolver.addInstructionToBlock(blockId, instruction, pattern.location.clone(), false);
+    //                         let mut argIds = Vec::new();
+    //                         for (index, arg) in args.iter().enumerate() {
+    //                             let argId = self.resolver.addInstructionToBlock(
+    //                                 blockId,
+    //                                 InstructionKind::TupleIndex(transformId, index as u32),
+    //                                 arg.location.clone(),
+    //                                 false,
+    //                             );
+    //                             argIds.push(argId);
+    //                         }
+    //                         let case = Case::Variant(variant.name.clone(), argIds);
+    //                         cases.insert(case, blockId);
+    //                     }
+    //                     let switch = Switch { var: root, cases: cases };
+    //                     self.nodes.insert(root, Node::Switch(switch));
+    //                 }
+    //                 if let Node::Switch(switch) = self.nodes.get(&root).cloned().expect("switch node not found") {
+    //                     for (case, _) in &switch.cases {
+    //                         if let Case::Variant(variant, argIds) = case {
+    //                             if *variant == variantName {
+    //                                 for (index, arg) in args.iter().enumerate() {
+    //                                     self.compilePattern(arg, argIds[index].clone());
+    //                                 }
+    //                             }
+    //                         }
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //         SimplePattern::Bind(value, _) => {
+    //             if !self.nodes.contains_key(&root) {
+    //                 let blockId = self.resolver.createBlock();
+    //                 let instruction = InstructionKind::Bind(value.toString(), root);
+    //                 self.resolver.addInstructionToBlock(blockId, instruction, pattern.location.clone(), false);
+    //                 let bind = Bind {
+    //                     var: root,
+    //                     name: value.toString(),
+    //                     blockId: blockId,
+    //                 };
+    //                 self.nodes.insert(root, Node::Bind(bind));
+    //             }
+    //         }
+    //         SimplePattern::Tuple(args) => {
+    //             if !self.nodes.contains_key(&root) {
+    //                 let blockId = self.resolver.createBlock();
+    //                 let mut argIds = Vec::new();
+    //                 for (index, arg) in args.iter().enumerate() {
+    //                     let argId = self.resolver.addInstructionToBlock(
+    //                         blockId,
+    //                         InstructionKind::TupleIndex(root, index as u32),
+    //                         arg.location.clone(),
+    //                         false,
+    //                     );
+    //                     argIds.push(argId);
+    //                 }
+    //                 let tuple = Tuple {
+    //                     var: root,
+    //                     args: argIds,
+    //                     blockId: blockId,
+    //                 };
+    //                 self.nodes.insert(root, Node::Tuple(tuple));
+    //             }
+    //             if let Node::Tuple(tuple) = self.nodes.get(&root).cloned().expect("tuple node not found") {
+    //                 for (index, arg) in args.iter().enumerate() {
+    //                     self.compilePattern(arg, tuple.args[index].clone());
+    //                 }
+    //             }
+    //         }
+    //         SimplePattern::StringLiteral(v) => {
+    //             println!("switch {} case string literal {}", root, v)
+    //         }
+    //         SimplePattern::IntegerLiteral(v) => {
+    //             println!("switch {} case integer literal {}", root, v)
+    //         }
+    //         SimplePattern::Wildcard => {
+    //             println!("switch {} case default", root)
+    //         }
+    //     }
+    // }
 }
 
 #[derive(Clone)]
 struct Tuple {
-    var: InstructionId,
-    args: Vec<InstructionId>,
-    blockId: BlockId,
+    args: Vec<Node>,
+    next: Option<DecisionPath>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Case {
-    Variant(QualifiedName, Vec<InstructionId>),
+    Variant(QualifiedName),
     Integer(String),
     String(String),
     Default,
@@ -436,8 +593,7 @@ enum Case {
 
 #[derive(Clone)]
 struct Switch {
-    var: InstructionId,
-    cases: BTreeMap<Case, BlockId>,
+    cases: BTreeMap<Case, Node>,
 }
 
 #[derive(Clone)]
@@ -452,4 +608,5 @@ enum Node {
     Tuple(Tuple),
     Switch(Switch),
     Bind(Bind),
+    Wildcard,
 }
