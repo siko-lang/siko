@@ -9,11 +9,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::iter::repeat;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DataPath {
     Root,
     Tuple(Box<DataPath>, i64),
     TupleIndex(Box<DataPath>, i64),
+    ItemIndex(Box<DataPath>, i64),
     Variant(Box<DataPath>, QualifiedName, QualifiedName),
     IntegerLiteral(Box<DataPath>, String),
     StringLiteral(Box<DataPath>, String),
@@ -40,6 +41,7 @@ impl DataPath {
             DataPath::Root => DataPath::Root,
             DataPath::Tuple(p, _) => *p.clone(),
             DataPath::TupleIndex(p, _) => *p.clone(),
+            DataPath::ItemIndex(p, _) => *p.clone(),
             DataPath::Variant(p, _, _) => *p.clone(),
             DataPath::IntegerLiteral(p, _) => *p.clone(),
             DataPath::StringLiteral(p, _) => *p.clone(),
@@ -55,12 +57,19 @@ impl fmt::Display for DataPath {
             DataPath::Root => write!(f, "Root"),
             DataPath::Tuple(path, len) => write!(f, "{}/tuple{}", path, len),
             DataPath::TupleIndex(path, index) => write!(f, "{}.t{}", path, index),
+            DataPath::ItemIndex(path, index) => write!(f, "{}.i{}", path, index),
             DataPath::Variant(path, name, _) => write!(f, "{}.{}", path, name),
             DataPath::IntegerLiteral(path, literal) => write!(f, "{}[int:{}]", path, literal),
             DataPath::StringLiteral(path, literal) => write!(f, "{}[str:\"{}\"]", path, literal),
             DataPath::Class(path, name) => write!(f, "{}.{}", path, name),
             DataPath::Wildcard(path) => write!(f, "{}._", path),
         }
+    }
+}
+
+impl fmt::Debug for DataPath {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self)
     }
 }
 
@@ -71,6 +80,7 @@ pub enum DataType {
     Tuple(i64),
     Integer,
     String,
+    Wildcard,
 }
 
 impl fmt::Display for DataType {
@@ -81,6 +91,7 @@ impl fmt::Display for DataType {
             DataType::Tuple(size) => write!(f, "Tuple({})", size),
             DataType::Integer => write!(f, "Integer"),
             DataType::String => write!(f, "String"),
+            DataType::Wildcard => write!(f, "_"),
         }
     }
 }
@@ -261,7 +272,8 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                 if let Some(enumName) = self.resolver.variants.get(&name) {
                     let path = DataPath::Variant(Box::new(parentData.clone()), name, enumName.clone());
                     let mut decision = decision.add(path.clone());
-                    for arg in args {
+                    for (index, arg) in args.iter().enumerate() {
+                        let path = DataPath::ItemIndex(Box::new(path.clone()), index as i64);
                         (decision, bindings) = self.generateDecisions(arg, &path, &decision, bindings);
                     }
                     (decision, bindings)
@@ -295,6 +307,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         for (index, branch) in self.branches.clone().iter().enumerate() {
             let branch = self.resolve(branch);
             let (decision, bindings) = self.generateDecisions(&branch, &DataPath::Root, &DecisionPath::new(), Bindings::new());
+            //println!("Pattern {}\n decision: {}", branch, decision);
             let choices = self.generateChoices(&branch);
             matches.push(Match {
                 kind: MatchKind::UserDefined(index as i64),
@@ -323,6 +336,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                         dataTypes.insert(parent.clone(), DataType::Tuple(*count));
                     }
                     DataPath::TupleIndex(_, _) => {}
+                    DataPath::ItemIndex(_, _) => {}
                     DataPath::Variant(parent, _, enumName) => {
                         dataTypes.insert(parent.clone(), DataType::Enum(enumName.clone()));
                     }
@@ -335,7 +349,11 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     DataPath::Class(parent, name) => {
                         dataTypes.insert(parent.clone(), DataType::Class(name.clone()));
                     }
-                    DataPath::Wildcard(_) => {}
+                    DataPath::Wildcard(parent) => {
+                        if !dataTypes.contains_key(parent.as_ref()) {
+                            dataTypes.insert(parent.clone(), DataType::Wildcard);
+                        }
+                    }
                 }
             }
         }
@@ -379,9 +397,16 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         dataTypes: &BTreeMap<Box<DataPath>, DataType>,
         allMatches: &Vec<Match>,
     ) -> Node {
+        //println!("buildNode: {:?} | {}", pendingPaths, currentDecision);
+        if pendingPaths.is_empty() {
+            let end = End {
+                decisionPath: currentDecision.clone(),
+            };
+            return Node::End(end);
+        }
         let currentPath = pendingPaths.remove(0);
         if let Some(ty) = dataTypes.get(&currentPath) {
-            //println!("Building node for {}, {} / [{}]", currentPath, ty, currentDecision);
+            //println!("Building node for {}, {} / [{}] / {:?}", currentPath, ty, currentDecision, pendingPaths);
             match ty {
                 DataType::Class(_) => todo!(),
                 DataType::Enum(enumName) => {
@@ -390,8 +415,10 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     for variant in &e.variants {
                         let casePath = DataPath::Variant(Box::new(currentPath.clone()), variant.name.clone(), enumName.clone());
                         let currentDecision = currentDecision.add(casePath.clone());
-                        let pendings = pendingPaths.clone();
-                        pendingPaths.insert(0, casePath.clone());
+                        let mut pendings = pendingPaths.clone();
+                        for index in 0..variant.items.len() {
+                            pendings.insert(0, DataPath::ItemIndex(Box::new(casePath.clone()), (variant.items.len() - index) as i64));
+                        }
                         let node = self.buildNode(pendings, &currentDecision, dataTypes, allMatches);
                         cases.insert(Case::Variant(variant.name.clone()), node);
                     }
@@ -475,14 +502,15 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     let switch = Switch { cases: cases };
                     Node::Switch(switch)
                 }
+                DataType::Wildcard => {
+                    let path = DataPath::Wildcard(Box::new(currentPath.clone()));
+                    pendingPaths.insert(0, path.clone());
+                    let currentDecision = &currentDecision.add(path);
+                    let node = self.buildNode(pendingPaths, currentDecision, dataTypes, allMatches);
+                    Node::Wildcard(Wildcard { next: Box::new(node) })
+                }
             }
         } else {
-            if pendingPaths.is_empty() {
-                let end = End {
-                    decisionPath: currentDecision.clone(),
-                };
-                return Node::End(end);
-            }
             self.buildNode(pendingPaths, currentDecision, dataTypes, allMatches)
         }
     }
@@ -519,11 +547,17 @@ struct End {
 }
 
 #[derive(Clone)]
+struct Wildcard {
+    next: Box<Node>,
+}
+
+#[derive(Clone)]
 enum Node {
     Tuple(Tuple),
     Switch(Switch),
     Bind(Bind),
     End(End),
+    Wildcard(Wildcard),
 }
 
 impl Node {
@@ -536,6 +570,9 @@ impl Node {
                 }
             }
             Node::Bind(_) => todo!(),
+            Node::Wildcard(w) => {
+                w.next.add(compiler, matches);
+            }
             Node::End(end) => {
                 let mut localMatch: Option<Match> = None;
                 for m in matches {
