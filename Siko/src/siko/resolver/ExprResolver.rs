@@ -31,7 +31,7 @@ struct LoopInfo {
 
 pub struct ExprResolver<'a> {
     pub ctx: &'a ReportContext,
-    body: Body,
+    pub body: Body,
     blockId: u32,
     valueId: u32,
     pub moduleResolver: &'a ModuleResolver<'a>,
@@ -74,6 +74,10 @@ impl<'a> ExprResolver<'a> {
 
     pub fn setTargetBlockId(&mut self, id: BlockId) {
         self.targetBlockId = id;
+    }
+
+    pub fn getTargetBlockId(&mut self) -> BlockId {
+        self.targetBlockId
     }
 
     fn resolveBlock<'e>(&mut self, block: &Block, env: &'e Environment<'e>) {
@@ -185,8 +189,8 @@ impl<'a> ExprResolver<'a> {
             }
             SimpleExpr::If(cond, trueBranch, falseBranch) => {
                 let condId = self.resolveExpr(cond, env);
-                let name = self.createValue("if_var");
-                let declareId = self.addInstruction(InstructionKind::DeclareVar(name.clone()), expr.location.clone());
+                let ifValue = self.createValue("if_var");
+                let declareId = self.addInstruction(InstructionKind::DeclareVar(ifValue.clone()), expr.location.clone());
                 let currentBlockId = self.targetBlockId;
                 let contBlockId = self.createBlock();
                 let trueBlockId = self.createBlock();
@@ -195,7 +199,7 @@ impl<'a> ExprResolver<'a> {
                         self.setTargetBlockId(trueBlockId);
                         self.resolveBlock(block, env);
                         self.addInstruction(
-                            InstructionKind::Assign(name.clone(), self.body.getBlockById(trueBlockId).getLastId()),
+                            InstructionKind::Assign(ifValue.clone(), self.body.getBlockById(trueBlockId).getLastId()),
                             expr.location.clone(),
                         );
                         self.addInstruction(InstructionKind::Jump(contBlockId), expr.location.clone());
@@ -210,7 +214,7 @@ impl<'a> ExprResolver<'a> {
                                 self.setTargetBlockId(falseBlockId);
                                 self.resolveBlock(block, env);
                                 self.addInstruction(
-                                    InstructionKind::Assign(name.clone(), self.body.getBlockById(falseBlockId).getLastId()),
+                                    InstructionKind::Assign(ifValue.clone(), self.body.getBlockById(falseBlockId).getLastId()),
                                     expr.location.clone(),
                                 );
                                 self.addInstruction(InstructionKind::Jump(contBlockId), expr.location.clone());
@@ -231,7 +235,7 @@ impl<'a> ExprResolver<'a> {
 
                 self.setTargetBlockId(contBlockId);
                 let ifValueId = self.addInstruction(
-                    InstructionKind::ValueRef(ValueKind::Value(name, declareId), Vec::new(), Vec::new()),
+                    InstructionKind::ValueRef(ValueKind::Value(ifValue, declareId), Vec::new(), Vec::new()),
                     expr.location.clone(),
                 );
                 ifValueId
@@ -315,8 +319,7 @@ impl<'a> ExprResolver<'a> {
             SimpleExpr::Match(body, branches) => {
                 let bodyId = self.resolveExpr(body, env);
                 let mut matchResolver = MatchCompiler::new(self, bodyId, body.location.clone(), branches.clone(), env);
-                matchResolver.compile();
-                self.addInstruction(InstructionKind::Tuple(vec![]), expr.location.clone())
+                matchResolver.compile()
             }
             SimpleExpr::Block(block) => {
                 self.resolveBlock(block, env);

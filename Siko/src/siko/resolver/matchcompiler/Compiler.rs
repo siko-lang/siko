@@ -1,4 +1,4 @@
-use crate::siko::hir::Function::{BlockId, InstructionId, InstructionKind, IntegerCase, StringCase, VariantCase};
+use crate::siko::hir::Function::{BlockId, InstructionId, InstructionKind, IntegerCase, StringCase, ValueKind, VariantCase};
 use crate::siko::hir::Type::Type;
 use crate::siko::location::Location::Location;
 use crate::siko::qualifiedname::QualifiedName;
@@ -140,6 +140,9 @@ pub struct MatchCompiler<'a, 'b> {
     nextVar: i32,
     nodes: BTreeMap<DecisionPath, Node>,
     parentEnv: &'a Environment<'a>,
+    matchValue: String,
+    declareId: InstructionId,
+    contBlockId: BlockId,
 }
 
 impl<'a, 'b> MatchCompiler<'a, 'b> {
@@ -150,6 +153,9 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         branches: Vec<Branch>,
         parentEnv: &'a Environment<'a>,
     ) -> MatchCompiler<'a, 'b> {
+        let matchValue = resolver.createValue("match_var");
+        let declareId = resolver.addInstruction(InstructionKind::DeclareVar(matchValue.clone()), bodyLocation.clone());
+        let contBlockId = resolver.createBlock();
         MatchCompiler {
             bodyLocation: bodyLocation,
             bodyId: bodyId,
@@ -161,6 +167,9 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
             missingPatterns: BTreeSet::new(),
             nodes: BTreeMap::new(),
             parentEnv: parentEnv,
+            matchValue: matchValue,
+            declareId: declareId,
+            contBlockId: contBlockId,
         }
     }
 
@@ -312,7 +321,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         }
     }
 
-    pub fn compile(&mut self) {
+    pub fn compile(&mut self) -> InstructionId {
         let mut matches = Vec::new();
 
         for (index, branch) in self.branches.clone().iter().enumerate() {
@@ -404,6 +413,13 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
 
         let ctx = CompileContext::new().add(node.getDataPath(), self.bodyId);
         self.compileNode(&node, &ctx);
+        let valueId = self.resolver.addInstructionToBlock(
+            self.contBlockId,
+            InstructionKind::ValueRef(ValueKind::Value(self.matchValue.clone(), self.declareId), Vec::new(), Vec::new()),
+            self.bodyLocation.clone(),
+            false,
+        );
+        valueId
     }
 
     fn compileNode(&mut self, node: &Node, ctx: &CompileContext) -> BlockId {
@@ -526,12 +542,19 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                         env.addValue(name.clone(), new, bindId);
                     }
                     self.resolver.resolveExpr(&branch.body, &mut env);
+                    let last = self.resolver.getTargetBlockId();
+                    self.resolver.addInstruction(
+                        InstructionKind::Assign(self.matchValue.clone(), self.resolver.body.getBlockById(last).getLastId()),
+                        self.bodyLocation.clone(),
+                    );
+                    self.resolver
+                        .addInstruction(InstructionKind::Jump(self.contBlockId), self.bodyLocation.clone());
                     blockId
                 } else {
                     unreachable!()
                 }
             }
-            Node::Wildcard(wildcard) => todo!(),
+            Node::Wildcard(_) => todo!(),
         }
     }
 
@@ -742,8 +765,8 @@ impl Node {
         match self {
             Node::Tuple(tuple) => tuple.dataPath.clone(),
             Node::Switch(switch) => switch.dataPath.clone(),
-            Node::End(end) => todo!(),
-            Node::Wildcard(wildcard) => todo!(),
+            Node::End(_) => unreachable!(),
+            Node::Wildcard(_) => unreachable!(),
         }
     }
 
