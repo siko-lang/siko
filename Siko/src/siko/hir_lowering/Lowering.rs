@@ -1,14 +1,16 @@
 use crate::siko::{
     hir::{
-        Data::Class as HirClass,
-        Data::Enum as HirEnum,
+        Data::{Class as HirClass, Enum as HirEnum},
         Function::{Block, BlockId, Function as HirFunction, FunctionKind, InstructionId, InstructionKind as HirInstructionKind},
         Program::Program as HirProgram,
         Type::Type as HirType,
     },
     mir::{
         Data::{Field as MirField, Struct, Union, Variant as MirVariant},
-        Function::{Block as MirBlock, EnumCase as MirEnumCase, Function as MirFunction, Instruction, Param as MirParam, Value, Variable},
+        Function::{
+            Block as MirBlock, EnumCase as MirEnumCase, Function as MirFunction, FunctionKind as MirFunctionKind, Instruction, Param as MirParam,
+            Value, Variable,
+        },
         Program::Program as MirProgram,
         Type::Type as MirType,
     },
@@ -129,21 +131,17 @@ impl<'a> Builder<'a> {
             };
             args.push(arg);
         }
-        let mut mirFunction = MirFunction {
-            name: convertName(&self.function.name),
-            args: args,
-            result: lowerType(&self.function.result, &self.program),
-            blocks: Vec::new(),
-        };
+
+        let mut blocks = Vec::new();
         match self.function.kind {
             FunctionKind::ClassCtor => {
-                mirFunction.blocks.push(self.createClassCtor());
+                blocks.push(self.createClassCtor());
             }
             FunctionKind::UserDefined => {
                 if let Some(body) = self.function.body.clone() {
                     for block in &body.blocks {
                         let mirBlock = self.lowerBlock(block);
-                        mirFunction.blocks.push(mirBlock);
+                        blocks.push(mirBlock);
                     }
                 }
             }
@@ -164,11 +162,17 @@ impl<'a> Builder<'a> {
                     block.instructions.push(Instruction::Declare(var1.clone()));
                     block.instructions.push(Instruction::Reference(var2.clone(), var1.clone()));
                     block.instructions.push(Instruction::Return(Value::Void));
-                    mirFunction.blocks.push(block);
+                    blocks.push(block);
                 }
             }
             FunctionKind::Extern => {}
         }
+        let mut mirFunction = MirFunction {
+            name: convertName(&self.function.name),
+            args: args,
+            result: lowerType(&self.function.result, &self.program),
+            kind: MirFunctionKind::UserDefined(blocks),
+        };
         mirFunction
     }
 
@@ -270,6 +274,8 @@ pub fn lowerEnum(e: &HirEnum, program: &HirProgram) -> Union {
     Union {
         name: convertName(&e.name),
         variants: variants,
+        size: 0,
+        alignment: 0,
     }
 }
 

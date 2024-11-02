@@ -14,23 +14,51 @@ impl fmt::Display for Param {
     }
 }
 
+pub enum FunctionKind {
+    UserDefined(Vec<Block>),
+    ClassCtor,
+    VariantCtor,
+}
+
 pub struct Function {
     pub name: String,
     pub args: Vec<Param>,
     pub result: Type,
-    pub blocks: Vec<Block>,
+    pub kind: FunctionKind,
 }
 
 impl fmt::Display for Function {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "Function: {}\nArguments: ({}) -> {}\nBlocks:\n{}",
-            self.name,
-            self.args.iter().map(|arg| format!("{}", arg)).collect::<Vec<_>>().join(", "),
-            self.result,
-            self.blocks.iter().map(|block| format!("{}", block)).collect::<Vec<_>>().join("\n")
-        )
+        match &self.kind {
+            FunctionKind::ClassCtor => {
+                write!(
+                    f,
+                    "Function: {}\nArguments: ({}) -> {}\nClassCtor",
+                    self.name,
+                    self.args.iter().map(|arg| format!("{}", arg)).collect::<Vec<_>>().join(", "),
+                    self.result,
+                )
+            }
+            FunctionKind::VariantCtor => {
+                write!(
+                    f,
+                    "Function: {}\nArguments: ({}) -> {}\nVariantCtor",
+                    self.name,
+                    self.args.iter().map(|arg| format!("{}", arg)).collect::<Vec<_>>().join(", "),
+                    self.result,
+                )
+            }
+            FunctionKind::UserDefined(blocks) => {
+                write!(
+                    f,
+                    "Function: {}\nArguments: ({}) -> {}\nBlocks:\n{}",
+                    self.name,
+                    self.args.iter().map(|arg| format!("{}", arg)).collect::<Vec<_>>().join(", "),
+                    self.result,
+                    blocks.iter().map(|block| format!("{}", block)).collect::<Vec<_>>().join("\n")
+                )
+            }
+        }
     }
 }
 

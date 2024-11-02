@@ -20,6 +20,8 @@ pub struct Field {
 pub struct Union {
     pub name: String,
     pub variants: Vec<Variant>,
+    pub size: u32,
+    pub alignment: u32,
 }
 
 #[derive(Clone)]

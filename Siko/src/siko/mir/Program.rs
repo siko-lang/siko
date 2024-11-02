@@ -4,7 +4,7 @@ use crate::siko::util::DependencyProcessor;
 
 use super::{
     Data::{Struct, Union},
-    Function::{Block, Function, Instruction, Param, Value, Variable},
+    Function::{Block, Function, FunctionKind, Instruction, Param, Value, Variable},
     Type::Type,
 };
 
@@ -74,16 +74,46 @@ impl Program {
         self.structs.get(n).cloned().expect("struct not found")
     }
 
+    fn getUnion(&self, n: &String) -> Union {
+        self.unions.get(n).cloned().expect("union not found")
+    }
+
     fn calculateSizeAndAlignment(&mut self) {
         let mut allDeps = BTreeMap::new();
+
         for (_, s) in &self.structs {
             allDeps.insert(s.name.clone(), Vec::new());
         }
+
+        for (_, u) in &self.unions {
+            allDeps.insert(u.name.clone(), Vec::new());
+        }
+
         for (_, s) in &self.structs {
             for f in &s.fields {
                 match &f.ty {
                     Type::Struct(n) => {
                         let deps = allDeps.get_mut(&s.name).expect("deps not found");
+                        deps.push(n.clone());
+                    }
+                    Type::Union(n) => {
+                        let deps = allDeps.get_mut(&s.name).expect("deps not found");
+                        deps.push(n.clone());
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        for (_, u) in &self.unions {
+            for v in &u.variants {
+                match &v.ty {
+                    Type::Struct(n) => {
+                        let deps = allDeps.get_mut(&u.name).expect("deps not found");
+                        deps.push(n.clone());
+                    }
+                    Type::Union(n) => {
+                        let deps = allDeps.get_mut(&u.name).expect("deps not found");
                         deps.push(n.clone());
                     }
                     _ => {}
@@ -97,42 +127,84 @@ impl Program {
             if group.items.len() != 1 {
                 panic!("Minic: cyclic data dependency {:?}", groups);
             }
-            let mut item = self.getStruct(&group.items[0]);
-            let mut offset = 0;
-            let mut totalAlignment = 4;
-            for f in &item.fields {
-                let size = match &f.ty {
-                    Type::Void => 0,
-                    Type::Int8 => 1,
-                    Type::Int16 => 2,
-                    Type::Int32 => 4,
-                    Type::Int64 => 8,
-                    Type::Char => 1,
-                    Type::Struct(n) => self.getStruct(n).size,
-                    Type::Union(n) => todo!(),
-                    Type::Ptr(_) => 8,
-                };
-                let alignment = match &f.ty {
-                    Type::Void => 0,
-                    Type::Int8 => 1,
-                    Type::Int16 => 2,
-                    Type::Int32 => 4,
-                    Type::Int64 => 8,
-                    Type::Char => 1,
-                    Type::Struct(n) => self.getStruct(n).alignment,
-                    Type::Union(n) => todo!(),
-                    Type::Ptr(_) => 8,
-                };
-                totalAlignment = std::cmp::max(totalAlignment, alignment);
-                offset += size;
-                let padding = (alignment - (offset % alignment)) % alignment;
+            let itemName = &group.items[0];
+            if self.structs.contains_key(itemName) {
+                let mut item = self.getStruct(itemName);
+                let mut offset = 0;
+                let mut totalAlignment = 4;
+                for f in &item.fields {
+                    let size = match &f.ty {
+                        Type::Void => 0,
+                        Type::Int8 => 1,
+                        Type::Int16 => 2,
+                        Type::Int32 => 4,
+                        Type::Int64 => 8,
+                        Type::Char => 1,
+                        Type::Struct(n) => self.getStruct(n).size,
+                        Type::Union(n) => self.getUnion(n).size,
+                        Type::Ptr(_) => 8,
+                    };
+                    let alignment = match &f.ty {
+                        Type::Void => 0,
+                        Type::Int8 => 1,
+                        Type::Int16 => 2,
+                        Type::Int32 => 4,
+                        Type::Int64 => 8,
+                        Type::Char => 1,
+                        Type::Struct(n) => self.getStruct(n).alignment,
+                        Type::Union(n) => self.getUnion(n).alignment,
+                        Type::Ptr(_) => 8,
+                    };
+                    totalAlignment = std::cmp::max(totalAlignment, alignment);
+                    offset += size;
+                    let padding = (alignment - (offset % alignment)) % alignment;
+                    offset += padding;
+                }
+                let padding = (totalAlignment - (offset % totalAlignment)) % totalAlignment;
                 offset += padding;
+                item.alignment = totalAlignment;
+                item.size = offset;
+                self.structs.insert(item.name.clone(), item);
             }
-            let padding = (totalAlignment - (offset % totalAlignment)) % totalAlignment;
-            offset += padding;
-            item.alignment = totalAlignment;
-            item.size = offset;
-            self.structs.insert(item.name.clone(), item);
+
+            if self.unions.contains_key(itemName) {
+                let mut item = self.getUnion(itemName);
+                let mut offset = 4;
+                let mut totalAlignment = 4;
+                let mut maxSize = 0;
+                for v in &item.variants {
+                    let size = match &v.ty {
+                        Type::Void => 0,
+                        Type::Int8 => 1,
+                        Type::Int16 => 2,
+                        Type::Int32 => 4,
+                        Type::Int64 => 8,
+                        Type::Char => 1,
+                        Type::Struct(n) => self.getStruct(n).size,
+                        Type::Union(n) => self.getUnion(n).size,
+                        Type::Ptr(_) => 8,
+                    };
+                    let alignment = match &v.ty {
+                        Type::Void => 0,
+                        Type::Int8 => 1,
+                        Type::Int16 => 2,
+                        Type::Int32 => 4,
+                        Type::Int64 => 8,
+                        Type::Char => 1,
+                        Type::Struct(n) => self.getStruct(n).alignment,
+                        Type::Union(n) => self.getUnion(n).alignment,
+                        Type::Ptr(_) => 8,
+                    };
+                    totalAlignment = std::cmp::max(totalAlignment, alignment);
+                    maxSize = std::cmp::max(maxSize, size);
+                }
+                offset += maxSize;
+                let padding = (totalAlignment - (offset % totalAlignment)) % totalAlignment;
+                offset += padding;
+                item.alignment = totalAlignment;
+                item.size = offset;
+                self.unions.insert(item.name.clone(), item);
+            }
         }
     }
 
@@ -247,29 +319,35 @@ impl Program {
     }
 
     fn lowerFunction(&self, f: &Function) -> LFunction {
-        let mut blocks: Vec<LBlock> = f.blocks.iter().map(|b| self.lowerBlock(b)).collect();
-        let mut localVars = Vec::new();
-        for block in &f.blocks {
-            for instruction in &block.instructions {
-                if let Instruction::Declare(var) = instruction {
-                    localVars.push(var.clone());
+        match &f.kind {
+            FunctionKind::UserDefined(blocks) => {
+                let mut llvmBlocks: Vec<LBlock> = blocks.iter().map(|b| self.lowerBlock(b)).collect();
+                let mut localVars = Vec::new();
+                for block in blocks {
+                    for instruction in &block.instructions {
+                        if let Instruction::Declare(var) = instruction {
+                            localVars.push(var.clone());
+                        }
+                    }
+                }
+                for var in localVars {
+                    let llvmInstruction = LInstruction::Allocate(self.lowerVar(&var));
+                    llvmBlocks[0].instructions.insert(0, llvmInstruction)
+                }
+                let mut args: Vec<_> = f.args.iter().map(|p| self.lowerParam(p)).collect();
+                args.push(LParam {
+                    name: getResultVarName(),
+                    ty: LType::Ptr(Box::new(self.lowerType(&f.result))),
+                });
+                LFunction {
+                    name: f.name.clone(),
+                    args: args,
+                    result: LType::Void,
+                    blocks: llvmBlocks,
                 }
             }
-        }
-        for var in localVars {
-            let llvmInstruction = LInstruction::Allocate(self.lowerVar(&var));
-            blocks[0].instructions.insert(0, llvmInstruction)
-        }
-        let mut args: Vec<_> = f.args.iter().map(|p| self.lowerParam(p)).collect();
-        args.push(LParam {
-            name: getResultVarName(),
-            ty: LType::Ptr(Box::new(self.lowerType(&f.result))),
-        });
-        LFunction {
-            name: f.name.clone(),
-            args: args,
-            result: LType::Void,
-            blocks: blocks,
+            FunctionKind::ClassCtor => todo!(),
+            FunctionKind::VariantCtor => todo!(),
         }
     }
 
