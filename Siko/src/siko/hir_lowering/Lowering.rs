@@ -102,7 +102,7 @@ impl<'a> Builder<'a> {
                     let mut mirCases = Vec::new();
                     for case in cases {
                         let mirCase = MirEnumCase {
-                            name: case.name.toString(),
+                            name: convertName(&case.name),
                             branch: self.getBlockName(case.branch),
                         };
                         mirCases.push(mirCase);
@@ -202,7 +202,7 @@ impl<'a> Builder<'a> {
 }
 
 pub fn convertName(name: &QualifiedName) -> String {
-    format!("{}", name.toString().replace(".", "_"))
+    format!("{}", name.toString().replace(".", "_").replace("(", "").replace(")", ""))
 }
 
 pub fn lowerType(ty: &HirType) -> MirType {
@@ -211,7 +211,7 @@ pub fn lowerType(ty: &HirType) -> MirType {
             if name.toString() == "Bool.Bool" {
                 MirType::Int64
             } else {
-                MirType::Struct(name.toString())
+                MirType::Struct(convertName(name))
             }
         }
         HirType::Tuple(_) => unreachable!("Tuple in MIR"),
@@ -240,7 +240,7 @@ pub fn lowerClass(c: &HirClass) -> Struct {
         fields.push(mirField);
     }
     Struct {
-        name: c.name.toString(),
+        name: convertName(&c.name),
         fields: fields,
         size: 0,
         alignment: 0,
@@ -252,7 +252,7 @@ pub fn lowerProgram(program: &HirProgram) -> MirProgram {
 
     for (n, c) in &program.classes {
         let c = lowerClass(c);
-        mirProgram.structs.insert(n.toString(), c);
+        mirProgram.structs.insert(convertName(n), c);
     }
 
     for (_, function) in &program.functions {

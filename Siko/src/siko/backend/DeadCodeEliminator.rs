@@ -75,7 +75,6 @@ impl<'a> DeadCodeEliminator<'a> {
                 InstructionKind::ValueRef(_, _, _) => {}
                 InstructionKind::Bind(_, _) => {}
                 InstructionKind::Tuple(_) => {}
-                InstructionKind::TupleIndex(_, _) => {}
                 InstructionKind::StringLiteral(_) => {}
                 InstructionKind::IntegerLiteral(_) => {}
                 InstructionKind::CharLiteral(_) => {}

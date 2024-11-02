@@ -167,7 +167,7 @@ impl Generator {
         }
 
         writeln!(output, "define i32 @main() {{")?;
-        writeln!(output, "   %res = alloca %struct.siko_Unit, align 4")?;
+        writeln!(output, "   %res = alloca %struct.siko_Tuple_, align 4")?;
         writeln!(output, "   call void @Main_main(ptr %res)")?;
         writeln!(output, "   ret i32 0")?;
         writeln!(output, "}}\n\n")?;

@@ -418,7 +418,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
             .addInstructionToBlock(startBlock, InstructionKind::Jump(firstBlockId), self.bodyLocation.clone(), false);
         let valueId = self.resolver.addInstructionToBlock(
             self.contBlockId,
-            InstructionKind::ValueRef(ValueKind::Value(self.matchValue.clone(), self.declareId), Vec::new(), Vec::new()),
+            InstructionKind::ValueRef(ValueKind::Value(self.matchValue.clone()), Vec::new(), Vec::new()),
             self.bodyLocation.clone(),
             false,
         );
@@ -433,9 +433,12 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                 let root = ctx.get(&tuple.dataPath);
                 let mut ctx = ctx.clone();
                 for index in 0..tuple.size {
+                    let new = self.resolver.createValue("tuple_index");
+                    self.resolver
+                        .addInstructionToBlock(blockId, InstructionKind::Bind(new.clone(), root), self.bodyLocation.clone(), false);
                     let argId = self.resolver.addInstructionToBlock(
                         blockId,
-                        InstructionKind::TupleIndex(root, index as u32),
+                        InstructionKind::ValueRef(ValueKind::Value(new.clone()), vec![format!("{}", index)], vec![index as u32]),
                         self.bodyLocation.clone(),
                         false,
                     );
@@ -463,9 +466,16 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                                     .addInstructionToBlock(itemBlockId, transform, self.bodyLocation.clone(), false);
                                 let mut ctx = ctx.clone();
                                 for (index, _) in v.items.iter().enumerate() {
+                                    let new = self.resolver.createValue("tuple_index");
+                                    self.resolver.addInstructionToBlock(
+                                        itemBlockId,
+                                        InstructionKind::Bind(new.clone(), transformId),
+                                        self.bodyLocation.clone(),
+                                        false,
+                                    );
                                     let indexId = self.resolver.addInstructionToBlock(
                                         itemBlockId,
-                                        InstructionKind::TupleIndex(transformId, index as u32),
+                                        InstructionKind::ValueRef(ValueKind::Value(new.clone()), vec![format!("{}", index)], vec![index as u32]),
                                         self.bodyLocation.clone(),
                                         false,
                                     );
@@ -536,13 +546,9 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                         println!("resolving binding {} {}", name, path);
                         let bindValue = ctx.get(path.decisions.last().unwrap());
                         let new = self.resolver.createValue(&name);
-                        let bindId = self.resolver.addInstructionToBlock(
-                            blockId,
-                            InstructionKind::Bind(new.clone(), bindValue),
-                            self.bodyLocation.clone(),
-                            false,
-                        );
-                        env.addValue(name.clone(), new, bindId);
+                        self.resolver
+                            .addInstructionToBlock(blockId, InstructionKind::Bind(new.clone(), bindValue), self.bodyLocation.clone(), false);
+                        env.addValue(name.clone(), new);
                     }
                     self.resolver.resolveExpr(&branch.body, &mut env);
                     let last = self.resolver.getTargetBlockId();

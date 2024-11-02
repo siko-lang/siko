@@ -100,7 +100,6 @@ impl RemoveTuples for Instruction {
 fn removeTuplesFromKind(kind: &InstructionKind, ty: &Type, ctx: &mut Context) -> InstructionKind {
     match kind {
         InstructionKind::Tuple(_) => InstructionKind::FunctionCall(getTuple(ty), Vec::new()),
-        InstructionKind::TupleIndex(_, _) => todo!(),
         InstructionKind::Transform(root, ty) => InstructionKind::Transform(*root, ty.removeTuples(ctx)),
         _ => kind.clone(),
     }

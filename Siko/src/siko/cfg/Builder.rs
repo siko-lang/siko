@@ -82,7 +82,6 @@ impl Builder {
                 InstructionKind::Tuple(_) => {
                     last = Some(self.processGenericInstruction(instruction, last, NodeKind::Generic));
                 }
-                InstructionKind::TupleIndex(_, _) => todo!(),
                 InstructionKind::StringLiteral(_) => {
                     last = Some(self.processGenericInstruction(instruction, last, NodeKind::Generic));
                 }

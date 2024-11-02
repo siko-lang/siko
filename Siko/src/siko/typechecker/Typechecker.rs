@@ -179,7 +179,7 @@ impl<'a> Typechecker<'a> {
                 InstructionKind::ValueRef(value, fields, _) => {
                     let mut receiverType = match &value {
                         ValueKind::Arg(name, _) => self.getValueType(name),
-                        ValueKind::Value(name, _) => self.getValueType(name),
+                        ValueKind::Value(name) => self.getValueType(name),
                     };
                     if fields.is_empty() {
                         self.unify(receiverType, self.getInstructionType(instruction.id), instruction.location.clone());
@@ -244,7 +244,7 @@ impl<'a> Typechecker<'a> {
                         instruction.location.clone(),
                     );
                 }
-                InstructionKind::TupleIndex(receiver, index) => {
+                /*InstructionKind::TupleIndex(receiver, index) => {
                     let ty = self.getInstructionType(*receiver);
                     let ty = self.substitution.apply(&ty);
                     match ty {
@@ -261,7 +261,7 @@ impl<'a> Typechecker<'a> {
                         Type::Var(_) => TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(self.ctx),
                         _ => TypecheckerError::FieldNotFound(format!(".{}", index), instruction.location.clone()).report(&self.ctx),
                     };
-                }
+                }*/
                 InstructionKind::StringLiteral(_) => {
                     self.unify(
                         self.getInstructionType(instruction.id),

@@ -8,14 +8,14 @@ use super::{ConstraintContext::ConstraintContext, Type::Type};
 #[derive(Debug, Clone, PartialEq)]
 pub enum ValueKind {
     Arg(String, i64),
-    Value(String, InstructionId),
+    Value(String),
 }
 
 impl ValueKind {
     pub fn getValue(&self) -> String {
         match &self {
             ValueKind::Arg(v, _) => v.clone(),
-            ValueKind::Value(v, _) => v.clone(),
+            ValueKind::Value(v) => v.clone(),
         }
     }
 }
@@ -24,7 +24,7 @@ impl Display for ValueKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
             ValueKind::Arg(n, index) => write!(f, "@arg/{}/{}", n, index),
-            ValueKind::Value(n, bindId) => write!(f, "${}/{}", n, bindId),
+            ValueKind::Value(n) => write!(f, "${}", n),
         }
     }
 }
@@ -164,7 +164,6 @@ pub enum InstructionKind {
     ValueRef(ValueKind, Vec<String>, Vec<u32>),
     Bind(String, InstructionId),
     Tuple(Vec<InstructionId>),
-    TupleIndex(InstructionId, u32),
     StringLiteral(String),
     IntegerLiteral(String),
     CharLiteral(char),
@@ -206,7 +205,6 @@ impl InstructionKind {
             InstructionKind::ValueRef(v, names, _) => format!("{}/{:?}", v, names),
             InstructionKind::Bind(v, rhs) => format!("${} = {}", v, rhs),
             InstructionKind::Tuple(args) => format!("tuple({:?})", args),
-            InstructionKind::TupleIndex(id, index) => format!("tupleindex:{}.{}", id, index),
             InstructionKind::StringLiteral(v) => format!("s:[{}]", v),
             InstructionKind::IntegerLiteral(v) => format!("i:[{}]", v),
             InstructionKind::CharLiteral(v) => format!("c:[{}]", v),
