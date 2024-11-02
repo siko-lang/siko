@@ -62,6 +62,15 @@ impl Enum {
             lifetime_info: None,
         }
     }
+
+    pub fn getVariant(&self, name: &QualifiedName) -> Variant {
+        for v in &self.variants {
+            if v.name == *name {
+                return v.clone();
+            }
+        }
+        panic!("variant {} not found", name);
+    }
 }
 
 impl fmt::Display for Field {

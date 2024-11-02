@@ -108,6 +108,55 @@ impl std::fmt::Debug for InstructionId {
 }
 
 #[derive(Clone, PartialEq)]
+pub struct VariantCase {
+    pub name: QualifiedName,
+    pub branch: BlockId,
+}
+
+impl std::fmt::Debug for VariantCase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}, {})", self.name, self.branch)
+    }
+}
+
+#[derive(Clone, PartialEq)]
+pub struct IntegerCase {
+    pub value: Option<String>,
+    pub branch: BlockId,
+}
+
+impl std::fmt::Debug for IntegerCase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.value {
+            Some(v) => {
+                write!(f, "({}, {})", v, self.branch)
+            }
+            None => {
+                write!(f, "(<default>, {})", self.branch)
+            }
+        }
+    }
+}
+#[derive(Clone, PartialEq)]
+pub struct StringCase {
+    pub value: Option<String>,
+    pub branch: BlockId,
+}
+
+impl std::fmt::Debug for StringCase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.value {
+            Some(v) => {
+                write!(f, "({}, {})", v, self.branch)
+            }
+            None => {
+                write!(f, "(<default>, {})", self.branch)
+            }
+        }
+    }
+}
+
+#[derive(Clone, PartialEq)]
 pub enum InstructionKind {
     FunctionCall(QualifiedName, Vec<InstructionId>),
     DynamicFunctionCall(InstructionId, Vec<InstructionId>),
@@ -126,6 +175,9 @@ pub enum InstructionKind {
     Assign(String, InstructionId),
     DeclareVar(String),
     Transform(InstructionId, Type),
+    EnumSwitch(InstructionId, Vec<VariantCase>),
+    IntegerSwitch(InstructionId, Vec<IntegerCase>),
+    StringSwitch(InstructionId, Vec<StringCase>),
 }
 
 impl Display for InstructionKind {
@@ -169,6 +221,9 @@ impl InstructionKind {
             InstructionKind::Assign(v, arg) => format!("assign({}, {})", v, arg),
             InstructionKind::DeclareVar(v) => format!("declare({})", v),
             InstructionKind::Transform(arg, targetType) => format!("transform({}, {})", arg, targetType),
+            InstructionKind::EnumSwitch(root, cases) => format!("variantswitch({}, {:?})", root, cases),
+            InstructionKind::IntegerSwitch(root, cases) => format!("integerswitch({}, {:?})", root, cases),
+            InstructionKind::StringSwitch(root, cases) => format!("stringswitch({}, {:?})", root, cases),
         }
     }
 }

@@ -286,6 +286,9 @@ impl<'a> Typechecker<'a> {
                 InstructionKind::Transform(_, ty) => {
                     self.unify(self.getInstructionType(instruction.id), ty.clone(), instruction.location.clone());
                 }
+                InstructionKind::EnumSwitch(_, _) => {}
+                InstructionKind::IntegerSwitch(_, _) => {}
+                InstructionKind::StringSwitch(_, _) => {}
             }
         }
     }

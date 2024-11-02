@@ -89,6 +89,9 @@ impl<'a> DeadCodeEliminator<'a> {
                 InstructionKind::Assign(_, _) => {}
                 InstructionKind::DeclareVar(_) => {}
                 InstructionKind::Transform(_, _) => {}
+                InstructionKind::EnumSwitch(_, _) => todo!(),
+                InstructionKind::IntegerSwitch(_, _) => todo!(),
+                InstructionKind::StringSwitch(_, _) => todo!(),
             }
         }
     }

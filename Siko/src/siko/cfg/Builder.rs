@@ -129,6 +129,9 @@ impl Builder {
                 InstructionKind::Assign(_, _) => {}
                 InstructionKind::DeclareVar(_) => {}
                 InstructionKind::Transform(_, _) => {}
+                InstructionKind::EnumSwitch(_, _) => {}
+                InstructionKind::IntegerSwitch(_, _) => {}
+                InstructionKind::StringSwitch(_, _) => {}
             }
         }
         last

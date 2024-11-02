@@ -72,7 +72,7 @@ impl<'a> ExprResolver<'a> {
         blockId
     }
 
-    fn setTargetBlockId(&mut self, id: BlockId) {
+    pub fn setTargetBlockId(&mut self, id: BlockId) {
         self.targetBlockId = id;
     }
 
@@ -112,7 +112,7 @@ impl<'a> ExprResolver<'a> {
         return irBlock.addWithImplicit(instruction, location, implicit);
     }
 
-    fn resolveExpr(&mut self, expr: &Expr, env: &mut Environment) -> InstructionId {
+    pub fn resolveExpr(&mut self, expr: &Expr, env: &mut Environment) -> InstructionId {
         match &expr.expr {
             SimpleExpr::Value(name) => match env.resolve(&name.name) {
                 Some(name) => {
@@ -314,11 +314,7 @@ impl<'a> ExprResolver<'a> {
             }
             SimpleExpr::Match(body, branches) => {
                 let bodyId = self.resolveExpr(body, env);
-                let mut patterns = Vec::new();
-                for b in branches {
-                    patterns.push(b.pattern.clone());
-                }
-                let mut matchResolver = MatchCompiler::new(self, bodyId, body.location.clone(), patterns);
+                let mut matchResolver = MatchCompiler::new(self, bodyId, body.location.clone(), branches.clone(), env);
                 matchResolver.compile();
                 self.addInstruction(InstructionKind::Tuple(vec![]), expr.location.clone())
             }
