@@ -108,12 +108,12 @@ impl std::fmt::Debug for InstructionId {
 }
 
 #[derive(Clone, PartialEq)]
-pub struct VariantCase {
+pub struct EnumCase {
     pub name: QualifiedName,
     pub branch: BlockId,
 }
 
-impl std::fmt::Debug for VariantCase {
+impl std::fmt::Debug for EnumCase {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "({}, {})", self.name, self.branch)
     }
@@ -175,7 +175,7 @@ pub enum InstructionKind {
     Assign(String, InstructionId),
     DeclareVar(String),
     Transform(InstructionId, Type),
-    EnumSwitch(InstructionId, Vec<VariantCase>),
+    EnumSwitch(InstructionId, Vec<EnumCase>),
     IntegerSwitch(InstructionId, Vec<IntegerCase>),
     StringSwitch(InstructionId, Vec<StringCase>),
 }
@@ -221,7 +221,7 @@ impl InstructionKind {
             InstructionKind::Assign(v, arg) => format!("assign({}, {})", v, arg),
             InstructionKind::DeclareVar(v) => format!("declare({})", v),
             InstructionKind::Transform(arg, targetType) => format!("transform({}, {})", arg, targetType),
-            InstructionKind::EnumSwitch(root, cases) => format!("variantswitch({}, {:?})", root, cases),
+            InstructionKind::EnumSwitch(root, cases) => format!("enumswitch({}, {:?})", root, cases),
             InstructionKind::IntegerSwitch(root, cases) => format!("integerswitch({}, {:?})", root, cases),
             InstructionKind::StringSwitch(root, cases) => format!("stringswitch({}, {:?})", root, cases),
         }

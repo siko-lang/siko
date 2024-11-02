@@ -227,6 +227,8 @@ impl Program {
                     let llvmInstruction = LInstruction::Jump(name.clone());
                     llvmBlock.instructions.push(llvmInstruction);
                 }
+                Instruction::EnumSwitch(_, _) => {}
+                Instruction::Transform(_, _, _) => {}
             };
         }
         llvmBlock

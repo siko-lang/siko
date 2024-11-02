@@ -89,9 +89,21 @@ impl<'a> DeadCodeEliminator<'a> {
                 InstructionKind::Assign(_, _) => {}
                 InstructionKind::DeclareVar(_) => {}
                 InstructionKind::Transform(_, _) => {}
-                InstructionKind::EnumSwitch(_, _) => todo!(),
-                InstructionKind::IntegerSwitch(_, _) => todo!(),
-                InstructionKind::StringSwitch(_, _) => todo!(),
+                InstructionKind::EnumSwitch(_, cases) => {
+                    for case in cases {
+                        self.processBlock(case.branch);
+                    }
+                }
+                InstructionKind::IntegerSwitch(_, cases) => {
+                    for case in cases {
+                        self.processBlock(case.branch);
+                    }
+                }
+                InstructionKind::StringSwitch(_, cases) => {
+                    for case in cases {
+                        self.processBlock(case.branch);
+                    }
+                }
             }
         }
     }

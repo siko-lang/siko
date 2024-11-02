@@ -7,7 +7,7 @@ use crate::siko::{
     },
     mir::{
         Data::{Field as MirField, Struct},
-        Function::{Block as MirBlock, Function as MirFunction, Instruction, Param as MirParam, Value, Variable},
+        Function::{Block as MirBlock, EnumCase as MirEnumCase, Function as MirFunction, Instruction, Param as MirParam, Value, Variable},
         Program::Program as MirProgram,
         Type::Type as MirType,
     },
@@ -96,6 +96,22 @@ impl<'a> Builder<'a> {
                 HirInstructionKind::IntegerLiteral(v) => {
                     block.instructions.push(Instruction::Declare(idVar.clone()));
                     block.instructions.push(Instruction::IntegerLiteral(idVar, v.to_string()));
+                }
+                HirInstructionKind::EnumSwitch(root, cases) => {
+                    let root = self.buildInstructionVar(root);
+                    let mut mirCases = Vec::new();
+                    for case in cases {
+                        let mirCase = MirEnumCase {
+                            name: case.name.toString(),
+                            branch: self.getBlockName(case.branch),
+                        };
+                        mirCases.push(mirCase);
+                    }
+                    block.instructions.push(Instruction::EnumSwitch(root, mirCases));
+                }
+                HirInstructionKind::Transform(root, ty) => {
+                    let root = self.buildInstructionVar(root);
+                    block.instructions.push(Instruction::Transform(idVar, root, format!("{}", ty)));
                 }
                 k => panic!("NYI {}", k),
             }

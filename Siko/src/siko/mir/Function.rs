@@ -82,6 +82,18 @@ impl fmt::Display for Value {
     }
 }
 
+#[derive(Clone, PartialEq)]
+pub struct EnumCase {
+    pub name: String,
+    pub branch: String,
+}
+
+impl std::fmt::Debug for EnumCase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}, {})", self.name, self.branch)
+    }
+}
+
 pub enum Instruction {
     Declare(Variable),
     GetFieldRef(Variable, Variable, i32),
@@ -91,6 +103,8 @@ pub enum Instruction {
     Return(Value),
     Memcpy(Variable, Variable),
     IntegerLiteral(Variable, String),
+    EnumSwitch(Variable, Vec<EnumCase>),
+    Transform(Variable, Variable, String),
     Jump(String),
 }
 
@@ -111,7 +125,9 @@ impl fmt::Display for Instruction {
             Instruction::Return(value) => write!(f, "Return({})", value),
             Instruction::Memcpy(var1, var2) => write!(f, "Memcpy({}, {})", var1, var2),
             Instruction::IntegerLiteral(var, literal) => write!(f, "IntegerLiteral({}, {})", var, literal),
+            Instruction::EnumSwitch(root, cases) => write!(f, "enumswitch({}, {:?})", root, cases),
             Instruction::Jump(label) => write!(f, "Jump({})", label),
+            Instruction::Transform(dest, src, ty) => write!(f, "Transform({}, {}, {})", dest, src, ty),
         }
     }
 }

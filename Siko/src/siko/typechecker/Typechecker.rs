@@ -244,7 +244,24 @@ impl<'a> Typechecker<'a> {
                         instruction.location.clone(),
                     );
                 }
-                InstructionKind::TupleIndex(_, _) => todo!(),
+                InstructionKind::TupleIndex(receiver, index) => {
+                    let ty = self.getInstructionType(*receiver);
+                    let ty = self.substitution.apply(&ty);
+                    match ty {
+                        Type::Tuple(t) => {
+                            if (*index as usize) >= t.len() {
+                                TypecheckerError::FieldNotFound(format!(".{}", index), instruction.location.clone()).report(&self.ctx);
+                            }
+                            self.unify(
+                                self.getInstructionType(instruction.id),
+                                t[*index as usize].clone(),
+                                instruction.location.clone(),
+                            );
+                        }
+                        Type::Var(_) => TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(self.ctx),
+                        _ => TypecheckerError::FieldNotFound(format!(".{}", index), instruction.location.clone()).report(&self.ctx),
+                    };
+                }
                 InstructionKind::StringLiteral(_) => {
                     self.unify(
                         self.getInstructionType(instruction.id),
@@ -286,9 +303,15 @@ impl<'a> Typechecker<'a> {
                 InstructionKind::Transform(_, ty) => {
                     self.unify(self.getInstructionType(instruction.id), ty.clone(), instruction.location.clone());
                 }
-                InstructionKind::EnumSwitch(_, _) => {}
-                InstructionKind::IntegerSwitch(_, _) => {}
-                InstructionKind::StringSwitch(_, _) => {}
+                InstructionKind::EnumSwitch(root, cases) => {
+                    self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
+                }
+                InstructionKind::IntegerSwitch(root, cases) => {
+                    self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
+                }
+                InstructionKind::StringSwitch(root, cases) => {
+                    self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
+                }
             }
         }
     }

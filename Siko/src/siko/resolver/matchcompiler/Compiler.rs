@@ -1,4 +1,4 @@
-use crate::siko::hir::Function::{BlockId, InstructionId, InstructionKind, IntegerCase, StringCase, ValueKind, VariantCase};
+use crate::siko::hir::Function::{BlockId, EnumCase, InstructionId, InstructionKind, IntegerCase, StringCase, ValueKind};
 use crate::siko::hir::Type::Type;
 use crate::siko::location::Location::Location;
 use crate::siko::qualifiedname::QualifiedName;
@@ -412,7 +412,10 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         }
 
         let ctx = CompileContext::new().add(node.getDataPath(), self.bodyId);
-        self.compileNode(&node, &ctx);
+        let startBlock = self.resolver.getTargetBlockId();
+        let firstBlockId = self.compileNode(&node, &ctx);
+        self.resolver
+            .addInstructionToBlock(startBlock, InstructionKind::Jump(firstBlockId), self.bodyLocation.clone(), false);
         let valueId = self.resolver.addInstructionToBlock(
             self.contBlockId,
             InstructionKind::ValueRef(ValueKind::Value(self.matchValue.clone(), self.declareId), Vec::new(), Vec::new()),
@@ -473,7 +476,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                                 let blockId = self.compileNode(&node, &ctx);
                                 self.resolver
                                     .addInstructionToBlock(itemBlockId, InstructionKind::Jump(blockId), self.bodyLocation.clone(), false);
-                                let c = VariantCase {
+                                let c = EnumCase {
                                     name: name.clone(),
                                     branch: itemBlockId,
                                 };
