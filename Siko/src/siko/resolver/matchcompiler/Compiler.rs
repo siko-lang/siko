@@ -513,6 +513,18 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     let mut env = Environment::child(self.parentEnv);
                     let blockId = self.resolver.createBlock();
                     self.resolver.setTargetBlockId(blockId);
+                    for (path, name) in &m.bindings.bindings {
+                        println!("resolving binding {} {}", name, path);
+                        let bindValue = ctx.get(path.decisions.last().unwrap());
+                        let new = self.resolver.createValue(&name);
+                        let bindId = self.resolver.addInstructionToBlock(
+                            blockId,
+                            InstructionKind::Bind(new.clone(), bindValue),
+                            self.bodyLocation.clone(),
+                            false,
+                        );
+                        env.addValue(name.clone(), new, bindId);
+                    }
                     self.resolver.resolveExpr(&branch.body, &mut env);
                     blockId
                 } else {

@@ -383,7 +383,7 @@ impl<'a> ExprResolver<'a> {
         }
     }
 
-    fn createValue(&mut self, name: &str) -> String {
+    pub fn createValue(&mut self, name: &str) -> String {
         let valueId = self.valueId;
         self.valueId += 1;
         format!("{}_{}", name, valueId)
