@@ -506,7 +506,6 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                 }
                 blockId
             }
-            Node::Bind(bind) => todo!(),
             Node::End(end) => {
                 let m = end.matches.last().expect("no match");
                 if let MatchKind::UserDefined(index) = &m.kind {
@@ -722,7 +721,6 @@ struct Wildcard {
 enum Node {
     Tuple(Tuple),
     Switch(Switch),
-    Bind(Bind),
     End(End),
     Wildcard(Wildcard),
 }
@@ -732,7 +730,6 @@ impl Node {
         match self {
             Node::Tuple(tuple) => tuple.dataPath.clone(),
             Node::Switch(switch) => switch.dataPath.clone(),
-            Node::Bind(bind) => todo!(),
             Node::End(end) => todo!(),
             Node::Wildcard(wildcard) => todo!(),
         }
@@ -746,7 +743,6 @@ impl Node {
                     node.add(compiler, matches);
                 }
             }
-            Node::Bind(_) => todo!(),
             Node::Wildcard(w) => {
                 w.next.add(compiler, matches);
             }
