@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, fmt};
 use crate::siko::util::DependencyProcessor;
 
 use super::{
-    Data::Struct,
+    Data::{Struct, Union},
     Function::{Block, Function, Instruction, Param, Value, Variable},
     Type::Type,
 };
@@ -22,6 +22,7 @@ use crate::siko::llvm::Type::Type as LType;
 pub struct Program {
     pub functions: Vec<Function>,
     pub structs: BTreeMap<String, Struct>,
+    pub unions: BTreeMap<String, Union>,
 }
 
 impl fmt::Display for Program {
@@ -30,6 +31,14 @@ impl fmt::Display for Program {
         write!(f, "\nFunctions:\n")?;
         for function in &self.functions {
             write!(f, "{}\n", function)?;
+        }
+        write!(f, "\nStructs:\n")?;
+        for (_, s) in &self.structs {
+            write!(f, "{}\n", s)?;
+        }
+        write!(f, "\nUnions:\n")?;
+        for (_, u) in &self.unions {
+            write!(f, "{}\n", u)?;
         }
         Ok(())
     }
@@ -51,6 +60,7 @@ impl Program {
         Program {
             functions: Vec::new(),
             structs: BTreeMap::new(),
+            unions: BTreeMap::new(),
         }
     }
 
@@ -99,6 +109,7 @@ impl Program {
                     Type::Int64 => 8,
                     Type::Char => 1,
                     Type::Struct(n) => self.getStruct(n).size,
+                    Type::Union(n) => todo!(),
                     Type::Ptr(_) => 8,
                 };
                 let alignment = match &f.ty {
@@ -109,6 +120,7 @@ impl Program {
                     Type::Int64 => 8,
                     Type::Char => 1,
                     Type::Struct(n) => self.getStruct(n).alignment,
+                    Type::Union(n) => todo!(),
                     Type::Ptr(_) => 8,
                 };
                 totalAlignment = std::cmp::max(totalAlignment, alignment);
@@ -288,6 +300,7 @@ impl Program {
             Type::Int64 => LType::Int64,
             Type::Char => LType::Int8,
             Type::Struct(n) => LType::Struct(n.clone()),
+            Type::Union(n) => LType::Struct(n.clone()),
             Type::Ptr(t) => LType::Ptr(Box::new(self.lowerType(t))),
         }
     }

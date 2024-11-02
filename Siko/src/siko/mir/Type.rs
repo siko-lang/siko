@@ -9,6 +9,7 @@ pub enum Type {
     Int64,
     Char,
     Struct(String),
+    Union(String),
     Ptr(Box<Type>),
 }
 
@@ -22,6 +23,7 @@ impl Type {
             Type::Int64 => true,
             Type::Char => true,
             Type::Struct(_) => false,
+            Type::Union(_) => false,
             Type::Ptr(_) => false,
         }
     }
@@ -37,6 +39,7 @@ impl fmt::Display for Type {
             Type::Int64 => write!(f, "i64"),
             Type::Char => write!(f, "char"),
             Type::Struct(name) => write!(f, "struct {}", name),
+            Type::Union(name) => write!(f, "union {}", name),
             Type::Ptr(inner) => write!(f, "*{}", inner),
         }
     }

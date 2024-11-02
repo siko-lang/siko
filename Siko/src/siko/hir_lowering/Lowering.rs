@@ -1,12 +1,13 @@
 use crate::siko::{
     hir::{
         Data::Class as HirClass,
+        Data::Enum as HirEnum,
         Function::{Block, BlockId, Function as HirFunction, FunctionKind, InstructionId, InstructionKind as HirInstructionKind},
         Program::Program as HirProgram,
         Type::Type as HirType,
     },
     mir::{
-        Data::{Field as MirField, Struct},
+        Data::{Field as MirField, Struct, Union, Variant as MirVariant},
         Function::{Block as MirBlock, EnumCase as MirEnumCase, Function as MirFunction, Instruction, Param as MirParam, Value, Variable},
         Program::Program as MirProgram,
         Type::Type as MirType,
@@ -29,7 +30,7 @@ impl<'a> Builder<'a> {
 
     fn buildInstructionVar(&self, id: &InstructionId) -> Variable {
         let i = self.function.getInstruction(*id);
-        let ty = lowerType(i.ty.as_ref().expect("no ty"));
+        let ty = lowerType(i.ty.as_ref().expect("no ty"), &self.program);
         let name = format!("i_{}_{}", id.getBlockById().id, id.getId() + 1);
         Variable { name: name, ty: ty }
     }
@@ -60,14 +61,14 @@ impl<'a> Builder<'a> {
                 HirInstructionKind::Drop(_) => {}
                 HirInstructionKind::DeclareVar(var) => {
                     let i = self.function.getInstruction(instruction.id);
-                    let ty = lowerType(i.ty.as_ref().expect("no ty"));
+                    let ty = lowerType(i.ty.as_ref().expect("no ty"), &self.program);
                     let var = Variable { name: var.clone(), ty: ty };
                     block.instructions.push(Instruction::Declare(var.clone()));
                 }
                 HirInstructionKind::If(_, _, _) => {}
                 HirInstructionKind::ValueRef(name, _, _) => {
                     let i = self.function.getInstruction(instruction.id);
-                    let ty = lowerType(i.ty.as_ref().expect("no ty"));
+                    let ty = lowerType(i.ty.as_ref().expect("no ty"), &self.program);
                     let var = Variable {
                         name: name.getValue(),
                         ty: ty,
@@ -78,7 +79,7 @@ impl<'a> Builder<'a> {
                 HirInstructionKind::Assign(_, _) => {}
                 HirInstructionKind::Bind(var, rhs) => {
                     let i = self.function.getInstruction(*rhs);
-                    let ty = lowerType(i.ty.as_ref().expect("no ty"));
+                    let ty = lowerType(i.ty.as_ref().expect("no ty"), &self.program);
                     let var = Variable {
                         name: var.to_string(),
                         ty: ty,
@@ -124,14 +125,14 @@ impl<'a> Builder<'a> {
         for arg in &self.function.params {
             let arg = MirParam {
                 name: format!("{}", arg.getName()),
-                ty: lowerType(&arg.getType()),
+                ty: lowerType(&arg.getType(), &self.program),
             };
             args.push(arg);
         }
         let mut mirFunction = MirFunction {
             name: convertName(&self.function.name),
             args: args,
-            result: lowerType(&self.function.result),
+            result: lowerType(&self.function.result, &self.program),
             blocks: Vec::new(),
         };
         match self.function.kind {
@@ -178,7 +179,7 @@ impl<'a> Builder<'a> {
         };
         let this = Variable {
             name: "this".to_string(),
-            ty: lowerType(&self.function.result),
+            ty: lowerType(&self.function.result, &self.program),
         };
         let s = self.program.getClass(&self.function.result.getName().unwrap());
         block.instructions.push(Instruction::Declare(this.clone()));
@@ -192,7 +193,7 @@ impl<'a> Builder<'a> {
                 .push(Instruction::GetFieldRef(fieldVar.clone(), this.clone(), index as i32));
             let argVar = Variable {
                 name: field.name.clone(),
-                ty: lowerType(&field.ty),
+                ty: lowerType(&field.ty, &self.program),
             };
             block.instructions.push(Instruction::Memcpy(fieldVar, argVar));
         }
@@ -202,16 +203,24 @@ impl<'a> Builder<'a> {
 }
 
 pub fn convertName(name: &QualifiedName) -> String {
-    format!("{}", name.toString().replace(".", "_").replace("(", "").replace(")", ""))
+    format!(
+        "{}",
+        name.toString()
+            .replace(".", "_")
+            .replace("(", "")
+            .replace(")", "")
+            .replace(",", "_")
+            .replace(" ", "_")
+    )
 }
 
-pub fn lowerType(ty: &HirType) -> MirType {
+pub fn lowerType(ty: &HirType, program: &HirProgram) -> MirType {
     match ty {
         HirType::Named(name, _, _) => {
-            if name.toString() == "Bool.Bool" {
-                MirType::Int64
-            } else {
+            if program.classes.get(name).is_some() {
                 MirType::Struct(convertName(name))
+            } else {
+                MirType::Union(convertName(name))
             }
         }
         HirType::Tuple(_) => unreachable!("Tuple in MIR"),
@@ -223,7 +232,7 @@ pub fn lowerType(ty: &HirType) -> MirType {
     }
 }
 
-pub fn lowerClass(c: &HirClass) -> Struct {
+pub fn lowerClass(c: &HirClass, program: &HirProgram) -> Struct {
     let mut fields = Vec::new();
     if c.name.toString() == "Int.Int" {
         fields.push(MirField {
@@ -235,7 +244,7 @@ pub fn lowerClass(c: &HirClass) -> Struct {
     for f in &c.fields {
         let mirField = MirField {
             name: f.name.clone(),
-            ty: lowerType(&f.ty),
+            ty: lowerType(&f.ty, program),
         };
         fields.push(mirField);
     }
@@ -247,12 +256,34 @@ pub fn lowerClass(c: &HirClass) -> Struct {
     }
 }
 
+pub fn lowerEnum(e: &HirEnum, program: &HirProgram) -> Union {
+    let mut variants = Vec::new();
+
+    for v in &e.variants {
+        assert_eq!(v.items.len(), 1);
+        let mirVariant = MirVariant {
+            name: convertName(&v.name),
+            ty: lowerType(&v.items[0], program),
+        };
+        variants.push(mirVariant);
+    }
+    Union {
+        name: convertName(&e.name),
+        variants: variants,
+    }
+}
+
 pub fn lowerProgram(program: &HirProgram) -> MirProgram {
     let mut mirProgram = MirProgram::new();
 
     for (n, c) in &program.classes {
-        let c = lowerClass(c);
+        let c = lowerClass(c, program);
         mirProgram.structs.insert(convertName(n), c);
+    }
+
+    for (n, e) in &program.enums {
+        let u = lowerEnum(e, program);
+        mirProgram.unions.insert(convertName(n), u);
     }
 
     for (_, function) in &program.functions {
