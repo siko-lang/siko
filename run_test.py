@@ -17,6 +17,7 @@ def test(root, entry):
         return
     input_path = os.path.join(root, entry, "main.sk")
     output_path = os.path.join(root, entry, "main.ll")
+    optimized_path = os.path.join(root, entry, "main_optimized.ll")
     llvm_output_path = os.path.join(root, entry, "main.bin")
     std = []
     for m in os.listdir("./std"):
@@ -27,7 +28,11 @@ def test(root, entry):
     if r.returncode != 0:
         failure += 1
         return
-    r = subprocess.run(["clang", "-Wno-override-module", output_path, "-o", llvm_output_path])
+    r = subprocess.run(["opt", "-O2", "-S", output_path, "-o", optimized_path])
+    if r.returncode != 0:
+        failure += 1
+        return
+    r = subprocess.run(["clang", "-Wno-override-module", optimized_path, "-o", llvm_output_path])
     #r = subprocess.run(["rustc", output_path, "-o", rust_output_path])
     if r.returncode != 0:
         failure += 1
