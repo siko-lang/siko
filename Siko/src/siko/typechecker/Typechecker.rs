@@ -176,7 +176,7 @@ impl<'a> Typechecker<'a> {
                     );
                     self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
                 }
-                InstructionKind::ValueRef(value, fields, _) => {
+                InstructionKind::ValueRef(value, fields, fieldIndices) => {
                     let mut receiverType = match &value {
                         ValueKind::Arg(name, _) => self.getValueType(name),
                         ValueKind::Value(name) => self.getValueType(name),
@@ -222,6 +222,13 @@ impl<'a> Typechecker<'a> {
                                         TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(self.ctx)
                                     }
                                 }
+                                Type::Tuple(t) => {
+                                    let tupleIndex = fieldIndices[index];
+                                    if tupleIndex as usize >= t.len() {
+                                        TypecheckerError::FieldNotFound(format!(".{}", index), instruction.location.clone()).report(&self.ctx);
+                                    }
+                                    receiverType = t[tupleIndex as usize].clone();
+                                }
                                 _ => TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(self.ctx),
                             }
                         }
@@ -245,22 +252,7 @@ impl<'a> Typechecker<'a> {
                     );
                 }
                 /*InstructionKind::TupleIndex(receiver, index) => {
-                    let ty = self.getInstructionType(*receiver);
-                    let ty = self.substitution.apply(&ty);
-                    match ty {
-                        Type::Tuple(t) => {
-                            if (*index as usize) >= t.len() {
-                                TypecheckerError::FieldNotFound(format!(".{}", index), instruction.location.clone()).report(&self.ctx);
-                            }
-                            self.unify(
-                                self.getInstructionType(instruction.id),
-                                t[*index as usize].clone(),
-                                instruction.location.clone(),
-                            );
-                        }
-                        Type::Var(_) => TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(self.ctx),
-                        _ => TypecheckerError::FieldNotFound(format!(".{}", index), instruction.location.clone()).report(&self.ctx),
-                    };
+
                 }*/
                 InstructionKind::StringLiteral(_) => {
                     self.unify(

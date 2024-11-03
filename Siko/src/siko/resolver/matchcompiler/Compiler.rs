@@ -566,7 +566,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     unreachable!()
                 }
             }
-            Node::Wildcard(_) => todo!(),
+            Node::Wildcard(w) => self.compileNode(&w.next, ctx),
         }
     }
 
