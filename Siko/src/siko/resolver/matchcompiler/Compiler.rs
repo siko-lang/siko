@@ -323,7 +323,6 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
 
     pub fn compile(&mut self) -> InstructionId {
         let mut matches = Vec::new();
-
         for (index, branch) in self.branches.clone().iter().enumerate() {
             let branchPattern = self.resolve(&branch.pattern);
             let (decision, bindings) = self.generateDecisions(&branchPattern, &DataPath::Root, &DecisionPath::new(), Bindings::new());
@@ -422,6 +421,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
             self.bodyLocation.clone(),
             false,
         );
+        self.resolver.setTargetBlockId(self.contBlockId);
         valueId
     }
 

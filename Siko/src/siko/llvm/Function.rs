@@ -30,6 +30,11 @@ pub enum Value {
     Numeric(String, Type),
 }
 
+pub struct Branch {
+    pub value: Value,
+    pub block: String,
+}
+
 pub enum Instruction {
     Allocate(Variable),
     Store(Variable, Value),
@@ -40,4 +45,5 @@ pub enum Instruction {
     Jump(String),
     Memcpy(Variable, Variable),
     Bitcast(Variable, Variable),
+    Switch(Variable, String, Vec<Branch>),
 }

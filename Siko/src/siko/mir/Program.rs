@@ -11,6 +11,7 @@ use super::{
 use crate::siko::llvm::Data::Field as LField;
 use crate::siko::llvm::Data::Struct as LStruct;
 use crate::siko::llvm::Function::Block as LBlock;
+use crate::siko::llvm::Function::Branch as LBranch;
 use crate::siko::llvm::Function::Function as LFunction;
 use crate::siko::llvm::Function::Instruction as LInstruction;
 use crate::siko::llvm::Function::Param as LParam;
@@ -352,7 +353,32 @@ impl Program {
                     let llvmInstruction = LInstruction::Jump(name.clone());
                     llvmBlock.instructions.push(llvmInstruction);
                 }
-                Instruction::EnumSwitch(_, _) => {}
+                Instruction::EnumSwitch(var, cases) => {
+                    println!("Switching on {}", var.ty);
+                    let switchVar = Variable {
+                        name: format!("switch_var"),
+                        ty: Type::Int32,
+                    };
+                    let tmpVar = self.tmpVar(&switchVar, 1);
+                    let tmpVar2 = self.tmpVar(&switchVar, 2);
+                    let llvmInstruction = LInstruction::GetFieldRef(tmpVar.clone(), self.lowerVar(var), 0);
+                    llvmBlock.instructions.push(llvmInstruction);
+                    let llvmInstruction = LInstruction::LoadVar(tmpVar2.clone(), tmpVar);
+                    llvmBlock.instructions.push(llvmInstruction);
+                    let mut branches = Vec::new();
+                    for (index, case) in cases.iter().enumerate() {
+                        if index == 0 {
+                            continue;
+                        }
+                        let branch = LBranch {
+                            value: LValue::Numeric(format!("{}", index), LType::Int32),
+                            block: case.branch.clone(),
+                        };
+                        branches.push(branch);
+                    }
+                    let llvmInstruction = LInstruction::Switch(tmpVar2.clone(), cases[0].branch.clone(), branches);
+                    llvmBlock.instructions.push(llvmInstruction);
+                }
                 Instruction::Transform(_, _, _) => {}
             };
         }

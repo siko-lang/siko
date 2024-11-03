@@ -144,27 +144,7 @@ impl<'a> Builder<'a> {
                 }
                 MirFunctionKind::UserDefined(blocks)
             }
-            FunctionKind::VariantCtor(i) => {
-                // if self.function.name == getTrueName().monomorphized("".to_string()) {
-                //     let var1 = Variable {
-                //         name: "var1".to_string(),
-                //         ty: MirType::Int64,
-                //     };
-                //     let var2 = Variable {
-                //         name: "var2".to_string(),
-                //         ty: MirType::Int64,
-                //     };
-                //     let mut block = MirBlock {
-                //         id: format!("block0"),
-                //         instructions: Vec::new(),
-                //     };
-                //     block.instructions.push(Instruction::Declare(var1.clone()));
-                //     block.instructions.push(Instruction::Reference(var2.clone(), var1.clone()));
-                //     block.instructions.push(Instruction::Return(Value::Void));
-                //     blocks.push(block);
-                // }
-                MirFunctionKind::VariantCtor(i)
-            }
+            FunctionKind::VariantCtor(i) => MirFunctionKind::VariantCtor(i),
             FunctionKind::Extern => todo!(),
         };
         let mirFunction = MirFunction {
