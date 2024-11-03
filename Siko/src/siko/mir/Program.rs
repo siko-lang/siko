@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, fmt};
 use crate::siko::util::DependencyProcessor;
 
 use super::{
-    Data::{Struct, Union},
+    Data::{Field, Struct, Union},
     Function::{Block, Function, FunctionKind, Instruction, Param, Value, Variable},
     Type::Type,
 };
@@ -67,6 +67,8 @@ impl Program {
     pub fn process(&mut self) -> LProgram {
         self.calculateSizeAndAlignment();
 
+        self.convertUnions();
+
         self.lower()
     }
 
@@ -76,6 +78,26 @@ impl Program {
 
     fn getUnion(&self, n: &String) -> Union {
         self.unions.get(n).cloned().expect("union not found")
+    }
+
+    fn convertUnions(&mut self) {
+        for (n, u) in &self.unions {
+            let tag = Field {
+                name: format!("tag"),
+                ty: Type::Int32,
+            };
+            let payload = Field {
+                name: format!("payload"),
+                ty: Type::ByteArray(u.payloadSize),
+            };
+            let s = Struct {
+                name: n.clone(),
+                fields: vec![tag, payload],
+                size: u.size,
+                alignment: u.alignment,
+            };
+            self.structs.insert(n.clone(), s);
+        }
     }
 
     fn calculateSizeAndAlignment(&mut self) {
@@ -143,6 +165,7 @@ impl Program {
                         Type::Struct(n) => self.getStruct(n).size,
                         Type::Union(n) => self.getUnion(n).size,
                         Type::Ptr(_) => 8,
+                        Type::ByteArray(s) => *s,
                     };
                     let alignment = match &f.ty {
                         Type::Void => 0,
@@ -154,6 +177,7 @@ impl Program {
                         Type::Struct(n) => self.getStruct(n).alignment,
                         Type::Union(n) => self.getUnion(n).alignment,
                         Type::Ptr(_) => 8,
+                        Type::ByteArray(_) => 1,
                     };
                     totalAlignment = std::cmp::max(totalAlignment, alignment);
                     offset += size;
@@ -183,6 +207,7 @@ impl Program {
                         Type::Struct(n) => self.getStruct(n).size,
                         Type::Union(n) => self.getUnion(n).size,
                         Type::Ptr(_) => 8,
+                        Type::ByteArray(s) => *s,
                     };
                     let alignment = match &v.ty {
                         Type::Void => 0,
@@ -194,6 +219,7 @@ impl Program {
                         Type::Struct(n) => self.getStruct(n).alignment,
                         Type::Union(n) => self.getUnion(n).alignment,
                         Type::Ptr(_) => 8,
+                        Type::ByteArray(_) => 1,
                     };
                     totalAlignment = std::cmp::max(totalAlignment, alignment);
                     maxSize = std::cmp::max(maxSize, size);
@@ -203,6 +229,7 @@ impl Program {
                 offset += padding;
                 item.alignment = totalAlignment;
                 item.size = offset;
+                item.payloadSize = maxSize;
                 self.unions.insert(item.name.clone(), item);
             }
         }
@@ -222,6 +249,8 @@ impl Program {
         }
     }
     fn lower(&self) -> LProgram {
+        println!("Before lowering {}", self);
+
         let mut program = LProgram::new();
 
         for (_, s) in &self.structs {
@@ -389,7 +418,19 @@ impl Program {
                     blocks: vec![block],
                 }
             }
-            FunctionKind::VariantCtor => todo!(),
+            FunctionKind::VariantCtor => {
+                let mut args: Vec<_> = f.args.iter().map(|p| self.lowerParam(p)).collect();
+                args.push(LParam {
+                    name: getResultVarName(),
+                    ty: LType::Ptr(Box::new(self.lowerType(&f.result))),
+                });
+                LFunction {
+                    name: f.name.clone(),
+                    args: args,
+                    result: LType::Void,
+                    blocks: vec![],
+                }
+            }
         }
     }
 
@@ -422,6 +463,7 @@ impl Program {
             Type::Struct(n) => LType::Struct(n.clone()),
             Type::Union(n) => LType::Struct(n.clone()),
             Type::Ptr(t) => LType::Ptr(Box::new(self.lowerType(t))),
+            Type::ByteArray(s) => LType::ByteArray(*s),
         }
     }
 }

@@ -22,6 +22,7 @@ pub struct Union {
     pub variants: Vec<Variant>,
     pub size: u32,
     pub alignment: u32,
+    pub payloadSize: u32,
 }
 
 #[derive(Clone)]
@@ -48,7 +49,11 @@ impl fmt::Display for Field {
 
 impl fmt::Display for Union {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Union {} {{\n", self.name)?;
+        write!(
+            f,
+            "Union {} (size: {}, alignment: {}, payload size: {}) {{\n",
+            self.name, self.size, self.alignment, self.payloadSize
+        )?;
         for variant in &self.variants {
             write!(f, "    {}\n", variant)?;
         }

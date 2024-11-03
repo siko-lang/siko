@@ -11,6 +11,7 @@ pub enum Type {
     Struct(String),
     Union(String),
     Ptr(Box<Type>),
+    ByteArray(u32),
 }
 
 impl Type {
@@ -25,6 +26,7 @@ impl Type {
             Type::Struct(_) => false,
             Type::Union(_) => false,
             Type::Ptr(_) => false,
+            Type::ByteArray(_) => false,
         }
     }
 }
@@ -41,6 +43,7 @@ impl fmt::Display for Type {
             Type::Struct(name) => write!(f, "struct {}", name),
             Type::Union(name) => write!(f, "union {}", name),
             Type::Ptr(inner) => write!(f, "*{}", inner),
+            Type::ByteArray(size) => write!(f, "u8[{}]", size),
         }
     }
 }

@@ -247,6 +247,7 @@ pub fn lowerEnum(e: &HirEnum, program: &HirProgram) -> Union {
         variants: variants,
         size: 0,
         alignment: 0,
+        payloadSize: 0,
     }
 }
 

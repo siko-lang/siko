@@ -7,6 +7,7 @@ pub enum Type {
     Int64,
     Struct(String),
     Ptr(Box<Type>),
+    ByteArray(u32),
 }
 
 impl Type {

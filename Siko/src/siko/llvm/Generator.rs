@@ -30,6 +30,7 @@ pub fn getTypeName(ty: &Type) -> String {
         Type::Int64 => "i64".to_string(),
         Type::Struct(n) => getStructName(n),
         Type::Ptr(_) => todo!(),
+        Type::ByteArray(s) => format!("i8[{}", s),
     }
 }
 
@@ -50,6 +51,7 @@ impl Generator {
             Type::Int64 => 8,
             Type::Struct(n) => self.program.getStruct(n).alignment,
             Type::Ptr(_) => 8,
+            Type::ByteArray(_) => 1,
         }
     }
 

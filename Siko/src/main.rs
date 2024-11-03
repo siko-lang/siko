@@ -85,7 +85,7 @@ fn main() {
     let program = data_lifetime_inferer.process();
     //println!("after backend\n {}", program);
     let mut mir_program = lowerProgram(&program);
-    println!("mir\n{}", mir_program);
+    //println!("mir\n{}", mir_program);
     let llvm_program = mir_program.process();
     let mut generator = Generator::new(outputFile, llvm_program);
     generator.dump().expect("llvm generator failed");
