@@ -30,7 +30,7 @@ pub fn getTypeName(ty: &Type) -> String {
         Type::Int64 => "i64".to_string(),
         Type::Struct(n) => getStructName(n),
         Type::Ptr(_) => todo!(),
-        Type::ByteArray(s) => format!("i8[{}", s),
+        Type::ByteArray(s) => format!("[{} x i8]", s),
     }
 }
 
@@ -75,8 +75,14 @@ impl Generator {
                 format!("{} = alloca {}, align {}", var.name, getTypeName(&var.ty), self.getAlignment(&var.ty),)
             }
             Instruction::Store(dest, src) => match src {
-                Value::Numeric(value) => {
-                    format!("store i64 {}, ptr {}, align {}", value, dest.name, self.getAlignment(&dest.ty),)
+                Value::Numeric(value, ty) => {
+                    format!(
+                        "store {} {}, ptr {}, align {}",
+                        getTypeName(ty),
+                        value,
+                        dest.name,
+                        self.getAlignment(&dest.ty),
+                    )
                 }
                 Value::Variable(src) => {
                     format!(
@@ -119,8 +125,8 @@ impl Generator {
                 Value::Variable(var) => {
                     format!("ret {} {}", getTypeName(&var.ty), var.name)
                 }
-                Value::Numeric(v) => {
-                    format!("ret i64 {}", v)
+                Value::Numeric(v, ty) => {
+                    format!("ret {} {}", getTypeName(ty), v)
                 }
             },
             Instruction::Jump(label) => {
@@ -138,6 +144,15 @@ impl Generator {
                     format!("ups {:?}", dest.ty)
                 }
             },
+            Instruction::Bitcast(dest, src) => {
+                format!(
+                    "{} = bitcast {}* {} to {}*",
+                    dest.name,
+                    getTypeName(&src.ty),
+                    src.name,
+                    getTypeName(&dest.ty)
+                )
+            }
         }
     }
 

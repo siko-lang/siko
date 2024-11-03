@@ -144,7 +144,7 @@ impl<'a> Builder<'a> {
                 }
                 MirFunctionKind::UserDefined(blocks)
             }
-            FunctionKind::VariantCtor(_) => {
+            FunctionKind::VariantCtor(i) => {
                 // if self.function.name == getTrueName().monomorphized("".to_string()) {
                 //     let var1 = Variable {
                 //         name: "var1".to_string(),
@@ -163,7 +163,7 @@ impl<'a> Builder<'a> {
                 //     block.instructions.push(Instruction::Return(Value::Void));
                 //     blocks.push(block);
                 // }
-                MirFunctionKind::VariantCtor
+                MirFunctionKind::VariantCtor(i)
             }
             FunctionKind::Extern => todo!(),
         };

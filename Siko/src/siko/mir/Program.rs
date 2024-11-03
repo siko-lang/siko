@@ -73,7 +73,10 @@ impl Program {
     }
 
     fn getStruct(&self, n: &String) -> Struct {
-        self.structs.get(n).cloned().expect("struct not found")
+        match self.structs.get(n) {
+            Some(s) => s.clone(),
+            None => panic!("struct {} not found", n),
+        }
     }
 
     fn getUnion(&self, n: &String) -> Union {
@@ -97,6 +100,15 @@ impl Program {
                 alignment: u.alignment,
             };
             self.structs.insert(n.clone(), s);
+            for v in &u.variants {
+                let mut variantStruct = if let Type::Struct(vName) = &v.ty {
+                    self.getStruct(vName)
+                } else {
+                    unreachable!()
+                };
+                variantStruct.name = v.name.clone();
+                self.structs.insert(v.name.clone(), variantStruct);
+            }
         }
     }
 
@@ -300,7 +312,7 @@ impl Program {
                         self.lowerVar(dest),
                         match src {
                             Value::Void => unreachable!(),
-                            Value::Numeric(v) => LValue::Numeric(v.clone()),
+                            Value::Numeric(v) => LValue::Numeric(v.clone(), LType::Int64),
                             Value::Var(v) => LValue::Variable(self.lowerVar(v)),
                         },
                     );
@@ -333,7 +345,7 @@ impl Program {
                     let tmpVar = self.tmpVar(var, 1);
                     let llvmInstruction = LInstruction::GetFieldRef(tmpVar.clone(), self.lowerVar(var), 0);
                     llvmBlock.instructions.push(llvmInstruction);
-                    let llvmInstruction = LInstruction::Store(tmpVar, LValue::Numeric(value.clone()));
+                    let llvmInstruction = LInstruction::Store(tmpVar, LValue::Numeric(value.clone(), LType::Int64));
                     llvmBlock.instructions.push(llvmInstruction);
                 }
                 Instruction::Jump(name) => {
@@ -418,7 +430,70 @@ impl Program {
                     blocks: vec![block],
                 }
             }
-            FunctionKind::VariantCtor => {
+            FunctionKind::VariantCtor(index) => {
+                let mut block = LBlock {
+                    id: format!("block0"),
+                    instructions: Vec::new(),
+                };
+                let this = Variable {
+                    name: "this".to_string(),
+                    ty: f.result.clone(),
+                };
+                let u = if let Type::Union(u) = &f.result {
+                    self.getUnion(u)
+                } else {
+                    unreachable!()
+                };
+                let variant = &u.variants[*index as usize];
+                let s = self.getStruct(&f.name);
+                block.instructions.push(LInstruction::Allocate(self.lowerVar(&this)));
+                let tagVar = Variable {
+                    name: format!("tag"),
+                    ty: Type::Int32,
+                };
+                let untypedPayloadVar = Variable {
+                    name: format!("payload1"),
+                    ty: Type::Int32,
+                };
+                block
+                    .instructions
+                    .push(LInstruction::GetFieldRef(self.lowerVar(&tagVar), self.lowerVar(&this), 0));
+                block.instructions.push(LInstruction::Store(
+                    self.lowerVar(&tagVar),
+                    LValue::Numeric(format!("{}", index), LType::Int32),
+                ));
+                block
+                    .instructions
+                    .push(LInstruction::GetFieldRef(self.lowerVar(&untypedPayloadVar), self.lowerVar(&this), 1));
+                let payloadVar = Variable {
+                    name: format!("payload2"),
+                    ty: Type::Struct(variant.name.clone()),
+                };
+                block
+                    .instructions
+                    .push(LInstruction::Bitcast(self.lowerVar(&payloadVar), self.lowerVar(&untypedPayloadVar)));
+                for (index, field) in s.fields.iter().enumerate() {
+                    let fieldVar = Variable {
+                        name: format!("field{}", index),
+                        ty: Type::Int64,
+                    };
+                    block.instructions.push(LInstruction::GetFieldRef(
+                        self.lowerVar(&fieldVar),
+                        self.lowerVar(&payloadVar),
+                        index as i32,
+                    ));
+                    let argVar = Variable {
+                        name: field.name.clone(),
+                        ty: field.ty.clone(),
+                    };
+                    block
+                        .instructions
+                        .push(LInstruction::Memcpy(self.lowerVar(&fieldVar), self.lowerVar(&argVar)));
+                }
+                block
+                    .instructions
+                    .push(LInstruction::Memcpy(self.lowerVar(&this), self.lowerVar(&getResultVar(this.ty.clone()))));
+                block.instructions.push(LInstruction::Return(LValue::Void));
                 let mut args: Vec<_> = f.args.iter().map(|p| self.lowerParam(p)).collect();
                 args.push(LParam {
                     name: getResultVarName(),
@@ -428,7 +503,7 @@ impl Program {
                     name: f.name.clone(),
                     args: args,
                     result: LType::Void,
-                    blocks: vec![],
+                    blocks: vec![block],
                 }
             }
         }

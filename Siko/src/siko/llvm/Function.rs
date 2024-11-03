@@ -27,7 +27,7 @@ pub struct Variable {
 pub enum Value {
     Void,
     Variable(Variable),
-    Numeric(String),
+    Numeric(String, Type),
 }
 
 pub enum Instruction {
@@ -39,4 +39,5 @@ pub enum Instruction {
     GetFieldRef(Variable, Variable, i32),
     Jump(String),
     Memcpy(Variable, Variable),
+    Bitcast(Variable, Variable),
 }

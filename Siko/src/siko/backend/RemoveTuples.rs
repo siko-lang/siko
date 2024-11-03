@@ -158,23 +158,39 @@ pub fn removeTuples(program: &Program) -> Program {
     result.enums = program.enums.removeTuples(&mut ctx);
     for tuple in ctx.tuples {
         let name = getTuple(&tuple);
-        let unit = Class {
-            name: name.clone(),
-            ty: Type::Named(name.clone(), Vec::new(), None),
-            fields: Vec::new(),
-            methods: Vec::new(),
-            lifetime_info: None,
-        };
-        let unitFn = Function {
-            name: name.clone(),
-            params: Vec::new(),
-            result: Type::Named(name.clone(), Vec::new(), None),
-            body: None,
-            constraintContext: createConstraintContext(&None),
-            kind: FunctionKind::ClassCtor,
-        };
-        result.classes.insert(name.clone(), unit);
-        result.functions.insert(name.clone(), unitFn);
+        if let Type::Tuple(args) = tuple {
+            let mut fields = Vec::new();
+            let mut params = Vec::new();
+            for (index, arg) in args.iter().enumerate() {
+                let name = format!("f{}", index);
+                let field = Field {
+                    name: name.clone(),
+                    ty: arg.clone(),
+                };
+                fields.push(field);
+                let param = Parameter::Named(name, arg.clone(), false);
+                params.push(param);
+            }
+            let tupleStruct = Class {
+                name: name.clone(),
+                ty: Type::Named(name.clone(), Vec::new(), None),
+                fields: fields,
+                methods: Vec::new(),
+                lifetime_info: None,
+            };
+            let unitFn = Function {
+                name: name.clone(),
+                params: params,
+                result: Type::Named(name.clone(), Vec::new(), None),
+                body: None,
+                constraintContext: createConstraintContext(&None),
+                kind: FunctionKind::ClassCtor,
+            };
+            result.classes.insert(name.clone(), tupleStruct);
+            result.functions.insert(name.clone(), unitFn);
+        } else {
+            unreachable!()
+        }
     }
     result
 }

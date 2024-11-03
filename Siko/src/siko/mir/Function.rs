@@ -17,7 +17,7 @@ impl fmt::Display for Param {
 pub enum FunctionKind {
     UserDefined(Vec<Block>),
     ClassCtor,
-    VariantCtor,
+    VariantCtor(i64),
 }
 
 pub struct Function {
@@ -39,7 +39,7 @@ impl fmt::Display for Function {
                     self.result,
                 )
             }
-            FunctionKind::VariantCtor => {
+            FunctionKind::VariantCtor(_) => {
                 write!(
                     f,
                     "Function: {}\nArguments: ({}) -> {}\nVariantCtor",

@@ -153,7 +153,7 @@ impl<'a> Resolver<'a> {
                             let mut ctorParams = Vec::new();
                             for (index, item) in variant.items.iter().enumerate() {
                                 let ty = typeResolver.resolveType(item);
-                                ctorParams.push(Parameter::Named(format!("item{}", index), ty.clone(), false));
+                                ctorParams.push(Parameter::Named(format!("f{}", index), ty.clone(), false));
                                 items.push(ty);
                             }
 
