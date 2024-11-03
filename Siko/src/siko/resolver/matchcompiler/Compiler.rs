@@ -132,6 +132,7 @@ impl fmt::Display for DecisionPath {
 pub struct MatchCompiler<'a, 'b> {
     resolver: &'a mut ExprResolver<'b>,
     bodyId: InstructionId,
+    matchLocation: Location,
     bodyLocation: Location,
     branches: Vec<Branch>,
     errors: Vec<ResolverError>,
@@ -149,14 +150,16 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
     pub fn new(
         resolver: &'a mut ExprResolver<'b>,
         bodyId: InstructionId,
+        matchLocation: Location,
         bodyLocation: Location,
         branches: Vec<Branch>,
         parentEnv: &'a Environment<'a>,
     ) -> MatchCompiler<'a, 'b> {
         let matchValue = resolver.createValue("match_var");
-        let declareId = resolver.addInstruction(InstructionKind::DeclareVar(matchValue.clone()), bodyLocation.clone());
+        let declareId = resolver.addInstruction(InstructionKind::DeclareVar(matchValue.clone()), matchLocation.clone());
         let contBlockId = resolver.createBlock();
         MatchCompiler {
+            matchLocation: matchLocation,
             bodyLocation: bodyLocation,
             bodyId: bodyId,
             branches: branches,
@@ -418,7 +421,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         let valueId = self.resolver.addInstructionToBlock(
             self.contBlockId,
             InstructionKind::ValueRef(ValueKind::Value(self.matchValue.clone()), Vec::new(), Vec::new()),
-            self.bodyLocation.clone(),
+            self.matchLocation.clone(),
             false,
         );
         self.resolver.setTargetBlockId(self.contBlockId);
@@ -554,7 +557,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     let last = self.resolver.getTargetBlockId();
                     self.resolver.addInstruction(
                         InstructionKind::Assign(self.matchValue.clone(), self.resolver.body.getBlockById(last).getLastId()),
-                        self.bodyLocation.clone(),
+                        self.matchLocation.clone(),
                     );
                     self.resolver
                         .addInstruction(InstructionKind::Jump(self.contBlockId), self.bodyLocation.clone());

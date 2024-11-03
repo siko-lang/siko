@@ -9,5 +9,5 @@ teststd: Siko/target/release/siko
 
 llvm: Siko/target/release/siko
 	@./siko test.sk
-	opt -O2 llvm.ll -o optimized.ll
+	opt -O2 -S llvm.ll -o optimized.ll
 	@clang -Wno-override-module llvm.ll -o llvm_main.bin

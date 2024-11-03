@@ -315,7 +315,7 @@ impl<'a> ExprResolver<'a> {
             }
             SimpleExpr::Match(body, branches) => {
                 let bodyId = self.resolveExpr(body, env);
-                let mut matchResolver = MatchCompiler::new(self, bodyId, body.location.clone(), branches.clone(), env);
+                let mut matchResolver = MatchCompiler::new(self, bodyId, expr.location.clone(), body.location.clone(), branches.clone(), env);
                 matchResolver.compile()
             }
             SimpleExpr::Block(block) => {

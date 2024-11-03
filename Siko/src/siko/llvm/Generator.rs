@@ -157,12 +157,12 @@ impl Generator {
                 let branches: Vec<_> = branches
                     .iter()
                     .map(|b| match &b.value {
-                        Value::Numeric(v, ty) => format!("{} {}, label {}", getTypeName(&ty), v, b.block),
+                        Value::Numeric(v, ty) => format!("{} {}, label %{}", getTypeName(&ty), v, b.block),
                         _ => todo!(),
                     })
                     .collect();
                 format!(
-                    "switch {} {}, label {} [\n{}\n]\n",
+                    "switch {} {}, label %{} [\n{}\n]\n",
                     getTypeName(&root.ty),
                     root.name,
                     default,

@@ -354,7 +354,6 @@ impl Program {
                     llvmBlock.instructions.push(llvmInstruction);
                 }
                 Instruction::EnumSwitch(var, cases) => {
-                    println!("Switching on {}", var.ty);
                     let switchVar = Variable {
                         name: format!("switch_var"),
                         ty: Type::Int32,
