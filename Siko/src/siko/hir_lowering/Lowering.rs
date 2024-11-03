@@ -14,7 +14,7 @@ use crate::siko::{
         Program::Program as MirProgram,
         Type::Type as MirType,
     },
-    qualifiedname::{getTrueName, QualifiedName},
+    qualifiedname::QualifiedName,
 };
 
 pub struct Builder<'a> {
@@ -132,77 +132,48 @@ impl<'a> Builder<'a> {
             args.push(arg);
         }
 
-        let mut blocks = Vec::new();
-        match self.function.kind {
-            FunctionKind::ClassCtor => {
-                blocks.push(self.createClassCtor());
-            }
+        let kind = match self.function.kind {
+            FunctionKind::ClassCtor => MirFunctionKind::ClassCtor,
             FunctionKind::UserDefined => {
+                let mut blocks = Vec::new();
                 if let Some(body) = self.function.body.clone() {
                     for block in &body.blocks {
                         let mirBlock = self.lowerBlock(block);
                         blocks.push(mirBlock);
                     }
                 }
+                MirFunctionKind::UserDefined(blocks)
             }
             FunctionKind::VariantCtor(_) => {
-                if self.function.name == getTrueName().monomorphized("".to_string()) {
-                    let var1 = Variable {
-                        name: "var1".to_string(),
-                        ty: MirType::Int64,
-                    };
-                    let var2 = Variable {
-                        name: "var2".to_string(),
-                        ty: MirType::Int64,
-                    };
-                    let mut block = MirBlock {
-                        id: format!("block0"),
-                        instructions: Vec::new(),
-                    };
-                    block.instructions.push(Instruction::Declare(var1.clone()));
-                    block.instructions.push(Instruction::Reference(var2.clone(), var1.clone()));
-                    block.instructions.push(Instruction::Return(Value::Void));
-                    blocks.push(block);
-                }
+                // if self.function.name == getTrueName().monomorphized("".to_string()) {
+                //     let var1 = Variable {
+                //         name: "var1".to_string(),
+                //         ty: MirType::Int64,
+                //     };
+                //     let var2 = Variable {
+                //         name: "var2".to_string(),
+                //         ty: MirType::Int64,
+                //     };
+                //     let mut block = MirBlock {
+                //         id: format!("block0"),
+                //         instructions: Vec::new(),
+                //     };
+                //     block.instructions.push(Instruction::Declare(var1.clone()));
+                //     block.instructions.push(Instruction::Reference(var2.clone(), var1.clone()));
+                //     block.instructions.push(Instruction::Return(Value::Void));
+                //     blocks.push(block);
+                // }
+                MirFunctionKind::VariantCtor
             }
-            FunctionKind::Extern => {}
-        }
-        let mut mirFunction = MirFunction {
+            FunctionKind::Extern => todo!(),
+        };
+        let mirFunction = MirFunction {
             name: convertName(&self.function.name),
             args: args,
             result: lowerType(&self.function.result, &self.program),
-            kind: MirFunctionKind::UserDefined(blocks),
+            kind: kind,
         };
         mirFunction
-    }
-
-    fn createClassCtor(&mut self) -> MirBlock {
-        let mut block = MirBlock {
-            id: format!("block0"),
-            instructions: Vec::new(),
-        };
-        let this = Variable {
-            name: "this".to_string(),
-            ty: lowerType(&self.function.result, &self.program),
-        };
-        let s = self.program.getClass(&self.function.result.getName().unwrap());
-        block.instructions.push(Instruction::Declare(this.clone()));
-        for (index, field) in s.fields.iter().enumerate() {
-            let fieldVar = Variable {
-                name: format!("field{}", index),
-                ty: MirType::Int64,
-            };
-            block
-                .instructions
-                .push(Instruction::GetFieldRef(fieldVar.clone(), this.clone(), index as i32));
-            let argVar = Variable {
-                name: field.name.clone(),
-                ty: lowerType(&field.ty, &self.program),
-            };
-            block.instructions.push(Instruction::Memcpy(fieldVar, argVar));
-        }
-        block.instructions.push(Instruction::Return(Value::Var(this)));
-        block
     }
 }
 

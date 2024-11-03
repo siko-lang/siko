@@ -346,7 +346,49 @@ impl Program {
                     blocks: llvmBlocks,
                 }
             }
-            FunctionKind::ClassCtor => todo!(),
+            FunctionKind::ClassCtor => {
+                let mut block = LBlock {
+                    id: format!("block0"),
+                    instructions: Vec::new(),
+                };
+                let this = Variable {
+                    name: "this".to_string(),
+                    ty: f.result.clone(),
+                };
+                let s = self.getStruct(&f.name);
+                block.instructions.push(LInstruction::Allocate(self.lowerVar(&this)));
+                for (index, field) in s.fields.iter().enumerate() {
+                    let fieldVar = Variable {
+                        name: format!("field{}", index),
+                        ty: Type::Int64,
+                    };
+                    block
+                        .instructions
+                        .push(LInstruction::GetFieldRef(self.lowerVar(&fieldVar), self.lowerVar(&this), index as i32));
+                    let argVar = Variable {
+                        name: field.name.clone(),
+                        ty: field.ty.clone(),
+                    };
+                    block
+                        .instructions
+                        .push(LInstruction::Memcpy(self.lowerVar(&fieldVar), self.lowerVar(&argVar)));
+                }
+                block
+                    .instructions
+                    .push(LInstruction::Memcpy(self.lowerVar(&this), self.lowerVar(&getResultVar(this.ty.clone()))));
+                block.instructions.push(LInstruction::Return(LValue::Void));
+                let mut args: Vec<_> = f.args.iter().map(|p| self.lowerParam(p)).collect();
+                args.push(LParam {
+                    name: getResultVarName(),
+                    ty: LType::Ptr(Box::new(self.lowerType(&f.result))),
+                });
+                LFunction {
+                    name: f.name.clone(),
+                    args: args,
+                    result: LType::Void,
+                    blocks: vec![block],
+                }
+            }
             FunctionKind::VariantCtor => todo!(),
         }
     }
