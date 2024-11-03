@@ -1,8 +1,6 @@
 use std::{collections::BTreeSet, fmt::Display};
 
-use crate::siko::qualifiedname::{
-    getBoolTypeName, getCharTypeName, getIntTypeName, getStringTypeName, QualifiedName,
-};
+use crate::siko::qualifiedname::{getBoolTypeName, getCharTypeName, getIntTypeName, getStringTypeName, QualifiedName};
 
 use super::Lifetime::{Lifetime, LifetimeInfo};
 
@@ -40,6 +38,13 @@ impl Type {
             Type::Named(n, _, _) => Some(n.clone()),
             Type::Reference(ty, _) => ty.getName(),
             _ => None,
+        }
+    }
+
+    pub fn unpackRef(&self) -> Type {
+        match &self {
+            Type::Reference(ty, _) => ty.unpackRef(),
+            t => (*t).clone(),
         }
     }
 
@@ -82,11 +87,7 @@ impl Type {
 
     pub fn collectLifetimes(&self) -> Vec<Lifetime> {
         match &self {
-            Type::Named(_, _, lifetimes) => lifetimes
-                .as_ref()
-                .expect("lifetime info missing")
-                .args
-                .clone(),
+            Type::Named(_, _, lifetimes) => lifetimes.as_ref().expect("lifetime info missing").args.clone(),
             Type::Tuple(_) => Vec::new(),
             Type::Function(_, _) => {
                 unreachable!()

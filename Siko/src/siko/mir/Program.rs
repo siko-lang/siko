@@ -262,7 +262,7 @@ impl Program {
         }
     }
     fn lower(&self) -> LProgram {
-        println!("Before lowering {}", self);
+        //println!("Before lowering {}", self);
 
         let mut program = LProgram::new();
 

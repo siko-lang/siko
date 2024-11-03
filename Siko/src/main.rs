@@ -10,7 +10,6 @@ use siko::{
     llvm::Generator::Generator,
     location::{FileManager::FileManager, Report::ReportContext},
     monomorphizer::Monomorphizer::Monomorphizer,
-    ownership::{BorrowChecker, DataFlow::DataFlowProfileBuilder::DataFlowProfileBuilder, DataLifetime::DataLifeTimeInference},
     parser::Parser::*,
     resolver::Resolver::Resolver,
     typechecker::Typechecker::Typechecker,
@@ -32,17 +31,17 @@ fn typecheck(ctx: &ReportContext, mut program: Program) -> Program {
     program
 }
 
-fn borrowcheck(program: &Program) {
-    let builder = DataFlowProfileBuilder::new(program);
-    let program = builder.process();
-    println!("{}", program);
-    for (_, f) in &program.functions {
-        if f.body.is_some() {
-            let mut borrowchecker = BorrowChecker::BorrowChecker::new(f);
-            borrowchecker.check();
-        }
-    }
-}
+// fn borrowcheck(program: &Program) {
+//     let builder = DataFlowProfileBuilder::new(program);
+//     let program = builder.process();
+//     println!("{}", program);
+//     for (_, f) in &program.functions {
+//         if f.body.is_some() {
+//             let mut borrowchecker = BorrowChecker::BorrowChecker::new(f);
+//             borrowchecker.check();
+//         }
+//     }
+// }
 
 fn monomorphize(ctx: &ReportContext, program: Program) -> Program {
     let monomorphizer = Monomorphizer::new(ctx, program);
@@ -76,13 +75,13 @@ fn main() {
     resolver.process();
     let program = resolver.ir();
     let program = typecheck(&ctx, program);
-    //println!("after tychk\n{}", program);
+    println!("after tychk\n{}", program);
     let program = eliminateDeadCode(&ctx, program);
     let program = monomorphize(&ctx, program);
     //println!("after mono\n{}", program);
     let program = removeTuples(&program);
-    let data_lifetime_inferer = DataLifeTimeInference::new(program);
-    let program = data_lifetime_inferer.process();
+    //let data_lifetime_inferer = DataLifeTimeInference::new(program);
+    //let program = data_lifetime_inferer.process();
     //println!("after backend\n {}", program);
     let mut mir_program = lowerProgram(&program);
     //println!("mir\n{}", mir_program);

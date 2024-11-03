@@ -68,7 +68,7 @@ impl<'a> Builder<'a> {
                     block.instructions.push(Instruction::Declare(var.clone()));
                 }
                 HirInstructionKind::If(_, _, _) => {}
-                HirInstructionKind::ValueRef(name, _, _) => {
+                HirInstructionKind::ValueRef(name) => {
                     let i = self.function.getInstruction(instruction.id);
                     let ty = lowerType(i.ty.as_ref().expect("no ty"), &self.program);
                     let var = Variable {

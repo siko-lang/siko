@@ -62,6 +62,7 @@ impl<'a> FunctionParser for Parser<'a> {
             } else {
                 None
             };
+            println!("Body {:?}", body);
             (false, body)
         };
 
