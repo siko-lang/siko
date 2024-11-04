@@ -177,7 +177,7 @@ impl<'a> Typechecker<'a> {
                     self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
                 }
                 InstructionKind::ValueRef(value) => {
-                    let mut receiverType = match &value {
+                    let receiverType = match &value {
                         ValueKind::Arg(name, _) => self.getValueType(name),
                         ValueKind::Value(name) => self.getValueType(name),
                     };
@@ -278,6 +278,7 @@ impl<'a> Typechecker<'a> {
                 }
                 InstructionKind::TupleIndex(receiver, index) => {
                     let receiverType = self.getInstructionType(*receiver);
+                    let receiverType = self.substitution.apply(&receiverType);
                     match receiverType {
                         Type::Tuple(t) => {
                             if *index as usize >= t.len() {

@@ -116,6 +116,10 @@ impl<'a> Builder<'a> {
                     let root = self.buildInstructionVar(root);
                     block.instructions.push(Instruction::Transform(idVar, root, format!("{}", ty)));
                 }
+                HirInstructionKind::TupleIndex(root, index) => {
+                    let root = self.buildInstructionVar(root);
+                    block.instructions.push(Instruction::GetFieldRef(idVar, root, *index));
+                }
                 k => panic!("NYI {}", k),
             }
         }

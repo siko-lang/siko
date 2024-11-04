@@ -67,7 +67,7 @@ block0:
    %tag = getelementptr inbounds %struct.Main_Bool, ptr %this, i32 0, i32 0
    store i32 0, ptr %tag, align 4
    %payload1 = getelementptr inbounds %struct.Main_Bool, ptr %this, i32 0, i32 1
-   %payload2 = bitcast i32* %payload1 to %struct.Main_Bool_True*
+   %payload2 = bitcast i8* %payload1 to %struct.Main_Bool_True*
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %this, i8 4, i1 false)
    ret void
 }
@@ -78,7 +78,7 @@ block0:
    %tag = getelementptr inbounds %struct.Main_FooBar, ptr %this, i32 0, i32 0
    store i32 1, ptr %tag, align 4
    %payload1 = getelementptr inbounds %struct.Main_FooBar, ptr %this, i32 0, i32 1
-   %payload2 = bitcast i32* %payload1 to %struct.Main_FooBar_Bar*
+   %payload2 = bitcast i8* %payload1 to %struct.Main_FooBar_Bar*
    %field0 = getelementptr inbounds %struct.Main_FooBar_Bar, ptr %payload2, i32 0, i32 0
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %f0, ptr align 4 %field0, i8 4, i1 false)
    %field1 = getelementptr inbounds %struct.Main_FooBar_Bar, ptr %payload2, i32 0, i32 1
@@ -93,7 +93,7 @@ block0:
    %tag = getelementptr inbounds %struct.Main_FooBar, ptr %this, i32 0, i32 0
    store i32 0, ptr %tag, align 4
    %payload1 = getelementptr inbounds %struct.Main_FooBar, ptr %this, i32 0, i32 1
-   %payload2 = bitcast i32* %payload1 to %struct.Main_FooBar_Foo*
+   %payload2 = bitcast i8* %payload1 to %struct.Main_FooBar_Foo*
    %field0 = getelementptr inbounds %struct.Main_FooBar_Foo, ptr %payload2, i32 0, i32 0
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %f0, ptr align 4 %field0, i8 4, i1 false)
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %this, i8 12, i1 false)

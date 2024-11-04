@@ -355,7 +355,7 @@ impl Program {
                 }
                 Instruction::EnumSwitch(var, cases) => {
                     let switchVar = Variable {
-                        name: format!("switch_var"),
+                        name: format!("switch_var_{}", block.id),
                         ty: Type::Int32,
                     };
                     let tmpVar = self.tmpVar(&switchVar, 1);
@@ -378,7 +378,10 @@ impl Program {
                     let llvmInstruction = LInstruction::Switch(tmpVar2.clone(), cases[0].branch.clone(), branches);
                     llvmBlock.instructions.push(llvmInstruction);
                 }
-                Instruction::Transform(_, _, _) => {}
+                Instruction::Transform(dest, src, _) => {
+                    let llvmInstruction = LInstruction::Bitcast(self.lowerVar(dest), self.lowerVar(src));
+                    llvmBlock.instructions.push(llvmInstruction);
+                }
             };
         }
         llvmBlock
@@ -478,7 +481,7 @@ impl Program {
                 };
                 let untypedPayloadVar = Variable {
                     name: format!("payload1"),
-                    ty: Type::Int32,
+                    ty: Type::Int8,
                 };
                 block
                     .instructions
@@ -500,7 +503,7 @@ impl Program {
                 for (index, field) in s.fields.iter().enumerate() {
                     let fieldVar = Variable {
                         name: format!("field{}", index),
-                        ty: Type::Int64,
+                        ty: field.ty.clone(),
                     };
                     block.instructions.push(LInstruction::GetFieldRef(
                         self.lowerVar(&fieldVar),

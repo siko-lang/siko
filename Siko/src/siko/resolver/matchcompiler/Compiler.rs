@@ -536,7 +536,6 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     let blockId = self.resolver.createBlock();
                     self.resolver.setTargetBlockId(blockId);
                     for (path, name) in &m.bindings.bindings {
-                        println!("resolving binding {} {}", name, path);
                         let bindValue = ctx.get(path.decisions.last().unwrap());
                         let new = self.resolver.createValue(&name);
                         self.resolver
