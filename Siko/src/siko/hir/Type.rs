@@ -105,6 +105,22 @@ impl Type {
         }
     }
 
+    pub fn changeSelfType(&self, selfType: Type) -> Type {
+        match &self {
+            Type::Tuple(args) => {
+                if args.len() > 0 && args[0] == Type::SelfType {
+                    let mut args = args.clone();
+                    args.remove(0);
+                    args.insert(0, selfType);
+                    return Type::Tuple(args);
+                }
+                Type::Tuple(args.clone())
+            }
+            Type::SelfType => selfType,
+            ty => (*ty).clone(),
+        }
+    }
+
     pub fn isConcrete(&self) -> bool {
         match &self {
             Type::Named(_, args, _) => {

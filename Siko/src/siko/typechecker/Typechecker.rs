@@ -23,7 +23,6 @@ use super::Error::TypecheckerError;
 enum TypedId {
     Instruction(InstructionId),
     Value(String),
-    SelfValue,
 }
 
 fn reportError(ctx: &ReportContext, ty1: Type, ty2: Type, location: Location) {
@@ -40,6 +39,7 @@ pub struct Typechecker<'a> {
     methodCalls: BTreeMap<InstructionId, InstructionId>,
     indices: BTreeMap<InstructionId, Vec<u32>>,
     types: BTreeMap<TypedId, Type>,
+    selfType: Option<Type>,
 }
 
 impl<'a> Typechecker<'a> {
@@ -54,12 +54,13 @@ impl<'a> Typechecker<'a> {
             methodCalls: BTreeMap::new(),
             indices: BTreeMap::new(),
             types: BTreeMap::new(),
+            selfType: None,
         }
     }
 
     pub fn run(&mut self, f: &Function) -> Function {
         self.initialize(f);
-        //self.dump(f);
+        self.dump(f);
         self.check(f);
         self.verify(f);
         //self.dump(f);
@@ -74,7 +75,8 @@ impl<'a> Typechecker<'a> {
                     self.types.insert(TypedId::Value(name.clone()), ty.clone());
                 }
                 Parameter::SelfParam(_, ty) => {
-                    self.types.insert(TypedId::SelfValue, ty.clone());
+                    self.types.insert(TypedId::Value(format!("self")), ty.clone());
+                    self.selfType = Some(ty.clone());
                 }
             }
         }
@@ -136,12 +138,15 @@ impl<'a> Typechecker<'a> {
     fn checkFunctionCall(&mut self, args: &Vec<InstructionId>, body: &Body, instruction: &Instruction, fnType: Type) {
         //println!("checkFunctionCall: {}", fnType);
         let fnType = self.instantiateType(fnType);
-        let (fnArgs, fnResult) = match fnType.splitFnType() {
+        let (fnArgs, mut fnResult) = match fnType.splitFnType() {
             Some((fnArgs, fnResult)) => (fnArgs, fnResult),
             None => return,
         };
         if args.len() != fnArgs.len() {
             TypecheckerError::ArgCountMismatch(fnArgs.len() as u32, args.len() as u32, instruction.location.clone()).report(self.ctx);
+        }
+        if fnArgs.len() > 0 {
+            fnResult = fnResult.changeSelfType(fnArgs[0].clone());
         }
         for (arg, fnArg) in zip(args, fnArgs) {
             self.unify(self.getInstructionType(*arg), fnArg, body.getInstruction(*arg).location.clone());
@@ -228,7 +233,11 @@ impl<'a> Typechecker<'a> {
                     self.unify(self.getInstructionType(instruction.id), Type::getCharType(), instruction.location.clone());
                 }
                 InstructionKind::Return(arg) => {
-                    self.unify(f.result.clone(), self.getInstructionType(*arg), instruction.location.clone());
+                    let mut result = f.result.clone();
+                    if let Some(selfType) = self.selfType.clone() {
+                        result = result.changeSelfType(selfType);
+                    }
+                    self.unify(result, self.getInstructionType(*arg), instruction.location.clone());
                     self.unify(self.getInstructionType(instruction.id), Type::Never, instruction.location.clone());
                 }
                 InstructionKind::Ref(arg) => {
@@ -271,13 +280,13 @@ impl<'a> Typechecker<'a> {
                         }
                     };
                 }
-                InstructionKind::EnumSwitch(root, cases) => {
+                InstructionKind::EnumSwitch(_root, _cases) => {
                     self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
                 }
-                InstructionKind::IntegerSwitch(root, cases) => {
+                InstructionKind::IntegerSwitch(_root, _cases) => {
                     self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
                 }
-                InstructionKind::StringSwitch(root, cases) => {
+                InstructionKind::StringSwitch(_root, _cases) => {
                     self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
                 }
                 InstructionKind::FieldRef(receiver, fieldName) => {
@@ -377,6 +386,9 @@ impl<'a> Typechecker<'a> {
     pub fn generate(&self, f: &Function) -> Function {
         //println!("Generating {}", f.name);
         let mut result = f.clone();
+        if let Some(selfType) = self.selfType.clone() {
+            result.result = result.result.changeSelfType(selfType);
+        }
         if let Some(body) = &mut result.body {
             for block in &mut body.blocks {
                 for instruction in &mut block.instructions {
