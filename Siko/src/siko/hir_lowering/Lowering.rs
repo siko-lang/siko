@@ -120,7 +120,14 @@ impl<'a> Builder<'a> {
                     let root = self.buildInstructionVar(root);
                     block.instructions.push(Instruction::GetFieldRef(idVar, root, *index));
                 }
-                HirInstructionKind::FieldRef(root, name) => {}
+                HirInstructionKind::FieldRef(root, name) => {
+                    let i = self.function.getInstruction(*root);
+                    let className = i.ty.as_ref().expect("no type").getName().expect("no name for field ref root");
+                    let c = self.program.classes.get(&className).expect("class not found");
+                    let (_, index) = c.getField(name);
+                    let root = self.buildInstructionVar(root);
+                    block.instructions.push(Instruction::GetFieldRef(idVar, root, index));
+                }
                 k => panic!("NYI {}", k),
             }
         }

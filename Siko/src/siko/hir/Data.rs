@@ -35,6 +35,15 @@ impl Class {
             lifetime_info: None,
         }
     }
+
+    pub fn getField(&self, name: &String) -> (Field, i32) {
+        for (index, f) in self.fields.iter().enumerate() {
+            if f.name == *name {
+                return (f.clone(), index as i32);
+            }
+        }
+        unreachable!();
+    }
 }
 
 #[derive(Clone, Debug)]

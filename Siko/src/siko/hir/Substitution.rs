@@ -104,6 +104,7 @@ impl Substitution {
                     return Err(Error {});
                 }
             }
+            (Type::Var(TypeVar::Var(v1)), Type::Var(TypeVar::Var(v2))) if v1 == v2 => Ok(()),
             (_, Type::Var(v)) => {
                 self.add(v.clone(), ty1);
                 Ok(())
