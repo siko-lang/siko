@@ -1,6 +1,6 @@
 use crate::siko::location::Location::Location;
 
-use super::{Expr::Expr, Pattern::Pattern};
+use super::{Expr::Expr, Pattern::Pattern, Type::Type};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Block {
@@ -12,7 +12,7 @@ pub struct Block {
 pub enum StatementKind {
     Expr(Expr),
     Assign(Expr, Expr),
-    Let(Pattern, Expr),
+    Let(Pattern, Expr, Option<Type>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

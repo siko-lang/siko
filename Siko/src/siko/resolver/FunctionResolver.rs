@@ -78,7 +78,7 @@ impl<'a> FunctionResolver<'a> {
         };
 
         let body = if let Some(body) = &f.body {
-            let mut exprResolver = ExprResolver::new(ctx, self.moduleResolver, emptyVariants, variants, enums);
+            let mut exprResolver = ExprResolver::new(ctx, self.moduleResolver, &typeResolver, emptyVariants, variants, enums);
             exprResolver.resolve(body, &env);
             Some(exprResolver.body())
         } else {

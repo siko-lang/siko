@@ -105,6 +105,7 @@ impl<'a> DeadCodeEliminator<'a> {
                         self.processBlock(case.branch);
                     }
                 }
+                InstructionKind::Noop => {}
             }
         }
     }

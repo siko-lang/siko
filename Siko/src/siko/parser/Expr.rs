@@ -8,6 +8,7 @@ use super::{
     Parser::*,
     Pattern::PatternParser,
     Token::{ArrowKind, BracketKind, KeywordKind, MiscKind, OperatorKind, Token, TokenKind},
+    Type::TypeParser,
 };
 
 pub trait ExprParser {
@@ -216,9 +217,14 @@ impl<'a> ExprParser for Parser<'a> {
             TokenKind::Keyword(KeywordKind::Let) => {
                 self.expect(TokenKind::Keyword(KeywordKind::Let));
                 let pattern = self.parsePattern();
+                let mut ty = None;
+                if self.peek() == TokenKind::Misc(MiscKind::Colon) {
+                    self.expect(TokenKind::Misc(MiscKind::Colon));
+                    ty = Some(self.parseType());
+                }
                 self.expect(TokenKind::Misc(MiscKind::Equal));
                 let rhs = self.parseExpr();
-                (StatementKind::Let(pattern, rhs), SemicolonRequirement::Required)
+                (StatementKind::Let(pattern, rhs, ty), SemicolonRequirement::Required)
             }
             _ => {
                 let expr = self.parseExpr();

@@ -8,7 +8,7 @@ use crate::siko::{
         Data::{Class, Enum},
         Function::{Body, Function, Instruction, InstructionId, InstructionKind, Parameter, ValueKind},
         Program::Program,
-        Substitution::{instantiateClass, instantiateEnum, Apply, Substitution},
+        Substitution::{instantiateClass, instantiateEnum, Substitution},
         TraitMethodSelector::TraitMethodSelector,
         Type::Type,
         TypeVarAllocator::TypeVarAllocator,
@@ -157,6 +157,9 @@ impl<'a> Typechecker<'a> {
         };
         for instruction in f.instructions() {
             //println!("Type checking {}", instruction);
+            if let Some(ty) = &instruction.ty {
+                self.unify(self.getInstructionType(instruction.id), ty.clone(), instruction.location.clone());
+            }
             match &instruction.kind {
                 InstructionKind::FunctionCall(name, args) => {
                     let f = self.program.functions.get(name).expect("Function not found");
@@ -292,6 +295,21 @@ impl<'a> Typechecker<'a> {
                                     }
                                 }
                                 if !found {
+                                    for m in &classDef.methods {
+                                        if m.name == *fieldName {
+                                            found = true;
+                                            self.methodSources.insert(instruction.id, m.fullName.clone());
+                                            break;
+                                        }
+                                    }
+                                }
+                                if !found {
+                                    if let Some(methodName) = self.traitMethodSelector.get(&fieldName) {
+                                        found = true;
+                                        self.methodSources.insert(instruction.id, methodName);
+                                    }
+                                }
+                                if !found {
                                     TypecheckerError::FieldNotFound(fieldName.clone(), instruction.location.clone()).report(self.ctx);
                                 }
                             } else {
@@ -316,6 +334,9 @@ impl<'a> Typechecker<'a> {
                         }
                         _ => TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(self.ctx),
                     }
+                }
+                InstructionKind::Noop => {
+                    self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
                 }
             }
         }
@@ -359,7 +380,14 @@ impl<'a> Typechecker<'a> {
         if let Some(body) = &mut result.body {
             for block in &mut body.blocks {
                 for instruction in &mut block.instructions {
-                    if self.methodSources.contains_key(&instruction.id) {}
+                    if self.methodSources.contains_key(&instruction.id) {
+                        match &instruction.kind {
+                            InstructionKind::FieldRef(_, _) => {
+                                instruction.kind = InstructionKind::Noop;
+                            }
+                            kind => panic!("Unexpected instruction kind for method source while rewriting! {}", kind.dump()),
+                        }
+                    }
                     if let Some(source) = self.methodCalls.get(&instruction.id) {
                         match &instruction.kind {
                             InstructionKind::DynamicFunctionCall(_, args) => {

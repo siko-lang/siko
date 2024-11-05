@@ -16,6 +16,7 @@ use crate::siko::{hir::Function::Body, syntax::Statement::Block};
 use super::Environment::Environment;
 use super::Error::ResolverError;
 use super::ModuleResolver::ModuleResolver;
+use super::TypeResolver::TypeResolver;
 
 fn createOpName(traitName: &str, method: &str) -> QualifiedName {
     let stdOps = Box::new(QualifiedName::Module("Std.Ops".to_string()));
@@ -35,6 +36,7 @@ pub struct ExprResolver<'a> {
     blockId: u32,
     valueId: u32,
     pub moduleResolver: &'a ModuleResolver<'a>,
+    typeResolver: &'a TypeResolver<'a>,
     emptyVariants: &'a BTreeSet<QualifiedName>,
     pub variants: &'a BTreeMap<QualifiedName, QualifiedName>,
     pub enums: &'a BTreeMap<QualifiedName, Enum>,
@@ -46,6 +48,7 @@ impl<'a> ExprResolver<'a> {
     pub fn new(
         ctx: &'a ReportContext,
         moduleResolver: &'a ModuleResolver,
+        typeResolver: &'a TypeResolver<'a>,
         emptyVariants: &'a BTreeSet<QualifiedName>,
         variants: &'a BTreeMap<QualifiedName, QualifiedName>,
         enums: &'a BTreeMap<QualifiedName, Enum>,
@@ -56,6 +59,7 @@ impl<'a> ExprResolver<'a> {
             blockId: 0,
             valueId: 0,
             moduleResolver: moduleResolver,
+            typeResolver: typeResolver,
             emptyVariants: emptyVariants,
             variants: variants,
             enums: enums,
@@ -88,8 +92,12 @@ impl<'a> ExprResolver<'a> {
                 lastHasSemicolon = true;
             }
             match &statement.kind {
-                StatementKind::Let(pat, rhs) => {
+                StatementKind::Let(pat, rhs, ty) => {
                     let rhsId = self.resolveExpr(rhs, &mut env);
+                    if let Some(ty) = ty {
+                        let ty = self.typeResolver.resolveType(ty);
+                        self.body.setType(rhsId, ty);
+                    }
                     self.resolvePattern(pat, &mut env, rhsId);
                 }
                 StatementKind::Assign(_lhs, _rhs) => {}

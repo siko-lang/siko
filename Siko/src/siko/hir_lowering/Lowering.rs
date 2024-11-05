@@ -128,6 +128,7 @@ impl<'a> Builder<'a> {
                     let root = self.buildInstructionVar(root);
                     block.instructions.push(Instruction::GetFieldRef(idVar, root, index));
                 }
+                HirInstructionKind::Noop => {}
                 k => panic!("NYI {}", k),
             }
         }

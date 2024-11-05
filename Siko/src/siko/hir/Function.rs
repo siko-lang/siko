@@ -179,6 +179,7 @@ pub enum InstructionKind {
     EnumSwitch(InstructionId, Vec<EnumCase>),
     IntegerSwitch(InstructionId, Vec<IntegerCase>),
     StringSwitch(InstructionId, Vec<StringCase>),
+    Noop,
 }
 
 impl Display for InstructionKind {
@@ -226,6 +227,7 @@ impl InstructionKind {
             InstructionKind::EnumSwitch(root, cases) => format!("enumswitch({}, {:?})", root, cases),
             InstructionKind::IntegerSwitch(root, cases) => format!("integerswitch({}, {:?})", root, cases),
             InstructionKind::StringSwitch(root, cases) => format!("stringswitch({}, {:?})", root, cases),
+            InstructionKind::Noop => format!("noop"),
         }
     }
 }
@@ -343,6 +345,10 @@ impl Body {
 
     pub fn getInstruction(&self, id: InstructionId) -> &Instruction {
         &self.blocks[id.blockId.id as usize].instructions[id.id as usize]
+    }
+
+    pub fn setType(&mut self, id: InstructionId, ty: Type) {
+        self.blocks[id.blockId.id as usize].instructions[id.id as usize].ty = Some(ty);
     }
 
     pub fn dump(&self) {
