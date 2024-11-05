@@ -18,14 +18,14 @@
 
 %struct.siko_Tuple_Main_MySuccess = type { %struct.Main_MySuccess }
 
-define void @siko_Tuple_(ptr noundef %fn_result) {
+define private void @siko_Tuple_(ptr noundef %fn_result) {
 block0:
    %this = alloca %struct.siko_Tuple_, align 4
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %this, i8 0, i1 false)
    ret void
 }
 
-define void @siko_Tuple_Main_MyError(ptr noundef %f0, ptr noundef %fn_result) {
+define private void @siko_Tuple_Main_MyError(ptr noundef %f0, ptr noundef %fn_result) {
 block0:
    %this = alloca %struct.siko_Tuple_Main_MyError, align 4
    %field0 = getelementptr inbounds %struct.siko_Tuple_Main_MyError, ptr %this, i32 0, i32 0
@@ -34,7 +34,7 @@ block0:
    ret void
 }
 
-define void @siko_Tuple_Main_MySuccess(ptr noundef %f0, ptr noundef %fn_result) {
+define private void @siko_Tuple_Main_MySuccess(ptr noundef %f0, ptr noundef %fn_result) {
 block0:
    %this = alloca %struct.siko_Tuple_Main_MySuccess, align 4
    %field0 = getelementptr inbounds %struct.siko_Tuple_Main_MySuccess, ptr %this, i32 0, i32 0
@@ -43,7 +43,7 @@ block0:
    ret void
 }
 
-define void @Main_main(ptr noundef %fn_result) {
+define private void @Main_main(ptr noundef %fn_result) {
 block0:
    %i_6_1 = alloca %struct.siko_Tuple_, align 4
    %i_4_1 = alloca %struct.siko_Tuple_, align 4
@@ -85,7 +85,7 @@ block6:
    br label %block1
 }
 
-define void @Main_someFunc(ptr noundef %fn_result) {
+define private void @Main_someFunc(ptr noundef %fn_result) {
 block0:
    %i_0_2 = alloca %struct.Main_Result_Main_MySuccess__Main_MyError, align 4
    %i_0_1 = alloca %struct.Main_MyError, align 4
@@ -95,7 +95,7 @@ block0:
    ret void
 }
 
-define void @Main_MyError_Failure(ptr noundef %fn_result) {
+define private void @Main_MyError_Failure(ptr noundef %fn_result) {
 block0:
    %this = alloca %struct.Main_MyError, align 4
    %tag = getelementptr inbounds %struct.Main_MyError, ptr %this, i32 0, i32 0
@@ -106,7 +106,7 @@ block0:
    ret void
 }
 
-define void @Main_Result_Err_Main_MySuccess__Main_MyError(ptr noundef %f0, ptr noundef %fn_result) {
+define private void @Main_Result_Err_Main_MySuccess__Main_MyError(ptr noundef %f0, ptr noundef %fn_result) {
 block0:
    %this = alloca %struct.Main_Result_Main_MySuccess__Main_MyError, align 4
    %tag = getelementptr inbounds %struct.Main_Result_Main_MySuccess__Main_MyError, ptr %this, i32 0, i32 0

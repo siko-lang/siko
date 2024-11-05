@@ -177,7 +177,7 @@ impl Generator {
         for arg in &f.args {
             args.push(format!("ptr noundef %{}", arg.name,));
         }
-        writeln!(buf, "define {} @{}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+        writeln!(buf, "define private {} @{}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
         for block in &f.blocks {
             writeln!(buf, "{}:", block.id)?;
             for i in &block.instructions {

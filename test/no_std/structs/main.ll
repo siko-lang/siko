@@ -6,14 +6,14 @@
 
 %struct.siko_Tuple_ = type {  }
 
-define void @siko_Tuple_(ptr noundef %fn_result) {
+define private void @siko_Tuple_(ptr noundef %fn_result) {
 block0:
    %this = alloca %struct.siko_Tuple_, align 4
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %this, i8 0, i1 false)
    ret void
 }
 
-define void @Main_Large(ptr noundef %s, ptr noundef %fn_result) {
+define private void @Main_Large(ptr noundef %s, ptr noundef %fn_result) {
 block0:
    %this = alloca %struct.Main_Large, align 8
    %field0 = getelementptr inbounds %struct.Main_Large, ptr %this, i32 0, i32 0
@@ -22,7 +22,7 @@ block0:
    ret void
 }
 
-define void @Main_Struct1(ptr noundef %num, ptr noundef %num1, ptr noundef %num2, ptr noundef %num3, ptr noundef %num4, ptr noundef %fn_result) {
+define private void @Main_Struct1(ptr noundef %num, ptr noundef %num1, ptr noundef %num2, ptr noundef %num3, ptr noundef %num4, ptr noundef %fn_result) {
 block0:
    %this = alloca %struct.Main_Struct1, align 8
    %field0 = getelementptr inbounds %struct.Main_Struct1, ptr %this, i32 0, i32 0
@@ -39,7 +39,7 @@ block0:
    ret void
 }
 
-define void @Main_foo(ptr noundef %fn_result) {
+define private void @Main_foo(ptr noundef %fn_result) {
 block0:
    %i_0_1 = alloca %struct.Int_Int, align 8
    %tmp_i_0_1_1 = getelementptr inbounds %struct.Int_Int, ptr %i_0_1, i32 0, i32 0
@@ -48,7 +48,7 @@ block0:
    ret void
 }
 
-define void @Main_foo2(ptr noundef %fn_result) {
+define private void @Main_foo2(ptr noundef %fn_result) {
 block0:
    %i_0_8 = alloca %struct.siko_Tuple_, align 4
    %i_0_7 = alloca %struct.Main_Large, align 8
@@ -75,7 +75,7 @@ block0:
    ret void
 }
 
-define void @Main_main(ptr noundef %fn_result) {
+define private void @Main_main(ptr noundef %fn_result) {
 block0:
    %i_2_3 = alloca %struct.siko_Tuple_, align 4
    %i_2_2 = alloca %struct.siko_Tuple_, align 4
