@@ -63,10 +63,10 @@ impl Enum {
         }
     }
 
-    pub fn getVariant(&self, name: &QualifiedName) -> Variant {
-        for v in &self.variants {
+    pub fn getVariant(&self, name: &QualifiedName) -> (Variant, u32) {
+        for (index, v) in self.variants.iter().enumerate() {
             if v.name == *name {
-                return v.clone();
+                return (v.clone(), index as u32);
             }
         }
         panic!("variant {} not found", name);

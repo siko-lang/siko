@@ -112,7 +112,7 @@ impl<'a> Builder<'a> {
                     }
                     block.instructions.push(Instruction::EnumSwitch(root, mirCases));
                 }
-                HirInstructionKind::Transform(root, ty) => {
+                HirInstructionKind::Transform(root, _, ty) => {
                     let root = self.buildInstructionVar(root);
                     block.instructions.push(Instruction::Transform(idVar, root, format!("{}", ty)));
                 }
@@ -170,6 +170,7 @@ pub fn convertName(name: &QualifiedName) -> String {
             .replace(")", "")
             .replace(",", "_")
             .replace(" ", "_")
+            .replace("#", "_")
     )
 }
 
@@ -184,7 +185,7 @@ pub fn lowerType(ty: &HirType, program: &HirProgram) -> MirType {
         }
         HirType::Tuple(_) => unreachable!("Tuple in MIR"),
         HirType::Function(_, _) => todo!(),
-        HirType::Var(_) => todo!(),
+        HirType::Var(_) => unreachable!("Type variable in MIR"),
         HirType::Reference(_, _) => todo!(),
         HirType::SelfType => todo!(),
         HirType::Never => MirType::Void,
@@ -192,6 +193,7 @@ pub fn lowerType(ty: &HirType, program: &HirProgram) -> MirType {
 }
 
 pub fn lowerClass(c: &HirClass, program: &HirProgram) -> Struct {
+    //println!("Lowering class {}", c.name);
     let mut fields = Vec::new();
     if c.name.toString() == "Int.Int" {
         fields.push(MirField {
@@ -238,15 +240,21 @@ pub fn lowerEnum(e: &HirEnum, program: &HirProgram) -> Union {
 pub fn lowerProgram(program: &HirProgram) -> MirProgram {
     let mut mirProgram = MirProgram::new();
 
+    //println!("Lowering classes");
+
     for (n, c) in &program.classes {
         let c = lowerClass(c, program);
         mirProgram.structs.insert(convertName(n), c);
     }
 
+    //println!("Lowering enums");
+
     for (n, e) in &program.enums {
         let u = lowerEnum(e, program);
         mirProgram.unions.insert(convertName(n), u);
     }
+
+    //println!("Lowering functions");
 
     for (_, function) in &program.functions {
         let mut builder = Builder::new(program, function);

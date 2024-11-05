@@ -175,7 +175,7 @@ pub enum InstructionKind {
     Jump(BlockId),
     Assign(String, InstructionId),
     DeclareVar(String),
-    Transform(InstructionId, Type),
+    Transform(InstructionId, u32, Type),
     EnumSwitch(InstructionId, Vec<EnumCase>),
     IntegerSwitch(InstructionId, Vec<IntegerCase>),
     StringSwitch(InstructionId, Vec<StringCase>),
@@ -222,7 +222,7 @@ impl InstructionKind {
             }
             InstructionKind::Assign(v, arg) => format!("assign({}, {})", v, arg),
             InstructionKind::DeclareVar(v) => format!("declare({})", v),
-            InstructionKind::Transform(arg, targetType) => format!("transform({}, {})", arg, targetType),
+            InstructionKind::Transform(arg, index, targetType) => format!("transform({}, {}, {})", arg, index, targetType),
             InstructionKind::EnumSwitch(root, cases) => format!("enumswitch({}, {:?})", root, cases),
             InstructionKind::IntegerSwitch(root, cases) => format!("integerswitch({}, {:?})", root, cases),
             InstructionKind::StringSwitch(root, cases) => format!("stringswitch({}, {:?})", root, cases),

@@ -5,9 +5,10 @@ use std::{
 
 use crate::siko::{
     hir::{
+        Data::Enum,
         Function::{Body, Function, Instruction, InstructionId, InstructionKind, Parameter, ValueKind},
         Program::Program,
-        Substitution::Substitution,
+        Substitution::{Apply, Substitution},
         TraitMethodSelector::TraitMethodSelector,
         Type::Type,
     },
@@ -121,6 +122,19 @@ impl<'a> Typechecker<'a> {
             sub.add(var.clone(), self.allocator.next());
         }
         sub.apply(&ty)
+    }
+
+    fn instantiateEnum(&mut self, e: &Enum, ty: &Type) -> Enum {
+        let vars = e.ty.collectVars(BTreeSet::new());
+        let mut sub = Substitution::new();
+        for var in &vars {
+            sub.add(var.clone(), self.allocator.next());
+        }
+        let mut e = e.clone();
+        e = e.apply(&sub);
+        let r = sub.unify(ty, &e.ty);
+        assert!(r.is_ok());
+        e.apply(&sub)
     }
 
     fn checkFunctionCall(&mut self, args: &Vec<InstructionId>, body: &Body, instruction: &Instruction, fnType: Type) {
@@ -239,8 +253,24 @@ impl<'a> Typechecker<'a> {
                 InstructionKind::DeclareVar(_) => {
                     self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
                 }
-                InstructionKind::Transform(_, ty) => {
-                    self.unify(self.getInstructionType(instruction.id), ty.clone(), instruction.location.clone());
+                InstructionKind::Transform(root, index, ty) => {
+                    let rootTy = self.getInstructionType(*root);
+                    let rootTy = self.substitution.apply(&rootTy);
+                    match rootTy.getName() {
+                        Some(name) => {
+                            let e = self.program.enums.get(&name).expect("not an enum in transform!");
+                            let e = self.instantiateEnum(e, &rootTy);
+                            let v = &e.variants[*index as usize];
+                            self.unify(
+                                self.getInstructionType(instruction.id),
+                                Type::Tuple(v.items.clone()),
+                                instruction.location.clone(),
+                            );
+                        }
+                        None => {
+                            TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(self.ctx);
+                        }
+                    };
                 }
                 InstructionKind::EnumSwitch(root, cases) => {
                     self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
@@ -348,7 +378,10 @@ impl<'a> Typechecker<'a> {
                     let ty = self.getType(&TypedId::Instruction(instruction.id));
                     let ty = self.substitution.apply(&ty);
                     //println!("{} : {}", instruction, ty);
-                    instruction.ty = Some(ty);
+                    instruction.ty = Some(ty.clone());
+                    if let InstructionKind::Transform(_, _, oldTy) = &mut instruction.kind {
+                        *oldTy = ty;
+                    }
                 }
             }
         }

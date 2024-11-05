@@ -2,6 +2,8 @@ use std::{collections::BTreeMap, fmt::Display, iter::zip};
 
 use crate::siko::hir::Type::{Type, TypeVar};
 
+use super::Data::{Enum, Variant};
+
 #[derive(Debug)]
 pub struct Substitution {
     substitutions: BTreeMap<TypeVar, Type>,
@@ -127,5 +129,38 @@ impl Display for Substitution {
             }
         }
         Ok(())
+    }
+}
+
+pub trait Apply {
+    fn apply(&self, sub: &Substitution) -> Self;
+}
+
+impl Apply for Type {
+    fn apply(&self, sub: &Substitution) -> Self {
+        sub.apply(self)
+    }
+}
+
+impl<T: Apply> Apply for Vec<T> {
+    fn apply(&self, sub: &Substitution) -> Self {
+        self.iter().map(|i| i.apply(sub)).collect()
+    }
+}
+
+impl Apply for Variant {
+    fn apply(&self, sub: &Substitution) -> Self {
+        let mut v = self.clone();
+        v.items = v.items.apply(sub);
+        v
+    }
+}
+
+impl Apply for Enum {
+    fn apply(&self, sub: &Substitution) -> Self {
+        let mut e = self.clone();
+        e.ty = sub.apply(&e.ty);
+        e.variants = e.variants.apply(sub);
+        e
     }
 }

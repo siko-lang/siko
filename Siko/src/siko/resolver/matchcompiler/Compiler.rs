@@ -459,8 +459,8 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                         for (case, node) in &switch.cases {
                             if let Case::Variant(name) = case {
                                 let itemBlockId = self.resolver.createBlock();
-                                let v = enumDef.getVariant(name);
-                                let transform = InstructionKind::Transform(root, Type::Tuple(v.items.clone()));
+                                let (v, index) = enumDef.getVariant(name);
+                                let transform = InstructionKind::Transform(root, index, Type::Tuple(v.items.clone()));
                                 let transformId = self
                                     .resolver
                                     .addInstructionToBlock(itemBlockId, transform, self.bodyLocation.clone(), false);

@@ -89,7 +89,7 @@ impl<'a> DeadCodeEliminator<'a> {
                 }
                 InstructionKind::Assign(_, _) => {}
                 InstructionKind::DeclareVar(_) => {}
-                InstructionKind::Transform(_, _) => {}
+                InstructionKind::Transform(_, _, _) => {}
                 InstructionKind::EnumSwitch(_, cases) => {
                     for case in cases {
                         self.processBlock(case.branch);

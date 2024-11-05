@@ -165,6 +165,10 @@ impl<'a> Monomorphizer<'a> {
                 self.addKey(Key::Function(name.clone(), ty_args));
                 InstructionKind::FunctionCall(fn_name, args.clone())
             }
+            InstructionKind::Transform(id, index, ty) => {
+                let ty = self.processType(sub.apply(ty));
+                InstructionKind::Transform(*id, *index, ty)
+            }
             k => k.clone(),
         };
         instruction.kind = kind;
@@ -252,6 +256,7 @@ impl<'a> Monomorphizer<'a> {
             .iter()
             .cloned()
             .map(|mut v| {
+                v.name = self.get_mono_name(&v.name, &args);
                 v.items = v.items.into_iter().map(|i| self.processType(sub.apply(&i))).collect();
                 v
             })

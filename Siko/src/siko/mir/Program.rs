@@ -459,6 +459,7 @@ impl Program {
                 }
             }
             FunctionKind::VariantCtor(index) => {
+                //println!("MIR: building variant ctor {}", f.name);
                 let mut block = LBlock {
                     id: format!("block0"),
                     instructions: Vec::new(),
