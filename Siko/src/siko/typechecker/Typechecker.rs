@@ -5,18 +5,19 @@ use std::{
 
 use crate::siko::{
     hir::{
-        Data::Enum,
+        Data::{Class, Enum},
         Function::{Body, Function, Instruction, InstructionId, InstructionKind, Parameter, ValueKind},
         Program::Program,
-        Substitution::{Apply, Substitution},
+        Substitution::{instantiateClass, instantiateEnum, Apply, Substitution},
         TraitMethodSelector::TraitMethodSelector,
         Type::Type,
+        TypeVarAllocator::TypeVarAllocator,
     },
     location::{Location::Location, Report::ReportContext},
     qualifiedname::QualifiedName,
 };
 
-use super::{Error::TypecheckerError, TypeVarAllocator::TypeVarAllocator};
+use super::Error::TypecheckerError;
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum TypedId {
@@ -125,16 +126,11 @@ impl<'a> Typechecker<'a> {
     }
 
     fn instantiateEnum(&mut self, e: &Enum, ty: &Type) -> Enum {
-        let vars = e.ty.collectVars(BTreeSet::new());
-        let mut sub = Substitution::new();
-        for var in &vars {
-            sub.add(var.clone(), self.allocator.next());
-        }
-        let mut e = e.clone();
-        e = e.apply(&sub);
-        let r = sub.unify(ty, &e.ty);
-        assert!(r.is_ok());
-        e.apply(&sub)
+        instantiateEnum(&mut self.allocator, e, ty)
+    }
+
+    fn instantiateClass(&mut self, c: &Class, ty: &Type) -> Class {
+        instantiateClass(&mut self.allocator, c, ty)
     }
 
     fn checkFunctionCall(&mut self, args: &Vec<InstructionId>, body: &Body, instruction: &Instruction, fnType: Type) {
@@ -253,7 +249,7 @@ impl<'a> Typechecker<'a> {
                 InstructionKind::DeclareVar(_) => {
                     self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
                 }
-                InstructionKind::Transform(root, index, ty) => {
+                InstructionKind::Transform(root, index, _) => {
                     let rootTy = self.getInstructionType(*root);
                     let rootTy = self.substitution.apply(&rootTy);
                     match rootTy.getName() {
@@ -287,6 +283,7 @@ impl<'a> Typechecker<'a> {
                     match receiverType.unpackRef() {
                         Type::Named(name, _, _) => {
                             if let Some(classDef) = self.program.classes.get(&name) {
+                                let classDef = self.instantiateClass(classDef, &receiverType);
                                 let mut found = false;
                                 for f in &classDef.fields {
                                     if f.name == *fieldName {

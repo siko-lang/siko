@@ -120,6 +120,7 @@ impl<'a> Builder<'a> {
                     let root = self.buildInstructionVar(root);
                     block.instructions.push(Instruction::GetFieldRef(idVar, root, *index));
                 }
+                HirInstructionKind::FieldRef(root, name) => {}
                 k => panic!("NYI {}", k),
             }
         }

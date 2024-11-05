@@ -7,8 +7,9 @@ use crate::siko::{
     hir::{
         Function::{Body, Instruction, InstructionKind, Parameter},
         Program::Program,
-        Substitution::Substitution,
+        Substitution::{instantiateClass, instantiateEnum, Substitution},
         Type::{formatTypes, Type},
+        TypeVarAllocator::TypeVarAllocator,
     },
     location::Report::{Report, ReportContext},
     qualifiedname::{build, QualifiedName},
@@ -85,14 +86,17 @@ impl<'a> Monomorphizer<'a> {
                         continue;
                     }
                     self.processed.insert(key.clone());
-                    match key {
+                    match key.clone() {
                         Key::Function(name, args) => {
+                            //println!("Processing func {}", key);
                             self.monomorphizeFunction(name, args);
                         }
                         Key::Class(name, args) => {
+                            //println!("Processing class {}", key);
                             self.monomorphizeClass(name, args);
                         }
                         Key::Enum(name, args) => {
+                            //println!("Processing enum {}", key);
                             self.monomorphizeEnum(name, args);
                         }
                     }
@@ -223,11 +227,12 @@ impl<'a> Monomorphizer<'a> {
 
     fn monomorphizeClass(&mut self, name: QualifiedName, args: Vec<Type>) {
         //println!("MONO CLASS: {} {}", name, formatTypes(&args));
+        let targetTy = Type::Named(name.clone(), args.clone(), None);
         let c = self.program.classes.get(&name).expect("class not found in mono");
+        let mut c = instantiateClass(&mut TypeVarAllocator::new(), c, &targetTy);
         let name = self.get_mono_name(&name, &args);
-        let mut mono_c = c.clone();
-        mono_c.ty = self.processType(mono_c.ty);
-        mono_c.fields = mono_c
+        c.ty = self.processType(c.ty);
+        c.fields = c
             .fields
             .iter()
             .cloned()
@@ -236,33 +241,31 @@ impl<'a> Monomorphizer<'a> {
                 f
             })
             .collect();
-        mono_c.methods.clear();
-        mono_c.name = name.clone();
-        self.monomorphizedProgram.classes.insert(name, mono_c);
+        c.methods.clear();
+        c.name = name.clone();
+        self.monomorphizedProgram.classes.insert(name, c);
     }
 
     fn monomorphizeEnum(&mut self, name: QualifiedName, args: Vec<Type>) {
         //println!("MONO ENUM: {} {}", name, formatTypes(&args));
         let e = self.program.enums.get(&name).expect("enum not found in mono");
+        let targetTy = Type::Named(name.clone(), args.clone(), None);
+        let mut e = instantiateEnum(&mut TypeVarAllocator::new(), e, &targetTy);
         //println!("Enum ty {}", e.ty);
-        let monoName = self.get_mono_name(&name, &args);
-        let target_ty = Type::Named(name, args.clone(), None);
-        let sub = Substitution::create(&target_ty, &e.ty);
+        let name = self.get_mono_name(&name, &args);
         //println!("Sub {}", sub);
-        let mut mono_e = e.clone();
-        mono_e.ty = self.processType(sub.apply(&mono_e.ty));
-        mono_e.variants = mono_e
+        e.variants = e
             .variants
             .iter()
             .cloned()
             .map(|mut v| {
                 v.name = self.get_mono_name(&v.name, &args);
-                v.items = v.items.into_iter().map(|i| self.processType(sub.apply(&i))).collect();
+                v.items = v.items.into_iter().map(|i| self.processType(i)).collect();
                 v
             })
             .collect();
-        mono_e.methods.clear();
-        mono_e.name = monoName.clone();
-        self.monomorphizedProgram.enums.insert(monoName, mono_e);
+        e.methods.clear();
+        e.name = name.clone();
+        self.monomorphizedProgram.enums.insert(name, e);
     }
 }

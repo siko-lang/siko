@@ -1,8 +1,15 @@
-use std::{collections::BTreeMap, fmt::Display, iter::zip};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt::Display,
+    iter::zip,
+};
 
 use crate::siko::hir::Type::{Type, TypeVar};
 
-use super::Data::{Enum, Variant};
+use super::{
+    Data::{Class, Enum, Field, Variant},
+    TypeVarAllocator::TypeVarAllocator,
+};
 
 #[derive(Debug)]
 pub struct Substitution {
@@ -163,4 +170,47 @@ impl Apply for Enum {
         e.variants = e.variants.apply(sub);
         e
     }
+}
+
+impl Apply for Field {
+    fn apply(&self, sub: &Substitution) -> Self {
+        let mut f = self.clone();
+        f.ty = sub.apply(&f.ty);
+        f
+    }
+}
+
+impl Apply for Class {
+    fn apply(&self, sub: &Substitution) -> Self {
+        let mut c = self.clone();
+        c.ty = sub.apply(&c.ty);
+        c.fields = c.fields.apply(sub);
+        c
+    }
+}
+
+pub fn instantiateEnum(allocator: &mut TypeVarAllocator, e: &Enum, ty: &Type) -> Enum {
+    let vars = e.ty.collectVars(BTreeSet::new());
+    let mut sub = Substitution::new();
+    for var in &vars {
+        sub.add(var.clone(), allocator.next());
+    }
+    let mut e = e.clone();
+    e = e.apply(&sub);
+    let r = sub.unify(ty, &e.ty);
+    assert!(r.is_ok());
+    e.apply(&sub)
+}
+
+pub fn instantiateClass(allocator: &mut TypeVarAllocator, c: &Class, ty: &Type) -> Class {
+    let vars = c.ty.collectVars(BTreeSet::new());
+    let mut sub = Substitution::new();
+    for var in &vars {
+        sub.add(var.clone(), allocator.next());
+    }
+    let mut e = c.clone();
+    e = e.apply(&sub);
+    let r = sub.unify(ty, &e.ty);
+    assert!(r.is_ok());
+    e.apply(&sub)
 }
