@@ -186,14 +186,6 @@ impl<'a> Typechecker<'a> {
                         self.checkFunctionCall(&args, body, instruction, fnType);
                     }
                 },
-                InstructionKind::If(cond, _, _) => {
-                    self.unify(
-                        self.getInstructionType(*cond),
-                        Type::getBoolType(),
-                        body.getInstruction(*cond).location.clone(),
-                    );
-                    self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
-                }
                 InstructionKind::ValueRef(value) => {
                     let receiverType = match &value {
                         ValueKind::Arg(name, _) => self.getValueType(name),

@@ -174,56 +174,6 @@ impl<'a> ExprResolver<'a> {
                     }
                 }
             }
-            SimpleExpr::If(cond, trueBranch, falseBranch) => {
-                let condId = self.resolveExpr(cond, env);
-                let ifValue = self.createValue("if_var");
-                self.addInstruction(InstructionKind::DeclareVar(ifValue.clone()), expr.location.clone());
-                let currentBlockId = self.targetBlockId;
-                let contBlockId = self.createBlock();
-                let trueBlockId = self.createBlock();
-                match &trueBranch.expr {
-                    SimpleExpr::Block(block) => {
-                        self.setTargetBlockId(trueBlockId);
-                        self.resolveBlock(block, env);
-                        self.addInstruction(
-                            InstructionKind::Assign(ifValue.clone(), self.body.getBlockById(trueBlockId).getLastId()),
-                            expr.location.clone(),
-                        );
-                        self.addInstruction(InstructionKind::Jump(contBlockId), expr.location.clone());
-                    }
-                    _ => panic!("If true branch is not a block!"),
-                };
-                let falseBranchId = match falseBranch {
-                    Some(falseBranch) => {
-                        let falseBranchId = match &falseBranch.expr {
-                            SimpleExpr::Block(block) => {
-                                let falseBlockId = self.createBlock();
-                                self.setTargetBlockId(falseBlockId);
-                                self.resolveBlock(block, env);
-                                self.addInstruction(
-                                    InstructionKind::Assign(ifValue.clone(), self.body.getBlockById(falseBlockId).getLastId()),
-                                    expr.location.clone(),
-                                );
-                                self.addInstruction(InstructionKind::Jump(contBlockId), expr.location.clone());
-                                falseBlockId
-                            }
-                            _ => panic!("If false branch is not a block!"),
-                        };
-                        Some(falseBranchId)
-                    }
-                    None => None,
-                };
-                self.addInstructionToBlock(
-                    currentBlockId,
-                    InstructionKind::If(condId, trueBlockId, falseBranchId),
-                    expr.location.clone(),
-                    false,
-                );
-
-                self.setTargetBlockId(contBlockId);
-                let ifValueId = self.addInstruction(InstructionKind::ValueRef(ValueKind::Value(ifValue)), expr.location.clone());
-                ifValueId
-            }
             SimpleExpr::For(_, _, _) => todo!(),
             SimpleExpr::Loop(pattern, init, body) => {
                 let initId = self.resolveExpr(&init, env);

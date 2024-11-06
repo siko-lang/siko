@@ -65,13 +65,6 @@ impl<'a> DeadCodeEliminator<'a> {
             match &instruction.kind {
                 InstructionKind::FunctionCall(_, _) => {}
                 InstructionKind::DynamicFunctionCall(_, _) => {}
-                InstructionKind::If(_, trueBlock, falseBlock) => {
-                    self.processBlock(*trueBlock);
-                    if let Some(falseBlock) = falseBlock {
-                        self.processBlock(*falseBlock);
-                    }
-                    return;
-                }
                 InstructionKind::ValueRef(_) => {}
                 InstructionKind::FieldRef(_, _) => {}
                 InstructionKind::TupleIndex(_, _) => {}

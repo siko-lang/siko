@@ -1,5 +1,6 @@
 use crate::siko::syntax::{
     Expr::{BinaryOp, Branch, Expr, SimpleExpr, UnaryOp},
+    Identifier::Identifier,
     Pattern::{Pattern, SimplePattern},
     Statement::{Block, Statement, StatementKind},
 };
@@ -118,17 +119,44 @@ impl<'a> ExprParser for Parser<'a> {
         let cond = self.parseExpr();
         self.expect(TokenKind::LeftBracket(BracketKind::Curly));
         self.undo();
+        let mut branches = Vec::new();
         let trueBranch = self.parseExpr();
-        let falseBranch = if self.check(TokenKind::Keyword(KeywordKind::Else)) {
+        branches.push(Branch {
+            pattern: Pattern {
+                pattern: SimplePattern::Named(Identifier::new("Bool.Bool.True", self.currentLocation()), Vec::new()),
+                location: self.currentLocation(),
+            },
+            body: trueBranch,
+        });
+        if self.check(TokenKind::Keyword(KeywordKind::Else)) {
             self.expect(TokenKind::Keyword(KeywordKind::Else));
             self.expect(TokenKind::LeftBracket(BracketKind::Curly));
             self.undo();
             let falseBranch = self.parseExpr();
-            Some(Box::new(falseBranch))
+            branches.push(Branch {
+                pattern: Pattern {
+                    pattern: SimplePattern::Named(Identifier::new("Bool.Bool.False", self.currentLocation()), Vec::new()),
+                    location: self.currentLocation(),
+                },
+                body: falseBranch,
+            });
         } else {
-            None
-        };
-        self.buildExpr(SimpleExpr::If(Box::new(cond), Box::new(trueBranch), falseBranch))
+            branches.push(Branch {
+                pattern: Pattern {
+                    pattern: SimplePattern::Named(Identifier::new("Bool.Bool.False", self.currentLocation()), Vec::new()),
+                    location: self.currentLocation(),
+                },
+                body: Expr {
+                    expr: SimpleExpr::Block(Block {
+                        statements: Vec::new(),
+                        location: self.currentLocation(),
+                    }),
+                    location: self.currentLocation(),
+                },
+            })
+        }
+
+        self.buildExpr(SimpleExpr::Match(Box::new(cond), branches))
     }
 
     fn parseFor(&mut self) -> Expr {

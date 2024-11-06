@@ -28,4 +28,11 @@ impl Identifier {
         self.name += ".";
         self.location.clone().merge(location);
     }
+
+    pub fn new(s: &str, location: Location) -> Identifier {
+        Identifier {
+            name: s.to_string(),
+            location: location,
+        }
+    }
 }

@@ -160,7 +160,6 @@ impl std::fmt::Debug for StringCase {
 pub enum InstructionKind {
     FunctionCall(QualifiedName, Vec<InstructionId>),
     DynamicFunctionCall(InstructionId, Vec<InstructionId>),
-    If(InstructionId, BlockId, Option<BlockId>),
     ValueRef(ValueKind),
     FieldRef(InstructionId, String),
     TupleIndex(InstructionId, i32),
@@ -201,10 +200,6 @@ impl InstructionKind {
             InstructionKind::DynamicFunctionCall(callable, args) => {
                 format!("DYN_CALL{}({:?})", callable, args)
             }
-            InstructionKind::If(cond, t, f) => match f {
-                Some(f) => format!("if {} {{ {} }} else {{ {} }}", cond, t, f),
-                None => format!("if {} {{ {} }}", cond, t),
-            },
             InstructionKind::ValueRef(v) => format!("{}", v),
             InstructionKind::FieldRef(v, name) => format!("{}.{}", v, name),
             InstructionKind::TupleIndex(v, idx) => format!("{}.t{}", v, idx),
