@@ -2,7 +2,11 @@ use std::{collections::BTreeSet, fmt::Display};
 
 use crate::siko::qualifiedname::{getBoolTypeName, getCharTypeName, getIntTypeName, getStringTypeName, QualifiedName};
 
-use super::Lifetime::{Lifetime, LifetimeInfo};
+use super::{
+    Lifetime::{Lifetime, LifetimeInfo},
+    Substitution::Substitution,
+    Unification::unify,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TypeVar {
@@ -227,4 +231,18 @@ impl Display for Type {
 pub fn formatTypes(types: &Vec<Type>) -> String {
     let types: Vec<String> = types.iter().map(|t| format!("{}", t)).collect();
     format!("({})", types.join(", "))
+}
+
+pub fn createTypeSubstitution(ty1: &Type, ty2: &Type) -> Substitution<Type> {
+    let mut sub = Substitution::new();
+    unify(&mut sub, ty1, ty2).expect("Unification failed");
+    sub
+}
+
+pub fn createTypeSubstitutionFrom(ty1: &Vec<Type>, ty2: &Vec<Type>) -> Substitution<Type> {
+    let mut sub = Substitution::new();
+    for (ty1, ty2) in ty1.iter().zip(ty2) {
+        unify(&mut sub, ty1, ty2).expect("Unification failed");
+    }
+    sub
 }

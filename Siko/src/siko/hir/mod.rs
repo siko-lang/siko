@@ -8,3 +8,4 @@ pub mod Trait;
 pub mod TraitMethodSelector;
 pub mod Type;
 pub mod TypeVarAllocator;
+pub mod Unification;

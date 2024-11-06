@@ -12,6 +12,7 @@ use crate::siko::{
         TraitMethodSelector::TraitMethodSelector,
         Type::Type,
         TypeVarAllocator::TypeVarAllocator,
+        Unification::unify,
     },
     location::{Location::Location, Report::ReportContext},
     qualifiedname::QualifiedName,
@@ -34,7 +35,7 @@ pub struct Typechecker<'a> {
     program: &'a Program,
     traitMethodSelector: &'a TraitMethodSelector,
     allocator: TypeVarAllocator,
-    substitution: Substitution,
+    substitution: Substitution<Type>,
     methodSources: BTreeMap<InstructionId, QualifiedName>,
     methodCalls: BTreeMap<InstructionId, InstructionId>,
     swaps: BTreeMap<InstructionId, InstructionId>,
@@ -113,7 +114,7 @@ impl<'a> Typechecker<'a> {
 
     fn unify(&mut self, ty1: Type, ty2: Type, location: Location) {
         //println!("UNIFY {} {}", ty1, ty2);
-        if let Err(_) = self.substitution.unify(&ty1, &ty2) {
+        if let Err(_) = unify(&mut self.substitution, &ty1, &ty2) {
             reportError(self.ctx, ty1.apply(&self.substitution), ty2.apply(&self.substitution), location);
         }
     }

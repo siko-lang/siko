@@ -8,7 +8,7 @@ use crate::siko::{
         Function::{Body, Instruction, InstructionKind, Parameter},
         Program::Program,
         Substitution::{instantiateClass, instantiateEnum, Apply, Substitution},
-        Type::{formatTypes, Type},
+        Type::{createTypeSubstitution, createTypeSubstitutionFrom, formatTypes, Type},
         TypeVarAllocator::TypeVarAllocator,
     },
     location::Report::{Report, ReportContext},
@@ -109,7 +109,7 @@ impl<'a> Monomorphizer<'a> {
     fn monomorphizeFunction(&mut self, name: QualifiedName, args: Vec<Type>) {
         //println!("MONO FN: {} {}", name, formatTypes(&args));
         let function = self.program.functions.get(&name).expect("function not found in mono").clone();
-        let sub = Substitution::createFrom(&function.constraintContext.typeParameters, &args);
+        let sub = createTypeSubstitutionFrom(&function.constraintContext.typeParameters, &args);
         let mut monoFn = function.clone();
         monoFn.result = self.processType(monoFn.result.apply(&sub));
         monoFn.params = monoFn
@@ -140,7 +140,7 @@ impl<'a> Monomorphizer<'a> {
         self.monomorphizedProgram.functions.insert(monoName, monoFn);
     }
 
-    fn monomorphizeInstruction(&mut self, sub: &Substitution, body: &Body, mut instruction: Instruction) -> Instruction {
+    fn monomorphizeInstruction(&mut self, sub: &Substitution<Type>, body: &Body, mut instruction: Instruction) -> Instruction {
         // println!(
         //     "MONO INSTR {} / {}",
         //     instruction,
@@ -162,7 +162,7 @@ impl<'a> Monomorphizer<'a> {
                 let context_ty = Type::Function(arg_types, Box::new(result));
                 //println!("fn type {}", fn_ty);
                 //println!("context type {}", context_ty);
-                let sub = Substitution::create(&context_ty, &fn_ty);
+                let sub = createTypeSubstitution(&context_ty, &fn_ty);
                 let ty_args: Vec<_> = target_fn.constraintContext.typeParameters.iter().map(|ty| ty.apply(&sub)).collect();
                 //println!("{} type args {}", name, formatTypes(&ty_args));
                 let fn_name = self.get_mono_name(name, &ty_args);
