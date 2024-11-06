@@ -8,9 +8,13 @@ success = 0
 failure = 0
 skipped = 0
 
+runtimePath = os.path.join("siko_runtime", "siko_runtime.o")
+
 def compileSiko(currentDir, files, extras):
     output_path = os.path.join(currentDir, "main.ll")
     optimized_path = os.path.join(currentDir, "main_optimized.ll")
+    bitcode_path = os.path.join(currentDir, "main.bc")
+    object_path = os.path.join(currentDir, "main.o")
     llvm_output_path = os.path.join(currentDir, "main.bin")
     args = ["./siko", "-o", output_path] + extras + files
     r = subprocess.run(args)
@@ -19,7 +23,13 @@ def compileSiko(currentDir, files, extras):
     r = subprocess.run(["opt", "-O2", "-S", output_path, "-o", optimized_path])
     if r.returncode != 0:
         return None
-    r = subprocess.run(["clang", "-Wno-override-module", optimized_path, "-o", llvm_output_path])
+    r = subprocess.run(["llvm-as", optimized_path, "-o", bitcode_path])
+    if r.returncode != 0:
+        return None
+    r = subprocess.run(["llc",  bitcode_path, "-filetype=obj", "-o", object_path])
+    if r.returncode != 0:
+        return None
+    r = subprocess.run(["clang", object_path, runtimePath, "-o", llvm_output_path])
     #r = subprocess.run(["rustc", output_path, "-o", rust_output_path])
     if r.returncode != 0:
         return None
@@ -74,6 +84,11 @@ no_std_path = os.path.join(".", "test", "no_std")
 std_path = os.path.join(".", "test", "std")
 
 errors_path = os.path.join(".", "test", "errors")
+
+def buildRuntime():
+    subprocess.run("siko_runtime/build.sh")
+
+buildRuntime()
 
 print("No std tests:")
 for entry in os.listdir(no_std_path):
