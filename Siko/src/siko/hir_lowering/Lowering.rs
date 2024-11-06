@@ -157,7 +157,7 @@ impl<'a> Builder<'a> {
                 MirFunctionKind::UserDefined(blocks)
             }
             FunctionKind::VariantCtor(i) => MirFunctionKind::VariantCtor(i),
-            FunctionKind::Extern => todo!(),
+            FunctionKind::Extern => MirFunctionKind::Extern,
         };
         let mirFunction = MirFunction {
             name: convertName(&self.function.name),

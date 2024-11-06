@@ -177,15 +177,19 @@ impl Generator {
         for arg in &f.args {
             args.push(format!("ptr noundef %{}", arg.name,));
         }
-        writeln!(buf, "define private {} @{}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-        for block in &f.blocks {
-            writeln!(buf, "{}:", block.id)?;
-            for i in &block.instructions {
-                let i = self.dumpInstruction(i);
-                writeln!(buf, "   {}", i)?;
+        if f.blocks.is_empty() {
+            writeln!(buf, "declare {} @{}({})\n", getTypeName(&f.result), f.name, args.join(", "))?;
+        } else {
+            writeln!(buf, "define private {} @{}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            for block in &f.blocks {
+                writeln!(buf, "{}:", block.id)?;
+                for i in &block.instructions {
+                    let i = self.dumpInstruction(i);
+                    writeln!(buf, "   {}", i)?;
+                }
             }
+            writeln!(buf, "}}\n")?;
         }
-        writeln!(buf, "}}\n")?;
         Ok(())
     }
 

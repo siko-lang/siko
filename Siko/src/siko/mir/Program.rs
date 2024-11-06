@@ -535,6 +535,19 @@ impl Program {
                     blocks: vec![block],
                 }
             }
+            FunctionKind::Extern => {
+                let mut args: Vec<_> = f.args.iter().map(|p| self.lowerParam(p)).collect();
+                args.push(LParam {
+                    name: getResultVarName(),
+                    ty: LType::Ptr(Box::new(self.lowerType(&f.result))),
+                });
+                LFunction {
+                    name: f.name.clone(),
+                    args: args,
+                    result: LType::Void,
+                    blocks: Vec::new(),
+                }
+            }
         }
     }
 

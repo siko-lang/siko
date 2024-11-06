@@ -18,6 +18,7 @@ pub enum FunctionKind {
     UserDefined(Vec<Block>),
     ClassCtor,
     VariantCtor(i64),
+    Extern,
 }
 
 pub struct Function {
@@ -56,6 +57,15 @@ impl fmt::Display for Function {
                     self.args.iter().map(|arg| format!("{}", arg)).collect::<Vec<_>>().join(", "),
                     self.result,
                     blocks.iter().map(|block| format!("{}", block)).collect::<Vec<_>>().join("\n")
+                )
+            }
+            FunctionKind::Extern => {
+                write!(
+                    f,
+                    "Function: {}\nArguments: ({}) -> {}\nExtern",
+                    self.name,
+                    self.args.iter().map(|arg| format!("{}", arg)).collect::<Vec<_>>().join(", "),
+                    self.result,
                 )
             }
         }
