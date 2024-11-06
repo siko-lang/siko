@@ -13,7 +13,7 @@ use super::{
 
 #[derive(Debug)]
 pub struct Substitution {
-    substitutions: BTreeMap<TypeVar, Type>,
+    substitutions: BTreeMap<Type, Type>,
 }
 
 #[derive(Debug)]
@@ -40,41 +40,15 @@ impl Substitution {
         sub
     }
 
-    pub fn add(&mut self, var: TypeVar, ty: Type) {
-        assert_ne!(Type::Var(var.clone()), ty);
+    pub fn add(&mut self, var: Type, ty: Type) {
+        assert_ne!(var, ty);
         self.substitutions.insert(var, ty);
-    }
-
-    pub fn apply(&self, ty: &Type) -> Type {
-        //println!("apply {} [{}]", ty, self);
-        match &ty {
-            Type::Named(n, args, lifetime) => {
-                let newArgs = args.iter().map(|arg| self.apply(arg)).collect();
-                Type::Named(n.clone(), newArgs, lifetime.clone())
-            }
-            Type::Tuple(args) => {
-                let newArgs = args.iter().map(|arg| self.apply(arg)).collect();
-                Type::Tuple(newArgs)
-            }
-            Type::Function(args, fnResult) => {
-                let newArgs = args.iter().map(|arg| self.apply(arg)).collect();
-                let newFnResult = self.apply(fnResult);
-                Type::Function(newArgs, Box::new(newFnResult))
-            }
-            Type::Var(v) => match self.substitutions.get(&v) {
-                Some(ty) => self.apply(ty),
-                None => ty.clone(),
-            },
-            Type::Reference(arg, l) => Type::Reference(Box::new(self.apply(arg)), l.clone()),
-            Type::SelfType => ty.clone(),
-            Type::Never => ty.clone(),
-        }
     }
 
     pub fn unify(&mut self, ty1: &Type, ty2: &Type) -> Result<(), Error> {
         //println!("Unifying {}/{}", ty1, ty2);
-        let ty1 = self.apply(ty1);
-        let ty2 = self.apply(ty2);
+        let ty1 = ty1.apply(self);
+        let ty2 = ty2.apply(self);
         //println!("Unifying2 {}/{}", ty1, ty2);
         match (&ty1, &ty2) {
             (Type::Named(name1, args1, _), Type::Named(name2, args2, _)) => {
@@ -105,12 +79,12 @@ impl Substitution {
                 }
             }
             (Type::Var(TypeVar::Var(v1)), Type::Var(TypeVar::Var(v2))) if v1 == v2 => Ok(()),
-            (_, Type::Var(v)) => {
-                self.add(v.clone(), ty1);
+            (_, Type::Var(_)) => {
+                self.add(ty2, ty1);
                 Ok(())
             }
-            (Type::Var(v), _) => {
-                self.add(v.clone(), ty2);
+            (Type::Var(_), _) => {
+                self.add(ty1, ty2);
                 Ok(())
             }
             (Type::Reference(v1, _), Type::Reference(v2, _)) => self.unify(&v1, &v2),
@@ -146,7 +120,28 @@ pub trait Apply {
 
 impl Apply for Type {
     fn apply(&self, sub: &Substitution) -> Self {
-        sub.apply(self)
+        match &self {
+            Type::Named(n, args, lifetime) => {
+                let newArgs = args.iter().map(|arg| arg.apply(sub)).collect();
+                Type::Named(n.clone(), newArgs, lifetime.clone())
+            }
+            Type::Tuple(args) => {
+                let newArgs = args.iter().map(|arg| arg.apply(sub)).collect();
+                Type::Tuple(newArgs)
+            }
+            Type::Function(args, fnResult) => {
+                let newArgs = args.iter().map(|arg| arg.apply(sub)).collect();
+                let newFnResult = fnResult.apply(sub);
+                Type::Function(newArgs, Box::new(newFnResult))
+            }
+            Type::Var(_) => match sub.substitutions.get(&self) {
+                Some(ty) => ty.apply(sub),
+                None => self.clone(),
+            },
+            Type::Reference(arg, l) => Type::Reference(Box::new(arg.apply(sub)), l.clone()),
+            Type::SelfType => self.clone(),
+            Type::Never => self.clone(),
+        }
     }
 }
 
@@ -167,7 +162,7 @@ impl Apply for Variant {
 impl Apply for Enum {
     fn apply(&self, sub: &Substitution) -> Self {
         let mut e = self.clone();
-        e.ty = sub.apply(&e.ty);
+        e.ty = e.ty.apply(sub);
         e.variants = e.variants.apply(sub);
         e
     }
@@ -176,7 +171,7 @@ impl Apply for Enum {
 impl Apply for Field {
     fn apply(&self, sub: &Substitution) -> Self {
         let mut f = self.clone();
-        f.ty = sub.apply(&f.ty);
+        f.ty = f.ty.apply(sub);
         f
     }
 }
@@ -184,7 +179,7 @@ impl Apply for Field {
 impl Apply for Class {
     fn apply(&self, sub: &Substitution) -> Self {
         let mut c = self.clone();
-        c.ty = sub.apply(&c.ty);
+        c.ty = c.ty.apply(sub);
         c.fields = c.fields.apply(sub);
         c
     }
@@ -194,7 +189,7 @@ pub fn instantiateEnum(allocator: &mut TypeVarAllocator, e: &Enum, ty: &Type) ->
     let vars = e.ty.collectVars(BTreeSet::new());
     let mut sub = Substitution::new();
     for var in &vars {
-        sub.add(var.clone(), allocator.next());
+        sub.add(Type::Var(var.clone()), allocator.next());
     }
     let mut e = e.clone();
     e = e.apply(&sub);
@@ -207,7 +202,7 @@ pub fn instantiateClass(allocator: &mut TypeVarAllocator, c: &Class, ty: &Type) 
     let vars = c.ty.collectVars(BTreeSet::new());
     let mut sub = Substitution::new();
     for var in &vars {
-        sub.add(var.clone(), allocator.next());
+        sub.add(Type::Var(var.clone()), allocator.next());
     }
     let mut e = c.clone();
     e = e.apply(&sub);

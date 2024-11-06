@@ -139,7 +139,7 @@ pub enum Instruction {
     Call(Variable, String, Vec<Variable>),
     Assign(Variable, Value),
     Return(Value),
-    Memcpy(Variable, Variable),
+    Memcpy(Variable, Variable), //src -> dest
     IntegerLiteral(Variable, String),
     EnumSwitch(Variable, Vec<EnumCase>),
     Transform(Variable, Variable, String),

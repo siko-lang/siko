@@ -8,7 +8,7 @@ use crate::siko::{
         Data::{Class, Enum},
         Function::{Body, Function, Instruction, InstructionId, InstructionKind, Parameter, ValueKind},
         Program::Program,
-        Substitution::{instantiateClass, instantiateEnum, Substitution},
+        Substitution::{instantiateClass, instantiateEnum, Apply, Substitution},
         TraitMethodSelector::TraitMethodSelector,
         Type::Type,
         TypeVarAllocator::TypeVarAllocator,
@@ -37,7 +37,7 @@ pub struct Typechecker<'a> {
     substitution: Substitution,
     methodSources: BTreeMap<InstructionId, QualifiedName>,
     methodCalls: BTreeMap<InstructionId, InstructionId>,
-    indices: BTreeMap<InstructionId, Vec<u32>>,
+    swaps: BTreeMap<InstructionId, InstructionId>,
     types: BTreeMap<TypedId, Type>,
     selfType: Option<Type>,
 }
@@ -52,7 +52,7 @@ impl<'a> Typechecker<'a> {
             substitution: Substitution::new(),
             methodSources: BTreeMap::new(),
             methodCalls: BTreeMap::new(),
-            indices: BTreeMap::new(),
+            swaps: BTreeMap::new(),
             types: BTreeMap::new(),
             selfType: None,
         }
@@ -114,7 +114,7 @@ impl<'a> Typechecker<'a> {
     fn unify(&mut self, ty1: Type, ty2: Type, location: Location) {
         //println!("UNIFY {} {}", ty1, ty2);
         if let Err(_) = self.substitution.unify(&ty1, &ty2) {
-            reportError(self.ctx, self.substitution.apply(&ty1), self.substitution.apply(&ty2), location);
+            reportError(self.ctx, ty1.apply(&self.substitution), ty2.apply(&self.substitution), location);
         }
     }
 
@@ -122,9 +122,9 @@ impl<'a> Typechecker<'a> {
         let vars = ty.collectVars(BTreeSet::new());
         let mut sub = Substitution::new();
         for var in &vars {
-            sub.add(var.clone(), self.allocator.next());
+            sub.add(Type::Var(var.clone()), self.allocator.next());
         }
-        sub.apply(&ty)
+        ty.apply(&sub)
     }
 
     fn instantiateEnum(&mut self, e: &Enum, ty: &Type) -> Enum {
@@ -208,9 +208,6 @@ impl<'a> Typechecker<'a> {
                         instruction.location.clone(),
                     );
                 }
-                /*InstructionKind::TupleIndex(receiver, index) => {
-
-                }*/
                 InstructionKind::StringLiteral(_) => {
                     self.unify(
                         self.getInstructionType(instruction.id),
@@ -255,7 +252,7 @@ impl<'a> Typechecker<'a> {
                 }
                 InstructionKind::Transform(root, index, _) => {
                     let rootTy = self.getInstructionType(*root);
-                    let rootTy = self.substitution.apply(&rootTy);
+                    let rootTy = rootTy.apply(&self.substitution);
                     match rootTy.getName() {
                         Some(name) => {
                             let e = self.program.enums.get(&name).expect("not an enum in transform!");
@@ -283,7 +280,7 @@ impl<'a> Typechecker<'a> {
                 }
                 InstructionKind::FieldRef(receiver, fieldName) => {
                     let receiverType = self.getInstructionType(*receiver);
-                    let receiverType = self.substitution.apply(&receiverType);
+                    let receiverType = receiverType.apply(&self.substitution);
                     match receiverType.unpackRef() {
                         Type::Named(name, _, _) => {
                             if let Some(classDef) = self.program.classes.get(&name) {
@@ -300,6 +297,7 @@ impl<'a> Typechecker<'a> {
                                         if m.name == *fieldName {
                                             found = true;
                                             self.methodSources.insert(instruction.id, m.fullName.clone());
+                                            self.swaps.insert(instruction.id, *receiver);
                                             break;
                                         }
                                     }
@@ -324,7 +322,7 @@ impl<'a> Typechecker<'a> {
                 }
                 InstructionKind::TupleIndex(receiver, index) => {
                     let receiverType = self.getInstructionType(*receiver);
-                    let receiverType = self.substitution.apply(&receiverType);
+                    let receiverType = receiverType.apply(&self.substitution);
                     match receiverType {
                         Type::Tuple(t) => {
                             if *index as usize >= t.len() {
@@ -350,7 +348,7 @@ impl<'a> Typechecker<'a> {
             for block in &body.blocks {
                 for instruction in &block.instructions {
                     let ty = self.getType(&TypedId::Instruction(instruction.id));
-                    let ty = self.substitution.apply(&ty);
+                    let ty = ty.apply(&self.substitution);
                     let vars = ty.collectVars(BTreeSet::new());
                     if !vars.is_empty() && vars != publicVars {
                         self.dump(f);
@@ -368,7 +366,7 @@ impl<'a> Typechecker<'a> {
             for block in &body.blocks {
                 for instruction in &block.instructions {
                     let ty = self.getType(&TypedId::Instruction(instruction.id));
-                    let ty = self.substitution.apply(&ty);
+                    let ty = ty.apply(&self.substitution);
                     println!("{} : {}", instruction, ty);
                 }
             }
@@ -405,7 +403,7 @@ impl<'a> Typechecker<'a> {
                         }
                     }
                     let ty = self.getType(&TypedId::Instruction(instruction.id));
-                    let ty = self.substitution.apply(&ty);
+                    let ty = ty.apply(&self.substitution);
                     //println!("{} : {}", instruction, ty);
                     instruction.ty = Some(ty.clone());
                     if let InstructionKind::Transform(_, _, oldTy) = &mut instruction.kind {

@@ -7,7 +7,7 @@ use crate::siko::{
     hir::{
         Function::{Body, Instruction, InstructionKind, Parameter},
         Program::Program,
-        Substitution::{instantiateClass, instantiateEnum, Substitution},
+        Substitution::{instantiateClass, instantiateEnum, Apply, Substitution},
         Type::{formatTypes, Type},
         TypeVarAllocator::TypeVarAllocator,
     },
@@ -111,13 +111,13 @@ impl<'a> Monomorphizer<'a> {
         let function = self.program.functions.get(&name).expect("function not found in mono").clone();
         let sub = Substitution::createFrom(&function.constraintContext.typeParameters, &args);
         let mut monoFn = function.clone();
-        monoFn.result = self.processType(sub.apply(&monoFn.result));
+        monoFn.result = self.processType(monoFn.result.apply(&sub));
         monoFn.params = monoFn
             .params
             .into_iter()
             .map(|param| match param {
-                Parameter::Named(name, ty, mutable) => Parameter::Named(name, self.processType(sub.apply(&ty)), mutable),
-                Parameter::SelfParam(mutable, ty) => Parameter::SelfParam(mutable, self.processType(sub.apply(&ty))),
+                Parameter::Named(name, ty, mutable) => Parameter::Named(name, self.processType(ty.apply(&sub)), mutable),
+                Parameter::SelfParam(mutable, ty) => Parameter::SelfParam(mutable, self.processType(ty.apply(&sub))),
             })
             .collect();
         monoFn.body = monoFn.body.map(|mut body| {
@@ -155,28 +155,28 @@ impl<'a> Monomorphizer<'a> {
                     .iter()
                     .map(|id| {
                         let ty = body.getInstruction(*id).ty.clone().expect("instruction with no type");
-                        sub.apply(&ty)
+                        ty.apply(&sub)
                     })
                     .collect();
-                let result = sub.apply(&instruction.ty.clone().expect("function with no result ty"));
+                let result = instruction.ty.clone().expect("function with no result ty").apply(sub);
                 let context_ty = Type::Function(arg_types, Box::new(result));
                 //println!("fn type {}", fn_ty);
                 //println!("context type {}", context_ty);
                 let sub = Substitution::create(&context_ty, &fn_ty);
-                let ty_args: Vec<_> = target_fn.constraintContext.typeParameters.iter().map(|ty| sub.apply(&ty)).collect();
+                let ty_args: Vec<_> = target_fn.constraintContext.typeParameters.iter().map(|ty| ty.apply(&sub)).collect();
                 //println!("{} type args {}", name, formatTypes(&ty_args));
                 let fn_name = self.get_mono_name(name, &ty_args);
                 self.addKey(Key::Function(name.clone(), ty_args));
                 InstructionKind::FunctionCall(fn_name, args.clone())
             }
             InstructionKind::Transform(id, index, ty) => {
-                let ty = self.processType(sub.apply(ty));
+                let ty = self.processType(ty.apply(sub));
                 InstructionKind::Transform(*id, *index, ty)
             }
             k => k.clone(),
         };
         instruction.kind = kind;
-        instruction.ty = instruction.ty.map(|ty| self.processType(sub.apply(&ty)));
+        instruction.ty = instruction.ty.map(|ty| self.processType(ty.apply(&sub)));
         instruction
     }
 
