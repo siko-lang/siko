@@ -87,6 +87,7 @@ impl<'a> ExprResolver<'a> {
     fn resolveBlock<'e>(&mut self, block: &Block, env: &'e Environment<'e>) {
         let mut env = Environment::child(env);
         let mut lastHasSemicolon = false;
+        let mut lastDoesNotReturn = false;
         for (index, statement) in block.statements.iter().enumerate() {
             if index == block.statements.len() - 1 && statement.hasSemicolon {
                 lastHasSemicolon = true;
@@ -102,12 +103,15 @@ impl<'a> ExprResolver<'a> {
                 }
                 StatementKind::Assign(_lhs, _rhs) => {}
                 StatementKind::Expr(expr) => {
+                    lastDoesNotReturn = expr.expr.doesNotReturn();
                     self.resolveExpr(expr, &mut env);
                 }
             }
         }
         if block.statements.is_empty() || lastHasSemicolon {
-            self.addImplicitInstruction(InstructionKind::Tuple(Vec::new()), block.location.clone());
+            if !lastDoesNotReturn {
+                self.addImplicitInstruction(InstructionKind::Tuple(Vec::new()), block.location.clone());
+            }
         }
     }
 

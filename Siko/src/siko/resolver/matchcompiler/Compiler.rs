@@ -544,12 +544,12 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     }
                     self.resolver.resolveExpr(&branch.body, &mut env);
                     let last = self.resolver.getTargetBlockId();
-                    self.resolver.addInstruction(
+                    self.resolver.addImplicitInstruction(
                         InstructionKind::Assign(self.matchValue.clone(), self.resolver.body.getBlockById(last).getLastId()),
                         self.matchLocation.clone(),
                     );
                     self.resolver
-                        .addInstruction(InstructionKind::Jump(self.contBlockId), self.bodyLocation.clone());
+                        .addImplicitInstruction(InstructionKind::Jump(self.contBlockId), self.bodyLocation.clone());
                     blockId
                 } else {
                     unreachable!()

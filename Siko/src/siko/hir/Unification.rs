@@ -42,6 +42,8 @@ pub fn unify(sub: &mut Substitution<Type>, ty1: &Type, ty2: &Type) -> Result<(),
             }
         }
         (Type::Var(TypeVar::Var(v1)), Type::Var(TypeVar::Var(v2))) if v1 == v2 => Ok(()),
+        (Type::Never, Type::Var(_)) => Ok(()),
+        (Type::Var(_), Type::Never) => Ok(()),
         (_, Type::Var(_)) => {
             sub.add(ty2, ty1);
             Ok(())

@@ -57,3 +57,14 @@ pub enum SimpleExpr {
     Continue(Option<Box<Expr>>),
     Ref(Box<Expr>),
 }
+
+impl SimpleExpr {
+    pub fn doesNotReturn(&self) -> bool {
+        match self {
+            SimpleExpr::Return(_) => true,
+            SimpleExpr::Break(_) => true,
+            SimpleExpr::Continue(_) => true,
+            _ => false,
+        }
+    }
+}

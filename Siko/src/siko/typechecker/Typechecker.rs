@@ -84,8 +84,15 @@ impl<'a> Typechecker<'a> {
         if let Some(body) = &f.body {
             for block in &body.blocks {
                 for instruction in &block.instructions {
-                    let ty = self.allocator.next();
-                    self.types.insert(TypedId::Instruction(instruction.id), ty.clone());
+                    match &instruction.kind {
+                        InstructionKind::Jump(_) | InstructionKind::Return(_) => {
+                            self.types.insert(TypedId::Instruction(instruction.id), Type::Never);
+                        }
+                        _ => {
+                            let ty = self.allocator.next();
+                            self.types.insert(TypedId::Instruction(instruction.id), ty.clone());
+                        }
+                    }
                     match &instruction.kind {
                         InstructionKind::DeclareVar(name) => {
                             self.types.insert(TypedId::Value(name.to_string()), self.allocator.next());
@@ -241,9 +248,7 @@ impl<'a> Typechecker<'a> {
                 InstructionKind::Drop(_) => {
                     self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
                 }
-                InstructionKind::Jump(_) => {
-                    self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
-                }
+                InstructionKind::Jump(_) => {}
                 InstructionKind::Assign(name, rhs) => {
                     self.unify(self.getValueType(name), self.getInstructionType(*rhs), instruction.location.clone());
                     self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
