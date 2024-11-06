@@ -105,7 +105,6 @@ fn main() {
     resolver.process();
     let program = resolver.ir();
     let program = typecheck(&ctx, program);
-    //println!("after tychk\n{}", program);
     let program = eliminateDeadCode(&ctx, program);
     let program = monomorphize(&ctx, program);
     //println!("after mono\n{}", program);

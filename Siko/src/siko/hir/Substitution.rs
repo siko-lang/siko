@@ -16,7 +16,7 @@ pub struct Substitution<T> {
     substitutions: BTreeMap<T, T>,
 }
 
-impl<T: Ord + Debug> Substitution<T> {
+impl<T: Apply<T> + Ord + Debug + Clone> Substitution<T> {
     pub fn new() -> Substitution<T> {
         Substitution {
             substitutions: BTreeMap::new(),
@@ -26,6 +26,13 @@ impl<T: Ord + Debug> Substitution<T> {
     pub fn add(&mut self, old: T, new: T) {
         assert_ne!(old, new);
         self.substitutions.insert(old, new);
+    }
+
+    pub fn get(&self, old: T) -> T {
+        match self.substitutions.get(&old) {
+            Some(new) => new.apply(self),
+            None => old,
+        }
     }
 }
 
@@ -62,10 +69,7 @@ impl Apply<Type> for Type {
                 let newFnResult = fnResult.apply(sub);
                 Type::Function(newArgs, Box::new(newFnResult))
             }
-            Type::Var(_) => match sub.substitutions.get(&self) {
-                Some(ty) => ty.apply(sub),
-                None => self.clone(),
-            },
+            Type::Var(_) => sub.get(self.clone()),
             Type::Reference(arg, l) => Type::Reference(Box::new(arg.apply(sub)), l.clone()),
             Type::SelfType => self.clone(),
             Type::Never => self.clone(),

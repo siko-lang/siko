@@ -38,7 +38,7 @@ pub struct Typechecker<'a> {
     substitution: Substitution<Type>,
     methodSources: BTreeMap<InstructionId, QualifiedName>,
     methodCalls: BTreeMap<InstructionId, InstructionId>,
-    swaps: BTreeMap<InstructionId, InstructionId>,
+    instructionSwaps: Substitution<InstructionId>,
     types: BTreeMap<TypedId, Type>,
     selfType: Option<Type>,
 }
@@ -53,7 +53,7 @@ impl<'a> Typechecker<'a> {
             substitution: Substitution::new(),
             methodSources: BTreeMap::new(),
             methodCalls: BTreeMap::new(),
-            swaps: BTreeMap::new(),
+            instructionSwaps: Substitution::new(),
             types: BTreeMap::new(),
             selfType: None,
         }
@@ -298,7 +298,7 @@ impl<'a> Typechecker<'a> {
                                         if m.name == *fieldName {
                                             found = true;
                                             self.methodSources.insert(instruction.id, m.fullName.clone());
-                                            self.swaps.insert(instruction.id, *receiver);
+                                            self.instructionSwaps.add(instruction.id, *receiver);
                                             break;
                                         }
                                     }
@@ -410,9 +410,44 @@ impl<'a> Typechecker<'a> {
                     if let InstructionKind::Transform(_, _, oldTy) = &mut instruction.kind {
                         *oldTy = ty;
                     }
+                    instruction.kind = instruction.kind.apply(&self.instructionSwaps);
                 }
             }
         }
         result
+    }
+}
+
+impl Apply<InstructionId> for InstructionId {
+    fn apply(&self, sub: &Substitution<InstructionId>) -> Self {
+        sub.get(self.clone())
+    }
+}
+
+impl Apply<InstructionId> for InstructionKind {
+    fn apply(&self, sub: &Substitution<InstructionId>) -> Self {
+        match self {
+            InstructionKind::FunctionCall(name, args) => InstructionKind::FunctionCall(name.clone(), args.apply(sub)),
+            InstructionKind::DynamicFunctionCall(receiver, args) => InstructionKind::DynamicFunctionCall(receiver.apply(sub), args.apply(sub)),
+            InstructionKind::ValueRef(value) => InstructionKind::ValueRef(value.clone()),
+            InstructionKind::FieldRef(root, field) => InstructionKind::FieldRef(root.apply(sub), field.clone()),
+            InstructionKind::TupleIndex(root, index) => InstructionKind::TupleIndex(root.apply(sub), *index),
+            InstructionKind::Bind(var, rhs) => InstructionKind::Bind(var.clone(), rhs.apply(sub)),
+            InstructionKind::Tuple(vec) => InstructionKind::Tuple(vec.apply(sub)),
+            InstructionKind::StringLiteral(lit) => InstructionKind::StringLiteral(lit.clone()),
+            InstructionKind::IntegerLiteral(lit) => InstructionKind::IntegerLiteral(lit.clone()),
+            InstructionKind::CharLiteral(ch) => InstructionKind::CharLiteral(*ch),
+            InstructionKind::Return(instruction_id) => InstructionKind::Return(instruction_id.apply(sub)),
+            InstructionKind::Ref(instruction_id) => InstructionKind::Ref(instruction_id.apply(sub)),
+            InstructionKind::Drop(args) => InstructionKind::Drop(args.clone()),
+            InstructionKind::Jump(block_id) => InstructionKind::Jump(*block_id),
+            InstructionKind::Assign(var, rhs) => InstructionKind::Assign(var.clone(), rhs.apply(sub)),
+            InstructionKind::DeclareVar(var) => InstructionKind::DeclareVar(var.clone()),
+            InstructionKind::Transform(root, op, args) => InstructionKind::Transform(root.apply(sub), *op, args.clone()),
+            InstructionKind::EnumSwitch(root, cases) => InstructionKind::EnumSwitch(root.apply(sub), cases.clone()),
+            InstructionKind::IntegerSwitch(root, cases) => InstructionKind::IntegerSwitch(root.apply(sub), cases.clone()),
+            InstructionKind::StringSwitch(root, cases) => InstructionKind::StringSwitch(root.apply(sub), cases.clone()),
+            InstructionKind::Noop => InstructionKind::Noop,
+        }
     }
 }
