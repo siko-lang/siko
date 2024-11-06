@@ -42,7 +42,7 @@ block0:
    %i_0_1 = alloca %struct.Bool_Bool, align 4
    call void @Bool_Bool_True(ptr %i_0_1)
    call void @Bool_Bool_False(ptr %i_0_2)
-   call void @siko_Tuple_Bool_Bool__Bool_Bool(ptr %i_0_3)
+   call void @siko_Tuple_Bool_Bool__Bool_Bool(ptr %i_0_1, ptr %i_0_2, ptr %i_0_3)
    br label %block2
 block1:
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %i_1_1, ptr align 8 %match_var_0, i8 8, i1 false)

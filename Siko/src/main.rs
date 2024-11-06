@@ -109,6 +109,7 @@ fn main() {
     let program = monomorphize(&ctx, program);
     //println!("after mono\n{}", program);
     let program = removeTuples(&program);
+    //println!("after remove\n{}", program);
     //let data_lifetime_inferer = DataLifeTimeInference::new(program);
     //let program = data_lifetime_inferer.process();
     //println!("after backend\n {}", program);
