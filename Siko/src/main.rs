@@ -15,7 +15,7 @@ use siko::{
     typechecker::Typechecker::Typechecker,
 };
 
-use std::{collections::BTreeMap, env::args};
+use std::{collections::BTreeMap, env::args, fs, path::Path};
 
 fn typecheck(ctx: &ReportContext, mut program: Program) -> Program {
     let mut result = BTreeMap::new();
@@ -48,12 +48,34 @@ fn monomorphize(ctx: &ReportContext, program: Program) -> Program {
     monomorphizer.run()
 }
 
+fn collectFiles(input: &Path) -> Vec<String> {
+    let mut allFiles = Vec::new();
+    if input.is_dir() {
+        for entry in fs::read_dir(input).expect("Failed to read directory") {
+            let entry = entry.expect("Failed to read entry");
+            let path = entry.path();
+
+            if path.is_dir() {
+                allFiles.extend(collectFiles(&path));
+            } else if let Some(extension) = path.extension() {
+                if extension == "sk" {
+                    allFiles.push(format!("{}", path.display()));
+                }
+            }
+        }
+    } else {
+        allFiles.push(format!("{}", input.display()));
+    }
+    allFiles
+}
+
 fn main() {
     let ctx = ReportContext {};
     let fileManager = FileManager::new();
     let mut resolver = Resolver::new(&ctx);
     let mut parseOutput = false;
     let mut outputFile = "llvm.ll".to_string();
+    let mut inputFiles = Vec::new();
     for arg in args().skip(1) {
         if arg == "-o" {
             parseOutput = true;
@@ -64,8 +86,16 @@ fn main() {
             parseOutput = false;
             continue;
         }
-        let fileId = fileManager.add(arg.clone());
-        let mut parser = Parser::new(&ctx, fileId, arg.to_string());
+        inputFiles.push(arg.clone());
+    }
+    let mut allFiles = Vec::new();
+    for inputFile in inputFiles {
+        let files = collectFiles(Path::new(&inputFile));
+        allFiles.extend(files);
+    }
+    for f in allFiles {
+        let fileId = fileManager.add(f.clone());
+        let mut parser = Parser::new(&ctx, fileId, f.to_string());
         parser.parse();
         let modules = parser.modules();
         for m in modules {

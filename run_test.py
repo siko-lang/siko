@@ -8,42 +8,43 @@ success = 0
 failure = 0
 skipped = 0
 
-def test(root, entry):
-    print("- %s" % entry)
-    global success, failure, skipped
-    skip_path = os.path.join(root, entry, "SKIP")
-    if os.path.exists(skip_path):
-        skipped += 1
-        return
-    input_path = os.path.join(root, entry, "main.sk")
-    output_path = os.path.join(root, entry, "main.ll")
-    optimized_path = os.path.join(root, entry, "main_optimized.ll")
-    llvm_output_path = os.path.join(root, entry, "main.bin")
-    std = []
-    for m in os.listdir("./std"):
-        std.append(os.path.join("./std", m))
-    args = ["./siko", input_path, "-o", output_path]
-    #print(args)
+def compileSiko(currentDir, files, extras):
+    output_path = os.path.join(currentDir, "main.ll")
+    optimized_path = os.path.join(currentDir, "main_optimized.ll")
+    llvm_output_path = os.path.join(currentDir, "main.bin")
+    args = ["./siko", "-o", output_path] + extras + files
     r = subprocess.run(args)
     if r.returncode != 0:
-        failure += 1
-        return
+        return None
     r = subprocess.run(["opt", "-O2", "-S", output_path, "-o", optimized_path])
     if r.returncode != 0:
-        failure += 1
-        return
+        return None
     r = subprocess.run(["clang", "-Wno-override-module", optimized_path, "-o", llvm_output_path])
     #r = subprocess.run(["rustc", output_path, "-o", rust_output_path])
     if r.returncode != 0:
+        return None
+    return llvm_output_path
+
+def test(root, entry, extras):
+    print("- %s" % entry)
+    global success, failure, skipped
+    currentDir = os.path.join(root, entry)
+    skipPath = os.path.join(currentDir, "SKIP")
+    if os.path.exists(skipPath):
+        skipped += 1
+        return
+    inputPath = os.path.join(currentDir, "main.sk")
+    binary = compileSiko(currentDir, [inputPath], extras)
+    if binary is None:
         failure += 1
         return
-    r = subprocess.run([llvm_output_path])
+    r = subprocess.run([binary])
     if r.returncode != 0:
         failure += 1
         return
     success += 1
 
-def test_fail(root, entry):
+def test_fail(root, entry, extras):
     print("- %s" % entry)
     global success, failure, skipped
     skip_path = os.path.join(root, entry, "SKIP")
@@ -52,11 +53,7 @@ def test_fail(root, entry):
         return
     input_path = os.path.join(root, entry, "main.sk")
     output_path = os.path.join(root, entry, "main.ll")
-    llvm_output_path = os.path.join(root, entry, "main.bin")
-    std = []
-    for m in os.listdir("./std"):
-        std.append(os.path.join("./std", m))
-    args = ["./siko", input_path, "-o", output_path]
+    args = ["./siko", input_path, "-o", output_path] + extras
     #print(args)
     r = subprocess.run(args, capture_output=True)
     if r.returncode == 0:
@@ -74,16 +71,24 @@ for arg in sys.argv[1:]:
 
 no_std_path = os.path.join(".", "test", "no_std")
 
+std_path = os.path.join(".", "test", "std")
+
 errors_path = os.path.join(".", "test", "errors")
 
+print("No std tests:")
 for entry in os.listdir(no_std_path):
     if len(filters) > 0 and entry not in filters:
         continue
-    test(no_std_path, entry)
+    test(no_std_path, entry, [])
+print("Std tests:")
+for entry in os.listdir(std_path):
+    if len(filters) > 0 and entry not in filters:
+        continue
+    test(std_path, entry, ["std"])
 for entry in os.listdir(errors_path):
     if len(filters) > 0 and entry not in filters:
         continue
-    test_fail(errors_path, entry)
+    test_fail(errors_path, entry, ["std"])
 percent = 0
 if (success+failure) != 0:
     percent = success/(success+failure)*100
