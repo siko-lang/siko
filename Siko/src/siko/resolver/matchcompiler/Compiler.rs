@@ -329,7 +329,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         for (index, branch) in self.branches.clone().iter().enumerate() {
             let branchPattern = self.resolve(&branch.pattern);
             let (decision, bindings) = self.generateDecisions(&branchPattern, &DataPath::Root, &DecisionPath::new(), Bindings::new());
-            //println!("Pattern {}\n decision: {}", branch, decision);
+            //println!("{} Pattern {}\n decision: {}", index, branch.pattern, decision);
             let choices = self.generateChoices(&branchPattern);
             matches.push(Match {
                 kind: MatchKind::UserDefined(index as i64),

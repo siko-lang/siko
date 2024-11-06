@@ -84,7 +84,18 @@ impl<'a> ModuleParser for Parser<'a> {
         }
         self.expect(TokenKind::RightBracket(BracketKind::Curly));
         let implicitImports = vec![
-            "String", "List", "Bool", "Int", "Char", "Result", "Option", "Ordering", "Show", "Iterator", "Std.Ops",
+            "String",
+            "List",
+            "Bool",
+            "Int",
+            "Char",
+            "Result",
+            "Option",
+            "Ordering",
+            "Show",
+            "Iterator",
+            "Std.Ops",
+            "Std.Basic.Util",
         ];
         for i in implicitImports {
             items.push(ModuleItem::Import(Import {
