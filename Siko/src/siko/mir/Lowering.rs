@@ -193,6 +193,31 @@ impl<'a> Builder<'a> {
                     let llvmInstruction = LInstruction::Switch(tmpVar2.clone(), cases[0].branch.clone(), branches);
                     llvmBlock.instructions.push(llvmInstruction);
                 }
+                Instruction::IntegerSwitch(var, cases) => {
+                    let switchVar = Variable {
+                        name: format!("switch_var_{}", block.id),
+                        ty: Type::Int64,
+                    };
+                    let tmpVar = self.tmpVar(&switchVar, 1);
+                    let tmpVar2 = self.tmpVar(&switchVar, 2);
+                    let llvmInstruction = LInstruction::GetFieldRef(tmpVar.clone(), self.lowerVar(var), 0);
+                    llvmBlock.instructions.push(llvmInstruction);
+                    let llvmInstruction = LInstruction::LoadVar(tmpVar2.clone(), tmpVar);
+                    llvmBlock.instructions.push(llvmInstruction);
+                    let mut branches = Vec::new();
+                    for (index, case) in cases.iter().enumerate() {
+                        if index == 0 {
+                            continue;
+                        }
+                        let branch = LBranch {
+                            value: LValue::Numeric(format!("{}", index), LType::Int64),
+                            block: case.branch.clone(),
+                        };
+                        branches.push(branch);
+                    }
+                    let llvmInstruction = LInstruction::Switch(tmpVar2.clone(), cases[0].branch.clone(), branches);
+                    llvmBlock.instructions.push(llvmInstruction);
+                }
                 Instruction::Transform(dest, src, _) => {
                     let llvmInstruction = LInstruction::Bitcast(self.lowerVar(dest), self.lowerVar(src));
                     llvmBlock.instructions.push(llvmInstruction);

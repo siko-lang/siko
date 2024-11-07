@@ -137,6 +137,7 @@ impl std::fmt::Debug for IntegerCase {
         }
     }
 }
+
 #[derive(Clone, PartialEq)]
 pub struct StringCase {
     pub value: Option<String>,

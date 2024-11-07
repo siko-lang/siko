@@ -8,8 +8,8 @@ use crate::siko::{
     mir::{
         Data::{Field as MirField, Struct, Union, Variant as MirVariant},
         Function::{
-            Block as MirBlock, EnumCase as MirEnumCase, Function as MirFunction, FunctionKind as MirFunctionKind, Instruction, Param as MirParam,
-            Value, Variable,
+            Block as MirBlock, EnumCase as MirEnumCase, Function as MirFunction, FunctionKind as MirFunctionKind, Instruction,
+            IntegerCase as MirIntegerCase, Param as MirParam, Value, Variable,
         },
         Program::Program as MirProgram,
         Type::Type as MirType,
@@ -126,6 +126,18 @@ impl<'a> Builder<'a> {
                         mirCases.push(mirCase);
                     }
                     block.instructions.push(Instruction::EnumSwitch(root, mirCases));
+                }
+                HirInstructionKind::IntegerSwitch(root, cases) => {
+                    let root = self.buildInstructionVar(root);
+                    let mut mirCases = Vec::new();
+                    for case in cases {
+                        let mirCase = MirIntegerCase {
+                            value: case.value.clone(),
+                            branch: self.getBlockName(case.branch),
+                        };
+                        mirCases.push(mirCase);
+                    }
+                    block.instructions.push(Instruction::IntegerSwitch(root, mirCases));
                 }
                 HirInstructionKind::Transform(root, _, ty) => {
                     let root = self.buildInstructionVar(root);

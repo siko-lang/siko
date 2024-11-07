@@ -131,6 +131,23 @@ impl std::fmt::Debug for EnumCase {
         write!(f, "({}, {})", self.name, self.branch)
     }
 }
+pub struct IntegerCase {
+    pub value: Option<String>,
+    pub branch: String,
+}
+
+impl std::fmt::Debug for IntegerCase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.value {
+            Some(v) => {
+                write!(f, "({}, {})", v, self.branch)
+            }
+            None => {
+                write!(f, "(<default>, {})", self.branch)
+            }
+        }
+    }
+}
 
 pub enum Instruction {
     Declare(Variable),
@@ -143,6 +160,7 @@ pub enum Instruction {
     IntegerLiteral(Variable, String),
     StringLiteral(Variable, String),
     EnumSwitch(Variable, Vec<EnumCase>),
+    IntegerSwitch(Variable, Vec<IntegerCase>),
     Transform(Variable, Variable, String),
     Jump(String),
 }
@@ -166,6 +184,7 @@ impl fmt::Display for Instruction {
             Instruction::IntegerLiteral(var, literal) => write!(f, "IntegerLiteral({}, {})", var, literal),
             Instruction::StringLiteral(var, literal) => write!(f, "StringLiteral({}, {})", var, literal),
             Instruction::EnumSwitch(root, cases) => write!(f, "enumswitch({}, {:?})", root, cases),
+            Instruction::IntegerSwitch(root, cases) => write!(f, "integerswitch({}, {:?})", root, cases),
             Instruction::Jump(label) => write!(f, "Jump({})", label),
             Instruction::Transform(dest, src, ty) => write!(f, "Transform({}, {}, {})", dest, src, ty),
         }
