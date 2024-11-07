@@ -17,11 +17,30 @@ block0:
 
 define private void @Main_main(ptr noundef %fn_result) {
 block0:
+   %i_16_4 = alloca %struct.Int_Int, align 8
+   %i_16_2 = alloca %struct.Int_Int, align 8
+   %i_16_1 = alloca %struct.Int_Int, align 8
+   %i_14_1 = alloca %struct.Int_Int, align 8
+   %i_11_1 = alloca %struct.Int_Int, align 8
+   %i_10_8 = alloca %struct.siko_Tuple_, align 4
+   %i_10_7 = alloca %struct.siko_Tuple_, align 4
+   %i_10_6 = alloca %struct.Bool_Bool, align 4
+   %i_10_4 = alloca %struct.Int_Int, align 8
+   %i_10_3 = alloca %struct.Int_Int, align 8
+   %r_7 = alloca %struct.Int_Int, align 8
+   %i_10_1 = alloca %struct.Int_Int, align 8
+   %match_var_6 = alloca %struct.siko_Tuple_, align 4
+   %i_9_6 = alloca %struct.Bool_Bool, align 4
+   %i_9_4 = alloca %struct.Int_Int, align 8
+   %i_9_3 = alloca %struct.Int_Int, align 8
+   %a_5 = alloca %struct.Int_Int, align 8
+   %i_9_1 = alloca %struct.Int_Int, align 8
    %i_8_4 = alloca %struct.Int_Int, align 8
    %i_8_2 = alloca %struct.Int_Int, align 8
    %i_8_1 = alloca %struct.Int_Int, align 8
    %i_6_1 = alloca %struct.Int_Int, align 8
-   %i_2_8 = alloca %struct.siko_Tuple_, align 4
+   %loop_var_4 = alloca %struct.Int_Int, align 8
+   %i_2_8 = alloca %struct.Int_Int, align 8
    %i_2_7 = alloca %struct.siko_Tuple_, align 4
    %i_2_6 = alloca %struct.Bool_Bool, align 4
    %i_2_4 = alloca %struct.Int_Int, align 8
@@ -56,9 +75,10 @@ block2:
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %i_2_4, ptr align 8 %r_3, i8 8, i1 false)
    call void @Int_Int_eq(ptr %i_2_4, ptr %i_2_3, ptr %i_2_6)
    call void @Std_Basic_Util_assert(ptr %i_2_6, ptr %i_2_7)
-   call void @siko_Tuple_(ptr %i_2_8)
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %i_2_8, i8 0, i1 false)
-   ret void
+   %tmp_i_2_8_1 = getelementptr inbounds %struct.Int_Int, ptr %i_2_8, i32 0, i32 0
+   store i64 1, ptr %tmp_i_2_8_1, align 8
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %loop_var_4, ptr align 8 %i_2_8, i8 8, i1 false)
+   br label %block9
 block4:
    %tmp_switch_var_block4_1 = getelementptr inbounds %struct.Bool_Bool, ptr %i_1_6, i32 0, i32 0
    %tmp_switch_var_block4_2 = load i32, ptr %tmp_switch_var_block4_1, align 4
@@ -83,6 +103,53 @@ block8:
    call void @Int_Int_add(ptr %i_8_2, ptr %i_8_1, ptr %i_8_4)
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %loop_var_0, ptr align 8 %i_8_4, i8 8, i1 false)
    br label %block1
+block9:
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %i_9_1, ptr align 8 %loop_var_4, i8 8, i1 false)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %a_5, ptr align 8 %i_9_1, i8 8, i1 false)
+   %tmp_i_9_3_1 = getelementptr inbounds %struct.Int_Int, ptr %i_9_3, i32 0, i32 0
+   store i64 10, ptr %tmp_i_9_3_1, align 8
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %i_9_4, ptr align 8 %a_5, i8 8, i1 false)
+   call void @Int_Int_lessThan(ptr %i_9_4, ptr %i_9_3, ptr %i_9_6)
+   br label %block12
+block10:
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %i_10_1, ptr align 8 %loop_var_4, i8 8, i1 false)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %r_7, ptr align 8 %i_10_1, i8 8, i1 false)
+   %tmp_i_10_3_1 = getelementptr inbounds %struct.Int_Int, ptr %i_10_3, i32 0, i32 0
+   store i64 10, ptr %tmp_i_10_3_1, align 8
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %i_10_4, ptr align 8 %r_7, i8 8, i1 false)
+   call void @Int_Int_eq(ptr %i_10_4, ptr %i_10_3, ptr %i_10_6)
+   call void @Std_Basic_Util_assert(ptr %i_10_6, ptr %i_10_7)
+   call void @siko_Tuple_(ptr %i_10_8)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %i_10_8, i8 0, i1 false)
+   ret void
+block11:
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %i_11_1, ptr align 8 %match_var_6, i8 8, i1 false)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %loop_var_4, ptr align 8 %i_11_1, i8 8, i1 false)
+   br label %block9
+block12:
+   %tmp_switch_var_block12_1 = getelementptr inbounds %struct.Bool_Bool, ptr %i_9_6, i32 0, i32 0
+   %tmp_switch_var_block12_2 = load i32, ptr %tmp_switch_var_block12_1, align 4
+   switch i32 %tmp_switch_var_block12_2, label %block13 [
+i32 1, label %block15
+]
+
+block13:
+   %i_13_1 = bitcast %struct.Bool_Bool* %i_9_6 to %struct.siko_Tuple_*
+   br label %block14
+block14:
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %i_14_1, ptr align 8 %a_5, i8 8, i1 false)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %loop_var_4, ptr align 8 %i_14_1, i8 8, i1 false)
+   br label %block10
+block15:
+   %i_15_1 = bitcast %struct.Bool_Bool* %i_9_6 to %struct.siko_Tuple_*
+   br label %block16
+block16:
+   %tmp_i_16_1_1 = getelementptr inbounds %struct.Int_Int, ptr %i_16_1, i32 0, i32 0
+   store i64 1, ptr %tmp_i_16_1_1, align 8
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %i_16_2, ptr align 8 %a_5, i8 8, i1 false)
+   call void @Int_Int_add(ptr %i_16_2, ptr %i_16_1, ptr %i_16_4)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %match_var_6, ptr align 8 %i_16_4, i8 8, i1 false)
+   br label %block11
 }
 
 define private void @Std_Basic_Util_assert(ptr noundef %v, ptr noundef %fn_result) {
