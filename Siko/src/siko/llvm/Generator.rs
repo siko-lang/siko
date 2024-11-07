@@ -211,9 +211,9 @@ impl Generator {
         for s in &self.program.strings {
             writeln!(
                 output,
-                "@.{} = private unnamed_addr constant [{} x i8] c\"{}\\00\", align 1",
+                "@.{} = private unnamed_addr constant [{} x i8] c\"{}\", align 1",
                 s.name,
-                s.value.len() + 1,
+                s.value.len(),
                 s.value
             )?;
         }

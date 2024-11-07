@@ -147,6 +147,7 @@ impl<'a> Builder<'a> {
                     llvmBlock.instructions.push(llvmInstruction);
                     let i8Ptr = LType::Ptr(Box::new(LType::Int8));
                     let new = self.constants.len();
+                    let strLen = value.len();
                     let value = match self.constants.entry(value.clone()) {
                         Entry::Occupied(v) => v.get().clone(),
                         Entry::Vacant(v) => {
@@ -156,6 +157,11 @@ impl<'a> Builder<'a> {
                         }
                     };
                     let llvmInstruction = LInstruction::Store(tmpVar, LValue::String(value.clone(), i8Ptr));
+                    llvmBlock.instructions.push(llvmInstruction);
+                    let tmpVar2 = self.tmpVar(var, 2);
+                    let llvmInstruction = LInstruction::GetFieldRef(tmpVar2.clone(), self.lowerVar(var), 1);
+                    llvmBlock.instructions.push(llvmInstruction);
+                    let llvmInstruction = LInstruction::Store(tmpVar2, LValue::Numeric(format!("{}", strLen), LType::Int64));
                     llvmBlock.instructions.push(llvmInstruction);
                 }
                 Instruction::Jump(name) => {
