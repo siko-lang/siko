@@ -625,7 +625,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     let mut values = BTreeSet::new();
                     for m in allMatches {
                         if m.decisionPath.decisions.starts_with(&currentDecision.decisions[..]) {
-                            if m.decisionPath.decisions.len() > currentDecision.decisions.len() + 1 {
+                            if m.decisionPath.decisions.len() > currentDecision.decisions.len() {
                                 match &m.decisionPath.decisions[currentDecision.decisions.len()] {
                                     DataPath::IntegerLiteral(_, value) => {
                                         values.insert(value.clone());

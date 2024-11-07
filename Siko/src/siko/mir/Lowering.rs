@@ -205,17 +205,22 @@ impl<'a> Builder<'a> {
                     let llvmInstruction = LInstruction::LoadVar(tmpVar2.clone(), tmpVar);
                     llvmBlock.instructions.push(llvmInstruction);
                     let mut branches = Vec::new();
+                    let mut defaultIndex = 0;
                     for (index, case) in cases.iter().enumerate() {
-                        if index == 0 {
-                            continue;
+                        match &case.value {
+                            Some(v) => {
+                                let branch = LBranch {
+                                    value: LValue::Numeric(v.clone(), LType::Int64),
+                                    block: case.branch.clone(),
+                                };
+                                branches.push(branch);
+                            }
+                            None => {
+                                defaultIndex = index;
+                            }
                         }
-                        let branch = LBranch {
-                            value: LValue::Numeric(format!("{}", index), LType::Int64),
-                            block: case.branch.clone(),
-                        };
-                        branches.push(branch);
                     }
-                    let llvmInstruction = LInstruction::Switch(tmpVar2.clone(), cases[0].branch.clone(), branches);
+                    let llvmInstruction = LInstruction::Switch(tmpVar2.clone(), cases[defaultIndex].branch.clone(), branches);
                     llvmBlock.instructions.push(llvmInstruction);
                 }
                 Instruction::Transform(dest, src, _) => {
