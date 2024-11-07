@@ -194,7 +194,8 @@ impl<'a> ExprResolver<'a> {
                 self.addInstruction(InstructionKind::Jump(loopBodyId), expr.location.clone());
                 let mut loopEnv = Environment::child(env);
                 self.setTargetBlockId(loopBodyId);
-                self.resolvePattern(pattern, &mut loopEnv, initId);
+                let currentValueId = self.addInstruction(InstructionKind::ValueRef(ValueKind::Value(name.clone())), expr.location.clone());
+                self.resolvePattern(pattern, &mut loopEnv, currentValueId);
                 self.loopInfos.push(LoopInfo {
                     body: loopBodyId,
                     exit: loopExitId,
@@ -204,8 +205,9 @@ impl<'a> ExprResolver<'a> {
                     SimpleExpr::Block(block) => self.resolveBlock(block, &loopEnv),
                     _ => panic!("If true branch is not a block!"),
                 }
+                let current = self.getTargetBlockId();
                 self.addImplicitInstruction(
-                    InstructionKind::Assign(name.clone(), self.body.getBlockById(loopBodyId).getLastId()),
+                    InstructionKind::Assign(name.clone(), self.body.getBlockById(current).getLastId()),
                     init.location.clone(),
                 );
                 self.addImplicitInstruction(InstructionKind::Jump(loopBodyId), expr.location.clone());

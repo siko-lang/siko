@@ -75,6 +75,7 @@ block3:
    br label %block4
 block4:
    call void @siko_Tuple_(ptr %i_4_1)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_1, ptr align 4 %i_4_1, i8 0, i1 false)
    br label %block1
 block5:
    %i_5_1 = bitcast %struct.Main_Result_Main_MySuccess__Main_MyError* %i_0_3 to %struct.siko_Tuple_Main_MySuccess*
@@ -82,6 +83,7 @@ block5:
    br label %block6
 block6:
    call void @siko_Tuple_(ptr %i_6_1)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_1, ptr align 4 %i_6_1, i8 0, i1 false)
    br label %block1
 }
 

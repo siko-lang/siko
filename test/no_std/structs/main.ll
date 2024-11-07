@@ -80,6 +80,7 @@ block0:
    %i_2_3 = alloca %struct.siko_Tuple_, align 4
    %i_2_2 = alloca %struct.siko_Tuple_, align 4
    %i_2_1 = alloca %struct.siko_Tuple_, align 4
+   %i_1_2 = alloca %struct.siko_Tuple_, align 4
    %i_1_1 = alloca %struct.siko_Tuple_, align 4
    %loop_var_0 = alloca %struct.siko_Tuple_, align 4
    %i_0_2 = alloca %struct.siko_Tuple_, align 4
@@ -89,7 +90,9 @@ block0:
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %loop_var_0, ptr align 4 %i_0_2, i8 0, i1 false)
    br label %block1
 block1:
-   call void @siko_Tuple_(ptr %i_1_1)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %i_1_1, ptr align 4 %loop_var_0, i8 0, i1 false)
+   call void @siko_Tuple_(ptr %i_1_2)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %loop_var_0, ptr align 4 %i_1_2, i8 0, i1 false)
    br label %block2
 block2:
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %i_2_1, ptr align 4 %loop_var_0, i8 0, i1 false)

@@ -422,7 +422,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
             self.contBlockId,
             InstructionKind::ValueRef(ValueKind::Value(self.matchValue.clone())),
             self.matchLocation.clone(),
-            false,
+            true,
         );
         self.resolver.setTargetBlockId(self.contBlockId);
         valueId

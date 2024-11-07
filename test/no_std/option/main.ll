@@ -73,6 +73,7 @@ block3:
    br label %block4
 block4:
    call void @Main_Bool_False(ptr %i_4_1)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_1, ptr align 4 %i_4_1, i8 4, i1 false)
    br label %block1
 block5:
    %i_5_1 = bitcast %struct.Main_Option_Main_Bool* %i_0_4 to %struct.siko_Tuple_Main_Bool*
@@ -81,6 +82,7 @@ block5:
 block6:
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %a_2, ptr align 4 %i_5_2, i8 4, i1 false)
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %i_6_2, ptr align 4 %a_2, i8 4, i1 false)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_1, ptr align 4 %i_6_2, i8 4, i1 false)
    br label %block1
 block7:
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %i_7_1, ptr align 4 %match_var_4, i8 4, i1 false)
@@ -99,6 +101,7 @@ block9:
    br label %block10
 block10:
    call void @Main_Bool_False(ptr %i_10_1)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_4, ptr align 4 %i_10_1, i8 4, i1 false)
    br label %block7
 block11:
    %i_11_1 = bitcast %struct.Main_Option_Main_Bool* %i_1_4 to %struct.siko_Tuple_Main_Bool*
@@ -107,6 +110,7 @@ block11:
 block12:
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %a_5, ptr align 4 %i_11_2, i8 4, i1 false)
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %i_12_2, ptr align 4 %a_5, i8 4, i1 false)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_4, ptr align 4 %i_12_2, i8 4, i1 false)
    br label %block7
 }
 

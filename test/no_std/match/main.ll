@@ -76,6 +76,7 @@ block6:
 block7:
    %tmp_i_7_1_1 = getelementptr inbounds %struct.Int_Int, ptr %i_7_1, i32 0, i32 0
    store i64 4, ptr %tmp_i_7_1_1, align 8
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %match_var_0, ptr align 8 %i_7_1, i8 8, i1 false)
    br label %block1
 block8:
    %i_8_1 = bitcast %struct.Bool_Bool* %i_2_2 to %struct.siko_Tuple_*
@@ -83,6 +84,7 @@ block8:
 block9:
    %tmp_i_9_1_1 = getelementptr inbounds %struct.Int_Int, ptr %i_9_1, i32 0, i32 0
    store i64 4, ptr %tmp_i_9_1_1, align 8
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %match_var_0, ptr align 8 %i_9_1, i8 8, i1 false)
    br label %block1
 block10:
    %i_10_1 = bitcast %struct.Bool_Bool* %i_2_1 to %struct.siko_Tuple_*
@@ -100,6 +102,7 @@ block12:
 block13:
    %tmp_i_13_1_1 = getelementptr inbounds %struct.Int_Int, ptr %i_13_1, i32 0, i32 0
    store i64 4, ptr %tmp_i_13_1_1, align 8
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %match_var_0, ptr align 8 %i_13_1, i8 8, i1 false)
    br label %block1
 block14:
    %i_14_1 = bitcast %struct.Bool_Bool* %i_2_2 to %struct.siko_Tuple_*
@@ -107,6 +110,7 @@ block14:
 block15:
    %tmp_i_15_1_1 = getelementptr inbounds %struct.Int_Int, ptr %i_15_1, i32 0, i32 0
    store i64 4, ptr %tmp_i_15_1_1, align 8
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %match_var_0, ptr align 8 %i_15_1, i8 8, i1 false)
    br label %block1
 }
 

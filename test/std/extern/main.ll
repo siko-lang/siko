@@ -86,12 +86,14 @@ block3:
 block4:
    call void @Std_Basic_Util_siko_runtime_abort(ptr %i_4_1)
    call void @siko_Tuple_(ptr %i_4_2)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_0, ptr align 4 %i_4_2, i8 0, i1 false)
    br label %block1
 block5:
    %i_5_1 = bitcast %struct.Bool_Bool* %i_0_1 to %struct.siko_Tuple_*
    br label %block6
 block6:
    call void @siko_Tuple_(ptr %i_6_1)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_0, ptr align 4 %i_6_1, i8 0, i1 false)
    br label %block1
 }
 

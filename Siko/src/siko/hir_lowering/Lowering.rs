@@ -41,7 +41,10 @@ impl<'a> Builder<'a> {
         format!("block{}", blockId.id)
     }
 
-    fn lowerBlock(&mut self, hirBlock: &Block) -> MirBlock {
+    fn lowerBlock(&mut self, hirBlock: &Block) -> Option<MirBlock> {
+        if hirBlock.instructions.is_empty() {
+            return None;
+        }
         let mut block = MirBlock {
             id: self.getBlockName(hirBlock.id),
             instructions: Vec::new(),
@@ -77,7 +80,16 @@ impl<'a> Builder<'a> {
                     block.instructions.push(Instruction::Declare(idVar.clone()));
                     block.instructions.push(Instruction::Memcpy(var, idVar));
                 }
-                HirInstructionKind::Assign(_, _) => {}
+                HirInstructionKind::Assign(name, rhs) => {
+                    let i = self.function.getInstruction(*rhs);
+                    let ty = lowerType(i.ty.as_ref().expect("no ty"), &self.program);
+                    let var = Variable {
+                        name: name.to_string(),
+                        ty: ty,
+                    };
+                    let rhs = self.buildInstructionVar(rhs);
+                    block.instructions.push(Instruction::Memcpy(rhs, var));
+                }
                 HirInstructionKind::Bind(var, rhs) => {
                     let i = self.function.getInstruction(*rhs);
                     let ty = lowerType(i.ty.as_ref().expect("no ty"), &self.program);
@@ -131,7 +143,7 @@ impl<'a> Builder<'a> {
                 k => panic!("NYI {}", k),
             }
         }
-        block
+        Some(block)
     }
 
     fn lowerFunction(&mut self) -> MirFunction {
@@ -150,8 +162,9 @@ impl<'a> Builder<'a> {
                 let mut blocks = Vec::new();
                 if let Some(body) = self.function.body.clone() {
                     for block in &body.blocks {
-                        let mirBlock = self.lowerBlock(block);
-                        blocks.push(mirBlock);
+                        if let Some(mirBlock) = self.lowerBlock(block) {
+                            blocks.push(mirBlock);
+                        }
                     }
                 }
                 MirFunctionKind::UserDefined(blocks)
