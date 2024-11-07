@@ -1,10 +1,11 @@
 use std::collections::BTreeMap;
 
-use super::{Data::Struct, Function::Function};
+use super::{Constant::StringConstant, Data::Struct, Function::Function};
 
 pub struct Program {
     pub functions: Vec<Function>,
     pub structs: BTreeMap<String, Struct>,
+    pub strings: Vec<StringConstant>,
 }
 
 impl Program {
@@ -12,6 +13,7 @@ impl Program {
         Program {
             functions: Vec::new(),
             structs: BTreeMap::new(),
+            strings: Vec::new(),
         }
     }
 

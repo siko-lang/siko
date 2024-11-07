@@ -28,6 +28,7 @@ pub enum Value {
     Void,
     Variable(Variable),
     Numeric(String, Type),
+    String(String, Type),
 }
 
 pub struct Branch {

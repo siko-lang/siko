@@ -14,5 +14,5 @@ llvm: Siko/target/release/siko siko_runtime/siko_runtime.o
 	@./siko test.sk
 	@opt -O2 -S llvm.ll -o optimized.ll
 	@llvm-as optimized.ll -o main.bc
-	@llc main.bc -filetype=obj -o main.o
+	@llc -relocation-model=pic main.bc -filetype=obj -o main.o
 	@clang main.o siko_runtime/siko_runtime.o -o main.bin

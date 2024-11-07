@@ -111,6 +111,10 @@ impl<'a> Builder<'a> {
                     block.instructions.push(Instruction::Declare(idVar.clone()));
                     block.instructions.push(Instruction::IntegerLiteral(idVar, v.to_string()));
                 }
+                HirInstructionKind::StringLiteral(v) => {
+                    block.instructions.push(Instruction::Declare(idVar.clone()));
+                    block.instructions.push(Instruction::StringLiteral(idVar, v.to_string()));
+                }
                 HirInstructionKind::EnumSwitch(root, cases) => {
                     let root = self.buildInstructionVar(root);
                     let mut mirCases = Vec::new();
@@ -219,6 +223,16 @@ pub fn lowerClass(c: &HirClass, program: &HirProgram) -> Struct {
     if c.name.toString() == "Int.Int" {
         fields.push(MirField {
             name: "value".to_string(),
+            ty: MirType::Int64,
+        });
+    }
+    if c.name.toString() == "String.String" {
+        fields.push(MirField {
+            name: "value".to_string(),
+            ty: MirType::Ptr(Box::new(MirType::Int8)),
+        });
+        fields.push(MirField {
+            name: "length".to_string(),
             ty: MirType::Int64,
         });
     }

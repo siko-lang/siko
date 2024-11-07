@@ -29,7 +29,7 @@ pub fn getTypeName(ty: &Type) -> String {
         Type::Int32 => "i32".to_string(),
         Type::Int64 => "i64".to_string(),
         Type::Struct(n) => getStructName(n),
-        Type::Ptr(_) => todo!(),
+        Type::Ptr(_) => "ptr".to_string(),
         Type::ByteArray(s) => format!("[{} x i8]", s),
     }
 }
@@ -84,6 +84,15 @@ impl Generator {
                         self.getAlignment(&dest.ty),
                     )
                 }
+                Value::String(value, ty) => {
+                    format!(
+                        "store {} @.{}, ptr {}, align {}",
+                        getTypeName(ty),
+                        value,
+                        dest.name,
+                        self.getAlignment(&dest.ty),
+                    )
+                }
                 Value::Variable(src) => {
                     format!(
                         "store {} {}, ptr {}, align {}",
@@ -124,6 +133,9 @@ impl Generator {
                 Value::Void => format!("ret void"),
                 Value::Variable(var) => {
                     format!("ret {} {}", getTypeName(&var.ty), var.name)
+                }
+                Value::String(_, _) => {
+                    unreachable!()
                 }
                 Value::Numeric(v, ty) => {
                     format!("ret {} {}", getTypeName(ty), v)
@@ -195,6 +207,17 @@ impl Generator {
 
     pub fn dump(&mut self) -> io::Result<()> {
         let mut output = File::create(&self.fileName).expect("Failed to open llvm output");
+
+        for s in &self.program.strings {
+            writeln!(
+                output,
+                "@.{} = private unnamed_addr constant [{} x i8] c\"{}\\00\", align 1",
+                s.name,
+                s.value.len() + 1,
+                s.value
+            )?;
+        }
+
         for (_, s) in &self.program.structs {
             self.dumpStruct(s, &mut output)?;
         }

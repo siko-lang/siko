@@ -10,6 +10,11 @@ struct siko_bool {
     int32_t value;
 };
 
+struct siko_string {
+    char* value;
+    int64_t length;
+};
+
 extern void Std_Basic_Util_siko_runtime_abort() {
     printf("siko_runtime_abort called\n");
     abort();
@@ -17,6 +22,10 @@ extern void Std_Basic_Util_siko_runtime_abort() {
 
 extern void Std_Basic_Util_siko_runtime_num(struct siko_int* v) {
     printf("%ld\n", v->value);
+}
+
+extern void Std_Basic_Util_siko_runtime_str(struct siko_string* v) {
+    printf("%.*s\n", (int)v->length, v->value);
 }
 
 void Other_Module_siko_runtime_bool(struct siko_bool* v) {
