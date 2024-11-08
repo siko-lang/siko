@@ -429,7 +429,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
     }
 
     fn compileNode(&mut self, node: &Node, ctx: &CompileContext) -> BlockId {
-        //println!("compileNode: ctx {}", ctx);
+        //println!("compileNode: node {:?}, ctx {}", node, ctx);
         match node {
             Node::Tuple(tuple) => {
                 let blockId = self.resolver.createBlock();
@@ -525,6 +525,10 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                             if let Case::Default = value {
                                 defaultBranch = self.compileNode(case, ctx);
                             }
+                        }
+                        if switch.cases.len() == 1 {
+                            self.resolver
+                                .addInstructionToBlock(blockId, InstructionKind::Jump(defaultBranch), self.bodyLocation.clone(), true);
                         }
                         for (case, node) in &switch.cases {
                             match case {
@@ -751,7 +755,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct Tuple {
     size: i64,
     dataPath: DataPath,
@@ -766,39 +770,32 @@ enum Case {
     Default,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum SwitchKind {
     Enum(QualifiedName),
     Integer,
     String,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct Switch {
     dataPath: DataPath,
     kind: SwitchKind,
     cases: BTreeMap<Case, Node>,
 }
 
-#[derive(Clone)]
-struct Bind {
-    var: InstructionId,
-    name: String,
-    blockId: BlockId,
-}
-
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct End {
     decisionPath: DecisionPath,
     matches: Vec<Match>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct Wildcard {
     next: Box<Node>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum Node {
     Tuple(Tuple),
     Switch(Switch),
@@ -900,7 +897,7 @@ fn removePaths(path: &DataPath, mut nodeDecisionPath: DecisionPath) -> DecisionP
     nodeDecisionPath
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 enum MatchKind {
     UserDefined(i64),
     Alternative,
@@ -915,7 +912,7 @@ impl fmt::Display for MatchKind {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct Match {
     kind: MatchKind,
     pattern: Pattern,
@@ -923,7 +920,7 @@ struct Match {
     bindings: Bindings,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct Bindings {
     bindings: BTreeMap<DecisionPath, String>,
 }
