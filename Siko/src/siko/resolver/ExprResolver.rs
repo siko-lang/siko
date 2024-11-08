@@ -179,6 +179,9 @@ impl<'a> ExprResolver<'a> {
                 match &callable.expr {
                     SimpleExpr::Name(name) => {
                         let irName = self.moduleResolver.resolverName(name);
+                        if self.enums.get(&irName).is_some() {
+                            ResolverError::NotAConstructor(name.name.clone(), name.location.clone()).report(self.ctx);
+                        }
                         return self.addInstruction(InstructionKind::FunctionCall(irName, irArgs), expr.location.clone());
                     }
                     SimpleExpr::Value(name) => {

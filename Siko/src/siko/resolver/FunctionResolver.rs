@@ -33,7 +33,7 @@ pub fn createSelfType(name: &Identifier, typeParams: Option<&TypeParameterDeclar
         }
         None => Vec::new(),
     };
-    IrType::Named(moduleResolver.resolverName(name), args, None)
+    IrType::Named(QualifiedName::Module(moduleResolver.name.clone()).add(name.toString()), args, None)
 }
 
 impl<'a> FunctionResolver<'a> {

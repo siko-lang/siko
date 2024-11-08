@@ -2,6 +2,7 @@ use crate::siko::location::{Location::Location, Report::Report, Report::ReportCo
 
 pub enum ResolverError {
     UnknownValue(String, Location),
+    NotAConstructor(String, Location),
     UnknownName(String, Location),
     Ambiguous(String, Location),
     RedundantPattern(Location),
@@ -22,6 +23,11 @@ impl ResolverError {
         match &self {
             ResolverError::UnknownValue(v, l) => {
                 let slogan = format!("Unknown value {}", ctx.yellow(v));
+                let r = Report::new(ctx, slogan, Some(l.clone()));
+                r.print();
+            }
+            ResolverError::NotAConstructor(v, l) => {
+                let slogan = format!("Not a constructor {}", ctx.yellow(v));
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }

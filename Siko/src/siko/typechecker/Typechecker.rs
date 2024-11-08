@@ -341,6 +341,28 @@ impl<'a> Typechecker<'a> {
                                 if !found {
                                     TypecheckerError::FieldNotFound(fieldName.clone(), instruction.location.clone()).report(self.ctx);
                                 }
+                            } else if let Some(enumDef) = self.program.enums.get(&name) {
+                                let enumDef = self.instantiateEnum(enumDef, &receiverType);
+                                let mut found = false;
+                                if !found {
+                                    for m in &enumDef.methods {
+                                        if m.name == *fieldName {
+                                            found = true;
+                                            self.methodSources.insert(instruction.id, m.fullName.clone());
+                                            self.instructionSwaps.add(instruction.id, *receiver);
+                                            break;
+                                        }
+                                    }
+                                }
+                                if !found {
+                                    if let Some(methodName) = self.traitMethodSelector.get(&fieldName) {
+                                        found = true;
+                                        self.methodSources.insert(instruction.id, methodName);
+                                    }
+                                }
+                                if !found {
+                                    TypecheckerError::FieldNotFound(fieldName.clone(), instruction.location.clone()).report(self.ctx);
+                                }
                             } else {
                                 TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(self.ctx);
                             }

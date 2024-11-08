@@ -137,7 +137,7 @@ impl<'a> Resolver<'a> {
                         for method in &c.methods {
                             irClass.methods.push(DataMethodInfo {
                                 name: method.name.toString(),
-                                fullName: moduleResolver.resolverName(&method.name),
+                                fullName: irClass.name.add(method.name.toString()),
                             })
                         }
                         //println!("Class {:?}", irClass);
@@ -179,7 +179,7 @@ impl<'a> Resolver<'a> {
                         for method in &e.methods {
                             irEnum.methods.push(DataMethodInfo {
                                 name: method.name.toString(),
-                                fullName: moduleResolver.resolverName(&method.name),
+                                fullName: irEnum.name.add(method.name.toString()),
                             })
                         }
                         //println!("Enum {:?}", irEnum);
@@ -262,7 +262,7 @@ impl<'a> Resolver<'a> {
                                 &self.emptyVariants,
                                 &self.variants,
                                 &self.program.enums,
-                                moduleResolver.resolverName(&method.name),
+                                owner.getName().unwrap().add(method.name.toString()),
                             );
                             self.program.functions.insert(irFunction.name.clone(), irFunction);
                         }
@@ -278,7 +278,7 @@ impl<'a> Resolver<'a> {
                                 &self.emptyVariants,
                                 &self.variants,
                                 &self.program.enums,
-                                moduleResolver.resolverName(&method.name),
+                                owner.getName().unwrap().add(method.name.toString()),
                             );
                             self.program.functions.insert(irFunction.name.clone(), irFunction);
                         }
