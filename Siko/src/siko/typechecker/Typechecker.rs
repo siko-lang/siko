@@ -41,6 +41,7 @@ pub struct Typechecker<'a> {
     instructionSwaps: Substitution<InstructionId>,
     types: BTreeMap<TypedId, Type>,
     selfType: Option<Type>,
+    mutables: BTreeSet<String>,
 }
 
 impl<'a> Typechecker<'a> {
@@ -56,6 +57,7 @@ impl<'a> Typechecker<'a> {
             instructionSwaps: Substitution::new(),
             types: BTreeMap::new(),
             selfType: None,
+            mutables: BTreeSet::new(),
         }
     }
 
@@ -72,12 +74,19 @@ impl<'a> Typechecker<'a> {
         //println!("Initializing {}", f.name);
         for param in &f.params {
             match &param {
-                Parameter::Named(name, ty, _) => {
+                Parameter::Named(name, ty, mutable) => {
                     self.types.insert(TypedId::Value(name.clone()), ty.clone());
+                    if *mutable {
+                        self.mutables.insert(name.clone());
+                    }
                 }
-                Parameter::SelfParam(_, ty) => {
-                    self.types.insert(TypedId::Value(format!("self")), ty.clone());
+                Parameter::SelfParam(mutable, ty) => {
+                    let name = format!("self");
+                    self.types.insert(TypedId::Value(name.clone()), ty.clone());
                     self.selfType = Some(ty.clone());
+                    if *mutable {
+                        self.mutables.insert(name);
+                    }
                 }
             }
         }
@@ -96,9 +105,13 @@ impl<'a> Typechecker<'a> {
                     match &instruction.kind {
                         InstructionKind::DeclareVar(name) => {
                             self.types.insert(TypedId::Value(name.to_string()), self.allocator.next());
+                            self.mutables.insert(name.clone());
                         }
-                        InstructionKind::Bind(name, _) => {
+                        InstructionKind::Bind(name, _, mutable) => {
                             self.types.insert(TypedId::Value(name.to_string()), self.allocator.next());
+                            if *mutable {
+                                self.mutables.insert(name.clone());
+                            }
                         }
                         _ => {}
                     }
@@ -201,7 +214,7 @@ impl<'a> Typechecker<'a> {
                     };
                     self.unify(receiverType, self.getInstructionType(instruction.id), instruction.location.clone());
                 }
-                InstructionKind::Bind(name, rhs) => {
+                InstructionKind::Bind(name, rhs, _) => {
                     self.unify(self.getValueType(name), self.getInstructionType(*rhs), instruction.location.clone());
                     self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
                 }
@@ -250,6 +263,9 @@ impl<'a> Typechecker<'a> {
                 }
                 InstructionKind::Jump(_) => {}
                 InstructionKind::Assign(name, rhs) => {
+                    if !self.mutables.contains(&name.getValue()) {
+                        TypecheckerError::ImmutableAssign(instruction.location.clone()).report(self.ctx);
+                    }
                     self.unify(
                         self.getValueType(&name.getValue()),
                         self.getInstructionType(*rhs),
@@ -445,7 +461,7 @@ impl Apply<InstructionId> for InstructionKind {
             InstructionKind::ValueRef(value) => InstructionKind::ValueRef(value.clone()),
             InstructionKind::FieldRef(root, field) => InstructionKind::FieldRef(root.apply(sub), field.clone()),
             InstructionKind::TupleIndex(root, index) => InstructionKind::TupleIndex(root.apply(sub), *index),
-            InstructionKind::Bind(var, rhs) => InstructionKind::Bind(var.clone(), rhs.apply(sub)),
+            InstructionKind::Bind(var, rhs, mutable) => InstructionKind::Bind(var.clone(), rhs.apply(sub), *mutable),
             InstructionKind::Tuple(vec) => InstructionKind::Tuple(vec.apply(sub)),
             InstructionKind::StringLiteral(lit) => InstructionKind::StringLiteral(lit.clone()),
             InstructionKind::IntegerLiteral(lit) => InstructionKind::IntegerLiteral(lit.clone()),

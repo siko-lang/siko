@@ -100,6 +100,7 @@ for entry in os.listdir(std_path):
     if len(filters) > 0 and entry not in filters:
         continue
     test(std_path, entry, ["std"])
+print("Error tests:")
 for entry in os.listdir(errors_path):
     if len(filters) > 0 and entry not in filters:
         continue

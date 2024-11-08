@@ -200,7 +200,7 @@ impl<'a> ExprResolver<'a> {
             SimpleExpr::Loop(pattern, init, body) => {
                 let initId = self.resolveExpr(&init, env);
                 let name = self.createValue("loop_var");
-                self.addInstruction(InstructionKind::Bind(name.clone(), initId), init.location.clone());
+                self.addInstruction(InstructionKind::Bind(name.clone(), initId, true), init.location.clone());
                 let loopBodyId = self.createBlock();
                 let loopExitId = self.createBlock();
                 let finalValueId = self.addInstructionToBlock(
@@ -336,9 +336,9 @@ impl<'a> ExprResolver<'a> {
     fn resolvePattern(&mut self, pat: &Pattern, env: &mut Environment, value: InstructionId) {
         match &pat.pattern {
             SimplePattern::Named(_name, _args) => todo!(),
-            SimplePattern::Bind(name, _) => {
+            SimplePattern::Bind(name, mutable) => {
                 let new = self.createValue(&name.name);
-                self.addInstruction(InstructionKind::Bind(new.clone(), value), pat.location.clone());
+                self.addInstruction(InstructionKind::Bind(new.clone(), value, *mutable), pat.location.clone());
                 env.addValue(name.toString(), new);
             }
             SimplePattern::Tuple(args) => {

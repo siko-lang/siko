@@ -90,7 +90,7 @@ impl<'a> Builder<'a> {
                     let rhs = self.buildInstructionVar(rhs);
                     block.instructions.push(Instruction::Memcpy(rhs, var));
                 }
-                HirInstructionKind::Bind(var, rhs) => {
+                HirInstructionKind::Bind(var, rhs, _) => {
                     let i = self.function.getInstruction(*rhs);
                     let ty = lowerType(i.ty.as_ref().expect("no ty"), &self.program);
                     let var = Variable {

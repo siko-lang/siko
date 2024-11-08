@@ -164,7 +164,7 @@ pub enum InstructionKind {
     ValueRef(ValueKind),
     FieldRef(InstructionId, String),
     TupleIndex(InstructionId, i32),
-    Bind(String, InstructionId),
+    Bind(String, InstructionId, bool), //mutable
     Tuple(Vec<InstructionId>),
     StringLiteral(String),
     IntegerLiteral(String),
@@ -204,7 +204,13 @@ impl InstructionKind {
             InstructionKind::ValueRef(v) => format!("{}", v),
             InstructionKind::FieldRef(v, name) => format!("{}.{}", v, name),
             InstructionKind::TupleIndex(v, idx) => format!("{}.t{}", v, idx),
-            InstructionKind::Bind(v, rhs) => format!("${} = {}", v, rhs),
+            InstructionKind::Bind(v, rhs, mutable) => {
+                if *mutable {
+                    format!("mut ${} = {}", v, rhs)
+                } else {
+                    format!("${} = {}", v, rhs)
+                }
+            }
             InstructionKind::Tuple(args) => format!("tuple({:?})", args),
             InstructionKind::StringLiteral(v) => format!("s:[{}]", v),
             InstructionKind::IntegerLiteral(v) => format!("i:[{}]", v),

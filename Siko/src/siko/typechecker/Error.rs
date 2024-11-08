@@ -5,6 +5,7 @@ pub enum TypecheckerError {
     FieldNotFound(String, Location),
     TypeAnnotationNeeded(Location),
     ArgCountMismatch(u32, u32, Location),
+    ImmutableAssign(Location),
 }
 
 impl TypecheckerError {
@@ -31,6 +32,11 @@ impl TypecheckerError {
                     ctx.yellow(&format!("{}", expected)),
                     ctx.yellow(&format!("{}", found))
                 );
+                let r = Report::new(ctx, slogan, Some(l.clone()));
+                r.print();
+            }
+            TypecheckerError::ImmutableAssign(l) => {
+                let slogan = format!("Value is not mutable, cannot assign");
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }

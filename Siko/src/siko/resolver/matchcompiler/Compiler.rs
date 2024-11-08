@@ -581,8 +581,12 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     for (path, name) in &m.bindings.bindings {
                         let bindValue = ctx.get(path.decisions.last().unwrap());
                         let new = self.resolver.createValue(&name);
-                        self.resolver
-                            .addInstructionToBlock(blockId, InstructionKind::Bind(new.clone(), bindValue), self.bodyLocation.clone(), false);
+                        self.resolver.addInstructionToBlock(
+                            blockId,
+                            InstructionKind::Bind(new.clone(), bindValue, false),
+                            self.bodyLocation.clone(),
+                            false,
+                        );
                         env.addValue(name.clone(), new);
                     }
                     self.resolver.resolveExpr(&branch.body, &mut env);
