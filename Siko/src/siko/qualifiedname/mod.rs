@@ -49,10 +49,7 @@ impl Display for QualifiedName {
 }
 
 pub fn build(m: &str, name: &str) -> QualifiedName {
-    QualifiedName::Item(
-        Box::new(QualifiedName::Module(m.to_string())),
-        name.to_string(),
-    )
+    QualifiedName::Item(Box::new(QualifiedName::Module(m.to_string())), name.to_string())
 }
 
 pub fn getBoolTypeName() -> QualifiedName {
@@ -77,4 +74,8 @@ pub fn getTrueName() -> QualifiedName {
 
 pub fn getFalseName() -> QualifiedName {
     build("Bool", "Bool").add("False".to_string())
+}
+
+pub fn getStringEqName() -> QualifiedName {
+    build("String", "String").add("eq".to_string())
 }

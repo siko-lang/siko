@@ -148,7 +148,7 @@ impl Generator {
                 Some(name) => {
                     let def = self.program.getStruct(&name);
                     format!(
-                        "call void @llvm.memcpy.p0.p0.i64(ptr align {} {}, ptr align {} {}, i8 {}, i1 false)",
+                        "call void @llvm.memcpy.p0.p0.i64(ptr align {} {}, ptr align {} {}, i64 {}, i1 false)",
                         def.alignment, dest.name, def.alignment, src.name, def.size
                     )
                 }

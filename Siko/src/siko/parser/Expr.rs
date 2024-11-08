@@ -1,8 +1,11 @@
-use crate::siko::syntax::{
-    Expr::{BinaryOp, Branch, Expr, SimpleExpr, UnaryOp},
-    Identifier::Identifier,
-    Pattern::{Pattern, SimplePattern},
-    Statement::{Block, Statement, StatementKind},
+use crate::siko::{
+    qualifiedname::{getFalseName, getTrueName},
+    syntax::{
+        Expr::{BinaryOp, Branch, Expr, SimpleExpr, UnaryOp},
+        Identifier::Identifier,
+        Pattern::{Pattern, SimplePattern},
+        Statement::{Block, Statement, StatementKind},
+    },
 };
 
 use super::{
@@ -123,7 +126,7 @@ impl<'a> ExprParser for Parser<'a> {
         let trueBranch = self.parseExpr();
         branches.push(Branch {
             pattern: Pattern {
-                pattern: SimplePattern::Named(Identifier::new("Bool.Bool.True", self.currentLocation()), Vec::new()),
+                pattern: SimplePattern::Named(Identifier::new(&getTrueName().toString(), self.currentLocation()), Vec::new()),
                 location: self.currentLocation(),
             },
             body: trueBranch,
@@ -135,7 +138,7 @@ impl<'a> ExprParser for Parser<'a> {
             let falseBranch = self.parseExpr();
             branches.push(Branch {
                 pattern: Pattern {
-                    pattern: SimplePattern::Named(Identifier::new("Bool.Bool.False", self.currentLocation()), Vec::new()),
+                    pattern: SimplePattern::Named(Identifier::new(&getFalseName().toString(), self.currentLocation()), Vec::new()),
                     location: self.currentLocation(),
                 },
                 body: falseBranch,
@@ -143,7 +146,7 @@ impl<'a> ExprParser for Parser<'a> {
         } else {
             branches.push(Branch {
                 pattern: Pattern {
-                    pattern: SimplePattern::Named(Identifier::new("Bool.Bool.False", self.currentLocation()), Vec::new()),
+                    pattern: SimplePattern::Named(Identifier::new(&getFalseName().toString(), self.currentLocation()), Vec::new()),
                     location: self.currentLocation(),
                 },
                 body: Expr {

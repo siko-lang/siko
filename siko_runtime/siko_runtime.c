@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 struct siko_int {
     int64_t value;
@@ -56,4 +57,12 @@ extern void Int_Int_lessThan(struct siko_int* v1, struct siko_int* v2, struct si
     } else {
         result->value = 0;
     }
+}
+
+extern void String_String_eq(struct siko_string* v1, struct siko_string* v2, struct siko_bool* result) {
+    if (v1->length != v2->length) {
+        result->value = 0;
+        return;
+    }
+    result->value = strncmp(v1->value, v2->value, v1->length) == 0;
 }

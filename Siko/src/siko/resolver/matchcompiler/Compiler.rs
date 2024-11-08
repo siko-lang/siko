@@ -1,7 +1,7 @@
-use crate::siko::hir::Function::{BlockId, EnumCase, InstructionId, InstructionKind, IntegerCase, StringCase, ValueKind};
+use crate::siko::hir::Function::{BlockId, EnumCase, InstructionId, InstructionKind, IntegerCase, ValueKind};
 use crate::siko::hir::Type::Type;
 use crate::siko::location::Location::Location;
-use crate::siko::qualifiedname::QualifiedName;
+use crate::siko::qualifiedname::{getFalseName, getStringEqName, getTrueName, QualifiedName};
 use crate::siko::resolver::Environment::Environment;
 use crate::siko::resolver::Error::ResolverError;
 use crate::siko::resolver::ExprResolver::ExprResolver;
@@ -460,22 +460,27 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                             if let Case::Variant(name) = case {
                                 let itemBlockId = self.resolver.createBlock();
                                 let (v, index) = enumDef.getVariant(name);
-                                let transform = InstructionKind::Transform(root, index, Type::Tuple(v.items.clone()));
-                                let transformId = self
-                                    .resolver
-                                    .addInstructionToBlock(itemBlockId, transform, self.bodyLocation.clone(), false);
-                                let mut ctx = ctx.clone();
-                                for (index, _) in v.items.iter().enumerate() {
-                                    let indexId = self.resolver.addInstructionToBlock(
-                                        itemBlockId,
-                                        InstructionKind::TupleIndex(transformId, index as i32),
-                                        self.bodyLocation.clone(),
-                                        false,
-                                    );
-                                    let path = DataPath::Variant(Box::new(switch.dataPath.clone()), name.clone(), enumName.clone());
-                                    let path = DataPath::ItemIndex(Box::new(path), index as i64);
-                                    ctx = ctx.add(path, indexId);
-                                }
+                                let ctx = if v.items.len() > 0 {
+                                    let transform = InstructionKind::Transform(root, index, Type::Tuple(v.items.clone()));
+                                    let transformId = self
+                                        .resolver
+                                        .addInstructionToBlock(itemBlockId, transform, self.bodyLocation.clone(), false);
+                                    let mut ctx = ctx.clone();
+                                    for (index, _) in v.items.iter().enumerate() {
+                                        let indexId = self.resolver.addInstructionToBlock(
+                                            itemBlockId,
+                                            InstructionKind::TupleIndex(transformId, index as i32),
+                                            self.bodyLocation.clone(),
+                                            false,
+                                        );
+                                        let path = DataPath::Variant(Box::new(switch.dataPath.clone()), name.clone(), enumName.clone());
+                                        let path = DataPath::ItemIndex(Box::new(path), index as i64);
+                                        ctx = ctx.add(path, indexId);
+                                    }
+                                    ctx
+                                } else {
+                                    ctx.clone()
+                                };
                                 let blockId = self.compileNode(&node, &ctx);
                                 self.resolver
                                     .addInstructionToBlock(itemBlockId, InstructionKind::Jump(blockId), self.bodyLocation.clone(), false);
@@ -508,22 +513,62 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                             .addInstructionToBlock(blockId, InstructionKind::IntegerSwitch(root, cases), self.bodyLocation.clone(), false);
                     }
                     SwitchKind::String => {
-                        let mut cases = Vec::new();
+                        let mut blocks = Vec::new();
+                        blocks.push(blockId);
+                        for _ in 0..switch.cases.len() {
+                            if blocks.len() < switch.cases.len() - 1 {
+                                blocks.push(self.resolver.createBlock());
+                            }
+                        }
+                        let mut defaultBranch = BlockId::first();
+                        for (value, case) in &switch.cases {
+                            if let Case::Default = value {
+                                defaultBranch = self.compileNode(case, ctx);
+                            }
+                        }
                         for (case, node) in &switch.cases {
-                            let value = match case {
-                                Case::String(v) => Some(v.clone()),
-                                Case::Default => None,
+                            match case {
+                                Case::String(v) => {
+                                    let current = blocks.remove(0);
+                                    let litId = self.resolver.addInstructionToBlock(
+                                        current,
+                                        InstructionKind::StringLiteral(v.clone()),
+                                        self.bodyLocation.clone(),
+                                        true,
+                                    );
+                                    let eqId = self.resolver.addInstructionToBlock(
+                                        current,
+                                        InstructionKind::FunctionCall(getStringEqName(), vec![root, litId]),
+                                        self.bodyLocation.clone(),
+                                        true,
+                                    );
+                                    let mut cases = Vec::new();
+                                    if blocks.is_empty() {
+                                        cases.push(EnumCase {
+                                            name: getFalseName(),
+                                            branch: defaultBranch,
+                                        });
+                                    } else {
+                                        cases.push(EnumCase {
+                                            name: getFalseName(),
+                                            branch: blocks[0],
+                                        });
+                                    }
+                                    cases.push(EnumCase {
+                                        name: getTrueName(),
+                                        branch: self.compileNode(&node, ctx),
+                                    });
+                                    self.resolver.addInstructionToBlock(
+                                        current,
+                                        InstructionKind::EnumSwitch(eqId, cases),
+                                        self.bodyLocation.clone(),
+                                        true,
+                                    );
+                                }
+                                Case::Default => {}
                                 c => unreachable!("string case {:?}", c),
                             };
-                            let blockId = self.compileNode(&node, ctx);
-                            let c = StringCase {
-                                value: value,
-                                branch: blockId,
-                            };
-                            cases.push(c);
                         }
-                        self.resolver
-                            .addInstructionToBlock(blockId, InstructionKind::StringSwitch(root, cases), self.bodyLocation.clone(), false);
                     }
                 }
                 blockId
@@ -918,7 +963,7 @@ impl CompileContext {
     fn get(&self, path: &DataPath) -> InstructionId {
         match self.values.get(path) {
             Some(id) => *id,
-            None => panic!("not value for path in compile context {}", path),
+            None => panic!("not found value for path in compile context {}", path),
         }
     }
 }
