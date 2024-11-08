@@ -185,7 +185,7 @@ impl<'a> Builder<'a> {
                             continue;
                         }
                         let branch = LBranch {
-                            value: LValue::Numeric(format!("{}", index), LType::Int32),
+                            value: LValue::Numeric(format!("{}", case.index), LType::Int32),
                             block: case.branch.clone(),
                         };
                         branches.push(branch);
@@ -223,8 +223,16 @@ impl<'a> Builder<'a> {
                     let llvmInstruction = LInstruction::Switch(tmpVar2.clone(), cases[defaultIndex].branch.clone(), branches);
                     llvmBlock.instructions.push(llvmInstruction);
                 }
-                Instruction::Transform(dest, src, _) => {
-                    let llvmInstruction = LInstruction::Bitcast(self.lowerVar(dest), self.lowerVar(src));
+                Instruction::Transform(dest, src, index) => {
+                    let u = self.program.getUnion(&src.ty.getUnion());
+                    let v = &u.variants[*index as usize];
+                    //println!("{} {} {} {}", dest.ty, src.ty, index, v.ty);
+                    let mut recastVar = dest.clone();
+                    recastVar.ty = Type::Struct(v.name.clone());
+                    let recastVar = self.tmpVar(&recastVar, 1);
+                    let llvmInstruction = LInstruction::Bitcast(recastVar.clone(), self.lowerVar(src));
+                    llvmBlock.instructions.push(llvmInstruction);
+                    let llvmInstruction = LInstruction::GetFieldRef(self.lowerVar(dest), recastVar, 1);
                     llvmBlock.instructions.push(llvmInstruction);
                 }
             };
@@ -274,7 +282,7 @@ impl<'a> Builder<'a> {
                 for (index, field) in s.fields.iter().enumerate() {
                     let fieldVar = Variable {
                         name: format!("field{}", index),
-                        ty: Type::Int64,
+                        ty: field.ty.clone(),
                     };
                     block
                         .instructions
@@ -285,7 +293,7 @@ impl<'a> Builder<'a> {
                     };
                     block
                         .instructions
-                        .push(LInstruction::Memcpy(self.lowerVar(&fieldVar), self.lowerVar(&argVar)));
+                        .push(LInstruction::Memcpy(self.lowerVar(&argVar), self.lowerVar(&fieldVar)));
                 }
                 block
                     .instructions
@@ -309,25 +317,25 @@ impl<'a> Builder<'a> {
                     id: format!("block0"),
                     instructions: Vec::new(),
                 };
-                let this = Variable {
-                    name: "this".to_string(),
-                    ty: f.result.clone(),
-                };
                 let u = if let Type::Union(u) = &f.result {
                     self.program.getUnion(u)
                 } else {
                     unreachable!()
                 };
                 let variant = &u.variants[*index as usize];
-                let s = self.program.getStruct(&f.name);
+                let s = self.program.getStruct(&variant.ty.getStruct());
+                let this = Variable {
+                    name: "this".to_string(),
+                    ty: Type::Struct(variant.name.clone()),
+                };
                 block.instructions.push(LInstruction::Allocate(self.lowerVar(&this)));
                 let tagVar = Variable {
                     name: format!("tag"),
                     ty: Type::Int32,
                 };
-                let untypedPayloadVar = Variable {
+                let typedPayloadVar = Variable {
                     name: format!("payload1"),
-                    ty: Type::Int8,
+                    ty: variant.ty.clone(),
                 };
                 block
                     .instructions
@@ -338,14 +346,7 @@ impl<'a> Builder<'a> {
                 ));
                 block
                     .instructions
-                    .push(LInstruction::GetFieldRef(self.lowerVar(&untypedPayloadVar), self.lowerVar(&this), 1));
-                let payloadVar = Variable {
-                    name: format!("payload2"),
-                    ty: Type::Struct(variant.name.clone()),
-                };
-                block
-                    .instructions
-                    .push(LInstruction::Bitcast(self.lowerVar(&payloadVar), self.lowerVar(&untypedPayloadVar)));
+                    .push(LInstruction::GetFieldRef(self.lowerVar(&typedPayloadVar), self.lowerVar(&this), 1));
                 for (index, field) in s.fields.iter().enumerate() {
                     let fieldVar = Variable {
                         name: format!("field{}", index),
@@ -353,7 +354,7 @@ impl<'a> Builder<'a> {
                     };
                     block.instructions.push(LInstruction::GetFieldRef(
                         self.lowerVar(&fieldVar),
-                        self.lowerVar(&payloadVar),
+                        self.lowerVar(&typedPayloadVar),
                         index as i32,
                     ));
                     let argVar = Variable {
@@ -362,7 +363,7 @@ impl<'a> Builder<'a> {
                     };
                     block
                         .instructions
-                        .push(LInstruction::Memcpy(self.lowerVar(&fieldVar), self.lowerVar(&argVar)));
+                        .push(LInstruction::Memcpy(self.lowerVar(&argVar), self.lowerVar(&fieldVar)));
                 }
                 block
                     .instructions

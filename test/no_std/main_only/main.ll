@@ -9,9 +9,9 @@ block0:
 
 define private void @Main_main(ptr noundef %fn_result) {
 block0:
-   %i_0_1 = alloca %struct.siko_Tuple_, align 4
-   call void @siko_Tuple_(ptr %i_0_1)
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %i_0_1, i64 0, i1 false)
+   %b0i1 = alloca %struct.siko_Tuple_, align 4
+   call void @siko_Tuple_(ptr %b0i1)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %b0i1, i64 0, i1 false)
    ret void
 }
 

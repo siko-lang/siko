@@ -122,13 +122,13 @@ impl fmt::Display for Value {
 
 #[derive(Clone, PartialEq)]
 pub struct EnumCase {
-    pub name: String,
+    pub index: u32,
     pub branch: String,
 }
 
 impl std::fmt::Debug for EnumCase {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({}, {})", self.name, self.branch)
+        write!(f, "({}, {})", self.index, self.branch)
     }
 }
 pub struct IntegerCase {
@@ -161,7 +161,7 @@ pub enum Instruction {
     StringLiteral(Variable, String),
     EnumSwitch(Variable, Vec<EnumCase>),
     IntegerSwitch(Variable, Vec<IntegerCase>),
-    Transform(Variable, Variable, String),
+    Transform(Variable, Variable, u32),
     Jump(String),
 }
 
@@ -180,7 +180,7 @@ impl fmt::Display for Instruction {
             ),
             Instruction::Assign(var, value) => write!(f, "Assign({}, {})", var, value),
             Instruction::Return(value) => write!(f, "Return({})", value),
-            Instruction::Memcpy(var1, var2) => write!(f, "Memcpy({}, {})", var1, var2),
+            Instruction::Memcpy(var1, var2) => write!(f, "Memcpy({} => {})", var1, var2),
             Instruction::IntegerLiteral(var, literal) => write!(f, "IntegerLiteral({}, {})", var, literal),
             Instruction::StringLiteral(var, literal) => write!(f, "StringLiteral({}, {})", var, literal),
             Instruction::EnumSwitch(root, cases) => write!(f, "enumswitch({}, {:?})", root, cases),

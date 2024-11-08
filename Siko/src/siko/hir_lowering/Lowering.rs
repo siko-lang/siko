@@ -33,7 +33,7 @@ impl<'a> Builder<'a> {
     fn buildInstructionVar(&self, id: &InstructionId) -> Variable {
         let i = self.function.getInstruction(*id);
         let ty = lowerType(i.ty.as_ref().expect("no ty"), &self.program);
-        let name = format!("i_{}_{}", id.getBlockById().id, id.getId() + 1);
+        let name = format!("b{}i{}", id.getBlockById().id, id.getId() + 1);
         Variable { name: name, ty: ty }
     }
 
@@ -81,8 +81,8 @@ impl<'a> Builder<'a> {
                     block.instructions.push(Instruction::Memcpy(var, idVar));
                 }
                 HirInstructionKind::Assign(name, rhs) => {
-                    let i = self.function.getInstruction(*rhs);
-                    let ty = lowerType(i.ty.as_ref().expect("no ty"), &self.program);
+                    let rhsI = self.function.getInstruction(*rhs);
+                    let ty = lowerType(rhsI.ty.as_ref().expect("no ty"), &self.program);
                     let var = Variable {
                         name: name.to_string(),
                         ty: ty,
@@ -120,7 +120,7 @@ impl<'a> Builder<'a> {
                     let mut mirCases = Vec::new();
                     for case in cases {
                         let mirCase = MirEnumCase {
-                            name: convertName(&case.name),
+                            index: case.index,
                             branch: self.getBlockName(case.branch),
                         };
                         mirCases.push(mirCase);
@@ -139,9 +139,9 @@ impl<'a> Builder<'a> {
                     }
                     block.instructions.push(Instruction::IntegerSwitch(root, mirCases));
                 }
-                HirInstructionKind::Transform(root, _, ty) => {
+                HirInstructionKind::Transform(root, index, _) => {
                     let root = self.buildInstructionVar(root);
-                    block.instructions.push(Instruction::Transform(idVar, root, format!("{}", ty)));
+                    block.instructions.push(Instruction::Transform(idVar, root, *index));
                 }
                 HirInstructionKind::TupleIndex(root, index) => {
                     let root = self.buildInstructionVar(root);

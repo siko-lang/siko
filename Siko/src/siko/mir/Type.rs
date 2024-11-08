@@ -29,6 +29,20 @@ impl Type {
             Type::ByteArray(_) => false,
         }
     }
+
+    pub fn getUnion(&self) -> String {
+        match self {
+            Type::Union(v) => v.clone(),
+            ty => unreachable!("not a union {}", ty),
+        }
+    }
+
+    pub fn getStruct(&self) -> String {
+        match self {
+            Type::Struct(v) => v.clone(),
+            ty => unreachable!("not a struct {}", ty),
+        }
+    }
 }
 
 impl fmt::Display for Type {

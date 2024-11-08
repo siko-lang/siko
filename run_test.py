@@ -20,16 +20,16 @@ def compileSiko(currentDir, files, extras):
     r = subprocess.run(args)
     if r.returncode != 0:
         return None
-    r = subprocess.run(["opt", "-O2", "-S", output_path, "-o", optimized_path])
+    #r = subprocess.run(["opt", "-O2", "-S", output_path, "-o", optimized_path])
+    #if r.returncode != 0:
+    #    return None
+    r = subprocess.run(["llvm-as", output_path, "-o", bitcode_path])
     if r.returncode != 0:
         return None
-    r = subprocess.run(["llvm-as", optimized_path, "-o", bitcode_path])
+    r = subprocess.run(["llc", "-O0", "-relocation-model=pic", bitcode_path, "-filetype=obj", "-o", object_path])
     if r.returncode != 0:
         return None
-    r = subprocess.run(["llc", "-relocation-model=pic", bitcode_path, "-filetype=obj", "-o", object_path])
-    if r.returncode != 0:
-        return None
-    r = subprocess.run(["clang", object_path, runtimePath, "-o", llvm_output_path])
+    r = subprocess.run(["clang", "-O0", object_path, runtimePath, "-o", llvm_output_path])
     #r = subprocess.run(["rustc", output_path, "-o", rust_output_path])
     if r.returncode != 0:
         return None

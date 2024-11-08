@@ -253,8 +253,12 @@ impl<'a> Typechecker<'a> {
                     self.unify(self.getValueType(name), self.getInstructionType(*rhs), instruction.location.clone());
                     self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
                 }
-                InstructionKind::DeclareVar(_) => {
-                    self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
+                InstructionKind::DeclareVar(var) => {
+                    self.unify(
+                        self.getInstructionType(instruction.id),
+                        self.getValueType(var),
+                        instruction.location.clone(),
+                    );
                 }
                 InstructionKind::Transform(root, index, _) => {
                     let rootTy = self.getInstructionType(*root);

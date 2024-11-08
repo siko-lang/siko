@@ -109,13 +109,13 @@ impl std::fmt::Debug for InstructionId {
 
 #[derive(Clone, PartialEq)]
 pub struct EnumCase {
-    pub name: QualifiedName,
+    pub index: u32,
     pub branch: BlockId,
 }
 
 impl std::fmt::Debug for EnumCase {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({}, {})", self.name, self.branch)
+        write!(f, "({}, {})", self.index, self.branch)
     }
 }
 

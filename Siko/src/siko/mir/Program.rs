@@ -77,19 +77,25 @@ impl Program {
             };
             let s = Struct {
                 name: n.clone(),
-                fields: vec![tag, payload],
+                fields: vec![tag.clone(), payload],
                 size: u.size,
                 alignment: u.alignment,
             };
+            //println!("{}: size: {} alignment {}", n, s.size, s.alignment);
             self.structs.insert(n.clone(), s);
             for v in &u.variants {
-                let mut variantStruct = if let Type::Struct(vName) = &v.ty {
-                    self.getStruct(vName)
-                } else {
-                    unreachable!()
+                let payload = Field {
+                    name: format!("payload"),
+                    ty: v.ty.clone(),
                 };
-                variantStruct.name = v.name.clone();
-                self.structs.insert(v.name.clone(), variantStruct);
+                let s = Struct {
+                    name: v.name.clone(),
+                    fields: vec![tag.clone(), payload],
+                    size: u.size,
+                    alignment: u.alignment,
+                };
+                //println!("{}: size: {} alignment {}", v.name, s.size, s.alignment);
+                self.structs.insert(v.name.clone(), s);
             }
         }
     }
@@ -182,6 +188,7 @@ impl Program {
                 offset += padding;
                 item.alignment = totalAlignment;
                 item.size = offset;
+                //println!("{} size: {}, alignment {}", item.name, item.size, item.alignment);
                 self.structs.insert(item.name.clone(), item);
             }
 
@@ -224,6 +231,7 @@ impl Program {
                 item.alignment = totalAlignment;
                 item.size = offset;
                 item.payloadSize = maxSize;
+                //println!("{} size: {}, alignment {}", item.name, item.size, item.alignment);
                 self.unions.insert(item.name.clone(), item);
             }
         }

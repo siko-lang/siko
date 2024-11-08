@@ -1,7 +1,7 @@
 use crate::siko::hir::Function::{BlockId, EnumCase, InstructionId, InstructionKind, IntegerCase, ValueKind};
 use crate::siko::hir::Type::Type;
 use crate::siko::location::Location::Location;
-use crate::siko::qualifiedname::{getFalseName, getStringEqName, getTrueName, QualifiedName};
+use crate::siko::qualifiedname::{getStringEqName, QualifiedName};
 use crate::siko::resolver::Environment::Environment;
 use crate::siko::resolver::Error::ResolverError;
 use crate::siko::resolver::ExprResolver::ExprResolver;
@@ -484,10 +484,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                                 let blockId = self.compileNode(&node, &ctx);
                                 self.resolver
                                     .addInstructionToBlock(itemBlockId, InstructionKind::Jump(blockId), self.bodyLocation.clone(), false);
-                                let c = EnumCase {
-                                    name: name.clone(),
-                                    branch: itemBlockId,
-                                };
+                                let c = EnumCase { index, branch: itemBlockId };
                                 cases.push(c);
                             }
                         }
@@ -549,17 +546,14 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                                     let mut cases = Vec::new();
                                     if blocks.is_empty() {
                                         cases.push(EnumCase {
-                                            name: getFalseName(),
+                                            index: 0,
                                             branch: defaultBranch,
                                         });
                                     } else {
-                                        cases.push(EnumCase {
-                                            name: getFalseName(),
-                                            branch: blocks[0],
-                                        });
+                                        cases.push(EnumCase { index: 0, branch: blocks[0] });
                                     }
                                     cases.push(EnumCase {
-                                        name: getTrueName(),
+                                        index: 1,
                                         branch: self.compileNode(&node, ctx),
                                     });
                                     self.resolver.addInstructionToBlock(

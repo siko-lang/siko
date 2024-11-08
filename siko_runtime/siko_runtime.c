@@ -29,7 +29,15 @@ extern void Std_Basic_Util_siko_runtime_str(struct siko_string* v) {
     printf("%.*s\n", (int)v->length, v->value);
 }
 
-void Other_Module_siko_runtime_bool(struct siko_bool* v) {
+extern void Std_Basic_Util_siko_runtime_true(struct siko_bool* v) {
+    v->value = 1;
+}
+
+extern void Std_Basic_Util_siko_runtime_false(struct siko_bool* v) {
+    v->value = 0;
+}
+
+extern void Std_Basic_Util_siko_runtime_bool(struct siko_bool* v) {
     if (v->value) {
         printf("siko_runtime_bool true\n");    
     } else {
