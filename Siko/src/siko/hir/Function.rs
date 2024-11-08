@@ -173,7 +173,7 @@ pub enum InstructionKind {
     Ref(InstructionId),
     Drop(Vec<String>),
     Jump(BlockId),
-    Assign(String, InstructionId),
+    Assign(ValueKind, InstructionId),
     DeclareVar(String),
     Transform(InstructionId, u32, Type),
     EnumSwitch(InstructionId, Vec<EnumCase>),

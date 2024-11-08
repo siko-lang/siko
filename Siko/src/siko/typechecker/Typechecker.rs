@@ -250,7 +250,11 @@ impl<'a> Typechecker<'a> {
                 }
                 InstructionKind::Jump(_) => {}
                 InstructionKind::Assign(name, rhs) => {
-                    self.unify(self.getValueType(name), self.getInstructionType(*rhs), instruction.location.clone());
+                    self.unify(
+                        self.getValueType(&name.getValue()),
+                        self.getInstructionType(*rhs),
+                        instruction.location.clone(),
+                    );
                     self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
                 }
                 InstructionKind::DeclareVar(var) => {

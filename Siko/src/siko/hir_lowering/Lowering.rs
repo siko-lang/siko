@@ -84,7 +84,7 @@ impl<'a> Builder<'a> {
                     let rhsI = self.function.getInstruction(*rhs);
                     let ty = lowerType(rhsI.ty.as_ref().expect("no ty"), &self.program);
                     let var = Variable {
-                        name: name.to_string(),
+                        name: name.getValue(),
                         ty: ty,
                     };
                     let rhs = self.buildInstructionVar(rhs);

@@ -101,7 +101,25 @@ impl<'a> ExprResolver<'a> {
                     }
                     self.resolvePattern(pat, &mut env, rhsId);
                 }
-                StatementKind::Assign(_lhs, _rhs) => {}
+                StatementKind::Assign(lhs, rhs) => {
+                    let rhsId = self.resolveExpr(rhs, &mut env);
+                    match &lhs.expr {
+                        SimpleExpr::Value(name) => {
+                            let value = env.resolve(&name.toString());
+                            match value {
+                                Some(value) => {
+                                    self.addInstruction(InstructionKind::Assign(value, rhsId), lhs.location.clone());
+                                }
+                                None => {
+                                    ResolverError::UnknownValue(name.name.clone(), name.location.clone()).report(self.ctx);
+                                }
+                            }
+                        }
+                        _ => {
+                            ResolverError::InvalidAssignment(lhs.location.clone()).report(self.ctx);
+                        }
+                    }
+                }
                 StatementKind::Expr(expr) => {
                     lastDoesNotReturn = expr.expr.doesNotReturn();
                     self.resolveExpr(expr, &mut env);
@@ -207,7 +225,7 @@ impl<'a> ExprResolver<'a> {
                 }
                 let current = self.getTargetBlockId();
                 self.addImplicitInstruction(
-                    InstructionKind::Assign(name.clone(), self.body.getBlockById(current).getLastId()),
+                    InstructionKind::Assign(ValueKind::Value(name.clone()), self.body.getBlockById(current).getLastId()),
                     init.location.clone(),
                 );
                 self.addImplicitInstruction(InstructionKind::Jump(loopBodyId), expr.location.clone());
@@ -287,7 +305,7 @@ impl<'a> ExprResolver<'a> {
                     Some(info) => info.clone(),
                     None => ResolverError::BreakOutsideLoop(expr.location.clone()).report(self.ctx),
                 };
-                self.addInstruction(InstructionKind::Assign(info.var, argId), expr.location.clone());
+                self.addInstruction(InstructionKind::Assign(ValueKind::Value(info.var), argId), expr.location.clone());
                 return self.addInstruction(InstructionKind::Jump(info.exit), expr.location.clone());
             }
             SimpleExpr::Continue(arg) => {
@@ -299,7 +317,7 @@ impl<'a> ExprResolver<'a> {
                     Some(info) => info.clone(),
                     None => ResolverError::BreakOutsideLoop(expr.location.clone()).report(self.ctx),
                 };
-                self.addInstruction(InstructionKind::Assign(info.var, argId), expr.location.clone());
+                self.addInstruction(InstructionKind::Assign(ValueKind::Value(info.var), argId), expr.location.clone());
                 return self.addInstruction(InstructionKind::Jump(info.body), expr.location.clone());
             }
             SimpleExpr::Ref(arg) => {

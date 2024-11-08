@@ -9,6 +9,7 @@ pub enum ResolverError {
     BreakOutsideLoop(Location),
     ContinueOutsideLoop(Location),
     InvalidInstanceType(String, Location),
+    InvalidAssignment(Location),
 }
 
 impl ResolverError {
@@ -57,6 +58,11 @@ impl ResolverError {
             }
             ResolverError::Ambiguous(v, l) => {
                 let slogan = format!("Ambiguous name {}", ctx.yellow(v));
+                let r = Report::new(ctx, slogan, Some(l.clone()));
+                r.print();
+            }
+            ResolverError::InvalidAssignment(l) => {
+                let slogan = format!("Invalid assignment target");
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }
