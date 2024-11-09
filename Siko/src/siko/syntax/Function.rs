@@ -7,7 +7,9 @@ use super::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Parameter {
     Named(Identifier, Type, bool),
-    SelfParam(bool),
+    SelfParam,
+    MutSelfParam,
+    RefSelfParam,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

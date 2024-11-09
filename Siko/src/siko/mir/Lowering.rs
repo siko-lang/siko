@@ -57,7 +57,7 @@ impl<'a> Builder<'a> {
     }
 
     pub fn lower(&mut self) -> LProgram {
-        //println!("Before lowering {}", self);
+        //println!("Before lowering {}", self.program);
 
         let mut program = LProgram::new();
 
@@ -97,16 +97,25 @@ impl<'a> Builder<'a> {
                 Instruction::Declare(_) => {
                     // declares are processed at the beginning
                 }
-                Instruction::Reference(_, _) => {}
-                // dereference
-                // Instruction::Reference(dest, src) => {
-                //     let llvmInstruction = LInstruction::LoadVar(self.lowerVar(dest), self.lowerVar(src));
-                //     llvmBlock.instructions.push(llvmInstruction);
-                // }
+                Instruction::Reference(dest, src) => {
+                    let mut src = src.clone();
+                    src.ty = dest.ty.clone();
+                    let llvmInstruction = LInstruction::Store(self.lowerVar(dest), LValue::Variable(self.lowerVar(&src)));
+                    llvmBlock.instructions.push(llvmInstruction);
+                }
                 Instruction::Call(dest, name, args) => {
                     let mut llvmArgs = Vec::new();
                     for arg in args {
-                        llvmArgs.push(self.lowerVar(arg));
+                        let var = self.lowerVar(arg);
+                        let var = if var.ty.isPtr() {
+                            let tmp = self.tmpVar(arg, 0);
+                            let llvmInstruction = LInstruction::LoadVar(tmp.clone(), var);
+                            llvmBlock.instructions.push(llvmInstruction);
+                            tmp
+                        } else {
+                            var
+                        };
+                        llvmArgs.push(var);
                     }
                     llvmArgs.push(self.lowerVar(dest));
                     let llvmInstruction = LInstruction::FunctionCall(name.clone(), llvmArgs);
@@ -129,10 +138,15 @@ impl<'a> Builder<'a> {
                         llvmBlock.instructions.push(llvmInstruction);
                     }
                     Value::Var(v) => {
-                        let llvmInstruction = LInstruction::Memcpy(self.lowerVar(v), self.lowerVar(&getResultVar(v.ty.clone())));
-                        llvmBlock.instructions.push(llvmInstruction);
-                        let llvmInstruction = LInstruction::Return(LValue::Void);
-                        llvmBlock.instructions.push(llvmInstruction);
+                        if v.ty.isPtr() {
+                            let llvmInstruction = LInstruction::Return(LValue::Void);
+                            llvmBlock.instructions.push(llvmInstruction);
+                        } else {
+                            let llvmInstruction = LInstruction::Memcpy(self.lowerVar(v), self.lowerVar(&getResultVar(v.ty.clone())));
+                            llvmBlock.instructions.push(llvmInstruction);
+                            let llvmInstruction = LInstruction::Return(LValue::Void);
+                            llvmBlock.instructions.push(llvmInstruction);
+                        }
                     }
                     _ => {
                         unreachable!()
@@ -140,7 +154,7 @@ impl<'a> Builder<'a> {
                 },
                 Instruction::Memcpy(src, dest) => {
                     if src.ty.isPtr() {
-                        let llvmInstruction = LInstruction::MemcpyPtr(self.lowerVar(src), self.lowerVar(dest));
+                        let llvmInstruction = LInstruction::Store(self.lowerVar(dest), LValue::Variable(self.lowerVar(src)));
                         llvmBlock.instructions.push(llvmInstruction);
                     } else {
                         let llvmInstruction = LInstruction::Memcpy(self.lowerVar(src), self.lowerVar(dest));
@@ -258,17 +272,18 @@ impl<'a> Builder<'a> {
     }
 
     fn lowerFunction(&mut self, f: &Function) -> LFunction {
+        let mut args: Vec<_> = f.args.iter().map(|p| self.lowerParam(p)).collect();
+        args.push(LParam {
+            name: getResultVarName(),
+            ty: self.lowerType(&f.result),
+        });
         match &f.kind {
             FunctionKind::UserDefined(blocks) => {
                 let mut localVars = Vec::new();
-                self.refMap.clear();
                 for block in blocks {
                     for instruction in &block.instructions {
                         if let Instruction::Declare(var) = instruction {
                             localVars.push(var.clone());
-                        }
-                        if let Instruction::Reference(dest, src) = instruction {
-                            self.refMap.insert(dest.name.clone(), src.name.clone());
                         }
                     }
                 }
@@ -277,11 +292,6 @@ impl<'a> Builder<'a> {
                     let llvmInstruction = LInstruction::Allocate(self.lowerVar(&var));
                     llvmBlocks[0].instructions.insert(0, llvmInstruction)
                 }
-                let mut args: Vec<_> = f.args.iter().map(|p| self.lowerParam(p)).collect();
-                args.push(LParam {
-                    name: getResultVarName(),
-                    ty: LType::Ptr(Box::new(self.lowerType(&f.result))),
-                });
                 LFunction {
                     name: f.name.clone(),
                     args: args,
@@ -320,11 +330,6 @@ impl<'a> Builder<'a> {
                     .instructions
                     .push(LInstruction::Memcpy(self.lowerVar(&this), self.lowerVar(&getResultVar(this.ty.clone()))));
                 block.instructions.push(LInstruction::Return(LValue::Void));
-                let mut args: Vec<_> = f.args.iter().map(|p| self.lowerParam(p)).collect();
-                args.push(LParam {
-                    name: getResultVarName(),
-                    ty: LType::Ptr(Box::new(self.lowerType(&f.result))),
-                });
                 LFunction {
                     name: f.name.clone(),
                     args: args,
@@ -390,11 +395,6 @@ impl<'a> Builder<'a> {
                     .instructions
                     .push(LInstruction::Memcpy(self.lowerVar(&this), self.lowerVar(&getResultVar(this.ty.clone()))));
                 block.instructions.push(LInstruction::Return(LValue::Void));
-                let mut args: Vec<_> = f.args.iter().map(|p| self.lowerParam(p)).collect();
-                args.push(LParam {
-                    name: getResultVarName(),
-                    ty: LType::Ptr(Box::new(self.lowerType(&f.result))),
-                });
                 LFunction {
                     name: f.name.clone(),
                     args: args,
@@ -406,7 +406,7 @@ impl<'a> Builder<'a> {
                 let mut args: Vec<_> = f.args.iter().map(|p| self.lowerParam(p)).collect();
                 args.push(LParam {
                     name: getResultVarName(),
-                    ty: LType::Ptr(Box::new(self.lowerType(&f.result))),
+                    ty: self.lowerType(&f.result),
                 });
                 LFunction {
                     name: f.name.clone(),

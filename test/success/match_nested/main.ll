@@ -64,7 +64,7 @@ block0:
    %v_2 = alloca %struct.Int_Int, align 8
    %b21i2 = alloca %struct.Int_Int, align 8
    %v_1 = alloca %struct.Int_Int, align 8
-   %b16i2 = alloca %struct.Bool_Bool, align 4
+   %b16i4 = alloca %struct.Bool_Bool, align 4
    %b16i1 = alloca %struct.String_String, align 8
    %b13i1 = alloca %struct.Int_Int, align 8
    %b11i1 = alloca %struct.Int_Int, align 8
@@ -164,8 +164,8 @@ block16:
    store ptr @.str_1, ptr %tmp_b16i1_1, align 8
    %tmp_b16i1_2 = getelementptr inbounds %struct.String_String, ptr %b16i1, i32 0, i32 1
    store i64 3, ptr %tmp_b16i1_2, align 8
-   call void @String_String_eq(ptr %b2i3, ptr %b16i1, ptr %b16i2)
-   %tmp_switch_var_block16_1 = getelementptr inbounds %struct.Bool_Bool, ptr %b16i2, i32 0, i32 0
+   call void @String_String_eq(ptr %b2i3, ptr %b16i1, ptr %b16i4)
+   %tmp_switch_var_block16_1 = getelementptr inbounds %struct.Bool_Bool, ptr %b16i4, i32 0, i32 0
    %tmp_switch_var_block16_2 = load i32, ptr %tmp_switch_var_block16_1, align 4
    switch i32 %tmp_switch_var_block16_2, label %block17 [
 i32 1, label %block24

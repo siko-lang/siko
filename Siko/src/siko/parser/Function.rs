@@ -23,20 +23,30 @@ impl<'a> FunctionParser for Parser<'a> {
         self.expect(TokenKind::LeftBracket(BracketKind::Paren));
         let mut params = Vec::new();
         while !self.check(TokenKind::RightBracket(BracketKind::Paren)) {
-            let mutable = if self.check(TokenKind::Keyword(KeywordKind::Mut)) {
-                self.expect(TokenKind::Keyword(KeywordKind::Mut));
-                true
-            } else {
-                false
-            };
-            let param = if self.check(TokenKind::Keyword(KeywordKind::ValueSelf)) {
+            let param = if self.check(TokenKind::Misc(MiscKind::Ampersand)) {
+                self.expect(TokenKind::Misc(MiscKind::Ampersand));
                 self.expect(TokenKind::Keyword(KeywordKind::ValueSelf));
-                Parameter::SelfParam(mutable)
+                Parameter::RefSelfParam
             } else {
-                let name = self.parseVarIdentifier();
-                self.expect(TokenKind::Misc(MiscKind::Colon));
-                let ty = self.parseType();
-                Parameter::Named(name, ty, mutable)
+                let mutable = if self.check(TokenKind::Keyword(KeywordKind::Mut)) {
+                    self.expect(TokenKind::Keyword(KeywordKind::Mut));
+                    true
+                } else {
+                    false
+                };
+                if self.check(TokenKind::Keyword(KeywordKind::ValueSelf)) {
+                    self.expect(TokenKind::Keyword(KeywordKind::ValueSelf));
+                    if mutable {
+                        Parameter::MutSelfParam
+                    } else {
+                        Parameter::SelfParam
+                    }
+                } else {
+                    let name = self.parseVarIdentifier();
+                    self.expect(TokenKind::Misc(MiscKind::Colon));
+                    let ty = self.parseType();
+                    Parameter::Named(name, ty, mutable)
+                }
             };
             params.push(param);
             if self.check(TokenKind::RightBracket(BracketKind::Paren)) {

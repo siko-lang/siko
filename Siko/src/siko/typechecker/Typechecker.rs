@@ -67,7 +67,6 @@ impl<'a> Typechecker<'a> {
         self.initialize(f);
         //self.dump(f);
         self.check(f);
-        self.verify(f);
         //self.dump(f);
         self.generate(f)
     }
@@ -173,6 +172,7 @@ impl<'a> Typechecker<'a> {
         }
         for (arg, fnArg) in zip(args, fnArgs) {
             let mut argTy = self.getInstructionType(*arg);
+            argTy = argTy.apply(&self.substitution);
             if !argTy.isReference() && fnArg.isReference() {
                 argTy = Type::Reference(Box::new(argTy), None);
                 self.types.insert(TypedId::Instruction(*arg), argTy.clone());
@@ -202,10 +202,11 @@ impl<'a> Typechecker<'a> {
                 }
                 InstructionKind::DynamicFunctionCall(callable, args) => match self.methodSources.get(callable) {
                     Some(name) => {
+                        let newCallable = callable.apply(&self.instructionSwaps);
                         let f = self.program.functions.get(&name).expect("Function not found");
                         let fnType = f.getType();
                         let mut newArgs = Vec::new();
-                        newArgs.push(*callable);
+                        newArgs.push(newCallable);
                         newArgs.extend(args);
                         self.checkFunctionCall(&newArgs, body, instruction, fnType);
                         self.methodCalls.insert(instruction.id, *callable);
@@ -329,7 +330,7 @@ impl<'a> Typechecker<'a> {
                     match receiverType.clone().unpackRef() {
                         Type::Named(name, _, _) => {
                             if let Some(classDef) = self.program.classes.get(&name) {
-                                let classDef = self.instantiateClass(classDef, &receiverType);
+                                let classDef = self.instantiateClass(classDef, &receiverType.unpackRef());
                                 let mut found = false;
                                 for f in &classDef.fields {
                                     if f.name == *fieldName {
@@ -357,7 +358,7 @@ impl<'a> Typechecker<'a> {
                                     TypecheckerError::FieldNotFound(fieldName.clone(), instruction.location.clone()).report(self.ctx);
                                 }
                             } else if let Some(enumDef) = self.program.enums.get(&name) {
-                                let enumDef = self.instantiateEnum(enumDef, &receiverType);
+                                let enumDef = self.instantiateEnum(enumDef, &receiverType.unpackRef());
                                 let mut found = false;
                                 if !found {
                                     for m in &enumDef.methods {
@@ -414,8 +415,7 @@ impl<'a> Typechecker<'a> {
             let publicVars = fnType.collectVars(BTreeSet::new());
             for block in &body.blocks {
                 for instruction in &block.instructions {
-                    let ty = self.getType(&TypedId::Instruction(instruction.id));
-                    let ty = ty.apply(&self.substitution);
+                    let ty = instruction.ty.clone().unwrap();
                     let vars = ty.collectVars(BTreeSet::new());
                     if !vars.is_empty() && vars != publicVars {
                         self.dump(f);
@@ -432,8 +432,13 @@ impl<'a> Typechecker<'a> {
         if let Some(body) = &f.body {
             for block in &body.blocks {
                 for instruction in &block.instructions {
-                    let ty = self.getType(&TypedId::Instruction(instruction.id));
-                    let ty = ty.apply(&self.substitution);
+                    let ty = match &instruction.ty {
+                        Some(ty) => ty.clone(),
+                        None => {
+                            let ty = self.getInstructionType(instruction.id);
+                            ty.apply(&self.substitution)
+                        }
+                    };
                     println!("{} : {}", instruction, ty);
                 }
             }
@@ -454,11 +459,21 @@ impl<'a> Typechecker<'a> {
                             InstructionKind::Converter(arg) => {
                                 instruction.kind = InstructionKind::Ref(*arg);
                             }
-                            kind => panic!("Unexpected instruction kind for implicit refe while rewriting! {}", kind.dump()),
+                            kind => panic!("Unexpected instruction kind for implicit ref while rewriting! {}", kind.dump()),
                         }
                     } else {
                         if let InstructionKind::Converter(arg) = instruction.kind {
                             instruction.kind = InstructionKind::Noop;
+                            self.types.insert(TypedId::Instruction(instruction.id), Type::getUnitType());
+                            self.instructionSwaps.add(instruction.id, arg);
+                        }
+                    }
+                    if let InstructionKind::Ref(arg) = instruction.kind {
+                        let ty = self.getInstructionType(arg);
+                        let ty = ty.apply(&self.substitution);
+                        if ty.isReference() {
+                            instruction.kind = InstructionKind::Noop;
+                            self.types.insert(TypedId::Instruction(instruction.id), Type::getUnitType());
                             self.instructionSwaps.add(instruction.id, arg);
                         }
                     }
@@ -472,6 +487,7 @@ impl<'a> Typechecker<'a> {
                         match &instruction.kind {
                             InstructionKind::FieldRef(_, _) => {
                                 instruction.kind = InstructionKind::Noop;
+                                self.types.insert(TypedId::Instruction(instruction.id), Type::getUnitType());
                             }
                             kind => panic!("Unexpected instruction kind for method source while rewriting! {}", kind.dump()),
                         }
@@ -488,7 +504,7 @@ impl<'a> Typechecker<'a> {
                             kind => panic!("Unexpected instruction kind for method call while rewriting! {}", kind.dump()),
                         }
                     }
-                    let ty = self.getType(&TypedId::Instruction(instruction.id));
+                    let ty = self.getInstructionType(instruction.id);
                     let ty = ty.apply(&self.substitution);
                     //println!("{} : {}", instruction, ty);
                     instruction.ty = Some(ty.clone());
@@ -499,6 +515,7 @@ impl<'a> Typechecker<'a> {
                 }
             }
         }
+        self.verify(&result);
         result
     }
 }

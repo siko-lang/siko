@@ -157,6 +157,7 @@ impl<'a> Builder<'a> {
                 }
                 HirInstructionKind::Ref(arg) => {
                     let arg = self.buildInstructionVar(arg);
+                    block.instructions.push(Instruction::Declare(idVar.clone()));
                     block.instructions.push(Instruction::Reference(idVar, arg));
                 }
                 HirInstructionKind::Noop => {}

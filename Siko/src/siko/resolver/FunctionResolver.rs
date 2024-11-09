@@ -63,8 +63,16 @@ impl<'a> FunctionResolver<'a> {
                     env.addArg(id.toString(), index as i64);
                     IrParameter::Named(id.toString(), typeResolver.resolveType(ty), *mutable)
                 }
-                Parameter::SelfParam(mutable) => match &self.owner {
-                    Some(owner) => IrParameter::SelfParam(*mutable, owner.clone()),
+                Parameter::SelfParam => match &self.owner {
+                    Some(owner) => IrParameter::SelfParam(false, owner.clone()),
+                    None => error(format!("No owner for self type!")),
+                },
+                Parameter::MutSelfParam => match &self.owner {
+                    Some(owner) => IrParameter::SelfParam(true, owner.clone()),
+                    None => error(format!("No owner for self type!")),
+                },
+                Parameter::RefSelfParam => match &self.owner {
+                    Some(owner) => IrParameter::SelfParam(false, IrType::Reference(Box::new(owner.clone()), None)),
                     None => error(format!("No owner for self type!")),
                 },
             };

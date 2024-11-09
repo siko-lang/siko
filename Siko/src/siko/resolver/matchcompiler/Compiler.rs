@@ -537,9 +537,21 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                                         self.bodyLocation.clone(),
                                         true,
                                     );
+                                    let litConverter = self.resolver.addInstructionToBlock(
+                                        current,
+                                        InstructionKind::Converter(litId),
+                                        self.bodyLocation.clone(),
+                                        true,
+                                    );
+                                    let rootConverter = self.resolver.addInstructionToBlock(
+                                        current,
+                                        InstructionKind::Converter(root),
+                                        self.bodyLocation.clone(),
+                                        true,
+                                    );
                                     let eqId = self.resolver.addInstructionToBlock(
                                         current,
-                                        InstructionKind::FunctionCall(getStringEqName(), vec![root, litId]),
+                                        InstructionKind::FunctionCall(getStringEqName(), vec![rootConverter, litConverter]),
                                         self.bodyLocation.clone(),
                                         true,
                                     );
