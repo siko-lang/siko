@@ -17,45 +17,45 @@ block0:
 
 define private void @Main_main(ptr noundef %fn_result) {
 block0:
-   %b0i19 = alloca %struct.siko_Tuple_, align 4
-   %b0i18 = alloca %struct.siko_Tuple_, align 4
-   %b0i17 = alloca %struct.Bool_Bool, align 4
-   %b0i16 = alloca %struct.Bool_Bool, align 4
-   %b0i14 = alloca %struct.Int_Int, align 8
+   %b0i24 = alloca %struct.siko_Tuple_, align 4
+   %b0i23 = alloca %struct.siko_Tuple_, align 4
+   %b0i21 = alloca %struct.Bool_Bool, align 4
+   %b0i20 = alloca %struct.Bool_Bool, align 4
+   %b0i18 = alloca %struct.Int_Int, align 8
+   %b0i16 = alloca %struct.Int_Int, align 8
+   %b0i15 = alloca %struct.Bool_Bool, align 4
    %b0i13 = alloca %struct.Int_Int, align 8
-   %b0i12 = alloca %struct.Bool_Bool, align 4
+   %b0i11 = alloca %struct.Int_Int, align 8
    %b0i10 = alloca %struct.Int_Int, align 8
-   %b0i9 = alloca %struct.Int_Int, align 8
    %b0i8 = alloca %struct.Int_Int, align 8
    %b0i6 = alloca %struct.Int_Int, align 8
    %b0i5 = alloca %struct.Int_Int, align 8
-   %b0i4 = alloca %struct.Int_Int, align 8
-   %b0i2 = alloca %struct.Int_Int, align 8
+   %b0i3 = alloca %struct.Int_Int, align 8
    %b0i1 = alloca %struct.Int_Int, align 8
    %tmp_b0i1_1 = getelementptr inbounds %struct.Int_Int, ptr %b0i1, i32 0, i32 0
    store i64 6, ptr %tmp_b0i1_1, align 8
-   %tmp_b0i2_1 = getelementptr inbounds %struct.Int_Int, ptr %b0i2, i32 0, i32 0
-   store i64 5, ptr %tmp_b0i2_1, align 8
-   call void @Int_Int_add(ptr %b0i2, ptr %b0i1, ptr %b0i4)
-   %tmp_b0i5_1 = getelementptr inbounds %struct.Int_Int, ptr %b0i5, i32 0, i32 0
-   store i64 6, ptr %tmp_b0i5_1, align 8
+   %tmp_b0i3_1 = getelementptr inbounds %struct.Int_Int, ptr %b0i3, i32 0, i32 0
+   store i64 5, ptr %tmp_b0i3_1, align 8
+   call void @Int_Int_add(ptr %b0i3, ptr %b0i1, ptr %b0i5)
    %tmp_b0i6_1 = getelementptr inbounds %struct.Int_Int, ptr %b0i6, i32 0, i32 0
-   store i64 5, ptr %tmp_b0i6_1, align 8
-   call void @Int_Int_sub(ptr %b0i6, ptr %b0i5, ptr %b0i8)
-   %tmp_b0i9_1 = getelementptr inbounds %struct.Int_Int, ptr %b0i9, i32 0, i32 0
-   store i64 6, ptr %tmp_b0i9_1, align 8
-   %tmp_b0i10_1 = getelementptr inbounds %struct.Int_Int, ptr %b0i10, i32 0, i32 0
-   store i64 5, ptr %tmp_b0i10_1, align 8
-   call void @Int_Int_eq(ptr %b0i10, ptr %b0i9, ptr %b0i12)
+   store i64 6, ptr %tmp_b0i6_1, align 8
+   %tmp_b0i8_1 = getelementptr inbounds %struct.Int_Int, ptr %b0i8, i32 0, i32 0
+   store i64 5, ptr %tmp_b0i8_1, align 8
+   call void @Int_Int_sub(ptr %b0i8, ptr %b0i6, ptr %b0i10)
+   %tmp_b0i11_1 = getelementptr inbounds %struct.Int_Int, ptr %b0i11, i32 0, i32 0
+   store i64 6, ptr %tmp_b0i11_1, align 8
    %tmp_b0i13_1 = getelementptr inbounds %struct.Int_Int, ptr %b0i13, i32 0, i32 0
-   store i64 6, ptr %tmp_b0i13_1, align 8
-   %tmp_b0i14_1 = getelementptr inbounds %struct.Int_Int, ptr %b0i14, i32 0, i32 0
-   store i64 5, ptr %tmp_b0i14_1, align 8
-   call void @Int_Int_lessThan(ptr %b0i14, ptr %b0i13, ptr %b0i16)
-   call void @Bool_Bool_True(ptr %b0i17)
-   call void @Std_Basic_Util_assert(ptr %b0i17, ptr %b0i18)
-   call void @siko_Tuple_(ptr %b0i19)
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %b0i19, i64 0, i1 false)
+   store i64 5, ptr %tmp_b0i13_1, align 8
+   call void @Int_Int_eq(ptr %b0i13, ptr %b0i11, ptr %b0i15)
+   %tmp_b0i16_1 = getelementptr inbounds %struct.Int_Int, ptr %b0i16, i32 0, i32 0
+   store i64 6, ptr %tmp_b0i16_1, align 8
+   %tmp_b0i18_1 = getelementptr inbounds %struct.Int_Int, ptr %b0i18, i32 0, i32 0
+   store i64 5, ptr %tmp_b0i18_1, align 8
+   call void @Int_Int_lessThan(ptr %b0i18, ptr %b0i16, ptr %b0i20)
+   call void @Bool_Bool_True(ptr %b0i21)
+   call void @Std_Basic_Util_assert(ptr %b0i21, ptr %b0i23)
+   call void @siko_Tuple_(ptr %b0i24)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %b0i24, i64 0, i1 false)
    ret void
 }
 

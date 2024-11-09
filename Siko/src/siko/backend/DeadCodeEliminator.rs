@@ -63,6 +63,7 @@ impl<'a> DeadCodeEliminator<'a> {
                 return;
             }
             match &instruction.kind {
+                InstructionKind::Converter(_) => {}
                 InstructionKind::FunctionCall(_, _) => {}
                 InstructionKind::DynamicFunctionCall(_, _) => {}
                 InstructionKind::ValueRef(_) => {}

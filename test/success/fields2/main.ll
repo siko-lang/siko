@@ -26,21 +26,21 @@ block0:
 
 define private void @Main_main(ptr noundef %fn_result) {
 block0:
-   %b0i7 = alloca %struct.siko_Tuple_, align 4
+   %b0i9 = alloca %struct.siko_Tuple_, align 4
    %b_1 = alloca %struct.Bool_Bool, align 4
-   %b0i5 = alloca %struct.Bool_Bool, align 4
-   %b0i4 = alloca %struct.Main_Container_Bool_Bool, align 4
+   %b0i7 = alloca %struct.Bool_Bool, align 4
+   %b0i5 = alloca %struct.Main_Container_Bool_Bool, align 4
    %a_0 = alloca %struct.Main_Container_Bool_Bool, align 4
-   %b0i2 = alloca %struct.Main_Container_Bool_Bool, align 4
+   %b0i3 = alloca %struct.Main_Container_Bool_Bool, align 4
    %b0i1 = alloca %struct.Bool_Bool, align 4
    call void @Bool_Bool_True(ptr %b0i1)
-   call void @Main_Container_Bool_Bool(ptr %b0i1, ptr %b0i2)
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %a_0, ptr align 4 %b0i2, i64 4, i1 false)
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %b0i4, ptr align 4 %a_0, i64 4, i1 false)
-   call void @Main_other_Bool_Bool(ptr %b0i4, ptr %b0i5)
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %b_1, ptr align 4 %b0i5, i64 4, i1 false)
-   call void @siko_Tuple_(ptr %b0i7)
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %b0i7, i64 0, i1 false)
+   call void @Main_Container_Bool_Bool(ptr %b0i1, ptr %b0i3)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %a_0, ptr align 4 %b0i3, i64 4, i1 false)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %b0i5, ptr align 4 %a_0, i64 4, i1 false)
+   call void @Main_other_Bool_Bool(ptr %b0i5, ptr %b0i7)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %b_1, ptr align 4 %b0i7, i64 4, i1 false)
+   call void @siko_Tuple_(ptr %b0i9)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %b0i9, i64 0, i1 false)
    ret void
 }
 

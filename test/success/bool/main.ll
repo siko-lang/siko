@@ -15,15 +15,15 @@ block0:
 
 define private void @Main_main(ptr noundef %fn_result) {
 block0:
+   %b0i6 = alloca %struct.siko_Tuple_, align 4
    %b0i5 = alloca %struct.siko_Tuple_, align 4
-   %b0i4 = alloca %struct.siko_Tuple_, align 4
    %b0i3 = alloca %struct.Bool_Bool, align 4
    %b0i1 = alloca %struct.Bool_Bool, align 4
    call void @Bool_Bool_False(ptr %b0i1)
    call void @Bool_Bool_not(ptr %b0i1, ptr %b0i3)
-   call void @Std_Basic_Util_assert(ptr %b0i3, ptr %b0i4)
-   call void @siko_Tuple_(ptr %b0i5)
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %b0i5, i64 0, i1 false)
+   call void @Std_Basic_Util_assert(ptr %b0i3, ptr %b0i5)
+   call void @siko_Tuple_(ptr %b0i6)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %b0i6, i64 0, i1 false)
    ret void
 }
 

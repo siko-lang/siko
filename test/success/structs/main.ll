@@ -50,28 +50,28 @@ block0:
 
 define private void @Main_foo2(ptr noundef %fn_result) {
 block0:
-   %b0i8 = alloca %struct.siko_Tuple_, align 4
-   %b0i7 = alloca %struct.Main_Large, align 8
-   %b0i6 = alloca %struct.Main_Struct1, align 8
+   %b0i14 = alloca %struct.siko_Tuple_, align 4
+   %b0i13 = alloca %struct.Main_Large, align 8
+   %b0i11 = alloca %struct.Main_Struct1, align 8
+   %b0i9 = alloca %struct.Int_Int, align 8
+   %b0i7 = alloca %struct.Int_Int, align 8
    %b0i5 = alloca %struct.Int_Int, align 8
-   %b0i4 = alloca %struct.Int_Int, align 8
    %b0i3 = alloca %struct.Int_Int, align 8
-   %b0i2 = alloca %struct.Int_Int, align 8
    %b0i1 = alloca %struct.Int_Int, align 8
    %tmp_b0i1_1 = getelementptr inbounds %struct.Int_Int, ptr %b0i1, i32 0, i32 0
    store i64 1, ptr %tmp_b0i1_1, align 8
-   %tmp_b0i2_1 = getelementptr inbounds %struct.Int_Int, ptr %b0i2, i32 0, i32 0
-   store i64 2, ptr %tmp_b0i2_1, align 8
    %tmp_b0i3_1 = getelementptr inbounds %struct.Int_Int, ptr %b0i3, i32 0, i32 0
-   store i64 3, ptr %tmp_b0i3_1, align 8
-   %tmp_b0i4_1 = getelementptr inbounds %struct.Int_Int, ptr %b0i4, i32 0, i32 0
-   store i64 4, ptr %tmp_b0i4_1, align 8
+   store i64 2, ptr %tmp_b0i3_1, align 8
    %tmp_b0i5_1 = getelementptr inbounds %struct.Int_Int, ptr %b0i5, i32 0, i32 0
-   store i64 5, ptr %tmp_b0i5_1, align 8
-   call void @Main_Struct1(ptr %b0i1, ptr %b0i2, ptr %b0i3, ptr %b0i4, ptr %b0i5, ptr %b0i6)
-   call void @Main_Large(ptr %b0i6, ptr %b0i7)
-   call void @siko_Tuple_(ptr %b0i8)
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %b0i8, i64 0, i1 false)
+   store i64 3, ptr %tmp_b0i5_1, align 8
+   %tmp_b0i7_1 = getelementptr inbounds %struct.Int_Int, ptr %b0i7, i32 0, i32 0
+   store i64 4, ptr %tmp_b0i7_1, align 8
+   %tmp_b0i9_1 = getelementptr inbounds %struct.Int_Int, ptr %b0i9, i32 0, i32 0
+   store i64 5, ptr %tmp_b0i9_1, align 8
+   call void @Main_Struct1(ptr %b0i1, ptr %b0i3, ptr %b0i5, ptr %b0i7, ptr %b0i9, ptr %b0i11)
+   call void @Main_Large(ptr %b0i11, ptr %b0i13)
+   call void @siko_Tuple_(ptr %b0i14)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %b0i14, i64 0, i1 false)
    ret void
 }
 

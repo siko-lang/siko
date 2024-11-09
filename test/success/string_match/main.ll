@@ -20,13 +20,13 @@ block0:
 
 define private void @Main_main(ptr noundef %fn_result) {
 block0:
-   %b8i2 = alloca %struct.siko_Tuple_, align 4
+   %b8i3 = alloca %struct.siko_Tuple_, align 4
    %b8i1 = alloca %struct.Bool_Bool, align 4
-   %b7i2 = alloca %struct.siko_Tuple_, align 4
+   %b7i3 = alloca %struct.siko_Tuple_, align 4
    %b7i1 = alloca %struct.Bool_Bool, align 4
-   %b6i2 = alloca %struct.siko_Tuple_, align 4
+   %b6i3 = alloca %struct.siko_Tuple_, align 4
    %b6i1 = alloca %struct.Bool_Bool, align 4
-   %b5i2 = alloca %struct.siko_Tuple_, align 4
+   %b5i3 = alloca %struct.siko_Tuple_, align 4
    %b5i1 = alloca %struct.Bool_Bool, align 4
    %b4i2 = alloca %struct.Bool_Bool, align 4
    %b4i1 = alloca %struct.String_String, align 8
@@ -84,23 +84,23 @@ i32 1, label %block8
 
 block5:
    call void @Bool_Bool_False(ptr %b5i1)
-   call void @Std_Basic_Util_assert(ptr %b5i1, ptr %b5i2)
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_0, ptr align 4 %b5i2, i64 0, i1 false)
+   call void @Std_Basic_Util_assert(ptr %b5i1, ptr %b5i3)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_0, ptr align 4 %b5i3, i64 0, i1 false)
    br label %block1
 block6:
    call void @Bool_Bool_False(ptr %b6i1)
-   call void @Std_Basic_Util_assert(ptr %b6i1, ptr %b6i2)
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_0, ptr align 4 %b6i2, i64 0, i1 false)
+   call void @Std_Basic_Util_assert(ptr %b6i1, ptr %b6i3)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_0, ptr align 4 %b6i3, i64 0, i1 false)
    br label %block1
 block7:
    call void @Bool_Bool_True(ptr %b7i1)
-   call void @Std_Basic_Util_assert(ptr %b7i1, ptr %b7i2)
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_0, ptr align 4 %b7i2, i64 0, i1 false)
+   call void @Std_Basic_Util_assert(ptr %b7i1, ptr %b7i3)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_0, ptr align 4 %b7i3, i64 0, i1 false)
    br label %block1
 block8:
    call void @Bool_Bool_False(ptr %b8i1)
-   call void @Std_Basic_Util_assert(ptr %b8i1, ptr %b8i2)
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_0, ptr align 4 %b8i2, i64 0, i1 false)
+   call void @Std_Basic_Util_assert(ptr %b8i1, ptr %b8i3)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_0, ptr align 4 %b8i3, i64 0, i1 false)
    br label %block1
 }
 

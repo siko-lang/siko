@@ -159,6 +159,7 @@ impl std::fmt::Debug for StringCase {
 
 #[derive(Clone, PartialEq)]
 pub enum InstructionKind {
+    Converter(InstructionId),
     FunctionCall(QualifiedName, Vec<InstructionId>),
     DynamicFunctionCall(InstructionId, Vec<InstructionId>),
     ValueRef(ValueKind),
@@ -197,6 +198,7 @@ impl Debug for InstructionKind {
 impl InstructionKind {
     pub fn dump(&self) -> String {
         match self {
+            InstructionKind::Converter(arg) => format!("converter({})", arg),
             InstructionKind::FunctionCall(name, args) => format!("call({}({:?}))", name, args),
             InstructionKind::DynamicFunctionCall(callable, args) => {
                 format!("DYN_CALL{}({:?})", callable, args)

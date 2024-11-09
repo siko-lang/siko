@@ -42,6 +42,7 @@ pub struct Typechecker<'a> {
     types: BTreeMap<TypedId, Type>,
     selfType: Option<Type>,
     mutables: BTreeSet<String>,
+    implicitRefs: BTreeSet<InstructionId>,
 }
 
 impl<'a> Typechecker<'a> {
@@ -58,6 +59,7 @@ impl<'a> Typechecker<'a> {
             types: BTreeMap::new(),
             selfType: None,
             mutables: BTreeSet::new(),
+            implicitRefs: BTreeSet::new(),
         }
     }
 
@@ -170,7 +172,13 @@ impl<'a> Typechecker<'a> {
             fnResult = fnResult.changeSelfType(fnArgs[0].clone());
         }
         for (arg, fnArg) in zip(args, fnArgs) {
-            self.unify(self.getInstructionType(*arg), fnArg, body.getInstruction(*arg).location.clone());
+            let mut argTy = self.getInstructionType(*arg);
+            if !argTy.isReference() && fnArg.isReference() {
+                argTy = Type::Reference(Box::new(argTy), None);
+                self.types.insert(TypedId::Instruction(*arg), argTy.clone());
+                self.implicitRefs.insert(*arg);
+            }
+            self.unify(argTy, fnArg, body.getInstruction(*arg).location.clone());
         }
         self.unify(self.getInstructionType(instruction.id), fnResult, instruction.location.clone());
     }
@@ -277,6 +285,13 @@ impl<'a> Typechecker<'a> {
                     self.unify(
                         self.getInstructionType(instruction.id),
                         self.getValueType(var),
+                        instruction.location.clone(),
+                    );
+                }
+                InstructionKind::Converter(arg) => {
+                    self.unify(
+                        self.getInstructionType(instruction.id),
+                        self.getInstructionType(*arg),
                         instruction.location.clone(),
                     );
                 }
@@ -425,11 +440,30 @@ impl<'a> Typechecker<'a> {
         }
     }
 
-    pub fn generate(&self, f: &Function) -> Function {
+    pub fn generate(&mut self, f: &Function) -> Function {
         //println!("Generating {}", f.name);
         let mut result = f.clone();
         if let Some(selfType) = self.selfType.clone() {
             result.result = result.result.changeSelfType(selfType);
+        }
+        if let Some(body) = &mut result.body {
+            for block in &mut body.blocks {
+                for instruction in &mut block.instructions {
+                    if self.implicitRefs.contains(&instruction.id) {
+                        match &instruction.kind {
+                            InstructionKind::Converter(arg) => {
+                                instruction.kind = InstructionKind::Ref(*arg);
+                            }
+                            kind => panic!("Unexpected instruction kind for implicit refe while rewriting! {}", kind.dump()),
+                        }
+                    } else {
+                        if let InstructionKind::Converter(arg) = instruction.kind {
+                            instruction.kind = InstructionKind::Noop;
+                            self.instructionSwaps.add(instruction.id, arg);
+                        }
+                    }
+                }
+            }
         }
         if let Some(body) = &mut result.body {
             for block in &mut body.blocks {
@@ -478,6 +512,7 @@ impl Apply<InstructionId> for InstructionId {
 impl Apply<InstructionId> for InstructionKind {
     fn apply(&self, sub: &Substitution<InstructionId>) -> Self {
         match self {
+            InstructionKind::Converter(arg) => InstructionKind::Converter(arg.apply(sub)),
             InstructionKind::FunctionCall(name, args) => InstructionKind::FunctionCall(name.clone(), args.apply(sub)),
             InstructionKind::DynamicFunctionCall(receiver, args) => InstructionKind::DynamicFunctionCall(receiver.apply(sub), args.apply(sub)),
             InstructionKind::ValueRef(value) => InstructionKind::ValueRef(value.clone()),

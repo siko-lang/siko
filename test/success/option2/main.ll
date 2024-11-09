@@ -34,15 +34,15 @@ define private void @Main_main(ptr noundef %fn_result) {
 block0:
    %b6i2 = alloca %struct.siko_Tuple_, align 4
    %a_1 = alloca %struct.Bool_Bool, align 4
-   %b4i2 = alloca %struct.siko_Tuple_, align 4
+   %b4i3 = alloca %struct.siko_Tuple_, align 4
    %b4i1 = alloca %struct.Bool_Bool, align 4
    %b1i2 = alloca %struct.siko_Tuple_, align 4
    %b1i1 = alloca %struct.siko_Tuple_, align 4
    %match_var_0 = alloca %struct.siko_Tuple_, align 4
-   %b0i2 = alloca %struct.Option_Option_Bool_Bool, align 4
+   %b0i3 = alloca %struct.Option_Option_Bool_Bool, align 4
    %b0i1 = alloca %struct.Bool_Bool, align 4
    call void @Std_Basic_Util_getTrue(ptr %b0i1)
-   call void @Option_Option_Some_Bool_Bool(ptr %b0i1, ptr %b0i2)
+   call void @Option_Option_Some_Bool_Bool(ptr %b0i1, ptr %b0i3)
    br label %block2
 block1:
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %b1i1, ptr align 4 %match_var_0, i64 0, i1 false)
@@ -50,7 +50,7 @@ block1:
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %b1i2, i64 0, i1 false)
    ret void
 block2:
-   %tmp_switch_var_block2_1 = getelementptr inbounds %struct.Option_Option_Bool_Bool, ptr %b0i2, i32 0, i32 0
+   %tmp_switch_var_block2_1 = getelementptr inbounds %struct.Option_Option_Bool_Bool, ptr %b0i3, i32 0, i32 0
    %tmp_switch_var_block2_2 = load i32, ptr %tmp_switch_var_block2_1, align 4
    switch i32 %tmp_switch_var_block2_2, label %block3 [
 i32 1, label %block5
@@ -60,11 +60,11 @@ block3:
    br label %block4
 block4:
    call void @Bool_Bool_False(ptr %b4i1)
-   call void @Std_Basic_Util_assert(ptr %b4i1, ptr %b4i2)
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_0, ptr align 4 %b4i2, i64 0, i1 false)
+   call void @Std_Basic_Util_assert(ptr %b4i1, ptr %b4i3)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_0, ptr align 4 %b4i3, i64 0, i1 false)
    br label %block1
 block5:
-   %tmp_b5i1_1 = bitcast %struct.Option_Option_Bool_Bool* %b0i2 to %struct.Option_Option_Some_Bool_Bool*
+   %tmp_b5i1_1 = bitcast %struct.Option_Option_Bool_Bool* %b0i3 to %struct.Option_Option_Some_Bool_Bool*
    %b5i1 = getelementptr inbounds %struct.Option_Option_Some_Bool_Bool, ptr %tmp_b5i1_1, i32 0, i32 1
    %b5i2 = getelementptr inbounds %struct.siko_Tuple_Bool_Bool, ptr %b5i1, i32 0, i32 0
    br label %block6

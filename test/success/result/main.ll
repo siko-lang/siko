@@ -91,11 +91,11 @@ block6:
 
 define private void @Main_someFunc(ptr noundef %fn_result) {
 block0:
-   %b0i2 = alloca %struct.Result_Result_Main_MySuccess__Main_MyError, align 4
+   %b0i3 = alloca %struct.Result_Result_Main_MySuccess__Main_MyError, align 4
    %b0i1 = alloca %struct.Main_MyError, align 4
    call void @Main_MyError_Failure(ptr %b0i1)
-   call void @Result_Result_Err_Main_MySuccess__Main_MyError(ptr %b0i1, ptr %b0i2)
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %b0i2, i64 8, i1 false)
+   call void @Result_Result_Err_Main_MySuccess__Main_MyError(ptr %b0i1, ptr %b0i3)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %b0i3, i64 8, i1 false)
    ret void
 }
 

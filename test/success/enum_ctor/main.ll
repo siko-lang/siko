@@ -45,19 +45,19 @@ block0:
 
 define private void @Main_main(ptr noundef %fn_result) {
 block0:
-   %b0i6 = alloca %struct.siko_Tuple_, align 4
-   %b0i5 = alloca %struct.Main_FooBar, align 4
+   %b0i9 = alloca %struct.siko_Tuple_, align 4
+   %b0i8 = alloca %struct.Main_FooBar, align 4
+   %b0i6 = alloca %struct.Bool_Bool, align 4
    %b0i4 = alloca %struct.Bool_Bool, align 4
-   %b0i3 = alloca %struct.Bool_Bool, align 4
-   %b0i2 = alloca %struct.Main_FooBar, align 4
+   %b0i3 = alloca %struct.Main_FooBar, align 4
    %b0i1 = alloca %struct.Bool_Bool, align 4
    call void @Bool_Bool_True(ptr %b0i1)
-   call void @Main_FooBar_Foo(ptr %b0i1, ptr %b0i2)
-   call void @Bool_Bool_True(ptr %b0i3)
+   call void @Main_FooBar_Foo(ptr %b0i1, ptr %b0i3)
    call void @Bool_Bool_True(ptr %b0i4)
-   call void @Main_FooBar_Bar(ptr %b0i3, ptr %b0i4, ptr %b0i5)
-   call void @siko_Tuple_(ptr %b0i6)
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %b0i6, i64 0, i1 false)
+   call void @Bool_Bool_True(ptr %b0i6)
+   call void @Main_FooBar_Bar(ptr %b0i4, ptr %b0i6, ptr %b0i8)
+   call void @siko_Tuple_(ptr %b0i9)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %b0i9, i64 0, i1 false)
    ret void
 }
 

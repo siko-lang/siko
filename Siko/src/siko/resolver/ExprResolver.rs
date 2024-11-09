@@ -174,6 +174,7 @@ impl<'a> ExprResolver<'a> {
                 let mut irArgs = Vec::new();
                 for arg in args {
                     let argId = self.resolveExpr(arg, env);
+                    let argId = self.addInstruction(InstructionKind::Converter(argId), expr.location.clone());
                     irArgs.push(argId)
                 }
                 match &callable.expr {
@@ -238,7 +239,9 @@ impl<'a> ExprResolver<'a> {
             }
             SimpleExpr::BinaryOp(op, lhs, rhs) => {
                 let lhsId = self.resolveExpr(lhs, env);
+                let lhsId = self.addInstruction(InstructionKind::Converter(lhsId), expr.location.clone());
                 let rhsId = self.resolveExpr(rhs, env);
+                let rhsId = self.addInstruction(InstructionKind::Converter(rhsId), expr.location.clone());
                 let name = match op {
                     BinaryOp::And => createOpName("And", "and"),
                     BinaryOp::Or => createOpName("Or", "or"),
@@ -262,6 +265,7 @@ impl<'a> ExprResolver<'a> {
             }
             SimpleExpr::UnaryOp(op, rhs) => {
                 let rhsId = self.resolveExpr(rhs, env);
+                let rhsId = self.addInstruction(InstructionKind::Converter(rhsId), expr.location.clone());
                 let name = match op {
                     UnaryOp::Not => createOpName("Not", "not"),
                 };

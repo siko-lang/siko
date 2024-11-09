@@ -71,8 +71,8 @@ block0:
    %b1i2 = alloca %struct.siko_Tuple_, align 4
    %b1i1 = alloca %struct.Int_Int, align 8
    %match_var_0 = alloca %struct.Int_Int, align 8
-   %b0i6 = alloca %struct.siko_Tuple_Bool_Bool__Int_Int__String_String__Main_Foo, align 8
-   %b0i5 = alloca %struct.Main_Foo, align 4
+   %b0i7 = alloca %struct.siko_Tuple_Bool_Bool__Int_Int__String_String__Main_Foo, align 8
+   %b0i6 = alloca %struct.Main_Foo, align 4
    %b0i4 = alloca %struct.Bool_Bool, align 4
    %b0i3 = alloca %struct.String_String, align 8
    %b0i2 = alloca %struct.Int_Int, align 8
@@ -85,8 +85,8 @@ block0:
    %tmp_b0i3_2 = getelementptr inbounds %struct.String_String, ptr %b0i3, i32 0, i32 1
    store i64 1, ptr %tmp_b0i3_2, align 8
    call void @Bool_Bool_True(ptr %b0i4)
-   call void @Main_Foo_Bar(ptr %b0i4, ptr %b0i5)
-   call void @siko_Tuple_Bool_Bool__Int_Int__String_String__Main_Foo(ptr %b0i1, ptr %b0i2, ptr %b0i3, ptr %b0i5, ptr %b0i6)
+   call void @Main_Foo_Bar(ptr %b0i4, ptr %b0i6)
+   call void @siko_Tuple_Bool_Bool__Int_Int__String_String__Main_Foo(ptr %b0i1, ptr %b0i2, ptr %b0i3, ptr %b0i6, ptr %b0i7)
    br label %block2
 block1:
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %b1i1, ptr align 8 %match_var_0, i64 8, i1 false)
@@ -94,10 +94,10 @@ block1:
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %b1i2, i64 0, i1 false)
    ret void
 block2:
-   %b2i1 = getelementptr inbounds %struct.siko_Tuple_Bool_Bool__Int_Int__String_String__Main_Foo, ptr %b0i6, i32 0, i32 0
-   %b2i2 = getelementptr inbounds %struct.siko_Tuple_Bool_Bool__Int_Int__String_String__Main_Foo, ptr %b0i6, i32 0, i32 1
-   %b2i3 = getelementptr inbounds %struct.siko_Tuple_Bool_Bool__Int_Int__String_String__Main_Foo, ptr %b0i6, i32 0, i32 2
-   %b2i4 = getelementptr inbounds %struct.siko_Tuple_Bool_Bool__Int_Int__String_String__Main_Foo, ptr %b0i6, i32 0, i32 3
+   %b2i1 = getelementptr inbounds %struct.siko_Tuple_Bool_Bool__Int_Int__String_String__Main_Foo, ptr %b0i7, i32 0, i32 0
+   %b2i2 = getelementptr inbounds %struct.siko_Tuple_Bool_Bool__Int_Int__String_String__Main_Foo, ptr %b0i7, i32 0, i32 1
+   %b2i3 = getelementptr inbounds %struct.siko_Tuple_Bool_Bool__Int_Int__String_String__Main_Foo, ptr %b0i7, i32 0, i32 2
+   %b2i4 = getelementptr inbounds %struct.siko_Tuple_Bool_Bool__Int_Int__String_String__Main_Foo, ptr %b0i7, i32 0, i32 3
    br label %block3
 block3:
    %tmp_switch_var_block3_1 = getelementptr inbounds %struct.Bool_Bool, ptr %b2i1, i32 0, i32 0
