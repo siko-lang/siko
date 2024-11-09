@@ -91,7 +91,7 @@ def processResult(r):
 
 buildRuntime()
 
-print("Std tests:")
+print("Success tests:")
 for entry in os.listdir(successes_path):
     if len(filters) > 0 and entry not in filters:
         continue
