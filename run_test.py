@@ -35,7 +35,7 @@ def compileSiko(currentDir, files, extras):
         return None
     return llvm_output_path
 
-def test(root, entry, extras):
+def test_success(root, entry, extras):
     print("- %s" % entry, end='')
     currentDir = os.path.join(root, entry)
     skipPath = os.path.join(currentDir, "SKIP")
@@ -95,7 +95,7 @@ print("Std tests:")
 for entry in os.listdir(successes_path):
     if len(filters) > 0 and entry not in filters:
         continue
-    processResult(test(successes_path, entry, ["std"]))
+    processResult(test_success(successes_path, entry, ["std"]))
 print("Error tests:")
 for entry in os.listdir(errors_path):
     if len(filters) > 0 and entry not in filters:
