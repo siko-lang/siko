@@ -73,7 +73,7 @@ filters = []
 for arg in sys.argv[1:]:
     filters.append(arg)
 
-successes_path = os.path.join(".", "test", "successes")
+successes_path = os.path.join(".", "test", "success")
 
 errors_path = os.path.join(".", "test", "errors")
 
