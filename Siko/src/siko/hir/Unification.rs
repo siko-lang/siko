@@ -10,8 +10,8 @@ pub struct Error {}
 
 pub fn unify(sub: &mut Substitution<Type>, ty1: &Type, ty2: &Type) -> Result<(), Error> {
     //println!("Unifying {}/{}", ty1, ty2);
-    let ty1 = ty1.apply(sub);
-    let ty2 = ty2.apply(sub);
+    let ty1 = ty1.apply(sub).makeSingleRef();
+    let ty2 = ty2.apply(sub).makeSingleRef();
     //println!("Unifying2 {}/{}", ty1, ty2);
     match (&ty1, &ty2) {
         (Type::Named(name1, args1, _), Type::Named(name2, args2, _)) => {

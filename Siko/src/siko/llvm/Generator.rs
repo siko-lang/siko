@@ -156,6 +156,12 @@ impl Generator {
                     format!("ups {:?}", dest.ty)
                 }
             },
+            Instruction::MemcpyPtr(src, dest) => {
+                format!(
+                    "call void @llvm.memcpy.p0.p0.i64(ptr align {} {}, ptr align {} {}, i64 {}, i1 false)",
+                    8, dest.name, 8, src.name, 8
+                )
+            }
             Instruction::Bitcast(dest, src) => {
                 format!(
                     "{} = bitcast {}* {} to {}*",

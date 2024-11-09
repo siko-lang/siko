@@ -45,10 +45,10 @@ impl Type {
         }
     }
 
-    pub fn unpackRef(&self) -> Type {
-        match &self {
+    pub fn unpackRef(self) -> Type {
+        match self {
             Type::Reference(ty, _) => ty.unpackRef(),
-            t => (*t).clone(),
+            ty => ty,
         }
     }
 
@@ -170,6 +170,19 @@ impl Type {
         match &self {
             Type::Reference(_, _) => true,
             _ => false,
+        }
+    }
+
+    pub fn makeSingleRef(self) -> Type {
+        match self {
+            Type::Reference(inner, lifetime) => {
+                if inner.isReference() {
+                    inner.makeSingleRef()
+                } else {
+                    Type::Reference(inner, lifetime)
+                }
+            }
+            ty => ty,
         }
     }
 

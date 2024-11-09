@@ -133,7 +133,7 @@ impl<'a> Typechecker<'a> {
     }
 
     fn unify(&mut self, ty1: Type, ty2: Type, location: Location) {
-        //println!("UNIFY {} {}", ty1, ty2);
+        // println!("UNIFY {} {}", ty1, ty2);
         if let Err(_) = unify(&mut self.substitution, &ty1, &ty2) {
             reportError(self.ctx, ty1.apply(&self.substitution), ty2.apply(&self.substitution), location);
         }
@@ -311,7 +311,7 @@ impl<'a> Typechecker<'a> {
                 InstructionKind::FieldRef(receiver, fieldName) => {
                     let receiverType = self.getInstructionType(*receiver);
                     let receiverType = receiverType.apply(&self.substitution);
-                    match receiverType.unpackRef() {
+                    match receiverType.clone().unpackRef() {
                         Type::Named(name, _, _) => {
                             if let Some(classDef) = self.program.classes.get(&name) {
                                 let classDef = self.instantiateClass(classDef, &receiverType);

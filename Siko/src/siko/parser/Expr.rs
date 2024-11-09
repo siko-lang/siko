@@ -38,27 +38,6 @@ pub enum SemicolonRequirement {
     Required,
 }
 
-fn injectRef(expr: Expr) -> Expr {
-    match &expr.expr {
-        SimpleExpr::Value(_) => Expr {
-            location: expr.location.clone(),
-            expr: SimpleExpr::Ref(Box::new(expr)),
-        },
-        SimpleExpr::FieldAccess(receiver, id) => {
-            let receiver = injectRef(*receiver.clone());
-            let expr = Expr {
-                location: expr.location.clone(),
-                expr: SimpleExpr::FieldAccess(Box::new(receiver), id.clone()),
-            };
-            Expr {
-                location: expr.location.clone(),
-                expr: SimpleExpr::Ref(Box::new(expr)),
-            }
-        }
-        _ => expr,
-    }
-}
-
 impl<'a> ExprParser for Parser<'a> {
     fn parseBlock(&mut self) -> Block {
         let mut statements = Vec::new();
@@ -463,8 +442,7 @@ impl<'a> ExprParser for Parser<'a> {
             TokenKind::Misc(MiscKind::Ampersand) => {
                 self.expect(TokenKind::Misc(MiscKind::Ampersand));
                 let arg = self.parseExpr();
-                let arg = injectRef(arg);
-                self.buildExpr(arg.expr)
+                self.buildExpr(SimpleExpr::Ref(Box::new(arg)))
             }
             kind => self.reportError2("<expr>", kind),
         }

@@ -45,6 +45,7 @@ pub enum Instruction {
     GetFieldRef(Variable, Variable, i32),
     Jump(String),
     Memcpy(Variable, Variable),
+    MemcpyPtr(Variable, Variable),
     Bitcast(Variable, Variable),
     Switch(Variable, String, Vec<Branch>),
 }

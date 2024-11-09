@@ -22,6 +22,7 @@ use crate::siko::llvm::{Constant::StringConstant, Data::Field as LField};
 pub struct Builder<'a> {
     program: &'a Program,
     constants: BTreeMap<String, String>,
+    refMap: BTreeMap<String, String>,
 }
 
 impl<'a> Builder<'a> {
@@ -29,12 +30,21 @@ impl<'a> Builder<'a> {
         Builder {
             program: program,
             constants: BTreeMap::new(),
+            refMap: BTreeMap::new(),
+        }
+    }
+
+    fn resolveVar(&self, v: &String) -> String {
+        match self.refMap.get(v) {
+            Some(name) => self.resolveVar(name),
+            None => v.clone(),
         }
     }
 
     fn lowerVar(&self, v: &Variable) -> LVariable {
+        let name = self.resolveVar(&v.name);
         LVariable {
-            name: format!("%{}", v.name),
+            name: format!("%{}", name),
             ty: self.lowerType(&v.ty),
         }
     }
@@ -87,10 +97,12 @@ impl<'a> Builder<'a> {
                 Instruction::Declare(_) => {
                     // declares are processed at the beginning
                 }
-                Instruction::Reference(dest, src) => {
-                    let llvmInstruction = LInstruction::LoadVar(self.lowerVar(dest), self.lowerVar(src));
-                    llvmBlock.instructions.push(llvmInstruction);
-                }
+                Instruction::Reference(_, _) => {}
+                // dereference
+                // Instruction::Reference(dest, src) => {
+                //     let llvmInstruction = LInstruction::LoadVar(self.lowerVar(dest), self.lowerVar(src));
+                //     llvmBlock.instructions.push(llvmInstruction);
+                // }
                 Instruction::Call(dest, name, args) => {
                     let mut llvmArgs = Vec::new();
                     for arg in args {
@@ -127,8 +139,13 @@ impl<'a> Builder<'a> {
                     }
                 },
                 Instruction::Memcpy(src, dest) => {
-                    let llvmInstruction = LInstruction::Memcpy(self.lowerVar(src), self.lowerVar(dest));
-                    llvmBlock.instructions.push(llvmInstruction);
+                    if src.ty.isPtr() {
+                        let llvmInstruction = LInstruction::MemcpyPtr(self.lowerVar(src), self.lowerVar(dest));
+                        llvmBlock.instructions.push(llvmInstruction);
+                    } else {
+                        let llvmInstruction = LInstruction::Memcpy(self.lowerVar(src), self.lowerVar(dest));
+                        llvmBlock.instructions.push(llvmInstruction);
+                    }
                 }
                 Instruction::GetFieldRef(dest, root, index) => {
                     let llvmInstruction = LInstruction::GetFieldRef(self.lowerVar(dest), self.lowerVar(root), *index);
@@ -243,15 +260,19 @@ impl<'a> Builder<'a> {
     fn lowerFunction(&mut self, f: &Function) -> LFunction {
         match &f.kind {
             FunctionKind::UserDefined(blocks) => {
-                let mut llvmBlocks: Vec<LBlock> = blocks.iter().map(|b| self.lowerBlock(b)).collect();
                 let mut localVars = Vec::new();
+                self.refMap.clear();
                 for block in blocks {
                     for instruction in &block.instructions {
                         if let Instruction::Declare(var) = instruction {
                             localVars.push(var.clone());
                         }
+                        if let Instruction::Reference(dest, src) = instruction {
+                            self.refMap.insert(dest.name.clone(), src.name.clone());
+                        }
                     }
                 }
+                let mut llvmBlocks: Vec<LBlock> = blocks.iter().map(|b| self.lowerBlock(b)).collect();
                 for var in localVars {
                     let llvmInstruction = LInstruction::Allocate(self.lowerVar(&var));
                     llvmBlocks[0].instructions.insert(0, llvmInstruction)

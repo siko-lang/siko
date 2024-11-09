@@ -155,6 +155,10 @@ impl<'a> Builder<'a> {
                     let root = self.buildInstructionVar(root);
                     block.instructions.push(Instruction::GetFieldRef(idVar, root, index));
                 }
+                HirInstructionKind::Ref(arg) => {
+                    let arg = self.buildInstructionVar(arg);
+                    block.instructions.push(Instruction::Reference(idVar, arg));
+                }
                 HirInstructionKind::Noop => {}
                 k => panic!("NYI {}", k),
             }
@@ -223,7 +227,7 @@ pub fn lowerType(ty: &HirType, program: &HirProgram) -> MirType {
         HirType::Tuple(_) => unreachable!("Tuple in MIR"),
         HirType::Function(_, _) => todo!(),
         HirType::Var(_) => unreachable!("Type variable in MIR"),
-        HirType::Reference(_, _) => todo!(),
+        HirType::Reference(ty, _) => MirType::Ptr(Box::new(lowerType(ty, program))),
         HirType::SelfType => todo!(),
         HirType::Never => MirType::Void,
     }

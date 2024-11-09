@@ -57,7 +57,7 @@ block3:
    %tmp_switch_var_block3_1 = getelementptr inbounds %struct.Bool_Bool, ptr %b2i1, i32 0, i32 0
    %tmp_switch_var_block3_2 = load i32, ptr %tmp_switch_var_block3_1, align 4
    switch i32 %tmp_switch_var_block3_2, label %block4 [
-i32 0, label %block10
+i32 1, label %block10
 ]
 
 block4:
@@ -66,7 +66,7 @@ block5:
    %tmp_switch_var_block5_1 = getelementptr inbounds %struct.Bool_Bool, ptr %b2i2, i32 0, i32 0
    %tmp_switch_var_block5_2 = load i32, ptr %tmp_switch_var_block5_1, align 4
    switch i32 %tmp_switch_var_block5_2, label %block6 [
-i32 0, label %block8
+i32 1, label %block8
 ]
 
 block6:
@@ -89,7 +89,7 @@ block11:
    %tmp_switch_var_block11_1 = getelementptr inbounds %struct.Bool_Bool, ptr %b2i2, i32 0, i32 0
    %tmp_switch_var_block11_2 = load i32, ptr %tmp_switch_var_block11_1, align 4
    switch i32 %tmp_switch_var_block11_2, label %block12 [
-i32 0, label %block14
+i32 1, label %block14
 ]
 
 block12:
@@ -112,7 +112,7 @@ define private void @Bool_Bool_False(ptr noundef %fn_result) {
 block0:
    %this = alloca %struct.Bool_Bool_False, align 4
    %tag = getelementptr inbounds %struct.Bool_Bool_False, ptr %this, i32 0, i32 0
-   store i32 1, ptr %tag, align 4
+   store i32 0, ptr %tag, align 4
    %payload1 = getelementptr inbounds %struct.Bool_Bool_False, ptr %this, i32 0, i32 1
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %this, i64 4, i1 false)
    ret void
@@ -122,7 +122,7 @@ define private void @Bool_Bool_True(ptr noundef %fn_result) {
 block0:
    %this = alloca %struct.Bool_Bool_True, align 4
    %tag = getelementptr inbounds %struct.Bool_Bool_True, ptr %this, i32 0, i32 0
-   store i32 0, ptr %tag, align 4
+   store i32 1, ptr %tag, align 4
    %payload1 = getelementptr inbounds %struct.Bool_Bool_True, ptr %this, i32 0, i32 1
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %this, i64 4, i1 false)
    ret void

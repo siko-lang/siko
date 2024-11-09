@@ -36,75 +36,71 @@ def compileSiko(currentDir, files, extras):
     return llvm_output_path
 
 def test(root, entry, extras):
-    print("- %s" % entry)
-    global success, failure, skipped
+    print("- %s" % entry, end='')
     currentDir = os.path.join(root, entry)
     skipPath = os.path.join(currentDir, "SKIP")
     if os.path.exists(skipPath):
-        skipped += 1
-        return
+        return False
     inputPath = os.path.join(currentDir, "main.sk")
     binary = compileSiko(currentDir, [inputPath], extras)
     if binary is None:
-        failure += 1
-        return
+        return False
     r = subprocess.run([binary])
     if r.returncode != 0:
-        failure += 1
-        return
-    success += 1
+        return False
+    return True
 
 def test_fail(root, entry, extras):
-    print("- %s" % entry)
+    print("- %s" % entry, end = '')
     global success, failure, skipped
     skip_path = os.path.join(root, entry, "SKIP")
     if os.path.exists(skip_path):
-        skipped += 1
-        return
+        return False
     input_path = os.path.join(root, entry, "main.sk")
     output_path = os.path.join(root, entry, "main.ll")
     args = ["./siko", input_path, "-o", output_path] + extras
     #print(args)
     r = subprocess.run(args, capture_output=True)
     if r.returncode == 0:
-        failure += 1
-        return
+        return False
     output_txt_path = os.path.join(root, entry, "output.txt")
     f = open(output_txt_path, "wb")
     f.write(r.stdout)
     f.close()
-    success += 1
+    return True
 
 filters = []
 for arg in sys.argv[1:]:
     filters.append(arg)
 
-no_std_path = os.path.join(".", "test", "no_std")
-
-std_path = os.path.join(".", "test", "std")
+successes_path = os.path.join(".", "test", "successes")
 
 errors_path = os.path.join(".", "test", "errors")
 
 def buildRuntime():
     subprocess.run("siko_runtime/build.sh")
 
+def processResult(r):
+    global success, failure
+    if r:
+        print(" - success")
+        success += 1
+    else:
+        print(" - failed")
+        failure += 1
+
 buildRuntime()
 
-print("No std tests:")
-for entry in os.listdir(no_std_path):
-    if len(filters) > 0 and entry not in filters:
-        continue
-    test(no_std_path, entry, [])
 print("Std tests:")
-for entry in os.listdir(std_path):
+for entry in os.listdir(successes_path):
     if len(filters) > 0 and entry not in filters:
         continue
-    test(std_path, entry, ["std"])
+    processResult(test(successes_path, entry, ["std"]))
 print("Error tests:")
 for entry in os.listdir(errors_path):
     if len(filters) > 0 and entry not in filters:
         continue
-    test_fail(errors_path, entry, ["std"])
+    processResult(test_fail(errors_path, entry, ["std"]))
 percent = 0
 if (success+failure) != 0:
     percent = success/(success+failure)*100
