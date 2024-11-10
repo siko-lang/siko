@@ -6,7 +6,7 @@ use std::{
 use crate::siko::{
     hir::{
         Data::{Class, Enum},
-        Function::{Body, Function, Instruction, InstructionId, InstructionKind, Parameter, ValueKind},
+        Function::{Body, Function, Instruction, InstructionId, InstructionKind, Parameter, ValueKind, Variable},
         Program::Program,
         Substitution::{instantiateClass, instantiateEnum, Apply, Substitution},
         TraitMethodSelector::TraitMethodSelector,
@@ -20,12 +20,6 @@ use crate::siko::{
 
 use super::Error::TypecheckerError;
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum TypedId {
-    Instruction(InstructionId),
-    Value(String),
-}
-
 fn reportError(ctx: &ReportContext, ty1: Type, ty2: Type, location: Location) {
     TypecheckerError::TypeMismatch(format!("{}", ty1), format!("{}", ty2), location).report(ctx)
 }
@@ -36,13 +30,13 @@ pub struct Typechecker<'a> {
     traitMethodSelector: &'a TraitMethodSelector,
     allocator: TypeVarAllocator,
     substitution: Substitution<Type>,
-    methodSources: BTreeMap<InstructionId, QualifiedName>,
-    methodCalls: BTreeMap<InstructionId, InstructionId>,
-    instructionSwaps: Substitution<InstructionId>,
-    types: BTreeMap<TypedId, Type>,
+    methodSources: BTreeMap<Variable, QualifiedName>,
+    methodCalls: BTreeMap<Variable, Variable>,
+    varSwap: Substitution<Variable>,
+    types: BTreeMap<String, Type>,
     selfType: Option<Type>,
     mutables: BTreeSet<String>,
-    implicitRefs: BTreeSet<InstructionId>,
+    implicitRefs: BTreeSet<Variable>,
 }
 
 impl<'a> Typechecker<'a> {
@@ -55,7 +49,7 @@ impl<'a> Typechecker<'a> {
             substitution: Substitution::new(),
             methodSources: BTreeMap::new(),
             methodCalls: BTreeMap::new(),
-            instructionSwaps: Substitution::new(),
+            varSwap: Substitution::new(),
             types: BTreeMap::new(),
             selfType: None,
             mutables: BTreeSet::new(),
@@ -71,19 +65,24 @@ impl<'a> Typechecker<'a> {
         self.generate(f)
     }
 
+    fn initializeVar(&mut self, var: &Variable) {
+        let ty = self.allocator.next();
+        self.types.insert(var.value.clone(), ty.clone());
+    }
+
     pub fn initialize(&mut self, f: &Function) {
         //println!("Initializing {}", f.name);
         for param in &f.params {
             match &param {
                 Parameter::Named(name, ty, mutable) => {
-                    self.types.insert(TypedId::Value(name.clone()), ty.clone());
+                    self.types.insert(name.clone(), ty.clone());
                     if *mutable {
                         self.mutables.insert(name.clone());
                     }
                 }
                 Parameter::SelfParam(mutable, ty) => {
                     let name = format!("self");
-                    self.types.insert(TypedId::Value(name.clone()), ty.clone());
+                    self.types.insert(name.clone(), ty.clone());
                     self.selfType = Some(ty.clone());
                     if *mutable {
                         self.mutables.insert(name);
@@ -95,46 +94,76 @@ impl<'a> Typechecker<'a> {
             for block in &body.blocks {
                 for instruction in &block.instructions {
                     match &instruction.kind {
-                        InstructionKind::Jump(_) | InstructionKind::Return(_) => {
-                            self.types.insert(TypedId::Instruction(instruction.id), Type::Never);
+                        InstructionKind::FunctionCall(var, _, _) => {
+                            self.initializeVar(var);
                         }
-                        _ => {
-                            let ty = self.allocator.next();
-                            self.types.insert(TypedId::Instruction(instruction.id), ty.clone());
+                        InstructionKind::DynamicFunctionCall(var, _, _) => {
+                            self.initializeVar(var);
                         }
-                    }
-                    match &instruction.kind {
-                        InstructionKind::DeclareVar(name) => {
-                            self.types.insert(TypedId::Value(name.to_string()), self.allocator.next());
-                            self.mutables.insert(name.clone());
+                        InstructionKind::ValueRef(var, _) => {
+                            self.initializeVar(var);
                         }
-                        InstructionKind::Bind(name, _, mutable) => {
-                            self.types.insert(TypedId::Value(name.to_string()), self.allocator.next());
+                        InstructionKind::FieldRef(var, _, _) => {
+                            self.initializeVar(var);
+                        }
+                        InstructionKind::TupleIndex(var, _, _) => {
+                            self.initializeVar(var);
+                        }
+                        InstructionKind::Bind(var, _, mutable) => {
+                            self.initializeVar(var);
                             if *mutable {
-                                self.mutables.insert(name.clone());
+                                self.mutables.insert(var.value.clone());
                             }
                         }
-                        _ => {}
+                        InstructionKind::Tuple(var, _) => {
+                            self.initializeVar(var);
+                        }
+                        InstructionKind::StringLiteral(var, _) => {
+                            self.initializeVar(var);
+                        }
+                        InstructionKind::IntegerLiteral(var, _) => {
+                            self.initializeVar(var);
+                        }
+                        InstructionKind::CharLiteral(var, _) => {
+                            self.initializeVar(var);
+                        }
+                        InstructionKind::Return(var, _) => {
+                            self.types.insert(var.value.clone(), Type::Never);
+                        }
+                        InstructionKind::Ref(var, _) => {
+                            self.initializeVar(var);
+                        }
+                        InstructionKind::Drop(_) => {}
+                        InstructionKind::Jump(var, _) => {
+                            self.types.insert(var.value.clone(), Type::Never);
+                        }
+                        InstructionKind::Assign(_, _) => {}
+                        InstructionKind::DeclareVar(var) => {
+                            self.initializeVar(var);
+                            self.mutables.insert(var.value.clone());
+                        }
+                        InstructionKind::Transform(var, _, _, _) => {
+                            self.initializeVar(var);
+                        }
+                        InstructionKind::EnumSwitch(_, _) => {}
+                        InstructionKind::IntegerSwitch(_, _) => {}
+                        InstructionKind::StringSwitch(_, _) => {}
                     }
                 }
             }
         }
     }
 
-    fn getType(&self, id: &TypedId) -> Type {
-        self.types.get(id).expect("No type found!").clone()
-    }
-
-    fn getInstructionType(&self, id: InstructionId) -> Type {
-        self.types.get(&TypedId::Instruction(id)).expect("not type for instruction").clone()
+    fn getType(&self, var: &Variable) -> Type {
+        self.types.get(&var.value).expect("No type found!").clone()
     }
 
     fn getValueType(&self, v: &String) -> Type {
-        self.types.get(&TypedId::Value(v.clone())).expect("not type for value").clone()
+        self.types.get(v).expect("not type for value").clone()
     }
 
     fn unify(&mut self, ty1: Type, ty2: Type, location: Location) {
-        // println!("UNIFY {} {}", ty1, ty2);
+        //println!("UNIFY {} {}", ty1, ty2);
         if let Err(_) = unify(&mut self.substitution, &ty1, &ty2) {
             reportError(self.ctx, ty1.apply(&self.substitution), ty2.apply(&self.substitution), location);
         }
@@ -157,7 +186,7 @@ impl<'a> Typechecker<'a> {
         instantiateClass(&mut self.allocator, c, ty)
     }
 
-    fn checkFunctionCall(&mut self, args: &Vec<InstructionId>, body: &Body, instruction: &Instruction, fnType: Type) {
+    fn checkFunctionCall(&mut self, args: &Vec<Variable>, resultVar: &Variable, fnType: Type) {
         //println!("checkFunctionCall: {}", fnType);
         let fnType = self.instantiateType(fnType);
         let (fnArgs, mut fnResult) = match fnType.splitFnType() {
@@ -165,167 +194,122 @@ impl<'a> Typechecker<'a> {
             None => return,
         };
         if args.len() != fnArgs.len() {
-            TypecheckerError::ArgCountMismatch(fnArgs.len() as u32, args.len() as u32, instruction.location.clone()).report(self.ctx);
+            TypecheckerError::ArgCountMismatch(fnArgs.len() as u32, args.len() as u32, resultVar.location.clone()).report(self.ctx);
         }
         if fnArgs.len() > 0 {
             fnResult = fnResult.changeSelfType(fnArgs[0].clone());
         }
         for (arg, fnArg) in zip(args, fnArgs) {
-            let mut argTy = self.getInstructionType(*arg);
+            let mut argTy = self.getType(arg);
             argTy = argTy.apply(&self.substitution);
             if !argTy.isReference() && fnArg.isReference() {
                 argTy = Type::Reference(Box::new(argTy), None);
-                self.types.insert(TypedId::Instruction(*arg), argTy.clone());
-                self.implicitRefs.insert(*arg);
+                self.implicitRefs.insert(arg.clone());
             }
-            self.unify(argTy, fnArg, body.getInstruction(*arg).location.clone());
+            self.unify(argTy, fnArg, arg.location.clone());
         }
-        self.unify(self.getInstructionType(instruction.id), fnResult, instruction.location.clone());
+        self.unify(self.getType(resultVar), fnResult, resultVar.location.clone());
     }
 
     fn check(&mut self, f: &Function) {
-        let body = if let Some(body) = &f.body {
-            body
-        } else {
+        if f.body.is_none() {
             return;
         };
         for instruction in f.instructions() {
             //println!("Type checking {}", instruction);
-            if let Some(ty) = &instruction.ty {
-                self.unify(self.getInstructionType(instruction.id), ty.clone(), instruction.location.clone());
-            }
             match &instruction.kind {
-                InstructionKind::FunctionCall(name, args) => {
+                InstructionKind::FunctionCall(dest, name, args) => {
                     let f = self.program.functions.get(name).expect("Function not found");
                     let fnType = f.getType();
-                    self.checkFunctionCall(args, body, instruction, fnType);
+                    self.checkFunctionCall(args, dest, fnType);
                 }
-                InstructionKind::DynamicFunctionCall(callable, args) => match self.methodSources.get(callable) {
+                InstructionKind::DynamicFunctionCall(dest, callable, args) => match self.methodSources.get(callable) {
                     Some(name) => {
-                        let newCallable = callable.apply(&self.instructionSwaps);
+                        let newCallable = callable.apply(&self.varSwap);
                         let f = self.program.functions.get(&name).expect("Function not found");
                         let fnType = f.getType();
                         let mut newArgs = Vec::new();
                         newArgs.push(newCallable);
-                        newArgs.extend(args);
-                        self.checkFunctionCall(&newArgs, body, instruction, fnType);
-                        self.methodCalls.insert(instruction.id, *callable);
+                        newArgs.extend(args.clone());
+                        self.checkFunctionCall(&newArgs, dest, fnType);
+                        //println!("Added method call {} {}", dest, callable);
+                        self.methodCalls.insert(dest.clone(), callable.clone());
                     }
                     None => {
-                        let fnType = self.getInstructionType(*callable);
-                        self.checkFunctionCall(&args, body, instruction, fnType);
+                        let fnType = self.getType(callable);
+                        self.checkFunctionCall(&args, dest, fnType);
                     }
                 },
-                InstructionKind::ValueRef(value) => {
+                InstructionKind::ValueRef(dest, value) => {
                     let receiverType = match &value {
                         ValueKind::Arg(name, _) => self.getValueType(name),
-                        ValueKind::Value(name) => self.getValueType(name),
+                        ValueKind::Value(var) => self.getType(var),
                     };
-                    self.unify(receiverType, self.getInstructionType(instruction.id), instruction.location.clone());
+                    self.unify(receiverType, self.getType(dest), instruction.location.clone());
                 }
                 InstructionKind::Bind(name, rhs, _) => {
-                    self.unify(self.getValueType(name), self.getInstructionType(*rhs), instruction.location.clone());
-                    self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
+                    self.unify(self.getType(name), self.getType(rhs), instruction.location.clone());
                 }
-                InstructionKind::Tuple(args) => {
+                InstructionKind::Tuple(dest, args) => {
                     let mut argTypes = Vec::new();
                     for arg in args {
-                        argTypes.push(self.getInstructionType(*arg));
+                        argTypes.push(self.getType(arg));
                     }
-                    self.unify(
-                        self.getInstructionType(instruction.id),
-                        Type::Tuple(argTypes),
-                        instruction.location.clone(),
-                    );
+                    self.unify(self.getType(dest), Type::Tuple(argTypes), instruction.location.clone());
                 }
-                InstructionKind::StringLiteral(_) => {
-                    self.unify(
-                        self.getInstructionType(instruction.id),
-                        Type::getStringType(),
-                        instruction.location.clone(),
-                    );
+                InstructionKind::StringLiteral(dest, _) => {
+                    self.unify(self.getType(dest), Type::getStringType(), instruction.location.clone());
                 }
-                InstructionKind::IntegerLiteral(_) => {
-                    self.unify(self.getInstructionType(instruction.id), Type::getIntType(), instruction.location.clone());
+                InstructionKind::IntegerLiteral(dest, _) => {
+                    self.unify(self.getType(dest), Type::getIntType(), instruction.location.clone());
                 }
-                InstructionKind::CharLiteral(_) => {
-                    self.unify(self.getInstructionType(instruction.id), Type::getCharType(), instruction.location.clone());
+                InstructionKind::CharLiteral(dest, _) => {
+                    self.unify(self.getType(dest), Type::getCharType(), instruction.location.clone());
                 }
-                InstructionKind::Return(arg) => {
+                InstructionKind::Return(_, arg) => {
                     let mut result = f.result.clone();
                     if let Some(selfType) = self.selfType.clone() {
                         result = result.changeSelfType(selfType);
                     }
-                    self.unify(result, self.getInstructionType(*arg), instruction.location.clone());
-                    self.unify(self.getInstructionType(instruction.id), Type::Never, instruction.location.clone());
+                    self.unify(result, self.getType(arg), instruction.location.clone());
                 }
-                InstructionKind::Ref(arg) => {
-                    let arg_type = self.getInstructionType(*arg);
+                InstructionKind::Ref(dest, arg) => {
+                    let arg_type = self.getType(arg);
                     self.unify(
-                        self.getInstructionType(instruction.id),
+                        self.getType(dest),
                         Type::Reference(Box::new(arg_type), None),
                         instruction.location.clone(),
                     );
                 }
-                InstructionKind::Drop(_) => {
-                    self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
-                }
-                InstructionKind::Jump(_) => {}
+                InstructionKind::Drop(_) => {}
+                InstructionKind::Jump(_, _) => {}
                 InstructionKind::Assign(name, rhs) => {
                     if !self.mutables.contains(&name.getValue()) {
                         TypecheckerError::ImmutableAssign(instruction.location.clone()).report(self.ctx);
                     }
-                    self.unify(
-                        self.getValueType(&name.getValue()),
-                        self.getInstructionType(*rhs),
-                        instruction.location.clone(),
-                    );
-                    self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
+                    self.unify(self.getValueType(&name.getValue()), self.getType(rhs), instruction.location.clone());
                 }
-                InstructionKind::DeclareVar(var) => {
-                    self.unify(
-                        self.getInstructionType(instruction.id),
-                        self.getValueType(var),
-                        instruction.location.clone(),
-                    );
-                }
-                InstructionKind::Converter(arg) => {
-                    self.unify(
-                        self.getInstructionType(instruction.id),
-                        self.getInstructionType(*arg),
-                        instruction.location.clone(),
-                    );
-                }
-                InstructionKind::Transform(root, index, _) => {
-                    let rootTy = self.getInstructionType(*root);
+                InstructionKind::DeclareVar(var) => {}
+                InstructionKind::Transform(dest, root, index, _) => {
+                    let rootTy = self.getType(root);
                     let rootTy = rootTy.apply(&self.substitution);
                     match rootTy.getName() {
                         Some(name) => {
                             let e = self.program.enums.get(&name).expect("not an enum in transform!");
                             let e = self.instantiateEnum(e, &rootTy);
                             let v = &e.variants[*index as usize];
-                            self.unify(
-                                self.getInstructionType(instruction.id),
-                                Type::Tuple(v.items.clone()),
-                                instruction.location.clone(),
-                            );
+                            self.unify(self.getType(dest), Type::Tuple(v.items.clone()), instruction.location.clone());
                         }
                         None => {
                             TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(self.ctx);
                         }
                     };
                 }
-                InstructionKind::EnumSwitch(_root, _cases) => {
-                    self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
-                }
-                InstructionKind::IntegerSwitch(_root, _cases) => {
-                    self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
-                }
-                InstructionKind::StringSwitch(_root, _cases) => {
-                    self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
-                }
-                InstructionKind::FieldRef(receiver, fieldName) => {
-                    let receiverType = self.getInstructionType(*receiver);
+                InstructionKind::EnumSwitch(_root, _cases) => {}
+                InstructionKind::IntegerSwitch(_root, _cases) => {}
+                InstructionKind::StringSwitch(_root, _cases) => {}
+                InstructionKind::FieldRef(dest, receiver, fieldName) => {
+                    let receiverType = self.getType(receiver);
                     let receiverType = receiverType.apply(&self.substitution);
                     match receiverType.clone().unpackRef() {
                         Type::Named(name, _, _) => {
@@ -334,7 +318,7 @@ impl<'a> Typechecker<'a> {
                                 let mut found = false;
                                 for f in &classDef.fields {
                                     if f.name == *fieldName {
-                                        self.unify(self.getInstructionType(instruction.id), f.ty.clone(), instruction.location.clone());
+                                        self.unify(self.getType(dest), f.ty.clone(), instruction.location.clone());
                                         found = true;
                                     }
                                 }
@@ -342,8 +326,9 @@ impl<'a> Typechecker<'a> {
                                     for m in &classDef.methods {
                                         if m.name == *fieldName {
                                             found = true;
-                                            self.methodSources.insert(instruction.id, m.fullName.clone());
-                                            self.instructionSwaps.add(instruction.id, *receiver);
+                                            //println!("Added {} {}", dest, m.fullName);
+                                            self.methodSources.insert(dest.asNotFixed(), m.fullName.clone());
+                                            self.varSwap.add(dest.asNotFixed(), receiver.clone());
                                             break;
                                         }
                                     }
@@ -351,7 +336,7 @@ impl<'a> Typechecker<'a> {
                                 if !found {
                                     if let Some(methodName) = self.traitMethodSelector.get(&fieldName) {
                                         found = true;
-                                        self.methodSources.insert(instruction.id, methodName);
+                                        self.methodSources.insert(dest.asNotFixed(), methodName);
                                     }
                                 }
                                 if !found {
@@ -364,8 +349,8 @@ impl<'a> Typechecker<'a> {
                                     for m in &enumDef.methods {
                                         if m.name == *fieldName {
                                             found = true;
-                                            self.methodSources.insert(instruction.id, m.fullName.clone());
-                                            self.instructionSwaps.add(instruction.id, *receiver);
+                                            self.methodSources.insert(dest.asNotFixed(), m.fullName.clone());
+                                            self.varSwap.add(dest.asNotFixed(), receiver.clone());
                                             break;
                                         }
                                     }
@@ -373,7 +358,7 @@ impl<'a> Typechecker<'a> {
                                 if !found {
                                     if let Some(methodName) = self.traitMethodSelector.get(&fieldName) {
                                         found = true;
-                                        self.methodSources.insert(instruction.id, methodName);
+                                        self.methodSources.insert(dest.asNotFixed(), methodName);
                                     }
                                 }
                                 if !found {
@@ -388,8 +373,8 @@ impl<'a> Typechecker<'a> {
                         }
                     }
                 }
-                InstructionKind::TupleIndex(receiver, index) => {
-                    let receiverType = self.getInstructionType(*receiver);
+                InstructionKind::TupleIndex(dest, receiver, index) => {
+                    let receiverType = self.getType(receiver);
                     let receiverType = receiverType.apply(&self.substitution);
                     match receiverType {
                         Type::Tuple(t) => {
@@ -397,13 +382,10 @@ impl<'a> Typechecker<'a> {
                                 TypecheckerError::FieldNotFound(format!(".{}", index), instruction.location.clone()).report(&self.ctx);
                             }
                             let fieldType = t[*index as usize].clone();
-                            self.unify(self.getInstructionType(instruction.id), fieldType, instruction.location.clone());
+                            self.unify(self.getType(dest), fieldType, instruction.location.clone());
                         }
                         _ => TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(self.ctx),
                     }
-                }
-                InstructionKind::Noop => {
-                    self.unify(self.getInstructionType(instruction.id), Type::getUnitType(), instruction.location.clone());
                 }
             }
         }
@@ -415,12 +397,17 @@ impl<'a> Typechecker<'a> {
             let publicVars = fnType.collectVars(BTreeSet::new());
             for block in &body.blocks {
                 for instruction in &block.instructions {
-                    let ty = instruction.ty.clone().unwrap();
-                    let vars = ty.collectVars(BTreeSet::new());
-                    if !vars.is_empty() && vars != publicVars {
-                        self.dump(f);
-                        println!("{} {}", instruction, ty);
-                        TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(self.ctx);
+                    if let Some(v) = instruction.kind.getResultVar() {
+                        if let Some(ty) = v.ty {
+                            let vars = ty.collectVars(BTreeSet::new());
+                            if !vars.is_empty() && vars != publicVars {
+                                self.dump(f);
+                                println!("MISSING: {} {}", instruction, ty);
+                                TypecheckerError::TypeAnnotationNeeded(v.location.clone()).report(self.ctx);
+                            }
+                        } else {
+                            TypecheckerError::TypeAnnotationNeeded(v.location.clone()).report(self.ctx);
+                        }
                     }
                 }
             }
@@ -432,14 +419,21 @@ impl<'a> Typechecker<'a> {
         if let Some(body) = &f.body {
             for block in &body.blocks {
                 for instruction in &block.instructions {
-                    let ty = match &instruction.ty {
-                        Some(ty) => ty.clone(),
+                    match instruction.kind.getResultVar() {
+                        Some(v) => match v.ty {
+                            Some(ty) => {
+                                println!("{} : {}", instruction, ty);
+                            }
+                            None => {
+                                let ty = self.getType(&v);
+                                let ty = ty.apply(&self.substitution);
+                                println!("{} : {} inferred", instruction, ty);
+                            }
+                        },
                         None => {
-                            let ty = self.getInstructionType(instruction.id);
-                            ty.apply(&self.substitution)
+                            println!("{}", instruction);
                         }
-                    };
-                    println!("{} : {}", instruction, ty);
+                    }
                 }
             }
         }
@@ -447,110 +441,133 @@ impl<'a> Typechecker<'a> {
 
     pub fn generate(&mut self, f: &Function) -> Function {
         //println!("Generating {}", f.name);
+        if f.body.is_none() {
+            return f.clone();
+        }
         let mut result = f.clone();
         if let Some(selfType) = self.selfType.clone() {
             result.result = result.result.changeSelfType(selfType);
         }
-        if let Some(body) = &mut result.body {
-            for block in &mut body.blocks {
-                for instruction in &mut block.instructions {
-                    if self.implicitRefs.contains(&instruction.id) {
-                        match &instruction.kind {
-                            InstructionKind::Converter(arg) => {
-                                instruction.kind = InstructionKind::Ref(*arg);
-                            }
-                            kind => panic!("Unexpected instruction kind for implicit ref while rewriting! {}", kind.dump()),
-                        }
-                    } else {
-                        if let InstructionKind::Converter(arg) = instruction.kind {
-                            instruction.kind = InstructionKind::Noop;
-                            self.types.insert(TypedId::Instruction(instruction.id), Type::getUnitType());
-                            self.instructionSwaps.add(instruction.id, arg);
-                        }
+        let mut nextImplicitRef = 0;
+        let body = &mut result.body.as_mut().unwrap();
+        for block in &mut body.blocks {
+            let mut index = 0;
+            loop {
+                if index >= block.instructions.len() {
+                    break;
+                }
+                let instruction = &block.instructions[index];
+                if let Some(var) = instruction.kind.getResultVar() {
+                    if self.implicitRefs.contains(&var) {
+                        let mut dest = var.clone();
+                        let fixedVar = var.asFixed();
+                        dest.value = format!("implicitRef{}", nextImplicitRef);
+                        nextImplicitRef += 1;
+                        let ty = Type::Reference(Box::new(self.getType(&var)), None);
+                        self.types.insert(dest.value.clone(), ty);
+                        self.varSwap.add(var.clone(), dest.clone());
+                        let kind = InstructionKind::Ref(dest.asFixed(), fixedVar);
+                        let implicitRef = Instruction {
+                            id: InstructionId::first(),
+                            implicit: true,
+                            kind: kind,
+                            ty: None,
+                            location: instruction.location.clone(),
+                        };
+                        block.instructions.insert(index + 1, implicitRef);
                     }
-                    if let InstructionKind::Ref(arg) = instruction.kind {
-                        let ty = self.getInstructionType(arg);
-                        let ty = ty.apply(&self.substitution);
-                        if ty.isReference() {
-                            instruction.kind = InstructionKind::Noop;
-                            self.types.insert(TypedId::Instruction(instruction.id), Type::getUnitType());
-                            self.instructionSwaps.add(instruction.id, arg);
-                        }
+                }
+                index += 1;
+            }
+        }
+
+        for block in &mut body.blocks {
+            for instruction in &mut block.instructions {
+                instruction.kind = instruction.kind.apply(&self.varSwap);
+            }
+        }
+
+        for block in &mut body.blocks {
+            let mut index = 0;
+            loop {
+                if index >= block.instructions.len() {
+                    break;
+                }
+                let instruction = &block.instructions[index];
+                if let InstructionKind::Ref(dest, arg) = &instruction.kind {
+                    let argTy = self.getType(arg).apply(&self.substitution);
+                    if argTy.isReference() {
+                        self.varSwap.add(dest.clone(), arg.clone());
+                        block.instructions.remove(index);
+                        continue;
+                    }
+                }
+                index += 1;
+            }
+        }
+
+        for block in &mut body.blocks {
+            for instruction in &mut block.instructions {
+                instruction.kind = instruction.kind.apply(&self.varSwap);
+            }
+        }
+
+        for block in &mut body.blocks {
+            let mut index = 0;
+            loop {
+                if index >= block.instructions.len() {
+                    break;
+                }
+                let instruction = &block.instructions[index];
+                if let InstructionKind::FieldRef(dest, _, _) = &instruction.kind {
+                    if self.methodSources.contains_key(&dest.asNotFixed()) {
+                        block.instructions.remove(index);
+                        continue;
+                    }
+                }
+                index += 1;
+            }
+        }
+
+        for block in &mut body.blocks {
+            for instruction in &mut block.instructions {
+                if let InstructionKind::DynamicFunctionCall(dest, root, args) = &mut instruction.kind {
+                    if let Some(source) = self.methodCalls.get(&dest) {
+                        let name = self.methodSources.get(source).expect("Method not found for call!");
+                        let mut newArgs = Vec::new();
+                        newArgs.push(root.clone());
+                        newArgs.extend(args.clone());
+                        instruction.kind = InstructionKind::FunctionCall(dest.asFixed(), name.clone(), newArgs);
                     }
                 }
             }
         }
-        if let Some(body) = &mut result.body {
-            for block in &mut body.blocks {
-                for instruction in &mut block.instructions {
-                    if self.methodSources.contains_key(&instruction.id) {
-                        match &instruction.kind {
-                            InstructionKind::FieldRef(_, _) => {
-                                instruction.kind = InstructionKind::Noop;
-                                self.types.insert(TypedId::Instruction(instruction.id), Type::getUnitType());
-                            }
-                            kind => panic!("Unexpected instruction kind for method source while rewriting! {}", kind.dump()),
-                        }
-                    }
-                    if let Some(source) = self.methodCalls.get(&instruction.id) {
-                        match &instruction.kind {
-                            InstructionKind::DynamicFunctionCall(_, args) => {
-                                let name = self.methodSources.get(source).expect("Method not found for call!");
-                                let mut newArgs = Vec::new();
-                                newArgs.push(*source);
-                                newArgs.extend(args);
-                                instruction.kind = InstructionKind::FunctionCall(name.clone(), newArgs);
-                            }
-                            kind => panic!("Unexpected instruction kind for method call while rewriting! {}", kind.dump()),
-                        }
-                    }
-                    let ty = self.getInstructionType(instruction.id);
+
+        let mut varSwap = Substitution::new();
+        varSwap.forced = true;
+
+        for block in &mut body.blocks {
+            for instruction in &mut block.instructions {
+                if let Some(var) = instruction.kind.getResultVar() {
+                    let ty = self.getType(&var);
                     let ty = ty.apply(&self.substitution);
-                    //println!("{} : {}", instruction, ty);
-                    instruction.ty = Some(ty.clone());
-                    if let InstructionKind::Transform(_, _, oldTy) = &mut instruction.kind {
-                        *oldTy = ty;
-                    }
-                    instruction.kind = instruction.kind.apply(&self.instructionSwaps);
+                    let mut newVar = var.clone();
+                    newVar.ty = Some(ty);
+                    varSwap.add(var, newVar);
                 }
             }
         }
+
+        for block in &mut body.blocks {
+            for instruction in &mut block.instructions {
+                //println!("Before {}", instruction.kind);
+                instruction.kind = instruction.kind.apply(&varSwap);
+                //println!("After {}", instruction.kind);
+            }
+        }
+
+        //self.dump(&result);
         self.verify(&result);
         result
-    }
-}
-
-impl Apply<InstructionId> for InstructionId {
-    fn apply(&self, sub: &Substitution<InstructionId>) -> Self {
-        sub.get(self.clone())
-    }
-}
-
-impl Apply<InstructionId> for InstructionKind {
-    fn apply(&self, sub: &Substitution<InstructionId>) -> Self {
-        match self {
-            InstructionKind::Converter(arg) => InstructionKind::Converter(arg.apply(sub)),
-            InstructionKind::FunctionCall(name, args) => InstructionKind::FunctionCall(name.clone(), args.apply(sub)),
-            InstructionKind::DynamicFunctionCall(receiver, args) => InstructionKind::DynamicFunctionCall(receiver.apply(sub), args.apply(sub)),
-            InstructionKind::ValueRef(value) => InstructionKind::ValueRef(value.clone()),
-            InstructionKind::FieldRef(root, field) => InstructionKind::FieldRef(root.apply(sub), field.clone()),
-            InstructionKind::TupleIndex(root, index) => InstructionKind::TupleIndex(root.apply(sub), *index),
-            InstructionKind::Bind(var, rhs, mutable) => InstructionKind::Bind(var.clone(), rhs.apply(sub), *mutable),
-            InstructionKind::Tuple(vec) => InstructionKind::Tuple(vec.apply(sub)),
-            InstructionKind::StringLiteral(lit) => InstructionKind::StringLiteral(lit.clone()),
-            InstructionKind::IntegerLiteral(lit) => InstructionKind::IntegerLiteral(lit.clone()),
-            InstructionKind::CharLiteral(ch) => InstructionKind::CharLiteral(*ch),
-            InstructionKind::Return(instruction_id) => InstructionKind::Return(instruction_id.apply(sub)),
-            InstructionKind::Ref(instruction_id) => InstructionKind::Ref(instruction_id.apply(sub)),
-            InstructionKind::Drop(args) => InstructionKind::Drop(args.clone()),
-            InstructionKind::Jump(block_id) => InstructionKind::Jump(*block_id),
-            InstructionKind::Assign(var, rhs) => InstructionKind::Assign(var.clone(), rhs.apply(sub)),
-            InstructionKind::DeclareVar(var) => InstructionKind::DeclareVar(var.clone()),
-            InstructionKind::Transform(root, op, args) => InstructionKind::Transform(root.apply(sub), *op, args.clone()),
-            InstructionKind::EnumSwitch(root, cases) => InstructionKind::EnumSwitch(root.apply(sub), cases.clone()),
-            InstructionKind::IntegerSwitch(root, cases) => InstructionKind::IntegerSwitch(root.apply(sub), cases.clone()),
-            InstructionKind::StringSwitch(root, cases) => InstructionKind::StringSwitch(root.apply(sub), cases.clone()),
-            InstructionKind::Noop => InstructionKind::Noop,
-        }
     }
 }

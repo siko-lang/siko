@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use crate::siko::{
     hir::{
-        Function::{BlockId, Function, InstructionId, InstructionKind},
+        Function::{BlockId, Function, InstructionKind},
         Program::Program,
     },
     location::Report::{Report, ReportContext},
@@ -16,6 +16,12 @@ pub fn eliminateDeadCode(ctx: &ReportContext, program: Program) -> Program {
         result.functions.insert(name.clone(), f);
     }
     result
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
+struct InstructionId {
+    block: usize,
+    id: usize,
 }
 
 pub struct DeadCodeEliminator<'a> {
@@ -35,20 +41,39 @@ impl<'a> DeadCodeEliminator<'a> {
         if self.function.body.is_some() {
             self.processBlock(BlockId::first());
         }
-        for instruction in self.function.instructions() {
-            if !self.visited.contains(&instruction.id) {
-                if !instruction.implicit {
-                    println!("unreachable code {}", instruction);
-                    let slogan = format!("Unreachable code");
-                    let r = Report::new(ctx, slogan, Some(instruction.location.clone()));
-                    r.print();
+        if let Some(body) = &self.function.body {
+            for (blockIndex, block) in body.blocks.iter().enumerate() {
+                for (index, instruction) in block.instructions.iter().enumerate() {
+                    if !self.visited.contains(&InstructionId {
+                        block: blockIndex,
+                        id: index,
+                    }) {
+                        if !instruction.implicit {
+                            println!("unreachable code {}", instruction);
+                            let slogan = format!("Unreachable code");
+                            let r = Report::new(ctx, slogan, Some(instruction.location.clone()));
+                            r.print();
+                        }
+                    }
                 }
             }
         }
         let mut result = self.function.clone();
         if let Some(body) = &mut result.body {
-            for block in &mut body.blocks {
-                let instructions: Vec<_> = block.instructions.iter().cloned().filter(|i| self.visited.contains(&i.id)).collect();
+            for (blockIndex, block) in body.blocks.iter_mut().enumerate() {
+                let instructions: Vec<_> = block
+                    .instructions
+                    .iter()
+                    .cloned()
+                    .enumerate()
+                    .filter(|(index, _)| {
+                        self.visited.contains(&InstructionId {
+                            block: blockIndex,
+                            id: *index,
+                        })
+                    })
+                    .map(|(_, i)| i.clone())
+                    .collect();
                 block.instructions = instructions;
             }
         }
@@ -57,33 +82,35 @@ impl<'a> DeadCodeEliminator<'a> {
 
     fn processBlock(&mut self, blockId: BlockId) {
         let block = self.function.getBlockById(blockId);
-        for instruction in &block.instructions {
-            let added = self.visited.insert(instruction.id);
+        for (index, instruction) in block.instructions.iter().enumerate() {
+            let added = self.visited.insert(InstructionId {
+                block: blockId.id as usize,
+                id: index,
+            });
             if !added {
                 return;
             }
             match &instruction.kind {
-                InstructionKind::Converter(_) => {}
-                InstructionKind::FunctionCall(_, _) => {}
-                InstructionKind::DynamicFunctionCall(_, _) => {}
-                InstructionKind::ValueRef(_) => {}
-                InstructionKind::FieldRef(_, _) => {}
-                InstructionKind::TupleIndex(_, _) => {}
+                InstructionKind::FunctionCall(_, _, _) => {}
+                InstructionKind::DynamicFunctionCall(_, _, _) => {}
+                InstructionKind::ValueRef(_, _) => {}
+                InstructionKind::FieldRef(_, _, _) => {}
+                InstructionKind::TupleIndex(_, _, _) => {}
                 InstructionKind::Bind(_, _, _) => {}
-                InstructionKind::Tuple(_) => {}
-                InstructionKind::StringLiteral(_) => {}
-                InstructionKind::IntegerLiteral(_) => {}
-                InstructionKind::CharLiteral(_) => {}
-                InstructionKind::Return(_) => return,
-                InstructionKind::Ref(_) => {}
+                InstructionKind::Tuple(_, _) => {}
+                InstructionKind::StringLiteral(_, _) => {}
+                InstructionKind::IntegerLiteral(_, _) => {}
+                InstructionKind::CharLiteral(_, _) => {}
+                InstructionKind::Return(_, _) => return,
+                InstructionKind::Ref(_, _) => {}
                 InstructionKind::Drop(_) => {}
-                InstructionKind::Jump(id) => {
+                InstructionKind::Jump(_, id) => {
                     self.processBlock(*id);
                     return;
                 }
                 InstructionKind::Assign(_, _) => {}
                 InstructionKind::DeclareVar(_) => {}
-                InstructionKind::Transform(_, _, _) => {}
+                InstructionKind::Transform(_, _, _, _) => {}
                 InstructionKind::EnumSwitch(_, cases) => {
                     for case in cases {
                         self.processBlock(case.branch);
@@ -99,7 +126,6 @@ impl<'a> DeadCodeEliminator<'a> {
                         self.processBlock(case.branch);
                     }
                 }
-                InstructionKind::Noop => {}
             }
         }
     }

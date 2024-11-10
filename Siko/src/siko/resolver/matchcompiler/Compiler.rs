@@ -1,4 +1,4 @@
-use crate::siko::hir::Function::{BlockId, EnumCase, InstructionId, InstructionKind, IntegerCase, ValueKind};
+use crate::siko::hir::Function::{BlockId, EnumCase, InstructionKind, IntegerCase, ValueKind, Variable};
 use crate::siko::hir::Type::Type;
 use crate::siko::location::Location::Location;
 use crate::siko::qualifiedname::{getStringEqName, QualifiedName};
@@ -131,7 +131,7 @@ impl fmt::Display for DecisionPath {
 
 pub struct MatchCompiler<'a, 'b> {
     resolver: &'a mut ExprResolver<'b>,
-    bodyId: InstructionId,
+    bodyId: Variable,
     matchLocation: Location,
     bodyLocation: Location,
     branches: Vec<Branch>,
@@ -141,22 +141,21 @@ pub struct MatchCompiler<'a, 'b> {
     nextVar: i32,
     nodes: BTreeMap<DecisionPath, Node>,
     parentEnv: &'a Environment<'a>,
-    matchValue: String,
-    declareId: InstructionId,
+    matchValue: Variable,
     contBlockId: BlockId,
 }
 
 impl<'a, 'b> MatchCompiler<'a, 'b> {
     pub fn new(
         resolver: &'a mut ExprResolver<'b>,
-        bodyId: InstructionId,
+        bodyId: Variable,
         matchLocation: Location,
         bodyLocation: Location,
         branches: Vec<Branch>,
         parentEnv: &'a Environment<'a>,
     ) -> MatchCompiler<'a, 'b> {
-        let matchValue = resolver.createValue("match_var");
-        let declareId = resolver.addInstruction(InstructionKind::DeclareVar(matchValue.clone()), matchLocation.clone());
+        let matchValue = resolver.createValue("match_var", matchLocation.clone());
+        resolver.addInstruction(InstructionKind::DeclareVar(matchValue.clone()), matchLocation.clone());
         let contBlockId = resolver.createBlock();
         MatchCompiler {
             matchLocation: matchLocation,
@@ -171,7 +170,6 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
             nodes: BTreeMap::new(),
             parentEnv: parentEnv,
             matchValue: matchValue,
-            declareId: declareId,
             contBlockId: contBlockId,
         }
     }
@@ -324,7 +322,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         }
     }
 
-    pub fn compile(&mut self) -> InstructionId {
+    pub fn compile(&mut self) -> Variable {
         let mut matches = Vec::new();
         for (index, branch) in self.branches.clone().iter().enumerate() {
             let branchPattern = self.resolve(&branch.pattern);
@@ -413,19 +411,25 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
             std::process::exit(1);
         }
 
-        let ctx = CompileContext::new().add(node.getDataPath(), self.bodyId);
+        let ctx = CompileContext::new().add(node.getDataPath(), self.bodyId.clone());
         let startBlock = self.resolver.getTargetBlockId();
         let firstBlockId = self.compileNode(&node, &ctx);
-        self.resolver
-            .addInstructionToBlock(startBlock, InstructionKind::Jump(firstBlockId), self.bodyLocation.clone(), false);
-        let valueId = self.resolver.addInstructionToBlock(
+        let jumpValue = self.resolver.createValue("jump", self.bodyLocation.clone());
+        self.resolver.addInstructionToBlock(
+            startBlock,
+            InstructionKind::Jump(jumpValue, firstBlockId),
+            self.bodyLocation.clone(),
+            false,
+        );
+        let value = self.resolver.createValue("matchValue", self.bodyLocation.clone());
+        self.resolver.addInstructionToBlock(
             self.contBlockId,
-            InstructionKind::ValueRef(ValueKind::Value(self.matchValue.clone())),
+            InstructionKind::ValueRef(value.clone(), ValueKind::Value(self.matchValue.clone())),
             self.matchLocation.clone(),
             true,
         );
         self.resolver.setTargetBlockId(self.contBlockId);
-        valueId
+        value
     }
 
     fn compileNode(&mut self, node: &Node, ctx: &CompileContext) -> BlockId {
@@ -436,17 +440,19 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                 let root = ctx.get(&tuple.dataPath);
                 let mut ctx = ctx.clone();
                 for index in 0..tuple.size {
-                    let argId = self.resolver.addInstructionToBlock(
+                    let value = self.resolver.createValue("tupleField", self.bodyLocation.clone());
+                    self.resolver.addInstructionToBlock(
                         blockId,
-                        InstructionKind::TupleIndex(root, index as i32),
+                        InstructionKind::TupleIndex(value.clone(), root.clone(), index as i32),
                         self.bodyLocation.clone(),
                         false,
                     );
-                    ctx = ctx.add(DataPath::TupleIndex(Box::new(tuple.dataPath.clone()), index), argId);
+                    ctx = ctx.add(DataPath::TupleIndex(Box::new(tuple.dataPath.clone()), index), value);
                 }
                 let nextId = self.compileNode(&tuple.next, &ctx);
+                let jumpValue = self.resolver.createValue("jump", self.bodyLocation.clone());
                 self.resolver
-                    .addInstructionToBlock(blockId, InstructionKind::Jump(nextId), self.bodyLocation.clone(), false);
+                    .addInstructionToBlock(blockId, InstructionKind::Jump(jumpValue, nextId), self.bodyLocation.clone(), false);
                 blockId
             }
             Node::Switch(switch) => {
@@ -461,35 +467,46 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                                 let itemBlockId = self.resolver.createBlock();
                                 let (v, index) = enumDef.getVariant(name);
                                 let ctx = if v.items.len() > 0 {
-                                    let transform = InstructionKind::Transform(root, index, Type::Tuple(v.items.clone()));
-                                    let transformId = self
-                                        .resolver
+                                    let transformValue = self.resolver.createValue("transform", self.bodyLocation.clone());
+                                    let transform =
+                                        InstructionKind::Transform(transformValue.clone(), root.clone(), index, Type::Tuple(v.items.clone()));
+                                    self.resolver
                                         .addInstructionToBlock(itemBlockId, transform, self.bodyLocation.clone(), false);
                                     let mut ctx = ctx.clone();
                                     for (index, _) in v.items.iter().enumerate() {
-                                        let indexId = self.resolver.addInstructionToBlock(
+                                        let value = self.resolver.createValue("tupleField", self.bodyLocation.clone());
+                                        self.resolver.addInstructionToBlock(
                                             itemBlockId,
-                                            InstructionKind::TupleIndex(transformId, index as i32),
+                                            InstructionKind::TupleIndex(value.clone(), transformValue.clone(), index as i32),
                                             self.bodyLocation.clone(),
                                             false,
                                         );
                                         let path = DataPath::Variant(Box::new(switch.dataPath.clone()), name.clone(), enumName.clone());
                                         let path = DataPath::ItemIndex(Box::new(path), index as i64);
-                                        ctx = ctx.add(path, indexId);
+                                        ctx = ctx.add(path, value.clone());
                                     }
                                     ctx
                                 } else {
                                     ctx.clone()
                                 };
                                 let blockId = self.compileNode(&node, &ctx);
-                                self.resolver
-                                    .addInstructionToBlock(itemBlockId, InstructionKind::Jump(blockId), self.bodyLocation.clone(), false);
+                                let jumpValue = self.resolver.createValue("jump", self.bodyLocation.clone());
+                                self.resolver.addInstructionToBlock(
+                                    itemBlockId,
+                                    InstructionKind::Jump(jumpValue, blockId),
+                                    self.bodyLocation.clone(),
+                                    false,
+                                );
                                 let c = EnumCase { index, branch: itemBlockId };
                                 cases.push(c);
                             }
                         }
-                        self.resolver
-                            .addInstructionToBlock(blockId, InstructionKind::EnumSwitch(root, cases), self.bodyLocation.clone(), false);
+                        self.resolver.addInstructionToBlock(
+                            blockId,
+                            InstructionKind::EnumSwitch(root.clone(), cases),
+                            self.bodyLocation.clone(),
+                            false,
+                        );
                     }
                     SwitchKind::Integer => {
                         let mut cases = Vec::new();
@@ -524,34 +541,29 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                             }
                         }
                         if switch.cases.len() == 1 {
-                            self.resolver
-                                .addInstructionToBlock(blockId, InstructionKind::Jump(defaultBranch), self.bodyLocation.clone(), true);
+                            let jumpValue = self.resolver.createValue("jump", self.bodyLocation.clone());
+                            self.resolver.addInstructionToBlock(
+                                blockId,
+                                InstructionKind::Jump(jumpValue, defaultBranch),
+                                self.bodyLocation.clone(),
+                                true,
+                            );
                         }
                         for (case, node) in &switch.cases {
                             match case {
                                 Case::String(v) => {
                                     let current = blocks.remove(0);
-                                    let litId = self.resolver.addInstructionToBlock(
+                                    let value = self.resolver.createValue("lit", self.bodyLocation.clone());
+                                    self.resolver.addInstructionToBlock(
                                         current,
-                                        InstructionKind::StringLiteral(v.clone()),
+                                        InstructionKind::StringLiteral(value.clone(), v.clone()),
                                         self.bodyLocation.clone(),
                                         true,
                                     );
-                                    let litConverter = self.resolver.addInstructionToBlock(
+                                    let eqValue = self.resolver.createValue("eq", self.bodyLocation.clone());
+                                    self.resolver.addInstructionToBlock(
                                         current,
-                                        InstructionKind::Converter(litId),
-                                        self.bodyLocation.clone(),
-                                        true,
-                                    );
-                                    let rootConverter = self.resolver.addInstructionToBlock(
-                                        current,
-                                        InstructionKind::Converter(root),
-                                        self.bodyLocation.clone(),
-                                        true,
-                                    );
-                                    let eqId = self.resolver.addInstructionToBlock(
-                                        current,
-                                        InstructionKind::FunctionCall(getStringEqName(), vec![rootConverter, litConverter]),
+                                        InstructionKind::FunctionCall(eqValue.clone(), getStringEqName(), vec![root.clone(), value.clone()]),
                                         self.bodyLocation.clone(),
                                         true,
                                     );
@@ -570,7 +582,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                                     });
                                     self.resolver.addInstructionToBlock(
                                         current,
-                                        InstructionKind::EnumSwitch(eqId, cases),
+                                        InstructionKind::EnumSwitch(eqValue, cases),
                                         self.bodyLocation.clone(),
                                         true,
                                     );
@@ -592,7 +604,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     self.resolver.setTargetBlockId(blockId);
                     for (path, name) in &m.bindings.bindings {
                         let bindValue = ctx.get(path.decisions.last().unwrap());
-                        let new = self.resolver.createValue(&name);
+                        let new = self.resolver.createValue(&name, self.bodyLocation.clone());
                         self.resolver.addInstructionToBlock(
                             blockId,
                             InstructionKind::Bind(new.clone(), bindValue, false),
@@ -601,17 +613,14 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                         );
                         env.addValue(name.clone(), new);
                     }
-                    self.resolver.resolveExpr(&branch.body, &mut env);
-                    let last = self.resolver.getTargetBlockId();
+                    let exprValue = self.resolver.resolveExpr(&branch.body, &mut env);
                     self.resolver.addImplicitInstruction(
-                        InstructionKind::Assign(
-                            ValueKind::Value(self.matchValue.clone()),
-                            self.resolver.body.getBlockById(last).getLastId(),
-                        ),
+                        InstructionKind::Assign(ValueKind::Value(self.matchValue.clone()), exprValue),
                         self.matchLocation.clone(),
                     );
+                    let jumpValue = self.resolver.createValue("jump", self.bodyLocation.clone());
                     self.resolver
-                        .addImplicitInstruction(InstructionKind::Jump(self.contBlockId), self.bodyLocation.clone());
+                        .addImplicitInstruction(InstructionKind::Jump(jumpValue, self.contBlockId), self.bodyLocation.clone());
                     blockId
                 } else {
                     unreachable!()
@@ -956,7 +965,7 @@ impl fmt::Display for Bindings {
 
 #[derive(Clone)]
 struct CompileContext {
-    values: BTreeMap<DataPath, InstructionId>,
+    values: BTreeMap<DataPath, Variable>,
 }
 
 impl CompileContext {
@@ -964,15 +973,15 @@ impl CompileContext {
         CompileContext { values: BTreeMap::new() }
     }
 
-    fn add(&self, path: DataPath, value: InstructionId) -> CompileContext {
+    fn add(&self, path: DataPath, value: Variable) -> CompileContext {
         let mut c = self.clone();
         c.values.insert(path, value);
         c
     }
 
-    fn get(&self, path: &DataPath) -> InstructionId {
+    fn get(&self, path: &DataPath) -> Variable {
         match self.values.get(path) {
-            Some(id) => *id,
+            Some(id) => id.clone(),
             None => panic!("not found value for path in compile context {}", path),
         }
     }

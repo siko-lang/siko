@@ -147,32 +147,32 @@ impl<'a> Monomorphizer<'a> {
         //     instruction.ty.clone().unwrap()
         // );
         let kind: InstructionKind = match &instruction.kind {
-            InstructionKind::FunctionCall(name, args) => {
-                //println!("Calling {}", name);
-                let target_fn = self.program.functions.get(name).expect("function not found in mono");
-                let fn_ty = target_fn.getType();
-                let arg_types: Vec<_> = args
-                    .iter()
-                    .map(|id| {
-                        let ty = body.getInstruction(*id).ty.clone().expect("instruction with no type");
-                        ty.apply(&sub)
-                    })
-                    .collect();
-                let result = instruction.ty.clone().expect("function with no result ty").apply(sub);
-                let context_ty = Type::Function(arg_types, Box::new(result));
-                //println!("fn type {}", fn_ty);
-                //println!("context type {}", context_ty);
-                let sub = createTypeSubstitution(&context_ty, &fn_ty);
-                let ty_args: Vec<_> = target_fn.constraintContext.typeParameters.iter().map(|ty| ty.apply(&sub)).collect();
-                //println!("{} type args {}", name, formatTypes(&ty_args));
-                let fn_name = self.get_mono_name(name, &ty_args);
-                self.addKey(Key::Function(name.clone(), ty_args));
-                InstructionKind::FunctionCall(fn_name, args.clone())
-            }
-            InstructionKind::Transform(id, index, ty) => {
-                let ty = self.processType(ty.apply(sub));
-                InstructionKind::Transform(*id, *index, ty)
-            }
+            // InstructionKind::FunctionCall(_, name, args) => {
+            //     //println!("Calling {}", name);
+            //     let target_fn = self.program.functions.get(name).expect("function not found in mono");
+            //     let fn_ty = target_fn.getType();
+            //     let arg_types: Vec<_> = args
+            //         .iter()
+            //         .map(|id| {
+            //             let ty = body.getInstruction(*id).ty.clone().expect("instruction with no type");
+            //             ty.apply(&sub)
+            //         })
+            //         .collect();
+            //     let result = instruction.ty.clone().expect("function with no result ty").apply(sub);
+            //     let context_ty = Type::Function(arg_types, Box::new(result));
+            //     //println!("fn type {}", fn_ty);
+            //     //println!("context type {}", context_ty);
+            //     let sub = createTypeSubstitution(&context_ty, &fn_ty);
+            //     let ty_args: Vec<_> = target_fn.constraintContext.typeParameters.iter().map(|ty| ty.apply(&sub)).collect();
+            //     //println!("{} type args {}", name, formatTypes(&ty_args));
+            //     let fn_name = self.get_mono_name(name, &ty_args);
+            //     self.addKey(Key::Function(name.clone(), ty_args));
+            //     InstructionKind::FunctionCall(fn_name, args.clone())
+            // }
+            // InstructionKind::Transform(id, index, ty) => {
+            //     let ty = self.processType(ty.apply(sub));
+            //     InstructionKind::Transform(*id, *index, ty)
+            // }
             k => k.clone(),
         };
         instruction.kind = kind;

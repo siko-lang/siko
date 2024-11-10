@@ -1,21 +1,24 @@
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::fmt::Display;
 
 use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
 
+use super::Substitution::Apply;
+use super::Substitution::Substitution;
 use super::{ConstraintContext::ConstraintContext, Type::Type};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ValueKind {
     Arg(String, i64),
-    Value(String),
+    Value(Variable),
 }
 
 impl ValueKind {
     pub fn getValue(&self) -> String {
         match &self {
             ValueKind::Arg(v, _) => v.clone(),
-            ValueKind::Value(v) => v.clone(),
+            ValueKind::Value(v) => v.value.clone(),
         }
     }
 }
@@ -24,7 +27,7 @@ impl Display for ValueKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
             ValueKind::Arg(n, index) => write!(f, "@arg/{}/{}", n, index),
-            ValueKind::Value(n) => write!(f, "${}", n),
+            ValueKind::Value(n) => write!(f, "{}", n),
         }
     }
 }
@@ -157,30 +160,65 @@ impl std::fmt::Debug for StringCase {
     }
 }
 
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Variable {
+    pub value: String,
+    pub location: Location,
+    pub ty: Option<Type>,
+    pub fixed: bool,
+}
+
+impl Variable {
+    pub fn asFixed(&self) -> Variable {
+        let mut f = self.clone();
+        f.fixed = true;
+        f
+    }
+
+    pub fn asNotFixed(&self) -> Variable {
+        let mut f = self.clone();
+        f.fixed = false;
+        f
+    }
+}
+
+impl Display for Variable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(ty) = &self.ty {
+            write!(f, "${}: {}", self.value, ty)
+        } else {
+            write!(f, "${}", self.value)
+        }
+    }
+}
+
+impl std::fmt::Debug for Variable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}
 #[derive(Clone, PartialEq)]
 pub enum InstructionKind {
-    Converter(InstructionId),
-    FunctionCall(QualifiedName, Vec<InstructionId>),
-    DynamicFunctionCall(InstructionId, Vec<InstructionId>),
-    ValueRef(ValueKind),
-    FieldRef(InstructionId, String),
-    TupleIndex(InstructionId, i32),
-    Bind(String, InstructionId, bool), //mutable
-    Tuple(Vec<InstructionId>),
-    StringLiteral(String),
-    IntegerLiteral(String),
-    CharLiteral(char),
-    Return(InstructionId),
-    Ref(InstructionId),
+    FunctionCall(Variable, QualifiedName, Vec<Variable>),
+    DynamicFunctionCall(Variable, Variable, Vec<Variable>),
+    ValueRef(Variable, ValueKind),
+    FieldRef(Variable, Variable, String),
+    TupleIndex(Variable, Variable, i32),
+    Bind(Variable, Variable, bool), //mutable
+    Tuple(Variable, Vec<Variable>),
+    StringLiteral(Variable, String),
+    IntegerLiteral(Variable, String),
+    CharLiteral(Variable, char),
+    Return(Variable, Variable),
+    Ref(Variable, Variable),
     Drop(Vec<String>),
-    Jump(BlockId),
-    Assign(ValueKind, InstructionId),
-    DeclareVar(String),
-    Transform(InstructionId, u32, Type),
-    EnumSwitch(InstructionId, Vec<EnumCase>),
-    IntegerSwitch(InstructionId, Vec<IntegerCase>),
-    StringSwitch(InstructionId, Vec<StringCase>),
-    Noop,
+    Jump(Variable, BlockId),
+    Assign(ValueKind, Variable),
+    DeclareVar(Variable),
+    Transform(Variable, Variable, u32, Type),
+    EnumSwitch(Variable, Vec<EnumCase>),
+    IntegerSwitch(Variable, Vec<IntegerCase>),
+    StringSwitch(Variable, Vec<StringCase>),
 }
 
 impl Display for InstructionKind {
@@ -196,16 +234,40 @@ impl Debug for InstructionKind {
 }
 
 impl InstructionKind {
+    pub fn getResultVar(&self) -> Option<Variable> {
+        match self {
+            InstructionKind::FunctionCall(v, _, _) => Some(v.clone()),
+            InstructionKind::DynamicFunctionCall(v, _, _) => Some(v.clone()),
+            InstructionKind::ValueRef(v, _) => Some(v.clone()),
+            InstructionKind::FieldRef(v, _, _) => Some(v.clone()),
+            InstructionKind::TupleIndex(v, _, _) => Some(v.clone()),
+            InstructionKind::Bind(v, _, _) => Some(v.clone()),
+            InstructionKind::Tuple(v, _) => Some(v.clone()),
+            InstructionKind::StringLiteral(v, _) => Some(v.clone()),
+            InstructionKind::IntegerLiteral(v, _) => Some(v.clone()),
+            InstructionKind::CharLiteral(v, _) => Some(v.clone()),
+            InstructionKind::Return(v, _) => Some(v.clone()),
+            InstructionKind::Ref(v, _) => Some(v.clone()),
+            InstructionKind::Drop(_) => None,
+            InstructionKind::Jump(v, _) => Some(v.clone()),
+            InstructionKind::Assign(_, _) => None,
+            InstructionKind::DeclareVar(_) => None,
+            InstructionKind::Transform(v, _, _, _) => Some(v.clone()),
+            InstructionKind::EnumSwitch(_, _) => None,
+            InstructionKind::IntegerSwitch(_, _) => None,
+            InstructionKind::StringSwitch(_, _) => None,
+        }
+    }
+
     pub fn dump(&self) -> String {
         match self {
-            InstructionKind::Converter(arg) => format!("converter({})", arg),
-            InstructionKind::FunctionCall(name, args) => format!("call({}({:?}))", name, args),
-            InstructionKind::DynamicFunctionCall(callable, args) => {
-                format!("DYN_CALL{}({:?})", callable, args)
+            InstructionKind::FunctionCall(dest, name, args) => format!("{} = call({}({:?}))", dest, name, args),
+            InstructionKind::DynamicFunctionCall(dest, callable, args) => {
+                format!("{} = DYN_CALL({}, {:?})", dest, callable, args)
             }
-            InstructionKind::ValueRef(v) => format!("{}", v),
-            InstructionKind::FieldRef(v, name) => format!("{}.{}", v, name),
-            InstructionKind::TupleIndex(v, idx) => format!("{}.t{}", v, idx),
+            InstructionKind::ValueRef(dest, v) => format!("{} = {}", dest, v),
+            InstructionKind::FieldRef(dest, v, name) => format!("{} = {}.{}", dest, v, name),
+            InstructionKind::TupleIndex(dest, v, idx) => format!("{} = {}.t{}", dest, v, idx),
             InstructionKind::Bind(v, rhs, mutable) => {
                 if *mutable {
                     format!("mut ${} = {}", v, rhs)
@@ -213,25 +275,24 @@ impl InstructionKind {
                     format!("${} = {}", v, rhs)
                 }
             }
-            InstructionKind::Tuple(args) => format!("tuple({:?})", args),
-            InstructionKind::StringLiteral(v) => format!("s:[{}]", v),
-            InstructionKind::IntegerLiteral(v) => format!("i:[{}]", v),
-            InstructionKind::CharLiteral(v) => format!("c:[{}]", v),
-            InstructionKind::Return(id) => format!("return({})", id),
-            InstructionKind::Ref(id) => format!("&({})", id),
+            InstructionKind::Tuple(dest, args) => format!("{} = tuple({:?})", dest, args),
+            InstructionKind::StringLiteral(dest, v) => format!("{} = s:[{}]", dest, v),
+            InstructionKind::IntegerLiteral(dest, v) => format!("{} = i:[{}]", dest, v),
+            InstructionKind::CharLiteral(dest, v) => format!("{} = c:[{}]", dest, v),
+            InstructionKind::Return(dest, id) => format!("{} = return({})", dest, id),
+            InstructionKind::Ref(dest, id) => format!("{} = &({})", dest, id),
             InstructionKind::Drop(values) => {
                 format!("drop({})", values.join(", "))
             }
-            InstructionKind::Jump(id) => {
-                format!("jump({})", id)
+            InstructionKind::Jump(dest, id) => {
+                format!("{} = jump({})", dest, id)
             }
             InstructionKind::Assign(v, arg) => format!("assign({}, {})", v, arg),
             InstructionKind::DeclareVar(v) => format!("declare({})", v),
-            InstructionKind::Transform(arg, index, targetType) => format!("transform({}, {}, {})", arg, index, targetType),
+            InstructionKind::Transform(dest, arg, index, targetType) => format!("{} = transform({}, {}, {})", dest, arg, index, targetType),
             InstructionKind::EnumSwitch(root, cases) => format!("enumswitch({}, {:?})", root, cases),
             InstructionKind::IntegerSwitch(root, cases) => format!("integerswitch({}, {:?})", root, cases),
             InstructionKind::StringSwitch(root, cases) => format!("stringswitch({}, {:?})", root, cases),
-            InstructionKind::Noop => format!("noop"),
         }
     }
 }
@@ -332,11 +393,15 @@ impl Display for Block {
 #[derive(Debug, Clone)]
 pub struct Body {
     pub blocks: Vec<Block>,
+    pub varTypes: BTreeMap<String, Type>,
 }
 
 impl Body {
     pub fn new() -> Body {
-        Body { blocks: Vec::new() }
+        Body {
+            blocks: Vec::new(),
+            varTypes: BTreeMap::new(),
+        }
     }
 
     pub fn addBlock(&mut self, block: Block) {
@@ -351,8 +416,8 @@ impl Body {
         &self.blocks[id.blockId.id as usize].instructions[id.id as usize]
     }
 
-    pub fn setType(&mut self, id: InstructionId, ty: Type) {
-        self.blocks[id.blockId.id as usize].instructions[id.id as usize].ty = Some(ty);
+    pub fn setType(&mut self, var: Variable, ty: Type) {
+        self.varTypes.insert(var.value, ty);
     }
 
     pub fn dump(&self) {
@@ -496,6 +561,45 @@ impl<'a> Iterator for InstructionIterator<'a> {
             return Some(item);
         } else {
             return None;
+        }
+    }
+}
+
+impl Apply<Variable> for Variable {
+    fn apply(&self, sub: &Substitution<Variable>) -> Self {
+        if self.fixed && !sub.forced {
+            self.clone()
+        } else {
+            sub.get(self.clone())
+        }
+    }
+}
+
+impl Apply<Variable> for InstructionKind {
+    fn apply(&self, sub: &Substitution<Variable>) -> Self {
+        match self {
+            InstructionKind::FunctionCall(dest, name, args) => InstructionKind::FunctionCall(dest.apply(sub), name.clone(), args.apply(sub)),
+            InstructionKind::DynamicFunctionCall(dest, callable, args) => {
+                InstructionKind::DynamicFunctionCall(dest.apply(sub), callable.apply(sub), args.apply(sub))
+            }
+            InstructionKind::ValueRef(dest, value) => InstructionKind::ValueRef(dest.apply(sub), value.clone()),
+            InstructionKind::FieldRef(dest, root, field) => InstructionKind::FieldRef(dest.apply(sub), root.apply(sub), field.clone()),
+            InstructionKind::TupleIndex(dest, root, index) => InstructionKind::TupleIndex(dest.apply(sub), root.apply(sub), *index),
+            InstructionKind::Bind(dest, rhs, mutable) => InstructionKind::Bind(dest.apply(sub), rhs.apply(sub), *mutable),
+            InstructionKind::Tuple(dest, args) => InstructionKind::Tuple(dest.apply(sub), args.apply(sub)),
+            InstructionKind::StringLiteral(dest, s) => InstructionKind::StringLiteral(dest.apply(sub), s.clone()),
+            InstructionKind::IntegerLiteral(dest, n) => InstructionKind::IntegerLiteral(dest.apply(sub), n.clone()),
+            InstructionKind::CharLiteral(dest, c) => InstructionKind::CharLiteral(dest.apply(sub), *c),
+            InstructionKind::Return(dest, arg) => InstructionKind::Return(dest.apply(sub), arg.apply(sub)),
+            InstructionKind::Ref(dest, arg) => InstructionKind::Ref(dest.apply(sub), arg.apply(sub)),
+            InstructionKind::Drop(args) => InstructionKind::Drop(args.clone()),
+            InstructionKind::Jump(dest, block_id) => InstructionKind::Jump(dest.apply(sub), *block_id),
+            InstructionKind::Assign(name, rhs) => InstructionKind::Assign(name.clone(), rhs.apply(sub)),
+            InstructionKind::DeclareVar(var) => InstructionKind::DeclareVar(var.apply(sub)),
+            InstructionKind::Transform(dest, root, op, ty) => InstructionKind::Transform(dest.apply(sub), root.apply(sub), op.clone(), ty.clone()),
+            InstructionKind::EnumSwitch(root, cases) => InstructionKind::EnumSwitch(root.clone(), cases.clone()),
+            InstructionKind::IntegerSwitch(root, cases) => InstructionKind::IntegerSwitch(root.clone(), cases.clone()),
+            InstructionKind::StringSwitch(root, cases) => InstructionKind::StringSwitch(root.clone(), cases.clone()),
         }
     }
 }

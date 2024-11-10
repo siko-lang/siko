@@ -74,7 +74,10 @@ impl<K: Clone + Ord, V: RemoveTuples> RemoveTuples for BTreeMap<K, V> {
 impl RemoveTuples for Body {
     fn removeTuples(&self, ctx: &mut Context) -> Self {
         let blocks = self.blocks.removeTuples(ctx);
-        Body { blocks: blocks }
+        Body {
+            blocks: blocks,
+            varTypes: BTreeMap::new(),
+        }
     }
 }
 
@@ -99,8 +102,8 @@ impl RemoveTuples for Instruction {
 
 fn removeTuplesFromKind(kind: &InstructionKind, ty: &Type, ctx: &mut Context) -> InstructionKind {
     match kind {
-        InstructionKind::Tuple(args) => InstructionKind::FunctionCall(getTuple(ty), args.clone()),
-        InstructionKind::Transform(root, index, ty) => InstructionKind::Transform(*root, *index, ty.removeTuples(ctx)),
+        InstructionKind::Tuple(value, args) => InstructionKind::FunctionCall(value.clone(), getTuple(ty), args.clone()),
+        InstructionKind::Transform(value, root, index, ty) => InstructionKind::Transform(value.clone(), root.clone(), *index, ty.removeTuples(ctx)),
         _ => kind.clone(),
     }
 }

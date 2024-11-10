@@ -13,12 +13,14 @@ use super::{
 
 #[derive(Debug)]
 pub struct Substitution<T> {
+    pub forced: bool,
     substitutions: BTreeMap<T, T>,
 }
 
 impl<T: Apply<T> + Ord + Debug + Clone> Substitution<T> {
     pub fn new() -> Substitution<T> {
         Substitution {
+            forced: false,
             substitutions: BTreeMap::new(),
         }
     }
