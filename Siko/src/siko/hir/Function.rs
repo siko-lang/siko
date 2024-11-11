@@ -4,8 +4,7 @@ use std::fmt::Display;
 
 use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
 
-use super::Substitution::Apply;
-use super::Substitution::Substitution;
+use super::Substitution::TypeSubstitution;
 use super::{ConstraintContext::ConstraintContext, Type::Type};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -215,7 +214,7 @@ pub enum InstructionKind {
     Jump(Variable, BlockId),
     Assign(ValueKind, Variable),
     DeclareVar(Variable),
-    Transform(Variable, Variable, u32, Type),
+    Transform(Variable, Variable, u32),
     EnumSwitch(Variable, Vec<EnumCase>),
     IntegerSwitch(Variable, Vec<IntegerCase>),
     StringSwitch(Variable, Vec<StringCase>),
@@ -252,7 +251,7 @@ impl InstructionKind {
             InstructionKind::Jump(v, _) => Some(v.clone()),
             InstructionKind::Assign(_, _) => None,
             InstructionKind::DeclareVar(_) => None,
-            InstructionKind::Transform(v, _, _, _) => Some(v.clone()),
+            InstructionKind::Transform(v, _, _) => Some(v.clone()),
             InstructionKind::EnumSwitch(_, _) => None,
             InstructionKind::IntegerSwitch(_, _) => None,
             InstructionKind::StringSwitch(_, _) => None,
@@ -289,7 +288,7 @@ impl InstructionKind {
             }
             InstructionKind::Assign(v, arg) => format!("assign({}, {})", v, arg),
             InstructionKind::DeclareVar(v) => format!("declare({})", v),
-            InstructionKind::Transform(dest, arg, index, targetType) => format!("{} = transform({}, {}, {})", dest, arg, index, targetType),
+            InstructionKind::Transform(dest, arg, index) => format!("{} = transform({}, {})", dest, arg, index),
             InstructionKind::EnumSwitch(root, cases) => format!("enumswitch({}, {:?})", root, cases),
             InstructionKind::IntegerSwitch(root, cases) => format!("integerswitch({}, {:?})", root, cases),
             InstructionKind::StringSwitch(root, cases) => format!("stringswitch({}, {:?})", root, cases),
@@ -561,45 +560,6 @@ impl<'a> Iterator for InstructionIterator<'a> {
             return Some(item);
         } else {
             return None;
-        }
-    }
-}
-
-impl Apply<Variable> for Variable {
-    fn apply(&self, sub: &Substitution<Variable>) -> Self {
-        if self.fixed && !sub.forced {
-            self.clone()
-        } else {
-            sub.get(self.clone())
-        }
-    }
-}
-
-impl Apply<Variable> for InstructionKind {
-    fn apply(&self, sub: &Substitution<Variable>) -> Self {
-        match self {
-            InstructionKind::FunctionCall(dest, name, args) => InstructionKind::FunctionCall(dest.apply(sub), name.clone(), args.apply(sub)),
-            InstructionKind::DynamicFunctionCall(dest, callable, args) => {
-                InstructionKind::DynamicFunctionCall(dest.apply(sub), callable.apply(sub), args.apply(sub))
-            }
-            InstructionKind::ValueRef(dest, value) => InstructionKind::ValueRef(dest.apply(sub), value.clone()),
-            InstructionKind::FieldRef(dest, root, field) => InstructionKind::FieldRef(dest.apply(sub), root.apply(sub), field.clone()),
-            InstructionKind::TupleIndex(dest, root, index) => InstructionKind::TupleIndex(dest.apply(sub), root.apply(sub), *index),
-            InstructionKind::Bind(dest, rhs, mutable) => InstructionKind::Bind(dest.apply(sub), rhs.apply(sub), *mutable),
-            InstructionKind::Tuple(dest, args) => InstructionKind::Tuple(dest.apply(sub), args.apply(sub)),
-            InstructionKind::StringLiteral(dest, s) => InstructionKind::StringLiteral(dest.apply(sub), s.clone()),
-            InstructionKind::IntegerLiteral(dest, n) => InstructionKind::IntegerLiteral(dest.apply(sub), n.clone()),
-            InstructionKind::CharLiteral(dest, c) => InstructionKind::CharLiteral(dest.apply(sub), *c),
-            InstructionKind::Return(dest, arg) => InstructionKind::Return(dest.apply(sub), arg.apply(sub)),
-            InstructionKind::Ref(dest, arg) => InstructionKind::Ref(dest.apply(sub), arg.apply(sub)),
-            InstructionKind::Drop(args) => InstructionKind::Drop(args.clone()),
-            InstructionKind::Jump(dest, block_id) => InstructionKind::Jump(dest.apply(sub), *block_id),
-            InstructionKind::Assign(name, rhs) => InstructionKind::Assign(name.clone(), rhs.apply(sub)),
-            InstructionKind::DeclareVar(var) => InstructionKind::DeclareVar(var.apply(sub)),
-            InstructionKind::Transform(dest, root, op, ty) => InstructionKind::Transform(dest.apply(sub), root.apply(sub), op.clone(), ty.clone()),
-            InstructionKind::EnumSwitch(root, cases) => InstructionKind::EnumSwitch(root.clone(), cases.clone()),
-            InstructionKind::IntegerSwitch(root, cases) => InstructionKind::IntegerSwitch(root.clone(), cases.clone()),
-            InstructionKind::StringSwitch(root, cases) => InstructionKind::StringSwitch(root.clone(), cases.clone()),
         }
     }
 }

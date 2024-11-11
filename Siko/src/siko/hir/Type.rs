@@ -4,7 +4,7 @@ use crate::siko::qualifiedname::{getBoolTypeName, getCharTypeName, getIntTypeNam
 
 use super::{
     Lifetime::{Lifetime, LifetimeInfo},
-    Substitution::Substitution,
+    Substitution::TypeSubstitution,
     Unification::unify,
 };
 
@@ -246,14 +246,16 @@ pub fn formatTypes(types: &Vec<Type>) -> String {
     format!("({})", types.join(", "))
 }
 
-pub fn createTypeSubstitution(ty1: &Type, ty2: &Type) -> Substitution<Type> {
-    let mut sub = Substitution::new();
-    unify(&mut sub, ty1, ty2).expect("Unification failed");
+pub fn createTypeSubstitution(ty1: &Type, ty2: &Type) -> TypeSubstitution {
+    let mut sub = TypeSubstitution::new();
+    if unify(&mut sub, ty1, ty2).is_err() {
+        panic!("Unification failed for {} {}", ty1, ty2);
+    }
     sub
 }
 
-pub fn createTypeSubstitutionFrom(ty1: &Vec<Type>, ty2: &Vec<Type>) -> Substitution<Type> {
-    let mut sub = Substitution::new();
+pub fn createTypeSubstitutionFrom(ty1: &Vec<Type>, ty2: &Vec<Type>) -> TypeSubstitution {
+    let mut sub = TypeSubstitution::new();
     for (ty1, ty2) in ty1.iter().zip(ty2) {
         unify(&mut sub, ty1, ty2).expect("Unification failed");
     }

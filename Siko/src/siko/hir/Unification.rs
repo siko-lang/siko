@@ -1,14 +1,15 @@
 use std::iter::zip;
 
 use super::{
-    Substitution::{Apply, Substitution},
+    Apply::Apply,
+    Substitution::TypeSubstitution,
     Type::{Type, TypeVar},
 };
 
 #[derive(Debug)]
 pub struct Error {}
 
-pub fn unify(sub: &mut Substitution<Type>, ty1: &Type, ty2: &Type) -> Result<(), Error> {
+pub fn unify(sub: &mut TypeSubstitution, ty1: &Type, ty2: &Type) -> Result<(), Error> {
     //println!("Unifying {}/{}", ty1, ty2);
     let ty1 = ty1.apply(sub).makeSingleRef();
     let ty2 = ty2.apply(sub).makeSingleRef();

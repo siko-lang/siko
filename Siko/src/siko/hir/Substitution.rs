@@ -1,36 +1,34 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     fmt::{Debug, Display},
 };
 
-use crate::siko::hir::Type::Type;
-
 use super::{
-    Data::{Class, Enum, Field, Variant},
-    TypeVarAllocator::TypeVarAllocator,
-    Unification::unify,
+    Apply::{Apply, ApplyVariable},
+    Function::Variable,
+    Type::Type,
 };
 
 #[derive(Debug)]
-pub struct Substitution<T> {
+pub struct TypeSubstitution {
     pub forced: bool,
-    substitutions: BTreeMap<T, T>,
+    substitutions: BTreeMap<Type, Type>,
 }
 
-impl<T: Apply<T> + Ord + Debug + Clone> Substitution<T> {
-    pub fn new() -> Substitution<T> {
-        Substitution {
+impl TypeSubstitution {
+    pub fn new() -> TypeSubstitution {
+        TypeSubstitution {
             forced: false,
             substitutions: BTreeMap::new(),
         }
     }
 
-    pub fn add(&mut self, old: T, new: T) {
+    pub fn add(&mut self, old: Type, new: Type) {
         assert_ne!(old, new);
         self.substitutions.insert(old, new);
     }
 
-    pub fn get(&self, old: T) -> T {
+    pub fn get(&self, old: Type) -> Type {
         match self.substitutions.get(&old) {
             Some(new) => new.apply(self),
             None => old,
@@ -38,7 +36,7 @@ impl<T: Apply<T> + Ord + Debug + Clone> Substitution<T> {
     }
 }
 
-impl<T: Display> Display for Substitution<T> {
+impl Display for TypeSubstitution {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (index, (key, value)) in self.substitutions.iter().enumerate() {
             if index == 0 {
@@ -51,96 +49,42 @@ impl<T: Display> Display for Substitution<T> {
     }
 }
 
-pub trait Apply<T> {
-    fn apply(&self, sub: &Substitution<T>) -> Self;
+#[derive(Debug)]
+pub struct VariableSubstitution {
+    pub forced: bool,
+    substitutions: BTreeMap<Variable, Variable>,
 }
 
-impl Apply<Type> for Type {
-    fn apply(&self, sub: &Substitution<Type>) -> Self {
-        match &self {
-            Type::Named(n, args, lifetime) => {
-                let newArgs = args.iter().map(|arg| arg.apply(sub)).collect();
-                Type::Named(n.clone(), newArgs, lifetime.clone())
-            }
-            Type::Tuple(args) => {
-                let newArgs = args.iter().map(|arg| arg.apply(sub)).collect();
-                Type::Tuple(newArgs)
-            }
-            Type::Function(args, fnResult) => {
-                let newArgs = args.iter().map(|arg| arg.apply(sub)).collect();
-                let newFnResult = fnResult.apply(sub);
-                Type::Function(newArgs, Box::new(newFnResult))
-            }
-            Type::Var(_) => sub.get(self.clone()),
-            Type::Reference(arg, l) => Type::Reference(Box::new(arg.apply(sub)), l.clone()),
-            Type::SelfType => self.clone(),
-            Type::Never => self.clone(),
+impl VariableSubstitution {
+    pub fn new() -> VariableSubstitution {
+        VariableSubstitution {
+            forced: false,
+            substitutions: BTreeMap::new(),
+        }
+    }
+
+    pub fn add(&mut self, old: Variable, new: Variable) {
+        assert_ne!(old, new);
+        self.substitutions.insert(old, new);
+    }
+
+    pub fn get(&self, old: Variable) -> Variable {
+        match self.substitutions.get(&old) {
+            Some(new) => new.applyVar(self),
+            None => old,
         }
     }
 }
 
-impl<I, T: Apply<I>> Apply<I> for Vec<T> {
-    fn apply(&self, sub: &Substitution<I>) -> Self {
-        self.iter().map(|i| i.apply(sub)).collect()
+impl Display for VariableSubstitution {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, (key, value)) in self.substitutions.iter().enumerate() {
+            if index == 0 {
+                write!(f, "{}: {}", key, value)?;
+            } else {
+                write!(f, ", {}: {}", key, value)?;
+            }
+        }
+        Ok(())
     }
-}
-
-impl Apply<Type> for Variant {
-    fn apply(&self, sub: &Substitution<Type>) -> Self {
-        let mut v = self.clone();
-        v.items = v.items.apply(sub);
-        v
-    }
-}
-
-impl Apply<Type> for Enum {
-    fn apply(&self, sub: &Substitution<Type>) -> Self {
-        let mut e = self.clone();
-        e.ty = e.ty.apply(sub);
-        e.variants = e.variants.apply(sub);
-        e
-    }
-}
-
-impl Apply<Type> for Field {
-    fn apply(&self, sub: &Substitution<Type>) -> Self {
-        let mut f = self.clone();
-        f.ty = f.ty.apply(sub);
-        f
-    }
-}
-
-impl Apply<Type> for Class {
-    fn apply(&self, sub: &Substitution<Type>) -> Self {
-        let mut c = self.clone();
-        c.ty = c.ty.apply(sub);
-        c.fields = c.fields.apply(sub);
-        c
-    }
-}
-
-pub fn instantiateEnum(allocator: &mut TypeVarAllocator, e: &Enum, ty: &Type) -> Enum {
-    let vars = e.ty.collectVars(BTreeSet::new());
-    let mut sub = Substitution::new();
-    for var in &vars {
-        sub.add(Type::Var(var.clone()), allocator.next());
-    }
-    let mut e = e.clone();
-    e = e.apply(&sub);
-    let r = unify(&mut sub, ty, &e.ty);
-    assert!(r.is_ok());
-    e.apply(&sub)
-}
-
-pub fn instantiateClass(allocator: &mut TypeVarAllocator, c: &Class, ty: &Type) -> Class {
-    let vars = c.ty.collectVars(BTreeSet::new());
-    let mut sub = Substitution::new();
-    for var in &vars {
-        sub.add(Type::Var(var.clone()), allocator.next());
-    }
-    let mut e = c.clone();
-    e = e.apply(&sub);
-    let r = unify(&mut sub, ty, &e.ty);
-    assert!(r.is_ok());
-    e.apply(&sub)
 }

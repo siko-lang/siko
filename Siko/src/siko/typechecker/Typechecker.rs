@@ -5,10 +5,11 @@ use std::{
 
 use crate::siko::{
     hir::{
+        Apply::{instantiateClass, instantiateEnum, Apply, ApplyVariable},
         Data::{Class, Enum},
-        Function::{Body, Function, Instruction, InstructionId, InstructionKind, Parameter, ValueKind, Variable},
+        Function::{Function, Instruction, InstructionId, InstructionKind, Parameter, ValueKind, Variable},
         Program::Program,
-        Substitution::{instantiateClass, instantiateEnum, Apply, Substitution},
+        Substitution::{TypeSubstitution, VariableSubstitution},
         TraitMethodSelector::TraitMethodSelector,
         Type::Type,
         TypeVarAllocator::TypeVarAllocator,
@@ -29,14 +30,14 @@ pub struct Typechecker<'a> {
     program: &'a Program,
     traitMethodSelector: &'a TraitMethodSelector,
     allocator: TypeVarAllocator,
-    substitution: Substitution<Type>,
+    substitution: TypeSubstitution,
     methodSources: BTreeMap<Variable, QualifiedName>,
     methodCalls: BTreeMap<Variable, Variable>,
-    varSwap: Substitution<Variable>,
+    varSwap: VariableSubstitution,
     types: BTreeMap<String, Type>,
     selfType: Option<Type>,
     mutables: BTreeSet<String>,
-    implicitRefs: BTreeSet<Variable>,
+    implicitRefs: BTreeSet<String>,
 }
 
 impl<'a> Typechecker<'a> {
@@ -46,10 +47,10 @@ impl<'a> Typechecker<'a> {
             program: program,
             traitMethodSelector: traitMethodSelector,
             allocator: TypeVarAllocator::new(),
-            substitution: Substitution::new(),
+            substitution: TypeSubstitution::new(),
             methodSources: BTreeMap::new(),
             methodCalls: BTreeMap::new(),
-            varSwap: Substitution::new(),
+            varSwap: VariableSubstitution::new(),
             types: BTreeMap::new(),
             selfType: None,
             mutables: BTreeSet::new(),
@@ -66,8 +67,15 @@ impl<'a> Typechecker<'a> {
     }
 
     fn initializeVar(&mut self, var: &Variable) {
-        let ty = self.allocator.next();
-        self.types.insert(var.value.clone(), ty.clone());
+        match &var.ty {
+            Some(ty) => {
+                self.types.insert(var.value.clone(), ty.clone());
+            }
+            None => {
+                let ty = self.allocator.next();
+                self.types.insert(var.value.clone(), ty.clone());
+            }
+        }
     }
 
     pub fn initialize(&mut self, f: &Function) {
@@ -142,7 +150,7 @@ impl<'a> Typechecker<'a> {
                             self.initializeVar(var);
                             self.mutables.insert(var.value.clone());
                         }
-                        InstructionKind::Transform(var, _, _, _) => {
+                        InstructionKind::Transform(var, _, _) => {
                             self.initializeVar(var);
                         }
                         InstructionKind::EnumSwitch(_, _) => {}
@@ -171,7 +179,7 @@ impl<'a> Typechecker<'a> {
 
     fn instantiateType(&mut self, ty: Type) -> Type {
         let vars = ty.collectVars(BTreeSet::new());
-        let mut sub = Substitution::new();
+        let mut sub = TypeSubstitution::new();
         for var in &vars {
             sub.add(Type::Var(var.clone()), self.allocator.next());
         }
@@ -202,9 +210,10 @@ impl<'a> Typechecker<'a> {
         for (arg, fnArg) in zip(args, fnArgs) {
             let mut argTy = self.getType(arg);
             argTy = argTy.apply(&self.substitution);
+            let fnArg = fnArg.apply(&self.substitution);
             if !argTy.isReference() && fnArg.isReference() {
                 argTy = Type::Reference(Box::new(argTy), None);
-                self.implicitRefs.insert(arg.clone());
+                self.implicitRefs.insert(arg.value.clone());
             }
             self.unify(argTy, fnArg, arg.location.clone());
         }
@@ -225,7 +234,7 @@ impl<'a> Typechecker<'a> {
                 }
                 InstructionKind::DynamicFunctionCall(dest, callable, args) => match self.methodSources.get(callable) {
                     Some(name) => {
-                        let newCallable = callable.apply(&self.varSwap);
+                        let newCallable = callable.applyVar(&self.varSwap);
                         let f = self.program.functions.get(&name).expect("Function not found");
                         let fnType = f.getType();
                         let mut newArgs = Vec::new();
@@ -290,7 +299,7 @@ impl<'a> Typechecker<'a> {
                     self.unify(self.getValueType(&name.getValue()), self.getType(rhs), instruction.location.clone());
                 }
                 InstructionKind::DeclareVar(var) => {}
-                InstructionKind::Transform(dest, root, index, _) => {
+                InstructionKind::Transform(dest, root, index) => {
                     let rootTy = self.getType(root);
                     let rootTy = rootTy.apply(&self.substitution);
                     match rootTy.getName() {
@@ -458,14 +467,14 @@ impl<'a> Typechecker<'a> {
                 }
                 let instruction = &block.instructions[index];
                 if let Some(var) = instruction.kind.getResultVar() {
-                    if self.implicitRefs.contains(&var) {
+                    if self.implicitRefs.contains(&var.value) {
                         let mut dest = var.clone();
                         let fixedVar = var.asFixed();
                         dest.value = format!("implicitRef{}", nextImplicitRef);
                         nextImplicitRef += 1;
                         let ty = Type::Reference(Box::new(self.getType(&var)), None);
                         self.types.insert(dest.value.clone(), ty);
-                        self.varSwap.add(var.clone(), dest.clone());
+                        self.varSwap.add(var.asNotFixed(), dest.clone());
                         let kind = InstructionKind::Ref(dest.asFixed(), fixedVar);
                         let implicitRef = Instruction {
                             id: InstructionId::first(),
@@ -483,7 +492,7 @@ impl<'a> Typechecker<'a> {
 
         for block in &mut body.blocks {
             for instruction in &mut block.instructions {
-                instruction.kind = instruction.kind.apply(&self.varSwap);
+                instruction.kind = instruction.kind.applyVar(&self.varSwap);
             }
         }
 
@@ -497,7 +506,7 @@ impl<'a> Typechecker<'a> {
                 if let InstructionKind::Ref(dest, arg) = &instruction.kind {
                     let argTy = self.getType(arg).apply(&self.substitution);
                     if argTy.isReference() {
-                        self.varSwap.add(dest.clone(), arg.clone());
+                        self.varSwap.add(dest.asNotFixed(), arg.clone());
                         block.instructions.remove(index);
                         continue;
                     }
@@ -508,7 +517,7 @@ impl<'a> Typechecker<'a> {
 
         for block in &mut body.blocks {
             for instruction in &mut block.instructions {
-                instruction.kind = instruction.kind.apply(&self.varSwap);
+                instruction.kind = instruction.kind.applyVar(&self.varSwap);
             }
         }
 
@@ -543,7 +552,7 @@ impl<'a> Typechecker<'a> {
             }
         }
 
-        let mut varSwap = Substitution::new();
+        let mut varSwap = VariableSubstitution::new();
         varSwap.forced = true;
 
         for block in &mut body.blocks {
@@ -552,8 +561,12 @@ impl<'a> Typechecker<'a> {
                     let ty = self.getType(&var);
                     let ty = ty.apply(&self.substitution);
                     let mut newVar = var.clone();
-                    newVar.ty = Some(ty);
+                    newVar.ty = Some(ty.clone());
+                    let useVar = var.asNotFixed();
+                    let mut newUseVar = var.asNotFixed();
+                    newUseVar.ty = Some(ty);
                     varSwap.add(var, newVar);
+                    varSwap.add(useVar, newUseVar);
                 }
             }
         }
@@ -561,12 +574,11 @@ impl<'a> Typechecker<'a> {
         for block in &mut body.blocks {
             for instruction in &mut block.instructions {
                 //println!("Before {}", instruction.kind);
-                instruction.kind = instruction.kind.apply(&varSwap);
+                instruction.kind = instruction.kind.applyVar(&varSwap);
                 //println!("After {}", instruction.kind);
             }
         }
 
-        //self.dump(&result);
         self.verify(&result);
         result
     }

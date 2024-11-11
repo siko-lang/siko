@@ -467,9 +467,9 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                                 let itemBlockId = self.resolver.createBlock();
                                 let (v, index) = enumDef.getVariant(name);
                                 let ctx = if v.items.len() > 0 {
-                                    let transformValue = self.resolver.createValue("transform", self.bodyLocation.clone());
-                                    let transform =
-                                        InstructionKind::Transform(transformValue.clone(), root.clone(), index, Type::Tuple(v.items.clone()));
+                                    let mut transformValue = self.resolver.createValue("transform", self.bodyLocation.clone());
+                                    transformValue.ty = Some(Type::Tuple(v.items.clone()));
+                                    let transform = InstructionKind::Transform(transformValue.clone(), root.clone(), index);
                                     self.resolver
                                         .addInstructionToBlock(itemBlockId, transform, self.bodyLocation.clone(), false);
                                     let mut ctx = ctx.clone();

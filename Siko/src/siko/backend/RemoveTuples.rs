@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::siko::{
     hir::{
         Data::{Class, Enum, Field, Variant},
-        Function::{Block, Body, Function, FunctionKind, Instruction, InstructionKind, Parameter},
+        Function::{Block, Body, Function, FunctionKind, Instruction, InstructionKind, Parameter, Variable},
         Program::Program,
         Type::Type,
     },
@@ -94,17 +94,53 @@ impl RemoveTuples for Block {
 impl RemoveTuples for Instruction {
     fn removeTuples(&self, ctx: &mut Context) -> Self {
         let mut result = self.clone();
-        result.kind = removeTuplesFromKind(&result.kind, result.ty.as_ref().unwrap(), ctx);
+        result.kind = result.kind.removeTuples(ctx);
+        result
+    }
+}
+
+impl RemoveTuples for Variable {
+    fn removeTuples(&self, ctx: &mut Context) -> Self {
+        let mut result = self.clone();
         result.ty = result.ty.removeTuples(ctx);
         result
     }
 }
 
-fn removeTuplesFromKind(kind: &InstructionKind, ty: &Type, ctx: &mut Context) -> InstructionKind {
-    match kind {
-        InstructionKind::Tuple(value, args) => InstructionKind::FunctionCall(value.clone(), getTuple(ty), args.clone()),
-        InstructionKind::Transform(value, root, index, ty) => InstructionKind::Transform(value.clone(), root.clone(), *index, ty.removeTuples(ctx)),
-        _ => kind.clone(),
+impl RemoveTuples for InstructionKind {
+    fn removeTuples(&self, ctx: &mut Context) -> InstructionKind {
+        match self {
+            InstructionKind::Tuple(dest, args) => InstructionKind::FunctionCall(
+                dest.removeTuples(ctx),
+                getTuple(&dest.ty.clone().expect("tuple ty not found")),
+                args.removeTuples(ctx),
+            ),
+            InstructionKind::Transform(dest, root, index) => InstructionKind::Transform(dest.removeTuples(ctx), root.removeTuples(ctx), *index),
+            InstructionKind::FunctionCall(dest, name, args) => {
+                InstructionKind::FunctionCall(dest.removeTuples(ctx), name.clone(), args.removeTuples(ctx))
+            }
+            InstructionKind::DynamicFunctionCall(dest, root, args) => {
+                InstructionKind::DynamicFunctionCall(dest.removeTuples(ctx), root.removeTuples(ctx), args.removeTuples(ctx))
+            }
+            InstructionKind::ValueRef(dest, arg) => InstructionKind::ValueRef(dest.removeTuples(ctx), arg.clone()),
+            InstructionKind::FieldRef(dest, receiver, field) => {
+                InstructionKind::FieldRef(dest.removeTuples(ctx), receiver.removeTuples(ctx), field.clone())
+            }
+            InstructionKind::TupleIndex(dest, root, index) => InstructionKind::TupleIndex(dest.removeTuples(ctx), root.removeTuples(ctx), *index),
+            InstructionKind::Bind(dest, rhs, mutable) => InstructionKind::Bind(dest.removeTuples(ctx), rhs.removeTuples(ctx), *mutable),
+            InstructionKind::StringLiteral(dest, lit) => InstructionKind::StringLiteral(dest.removeTuples(ctx), lit.clone()),
+            InstructionKind::IntegerLiteral(dest, lit) => InstructionKind::IntegerLiteral(dest.removeTuples(ctx), lit.clone()),
+            InstructionKind::CharLiteral(dest, lit) => InstructionKind::CharLiteral(dest.removeTuples(ctx), *lit),
+            InstructionKind::Return(dest, arg) => InstructionKind::Return(dest.removeTuples(ctx), arg.removeTuples(ctx)),
+            InstructionKind::Ref(dest, arg) => InstructionKind::Ref(dest.removeTuples(ctx), arg.removeTuples(ctx)),
+            InstructionKind::Drop(args) => InstructionKind::Drop(args.clone()),
+            InstructionKind::Jump(dest, blockId) => InstructionKind::Jump(dest.removeTuples(ctx), *blockId),
+            InstructionKind::Assign(lhs, rhs) => InstructionKind::Assign(lhs.clone(), rhs.removeTuples(ctx)),
+            InstructionKind::DeclareVar(var) => InstructionKind::DeclareVar(var.removeTuples(ctx)),
+            InstructionKind::EnumSwitch(root, cases) => InstructionKind::EnumSwitch(root.removeTuples(ctx), cases.clone()),
+            InstructionKind::IntegerSwitch(root, cases) => InstructionKind::IntegerSwitch(root.removeTuples(ctx), cases.clone()),
+            InstructionKind::StringSwitch(root, cases) => InstructionKind::StringSwitch(root.removeTuples(ctx), cases.clone()),
+        }
     }
 }
 
