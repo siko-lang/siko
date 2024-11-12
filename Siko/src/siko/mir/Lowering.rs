@@ -124,7 +124,7 @@ impl<'a> Builder<'a> {
                         let tmp = self.tmpVar(dest);
                         let llvmInstruction = LInstruction::FunctionCallValue(tmp.clone(), name.clone(), llvmArgs);
                         llvmBlock.instructions.push(llvmInstruction);
-                        let llvmInstruction = LInstruction::MemcpyPtr(tmp, self.lowerVar(dest));
+                        let llvmInstruction = LInstruction::Store(self.lowerVar(dest), LValue::Variable(tmp));
                         llvmBlock.instructions.push(llvmInstruction);
                     } else {
                         llvmArgs.push(self.lowerVar(dest));
@@ -166,9 +166,13 @@ impl<'a> Builder<'a> {
                         unreachable!()
                     }
                 },
+                Instruction::Store(src, dest) => {
+                    let llvmInstruction = LInstruction::Store(self.lowerVar(dest), LValue::Variable(self.lowerVar(src)));
+                    llvmBlock.instructions.push(llvmInstruction);
+                }
                 Instruction::Memcpy(src, dest) => {
                     if src.ty.isPtr() {
-                        let llvmInstruction = LInstruction::Store(self.lowerVar(dest), LValue::Variable(self.lowerVar(src)));
+                        let llvmInstruction = LInstruction::MemcpyPtr(self.lowerVar(src), self.lowerVar(dest));
                         llvmBlock.instructions.push(llvmInstruction);
                     } else {
                         let llvmInstruction = LInstruction::Memcpy(self.lowerVar(src), self.lowerVar(dest));

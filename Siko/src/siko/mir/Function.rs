@@ -157,6 +157,7 @@ pub enum Instruction {
     Assign(Variable, Value),
     Return(Value),
     Memcpy(Variable, Variable), //src -> dest
+    Store(Variable, Variable),  //src -> dest
     IntegerLiteral(Variable, String),
     StringLiteral(Variable, String),
     EnumSwitch(Variable, Vec<EnumCase>),
@@ -181,6 +182,7 @@ impl fmt::Display for Instruction {
             Instruction::Assign(var, value) => write!(f, "Assign({}, {})", var, value),
             Instruction::Return(value) => write!(f, "Return({})", value),
             Instruction::Memcpy(var1, var2) => write!(f, "Memcpy({} => {})", var1, var2),
+            Instruction::Store(var1, var2) => write!(f, "Store({} => {})", var1, var2),
             Instruction::IntegerLiteral(var, literal) => write!(f, "IntegerLiteral({}, {})", var, literal),
             Instruction::StringLiteral(var, literal) => write!(f, "StringLiteral({}, {})", var, literal),
             Instruction::EnumSwitch(root, cases) => write!(f, "enumswitch({}, {:?})", root, cases),

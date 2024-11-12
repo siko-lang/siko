@@ -74,7 +74,11 @@ impl<'a> Builder<'a> {
                         ty: dest.ty.clone(),
                     };
                     block.instructions.push(Instruction::Declare(dest.clone()));
-                    block.instructions.push(Instruction::Memcpy(var, dest));
+                    if name.isArg() && dest.ty.isPtr() {
+                        block.instructions.push(Instruction::Store(var, dest));
+                    } else {
+                        block.instructions.push(Instruction::Memcpy(var, dest));
+                    }
                 }
                 HirInstructionKind::Assign(name, rhs) => {
                     let rhs = self.buildVariable(rhs);

@@ -19,6 +19,13 @@ impl ValueKind {
             ValueKind::Value(v) => v.value.clone(),
         }
     }
+
+    pub fn isArg(&self) -> bool {
+        match &self {
+            ValueKind::Arg(_, _) => true,
+            ValueKind::Value(_) => false,
+        }
+    }
 }
 
 impl Display for ValueKind {
