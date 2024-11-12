@@ -1,7 +1,7 @@
 use crate::siko::{
     hir::{
         Data::{Class as HirClass, Enum as HirEnum},
-        Function::{Block, BlockId, Function as HirFunction, FunctionKind, InstructionId, InstructionKind as HirInstructionKind},
+        Function::{Block, BlockId, Function as HirFunction, FunctionKind, InstructionKind as HirInstructionKind, Variable},
         Program::Program as HirProgram,
         Type::Type as HirType,
     },
@@ -9,7 +9,7 @@ use crate::siko::{
         Data::{Field as MirField, Struct, Union, Variant as MirVariant},
         Function::{
             Block as MirBlock, EnumCase as MirEnumCase, Function as MirFunction, FunctionKind as MirFunctionKind, Instruction,
-            IntegerCase as MirIntegerCase, Param as MirParam, Value, Variable,
+            IntegerCase as MirIntegerCase, Param as MirParam, Value, Variable as MirVariable,
         },
         Program::Program as MirProgram,
         Type::Type as MirType,
@@ -30,11 +30,10 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn buildInstructionVar(&self, id: &InstructionId) -> Variable {
-        let i = self.function.getInstruction(*id);
-        let ty = lowerType(i.ty.as_ref().expect("no ty"), &self.program);
-        let name = format!("b{}i{}", id.getBlockById().id, id.getId() + 1);
-        Variable { name: name, ty: ty }
+    fn buildVariable(&self, id: &Variable) -> MirVariable {
+        let ty = lowerType(&id.getType(), &self.program);
+        let name = format!("{}", id.value);
+        MirVariable { name: name, ty: ty }
     }
 
     fn getBlockName(&self, blockId: BlockId) -> String {
@@ -49,125 +48,120 @@ impl<'a> Builder<'a> {
             id: self.getBlockName(hirBlock.id),
             instructions: Vec::new(),
         };
-        // for instruction in &hirBlock.instructions {
-        //     if let HirInstructionKind::Drop(_) = instruction.kind {
-        //         continue;
-        //     }
-        //     let idVar = self.buildInstructionVar(&instruction.id);
-        //     match &instruction.kind {
-        //         HirInstructionKind::FunctionCall(name, args) => {
-        //             let args = args.iter().map(|id| self.buildInstructionVar(id)).collect();
-        //             block.instructions.push(Instruction::Declare(idVar.clone()));
-        //             block.instructions.push(Instruction::Call(idVar, convertName(name), args));
-        //         }
-        //         HirInstructionKind::Tuple(_) => {
-        //             unreachable!()
-        //         }
-        //         HirInstructionKind::Drop(_) => {}
-        //         HirInstructionKind::DeclareVar(var) => {
-        //             let i = self.function.getInstruction(instruction.id);
-        //             let ty = lowerType(i.ty.as_ref().expect("no ty"), &self.program);
-        //             let var = Variable { name: var.clone(), ty: ty };
-        //             block.instructions.push(Instruction::Declare(var.clone()));
-        //         }
-        //         HirInstructionKind::ValueRef(name) => {
-        //             let i = self.function.getInstruction(instruction.id);
-        //             let ty = lowerType(i.ty.as_ref().expect("no ty"), &self.program);
-        //             let var = Variable {
-        //                 name: name.getValue(),
-        //                 ty: ty,
-        //             };
-        //             block.instructions.push(Instruction::Declare(idVar.clone()));
-        //             block.instructions.push(Instruction::Memcpy(var, idVar));
-        //         }
-        //         HirInstructionKind::Assign(name, rhs) => {
-        //             let rhsI = self.function.getInstruction(*rhs);
-        //             let ty = lowerType(rhsI.ty.as_ref().expect("no ty"), &self.program);
-        //             let var = Variable {
-        //                 name: name.getValue(),
-        //                 ty: ty,
-        //             };
-        //             let rhs = self.buildInstructionVar(rhs);
-        //             block.instructions.push(Instruction::Memcpy(rhs, var));
-        //         }
-        //         HirInstructionKind::Bind(var, rhs, _) => {
-        //             let i = self.function.getInstruction(*rhs);
-        //             let ty = lowerType(i.ty.as_ref().expect("no ty"), &self.program);
-        //             let var = Variable {
-        //                 name: var.to_string(),
-        //                 ty: ty,
-        //             };
-        //             let rhs = self.buildInstructionVar(rhs);
-        //             block.instructions.push(Instruction::Declare(var.clone()));
-        //             block.instructions.push(Instruction::Memcpy(rhs, var));
-        //         }
-        //         HirInstructionKind::Jump(blockId) => {
-        //             block.instructions.push(Instruction::Jump(self.getBlockName(*blockId)));
-        //         }
-        //         HirInstructionKind::Return(v) => {
-        //             block.instructions.push(Instruction::Return(Value::Var(self.buildInstructionVar(v))));
-        //         }
-        //         HirInstructionKind::IntegerLiteral(v) => {
-        //             block.instructions.push(Instruction::Declare(idVar.clone()));
-        //             block.instructions.push(Instruction::IntegerLiteral(idVar, v.to_string()));
-        //         }
-        //         HirInstructionKind::StringLiteral(v) => {
-        //             block.instructions.push(Instruction::Declare(idVar.clone()));
-        //             block.instructions.push(Instruction::StringLiteral(idVar, v.to_string()));
-        //         }
-        //         HirInstructionKind::EnumSwitch(root, cases) => {
-        //             let root = self.buildInstructionVar(root);
-        //             let mut mirCases = Vec::new();
-        //             for case in cases {
-        //                 let mirCase = MirEnumCase {
-        //                     index: case.index,
-        //                     branch: self.getBlockName(case.branch),
-        //                 };
-        //                 mirCases.push(mirCase);
-        //             }
-        //             block.instructions.push(Instruction::EnumSwitch(root, mirCases));
-        //         }
-        //         HirInstructionKind::IntegerSwitch(root, cases) => {
-        //             let root = self.buildInstructionVar(root);
-        //             let mut mirCases = Vec::new();
-        //             for case in cases {
-        //                 let mirCase = MirIntegerCase {
-        //                     value: case.value.clone(),
-        //                     branch: self.getBlockName(case.branch),
-        //                 };
-        //                 mirCases.push(mirCase);
-        //             }
-        //             block.instructions.push(Instruction::IntegerSwitch(root, mirCases));
-        //         }
-        //         HirInstructionKind::Transform(root, index, _) => {
-        //             let root = self.buildInstructionVar(root);
-        //             block.instructions.push(Instruction::Transform(idVar, root, *index));
-        //         }
-        //         HirInstructionKind::TupleIndex(root, index) => {
-        //             let root = self.buildInstructionVar(root);
-        //             block.instructions.push(Instruction::GetFieldRef(idVar, root, *index));
-        //         }
-        //         HirInstructionKind::FieldRef(root, name) => {
-        //             let i = self.function.getInstruction(*root);
-        //             let className = i.ty.as_ref().expect("no type").getName().expect("no name for field ref root");
-        //             let c = self.program.classes.get(&className).expect("class not found");
-        //             let (_, index) = c.getField(name);
-        //             let root = self.buildInstructionVar(root);
-        //             block.instructions.push(Instruction::GetFieldRef(idVar, root, index));
-        //         }
-        //         HirInstructionKind::Ref(arg) => {
-        //             let arg = self.buildInstructionVar(arg);
-        //             block.instructions.push(Instruction::Declare(idVar.clone()));
-        //             block.instructions.push(Instruction::Reference(idVar, arg));
-        //         }
-        //         HirInstructionKind::Noop => {}
-        //         k => panic!("NYI {}", k),
-        //     }
-        // }
+        for instruction in &hirBlock.instructions {
+            if let HirInstructionKind::Drop(_) = instruction.kind {
+                continue;
+            }
+            match &instruction.kind {
+                HirInstructionKind::FunctionCall(dest, name, args) => {
+                    let args = args.iter().map(|var| self.buildVariable(var)).collect();
+                    let dest = self.buildVariable(dest);
+                    block.instructions.push(Instruction::Declare(dest.clone()));
+                    block.instructions.push(Instruction::Call(dest, convertName(name), args));
+                }
+                HirInstructionKind::Tuple(_, _) => {
+                    unreachable!("tuples in MIR??")
+                }
+                HirInstructionKind::Drop(_) => {}
+                HirInstructionKind::DeclareVar(var) => {
+                    let var = self.buildVariable(var);
+                    block.instructions.push(Instruction::Declare(var.clone()));
+                }
+                HirInstructionKind::ValueRef(dest, name) => {
+                    let dest = self.buildVariable(dest);
+                    let var = MirVariable {
+                        name: name.getValue(),
+                        ty: dest.ty.clone(),
+                    };
+                    block.instructions.push(Instruction::Declare(dest.clone()));
+                    block.instructions.push(Instruction::Memcpy(var, dest));
+                }
+                HirInstructionKind::Assign(name, rhs) => {
+                    let rhs = self.buildVariable(rhs);
+                    let var = MirVariable {
+                        name: name.getValue(),
+                        ty: rhs.ty.clone(),
+                    };
+                    block.instructions.push(Instruction::Memcpy(rhs, var));
+                }
+                HirInstructionKind::Bind(var, rhs, _) => {
+                    let rhs = self.buildVariable(rhs);
+                    let var = self.buildVariable(var);
+                    block.instructions.push(Instruction::Declare(var.clone()));
+                    block.instructions.push(Instruction::Memcpy(rhs, var));
+                }
+                HirInstructionKind::Jump(_, blockId) => {
+                    block.instructions.push(Instruction::Jump(self.getBlockName(*blockId)));
+                }
+                HirInstructionKind::Return(_, v) => {
+                    block.instructions.push(Instruction::Return(Value::Var(self.buildVariable(v))));
+                }
+                HirInstructionKind::IntegerLiteral(dest, v) => {
+                    let dest = self.buildVariable(dest);
+                    block.instructions.push(Instruction::Declare(dest.clone()));
+                    block.instructions.push(Instruction::IntegerLiteral(dest, v.to_string()));
+                }
+                HirInstructionKind::StringLiteral(dest, v) => {
+                    let dest = self.buildVariable(dest);
+                    block.instructions.push(Instruction::Declare(dest.clone()));
+                    block.instructions.push(Instruction::StringLiteral(dest, v.to_string()));
+                }
+                HirInstructionKind::EnumSwitch(root, cases) => {
+                    let root = self.buildVariable(root);
+                    let mut mirCases = Vec::new();
+                    for case in cases {
+                        let mirCase = MirEnumCase {
+                            index: case.index,
+                            branch: self.getBlockName(case.branch),
+                        };
+                        mirCases.push(mirCase);
+                    }
+                    block.instructions.push(Instruction::EnumSwitch(root, mirCases));
+                }
+                HirInstructionKind::IntegerSwitch(root, cases) => {
+                    let root = self.buildVariable(root);
+                    let mut mirCases = Vec::new();
+                    for case in cases {
+                        let mirCase = MirIntegerCase {
+                            value: case.value.clone(),
+                            branch: self.getBlockName(case.branch),
+                        };
+                        mirCases.push(mirCase);
+                    }
+                    block.instructions.push(Instruction::IntegerSwitch(root, mirCases));
+                }
+                HirInstructionKind::Transform(dest, root, index) => {
+                    let dest = self.buildVariable(dest);
+                    let root = self.buildVariable(root);
+                    block.instructions.push(Instruction::Transform(dest, root, *index));
+                }
+                HirInstructionKind::TupleIndex(dest, root, index) => {
+                    let dest = self.buildVariable(dest);
+                    let root = self.buildVariable(root);
+                    block.instructions.push(Instruction::GetFieldRef(dest, root, *index));
+                }
+                HirInstructionKind::FieldRef(dest, root, name) => {
+                    let dest = self.buildVariable(dest);
+                    let className = root.ty.as_ref().expect("no type").getName().expect("no name for field ref root");
+                    let c = self.program.classes.get(&className).expect("class not found");
+                    let (_, index) = c.getField(name);
+                    let root = self.buildVariable(root);
+                    block.instructions.push(Instruction::GetFieldRef(dest, root, index));
+                }
+                HirInstructionKind::Ref(dest, arg) => {
+                    let dest = self.buildVariable(dest);
+                    let arg = self.buildVariable(arg);
+                    block.instructions.push(Instruction::Declare(dest.clone()));
+                    block.instructions.push(Instruction::Reference(dest, arg));
+                }
+                k => panic!("NYI {}", k),
+            }
+        }
         Some(block)
     }
 
     fn lowerFunction(&mut self) -> MirFunction {
+        //println!("Lowering {}", self.function.name);
         let mut args = Vec::new();
         for arg in &self.function.params {
             let arg = MirParam {

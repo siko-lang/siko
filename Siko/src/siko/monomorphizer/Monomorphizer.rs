@@ -6,7 +6,7 @@ use std::{
 use crate::siko::{
     hir::{
         Apply::{instantiateClass, instantiateEnum, Apply},
-        Function::{Body, Instruction, InstructionKind, Parameter},
+        Function::{Block, Body, Instruction, InstructionKind, Parameter, ValueKind, Variable},
         Program::Program,
         Substitution::TypeSubstitution,
         Type::{createTypeSubstitution, createTypeSubstitutionFrom, formatTypes, Type},
@@ -29,6 +29,150 @@ impl Display for Key {
             Key::Class(name, types) => write!(f, "{}/{}", name, formatTypes(types)),
             Key::Enum(name, types) => write!(f, "{}/{}", name, formatTypes(types)),
             Key::Function(name, types) => write!(f, "{}/{}", name, formatTypes(types)),
+        }
+    }
+}
+
+trait Monomorphize {
+    fn process(&self, sub: &TypeSubstitution, mono: &mut Monomorphizer) -> Self;
+}
+
+impl Monomorphize for Type {
+    fn process(&self, sub: &TypeSubstitution, mono: &mut Monomorphizer) -> Self {
+        let ty = self.apply(sub);
+        mono.processType(ty)
+    }
+}
+
+impl<T: Monomorphize> Monomorphize for Option<T> {
+    fn process(&self, sub: &TypeSubstitution, mono: &mut Monomorphizer) -> Self {
+        match self {
+            Some(v) => Some(v.process(sub, mono)),
+            None => None,
+        }
+    }
+}
+
+impl<T: Monomorphize> Monomorphize for Vec<T> {
+    fn process(&self, sub: &TypeSubstitution, mono: &mut Monomorphizer) -> Self {
+        self.iter().map(|i| i.process(sub, mono)).collect()
+    }
+}
+
+impl Monomorphize for Variable {
+    fn process(&self, sub: &TypeSubstitution, mono: &mut Monomorphizer) -> Self {
+        let mut v = self.clone();
+        v.ty = v.ty.process(sub, mono);
+        v
+    }
+}
+
+impl Monomorphize for ValueKind {
+    fn process(&self, sub: &TypeSubstitution, mono: &mut Monomorphizer) -> Self {
+        match self {
+            ValueKind::Arg(_, _) => self.clone(),
+            ValueKind::Value(var) => ValueKind::Value(var.process(sub, mono)),
+        }
+    }
+}
+
+impl Monomorphize for Parameter {
+    fn process(&self, sub: &TypeSubstitution, mono: &mut Monomorphizer) -> Self {
+        match self {
+            Parameter::Named(name, ty, mutable) => Parameter::Named(name.clone(), ty.process(sub, mono), *mutable),
+            Parameter::SelfParam(mutable, ty) => Parameter::SelfParam(*mutable, ty.process(sub, mono)),
+        }
+    }
+}
+
+impl Monomorphize for Instruction {
+    fn process(&self, sub: &TypeSubstitution, mono: &mut Monomorphizer) -> Self {
+        // println!(
+        //     "MONO INSTR {} / {}",
+        //     instruction,
+        //     instruction.ty.clone().unwrap()
+        // );
+        let mut instruction = self.clone();
+        let kind: InstructionKind = match &self.kind {
+            InstructionKind::FunctionCall(dest, name, args) => {
+                //println!("Calling {}", name);
+                let target_fn = mono.program.functions.get(name).expect("function not found in mono");
+                let fn_ty = target_fn.getType();
+                let arg_types: Vec<_> = args
+                    .iter()
+                    .map(|arg| {
+                        //println!("arg {}", arg);
+                        let ty = arg.getType();
+                        ty.apply(&sub)
+                    })
+                    .collect();
+                let result = dest.getType().apply(sub);
+                let context_ty = Type::Function(arg_types, Box::new(result));
+                //println!("fn type {}", fn_ty);
+                //println!("context type {}", context_ty);
+                let sub = createTypeSubstitution(&context_ty, &fn_ty);
+                let ty_args: Vec<_> = target_fn.constraintContext.typeParameters.iter().map(|ty| ty.apply(&sub)).collect();
+                //println!("{} type args {}", name, formatTypes(&ty_args));
+                let fn_name = mono.get_mono_name(name, &ty_args);
+                mono.addKey(Key::Function(name.clone(), ty_args));
+                InstructionKind::FunctionCall(dest.clone(), fn_name, args.clone())
+            }
+            k => k.clone(),
+        };
+        instruction.kind = kind.process(sub, mono);
+        instruction
+    }
+}
+
+impl Monomorphize for InstructionKind {
+    fn process(&self, sub: &TypeSubstitution, mono: &mut Monomorphizer) -> Self {
+        match self {
+            InstructionKind::FunctionCall(dest, name, args) => {
+                InstructionKind::FunctionCall(dest.process(sub, mono), name.clone(), args.process(sub, mono))
+            }
+            InstructionKind::DynamicFunctionCall(dest, root, args) => {
+                InstructionKind::DynamicFunctionCall(dest.process(sub, mono), root.process(sub, mono), args.process(sub, mono))
+            }
+            InstructionKind::ValueRef(dest, value) => InstructionKind::ValueRef(dest.process(sub, mono), value.process(sub, mono)),
+            InstructionKind::FieldRef(dest, root, name) => InstructionKind::FieldRef(dest.process(sub, mono), root.process(sub, mono), name.clone()),
+            InstructionKind::TupleIndex(dest, root, index) => InstructionKind::TupleIndex(dest.process(sub, mono), root.process(sub, mono), *index),
+            InstructionKind::Bind(lhs, rhs, mutable) => InstructionKind::Bind(lhs.process(sub, mono), rhs.process(sub, mono), mutable.clone()),
+            InstructionKind::Tuple(dest, args) => InstructionKind::Tuple(dest.process(sub, mono), args.process(sub, mono)),
+            InstructionKind::StringLiteral(dest, lit) => InstructionKind::StringLiteral(dest.process(sub, mono), lit.clone()),
+            InstructionKind::IntegerLiteral(dest, lit) => InstructionKind::IntegerLiteral(dest.process(sub, mono), lit.clone()),
+            InstructionKind::CharLiteral(dest, lit) => InstructionKind::CharLiteral(dest.process(sub, mono), *lit),
+            InstructionKind::Return(dest, arg) => InstructionKind::Return(dest.process(sub, mono), arg.process(sub, mono)),
+            InstructionKind::Ref(dest, arg) => InstructionKind::Ref(dest.process(sub, mono), arg.process(sub, mono)),
+            InstructionKind::Drop(args) => InstructionKind::Drop(args.clone()),
+            InstructionKind::Jump(dest, block_id) => InstructionKind::Jump(dest.process(sub, mono), *block_id),
+            InstructionKind::Assign(dest, rhs) => InstructionKind::Assign(dest.process(sub, mono), rhs.process(sub, mono)),
+            InstructionKind::DeclareVar(var) => InstructionKind::DeclareVar(var.process(sub, mono)),
+            InstructionKind::Transform(dest, root, index) => {
+                InstructionKind::Transform(dest.process(sub, mono), root.process(sub, mono), index.clone())
+            }
+            InstructionKind::EnumSwitch(root, cases) => InstructionKind::EnumSwitch(root.process(sub, mono), cases.clone()),
+            InstructionKind::IntegerSwitch(root, cases) => InstructionKind::IntegerSwitch(root.process(sub, mono), cases.clone()),
+            InstructionKind::StringSwitch(root, cases) => InstructionKind::StringSwitch(root.process(sub, mono), cases.clone()),
+        }
+    }
+}
+
+impl Monomorphize for Block {
+    fn process(&self, sub: &TypeSubstitution, mono: &mut Monomorphizer) -> Self {
+        let instructions = self.instructions.process(sub, mono);
+        Block {
+            id: self.id.clone(),
+            instructions: instructions,
+        }
+    }
+}
+
+impl Monomorphize for Body {
+    fn process(&self, sub: &TypeSubstitution, mono: &mut Monomorphizer) -> Self {
+        let blocks = self.blocks.process(sub, mono);
+        Body {
+            blocks: blocks,
+            varTypes: BTreeMap::new(),
         }
     }
 }
@@ -86,6 +230,7 @@ impl<'a> Monomorphizer<'a> {
                     if self.processed.contains(&key) {
                         continue;
                     }
+                    //println!("MONO Processing {}", key);
                     self.processed.insert(key.clone());
                     match key.clone() {
                         Key::Function(name, args) => {
@@ -114,68 +259,11 @@ impl<'a> Monomorphizer<'a> {
         sub.forced = true;
         let mut monoFn = function.clone();
         monoFn.result = self.processType(monoFn.result.apply(&sub));
-        monoFn.params = monoFn
-            .params
-            .into_iter()
-            .map(|param| match param {
-                Parameter::Named(name, ty, mutable) => Parameter::Named(name, self.processType(ty.apply(&sub)), mutable),
-                Parameter::SelfParam(mutable, ty) => Parameter::SelfParam(mutable, self.processType(ty.apply(&sub))),
-            })
-            .collect();
-        monoFn.body = monoFn.body.map(|mut body| {
-            body.blocks = body
-                .blocks
-                .into_iter()
-                .map(|mut block| {
-                    block.instructions = block
-                        .instructions
-                        .into_iter()
-                        .map(|instruction| self.monomorphizeInstruction(&sub, instruction))
-                        .collect();
-                    block
-                })
-                .collect();
-            body
-        });
+        monoFn.params = monoFn.params.process(&sub, self);
+        monoFn.body = monoFn.body.process(&sub, self);
         let monoName = self.get_mono_name(&name, &args);
         monoFn.name = monoName.clone();
         self.monomorphizedProgram.functions.insert(monoName, monoFn);
-    }
-
-    fn monomorphizeInstruction(&mut self, sub: &TypeSubstitution, mut instruction: Instruction) -> Instruction {
-        // println!(
-        //     "MONO INSTR {} / {}",
-        //     instruction,
-        //     instruction.ty.clone().unwrap()
-        // );
-        let kind: InstructionKind = match &instruction.kind {
-            InstructionKind::FunctionCall(dest, name, args) => {
-                //println!("Calling {}", name);
-                let target_fn = self.program.functions.get(name).expect("function not found in mono");
-                let fn_ty = target_fn.getType();
-                let arg_types: Vec<_> = args
-                    .iter()
-                    .map(|arg| {
-                        //println!("arg {}", arg);
-                        let ty = arg.ty.clone().expect("variable with no type");
-                        ty.apply(&sub)
-                    })
-                    .collect();
-                let result = dest.ty.clone().expect("function with no result ty").apply(sub);
-                let context_ty = Type::Function(arg_types, Box::new(result));
-                //println!("fn type {}", fn_ty);
-                //println!("context type {}", context_ty);
-                let sub = createTypeSubstitution(&context_ty, &fn_ty);
-                let ty_args: Vec<_> = target_fn.constraintContext.typeParameters.iter().map(|ty| ty.apply(&sub)).collect();
-                //println!("{} type args {}", name, formatTypes(&ty_args));
-                let fn_name = self.get_mono_name(name, &ty_args);
-                self.addKey(Key::Function(name.clone(), ty_args));
-                InstructionKind::FunctionCall(dest.clone(), fn_name, args.clone())
-            }
-            k => k.clone(),
-        };
-        instruction.kind = kind.apply(&sub);
-        instruction
     }
 
     fn processType(&mut self, ty: Type) -> Type {

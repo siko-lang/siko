@@ -4,7 +4,6 @@ use std::fmt::Display;
 
 use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
 
-use super::Substitution::TypeSubstitution;
 use super::{ConstraintContext::ConstraintContext, Type::Type};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -179,6 +178,13 @@ impl Variable {
         f.fixed = false;
         f
     }
+
+    pub fn getType(&self) -> &Type {
+        match &self.ty {
+            Some(ty) => ty,
+            None => panic!("No type found for var {}", self.value),
+        }
+    }
 }
 
 impl Display for Variable {
@@ -250,7 +256,7 @@ impl InstructionKind {
             InstructionKind::Drop(_) => None,
             InstructionKind::Jump(v, _) => Some(v.clone()),
             InstructionKind::Assign(_, _) => None,
-            InstructionKind::DeclareVar(_) => None,
+            InstructionKind::DeclareVar(v) => Some(v.clone()),
             InstructionKind::Transform(v, _, _) => Some(v.clone()),
             InstructionKind::EnumSwitch(_, _) => None,
             InstructionKind::IntegerSwitch(_, _) => None,

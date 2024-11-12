@@ -41,64 +41,62 @@ block0:
 
 define private void @Main_foo(ptr noundef %fn_result) {
 block0:
-   %b0i1 = alloca %struct.Int_Int, align 8
-   %tmp_b0i1_1 = getelementptr inbounds %struct.Int_Int, ptr %b0i1, i32 0, i32 0
-   store i64 6, ptr %tmp_b0i1_1, align 8
-   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %fn_result, ptr align 8 %b0i1, i64 8, i1 false)
+   %lit_1 = alloca %struct.Int_Int, align 8
+   %tmp_lit_1_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_1, i32 0, i32 0
+   store i64 6, ptr %tmp_lit_1_1, align 8
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %fn_result, ptr align 8 %lit_1, i64 8, i1 false)
    ret void
 }
 
 define private void @Main_foo2(ptr noundef %fn_result) {
 block0:
-   %b0i14 = alloca %struct.siko_Tuple_, align 4
-   %b0i13 = alloca %struct.Main_Large, align 8
-   %b0i11 = alloca %struct.Main_Struct1, align 8
-   %b0i9 = alloca %struct.Int_Int, align 8
-   %b0i7 = alloca %struct.Int_Int, align 8
-   %b0i5 = alloca %struct.Int_Int, align 8
-   %b0i3 = alloca %struct.Int_Int, align 8
-   %b0i1 = alloca %struct.Int_Int, align 8
-   %tmp_b0i1_1 = getelementptr inbounds %struct.Int_Int, ptr %b0i1, i32 0, i32 0
-   store i64 1, ptr %tmp_b0i1_1, align 8
-   %tmp_b0i3_1 = getelementptr inbounds %struct.Int_Int, ptr %b0i3, i32 0, i32 0
-   store i64 2, ptr %tmp_b0i3_1, align 8
-   %tmp_b0i5_1 = getelementptr inbounds %struct.Int_Int, ptr %b0i5, i32 0, i32 0
-   store i64 3, ptr %tmp_b0i5_1, align 8
-   %tmp_b0i7_1 = getelementptr inbounds %struct.Int_Int, ptr %b0i7, i32 0, i32 0
-   store i64 4, ptr %tmp_b0i7_1, align 8
-   %tmp_b0i9_1 = getelementptr inbounds %struct.Int_Int, ptr %b0i9, i32 0, i32 0
-   store i64 5, ptr %tmp_b0i9_1, align 8
-   call void @Main_Struct1(ptr %b0i1, ptr %b0i3, ptr %b0i5, ptr %b0i7, ptr %b0i9, ptr %b0i11)
-   call void @Main_Large(ptr %b0i11, ptr %b0i13)
-   call void @siko_Tuple_(ptr %b0i14)
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %b0i14, i64 0, i1 false)
+   %unit_8 = alloca %struct.siko_Tuple_, align 4
+   %call_7 = alloca %struct.Main_Large, align 8
+   %call_6 = alloca %struct.Main_Struct1, align 8
+   %lit_5 = alloca %struct.Int_Int, align 8
+   %lit_4 = alloca %struct.Int_Int, align 8
+   %lit_3 = alloca %struct.Int_Int, align 8
+   %lit_2 = alloca %struct.Int_Int, align 8
+   %lit_1 = alloca %struct.Int_Int, align 8
+   %tmp_lit_1_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_1, i32 0, i32 0
+   store i64 1, ptr %tmp_lit_1_1, align 8
+   %tmp_lit_2_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_2, i32 0, i32 0
+   store i64 2, ptr %tmp_lit_2_1, align 8
+   %tmp_lit_3_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_3, i32 0, i32 0
+   store i64 3, ptr %tmp_lit_3_1, align 8
+   %tmp_lit_4_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_4, i32 0, i32 0
+   store i64 4, ptr %tmp_lit_4_1, align 8
+   %tmp_lit_5_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_5, i32 0, i32 0
+   store i64 5, ptr %tmp_lit_5_1, align 8
+   call void @Main_Struct1(ptr %lit_1, ptr %lit_2, ptr %lit_3, ptr %lit_4, ptr %lit_5, ptr %call_6)
+   call void @Main_Large(ptr %call_6, ptr %call_7)
+   call void @siko_Tuple_(ptr %unit_8)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %unit_8, i64 0, i1 false)
    ret void
 }
 
 define private void @Main_main(ptr noundef %fn_result) {
 block0:
-   %b2i3 = alloca %struct.siko_Tuple_, align 4
-   %b2i2 = alloca %struct.siko_Tuple_, align 4
-   %b2i1 = alloca %struct.siko_Tuple_, align 4
-   %b1i2 = alloca %struct.siko_Tuple_, align 4
-   %b1i1 = alloca %struct.siko_Tuple_, align 4
-   %loop_var_0 = alloca %struct.siko_Tuple_, align 4
-   %b0i2 = alloca %struct.siko_Tuple_, align 4
-   %b0i1 = alloca %struct.Int_Int, align 8
-   call void @Main_foo(ptr %b0i1)
-   call void @siko_Tuple_(ptr %b0i2)
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %loop_var_0, ptr align 4 %b0i2, i64 0, i1 false)
+   %unit_11 = alloca %struct.siko_Tuple_, align 4
+   %call_10 = alloca %struct.siko_Tuple_, align 4
+   %finalValueRef_4 = alloca %struct.siko_Tuple_, align 4
+   %unit_7 = alloca %struct.siko_Tuple_, align 4
+   %loopVar_3 = alloca %struct.siko_Tuple_, align 4
+   %tuple_2 = alloca %struct.siko_Tuple_, align 4
+   %call_1 = alloca %struct.Int_Int, align 8
+   call void @Main_foo(ptr %call_1)
+   call void @siko_Tuple_(ptr %tuple_2)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %loopVar_3, ptr align 4 %tuple_2, i64 0, i1 false)
    br label %block1
 block1:
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %b1i1, ptr align 4 %loop_var_0, i64 0, i1 false)
-   call void @siko_Tuple_(ptr %b1i2)
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %loop_var_0, ptr align 4 %b1i2, i64 0, i1 false)
+   call void @siko_Tuple_(ptr %unit_7)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %loopVar_3, ptr align 4 %unit_7, i64 0, i1 false)
    br label %block2
 block2:
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %b2i1, ptr align 4 %loop_var_0, i64 0, i1 false)
-   call void @Main_foo2(ptr %b2i2)
-   call void @siko_Tuple_(ptr %b2i3)
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %b2i3, i64 0, i1 false)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %finalValueRef_4, ptr align 4 %loopVar_3, i64 0, i1 false)
+   call void @Main_foo2(ptr %call_10)
+   call void @siko_Tuple_(ptr %unit_11)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %unit_11, i64 0, i1 false)
    ret void
 }
 

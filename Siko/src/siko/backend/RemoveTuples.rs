@@ -110,11 +110,9 @@ impl RemoveTuples for Variable {
 impl RemoveTuples for InstructionKind {
     fn removeTuples(&self, ctx: &mut Context) -> InstructionKind {
         match self {
-            InstructionKind::Tuple(dest, args) => InstructionKind::FunctionCall(
-                dest.removeTuples(ctx),
-                getTuple(&dest.ty.clone().expect("tuple ty not found")),
-                args.removeTuples(ctx),
-            ),
+            InstructionKind::Tuple(dest, args) => {
+                InstructionKind::FunctionCall(dest.removeTuples(ctx), getTuple(&dest.getType()), args.removeTuples(ctx))
+            }
             InstructionKind::Transform(dest, root, index) => InstructionKind::Transform(dest.removeTuples(ctx), root.removeTuples(ctx), *index),
             InstructionKind::FunctionCall(dest, name, args) => {
                 InstructionKind::FunctionCall(dest.removeTuples(ctx), name.clone(), args.removeTuples(ctx))

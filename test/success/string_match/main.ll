@@ -20,106 +20,106 @@ block0:
 
 define private void @Main_main(ptr noundef %fn_result) {
 block0:
-   %b8i3 = alloca %struct.siko_Tuple_, align 4
-   %b8i1 = alloca %struct.Bool_Bool, align 4
-   %b7i3 = alloca %struct.siko_Tuple_, align 4
-   %b7i1 = alloca %struct.Bool_Bool, align 4
-   %b6i3 = alloca %struct.siko_Tuple_, align 4
-   %b6i1 = alloca %struct.Bool_Bool, align 4
-   %b5i3 = alloca %struct.siko_Tuple_, align 4
-   %b5i1 = alloca %struct.Bool_Bool, align 4
-   %b4i4 = alloca %struct.Bool_Bool, align 4
-   %b4i1 = alloca %struct.String_String, align 8
-   %b3i4 = alloca %struct.Bool_Bool, align 4
-   %b3i1 = alloca %struct.String_String, align 8
-   %b2i4 = alloca %struct.Bool_Bool, align 4
-   %b2i1 = alloca %struct.String_String, align 8
-   %b1i1 = alloca %struct.siko_Tuple_, align 4
-   %match_var_0 = alloca %struct.siko_Tuple_, align 4
-   %b0i1 = alloca %struct.String_String, align 8
-   %tmp_b0i1_1 = getelementptr inbounds %struct.String_String, ptr %b0i1, i32 0, i32 0
-   store ptr @.str_0, ptr %tmp_b0i1_1, align 8
-   %tmp_b0i1_2 = getelementptr inbounds %struct.String_String, ptr %b0i1, i32 0, i32 1
-   store i64 3, ptr %tmp_b0i1_2, align 8
+   %call_19 = alloca %struct.siko_Tuple_, align 4
+   %call_18 = alloca %struct.Bool_Bool, align 4
+   %call_14 = alloca %struct.siko_Tuple_, align 4
+   %call_13 = alloca %struct.Bool_Bool, align 4
+   %call_9 = alloca %struct.siko_Tuple_, align 4
+   %call_8 = alloca %struct.Bool_Bool, align 4
+   %call_4 = alloca %struct.siko_Tuple_, align 4
+   %call_3 = alloca %struct.Bool_Bool, align 4
+   %eq_17 = alloca %struct.Bool_Bool, align 4
+   %lit_16 = alloca %struct.String_String, align 8
+   %eq_12 = alloca %struct.Bool_Bool, align 4
+   %lit_11 = alloca %struct.String_String, align 8
+   %eq_7 = alloca %struct.Bool_Bool, align 4
+   %lit_6 = alloca %struct.String_String, align 8
+   %matchValue_22 = alloca %struct.siko_Tuple_, align 4
+   %match_var_2 = alloca %struct.siko_Tuple_, align 4
+   %literal_1 = alloca %struct.String_String, align 8
+   %tmp_literal_1_1 = getelementptr inbounds %struct.String_String, ptr %literal_1, i32 0, i32 0
+   store ptr @.str_0, ptr %tmp_literal_1_1, align 8
+   %tmp_literal_1_2 = getelementptr inbounds %struct.String_String, ptr %literal_1, i32 0, i32 1
+   store i64 3, ptr %tmp_literal_1_2, align 8
    br label %block2
 block1:
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %b1i1, ptr align 4 %match_var_0, i64 0, i1 false)
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %b1i1, i64 0, i1 false)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %matchValue_22, ptr align 4 %match_var_2, i64 0, i1 false)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %matchValue_22, i64 0, i1 false)
    ret void
 block2:
-   %tmp_b2i1_1 = getelementptr inbounds %struct.String_String, ptr %b2i1, i32 0, i32 0
-   store ptr @.str_1, ptr %tmp_b2i1_1, align 8
-   %tmp_b2i1_2 = getelementptr inbounds %struct.String_String, ptr %b2i1, i32 0, i32 1
-   store i64 3, ptr %tmp_b2i1_2, align 8
-   call void @String_String_eq(ptr %b0i1, ptr %b2i1, ptr %b2i4)
-   %tmp_switch_var_block2_1 = getelementptr inbounds %struct.Bool_Bool, ptr %b2i4, i32 0, i32 0
+   %tmp_lit_6_1 = getelementptr inbounds %struct.String_String, ptr %lit_6, i32 0, i32 0
+   store ptr @.str_1, ptr %tmp_lit_6_1, align 8
+   %tmp_lit_6_2 = getelementptr inbounds %struct.String_String, ptr %lit_6, i32 0, i32 1
+   store i64 3, ptr %tmp_lit_6_2, align 8
+   call void @String_String_eq(ptr %literal_1, ptr %lit_6, ptr %eq_7)
+   %tmp_switch_var_block2_1 = getelementptr inbounds %struct.Bool_Bool, ptr %eq_7, i32 0, i32 0
    %tmp_switch_var_block2_2 = load i32, ptr %tmp_switch_var_block2_1, align 4
    switch i32 %tmp_switch_var_block2_2, label %block3 [
 i32 1, label %block6
 ]
 
 block3:
-   %tmp_b3i1_1 = getelementptr inbounds %struct.String_String, ptr %b3i1, i32 0, i32 0
-   store ptr @.str_0, ptr %tmp_b3i1_1, align 8
-   %tmp_b3i1_2 = getelementptr inbounds %struct.String_String, ptr %b3i1, i32 0, i32 1
-   store i64 3, ptr %tmp_b3i1_2, align 8
-   call void @String_String_eq(ptr %b0i1, ptr %b3i1, ptr %b3i4)
-   %tmp_switch_var_block3_1 = getelementptr inbounds %struct.Bool_Bool, ptr %b3i4, i32 0, i32 0
+   %tmp_lit_11_1 = getelementptr inbounds %struct.String_String, ptr %lit_11, i32 0, i32 0
+   store ptr @.str_0, ptr %tmp_lit_11_1, align 8
+   %tmp_lit_11_2 = getelementptr inbounds %struct.String_String, ptr %lit_11, i32 0, i32 1
+   store i64 3, ptr %tmp_lit_11_2, align 8
+   call void @String_String_eq(ptr %literal_1, ptr %lit_11, ptr %eq_12)
+   %tmp_switch_var_block3_1 = getelementptr inbounds %struct.Bool_Bool, ptr %eq_12, i32 0, i32 0
    %tmp_switch_var_block3_2 = load i32, ptr %tmp_switch_var_block3_1, align 4
    switch i32 %tmp_switch_var_block3_2, label %block4 [
 i32 1, label %block7
 ]
 
 block4:
-   %tmp_b4i1_1 = getelementptr inbounds %struct.String_String, ptr %b4i1, i32 0, i32 0
-   store ptr @.str_2, ptr %tmp_b4i1_1, align 8
-   %tmp_b4i1_2 = getelementptr inbounds %struct.String_String, ptr %b4i1, i32 0, i32 1
-   store i64 4, ptr %tmp_b4i1_2, align 8
-   call void @String_String_eq(ptr %b0i1, ptr %b4i1, ptr %b4i4)
-   %tmp_switch_var_block4_1 = getelementptr inbounds %struct.Bool_Bool, ptr %b4i4, i32 0, i32 0
+   %tmp_lit_16_1 = getelementptr inbounds %struct.String_String, ptr %lit_16, i32 0, i32 0
+   store ptr @.str_2, ptr %tmp_lit_16_1, align 8
+   %tmp_lit_16_2 = getelementptr inbounds %struct.String_String, ptr %lit_16, i32 0, i32 1
+   store i64 4, ptr %tmp_lit_16_2, align 8
+   call void @String_String_eq(ptr %literal_1, ptr %lit_16, ptr %eq_17)
+   %tmp_switch_var_block4_1 = getelementptr inbounds %struct.Bool_Bool, ptr %eq_17, i32 0, i32 0
    %tmp_switch_var_block4_2 = load i32, ptr %tmp_switch_var_block4_1, align 4
    switch i32 %tmp_switch_var_block4_2, label %block5 [
 i32 1, label %block8
 ]
 
 block5:
-   call void @Bool_Bool_False(ptr %b5i1)
-   call void @Std_Basic_Util_assert(ptr %b5i1, ptr %b5i3)
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_0, ptr align 4 %b5i3, i64 0, i1 false)
+   call void @Bool_Bool_False(ptr %call_3)
+   call void @Std_Basic_Util_assert(ptr %call_3, ptr %call_4)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_2, ptr align 4 %call_4, i64 0, i1 false)
    br label %block1
 block6:
-   call void @Bool_Bool_False(ptr %b6i1)
-   call void @Std_Basic_Util_assert(ptr %b6i1, ptr %b6i3)
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_0, ptr align 4 %b6i3, i64 0, i1 false)
+   call void @Bool_Bool_False(ptr %call_8)
+   call void @Std_Basic_Util_assert(ptr %call_8, ptr %call_9)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_2, ptr align 4 %call_9, i64 0, i1 false)
    br label %block1
 block7:
-   call void @Bool_Bool_True(ptr %b7i1)
-   call void @Std_Basic_Util_assert(ptr %b7i1, ptr %b7i3)
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_0, ptr align 4 %b7i3, i64 0, i1 false)
+   call void @Bool_Bool_True(ptr %call_13)
+   call void @Std_Basic_Util_assert(ptr %call_13, ptr %call_14)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_2, ptr align 4 %call_14, i64 0, i1 false)
    br label %block1
 block8:
-   call void @Bool_Bool_False(ptr %b8i1)
-   call void @Std_Basic_Util_assert(ptr %b8i1, ptr %b8i3)
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_0, ptr align 4 %b8i3, i64 0, i1 false)
+   call void @Bool_Bool_False(ptr %call_18)
+   call void @Std_Basic_Util_assert(ptr %call_18, ptr %call_19)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_2, ptr align 4 %call_19, i64 0, i1 false)
    br label %block1
 }
 
 define private void @Std_Basic_Util_assert(ptr noundef %v, ptr noundef %fn_result) {
 block0:
-   %b6i1 = alloca %struct.siko_Tuple_, align 4
-   %b4i2 = alloca %struct.siko_Tuple_, align 4
-   %b4i1 = alloca %struct.siko_Tuple_, align 4
-   %b1i1 = alloca %struct.siko_Tuple_, align 4
-   %match_var_0 = alloca %struct.siko_Tuple_, align 4
-   %b0i1 = alloca %struct.Bool_Bool, align 4
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %b0i1, ptr align 4 %v, i64 4, i1 false)
+   %unit_9 = alloca %struct.siko_Tuple_, align 4
+   %unit_5 = alloca %struct.siko_Tuple_, align 4
+   %call_4 = alloca %struct.siko_Tuple_, align 4
+   %matchValue_13 = alloca %struct.siko_Tuple_, align 4
+   %match_var_2 = alloca %struct.siko_Tuple_, align 4
+   %valueRef_1 = alloca %struct.Bool_Bool, align 4
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %valueRef_1, ptr align 4 %v, i64 4, i1 false)
    br label %block2
 block1:
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %b1i1, ptr align 4 %match_var_0, i64 0, i1 false)
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %b1i1, i64 0, i1 false)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %matchValue_13, ptr align 4 %match_var_2, i64 0, i1 false)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %matchValue_13, i64 0, i1 false)
    ret void
 block2:
-   %tmp_switch_var_block2_1 = getelementptr inbounds %struct.Bool_Bool, ptr %b0i1, i32 0, i32 0
+   %tmp_switch_var_block2_1 = getelementptr inbounds %struct.Bool_Bool, ptr %valueRef_1, i32 0, i32 0
    %tmp_switch_var_block2_2 = load i32, ptr %tmp_switch_var_block2_1, align 4
    switch i32 %tmp_switch_var_block2_2, label %block3 [
 i32 1, label %block5
@@ -128,15 +128,15 @@ i32 1, label %block5
 block3:
    br label %block4
 block4:
-   call void @Std_Basic_Util_siko_runtime_abort(ptr %b4i1)
-   call void @siko_Tuple_(ptr %b4i2)
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_0, ptr align 4 %b4i2, i64 0, i1 false)
+   call void @Std_Basic_Util_siko_runtime_abort(ptr %call_4)
+   call void @siko_Tuple_(ptr %unit_5)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_2, ptr align 4 %unit_5, i64 0, i1 false)
    br label %block1
 block5:
    br label %block6
 block6:
-   call void @siko_Tuple_(ptr %b6i1)
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_0, ptr align 4 %b6i1, i64 0, i1 false)
+   call void @siko_Tuple_(ptr %unit_9)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_2, ptr align 4 %unit_9, i64 0, i1 false)
    br label %block1
 }
 

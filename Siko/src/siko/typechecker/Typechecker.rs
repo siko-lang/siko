@@ -163,7 +163,10 @@ impl<'a> Typechecker<'a> {
     }
 
     fn getType(&self, var: &Variable) -> Type {
-        self.types.get(&var.value).expect("No type found!").clone()
+        match self.types.get(&var.value) {
+            Some(ty) => ty.clone(),
+            None => panic!("No type found for {}!", var),
+        }
     }
 
     fn getValueType(&self, v: &String) -> Type {
@@ -298,7 +301,7 @@ impl<'a> Typechecker<'a> {
                     }
                     self.unify(self.getValueType(&name.getValue()), self.getType(rhs), instruction.location.clone());
                 }
-                InstructionKind::DeclareVar(var) => {}
+                InstructionKind::DeclareVar(_) => {}
                 InstructionKind::Transform(dest, root, index) => {
                     let rootTy = self.getType(root);
                     let rootTy = rootTy.apply(&self.substitution);
@@ -573,12 +576,10 @@ impl<'a> Typechecker<'a> {
 
         for block in &mut body.blocks {
             for instruction in &mut block.instructions {
-                //println!("Before {}", instruction.kind);
                 instruction.kind = instruction.kind.applyVar(&varSwap);
-                //println!("After {}", instruction.kind);
             }
         }
-
+        //self.dump(&result);
         self.verify(&result);
         result
     }

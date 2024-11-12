@@ -155,7 +155,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         parentEnv: &'a Environment<'a>,
     ) -> MatchCompiler<'a, 'b> {
         let matchValue = resolver.createValue("match_var", matchLocation.clone());
-        resolver.addInstruction(InstructionKind::DeclareVar(matchValue.clone()), matchLocation.clone());
+        resolver.addInstruction(InstructionKind::DeclareVar(matchValue.asFixed()), matchLocation.clone());
         let contBlockId = resolver.createBlock();
         MatchCompiler {
             matchLocation: matchLocation,
@@ -615,7 +615,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     }
                     let exprValue = self.resolver.resolveExpr(&branch.body, &mut env);
                     self.resolver.addImplicitInstruction(
-                        InstructionKind::Assign(ValueKind::Value(self.matchValue.clone()), exprValue),
+                        InstructionKind::Assign(ValueKind::Value(self.matchValue.asNotFixed()), exprValue),
                         self.matchLocation.clone(),
                     );
                     let jumpValue = self.resolver.createValue("jump", self.bodyLocation.clone());

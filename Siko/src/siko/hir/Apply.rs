@@ -4,7 +4,7 @@ use crate::siko::hir::Type::Type;
 
 use super::{
     Data::{Class, Enum, Field, Variant},
-    Function::{InstructionKind, Variable},
+    Function::{InstructionKind, ValueKind, Variable},
     Substitution::{TypeSubstitution, VariableSubstitution},
     TypeVarAllocator::TypeVarAllocator,
     Unification::unify,
@@ -109,6 +109,15 @@ impl Apply for Variable {
     }
 }
 
+impl Apply for ValueKind {
+    fn apply(&self, sub: &TypeSubstitution) -> Self {
+        match self {
+            ValueKind::Arg(n, i) => ValueKind::Arg(n.clone(), *i),
+            ValueKind::Value(v) => ValueKind::Value(v.apply(sub)),
+        }
+    }
+}
+
 impl Apply for InstructionKind {
     fn apply(&self, sub: &TypeSubstitution) -> Self {
         match self {
@@ -128,12 +137,12 @@ impl Apply for InstructionKind {
             InstructionKind::Ref(dest, arg) => InstructionKind::Ref(dest.apply(sub), arg.apply(sub)),
             InstructionKind::Drop(args) => InstructionKind::Drop(args.clone()),
             InstructionKind::Jump(dest, block_id) => InstructionKind::Jump(dest.apply(sub), *block_id),
-            InstructionKind::Assign(name, rhs) => InstructionKind::Assign(name.clone(), rhs.apply(sub)),
+            InstructionKind::Assign(name, rhs) => InstructionKind::Assign(name.apply(sub), rhs.apply(sub)),
             InstructionKind::DeclareVar(var) => InstructionKind::DeclareVar(var.apply(sub)),
             InstructionKind::Transform(dest, root, op) => InstructionKind::Transform(dest.apply(sub), root.apply(sub), op.clone()),
-            InstructionKind::EnumSwitch(root, cases) => InstructionKind::EnumSwitch(root.clone(), cases.clone()),
-            InstructionKind::IntegerSwitch(root, cases) => InstructionKind::IntegerSwitch(root.clone(), cases.clone()),
-            InstructionKind::StringSwitch(root, cases) => InstructionKind::StringSwitch(root.clone(), cases.clone()),
+            InstructionKind::EnumSwitch(root, cases) => InstructionKind::EnumSwitch(root.apply(sub), cases.clone()),
+            InstructionKind::IntegerSwitch(root, cases) => InstructionKind::IntegerSwitch(root.apply(sub), cases.clone()),
+            InstructionKind::StringSwitch(root, cases) => InstructionKind::StringSwitch(root.apply(sub), cases.clone()),
         }
     }
 }
@@ -164,6 +173,15 @@ pub fn instantiateClass(allocator: &mut TypeVarAllocator, c: &Class, ty: &Type) 
     e.apply(&sub)
 }
 
+impl ApplyVariable for ValueKind {
+    fn applyVar(&self, sub: &VariableSubstitution) -> Self {
+        match self {
+            ValueKind::Arg(n, i) => ValueKind::Arg(n.clone(), *i),
+            ValueKind::Value(v) => ValueKind::Value(v.applyVar(sub)),
+        }
+    }
+}
+
 impl ApplyVariable for InstructionKind {
     fn applyVar(&self, sub: &VariableSubstitution) -> Self {
         match self {
@@ -183,12 +201,12 @@ impl ApplyVariable for InstructionKind {
             InstructionKind::Ref(dest, arg) => InstructionKind::Ref(dest.applyVar(sub), arg.applyVar(sub)),
             InstructionKind::Drop(args) => InstructionKind::Drop(args.clone()),
             InstructionKind::Jump(dest, block_id) => InstructionKind::Jump(dest.applyVar(sub), *block_id),
-            InstructionKind::Assign(name, rhs) => InstructionKind::Assign(name.clone(), rhs.applyVar(sub)),
+            InstructionKind::Assign(name, rhs) => InstructionKind::Assign(name.applyVar(sub), rhs.applyVar(sub)),
             InstructionKind::DeclareVar(var) => InstructionKind::DeclareVar(var.applyVar(sub)),
             InstructionKind::Transform(dest, root, op) => InstructionKind::Transform(dest.applyVar(sub), root.applyVar(sub), op.clone()),
-            InstructionKind::EnumSwitch(root, cases) => InstructionKind::EnumSwitch(root.clone(), cases.clone()),
-            InstructionKind::IntegerSwitch(root, cases) => InstructionKind::IntegerSwitch(root.clone(), cases.clone()),
-            InstructionKind::StringSwitch(root, cases) => InstructionKind::StringSwitch(root.clone(), cases.clone()),
+            InstructionKind::EnumSwitch(root, cases) => InstructionKind::EnumSwitch(root.applyVar(sub), cases.clone()),
+            InstructionKind::IntegerSwitch(root, cases) => InstructionKind::IntegerSwitch(root.applyVar(sub), cases.clone()),
+            InstructionKind::StringSwitch(root, cases) => InstructionKind::StringSwitch(root.applyVar(sub), cases.clone()),
         }
     }
 }

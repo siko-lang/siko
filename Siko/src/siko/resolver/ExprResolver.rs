@@ -353,7 +353,6 @@ impl<'a> ExprResolver<'a> {
                 value
             }
             SimpleExpr::Break(arg) => {
-                let value = self.createValue("break", expr.location.clone());
                 let argId = match arg {
                     Some(arg) => self.resolveExpr(arg, env),
                     None => {
@@ -369,10 +368,9 @@ impl<'a> ExprResolver<'a> {
                 self.addInstruction(InstructionKind::Assign(ValueKind::Value(info.var), argId), expr.location.clone());
                 let jumpValue = self.createValue("jump", expr.location.clone());
                 self.addInstruction(InstructionKind::Jump(jumpValue.asFixed(), info.exit), expr.location.clone());
-                value
+                jumpValue
             }
             SimpleExpr::Continue(arg) => {
-                let value = self.createValue("continue", expr.location.clone());
                 let argId = match arg {
                     Some(arg) => self.resolveExpr(arg, env),
                     None => {
@@ -388,7 +386,7 @@ impl<'a> ExprResolver<'a> {
                 self.addInstruction(InstructionKind::Assign(ValueKind::Value(info.var), argId), expr.location.clone());
                 let jumpValue = self.createValue("jump", expr.location.clone());
                 self.addInstruction(InstructionKind::Jump(jumpValue.asFixed(), info.body), expr.location.clone());
-                value
+                jumpValue
             }
             SimpleExpr::Ref(arg) => {
                 let arg = self.resolveExpr(arg, env);
