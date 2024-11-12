@@ -568,8 +568,12 @@ impl<'a> Typechecker<'a> {
                     let useVar = var.asNotFixed();
                     let mut newUseVar = var.asNotFixed();
                     newUseVar.ty = Some(ty);
-                    varSwap.add(var, newVar);
-                    varSwap.add(useVar, newUseVar);
+                    if newVar != var {
+                        varSwap.add(var, newVar);
+                    }
+                    if useVar != newUseVar {
+                        varSwap.add(useVar, newUseVar);
+                    }
                 }
             }
         }
