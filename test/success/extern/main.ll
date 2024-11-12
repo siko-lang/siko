@@ -34,23 +34,23 @@ block0:
    %lit_1 = alloca %struct.Int_Int, align 8
    %tmp_lit_1_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_1, i32 0, i32 0
    store i64 6, ptr %tmp_lit_1_1, align 8
-   %tmp_lit_2_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_2, i32 0, i32 0
-   store i64 5, ptr %tmp_lit_2_1, align 8
+   %tmp_lit_2_2 = getelementptr inbounds %struct.Int_Int, ptr %lit_2, i32 0, i32 0
+   store i64 5, ptr %tmp_lit_2_2, align 8
    call void @Int_Int_add(ptr %lit_2, ptr %lit_1, ptr %call_4)
-   %tmp_lit_5_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_5, i32 0, i32 0
-   store i64 6, ptr %tmp_lit_5_1, align 8
-   %tmp_lit_6_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_6, i32 0, i32 0
-   store i64 5, ptr %tmp_lit_6_1, align 8
+   %tmp_lit_5_3 = getelementptr inbounds %struct.Int_Int, ptr %lit_5, i32 0, i32 0
+   store i64 6, ptr %tmp_lit_5_3, align 8
+   %tmp_lit_6_4 = getelementptr inbounds %struct.Int_Int, ptr %lit_6, i32 0, i32 0
+   store i64 5, ptr %tmp_lit_6_4, align 8
    call void @Int_Int_sub(ptr %lit_6, ptr %lit_5, ptr %call_8)
-   %tmp_lit_9_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_9, i32 0, i32 0
-   store i64 6, ptr %tmp_lit_9_1, align 8
-   %tmp_lit_10_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_10, i32 0, i32 0
-   store i64 5, ptr %tmp_lit_10_1, align 8
+   %tmp_lit_9_5 = getelementptr inbounds %struct.Int_Int, ptr %lit_9, i32 0, i32 0
+   store i64 6, ptr %tmp_lit_9_5, align 8
+   %tmp_lit_10_6 = getelementptr inbounds %struct.Int_Int, ptr %lit_10, i32 0, i32 0
+   store i64 5, ptr %tmp_lit_10_6, align 8
    call void @Int_Int_eq(ptr %lit_10, ptr %lit_9, ptr %call_12)
-   %tmp_lit_13_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_13, i32 0, i32 0
-   store i64 6, ptr %tmp_lit_13_1, align 8
-   %tmp_lit_14_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_14, i32 0, i32 0
-   store i64 5, ptr %tmp_lit_14_1, align 8
+   %tmp_lit_13_7 = getelementptr inbounds %struct.Int_Int, ptr %lit_13, i32 0, i32 0
+   store i64 6, ptr %tmp_lit_13_7, align 8
+   %tmp_lit_14_8 = getelementptr inbounds %struct.Int_Int, ptr %lit_14, i32 0, i32 0
+   store i64 5, ptr %tmp_lit_14_8, align 8
    call void @Int_Int_lessThan(ptr %lit_14, ptr %lit_13, ptr %call_16)
    call void @Bool_Bool_True(ptr %call_17)
    call void @Std_Basic_Util_assert(ptr %call_17, ptr %call_18)
@@ -74,9 +74,9 @@ block1:
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %matchValue_13, i64 0, i1 false)
    ret void
 block2:
-   %tmp_switch_var_block2_1 = getelementptr inbounds %struct.Bool_Bool, ptr %valueRef_1, i32 0, i32 0
-   %tmp_switch_var_block2_2 = load i32, ptr %tmp_switch_var_block2_1, align 4
-   switch i32 %tmp_switch_var_block2_2, label %block3 [
+   %tmp_switch_var_block2_9 = getelementptr inbounds %struct.Bool_Bool, ptr %valueRef_1, i32 0, i32 0
+   %tmp_switch_var_block2_10 = load i32, ptr %tmp_switch_var_block2_9, align 4
+   switch i32 %tmp_switch_var_block2_10, label %block3 [
 i32 1, label %block5
 ]
 

@@ -70,8 +70,8 @@ i32 0, label %block5
 ]
 
 block3:
-   %tmp_transform_5_1 = bitcast %struct.Result_Result_Main_MySuccess__Main_MyError* %valueRef_3 to %struct.Result_Result_Err_Main_MySuccess__Main_MyError*
-   %transform_5 = getelementptr inbounds %struct.Result_Result_Err_Main_MySuccess__Main_MyError, ptr %tmp_transform_5_1, i32 0, i32 1
+   %tmp_transform_5_3 = bitcast %struct.Result_Result_Main_MySuccess__Main_MyError* %valueRef_3 to %struct.Result_Result_Err_Main_MySuccess__Main_MyError*
+   %transform_5 = getelementptr inbounds %struct.Result_Result_Err_Main_MySuccess__Main_MyError, ptr %tmp_transform_5_3, i32 0, i32 1
    %tupleField_6 = getelementptr inbounds %struct.siko_Tuple_Main_MyError, ptr %transform_5, i32 0, i32 0
    br label %block4
 block4:
@@ -79,8 +79,8 @@ block4:
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_4, ptr align 4 %tuple_7, i64 0, i1 false)
    br label %block1
 block5:
-   %tmp_transform_10_1 = bitcast %struct.Result_Result_Main_MySuccess__Main_MyError* %valueRef_3 to %struct.Result_Result_Ok_Main_MySuccess__Main_MyError*
-   %transform_10 = getelementptr inbounds %struct.Result_Result_Ok_Main_MySuccess__Main_MyError, ptr %tmp_transform_10_1, i32 0, i32 1
+   %tmp_transform_10_4 = bitcast %struct.Result_Result_Main_MySuccess__Main_MyError* %valueRef_3 to %struct.Result_Result_Ok_Main_MySuccess__Main_MyError*
+   %transform_10 = getelementptr inbounds %struct.Result_Result_Ok_Main_MySuccess__Main_MyError, ptr %tmp_transform_10_4, i32 0, i32 1
    %tupleField_11 = getelementptr inbounds %struct.siko_Tuple_Main_MySuccess, ptr %transform_10, i32 0, i32 0
    br label %block6
 block6:

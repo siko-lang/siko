@@ -63,47 +63,47 @@ i32 1, label %block10
 block4:
    br label %block5
 block5:
-   %tmp_switch_var_block5_1 = getelementptr inbounds %struct.Bool_Bool, ptr %tupleField_6, i32 0, i32 0
-   %tmp_switch_var_block5_2 = load i32, ptr %tmp_switch_var_block5_1, align 4
-   switch i32 %tmp_switch_var_block5_2, label %block6 [
+   %tmp_switch_var_block5_3 = getelementptr inbounds %struct.Bool_Bool, ptr %tupleField_6, i32 0, i32 0
+   %tmp_switch_var_block5_4 = load i32, ptr %tmp_switch_var_block5_3, align 4
+   switch i32 %tmp_switch_var_block5_4, label %block6 [
 i32 1, label %block8
 ]
 
 block6:
    br label %block7
 block7:
-   %tmp_lit_7_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_7, i32 0, i32 0
-   store i64 4, ptr %tmp_lit_7_1, align 8
+   %tmp_lit_7_5 = getelementptr inbounds %struct.Int_Int, ptr %lit_7, i32 0, i32 0
+   store i64 4, ptr %tmp_lit_7_5, align 8
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %match_var_4, ptr align 8 %lit_7, i64 8, i1 false)
    br label %block1
 block8:
    br label %block9
 block9:
-   %tmp_lit_10_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_10, i32 0, i32 0
-   store i64 4, ptr %tmp_lit_10_1, align 8
+   %tmp_lit_10_6 = getelementptr inbounds %struct.Int_Int, ptr %lit_10, i32 0, i32 0
+   store i64 4, ptr %tmp_lit_10_6, align 8
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %match_var_4, ptr align 8 %lit_10, i64 8, i1 false)
    br label %block1
 block10:
    br label %block11
 block11:
-   %tmp_switch_var_block11_1 = getelementptr inbounds %struct.Bool_Bool, ptr %tupleField_6, i32 0, i32 0
-   %tmp_switch_var_block11_2 = load i32, ptr %tmp_switch_var_block11_1, align 4
-   switch i32 %tmp_switch_var_block11_2, label %block12 [
+   %tmp_switch_var_block11_7 = getelementptr inbounds %struct.Bool_Bool, ptr %tupleField_6, i32 0, i32 0
+   %tmp_switch_var_block11_8 = load i32, ptr %tmp_switch_var_block11_7, align 4
+   switch i32 %tmp_switch_var_block11_8, label %block12 [
 i32 1, label %block14
 ]
 
 block12:
    br label %block13
 block13:
-   %tmp_lit_14_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_14, i32 0, i32 0
-   store i64 4, ptr %tmp_lit_14_1, align 8
+   %tmp_lit_14_9 = getelementptr inbounds %struct.Int_Int, ptr %lit_14, i32 0, i32 0
+   store i64 4, ptr %tmp_lit_14_9, align 8
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %match_var_4, ptr align 8 %lit_14, i64 8, i1 false)
    br label %block1
 block14:
    br label %block15
 block15:
-   %tmp_lit_17_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_17, i32 0, i32 0
-   store i64 4, ptr %tmp_lit_17_1, align 8
+   %tmp_lit_17_10 = getelementptr inbounds %struct.Int_Int, ptr %lit_17, i32 0, i32 0
+   store i64 4, ptr %tmp_lit_17_10, align 8
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %match_var_4, ptr align 8 %lit_17, i64 8, i1 false)
    br label %block1
 }

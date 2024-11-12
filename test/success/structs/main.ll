@@ -58,16 +58,16 @@ block0:
    %lit_3 = alloca %struct.Int_Int, align 8
    %lit_2 = alloca %struct.Int_Int, align 8
    %lit_1 = alloca %struct.Int_Int, align 8
-   %tmp_lit_1_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_1, i32 0, i32 0
-   store i64 1, ptr %tmp_lit_1_1, align 8
-   %tmp_lit_2_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_2, i32 0, i32 0
-   store i64 2, ptr %tmp_lit_2_1, align 8
-   %tmp_lit_3_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_3, i32 0, i32 0
-   store i64 3, ptr %tmp_lit_3_1, align 8
-   %tmp_lit_4_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_4, i32 0, i32 0
-   store i64 4, ptr %tmp_lit_4_1, align 8
-   %tmp_lit_5_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_5, i32 0, i32 0
-   store i64 5, ptr %tmp_lit_5_1, align 8
+   %tmp_lit_1_2 = getelementptr inbounds %struct.Int_Int, ptr %lit_1, i32 0, i32 0
+   store i64 1, ptr %tmp_lit_1_2, align 8
+   %tmp_lit_2_3 = getelementptr inbounds %struct.Int_Int, ptr %lit_2, i32 0, i32 0
+   store i64 2, ptr %tmp_lit_2_3, align 8
+   %tmp_lit_3_4 = getelementptr inbounds %struct.Int_Int, ptr %lit_3, i32 0, i32 0
+   store i64 3, ptr %tmp_lit_3_4, align 8
+   %tmp_lit_4_5 = getelementptr inbounds %struct.Int_Int, ptr %lit_4, i32 0, i32 0
+   store i64 4, ptr %tmp_lit_4_5, align 8
+   %tmp_lit_5_6 = getelementptr inbounds %struct.Int_Int, ptr %lit_5, i32 0, i32 0
+   store i64 5, ptr %tmp_lit_5_6, align 8
    call void @Main_Struct1(ptr %lit_1, ptr %lit_2, ptr %lit_3, ptr %lit_4, ptr %lit_5, ptr %call_6)
    call void @Main_Large(ptr %call_6, ptr %call_7)
    call void @siko_Tuple_(ptr %unit_8)

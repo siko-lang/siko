@@ -36,9 +36,9 @@ block1:
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %matchValue_16, i64 0, i1 false)
    ret void
 block2:
-   %tmp_switch_var_block2_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_1, i32 0, i32 0
-   %tmp_switch_var_block2_2 = load i64, ptr %tmp_switch_var_block2_1, align 8
-   switch i64 %tmp_switch_var_block2_2, label %block6 [
+   %tmp_switch_var_block2_2 = getelementptr inbounds %struct.Int_Int, ptr %lit_1, i32 0, i32 0
+   %tmp_switch_var_block2_3 = load i64, ptr %tmp_switch_var_block2_2, align 8
+   switch i64 %tmp_switch_var_block2_3, label %block6 [
 i64 3, label %block3
 i64 4, label %block4
 i64 5, label %block5
@@ -81,9 +81,9 @@ block1:
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %matchValue_13, i64 0, i1 false)
    ret void
 block2:
-   %tmp_switch_var_block2_1 = getelementptr inbounds %struct.Bool_Bool, ptr %valueRef_1, i32 0, i32 0
-   %tmp_switch_var_block2_2 = load i32, ptr %tmp_switch_var_block2_1, align 4
-   switch i32 %tmp_switch_var_block2_2, label %block3 [
+   %tmp_switch_var_block2_4 = getelementptr inbounds %struct.Bool_Bool, ptr %valueRef_1, i32 0, i32 0
+   %tmp_switch_var_block2_5 = load i32, ptr %tmp_switch_var_block2_4, align 4
+   switch i32 %tmp_switch_var_block2_5, label %block3 [
 i32 1, label %block5
 ]
 

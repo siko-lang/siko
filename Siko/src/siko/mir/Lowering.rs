@@ -23,6 +23,7 @@ pub struct Builder<'a> {
     program: &'a Program,
     constants: BTreeMap<String, String>,
     refMap: BTreeMap<String, String>,
+    nextTmp: u32,
 }
 
 impl<'a> Builder<'a> {
@@ -31,6 +32,7 @@ impl<'a> Builder<'a> {
             program: program,
             constants: BTreeMap::new(),
             refMap: BTreeMap::new(),
+            nextTmp: 0,
         }
     }
 
@@ -49,9 +51,10 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn tmpVar(&self, v: &Variable, index: u32) -> LVariable {
+    fn tmpVar(&mut self, v: &Variable) -> LVariable {
+        self.nextTmp += 1;
         LVariable {
-            name: format!("%tmp_{}_{}", v.name, index),
+            name: format!("%tmp_{}_{}", v.name, self.nextTmp),
             ty: self.lowerType(&v.ty),
         }
     }
@@ -108,7 +111,7 @@ impl<'a> Builder<'a> {
                     for arg in args {
                         let var = self.lowerVar(arg);
                         let var = if var.ty.isPtr() {
-                            let tmp = self.tmpVar(arg, 0);
+                            let tmp = self.tmpVar(arg);
                             let llvmInstruction = LInstruction::LoadVar(tmp.clone(), var);
                             llvmBlock.instructions.push(llvmInstruction);
                             tmp
@@ -166,14 +169,14 @@ impl<'a> Builder<'a> {
                     llvmBlock.instructions.push(llvmInstruction);
                 }
                 Instruction::IntegerLiteral(var, value) => {
-                    let tmpVar = self.tmpVar(var, 1);
+                    let tmpVar = self.tmpVar(var);
                     let llvmInstruction = LInstruction::GetFieldRef(tmpVar.clone(), self.lowerVar(var), 0);
                     llvmBlock.instructions.push(llvmInstruction);
                     let llvmInstruction = LInstruction::Store(tmpVar, LValue::Numeric(value.clone(), LType::Int64));
                     llvmBlock.instructions.push(llvmInstruction);
                 }
                 Instruction::StringLiteral(var, value) => {
-                    let tmpVar = self.tmpVar(var, 1);
+                    let tmpVar = self.tmpVar(var);
                     let llvmInstruction = LInstruction::GetFieldRef(tmpVar.clone(), self.lowerVar(var), 0);
                     llvmBlock.instructions.push(llvmInstruction);
                     let i8Ptr = LType::Ptr(Box::new(LType::Int8));
@@ -189,7 +192,7 @@ impl<'a> Builder<'a> {
                     };
                     let llvmInstruction = LInstruction::Store(tmpVar, LValue::String(value.clone(), i8Ptr));
                     llvmBlock.instructions.push(llvmInstruction);
-                    let tmpVar2 = self.tmpVar(var, 2);
+                    let tmpVar2 = self.tmpVar(var);
                     let llvmInstruction = LInstruction::GetFieldRef(tmpVar2.clone(), self.lowerVar(var), 1);
                     llvmBlock.instructions.push(llvmInstruction);
                     let llvmInstruction = LInstruction::Store(tmpVar2, LValue::Numeric(format!("{}", strLen), LType::Int64));
@@ -204,8 +207,8 @@ impl<'a> Builder<'a> {
                         name: format!("switch_var_{}", block.id),
                         ty: Type::Int32,
                     };
-                    let tmpVar = self.tmpVar(&switchVar, 1);
-                    let tmpVar2 = self.tmpVar(&switchVar, 2);
+                    let tmpVar = self.tmpVar(&switchVar);
+                    let tmpVar2 = self.tmpVar(&switchVar);
                     let llvmInstruction = LInstruction::GetFieldRef(tmpVar.clone(), self.lowerVar(var), 0);
                     llvmBlock.instructions.push(llvmInstruction);
                     let llvmInstruction = LInstruction::LoadVar(tmpVar2.clone(), tmpVar);
@@ -229,8 +232,8 @@ impl<'a> Builder<'a> {
                         name: format!("switch_var_{}", block.id),
                         ty: Type::Int64,
                     };
-                    let tmpVar = self.tmpVar(&switchVar, 1);
-                    let tmpVar2 = self.tmpVar(&switchVar, 2);
+                    let tmpVar = self.tmpVar(&switchVar);
+                    let tmpVar2 = self.tmpVar(&switchVar);
                     let llvmInstruction = LInstruction::GetFieldRef(tmpVar.clone(), self.lowerVar(var), 0);
                     llvmBlock.instructions.push(llvmInstruction);
                     let llvmInstruction = LInstruction::LoadVar(tmpVar2.clone(), tmpVar);
@@ -260,7 +263,7 @@ impl<'a> Builder<'a> {
                     //println!("{} {} {} {}", dest.ty, src.ty, index, v.ty);
                     let mut recastVar = dest.clone();
                     recastVar.ty = Type::Struct(v.name.clone());
-                    let recastVar = self.tmpVar(&recastVar, 1);
+                    let recastVar = self.tmpVar(&recastVar);
                     let llvmInstruction = LInstruction::Bitcast(recastVar.clone(), self.lowerVar(src));
                     llvmBlock.instructions.push(llvmInstruction);
                     let llvmInstruction = LInstruction::GetFieldRef(self.lowerVar(dest), recastVar, 1);

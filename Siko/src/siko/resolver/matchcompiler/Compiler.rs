@@ -556,7 +556,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                                     let value = self.resolver.createValue("lit", self.bodyLocation.clone());
                                     self.resolver.addInstructionToBlock(
                                         current,
-                                        InstructionKind::StringLiteral(value.clone(), v.clone()),
+                                        InstructionKind::StringLiteral(value.asFixed(), v.clone()),
                                         self.bodyLocation.clone(),
                                         true,
                                     );

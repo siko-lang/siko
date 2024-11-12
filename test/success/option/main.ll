@@ -96,8 +96,8 @@ block4:
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_5, ptr align 4 %call_6, i64 4, i1 false)
    br label %block1
 block5:
-   %tmp_transform_9_1 = bitcast %struct.Option_Option_Bool_Bool* %valueRef_4 to %struct.Option_Option_Some_Bool_Bool*
-   %transform_9 = getelementptr inbounds %struct.Option_Option_Some_Bool_Bool, ptr %tmp_transform_9_1, i32 0, i32 1
+   %tmp_transform_9_3 = bitcast %struct.Option_Option_Bool_Bool* %valueRef_4 to %struct.Option_Option_Some_Bool_Bool*
+   %transform_9 = getelementptr inbounds %struct.Option_Option_Some_Bool_Bool, ptr %tmp_transform_9_3, i32 0, i32 1
    %tupleField_10 = getelementptr inbounds %struct.siko_Tuple_Bool_Bool, ptr %transform_9, i32 0, i32 0
    br label %block6
 block6:
@@ -113,9 +113,9 @@ block7:
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %valueRef_35, ptr align 4 %a_34, i64 8, i1 false)
    br label %block14
 block8:
-   %tmp_switch_var_block8_1 = getelementptr inbounds %struct.Option_Option_Bool_Bool, ptr %valueRef_19, i32 0, i32 0
-   %tmp_switch_var_block8_2 = load i32, ptr %tmp_switch_var_block8_1, align 4
-   switch i32 %tmp_switch_var_block8_2, label %block9 [
+   %tmp_switch_var_block8_4 = getelementptr inbounds %struct.Option_Option_Bool_Bool, ptr %valueRef_19, i32 0, i32 0
+   %tmp_switch_var_block8_5 = load i32, ptr %tmp_switch_var_block8_4, align 4
+   switch i32 %tmp_switch_var_block8_5, label %block9 [
 i32 1, label %block11
 ]
 
@@ -126,8 +126,8 @@ block10:
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_20, ptr align 4 %call_21, i64 4, i1 false)
    br label %block7
 block11:
-   %tmp_transform_24_1 = bitcast %struct.Option_Option_Bool_Bool* %valueRef_19 to %struct.Option_Option_Some_Bool_Bool*
-   %transform_24 = getelementptr inbounds %struct.Option_Option_Some_Bool_Bool, ptr %tmp_transform_24_1, i32 0, i32 1
+   %tmp_transform_24_6 = bitcast %struct.Option_Option_Bool_Bool* %valueRef_19 to %struct.Option_Option_Some_Bool_Bool*
+   %transform_24 = getelementptr inbounds %struct.Option_Option_Some_Bool_Bool, ptr %tmp_transform_24_6, i32 0, i32 1
    %tupleField_25 = getelementptr inbounds %struct.siko_Tuple_Bool_Bool, ptr %transform_24, i32 0, i32 0
    br label %block12
 block12:
@@ -142,9 +142,9 @@ block13:
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %valueRef_52, ptr align 4 %a_51, i64 8, i1 false)
    br label %block20
 block14:
-   %tmp_switch_var_block14_1 = getelementptr inbounds %struct.Option_Option_Bool_Bool, ptr %valueRef_35, i32 0, i32 0
-   %tmp_switch_var_block14_2 = load i32, ptr %tmp_switch_var_block14_1, align 4
-   switch i32 %tmp_switch_var_block14_2, label %block15 [
+   %tmp_switch_var_block14_7 = getelementptr inbounds %struct.Option_Option_Bool_Bool, ptr %valueRef_35, i32 0, i32 0
+   %tmp_switch_var_block14_8 = load i32, ptr %tmp_switch_var_block14_7, align 4
+   switch i32 %tmp_switch_var_block14_8, label %block15 [
 i32 1, label %block17
 ]
 
@@ -156,8 +156,8 @@ block16:
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_36, ptr align 4 %call_38, i64 0, i1 false)
    br label %block13
 block17:
-   %tmp_transform_41_1 = bitcast %struct.Option_Option_Bool_Bool* %valueRef_35 to %struct.Option_Option_Some_Bool_Bool*
-   %transform_41 = getelementptr inbounds %struct.Option_Option_Some_Bool_Bool, ptr %tmp_transform_41_1, i32 0, i32 1
+   %tmp_transform_41_9 = bitcast %struct.Option_Option_Bool_Bool* %valueRef_35 to %struct.Option_Option_Some_Bool_Bool*
+   %transform_41 = getelementptr inbounds %struct.Option_Option_Some_Bool_Bool, ptr %tmp_transform_41_9, i32 0, i32 1
    %tupleField_42 = getelementptr inbounds %struct.siko_Tuple_Bool_Bool, ptr %transform_41, i32 0, i32 0
    br label %block18
 block18:
@@ -172,9 +172,9 @@ block19:
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %unit_67, i64 0, i1 false)
    ret void
 block20:
-   %tmp_switch_var_block20_1 = getelementptr inbounds %struct.Option_Option_Bool_Bool, ptr %valueRef_52, i32 0, i32 0
-   %tmp_switch_var_block20_2 = load i32, ptr %tmp_switch_var_block20_1, align 4
-   switch i32 %tmp_switch_var_block20_2, label %block21 [
+   %tmp_switch_var_block20_10 = getelementptr inbounds %struct.Option_Option_Bool_Bool, ptr %valueRef_52, i32 0, i32 0
+   %tmp_switch_var_block20_11 = load i32, ptr %tmp_switch_var_block20_10, align 4
+   switch i32 %tmp_switch_var_block20_11, label %block21 [
 i32 1, label %block23
 ]
 
@@ -186,8 +186,8 @@ block22:
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_53, ptr align 4 %call_55, i64 0, i1 false)
    br label %block19
 block23:
-   %tmp_transform_58_1 = bitcast %struct.Option_Option_Bool_Bool* %valueRef_52 to %struct.Option_Option_Some_Bool_Bool*
-   %transform_58 = getelementptr inbounds %struct.Option_Option_Some_Bool_Bool, ptr %tmp_transform_58_1, i32 0, i32 1
+   %tmp_transform_58_12 = bitcast %struct.Option_Option_Bool_Bool* %valueRef_52 to %struct.Option_Option_Some_Bool_Bool*
+   %transform_58 = getelementptr inbounds %struct.Option_Option_Some_Bool_Bool, ptr %tmp_transform_58_12, i32 0, i32 1
    %tupleField_59 = getelementptr inbounds %struct.siko_Tuple_Bool_Bool, ptr %transform_58, i32 0, i32 0
    br label %block24
 block24:
@@ -213,9 +213,9 @@ block1:
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %matchValue_13, i64 0, i1 false)
    ret void
 block2:
-   %tmp_switch_var_block2_1 = getelementptr inbounds %struct.Bool_Bool, ptr %valueRef_1, i32 0, i32 0
-   %tmp_switch_var_block2_2 = load i32, ptr %tmp_switch_var_block2_1, align 4
-   switch i32 %tmp_switch_var_block2_2, label %block3 [
+   %tmp_switch_var_block2_13 = getelementptr inbounds %struct.Bool_Bool, ptr %valueRef_1, i32 0, i32 0
+   %tmp_switch_var_block2_14 = load i32, ptr %tmp_switch_var_block2_13, align 4
+   switch i32 %tmp_switch_var_block2_14, label %block3 [
 i32 1, label %block5
 ]
 
