@@ -1,4 +1,5 @@
 use crate::siko::{
+    location::Location::{Location, Span},
     qualifiedname::{getFalseName, getTrueName},
     syntax::{
         Expr::{BinaryOp, Branch, Expr, SimpleExpr, UnaryOp},
@@ -28,8 +29,7 @@ pub trait ExprParser {
     fn parseUnary(&mut self) -> Expr;
     fn parsePrimary(&mut self) -> Expr;
     fn callNext(&mut self, index: usize) -> Expr;
-    fn buildExpr(&mut self, e: SimpleExpr) -> Expr;
-    fn buildExpr2(&mut self, e: SimpleExpr) -> Expr;
+    fn buildExpr2(&mut self, e: SimpleExpr, start: Span) -> Expr;
 }
 
 pub enum SemicolonRequirement {
@@ -41,7 +41,7 @@ pub enum SemicolonRequirement {
 impl<'a> ExprParser for Parser<'a> {
     fn parseBlock(&mut self) -> Block {
         let mut statements = Vec::new();
-        self.pushSpan();
+        let start = self.currentSpan();
         self.expect(TokenKind::LeftBracket(BracketKind::Curly));
         while !self.check(TokenKind::RightBracket(BracketKind::Curly)) {
             let (statementKind, requirement) = self.parseStatement();
@@ -77,26 +77,22 @@ impl<'a> ExprParser for Parser<'a> {
             });
         }
         self.expect(TokenKind::RightBracket(BracketKind::Curly));
+        let end = self.currentSpan();
         Block {
             statements,
-            location: self.popSpan(),
+            location: Location::new(self.fileId.clone(), start.merge(end)),
         }
     }
 
-    fn buildExpr(&mut self, e: SimpleExpr) -> Expr {
-        let location = self.popSpan();
-        Expr { expr: e, location: location }
-    }
-
-    fn buildExpr2(&mut self, e: SimpleExpr) -> Expr {
+    fn buildExpr2(&mut self, e: SimpleExpr, start: Span) -> Expr {
         Expr {
             expr: e,
-            location: self.useSpan(),
+            location: Location::new(self.fileId.clone(), start.merge(self.currentSpan())),
         }
     }
 
     fn parseIf(&mut self) -> Expr {
-        self.pushSpan();
+        let start = self.currentSpan();
         self.expect(TokenKind::Keyword(KeywordKind::If));
         let cond = self.parseExpr();
         self.expect(TokenKind::LeftBracket(BracketKind::Curly));
@@ -138,11 +134,11 @@ impl<'a> ExprParser for Parser<'a> {
             })
         }
 
-        self.buildExpr(SimpleExpr::Match(Box::new(cond), branches))
+        self.buildExpr2(SimpleExpr::Match(Box::new(cond), branches), start)
     }
 
     fn parseFor(&mut self) -> Expr {
-        self.pushSpan();
+        let start = self.currentSpan();
         self.expect(TokenKind::Keyword(KeywordKind::For));
         let pattern = self.parsePattern();
         self.expect(TokenKind::Keyword(KeywordKind::In));
@@ -150,11 +146,11 @@ impl<'a> ExprParser for Parser<'a> {
         self.expect(TokenKind::LeftBracket(BracketKind::Curly));
         self.undo();
         let body = self.parseExpr();
-        self.buildExpr(SimpleExpr::For(pattern, Box::new(source), Box::new(body)))
+        self.buildExpr2(SimpleExpr::For(pattern, Box::new(source), Box::new(body)), start)
     }
 
     fn parseLoop(&mut self) -> Expr {
-        self.pushSpan();
+        let start = self.currentSpan();
         self.expect(TokenKind::Keyword(KeywordKind::Loop));
         if self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
             self.expect(TokenKind::LeftBracket(BracketKind::Curly));
@@ -168,7 +164,7 @@ impl<'a> ExprParser for Parser<'a> {
                 expr: SimpleExpr::Tuple(Vec::new()),
                 location: self.currentLocation(),
             };
-            self.buildExpr(SimpleExpr::Loop(pattern, Box::new(init), Box::new(body)))
+            self.buildExpr2(SimpleExpr::Loop(pattern, Box::new(init), Box::new(body)), start)
         } else {
             let pattern = self.parsePattern();
             self.expect(TokenKind::Misc(MiscKind::Equal));
@@ -176,12 +172,12 @@ impl<'a> ExprParser for Parser<'a> {
             self.expect(TokenKind::LeftBracket(BracketKind::Curly));
             self.undo();
             let body = self.parseExpr();
-            self.buildExpr(SimpleExpr::Loop(pattern, Box::new(init), Box::new(body)))
+            self.buildExpr2(SimpleExpr::Loop(pattern, Box::new(init), Box::new(body)), start)
         }
     }
 
     fn parseMatch(&mut self) -> Expr {
-        self.pushSpan();
+        let start = self.currentSpan();
         self.expect(TokenKind::Keyword(KeywordKind::Match));
         let body = self.parseExpr();
         self.expect(TokenKind::LeftBracket(BracketKind::Curly));
@@ -191,7 +187,7 @@ impl<'a> ExprParser for Parser<'a> {
             self.expect(TokenKind::Arrow(ArrowKind::Right));
             let body = if self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
                 let block = self.parseBlock();
-                let expr = self.buildExpr(SimpleExpr::Block(block));
+                let expr = self.buildExpr2(SimpleExpr::Block(block), start.clone());
                 expr
             } else {
                 let expr = self.parseExpr();
@@ -203,7 +199,7 @@ impl<'a> ExprParser for Parser<'a> {
             branches.push(Branch { pattern, body });
         }
         self.expect(TokenKind::RightBracket(BracketKind::Curly));
-        self.buildExpr(SimpleExpr::Match(Box::new(body), branches))
+        self.buildExpr2(SimpleExpr::Match(Box::new(body), branches), start.clone())
     }
 
     fn parseStatement(&mut self) -> (StatementKind, SemicolonRequirement) {
@@ -250,13 +246,13 @@ impl<'a> ExprParser for Parser<'a> {
     }
 
     fn parseFieldAccessOrCall(&mut self) -> Expr {
-        self.pushSpan();
+        let start = self.currentSpan();
         let mut current = self.parseUnary();
         loop {
             if self.check(TokenKind::Misc(MiscKind::Dot)) {
                 self.expect(TokenKind::Misc(MiscKind::Dot));
                 let name = self.parseVarIdentifier();
-                current = self.buildExpr2(SimpleExpr::FieldAccess(Box::new(current), name));
+                current = self.buildExpr2(SimpleExpr::FieldAccess(Box::new(current), name), start.clone());
             } else if self.check(TokenKind::LeftBracket(BracketKind::Paren)) {
                 self.expect(TokenKind::LeftBracket(BracketKind::Paren));
                 let mut args = Vec::new();
@@ -270,17 +266,16 @@ impl<'a> ExprParser for Parser<'a> {
                     }
                 }
                 self.expect(TokenKind::RightBracket(BracketKind::Paren));
-                current = self.buildExpr2(SimpleExpr::Call(Box::new(current), args));
+                current = self.buildExpr2(SimpleExpr::Call(Box::new(current), args), start.clone());
             } else {
                 break;
             }
         }
-        self.popSpan();
         return current;
     }
 
     fn parseBinaryOp(&mut self, index: usize) -> Expr {
-        self.pushSpan();
+        let start = self.currentSpan();
         let mut left = self.callNext(index);
         loop {
             let ops = &self.opTable[index];
@@ -308,12 +303,11 @@ impl<'a> ExprParser for Parser<'a> {
                     OperatorKind::LessThanOrEqual => BinaryOp::LessThanOrEqual,
                     OperatorKind::GreaterThanOrEqual => BinaryOp::GreaterThanOrEqual,
                 };
-                left = self.buildExpr2(SimpleExpr::BinaryOp(op, Box::new(left), Box::new(rhs)));
+                left = self.buildExpr2(SimpleExpr::BinaryOp(op, Box::new(left), Box::new(rhs)), start.clone());
             } else {
                 break;
             }
         }
-        self.popSpan();
         return left;
     }
 
@@ -327,20 +321,20 @@ impl<'a> ExprParser for Parser<'a> {
     fn parseUnary(&mut self) -> Expr {
         match self.peek() {
             TokenKind::Misc(MiscKind::ExclamationMark) => {
-                self.pushSpan();
+                let start = self.currentSpan();
                 self.expect(TokenKind::Misc(MiscKind::ExclamationMark));
                 let expr = self.parsePrimary();
-                self.buildExpr(SimpleExpr::UnaryOp(UnaryOp::Not, Box::new(expr)))
+                self.buildExpr2(SimpleExpr::UnaryOp(UnaryOp::Not, Box::new(expr)), start)
             }
             _ => self.parsePrimary(),
         }
     }
     fn parsePrimary(&mut self) -> Expr {
-        self.pushSpan();
+        let start = self.currentSpan();
         match self.peek() {
             TokenKind::VarIdentifier => {
                 let value = self.parseVarIdentifier();
-                self.buildExpr(SimpleExpr::Value(value))
+                self.buildExpr2(SimpleExpr::Value(value), start)
             }
             TokenKind::TypeIdentifier => {
                 let mut value = self.parseTypeIdentifier();
@@ -359,28 +353,28 @@ impl<'a> ExprParser for Parser<'a> {
                     }
                     self.reportError2("<identifier>", self.peek());
                 }
-                self.buildExpr(SimpleExpr::Name(value))
+                self.buildExpr2(SimpleExpr::Name(value), start)
             }
             TokenKind::StringLiteral => {
                 let literal = self.parseStringLiteral();
-                self.buildExpr(SimpleExpr::StringLiteral(literal))
+                self.buildExpr2(SimpleExpr::StringLiteral(literal), start)
             }
             TokenKind::IntegerLiteral => {
                 let literal = self.parseIntegerLiteral();
-                self.buildExpr(SimpleExpr::IntegerLiteral(literal))
+                self.buildExpr2(SimpleExpr::IntegerLiteral(literal), start)
             }
             TokenKind::CharLiteral => {
                 let tokenInfo = self.current().clone();
                 self.step();
                 if let Token::CharLiteral(value) = tokenInfo.token {
-                    self.buildExpr(SimpleExpr::CharLiteral(value))
+                    self.buildExpr2(SimpleExpr::CharLiteral(value), start)
                 } else {
                     unreachable!()
                 }
             }
             TokenKind::Keyword(KeywordKind::ValueSelf) => {
                 self.expect(TokenKind::Keyword(KeywordKind::ValueSelf));
-                self.buildExpr(SimpleExpr::SelfValue)
+                self.buildExpr2(SimpleExpr::SelfValue, start)
             }
             TokenKind::Keyword(KeywordKind::Return) => {
                 self.expect(TokenKind::Keyword(KeywordKind::Return));
@@ -389,7 +383,7 @@ impl<'a> ExprParser for Parser<'a> {
                 } else {
                     Some(Box::new(self.parseExpr()))
                 };
-                self.buildExpr(SimpleExpr::Return(arg))
+                self.buildExpr2(SimpleExpr::Return(arg), start)
             }
             TokenKind::Keyword(KeywordKind::Continue) => {
                 self.expect(TokenKind::Keyword(KeywordKind::Continue));
@@ -398,7 +392,7 @@ impl<'a> ExprParser for Parser<'a> {
                 } else {
                     Some(Box::new(self.parseExpr()))
                 };
-                self.buildExpr(SimpleExpr::Continue(arg))
+                self.buildExpr2(SimpleExpr::Continue(arg), start)
             }
             TokenKind::Keyword(KeywordKind::Break) => {
                 self.expect(TokenKind::Keyword(KeywordKind::Break));
@@ -407,7 +401,7 @@ impl<'a> ExprParser for Parser<'a> {
                 } else {
                     Some(Box::new(self.parseExpr()))
                 };
-                self.buildExpr(SimpleExpr::Break(arg))
+                self.buildExpr2(SimpleExpr::Break(arg), start)
             }
             TokenKind::Keyword(KeywordKind::If) => self.parseIf(),
             TokenKind::Keyword(KeywordKind::For) => self.parseFor(),
@@ -415,7 +409,7 @@ impl<'a> ExprParser for Parser<'a> {
             TokenKind::Keyword(KeywordKind::Match) => self.parseMatch(),
             TokenKind::LeftBracket(BracketKind::Curly) => {
                 let block = self.parseBlock();
-                self.buildExpr(SimpleExpr::Block(block))
+                self.buildExpr2(SimpleExpr::Block(block), start)
             }
             TokenKind::LeftBracket(BracketKind::Paren) => {
                 self.expect(TokenKind::LeftBracket(BracketKind::Paren));
@@ -436,13 +430,13 @@ impl<'a> ExprParser for Parser<'a> {
                 if args.len() == 1 && !commaAtEnd {
                     args.remove(0)
                 } else {
-                    self.buildExpr(SimpleExpr::Tuple(args))
+                    self.buildExpr2(SimpleExpr::Tuple(args), start)
                 }
             }
             TokenKind::Misc(MiscKind::Ampersand) => {
                 self.expect(TokenKind::Misc(MiscKind::Ampersand));
                 let arg = self.parseExpr();
-                self.buildExpr(SimpleExpr::Ref(Box::new(arg)))
+                self.buildExpr2(SimpleExpr::Ref(Box::new(arg)), start)
             }
             kind => self.reportError2("<expr>", kind),
         }

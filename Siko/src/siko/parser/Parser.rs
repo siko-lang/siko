@@ -43,6 +43,10 @@ impl<'a> Parser<'a> {
         }
     }
 
+    pub fn currentSpan(&mut self) -> Span {
+        self.tokens[self.index].span.clone()
+    }
+
     pub fn pushSpan(&mut self) {
         let span = self.tokens[self.index].span.clone();
         self.spans.push(span);

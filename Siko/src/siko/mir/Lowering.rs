@@ -345,9 +345,15 @@ impl<'a> Builder<'a> {
                         name: field.name.clone(),
                         ty: field.ty.clone(),
                     };
-                    block
-                        .instructions
-                        .push(LInstruction::Memcpy(self.lowerVar(&argVar), self.lowerVar(&fieldVar)));
+                    if field.ty.isPtr() {
+                        block
+                            .instructions
+                            .push(LInstruction::Store(self.lowerVar(&fieldVar), LValue::Variable(self.lowerVar(&argVar))));
+                    } else {
+                        block
+                            .instructions
+                            .push(LInstruction::Memcpy(self.lowerVar(&argVar), self.lowerVar(&fieldVar)));
+                    }
                 }
                 block
                     .instructions
@@ -410,9 +416,15 @@ impl<'a> Builder<'a> {
                         name: field.name.clone(),
                         ty: field.ty.clone(),
                     };
-                    block
-                        .instructions
-                        .push(LInstruction::Memcpy(self.lowerVar(&argVar), self.lowerVar(&fieldVar)));
+                    if field.ty.isPtr() {
+                        block
+                            .instructions
+                            .push(LInstruction::Store(self.lowerVar(&fieldVar), LValue::Variable(self.lowerVar(&argVar))));
+                    } else {
+                        block
+                            .instructions
+                            .push(LInstruction::Memcpy(self.lowerVar(&argVar), self.lowerVar(&fieldVar)));
+                    }
                 }
                 block
                     .instructions

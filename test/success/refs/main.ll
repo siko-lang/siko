@@ -6,14 +6,42 @@
 
 %struct.Bool_Bool_True = type { i32, %struct.siko_Tuple_ }
 
+%struct.Main_Object = type { ptr }
+
+%struct.Option_Option_None__r_String_String = type { i32, %struct.siko_Tuple_ }
+
+%struct.Option_Option_Some__r_String_String = type { i32, %struct.siko_Tuple__r_String_String }
+
+%struct.Option_Option__r_String_String = type { i32, [8 x i8] }
+
 %struct.String_String = type { ptr, i64 }
 
 %struct.siko_Tuple_ = type {  }
+
+%struct.siko_Tuple__r_String_String = type { ptr }
+
+define private void @siko_Tuple__r_String_String(ptr noundef %f0, ptr noundef %fn_result) {
+block0:
+   %this = alloca %struct.siko_Tuple__r_String_String, align 8
+   %field0 = getelementptr inbounds %struct.siko_Tuple__r_String_String, ptr %this, i32 0, i32 0
+   store ptr %f0, ptr %field0, align 8
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %fn_result, ptr align 8 %this, i64 8, i1 false)
+   ret void
+}
 
 define private void @siko_Tuple_(ptr noundef %fn_result) {
 block0:
    %this = alloca %struct.siko_Tuple_, align 4
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %this, i64 0, i1 false)
+   ret void
+}
+
+define private void @Main_Object(ptr noundef %s, ptr noundef %fn_result) {
+block0:
+   %this = alloca %struct.Main_Object, align 8
+   %field0 = getelementptr inbounds %struct.Main_Object, ptr %this, i32 0, i32 0
+   store ptr %s, ptr %field0, align 8
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %fn_result, ptr align 8 %this, i64 8, i1 false)
    ret void
 }
 
@@ -59,7 +87,32 @@ block0:
 
 define private void @Main_main(ptr noundef %fn_result) {
 block0:
-   %unit_31 = alloca %struct.siko_Tuple_, align 4
+   %unit_59 = alloca %struct.siko_Tuple_, align 4
+   %call_58 = alloca %struct.siko_Tuple_, align 4
+   %call_57 = alloca %struct.Bool_Bool, align 4
+   %implicitRef5 = alloca ptr, align 8
+   %valueRef_55 = alloca %struct.String_String, align 8
+   %valueRef_54 = alloca ptr, align 8
+   %s2_52 = alloca ptr, align 8
+   %call_47 = alloca %struct.siko_Tuple_, align 4
+   %call_46 = alloca %struct.Bool_Bool, align 4
+   %unit_64 = alloca %struct.siko_Tuple_, align 4
+   %matchValue_63 = alloca %struct.siko_Tuple_, align 4
+   %match_var_44 = alloca %struct.siko_Tuple_, align 4
+   %valueRef_43 = alloca %struct.Option_Option__r_String_String, align 8
+   %o2_42 = alloca %struct.Option_Option__r_String_String, align 8
+   %call_41 = alloca %struct.Option_Option__r_String_String, align 8
+   %implicitRef4 = alloca ptr, align 8
+   %valueRef_40 = alloca %struct.String_String, align 8
+   %call_39 = alloca %struct.siko_Tuple_, align 4
+   %call_38 = alloca %struct.Bool_Bool, align 4
+   %implicitRef3 = alloca ptr, align 8
+   %valueRef_36 = alloca %struct.String_String, align 8
+   %valueRef_34 = alloca %struct.Main_Object, align 8
+   %o_33 = alloca %struct.Main_Object, align 8
+   %call_32 = alloca %struct.Main_Object, align 8
+   %implicitRef2 = alloca ptr, align 8
+   %valueRef_31 = alloca %struct.String_String, align 8
    %call_30 = alloca %struct.siko_Tuple_, align 4
    %call_29 = alloca %struct.Bool_Bool, align 4
    %implicitRef1 = alloca ptr, align 8
@@ -115,8 +168,91 @@ block0:
    %tmp_valueRef_26_19 = load ptr, ptr %valueRef_26, align 8
    call void @String_String_eq(ptr %tmp_implicitRef1_18, ptr %tmp_valueRef_26_19, ptr %call_29)
    call void @Std_Basic_Util_assert(ptr %call_29, ptr %call_30)
-   call void @siko_Tuple_(ptr %unit_31)
-   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %unit_31, i64 0, i1 false)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %valueRef_31, ptr align 8 %s_2, i64 16, i1 false)
+   store ptr %valueRef_31, ptr %implicitRef2, align 8
+   %tmp_implicitRef2_20 = load ptr, ptr %implicitRef2, align 8
+   call void @Main_store(ptr %tmp_implicitRef2_20, ptr %call_32)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %o_33, ptr align 8 %call_32, i64 8, i1 false)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %valueRef_34, ptr align 8 %o_33, i64 8, i1 false)
+   %fieldRef_35 = getelementptr inbounds %struct.Main_Object, ptr %valueRef_34, i32 0, i32 0
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %valueRef_36, ptr align 8 %s_2, i64 16, i1 false)
+   store ptr %valueRef_36, ptr %implicitRef3, align 8
+   %tmp_implicitRef3_21 = load ptr, ptr %implicitRef3, align 8
+   %tmp_fieldRef_35_22 = load ptr, ptr %fieldRef_35, align 8
+   call void @String_String_eq(ptr %tmp_implicitRef3_21, ptr %tmp_fieldRef_35_22, ptr %call_38)
+   call void @Std_Basic_Util_assert(ptr %call_38, ptr %call_39)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %valueRef_40, ptr align 8 %s_2, i64 16, i1 false)
+   store ptr %valueRef_40, ptr %implicitRef4, align 8
+   %tmp_implicitRef4_23 = load ptr, ptr %implicitRef4, align 8
+   call void @Main_store2(ptr %tmp_implicitRef4_23, ptr %call_41)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %o2_42, ptr align 8 %call_41, i64 16, i1 false)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %valueRef_43, ptr align 8 %o2_42, i64 16, i1 false)
+   br label %block2
+block1:
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %matchValue_63, ptr align 4 %match_var_44, i64 0, i1 false)
+   call void @siko_Tuple_(ptr %unit_64)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %unit_64, i64 0, i1 false)
+   ret void
+block2:
+   %tmp_switch_var_block2_24 = getelementptr inbounds %struct.Option_Option__r_String_String, ptr %valueRef_43, i32 0, i32 0
+   %tmp_switch_var_block2_25 = load i32, ptr %tmp_switch_var_block2_24, align 4
+   switch i32 %tmp_switch_var_block2_25, label %block3 [
+i32 1, label %block5
+]
+
+block3:
+   br label %block4
+block4:
+   call void @Bool_Bool_False(ptr %call_46)
+   call void @Std_Basic_Util_assert(ptr %call_46, ptr %call_47)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_44, ptr align 4 %call_47, i64 0, i1 false)
+   br label %block1
+block5:
+   %tmp_transform_50_26 = bitcast %struct.Option_Option__r_String_String* %valueRef_43 to %struct.Option_Option_Some__r_String_String*
+   %transform_50 = getelementptr inbounds %struct.Option_Option_Some__r_String_String, ptr %tmp_transform_50_26, i32 0, i32 1
+   %tupleField_51 = getelementptr inbounds %struct.siko_Tuple__r_String_String, ptr %transform_50, i32 0, i32 0
+   br label %block6
+block6:
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %s2_52, ptr align 8 %tupleField_51, i64 8, i1 false)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %valueRef_54, ptr align 8 %s2_52, i64 8, i1 false)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %valueRef_55, ptr align 8 %s_2, i64 16, i1 false)
+   store ptr %valueRef_55, ptr %implicitRef5, align 8
+   %tmp_implicitRef5_27 = load ptr, ptr %implicitRef5, align 8
+   %tmp_valueRef_54_28 = load ptr, ptr %valueRef_54, align 8
+   call void @String_String_eq(ptr %tmp_implicitRef5_27, ptr %tmp_valueRef_54_28, ptr %call_57)
+   call void @Std_Basic_Util_assert(ptr %call_57, ptr %call_58)
+   call void @siko_Tuple_(ptr %unit_59)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_44, ptr align 4 %unit_59, i64 0, i1 false)
+   br label %block1
+}
+
+define private void @Main_store(ptr noundef %s, ptr noundef %fn_result) {
+block0:
+   %valueRef_4 = alloca %struct.Main_Object, align 8
+   %o_3 = alloca %struct.Main_Object, align 8
+   %call_2 = alloca %struct.Main_Object, align 8
+   %valueRef_1 = alloca ptr, align 8
+   store ptr %s, ptr %valueRef_1, align 8
+   %tmp_valueRef_1_29 = load ptr, ptr %valueRef_1, align 8
+   call void @Main_Object(ptr %tmp_valueRef_1_29, ptr %call_2)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %o_3, ptr align 8 %call_2, i64 8, i1 false)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %valueRef_4, ptr align 8 %o_3, i64 8, i1 false)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %fn_result, ptr align 8 %valueRef_4, i64 8, i1 false)
+   ret void
+}
+
+define private void @Main_store2(ptr noundef %s, ptr noundef %fn_result) {
+block0:
+   %valueRef_4 = alloca %struct.Option_Option__r_String_String, align 8
+   %o_3 = alloca %struct.Option_Option__r_String_String, align 8
+   %call_2 = alloca %struct.Option_Option__r_String_String, align 8
+   %valueRef_1 = alloca ptr, align 8
+   store ptr %s, ptr %valueRef_1, align 8
+   %tmp_valueRef_1_30 = load ptr, ptr %valueRef_1, align 8
+   call void @Option_Option_Some__r_String_String(ptr %tmp_valueRef_1_30, ptr %call_2)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %o_3, ptr align 8 %call_2, i64 16, i1 false)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %valueRef_4, ptr align 8 %o_3, i64 16, i1 false)
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %fn_result, ptr align 8 %valueRef_4, i64 16, i1 false)
    ret void
 }
 
@@ -135,9 +271,9 @@ block1:
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %matchValue_13, i64 0, i1 false)
    ret void
 block2:
-   %tmp_switch_var_block2_20 = getelementptr inbounds %struct.Bool_Bool, ptr %valueRef_1, i32 0, i32 0
-   %tmp_switch_var_block2_21 = load i32, ptr %tmp_switch_var_block2_20, align 4
-   switch i32 %tmp_switch_var_block2_21, label %block3 [
+   %tmp_switch_var_block2_31 = getelementptr inbounds %struct.Bool_Bool, ptr %valueRef_1, i32 0, i32 0
+   %tmp_switch_var_block2_32 = load i32, ptr %tmp_switch_var_block2_31, align 4
+   switch i32 %tmp_switch_var_block2_32, label %block3 [
 i32 1, label %block5
 ]
 
@@ -192,9 +328,9 @@ block1:
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %matchValue_10, i64 4, i1 false)
    ret void
 block2:
-   %tmp_switch_var_block2_22 = getelementptr inbounds %struct.Bool_Bool, ptr %valueRef_1, i32 0, i32 0
-   %tmp_switch_var_block2_23 = load i32, ptr %tmp_switch_var_block2_22, align 4
-   switch i32 %tmp_switch_var_block2_23, label %block3 [
+   %tmp_switch_var_block2_33 = getelementptr inbounds %struct.Bool_Bool, ptr %valueRef_1, i32 0, i32 0
+   %tmp_switch_var_block2_34 = load i32, ptr %tmp_switch_var_block2_33, align 4
+   switch i32 %tmp_switch_var_block2_34, label %block3 [
 i32 1, label %block5
 ]
 
@@ -210,6 +346,18 @@ block6:
    call void @Bool_Bool_False(ptr %call_6)
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %match_var_2, ptr align 4 %call_6, i64 4, i1 false)
    br label %block1
+}
+
+define private void @Option_Option_Some__r_String_String(ptr noundef %f0, ptr noundef %fn_result) {
+block0:
+   %this = alloca %struct.Option_Option_Some__r_String_String, align 8
+   %tag = getelementptr inbounds %struct.Option_Option_Some__r_String_String, ptr %this, i32 0, i32 0
+   store i32 1, ptr %tag, align 4
+   %payload1 = getelementptr inbounds %struct.Option_Option_Some__r_String_String, ptr %this, i32 0, i32 1
+   %field0 = getelementptr inbounds %struct.siko_Tuple__r_String_String, ptr %payload1, i32 0, i32 0
+   store ptr %f0, ptr %field0, align 8
+   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %fn_result, ptr align 8 %this, i64 16, i1 false)
+   ret void
 }
 
 declare void @String_String_eq(ptr noundef %self, ptr noundef %other, ptr noundef %fn_result)

@@ -6,6 +6,20 @@ fn foo(s: &String) -> &String {
     s
 }
 
+class Object {
+    s: &String
+}
+
+fn store(s: &String) -> Object {
+    let o = Object(s);
+    o
+}
+
+fn store2(s: &String) -> Option[&String] {
+    let o = Some(s);
+    o
+}
+
 fn main() {
     let s = "foo";
     let ref : &String = &&&&&&s;
@@ -14,6 +28,15 @@ fn main() {
     foo(&s);
     let same = foo(&&&&s);
     assert(s.eq(same));
+    let o = store(s);
+    assert(s.eq(o.s));
+    let o2 = store2(s);
+    match o2 {
+        Some(s2) -> {
+            assert(s.eq(s2));
+        }
+        None -> { assert(False) }
+    };
 }
 
 }
