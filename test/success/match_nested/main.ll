@@ -65,9 +65,11 @@ block0:
    %valueRef_26 = alloca %struct.Int_Int, align 8
    %v_25 = alloca %struct.Int_Int, align 8
    %eq_35 = alloca %struct.Bool_Bool, align 4
+   %implicitRef1 = alloca ptr, align 8
    %lit_34 = alloca %struct.String_String, align 8
    %lit_17 = alloca %struct.Int_Int, align 8
    %lit_14 = alloca %struct.Int_Int, align 8
+   %implicitRef0 = alloca ptr, align 8
    %unit_62 = alloca %struct.siko_Tuple_, align 4
    %matchValue_61 = alloca %struct.Int_Int, align 8
    %match_var_7 = alloca %struct.Int_Int, align 8
@@ -80,10 +82,10 @@ block0:
    call void @Bool_Bool_True(ptr %call_1)
    %tmp_lit_2_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_2, i32 0, i32 0
    store i64 3, ptr %tmp_lit_2_1, align 8
-   %tmp_literal_3_1 = getelementptr inbounds %struct.String_String, ptr %literal_3, i32 0, i32 0
-   store ptr @.str_0, ptr %tmp_literal_3_1, align 8
-   %tmp_literal_3_2 = getelementptr inbounds %struct.String_String, ptr %literal_3, i32 0, i32 1
-   store i64 1, ptr %tmp_literal_3_2, align 8
+   %tmp_literal_3_2 = getelementptr inbounds %struct.String_String, ptr %literal_3, i32 0, i32 0
+   store ptr @.str_0, ptr %tmp_literal_3_2, align 8
+   %tmp_literal_3_3 = getelementptr inbounds %struct.String_String, ptr %literal_3, i32 0, i32 1
+   store i64 1, ptr %tmp_literal_3_3, align 8
    call void @Bool_Bool_True(ptr %call_4)
    call void @Main_Foo_Bar(ptr %call_4, ptr %call_5)
    call void @siko_Tuple_Bool_Bool__Int_Int__String_String__Main_Foo(ptr %call_1, ptr %lit_2, ptr %literal_3, ptr %call_5, ptr %tuple_6)
@@ -97,96 +99,100 @@ block2:
    %tupleField_8 = getelementptr inbounds %struct.siko_Tuple_Bool_Bool__Int_Int__String_String__Main_Foo, ptr %tuple_6, i32 0, i32 0
    %tupleField_9 = getelementptr inbounds %struct.siko_Tuple_Bool_Bool__Int_Int__String_String__Main_Foo, ptr %tuple_6, i32 0, i32 1
    %tupleField_10 = getelementptr inbounds %struct.siko_Tuple_Bool_Bool__Int_Int__String_String__Main_Foo, ptr %tuple_6, i32 0, i32 2
+   store ptr %tupleField_10, ptr %implicitRef0, align 8
    %tupleField_11 = getelementptr inbounds %struct.siko_Tuple_Bool_Bool__Int_Int__String_String__Main_Foo, ptr %tuple_6, i32 0, i32 3
    br label %block3
 block3:
-   %tmp_switch_var_block3_1 = getelementptr inbounds %struct.Bool_Bool, ptr %tupleField_8, i32 0, i32 0
-   %tmp_switch_var_block3_2 = load i32, ptr %tmp_switch_var_block3_1, align 4
-   switch i32 %tmp_switch_var_block3_2, label %block4 [
+   %tmp_switch_var_block3_4 = getelementptr inbounds %struct.Bool_Bool, ptr %tupleField_8, i32 0, i32 0
+   %tmp_switch_var_block3_5 = load i32, ptr %tmp_switch_var_block3_4, align 4
+   switch i32 %tmp_switch_var_block3_5, label %block4 [
 i32 1, label %block14
 ]
 
 block4:
    br label %block5
 block5:
-   %tmp_switch_var_block5_1 = getelementptr inbounds %struct.Int_Int, ptr %tupleField_9, i32 0, i32 0
-   %tmp_switch_var_block5_2 = load i64, ptr %tmp_switch_var_block5_1, align 8
-   switch i64 %tmp_switch_var_block5_2, label %block6 [
+   %tmp_switch_var_block5_6 = getelementptr inbounds %struct.Int_Int, ptr %tupleField_9, i32 0, i32 0
+   %tmp_switch_var_block5_7 = load i64, ptr %tmp_switch_var_block5_6, align 8
+   switch i64 %tmp_switch_var_block5_7, label %block6 [
 
 ]
 
 block6:
    br label %block7
 block7:
-   %tmp_switch_var_block7_1 = getelementptr inbounds %struct.Main_Foo, ptr %tupleField_11, i32 0, i32 0
-   %tmp_switch_var_block7_2 = load i32, ptr %tmp_switch_var_block7_1, align 4
-   switch i32 %tmp_switch_var_block7_2, label %block8 [
+   %tmp_switch_var_block7_8 = getelementptr inbounds %struct.Main_Foo, ptr %tupleField_11, i32 0, i32 0
+   %tmp_switch_var_block7_9 = load i32, ptr %tmp_switch_var_block7_8, align 4
+   switch i32 %tmp_switch_var_block7_9, label %block8 [
 
 ]
 
 block8:
-   %tmp_transform_12_1 = bitcast %struct.Main_Foo* %tupleField_11 to %struct.Main_Foo_Bar*
-   %transform_12 = getelementptr inbounds %struct.Main_Foo_Bar, ptr %tmp_transform_12_1, i32 0, i32 1
+   %tmp_transform_12_10 = bitcast %struct.Main_Foo* %tupleField_11 to %struct.Main_Foo_Bar*
+   %transform_12 = getelementptr inbounds %struct.Main_Foo_Bar, ptr %tmp_transform_12_10, i32 0, i32 1
    %tupleField_13 = getelementptr inbounds %struct.siko_Tuple_Bool_Bool, ptr %transform_12, i32 0, i32 0
    br label %block9
 block9:
-   %tmp_switch_var_block9_1 = getelementptr inbounds %struct.Bool_Bool, ptr %tupleField_13, i32 0, i32 0
-   %tmp_switch_var_block9_2 = load i32, ptr %tmp_switch_var_block9_1, align 4
-   switch i32 %tmp_switch_var_block9_2, label %block10 [
+   %tmp_switch_var_block9_11 = getelementptr inbounds %struct.Bool_Bool, ptr %tupleField_13, i32 0, i32 0
+   %tmp_switch_var_block9_12 = load i32, ptr %tmp_switch_var_block9_11, align 4
+   switch i32 %tmp_switch_var_block9_12, label %block10 [
 i32 1, label %block12
 ]
 
 block10:
    br label %block11
 block11:
-   %tmp_lit_14_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_14, i32 0, i32 0
-   store i64 3, ptr %tmp_lit_14_1, align 8
+   %tmp_lit_14_13 = getelementptr inbounds %struct.Int_Int, ptr %lit_14, i32 0, i32 0
+   store i64 3, ptr %tmp_lit_14_13, align 8
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %match_var_7, ptr align 8 %lit_14, i64 8, i1 false)
    br label %block1
 block12:
    br label %block13
 block13:
-   %tmp_lit_17_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_17, i32 0, i32 0
-   store i64 3, ptr %tmp_lit_17_1, align 8
+   %tmp_lit_17_14 = getelementptr inbounds %struct.Int_Int, ptr %lit_17, i32 0, i32 0
+   store i64 3, ptr %tmp_lit_17_14, align 8
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %match_var_7, ptr align 8 %lit_17, i64 8, i1 false)
    br label %block1
 block14:
    br label %block15
 block15:
-   %tmp_switch_var_block15_1 = getelementptr inbounds %struct.Int_Int, ptr %tupleField_9, i32 0, i32 0
-   %tmp_switch_var_block15_2 = load i64, ptr %tmp_switch_var_block15_1, align 8
-   switch i64 %tmp_switch_var_block15_2, label %block31 [
+   %tmp_switch_var_block15_15 = getelementptr inbounds %struct.Int_Int, ptr %tupleField_9, i32 0, i32 0
+   %tmp_switch_var_block15_16 = load i64, ptr %tmp_switch_var_block15_15, align 8
+   switch i64 %tmp_switch_var_block15_16, label %block31 [
 i64 1, label %block16
 ]
 
 block16:
-   %tmp_lit_34_1 = getelementptr inbounds %struct.String_String, ptr %lit_34, i32 0, i32 0
-   store ptr @.str_1, ptr %tmp_lit_34_1, align 8
-   %tmp_lit_34_2 = getelementptr inbounds %struct.String_String, ptr %lit_34, i32 0, i32 1
-   store i64 3, ptr %tmp_lit_34_2, align 8
-   call void @String_String_eq(ptr %tupleField_10, ptr %lit_34, ptr %eq_35)
-   %tmp_switch_var_block16_1 = getelementptr inbounds %struct.Bool_Bool, ptr %eq_35, i32 0, i32 0
-   %tmp_switch_var_block16_2 = load i32, ptr %tmp_switch_var_block16_1, align 4
-   switch i32 %tmp_switch_var_block16_2, label %block17 [
+   %tmp_lit_34_17 = getelementptr inbounds %struct.String_String, ptr %lit_34, i32 0, i32 0
+   store ptr @.str_1, ptr %tmp_lit_34_17, align 8
+   %tmp_lit_34_18 = getelementptr inbounds %struct.String_String, ptr %lit_34, i32 0, i32 1
+   store i64 3, ptr %tmp_lit_34_18, align 8
+   store ptr %lit_34, ptr %implicitRef1, align 8
+   %tmp_implicitRef0_19 = load ptr, ptr %implicitRef0, align 8
+   %tmp_implicitRef1_20 = load ptr, ptr %implicitRef1, align 8
+   call void @String_String_eq(ptr %tmp_implicitRef0_19, ptr %tmp_implicitRef1_20, ptr %eq_35)
+   %tmp_switch_var_block16_21 = getelementptr inbounds %struct.Bool_Bool, ptr %eq_35, i32 0, i32 0
+   %tmp_switch_var_block16_22 = load i32, ptr %tmp_switch_var_block16_21, align 4
+   switch i32 %tmp_switch_var_block16_22, label %block17 [
 i32 1, label %block24
 ]
 
 block17:
-   %tmp_switch_var_block17_1 = getelementptr inbounds %struct.Main_Foo, ptr %tupleField_11, i32 0, i32 0
-   %tmp_switch_var_block17_2 = load i32, ptr %tmp_switch_var_block17_1, align 4
-   switch i32 %tmp_switch_var_block17_2, label %block18 [
+   %tmp_switch_var_block17_23 = getelementptr inbounds %struct.Main_Foo, ptr %tupleField_11, i32 0, i32 0
+   %tmp_switch_var_block17_24 = load i32, ptr %tmp_switch_var_block17_23, align 4
+   switch i32 %tmp_switch_var_block17_24, label %block18 [
 
 ]
 
 block18:
-   %tmp_transform_23_1 = bitcast %struct.Main_Foo* %tupleField_11 to %struct.Main_Foo_Bar*
-   %transform_23 = getelementptr inbounds %struct.Main_Foo_Bar, ptr %tmp_transform_23_1, i32 0, i32 1
+   %tmp_transform_23_25 = bitcast %struct.Main_Foo* %tupleField_11 to %struct.Main_Foo_Bar*
+   %transform_23 = getelementptr inbounds %struct.Main_Foo_Bar, ptr %tmp_transform_23_25, i32 0, i32 1
    %tupleField_24 = getelementptr inbounds %struct.siko_Tuple_Bool_Bool, ptr %transform_23, i32 0, i32 0
    br label %block19
 block19:
-   %tmp_switch_var_block19_1 = getelementptr inbounds %struct.Bool_Bool, ptr %tupleField_24, i32 0, i32 0
-   %tmp_switch_var_block19_2 = load i32, ptr %tmp_switch_var_block19_1, align 4
-   switch i32 %tmp_switch_var_block19_2, label %block20 [
+   %tmp_switch_var_block19_26 = getelementptr inbounds %struct.Bool_Bool, ptr %tupleField_24, i32 0, i32 0
+   %tmp_switch_var_block19_27 = load i32, ptr %tmp_switch_var_block19_26, align 4
+   switch i32 %tmp_switch_var_block19_27, label %block20 [
 i32 1, label %block22
 ]
 
@@ -205,21 +211,21 @@ block23:
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %match_var_7, ptr align 8 %valueRef_30, i64 8, i1 false)
    br label %block1
 block24:
-   %tmp_switch_var_block24_1 = getelementptr inbounds %struct.Main_Foo, ptr %tupleField_11, i32 0, i32 0
-   %tmp_switch_var_block24_2 = load i32, ptr %tmp_switch_var_block24_1, align 4
-   switch i32 %tmp_switch_var_block24_2, label %block25 [
+   %tmp_switch_var_block24_28 = getelementptr inbounds %struct.Main_Foo, ptr %tupleField_11, i32 0, i32 0
+   %tmp_switch_var_block24_29 = load i32, ptr %tmp_switch_var_block24_28, align 4
+   switch i32 %tmp_switch_var_block24_29, label %block25 [
 
 ]
 
 block25:
-   %tmp_transform_36_1 = bitcast %struct.Main_Foo* %tupleField_11 to %struct.Main_Foo_Bar*
-   %transform_36 = getelementptr inbounds %struct.Main_Foo_Bar, ptr %tmp_transform_36_1, i32 0, i32 1
+   %tmp_transform_36_30 = bitcast %struct.Main_Foo* %tupleField_11 to %struct.Main_Foo_Bar*
+   %transform_36 = getelementptr inbounds %struct.Main_Foo_Bar, ptr %tmp_transform_36_30, i32 0, i32 1
    %tupleField_37 = getelementptr inbounds %struct.siko_Tuple_Bool_Bool, ptr %transform_36, i32 0, i32 0
    br label %block26
 block26:
-   %tmp_switch_var_block26_1 = getelementptr inbounds %struct.Bool_Bool, ptr %tupleField_37, i32 0, i32 0
-   %tmp_switch_var_block26_2 = load i32, ptr %tmp_switch_var_block26_1, align 4
-   switch i32 %tmp_switch_var_block26_2, label %block27 [
+   %tmp_switch_var_block26_31 = getelementptr inbounds %struct.Bool_Bool, ptr %tupleField_37, i32 0, i32 0
+   %tmp_switch_var_block26_32 = load i32, ptr %tmp_switch_var_block26_31, align 4
+   switch i32 %tmp_switch_var_block26_32, label %block27 [
 i32 1, label %block29
 ]
 
@@ -233,28 +239,28 @@ block28:
 block29:
    br label %block30
 block30:
-   %tmp_lit_42_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_42, i32 0, i32 0
-   store i64 1, ptr %tmp_lit_42_1, align 8
+   %tmp_lit_42_33 = getelementptr inbounds %struct.Int_Int, ptr %lit_42, i32 0, i32 0
+   store i64 1, ptr %tmp_lit_42_33, align 8
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %match_var_7, ptr align 8 %lit_42, i64 8, i1 false)
    br label %block1
 block31:
    br label %block32
 block32:
-   %tmp_switch_var_block32_1 = getelementptr inbounds %struct.Main_Foo, ptr %tupleField_11, i32 0, i32 0
-   %tmp_switch_var_block32_2 = load i32, ptr %tmp_switch_var_block32_1, align 4
-   switch i32 %tmp_switch_var_block32_2, label %block33 [
+   %tmp_switch_var_block32_34 = getelementptr inbounds %struct.Main_Foo, ptr %tupleField_11, i32 0, i32 0
+   %tmp_switch_var_block32_35 = load i32, ptr %tmp_switch_var_block32_34, align 4
+   switch i32 %tmp_switch_var_block32_35, label %block33 [
 
 ]
 
 block33:
-   %tmp_transform_46_1 = bitcast %struct.Main_Foo* %tupleField_11 to %struct.Main_Foo_Bar*
-   %transform_46 = getelementptr inbounds %struct.Main_Foo_Bar, ptr %tmp_transform_46_1, i32 0, i32 1
+   %tmp_transform_46_36 = bitcast %struct.Main_Foo* %tupleField_11 to %struct.Main_Foo_Bar*
+   %transform_46 = getelementptr inbounds %struct.Main_Foo_Bar, ptr %tmp_transform_46_36, i32 0, i32 1
    %tupleField_47 = getelementptr inbounds %struct.siko_Tuple_Bool_Bool, ptr %transform_46, i32 0, i32 0
    br label %block34
 block34:
-   %tmp_switch_var_block34_1 = getelementptr inbounds %struct.Bool_Bool, ptr %tupleField_47, i32 0, i32 0
-   %tmp_switch_var_block34_2 = load i32, ptr %tmp_switch_var_block34_1, align 4
-   switch i32 %tmp_switch_var_block34_2, label %block35 [
+   %tmp_switch_var_block34_37 = getelementptr inbounds %struct.Bool_Bool, ptr %tupleField_47, i32 0, i32 0
+   %tmp_switch_var_block34_38 = load i32, ptr %tmp_switch_var_block34_37, align 4
+   switch i32 %tmp_switch_var_block34_38, label %block35 [
 i32 1, label %block37
 ]
 

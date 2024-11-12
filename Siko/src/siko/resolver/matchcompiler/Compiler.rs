@@ -443,7 +443,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     let value = self.resolver.createValue("tupleField", self.bodyLocation.clone());
                     self.resolver.addInstructionToBlock(
                         blockId,
-                        InstructionKind::TupleIndex(value.clone(), root.clone(), index as i32),
+                        InstructionKind::TupleIndex(value.asFixed(), root.clone(), index as i32),
                         self.bodyLocation.clone(),
                         false,
                     );
