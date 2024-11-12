@@ -111,6 +111,13 @@ impl Generator {
                 }
                 format!("call void @{}({})", name, argRefs.join(", "))
             }
+            Instruction::FunctionCallValue(dest, name, args) => {
+                let mut argRefs = Vec::new();
+                for arg in args {
+                    argRefs.push(format!("ptr {}", arg.name));
+                }
+                format!("{} = call {} @{}({})", dest.name, getTypeName(&dest.ty), name, argRefs.join(", "))
+            }
             Instruction::LoadVar(dest, src) => {
                 format!(
                     "{} = load {}, ptr {}, align {}",

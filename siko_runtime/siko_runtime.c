@@ -68,6 +68,9 @@ extern void Int_Int_lessThan(struct siko_int* v1, struct siko_int* v2, struct si
 }
 
 extern void String_String_eq(struct siko_string* v1, struct siko_string* v2, struct siko_bool* result) {
+    //printf("string eq!!\n");
+    //Std_Basic_Util_siko_runtime_str(v1);
+    //Std_Basic_Util_siko_runtime_str(v2);
     if (v1->length != v2->length) {
         result->value = 0;
         return;

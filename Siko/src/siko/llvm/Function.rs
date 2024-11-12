@@ -41,6 +41,7 @@ pub enum Instruction {
     Store(Variable, Value),
     LoadVar(Variable, Variable),
     FunctionCall(String, Vec<Variable>),
+    FunctionCallValue(Variable, String, Vec<Variable>),
     Return(Value),
     GetFieldRef(Variable, Variable, i32),
     Jump(String),

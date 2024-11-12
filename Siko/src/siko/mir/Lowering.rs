@@ -120,9 +120,17 @@ impl<'a> Builder<'a> {
                         };
                         llvmArgs.push(var);
                     }
-                    llvmArgs.push(self.lowerVar(dest));
-                    let llvmInstruction = LInstruction::FunctionCall(name.clone(), llvmArgs);
-                    llvmBlock.instructions.push(llvmInstruction);
+                    if dest.ty.isPtr() {
+                        let tmp = self.tmpVar(dest);
+                        let llvmInstruction = LInstruction::FunctionCallValue(tmp.clone(), name.clone(), llvmArgs);
+                        llvmBlock.instructions.push(llvmInstruction);
+                        let llvmInstruction = LInstruction::MemcpyPtr(tmp, self.lowerVar(dest));
+                        llvmBlock.instructions.push(llvmInstruction);
+                    } else {
+                        llvmArgs.push(self.lowerVar(dest));
+                        let llvmInstruction = LInstruction::FunctionCall(name.clone(), llvmArgs);
+                        llvmBlock.instructions.push(llvmInstruction);
+                    }
                 }
                 Instruction::Assign(dest, src) => {
                     let llvmInstruction = LInstruction::Store(
@@ -142,7 +150,10 @@ impl<'a> Builder<'a> {
                     }
                     Value::Var(v) => {
                         if v.ty.isPtr() {
-                            let llvmInstruction = LInstruction::Return(LValue::Void);
+                            let tmp = self.tmpVar(v);
+                            let llvmInstruction = LInstruction::LoadVar(tmp.clone(), self.lowerVar(v));
+                            llvmBlock.instructions.push(llvmInstruction);
+                            let llvmInstruction = LInstruction::Return(LValue::Variable(tmp));
                             llvmBlock.instructions.push(llvmInstruction);
                         } else {
                             let llvmInstruction = LInstruction::Memcpy(self.lowerVar(v), self.lowerVar(&getResultVar(v.ty.clone())));
@@ -276,10 +287,15 @@ impl<'a> Builder<'a> {
 
     fn lowerFunction(&mut self, f: &Function) -> LFunction {
         let mut args: Vec<_> = f.args.iter().map(|p| self.lowerParam(p)).collect();
-        args.push(LParam {
-            name: getResultVarName(),
-            ty: self.lowerType(&f.result),
-        });
+        let mut resultTy = LType::Void;
+        if !f.result.isPtr() {
+            args.push(LParam {
+                name: getResultVarName(),
+                ty: self.lowerType(&f.result),
+            });
+        } else {
+            resultTy = self.lowerType(&f.result);
+        }
         match &f.kind {
             FunctionKind::UserDefined(blocks) => {
                 let mut localVars = Vec::new();
@@ -298,7 +314,7 @@ impl<'a> Builder<'a> {
                 LFunction {
                     name: f.name.clone(),
                     args: args,
-                    result: LType::Void,
+                    result: resultTy,
                     blocks: llvmBlocks,
                 }
             }
@@ -336,7 +352,7 @@ impl<'a> Builder<'a> {
                 LFunction {
                     name: f.name.clone(),
                     args: args,
-                    result: LType::Void,
+                    result: resultTy,
                     blocks: vec![block],
                 }
             }
@@ -401,23 +417,16 @@ impl<'a> Builder<'a> {
                 LFunction {
                     name: f.name.clone(),
                     args: args,
-                    result: LType::Void,
+                    result: resultTy,
                     blocks: vec![block],
                 }
             }
-            FunctionKind::Extern => {
-                let mut args: Vec<_> = f.args.iter().map(|p| self.lowerParam(p)).collect();
-                args.push(LParam {
-                    name: getResultVarName(),
-                    ty: self.lowerType(&f.result),
-                });
-                LFunction {
-                    name: f.name.clone(),
-                    args: args,
-                    result: LType::Void,
-                    blocks: Vec::new(),
-                }
-            }
+            FunctionKind::Extern => LFunction {
+                name: f.name.clone(),
+                args: args,
+                result: resultTy,
+                blocks: Vec::new(),
+            },
         }
     }
 
