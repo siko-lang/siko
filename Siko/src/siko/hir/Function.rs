@@ -76,45 +76,6 @@ impl Display for BlockId {
     }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
-pub struct InstructionId {
-    blockId: BlockId,
-    id: u32,
-}
-
-impl InstructionId {
-    pub fn first() -> InstructionId {
-        InstructionId {
-            blockId: BlockId { id: 0 },
-            id: 0,
-        }
-    }
-
-    pub fn simple(&self) -> String {
-        format!("{}_{}", self.blockId.id, self.id)
-    }
-
-    pub fn getBlockById(&self) -> BlockId {
-        self.blockId
-    }
-
-    pub fn getId(&self) -> u32 {
-        self.id
-    }
-}
-
-impl Display for InstructionId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({}.{})", self.blockId, self.id)
-    }
-}
-
-impl std::fmt::Debug for InstructionId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({}.{})", self.blockId, self.id)
-    }
-}
-
 #[derive(Clone, PartialEq)]
 pub struct EnumCase {
     pub index: u32,
@@ -311,10 +272,8 @@ impl InstructionKind {
 
 #[derive(Debug, Clone)]
 pub struct Instruction {
-    pub id: InstructionId,
     pub implicit: bool,
     pub kind: InstructionKind,
-    pub ty: Option<Type>,
     pub location: Location,
 }
 
@@ -326,11 +285,7 @@ impl Instruction {
 
 impl Display for Instruction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(ty) = &self.ty {
-            write!(f, "{}: {} {}", self.id, self.kind.dump(), ty)?;
-        } else {
-            write!(f, "{}: {}", self.id, self.kind.dump())?;
-        }
+        write!(f, "{}", self.kind.dump())?;
         Ok(())
     }
 }
@@ -349,39 +304,16 @@ impl Block {
         }
     }
 
-    pub fn peekNextInstructionId(&self) -> InstructionId {
-        let id = InstructionId {
-            blockId: self.id,
-            id: self.instructions.len() as u32,
-        };
-        id
-    }
-
-    pub fn getInstruction(&self, id: InstructionId) -> &Instruction {
-        &self.instructions[id.id as usize]
-    }
-
-    pub fn add(&mut self, kind: InstructionKind, location: Location) -> InstructionId {
+    pub fn add(&mut self, kind: InstructionKind, location: Location) {
         self.addWithImplicit(kind, location, false)
     }
 
-    pub fn addWithImplicit(&mut self, kind: InstructionKind, location: Location, implicit: bool) -> InstructionId {
-        let id = InstructionId {
-            blockId: self.id,
-            id: self.instructions.len() as u32,
-        };
+    pub fn addWithImplicit(&mut self, kind: InstructionKind, location: Location, implicit: bool) {
         self.instructions.push(Instruction {
-            id: id,
             implicit: implicit,
             kind: kind,
-            ty: None,
             location: location,
         });
-        id
-    }
-
-    pub fn getLastId(&self) -> InstructionId {
-        self.instructions.iter().rev().next().expect("Empty block!").id
     }
 
     pub fn dump(&self) {
@@ -422,10 +354,6 @@ impl Body {
 
     pub fn getBlockById(&self, id: BlockId) -> &Block {
         &self.blocks[id.id as usize]
-    }
-
-    pub fn getInstruction(&self, id: InstructionId) -> &Instruction {
-        &self.blocks[id.blockId.id as usize].instructions[id.id as usize]
     }
 
     pub fn setType(&mut self, var: Variable, ty: Type) {
@@ -498,14 +426,6 @@ impl Function {
             &body.blocks[0]
         } else {
             panic!("getFirstBlock: no body found");
-        }
-    }
-
-    pub fn getInstruction(&self, id: InstructionId) -> &Instruction {
-        if let Some(body) = &self.body {
-            body.getInstruction(id)
-        } else {
-            panic!("getInstruction: no body found");
         }
     }
 

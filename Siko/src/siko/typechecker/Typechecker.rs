@@ -7,7 +7,7 @@ use crate::siko::{
     hir::{
         Apply::{instantiateClass, instantiateEnum, Apply, ApplyVariable},
         Data::{Class, Enum},
-        Function::{Function, Instruction, InstructionId, InstructionKind, Parameter, ValueKind, Variable},
+        Function::{Function, Instruction, InstructionKind, Parameter, ValueKind, Variable},
         Program::Program,
         Substitution::{TypeSubstitution, VariableSubstitution},
         TraitMethodSelector::TraitMethodSelector,
@@ -480,10 +480,8 @@ impl<'a> Typechecker<'a> {
                         self.varSwap.add(var.asNotFixed(), dest.clone());
                         let kind = InstructionKind::Ref(dest.asFixed(), fixedVar);
                         let implicitRef = Instruction {
-                            id: InstructionId::first(),
                             implicit: true,
                             kind: kind,
-                            ty: None,
                             location: instruction.location.clone(),
                         };
                         block.instructions.insert(index + 1, implicitRef);

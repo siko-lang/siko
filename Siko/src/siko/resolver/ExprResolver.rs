@@ -2,7 +2,7 @@ use core::panic;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::siko::hir::Data::Enum;
-use crate::siko::hir::Function::{Block as IrBlock, BlockId, InstructionId, InstructionKind, ValueKind, Variable};
+use crate::siko::hir::Function::{Block as IrBlock, BlockId, InstructionKind, ValueKind, Variable};
 use crate::siko::location::Location::Location;
 use crate::siko::location::Report::ReportContext;
 use crate::siko::qualifiedname::QualifiedName;
@@ -138,15 +138,15 @@ impl<'a> ExprResolver<'a> {
         blockValue
     }
 
-    pub fn addInstruction(&mut self, instruction: InstructionKind, location: Location) -> InstructionId {
+    pub fn addInstruction(&mut self, instruction: InstructionKind, location: Location) {
         self.addInstructionToBlock(self.targetBlockId, instruction, location, false)
     }
 
-    pub fn addImplicitInstruction(&mut self, instruction: InstructionKind, location: Location) -> InstructionId {
+    pub fn addImplicitInstruction(&mut self, instruction: InstructionKind, location: Location) {
         self.addInstructionToBlock(self.targetBlockId, instruction, location, true)
     }
 
-    pub fn addInstructionToBlock(&mut self, id: BlockId, instruction: InstructionKind, location: Location, implicit: bool) -> InstructionId {
+    pub fn addInstructionToBlock(&mut self, id: BlockId, instruction: InstructionKind, location: Location, implicit: bool) {
         let irBlock = &mut self.body.blocks[id.id as usize];
         return irBlock.addWithImplicit(instruction, location, implicit);
     }
@@ -436,8 +436,8 @@ impl<'a> ExprResolver<'a> {
         let id = self.createBlock();
         self.setTargetBlockId(id);
         let value = self.resolveBlock(body, env);
-        let lastId = self.body.getBlockById(self.targetBlockId).getLastId();
-        let lastInstruction = self.body.getInstruction(lastId);
+        let lastBlock = self.body.getBlockById(self.targetBlockId);
+        let lastInstruction = lastBlock.instructions.last().expect("empty block");
         if let InstructionKind::Return(_, _) = lastInstruction.kind {
         } else {
             let retValue = self.createValue("ret", body.location.clone());
