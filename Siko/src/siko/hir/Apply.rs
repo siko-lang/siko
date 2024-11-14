@@ -139,7 +139,7 @@ impl Apply for InstructionKind {
             InstructionKind::Jump(dest, block_id) => InstructionKind::Jump(dest.apply(sub), *block_id),
             InstructionKind::Assign(name, rhs) => InstructionKind::Assign(name.apply(sub), rhs.apply(sub)),
             InstructionKind::DeclareVar(var) => InstructionKind::DeclareVar(var.apply(sub)),
-            InstructionKind::Transform(dest, root, op) => InstructionKind::Transform(dest.apply(sub), root.apply(sub), op.clone()),
+            InstructionKind::Transform(dest, root, index) => InstructionKind::Transform(dest.apply(sub), root.apply(sub), index.clone()),
             InstructionKind::EnumSwitch(root, cases) => InstructionKind::EnumSwitch(root.apply(sub), cases.clone()),
             InstructionKind::IntegerSwitch(root, cases) => InstructionKind::IntegerSwitch(root.apply(sub), cases.clone()),
             InstructionKind::StringSwitch(root, cases) => InstructionKind::StringSwitch(root.apply(sub), cases.clone()),
@@ -160,6 +160,15 @@ pub fn instantiateEnum(allocator: &mut TypeVarAllocator, e: &Enum, ty: &Type) ->
     e.apply(&sub)
 }
 
+pub fn instantiateEnum2(allocator: &mut TypeVarAllocator, e: &Enum) -> Enum {
+    let vars = e.ty.collectVars(BTreeSet::new());
+    let mut sub = TypeSubstitution::new();
+    for var in &vars {
+        sub.add(Type::Var(var.clone()), allocator.next());
+    }
+    e.apply(&sub)
+}
+
 pub fn instantiateClass(allocator: &mut TypeVarAllocator, c: &Class, ty: &Type) -> Class {
     let vars = c.ty.collectVars(BTreeSet::new());
     let mut sub = TypeSubstitution::new();
@@ -171,6 +180,15 @@ pub fn instantiateClass(allocator: &mut TypeVarAllocator, c: &Class, ty: &Type) 
     let r = unify(&mut sub, ty, &e.ty);
     assert!(r.is_ok());
     e.apply(&sub)
+}
+
+pub fn instantiateType(allocator: &mut TypeVarAllocator, ty: &Type) -> Type {
+    let vars = ty.collectVars(BTreeSet::new());
+    let mut sub = TypeSubstitution::new();
+    for var in &vars {
+        sub.add(Type::Var(var.clone()), allocator.next());
+    }
+    ty.apply(&sub)
 }
 
 impl ApplyVariable for ValueKind {
@@ -203,7 +221,7 @@ impl ApplyVariable for InstructionKind {
             InstructionKind::Jump(dest, block_id) => InstructionKind::Jump(dest.applyVar(sub), *block_id),
             InstructionKind::Assign(name, rhs) => InstructionKind::Assign(name.applyVar(sub), rhs.applyVar(sub)),
             InstructionKind::DeclareVar(var) => InstructionKind::DeclareVar(var.applyVar(sub)),
-            InstructionKind::Transform(dest, root, op) => InstructionKind::Transform(dest.applyVar(sub), root.applyVar(sub), op.clone()),
+            InstructionKind::Transform(dest, root, index) => InstructionKind::Transform(dest.applyVar(sub), root.applyVar(sub), index.clone()),
             InstructionKind::EnumSwitch(root, cases) => InstructionKind::EnumSwitch(root.applyVar(sub), cases.clone()),
             InstructionKind::IntegerSwitch(root, cases) => InstructionKind::IntegerSwitch(root.applyVar(sub), cases.clone()),
             InstructionKind::StringSwitch(root, cases) => InstructionKind::StringSwitch(root.applyVar(sub), cases.clone()),
