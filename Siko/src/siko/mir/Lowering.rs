@@ -475,7 +475,7 @@ impl<'a> Builder<'a> {
             Type::Struct(n) => LType::Struct(n.clone()),
             Type::Union(n) => LType::Struct(n.clone()),
             Type::Ptr(t) => LType::Ptr(Box::new(self.lowerType(t))),
-            Type::ByteArray(s) => LType::ByteArray(*s),
+            Type::Array(s, itemSize) => LType::Array(*s, *itemSize),
         }
     }
 }

@@ -1,4 +1,4 @@
-%struct.Bool_Bool = type { i32, [0 x i8] }
+%struct.Bool_Bool = type { i32, [0 x i32] }
 
 %struct.Bool_Bool_False = type { i32, %struct.siko_Tuple_ }
 
@@ -57,7 +57,7 @@ define private void @Bool_Bool_True(ptr noundef %fn_result) {
 block0:
    %this = alloca %struct.Bool_Bool_True, align 4
    %tag = getelementptr inbounds %struct.Bool_Bool_True, ptr %this, i32 0, i32 0
-   store i32 1, ptr %tag, align 4
+   store volatile i32 1, ptr %tag, align 4
    %payload1 = getelementptr inbounds %struct.Bool_Bool_True, ptr %this, i32 0, i32 1
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %this, i64 4, i1 false)
    ret void

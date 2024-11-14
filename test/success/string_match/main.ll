@@ -1,7 +1,7 @@
 @.str_1 = private unnamed_addr constant [3 x i8] c"bar", align 1
 @.str_0 = private unnamed_addr constant [3 x i8] c"foo", align 1
 @.str_2 = private unnamed_addr constant [4 x i8] c"zorp", align 1
-%struct.Bool_Bool = type { i32, [0 x i8] }
+%struct.Bool_Bool = type { i32, [0 x i32] }
 
 %struct.Bool_Bool_False = type { i32, %struct.siko_Tuple_ }
 
@@ -44,7 +44,7 @@ block0:
    %tmp_literal_1_1 = getelementptr inbounds %struct.String_String, ptr %literal_1, i32 0, i32 0
    store ptr @.str_0, ptr %tmp_literal_1_1, align 8
    %tmp_literal_1_2 = getelementptr inbounds %struct.String_String, ptr %literal_1, i32 0, i32 1
-   store i64 3, ptr %tmp_literal_1_2, align 8
+   store volatile i64 3, ptr %tmp_literal_1_2, align 8
    store ptr %literal_1, ptr %implicitRef0, align 8
    br label %block2
 block1:
@@ -55,7 +55,7 @@ block2:
    %tmp_lit_6_3 = getelementptr inbounds %struct.String_String, ptr %lit_6, i32 0, i32 0
    store ptr @.str_1, ptr %tmp_lit_6_3, align 8
    %tmp_lit_6_4 = getelementptr inbounds %struct.String_String, ptr %lit_6, i32 0, i32 1
-   store i64 3, ptr %tmp_lit_6_4, align 8
+   store volatile i64 3, ptr %tmp_lit_6_4, align 8
    store ptr %lit_6, ptr %implicitRef1, align 8
    %tmp_implicitRef0_5 = load ptr, ptr %implicitRef0, align 8
    %tmp_implicitRef1_6 = load ptr, ptr %implicitRef1, align 8
@@ -70,7 +70,7 @@ block3:
    %tmp_lit_11_9 = getelementptr inbounds %struct.String_String, ptr %lit_11, i32 0, i32 0
    store ptr @.str_0, ptr %tmp_lit_11_9, align 8
    %tmp_lit_11_10 = getelementptr inbounds %struct.String_String, ptr %lit_11, i32 0, i32 1
-   store i64 3, ptr %tmp_lit_11_10, align 8
+   store volatile i64 3, ptr %tmp_lit_11_10, align 8
    store ptr %lit_11, ptr %implicitRef2, align 8
    %tmp_implicitRef0_11 = load ptr, ptr %implicitRef0, align 8
    %tmp_implicitRef2_12 = load ptr, ptr %implicitRef2, align 8
@@ -85,7 +85,7 @@ block4:
    %tmp_lit_16_15 = getelementptr inbounds %struct.String_String, ptr %lit_16, i32 0, i32 0
    store ptr @.str_2, ptr %tmp_lit_16_15, align 8
    %tmp_lit_16_16 = getelementptr inbounds %struct.String_String, ptr %lit_16, i32 0, i32 1
-   store i64 4, ptr %tmp_lit_16_16, align 8
+   store volatile i64 4, ptr %tmp_lit_16_16, align 8
    store ptr %lit_16, ptr %implicitRef3, align 8
    %tmp_implicitRef0_17 = load ptr, ptr %implicitRef0, align 8
    %tmp_implicitRef3_18 = load ptr, ptr %implicitRef3, align 8
@@ -160,7 +160,7 @@ define private void @Bool_Bool_False(ptr noundef %fn_result) {
 block0:
    %this = alloca %struct.Bool_Bool_False, align 4
    %tag = getelementptr inbounds %struct.Bool_Bool_False, ptr %this, i32 0, i32 0
-   store i32 0, ptr %tag, align 4
+   store volatile i32 0, ptr %tag, align 4
    %payload1 = getelementptr inbounds %struct.Bool_Bool_False, ptr %this, i32 0, i32 1
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %this, i64 4, i1 false)
    ret void
@@ -170,7 +170,7 @@ define private void @Bool_Bool_True(ptr noundef %fn_result) {
 block0:
    %this = alloca %struct.Bool_Bool_True, align 4
    %tag = getelementptr inbounds %struct.Bool_Bool_True, ptr %this, i32 0, i32 0
-   store i32 1, ptr %tag, align 4
+   store volatile i32 1, ptr %tag, align 4
    %payload1 = getelementptr inbounds %struct.Bool_Bool_True, ptr %this, i32 0, i32 1
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %this, i64 4, i1 false)
    ret void

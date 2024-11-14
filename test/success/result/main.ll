@@ -1,14 +1,14 @@
-%struct.Main_MyError = type { i32, [0 x i8] }
+%struct.Main_MyError = type { i32, [0 x i32] }
 
 %struct.Main_MyError_Failure = type { i32, %struct.siko_Tuple_ }
 
-%struct.Main_MySuccess = type { i32, [0 x i8] }
+%struct.Main_MySuccess = type { i32, [0 x i32] }
 
 %struct.Main_MySuccess_Yay = type { i32, %struct.siko_Tuple_ }
 
 %struct.Result_Result_Err_Main_MySuccess__Main_MyError = type { i32, %struct.siko_Tuple_Main_MyError }
 
-%struct.Result_Result_Main_MySuccess__Main_MyError = type { i32, [4 x i8] }
+%struct.Result_Result_Main_MySuccess__Main_MyError = type { i32, [1 x i32] }
 
 %struct.Result_Result_Ok_Main_MySuccess__Main_MyError = type { i32, %struct.siko_Tuple_Main_MySuccess }
 
@@ -103,7 +103,7 @@ define private void @Main_MyError_Failure(ptr noundef %fn_result) {
 block0:
    %this = alloca %struct.Main_MyError_Failure, align 4
    %tag = getelementptr inbounds %struct.Main_MyError_Failure, ptr %this, i32 0, i32 0
-   store i32 0, ptr %tag, align 4
+   store volatile i32 0, ptr %tag, align 4
    %payload1 = getelementptr inbounds %struct.Main_MyError_Failure, ptr %this, i32 0, i32 1
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %this, i64 4, i1 false)
    ret void
@@ -113,7 +113,7 @@ define private void @Result_Result_Err_Main_MySuccess__Main_MyError(ptr noundef 
 block0:
    %this = alloca %struct.Result_Result_Err_Main_MySuccess__Main_MyError, align 4
    %tag = getelementptr inbounds %struct.Result_Result_Err_Main_MySuccess__Main_MyError, ptr %this, i32 0, i32 0
-   store i32 1, ptr %tag, align 4
+   store volatile i32 1, ptr %tag, align 4
    %payload1 = getelementptr inbounds %struct.Result_Result_Err_Main_MySuccess__Main_MyError, ptr %this, i32 0, i32 1
    %field0 = getelementptr inbounds %struct.siko_Tuple_Main_MyError, ptr %payload1, i32 0, i32 0
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %field0, ptr align 4 %f0, i64 4, i1 false)

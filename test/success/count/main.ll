@@ -1,4 +1,4 @@
-%struct.Bool_Bool = type { i32, [0 x i8] }
+%struct.Bool_Bool = type { i32, [0 x i32] }
 
 %struct.Bool_Bool_False = type { i32, %struct.siko_Tuple_ }
 
@@ -54,13 +54,13 @@ block0:
    %loopVar_2 = alloca %struct.Int_Int, align 8
    %lit_1 = alloca %struct.Int_Int, align 8
    %tmp_lit_1_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_1, i32 0, i32 0
-   store i64 1, ptr %tmp_lit_1_1, align 8
+   store volatile i64 1, ptr %tmp_lit_1_1, align 8
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %loopVar_2, ptr align 8 %lit_1, i64 8, i1 false)
    br label %block1
 block1:
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %a_5, ptr align 8 %loopVar_2, i64 8, i1 false)
    %tmp_lit_7_2 = getelementptr inbounds %struct.Int_Int, ptr %lit_7, i32 0, i32 0
-   store i64 10, ptr %tmp_lit_7_2, align 8
+   store volatile i64 10, ptr %tmp_lit_7_2, align 8
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %valueRef_8, ptr align 8 %a_5, i64 8, i1 false)
    call void @Int_Int_lessThan(ptr %valueRef_8, ptr %lit_7, ptr %call_10)
    br label %block4
@@ -68,12 +68,12 @@ block2:
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %finalValueRef_3, ptr align 8 %loopVar_2, i64 8, i1 false)
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %r_28, ptr align 8 %finalValueRef_3, i64 8, i1 false)
    %tmp_lit_29_3 = getelementptr inbounds %struct.Int_Int, ptr %lit_29, i32 0, i32 0
-   store i64 10, ptr %tmp_lit_29_3, align 8
+   store volatile i64 10, ptr %tmp_lit_29_3, align 8
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %valueRef_30, ptr align 8 %r_28, i64 8, i1 false)
    call void @Int_Int_eq(ptr %valueRef_30, ptr %lit_29, ptr %call_32)
    call void @Std_Basic_Util_assert(ptr %call_32, ptr %call_33)
    %tmp_lit_34_4 = getelementptr inbounds %struct.Int_Int, ptr %lit_34, i32 0, i32 0
-   store i64 1, ptr %tmp_lit_34_4, align 8
+   store volatile i64 1, ptr %tmp_lit_34_4, align 8
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %loopVar_35, ptr align 8 %lit_34, i64 8, i1 false)
    br label %block9
 block4:
@@ -93,7 +93,7 @@ block7:
    br label %block8
 block8:
    %tmp_lit_18_7 = getelementptr inbounds %struct.Int_Int, ptr %lit_18, i32 0, i32 0
-   store i64 1, ptr %tmp_lit_18_7, align 8
+   store volatile i64 1, ptr %tmp_lit_18_7, align 8
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %valueRef_19, ptr align 8 %a_5, i64 8, i1 false)
    call void @Int_Int_add(ptr %valueRef_19, ptr %lit_18, ptr %call_21)
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %loopVar_2, ptr align 8 %call_21, i64 8, i1 false)
@@ -101,7 +101,7 @@ block8:
 block9:
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %a_38, ptr align 8 %loopVar_35, i64 8, i1 false)
    %tmp_lit_40_8 = getelementptr inbounds %struct.Int_Int, ptr %lit_40, i32 0, i32 0
-   store i64 10, ptr %tmp_lit_40_8, align 8
+   store volatile i64 10, ptr %tmp_lit_40_8, align 8
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %valueRef_41, ptr align 8 %a_38, i64 8, i1 false)
    call void @Int_Int_lessThan(ptr %valueRef_41, ptr %lit_40, ptr %call_43)
    br label %block12
@@ -109,7 +109,7 @@ block10:
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %finalValueRef_36, ptr align 8 %loopVar_35, i64 8, i1 false)
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %r_60, ptr align 8 %finalValueRef_36, i64 8, i1 false)
    %tmp_lit_61_9 = getelementptr inbounds %struct.Int_Int, ptr %lit_61, i32 0, i32 0
-   store i64 10, ptr %tmp_lit_61_9, align 8
+   store volatile i64 10, ptr %tmp_lit_61_9, align 8
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %valueRef_62, ptr align 8 %r_60, i64 8, i1 false)
    call void @Int_Int_eq(ptr %valueRef_62, ptr %lit_61, ptr %call_64)
    call void @Std_Basic_Util_assert(ptr %call_64, ptr %call_65)
@@ -137,7 +137,7 @@ block15:
    br label %block16
 block16:
    %tmp_lit_51_12 = getelementptr inbounds %struct.Int_Int, ptr %lit_51, i32 0, i32 0
-   store i64 1, ptr %tmp_lit_51_12, align 8
+   store volatile i64 1, ptr %tmp_lit_51_12, align 8
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %valueRef_52, ptr align 8 %a_38, i64 8, i1 false)
    call void @Int_Int_add(ptr %valueRef_52, ptr %lit_51, ptr %call_54)
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %match_var_44, ptr align 8 %call_54, i64 8, i1 false)

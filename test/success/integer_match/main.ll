@@ -1,4 +1,4 @@
-%struct.Bool_Bool = type { i32, [0 x i8] }
+%struct.Bool_Bool = type { i32, [0 x i32] }
 
 %struct.Bool_Bool_False = type { i32, %struct.siko_Tuple_ }
 
@@ -29,7 +29,7 @@ block0:
    %match_var_2 = alloca %struct.siko_Tuple_, align 4
    %lit_1 = alloca %struct.Int_Int, align 8
    %tmp_lit_1_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_1, i32 0, i32 0
-   store i64 5, ptr %tmp_lit_1_1, align 8
+   store volatile i64 5, ptr %tmp_lit_1_1, align 8
    br label %block2
 block1:
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %matchValue_16, ptr align 4 %match_var_2, i64 0, i1 false)
@@ -108,7 +108,7 @@ define private void @Bool_Bool_False(ptr noundef %fn_result) {
 block0:
    %this = alloca %struct.Bool_Bool_False, align 4
    %tag = getelementptr inbounds %struct.Bool_Bool_False, ptr %this, i32 0, i32 0
-   store i32 0, ptr %tag, align 4
+   store volatile i32 0, ptr %tag, align 4
    %payload1 = getelementptr inbounds %struct.Bool_Bool_False, ptr %this, i32 0, i32 1
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %this, i64 4, i1 false)
    ret void
@@ -118,7 +118,7 @@ define private void @Bool_Bool_True(ptr noundef %fn_result) {
 block0:
    %this = alloca %struct.Bool_Bool_True, align 4
    %tag = getelementptr inbounds %struct.Bool_Bool_True, ptr %this, i32 0, i32 0
-   store i32 1, ptr %tag, align 4
+   store volatile i32 1, ptr %tag, align 4
    %payload1 = getelementptr inbounds %struct.Bool_Bool_True, ptr %this, i32 0, i32 1
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %this, i64 4, i1 false)
    ret void

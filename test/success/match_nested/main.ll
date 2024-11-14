@@ -1,6 +1,6 @@
 @.str_0 = private unnamed_addr constant [1 x i8] c"4", align 1
 @.str_1 = private unnamed_addr constant [3 x i8] c"foo", align 1
-%struct.Bool_Bool = type { i32, [0 x i8] }
+%struct.Bool_Bool = type { i32, [0 x i32] }
 
 %struct.Bool_Bool_False = type { i32, %struct.siko_Tuple_ }
 
@@ -8,7 +8,7 @@
 
 %struct.Int_Int = type { i64 }
 
-%struct.Main_Foo = type { i32, [4 x i8] }
+%struct.Main_Foo = type { i32, [1 x i32] }
 
 %struct.Main_Foo_Bar = type { i32, %struct.siko_Tuple_Bool_Bool }
 
@@ -81,11 +81,11 @@ block0:
    %call_1 = alloca %struct.Bool_Bool, align 4
    call void @Bool_Bool_True(ptr %call_1)
    %tmp_lit_2_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_2, i32 0, i32 0
-   store i64 3, ptr %tmp_lit_2_1, align 8
+   store volatile i64 3, ptr %tmp_lit_2_1, align 8
    %tmp_literal_3_2 = getelementptr inbounds %struct.String_String, ptr %literal_3, i32 0, i32 0
    store ptr @.str_0, ptr %tmp_literal_3_2, align 8
    %tmp_literal_3_3 = getelementptr inbounds %struct.String_String, ptr %literal_3, i32 0, i32 1
-   store i64 1, ptr %tmp_literal_3_3, align 8
+   store volatile i64 1, ptr %tmp_literal_3_3, align 8
    call void @Bool_Bool_True(ptr %call_4)
    call void @Main_Foo_Bar(ptr %call_4, ptr %call_5)
    call void @siko_Tuple_Bool_Bool__Int_Int__String_String__Main_Foo(ptr %call_1, ptr %lit_2, ptr %literal_3, ptr %call_5, ptr %tuple_6)
@@ -143,14 +143,14 @@ block10:
    br label %block11
 block11:
    %tmp_lit_14_13 = getelementptr inbounds %struct.Int_Int, ptr %lit_14, i32 0, i32 0
-   store i64 3, ptr %tmp_lit_14_13, align 8
+   store volatile i64 3, ptr %tmp_lit_14_13, align 8
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %match_var_7, ptr align 8 %lit_14, i64 8, i1 false)
    br label %block1
 block12:
    br label %block13
 block13:
    %tmp_lit_17_14 = getelementptr inbounds %struct.Int_Int, ptr %lit_17, i32 0, i32 0
-   store i64 3, ptr %tmp_lit_17_14, align 8
+   store volatile i64 3, ptr %tmp_lit_17_14, align 8
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %match_var_7, ptr align 8 %lit_17, i64 8, i1 false)
    br label %block1
 block14:
@@ -166,7 +166,7 @@ block16:
    %tmp_lit_34_17 = getelementptr inbounds %struct.String_String, ptr %lit_34, i32 0, i32 0
    store ptr @.str_1, ptr %tmp_lit_34_17, align 8
    %tmp_lit_34_18 = getelementptr inbounds %struct.String_String, ptr %lit_34, i32 0, i32 1
-   store i64 3, ptr %tmp_lit_34_18, align 8
+   store volatile i64 3, ptr %tmp_lit_34_18, align 8
    store ptr %lit_34, ptr %implicitRef1, align 8
    %tmp_implicitRef0_19 = load ptr, ptr %implicitRef0, align 8
    %tmp_implicitRef1_20 = load ptr, ptr %implicitRef1, align 8
@@ -240,7 +240,7 @@ block29:
    br label %block30
 block30:
    %tmp_lit_42_33 = getelementptr inbounds %struct.Int_Int, ptr %lit_42, i32 0, i32 0
-   store i64 1, ptr %tmp_lit_42_33, align 8
+   store volatile i64 1, ptr %tmp_lit_42_33, align 8
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %match_var_7, ptr align 8 %lit_42, i64 8, i1 false)
    br label %block1
 block31:
@@ -284,7 +284,7 @@ define private void @Bool_Bool_True(ptr noundef %fn_result) {
 block0:
    %this = alloca %struct.Bool_Bool_True, align 4
    %tag = getelementptr inbounds %struct.Bool_Bool_True, ptr %this, i32 0, i32 0
-   store i32 1, ptr %tag, align 4
+   store volatile i32 1, ptr %tag, align 4
    %payload1 = getelementptr inbounds %struct.Bool_Bool_True, ptr %this, i32 0, i32 1
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %this, i64 4, i1 false)
    ret void
@@ -294,7 +294,7 @@ define private void @Main_Foo_Bar(ptr noundef %f0, ptr noundef %fn_result) {
 block0:
    %this = alloca %struct.Main_Foo_Bar, align 4
    %tag = getelementptr inbounds %struct.Main_Foo_Bar, ptr %this, i32 0, i32 0
-   store i32 0, ptr %tag, align 4
+   store volatile i32 0, ptr %tag, align 4
    %payload1 = getelementptr inbounds %struct.Main_Foo_Bar, ptr %this, i32 0, i32 1
    %field0 = getelementptr inbounds %struct.siko_Tuple_Bool_Bool, ptr %payload1, i32 0, i32 0
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %field0, ptr align 4 %f0, i64 4, i1 false)

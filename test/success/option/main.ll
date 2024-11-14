@@ -1,10 +1,10 @@
-%struct.Bool_Bool = type { i32, [0 x i8] }
+%struct.Bool_Bool = type { i32, [0 x i32] }
 
 %struct.Bool_Bool_False = type { i32, %struct.siko_Tuple_ }
 
 %struct.Bool_Bool_True = type { i32, %struct.siko_Tuple_ }
 
-%struct.Option_Option_Bool_Bool = type { i32, [4 x i8] }
+%struct.Option_Option_Bool_Bool = type { i32, [1 x i32] }
 
 %struct.Option_Option_None_Bool_Bool = type { i32, %struct.siko_Tuple_ }
 
@@ -240,7 +240,7 @@ define private void @Bool_Bool_False(ptr noundef %fn_result) {
 block0:
    %this = alloca %struct.Bool_Bool_False, align 4
    %tag = getelementptr inbounds %struct.Bool_Bool_False, ptr %this, i32 0, i32 0
-   store i32 0, ptr %tag, align 4
+   store volatile i32 0, ptr %tag, align 4
    %payload1 = getelementptr inbounds %struct.Bool_Bool_False, ptr %this, i32 0, i32 1
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %this, i64 4, i1 false)
    ret void
@@ -250,7 +250,7 @@ define private void @Bool_Bool_True(ptr noundef %fn_result) {
 block0:
    %this = alloca %struct.Bool_Bool_True, align 4
    %tag = getelementptr inbounds %struct.Bool_Bool_True, ptr %this, i32 0, i32 0
-   store i32 1, ptr %tag, align 4
+   store volatile i32 1, ptr %tag, align 4
    %payload1 = getelementptr inbounds %struct.Bool_Bool_True, ptr %this, i32 0, i32 1
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %this, i64 4, i1 false)
    ret void
@@ -260,7 +260,7 @@ define private void @Option_Option_None_Bool_Bool(ptr noundef %fn_result) {
 block0:
    %this = alloca %struct.Option_Option_None_Bool_Bool, align 4
    %tag = getelementptr inbounds %struct.Option_Option_None_Bool_Bool, ptr %this, i32 0, i32 0
-   store i32 0, ptr %tag, align 4
+   store volatile i32 0, ptr %tag, align 4
    %payload1 = getelementptr inbounds %struct.Option_Option_None_Bool_Bool, ptr %this, i32 0, i32 1
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %this, i64 8, i1 false)
    ret void
@@ -270,7 +270,7 @@ define private void @Option_Option_Some_Bool_Bool(ptr noundef %f0, ptr noundef %
 block0:
    %this = alloca %struct.Option_Option_Some_Bool_Bool, align 4
    %tag = getelementptr inbounds %struct.Option_Option_Some_Bool_Bool, ptr %this, i32 0, i32 0
-   store i32 1, ptr %tag, align 4
+   store volatile i32 1, ptr %tag, align 4
    %payload1 = getelementptr inbounds %struct.Option_Option_Some_Bool_Bool, ptr %this, i32 0, i32 1
    %field0 = getelementptr inbounds %struct.siko_Tuple_Bool_Bool, ptr %payload1, i32 0, i32 0
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %field0, ptr align 4 %f0, i64 4, i1 false)

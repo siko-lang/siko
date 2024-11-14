@@ -1,6 +1,6 @@
 %struct.Main_SomeClass = type {  }
 
-%struct.Main_SomeEnum = type { i32, [0 x i8] }
+%struct.Main_SomeEnum = type { i32, [0 x i32] }
 
 %struct.Main_SomeEnum_Foo = type { i32, %struct.siko_Tuple_ }
 
@@ -68,7 +68,7 @@ define private void @Main_SomeEnum_Foo(ptr noundef %fn_result) {
 block0:
    %this = alloca %struct.Main_SomeEnum_Foo, align 4
    %tag = getelementptr inbounds %struct.Main_SomeEnum_Foo, ptr %this, i32 0, i32 0
-   store i32 0, ptr %tag, align 4
+   store volatile i32 0, ptr %tag, align 4
    %payload1 = getelementptr inbounds %struct.Main_SomeEnum_Foo, ptr %this, i32 0, i32 1
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %this, i64 4, i1 false)
    ret void

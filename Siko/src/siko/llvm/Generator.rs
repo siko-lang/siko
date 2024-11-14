@@ -30,7 +30,7 @@ pub fn getTypeName(ty: &Type) -> String {
         Type::Int64 => "i64".to_string(),
         Type::Struct(n) => getStructName(n),
         Type::Ptr(_) => "ptr".to_string(),
-        Type::ByteArray(s) => format!("[{} x i8]", s),
+        Type::Array(s, itemSize) => format!("[{} x i{}]", s, itemSize),
     }
 }
 
@@ -51,7 +51,7 @@ impl Generator {
             Type::Int64 => 8,
             Type::Struct(n) => self.program.getStruct(n).alignment,
             Type::Ptr(_) => 8,
-            Type::ByteArray(_) => 1,
+            Type::Array(_, itemSize) => *itemSize / 8,
         }
     }
 
@@ -77,7 +77,7 @@ impl Generator {
             Instruction::Store(dest, src) => match src {
                 Value::Numeric(value, ty) => {
                     format!(
-                        "store {} {}, ptr {}, align {}",
+                        "store volatile {} {}, ptr {}, align {}",
                         getTypeName(ty),
                         value,
                         dest.name,

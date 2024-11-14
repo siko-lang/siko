@@ -1,7 +1,7 @@
 @.str_1 = private unnamed_addr constant [4 x i8] c"John", align 1
 @.str_2 = private unnamed_addr constant [5 x i8] c"Katie", align 1
 @.str_0 = private unnamed_addr constant [4 x i8] c"Main", align 1
-%struct.Bool_Bool = type { i32, [0 x i8] }
+%struct.Bool_Bool = type { i32, [0 x i32] }
 
 %struct.Bool_Bool_False = type { i32, %struct.siko_Tuple_ }
 
@@ -68,26 +68,26 @@ block0:
    %tmp_literal_1_1 = getelementptr inbounds %struct.String_String, ptr %literal_1, i32 0, i32 0
    store ptr @.str_0, ptr %tmp_literal_1_1, align 8
    %tmp_literal_1_2 = getelementptr inbounds %struct.String_String, ptr %literal_1, i32 0, i32 1
-   store i64 4, ptr %tmp_literal_1_2, align 8
+   store volatile i64 4, ptr %tmp_literal_1_2, align 8
    call void @Main_Address(ptr %literal_1, ptr %call_2)
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %addr1_3, ptr align 8 %call_2, i64 16, i1 false)
    %tmp_literal_4_3 = getelementptr inbounds %struct.String_String, ptr %literal_4, i32 0, i32 0
    store ptr @.str_0, ptr %tmp_literal_4_3, align 8
    %tmp_literal_4_4 = getelementptr inbounds %struct.String_String, ptr %literal_4, i32 0, i32 1
-   store i64 4, ptr %tmp_literal_4_4, align 8
+   store volatile i64 4, ptr %tmp_literal_4_4, align 8
    call void @Main_Address(ptr %literal_4, ptr %call_5)
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %addr2_6, ptr align 8 %call_5, i64 16, i1 false)
    %tmp_literal_7_5 = getelementptr inbounds %struct.String_String, ptr %literal_7, i32 0, i32 0
    store ptr @.str_1, ptr %tmp_literal_7_5, align 8
    %tmp_literal_7_6 = getelementptr inbounds %struct.String_String, ptr %literal_7, i32 0, i32 1
-   store i64 4, ptr %tmp_literal_7_6, align 8
+   store volatile i64 4, ptr %tmp_literal_7_6, align 8
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %valueRef_8, ptr align 8 %addr1_3, i64 16, i1 false)
    call void @Main_Person(ptr %literal_7, ptr %valueRef_8, ptr %call_9)
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %person1_10, ptr align 8 %call_9, i64 32, i1 false)
    %tmp_literal_11_7 = getelementptr inbounds %struct.String_String, ptr %literal_11, i32 0, i32 0
    store ptr @.str_2, ptr %tmp_literal_11_7, align 8
    %tmp_literal_11_8 = getelementptr inbounds %struct.String_String, ptr %literal_11, i32 0, i32 1
-   store i64 5, ptr %tmp_literal_11_8, align 8
+   store volatile i64 5, ptr %tmp_literal_11_8, align 8
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %valueRef_12, ptr align 8 %addr2_6, i64 16, i1 false)
    call void @Main_Person(ptr %literal_11, ptr %valueRef_12, ptr %call_13)
    call void @llvm.memcpy.p0.p0.i64(ptr align 8 %person2_14, ptr align 8 %call_13, i64 32, i1 false)

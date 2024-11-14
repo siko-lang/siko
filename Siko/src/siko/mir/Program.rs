@@ -71,9 +71,11 @@ impl Program {
                 name: format!("tag"),
                 ty: Type::Int32,
             };
+            let itemSize = u.alignment * 8;
+            //println!("payloadsize {}", u.payloadSize);
             let payload = Field {
                 name: format!("payload"),
-                ty: Type::ByteArray(u.payloadSize),
+                ty: Type::Array(u.payloadSize * 8 / itemSize, itemSize),
             };
             let s = Struct {
                 name: n.clone(),
@@ -165,7 +167,7 @@ impl Program {
                         Type::Struct(n) => self.getStruct(n).size,
                         Type::Union(n) => self.getUnion(n).size,
                         Type::Ptr(_) => 8,
-                        Type::ByteArray(s) => *s,
+                        Type::Array(s, itemSize) => *s * *itemSize,
                     };
                     let alignment = match &f.ty {
                         Type::Void => 0,
@@ -177,7 +179,7 @@ impl Program {
                         Type::Struct(n) => self.getStruct(n).alignment,
                         Type::Union(n) => self.getUnion(n).alignment,
                         Type::Ptr(_) => 8,
-                        Type::ByteArray(_) => 1,
+                        Type::Array(_, itemSize) => *itemSize / 8,
                     };
                     totalAlignment = std::cmp::max(totalAlignment, alignment);
                     offset += size;
@@ -208,7 +210,7 @@ impl Program {
                         Type::Struct(n) => self.getStruct(n).size,
                         Type::Union(n) => self.getUnion(n).size,
                         Type::Ptr(_) => 8,
-                        Type::ByteArray(s) => *s,
+                        Type::Array(s, itemSize) => *s * *itemSize,
                     };
                     let alignment = match &v.ty {
                         Type::Void => 0,
@@ -220,9 +222,10 @@ impl Program {
                         Type::Struct(n) => self.getStruct(n).alignment,
                         Type::Union(n) => self.getUnion(n).alignment,
                         Type::Ptr(_) => 8,
-                        Type::ByteArray(_) => 1,
+                        Type::Array(_, itemSize) => *itemSize / 8,
                     };
                     totalAlignment = std::cmp::max(totalAlignment, alignment);
+                    //println!("variant {} size {} alignment {}", v.name, size, alignment);
                     maxSize = std::cmp::max(maxSize, size);
                 }
                 offset += maxSize;

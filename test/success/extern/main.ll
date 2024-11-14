@@ -1,4 +1,4 @@
-%struct.Bool_Bool = type { i32, [0 x i8] }
+%struct.Bool_Bool = type { i32, [0 x i32] }
 
 %struct.Bool_Bool_False = type { i32, %struct.siko_Tuple_ }
 
@@ -33,24 +33,24 @@ block0:
    %lit_2 = alloca %struct.Int_Int, align 8
    %lit_1 = alloca %struct.Int_Int, align 8
    %tmp_lit_1_1 = getelementptr inbounds %struct.Int_Int, ptr %lit_1, i32 0, i32 0
-   store i64 6, ptr %tmp_lit_1_1, align 8
+   store volatile i64 6, ptr %tmp_lit_1_1, align 8
    %tmp_lit_2_2 = getelementptr inbounds %struct.Int_Int, ptr %lit_2, i32 0, i32 0
-   store i64 5, ptr %tmp_lit_2_2, align 8
+   store volatile i64 5, ptr %tmp_lit_2_2, align 8
    call void @Int_Int_add(ptr %lit_2, ptr %lit_1, ptr %call_4)
    %tmp_lit_5_3 = getelementptr inbounds %struct.Int_Int, ptr %lit_5, i32 0, i32 0
-   store i64 6, ptr %tmp_lit_5_3, align 8
+   store volatile i64 6, ptr %tmp_lit_5_3, align 8
    %tmp_lit_6_4 = getelementptr inbounds %struct.Int_Int, ptr %lit_6, i32 0, i32 0
-   store i64 5, ptr %tmp_lit_6_4, align 8
+   store volatile i64 5, ptr %tmp_lit_6_4, align 8
    call void @Int_Int_sub(ptr %lit_6, ptr %lit_5, ptr %call_8)
    %tmp_lit_9_5 = getelementptr inbounds %struct.Int_Int, ptr %lit_9, i32 0, i32 0
-   store i64 6, ptr %tmp_lit_9_5, align 8
+   store volatile i64 6, ptr %tmp_lit_9_5, align 8
    %tmp_lit_10_6 = getelementptr inbounds %struct.Int_Int, ptr %lit_10, i32 0, i32 0
-   store i64 5, ptr %tmp_lit_10_6, align 8
+   store volatile i64 5, ptr %tmp_lit_10_6, align 8
    call void @Int_Int_eq(ptr %lit_10, ptr %lit_9, ptr %call_12)
    %tmp_lit_13_7 = getelementptr inbounds %struct.Int_Int, ptr %lit_13, i32 0, i32 0
-   store i64 6, ptr %tmp_lit_13_7, align 8
+   store volatile i64 6, ptr %tmp_lit_13_7, align 8
    %tmp_lit_14_8 = getelementptr inbounds %struct.Int_Int, ptr %lit_14, i32 0, i32 0
-   store i64 5, ptr %tmp_lit_14_8, align 8
+   store volatile i64 5, ptr %tmp_lit_14_8, align 8
    call void @Int_Int_lessThan(ptr %lit_14, ptr %lit_13, ptr %call_16)
    call void @Bool_Bool_True(ptr %call_17)
    call void @Std_Basic_Util_assert(ptr %call_17, ptr %call_18)
@@ -101,7 +101,7 @@ define private void @Bool_Bool_True(ptr noundef %fn_result) {
 block0:
    %this = alloca %struct.Bool_Bool_True, align 4
    %tag = getelementptr inbounds %struct.Bool_Bool_True, ptr %this, i32 0, i32 0
-   store i32 1, ptr %tag, align 4
+   store volatile i32 1, ptr %tag, align 4
    %payload1 = getelementptr inbounds %struct.Bool_Bool_True, ptr %this, i32 0, i32 1
    call void @llvm.memcpy.p0.p0.i64(ptr align 4 %fn_result, ptr align 4 %this, i64 4, i1 false)
    ret void
