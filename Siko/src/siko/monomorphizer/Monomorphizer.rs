@@ -6,7 +6,7 @@ use std::{
 use crate::siko::{
     hir::{
         Apply::{instantiateClass, instantiateEnum, Apply},
-        Function::{Block, Body, Instruction, InstructionKind, Parameter, ValueKind, Variable},
+        Function::{Block, Body, Instruction, InstructionKind, Parameter, Variable},
         Program::Program,
         Substitution::TypeSubstitution,
         Type::{createTypeSubstitution, createTypeSubstitutionFrom, formatTypes, Type},
@@ -64,15 +64,6 @@ impl Monomorphize for Variable {
         let mut v = self.clone();
         v.ty = v.ty.process(sub, mono);
         v
-    }
-}
-
-impl Monomorphize for ValueKind {
-    fn process(&self, sub: &TypeSubstitution, mono: &mut Monomorphizer) -> Self {
-        match self {
-            ValueKind::Arg(_, _) => self.clone(),
-            ValueKind::Value(var) => ValueKind::Value(var.process(sub, mono)),
-        }
     }
 }
 

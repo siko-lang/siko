@@ -3,6 +3,8 @@ use std::{
     fmt::{Debug, Display},
 };
 
+use crate::siko::location::Location::Location;
+
 use super::{
     Apply::{Apply, ApplyVariable},
     Function::Variable,
@@ -63,12 +65,14 @@ impl VariableSubstitution {
         }
     }
 
-    pub fn add(&mut self, old: Variable, new: Variable) {
+    pub fn add(&mut self, mut old: Variable, new: Variable) {
+        old.location = Location::empty();
         assert_ne!(old, new);
         self.substitutions.insert(old, new);
     }
 
-    pub fn get(&self, old: Variable) -> Variable {
+    pub fn get(&self, mut old: Variable) -> Variable {
+        old.location = Location::empty();
         match self.substitutions.get(&old) {
             Some(new) => new.applyVar(self),
             None => old,

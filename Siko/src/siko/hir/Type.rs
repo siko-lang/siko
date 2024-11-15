@@ -125,6 +125,19 @@ impl Type {
         }
     }
 
+    pub fn hasSelfType(&self) -> bool {
+        match &self {
+            Type::Tuple(args) => {
+                if args.len() > 0 && args[0] == Type::SelfType {
+                    return true;
+                }
+                false
+            }
+            Type::SelfType => true,
+            _ => false,
+        }
+    }
+
     pub fn isConcrete(&self) -> bool {
         match &self {
             Type::Named(_, args, _) => {

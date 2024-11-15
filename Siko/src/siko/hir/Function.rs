@@ -6,37 +6,6 @@ use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
 
 use super::{ConstraintContext::ConstraintContext, Type::Type};
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum ValueKind {
-    Arg(String, i64),
-    Value(Variable),
-}
-
-impl ValueKind {
-    pub fn getValue(&self) -> String {
-        match &self {
-            ValueKind::Arg(v, _) => v.clone(),
-            ValueKind::Value(v) => v.value.clone(),
-        }
-    }
-
-    pub fn isArg(&self) -> bool {
-        match &self {
-            ValueKind::Arg(_, _) => true,
-            ValueKind::Value(_) => false,
-        }
-    }
-}
-
-impl Display for ValueKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self {
-            ValueKind::Arg(n, index) => write!(f, "@arg/{}/{}", n, index),
-            ValueKind::Value(n) => write!(f, "{}", n),
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub enum Parameter {
     Named(String, Type, bool), // mutable
@@ -174,7 +143,7 @@ impl std::fmt::Debug for Variable {
 pub enum InstructionKind {
     FunctionCall(Variable, QualifiedName, Vec<Variable>),
     DynamicFunctionCall(Variable, Variable, Vec<Variable>),
-    ValueRef(Variable, ValueKind),
+    ValueRef(Variable, Variable),
     FieldRef(Variable, Variable, String),
     TupleIndex(Variable, Variable, i32),
     Bind(Variable, Variable, bool), //mutable
@@ -186,7 +155,7 @@ pub enum InstructionKind {
     Ref(Variable, Variable),
     Drop(Vec<String>),
     Jump(Variable, BlockId),
-    Assign(ValueKind, Variable),
+    Assign(Variable, Variable),
     DeclareVar(Variable),
     Transform(Variable, Variable, u32),
     EnumSwitch(Variable, Vec<EnumCase>),

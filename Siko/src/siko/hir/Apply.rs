@@ -4,7 +4,7 @@ use crate::siko::hir::Type::Type;
 
 use super::{
     Data::{Class, Enum, Field, Variant},
-    Function::{InstructionKind, ValueKind, Variable},
+    Function::{InstructionKind, Variable},
     Substitution::{TypeSubstitution, VariableSubstitution},
     TypeVarAllocator::TypeVarAllocator,
     Unification::unify,
@@ -109,15 +109,6 @@ impl Apply for Variable {
     }
 }
 
-impl Apply for ValueKind {
-    fn apply(&self, sub: &TypeSubstitution) -> Self {
-        match self {
-            ValueKind::Arg(n, i) => ValueKind::Arg(n.clone(), *i),
-            ValueKind::Value(v) => ValueKind::Value(v.apply(sub)),
-        }
-    }
-}
-
 impl Apply for InstructionKind {
     fn apply(&self, sub: &TypeSubstitution) -> Self {
         match self {
@@ -189,15 +180,6 @@ pub fn instantiateType(allocator: &mut TypeVarAllocator, ty: &Type) -> Type {
         sub.add(Type::Var(var.clone()), allocator.next());
     }
     ty.apply(&sub)
-}
-
-impl ApplyVariable for ValueKind {
-    fn applyVar(&self, sub: &VariableSubstitution) -> Self {
-        match self {
-            ValueKind::Arg(n, i) => ValueKind::Arg(n.clone(), *i),
-            ValueKind::Value(v) => ValueKind::Value(v.applyVar(sub)),
-        }
-    }
 }
 
 impl ApplyVariable for InstructionKind {

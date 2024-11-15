@@ -7,7 +7,7 @@ use crate::siko::{
     hir::{
         Apply::{instantiateClass, instantiateEnum, Apply, ApplyVariable},
         Data::{Class, Enum},
-        Function::{Function, Instruction, InstructionKind, Parameter, ValueKind, Variable},
+        Function::{Function, Instruction, InstructionKind, Parameter, Variable},
         Program::Program,
         Substitution::{TypeSubstitution, VariableSubstitution},
         TraitMethodSelector::TraitMethodSelector,
@@ -169,10 +169,6 @@ impl<'a> Typechecker<'a> {
         }
     }
 
-    fn getValueType(&self, v: &String) -> Type {
-        self.types.get(v).expect("not type for value").clone()
-    }
-
     fn unify(&mut self, ty1: Type, ty2: Type, location: Location) {
         //println!("UNIFY {} {}", ty1, ty2);
         if let Err(_) = unify(&mut self.substitution, &ty1, &ty2) {
@@ -233,6 +229,7 @@ impl<'a> Typechecker<'a> {
                 InstructionKind::FunctionCall(dest, name, args) => {
                     let f = self.program.functions.get(name).expect("Function not found");
                     let fnType = f.getType();
+
                     self.checkFunctionCall(args, dest, fnType);
                 }
                 InstructionKind::DynamicFunctionCall(dest, callable, args) => match self.methodSources.get(callable) {
@@ -240,6 +237,7 @@ impl<'a> Typechecker<'a> {
                         let newCallable = callable.applyVar(&self.varSwap);
                         let f = self.program.functions.get(&name).expect("Function not found");
                         let fnType = f.getType();
+                        //println!("CHECK {} {} {}", name, fnType, f.result.hasSelfType());
                         let mut newArgs = Vec::new();
                         newArgs.push(newCallable);
                         newArgs.extend(args.clone());
@@ -253,10 +251,7 @@ impl<'a> Typechecker<'a> {
                     }
                 },
                 InstructionKind::ValueRef(dest, value) => {
-                    let receiverType = match &value {
-                        ValueKind::Arg(name, _) => self.getValueType(name),
-                        ValueKind::Value(var) => self.getType(var),
-                    };
+                    let receiverType = self.getType(value);
                     self.unify(receiverType, self.getType(dest), instruction.location.clone());
                 }
                 InstructionKind::Bind(name, rhs, _) => {
@@ -296,10 +291,10 @@ impl<'a> Typechecker<'a> {
                 InstructionKind::Drop(_) => {}
                 InstructionKind::Jump(_, _) => {}
                 InstructionKind::Assign(name, rhs) => {
-                    if !self.mutables.contains(&name.getValue()) {
+                    if !self.mutables.contains(&name.value) {
                         TypecheckerError::ImmutableAssign(instruction.location.clone()).report(self.ctx);
                     }
-                    self.unify(self.getValueType(&name.getValue()), self.getType(rhs), instruction.location.clone());
+                    self.unify(self.getType(name), self.getType(rhs), instruction.location.clone());
                 }
                 InstructionKind::DeclareVar(_) => {}
                 InstructionKind::Transform(dest, root, index) => {
@@ -555,6 +550,47 @@ impl<'a> Typechecker<'a> {
 
         let mut varSwap = VariableSubstitution::new();
         varSwap.forced = true;
+
+        for param in &f.params {
+            let (useVar, newUseVar) = match &param {
+                Parameter::Named(name, ty, _) => {
+                    self.types.insert(name.clone(), ty.clone());
+                    (
+                        Variable {
+                            value: name.clone(),
+                            location: Location::empty(),
+                            ty: None,
+                            fixed: false,
+                        },
+                        Variable {
+                            value: name.clone(),
+                            location: Location::empty(),
+                            ty: Some(ty.clone()),
+                            fixed: false,
+                        },
+                    )
+                }
+                Parameter::SelfParam(_, ty) => {
+                    let name = format!("self");
+                    self.types.insert(name.clone(), ty.clone());
+                    (
+                        Variable {
+                            value: name.clone(),
+                            location: Location::empty(),
+                            ty: None,
+                            fixed: false,
+                        },
+                        Variable {
+                            value: name,
+                            location: Location::empty(),
+                            ty: Some(ty.clone()),
+                            fixed: false,
+                        },
+                    )
+                }
+            };
+            varSwap.add(useVar, newUseVar);
+        }
 
         for block in &mut body.blocks {
             for instruction in &mut block.instructions {

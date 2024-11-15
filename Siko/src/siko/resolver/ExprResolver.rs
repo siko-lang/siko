@@ -2,7 +2,7 @@ use core::panic;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::siko::hir::Data::Enum;
-use crate::siko::hir::Function::{Block as IrBlock, BlockId, InstructionKind, ValueKind, Variable};
+use crate::siko::hir::Function::{Block as IrBlock, BlockId, InstructionKind, Variable};
 use crate::siko::location::Location::Location;
 use crate::siko::location::Report::ReportContext;
 use crate::siko::qualifiedname::QualifiedName;
@@ -163,14 +163,12 @@ impl<'a> ExprResolver<'a> {
                     ResolverError::UnknownValue(name.name.clone(), name.location.clone()).report(self.ctx);
                 }
             },
-            SimpleExpr::SelfValue => {
-                let value = self.createValue("valueRef", expr.location.clone());
-                self.addInstruction(
-                    InstructionKind::ValueRef(value.asFixed(), ValueKind::Arg("self".to_string(), 0)),
-                    expr.location.clone(),
-                );
-                value
-            }
+            SimpleExpr::SelfValue => Variable {
+                value: "self".to_string(),
+                location: expr.location.clone(),
+                ty: None,
+                fixed: false,
+            },
             SimpleExpr::Name(name) => {
                 let irName = self.moduleResolver.resolverName(name);
                 if self.emptyVariants.contains(&irName) {
@@ -240,7 +238,7 @@ impl<'a> ExprResolver<'a> {
                 let finalValue = self.createValue("finalValueRef", expr.location.clone());
                 self.addInstructionToBlock(
                     loopExitId,
-                    InstructionKind::ValueRef(finalValue.asFixed(), ValueKind::Value(name.clone())),
+                    InstructionKind::ValueRef(finalValue.asFixed(), name.clone()),
                     expr.location.clone(),
                     true,
                 );
@@ -258,7 +256,7 @@ impl<'a> ExprResolver<'a> {
                     SimpleExpr::Block(block) => self.resolveBlock(block, &loopEnv),
                     _ => panic!("If true branch is not a block!"),
                 };
-                self.addImplicitInstruction(InstructionKind::Assign(ValueKind::Value(name.clone()), blockValue), init.location.clone());
+                self.addImplicitInstruction(InstructionKind::Assign(name.clone(), blockValue), init.location.clone());
                 let jumpValue = self.createValue("jump", expr.location.clone());
                 self.addImplicitInstruction(InstructionKind::Jump(jumpValue.asFixed(), loopBodyId), expr.location.clone());
                 self.loopInfos.pop();
@@ -365,7 +363,7 @@ impl<'a> ExprResolver<'a> {
                     Some(info) => info.clone(),
                     None => ResolverError::BreakOutsideLoop(expr.location.clone()).report(self.ctx),
                 };
-                self.addInstruction(InstructionKind::Assign(ValueKind::Value(info.var), argId), expr.location.clone());
+                self.addInstruction(InstructionKind::Assign(info.var, argId), expr.location.clone());
                 let jumpValue = self.createValue("jump", expr.location.clone());
                 self.addInstruction(InstructionKind::Jump(jumpValue.asFixed(), info.exit), expr.location.clone());
                 jumpValue
@@ -383,7 +381,7 @@ impl<'a> ExprResolver<'a> {
                     Some(info) => info.clone(),
                     None => ResolverError::BreakOutsideLoop(expr.location.clone()).report(self.ctx),
                 };
-                self.addInstruction(InstructionKind::Assign(ValueKind::Value(info.var), argId), expr.location.clone());
+                self.addInstruction(InstructionKind::Assign(info.var, argId), expr.location.clone());
                 let jumpValue = self.createValue("jump", expr.location.clone());
                 self.addInstruction(InstructionKind::Jump(jumpValue.asFixed(), info.body), expr.location.clone());
                 jumpValue

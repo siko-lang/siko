@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 
-use crate::siko::hir::Function::{ValueKind, Variable};
+use crate::siko::hir::Function::Variable;
 
 pub struct Environment<'a> {
-    values: BTreeMap<String, ValueKind>,
+    values: BTreeMap<String, Variable>,
     parent: Option<&'a Environment<'a>>,
 }
 
@@ -22,21 +22,21 @@ impl<'a> Environment<'a> {
         }
     }
 
-    pub fn addArg(&mut self, arg: String, index: i64) {
-        self.values.insert(arg.clone(), ValueKind::Arg(arg, index));
+    pub fn addArg(&mut self, arg: Variable) {
+        self.values.insert(arg.value.clone(), arg);
     }
 
     pub fn addValue(&mut self, old: String, new: Variable) {
         //println!("Added value {}", new);
-        self.values.insert(old.clone(), ValueKind::Value(new));
+        self.values.insert(old.clone(), new);
     }
 
-    pub fn addTmpValue(&mut self, name: Variable) {
+    pub fn addTmpValue(&mut self, var: Variable) {
         //println!("Added value {}", new);
-        self.values.insert(name.value.clone(), ValueKind::Value(name));
+        self.values.insert(var.value.clone(), var);
     }
 
-    pub fn resolve(&self, value: &String) -> Option<ValueKind> {
+    pub fn resolve(&self, value: &String) -> Option<Variable> {
         match self.values.get(value) {
             Some(v) => Some(v.clone()),
             None => {

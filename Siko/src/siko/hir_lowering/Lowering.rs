@@ -70,20 +70,16 @@ impl<'a> Builder<'a> {
                 HirInstructionKind::ValueRef(dest, name) => {
                     let dest = self.buildVariable(dest);
                     let var = MirVariable {
-                        name: name.getValue(),
+                        name: name.value.clone(),
                         ty: dest.ty.clone(),
                     };
                     block.instructions.push(Instruction::Declare(dest.clone()));
-                    if name.isArg() && dest.ty.isPtr() {
-                        block.instructions.push(Instruction::Store(var, dest));
-                    } else {
-                        block.instructions.push(Instruction::Memcpy(var, dest));
-                    }
+                    block.instructions.push(Instruction::Store(var, dest));
                 }
                 HirInstructionKind::Assign(name, rhs) => {
                     let rhs = self.buildVariable(rhs);
                     let var = MirVariable {
-                        name: name.getValue(),
+                        name: name.value.clone(),
                         ty: rhs.ty.clone(),
                     };
                     block.instructions.push(Instruction::Memcpy(rhs, var));

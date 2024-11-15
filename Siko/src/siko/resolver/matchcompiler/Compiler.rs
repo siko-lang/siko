@@ -1,4 +1,4 @@
-use crate::siko::hir::Function::{BlockId, EnumCase, InstructionKind, IntegerCase, ValueKind, Variable};
+use crate::siko::hir::Function::{BlockId, EnumCase, InstructionKind, IntegerCase, Variable};
 use crate::siko::location::Location::Location;
 use crate::siko::qualifiedname::{getStringEqName, QualifiedName};
 use crate::siko::resolver::Environment::Environment;
@@ -423,7 +423,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         let value = self.resolver.createValue("matchValue", self.bodyLocation.clone());
         self.resolver.addInstructionToBlock(
             self.contBlockId,
-            InstructionKind::ValueRef(value.clone(), ValueKind::Value(self.matchValue.clone())),
+            InstructionKind::ValueRef(value.clone(), self.matchValue.clone()),
             self.matchLocation.clone(),
             true,
         );
@@ -613,7 +613,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     }
                     let exprValue = self.resolver.resolveExpr(&branch.body, &mut env);
                     self.resolver.addImplicitInstruction(
-                        InstructionKind::Assign(ValueKind::Value(self.matchValue.asNotFixed()), exprValue),
+                        InstructionKind::Assign(self.matchValue.asNotFixed(), exprValue),
                         self.matchLocation.clone(),
                     );
                     let jumpValue = self.resolver.createValue("jump", self.bodyLocation.clone());
