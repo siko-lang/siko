@@ -45,6 +45,7 @@ pub enum Instruction {
     FunctionCallValue(Variable, String, Vec<Variable>),
     Return(Value),
     GetFieldRef(Variable, Variable, i32),
+    SetField(Variable, Variable, Vec<i32>),
     Jump(String),
     Memcpy(Variable, Variable),
     MemcpyPtr(Variable, Variable),

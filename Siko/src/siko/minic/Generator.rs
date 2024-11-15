@@ -1,10 +1,10 @@
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs::File,
     io::{self, Write},
 };
 
-use crate::siko::minic::Function::Value;
+use crate::siko::{minic::Function::Value, util::DependencyProcessor::processDependencies};
 
 use super::{
     Data::Struct,
@@ -119,6 +119,23 @@ impl MiniCGenerator {
             Instruction::GetFieldRef(dest, root, index) => {
                 format!("{} = {}.field{};", dest.name, root.name, index)
             }
+            Instruction::SetField(dest, src, indices) => {
+                let path: Vec<_> = indices.iter().map(|i| format!(".field{}", i)).collect();
+                let path: String = path.join("");
+                if dest.ty.isPtr() {
+                    if src.ty.isPtr() {
+                        format!("{}{} = {};", dest.name, path, src.name)
+                    } else {
+                        unreachable!();
+                    }
+                } else {
+                    if src.ty.isPtr() {
+                        format!("{}{} = *{};", dest.name, path, src.name)
+                    } else {
+                        format!("{}{} = {};", dest.name, path, src.name)
+                    }
+                }
+            }
             Instruction::Return(value) => match value {
                 Value::Void => format!("return;"),
                 Value::Variable(var) => {
@@ -158,7 +175,7 @@ impl MiniCGenerator {
                 format!("{} = &{};", dest.name, src.name)
             }
             Instruction::Bitcast(dest, src) => {
-                format!("{} = ({}){}", dest.name, getTypeName(&dest.ty), src.name)
+                format!("{} = *({}*)&{};", dest.name, getTypeName(&dest.ty), src.name)
             }
             Instruction::Switch(root, default, branches) => {
                 let branches: Vec<_> = branches
@@ -208,10 +225,15 @@ impl MiniCGenerator {
                     Instruction::GetFieldRef(dest, variable1, _) => {
                         localVars.insert(dest.clone());
                     }
+                    Instruction::SetField(dest, variable1, _) => {
+                        localVars.insert(dest.clone());
+                    }
                     Instruction::Jump(_) => {}
                     Instruction::Memcpy(variable, variable1) => {}
                     Instruction::MemcpyPtr(variable, variable1) => {}
-                    Instruction::Bitcast(variable, variable1) => {}
+                    Instruction::Bitcast(dest, variable1) => {
+                        localVars.insert(dest.clone());
+                    }
                     Instruction::Switch(variable, _, vec) => {}
                 }
             }
@@ -260,14 +282,36 @@ impl MiniCGenerator {
 
         writeln!(output, "")?;
 
+        let mut deps = BTreeMap::new();
+
+        for (_, s) in &self.program.structs {
+            deps.insert(s.name.clone(), Vec::new());
+        }
+
+        for (_, s) in &self.program.structs {
+            let deps = deps.entry(s.name.clone()).or_insert_with(|| Vec::new());
+            for f in &s.fields {
+                match &f.ty {
+                    Type::Struct(n) => deps.push(n.clone()),
+                    _ => {}
+                }
+            }
+        }
+
+        let groups = processDependencies(&deps);
+
         for (_, s) in &self.program.structs {
             writeln!(output, "struct {};", s.name)?;
         }
 
         writeln!(output, "")?;
 
-        for (_, s) in &self.program.structs {
-            self.dumpStruct(s, &mut output)?;
+        for group in groups {
+            assert_eq!(group.items.len(), 1);
+            for item in group.items {
+                let s = self.program.getStruct(&item);
+                self.dumpStruct(&s, &mut output)?;
+            }
         }
 
         for f in &self.program.functions {

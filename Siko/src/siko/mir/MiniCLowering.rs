@@ -311,26 +311,13 @@ impl<'a> MinicBuilder<'a> {
                 let s = self.program.getStruct(&f.name);
                 block.instructions.push(LInstruction::Allocate(self.lowerVar(&this)));
                 for (index, field) in s.fields.iter().enumerate() {
-                    let fieldVar = Variable {
-                        name: format!("field{}", index),
-                        ty: field.ty.clone(),
+                    let argVar = Variable {
+                        name: field.name.clone(),
+                        ty: Type::Ptr(Box::new(field.ty.clone())),
                     };
                     block
                         .instructions
-                        .push(LInstruction::GetFieldRef(self.lowerVar(&fieldVar), self.lowerVar(&this), index as i32));
-                    let argVar = Variable {
-                        name: field.name.clone(),
-                        ty: field.ty.clone(),
-                    };
-                    if field.ty.isPtr() {
-                        block
-                            .instructions
-                            .push(LInstruction::Store(self.lowerVar(&fieldVar), LValue::Variable(self.lowerVar(&argVar))));
-                    } else {
-                        block
-                            .instructions
-                            .push(LInstruction::Memcpy(self.lowerVar(&argVar), self.lowerVar(&fieldVar)));
-                    }
+                        .push(LInstruction::SetField(self.lowerVar(&this), self.lowerVar(&argVar), vec![index as i32]));
                 }
                 block
                     .instructions
@@ -366,26 +353,15 @@ impl<'a> MinicBuilder<'a> {
                     LValue::Numeric(format!("{}", index), LType::Int32),
                 ));
                 for (index, field) in s.fields.iter().enumerate() {
-                    let fieldVar = Variable {
-                        name: format!("field{}", index),
-                        ty: field.ty.clone(),
-                    };
-                    block
-                        .instructions
-                        .push(LInstruction::GetFieldRef(self.lowerVar(&fieldVar), self.lowerVar(&this), index as i32));
                     let argVar = Variable {
                         name: field.name.clone(),
-                        ty: field.ty.clone(),
+                        ty: Type::Ptr(Box::new(field.ty.clone())),
                     };
-                    if field.ty.isPtr() {
-                        block
-                            .instructions
-                            .push(LInstruction::Store(self.lowerVar(&fieldVar), LValue::Variable(self.lowerVar(&argVar))));
-                    } else {
-                        block
-                            .instructions
-                            .push(LInstruction::Memcpy(self.lowerVar(&argVar), self.lowerVar(&fieldVar)));
-                    }
+                    block.instructions.push(LInstruction::SetField(
+                        self.lowerVar(&this),
+                        self.lowerVar(&argVar),
+                        vec![1, index as i32],
+                    ));
                 }
                 block
                     .instructions
