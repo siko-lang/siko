@@ -48,10 +48,10 @@ def compileSikoC(currentDir, files, extras):
     r = subprocess.run(args)
     if r.returncode != 0:
         return None
-    r = subprocess.run(["clang", "-c", c_output_path, "-o", object_path, "-I", "siko_runtime"])
+    r = subprocess.run(["clang", "-fsanitize=undefined,address", "-g", "-O1", "-c", c_output_path, "-o", object_path, "-I", "siko_runtime"])
     if r.returncode != 0:
         return None
-    r = subprocess.run(["clang", object_path, runtimePath, "-o", bin_output_path])
+    r = subprocess.run(["clang", "-fsanitize=undefined,address", object_path, runtimePath, "-o", bin_output_path])
     #r = subprocess.run(["rustc", output_path, "-o", rust_output_path])
     if r.returncode != 0:
         return None
