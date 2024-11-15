@@ -7,28 +7,28 @@ use super::{
     Type::Type,
 };
 
-use crate::siko::llvm::Data::Struct as LStruct;
-use crate::siko::llvm::Function::Block as LBlock;
-use crate::siko::llvm::Function::Branch as LBranch;
-use crate::siko::llvm::Function::Function as LFunction;
-use crate::siko::llvm::Function::Instruction as LInstruction;
-use crate::siko::llvm::Function::Param as LParam;
-use crate::siko::llvm::Function::Value as LValue;
-use crate::siko::llvm::Function::Variable as LVariable;
-use crate::siko::llvm::Program::Program as LProgram;
-use crate::siko::llvm::Type::Type as LType;
-use crate::siko::llvm::{Constant::StringConstant, Data::Field as LField};
+use crate::siko::minic::Data::Struct as LStruct;
+use crate::siko::minic::Function::Block as LBlock;
+use crate::siko::minic::Function::Branch as LBranch;
+use crate::siko::minic::Function::Function as LFunction;
+use crate::siko::minic::Function::Instruction as LInstruction;
+use crate::siko::minic::Function::Param as LParam;
+use crate::siko::minic::Function::Value as LValue;
+use crate::siko::minic::Function::Variable as LVariable;
+use crate::siko::minic::Program::Program as LProgram;
+use crate::siko::minic::Type::Type as LType;
+use crate::siko::minic::{Constant::StringConstant, Data::Field as LField};
 
-pub struct Builder<'a> {
+pub struct MinicBuilder<'a> {
     program: &'a Program,
     constants: BTreeMap<String, String>,
     refMap: BTreeMap<String, String>,
     nextTmp: u32,
 }
 
-impl<'a> Builder<'a> {
-    pub fn new(program: &'a Program) -> Builder<'a> {
-        Builder {
+impl<'a> MinicBuilder<'a> {
+    pub fn new(program: &'a Program) -> MinicBuilder<'a> {
+        MinicBuilder {
             program: program,
             constants: BTreeMap::new(),
             refMap: BTreeMap::new(),
@@ -46,7 +46,7 @@ impl<'a> Builder<'a> {
     fn lowerVar(&self, v: &Variable) -> LVariable {
         let name = self.resolveVar(&v.name);
         LVariable {
-            name: format!("%{}", name),
+            name: format!("{}", name),
             ty: self.lowerType(&v.ty),
         }
     }
@@ -54,7 +54,7 @@ impl<'a> Builder<'a> {
     fn tmpVar(&mut self, v: &Variable) -> LVariable {
         self.nextTmp += 1;
         LVariable {
-            name: format!("%tmp_{}_{}", v.name, self.nextTmp),
+            name: format!("tmp_{}_{}", v.name, self.nextTmp),
             ty: self.lowerType(&v.ty),
         }
     }
@@ -91,7 +91,7 @@ impl<'a> Builder<'a> {
     }
 
     fn lowerBlock(&mut self, block: &Block) -> LBlock {
-        let mut llvmBlock = LBlock {
+        let mut minicBlock = LBlock {
             id: block.id.clone(),
             instructions: Vec::new(),
         };
@@ -103,37 +103,37 @@ impl<'a> Builder<'a> {
                 Instruction::Reference(dest, src) => {
                     let mut src = src.clone();
                     src.ty = dest.ty.clone();
-                    let llvmInstruction = LInstruction::Store(self.lowerVar(dest), LValue::Variable(self.lowerVar(&src)));
-                    llvmBlock.instructions.push(llvmInstruction);
+                    let minicInstruction = LInstruction::Store(self.lowerVar(dest), LValue::Variable(self.lowerVar(&src)));
+                    minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::Call(dest, name, args) => {
-                    let mut llvmArgs = Vec::new();
+                    let mut minicArgs = Vec::new();
                     for arg in args {
                         let var = self.lowerVar(arg);
                         let var = if var.ty.isPtr() {
                             let tmp = self.tmpVar(arg);
-                            let llvmInstruction = LInstruction::LoadVar(tmp.clone(), var);
-                            llvmBlock.instructions.push(llvmInstruction);
+                            let minicInstruction = LInstruction::LoadVar(tmp.clone(), var);
+                            minicBlock.instructions.push(minicInstruction);
                             tmp
                         } else {
                             var
                         };
-                        llvmArgs.push(var);
+                        minicArgs.push(var);
                     }
                     if dest.ty.isPtr() {
                         let tmp = self.tmpVar(dest);
-                        let llvmInstruction = LInstruction::FunctionCallValue(tmp.clone(), name.clone(), llvmArgs);
-                        llvmBlock.instructions.push(llvmInstruction);
-                        let llvmInstruction = LInstruction::Store(self.lowerVar(dest), LValue::Variable(tmp));
-                        llvmBlock.instructions.push(llvmInstruction);
+                        let minicInstruction = LInstruction::FunctionCallValue(tmp.clone(), name.clone(), minicArgs);
+                        minicBlock.instructions.push(minicInstruction);
+                        let minicInstruction = LInstruction::Store(self.lowerVar(dest), LValue::Variable(tmp));
+                        minicBlock.instructions.push(minicInstruction);
                     } else {
-                        llvmArgs.push(self.lowerVar(dest));
-                        let llvmInstruction = LInstruction::FunctionCall(name.clone(), llvmArgs);
-                        llvmBlock.instructions.push(llvmInstruction);
+                        minicArgs.push(self.lowerVar(dest));
+                        let minicInstruction = LInstruction::FunctionCall(name.clone(), minicArgs);
+                        minicBlock.instructions.push(minicInstruction);
                     }
                 }
                 Instruction::Assign(dest, src) => {
-                    let llvmInstruction = LInstruction::Store(
+                    let minicInstruction = LInstruction::Store(
                         self.lowerVar(dest),
                         match src {
                             Value::Void => unreachable!(),
@@ -141,25 +141,25 @@ impl<'a> Builder<'a> {
                             Value::Var(v) => LValue::Variable(self.lowerVar(v)),
                         },
                     );
-                    llvmBlock.instructions.push(llvmInstruction);
+                    minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::Return(v) => match v {
                     Value::Void => {
-                        let llvmInstruction = LInstruction::Return(LValue::Void);
-                        llvmBlock.instructions.push(llvmInstruction);
+                        let minicInstruction = LInstruction::Return(LValue::Void);
+                        minicBlock.instructions.push(minicInstruction);
                     }
                     Value::Var(v) => {
                         if v.ty.isPtr() {
                             let tmp = self.tmpVar(v);
-                            let llvmInstruction = LInstruction::LoadVar(tmp.clone(), self.lowerVar(v));
-                            llvmBlock.instructions.push(llvmInstruction);
-                            let llvmInstruction = LInstruction::Return(LValue::Variable(tmp));
-                            llvmBlock.instructions.push(llvmInstruction);
+                            let minicInstruction = LInstruction::LoadVar(tmp.clone(), self.lowerVar(v));
+                            minicBlock.instructions.push(minicInstruction);
+                            let minicInstruction = LInstruction::Return(LValue::Variable(tmp));
+                            minicBlock.instructions.push(minicInstruction);
                         } else {
-                            let llvmInstruction = LInstruction::Memcpy(self.lowerVar(v), self.lowerVar(&getResultVar(v.ty.clone())));
-                            llvmBlock.instructions.push(llvmInstruction);
-                            let llvmInstruction = LInstruction::Return(LValue::Void);
-                            llvmBlock.instructions.push(llvmInstruction);
+                            let minicInstruction = LInstruction::Memcpy(self.lowerVar(v), self.lowerVar(&getResultVar(v.ty.clone())));
+                            minicBlock.instructions.push(minicInstruction);
+                            let minicInstruction = LInstruction::Return(LValue::Void);
+                            minicBlock.instructions.push(minicInstruction);
                         }
                     }
                     _ => {
@@ -167,33 +167,33 @@ impl<'a> Builder<'a> {
                     }
                 },
                 Instruction::Store(src, dest) => {
-                    let llvmInstruction = LInstruction::Store(self.lowerVar(dest), LValue::Variable(self.lowerVar(src)));
-                    llvmBlock.instructions.push(llvmInstruction);
+                    let minicInstruction = LInstruction::Store(self.lowerVar(dest), LValue::Variable(self.lowerVar(src)));
+                    minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::Memcpy(src, dest) => {
                     if src.ty.isPtr() {
-                        let llvmInstruction = LInstruction::MemcpyPtr(self.lowerVar(src), self.lowerVar(dest));
-                        llvmBlock.instructions.push(llvmInstruction);
+                        let minicInstruction = LInstruction::MemcpyPtr(self.lowerVar(src), self.lowerVar(dest));
+                        minicBlock.instructions.push(minicInstruction);
                     } else {
-                        let llvmInstruction = LInstruction::Memcpy(self.lowerVar(src), self.lowerVar(dest));
-                        llvmBlock.instructions.push(llvmInstruction);
+                        let minicInstruction = LInstruction::Memcpy(self.lowerVar(src), self.lowerVar(dest));
+                        minicBlock.instructions.push(minicInstruction);
                     }
                 }
                 Instruction::GetFieldRef(dest, root, index) => {
-                    let llvmInstruction = LInstruction::GetFieldRef(self.lowerVar(dest), self.lowerVar(root), *index);
-                    llvmBlock.instructions.push(llvmInstruction);
+                    let minicInstruction = LInstruction::GetFieldRef(self.lowerVar(dest), self.lowerVar(root), *index);
+                    minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::IntegerLiteral(var, value) => {
                     let tmpVar = self.tmpVar(var);
-                    let llvmInstruction = LInstruction::GetFieldRef(tmpVar.clone(), self.lowerVar(var), 0);
-                    llvmBlock.instructions.push(llvmInstruction);
-                    let llvmInstruction = LInstruction::Store(tmpVar, LValue::Numeric(value.clone(), LType::Int64));
-                    llvmBlock.instructions.push(llvmInstruction);
+                    let minicInstruction = LInstruction::GetFieldRef(tmpVar.clone(), self.lowerVar(var), 0);
+                    minicBlock.instructions.push(minicInstruction);
+                    let minicInstruction = LInstruction::Store(tmpVar, LValue::Numeric(value.clone(), LType::Int64));
+                    minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::StringLiteral(var, value) => {
                     let tmpVar = self.tmpVar(var);
-                    let llvmInstruction = LInstruction::GetFieldRef(tmpVar.clone(), self.lowerVar(var), 0);
-                    llvmBlock.instructions.push(llvmInstruction);
+                    let minicInstruction = LInstruction::GetFieldRef(tmpVar.clone(), self.lowerVar(var), 0);
+                    minicBlock.instructions.push(minicInstruction);
                     let i8Ptr = LType::Ptr(Box::new(LType::Int8));
                     let new = self.constants.len();
                     let strLen = value.len();
@@ -205,17 +205,17 @@ impl<'a> Builder<'a> {
                             newStr
                         }
                     };
-                    let llvmInstruction = LInstruction::Store(tmpVar, LValue::String(value.clone(), i8Ptr));
-                    llvmBlock.instructions.push(llvmInstruction);
+                    let minicInstruction = LInstruction::Store(tmpVar, LValue::String(value.clone(), i8Ptr));
+                    minicBlock.instructions.push(minicInstruction);
                     let tmpVar2 = self.tmpVar(var);
-                    let llvmInstruction = LInstruction::GetFieldRef(tmpVar2.clone(), self.lowerVar(var), 1);
-                    llvmBlock.instructions.push(llvmInstruction);
-                    let llvmInstruction = LInstruction::Store(tmpVar2, LValue::Numeric(format!("{}", strLen), LType::Int64));
-                    llvmBlock.instructions.push(llvmInstruction);
+                    let minicInstruction = LInstruction::GetFieldRef(tmpVar2.clone(), self.lowerVar(var), 1);
+                    minicBlock.instructions.push(minicInstruction);
+                    let minicInstruction = LInstruction::Store(tmpVar2, LValue::Numeric(format!("{}", strLen), LType::Int64));
+                    minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::Jump(name) => {
-                    let llvmInstruction = LInstruction::Jump(name.clone());
-                    llvmBlock.instructions.push(llvmInstruction);
+                    let minicInstruction = LInstruction::Jump(name.clone());
+                    minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::EnumSwitch(var, cases) => {
                     let switchVar = Variable {
@@ -224,10 +224,10 @@ impl<'a> Builder<'a> {
                     };
                     let tmpVar = self.tmpVar(&switchVar);
                     let tmpVar2 = self.tmpVar(&switchVar);
-                    let llvmInstruction = LInstruction::GetFieldRef(tmpVar.clone(), self.lowerVar(var), 0);
-                    llvmBlock.instructions.push(llvmInstruction);
-                    let llvmInstruction = LInstruction::LoadVar(tmpVar2.clone(), tmpVar);
-                    llvmBlock.instructions.push(llvmInstruction);
+                    let minicInstruction = LInstruction::GetFieldRef(tmpVar.clone(), self.lowerVar(var), 0);
+                    minicBlock.instructions.push(minicInstruction);
+                    let minicInstruction = LInstruction::LoadVar(tmpVar2.clone(), tmpVar);
+                    minicBlock.instructions.push(minicInstruction);
                     let mut branches = Vec::new();
                     for (index, case) in cases.iter().enumerate() {
                         if index == 0 {
@@ -239,8 +239,8 @@ impl<'a> Builder<'a> {
                         };
                         branches.push(branch);
                     }
-                    let llvmInstruction = LInstruction::Switch(tmpVar2.clone(), cases[0].branch.clone(), branches);
-                    llvmBlock.instructions.push(llvmInstruction);
+                    let minicInstruction = LInstruction::Switch(tmpVar2.clone(), cases[0].branch.clone(), branches);
+                    minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::IntegerSwitch(var, cases) => {
                     let switchVar = Variable {
@@ -249,10 +249,10 @@ impl<'a> Builder<'a> {
                     };
                     let tmpVar = self.tmpVar(&switchVar);
                     let tmpVar2 = self.tmpVar(&switchVar);
-                    let llvmInstruction = LInstruction::GetFieldRef(tmpVar.clone(), self.lowerVar(var), 0);
-                    llvmBlock.instructions.push(llvmInstruction);
-                    let llvmInstruction = LInstruction::LoadVar(tmpVar2.clone(), tmpVar);
-                    llvmBlock.instructions.push(llvmInstruction);
+                    let minicInstruction = LInstruction::GetFieldRef(tmpVar.clone(), self.lowerVar(var), 0);
+                    minicBlock.instructions.push(minicInstruction);
+                    let minicInstruction = LInstruction::LoadVar(tmpVar2.clone(), tmpVar);
+                    minicBlock.instructions.push(minicInstruction);
                     let mut branches = Vec::new();
                     let mut defaultIndex = 0;
                     for (index, case) in cases.iter().enumerate() {
@@ -269,8 +269,8 @@ impl<'a> Builder<'a> {
                             }
                         }
                     }
-                    let llvmInstruction = LInstruction::Switch(tmpVar2.clone(), cases[defaultIndex].branch.clone(), branches);
-                    llvmBlock.instructions.push(llvmInstruction);
+                    let minicInstruction = LInstruction::Switch(tmpVar2.clone(), cases[defaultIndex].branch.clone(), branches);
+                    minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::Transform(dest, src, index) => {
                     let u = self.program.getUnion(&src.ty.getUnion());
@@ -279,14 +279,14 @@ impl<'a> Builder<'a> {
                     let mut recastVar = dest.clone();
                     recastVar.ty = Type::Struct(v.name.clone());
                     let recastVar = self.tmpVar(&recastVar);
-                    let llvmInstruction = LInstruction::Bitcast(recastVar.clone(), self.lowerVar(src));
-                    llvmBlock.instructions.push(llvmInstruction);
-                    let llvmInstruction = LInstruction::GetFieldRef(self.lowerVar(dest), recastVar, 1);
-                    llvmBlock.instructions.push(llvmInstruction);
+                    let minicInstruction = LInstruction::Bitcast(recastVar.clone(), self.lowerVar(src));
+                    minicBlock.instructions.push(minicInstruction);
+                    let minicInstruction = LInstruction::GetFieldRef(self.lowerVar(dest), recastVar, 1);
+                    minicBlock.instructions.push(minicInstruction);
                 }
             };
         }
-        llvmBlock
+        minicBlock
     }
 
     fn lowerFunction(&mut self, f: &Function) -> LFunction {
@@ -310,16 +310,16 @@ impl<'a> Builder<'a> {
                         }
                     }
                 }
-                let mut llvmBlocks: Vec<LBlock> = blocks.iter().map(|b| self.lowerBlock(b)).collect();
+                let mut minicBlocks: Vec<LBlock> = blocks.iter().map(|b| self.lowerBlock(b)).collect();
                 for var in localVars {
-                    let llvmInstruction = LInstruction::Allocate(self.lowerVar(&var));
-                    llvmBlocks[0].instructions.insert(0, llvmInstruction)
+                    let minicInstruction = LInstruction::Allocate(self.lowerVar(&var));
+                    minicBlocks[0].instructions.insert(0, minicInstruction)
                 }
                 LFunction {
                     name: f.name.clone(),
                     args: args,
                     result: resultTy,
-                    blocks: llvmBlocks,
+                    blocks: minicBlocks,
                 }
             }
             FunctionKind::ClassCtor => {
@@ -449,19 +449,19 @@ impl<'a> Builder<'a> {
     fn lowerStruct(&self, s: &Struct) -> LStruct {
         let mut fields = Vec::new();
         for f in &s.fields {
-            let llvmField = LField {
+            let minicField = LField {
                 name: f.name.clone(),
                 ty: self.lowerType(&f.ty),
             };
-            fields.push(llvmField);
+            fields.push(minicField);
         }
-        let llvmStruct = LStruct {
+        let minicStruct = LStruct {
             name: s.name.clone(),
             fields: fields,
             size: s.size,
             alignment: s.alignment,
         };
-        llvmStruct
+        minicStruct
     }
 
     fn lowerType(&self, ty: &Type) -> LType {

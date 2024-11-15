@@ -11,7 +11,9 @@ skipped = 0
 runtimePath = os.path.join("siko_runtime", "siko_runtime.o")
 
 def compileSiko(currentDir, files, extras):
-    output_path = os.path.join(currentDir, "main.ll")
+    output_path = os.path.join(currentDir, "main")
+    llvm_ir_output_path = os.path.join(currentDir, "main.ll")
+    c_output_path = os.path.join(currentDir, "main.c")
     optimized_path = os.path.join(currentDir, "main_optimized.ll")
     bitcode_path = os.path.join(currentDir, "main.bc")
     object_path = os.path.join(currentDir, "main.o")
@@ -20,10 +22,10 @@ def compileSiko(currentDir, files, extras):
     r = subprocess.run(args)
     if r.returncode != 0:
         return None
-    r = subprocess.run(["opt", "-passes=verify", "-S", output_path, "-o", "/dev/null"])
+    r = subprocess.run(["opt", "-passes=verify", "-S", llvm_ir_output_path, "-o", "/dev/null"])
     if r.returncode != 0:
        return None
-    r = subprocess.run(["opt", "-O2", "-S", output_path, "-o", optimized_path])
+    r = subprocess.run(["opt", "-O2", "-S", llvm_ir_output_path, "-o", optimized_path])
     if r.returncode != 0:
        return None
     r = subprocess.run(["llvm-as", optimized_path, "-o", bitcode_path])

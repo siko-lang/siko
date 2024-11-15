@@ -5,11 +5,13 @@ use crate::siko::util::DependencyProcessor;
 use super::{
     Data::{Field, Struct, Union},
     Function::Function,
-    Lowering::Builder,
+    LLVMLowering::LLVMBuilder,
+    MiniCLowering::MinicBuilder,
     Type::Type,
 };
 
 use crate::siko::llvm::Program::Program as LProgram;
+use crate::siko::minic::Program::Program as CProgram;
 
 pub struct Program {
     pub functions: Vec<Function>,
@@ -45,12 +47,19 @@ impl Program {
         }
     }
 
-    pub fn process(&mut self) -> LProgram {
+    pub fn process(&mut self) {
         self.calculateSizeAndAlignment();
 
         self.convertUnions();
+    }
 
-        let mut builder = Builder::new(self);
+    pub fn toLLVM(&self) -> LProgram {
+        let mut builder = LLVMBuilder::new(self);
+        builder.lower()
+    }
+
+    pub fn toMiniC(&self) -> CProgram {
+        let mut builder = MinicBuilder::new(self);
         builder.lower()
     }
 

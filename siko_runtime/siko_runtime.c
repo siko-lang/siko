@@ -1,20 +1,8 @@
+#include <siko_runtime.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-
-struct siko_int {
-    int64_t value;
-};
-
-struct siko_bool {
-    int32_t value;
-};
-
-struct siko_string {
-    char* value;
-    int64_t length;
-};
 
 extern void Std_Basic_Util_siko_runtime_abort() {
     printf("siko_runtime_abort called\n");
