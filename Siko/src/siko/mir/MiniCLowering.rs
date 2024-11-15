@@ -101,24 +101,13 @@ impl<'a> MinicBuilder<'a> {
                     // declares are processed at the beginning
                 }
                 Instruction::Reference(dest, src) => {
-                    let mut src = src.clone();
-                    src.ty = dest.ty.clone();
-                    let minicInstruction = LInstruction::Store(self.lowerVar(dest), LValue::Variable(self.lowerVar(&src)));
+                    let minicInstruction = LInstruction::Reference(self.lowerVar(dest), self.lowerVar(&src));
                     minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::Call(dest, name, args) => {
                     let mut minicArgs = Vec::new();
                     for arg in args {
-                        let var = self.lowerVar(arg);
-                        let var = if var.ty.isPtr() {
-                            let tmp = self.tmpVar(arg);
-                            let minicInstruction = LInstruction::LoadVar(tmp.clone(), var);
-                            minicBlock.instructions.push(minicInstruction);
-                            tmp
-                        } else {
-                            var
-                        };
-                        minicArgs.push(var);
+                        minicArgs.push(self.lowerVar(arg));
                     }
                     if dest.ty.isPtr() {
                         let tmp = self.tmpVar(dest);
@@ -150,10 +139,7 @@ impl<'a> MinicBuilder<'a> {
                     }
                     Value::Var(v) => {
                         if v.ty.isPtr() {
-                            let tmp = self.tmpVar(v);
-                            let minicInstruction = LInstruction::LoadVar(tmp.clone(), self.lowerVar(v));
-                            minicBlock.instructions.push(minicInstruction);
-                            let minicInstruction = LInstruction::Return(LValue::Variable(tmp));
+                            let minicInstruction = LInstruction::Return(LValue::Variable(self.lowerVar(v)));
                             minicBlock.instructions.push(minicInstruction);
                         } else {
                             let minicInstruction = LInstruction::Memcpy(self.lowerVar(v), self.lowerVar(&getResultVar(v.ty.clone())));
@@ -184,10 +170,7 @@ impl<'a> MinicBuilder<'a> {
                     minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::IntegerLiteral(var, value) => {
-                    let tmpVar = self.tmpVar(var);
-                    let minicInstruction = LInstruction::GetFieldRef(tmpVar.clone(), self.lowerVar(var), 0);
-                    minicBlock.instructions.push(minicInstruction);
-                    let minicInstruction = LInstruction::Store(tmpVar, LValue::Numeric(value.clone(), LType::Int64));
+                    let minicInstruction = LInstruction::Store(self.lowerVar(var), LValue::Numeric(value.clone(), LType::Int64));
                     minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::StringLiteral(var, value) => {

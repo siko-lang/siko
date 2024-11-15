@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeSet,
     fs::File,
     io::{self, Write},
 };
@@ -59,48 +60,24 @@ impl MiniCGenerator {
         let name = getStructName(&s.name);
         writeln!(buf, "struct {} {{", name)?;
         for (index, field) in s.fields.iter().enumerate() {
-            if index + 1 == s.fields.len() {
-                writeln!(buf, "  {} field{}", getTypeName(&field.ty), index)?;
-            } else {
-                writeln!(buf, "  {} field{},", getTypeName(&field.ty), index)?;
-            }
+            writeln!(buf, "  {} field{};", getTypeName(&field.ty), index)?;
         }
         writeln!(buf, "}};\n")?;
         Ok(())
     }
 
-    fn dumpInstruction(&self, instruction: &Instruction) -> String {
-        match &instruction {
-            Instruction::Allocate(var) => {
-                format!("{} {};", getTypeName(&var.ty), var.name,)
-            }
+    fn dumpInstruction(&self, instruction: &Instruction) -> Option<String> {
+        let s = match &instruction {
+            Instruction::Allocate(_) => return None,
             Instruction::Store(dest, src) => match src {
-                Value::Numeric(value, ty) => {
-                    format!(
-                        "store volatile {} {}, ptr {}, align {}",
-                        getTypeName(ty),
-                        value,
-                        dest.name,
-                        self.getAlignment(&dest.ty),
-                    )
+                Value::Numeric(value, _) => {
+                    format!("{}.field0 = {};", dest.name, value)
                 }
-                Value::String(value, ty) => {
-                    format!(
-                        "store {} @.{}, ptr {}, align {}",
-                        getTypeName(ty),
-                        value,
-                        dest.name,
-                        self.getAlignment(&dest.ty),
-                    )
+                Value::String(value, _) => {
+                    format!("{}.field0 = {};", dest.name, value)
                 }
                 Value::Variable(src) => {
-                    format!(
-                        "store {} {}, ptr {}, align {}",
-                        getTypeName(&src.ty),
-                        src.name,
-                        dest.name,
-                        self.getAlignment(&dest.ty),
-                    )
+                    format!("{} = {};", dest.name, src.name,)
                 }
                 Value::Void => unreachable!(),
             },
@@ -118,9 +95,13 @@ impl MiniCGenerator {
             Instruction::FunctionCallValue(dest, name, args) => {
                 let mut argRefs = Vec::new();
                 for arg in args {
-                    argRefs.push(format!("ptr {}", arg.name));
+                    if arg.ty.isPtr() {
+                        argRefs.push(format!("{}", arg.name));
+                    } else {
+                        argRefs.push(format!("&{}", arg.name));
+                    }
                 }
-                format!("{} = call {} @{}({})", dest.name, getTypeName(&dest.ty), name, argRefs.join(", "))
+                format!("{} = {}({});", dest.name, name, argRefs.join(", "))
             }
             Instruction::LoadVar(dest, src) => {
                 format!(
@@ -132,13 +113,7 @@ impl MiniCGenerator {
                 )
             }
             Instruction::GetFieldRef(dest, root, index) => {
-                format!(
-                    "{} = getelementptr inbounds {}, ptr {}, i32 0, i32 {}",
-                    dest.name,
-                    getTypeName(&root.ty),
-                    root.name,
-                    index
-                )
+                format!("{} = {}.field{};", dest.name, root.name, index)
             }
             Instruction::Return(value) => match value {
                 Value::Void => format!("return;"),
@@ -169,10 +144,10 @@ impl MiniCGenerator {
                 }
             },
             Instruction::MemcpyPtr(src, dest) => {
-                format!(
-                    "call void @llvm.memcpy.p0.p0.i64(ptr align {} {}, ptr align {} {}, i64 {}, i1 false)",
-                    8, dest.name, 8, src.name, 8
-                )
+                format!("{} = {};", dest.name, src.name)
+            }
+            Instruction::Reference(dest, src) => {
+                format!("{} = &{};", dest.name, src.name)
             }
             Instruction::Bitcast(dest, src) => {
                 format!(
@@ -199,21 +174,59 @@ impl MiniCGenerator {
                     branches.join("\n")
                 )
             }
-        }
+        };
+        Some(s)
     }
 
     fn dumpFunction(&self, f: &Function, buf: &mut File) -> io::Result<()> {
         let mut args = Vec::new();
         for arg in &f.args {
-            args.push(format!("{}* {}", getTypeName(&arg.ty), arg.name,));
+            if arg.ty.isPtr() {
+                args.push(format!("{} {}", getTypeName(&arg.ty), arg.name,));
+            } else {
+                args.push(format!("{}* {}", getTypeName(&arg.ty), arg.name,));
+            }
         }
+
+        let mut localVars = BTreeSet::new();
+
+        for block in &f.blocks {
+            for i in &block.instructions {
+                match i {
+                    Instruction::Allocate(v) => {
+                        localVars.insert(v.clone());
+                    }
+                    Instruction::Store(variable, value) => {}
+                    Instruction::LoadVar(variable, variable1) => {}
+                    Instruction::Reference(variable, variable1) => {}
+                    Instruction::FunctionCall(_, _) => {}
+                    Instruction::FunctionCallValue(dest, _, _) => {
+                        localVars.insert(dest.clone());
+                    }
+                    Instruction::Return(value) => {}
+                    Instruction::GetFieldRef(dest, variable1, _) => {
+                        localVars.insert(dest.clone());
+                    }
+                    Instruction::Jump(_) => {}
+                    Instruction::Memcpy(variable, variable1) => {}
+                    Instruction::MemcpyPtr(variable, variable1) => {}
+                    Instruction::Bitcast(variable, variable1) => {}
+                    Instruction::Switch(variable, _, vec) => {}
+                }
+            }
+        }
+
         if !f.blocks.is_empty() {
             writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            for v in localVars {
+                writeln!(buf, "   {} {};", getTypeName(&v.ty), v.name)?;
+            }
             for block in &f.blocks {
                 writeln!(buf, "{}:", block.id)?;
                 for i in &block.instructions {
-                    let i = self.dumpInstruction(i);
-                    writeln!(buf, "   {}", i)?;
+                    if let Some(i) = self.dumpInstruction(i) {
+                        writeln!(buf, "   {}", i)?;
+                    }
                 }
             }
             writeln!(buf, "}}\n")?;
@@ -224,7 +237,11 @@ impl MiniCGenerator {
     fn dumpFunctionDeclaration(&self, f: &Function, buf: &mut File) -> io::Result<()> {
         let mut args = Vec::new();
         for arg in &f.args {
-            args.push(format!("{}* {}", getTypeName(&arg.ty), arg.name,));
+            if arg.ty.isPtr() {
+                args.push(format!("{} {}", getTypeName(&arg.ty), arg.name,));
+            } else {
+                args.push(format!("{}* {}", getTypeName(&arg.ty), arg.name,));
+            }
         }
         writeln!(buf, "{} {}({});\n", getTypeName(&f.result), f.name, args.join(", "))?;
         Ok(())

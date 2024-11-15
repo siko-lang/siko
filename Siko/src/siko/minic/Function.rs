@@ -17,7 +17,7 @@ pub struct Block {
     pub instructions: Vec<Instruction>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Variable {
     pub name: String,
     pub ty: Type,
@@ -40,6 +40,7 @@ pub enum Instruction {
     Allocate(Variable),
     Store(Variable, Value),
     LoadVar(Variable, Variable),
+    Reference(Variable, Variable),
     FunctionCall(String, Vec<Variable>),
     FunctionCallValue(Variable, String, Vec<Variable>),
     Return(Value),
