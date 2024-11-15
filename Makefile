@@ -21,3 +21,4 @@ c: Siko/target/release/siko siko_runtime/siko_runtime.o
 	@./siko test.sk
 	@clang -c siko_main.c -o siko_main.o -I siko_runtime
 	@clang siko_main.o siko_runtime/siko_runtime.o -o main.bin
+	@./main.bin

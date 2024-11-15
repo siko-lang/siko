@@ -109,10 +109,8 @@ impl<'a> MinicBuilder<'a> {
                     for arg in args {
                         minicArgs.push(self.lowerVar(arg));
                     }
-                    if dest.ty.isPtr() {
-                        let minicInstruction = LInstruction::FunctionCallValue(self.lowerVar(dest), name.clone(), minicArgs);
-                        minicBlock.instructions.push(minicInstruction);
-                    }
+                    let minicInstruction = LInstruction::FunctionCallValue(self.lowerVar(dest), name.clone(), minicArgs);
+                    minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::Assign(dest, src) => {
                     let minicInstruction = LInstruction::Store(

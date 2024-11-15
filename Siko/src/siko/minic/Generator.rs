@@ -85,25 +85,10 @@ impl MiniCGenerator {
                 }
                 Value::Void => unreachable!(),
             },
-            Instruction::FunctionCall(name, args) => {
-                let mut argRefs = Vec::new();
-                for arg in args {
-                    if arg.ty.isPtr() {
-                        argRefs.push(format!("{}", arg.name));
-                    } else {
-                        argRefs.push(format!("&{}", arg.name));
-                    }
-                }
-                format!("{}({});", name, argRefs.join(", "))
-            }
             Instruction::FunctionCallValue(dest, name, args) => {
                 let mut argRefs = Vec::new();
                 for arg in args {
-                    if arg.ty.isPtr() {
-                        argRefs.push(format!("{}", arg.name));
-                    } else {
-                        argRefs.push(format!("&{}", arg.name));
-                    }
+                    argRefs.push(format!("{}", arg.name));
                 }
                 format!("{} = {}({});", dest.name, name, argRefs.join(", "))
             }
@@ -213,7 +198,6 @@ impl MiniCGenerator {
                     }
                     Instruction::LoadVar(_, _) => {}
                     Instruction::Reference(_, _) => {}
-                    Instruction::FunctionCall(_, _) => {}
                     Instruction::FunctionCallValue(dest, _, _) => {
                         localVars.insert(dest.clone());
                     }
