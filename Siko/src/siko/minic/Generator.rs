@@ -128,7 +128,7 @@ impl MiniCGenerator {
                 }
             },
             Instruction::Jump(label) => {
-                format!("br label %{}", label)
+                format!("goto {};", label)
             }
             Instruction::Memcpy(src, dest) => match dest.ty.getName() {
                 Some(_) => {
@@ -162,16 +162,15 @@ impl MiniCGenerator {
                 let branches: Vec<_> = branches
                     .iter()
                     .map(|b| match &b.value {
-                        Value::Numeric(v, ty) => format!("{} {}, label %{}", getTypeName(&ty), v, b.block),
+                        Value::Numeric(v, ty) => format!("   case {}:\n      goto {};\n", v, b.block),
                         _ => todo!(),
                     })
                     .collect();
                 format!(
-                    "switch {} {}, label %{} [\n{}\n]\n",
-                    getTypeName(&root.ty),
+                    "switch ({}) {{\n{}\n    default:\n       goto {};\n   }}",
                     root.name,
-                    default,
-                    branches.join("\n")
+                    branches.join("\n"),
+                    default
                 )
             }
         };

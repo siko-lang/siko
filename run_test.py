@@ -10,10 +10,9 @@ skipped = 0
 
 runtimePath = os.path.join("siko_runtime", "siko_runtime.o")
 
-def compileSiko(currentDir, files, extras):
+def compileSikoLLVM(currentDir, files, extras):
     output_path = os.path.join(currentDir, "main")
     llvm_ir_output_path = os.path.join(currentDir, "main.ll")
-    c_output_path = os.path.join(currentDir, "main.c")
     optimized_path = os.path.join(currentDir, "main_optimized.ll")
     bitcode_path = os.path.join(currentDir, "main.bc")
     object_path = os.path.join(currentDir, "main.o")
@@ -40,6 +39,24 @@ def compileSiko(currentDir, files, extras):
         return None
     return llvm_output_path
 
+def compileSikoC(currentDir, files, extras):
+    output_path = os.path.join(currentDir, "main")
+    c_output_path = os.path.join(currentDir, "main.c")
+    object_path = os.path.join(currentDir, "main.o")
+    bin_output_path = os.path.join(currentDir, "main.bin")
+    args = ["./siko", "-o", output_path] + extras + files
+    r = subprocess.run(args)
+    if r.returncode != 0:
+        return None
+    r = subprocess.run(["clang", "-c", c_output_path, "-o", object_path, "-I", "siko_runtime"])
+    if r.returncode != 0:
+        return None
+    r = subprocess.run(["clang", object_path, runtimePath, "-o", bin_output_path])
+    #r = subprocess.run(["rustc", output_path, "-o", rust_output_path])
+    if r.returncode != 0:
+        return None
+    return bin_output_path
+
 def test_success(root, entry, extras):
     print("- %s" % entry, end='')
     currentDir = os.path.join(root, entry)
@@ -47,7 +64,8 @@ def test_success(root, entry, extras):
     if os.path.exists(skipPath):
         return False
     inputPath = os.path.join(currentDir, "main.sk")
-    binary = compileSiko(currentDir, [inputPath], extras)
+    #binary = compileSikoLLVM(currentDir, [inputPath], extras)
+    binary = compileSikoC(currentDir, [inputPath], extras)
     if binary is None:
         return False
     r = subprocess.run([binary])

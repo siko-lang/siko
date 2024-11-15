@@ -231,10 +231,7 @@ impl<'a> MinicBuilder<'a> {
                         ty: Type::Int64,
                     };
                     let tmpVar = self.tmpVar(&switchVar);
-                    let tmpVar2 = self.tmpVar(&switchVar);
                     let minicInstruction = LInstruction::GetFieldRef(tmpVar.clone(), self.lowerVar(var), 0);
-                    minicBlock.instructions.push(minicInstruction);
-                    let minicInstruction = LInstruction::LoadVar(tmpVar2.clone(), tmpVar);
                     minicBlock.instructions.push(minicInstruction);
                     let mut branches = Vec::new();
                     let mut defaultIndex = 0;
@@ -252,7 +249,7 @@ impl<'a> MinicBuilder<'a> {
                             }
                         }
                     }
-                    let minicInstruction = LInstruction::Switch(tmpVar2.clone(), cases[defaultIndex].branch.clone(), branches);
+                    let minicInstruction = LInstruction::Switch(tmpVar.clone(), cases[defaultIndex].branch.clone(), branches);
                     minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::Transform(dest, src, index) => {
