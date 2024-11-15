@@ -206,10 +206,7 @@ impl<'a> MinicBuilder<'a> {
                         ty: Type::Int32,
                     };
                     let tmpVar = self.tmpVar(&switchVar);
-                    let tmpVar2 = self.tmpVar(&switchVar);
                     let minicInstruction = LInstruction::GetFieldRef(tmpVar.clone(), self.lowerVar(var), 0);
-                    minicBlock.instructions.push(minicInstruction);
-                    let minicInstruction = LInstruction::LoadVar(tmpVar2.clone(), tmpVar);
                     minicBlock.instructions.push(minicInstruction);
                     let mut branches = Vec::new();
                     for (index, case) in cases.iter().enumerate() {
@@ -222,7 +219,7 @@ impl<'a> MinicBuilder<'a> {
                         };
                         branches.push(branch);
                     }
-                    let minicInstruction = LInstruction::Switch(tmpVar2.clone(), cases[0].branch.clone(), branches);
+                    let minicInstruction = LInstruction::Switch(tmpVar.clone(), cases[0].branch.clone(), branches);
                     minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::IntegerSwitch(var, cases) => {
@@ -364,34 +361,18 @@ impl<'a> MinicBuilder<'a> {
                     ty: Type::Struct(variant.name.clone()),
                 };
                 block.instructions.push(LInstruction::Allocate(self.lowerVar(&this)));
-                let tagVar = Variable {
-                    name: format!("tag"),
-                    ty: Type::Int32,
-                };
-                let typedPayloadVar = Variable {
-                    name: format!("payload1"),
-                    ty: variant.ty.clone(),
-                };
-                block
-                    .instructions
-                    .push(LInstruction::GetFieldRef(self.lowerVar(&tagVar), self.lowerVar(&this), 0));
                 block.instructions.push(LInstruction::Store(
-                    self.lowerVar(&tagVar),
+                    self.lowerVar(&this),
                     LValue::Numeric(format!("{}", index), LType::Int32),
                 ));
-                block
-                    .instructions
-                    .push(LInstruction::GetFieldRef(self.lowerVar(&typedPayloadVar), self.lowerVar(&this), 1));
                 for (index, field) in s.fields.iter().enumerate() {
                     let fieldVar = Variable {
                         name: format!("field{}", index),
                         ty: field.ty.clone(),
                     };
-                    block.instructions.push(LInstruction::GetFieldRef(
-                        self.lowerVar(&fieldVar),
-                        self.lowerVar(&typedPayloadVar),
-                        index as i32,
-                    ));
+                    block
+                        .instructions
+                        .push(LInstruction::GetFieldRef(self.lowerVar(&fieldVar), self.lowerVar(&this), index as i32));
                     let argVar = Variable {
                         name: field.name.clone(),
                         ty: field.ty.clone(),
@@ -408,7 +389,7 @@ impl<'a> MinicBuilder<'a> {
                 }
                 block
                     .instructions
-                    .push(LInstruction::Memcpy(self.lowerVar(&this), self.lowerVar(&getResultVar(this.ty.clone()))));
+                    .push(LInstruction::Memcpy(self.lowerVar(&this), self.lowerVar(&getResultVar(f.result.clone()))));
                 block.instructions.push(LInstruction::Return(LValue::Void));
                 LFunction {
                     name: f.name.clone(),

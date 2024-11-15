@@ -31,7 +31,7 @@ pub fn getTypeName(ty: &Type) -> String {
         Type::Int64 => "int64_t".to_string(),
         Type::Struct(n) => format!("struct {}", getStructName(n)),
         Type::Ptr(i) => format!("{}*", getTypeName(i)),
-        Type::Array(s, itemSize) => format!("int{}_t[{}]", itemSize, s),
+        Type::Array(s, itemSize) => format!("int{}_t", itemSize),
     }
 }
 
@@ -60,7 +60,11 @@ impl MiniCGenerator {
         let name = getStructName(&s.name);
         writeln!(buf, "struct {} {{", name)?;
         for (index, field) in s.fields.iter().enumerate() {
-            writeln!(buf, "  {} field{};", getTypeName(&field.ty), index)?;
+            if field.ty.isArray() {
+                writeln!(buf, "  {} field{}[{}];", getTypeName(&field.ty), index, field.ty.getArraySize())?;
+            } else {
+                writeln!(buf, "  {} field{};", getTypeName(&field.ty), index)?;
+            }
         }
         writeln!(buf, "}};\n")?;
         Ok(())
@@ -133,7 +137,11 @@ impl MiniCGenerator {
             Instruction::Memcpy(src, dest) => match dest.ty.getName() {
                 Some(_) => {
                     if dest.ty.isPtr() {
-                        format!("*{} = {};", dest.name, src.name)
+                        if src.ty.isPtr() {
+                            format!("*{} = *({}){};", dest.name, getTypeName(&dest.ty), src.name)
+                        } else {
+                            format!("*{} = *({})&{};", dest.name, getTypeName(&dest.ty), src.name)
+                        }
                     } else {
                         format!("{} = {};", dest.name, src.name)
                     }
@@ -150,13 +158,7 @@ impl MiniCGenerator {
                 format!("{} = &{};", dest.name, src.name)
             }
             Instruction::Bitcast(dest, src) => {
-                format!(
-                    "{} = bitcast {}* {} to {}*",
-                    dest.name,
-                    getTypeName(&src.ty),
-                    src.name,
-                    getTypeName(&dest.ty)
-                )
+                format!("{} = ({}){}", dest.name, getTypeName(&dest.ty), src.name)
             }
             Instruction::Switch(root, default, branches) => {
                 let branches: Vec<_> = branches
