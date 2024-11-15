@@ -31,7 +31,7 @@ pub fn getTypeName(ty: &Type) -> String {
         Type::Int64 => "int64_t".to_string(),
         Type::Struct(n) => format!("struct {}", getStructName(n)),
         Type::Ptr(i) => format!("{}*", getTypeName(i)),
-        Type::Array(s, itemSize) => format!("int{}_t", itemSize),
+        Type::Array(_, itemSize) => format!("int{}_t", itemSize),
     }
 }
 
@@ -179,7 +179,7 @@ impl MiniCGenerator {
                 let branches: Vec<_> = branches
                     .iter()
                     .map(|b| match &b.value {
-                        Value::Numeric(v, ty) => format!("   case {}:\n      goto {};\n", v, b.block),
+                        Value::Numeric(v, _) => format!("   case {}:\n      goto {};\n", v, b.block),
                         _ => todo!(),
                     })
                     .collect();
@@ -208,29 +208,29 @@ impl MiniCGenerator {
                     Instruction::Allocate(v) => {
                         localVars.insert(v.clone());
                     }
-                    Instruction::Store(dest, value) => {
+                    Instruction::Store(dest, _) => {
                         localVars.insert(dest.clone());
                     }
-                    Instruction::LoadVar(variable, variable1) => {}
-                    Instruction::Reference(variable, variable1) => {}
+                    Instruction::LoadVar(_, _) => {}
+                    Instruction::Reference(_, _) => {}
                     Instruction::FunctionCall(_, _) => {}
                     Instruction::FunctionCallValue(dest, _, _) => {
                         localVars.insert(dest.clone());
                     }
-                    Instruction::Return(value) => {}
-                    Instruction::GetFieldRef(dest, variable1, _) => {
+                    Instruction::Return(_) => {}
+                    Instruction::GetFieldRef(dest, _, _) => {
                         localVars.insert(dest.clone());
                     }
-                    Instruction::SetField(dest, variable1, _, _) => {
+                    Instruction::SetField(dest, _, _, _) => {
                         localVars.insert(dest.clone());
                     }
                     Instruction::Jump(_) => {}
-                    Instruction::Memcpy(variable, variable1) => {}
-                    Instruction::MemcpyPtr(variable, variable1) => {}
-                    Instruction::Bitcast(dest, variable1) => {
+                    Instruction::Memcpy(_, _) => {}
+                    Instruction::MemcpyPtr(_, _) => {}
+                    Instruction::Bitcast(dest, _) => {
                         localVars.insert(dest.clone());
                     }
-                    Instruction::Switch(variable, _, vec) => {}
+                    Instruction::Switch(_, _, _) => {}
                 }
             }
         }
