@@ -8,7 +8,7 @@ use crate::siko::{minic::Function::Value, util::DependencyProcessor::processDepe
 
 use super::{
     Data::Struct,
-    Function::{Function, Instruction},
+    Function::{Function, Instruction, ReadMode},
     Program::Program,
     Type::Type,
 };
@@ -25,7 +25,7 @@ pub fn getStructName(name: &String) -> String {
 pub fn getTypeName(ty: &Type) -> String {
     match &ty {
         Type::Void => "void".to_string(),
-        Type::Int8 => "u8_t".to_string(),
+        Type::Int8 => "uint8_t".to_string(),
         Type::Int16 => "int16_t".to_string(),
         Type::Int32 => "int32_t".to_string(),
         Type::Int64 => "int64_t".to_string(),
@@ -75,10 +75,10 @@ impl MiniCGenerator {
             Instruction::Allocate(_) => return None,
             Instruction::Store(dest, src) => match src {
                 Value::Numeric(value, _) => {
-                    format!("{}.field0 = {};", dest.name, value)
+                    format!("{} = {};", dest.name, value)
                 }
                 Value::String(value, _) => {
-                    format!("{}.field0 = {};", dest.name, value)
+                    format!("{} = (uint8_t*){};", dest.name, value)
                 }
                 Value::Variable(src) => {
                     format!("{} = {};", dest.name, src.name,)
@@ -119,20 +119,18 @@ impl MiniCGenerator {
             Instruction::GetFieldRef(dest, root, index) => {
                 format!("{} = {}.field{};", dest.name, root.name, index)
             }
-            Instruction::SetField(dest, src, indices) => {
+            Instruction::SetField(dest, src, indices, mode) => {
                 let path: Vec<_> = indices.iter().map(|i| format!(".field{}", i)).collect();
                 let path: String = path.join("");
-                if dest.ty.isPtr() {
-                    if src.ty.isPtr() {
+                match *mode {
+                    ReadMode::Noop => {
                         format!("{}{} = {};", dest.name, path, src.name)
-                    } else {
-                        unreachable!();
                     }
-                } else {
-                    if src.ty.isPtr() {
+                    ReadMode::Ref => {
                         format!("{}{} = *{};", dest.name, path, src.name)
-                    } else {
-                        format!("{}{} = {};", dest.name, path, src.name)
+                    }
+                    ReadMode::Deref => {
+                        format!("{}{} = *{};", dest.name, path, src.name)
                     }
                 }
             }
@@ -199,11 +197,7 @@ impl MiniCGenerator {
     fn dumpFunction(&self, f: &Function, buf: &mut File) -> io::Result<()> {
         let mut args = Vec::new();
         for arg in &f.args {
-            if arg.ty.isPtr() {
-                args.push(format!("{} {}", getTypeName(&arg.ty), arg.name,));
-            } else {
-                args.push(format!("{}* {}", getTypeName(&arg.ty), arg.name,));
-            }
+            args.push(format!("{} {}", getTypeName(&arg.ty), arg.name,));
         }
 
         let mut localVars = BTreeSet::new();
@@ -214,7 +208,9 @@ impl MiniCGenerator {
                     Instruction::Allocate(v) => {
                         localVars.insert(v.clone());
                     }
-                    Instruction::Store(variable, value) => {}
+                    Instruction::Store(dest, value) => {
+                        localVars.insert(dest.clone());
+                    }
                     Instruction::LoadVar(variable, variable1) => {}
                     Instruction::Reference(variable, variable1) => {}
                     Instruction::FunctionCall(_, _) => {}
@@ -225,7 +221,7 @@ impl MiniCGenerator {
                     Instruction::GetFieldRef(dest, variable1, _) => {
                         localVars.insert(dest.clone());
                     }
-                    Instruction::SetField(dest, variable1, _) => {
+                    Instruction::SetField(dest, variable1, _, _) => {
                         localVars.insert(dest.clone());
                     }
                     Instruction::Jump(_) => {}
@@ -260,11 +256,7 @@ impl MiniCGenerator {
     fn dumpFunctionDeclaration(&self, f: &Function, buf: &mut File) -> io::Result<()> {
         let mut args = Vec::new();
         for arg in &f.args {
-            if arg.ty.isPtr() {
-                args.push(format!("{} {}", getTypeName(&arg.ty), arg.name,));
-            } else {
-                args.push(format!("{}* {}", getTypeName(&arg.ty), arg.name,));
-            }
+            args.push(format!("{} {}", getTypeName(&arg.ty), arg.name,));
         }
         writeln!(buf, "{} {}({});\n", getTypeName(&f.result), f.name, args.join(", "))?;
         Ok(())
@@ -309,6 +301,18 @@ impl MiniCGenerator {
         for group in groups {
             assert_eq!(group.items.len(), 1);
             for item in group.items {
+                if item == "String_String" {
+                    continue;
+                }
+                if item == "Bool_Bool" {
+                    continue;
+                }
+                if item == "Int_Int" {
+                    continue;
+                }
+                if item == "siko_Tuple_" {
+                    continue;
+                }
                 let s = self.program.getStruct(&item);
                 self.dumpStruct(&s, &mut output)?;
             }
@@ -323,8 +327,7 @@ impl MiniCGenerator {
         }
 
         writeln!(output, "int main() {{")?;
-        writeln!(output, "   struct siko_Tuple_ res;")?;
-        writeln!(output, "   Main_main(&res);")?;
+        writeln!(output, "   Main_main();")?;
         writeln!(output, "   return 0;")?;
         writeln!(output, "}}\n\n")?;
         Ok(())

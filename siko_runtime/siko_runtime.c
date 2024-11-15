@@ -4,67 +4,89 @@
 #include <stdlib.h>
 #include <string.h>
 
-extern void Std_Basic_Util_siko_runtime_abort() {
+extern struct siko_Tuple_ Std_Basic_Util_siko_runtime_abort() {
+    struct siko_Tuple_ result;
     printf("siko_runtime_abort called\n");
     abort();
+    return result;
 }
 
-extern void Std_Basic_Util_siko_runtime_num(struct siko_int* v) {
-    printf("%ld\n", v->value);
+extern struct siko_Tuple_ Std_Basic_Util_siko_runtime_num(struct Int_Int v) {
+    struct siko_Tuple_ result;
+    printf("%ld\n", v.field0);
+    return result;
 }
 
-extern void Std_Basic_Util_siko_runtime_str(struct siko_string* v) {
-    printf("%.*s\n", (int)v->length, v->value);
+extern struct siko_Tuple_ Std_Basic_Util_siko_runtime_str(struct String_String* v) {
+    struct siko_Tuple_ result;
+    printf("%.*s\n", (int)v->field1, v->field0);
+    return result;
 }
 
-extern void Std_Basic_Util_siko_runtime_true(struct siko_bool* v) {
-    v->value = 1;
+extern struct Bool_Bool Std_Basic_Util_siko_runtime_true() {
+    struct Bool_Bool result;
+    result.field0 = 1;
+    return result;
 }
 
-extern void Std_Basic_Util_siko_runtime_false(struct siko_bool* v) {
-    v->value = 0;
+extern struct Bool_Bool Std_Basic_Util_siko_runtime_false() {
+    struct Bool_Bool result;
+    result.field0 = 0;
+    return result;
 }
 
-extern void Std_Basic_Util_siko_runtime_bool(struct siko_bool* v) {
-    if (v->value) {
+extern struct siko_Tuple_ Std_Basic_Util_siko_runtime_bool(struct Bool_Bool v) {
+    struct siko_Tuple_ result;
+    if (v.field0) {
         printf("siko_runtime_bool true\n");    
     } else {
         printf("siko_runtime_num false\n");
     }
+    return result;
 }
 
-extern void Int_Int_add(struct siko_int* v1, struct siko_int* v2, struct siko_int* result) {
-    //printf("add %ld %ld\n", v1->value, v2->value);
-    result->value = v1->value + v2->value;
+extern struct Int_Int Int_Int_add(struct Int_Int v1, struct Int_Int v2) {
+    struct Int_Int result;
+    //printf("add %ld %ld\n", v1->field0, v2->field0);
+    result.field0 = v1.field0 + v2.field0;
+    return result;
 }
 
-extern void Int_Int_sub(struct siko_int* v1, struct siko_int* v2, struct siko_int* result) {
-    result->value = v1->value - v2->value;
+extern struct Int_Int Int_Int_sub(struct Int_Int v1, struct Int_Int v2) {
+    struct Int_Int result;
+    result.field0 = v1.field0 - v2.field0;
+    return result;
 }
 
-extern void Int_Int_eq(struct siko_int* v1, struct siko_int* v2, struct siko_bool* result) {
-    result->value = v1->value == v2->value;
+extern struct Bool_Bool Int_Int_eq(struct Int_Int v1, struct Int_Int v2) {
+    struct Bool_Bool result;
+    result.field0 = v1.field0 == v2.field0;
+    return result;
 }
 
-extern void Int_Int_lessThan(struct siko_int* v1, struct siko_int* v2, struct siko_bool* result) {
-    //printf("lessThan %ld %ld\n", v1->value, v2->value);
-    if (v1->value < v2->value) {
-        result->value = 1;
+extern struct Bool_Bool Int_Int_lessThan(struct Int_Int v1, struct Int_Int v2) {
+    struct Bool_Bool result;
+    //printf("lessThan %ld %ld\n", v1->field0, v2->field0);
+    if (v1.field0 < v2.field0) {
+        result.field0 = 1;
     } else {
-        result->value = 0;
+        result.field0 = 0;
     }
+    return result;
 }
 
-extern void String_String_eq(struct siko_string* v1, struct siko_string* v2, struct siko_bool* result) {
+extern struct Bool_Bool String_String_eq(struct String_String* v1, struct String_String* v2) {
     // printf("string eq0!!\n");
     // printf("string eq1!! %p %p\n", v1, v2);
-    // printf("string eq2!! %p %p\n", v1->value, v2->value);
-    // printf("string eq3!! %ld %ld\n", v1->length, v2->length);
+    // printf("string eq2!! %p %p\n", v1->field0, v2->field0);
+    // printf("string eq3!! %ld %ld\n", v1->field1, v2->field1);
     // Std_Basic_Util_siko_runtime_str(v1);
     // Std_Basic_Util_siko_runtime_str(v2);
-    if (v1->length != v2->length) {
-        result->value = 0;
-        return;
+    struct Bool_Bool result;
+    if (v1->field1 != v2->field1) {
+        result.field0 = 0;
+        return result;
     }
-    result->value = strncmp(v1->value, v2->value, v1->length) == 0;
+    result.field0 = strncmp((const char*)v1->field0, (const char*)v2->field0, v1->field1) == 0;
+    return result;
 }

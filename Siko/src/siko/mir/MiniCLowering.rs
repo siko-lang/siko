@@ -7,7 +7,6 @@ use super::{
     Type::Type,
 };
 
-use crate::siko::minic::Data::Struct as LStruct;
 use crate::siko::minic::Function::Block as LBlock;
 use crate::siko::minic::Function::Branch as LBranch;
 use crate::siko::minic::Function::Function as LFunction;
@@ -18,6 +17,7 @@ use crate::siko::minic::Function::Variable as LVariable;
 use crate::siko::minic::Program::Program as LProgram;
 use crate::siko::minic::Type::Type as LType;
 use crate::siko::minic::{Constant::StringConstant, Data::Field as LField};
+use crate::siko::minic::{Data::Struct as LStruct, Function::ReadMode};
 
 pub struct MinicBuilder<'a> {
     program: &'a Program,
@@ -110,14 +110,7 @@ impl<'a> MinicBuilder<'a> {
                         minicArgs.push(self.lowerVar(arg));
                     }
                     if dest.ty.isPtr() {
-                        let tmp = self.tmpVar(dest);
-                        let minicInstruction = LInstruction::FunctionCallValue(tmp.clone(), name.clone(), minicArgs);
-                        minicBlock.instructions.push(minicInstruction);
-                        let minicInstruction = LInstruction::Store(self.lowerVar(dest), LValue::Variable(tmp));
-                        minicBlock.instructions.push(minicInstruction);
-                    } else {
-                        minicArgs.push(self.lowerVar(dest));
-                        let minicInstruction = LInstruction::FunctionCall(name.clone(), minicArgs);
+                        let minicInstruction = LInstruction::FunctionCallValue(self.lowerVar(dest), name.clone(), minicArgs);
                         minicBlock.instructions.push(minicInstruction);
                     }
                 }
@@ -138,15 +131,8 @@ impl<'a> MinicBuilder<'a> {
                         minicBlock.instructions.push(minicInstruction);
                     }
                     Value::Var(v) => {
-                        if v.ty.isPtr() {
-                            let minicInstruction = LInstruction::Return(LValue::Variable(self.lowerVar(v)));
-                            minicBlock.instructions.push(minicInstruction);
-                        } else {
-                            let minicInstruction = LInstruction::Memcpy(self.lowerVar(v), self.lowerVar(&getResultVar(v.ty.clone())));
-                            minicBlock.instructions.push(minicInstruction);
-                            let minicInstruction = LInstruction::Return(LValue::Void);
-                            minicBlock.instructions.push(minicInstruction);
-                        }
+                        let minicInstruction = LInstruction::Return(LValue::Variable(self.lowerVar(v)));
+                        minicBlock.instructions.push(minicInstruction);
                     }
                     _ => {
                         unreachable!()
@@ -170,14 +156,19 @@ impl<'a> MinicBuilder<'a> {
                     minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::IntegerLiteral(var, value) => {
-                    let minicInstruction = LInstruction::Store(self.lowerVar(var), LValue::Numeric(value.clone(), LType::Int64));
+                    let mut tmp = self.tmpVar(var);
+                    tmp.ty = LType::Int64;
+                    let minicInstruction = LInstruction::Store(tmp.clone(), LValue::Numeric(value.clone(), LType::Int64));
+                    minicBlock.instructions.push(minicInstruction);
+                    let minicInstruction = LInstruction::SetField(self.lowerVar(var), tmp, vec![0], ReadMode::Noop);
                     minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::StringLiteral(var, value) => {
-                    let tmpVar = self.tmpVar(var);
-                    let minicInstruction = LInstruction::GetFieldRef(tmpVar.clone(), self.lowerVar(var), 0);
-                    minicBlock.instructions.push(minicInstruction);
                     let i8Ptr = LType::Ptr(Box::new(LType::Int8));
+                    let mut tmpVar = self.tmpVar(var);
+                    tmpVar.ty = i8Ptr.clone();
+                    let mut tmpVar2 = self.tmpVar(var);
+                    tmpVar2.ty = LType::Int64;
                     let new = self.constants.len();
                     let strLen = value.len();
                     let value = match self.constants.entry(value.clone()) {
@@ -188,12 +179,13 @@ impl<'a> MinicBuilder<'a> {
                             newStr
                         }
                     };
-                    let minicInstruction = LInstruction::Store(tmpVar, LValue::String(value.clone(), i8Ptr));
+                    let minicInstruction = LInstruction::Store(tmpVar.clone(), LValue::String(value.clone(), i8Ptr));
                     minicBlock.instructions.push(minicInstruction);
-                    let tmpVar2 = self.tmpVar(var);
-                    let minicInstruction = LInstruction::GetFieldRef(tmpVar2.clone(), self.lowerVar(var), 1);
+                    let minicInstruction = LInstruction::Store(tmpVar2.clone(), LValue::Numeric(format!("{}", strLen), LType::Int64));
                     minicBlock.instructions.push(minicInstruction);
-                    let minicInstruction = LInstruction::Store(tmpVar2, LValue::Numeric(format!("{}", strLen), LType::Int64));
+                    let minicInstruction = LInstruction::SetField(self.lowerVar(var), tmpVar, vec![0], ReadMode::Noop);
+                    minicBlock.instructions.push(minicInstruction);
+                    let minicInstruction = LInstruction::SetField(self.lowerVar(var), tmpVar2, vec![1], ReadMode::Noop);
                     minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::Jump(name) => {
@@ -267,16 +259,8 @@ impl<'a> MinicBuilder<'a> {
     }
 
     fn lowerFunction(&mut self, f: &Function) -> LFunction {
-        let mut args: Vec<_> = f.args.iter().map(|p| self.lowerParam(p)).collect();
-        let mut resultTy = LType::Void;
-        if !f.result.isPtr() {
-            args.push(LParam {
-                name: getResultVarName(),
-                ty: self.lowerType(&f.result),
-            });
-        } else {
-            resultTy = self.lowerType(&f.result);
-        }
+        let args: Vec<_> = f.args.iter().map(|p| self.lowerParam(p)).collect();
+        let resultTy = self.lowerType(&f.result);
         match &f.kind {
             FunctionKind::UserDefined(blocks) => {
                 let mut localVars = Vec::new();
@@ -315,14 +299,23 @@ impl<'a> MinicBuilder<'a> {
                         name: field.name.clone(),
                         ty: Type::Ptr(Box::new(field.ty.clone())),
                     };
-                    block
-                        .instructions
-                        .push(LInstruction::SetField(self.lowerVar(&this), self.lowerVar(&argVar), vec![index as i32]));
+                    if field.ty.isPtr() {
+                        block.instructions.push(LInstruction::SetField(
+                            self.lowerVar(&this),
+                            self.lowerVar(&argVar),
+                            vec![index as i32],
+                            ReadMode::Noop,
+                        ));
+                    } else {
+                        block.instructions.push(LInstruction::SetField(
+                            self.lowerVar(&this),
+                            self.lowerVar(&argVar),
+                            vec![index as i32],
+                            ReadMode::Noop,
+                        ));
+                    }
                 }
-                block
-                    .instructions
-                    .push(LInstruction::Memcpy(self.lowerVar(&this), self.lowerVar(&getResultVar(this.ty.clone()))));
-                block.instructions.push(LInstruction::Return(LValue::Void));
+                block.instructions.push(LInstruction::Return(LValue::Variable(self.lowerVar(&this))));
                 LFunction {
                     name: f.name.clone(),
                     args: args,
@@ -348,10 +341,14 @@ impl<'a> MinicBuilder<'a> {
                     ty: Type::Struct(variant.name.clone()),
                 };
                 block.instructions.push(LInstruction::Allocate(self.lowerVar(&this)));
-                block.instructions.push(LInstruction::Store(
-                    self.lowerVar(&this),
-                    LValue::Numeric(format!("{}", index), LType::Int32),
-                ));
+                let mut tmp = self.tmpVar(&this);
+                tmp.ty = LType::Int32;
+                block
+                    .instructions
+                    .push(LInstruction::Store(tmp.clone(), LValue::Numeric(format!("{}", index), LType::Int32)));
+                block
+                    .instructions
+                    .push(LInstruction::SetField(self.lowerVar(&this), tmp, vec![0], ReadMode::Noop));
                 for (index, field) in s.fields.iter().enumerate() {
                     let argVar = Variable {
                         name: field.name.clone(),
@@ -361,12 +358,13 @@ impl<'a> MinicBuilder<'a> {
                         self.lowerVar(&this),
                         self.lowerVar(&argVar),
                         vec![1, index as i32],
+                        ReadMode::Noop,
                     ));
                 }
-                block
-                    .instructions
-                    .push(LInstruction::Memcpy(self.lowerVar(&this), self.lowerVar(&getResultVar(f.result.clone()))));
-                block.instructions.push(LInstruction::Return(LValue::Void));
+                let mut tmp2 = self.tmpVar(&this);
+                tmp2.ty = resultTy.clone();
+                block.instructions.push(LInstruction::Bitcast(tmp2.clone(), self.lowerVar(&this)));
+                block.instructions.push(LInstruction::Return(LValue::Variable(tmp2)));
                 LFunction {
                     name: f.name.clone(),
                     args: args,
@@ -414,16 +412,5 @@ impl<'a> MinicBuilder<'a> {
             Type::Ptr(t) => LType::Ptr(Box::new(self.lowerType(t))),
             Type::Array(s, itemSize) => LType::Array(*s, *itemSize),
         }
-    }
-}
-
-fn getResultVarName() -> String {
-    "fn_result".to_string()
-}
-
-fn getResultVar(ty: Type) -> Variable {
-    Variable {
-        name: getResultVarName(),
-        ty: Type::Ptr(Box::new(ty)),
     }
 }
