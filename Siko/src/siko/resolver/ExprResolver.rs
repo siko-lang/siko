@@ -42,6 +42,7 @@ pub struct ExprResolver<'a> {
     pub enums: &'a BTreeMap<QualifiedName, Enum>,
     loopInfos: Vec<LoopInfo>,
     targetBlockId: BlockId,
+    varIndices: BTreeMap<String, u32>,
 }
 
 impl<'a> ExprResolver<'a> {
@@ -65,6 +66,7 @@ impl<'a> ExprResolver<'a> {
             enums: enums,
             loopInfos: Vec::new(),
             targetBlockId: BlockId::first(),
+            varIndices: BTreeMap::new(),
         }
     }
 
@@ -82,6 +84,13 @@ impl<'a> ExprResolver<'a> {
 
     pub fn getTargetBlockId(&mut self) -> BlockId {
         self.targetBlockId
+    }
+
+    fn indexVar(&mut self, mut var: Variable) -> Variable {
+        let index = self.varIndices.entry(var.value.clone()).or_insert(1);
+        var.index = *index;
+        *index += 1;
+        var
     }
 
     fn resolveBlock<'e>(&mut self, block: &Block, env: &'e Environment<'e>) -> Variable {
@@ -109,7 +118,7 @@ impl<'a> ExprResolver<'a> {
                             let value = env.resolve(&name.toString());
                             match value {
                                 Some(value) => {
-                                    self.addInstruction(InstructionKind::Assign(value, rhsId), lhs.location.clone());
+                                    self.addInstruction(InstructionKind::Assign(value.asFixed(), rhsId), lhs.location.clone());
                                 }
                                 None => {
                                     ResolverError::UnknownValue(name.name.clone(), name.location.clone()).report(self.ctx);
@@ -154,11 +163,7 @@ impl<'a> ExprResolver<'a> {
     pub fn resolveExpr(&mut self, expr: &Expr, env: &mut Environment) -> Variable {
         match &expr.expr {
             SimpleExpr::Value(name) => match env.resolve(&name.name) {
-                Some(name) => {
-                    let value = self.createValue("valueRef", expr.location.clone());
-                    self.addInstruction(InstructionKind::ValueRef(value.asFixed(), name), expr.location.clone());
-                    value
-                }
+                Some(var) => self.indexVar(var),
                 None => {
                     ResolverError::UnknownValue(name.name.clone(), name.location.clone()).report(self.ctx);
                 }
@@ -168,6 +173,7 @@ impl<'a> ExprResolver<'a> {
                 location: expr.location.clone(),
                 ty: None,
                 fixed: false,
+                index: 0,
             },
             SimpleExpr::Name(name) => {
                 let irName = self.moduleResolver.resolverName(name);
@@ -188,6 +194,7 @@ impl<'a> ExprResolver<'a> {
                 let mut irArgs = Vec::new();
                 for arg in args {
                     let argId = self.resolveExpr(arg, env);
+                    let argId = self.indexVar(argId);
                     irArgs.push(argId)
                 }
                 match &callable.expr {
@@ -227,6 +234,21 @@ impl<'a> ExprResolver<'a> {
                         value
                     }
                 }
+            }
+            SimpleExpr::MethodCall(receiver, name, args) => {
+                let receiver = self.resolveExpr(&receiver, env);
+                let value = self.createValue("call", expr.location.clone());
+                let mut irArgs = Vec::new();
+                for arg in args {
+                    let argId = self.resolveExpr(arg, env);
+                    let argId = self.indexVar(argId);
+                    irArgs.push(argId)
+                }
+                self.addInstruction(
+                    InstructionKind::MethodCall(value.asFixed(), receiver, name.toString(), irArgs),
+                    expr.location.clone(),
+                );
+                value
             }
             SimpleExpr::For(_, _, _) => todo!(),
             SimpleExpr::Loop(pattern, init, body) => {
@@ -403,6 +425,7 @@ impl<'a> ExprResolver<'a> {
             location: location,
             ty: None,
             fixed: false,
+            index: 0,
         }
     }
 
@@ -411,7 +434,7 @@ impl<'a> ExprResolver<'a> {
             SimplePattern::Named(_name, _args) => todo!(),
             SimplePattern::Bind(name, mutable) => {
                 let new = self.createValue(&name.name, pat.location.clone());
-                self.addInstruction(InstructionKind::Bind(new.clone(), root, *mutable), pat.location.clone());
+                self.addInstruction(InstructionKind::Bind(new.asFixed(), root, *mutable), pat.location.clone());
                 env.addValue(name.toString(), new);
             }
             SimplePattern::Tuple(args) => {
@@ -435,9 +458,13 @@ impl<'a> ExprResolver<'a> {
         self.setTargetBlockId(id);
         let value = self.resolveBlock(body, env);
         let lastBlock = self.body.getBlockById(self.targetBlockId);
-        let lastInstruction = lastBlock.instructions.last().expect("empty block");
-        if let InstructionKind::Return(_, _) = lastInstruction.kind {
-        } else {
+        let mut addReturn = true;
+        if let Some(lastInstruction) = lastBlock.instructions.last() {
+            if let InstructionKind::Return(_, _) = lastInstruction.kind {
+                addReturn = false;
+            }
+        }
+        if addReturn {
             let retValue = self.createValue("ret", body.location.clone());
             self.addImplicitInstruction(InstructionKind::Return(retValue, value), body.location.clone());
         }

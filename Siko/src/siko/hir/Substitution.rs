@@ -71,9 +71,10 @@ impl VariableSubstitution {
         self.substitutions.insert(old, new);
     }
 
-    pub fn get(&self, mut old: Variable) -> Variable {
-        old.location = Location::empty();
-        match self.substitutions.get(&old) {
+    pub fn get(&self, old: Variable) -> Variable {
+        let mut old2 = old.clone();
+        old2.location = Location::empty();
+        match self.substitutions.get(&old2) {
             Some(new) => new.applyVar(self),
             None => old,
         }

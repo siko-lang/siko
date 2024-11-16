@@ -196,8 +196,12 @@ impl MiniCGenerator {
                     Instruction::Store(dest, _) => {
                         localVars.insert(dest.clone());
                     }
-                    Instruction::LoadVar(_, _) => {}
-                    Instruction::Reference(_, _) => {}
+                    Instruction::LoadVar(dest, _) => {
+                        localVars.insert(dest.clone());
+                    }
+                    Instruction::Reference(dest, _) => {
+                        localVars.insert(dest.clone());
+                    }
                     Instruction::FunctionCallValue(dest, _, _) => {
                         localVars.insert(dest.clone());
                     }
@@ -209,8 +213,12 @@ impl MiniCGenerator {
                         localVars.insert(dest.clone());
                     }
                     Instruction::Jump(_) => {}
-                    Instruction::Memcpy(_, _) => {}
-                    Instruction::MemcpyPtr(_, _) => {}
+                    Instruction::Memcpy(_, dest) => {
+                        localVars.insert(dest.clone());
+                    }
+                    Instruction::MemcpyPtr(_, dest) => {
+                        localVars.insert(dest.clone());
+                    }
                     Instruction::Bitcast(dest, _) => {
                         localVars.insert(dest.clone());
                     }

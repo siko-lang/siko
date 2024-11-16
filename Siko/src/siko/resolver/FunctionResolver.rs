@@ -65,6 +65,7 @@ impl<'a> FunctionResolver<'a> {
                         location: id.location.clone(),
                         ty: Some(typeResolver.resolveType(ty)),
                         fixed: false,
+                        index: 0,
                     };
                     env.addArg(var);
                     IrParameter::Named(id.toString(), typeResolver.resolveType(ty), *mutable)

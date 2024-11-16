@@ -113,6 +113,9 @@ impl Apply for InstructionKind {
     fn apply(&self, sub: &TypeSubstitution) -> Self {
         match self {
             InstructionKind::FunctionCall(dest, name, args) => InstructionKind::FunctionCall(dest.apply(sub), name.clone(), args.apply(sub)),
+            InstructionKind::MethodCall(dest, receiver, name, args) => {
+                InstructionKind::MethodCall(dest.apply(sub), receiver.apply(sub), name.clone(), args.apply(sub))
+            }
             InstructionKind::DynamicFunctionCall(dest, callable, args) => {
                 InstructionKind::DynamicFunctionCall(dest.apply(sub), callable.apply(sub), args.apply(sub))
             }
@@ -186,6 +189,9 @@ impl ApplyVariable for InstructionKind {
     fn applyVar(&self, sub: &VariableSubstitution) -> Self {
         match self {
             InstructionKind::FunctionCall(dest, name, args) => InstructionKind::FunctionCall(dest.applyVar(sub), name.clone(), args.applyVar(sub)),
+            InstructionKind::MethodCall(dest, receiver, name, args) => {
+                InstructionKind::MethodCall(dest.applyVar(sub), receiver.applyVar(sub), name.clone(), args.applyVar(sub))
+            }
             InstructionKind::DynamicFunctionCall(dest, callable, args) => {
                 InstructionKind::DynamicFunctionCall(dest.applyVar(sub), callable.applyVar(sub), args.applyVar(sub))
             }

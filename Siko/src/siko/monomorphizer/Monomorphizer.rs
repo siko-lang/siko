@@ -108,6 +108,13 @@ impl Monomorphize for Instruction {
                 mono.addKey(Key::Function(name.clone(), ty_args));
                 InstructionKind::FunctionCall(dest.clone(), fn_name, args.clone())
             }
+            InstructionKind::Ref(dest, src) => {
+                if dest.ty.as_ref().unwrap().isReference() && src.ty.as_ref().unwrap().isReference() {
+                    InstructionKind::Assign(dest.clone(), src.clone())
+                } else {
+                    InstructionKind::Ref(dest.clone(), src.clone())
+                }
+            }
             k => k.clone(),
         };
         instruction.kind = kind.process(sub, mono);
@@ -120,6 +127,9 @@ impl Monomorphize for InstructionKind {
         match self {
             InstructionKind::FunctionCall(dest, name, args) => {
                 InstructionKind::FunctionCall(dest.process(sub, mono), name.clone(), args.process(sub, mono))
+            }
+            InstructionKind::MethodCall(_, _, _, _) => {
+                unreachable!("method in mono??")
             }
             InstructionKind::DynamicFunctionCall(dest, root, args) => {
                 InstructionKind::DynamicFunctionCall(dest.process(sub, mono), root.process(sub, mono), args.process(sub, mono))

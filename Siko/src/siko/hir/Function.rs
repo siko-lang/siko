@@ -101,6 +101,7 @@ pub struct Variable {
     pub location: Location,
     pub ty: Option<Type>,
     pub fixed: bool,
+    pub index: u32,
 }
 
 impl Variable {
@@ -127,9 +128,9 @@ impl Variable {
 impl Display for Variable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(ty) = &self.ty {
-            write!(f, "${}: {}", self.value, ty)
+            write!(f, "${}/{}: {}", self.value, self.index, ty)
         } else {
-            write!(f, "${}", self.value)
+            write!(f, "${}/{}", self.value, self.index)
         }
     }
 }
@@ -139,9 +140,11 @@ impl std::fmt::Debug for Variable {
         write!(f, "{}", self)
     }
 }
+
 #[derive(Clone, PartialEq)]
 pub enum InstructionKind {
     FunctionCall(Variable, QualifiedName, Vec<Variable>),
+    MethodCall(Variable, Variable, String, Vec<Variable>),
     DynamicFunctionCall(Variable, Variable, Vec<Variable>),
     ValueRef(Variable, Variable),
     FieldRef(Variable, Variable, String),
@@ -179,6 +182,7 @@ impl InstructionKind {
     pub fn getResultVar(&self) -> Option<Variable> {
         match self {
             InstructionKind::FunctionCall(v, _, _) => Some(v.clone()),
+            InstructionKind::MethodCall(v, _, _, _) => Some(v.clone()),
             InstructionKind::DynamicFunctionCall(v, _, _) => Some(v.clone()),
             InstructionKind::ValueRef(v, _) => Some(v.clone()),
             InstructionKind::FieldRef(v, _, _) => Some(v.clone()),
@@ -201,9 +205,58 @@ impl InstructionKind {
         }
     }
 
+    pub fn collectVariables(&self) -> Vec<Variable> {
+        match self {
+            InstructionKind::FunctionCall(var, _, args) => {
+                let mut vars = vec![var.clone()];
+                vars.extend(args.clone());
+                vars
+            }
+            InstructionKind::MethodCall(var, obj, _, args) => {
+                let mut vars = vec![var.clone(), obj.clone()];
+                vars.extend(args.clone());
+                vars
+            }
+            InstructionKind::DynamicFunctionCall(var, func, args) => {
+                let mut vars = vec![var.clone(), func.clone()];
+                vars.extend(args.clone());
+                vars
+            }
+            InstructionKind::ValueRef(var, target) => vec![var.clone(), target.clone()],
+            InstructionKind::FieldRef(var, target, _) => vec![var.clone(), target.clone()],
+            InstructionKind::TupleIndex(var, target, _) => vec![var.clone(), target.clone()],
+            InstructionKind::Bind(var, value, _) => vec![var.clone(), value.clone()],
+            InstructionKind::Tuple(var, elements) => {
+                let mut vars = vec![var.clone()];
+                vars.extend(elements.clone());
+                vars
+            }
+            InstructionKind::StringLiteral(var, _) => vec![var.clone()],
+            InstructionKind::IntegerLiteral(var, _) => vec![var.clone()],
+            InstructionKind::CharLiteral(var, _) => vec![var.clone()],
+            InstructionKind::Return(var, value) => vec![var.clone(), value.clone()],
+            InstructionKind::Ref(var, target) => vec![var.clone(), target.clone()],
+            InstructionKind::Drop(_) => vec![],
+            InstructionKind::Jump(var, _) => vec![var.clone()],
+            InstructionKind::Assign(var, value) => vec![var.clone(), value.clone()],
+            InstructionKind::DeclareVar(var) => vec![var.clone()],
+            InstructionKind::Transform(var, target, _) => vec![var.clone(), target.clone()],
+            InstructionKind::EnumSwitch(var, _) => {
+                vec![var.clone()]
+            }
+            InstructionKind::IntegerSwitch(var, _) => {
+                vec![var.clone()]
+            }
+            InstructionKind::StringSwitch(var, _) => {
+                vec![var.clone()]
+            }
+        }
+    }
+
     pub fn dump(&self) -> String {
         match self {
             InstructionKind::FunctionCall(dest, name, args) => format!("{} = call({}({:?}))", dest, name, args),
+            InstructionKind::MethodCall(dest, receiver, name, args) => format!("{} = methodcall({}.{}({:?}))", dest, receiver, name, args),
             InstructionKind::DynamicFunctionCall(dest, callable, args) => {
                 format!("{} = DYN_CALL({}, {:?})", dest, callable, args)
             }

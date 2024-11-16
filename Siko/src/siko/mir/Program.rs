@@ -59,6 +59,7 @@ impl Program {
     }
 
     pub fn toMiniC(&self) -> CProgram {
+        //println!("MIR before C gen {}", self);
         let mut builder = MinicBuilder::new(self);
         builder.lower()
     }

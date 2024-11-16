@@ -31,13 +31,12 @@ pub struct Typechecker<'a> {
     traitMethodSelector: &'a TraitMethodSelector,
     allocator: TypeVarAllocator,
     substitution: TypeSubstitution,
-    methodSources: BTreeMap<Variable, QualifiedName>,
-    methodCalls: BTreeMap<Variable, Variable>,
+    methodCalls: BTreeMap<Variable, QualifiedName>,
     varSwap: VariableSubstitution,
     types: BTreeMap<String, Type>,
     selfType: Option<Type>,
     mutables: BTreeSet<String>,
-    implicitRefs: BTreeSet<String>,
+    implicitRefs: BTreeSet<Variable>,
 }
 
 impl<'a> Typechecker<'a> {
@@ -48,7 +47,6 @@ impl<'a> Typechecker<'a> {
             traitMethodSelector: traitMethodSelector,
             allocator: TypeVarAllocator::new(),
             substitution: TypeSubstitution::new(),
-            methodSources: BTreeMap::new(),
             methodCalls: BTreeMap::new(),
             varSwap: VariableSubstitution::new(),
             types: BTreeMap::new(),
@@ -103,6 +101,9 @@ impl<'a> Typechecker<'a> {
                 for instruction in &block.instructions {
                     match &instruction.kind {
                         InstructionKind::FunctionCall(var, _, _) => {
+                            self.initializeVar(var);
+                        }
+                        InstructionKind::MethodCall(var, _, _, _) => {
                             self.initializeVar(var);
                         }
                         InstructionKind::DynamicFunctionCall(var, _, _) => {
@@ -212,11 +213,48 @@ impl<'a> Typechecker<'a> {
             let fnArg = fnArg.apply(&self.substitution);
             if !argTy.isReference() && fnArg.isReference() {
                 argTy = Type::Reference(Box::new(argTy), None);
-                self.implicitRefs.insert(arg.value.clone());
+                //println!("IMPLICIT REF FOR {}", arg);
+                self.implicitRefs.insert(arg.clone());
             }
             self.unify(argTy, fnArg, arg.location.clone());
         }
         self.unify(self.getType(resultVar), fnResult, resultVar.location.clone());
+    }
+
+    fn lookupMethod(&mut self, receiverType: Type, methodName: &String, location: Location) -> QualifiedName {
+        match receiverType.clone().unpackRef() {
+            Type::Named(name, _, _) => {
+                if let Some(classDef) = self.program.classes.get(&name) {
+                    let classDef = self.instantiateClass(classDef, &receiverType.unpackRef());
+                    for m in &classDef.methods {
+                        if m.name == *methodName {
+                            //println!("Added {} {}", dest, m.fullName);
+                            return m.fullName.clone();
+                        }
+                    }
+                    if let Some(methodName) = self.traitMethodSelector.get(methodName) {
+                        return methodName;
+                    }
+                    TypecheckerError::MethoddNotFound(methodName.clone(), location.clone()).report(self.ctx);
+                } else if let Some(enumDef) = self.program.enums.get(&name) {
+                    let enumDef = self.instantiateEnum(enumDef, &receiverType.unpackRef());
+                    for m in &enumDef.methods {
+                        if m.name == *methodName {
+                            return m.fullName.clone();
+                        }
+                    }
+                    if let Some(methodName) = self.traitMethodSelector.get(&methodName) {
+                        return methodName;
+                    }
+                    TypecheckerError::MethoddNotFound(methodName.clone(), location.clone()).report(self.ctx);
+                } else {
+                    TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
+                }
+            }
+            _ => {
+                TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
+            }
+        };
     }
 
     fn check(&mut self, f: &Function) {
@@ -232,24 +270,21 @@ impl<'a> Typechecker<'a> {
 
                     self.checkFunctionCall(args, dest, fnType);
                 }
-                InstructionKind::DynamicFunctionCall(dest, callable, args) => match self.methodSources.get(callable) {
-                    Some(name) => {
-                        let newCallable = callable.applyVar(&self.varSwap);
-                        let f = self.program.functions.get(&name).expect("Function not found");
-                        let fnType = f.getType();
-                        //println!("CHECK {} {} {}", name, fnType, f.result.hasSelfType());
-                        let mut newArgs = Vec::new();
-                        newArgs.push(newCallable);
-                        newArgs.extend(args.clone());
-                        self.checkFunctionCall(&newArgs, dest, fnType);
-                        //println!("Added method call {} {}", dest, callable);
-                        self.methodCalls.insert(dest.clone(), callable.clone());
-                    }
-                    None => {
-                        let fnType = self.getType(callable);
-                        self.checkFunctionCall(&args, dest, fnType);
-                    }
-                },
+                InstructionKind::MethodCall(dest, receiver, methodName, args) => {
+                    let receiverType = self.getType(receiver);
+                    let receiverType = receiverType.apply(&self.substitution);
+                    let name = self.lookupMethod(receiverType, methodName, instruction.location.clone());
+                    self.methodCalls.insert(dest.clone(), name.clone());
+                    let f = self.program.functions.get(&name).expect("Function not found");
+                    let fnType = f.getType();
+                    let mut args = args.clone();
+                    args.insert(0, receiver.clone());
+                    self.checkFunctionCall(&args, dest, fnType);
+                }
+                InstructionKind::DynamicFunctionCall(dest, callable, args) => {
+                    let fnType = self.getType(callable);
+                    self.checkFunctionCall(&args, dest, fnType);
+                }
                 InstructionKind::ValueRef(dest, value) => {
                     let receiverType = self.getType(value);
                     self.unify(receiverType, self.getType(dest), instruction.location.clone());
@@ -327,45 +362,6 @@ impl<'a> Typechecker<'a> {
                                     if f.name == *fieldName {
                                         self.unify(self.getType(dest), f.ty.clone(), instruction.location.clone());
                                         found = true;
-                                    }
-                                }
-                                if !found {
-                                    for m in &classDef.methods {
-                                        if m.name == *fieldName {
-                                            found = true;
-                                            //println!("Added {} {}", dest, m.fullName);
-                                            self.methodSources.insert(dest.asNotFixed(), m.fullName.clone());
-                                            self.varSwap.add(dest.asNotFixed(), receiver.clone());
-                                            break;
-                                        }
-                                    }
-                                }
-                                if !found {
-                                    if let Some(methodName) = self.traitMethodSelector.get(&fieldName) {
-                                        found = true;
-                                        self.methodSources.insert(dest.asNotFixed(), methodName);
-                                    }
-                                }
-                                if !found {
-                                    TypecheckerError::FieldNotFound(fieldName.clone(), instruction.location.clone()).report(self.ctx);
-                                }
-                            } else if let Some(enumDef) = self.program.enums.get(&name) {
-                                let enumDef = self.instantiateEnum(enumDef, &receiverType.unpackRef());
-                                let mut found = false;
-                                if !found {
-                                    for m in &enumDef.methods {
-                                        if m.name == *fieldName {
-                                            found = true;
-                                            self.methodSources.insert(dest.asNotFixed(), m.fullName.clone());
-                                            self.varSwap.add(dest.asNotFixed(), receiver.clone());
-                                            break;
-                                        }
-                                    }
-                                }
-                                if !found {
-                                    if let Some(methodName) = self.traitMethodSelector.get(&fieldName) {
-                                        found = true;
-                                        self.methodSources.insert(dest.asNotFixed(), methodName);
                                     }
                                 }
                                 if !found {
@@ -455,17 +451,33 @@ impl<'a> Typechecker<'a> {
         if let Some(selfType) = self.selfType.clone() {
             result.result = result.result.changeSelfType(selfType);
         }
+
         let mut nextImplicitRef = 0;
         let body = &mut result.body.as_mut().unwrap();
+
+        for block in &mut body.blocks {
+            for instruction in &mut block.instructions {
+                if let InstructionKind::MethodCall(dest, root, _, args) = &mut instruction.kind {
+                    if let Some(fnName) = self.methodCalls.get(&dest) {
+                        let mut newArgs = Vec::new();
+                        newArgs.push(root.clone());
+                        newArgs.extend(args.clone());
+                        instruction.kind = InstructionKind::FunctionCall(dest.asFixed(), fnName.clone(), newArgs);
+                    }
+                }
+            }
+        }
+
         for block in &mut body.blocks {
             let mut index = 0;
             loop {
                 if index >= block.instructions.len() {
                     break;
                 }
-                let instruction = &block.instructions[index];
-                if let Some(var) = instruction.kind.getResultVar() {
-                    if self.implicitRefs.contains(&var.value) {
+                let instruction = block.instructions[index].clone();
+                let vars = instruction.kind.collectVariables();
+                for var in vars {
+                    if self.implicitRefs.contains(&var) {
                         let mut dest = var.clone();
                         let fixedVar = var.asFixed();
                         dest.value = format!("implicitRef{}", nextImplicitRef);
@@ -479,7 +491,8 @@ impl<'a> Typechecker<'a> {
                             kind: kind,
                             location: instruction.location.clone(),
                         };
-                        block.instructions.insert(index + 1, implicitRef);
+                        block.instructions.insert(index, implicitRef);
+                        self.implicitRefs.remove(&var);
                     }
                 }
                 index += 1;
@@ -489,112 +502,15 @@ impl<'a> Typechecker<'a> {
         for block in &mut body.blocks {
             for instruction in &mut block.instructions {
                 instruction.kind = instruction.kind.applyVar(&self.varSwap);
-            }
-        }
-
-        for block in &mut body.blocks {
-            let mut index = 0;
-            loop {
-                if index >= block.instructions.len() {
-                    break;
-                }
-                let instruction = &block.instructions[index];
-                if let InstructionKind::Ref(dest, arg) = &instruction.kind {
-                    let argTy = self.getType(arg).apply(&self.substitution);
-                    if argTy.isReference() {
-                        self.varSwap.add(dest.asNotFixed(), arg.clone());
-                        block.instructions.remove(index);
-                        continue;
-                    }
-                }
-                index += 1;
-            }
-        }
-
-        for block in &mut body.blocks {
-            for instruction in &mut block.instructions {
-                instruction.kind = instruction.kind.applyVar(&self.varSwap);
-            }
-        }
-
-        for block in &mut body.blocks {
-            let mut index = 0;
-            loop {
-                if index >= block.instructions.len() {
-                    break;
-                }
-                let instruction = &block.instructions[index];
-                if let InstructionKind::FieldRef(dest, _, _) = &instruction.kind {
-                    if self.methodSources.contains_key(&dest.asNotFixed()) {
-                        block.instructions.remove(index);
-                        continue;
-                    }
-                }
-                index += 1;
-            }
-        }
-
-        for block in &mut body.blocks {
-            for instruction in &mut block.instructions {
-                if let InstructionKind::DynamicFunctionCall(dest, root, args) = &mut instruction.kind {
-                    if let Some(source) = self.methodCalls.get(&dest) {
-                        let name = self.methodSources.get(source).expect("Method not found for call!");
-                        let mut newArgs = Vec::new();
-                        newArgs.push(root.clone());
-                        newArgs.extend(args.clone());
-                        instruction.kind = InstructionKind::FunctionCall(dest.asFixed(), name.clone(), newArgs);
-                    }
-                }
             }
         }
 
         let mut varSwap = VariableSubstitution::new();
         varSwap.forced = true;
 
-        for param in &f.params {
-            let (useVar, newUseVar) = match &param {
-                Parameter::Named(name, ty, _) => {
-                    self.types.insert(name.clone(), ty.clone());
-                    (
-                        Variable {
-                            value: name.clone(),
-                            location: Location::empty(),
-                            ty: None,
-                            fixed: false,
-                        },
-                        Variable {
-                            value: name.clone(),
-                            location: Location::empty(),
-                            ty: Some(ty.clone()),
-                            fixed: false,
-                        },
-                    )
-                }
-                Parameter::SelfParam(_, ty) => {
-                    let name = format!("self");
-                    self.types.insert(name.clone(), ty.clone());
-                    (
-                        Variable {
-                            value: name.clone(),
-                            location: Location::empty(),
-                            ty: None,
-                            fixed: false,
-                        },
-                        Variable {
-                            value: name,
-                            location: Location::empty(),
-                            ty: Some(ty.clone()),
-                            fixed: false,
-                        },
-                    )
-                }
-            };
-            varSwap.add(useVar, newUseVar);
-        }
-
         for block in &mut body.blocks {
             for instruction in &mut block.instructions {
-                if let Some(var) = instruction.kind.getResultVar() {
+                for var in instruction.kind.collectVariables() {
                     let ty = self.getType(&var);
                     let ty = ty.apply(&self.substitution);
                     let mut newVar = var.clone();

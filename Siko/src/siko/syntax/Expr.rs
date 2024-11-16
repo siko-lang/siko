@@ -42,6 +42,7 @@ pub enum SimpleExpr {
     Name(Identifier),
     FieldAccess(Box<Expr>, Identifier),
     Call(Box<Expr>, Vec<Expr>),
+    MethodCall(Box<Expr>, Identifier, Vec<Expr>),
     For(Pattern, Box<Expr>, Box<Expr>),
     Loop(Pattern, Box<Expr>, Box<Expr>),
     BinaryOp(BinaryOp, Box<Expr>, Box<Expr>),

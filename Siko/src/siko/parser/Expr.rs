@@ -266,7 +266,11 @@ impl<'a> ExprParser for Parser<'a> {
                     }
                 }
                 self.expect(TokenKind::RightBracket(BracketKind::Paren));
-                current = self.buildExpr2(SimpleExpr::Call(Box::new(current), args), start.clone());
+                if let SimpleExpr::FieldAccess(receiver, name) = current.expr {
+                    current = self.buildExpr2(SimpleExpr::MethodCall(receiver, name, args), start.clone());
+                } else {
+                    current = self.buildExpr2(SimpleExpr::Call(Box::new(current), args), start.clone());
+                }
             } else {
                 break;
             }
