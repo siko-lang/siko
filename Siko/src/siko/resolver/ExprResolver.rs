@@ -163,7 +163,10 @@ impl<'a> ExprResolver<'a> {
     pub fn resolveExpr(&mut self, expr: &Expr, env: &mut Environment) -> Variable {
         match &expr.expr {
             SimpleExpr::Value(name) => match env.resolve(&name.name) {
-                Some(var) => self.indexVar(var),
+                Some(mut var) => {
+                    var.location = expr.location.clone();
+                    self.indexVar(var)
+                }
                 None => {
                     ResolverError::UnknownValue(name.name.clone(), name.location.clone()).report(self.ctx);
                 }
