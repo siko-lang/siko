@@ -25,6 +25,12 @@ fn reportError(ctx: &ReportContext, ty1: Type, ty2: Type, location: Location) {
     TypecheckerError::TypeMismatch(format!("{}", ty1), format!("{}", ty2), location).report(ctx)
 }
 
+struct MutableMethodCallInfo {
+    receiver: Variable,
+    baseType: Type,
+    selfLessType: Type,
+}
+
 pub struct Typechecker<'a> {
     ctx: &'a ReportContext,
     program: &'a Program,
@@ -36,6 +42,7 @@ pub struct Typechecker<'a> {
     selfType: Option<Type>,
     mutables: BTreeSet<String>,
     implicitRefs: BTreeSet<Variable>,
+    mutableMethodCalls: BTreeMap<Variable, MutableMethodCallInfo>,
 }
 
 impl<'a> Typechecker<'a> {
@@ -51,6 +58,7 @@ impl<'a> Typechecker<'a> {
             selfType: None,
             mutables: BTreeSet::new(),
             implicitRefs: BTreeSet::new(),
+            mutableMethodCalls: BTreeMap::new(),
         }
     }
 
@@ -271,12 +279,27 @@ impl<'a> Typechecker<'a> {
                 InstructionKind::MethodCall(dest, receiver, methodName, args) => {
                     let receiverType = self.getType(receiver);
                     let receiverType = receiverType.apply(&self.substitution);
-                    let name = self.lookupMethod(receiverType, methodName, instruction.location.clone());
+                    let name = self.lookupMethod(receiverType.clone(), methodName, instruction.location.clone());
                     self.methodCalls.insert(dest.clone(), name.clone());
                     let f = self.program.functions.get(&name).expect("Function not found");
-                    let fnType = f.getType();
+                    let mut fnType = f.getType();
                     let mut args = args.clone();
                     args.insert(0, receiver.clone());
+                    if self.mutables.contains(&receiver.value) && fnType.getResult().hasSelfType() {
+                        let originalType = fnType.getResult();
+                        fnType = fnType.changeMethodResult();
+                        let baseType = originalType.changeSelfType(receiverType);
+                        let selfLessType = originalType.getSelflessType();
+                        //println!("MUT METHOD {} => {}", originalType, selfLessType);
+                        self.mutableMethodCalls.insert(
+                            dest.clone(),
+                            MutableMethodCallInfo {
+                                receiver: receiver.clone(),
+                                baseType,
+                                selfLessType,
+                            },
+                        );
+                    }
                     self.checkFunctionCall(&args, dest, fnType);
                 }
                 InstructionKind::DynamicFunctionCall(dest, callable, args) => {
@@ -419,20 +442,21 @@ impl<'a> Typechecker<'a> {
         println!("Dumping {}", f.name);
         if let Some(body) = &f.body {
             for block in &body.blocks {
+                println!("{}:", block.id);
                 for instruction in &block.instructions {
                     match instruction.kind.getResultVar() {
                         Some(v) => match v.ty {
                             Some(ty) => {
-                                println!("{} : {}", instruction, ty);
+                                println!("  {} : {}", instruction, ty);
                             }
                             None => {
                                 let ty = self.getType(&v);
                                 let ty = ty.apply(&self.substitution);
-                                println!("{} : {} inferred", instruction, ty);
+                                println!("  {} : {} inferred", instruction, ty);
                             }
                         },
                         None => {
-                            println!("{}", instruction);
+                            println!("  {}", instruction);
                         }
                     }
                 }
@@ -440,18 +464,8 @@ impl<'a> Typechecker<'a> {
         }
     }
 
-    pub fn generate(&mut self, f: &Function) -> Function {
-        //println!("Generating {}", f.name);
-        if f.body.is_none() {
-            return f.clone();
-        }
-        let mut result = f.clone();
-        if let Some(selfType) = self.selfType.clone() {
-            result.result = result.result.changeSelfType(selfType);
-        }
-
-        let mut nextImplicitRef = 0;
-        let body = &mut result.body.as_mut().unwrap();
+    fn convertMethodCalls(&mut self, f: &mut Function) {
+        let body = &mut f.body.as_mut().unwrap();
 
         for block in &mut body.blocks {
             for instruction in &mut block.instructions {
@@ -465,6 +479,12 @@ impl<'a> Typechecker<'a> {
                 }
             }
         }
+    }
+
+    fn addImplicitRefs(&mut self, f: &mut Function) {
+        let mut nextImplicitRef = 0;
+
+        let body = &mut f.body.as_mut().unwrap();
 
         for block in &mut body.blocks {
             let mut index = 0;
@@ -478,14 +498,13 @@ impl<'a> Typechecker<'a> {
                 for var in vars {
                     if self.implicitRefs.contains(&var) {
                         let mut dest = var.clone();
-                        let fixedVar = var.clone();
                         dest.value = format!("implicitRef{}", nextImplicitRef);
                         nextImplicitRef += 1;
                         let ty = Type::Reference(Box::new(self.getType(&var)), None);
                         self.types.insert(dest.value.clone(), ty);
                         let mut varSwap = VariableSubstitution::new();
                         varSwap.add(var.clone(), dest.clone());
-                        let kind = InstructionKind::Ref(dest.clone(), fixedVar);
+                        let kind = InstructionKind::Ref(dest.clone(), var.clone());
                         let implicitRef = Instruction {
                             implicit: true,
                             kind: kind,
@@ -501,8 +520,93 @@ impl<'a> Typechecker<'a> {
                 index += 1;
             }
         }
+    }
 
+    fn transformMutableMethodCalls(&mut self, f: &mut Function) {
+        let mut nextImplicitResult = 0;
+
+        let body = &mut f.body.as_mut().unwrap();
+
+        for block in &mut body.blocks {
+            let mut index = 0;
+            loop {
+                if index >= block.instructions.len() {
+                    break;
+                }
+                let mut instruction = block.instructions[index].clone();
+                let vars = instruction.kind.collectVariables();
+                for var in vars {
+                    if let Some(info) = self.mutableMethodCalls.get(&var) {
+                        let mut dest = var.clone();
+                        dest.value = format!("implicitResult{}", nextImplicitResult);
+                        nextImplicitResult += 1;
+                        self.types.insert(dest.value.clone(), info.baseType.clone());
+                        let mut varSwap = VariableSubstitution::new();
+                        varSwap.add(var.clone(), dest.clone());
+                        let tupleTypes = info.selfLessType.getTupleTypes();
+                        let mut currentIndex = index + 1;
+                        if !tupleTypes.is_empty() {
+                            let kind = InstructionKind::TupleIndex(info.receiver.clone(), dest.clone(), 0);
+                            let selfIndex = Instruction {
+                                implicit: true,
+                                kind: kind,
+                                location: instruction.location.clone(),
+                            };
+                            block.instructions.insert(currentIndex, selfIndex);
+                            let mut args = Vec::new();
+                            for (argIndex, argType) in tupleTypes.iter().enumerate() {
+                                let mut argVar = var.clone();
+                                argVar.value = format!("argVar{}", nextImplicitResult);
+                                args.push(argVar.clone());
+                                nextImplicitResult += 1;
+                                self.types.insert(argVar.value.clone(), argType.clone());
+                                let kind = InstructionKind::TupleIndex(argVar.clone(), dest.clone(), (argIndex + 1) as i32);
+                                let tupleIndex = Instruction {
+                                    implicit: true,
+                                    kind: kind,
+                                    location: instruction.location.clone(),
+                                };
+                                block.instructions.insert(currentIndex, tupleIndex);
+                                currentIndex += 1;
+                            }
+                            let kind = InstructionKind::Tuple(var.clone(), args);
+                            let tuple = Instruction {
+                                implicit: true,
+                                kind: kind,
+                                location: instruction.location.clone(),
+                            };
+                            block.instructions.insert(currentIndex, tuple);
+                        } else {
+                            let kind = InstructionKind::Assign(info.receiver.clone(), dest.clone());
+                            let selfIndex = Instruction {
+                                implicit: true,
+                                kind: kind,
+                                location: instruction.location.clone(),
+                            };
+                            block.instructions.insert(currentIndex, selfIndex);
+                            let kind = InstructionKind::Tuple(var.clone(), Vec::new());
+                            let assign = Instruction {
+                                implicit: true,
+                                kind: kind,
+                                location: instruction.location.clone(),
+                            };
+                            block.instructions.insert(index + 1, assign);
+                        }
+                        instruction.kind = instruction.kind.applyVar(&varSwap);
+                        self.mutableMethodCalls.remove(&var);
+                        break;
+                    }
+                }
+                block.instructions[index] = instruction;
+                index += 1;
+            }
+        }
+    }
+
+    fn addTypes(&mut self, f: &mut Function) {
         let mut varSwap = VariableSubstitution::new();
+
+        let body = &mut f.body.as_mut().unwrap();
 
         for block in &mut body.blocks {
             for instruction in &mut block.instructions {
@@ -523,6 +627,24 @@ impl<'a> Typechecker<'a> {
                 instruction.kind = instruction.kind.applyVar(&varSwap);
             }
         }
+    }
+
+    pub fn generate(&mut self, f: &Function) -> Function {
+        //println!("Generating {}", f.name);
+        if f.body.is_none() {
+            return f.clone();
+        }
+
+        let mut result = f.clone();
+        if let Some(selfType) = self.selfType.clone() {
+            result.result = result.result.changeSelfType(selfType);
+        }
+
+        self.convertMethodCalls(&mut result);
+        self.addImplicitRefs(&mut result);
+        self.transformMutableMethodCalls(&mut result);
+        self.addTypes(&mut result);
+
         //self.dump(&result);
         self.verify(&result);
         result

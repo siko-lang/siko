@@ -59,6 +59,7 @@ extern struct Int_Int Int_Int_sub(struct Int_Int v1, struct Int_Int v2) {
 }
 
 extern struct Bool_Bool Int_Int_eq(struct Int_Int v1, struct Int_Int v2) {
+    //printf("Int_Int_eq %ld %ld\n", v1.field0, v2.field0);
     struct Bool_Bool result;
     result.field0 = v1.field0 == v2.field0;
     return result;

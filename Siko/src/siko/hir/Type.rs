@@ -138,6 +138,39 @@ impl Type {
         }
     }
 
+    pub fn getResult(&self) -> Type {
+        match &self {
+            Type::Function(_, result) => *result.clone(),
+            _ => panic!("not a function!"),
+        }
+    }
+
+    pub fn getSelflessType(&self) -> Type {
+        match &self {
+            Type::Tuple(args) => {
+                assert!(args.len() > 0);
+                assert_eq!(args[0], Type::SelfType);
+                Type::Tuple(args[1..].to_vec())
+            }
+            Type::SelfType => Type::Tuple(Vec::new()),
+            _ => panic!("type does not have self!"),
+        }
+    }
+
+    pub fn getTupleTypes(&self) -> Vec<Type> {
+        match &self {
+            Type::Tuple(args) => args.clone(),
+            _ => Vec::new(),
+        }
+    }
+
+    pub fn changeMethodResult(&self) -> Type {
+        match &self {
+            Type::Function(args, result) => Type::Function(args.clone(), Box::new(result.getSelflessType())),
+            _ => panic!("type is not a function!"),
+        }
+    }
+
     pub fn isConcrete(&self) -> bool {
         match &self {
             Type::Named(_, args, _) => {
