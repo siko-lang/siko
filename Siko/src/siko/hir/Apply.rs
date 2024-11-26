@@ -219,10 +219,6 @@ impl ApplyVariable for InstructionKind {
 
 impl ApplyVariable for Variable {
     fn applyVar(&self, sub: &VariableSubstitution) -> Self {
-        if self.fixed && !sub.forced {
-            self.clone()
-        } else {
-            sub.get(self.clone())
-        }
+        sub.get(self.clone())
     }
 }

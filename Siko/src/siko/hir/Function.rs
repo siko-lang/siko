@@ -100,23 +100,10 @@ pub struct Variable {
     pub value: String,
     pub location: Location,
     pub ty: Option<Type>,
-    pub fixed: bool,
     pub index: u32,
 }
 
 impl Variable {
-    pub fn asFixed(&self) -> Variable {
-        let mut f = self.clone();
-        f.fixed = true;
-        f
-    }
-
-    pub fn asNotFixed(&self) -> Variable {
-        let mut f = self.clone();
-        f.fixed = false;
-        f
-    }
-
     pub fn getType(&self) -> &Type {
         match &self.ty {
             Some(ty) => ty,

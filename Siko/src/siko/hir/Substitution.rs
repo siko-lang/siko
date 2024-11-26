@@ -53,14 +53,12 @@ impl Display for TypeSubstitution {
 
 #[derive(Debug)]
 pub struct VariableSubstitution {
-    pub forced: bool,
     substitutions: BTreeMap<Variable, Variable>,
 }
 
 impl VariableSubstitution {
     pub fn new() -> VariableSubstitution {
         VariableSubstitution {
-            forced: false,
             substitutions: BTreeMap::new(),
         }
     }

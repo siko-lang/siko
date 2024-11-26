@@ -32,7 +32,6 @@ pub struct Typechecker<'a> {
     allocator: TypeVarAllocator,
     substitution: TypeSubstitution,
     methodCalls: BTreeMap<Variable, QualifiedName>,
-    varSwap: VariableSubstitution,
     types: BTreeMap<String, Type>,
     selfType: Option<Type>,
     mutables: BTreeSet<String>,
@@ -48,7 +47,6 @@ impl<'a> Typechecker<'a> {
             allocator: TypeVarAllocator::new(),
             substitution: TypeSubstitution::new(),
             methodCalls: BTreeMap::new(),
-            varSwap: VariableSubstitution::new(),
             types: BTreeMap::new(),
             selfType: None,
             mutables: BTreeSet::new(),
@@ -462,7 +460,7 @@ impl<'a> Typechecker<'a> {
                         let mut newArgs = Vec::new();
                         newArgs.push(root.clone());
                         newArgs.extend(args.clone());
-                        instruction.kind = InstructionKind::FunctionCall(dest.asFixed(), fnName.clone(), newArgs);
+                        instruction.kind = InstructionKind::FunctionCall(dest.clone(), fnName.clone(), newArgs);
                     }
                 }
             }
@@ -474,39 +472,37 @@ impl<'a> Typechecker<'a> {
                 if index >= block.instructions.len() {
                     break;
                 }
-                let instruction = block.instructions[index].clone();
+                let mut instruction = block.instructions[index].clone();
                 let vars = instruction.kind.collectVariables();
+                let mut instructionIndex = index;
                 for var in vars {
                     if self.implicitRefs.contains(&var) {
                         let mut dest = var.clone();
-                        let fixedVar = var.asFixed();
+                        let fixedVar = var.clone();
                         dest.value = format!("implicitRef{}", nextImplicitRef);
                         nextImplicitRef += 1;
                         let ty = Type::Reference(Box::new(self.getType(&var)), None);
                         self.types.insert(dest.value.clone(), ty);
-                        self.varSwap.add(var.asNotFixed(), dest.clone());
-                        let kind = InstructionKind::Ref(dest.asFixed(), fixedVar);
+                        let mut varSwap = VariableSubstitution::new();
+                        varSwap.add(var.clone(), dest.clone());
+                        let kind = InstructionKind::Ref(dest.clone(), fixedVar);
                         let implicitRef = Instruction {
                             implicit: true,
                             kind: kind,
                             location: instruction.location.clone(),
                         };
+                        instruction.kind = instruction.kind.applyVar(&varSwap);
                         block.instructions.insert(index, implicitRef);
+                        instructionIndex += 1;
                         self.implicitRefs.remove(&var);
                     }
                 }
+                block.instructions[instructionIndex] = instruction;
                 index += 1;
             }
         }
 
-        for block in &mut body.blocks {
-            for instruction in &mut block.instructions {
-                instruction.kind = instruction.kind.applyVar(&self.varSwap);
-            }
-        }
-
         let mut varSwap = VariableSubstitution::new();
-        varSwap.forced = true;
 
         for block in &mut body.blocks {
             for instruction in &mut block.instructions {
@@ -515,14 +511,8 @@ impl<'a> Typechecker<'a> {
                     let ty = ty.apply(&self.substitution);
                     let mut newVar = var.clone();
                     newVar.ty = Some(ty.clone());
-                    let useVar = var.asNotFixed();
-                    let mut newUseVar = var.asNotFixed();
-                    newUseVar.ty = Some(ty);
                     if newVar != var {
                         varSwap.add(var, newVar);
-                    }
-                    if useVar != newUseVar {
-                        varSwap.add(useVar, newUseVar);
                     }
                 }
             }

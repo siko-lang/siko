@@ -154,7 +154,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         parentEnv: &'a Environment<'a>,
     ) -> MatchCompiler<'a, 'b> {
         let matchValue = resolver.createValue("match_var", matchLocation.clone());
-        resolver.addInstruction(InstructionKind::DeclareVar(matchValue.asFixed()), matchLocation.clone());
+        resolver.addInstruction(InstructionKind::DeclareVar(matchValue.clone()), matchLocation.clone());
         let contBlockId = resolver.createBlock();
         MatchCompiler {
             matchLocation: matchLocation,
@@ -442,7 +442,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     let value = self.resolver.createValue("tupleField", self.bodyLocation.clone());
                     self.resolver.addInstructionToBlock(
                         blockId,
-                        InstructionKind::TupleIndex(value.asFixed(), root.clone(), index as i32),
+                        InstructionKind::TupleIndex(value.clone(), root.clone(), index as i32),
                         self.bodyLocation.clone(),
                         false,
                     );
@@ -554,14 +554,16 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                                     let value = self.resolver.createValue("lit", self.bodyLocation.clone());
                                     self.resolver.addInstructionToBlock(
                                         current,
-                                        InstructionKind::StringLiteral(value.asFixed(), v.clone()),
+                                        InstructionKind::StringLiteral(value.clone(), v.clone()),
                                         self.bodyLocation.clone(),
                                         true,
                                     );
                                     let eqValue = self.resolver.createValue("eq", self.bodyLocation.clone());
+                                    let root = self.resolver.indexVar(root.clone());
+                                    let value = self.resolver.indexVar(value);
                                     self.resolver.addInstructionToBlock(
                                         current,
-                                        InstructionKind::FunctionCall(eqValue.clone(), getStringEqName(), vec![root.clone(), value.clone()]),
+                                        InstructionKind::FunctionCall(eqValue.clone(), getStringEqName(), vec![root, value]),
                                         self.bodyLocation.clone(),
                                         true,
                                     );
@@ -612,10 +614,8 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                         env.addValue(name.clone(), new);
                     }
                     let exprValue = self.resolver.resolveExpr(&branch.body, &mut env);
-                    self.resolver.addImplicitInstruction(
-                        InstructionKind::Assign(self.matchValue.asNotFixed(), exprValue),
-                        self.matchLocation.clone(),
-                    );
+                    self.resolver
+                        .addImplicitInstruction(InstructionKind::Assign(self.matchValue.clone(), exprValue), self.matchLocation.clone());
                     let jumpValue = self.resolver.createValue("jump", self.bodyLocation.clone());
                     self.resolver
                         .addImplicitInstruction(InstructionKind::Jump(jumpValue, self.contBlockId), self.bodyLocation.clone());

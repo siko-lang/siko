@@ -64,7 +64,6 @@ impl<'a> FunctionResolver<'a> {
                         value: id.toString(),
                         location: id.location.clone(),
                         ty: Some(typeResolver.resolveType(ty)),
-                        fixed: false,
                         index: 0,
                     };
                     env.addArg(var);
