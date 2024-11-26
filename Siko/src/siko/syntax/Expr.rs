@@ -41,6 +41,7 @@ pub enum SimpleExpr {
     SelfValue,
     Name(Identifier),
     FieldAccess(Box<Expr>, Identifier),
+    TupleIndex(Box<Expr>, String),
     Call(Box<Expr>, Vec<Expr>),
     MethodCall(Box<Expr>, Identifier, Vec<Expr>),
     For(Pattern, Box<Expr>, Box<Expr>),

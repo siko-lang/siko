@@ -253,6 +253,16 @@ impl<'a> ExprResolver<'a> {
                 );
                 value
             }
+            SimpleExpr::TupleIndex(receiver, index) => {
+                let receiver = self.resolveExpr(&receiver, env);
+                let receiver = self.indexVar(receiver);
+                let value = self.createValue("tupleIndex", expr.location.clone());
+                self.addInstruction(
+                    InstructionKind::TupleIndex(value.clone(), receiver, index.parse().unwrap()),
+                    expr.location.clone(),
+                );
+                value
+            }
             SimpleExpr::For(_, _, _) => todo!(),
             SimpleExpr::Loop(pattern, init, body) => {
                 let initId = self.resolveExpr(&init, env);
