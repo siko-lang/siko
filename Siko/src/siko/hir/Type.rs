@@ -145,12 +145,16 @@ impl Type {
         }
     }
 
-    pub fn getSelflessType(&self) -> Type {
+    pub fn getSelflessType(&self, finalValue: bool) -> Type {
         match &self {
             Type::Tuple(args) => {
                 assert!(args.len() > 0);
                 assert_eq!(args[0], Type::SelfType);
-                Type::Tuple(args[1..].to_vec())
+                if args.len() == 2 && finalValue {
+                    args[1].clone()
+                } else {
+                    Type::Tuple(args[1..].to_vec())
+                }
             }
             Type::SelfType => Type::Tuple(Vec::new()),
             _ => panic!("type does not have self!"),
@@ -166,7 +170,7 @@ impl Type {
 
     pub fn changeMethodResult(&self) -> Type {
         match &self {
-            Type::Function(args, result) => Type::Function(args.clone(), Box::new(result.getSelflessType())),
+            Type::Function(args, result) => Type::Function(args.clone(), Box::new(result.getSelflessType(true))),
             _ => panic!("type is not a function!"),
         }
     }
