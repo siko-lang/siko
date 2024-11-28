@@ -45,7 +45,7 @@ impl Type {
         }
     }
 
-    pub fn unpackRef(self) -> Type {
+    pub fn unpackRef(&self) -> &Type {
         match self {
             Type::Reference(ty, _) => ty.unpackRef(),
             ty => ty,

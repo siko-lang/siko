@@ -160,7 +160,7 @@ impl<'a> Builder<'a> {
         Some(block)
     }
 
-    fn lowerFunction(&mut self) -> MirFunction {
+    fn lowerFunction(&mut self) -> Option<MirFunction> {
         //println!("Lowering {}", self.function.name);
         let mut args = Vec::new();
         for arg in &self.function.params {
@@ -186,6 +186,7 @@ impl<'a> Builder<'a> {
             }
             FunctionKind::VariantCtor(i) => MirFunctionKind::VariantCtor(i),
             FunctionKind::Extern => MirFunctionKind::Extern,
+            FunctionKind::TraitMethodDecl => return None,
         };
         let mirFunction = MirFunction {
             name: convertName(&self.function.name),
@@ -193,7 +194,7 @@ impl<'a> Builder<'a> {
             result: lowerType(&self.function.result, &self.program),
             kind: kind,
         };
-        mirFunction
+        Some(mirFunction)
     }
 }
 
@@ -305,8 +306,9 @@ pub fn lowerProgram(program: &HirProgram) -> MirProgram {
 
     for (_, function) in &program.functions {
         let mut builder = Builder::new(program, function);
-        let f = builder.lowerFunction();
-        mirProgram.functions.push(f);
+        if let Some(f) = builder.lowerFunction() {
+            mirProgram.functions.push(f);
+        }
     }
 
     mirProgram

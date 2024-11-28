@@ -53,8 +53,8 @@ impl<'a> FunctionResolver<'a> {
         variants: &BTreeMap<QualifiedName, QualifiedName>,
         enums: &BTreeMap<QualifiedName, Enum>,
         name: QualifiedName,
+        typeResolver: &TypeResolver,
     ) -> IrFunction {
-        let typeResolver = TypeResolver::new(self.moduleResolver, &self.constraintContext);
         let mut params = Vec::new();
         let mut env = Environment::new();
         for (_, param) in f.params.iter().enumerate() {

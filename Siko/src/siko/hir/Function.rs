@@ -391,6 +391,7 @@ pub enum FunctionKind {
     VariantCtor(i64),
     ClassCtor,
     Extern,
+    TraitMethodDecl,
 }
 
 #[derive(Debug, Clone)]

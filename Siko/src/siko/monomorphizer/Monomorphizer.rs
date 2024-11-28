@@ -6,7 +6,7 @@ use std::{
 use crate::siko::{
     hir::{
         Apply::{instantiateClass, instantiateEnum, Apply},
-        Function::{Block, Body, Instruction, InstructionKind, Parameter, Variable},
+        Function::{Block, Body, FunctionKind, Instruction, InstructionKind, Parameter, Variable},
         Program::Program,
         Substitution::TypeSubstitution,
         Type::{createTypeSubstitution, createTypeSubstitutionFrom, formatTypes, Type},
@@ -78,11 +78,7 @@ impl Monomorphize for Parameter {
 
 impl Monomorphize for Instruction {
     fn process(&self, sub: &TypeSubstitution, mono: &mut Monomorphizer) -> Self {
-        // println!(
-        //     "MONO INSTR {} / {}",
-        //     instruction,
-        //     instruction.ty.clone().unwrap()
-        // );
+        //println!("MONO INSTR {}", self);
         let mut instruction = self.clone();
         let kind: InstructionKind = match &self.kind {
             InstructionKind::FunctionCall(dest, name, args) => {
@@ -102,7 +98,12 @@ impl Monomorphize for Instruction {
                 //println!("fn type {}", fn_ty);
                 //println!("context type {}", context_ty);
                 let sub = createTypeSubstitution(&context_ty, &fn_ty);
-                let ty_args: Vec<_> = target_fn.constraintContext.typeParameters.iter().map(|ty| ty.apply(&sub)).collect();
+                let ty_args: Vec<_> = target_fn
+                    .constraintContext
+                    .typeParameters
+                    .iter()
+                    .map(|ty| ty.typeParameter.apply(&sub))
+                    .collect();
                 //println!("{} type args {}", name, formatTypes(&ty_args));
                 let fn_name = mono.get_mono_name(name, &ty_args);
                 mono.addKey(Key::Function(name.clone(), ty_args));
@@ -256,7 +257,16 @@ impl<'a> Monomorphizer<'a> {
     fn monomorphizeFunction(&mut self, name: QualifiedName, args: Vec<Type>) {
         //println!("MONO FN: {} {}", name, formatTypes(&args));
         let function = self.program.functions.get(&name).expect("function not found in mono").clone();
-        let mut sub = createTypeSubstitutionFrom(&function.constraintContext.typeParameters, &args);
+        if function.kind == FunctionKind::TraitMethodDecl {
+            return;
+        }
+        let params = function
+            .constraintContext
+            .typeParameters
+            .iter()
+            .map(|t| t.typeParameter.clone())
+            .collect();
+        let mut sub = createTypeSubstitutionFrom(&params, &args);
         sub.forced = true;
         let mut monoFn = function.clone();
         monoFn.result = self.processType(monoFn.result.apply(&sub));

@@ -2,8 +2,14 @@ use crate::siko::{location::Report::ReportContext, qualifiedname::QualifiedName,
 use std::collections::BTreeMap;
 
 #[derive(Clone)]
+pub struct TraitMethodSelection {
+    pub traitName: QualifiedName,
+    pub method: QualifiedName,
+}
+
+#[derive(Clone)]
 pub struct TraitMethodSelector {
-    methods: BTreeMap<String, QualifiedName>,
+    methods: BTreeMap<String, TraitMethodSelection>,
 }
 
 impl TraitMethodSelector {
@@ -11,14 +17,14 @@ impl TraitMethodSelector {
         TraitMethodSelector { methods: BTreeMap::new() }
     }
 
-    pub fn add(&mut self, ctx: &ReportContext, name: Identifier, method: QualifiedName) {
-        let p = self.methods.insert(name.toString(), method);
+    pub fn add(&mut self, ctx: &ReportContext, name: Identifier, selection: TraitMethodSelection) {
+        let p = self.methods.insert(name.toString(), selection);
         if p.is_some() {
             ResolverError::Ambiguous(name.toString(), name.location.clone()).report(ctx);
         }
     }
 
-    pub fn get(&self, field: &String) -> Option<QualifiedName> {
+    pub fn get(&self, field: &String) -> Option<TraitMethodSelection> {
         self.methods.get(field).cloned()
     }
 }

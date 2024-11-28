@@ -1,5 +1,4 @@
 use super::ModuleResolver::ModuleResolver;
-use crate::siko::hir::ConstraintContext::ConstraintContext;
 use crate::siko::hir::Type::{Type as IrType, TypeVar};
 use crate::siko::syntax::Identifier::Identifier;
 use crate::siko::syntax::Type::{Type, TypeParameterDeclaration};
@@ -11,12 +10,12 @@ pub struct TypeResolver<'a> {
 }
 
 impl<'a> TypeResolver<'a> {
-    pub fn new(moduleResolver: &'a ModuleResolver, constraintContext: &'a ConstraintContext) -> TypeResolver<'a> {
+    pub fn new(moduleResolver: &'a ModuleResolver, typeParameters: &'a Vec<IrType>) -> TypeResolver<'a> {
         let mut r = TypeResolver {
             moduleResolver: moduleResolver,
             typeParameters: BTreeSet::new(),
         };
-        for param in &constraintContext.typeParameters {
+        for param in typeParameters {
             r.addTypeParams(param.clone());
         }
         r

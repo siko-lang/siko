@@ -2,13 +2,13 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::siko::{
     hir::{
+        ConstraintContext::ConstraintContext,
         Data::{Class, Enum, Field, Variant},
         Function::{Block, Body, Function, FunctionKind, Instruction, InstructionKind, Parameter, Variable},
         Program::Program,
         Type::Type,
     },
     qualifiedname::QualifiedName,
-    resolver::Resolver::createConstraintContext,
 };
 
 fn getTuple(ty: &Type) -> QualifiedName {
@@ -224,7 +224,7 @@ pub fn removeTuples(program: &Program) -> Program {
                 params: params,
                 result: Type::Named(name.clone(), Vec::new(), None),
                 body: None,
-                constraintContext: createConstraintContext(&None),
+                constraintContext: ConstraintContext::new(),
                 kind: FunctionKind::ClassCtor,
             };
             result.classes.insert(name.clone(), tupleStruct);

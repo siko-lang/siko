@@ -1,11 +1,11 @@
 use crate::siko::{
     hir::{
-        ConstraintContext::ConstraintContext,
+        ConstraintContext::{ConstraintContext, TypeParameter},
         Data::MethodInfo as DataMethodInfo,
         Function::{FunctionKind, Parameter},
         Program::Program,
         Trait::MethodInfo as TraitMethodInfo,
-        TraitMethodSelector::TraitMethodSelector,
+        TraitMethodSelector::{TraitMethodSelection, TraitMethodSelector},
         Type::TypeVar,
     },
     location::Report::ReportContext,
@@ -34,17 +34,31 @@ use crate::siko::hir::Trait::Instance as IrInstance;
 use crate::siko::hir::Trait::Trait as IrTrait;
 use crate::siko::hir::Type::Type as IrType;
 
-pub fn createConstraintContext(decl: &Option<TypeParameterDeclaration>) -> ConstraintContext {
-    addTypeParams(ConstraintContext::new(), decl)
+pub fn createConstraintContext(decl: &Option<TypeParameterDeclaration>, typeResolver: &TypeResolver) -> ConstraintContext {
+    addTypeParams(ConstraintContext::new(), decl, typeResolver)
 }
 
-fn addTypeParams(mut context: ConstraintContext, decl: &Option<TypeParameterDeclaration>) -> ConstraintContext {
+fn addTypeParams(mut context: ConstraintContext, decl: &Option<TypeParameterDeclaration>, typeResolver: &TypeResolver) -> ConstraintContext {
     if let Some(decl) = decl {
         for param in &decl.params {
-            context.add(IrType::Var(TypeVar::Named(param.name.name.clone())));
+            let irParam = TypeParameter {
+                typeParameter: IrType::Var(TypeVar::Named(param.name.name.clone())),
+                constraints: param.constraints.iter().map(|ty| typeResolver.resolveType(ty)).collect(),
+            };
+            context.add(irParam);
         }
     }
     context
+}
+
+fn getTypeParams(decl: &Option<TypeParameterDeclaration>) -> Vec<IrType> {
+    let mut params = Vec::new();
+    if let Some(decl) = decl {
+        for param in &decl.params {
+            params.push(IrType::Var(TypeVar::Named(param.name.name.clone())));
+        }
+    }
+    params
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -119,8 +133,9 @@ impl<'a> Resolver<'a> {
             for item in &m.items {
                 match item {
                     ModuleItem::Class(c) => {
-                        let constraintContext = createConstraintContext(&c.typeParams);
-                        let typeResolver = TypeResolver::new(moduleResolver, &constraintContext);
+                        let typeParams = getTypeParams(&c.typeParams);
+                        let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
+                        let constraintContext = createConstraintContext(&c.typeParams, &typeResolver);
                         let irType = typeResolver.createDataType(&c.name, &c.typeParams);
                         let mut irClass = IrClass::new(moduleResolver.resolverName(&c.name), irType.clone());
                         let mut ctorParams = Vec::new();
@@ -144,8 +159,9 @@ impl<'a> Resolver<'a> {
                         self.program.classes.insert(irClass.name.clone(), irClass);
                     }
                     ModuleItem::Enum(e) => {
-                        let constraintContext = createConstraintContext(&e.typeParams);
-                        let typeResolver = TypeResolver::new(moduleResolver, &constraintContext);
+                        let typeParams = getTypeParams(&e.typeParams);
+                        let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
+                        let constraintContext = createConstraintContext(&e.typeParams, &typeResolver);
                         let irType = typeResolver.createDataType(&e.name, &e.typeParams);
                         let mut irEnum = IrEnum::new(moduleResolver.resolverName(&e.name), irType.clone());
                         for (index, variant) in e.variants.iter().enumerate() {
@@ -219,8 +235,8 @@ impl<'a> Resolver<'a> {
                     }
                     ModuleItem::Instance(i) => {
                         i.id = self.instances.len() as u64;
-                        let constraintContext = createConstraintContext(&i.typeParams);
-                        let typeResolver = TypeResolver::new(moduleResolver, &constraintContext);
+                        let typeParams = getTypeParams(&i.typeParams);
+                        let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
                         let ty = typeResolver.resolveType(&i.ty);
                         let (name, args) = match ty {
                             IrType::Named(name, args, _) => (name, args),
@@ -253,7 +269,9 @@ impl<'a> Resolver<'a> {
                 match item {
                     ModuleItem::Class(c) => {
                         let owner = createSelfType(&c.name, c.typeParams.as_ref(), moduleResolver);
-                        let constraintContext = createConstraintContext(&c.typeParams);
+                        let typeParams = getTypeParams(&c.typeParams);
+                        let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
+                        let constraintContext = createConstraintContext(&c.typeParams, &typeResolver);
                         for method in &c.methods {
                             let functionResolver = FunctionResolver::new(moduleResolver, constraintContext.clone(), Some(owner.clone()));
                             let irFunction = functionResolver.resolve(
@@ -263,13 +281,16 @@ impl<'a> Resolver<'a> {
                                 &self.variants,
                                 &self.program.enums,
                                 owner.getName().unwrap().add(method.name.toString()),
+                                &typeResolver,
                             );
                             self.program.functions.insert(irFunction.name.clone(), irFunction);
                         }
                     }
                     ModuleItem::Enum(e) => {
                         let owner = createSelfType(&e.name, e.typeParams.as_ref(), moduleResolver);
-                        let constraintContext = createConstraintContext(&e.typeParams);
+                        let typeParams = getTypeParams(&e.typeParams);
+                        let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
+                        let constraintContext = createConstraintContext(&e.typeParams, &typeResolver);
                         for method in &e.methods {
                             let functionResolver = FunctionResolver::new(moduleResolver, constraintContext.clone(), Some(owner.clone()));
                             let irFunction = functionResolver.resolve(
@@ -279,6 +300,7 @@ impl<'a> Resolver<'a> {
                                 &self.variants,
                                 &self.program.enums,
                                 owner.getName().unwrap().add(method.name.toString()),
+                                &typeResolver,
                             );
                             self.program.functions.insert(irFunction.name.clone(), irFunction);
                         }
@@ -287,39 +309,57 @@ impl<'a> Resolver<'a> {
                         let name = moduleResolver.resolverName(&t.name);
                         let irTrait = self.traits.get(&name).unwrap();
                         let owner = irTrait.params.first().expect("first trait param not found");
-                        let mut constraintContext = createConstraintContext(&t.typeParams);
-                        for param in &irTrait.params {
-                            match &param {
-                                IrType::Var(TypeVar::Named(_)) => constraintContext.add(param.clone()),
-                                _ => panic!("Trait param is not type var!"),
-                            }
-                        }
-                        for dep in &irTrait.deps {
-                            match &dep {
-                                IrType::Var(TypeVar::Named(_)) => constraintContext.add(dep.clone()),
-                                _ => panic!("Trait dep is not type var!"),
-                            }
-                        }
+                        let typeParams = getTypeParams(&t.typeParams);
+                        let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
+                        let constraintContext = createConstraintContext(&t.typeParams, &typeResolver);
+                        // for param in &irTrait.params {
+                        //     match &param {
+                        //         IrType::Var(TypeVar::Named(_)) => {
+                        //             let irParam = TypeParameter {
+                        //                 typeParameter: param.clone(),
+                        //                 constraints:
+                        //             };
+                        //             constraintContext.add(irParam)
+                        //         }
+                        //         _ => panic!("Trait param is not type var!"),
+                        //     }
+                        // }
+                        // for dep in &irTrait.deps {
+                        //     match &dep {
+                        //         IrType::Var(TypeVar::Named(_)) => constraintContext.add(dep.clone()),
+                        //         _ => panic!("Trait dep is not type var!"),
+                        //     }
+                        // }
                         for method in &t.methods {
-                            let constraintContext = addTypeParams(constraintContext.clone(), &method.typeParams);
+                            let constraintContext = addTypeParams(constraintContext.clone(), &method.typeParams, &typeResolver);
                             let functionResolver = FunctionResolver::new(moduleResolver, constraintContext, Some(owner.clone()));
-                            let irFunction = functionResolver.resolve(
+                            let mut irFunction = functionResolver.resolve(
                                 self.ctx,
                                 method,
                                 &self.emptyVariants,
                                 &self.variants,
                                 &self.program.enums,
                                 QualifiedName::Item(Box::new(name.clone()), method.name.toString()),
+                                &typeResolver,
                             );
-                            traitMethodSelector.add(self.ctx, method.name.clone(), irFunction.name.clone());
+                            if method.body.is_none() {
+                                irFunction.kind = FunctionKind::TraitMethodDecl;
+                            }
+                            let selection = TraitMethodSelection {
+                                method: irFunction.name.clone(),
+                                traitName: name.clone(),
+                            };
+                            traitMethodSelector.add(self.ctx, method.name.clone(), selection);
                             self.program.functions.insert(irFunction.name.clone(), irFunction);
                         }
                     }
                     ModuleItem::Instance(i) => {
                         let irInstance = &self.instances[i.id as usize];
-                        let constraintContext = createConstraintContext(&i.typeParams);
+                        let typeParams = getTypeParams(&i.typeParams);
+                        let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
+                        let constraintContext = createConstraintContext(&i.typeParams, &typeResolver);
                         for method in &i.methods {
-                            let constraintContext = addTypeParams(constraintContext.clone(), &method.typeParams);
+                            let constraintContext = addTypeParams(constraintContext.clone(), &method.typeParams, &typeResolver);
                             let functionResolver = FunctionResolver::new(moduleResolver, constraintContext, Some(irInstance.types[0].clone()));
                             let irFunction = functionResolver.resolve(
                                 self.ctx,
@@ -331,12 +371,15 @@ impl<'a> Resolver<'a> {
                                     Box::new(QualifiedName::Item(Box::new(irInstance.traitName.clone()), method.name.toString())),
                                     irInstance.id,
                                 ),
+                                &typeResolver,
                             );
                             self.program.functions.insert(irFunction.name.clone(), irFunction);
                         }
                     }
                     ModuleItem::Function(f) => {
-                        let constraintContext = createConstraintContext(&f.typeParams);
+                        let typeParams = getTypeParams(&f.typeParams);
+                        let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
+                        let constraintContext = createConstraintContext(&f.typeParams, &typeResolver);
                         let functionResolver = FunctionResolver::new(moduleResolver, constraintContext, None);
                         let irFunction = functionResolver.resolve(
                             self.ctx,
@@ -345,6 +388,7 @@ impl<'a> Resolver<'a> {
                             &self.variants,
                             &self.program.enums,
                             moduleResolver.resolverName(&f.name),
+                            &typeResolver,
                         );
                         self.program.functions.insert(irFunction.name.clone(), irFunction);
                     }

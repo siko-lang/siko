@@ -11,7 +11,7 @@ use crate::siko::{
         Program::Program,
         Substitution::{TypeSubstitution, VariableSubstitution},
         TraitMethodSelector::TraitMethodSelector,
-        Type::Type,
+        Type::{Type, TypeVar},
         TypeVarAllocator::TypeVarAllocator,
         Unification::unify,
     },
@@ -31,6 +31,12 @@ struct MutableMethodCallInfo {
     selfLessType: Type,
 }
 
+struct Constraint {
+    ty: Type,
+    traitName: QualifiedName,
+    location: Location,
+}
+
 pub struct Typechecker<'a> {
     ctx: &'a ReportContext,
     program: &'a Program,
@@ -43,6 +49,7 @@ pub struct Typechecker<'a> {
     mutables: BTreeSet<String>,
     implicitRefs: BTreeSet<Variable>,
     mutableMethodCalls: BTreeMap<Variable, MutableMethodCallInfo>,
+    constraints: Vec<Constraint>,
 }
 
 impl<'a> Typechecker<'a> {
@@ -59,6 +66,7 @@ impl<'a> Typechecker<'a> {
             mutables: BTreeSet::new(),
             implicitRefs: BTreeSet::new(),
             mutableMethodCalls: BTreeMap::new(),
+            constraints: Vec::new(),
         }
     }
 
@@ -66,6 +74,7 @@ impl<'a> Typechecker<'a> {
         self.initialize(f);
         //self.dump(f);
         self.check(f);
+        self.checkConstraints(f);
         //self.dump(f);
         self.generate(f)
     }
@@ -227,35 +236,44 @@ impl<'a> Typechecker<'a> {
         self.unify(self.getType(resultVar), fnResult, resultVar.location.clone());
     }
 
+    fn lookupTraitMethod(&mut self, receiverType: Type, methodName: &String, location: Location) -> QualifiedName {
+        if let Some(selection) = self.traitMethodSelector.get(methodName) {
+            self.constraints.push(Constraint {
+                ty: receiverType.clone(),
+                traitName: selection.traitName,
+                location: location,
+            });
+            return selection.method.clone();
+        }
+        TypecheckerError::MethoddNotFound(methodName.clone(), location.clone()).report(self.ctx);
+    }
+
     fn lookupMethod(&mut self, receiverType: Type, methodName: &String, location: Location) -> QualifiedName {
-        match receiverType.clone().unpackRef() {
+        match receiverType.unpackRef() {
             Type::Named(name, _, _) => {
                 if let Some(classDef) = self.program.classes.get(&name) {
-                    let classDef = self.instantiateClass(classDef, &receiverType.unpackRef());
+                    let classDef = self.instantiateClass(classDef, receiverType.unpackRef());
                     for m in &classDef.methods {
                         if m.name == *methodName {
                             //println!("Added {} {}", dest, m.fullName);
                             return m.fullName.clone();
                         }
                     }
-                    if let Some(methodName) = self.traitMethodSelector.get(methodName) {
-                        return methodName;
-                    }
-                    TypecheckerError::MethoddNotFound(methodName.clone(), location.clone()).report(self.ctx);
+                    return self.lookupTraitMethod(receiverType, methodName, location);
                 } else if let Some(enumDef) = self.program.enums.get(&name) {
-                    let enumDef = self.instantiateEnum(enumDef, &receiverType.unpackRef());
+                    let enumDef = self.instantiateEnum(enumDef, receiverType.unpackRef());
                     for m in &enumDef.methods {
                         if m.name == *methodName {
                             return m.fullName.clone();
                         }
                     }
-                    if let Some(methodName) = self.traitMethodSelector.get(&methodName) {
-                        return methodName;
-                    }
-                    TypecheckerError::MethoddNotFound(methodName.clone(), location.clone()).report(self.ctx);
+                    return self.lookupTraitMethod(receiverType, methodName, location);
                 } else {
                     TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
                 }
+            }
+            Type::Var(TypeVar::Named(_)) => {
+                return self.lookupTraitMethod(receiverType, methodName, location);
             }
             _ => {
                 TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
@@ -375,10 +393,10 @@ impl<'a> Typechecker<'a> {
                 InstructionKind::FieldRef(dest, receiver, fieldName) => {
                     let receiverType = self.getType(receiver);
                     let receiverType = receiverType.apply(&self.substitution);
-                    match receiverType.clone().unpackRef() {
+                    match receiverType.unpackRef() {
                         Type::Named(name, _, _) => {
                             if let Some(classDef) = self.program.classes.get(&name) {
-                                let classDef = self.instantiateClass(classDef, &receiverType.unpackRef());
+                                let classDef = self.instantiateClass(classDef, receiverType.unpackRef());
                                 let mut found = false;
                                 for f in &classDef.fields {
                                     if f.name == *fieldName {
@@ -413,6 +431,13 @@ impl<'a> Typechecker<'a> {
                     }
                 }
             }
+        }
+    }
+
+    fn checkConstraints(&mut self, f: &Function) {
+        //println!("context {}", f.constraintContext);
+        for constraint in &self.constraints {
+            //println!("{} impls {}", constraint.ty, constraint.traitName);
         }
     }
 
