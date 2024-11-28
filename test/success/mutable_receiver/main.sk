@@ -20,6 +20,18 @@ class Object {
     }
 }
 
+enum Adt {
+    Foo(Int),
+    Bar(Int)
+
+    fn set(self, a: Int) -> Self {
+        match self {
+            Foo(v) -> Foo(v.add(a)),
+            Bar(v) -> Bar(v.add(a)),
+        }
+    }
+}
+
 fn expectsTuple(t: ()) {
 
 }
@@ -37,6 +49,12 @@ fn main() {
     assert(t.1.eq(5));
     assert(o1.value.eq(4));
     o1.foo();
+    let mut adt = Foo(4);
+    adt.set(5);
+    match adt {
+        Foo(x) -> assert(x.eq(9)),
+        Bar(_) -> assert(False),
+    };
 }
 
 }
