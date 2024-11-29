@@ -26,7 +26,7 @@ pub fn createSelfType(name: &Identifier, typeParams: Option<&TypeParameterDeclar
         Some(typeParams) => {
             let mut args = Vec::new();
             for param in &typeParams.params {
-                let arg = IrType::Var(TypeVar::Named(param.name.name.clone()));
+                let arg = IrType::Var(TypeVar::Named(param.name.clone()));
                 args.push(arg);
             }
             args

@@ -42,8 +42,8 @@ fn addTypeParams(mut context: ConstraintContext, decl: &Option<TypeParameterDecl
     if let Some(decl) = decl {
         for param in &decl.params {
             let irParam = TypeParameter {
-                typeParameter: IrType::Var(TypeVar::Named(param.name.name.clone())),
-                constraints: param.constraints.iter().map(|ty| typeResolver.resolveType(ty)).collect(),
+                typeParameter: IrType::Var(TypeVar::Named(param.name.clone())),
+                constraints: Vec::new(), //param.constraints.iter().map(|ty| typeResolver.resolveType(ty)).collect(),
             };
             context.add(irParam);
         }
@@ -55,7 +55,7 @@ fn getTypeParams(decl: &Option<TypeParameterDeclaration>) -> Vec<IrType> {
     let mut params = Vec::new();
     if let Some(decl) = decl {
         for param in &decl.params {
-            params.push(IrType::Var(TypeVar::Named(param.name.name.clone())));
+            params.push(IrType::Var(TypeVar::Named(param.name.clone())));
         }
     }
     params
@@ -219,10 +219,6 @@ impl<'a> Resolver<'a> {
                             irParams.push(irParam);
                         }
                         let mut irDeps = Vec::new();
-                        for dep in &t.deps {
-                            let irDep = IrType::Var(TypeVar::Named(dep.toString()));
-                            irDeps.push(irDep);
-                        }
                         let mut irTrait = IrTrait::new(moduleResolver.resolverName(&t.name), irParams, irDeps);
                         for method in &t.methods {
                             irTrait.methods.push(TraitMethodInfo {
@@ -237,17 +233,14 @@ impl<'a> Resolver<'a> {
                         i.id = self.instances.len() as u64;
                         let typeParams = getTypeParams(&i.typeParams);
                         let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
-                        let ty = typeResolver.resolveType(&i.ty);
-                        let (name, args) = match ty {
-                            IrType::Named(name, args, _) => (name, args),
-                            ty => ResolverError::InvalidInstanceType(format!("{}", ty), i.location.clone()).report(self.ctx),
-                        };
-                        let mut irInstance = IrInstance::new(i.id, name.clone(), args);
+                        let traitName = moduleResolver.resolverName(&i.traitName);
+                        let args = i.types.iter().map(|ty| typeResolver.resolveType(ty)).collect();
+                        let mut irInstance = IrInstance::new(i.id, traitName.clone(), args);
                         for method in &i.methods {
                             irInstance.methods.push(TraitMethodInfo {
                                 name: method.name.toString(),
                                 fullName: QualifiedName::Instance(
-                                    Box::new(QualifiedName::Item(Box::new(name.clone()), method.name.toString())),
+                                    Box::new(QualifiedName::Item(Box::new(traitName.clone()), method.name.toString())),
                                     irInstance.id,
                                 ),
                             })

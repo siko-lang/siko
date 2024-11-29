@@ -1,12 +1,18 @@
-use crate::siko::syntax::Type::*;
+use crate::siko::{
+    syntax::{Identifier::Identifier, Type::*},
+    util::error,
+};
 
 use super::{
     Parser::*,
-    Token::{ArrowKind, BracketKind, KeywordKind, MiscKind, OperatorKind, TokenKind},
+    Token::{ArrowKind, BracketKind, KeywordKind, MiscKind, TokenKind},
 };
 
 pub trait TypeParser {
     fn parseType(&mut self) -> Type;
+    fn parseTypeConstraint(&mut self) -> Constraint;
+    fn parseTypeConstraints(&mut self) -> Vec<Constraint>;
+    fn parseTypeParams(&mut self) -> Vec<Identifier>;
     fn parseTypeParameterDeclaration(&mut self) -> TypeParameterDeclaration;
 }
 
@@ -77,49 +83,73 @@ impl<'a> TypeParser for Parser<'a> {
         }
     }
 
-    fn parseTypeParameterDeclaration(&mut self) -> TypeParameterDeclaration {
-        let mut params = Vec::new();
-        let mut constraints = Vec::new();
-        let mut afterParam = false;
-        self.expect(TokenKind::LeftBracket(BracketKind::Square));
-        while !self.check(TokenKind::RightBracket(BracketKind::Square)) {
-            if afterParam {
-                let constraint = self.parseType();
-                constraints.push(constraint);
+    fn parseTypeConstraint(&mut self) -> Constraint {
+        let traitName = self.parseTypeIdentifier();
+        let mut args = Vec::new();
+        if self.check(TokenKind::LeftBracket(BracketKind::Square)) {
+            self.expect(TokenKind::LeftBracket(BracketKind::Square));
+            while !self.check(TokenKind::RightBracket(BracketKind::Square)) {
+                let ty = self.parseType();
                 if self.check(TokenKind::Misc(MiscKind::Comma)) {
                     self.expect(TokenKind::Misc(MiscKind::Comma));
+                    args.push(ConstraintArgument::Type(ty));
                     continue;
-                } else {
-                    break;
                 }
-            } else {
-                let param = self.parseTypeIdentifier();
-                let mut deps = Vec::new();
-                if self.check(TokenKind::Misc(MiscKind::Colon)) {
-                    self.expect(TokenKind::Misc(MiscKind::Colon));
-                    loop {
-                        let dep = self.parseType();
-                        deps.push(dep);
-                        if self.check(TokenKind::Op(OperatorKind::Add)) {
-                            self.expect(TokenKind::Op(OperatorKind::Add));
-                        } else {
-                            break;
-                        }
+                if self.check(TokenKind::Misc(MiscKind::Equal)) {
+                    self.expect(TokenKind::Misc(MiscKind::Equal));
+                    let associatedTy = self.parseType();
+                    if let Type::Named(name, _) = ty {
+                        args.push(ConstraintArgument::AssociatedType(name, associatedTy));
+                    } else {
+                        error(format!("Unexpected associated type {:?}", ty));
                     }
                 }
-                params.push(TypeParameter {
-                    name: param,
-                    constraints: deps,
-                });
-                if self.check(TokenKind::Misc(MiscKind::Comma)) {
-                    self.expect(TokenKind::Misc(MiscKind::Comma));
-                    continue;
-                }
-                if self.check(TokenKind::Arrow(ArrowKind::DoubleRight)) {
-                    self.expect(TokenKind::Arrow(ArrowKind::DoubleRight));
-                    afterParam = true;
-                }
             }
+        }
+        self.expect(TokenKind::RightBracket(BracketKind::Square));
+        Constraint {
+            traitName: traitName,
+            args: args,
+        }
+    }
+
+    fn parseTypeConstraints(&mut self) -> Vec<Constraint> {
+        let mut constraints = Vec::new();
+        while self.check(TokenKind::TypeIdentifier) {
+            let constraint = self.parseTypeConstraint();
+            constraints.push(constraint);
+            if self.check(TokenKind::Misc(MiscKind::Comma)) {
+                self.expect(TokenKind::Misc(MiscKind::Comma));
+                continue;
+            } else {
+                break;
+            }
+        }
+        constraints
+    }
+
+    fn parseTypeParams(&mut self) -> Vec<Identifier> {
+        let mut params = Vec::new();
+        while self.check(TokenKind::TypeIdentifier) {
+            let param = self.parseTypeIdentifier();
+            params.push(param);
+            if self.check(TokenKind::Misc(MiscKind::Comma)) {
+                self.expect(TokenKind::Misc(MiscKind::Comma));
+                continue;
+            } else {
+                break;
+            }
+        }
+        params
+    }
+
+    fn parseTypeParameterDeclaration(&mut self) -> TypeParameterDeclaration {
+        let mut constraints = Vec::new();
+        self.expect(TokenKind::LeftBracket(BracketKind::Square));
+        let params = self.parseTypeParams();
+        if self.check(TokenKind::Misc(MiscKind::Colon)) {
+            self.expect(TokenKind::Misc(MiscKind::Colon));
+            constraints = self.parseTypeConstraints();
         }
         self.expect(TokenKind::RightBracket(BracketKind::Square));
         TypeParameterDeclaration { params, constraints }

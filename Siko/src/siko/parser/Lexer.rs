@@ -135,10 +135,7 @@ impl Lexer {
                 }
             }
             if invalidLiteral {
-                self.addError(LexerError::InvalidIdentifier(
-                    self.current.clone(),
-                    self.span.clone(),
-                ));
+                self.addError(LexerError::InvalidIdentifier(self.current.clone(), self.span.clone()));
                 self.resetSpan();
                 self.resetCurrent();
             } else {
@@ -177,6 +174,7 @@ impl Lexer {
                     "continue" => Token::Keyword(KeywordKind::Continue),
                     "break" => Token::Keyword(KeywordKind::Break),
                     "implicit" => Token::Keyword(KeywordKind::Implicit),
+                    "type" => Token::Keyword(KeywordKind::Type),
                     "_" => Token::Misc(MiscKind::Wildcard),
                     _ => Token::VarIdentifier(self.current.clone()),
                 };
