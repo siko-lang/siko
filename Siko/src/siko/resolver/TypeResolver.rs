@@ -5,7 +5,7 @@ use crate::siko::syntax::Type::{Type, TypeParameterDeclaration};
 use std::collections::BTreeSet;
 
 pub struct TypeResolver<'a> {
-    moduleResolver: &'a ModuleResolver<'a>,
+    pub moduleResolver: &'a ModuleResolver<'a>,
     typeParameters: BTreeSet<IrType>,
 }
 

@@ -1,31 +1,35 @@
 use std::fmt::Display;
 
-use super::Type::{formatTypes, Type};
+use crate::siko::qualifiedname::QualifiedName;
+
+use super::Type::Type;
 
 #[derive(Debug, Clone)]
-pub struct TypeParameter {
-    pub typeParameter: Type,
-    pub constraints: Vec<Type>,
+pub enum Constraint {
+    Instance(QualifiedName, Vec<Type>),
+    AssociatedType(QualifiedName, Type),
 }
 
 #[derive(Debug, Clone)]
 pub struct ConstraintContext {
-    pub typeParameters: Vec<TypeParameter>,
+    pub typeParameters: Vec<Type>,
+    pub constraints: Vec<Constraint>,
 }
 
 impl ConstraintContext {
     pub fn new() -> ConstraintContext {
-        ConstraintContext { typeParameters: Vec::new() }
+        ConstraintContext {
+            typeParameters: Vec::new(),
+            constraints: Vec::new(),
+        }
     }
 
-    pub fn add(&mut self, param: TypeParameter) {
+    pub fn addTypeParam(&mut self, param: Type) {
         self.typeParameters.push(param);
     }
-}
 
-impl Display for TypeParameter {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{}: {}", self.typeParameter, formatTypes(&self.constraints))
+    pub fn addConstraint(&mut self, constraint: Constraint) {
+        self.constraints.push(constraint);
     }
 }
 

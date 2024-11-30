@@ -42,6 +42,24 @@ pub struct TypeParameterDeclaration {
     pub constraints: Vec<Constraint>,
 }
 
+impl fmt::Display for TypeParameterDeclaration {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let params = self.params.iter().map(|param| format!("{}", param)).collect::<Vec<_>>().join(", ");
+
+        if self.constraints.is_empty() {
+            write!(f, "[{}]", params)
+        } else {
+            let constraints = self
+                .constraints
+                .iter()
+                .map(|constraint| format!("{}", constraint))
+                .collect::<Vec<_>>()
+                .join(", ");
+            write!(f, "[{}: {}]", params, constraints)
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConstraintArgument {
     Type(Type),

@@ -1,6 +1,6 @@
 use crate::siko::{
     hir::{
-        ConstraintContext::{ConstraintContext, TypeParameter},
+        ConstraintContext::{Constraint as IrConstraint, ConstraintContext},
         Data::MethodInfo as DataMethodInfo,
         Function::{FunctionKind, Parameter},
         Program::Program,
@@ -13,7 +13,7 @@ use crate::siko::{
     resolver::FunctionResolver::FunctionResolver,
     syntax::{
         Module::{Import, Module, ModuleItem},
-        Type::TypeParameterDeclaration,
+        Type::{Constraint, ConstraintArgument, TypeParameterDeclaration},
     },
     util::error,
 };
@@ -40,12 +40,30 @@ pub fn createConstraintContext(decl: &Option<TypeParameterDeclaration>, typeReso
 
 fn addTypeParams(mut context: ConstraintContext, decl: &Option<TypeParameterDeclaration>, typeResolver: &TypeResolver) -> ConstraintContext {
     if let Some(decl) = decl {
+        println!("Processing {}", decl);
         for param in &decl.params {
-            let irParam = TypeParameter {
-                typeParameter: IrType::Var(TypeVar::Named(param.name.clone())),
-                constraints: Vec::new(), //param.constraints.iter().map(|ty| typeResolver.resolveType(ty)).collect(),
-            };
-            context.add(irParam);
+            let irParam = IrType::Var(TypeVar::Named(param.name.clone()));
+            context.addTypeParam(irParam);
+        }
+        for constraint in &decl.constraints {
+            let traitName = typeResolver.moduleResolver.resolverName(&constraint.traitName);
+            let mut args = Vec::new();
+            for arg in &constraint.args {
+                match arg {
+                    ConstraintArgument::Type(ty) => {
+                        let irTy = typeResolver.resolveType(ty);
+                        args.push(irTy);
+                    }
+                    ConstraintArgument::AssociatedType(name, ty) => {
+                        let itemName = traitName.add(name.toString());
+                        let irTy = typeResolver.resolveType(ty);
+                        let irConstraint = IrConstraint::AssociatedType(itemName, irTy);
+                        context.addConstraint(irConstraint);
+                    }
+                }
+            }
+            let irConstraint = IrConstraint::Instance(traitName, args);
+            context.addConstraint(irConstraint);
         }
     }
     context
@@ -218,8 +236,7 @@ impl<'a> Resolver<'a> {
                             let irParam = IrType::Var(TypeVar::Named(param.toString()));
                             irParams.push(irParam);
                         }
-                        let mut irDeps = Vec::new();
-                        let mut irTrait = IrTrait::new(moduleResolver.resolverName(&t.name), irParams, irDeps);
+                        let mut irTrait = IrTrait::new(moduleResolver.resolverName(&t.name), irParams);
                         for method in &t.methods {
                             irTrait.methods.push(TraitMethodInfo {
                                 name: method.name.toString(),

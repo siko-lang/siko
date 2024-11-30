@@ -12,16 +12,14 @@ pub struct MethodInfo {
 pub struct Trait {
     pub name: QualifiedName,
     pub params: Vec<Type>,
-    pub deps: Vec<Type>,
     pub methods: Vec<MethodInfo>,
 }
 
 impl Trait {
-    pub fn new(name: QualifiedName, params: Vec<Type>, deps: Vec<Type>) -> Trait {
+    pub fn new(name: QualifiedName, params: Vec<Type>) -> Trait {
         Trait {
             name: name,
             params: params,
-            deps: deps,
             methods: Vec::new(),
         }
     }

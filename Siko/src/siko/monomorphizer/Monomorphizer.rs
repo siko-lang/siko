@@ -98,12 +98,7 @@ impl Monomorphize for Instruction {
                 //println!("fn type {}", fn_ty);
                 //println!("context type {}", context_ty);
                 let sub = createTypeSubstitution(&context_ty, &fn_ty);
-                let ty_args: Vec<_> = target_fn
-                    .constraintContext
-                    .typeParameters
-                    .iter()
-                    .map(|ty| ty.typeParameter.apply(&sub))
-                    .collect();
+                let ty_args: Vec<_> = target_fn.constraintContext.typeParameters.iter().map(|ty| ty.apply(&sub)).collect();
                 //println!("{} type args {}", name, formatTypes(&ty_args));
                 let fn_name = mono.get_mono_name(name, &ty_args);
                 mono.addKey(Key::Function(name.clone(), ty_args));
@@ -260,12 +255,7 @@ impl<'a> Monomorphizer<'a> {
         if function.kind == FunctionKind::TraitMethodDecl {
             return;
         }
-        let params = function
-            .constraintContext
-            .typeParameters
-            .iter()
-            .map(|t| t.typeParameter.clone())
-            .collect();
+        let params = function.constraintContext.typeParameters.iter().map(|ty| ty.clone()).collect();
         let mut sub = createTypeSubstitutionFrom(&params, &args);
         sub.forced = true;
         let mut monoFn = function.clone();
