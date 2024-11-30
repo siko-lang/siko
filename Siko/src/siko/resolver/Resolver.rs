@@ -4,7 +4,7 @@ use crate::siko::{
         Data::MethodInfo as DataMethodInfo,
         Function::{FunctionKind, Parameter},
         Program::Program,
-        Trait::{AssociatedType, MethodInfo as TraitMethodInfo},
+        Trait::{AssociatedType, MethodInfo},
         TraitMethodSelector::{TraitMethodSelection, TraitMethodSelector},
         Type::TypeVar,
     },
@@ -40,13 +40,13 @@ pub fn createConstraintContext(decl: &Option<TypeParameterDeclaration>, typeReso
 
 fn addTypeParams(mut context: ConstraintContext, decl: &Option<TypeParameterDeclaration>, typeResolver: &TypeResolver) -> ConstraintContext {
     if let Some(decl) = decl {
-        println!("Processing {}", decl);
+        //println!("Processing {}", decl);
         for param in &decl.params {
             let irParam = IrType::Var(TypeVar::Named(param.name.clone()));
             context.addTypeParam(irParam);
         }
         for constraint in &decl.constraints {
-            println!("Processing constraint {}", constraint);
+            //println!("Processing constraint {}", constraint);
             let traitName = typeResolver.moduleResolver.resolverName(&constraint.traitName);
             let mut args = Vec::new();
             for arg in &constraint.args {
@@ -244,9 +244,10 @@ impl<'a> Resolver<'a> {
                         }
                         let mut irTrait = IrTrait::new(traitName, irParams, associatedTypes);
                         for method in &t.methods {
-                            irTrait.methods.push(TraitMethodInfo {
+                            irTrait.methods.push(MethodInfo {
                                 name: method.name.toString(),
                                 fullName: QualifiedName::Item(Box::new(irTrait.name.clone()), method.name.toString()),
+                                default: method.body.is_some(),
                             })
                         }
                         //println!("Trait {:?}", irTrait);
@@ -286,15 +287,16 @@ impl<'a> Resolver<'a> {
                         }
                         let mut irInstance = IrInstance::new(i.id, traitName.clone(), args, associatedTypes, constraintContext);
                         for method in &i.methods {
-                            irInstance.methods.push(TraitMethodInfo {
+                            irInstance.methods.push(MethodInfo {
                                 name: method.name.toString(),
                                 fullName: QualifiedName::Instance(
                                     Box::new(QualifiedName::Item(Box::new(traitName.clone()), method.name.toString())),
                                     irInstance.id,
                                 ),
+                                default: false,
                             })
                         }
-                        println!("Instance {}", irInstance);
+                        //println!("Instance {}", irInstance);
                         self.instances.push(irInstance);
                     }
                     _ => {}
@@ -401,10 +403,28 @@ impl<'a> Resolver<'a> {
                         let irInstance = &self.instances[i.id as usize];
                         let typeParams = getTypeParams(&i.typeParams);
                         let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
-                        let constraintContext = createConstraintContext(&i.typeParams, &typeResolver);
+                        let traitDef = self.traits.get(&irInstance.traitName).expect("trait not found");
+                        let mut allTraitMethods = BTreeSet::new();
+                        let mut neededTraitMethods = BTreeSet::new();
+                        for method in &traitDef.methods {
+                            allTraitMethods.insert(method.name.clone());
+                            if method.default {
+                                neededTraitMethods.insert(method.name.clone());
+                            }
+                        }
+                        let mut implementedMethods = BTreeSet::new();
                         for method in &i.methods {
+                            implementedMethods.insert(method.name.clone());
+                            if !allTraitMethods.contains(&method.name.name) {
+                                ResolverError::InvalidInstanceMember(
+                                    method.name.name.clone(),
+                                    irInstance.traitName.toString(),
+                                    method.name.location.clone(),
+                                )
+                                .report(self.ctx);
+                            }
                             //println!("Processing instance method {}", method.name);
-                            let constraintContext = addTypeParams(constraintContext.clone(), &method.typeParams, &typeResolver);
+                            let constraintContext = addTypeParams(irInstance.constraintContext.clone(), &method.typeParams, &typeResolver);
                             let functionResolver = FunctionResolver::new(moduleResolver, constraintContext, Some(irInstance.types[0].clone()));
                             let irFunction = functionResolver.resolve(
                                 self.ctx,

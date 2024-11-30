@@ -8,6 +8,7 @@ use super::{ConstraintContext::ConstraintContext, Type::Type};
 pub struct MethodInfo {
     pub name: String,
     pub fullName: QualifiedName,
+    pub default: bool,
 }
 
 impl fmt::Display for MethodInfo {

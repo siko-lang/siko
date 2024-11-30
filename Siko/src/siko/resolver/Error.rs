@@ -13,6 +13,7 @@ pub enum ResolverError {
     BreakOutsideLoop(Location),
     ContinueOutsideLoop(Location),
     AssociatedTypeNotFound(String, String, Location),
+    InvalidInstanceMember(String, String, Location),
     InvalidAssignment(Location),
 }
 
@@ -62,6 +63,11 @@ impl ResolverError {
             }
             ResolverError::AssociatedTypeNotFound(ty, traitName, l) => {
                 let slogan = format!("Associated type {} not found in trait {}", ctx.yellow(ty), ctx.yellow(traitName));
+                let r = Report::new(ctx, slogan, Some(l.clone()));
+                r.print();
+            }
+            ResolverError::InvalidInstanceMember(name, traitName, l) => {
+                let slogan = format!("Method {} not found in trait {}", ctx.yellow(name), ctx.yellow(traitName));
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }
