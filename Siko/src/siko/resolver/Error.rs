@@ -1,4 +1,7 @@
-use crate::siko::location::{Location::Location, Report::Report, Report::ReportContext};
+use crate::siko::location::{
+    Location::Location,
+    Report::{Report, ReportContext},
+};
 
 pub enum ResolverError {
     UnknownValue(String, Location),
@@ -9,7 +12,7 @@ pub enum ResolverError {
     MissingPattern(Vec<String>, Location),
     BreakOutsideLoop(Location),
     ContinueOutsideLoop(Location),
-    InvalidInstanceType(String, Location),
+    AssociatedTypeNotFound(String, String, Location),
     InvalidAssignment(Location),
 }
 
@@ -57,8 +60,8 @@ impl ResolverError {
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }
-            ResolverError::InvalidInstanceType(ty, l) => {
-                let slogan = format!("Invalid instance type {}", ctx.yellow(ty));
+            ResolverError::AssociatedTypeNotFound(ty, traitName, l) => {
+                let slogan = format!("Associated type {} not found in trait {}", ctx.yellow(ty), ctx.yellow(traitName));
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }

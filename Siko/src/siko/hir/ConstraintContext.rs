@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::siko::qualifiedname::QualifiedName;
+use crate::siko::{hir::Type::formatTypes, qualifiedname::QualifiedName};
 
 use super::Type::Type;
 
@@ -10,6 +10,22 @@ pub enum Constraint {
     AssociatedType(QualifiedName, Type),
 }
 
+impl Display for Constraint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Constraint::Instance(name, types) => {
+                if types.is_empty() {
+                    write!(f, "{}", name)
+                } else {
+                    write!(f, "{}[{}]", name, formatTypes(types))
+                }
+            }
+            Constraint::AssociatedType(name, ty) => {
+                write!(f, "{} = {}", name, ty)
+            }
+        }
+    }
+}
 #[derive(Debug, Clone)]
 pub struct ConstraintContext {
     pub typeParameters: Vec<Type>,
@@ -35,11 +51,16 @@ impl ConstraintContext {
 
 impl Display for ConstraintContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "[")?;
-        for typeParameter in &self.typeParameters {
-            writeln!(f, "{}", typeParameter)?;
+        write!(f, "args: {}", formatTypes(&self.typeParameters))?;
+        write!(f, " constraints: (")?;
+        for (index, c) in self.constraints.iter().enumerate() {
+            if index == 0 {
+                write!(f, "{}", c)?;
+            } else {
+                write!(f, ", {}", c)?;
+            }
         }
-        writeln!(f, "]")?;
+        write!(f, ")")?;
         Ok(())
     }
 }

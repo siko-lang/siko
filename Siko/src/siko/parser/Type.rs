@@ -90,11 +90,6 @@ impl<'a> TypeParser for Parser<'a> {
             self.expect(TokenKind::LeftBracket(BracketKind::Square));
             while !self.check(TokenKind::RightBracket(BracketKind::Square)) {
                 let ty = self.parseType();
-                if self.check(TokenKind::Misc(MiscKind::Comma)) {
-                    self.expect(TokenKind::Misc(MiscKind::Comma));
-                    args.push(ConstraintArgument::Type(ty));
-                    continue;
-                }
                 if self.check(TokenKind::Misc(MiscKind::Equal)) {
                     self.expect(TokenKind::Misc(MiscKind::Equal));
                     let associatedTy = self.parseType();
@@ -103,6 +98,12 @@ impl<'a> TypeParser for Parser<'a> {
                     } else {
                         error(format!("Unexpected associated type {:?}", ty));
                     }
+                } else {
+                    args.push(ConstraintArgument::Type(ty));
+                }
+                if self.check(TokenKind::Misc(MiscKind::Comma)) {
+                    self.expect(TokenKind::Misc(MiscKind::Comma));
+                    continue;
                 }
             }
         }
