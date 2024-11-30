@@ -4,7 +4,7 @@ use crate::siko::{
         Data::MethodInfo as DataMethodInfo,
         Function::{FunctionKind, Parameter},
         Program::Program,
-        Trait::{AssociatedType, MethodInfo},
+        Trait::{AssociatedType, MemberInfo},
         TraitMethodSelector::{TraitMethodSelection, TraitMethodSelector},
         Type::TypeVar,
     },
@@ -244,7 +244,7 @@ impl<'a> Resolver<'a> {
                         }
                         let mut irTrait = IrTrait::new(traitName, irParams, associatedTypes);
                         for method in &t.methods {
-                            irTrait.methods.push(MethodInfo {
+                            irTrait.members.push(MemberInfo {
                                 name: method.name.toString(),
                                 fullName: QualifiedName::Item(Box::new(irTrait.name.clone()), method.name.toString()),
                                 default: method.body.is_some(),
@@ -287,7 +287,7 @@ impl<'a> Resolver<'a> {
                         }
                         let mut irInstance = IrInstance::new(i.id, traitName.clone(), args, associatedTypes, constraintContext);
                         for method in &i.methods {
-                            irInstance.methods.push(MethodInfo {
+                            irInstance.members.push(MemberInfo {
                                 name: method.name.toString(),
                                 fullName: QualifiedName::Instance(
                                     Box::new(QualifiedName::Item(Box::new(traitName.clone()), method.name.toString())),
@@ -404,18 +404,18 @@ impl<'a> Resolver<'a> {
                         let typeParams = getTypeParams(&i.typeParams);
                         let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
                         let traitDef = self.traits.get(&irInstance.traitName).expect("trait not found");
-                        let mut allTraitMethods = BTreeSet::new();
-                        let mut neededTraitMethods = BTreeSet::new();
-                        for method in &traitDef.methods {
-                            allTraitMethods.insert(method.name.clone());
-                            if method.default {
-                                neededTraitMethods.insert(method.name.clone());
+                        let mut allTraitMembers = BTreeSet::new();
+                        let mut neededTraitMembers = BTreeSet::new();
+                        for method in &traitDef.members {
+                            allTraitMembers.insert(method.name.clone());
+                            if !method.default {
+                                neededTraitMembers.insert(method.name.clone());
                             }
                         }
-                        let mut implementedMethods = BTreeSet::new();
+                        let mut implementedMembers = BTreeSet::new();
                         for method in &i.methods {
-                            implementedMethods.insert(method.name.clone());
-                            if !allTraitMethods.contains(&method.name.name) {
+                            implementedMembers.insert(method.name.clone());
+                            if !allTraitMembers.contains(&method.name.name) {
                                 ResolverError::InvalidInstanceMember(
                                     method.name.name.clone(),
                                     irInstance.traitName.toString(),
@@ -423,6 +423,7 @@ impl<'a> Resolver<'a> {
                                 )
                                 .report(self.ctx);
                             }
+                            neededTraitMembers.remove(&method.name.name);
                             //println!("Processing instance method {}", method.name);
                             let constraintContext = addTypeParams(irInstance.constraintContext.clone(), &method.typeParams, &typeResolver);
                             let functionResolver = FunctionResolver::new(moduleResolver, constraintContext, Some(irInstance.types[0].clone()));
@@ -439,6 +440,14 @@ impl<'a> Resolver<'a> {
                                 &typeResolver,
                             );
                             self.program.functions.insert(irFunction.name.clone(), irFunction);
+                        }
+                        if !neededTraitMembers.is_empty() {
+                            ResolverError::MissingInstanceMembers(
+                                neededTraitMembers.into_iter().collect(),
+                                irInstance.traitName.toString(),
+                                i.traitName.location.clone(),
+                            )
+                            .report(self.ctx);
                         }
                     }
                     ModuleItem::Function(f) => {

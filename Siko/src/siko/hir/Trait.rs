@@ -5,13 +5,13 @@ use crate::siko::{hir::Type::formatTypes, qualifiedname::QualifiedName};
 use super::{ConstraintContext::ConstraintContext, Type::Type};
 
 #[derive(Debug)]
-pub struct MethodInfo {
+pub struct MemberInfo {
     pub name: String,
     pub fullName: QualifiedName,
     pub default: bool,
 }
 
-impl fmt::Display for MethodInfo {
+impl fmt::Display for MemberInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "fn {} => ({})", self.name, self.fullName)
     }
@@ -22,7 +22,7 @@ pub struct Trait {
     pub name: QualifiedName,
     pub params: Vec<Type>,
     pub associatedTypes: Vec<String>,
-    pub methods: Vec<MethodInfo>,
+    pub members: Vec<MemberInfo>,
 }
 
 impl Trait {
@@ -31,7 +31,7 @@ impl Trait {
             name: name,
             params: params,
             associatedTypes: associatedTypes,
-            methods: Vec::new(),
+            members: Vec::new(),
         }
     }
 }
@@ -55,7 +55,7 @@ pub struct Instance {
     pub types: Vec<Type>,
     pub associatedTypes: Vec<AssociatedType>,
     pub constraintContext: ConstraintContext,
-    pub methods: Vec<MethodInfo>,
+    pub members: Vec<MemberInfo>,
 }
 
 impl Instance {
@@ -72,14 +72,14 @@ impl Instance {
             types: types,
             associatedTypes: associatedTypes,
             constraintContext: constraintContext,
-            methods: Vec::new(),
+            members: Vec::new(),
         }
     }
 }
 
 impl fmt::Display for Instance {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let methods = self.methods.iter().map(|m| format!("{}", m)).collect::<Vec<_>>().join(",\n    ");
+        let methods = self.members.iter().map(|m| format!("{}", m)).collect::<Vec<_>>().join(",\n    ");
         let associatedTypes = self.associatedTypes.iter().map(|m| format!("{}", m)).collect::<Vec<_>>().join(",\n    ");
         write!(
             f,

@@ -14,6 +14,7 @@ pub enum ResolverError {
     ContinueOutsideLoop(Location),
     AssociatedTypeNotFound(String, String, Location),
     InvalidInstanceMember(String, String, Location),
+    MissingInstanceMembers(Vec<String>, String, Location),
     InvalidAssignment(Location),
 }
 
@@ -67,7 +68,13 @@ impl ResolverError {
                 r.print();
             }
             ResolverError::InvalidInstanceMember(name, traitName, l) => {
-                let slogan = format!("Method {} not found in trait {}", ctx.yellow(name), ctx.yellow(traitName));
+                let slogan = format!("Member {} not found in trait {}", ctx.yellow(name), ctx.yellow(traitName));
+                let r = Report::new(ctx, slogan, Some(l.clone()));
+                r.print();
+            }
+            ResolverError::MissingInstanceMembers(names, traitName, l) => {
+                let names: Vec<_> = names.iter().map(|p| ctx.yellow(p)).collect();
+                let slogan = format!("Missing instance member(s): {} for trait {}", names.join(", "), ctx.yellow(traitName));
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }
