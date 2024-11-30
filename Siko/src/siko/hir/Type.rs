@@ -176,10 +176,14 @@ impl Type {
     }
 
     pub fn isConcrete(&self) -> bool {
+        self.isSpecified(true)
+    }
+
+    pub fn isSpecified(&self, fully: bool) -> bool {
         match &self {
             Type::Named(_, args, _) => {
                 for arg in args {
-                    if !arg.isConcrete() {
+                    if !arg.isSpecified(fully) {
                         return false;
                     }
                 }
@@ -187,7 +191,7 @@ impl Type {
             }
             Type::Tuple(args) => {
                 for arg in args {
-                    if !arg.isConcrete() {
+                    if !arg.isSpecified(fully) {
                         return false;
                     }
                 }
@@ -195,20 +199,23 @@ impl Type {
             }
             Type::Function(args, result) => {
                 for arg in args {
-                    if !arg.isConcrete() {
+                    if !arg.isSpecified(fully) {
                         return false;
                     }
                 }
-                return result.isConcrete();
+                return result.isSpecified(fully);
             }
-            Type::Var(_) => {
+            Type::Var(TypeVar::Named(_)) => {
+                return !fully;
+            }
+            Type::Var(TypeVar::Var(_)) => {
                 return false;
             }
             Type::Reference(ty, _) => {
-                return ty.isConcrete();
+                return ty.isSpecified(fully);
             }
             Type::SelfType => {
-                panic!("self in isConcrete")
+                panic!("self in isSpecified")
             }
             Type::Never => {
                 return true;

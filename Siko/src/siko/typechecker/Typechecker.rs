@@ -49,7 +49,6 @@ pub struct Typechecker<'a> {
     mutables: BTreeSet<String>,
     implicitRefs: BTreeSet<Variable>,
     mutableMethodCalls: BTreeMap<Variable, MutableMethodCallInfo>,
-    constraints: Vec<Constraint>,
 }
 
 impl<'a> Typechecker<'a> {
@@ -66,7 +65,6 @@ impl<'a> Typechecker<'a> {
             mutables: BTreeSet::new(),
             implicitRefs: BTreeSet::new(),
             mutableMethodCalls: BTreeMap::new(),
-            constraints: Vec::new(),
         }
     }
 
@@ -74,7 +72,6 @@ impl<'a> Typechecker<'a> {
         self.initialize(f);
         //self.dump(f);
         self.check(f);
-        self.checkConstraints(f);
         //self.dump(f);
         self.generate(f)
     }
@@ -238,11 +235,10 @@ impl<'a> Typechecker<'a> {
 
     fn lookupTraitMethod(&mut self, receiverType: Type, methodName: &String, location: Location) -> QualifiedName {
         if let Some(selection) = self.traitMethodSelector.get(methodName) {
-            self.constraints.push(Constraint {
-                ty: receiverType.clone(),
-                traitName: selection.traitName,
-                location: location,
-            });
+            //println!("Looking for {} {} for ty {}", receiverType, methodName, selection.traitName);
+            if !receiverType.isSpecified(false) {
+                TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
+            }
             return selection.method.clone();
         }
         TypecheckerError::MethoddNotFound(methodName.clone(), location.clone()).report(self.ctx);
@@ -431,13 +427,6 @@ impl<'a> Typechecker<'a> {
                     }
                 }
             }
-        }
-    }
-
-    fn checkConstraints(&mut self, f: &Function) {
-        //println!("context {}", f.constraintContext);
-        for constraint in &self.constraints {
-            //println!("{} impls {}", constraint.ty, constraint.traitName);
         }
     }
 

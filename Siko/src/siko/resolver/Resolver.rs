@@ -3,6 +3,7 @@ use crate::siko::{
         ConstraintContext::{Constraint as IrConstraint, ConstraintContext},
         Data::MethodInfo as DataMethodInfo,
         Function::{FunctionKind, Parameter},
+        InstanceResolver::InstanceResolver,
         Program::Program,
         Trait::{AssociatedType, MemberInfo},
         TraitMethodSelector::{TraitMethodSelection, TraitMethodSelector},
@@ -297,6 +298,7 @@ impl<'a> Resolver<'a> {
                             })
                         }
                         //println!("Instance {}", irInstance);
+                        self.program.instanceResolver.addInstance(irInstance.clone());
                         self.instances.push(irInstance);
                     }
                     _ => {}

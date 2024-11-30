@@ -4,7 +4,7 @@ use crate::siko::{hir::Type::formatTypes, qualifiedname::QualifiedName};
 
 use super::{ConstraintContext::ConstraintContext, Type::Type};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MemberInfo {
     pub name: String,
     pub fullName: QualifiedName,
@@ -36,7 +36,7 @@ impl Trait {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AssociatedType {
     pub name: String,
     pub ty: Type,
@@ -48,7 +48,7 @@ impl fmt::Display for AssociatedType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Instance {
     pub id: u64,
     pub traitName: QualifiedName,

@@ -5,6 +5,7 @@ use crate::siko::qualifiedname::QualifiedName;
 use super::{
     Data::{Class, Enum},
     Function::Function,
+    InstanceResolver::InstanceResolver,
     TraitMethodSelector::TraitMethodSelector,
 };
 
@@ -14,6 +15,7 @@ pub struct Program {
     pub classes: BTreeMap<QualifiedName, Class>,
     pub enums: BTreeMap<QualifiedName, Enum>,
     pub traitMethodSelectors: BTreeMap<QualifiedName, TraitMethodSelector>,
+    pub instanceResolver: InstanceResolver,
 }
 
 impl Program {
@@ -23,6 +25,7 @@ impl Program {
             classes: BTreeMap::new(),
             enums: BTreeMap::new(),
             traitMethodSelectors: BTreeMap::new(),
+            instanceResolver: InstanceResolver::new(),
         }
     }
 
