@@ -6,6 +6,7 @@ use super::{
     Data::{Class, Enum},
     Function::Function,
     InstanceResolver::InstanceResolver,
+    Trait::Trait,
     TraitMethodSelector::TraitMethodSelector,
 };
 
@@ -14,6 +15,7 @@ pub struct Program {
     pub functions: BTreeMap<QualifiedName, Function>,
     pub classes: BTreeMap<QualifiedName, Class>,
     pub enums: BTreeMap<QualifiedName, Enum>,
+    pub traits: BTreeMap<QualifiedName, Trait>,
     pub traitMethodSelectors: BTreeMap<QualifiedName, TraitMethodSelector>,
     pub instanceResolver: InstanceResolver,
 }
@@ -24,6 +26,7 @@ impl Program {
             functions: BTreeMap::new(),
             classes: BTreeMap::new(),
             enums: BTreeMap::new(),
+            traits: BTreeMap::new(),
             traitMethodSelectors: BTreeMap::new(),
             instanceResolver: InstanceResolver::new(),
         }
@@ -35,6 +38,10 @@ impl Program {
 
     pub fn getClass(&self, qn: &QualifiedName) -> Class {
         self.classes.get(qn).expect("class not found").clone()
+    }
+
+    pub fn getTrait(&self, qn: &QualifiedName) -> Trait {
+        self.traits.get(qn).expect("trait not found").clone()
     }
 }
 

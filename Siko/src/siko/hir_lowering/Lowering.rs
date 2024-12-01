@@ -173,7 +173,7 @@ impl<'a> Builder<'a> {
 
         let kind = match self.function.kind {
             FunctionKind::ClassCtor => MirFunctionKind::ClassCtor,
-            FunctionKind::UserDefined => {
+            FunctionKind::UserDefined | FunctionKind::TraitMemberDefinition(_) => {
                 let mut blocks = Vec::new();
                 if let Some(body) = self.function.body.clone() {
                     for block in &body.blocks {
@@ -186,7 +186,7 @@ impl<'a> Builder<'a> {
             }
             FunctionKind::VariantCtor(i) => MirFunctionKind::VariantCtor(i),
             FunctionKind::Extern => MirFunctionKind::Extern,
-            FunctionKind::TraitMethodDecl => return None,
+            FunctionKind::TraitMemberDecl(_) => return None,
         };
         let mirFunction = MirFunction {
             name: convertName(&self.function.name),

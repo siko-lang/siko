@@ -5,13 +5,13 @@ use std::{
 
 use crate::siko::{
     hir::{
-        Apply::{instantiateClass, instantiateEnum, Apply, ApplyVariable},
+        Apply::{instantiateClass, instantiateEnum, instantiateType, instantiateType2, Apply, ApplyVariable},
         Data::{Class, Enum},
         Function::{Function, Instruction, InstructionKind, Parameter, Variable},
         Program::Program,
         Substitution::{TypeSubstitution, VariableSubstitution},
         TraitMethodSelector::TraitMethodSelector,
-        Type::{Type, TypeVar},
+        Type::{formatTypes, Type, TypeVar},
         TypeVarAllocator::TypeVarAllocator,
         Unification::unify,
     },
@@ -190,12 +190,7 @@ impl<'a> Typechecker<'a> {
     }
 
     fn instantiateType(&mut self, ty: Type) -> Type {
-        let vars = ty.collectVars(BTreeSet::new());
-        let mut sub = TypeSubstitution::new();
-        for var in &vars {
-            sub.add(Type::Var(var.clone()), self.allocator.next());
-        }
-        ty.apply(&sub)
+        instantiateType(&mut self.allocator, &ty)
     }
 
     fn instantiateEnum(&mut self, e: &Enum, ty: &Type) -> Enum {
@@ -233,15 +228,67 @@ impl<'a> Typechecker<'a> {
         self.unify(self.getType(resultVar), fnResult, resultVar.location.clone());
     }
 
+    fn checkTraitFunctionCall(&mut self, args: &Vec<Variable>, resultVar: &Variable, fnType: Type, traitName: QualifiedName) {
+        //println!("checkTraitFunctionCall: {}", fnType);
+        let traitDef = self.program.getTrait(&traitName);
+        //println!("trait {}", traitDef);
+        let (fnType, sub) = instantiateType2(&mut self.allocator, &fnType);
+        let traitDef = traitDef.apply(&sub);
+        //println!("trait {}", traitDef);
+        //println!("fnType: {}", fnType);
+        let (fnArgs, mut fnResult) = match fnType.splitFnType() {
+            Some((fnArgs, fnResult)) => (fnArgs, fnResult),
+            None => return,
+        };
+        if args.len() != fnArgs.len() {
+            TypecheckerError::ArgCountMismatch(fnArgs.len() as u32, args.len() as u32, resultVar.location.clone()).report(self.ctx);
+        }
+        if fnArgs.len() > 0 {
+            fnResult = fnResult.changeSelfType(fnArgs[0].clone());
+        }
+        for (arg, fnArg) in zip(args, fnArgs) {
+            let mut argTy = self.getType(arg);
+            argTy = argTy.apply(&self.substitution);
+            let fnArg = fnArg.apply(&self.substitution);
+            if !argTy.isReference() && fnArg.isReference() {
+                argTy = Type::Reference(Box::new(argTy), None);
+                //println!("IMPLICIT REF FOR {}", arg);
+                self.implicitRefs.insert(arg.clone());
+            }
+            self.unify(argTy, fnArg, arg.location.clone());
+        }
+        self.unify(self.getType(resultVar), fnResult, resultVar.location.clone());
+        let traitDef = traitDef.apply(&self.substitution);
+        //println!("final trait {}", traitDef);
+        let mut fullySpecified = true;
+        for param in &traitDef.params {
+            if !param.isConcrete() {
+                fullySpecified = false;
+            }
+        }
+        if fullySpecified {
+            if let Some(instances) = self.program.instanceResolver.lookupInstances(&traitName) {
+                instances.find(&traitDef.params);
+            } else {
+                TypecheckerError::InstanceNotFound(traitName.toString(), formatTypes(&traitDef.params), resultVar.location.clone()).report(self.ctx);
+            }
+        }
+    }
+
     fn lookupTraitMethod(&mut self, receiverType: Type, methodName: &String, location: Location) -> QualifiedName {
         if let Some(selection) = self.traitMethodSelector.get(methodName) {
-            //println!("Looking for {} {} for ty {}", receiverType, methodName, selection.traitName);
-            if !receiverType.isSpecified(false) {
-                TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
-            }
+            // //println!("Looking for {} {} for ty {}", receiverType, methodName, selection.traitName);
+            // if !receiverType.isSpecified(false) {
+            //     TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
+            // }
+            // if receiverType.isSpecified(true) {
+            //     println!("Looking for {} {} for ty {}", receiverType, methodName, selection.traitName);
+            //     let instances = self.program.instanceResolver.lookupInstances(&selection.traitName);
+            //     instances.find(receiverType);
+            // }
             return selection.method.clone();
         }
-        TypecheckerError::MethoddNotFound(methodName.clone(), location.clone()).report(self.ctx);
+        TypecheckerError::MethodNotFound(methodName.clone(), location.clone()).report(self.ctx);
     }
 
     fn lookupMethod(&mut self, receiverType: Type, methodName: &String, location: Location) -> QualifiedName {
@@ -287,7 +334,11 @@ impl<'a> Typechecker<'a> {
                 InstructionKind::FunctionCall(dest, name, args) => {
                     let f = self.program.functions.get(name).expect("Function not found");
                     let fnType = f.getType();
-                    self.checkFunctionCall(args, dest, fnType);
+                    if let Some(traitName) = f.kind.isTraitCall() {
+                        self.checkTraitFunctionCall(args, dest, fnType, traitName);
+                    } else {
+                        self.checkFunctionCall(args, dest, fnType);
+                    }
                 }
                 InstructionKind::MethodCall(dest, receiver, methodName, args) => {
                     let receiverType = self.getType(receiver);
@@ -315,7 +366,11 @@ impl<'a> Typechecker<'a> {
                             },
                         );
                     }
-                    self.checkFunctionCall(&args, dest, fnType);
+                    if let Some(traitName) = f.kind.isTraitCall() {
+                        self.checkTraitFunctionCall(&args, dest, fnType, traitName);
+                    } else {
+                        self.checkFunctionCall(&args, dest, fnType);
+                    }
                 }
                 InstructionKind::DynamicFunctionCall(dest, callable, args) => {
                     let fnType = self.getType(callable);

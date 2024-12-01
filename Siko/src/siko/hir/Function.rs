@@ -391,7 +391,17 @@ pub enum FunctionKind {
     VariantCtor(i64),
     ClassCtor,
     Extern,
-    TraitMethodDecl,
+    TraitMemberDecl(QualifiedName),
+    TraitMemberDefinition(QualifiedName),
+}
+
+impl FunctionKind {
+    pub fn isTraitCall(&self) -> Option<QualifiedName> {
+        match self {
+            FunctionKind::TraitMemberDecl(qn) | FunctionKind::TraitMemberDefinition(qn) => Some(qn.clone()),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

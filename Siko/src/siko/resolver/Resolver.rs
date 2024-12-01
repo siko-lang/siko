@@ -105,7 +105,6 @@ pub struct Resolver<'a> {
     program: Program,
     emptyVariants: BTreeSet<QualifiedName>,
     variants: BTreeMap<QualifiedName, QualifiedName>,
-    traits: BTreeMap<QualifiedName, IrTrait>,
     instances: Vec<IrInstance>,
 }
 
@@ -118,7 +117,6 @@ impl<'a> Resolver<'a> {
             program: Program::new(),
             emptyVariants: BTreeSet::new(),
             variants: BTreeMap::new(),
-            traits: BTreeMap::new(),
             instances: Vec::new(),
         }
     }
@@ -252,7 +250,7 @@ impl<'a> Resolver<'a> {
                             })
                         }
                         //println!("Trait {:?}", irTrait);
-                        self.traits.insert(irTrait.name.clone(), irTrait);
+                        self.program.traits.insert(irTrait.name.clone(), irTrait);
                     }
                     ModuleItem::Instance(i) => {
                         i.id = self.instances.len() as u64;
@@ -262,7 +260,7 @@ impl<'a> Resolver<'a> {
                         let traitName = moduleResolver.resolverName(&i.traitName);
                         let args = i.types.iter().map(|ty| typeResolver.resolveType(ty)).collect();
                         let mut associatedTypes = Vec::new();
-                        let traitDef = self.traits.get(&traitName).expect("trait not found");
+                        let traitDef = self.program.getTrait(&traitName);
                         for associatedType in &i.associatedTypes {
                             let mut found = false;
                             for traitAssociatedType in &traitDef.associatedTypes {
@@ -353,8 +351,8 @@ impl<'a> Resolver<'a> {
                     }
                     ModuleItem::Trait(t) => {
                         let name = moduleResolver.resolverName(&t.name);
-                        let irTrait = self.traits.get(&name).unwrap();
-                        let owner = irTrait.params.first().expect("first trait param not found");
+                        let traitDef = self.program.getTrait(&name);
+                        let owner = traitDef.params.first().expect("first trait param not found");
                         let typeParams = getTypeParams(&t.typeParams);
                         let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
                         let constraintContext = createConstraintContext(&t.typeParams, &typeResolver);
@@ -391,7 +389,9 @@ impl<'a> Resolver<'a> {
                                 &typeResolver,
                             );
                             if method.body.is_none() {
-                                irFunction.kind = FunctionKind::TraitMethodDecl;
+                                irFunction.kind = FunctionKind::TraitMemberDecl(name.clone());
+                            } else {
+                                irFunction.kind = FunctionKind::TraitMemberDefinition(name.clone());
                             }
                             let selection = TraitMethodSelection {
                                 method: irFunction.name.clone(),
@@ -405,7 +405,7 @@ impl<'a> Resolver<'a> {
                         let irInstance = &self.instances[i.id as usize];
                         let typeParams = getTypeParams(&i.typeParams);
                         let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
-                        let traitDef = self.traits.get(&irInstance.traitName).expect("trait not found");
+                        let traitDef = self.program.getTrait(&irInstance.traitName);
                         let mut allTraitMembers = BTreeSet::new();
                         let mut neededTraitMembers = BTreeSet::new();
                         for method in &traitDef.members {

@@ -252,7 +252,7 @@ impl<'a> Monomorphizer<'a> {
     fn monomorphizeFunction(&mut self, name: QualifiedName, args: Vec<Type>) {
         //println!("MONO FN: {} {}", name, formatTypes(&args));
         let function = self.program.functions.get(&name).expect("function not found in mono").clone();
-        if function.kind == FunctionKind::TraitMethodDecl {
+        if let FunctionKind::TraitMemberDecl(_) = function.kind {
             return;
         }
         let params = function.constraintContext.typeParameters.iter().map(|ty| ty.clone()).collect();

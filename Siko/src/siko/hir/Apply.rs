@@ -6,6 +6,7 @@ use super::{
     Data::{Class, Enum, Field, Variant},
     Function::{InstructionKind, Variable},
     Substitution::{TypeSubstitution, VariableSubstitution},
+    Trait::Trait,
     TypeVarAllocator::TypeVarAllocator,
     Unification::unify,
 };
@@ -97,6 +98,15 @@ impl Apply for Class {
     }
 }
 
+impl Apply for Trait {
+    fn apply(&self, sub: &TypeSubstitution) -> Self {
+        //println!("Applying for {}", self.value);
+        let mut t = self.clone();
+        t.params = t.params.apply(sub);
+        t
+    }
+}
+
 impl Apply for Variable {
     fn apply(&self, sub: &TypeSubstitution) -> Self {
         //println!("Applying for {}", self.value);
@@ -142,11 +152,7 @@ impl Apply for InstructionKind {
 }
 
 pub fn instantiateEnum(allocator: &mut TypeVarAllocator, e: &Enum, ty: &Type) -> Enum {
-    let vars = e.ty.collectVars(BTreeSet::new());
-    let mut sub = TypeSubstitution::new();
-    for var in &vars {
-        sub.add(Type::Var(var.clone()), allocator.next());
-    }
+    let (_, mut sub) = instantiateType2(allocator, &e.ty);
     let mut e = e.clone();
     e = e.apply(&sub);
     let r = unify(&mut sub, ty, &e.ty);
@@ -155,34 +161,31 @@ pub fn instantiateEnum(allocator: &mut TypeVarAllocator, e: &Enum, ty: &Type) ->
 }
 
 pub fn instantiateEnum2(allocator: &mut TypeVarAllocator, e: &Enum) -> Enum {
-    let vars = e.ty.collectVars(BTreeSet::new());
-    let mut sub = TypeSubstitution::new();
-    for var in &vars {
-        sub.add(Type::Var(var.clone()), allocator.next());
-    }
+    let (_, sub) = instantiateType2(allocator, &e.ty);
     e.apply(&sub)
 }
 
 pub fn instantiateClass(allocator: &mut TypeVarAllocator, c: &Class, ty: &Type) -> Class {
-    let vars = c.ty.collectVars(BTreeSet::new());
-    let mut sub = TypeSubstitution::new();
-    for var in &vars {
-        sub.add(Type::Var(var.clone()), allocator.next());
-    }
-    let mut e = c.clone();
-    e = e.apply(&sub);
-    let r = unify(&mut sub, ty, &e.ty);
+    let (_, mut sub) = instantiateType2(allocator, &c.ty);
+    let mut res = c.clone();
+    res = res.apply(&sub);
+    let r = unify(&mut sub, ty, &res.ty);
     assert!(r.is_ok());
-    e.apply(&sub)
+    res.apply(&sub)
 }
 
 pub fn instantiateType(allocator: &mut TypeVarAllocator, ty: &Type) -> Type {
+    let (ty, _) = instantiateType2(allocator, ty);
+    ty
+}
+
+pub fn instantiateType2(allocator: &mut TypeVarAllocator, ty: &Type) -> (Type, TypeSubstitution) {
     let vars = ty.collectVars(BTreeSet::new());
     let mut sub = TypeSubstitution::new();
     for var in &vars {
         sub.add(Type::Var(var.clone()), allocator.next());
     }
-    ty.apply(&sub)
+    (ty.apply(&sub), sub)
 }
 
 impl ApplyVariable for InstructionKind {

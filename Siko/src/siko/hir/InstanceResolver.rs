@@ -2,20 +2,28 @@ use std::collections::BTreeMap;
 
 use crate::siko::qualifiedname::QualifiedName;
 
-use super::Trait::Instance;
+use super::{Trait::Instance, Type::Type};
 
 #[derive(Clone)]
 pub struct Instances {
+    traitName: QualifiedName,
     instances: Vec<Instance>,
 }
 
 impl Instances {
-    pub fn new() -> Instances {
-        Instances { instances: Vec::new() }
+    pub fn new(traitName: QualifiedName) -> Instances {
+        Instances {
+            traitName: traitName,
+            instances: Vec::new(),
+        }
     }
 
     pub fn add(&mut self, instance: Instance) {
         self.instances.push(instance);
+    }
+
+    pub fn find(&self, types: &Vec<Type>) {
+        for i in &self.instances {}
     }
 }
 
@@ -30,7 +38,18 @@ impl InstanceResolver {
     }
 
     pub fn addInstance(&mut self, instance: Instance) {
-        let instances = self.traits.entry(instance.traitName.clone()).or_insert_with(|| Instances::new());
+        let instances = self
+            .traits
+            .entry(instance.traitName.clone())
+            .or_insert_with(|| Instances::new(instance.traitName.clone()));
         instances.add(instance);
+    }
+
+    pub fn lookupInstances(&self, traitName: &QualifiedName) -> Option<&Instances> {
+        if let Some(instances) = self.traits.get(traitName) {
+            Some(instances)
+        } else {
+            None
+        }
     }
 }

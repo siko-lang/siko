@@ -17,7 +17,7 @@ impl fmt::Display for MemberInfo {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Trait {
     pub name: QualifiedName,
     pub params: Vec<Type>,
@@ -33,6 +33,33 @@ impl Trait {
             associatedTypes: associatedTypes,
             members: Vec::new(),
         }
+    }
+}
+
+impl fmt::Display for Trait {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let associated_types_str = if !self.associatedTypes.is_empty() {
+            let types = self.associatedTypes.join(", ");
+            format!("\n    Associated Types: {}", types)
+        } else {
+            String::new()
+        };
+
+        let members_str = if !self.members.is_empty() {
+            let members = self.members.iter().map(|m| format!("{}", m)).collect::<Vec<_>>().join("\n    ");
+            format!("\n    Members:\n    {}", members)
+        } else {
+            String::new()
+        };
+
+        write!(
+            f,
+            "trait {}{}{}{}",
+            self.name,
+            formatTypes(&self.params),
+            associated_types_str,
+            members_str
+        )
     }
 }
 
