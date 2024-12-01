@@ -5,8 +5,9 @@ use std::{
 
 use crate::siko::{
     hir::{
-        Apply::{instantiateClass, instantiateEnum, Apply},
+        Apply::{instantiateClass, instantiateEnum, instantiateType2, Apply},
         Function::{Block, Body, FunctionKind, Instruction, InstructionKind, Parameter, Variable},
+        InstanceResolver::ResolutionResult,
         Program::Program,
         Substitution::TypeSubstitution,
         Type::{createTypeSubstitution, createTypeSubstitutionFrom, formatTypes, Type},
@@ -78,6 +79,41 @@ impl Monomorphize for Parameter {
 
 impl Monomorphize for Instruction {
     fn process(&self, sub: &TypeSubstitution, mono: &mut Monomorphizer) -> Self {
+        fn getFunctionName(kind: FunctionKind, name: QualifiedName, mono: &mut Monomorphizer, context_ty: &Type) -> QualifiedName {
+            if let Some(traitName) = kind.isTraitCall() {
+                //println!("Trait call in mono!");
+                let traitDef = mono.program.getTrait(&traitName);
+                //println!("trait {}", traitDef);
+                let mut allocator = TypeVarAllocator::new();
+                let (_, sub) = instantiateType2(&mut allocator, &context_ty);
+                let traitDef = traitDef.apply(&sub);
+                //println!("trait ii {}", traitDef);
+                if let Some(instances) = mono.program.instanceResolver.lookupInstances(&traitName) {
+                    let resolutionResult = instances.find(&mut allocator, &traitDef.params);
+                    match resolutionResult {
+                        ResolutionResult::Winner(instance) => {
+                            for m in &instance.members {
+                                let base = m.fullName.base();
+                                if base == name {
+                                    return m.fullName.clone();
+                                }
+                            }
+                            panic!("instance member not found!")
+                        }
+                        ResolutionResult::Ambiguous(_) => {
+                            panic!("Ambiguous instances in mono!");
+                        }
+                        ResolutionResult::NoInstanceFound => {
+                            panic!("no instance found in mono!");
+                        }
+                    }
+                } else {
+                    panic!("no instances for found trait {} in mono!", traitName);
+                }
+            } else {
+                name.clone()
+            }
+        }
         //println!("MONO INSTR {}", self);
         let mut instruction = self.clone();
         let kind: InstructionKind = match &self.kind {
@@ -99,8 +135,10 @@ impl Monomorphize for Instruction {
                 //println!("context type {}", context_ty);
                 let sub = createTypeSubstitution(&context_ty, &fn_ty);
                 let ty_args: Vec<_> = target_fn.constraintContext.typeParameters.iter().map(|ty| ty.apply(&sub)).collect();
+
                 //println!("{} type args {}", name, formatTypes(&ty_args));
-                let fn_name = mono.get_mono_name(name, &ty_args);
+                let name = getFunctionName(target_fn.kind.clone(), name.clone(), mono, &context_ty);
+                let fn_name = mono.get_mono_name(&name, &ty_args);
                 mono.addKey(Key::Function(name.clone(), ty_args));
                 InstructionKind::FunctionCall(dest.clone(), fn_name, args.clone())
             }
