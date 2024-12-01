@@ -85,7 +85,7 @@ impl<'a> TraitParser for Parser<'a> {
         } else {
             None
         };
-        let traitName = self.parseTypeIdentifier();
+        let traitName = self.parseQualifiedName();
         let mut types = Vec::new();
         self.expect(TokenKind::LeftBracket(BracketKind::Square));
         while !self.check(TokenKind::RightBracket(BracketKind::Square)) {

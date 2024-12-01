@@ -4,6 +4,7 @@ use crate::siko::syntax::Identifier::Identifier;
 use crate::siko::syntax::Type::{Type, TypeParameterDeclaration};
 use std::collections::BTreeSet;
 
+#[derive(Debug)]
 pub struct TypeResolver<'a> {
     pub moduleResolver: &'a ModuleResolver<'a>,
     typeParameters: BTreeSet<IrType>,

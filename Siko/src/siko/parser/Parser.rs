@@ -177,6 +177,27 @@ impl<'a> Parser<'a> {
         id
     }
 
+    pub fn parseQualifiedName(&mut self) -> Identifier {
+        if self.check(TokenKind::TypeIdentifier) {
+            let mut id = self.parseTypeIdentifier();
+            while self.check(TokenKind::Misc(MiscKind::Dot)) {
+                self.expect(TokenKind::Misc(MiscKind::Dot));
+                id.dot(self.currentLocation());
+                if self.check(TokenKind::TypeIdentifier) {
+                    let next = self.parseTypeIdentifier();
+                    id.merge(next);
+                } else {
+                    let next = self.parseVarIdentifier();
+                    id.merge(next);
+                    break;
+                }
+            }
+            id
+        } else {
+            self.parseVarIdentifier()
+        }
+    }
+
     pub fn parse(&mut self) {
         let content = std::fs::read_to_string(&self.fileName).unwrap();
         let mut lexer = Lexer::new(content, self.fileId.clone());

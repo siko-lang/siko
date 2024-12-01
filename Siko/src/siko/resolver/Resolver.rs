@@ -129,6 +129,7 @@ impl<'a> Resolver<'a> {
         self.processImports();
         self.processDataTypes();
         self.processTraits();
+        self.processInstances();
         self.processFunctions();
         //self.dump();
     }
@@ -231,10 +232,11 @@ impl<'a> Resolver<'a> {
                 match item {
                     ModuleItem::Trait(t) => {
                         let typeParams = getTypeParams(&t.typeParams);
-                        let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
+                        let mut typeResolver = TypeResolver::new(moduleResolver, &typeParams);
                         let mut irParams = Vec::new();
                         for param in &t.params {
                             let irParam = IrType::Var(TypeVar::Named(param.toString()));
+                            typeResolver.addTypeParams(irParam.clone());
                             irParams.push(irParam);
                         }
                         let mut associatedTypes = Vec::new();
@@ -251,9 +253,20 @@ impl<'a> Resolver<'a> {
                                 result: typeResolver.resolveType(&method.result),
                             })
                         }
-                        //println!("Trait {:?}", irTrait);
+                        //println!("Trait {}", irTrait);
                         self.program.traits.insert(irTrait.name.clone(), irTrait);
                     }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    fn processInstances(&mut self) {
+        for (_, m) in &mut self.modules {
+            let moduleResolver = self.resolvers.get(&m.name.name).unwrap();
+            for item in &mut m.items {
+                match item {
                     ModuleItem::Instance(i) => {
                         i.id = self.instances.len() as u64;
                         let typeParams = getTypeParams(&i.typeParams);
@@ -357,27 +370,11 @@ impl<'a> Resolver<'a> {
                         let traitDef = self.program.getTrait(&name);
                         let owner = traitDef.params.first().expect("first trait param not found");
                         let typeParams = getTypeParams(&t.typeParams);
-                        let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
+                        let mut typeResolver = TypeResolver::new(moduleResolver, &typeParams);
                         let constraintContext = createConstraintContext(&t.typeParams, &typeResolver);
-                        //println!("Processing trait {}, ctx {}", name, constraintContext);
-                        // for param in &irTrait.params {
-                        //     match &param {
-                        //         IrType::Var(TypeVar::Named(_)) => {
-                        //             let irParam = TypeParameter {
-                        //                 typeParameter: param.clone(),
-                        //                 constraints:
-                        //             };
-                        //             constraintContext.add(irParam)
-                        //         }
-                        //         _ => panic!("Trait param is not type var!"),
-                        //     }
-                        // }
-                        // for dep in &irTrait.deps {
-                        //     match &dep {
-                        //         IrType::Var(TypeVar::Named(_)) => constraintContext.add(dep.clone()),
-                        //         _ => panic!("Trait dep is not type var!"),
-                        //     }
-                        // }
+                        for param in &traitDef.params {
+                            typeResolver.addTypeParams(param.clone());
+                        }
                         for method in &t.methods {
                             //println!("Processing trait method {}", method.name);
                             let constraintContext = addTypeParams(constraintContext.clone(), &method.typeParams, &typeResolver);
