@@ -229,7 +229,14 @@ impl<'a> Typechecker<'a> {
         self.unify(self.getType(resultVar), fnResult, resultVar.location.clone());
     }
 
-    fn checkTraitFunctionCall(&mut self, args: &Vec<Variable>, resultVar: &Variable, fnType: Type, traitName: QualifiedName) {
+    fn checkTraitFunctionCall(
+        &mut self,
+        args: &Vec<Variable>,
+        resultVar: &Variable,
+        fnType: Type,
+        traitName: QualifiedName,
+        memberName: QualifiedName,
+    ) {
         //println!("checkTraitFunctionCall: {}", fnType);
         let traitDef = self.program.getTrait(&traitName);
         //println!("trait {}", traitDef);
@@ -271,8 +278,16 @@ impl<'a> Typechecker<'a> {
             if let Some(instances) = self.program.instanceResolver.lookupInstances(&traitName) {
                 let resolutionResult = instances.find(&mut self.allocator, &traitDef.params);
                 match resolutionResult {
-                    ResolutionResult::Winner(instance) => {}
-                    ResolutionResult::Ambiguous(vec) => {
+                    ResolutionResult::Winner(instance) => {
+                        for m in &instance.members {
+                            let base = m.fullName.base();
+                            if base == memberName {
+                                self.unify(self.getType(resultVar), m.result.clone(), resultVar.location.clone());
+                                break;
+                            }
+                        }
+                    }
+                    ResolutionResult::Ambiguous(_) => {
                         TypecheckerError::AmbiguousInstances(
                             traitName.toString(),
                             formatTypes(&traitDef.params),
@@ -292,17 +307,8 @@ impl<'a> Typechecker<'a> {
         }
     }
 
-    fn lookupTraitMethod(&mut self, receiverType: Type, methodName: &String, location: Location) -> QualifiedName {
+    fn lookupTraitMethod(&mut self, methodName: &String, location: Location) -> QualifiedName {
         if let Some(selection) = self.traitMethodSelector.get(methodName) {
-            // //println!("Looking for {} {} for ty {}", receiverType, methodName, selection.traitName);
-            // if !receiverType.isSpecified(false) {
-            //     TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
-            // }
-            // if receiverType.isSpecified(true) {
-            //     println!("Looking for {} {} for ty {}", receiverType, methodName, selection.traitName);
-            //     let instances = self.program.instanceResolver.lookupInstances(&selection.traitName);
-            //     instances.find(receiverType);
-            // }
             return selection.method.clone();
         }
         TypecheckerError::MethodNotFound(methodName.clone(), location.clone()).report(self.ctx);
@@ -319,7 +325,7 @@ impl<'a> Typechecker<'a> {
                             return m.fullName.clone();
                         }
                     }
-                    return self.lookupTraitMethod(receiverType, methodName, location);
+                    return self.lookupTraitMethod(methodName, location);
                 } else if let Some(enumDef) = self.program.enums.get(&name) {
                     let enumDef = self.instantiateEnum(enumDef, receiverType.unpackRef());
                     for m in &enumDef.methods {
@@ -327,13 +333,13 @@ impl<'a> Typechecker<'a> {
                             return m.fullName.clone();
                         }
                     }
-                    return self.lookupTraitMethod(receiverType, methodName, location);
+                    return self.lookupTraitMethod(methodName, location);
                 } else {
                     TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
                 }
             }
             Type::Var(TypeVar::Named(_)) => {
-                return self.lookupTraitMethod(receiverType, methodName, location);
+                return self.lookupTraitMethod(methodName, location);
             }
             _ => {
                 TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
@@ -352,7 +358,7 @@ impl<'a> Typechecker<'a> {
                     let f = self.program.functions.get(name).expect("Function not found");
                     let fnType = f.getType();
                     if let Some(traitName) = f.kind.isTraitCall() {
-                        self.checkTraitFunctionCall(args, dest, fnType, traitName);
+                        self.checkTraitFunctionCall(args, dest, fnType, traitName, name.clone());
                     } else {
                         self.checkFunctionCall(args, dest, fnType);
                     }
@@ -384,7 +390,7 @@ impl<'a> Typechecker<'a> {
                         );
                     }
                     if let Some(traitName) = f.kind.isTraitCall() {
-                        self.checkTraitFunctionCall(&args, dest, fnType, traitName);
+                        self.checkTraitFunctionCall(&args, dest, fnType, traitName, name.clone());
                     } else {
                         self.checkFunctionCall(&args, dest, fnType);
                     }

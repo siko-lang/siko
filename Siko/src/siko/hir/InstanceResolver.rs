@@ -3,12 +3,7 @@ use std::{cmp::Ordering, collections::BTreeMap};
 use crate::siko::{hir::Trait::CompareSpecificity, qualifiedname::QualifiedName};
 
 use super::{
-    Apply::{instantiateInstance, instantiateType2},
-    Substitution::TypeSubstitution,
-    Trait::Instance,
-    Type::Type,
-    TypeVarAllocator::TypeVarAllocator,
-    Unification::unify,
+    Apply::instantiateInstance, Substitution::TypeSubstitution, Trait::Instance, Type::Type, TypeVarAllocator::TypeVarAllocator, Unification::unify,
 };
 
 #[derive(Clone)]

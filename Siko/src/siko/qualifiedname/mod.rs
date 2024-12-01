@@ -22,6 +22,15 @@ impl QualifiedName {
         }
     }
 
+    pub fn base(&self) -> QualifiedName {
+        match &self {
+            QualifiedName::Module(_) => self.clone(),
+            QualifiedName::Instance(p, _) => *p.clone(),
+            QualifiedName::Item(p, _) => *p.clone(),
+            QualifiedName::Monomorphized(p, _) => *p.clone(),
+        }
+    }
+
     pub fn monomorphized(&self, args: String) -> QualifiedName {
         QualifiedName::Monomorphized(Box::new(self.clone()), args)
     }

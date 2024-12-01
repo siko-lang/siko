@@ -1,4 +1,7 @@
-use crate::siko::syntax::Function::{Function, Parameter};
+use crate::siko::syntax::{
+    Function::{Function, Parameter},
+    Type::Type,
+};
 
 use super::{
     Expr::ExprParser,
@@ -57,9 +60,9 @@ impl<'a> FunctionParser for Parser<'a> {
         self.expect(TokenKind::RightBracket(BracketKind::Paren));
         let result = if self.check(TokenKind::Arrow(ArrowKind::Right)) {
             self.expect(TokenKind::Arrow(ArrowKind::Right));
-            Some(self.parseType())
+            self.parseType()
         } else {
-            None
+            Type::Tuple(Vec::new())
         };
 
         let (isExtern, body) = if self.check(TokenKind::Misc(MiscKind::Equal)) {

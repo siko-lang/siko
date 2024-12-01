@@ -6,7 +6,7 @@ use super::{
     Data::{Class, Enum, Field, Variant},
     Function::{InstructionKind, Variable},
     Substitution::{TypeSubstitution, VariableSubstitution},
-    Trait::{AssociatedType, Instance, Trait},
+    Trait::{AssociatedType, Instance, MemberInfo, Trait},
     TypeVarAllocator::TypeVarAllocator,
     Unification::unify,
 };
@@ -116,12 +116,22 @@ impl Apply for AssociatedType {
     }
 }
 
+impl Apply for MemberInfo {
+    fn apply(&self, sub: &TypeSubstitution) -> Self {
+        //println!("Applying for {}", self.value);
+        let mut m = self.clone();
+        m.result = m.result.apply(sub);
+        m
+    }
+}
+
 impl Apply for Instance {
     fn apply(&self, sub: &TypeSubstitution) -> Self {
         //println!("Applying for {}", self.value);
         let mut i = self.clone();
         i.types = i.types.apply(sub);
         i.associatedTypes = i.associatedTypes.apply(sub);
+        i.members = i.members.apply(sub);
         i
     }
 }

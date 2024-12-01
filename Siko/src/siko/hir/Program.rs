@@ -36,6 +36,10 @@ impl Program {
         self.enums.get(qn).expect("enum not found").clone()
     }
 
+    pub fn getFunction(&self, qn: &QualifiedName) -> Function {
+        self.functions.get(qn).expect("function not found").clone()
+    }
+
     pub fn getClass(&self, qn: &QualifiedName) -> Class {
         self.classes.get(qn).expect("class not found").clone()
     }

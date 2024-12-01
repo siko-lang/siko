@@ -9,6 +9,7 @@ pub struct MemberInfo {
     pub name: String,
     pub fullName: QualifiedName,
     pub default: bool,
+    pub result: Type,
 }
 
 impl fmt::Display for MemberInfo {

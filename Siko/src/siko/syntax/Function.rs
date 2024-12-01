@@ -17,7 +17,7 @@ pub struct Function {
     pub name: Identifier,
     pub typeParams: Option<TypeParameterDeclaration>,
     pub params: Vec<Parameter>,
-    pub result: Option<Type>,
+    pub result: Type,
     pub body: Option<Block>,
     pub isExtern: bool,
 }

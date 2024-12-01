@@ -3,7 +3,6 @@ use crate::siko::{
         ConstraintContext::{Constraint as IrConstraint, ConstraintContext},
         Data::MethodInfo as DataMethodInfo,
         Function::{FunctionKind, Parameter},
-        InstanceResolver::InstanceResolver,
         Program::Program,
         Trait::{AssociatedType, MemberInfo},
         TraitMethodSelector::{TraitMethodSelection, TraitMethodSelector},
@@ -14,7 +13,7 @@ use crate::siko::{
     resolver::FunctionResolver::FunctionResolver,
     syntax::{
         Module::{Import, Module, ModuleItem},
-        Type::{Constraint, ConstraintArgument, TypeParameterDeclaration},
+        Type::{ConstraintArgument, TypeParameterDeclaration},
     },
     util::error,
 };
@@ -231,6 +230,8 @@ impl<'a> Resolver<'a> {
             for item in &mut m.items {
                 match item {
                     ModuleItem::Trait(t) => {
+                        let typeParams = getTypeParams(&t.typeParams);
+                        let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
                         let mut irParams = Vec::new();
                         for param in &t.params {
                             let irParam = IrType::Var(TypeVar::Named(param.toString()));
@@ -247,6 +248,7 @@ impl<'a> Resolver<'a> {
                                 name: method.name.toString(),
                                 fullName: QualifiedName::Item(Box::new(irTrait.name.clone()), method.name.toString()),
                                 default: method.body.is_some(),
+                                result: typeResolver.resolveType(&method.result),
                             })
                         }
                         //println!("Trait {:?}", irTrait);
@@ -293,6 +295,7 @@ impl<'a> Resolver<'a> {
                                     irInstance.id,
                                 ),
                                 default: false,
+                                result: typeResolver.resolveType(&method.result),
                             })
                         }
                         //println!("Instance {}", irInstance);

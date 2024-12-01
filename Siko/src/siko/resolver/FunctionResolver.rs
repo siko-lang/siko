@@ -85,11 +85,7 @@ impl<'a> FunctionResolver<'a> {
 
             params.push(irParam);
         }
-        let result = if let Some(ty) = &f.result {
-            typeResolver.resolveType(ty)
-        } else {
-            IrType::Tuple(Vec::new())
-        };
+        let result = typeResolver.resolveType(&f.result);
 
         let body = if let Some(body) = &f.body {
             let mut exprResolver = ExprResolver::new(ctx, self.moduleResolver, &typeResolver, emptyVariants, variants, enums);
