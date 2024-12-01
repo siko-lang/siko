@@ -268,7 +268,7 @@ impl<'a> Typechecker<'a> {
         }
         if fullySpecified {
             if let Some(instances) = self.program.instanceResolver.lookupInstances(&traitName) {
-                instances.find(&traitDef.params);
+                instances.find(&mut self.allocator, &traitDef.params);
             } else {
                 TypecheckerError::InstanceNotFound(traitName.toString(), formatTypes(&traitDef.params), resultVar.location.clone()).report(self.ctx);
             }

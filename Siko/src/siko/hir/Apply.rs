@@ -6,7 +6,7 @@ use super::{
     Data::{Class, Enum, Field, Variant},
     Function::{InstructionKind, Variable},
     Substitution::{TypeSubstitution, VariableSubstitution},
-    Trait::Trait,
+    Trait::{AssociatedType, Instance, Trait},
     TypeVarAllocator::TypeVarAllocator,
     Unification::unify,
 };
@@ -107,6 +107,25 @@ impl Apply for Trait {
     }
 }
 
+impl Apply for AssociatedType {
+    fn apply(&self, sub: &TypeSubstitution) -> Self {
+        //println!("Applying for {}", self.value);
+        let mut n = self.clone();
+        n.ty = n.ty.apply(sub);
+        n
+    }
+}
+
+impl Apply for Instance {
+    fn apply(&self, sub: &TypeSubstitution) -> Self {
+        //println!("Applying for {}", self.value);
+        let mut i = self.clone();
+        i.types = i.types.apply(sub);
+        i.associatedTypes = i.associatedTypes.apply(sub);
+        i
+    }
+}
+
 impl Apply for Variable {
     fn apply(&self, sub: &TypeSubstitution) -> Self {
         //println!("Applying for {}", self.value);
@@ -172,6 +191,18 @@ pub fn instantiateClass(allocator: &mut TypeVarAllocator, c: &Class, ty: &Type) 
     let r = unify(&mut sub, ty, &res.ty);
     assert!(r.is_ok());
     res.apply(&sub)
+}
+
+pub fn instantiateInstance(allocator: &mut TypeVarAllocator, i: &Instance) -> Instance {
+    let mut vars = BTreeSet::new();
+    for ty in &i.types {
+        vars = ty.collectVars(vars);
+    }
+    let mut sub = TypeSubstitution::new();
+    for var in &vars {
+        sub.add(Type::Var(var.clone()), allocator.next());
+    }
+    i.apply(&sub)
 }
 
 pub fn instantiateType(allocator: &mut TypeVarAllocator, ty: &Type) -> Type {
