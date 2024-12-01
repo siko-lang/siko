@@ -8,6 +8,7 @@ use crate::siko::{
         Apply::{instantiateClass, instantiateEnum, instantiateType, instantiateType2, Apply, ApplyVariable},
         Data::{Class, Enum},
         Function::{Function, Instruction, InstructionKind, Parameter, Variable},
+        InstanceResolver::ResolutionResult,
         Program::Program,
         Substitution::{TypeSubstitution, VariableSubstitution},
         TraitMethodSelector::TraitMethodSelector,
@@ -268,7 +269,23 @@ impl<'a> Typechecker<'a> {
         }
         if fullySpecified {
             if let Some(instances) = self.program.instanceResolver.lookupInstances(&traitName) {
-                instances.find(&mut self.allocator, &traitDef.params);
+                let resolutionResult = instances.find(&mut self.allocator, &traitDef.params);
+                match resolutionResult {
+                    ResolutionResult::Winner(instance) => {}
+                    ResolutionResult::Ambiguous(vec) => {
+                        TypecheckerError::AmbiguousInstances(
+                            traitName.toString(),
+                            formatTypes(&traitDef.params),
+                            resultVar.location.clone(),
+                            Vec::new(),
+                        )
+                        .report(self.ctx);
+                    }
+                    ResolutionResult::NoInstanceFound => {
+                        TypecheckerError::InstanceNotFound(traitName.toString(), formatTypes(&traitDef.params), resultVar.location.clone())
+                            .report(self.ctx);
+                    }
+                }
             } else {
                 TypecheckerError::InstanceNotFound(traitName.toString(), formatTypes(&traitDef.params), resultVar.location.clone()).report(self.ctx);
             }

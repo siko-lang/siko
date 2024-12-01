@@ -17,6 +17,12 @@ pub struct Instances {
     instances: Vec<Instance>,
 }
 
+pub enum ResolutionResult {
+    Winner(Instance),
+    Ambiguous(Vec<Instance>),
+    NoInstanceFound,
+}
+
 impl Instances {
     pub fn new(traitName: QualifiedName) -> Instances {
         Instances {
@@ -29,7 +35,7 @@ impl Instances {
         self.instances.push(instance);
     }
 
-    pub fn find(&self, allocator: &mut TypeVarAllocator, types: &Vec<Type>) {
+    pub fn find(&self, allocator: &mut TypeVarAllocator, types: &Vec<Type>) -> ResolutionResult {
         let mut matchingInstances = Vec::new();
         for i in &self.instances {
             let i = instantiateInstance(allocator, i);
@@ -45,8 +51,6 @@ impl Instances {
             if noMatch {
                 continue;
             }
-            println!("Found matching instance!");
-            println!("{}", i);
             matchingInstances.push(i);
         }
         let mut winner: Option<&Instance> = None;
@@ -78,12 +82,12 @@ impl Instances {
             index += 1;
         }
         if let Some(winner) = winner {
-            println!("winner {}", winner);
+            ResolutionResult::Winner(winner.clone())
         } else {
             if matchingInstances.is_empty() {
-                println!("No instance found");
+                ResolutionResult::NoInstanceFound
             } else {
-                println!("Ambigous instances");
+                ResolutionResult::Ambiguous(matchingInstances)
             }
         }
     }

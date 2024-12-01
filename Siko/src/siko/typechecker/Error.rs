@@ -5,6 +5,7 @@ pub enum TypecheckerError {
     FieldNotFound(String, Location),
     MethodNotFound(String, Location),
     InstanceNotFound(String, String, Location),
+    AmbiguousInstances(String, String, Location, Vec<Location>),
     TypeAnnotationNeeded(Location),
     ArgCountMismatch(u32, u32, Location),
     ImmutableAssign(Location),
@@ -29,7 +30,16 @@ impl TypecheckerError {
                 r.print();
             }
             TypecheckerError::InstanceNotFound(traitName, params, l) => {
-                let slogan = format!("Instance for {} not found with types: {}", ctx.yellow(traitName), ctx.yellow(params));
+                let slogan = format!("Instance for {} not found with type(s): {}", ctx.yellow(traitName), ctx.yellow(params));
+                let r = Report::new(ctx, slogan, Some(l.clone()));
+                r.print();
+            }
+            TypecheckerError::AmbiguousInstances(traitName, params, l, _) => {
+                let slogan = format!(
+                    "Instances for {} are ambiguous with type(s): {}",
+                    ctx.yellow(traitName),
+                    ctx.yellow(params)
+                );
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }
