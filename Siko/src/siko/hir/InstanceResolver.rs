@@ -36,9 +36,11 @@ impl Instances {
             let i = instantiateInstance(allocator, i);
             let mut sub = TypeSubstitution::new();
             let mut noMatch = false;
+            //println!("Matching {} {}", formatTypes(types), formatTypes(&i.types));
             for (arg, ty) in i.types.iter().zip(types.iter()) {
                 let r = unify(&mut sub, arg, ty);
                 if r.is_err() {
+                    //println!("no match");
                     noMatch = true;
                     break;
                 }

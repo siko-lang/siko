@@ -5,7 +5,7 @@ use std::{
 
 use crate::siko::{
     hir::{
-        Apply::{instantiateClass, instantiateEnum, instantiateType2, Apply},
+        Apply::{instantiateClass, instantiateEnum, Apply},
         Function::{Block, Body, FunctionKind, Instruction, InstructionKind, Parameter, Variable},
         InstanceResolver::ResolutionResult,
         Program::Program,
@@ -79,13 +79,12 @@ impl Monomorphize for Parameter {
 
 impl Monomorphize for Instruction {
     fn process(&self, sub: &TypeSubstitution, mono: &mut Monomorphizer) -> Self {
-        fn getFunctionName(kind: FunctionKind, name: QualifiedName, mono: &mut Monomorphizer, context_ty: &Type) -> QualifiedName {
+        fn getFunctionName(kind: FunctionKind, name: QualifiedName, mono: &mut Monomorphizer, sub: &TypeSubstitution) -> QualifiedName {
             if let Some(traitName) = kind.isTraitCall() {
                 //println!("Trait call in mono!");
                 let traitDef = mono.program.getTrait(&traitName);
                 //println!("trait {}", traitDef);
                 let mut allocator = TypeVarAllocator::new();
-                let (_, sub) = instantiateType2(&mut allocator, &context_ty);
                 let traitDef = traitDef.apply(&sub);
                 //println!("trait ii {}", traitDef);
                 if let Some(instances) = mono.program.instanceResolver.lookupInstances(&traitName) {
@@ -137,7 +136,7 @@ impl Monomorphize for Instruction {
                 let ty_args: Vec<_> = target_fn.constraintContext.typeParameters.iter().map(|ty| ty.apply(&sub)).collect();
 
                 //println!("{} type args {}", name, formatTypes(&ty_args));
-                let name = getFunctionName(target_fn.kind.clone(), name.clone(), mono, &context_ty);
+                let name = getFunctionName(target_fn.kind.clone(), name.clone(), mono, &sub);
                 let fn_name = mono.get_mono_name(&name, &ty_args);
                 mono.addKey(Key::Function(name.clone(), ty_args));
                 InstructionKind::FunctionCall(dest.clone(), fn_name, args.clone())
