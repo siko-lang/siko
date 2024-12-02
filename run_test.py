@@ -62,7 +62,7 @@ def test_success(root, entry, extras):
     currentDir = os.path.join(root, entry)
     skipPath = os.path.join(currentDir, "SKIP")
     if os.path.exists(skipPath):
-        return False
+        return "skip"
     inputPath = os.path.join(currentDir, "main.sk")
     #binary = compileSikoLLVM(currentDir, [inputPath], extras)
     binary = compileSikoC(currentDir, [inputPath], extras)
@@ -78,7 +78,7 @@ def test_fail(root, entry, extras):
     global success, failure, skipped
     skip_path = os.path.join(root, entry, "SKIP")
     if os.path.exists(skip_path):
-        return False
+        return "skip"
     input_path = os.path.join(root, entry, "main.sk")
     output_path = os.path.join(root, entry, "main.ll")
     args = ["./siko", input_path, "-o", output_path] + extras
@@ -104,7 +104,11 @@ def buildRuntime():
     subprocess.run("siko_runtime/build.sh")
 
 def processResult(r):
-    global success, failure
+    global success, failure, skipped
+    if r == "skip":
+        print(" - SKIPPED")
+        skipped += 1
+        return
     if r:
         print(" - success")
         success += 1

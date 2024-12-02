@@ -7,7 +7,7 @@ use crate::siko::{
     hir::{
         Apply::{instantiateClass, instantiateEnum, instantiateType, instantiateType2, Apply, ApplyVariable},
         Data::{Class, Enum},
-        Function::{Function, Instruction, InstructionKind, Parameter, Variable},
+        Function::{Body, Function, Instruction, InstructionKind, Parameter, Variable},
         InstanceResolver::ResolutionResult,
         Program::Program,
         Substitution::{TypeSubstitution, VariableSubstitution},
@@ -77,14 +77,18 @@ impl<'a> Typechecker<'a> {
         self.generate(f)
     }
 
-    fn initializeVar(&mut self, var: &Variable) {
+    fn initializeVar(&mut self, var: &Variable, body: &Body) {
         match &var.ty {
             Some(ty) => {
                 self.types.insert(var.value.clone(), ty.clone());
             }
             None => {
-                let ty = self.allocator.next();
-                self.types.insert(var.value.clone(), ty.clone());
+                if let Some(ty) = body.varTypes.get(&var.value) {
+                    self.types.insert(var.value.clone(), ty.clone());
+                } else {
+                    let ty = self.allocator.next();
+                    self.types.insert(var.value.clone(), ty.clone());
+                }
             }
         }
     }
@@ -114,46 +118,46 @@ impl<'a> Typechecker<'a> {
                 for instruction in &block.instructions {
                     match &instruction.kind {
                         InstructionKind::FunctionCall(var, _, _) => {
-                            self.initializeVar(var);
+                            self.initializeVar(var, body);
                         }
                         InstructionKind::MethodCall(var, _, _, _) => {
-                            self.initializeVar(var);
+                            self.initializeVar(var, body);
                         }
                         InstructionKind::DynamicFunctionCall(var, _, _) => {
-                            self.initializeVar(var);
+                            self.initializeVar(var, body);
                         }
                         InstructionKind::ValueRef(var, _) => {
-                            self.initializeVar(var);
+                            self.initializeVar(var, body);
                         }
                         InstructionKind::FieldRef(var, _, _) => {
-                            self.initializeVar(var);
+                            self.initializeVar(var, body);
                         }
                         InstructionKind::TupleIndex(var, _, _) => {
-                            self.initializeVar(var);
+                            self.initializeVar(var, body);
                         }
                         InstructionKind::Bind(var, _, mutable) => {
-                            self.initializeVar(var);
+                            self.initializeVar(var, body);
                             if *mutable {
                                 self.mutables.insert(var.value.clone());
                             }
                         }
                         InstructionKind::Tuple(var, _) => {
-                            self.initializeVar(var);
+                            self.initializeVar(var, body);
                         }
                         InstructionKind::StringLiteral(var, _) => {
-                            self.initializeVar(var);
+                            self.initializeVar(var, body);
                         }
                         InstructionKind::IntegerLiteral(var, _) => {
-                            self.initializeVar(var);
+                            self.initializeVar(var, body);
                         }
                         InstructionKind::CharLiteral(var, _) => {
-                            self.initializeVar(var);
+                            self.initializeVar(var, body);
                         }
                         InstructionKind::Return(var, _) => {
                             self.types.insert(var.value.clone(), Type::Never);
                         }
                         InstructionKind::Ref(var, _) => {
-                            self.initializeVar(var);
+                            self.initializeVar(var, body);
                         }
                         InstructionKind::Drop(_) => {}
                         InstructionKind::Jump(var, _) => {
@@ -161,11 +165,11 @@ impl<'a> Typechecker<'a> {
                         }
                         InstructionKind::Assign(_, _) => {}
                         InstructionKind::DeclareVar(var) => {
-                            self.initializeVar(var);
+                            self.initializeVar(var, body);
                             self.mutables.insert(var.value.clone());
                         }
                         InstructionKind::Transform(var, _, _) => {
-                            self.initializeVar(var);
+                            self.initializeVar(var, body);
                         }
                         InstructionKind::EnumSwitch(_, _) => {}
                         InstructionKind::IntegerSwitch(_, _) => {}
