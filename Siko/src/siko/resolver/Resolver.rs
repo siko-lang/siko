@@ -243,6 +243,8 @@ impl<'a> Resolver<'a> {
                         let traitName = moduleResolver.resolverName(&t.name);
                         for associatedType in &t.associatedTypes {
                             associatedTypes.push(associatedType.name.name.clone());
+                            let irParam = IrType::Var(TypeVar::Named(associatedType.name.toString()));
+                            typeResolver.addTypeParams(irParam);
                         }
                         let mut irTrait = IrTrait::new(traitName, irParams, associatedTypes);
                         for method in &t.methods {
@@ -374,6 +376,9 @@ impl<'a> Resolver<'a> {
                         let constraintContext = createConstraintContext(&t.typeParams, &typeResolver);
                         for param in &traitDef.params {
                             typeResolver.addTypeParams(param.clone());
+                        }
+                        for associatedType in &traitDef.associatedTypes {
+                            typeResolver.addTypeParams(IrType::Var(TypeVar::Named(associatedType.clone())));
                         }
                         for method in &t.methods {
                             //println!("Processing trait method {}", method.name);
