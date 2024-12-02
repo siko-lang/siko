@@ -305,7 +305,7 @@ pub fn formatTypes(types: &Vec<Type>) -> String {
 
 pub fn createTypeSubstitution(ty1: &Type, ty2: &Type) -> TypeSubstitution {
     let mut sub = TypeSubstitution::new();
-    if unify(&mut sub, ty1, ty2).is_err() {
+    if unify(&mut sub, ty1, &ty2, true).is_err() {
         panic!("Unification failed for {} {}", ty1, ty2);
     }
     sub
@@ -314,7 +314,7 @@ pub fn createTypeSubstitution(ty1: &Type, ty2: &Type) -> TypeSubstitution {
 pub fn createTypeSubstitutionFrom(ty1: &Vec<Type>, ty2: &Vec<Type>) -> TypeSubstitution {
     let mut sub = TypeSubstitution::new();
     for (ty1, ty2) in ty1.iter().zip(ty2) {
-        unify(&mut sub, ty1, ty2).expect("Unification failed");
+        unify(&mut sub, ty1, ty2, true).expect("Unification failed");
     }
     sub
 }

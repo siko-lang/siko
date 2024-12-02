@@ -184,7 +184,7 @@ pub fn instantiateEnum(allocator: &mut TypeVarAllocator, e: &Enum, ty: &Type) ->
     let (_, mut sub) = instantiateType2(allocator, &e.ty);
     let mut e = e.clone();
     e = e.apply(&sub);
-    let r = unify(&mut sub, ty, &e.ty);
+    let r = unify(&mut sub, ty, &e.ty, false);
     assert!(r.is_ok());
     e.apply(&sub)
 }
@@ -198,7 +198,7 @@ pub fn instantiateClass(allocator: &mut TypeVarAllocator, c: &Class, ty: &Type) 
     let (_, mut sub) = instantiateType2(allocator, &c.ty);
     let mut res = c.clone();
     res = res.apply(&sub);
-    let r = unify(&mut sub, ty, &res.ty);
+    let r = unify(&mut sub, ty, &res.ty, false);
     assert!(r.is_ok());
     res.apply(&sub)
 }

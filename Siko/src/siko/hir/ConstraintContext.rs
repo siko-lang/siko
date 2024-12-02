@@ -4,7 +4,7 @@ use crate::siko::{hir::Type::formatTypes, qualifiedname::QualifiedName};
 
 use super::Type::Type;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Constraint {
     Instance(QualifiedName, Vec<Type>),
     AssociatedType(QualifiedName, Type),

@@ -476,6 +476,7 @@ impl Function {
 impl Display for Function {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{}: {}", self.name, self.getType())?;
+        writeln!(f, "constraints {}", self.constraintContext)?;
         match &self.body {
             Some(body) => write!(f, "{}", body),
             None => write!(f, "  <no body>"),

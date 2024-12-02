@@ -38,7 +38,7 @@ impl Instances {
             let mut noMatch = false;
             //println!("Matching {} {}", formatTypes(types), formatTypes(&i.types));
             for (arg, ty) in i.types.iter().zip(types.iter()) {
-                let r = unify(&mut sub, arg, ty);
+                let r = unify(&mut sub, arg, ty, false);
                 if r.is_err() {
                     //println!("no match");
                     noMatch = true;

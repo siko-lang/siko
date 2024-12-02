@@ -6,6 +6,7 @@ use std::{
 use crate::siko::{
     hir::{
         Apply::{instantiateClass, instantiateEnum, instantiateType, instantiateType2, Apply, ApplyVariable},
+        ConstraintContext::{Constraint as HirConstraint, ConstraintContext},
         Data::{Class, Enum},
         Function::{Body, Function, Instruction, InstructionKind, Parameter, Variable},
         InstanceResolver::ResolutionResult,
@@ -189,7 +190,7 @@ impl<'a> Typechecker<'a> {
 
     fn unify(&mut self, ty1: Type, ty2: Type, location: Location) {
         //println!("UNIFY {} {}", ty1, ty2);
-        if let Err(_) = unify(&mut self.substitution, &ty1, &ty2) {
+        if let Err(_) = unify(&mut self.substitution, &ty1, &ty2, false) {
             reportError(self.ctx, ty1.apply(&self.substitution), ty2.apply(&self.substitution), location);
         }
     }
@@ -240,6 +241,7 @@ impl<'a> Typechecker<'a> {
         fnType: Type,
         traitName: QualifiedName,
         memberName: QualifiedName,
+        constraintContext: &ConstraintContext,
     ) {
         //println!("checkTraitFunctionCall: {}", fnType);
         let traitDef = self.program.getTrait(&traitName);
@@ -308,6 +310,43 @@ impl<'a> Typechecker<'a> {
             } else {
                 TypecheckerError::InstanceNotFound(traitName.toString(), formatTypes(&traitDef.params), resultVar.location.clone()).report(self.ctx);
             }
+        } else {
+            let constraint = HirConstraint::Instance(traitName.clone(), traitDef.params.clone());
+            //println!("{}", constraint);
+            //println!("Available: constraints {}", constraintContext);
+            if !constraintContext.constraints.contains(&constraint) {
+                if let Some(instances) = self.program.instanceResolver.lookupInstances(&traitName) {
+                    let resolutionResult = instances.find(&mut self.allocator, &traitDef.params);
+                    match resolutionResult {
+                        ResolutionResult::Winner(instance) => {
+                            //println!("Winner {} for {}", instance, formatTypes(&traitDef.params));
+                            for m in &instance.members {
+                                let base = m.fullName.base();
+                                if base == memberName {
+                                    self.unify(self.getType(resultVar), m.result.clone(), resultVar.location.clone());
+                                    break;
+                                }
+                            }
+                        }
+                        ResolutionResult::Ambiguous(_) => {
+                            TypecheckerError::AmbiguousInstances(
+                                traitName.toString(),
+                                formatTypes(&traitDef.params),
+                                resultVar.location.clone(),
+                                Vec::new(),
+                            )
+                            .report(self.ctx);
+                        }
+                        ResolutionResult::NoInstanceFound => {
+                            TypecheckerError::InstanceNotFound(traitName.toString(), formatTypes(&traitDef.params), resultVar.location.clone())
+                                .report(self.ctx);
+                        }
+                    }
+                } else {
+                    TypecheckerError::InstanceNotFound(traitName.toString(), formatTypes(&traitDef.params), resultVar.location.clone())
+                        .report(self.ctx);
+                }
+            }
         }
     }
 
@@ -352,6 +391,7 @@ impl<'a> Typechecker<'a> {
     }
 
     fn check(&mut self, f: &Function) {
+        //println!("checking {}", f.name);
         if f.body.is_none() {
             return;
         };
@@ -362,7 +402,7 @@ impl<'a> Typechecker<'a> {
                     let f = self.program.functions.get(name).expect("Function not found");
                     let fnType = f.getType();
                     if let Some(traitName) = f.kind.isTraitCall() {
-                        self.checkTraitFunctionCall(args, dest, fnType, traitName, name.clone());
+                        self.checkTraitFunctionCall(args, dest, fnType, traitName, name.clone(), &f.constraintContext);
                     } else {
                         self.checkFunctionCall(args, dest, fnType);
                     }
@@ -373,8 +413,8 @@ impl<'a> Typechecker<'a> {
                     //println!("METHOD {} {} {}", methodName, receiver, receiverType);
                     let name = self.lookupMethod(receiverType.clone(), methodName, instruction.location.clone());
                     self.methodCalls.insert(dest.clone(), name.clone());
-                    let f = self.program.functions.get(&name).expect("Function not found");
-                    let mut fnType = f.getType();
+                    let targetFn = self.program.functions.get(&name).expect("Function not found");
+                    let mut fnType = targetFn.getType();
                     let mut args = args.clone();
                     args.insert(0, receiver.clone());
                     if self.mutables.contains(&receiver.value) && fnType.getResult().hasSelfType() {
@@ -393,8 +433,8 @@ impl<'a> Typechecker<'a> {
                             },
                         );
                     }
-                    if let Some(traitName) = f.kind.isTraitCall() {
-                        self.checkTraitFunctionCall(&args, dest, fnType, traitName, name.clone());
+                    if let Some(traitName) = targetFn.kind.isTraitCall() {
+                        self.checkTraitFunctionCall(&args, dest, fnType, traitName, name.clone(), &f.constraintContext);
                     } else {
                         self.checkFunctionCall(&args, dest, fnType);
                     }

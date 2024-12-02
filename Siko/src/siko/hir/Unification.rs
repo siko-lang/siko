@@ -9,7 +9,7 @@ use super::{
 #[derive(Debug)]
 pub struct Error {}
 
-pub fn unify(sub: &mut TypeSubstitution, ty1: &Type, ty2: &Type) -> Result<(), Error> {
+pub fn unify(sub: &mut TypeSubstitution, ty1: &Type, ty2: &Type, allowNamed: bool) -> Result<(), Error> {
     //println!("Unifying {}/{}", ty1, ty2);
     let ty1 = ty1.apply(sub).makeSingleRef();
     let ty2 = ty2.apply(sub).makeSingleRef();
@@ -20,7 +20,7 @@ pub fn unify(sub: &mut TypeSubstitution, ty1: &Type, ty2: &Type) -> Result<(), E
                 return Err(Error {});
             } else {
                 for (arg1, arg2) in zip(args1, args2) {
-                    unify(sub, arg1, arg2)?;
+                    unify(sub, arg1, arg2, allowNamed)?;
                 }
                 Ok(())
             }
@@ -30,7 +30,7 @@ pub fn unify(sub: &mut TypeSubstitution, ty1: &Type, ty2: &Type) -> Result<(), E
                 return Err(Error {});
             } else {
                 for (arg1, arg2) in zip(args1, args2) {
-                    unify(sub, arg1, arg2)?;
+                    unify(sub, arg1, arg2, allowNamed)?;
                 }
                 Ok(())
             }
@@ -45,22 +45,30 @@ pub fn unify(sub: &mut TypeSubstitution, ty1: &Type, ty2: &Type) -> Result<(), E
         (Type::Var(TypeVar::Var(v1)), Type::Var(TypeVar::Var(v2))) if v1 == v2 => Ok(()),
         (Type::Never, Type::Var(_)) => Ok(()),
         (Type::Var(_), Type::Never) => Ok(()),
-        (_, Type::Var(_)) => {
+        (_, Type::Var(TypeVar::Var(_))) => {
             sub.add(ty2, ty1);
             Ok(())
         }
-        (Type::Var(_), _) => {
+        (Type::Var(TypeVar::Var(_)), _) => {
             sub.add(ty1, ty2);
             Ok(())
         }
-        (Type::Reference(v1, _), Type::Reference(v2, _)) => unify(sub, &v1, &v2),
+        (_, Type::Var(_)) if allowNamed => {
+            sub.add(ty2, ty1);
+            Ok(())
+        }
+        (Type::Var(_), _) if allowNamed => {
+            sub.add(ty1, ty2);
+            Ok(())
+        }
+        (Type::Reference(v1, _), Type::Reference(v2, _)) => unify(sub, &v1, &v2, allowNamed),
         (Type::Never, _) => Ok(()),
         (_, Type::Never) => Ok(()),
         (Type::Function(args1, res1), Type::Function(args2, res2)) => {
             for (arg1, arg2) in zip(args1, args2) {
-                unify(sub, arg1, arg2)?;
+                unify(sub, arg1, arg2, allowNamed)?;
             }
-            return unify(sub, &res1, &res2);
+            return unify(sub, &res1, &res2, allowNamed);
         }
         _ => return Err(Error {}),
     }
