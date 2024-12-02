@@ -10,12 +10,29 @@ use crate::siko::{
         InstanceResolver::ResolutionResult,
         Program::Program,
         Substitution::TypeSubstitution,
-        Type::{createTypeSubstitution, createTypeSubstitutionFrom, formatTypes, Type},
+        Type::{formatTypes, Type},
         TypeVarAllocator::TypeVarAllocator,
+        Unification::unify,
     },
     location::Report::{Report, ReportContext},
     qualifiedname::{build, QualifiedName},
 };
+
+fn createTypeSubstitution(ty1: &Type, ty2: &Type) -> TypeSubstitution {
+    let mut sub = TypeSubstitution::new();
+    if unify(&mut sub, ty1, &ty2, true).is_err() {
+        panic!("Unification failed for {} {}", ty1, ty2);
+    }
+    sub
+}
+
+fn createTypeSubstitutionFrom(ty1: &Vec<Type>, ty2: &Vec<Type>) -> TypeSubstitution {
+    let mut sub = TypeSubstitution::new();
+    for (ty1, ty2) in ty1.iter().zip(ty2) {
+        unify(&mut sub, ty1, ty2, true).expect("Unification failed");
+    }
+    sub
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Key {
