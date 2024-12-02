@@ -140,9 +140,6 @@ impl Apply for Variable {
     fn apply(&self, sub: &TypeSubstitution) -> Self {
         //println!("Applying for {}", self.value);
         let mut v = self.clone();
-        if sub.forced && v.ty.is_none() {
-            panic!("var without type in mono! {}", v);
-        }
         v.ty = v.ty.apply(sub);
         v
     }

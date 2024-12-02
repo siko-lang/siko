@@ -293,8 +293,7 @@ impl<'a> Monomorphizer<'a> {
             return;
         }
         let params = function.constraintContext.typeParameters.iter().map(|ty| ty.clone()).collect();
-        let mut sub = createTypeSubstitutionFrom(&params, &args);
-        sub.forced = true;
+        let sub = createTypeSubstitutionFrom(&params, &args);
         let mut monoFn = function.clone();
         monoFn.result = self.processType(monoFn.result.apply(&sub));
         monoFn.params = monoFn.params.process(&sub, self);
