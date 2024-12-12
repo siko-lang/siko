@@ -44,8 +44,8 @@ impl Program {
         self.classes.get(qn).expect("class not found").clone()
     }
 
-    pub fn getTrait(&self, qn: &QualifiedName) -> Trait {
-        self.traits.get(qn).expect("trait not found").clone()
+    pub fn getTrait(&self, qn: &QualifiedName) -> Option<Trait> {
+        self.traits.get(qn).cloned()
     }
 }
 

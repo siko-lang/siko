@@ -9,12 +9,26 @@ trait Bar[T] {
     fn bar(self) -> Output
 }
 
-fn generic[T, R: Bar[Container[T], Output=R]](c: Container[T]) -> R
-{
+fn generic[T, R: Bar[Container[T], Output=R]](c: Container[T]) -> R {
     c.bar()
 }
 
+class Foo {
+
+}
+
+instance Bar[Container[Foo]] {
+    type Output = Int
+
+    fn bar(self) -> Int {
+        5
+    }
+}
+
 fn main() {
+    let c = Container(Foo());
+    let v = generic(c);
+    assert(v.eq(5));
 }
 
 }

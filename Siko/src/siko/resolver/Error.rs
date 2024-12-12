@@ -13,6 +13,7 @@ pub enum ResolverError {
     BreakOutsideLoop(Location),
     ContinueOutsideLoop(Location),
     AssociatedTypeNotFound(String, String, Location),
+    TraitNotFound(String, Location),
     InvalidInstanceMember(String, String, Location),
     MissingInstanceMembers(Vec<String>, String, Location),
     InvalidAssignment(Location),
@@ -64,6 +65,11 @@ impl ResolverError {
             }
             ResolverError::AssociatedTypeNotFound(ty, traitName, l) => {
                 let slogan = format!("Associated type {} not found in trait {}", ctx.yellow(ty), ctx.yellow(traitName));
+                let r = Report::new(ctx, slogan, Some(l.clone()));
+                r.print();
+            }
+            ResolverError::TraitNotFound(traitName, l) => {
+                let slogan = format!("Trait {} not found", ctx.yellow(traitName));
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }

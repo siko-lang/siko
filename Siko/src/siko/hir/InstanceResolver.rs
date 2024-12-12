@@ -101,6 +101,7 @@ impl InstanceResolver {
     }
 
     pub fn addInstance(&mut self, instance: Instance) {
+        //println!("Add instance {}", instance);
         let instances = self
             .traits
             .entry(instance.traitName.clone())

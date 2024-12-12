@@ -1,26 +1,38 @@
 module Main {
 
+class Container[T] {
+    item: T
+}
+
+trait Bar[T] {
+    type Output
+    fn bar(self) -> Output
+}
+
+// fn generic[T, R: Bar[Container[T], Output=R]](c: Container[T]) -> R {
+//     c.bar()
+// }
+
 class Foo {
 
 }
 
-trait Bar[T] {
-    fn bar(&self) -> ()
+class Baz {
+
 }
 
-instance Bar[Foo] {
-    fn bar(&self) -> () {
+instance Bar[Container[Foo]] {
+    type Output = Baz
 
+    fn bar(self) -> Baz {
+        Baz()
     }
 }
 
-fn generic[T](t: T) {
-    t.bar();
-}
-
 fn main() {
-    let f = Foo();
-    generic(f);
+    let c = Container(Foo());
+    c.bar();
+    //let v = generic(c);
 }
 
 }

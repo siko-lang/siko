@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use crate::siko::hir::Type::Type;
 
 use super::{
+    ConstraintContext::{Constraint, ConstraintContext},
     Data::{Class, Enum, Field, Variant},
     Function::{InstructionKind, Variable},
     Substitution::{TypeSubstitution, VariableSubstitution},
@@ -142,6 +143,26 @@ impl Apply for Variable {
         let mut v = self.clone();
         v.ty = v.ty.apply(sub);
         v
+    }
+}
+
+impl Apply for Constraint {
+    fn apply(&self, sub: &TypeSubstitution) -> Self {
+        //println!("Applying for {}", self.value);
+        let mut ctx = self.clone();
+        ctx.args = ctx.args.apply(sub);
+        ctx.associatedTypes = ctx.associatedTypes.apply(sub);
+        ctx
+    }
+}
+
+impl Apply for ConstraintContext {
+    fn apply(&self, sub: &TypeSubstitution) -> Self {
+        //println!("Applying for {}", self.value);
+        let mut ctx = self.clone();
+        ctx.typeParameters = ctx.typeParameters.apply(sub);
+        ctx.constraints = ctx.constraints.apply(sub);
+        ctx
     }
 }
 

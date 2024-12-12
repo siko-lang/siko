@@ -1,3 +1,5 @@
+use crate::siko::hir::Program::Program;
+use crate::siko::hir::Trait::Trait;
 use crate::siko::location::Report::ReportContext;
 use crate::siko::qualifiedname::QualifiedName;
 use crate::siko::resolver::Error::ResolverError;
@@ -20,6 +22,15 @@ pub struct ModuleResolver<'a> {
 }
 
 impl<'a> ModuleResolver<'a> {
+    pub fn lookupTrait(&self, name: &Identifier, program: &Program) -> Trait {
+        let qn = &self.resolverName(name);
+        if let Some(traitDef) = program.getTrait(qn) {
+            traitDef
+        } else {
+            ResolverError::TraitNotFound(name.toString(), name.location.clone()).report(self.ctx);
+        }
+    }
+
     pub fn resolverName(&self, name: &Identifier) -> QualifiedName {
         if let Some(names) = self.localNames.names.get(&name.name) {
             if names.len() > 1 {

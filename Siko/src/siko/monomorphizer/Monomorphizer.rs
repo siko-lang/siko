@@ -99,7 +99,7 @@ impl Monomorphize for Instruction {
         fn getFunctionName(kind: FunctionKind, name: QualifiedName, mono: &mut Monomorphizer, sub: &TypeSubstitution) -> QualifiedName {
             if let Some(traitName) = kind.isTraitCall() {
                 //println!("Trait call in mono!");
-                let traitDef = mono.program.getTrait(&traitName);
+                let traitDef = mono.program.getTrait(&traitName).unwrap();
                 //println!("trait {}", traitDef);
                 let mut allocator = TypeVarAllocator::new();
                 let traitDef = traitDef.apply(&sub);
