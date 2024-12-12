@@ -19,6 +19,7 @@ pub struct ModuleResolver<'a> {
     pub name: String,
     pub localNames: Names,
     pub importedNames: Names,
+    pub importedModules: Vec<String>,
 }
 
 impl<'a> ModuleResolver<'a> {

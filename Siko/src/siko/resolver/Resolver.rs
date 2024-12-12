@@ -153,6 +153,32 @@ impl<'a> Resolver<'a> {
         self.processTraits();
         self.processInstances();
         self.processFunctions();
+
+        let mut traitMethodSelectors = BTreeMap::new();
+
+        for resolver in self.resolvers.values() {
+            let name = QualifiedName::Module(resolver.name.clone());
+            let mut selector = self
+                .program
+                .traitMethodSelectors
+                .get(&name)
+                .expect("trait method selector not found")
+                .clone();
+            for importedModule in &resolver.importedModules {
+                let importedModuleName = QualifiedName::Module(importedModule.clone());
+                if importedModuleName == name {
+                    continue;
+                }
+                let moduleSelector = self
+                    .program
+                    .traitMethodSelectors
+                    .get(&importedModuleName)
+                    .expect("trait method selector not found");
+                selector.merge(moduleSelector);
+            }
+            traitMethodSelectors.insert(name, selector);
+        }
+        self.program.traitMethodSelectors = traitMethodSelectors;
         //self.dump();
     }
 
@@ -436,7 +462,7 @@ impl<'a> Resolver<'a> {
                                 method: irFunction.name.clone(),
                                 traitName: name.clone(),
                             };
-                            traitMethodSelector.add(self.ctx, method.name.clone(), selection);
+                            traitMethodSelector.add(method.name.toString(), selection);
                             self.program.functions.insert(irFunction.name.clone(), irFunction);
                         }
                     }
@@ -619,12 +645,14 @@ impl<'a> Resolver<'a> {
         for (_, m) in &self.modules {
             //println!("Processing module {}", name);
             let mut importedNames = Names::new();
+            let mut importedModules = Vec::new();
             for item in &m.items {
                 match item {
                     ModuleItem::Import(i) => {
                         let moduleName = i.moduleName.toString();
                         match self.modules.get(&moduleName) {
                             Some(sourceModule) => {
+                                importedModules.push(moduleName);
                                 Resolver::processSourceModule(sourceModule, &mut importedNames, i);
                             }
                             None => {
@@ -639,6 +667,7 @@ impl<'a> Resolver<'a> {
             }
             let moduleResolver = self.resolvers.get_mut(&m.name.toString()).unwrap();
             moduleResolver.importedNames = importedNames;
+            moduleResolver.importedModules = importedModules;
         }
     }
 
@@ -650,6 +679,7 @@ impl<'a> Resolver<'a> {
                 name: m.name.toString(),
                 localNames: Resolver::buildLocalNames(m),
                 importedNames: Names::new(),
+                importedModules: Vec::new(),
             };
             self.resolvers.insert(m.name.toString(), moduleResolver);
         }

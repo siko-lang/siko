@@ -35,6 +35,10 @@ struct Int_Int Int_Int_add(struct Int_Int v1, struct Int_Int v2);
 
 struct Int_Int Int_Int_sub(struct Int_Int v1, struct Int_Int v2);
 
+struct Int_Int Int_Int_mul(struct Int_Int v1, struct Int_Int v2);
+
+struct Int_Int Int_Int_div(struct Int_Int v1, struct Int_Int v2);
+
 struct Bool_Bool Int_Int_eq(struct Int_Int v1, struct Int_Int v2);
 
 struct Bool_Bool Int_Int_lessThan(struct Int_Int v1, struct Int_Int v2);

@@ -4,6 +4,7 @@ pub enum TypecheckerError {
     TypeMismatch(String, String, Location),
     FieldNotFound(String, Location),
     MethodNotFound(String, Location),
+    MethodAmbiguous(String, Location),
     InstanceNotFound(String, String, Location),
     AmbiguousInstances(String, String, Location, Vec<Location>),
     TypeAnnotationNeeded(Location),
@@ -26,6 +27,11 @@ impl TypecheckerError {
             }
             TypecheckerError::MethodNotFound(name, l) => {
                 let slogan = format!("Method not found: {}", ctx.yellow(name));
+                let r = Report::new(ctx, slogan, Some(l.clone()));
+                r.print();
+            }
+            TypecheckerError::MethodAmbiguous(name, l) => {
+                let slogan = format!("Method ambiguous: {}", ctx.yellow(name));
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }

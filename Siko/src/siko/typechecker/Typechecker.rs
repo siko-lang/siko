@@ -406,8 +406,11 @@ impl<'a> Typechecker<'a> {
     }
 
     fn lookupTraitMethod(&mut self, methodName: &String, location: Location) -> QualifiedName {
-        if let Some(selection) = self.traitMethodSelector.get(methodName) {
-            return selection.method.clone();
+        if let Some(selections) = self.traitMethodSelector.get(methodName) {
+            if selections.len() > 1 {
+                TypecheckerError::MethodAmbiguous(methodName.clone(), location.clone()).report(self.ctx);
+            }
+            return selections[0].method.clone();
         }
         TypecheckerError::MethodNotFound(methodName.clone(), location.clone()).report(self.ctx);
     }

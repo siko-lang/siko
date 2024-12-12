@@ -247,7 +247,7 @@ impl<'a> ExprParser for Parser<'a> {
 
     fn parseFieldAccessOrCall(&mut self) -> Expr {
         let start = self.currentSpan();
-        let mut current = self.parseUnary();
+        let mut current = self.parsePrimary();
         loop {
             if self.check(TokenKind::Misc(MiscKind::Dot)) {
                 self.expect(TokenKind::Misc(MiscKind::Dot));
@@ -322,20 +322,21 @@ impl<'a> ExprParser for Parser<'a> {
 
     fn callNext(&mut self, index: usize) -> Expr {
         if index + 1 >= self.opTable.len() {
-            self.parseFieldAccessOrCall()
+            self.parseUnary()
         } else {
             self.parseBinaryOp(index + 1)
         }
     }
+
     fn parseUnary(&mut self) -> Expr {
         match self.peek() {
             TokenKind::Misc(MiscKind::ExclamationMark) => {
                 let start = self.currentSpan();
                 self.expect(TokenKind::Misc(MiscKind::ExclamationMark));
-                let expr = self.parsePrimary();
+                let expr = self.parseFieldAccessOrCall();
                 self.buildExpr(SimpleExpr::UnaryOp(UnaryOp::Not, Box::new(expr)), start)
             }
-            _ => self.parsePrimary(),
+            _ => self.parseFieldAccessOrCall(),
         }
     }
     fn parsePrimary(&mut self) -> Expr {

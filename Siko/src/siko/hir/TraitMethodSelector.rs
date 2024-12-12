@@ -1,15 +1,16 @@
-use crate::siko::{location::Report::ReportContext, qualifiedname::QualifiedName, resolver::Error::ResolverError, syntax::Identifier::Identifier};
+use crate::siko::qualifiedname::QualifiedName;
+
 use std::collections::BTreeMap;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TraitMethodSelection {
     pub traitName: QualifiedName,
     pub method: QualifiedName,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TraitMethodSelector {
-    methods: BTreeMap<String, TraitMethodSelection>,
+    methods: BTreeMap<String, Vec<TraitMethodSelection>>,
 }
 
 impl TraitMethodSelector {
@@ -17,14 +18,20 @@ impl TraitMethodSelector {
         TraitMethodSelector { methods: BTreeMap::new() }
     }
 
-    pub fn add(&mut self, ctx: &ReportContext, name: Identifier, selection: TraitMethodSelection) {
-        let p = self.methods.insert(name.toString(), selection);
-        if p.is_some() {
-            ResolverError::Ambiguous(name.toString(), name.location.clone()).report(ctx);
-        }
+    pub fn add(&mut self, name: String, selection: TraitMethodSelection) {
+        let selections = self.methods.entry(name).or_insert_with(|| Vec::new());
+        selections.push(selection);
     }
 
-    pub fn get(&self, field: &String) -> Option<TraitMethodSelection> {
+    pub fn get(&self, field: &String) -> Option<Vec<TraitMethodSelection>> {
         self.methods.get(field).cloned()
+    }
+
+    pub fn merge(&mut self, other: &TraitMethodSelector) {
+        for (name, selections) in &other.methods {
+            for selection in selections {
+                self.add(name.clone(), selection.clone());
+            }
+        }
     }
 }
