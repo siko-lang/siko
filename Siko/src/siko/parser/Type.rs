@@ -5,7 +5,7 @@ use crate::siko::{
 
 use super::{
     Parser::*,
-    Token::{ArrowKind, BracketKind, KeywordKind, MiscKind, TokenKind},
+    Token::{ArrowKind, BracketKind, KeywordKind, MiscKind, OperatorKind, TokenKind},
 };
 
 pub trait TypeParser {
@@ -78,6 +78,11 @@ impl<'a> TypeParser for Parser<'a> {
                 self.expect(TokenKind::Misc(MiscKind::Ampersand));
                 let ty = self.parseType();
                 Type::Reference(Box::new(ty))
+            }
+            TokenKind::Op(OperatorKind::Mul) => {
+                self.expect(TokenKind::Op(OperatorKind::Mul));
+                let ty = self.parseType();
+                Type::Ptr(Box::new(ty))
             }
             kind => self.reportError2("<type>", kind),
         }

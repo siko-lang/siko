@@ -357,6 +357,7 @@ impl<'a> Monomorphizer<'a> {
                 panic!("TypeVar found in monomorphization {}", v);
             }
             Type::Reference(ty, l) => Type::Reference(Box::new(self.processType(*ty)), l.clone()),
+            Type::Ptr(ty) => Type::Ptr(Box::new(self.processType(*ty))),
             Type::SelfType => Type::SelfType,
             Type::Never => Type::Never,
         };

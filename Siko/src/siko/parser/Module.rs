@@ -96,6 +96,7 @@ impl<'a> ModuleParser for Parser<'a> {
             "Iterator",
             "Std.Ops",
             "Std.Basic.Util",
+            "Vec",
         ];
         for i in implicitImports {
             items.push(ModuleItem::Import(Import {

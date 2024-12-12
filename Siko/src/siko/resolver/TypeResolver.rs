@@ -56,6 +56,7 @@ impl<'a> TypeResolver<'a> {
                 IrType::Function(irArgs, Box::new(self.resolveType(result)))
             }
             Type::Reference(ty) => IrType::Reference(Box::new(self.resolveType(ty)), None),
+            Type::Ptr(ty) => IrType::Ptr(Box::new(self.resolveType(ty))),
             Type::SelfType => IrType::SelfType,
         }
     }

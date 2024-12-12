@@ -38,6 +38,7 @@ impl Apply for Type {
             }
             Type::Var(_) => sub.get(self.clone()),
             Type::Reference(arg, l) => Type::Reference(Box::new(arg.apply(sub)), l.clone()),
+            Type::Ptr(arg) => Type::Ptr(Box::new(arg.apply(sub))),
             Type::SelfType => self.clone(),
             Type::Never => self.clone(),
         }

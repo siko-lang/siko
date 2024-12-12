@@ -28,6 +28,7 @@ pub enum Type {
     Function(Vec<Type>, Box<Type>),
     Var(TypeVar),
     Reference(Box<Type>, Option<Lifetime>),
+    Ptr(Box<Type>),
     SelfType,
     Never,
 }
@@ -79,6 +80,9 @@ impl Type {
             Type::Reference(ty, _) => {
                 vars = ty.collectVars(vars);
             }
+            Type::Ptr(ty) => {
+                vars = ty.collectVars(vars);
+            }
             Type::SelfType => {}
             Type::Never => {}
         }
@@ -100,6 +104,7 @@ impl Type {
                 lifetimes.insert(0, lifetime.expect("no lifetime for ref"));
                 lifetimes
             }
+            Type::Ptr(_) => Vec::new(),
             Type::SelfType => Vec::new(),
             Type::Never => Vec::new(),
         }
@@ -210,6 +215,9 @@ impl Type {
             Type::Reference(ty, _) => {
                 return ty.isSpecified(fully);
             }
+            Type::Ptr(ty) => {
+                return ty.isSpecified(fully);
+            }
             Type::SelfType => {
                 panic!("self in isSpecified")
             }
@@ -288,6 +296,9 @@ impl Display for Type {
                 Some(l) => write!(f, "&{} {}", l, ty),
                 None => write!(f, "&{}", ty),
             },
+            Type::Ptr(ty) => {
+                write!(f, "*{}", ty)
+            }
             Type::SelfType => write!(f, "Self"),
             Type::Never => write!(f, "!"),
         }

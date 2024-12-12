@@ -62,6 +62,7 @@ pub fn unify(sub: &mut TypeSubstitution, ty1: &Type, ty2: &Type, allowNamed: boo
             Ok(())
         }
         (Type::Reference(v1, _), Type::Reference(v2, _)) => unify(sub, &v1, &v2, allowNamed),
+        (Type::Ptr(v1), Type::Ptr(v2)) => unify(sub, &v1, &v2, allowNamed),
         (Type::Never, _) => Ok(()),
         (_, Type::Never) => Ok(()),
         (Type::Function(args1, res1), Type::Function(args2, res2)) => {

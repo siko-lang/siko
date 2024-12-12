@@ -8,6 +8,7 @@ pub enum Type {
     Tuple(Vec<Type>),
     Function(Vec<Type>, Box<Type>),
     Reference(Box<Type>),
+    Ptr(Box<Type>),
     SelfType,
 }
 
@@ -31,6 +32,7 @@ impl fmt::Display for Type {
                 write!(f, "fn({}) -> {}", params, ret)
             }
             Type::Reference(inner) => write!(f, "&{}", inner),
+            Type::Ptr(inner) => write!(f, "*{}", inner),
             Type::SelfType => write!(f, "Self"),
         }
     }
