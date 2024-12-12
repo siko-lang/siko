@@ -7,7 +7,6 @@ use siko::{
     backend::{DeadCodeEliminator::eliminateDeadCode, RemoveTuples::removeTuples},
     hir::Program::Program,
     hir_lowering::Lowering::lowerProgram,
-    llvm::Generator::LLVMGenerator,
     location::{FileManager::FileManager, Report::ReportContext},
     minic::Generator::MiniCGenerator,
     monomorphizer::Monomorphizer::Monomorphizer,
@@ -119,9 +118,6 @@ fn main() {
     let mut mir_program = lowerProgram(&program);
     //println!("mir\n{}", mir_program);
     mir_program.process();
-    let llvm_program = mir_program.toLLVM();
-    let mut generator = LLVMGenerator::new(format!("{}.ll", outputFile), llvm_program);
-    generator.dump().expect("llvm generator failed");
     let c_program = mir_program.toMiniC();
     let mut generator = MiniCGenerator::new(format!("{}.c", outputFile), c_program);
     generator.dump().expect("c generator failed");
