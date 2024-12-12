@@ -114,6 +114,12 @@ impl Monomorphize for Instruction {
                                     return m.fullName.clone();
                                 }
                             }
+                            let traitDef = mono.program.getTrait(&traitName).expect("trait not found in mono");
+                            for m in &traitDef.members {
+                                if m.fullName == name {
+                                    return m.fullName.clone();
+                                }
+                            }
                             panic!("instance member not found!")
                         }
                         ResolutionResult::Ambiguous(_) => {
@@ -150,6 +156,7 @@ impl Monomorphize for Instruction {
                 //println!("fn type {}", fn_ty);
                 //println!("context type {}", context_ty);
                 let sub = createTypeSubstitution(&context_ty, &fn_ty);
+                //println!("target ctx {}", target_fn.constraintContext);
                 let ty_args: Vec<_> = target_fn.constraintContext.typeParameters.iter().map(|ty| ty.apply(&sub)).collect();
 
                 //println!("{} type args {}", name, formatTypes(&ty_args));

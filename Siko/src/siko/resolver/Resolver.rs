@@ -420,9 +420,10 @@ impl<'a> Resolver<'a> {
                         let owner = traitDef.params.first().expect("first trait param not found");
                         let typeParams = getTypeParams(&t.typeParams);
                         let mut typeResolver = TypeResolver::new(moduleResolver, &typeParams);
-                        let constraintContext = createConstraintContext(&t.typeParams, &typeResolver, &self.program, &self.ctx);
+                        let mut constraintContext = createConstraintContext(&t.typeParams, &typeResolver, &self.program, &self.ctx);
                         for param in &traitDef.params {
                             typeResolver.addTypeParams(param.clone());
+                            constraintContext.addTypeParam(param.clone());
                         }
                         for associatedType in &traitDef.associatedTypes {
                             typeResolver.addTypeParams(IrType::Var(TypeVar::Named(associatedType.clone())));
