@@ -14,7 +14,7 @@ use crate::siko::{
         Program::Program as MirProgram,
         Type::Type as MirType,
     },
-    qualifiedname::QualifiedName,
+    qualifiedname::{getPtrNullName, QualifiedName},
 };
 
 pub struct Builder<'a> {
@@ -185,7 +185,27 @@ impl<'a> Builder<'a> {
                 MirFunctionKind::UserDefined(blocks)
             }
             FunctionKind::VariantCtor(i) => MirFunctionKind::VariantCtor(i),
-            FunctionKind::Extern => MirFunctionKind::Extern,
+            FunctionKind::Extern => {
+                if getPtrNullName() == self.function.name.base() {
+                    let mut blocks = Vec::new();
+                    let mut instructions = Vec::new();
+                    let dest = MirVariable {
+                        name: format!("result"),
+                        ty: lowerType(&self.function.result, &self.program),
+                    };
+                    instructions.push(Instruction::Declare(dest.clone()));
+                    instructions.push(Instruction::IntegerLiteral(dest.clone(), format!("0")));
+                    instructions.push(Instruction::Return(Value::Var(dest)));
+                    let block = MirBlock {
+                        id: format!("main"),
+                        instructions: instructions,
+                    };
+                    blocks.push(block);
+                    MirFunctionKind::UserDefined(blocks)
+                } else {
+                    MirFunctionKind::Extern
+                }
+            }
             FunctionKind::TraitMemberDecl(_) => return None,
         };
         let mirFunction = MirFunction {

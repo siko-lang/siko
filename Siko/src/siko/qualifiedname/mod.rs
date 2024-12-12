@@ -88,3 +88,7 @@ pub fn getFalseName() -> QualifiedName {
 pub fn getStringEqName() -> QualifiedName {
     build("String", "String").add("eq".to_string())
 }
+
+pub fn getPtrNullName() -> QualifiedName {
+    build("Ptr", "null")
+}
