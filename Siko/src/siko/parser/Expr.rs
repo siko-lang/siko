@@ -108,8 +108,10 @@ impl<'a> ExprParser for Parser<'a> {
         });
         if self.check(TokenKind::Keyword(KeywordKind::Else)) {
             self.expect(TokenKind::Keyword(KeywordKind::Else));
-            self.expect(TokenKind::LeftBracket(BracketKind::Curly));
-            self.undo();
+            if !self.check(TokenKind::Keyword(KeywordKind::If)) {
+                self.expect(TokenKind::LeftBracket(BracketKind::Curly));
+                self.undo();
+            }
             let falseBranch = self.parseExpr();
             branches.push(Branch {
                 pattern: Pattern {
