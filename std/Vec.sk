@@ -13,7 +13,11 @@ class Vec[T] {
 
     fn push(mut self, item: T) -> Self {
         if self.size == self.capacity {
-            self.grow(self.capacity * 2);
+            if self.capacity == 0 {
+                self.grow(8);
+            } else {
+                self.grow(self.capacity * 2);
+            }
         }
         self.size = self.size + 1;
         let ptr = offset(self.items, self.size);
@@ -37,6 +41,10 @@ class Vec[T] {
         }
         self.items = newItems;
         self
+    }
+
+    fn drop(self) {
+        deallocate(self.items);
     }
 }
 

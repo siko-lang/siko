@@ -97,6 +97,10 @@ pub fn getPtrAllocateArrayName() -> QualifiedName {
     build("Ptr", "allocateArray")
 }
 
+pub fn getPtrDeallocateName() -> QualifiedName {
+    build("Ptr", "deallocate")
+}
+
 pub fn getPtrMemcpyName() -> QualifiedName {
     build("Ptr", "memcpy")
 }

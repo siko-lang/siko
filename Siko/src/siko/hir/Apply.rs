@@ -210,9 +210,10 @@ impl Apply for InstructionKind {
 }
 
 pub fn instantiateEnum(allocator: &mut TypeVarAllocator, e: &Enum, ty: &Type) -> Enum {
-    let (_, mut sub) = instantiateType2(allocator, &e.ty);
+    let (_, sub) = instantiateType2(allocator, &e.ty);
     let mut e = e.clone();
     e = e.apply(&sub);
+    let mut sub = TypeSubstitution::new();
     let r = unify(&mut sub, ty, &e.ty, false);
     assert!(r.is_ok());
     e.apply(&sub)
@@ -224,9 +225,10 @@ pub fn instantiateEnum2(allocator: &mut TypeVarAllocator, e: &Enum) -> Enum {
 }
 
 pub fn instantiateClass(allocator: &mut TypeVarAllocator, c: &Class, ty: &Type) -> Class {
-    let (_, mut sub) = instantiateType2(allocator, &c.ty);
+    let (_, sub) = instantiateType2(allocator, &c.ty);
     let mut res = c.clone();
     res = res.apply(&sub);
+    let mut sub = TypeSubstitution::new();
     let r = unify(&mut sub, ty, &res.ty, false);
     assert!(r.is_ok());
     res.apply(&sub)
