@@ -134,8 +134,8 @@ impl MiniCGenerator {
             Instruction::Jump(label) => {
                 format!("goto {};", label)
             }
-            Instruction::Memcpy(src, dest) => match dest.ty.getName() {
-                Some(_) => {
+            Instruction::Memcpy(src, dest) => match &dest.ty {
+                ty if ty.getName().is_some() => {
                     if dest.ty.isPtr() {
                         if src.ty.isPtr() {
                             format!("*{} = *({}){};", dest.name, getTypeName(&dest.ty), src.name)
@@ -147,9 +147,10 @@ impl MiniCGenerator {
                     }
                     //let def = self.program.getStruct(&name);
                 }
-                None => {
-                    format!("ups {:?}", dest.ty)
+                Type::Int64 => {
+                    format!("{} = {};", dest.name, src.name)
                 }
+                _ => panic!("Unsupported memcpy ty {:?}", dest.ty),
             },
             Instruction::MemcpyPtr(src, dest) => {
                 format!("{} = {};", dest.name, src.name)

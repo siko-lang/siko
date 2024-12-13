@@ -14,7 +14,7 @@ use crate::siko::{
         Program::Program as MirProgram,
         Type::Type as MirType,
     },
-    qualifiedname::{getPtrNullName, QualifiedName},
+    qualifiedname::{getIntTypeName, getPtrNullName, QualifiedName},
 };
 
 pub struct Builder<'a> {
@@ -239,7 +239,11 @@ pub fn lowerType(ty: &HirType, program: &HirProgram) -> MirType {
     match ty {
         HirType::Named(name, _, _) => {
             if program.classes.get(name).is_some() {
-                MirType::Struct(convertName(name))
+                if name.base() == getIntTypeName() {
+                    MirType::Int64
+                } else {
+                    MirType::Struct(convertName(name))
+                }
             } else {
                 MirType::Union(convertName(name))
             }

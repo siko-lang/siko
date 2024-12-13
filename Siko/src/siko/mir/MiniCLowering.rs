@@ -154,11 +154,7 @@ impl<'a> MinicBuilder<'a> {
                     minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::IntegerLiteral(var, value) => {
-                    let mut tmp = self.tmpVar(var);
-                    tmp.ty = LType::Int64;
-                    let minicInstruction = LInstruction::Store(tmp.clone(), LValue::Numeric(value.clone(), LType::Int64));
-                    minicBlock.instructions.push(minicInstruction);
-                    let minicInstruction = LInstruction::SetField(self.lowerVar(var), tmp, vec![0], ReadMode::Noop);
+                    let minicInstruction = LInstruction::Store(self.lowerVar(var), LValue::Numeric(value.clone(), LType::Int64));
                     minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::StringLiteral(var, value) => {
@@ -213,13 +209,6 @@ impl<'a> MinicBuilder<'a> {
                     minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::IntegerSwitch(var, cases) => {
-                    let switchVar = Variable {
-                        name: format!("switch_var_{}", block.id),
-                        ty: Type::Int64,
-                    };
-                    let tmpVar = self.tmpVar(&switchVar);
-                    let minicInstruction = LInstruction::GetFieldRef(tmpVar.clone(), self.lowerVar(var), 0);
-                    minicBlock.instructions.push(minicInstruction);
                     let mut branches = Vec::new();
                     let mut defaultIndex = 0;
                     for (index, case) in cases.iter().enumerate() {
@@ -236,7 +225,7 @@ impl<'a> MinicBuilder<'a> {
                             }
                         }
                     }
-                    let minicInstruction = LInstruction::Switch(tmpVar.clone(), cases[defaultIndex].branch.clone(), branches);
+                    let minicInstruction = LInstruction::Switch(self.lowerVar(var), cases[defaultIndex].branch.clone(), branches);
                     minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::Transform(dest, src, index) => {

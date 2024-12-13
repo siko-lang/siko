@@ -11,9 +11,9 @@ extern struct siko_Tuple_ Std_Basic_Util_siko_runtime_abort() {
     return result;
 }
 
-extern struct siko_Tuple_ Std_Basic_Util_siko_runtime_num(struct Int_Int v) {
+extern struct siko_Tuple_ Std_Basic_Util_siko_runtime_num(Int_Int v) {
     struct siko_Tuple_ result;
-    printf("%ld\n", v.field0);
+    printf("%ld\n", v);
     return result;
 }
 
@@ -45,42 +45,42 @@ extern struct siko_Tuple_ Std_Basic_Util_siko_runtime_bool(struct Bool_Bool v) {
     return result;
 }
 
-extern struct Int_Int Int_Int_add(struct Int_Int v1, struct Int_Int v2) {
-    struct Int_Int result;
+extern Int_Int Int_Int_add(Int_Int v1, Int_Int v2) {
+    Int_Int result;
     //printf("add %ld %ld\n", v1->field0, v2->field0);
-    result.field0 = v1.field0 + v2.field0;
+    result = v1 + v2;
     return result;
 }
 
-extern struct Int_Int Int_Int_sub(struct Int_Int v1, struct Int_Int v2) {
-    struct Int_Int result;
-    result.field0 = v1.field0 - v2.field0;
+extern Int_Int Int_Int_sub(Int_Int v1, Int_Int v2) {
+    Int_Int result;
+    result = v1 - v2;
     return result;
 }
 
-extern struct Int_Int Int_Int_mul(struct Int_Int v1, struct Int_Int v2) {
-    struct Int_Int result;
-    result.field0 = v1.field0 * v2.field0;
+extern Int_Int Int_Int_mul(Int_Int v1, Int_Int v2) {
+    Int_Int result;
+    result = v1 * v2;
     return result;
 }
 
-extern struct Int_Int Int_Int_div(struct Int_Int v1, struct Int_Int v2) {
-    struct Int_Int result;
-    result.field0 = v1.field0 / v2.field0;
+extern Int_Int Int_Int_div(Int_Int v1, Int_Int v2) {
+    Int_Int result;
+    result = v1 / v2;
     return result;
 }
 
-extern struct Bool_Bool Int_Int_eq(struct Int_Int v1, struct Int_Int v2) {
+extern struct Bool_Bool Int_Int_eq(Int_Int v1, Int_Int v2) {
     //printf("Int_Int_eq %ld %ld\n", v1.field0, v2.field0);
     struct Bool_Bool result;
-    result.field0 = v1.field0 == v2.field0;
+    result.field0 = v1 == v2;
     return result;
 }
 
-extern struct Bool_Bool Int_Int_lessThan(struct Int_Int v1, struct Int_Int v2) {
+extern struct Bool_Bool Int_Int_lessThan(Int_Int v1, Int_Int v2) {
     struct Bool_Bool result;
     //printf("lessThan %ld %ld\n", v1->field0, v2->field0);
-    if (v1.field0 < v2.field0) {
+    if (v1 < v2) {
         result.field0 = 1;
     } else {
         result.field0 = 0;
