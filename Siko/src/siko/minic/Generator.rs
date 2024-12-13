@@ -4,7 +4,11 @@ use std::{
     io::{self, Write},
 };
 
-use crate::siko::{minic::Function::Value, util::DependencyProcessor::processDependencies};
+use crate::siko::{
+    minic::Function::Value,
+    qualifiedname::{getPtrAllocateArrayName, getPtrMemcpyName, getPtrNullName, getPtrOffsetName, getPtrStoreName},
+    util::DependencyProcessor::processDependencies,
+};
 
 use super::{
     Data::Struct,
@@ -102,7 +106,11 @@ impl MiniCGenerator {
                 )
             }
             Instruction::GetFieldRef(dest, root, index) => {
-                format!("{} = {}.field{};", dest.name, root.name, index)
+                if root.ty.isPtr() {
+                    format!("{} = {}->field{};", dest.name, root.name, index)
+                } else {
+                    format!("{} = {}.field{};", dest.name, root.name, index)
+                }
             }
             Instruction::SetField(dest, src, indices, mode) => {
                 let path: Vec<_> = indices.iter().map(|i| format!(".field{}", i)).collect();
@@ -182,8 +190,10 @@ impl MiniCGenerator {
 
     fn dumpFunction(&self, f: &Function, buf: &mut File) -> io::Result<()> {
         let mut args = Vec::new();
+        let mut argNames = Vec::new();
         for arg in &f.args {
             args.push(format!("{} {}", getTypeName(&arg.ty), arg.name,));
+            argNames.push(arg.name.clone());
         }
 
         let mut localVars = BTreeSet::new();
@@ -228,9 +238,46 @@ impl MiniCGenerator {
             }
         }
 
+        if f.name.starts_with(&getPtrMemcpyName().toString().replace(".", "_")) {
+            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(buf, "    {} result;", getTypeName(&f.result))?;
+            writeln!(buf, "    memcpy(dest, src, sizeof(*src) * count);")?;
+            writeln!(buf, "    return result;")?;
+            writeln!(buf, "}}\n")?;
+        }
+
+        if f.name.starts_with(&getPtrNullName().toString().replace(".", "_")) {
+            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(buf, "    return NULL;")?;
+            writeln!(buf, "}}\n")?;
+        }
+
+        if f.name.starts_with(&getPtrAllocateArrayName().toString().replace(".", "_")) {
+            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(buf, "    return malloc(sizeof({}) * count);", getTypeName(&f.result.getBase()))?;
+            writeln!(buf, "}}\n")?;
+        }
+
+        if f.name.starts_with(&getPtrOffsetName().toString().replace(".", "_")) {
+            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(buf, "    return &base[count];")?;
+            writeln!(buf, "}}\n")?;
+        }
+
+        if f.name.starts_with(&getPtrStoreName().toString().replace(".", "_")) {
+            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(buf, "    {} result;", getTypeName(&f.result))?;
+            writeln!(buf, "    *addr = item;")?;
+            writeln!(buf, "    return result;")?;
+            writeln!(buf, "}}\n")?;
+        }
+
         if !f.blocks.is_empty() {
             writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
             for v in localVars {
+                if argNames.contains(&v.name) {
+                    continue;
+                }
                 writeln!(buf, "   {} {};", getTypeName(&v.ty), v.name)?;
             }
             for block in &f.blocks {

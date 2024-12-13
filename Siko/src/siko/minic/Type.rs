@@ -18,6 +18,13 @@ impl Type {
         }
     }
 
+    pub fn getBase(&self) -> Type {
+        match self {
+            Type::Ptr(p) => *p.clone(),
+            _ => unreachable!(),
+        }
+    }
+
     pub fn isArray(&self) -> bool {
         match self {
             Type::Array(_, _) => true,

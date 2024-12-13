@@ -110,6 +110,7 @@ impl<'a> DeadCodeEliminator<'a> {
                     return;
                 }
                 InstructionKind::Assign(_, _) => {}
+                InstructionKind::FieldAssign(_, _, _) => {}
                 InstructionKind::DeclareVar(_) => {}
                 InstructionKind::Transform(_, _, _) => {}
                 InstructionKind::EnumSwitch(_, cases) => {

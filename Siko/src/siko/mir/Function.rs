@@ -155,6 +155,7 @@ pub enum Instruction {
     Reference(Variable, Variable),
     Call(Variable, String, Vec<Variable>),
     Assign(Variable, Value),
+    SetField(Variable, Variable, Vec<i32>),
     Return(Value),
     Memcpy(Variable, Variable), //src -> dest
     Store(Variable, Variable),  //src -> dest
@@ -180,6 +181,7 @@ impl fmt::Display for Instruction {
                 args.iter().map(|arg| format!("{}", arg)).collect::<Vec<_>>().join(", ")
             ),
             Instruction::Assign(var, value) => write!(f, "Assign({}, {})", var, value),
+            Instruction::SetField(dest, src, indices) => write!(f, "SetField({}, {}, {:?})", dest, src, indices),
             Instruction::Return(value) => write!(f, "Return({})", value),
             Instruction::Memcpy(var1, var2) => write!(f, "Memcpy({} => {})", var1, var2),
             Instruction::Store(var1, var2) => write!(f, "Store({} => {})", var1, var2),

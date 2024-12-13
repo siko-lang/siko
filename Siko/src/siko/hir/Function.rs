@@ -129,6 +129,23 @@ impl std::fmt::Debug for Variable {
 }
 
 #[derive(Clone, PartialEq)]
+pub struct FieldInfo {
+    pub name: String,
+    pub location: Location,
+    pub ty: Option<Type>,
+}
+
+impl Display for FieldInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(ty) = &self.ty {
+            write!(f, "f/{}: {}", self.name, ty)
+        } else {
+            write!(f, "f/{}", self.name)
+        }
+    }
+}
+
+#[derive(Clone, PartialEq)]
 pub enum InstructionKind {
     FunctionCall(Variable, QualifiedName, Vec<Variable>),
     MethodCall(Variable, Variable, String, Vec<Variable>),
@@ -146,6 +163,7 @@ pub enum InstructionKind {
     Drop(Vec<String>),
     Jump(Variable, BlockId),
     Assign(Variable, Variable),
+    FieldAssign(Variable, Variable, Vec<FieldInfo>),
     DeclareVar(Variable),
     Transform(Variable, Variable, u32),
     EnumSwitch(Variable, Vec<EnumCase>),
@@ -184,6 +202,7 @@ impl InstructionKind {
             InstructionKind::Drop(_) => None,
             InstructionKind::Jump(v, _) => Some(v.clone()),
             InstructionKind::Assign(_, _) => None,
+            InstructionKind::FieldAssign(_, _, _) => None,
             InstructionKind::DeclareVar(v) => Some(v.clone()),
             InstructionKind::Transform(v, _, _) => Some(v.clone()),
             InstructionKind::EnumSwitch(_, _) => None,
@@ -226,6 +245,7 @@ impl InstructionKind {
             InstructionKind::Drop(_) => vec![],
             InstructionKind::Jump(var, _) => vec![var.clone()],
             InstructionKind::Assign(var, value) => vec![var.clone(), value.clone()],
+            InstructionKind::FieldAssign(var, value, _) => vec![var.clone(), value.clone()],
             InstructionKind::DeclareVar(var) => vec![var.clone()],
             InstructionKind::Transform(var, target, _) => vec![var.clone(), target.clone()],
             InstructionKind::EnumSwitch(var, _) => {
@@ -270,6 +290,10 @@ impl InstructionKind {
                 format!("{} = jump({})", dest, id)
             }
             InstructionKind::Assign(v, arg) => format!("assign({}, {})", v, arg),
+            InstructionKind::FieldAssign(v, arg, fields) => {
+                let fields = fields.iter().map(|info| info.to_string()).collect::<Vec<_>>().join(", ");
+                format!("fieldassign({}, {}, {})", v, arg, fields)
+            }
             InstructionKind::DeclareVar(v) => format!("declare({})", v),
             InstructionKind::Transform(dest, arg, index) => format!("{} = transform({}, {})", dest, arg, index),
             InstructionKind::EnumSwitch(root, cases) => format!("enumswitch({}, {:?})", root, cases),

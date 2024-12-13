@@ -10,6 +10,34 @@ class Vec[T] {
     fn new() -> Vec[T] {
         Vec(null(), 0, 0)
     }
+
+    fn push(mut self, item: T) -> Self {
+        if self.size == self.capacity {
+            self.grow(self.capacity * 2);
+        }
+        self.size = self.size + 1;
+        let ptr = offset(self.items, self.size);
+        store(ptr, item);
+        self
+    }
+
+    fn get(&self, index: Int) -> &T {
+        if self.size >= index {
+            panic("OutOfBounds");
+        }
+        let ptr = offset(self.items, index);
+        toRef(ptr)
+    }
+
+    fn grow(mut self, capacity: Int) -> Self {
+        self.capacity = capacity;
+        let newItems: *T = allocateArray(self.capacity);
+        if self.size > 0 {
+            memcpy(newItems, self.items, self.size);
+        }
+        self.items = newItems;
+        self
+    }
 }
 
 }

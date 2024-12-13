@@ -2,7 +2,7 @@ use core::panic;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::siko::hir::Data::Enum;
-use crate::siko::hir::Function::{Block as IrBlock, BlockId, InstructionKind, Variable};
+use crate::siko::hir::Function::{Block as IrBlock, BlockId, FieldInfo, InstructionKind, Variable};
 use crate::siko::location::Location::Location;
 use crate::siko::location::Report::ReportContext;
 use crate::siko::qualifiedname::QualifiedName;
@@ -93,6 +93,55 @@ impl<'a> ExprResolver<'a> {
         var
     }
 
+    fn processFieldAssign<'e>(&mut self, receiver: &Expr, name: &Identifier, env: &'e Environment<'e>, rhsId: Variable, location: Location) {
+        let mut receiver = receiver;
+        let mut fields: Vec<FieldInfo> = Vec::new();
+        fields.push(FieldInfo {
+            name: name.toString(),
+            location: name.location.clone(),
+            ty: None,
+        });
+        loop {
+            match &receiver.expr {
+                SimpleExpr::Value(name) => {
+                    let value = env.resolve(&name.toString());
+                    match value {
+                        Some(value) => {
+                            fields.reverse();
+                            self.addInstruction(InstructionKind::FieldAssign(value.clone(), rhsId, fields), location.clone());
+                            return;
+                        }
+                        None => {
+                            ResolverError::UnknownValue(name.name.clone(), name.location.clone()).report(self.ctx);
+                        }
+                    }
+                }
+                SimpleExpr::SelfValue => {
+                    let value = Variable {
+                        value: "self".to_string(),
+                        location: receiver.location.clone(),
+                        ty: None,
+                        index: 0,
+                    };
+                    fields.reverse();
+                    self.addInstruction(InstructionKind::FieldAssign(value.clone(), rhsId, fields), location.clone());
+                    return;
+                }
+                SimpleExpr::FieldAccess(r, name) => {
+                    receiver = r;
+                    fields.push(FieldInfo {
+                        name: name.toString(),
+                        location: name.location.clone(),
+                        ty: None,
+                    });
+                }
+                _ => {
+                    ResolverError::InvalidAssignment(location.clone()).report(self.ctx);
+                }
+            }
+        }
+    }
+
     fn resolveBlock<'e>(&mut self, block: &Block, env: &'e Environment<'e>) -> Variable {
         let mut env = Environment::child(env);
         let mut lastHasSemicolon = false;
@@ -124,6 +173,9 @@ impl<'a> ExprResolver<'a> {
                                     ResolverError::UnknownValue(name.name.clone(), name.location.clone()).report(self.ctx);
                                 }
                             }
+                        }
+                        SimpleExpr::FieldAccess(receiver, name) => {
+                            self.processFieldAssign(receiver, name, &mut env, rhsId, lhs.location.clone());
                         }
                         _ => {
                             ResolverError::InvalidAssignment(lhs.location.clone()).report(self.ctx);

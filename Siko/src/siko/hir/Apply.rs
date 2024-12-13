@@ -5,7 +5,7 @@ use crate::siko::hir::Type::Type;
 use super::{
     ConstraintContext::{Constraint, ConstraintContext},
     Data::{Class, Enum, Field, Variant},
-    Function::{InstructionKind, Variable},
+    Function::{FieldInfo, InstructionKind, Variable},
     Substitution::{TypeSubstitution, VariableSubstitution},
     Trait::{AssociatedType, Instance, MemberInfo, Trait},
     TypeVarAllocator::TypeVarAllocator,
@@ -167,6 +167,15 @@ impl Apply for ConstraintContext {
     }
 }
 
+impl Apply for FieldInfo {
+    fn apply(&self, sub: &TypeSubstitution) -> Self {
+        //println!("Applying for {}", self.value);
+        let mut info = self.clone();
+        info.ty = info.ty.apply(sub);
+        info
+    }
+}
+
 impl Apply for InstructionKind {
     fn apply(&self, sub: &TypeSubstitution) -> Self {
         match self {
@@ -190,6 +199,7 @@ impl Apply for InstructionKind {
             InstructionKind::Drop(args) => InstructionKind::Drop(args.clone()),
             InstructionKind::Jump(dest, block_id) => InstructionKind::Jump(dest.apply(sub), *block_id),
             InstructionKind::Assign(name, rhs) => InstructionKind::Assign(name.apply(sub), rhs.apply(sub)),
+            InstructionKind::FieldAssign(name, rhs, fields) => InstructionKind::FieldAssign(name.apply(sub), rhs.apply(sub), fields.apply(sub)),
             InstructionKind::DeclareVar(var) => InstructionKind::DeclareVar(var.apply(sub)),
             InstructionKind::Transform(dest, root, index) => InstructionKind::Transform(dest.apply(sub), root.apply(sub), index.clone()),
             InstructionKind::EnumSwitch(root, cases) => InstructionKind::EnumSwitch(root.apply(sub), cases.clone()),
@@ -271,6 +281,7 @@ impl ApplyVariable for InstructionKind {
             InstructionKind::Drop(args) => InstructionKind::Drop(args.clone()),
             InstructionKind::Jump(dest, block_id) => InstructionKind::Jump(dest.applyVar(sub), *block_id),
             InstructionKind::Assign(name, rhs) => InstructionKind::Assign(name.applyVar(sub), rhs.applyVar(sub)),
+            InstructionKind::FieldAssign(name, rhs, fields) => InstructionKind::FieldAssign(name.applyVar(sub), rhs.applyVar(sub), fields.clone()),
             InstructionKind::DeclareVar(var) => InstructionKind::DeclareVar(var.applyVar(sub)),
             InstructionKind::Transform(dest, root, index) => InstructionKind::Transform(dest.applyVar(sub), root.applyVar(sub), index.clone()),
             InstructionKind::EnumSwitch(root, cases) => InstructionKind::EnumSwitch(root.applyVar(sub), cases.clone()),

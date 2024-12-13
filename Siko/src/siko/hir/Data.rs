@@ -42,6 +42,8 @@ impl Class {
                 return (f.clone(), index as i32);
             }
         }
+        println!("Field not found {}", name);
+        println!("{}", self);
         unreachable!();
     }
 }

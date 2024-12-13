@@ -153,6 +153,10 @@ impl<'a> MinicBuilder<'a> {
                     let minicInstruction = LInstruction::GetFieldRef(self.lowerVar(dest), self.lowerVar(root), *index);
                     minicBlock.instructions.push(minicInstruction);
                 }
+                Instruction::SetField(dest, root, indices) => {
+                    let minicInstruction = LInstruction::SetField(self.lowerVar(dest), self.lowerVar(root), indices.clone(), ReadMode::Noop);
+                    minicBlock.instructions.push(minicInstruction);
+                }
                 Instruction::IntegerLiteral(var, value) => {
                     let minicInstruction = LInstruction::Store(self.lowerVar(var), LValue::Numeric(value.clone(), LType::Int64));
                     minicBlock.instructions.push(minicInstruction);

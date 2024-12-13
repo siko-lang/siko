@@ -92,3 +92,19 @@ pub fn getStringEqName() -> QualifiedName {
 pub fn getPtrNullName() -> QualifiedName {
     build("Ptr", "null")
 }
+
+pub fn getPtrAllocateArrayName() -> QualifiedName {
+    build("Ptr", "allocateArray")
+}
+
+pub fn getPtrMemcpyName() -> QualifiedName {
+    build("Ptr", "memcpy")
+}
+
+pub fn getPtrOffsetName() -> QualifiedName {
+    build("Ptr", "offset")
+}
+
+pub fn getPtrStoreName() -> QualifiedName {
+    build("Ptr", "store")
+}

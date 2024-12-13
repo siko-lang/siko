@@ -51,6 +51,7 @@ pub struct Typechecker<'a> {
     mutables: BTreeSet<String>,
     implicitRefs: BTreeSet<Variable>,
     mutableMethodCalls: BTreeMap<Variable, MutableMethodCallInfo>,
+    fieldTypes: BTreeMap<Variable, Vec<Type>>,
 }
 
 impl<'a> Typechecker<'a> {
@@ -67,6 +68,7 @@ impl<'a> Typechecker<'a> {
             mutables: BTreeSet::new(),
             implicitRefs: BTreeSet::new(),
             mutableMethodCalls: BTreeMap::new(),
+            fieldTypes: BTreeMap::new(),
         }
     }
 
@@ -165,6 +167,7 @@ impl<'a> Typechecker<'a> {
                             self.types.insert(var.value.clone(), Type::Never);
                         }
                         InstructionKind::Assign(_, _) => {}
+                        InstructionKind::FieldAssign(_, _, _) => {}
                         InstructionKind::DeclareVar(var) => {
                             self.initializeVar(var, body);
                             self.mutables.insert(var.value.clone());
@@ -448,6 +451,28 @@ impl<'a> Typechecker<'a> {
         };
     }
 
+    fn checkField(&mut self, receiverType: Type, fieldName: String, location: Location) -> Type {
+        let receiverType = receiverType.apply(&self.substitution);
+        match receiverType.unpackRef() {
+            Type::Named(name, _, _) => {
+                if let Some(classDef) = self.program.classes.get(&name) {
+                    let classDef = self.instantiateClass(classDef, receiverType.unpackRef());
+                    for f in &classDef.fields {
+                        if f.name == *fieldName {
+                            return f.ty.clone();
+                        }
+                    }
+                    TypecheckerError::FieldNotFound(fieldName.clone(), location.clone()).report(self.ctx);
+                } else {
+                    TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
+                }
+            }
+            _ => {
+                TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
+            }
+        }
+    }
+
     fn check(&mut self, f: &Function) {
         //println!("checking {}", f.name);
         if f.body.is_none() {
@@ -543,6 +568,21 @@ impl<'a> Typechecker<'a> {
                     }
                     self.unify(self.getType(name), self.getType(rhs), instruction.location.clone());
                 }
+                InstructionKind::FieldAssign(name, rhs, fields) => {
+                    if !self.mutables.contains(&name.value) {
+                        TypecheckerError::ImmutableAssign(instruction.location.clone()).report(self.ctx);
+                    }
+                    let receiverType = self.getType(name);
+                    let mut types = Vec::new();
+                    let mut receiverType = receiverType.apply(&self.substitution);
+                    for field in fields {
+                        let fieldTy = self.checkField(receiverType, field.name.clone(), field.location.clone());
+                        types.push(fieldTy.clone());
+                        receiverType = fieldTy;
+                    }
+                    self.fieldTypes.insert(name.clone(), types);
+                    self.unify(self.getType(rhs), receiverType, instruction.location.clone());
+                }
                 InstructionKind::DeclareVar(_) => {}
                 InstructionKind::Transform(dest, root, index) => {
                     let rootTy = self.getType(root);
@@ -564,29 +604,8 @@ impl<'a> Typechecker<'a> {
                 InstructionKind::StringSwitch(_root, _cases) => {}
                 InstructionKind::FieldRef(dest, receiver, fieldName) => {
                     let receiverType = self.getType(receiver);
-                    let receiverType = receiverType.apply(&self.substitution);
-                    match receiverType.unpackRef() {
-                        Type::Named(name, _, _) => {
-                            if let Some(classDef) = self.program.classes.get(&name) {
-                                let classDef = self.instantiateClass(classDef, receiverType.unpackRef());
-                                let mut found = false;
-                                for f in &classDef.fields {
-                                    if f.name == *fieldName {
-                                        self.unify(self.getType(dest), f.ty.clone(), instruction.location.clone());
-                                        found = true;
-                                    }
-                                }
-                                if !found {
-                                    TypecheckerError::FieldNotFound(fieldName.clone(), instruction.location.clone()).report(self.ctx);
-                                }
-                            } else {
-                                TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(self.ctx);
-                            }
-                        }
-                        _ => {
-                            TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(self.ctx);
-                        }
-                    }
+                    let fieldTy = self.checkField(receiverType, fieldName.clone(), instruction.location.clone());
+                    self.unify(self.getType(dest), fieldTy, instruction.location.clone());
                 }
                 InstructionKind::TupleIndex(dest, receiver, index) => {
                     let receiverType = self.getType(receiver);
@@ -825,6 +844,21 @@ impl<'a> Typechecker<'a> {
         }
     }
 
+    fn addFieldTypes(&mut self, f: &mut Function) {
+        let body = &mut f.body.as_mut().unwrap();
+
+        for block in &mut body.blocks {
+            for instruction in &mut block.instructions {
+                if let InstructionKind::FieldAssign(dest, _, fields) = &mut instruction.kind {
+                    let types = self.fieldTypes.get(&dest).expect("field types are missing");
+                    for (index, ty) in types.iter().enumerate() {
+                        fields[index].ty = Some(ty.apply(&self.substitution));
+                    }
+                }
+            }
+        }
+    }
+
     fn addTypes(&mut self, f: &mut Function) {
         let mut varSwap = VariableSubstitution::new();
 
@@ -865,6 +899,7 @@ impl<'a> Typechecker<'a> {
         self.convertMethodCalls(&mut result);
         self.addImplicitRefs(&mut result);
         self.transformMutableMethodCalls(&mut result);
+        self.addFieldTypes(&mut result);
         self.addTypes(&mut result);
 
         //self.dump(&result);

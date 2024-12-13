@@ -6,7 +6,7 @@ use std::{
 use crate::siko::{
     hir::{
         Apply::{instantiateClass, instantiateEnum, Apply},
-        Function::{Block, Body, FunctionKind, Instruction, InstructionKind, Parameter, Variable},
+        Function::{Block, Body, FieldInfo, FunctionKind, Instruction, InstructionKind, Parameter, Variable},
         InstanceResolver::ResolutionResult,
         Program::Program,
         Substitution::TypeSubstitution,
@@ -179,6 +179,14 @@ impl Monomorphize for Instruction {
     }
 }
 
+impl Monomorphize for FieldInfo {
+    fn process(&self, sub: &TypeSubstitution, mono: &mut Monomorphizer) -> Self {
+        let mut result = self.clone();
+        result.ty = result.ty.process(sub, mono);
+        result
+    }
+}
+
 impl Monomorphize for InstructionKind {
     fn process(&self, sub: &TypeSubstitution, mono: &mut Monomorphizer) -> Self {
         match self {
@@ -204,6 +212,9 @@ impl Monomorphize for InstructionKind {
             InstructionKind::Drop(args) => InstructionKind::Drop(args.clone()),
             InstructionKind::Jump(dest, block_id) => InstructionKind::Jump(dest.process(sub, mono), *block_id),
             InstructionKind::Assign(dest, rhs) => InstructionKind::Assign(dest.process(sub, mono), rhs.process(sub, mono)),
+            InstructionKind::FieldAssign(dest, rhs, fields) => {
+                InstructionKind::FieldAssign(dest.process(sub, mono), rhs.process(sub, mono), fields.process(sub, mono))
+            }
             InstructionKind::DeclareVar(var) => InstructionKind::DeclareVar(var.process(sub, mono)),
             InstructionKind::Transform(dest, root, index) => {
                 InstructionKind::Transform(dest.process(sub, mono), root.process(sub, mono), index.clone())

@@ -4,7 +4,7 @@ use crate::siko::{
     hir::{
         ConstraintContext::ConstraintContext,
         Data::{Class, Enum, Field, Variant},
-        Function::{Block, Body, Function, FunctionKind, Instruction, InstructionKind, Parameter, Variable},
+        Function::{Block, Body, FieldInfo, Function, FunctionKind, Instruction, InstructionKind, Parameter, Variable},
         Program::Program,
         Type::Type,
     },
@@ -107,13 +107,20 @@ impl RemoveTuples for Variable {
     }
 }
 
+impl RemoveTuples for FieldInfo {
+    fn removeTuples(&self, ctx: &mut Context) -> Self {
+        let mut result = self.clone();
+        result.ty = result.ty.removeTuples(ctx);
+        result
+    }
+}
+
 impl RemoveTuples for InstructionKind {
     fn removeTuples(&self, ctx: &mut Context) -> InstructionKind {
         match self {
             InstructionKind::Tuple(dest, args) => {
                 InstructionKind::FunctionCall(dest.removeTuples(ctx), getTuple(&dest.getType()), args.removeTuples(ctx))
             }
-
             InstructionKind::Transform(dest, root, index) => InstructionKind::Transform(dest.removeTuples(ctx), root.removeTuples(ctx), *index),
             InstructionKind::FunctionCall(dest, name, args) => {
                 InstructionKind::FunctionCall(dest.removeTuples(ctx), name.clone(), args.removeTuples(ctx))
@@ -138,6 +145,9 @@ impl RemoveTuples for InstructionKind {
             InstructionKind::Drop(args) => InstructionKind::Drop(args.clone()),
             InstructionKind::Jump(dest, blockId) => InstructionKind::Jump(dest.removeTuples(ctx), *blockId),
             InstructionKind::Assign(lhs, rhs) => InstructionKind::Assign(lhs.clone(), rhs.removeTuples(ctx)),
+            InstructionKind::FieldAssign(lhs, rhs, fields) => {
+                InstructionKind::FieldAssign(lhs.clone(), rhs.removeTuples(ctx), fields.removeTuples(ctx))
+            }
             InstructionKind::DeclareVar(var) => InstructionKind::DeclareVar(var.removeTuples(ctx)),
             InstructionKind::EnumSwitch(root, cases) => InstructionKind::EnumSwitch(root.removeTuples(ctx), cases.clone()),
             InstructionKind::IntegerSwitch(root, cases) => InstructionKind::IntegerSwitch(root.removeTuples(ctx), cases.clone()),
