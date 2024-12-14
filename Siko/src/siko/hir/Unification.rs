@@ -45,14 +45,14 @@ pub fn unify(sub: &mut TypeSubstitution, ty1: &Type, ty2: &Type, allowNamed: boo
         (Type::Var(TypeVar::Var(v1)), Type::Var(TypeVar::Var(v2))) if v1 == v2 => Ok(()),
         (Type::Never(false), Type::Var(_)) => Ok(()),
         (Type::Var(_), Type::Never(false)) => Ok(()),
-        (Type::Var(_), Type::Never(true)) => {
-            sub.add(ty1, ty2);
-            Ok(())
-        }
-        (Type::Never(true), Type::Var(_)) => {
-            sub.add(ty2, ty1);
-            Ok(())
-        }
+        // (Type::Var(_), Type::Never(true)) => {
+        //     sub.add(ty1, ty2);
+        //     Ok(())
+        // }
+        // (Type::Never(true), Type::Var(_)) => {
+        //     sub.add(ty2, ty1);
+        //     Ok(())
+        // }
         (_, Type::Var(TypeVar::Var(_))) => {
             sub.add(ty2, ty1);
             Ok(())

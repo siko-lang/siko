@@ -40,6 +40,7 @@ impl Type {
     pub fn getUnion(&self) -> String {
         match self {
             Type::Union(v) => v.clone(),
+            Type::Ptr(v) => v.getUnion(),
             ty => unreachable!("not a union {}", ty),
         }
     }

@@ -481,10 +481,10 @@ impl<'a> Typechecker<'a> {
                 InstructionKind::Transform(dest, root, index) => {
                     let rootTy = self.getType(root);
                     let rootTy = rootTy.apply(&self.substitution);
-                    match rootTy.getName() {
+                    match rootTy.unpackRef().getName() {
                         Some(name) => {
                             let e = self.program.enums.get(&name).expect("not an enum in transform!");
-                            let e = self.instantiateEnum(e, &rootTy);
+                            let e = self.instantiateEnum(e, &rootTy.unpackRef());
                             let v = &e.variants[*index as usize];
                             self.unify(self.getType(dest), Type::Tuple(v.items.clone()), instruction.location.clone());
                         }

@@ -173,7 +173,7 @@ impl Program {
                         Type::Array(s, itemSize) => *s * *itemSize,
                     };
                     let alignment = match &f.ty {
-                        Type::Void => 0,
+                        Type::Void => 1,
                         Type::Int8 => 1,
                         Type::Int16 => 2,
                         Type::Int32 => 4,
