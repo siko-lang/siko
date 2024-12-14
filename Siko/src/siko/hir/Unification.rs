@@ -43,8 +43,16 @@ pub fn unify(sub: &mut TypeSubstitution, ty1: &Type, ty2: &Type, allowNamed: boo
             }
         }
         (Type::Var(TypeVar::Var(v1)), Type::Var(TypeVar::Var(v2))) if v1 == v2 => Ok(()),
-        (Type::Never, Type::Var(_)) => Ok(()),
-        (Type::Var(_), Type::Never) => Ok(()),
+        (Type::Never(false), Type::Var(_)) => Ok(()),
+        (Type::Var(_), Type::Never(false)) => Ok(()),
+        (Type::Var(_), Type::Never(true)) => {
+            sub.add(ty1, ty2);
+            Ok(())
+        }
+        (Type::Never(true), Type::Var(_)) => {
+            sub.add(ty2, ty1);
+            Ok(())
+        }
         (_, Type::Var(TypeVar::Var(_))) => {
             sub.add(ty2, ty1);
             Ok(())
@@ -63,8 +71,8 @@ pub fn unify(sub: &mut TypeSubstitution, ty1: &Type, ty2: &Type, allowNamed: boo
         }
         (Type::Reference(v1, _), Type::Reference(v2, _)) => unify(sub, &v1, &v2, allowNamed),
         (Type::Ptr(v1), Type::Ptr(v2)) => unify(sub, &v1, &v2, allowNamed),
-        (Type::Never, _) => Ok(()),
-        (_, Type::Never) => Ok(()),
+        (Type::Never(_), _) => Ok(()),
+        (_, Type::Never(_)) => Ok(()),
         (Type::Function(args1, res1), Type::Function(args2, res2)) => {
             for (arg1, arg2) in zip(args1, args2) {
                 unify(sub, arg1, arg2, allowNamed)?;

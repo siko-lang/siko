@@ -17,7 +17,7 @@ struct String_String {
 
 typedef int64_t Int_Int;
 
-struct siko_Tuple_ Std_Basic_Util_siko_runtime_abort();
+void Std_Basic_Util_siko_runtime_abort();
 
 struct siko_Tuple_ Std_Basic_Util_siko_runtime_num(Int_Int v);
 

@@ -108,6 +108,7 @@ fn main() {
     let program = typecheck(&ctx, program);
     //println!("after typchk\n{}", program);
     let program = eliminateDeadCode(&ctx, program);
+    //println!("after dce\n{}", program);
     let program = monomorphize(&ctx, program);
     //println!("after mono\n{}", program);
     let program = removeTuples(&program);

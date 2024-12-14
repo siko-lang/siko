@@ -96,7 +96,11 @@ impl MiniCGenerator {
                 for arg in args {
                     argRefs.push(format!("{}", arg.name));
                 }
-                format!("{} = {}({});", dest.name, name, argRefs.join(", "))
+                if dest.ty.isVoid() {
+                    format!("{}({});", name, argRefs.join(", "))
+                } else {
+                    format!("{} = {}({});", dest.name, name, argRefs.join(", "))
+                }
             }
             Instruction::LoadVar(dest, src) => {
                 format!(
@@ -291,9 +295,15 @@ impl MiniCGenerator {
         }
 
         if !f.blocks.is_empty() {
+            if f.result.isVoid() {
+                write!(buf, "[[ noreturn ]] ")?;
+            }
             writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
             for v in localVars {
                 if argNames.contains(&v.name) {
+                    continue;
+                }
+                if v.ty.isVoid() {
                     continue;
                 }
                 writeln!(buf, "   {} {};", getTypeName(&v.ty), v.name)?;
@@ -315,6 +325,9 @@ impl MiniCGenerator {
         let mut args = Vec::new();
         for arg in &f.args {
             args.push(format!("{} {}", getTypeName(&arg.ty), arg.name,));
+        }
+        if f.result.isVoid() {
+            write!(buf, "[[ noreturn ]] ")?;
         }
         writeln!(buf, "{} {}({});\n", getTypeName(&f.result), f.name, args.join(", "))?;
         Ok(())

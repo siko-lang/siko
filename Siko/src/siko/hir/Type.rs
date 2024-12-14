@@ -30,7 +30,7 @@ pub enum Type {
     Reference(Box<Type>, Option<Lifetime>),
     Ptr(Box<Type>),
     SelfType,
-    Never,
+    Never(bool), // true = explicit never i.e. !
 }
 
 impl Type {
@@ -84,7 +84,7 @@ impl Type {
                 vars = ty.collectVars(vars);
             }
             Type::SelfType => {}
-            Type::Never => {}
+            Type::Never(_) => {}
         }
         vars
     }
@@ -106,7 +106,7 @@ impl Type {
             }
             Type::Ptr(_) => Vec::new(),
             Type::SelfType => Vec::new(),
-            Type::Never => Vec::new(),
+            Type::Never(_) => Vec::new(),
         }
     }
 
@@ -185,7 +185,12 @@ impl Type {
             _ => false,
         }
     }
-
+    pub fn isNever(&self) -> bool {
+        match &self {
+            Type::Never(_) => true,
+            _ => false,
+        }
+    }
     pub fn changeMethodResult(&self) -> Type {
         match &self {
             Type::Function(args, result) => Type::Function(args.clone(), Box::new(result.getSelflessType(true))),
@@ -238,7 +243,7 @@ impl Type {
             Type::SelfType => {
                 panic!("self in isSpecified")
             }
-            Type::Never => {
+            Type::Never(_) => {
                 return true;
             }
         }
@@ -317,7 +322,7 @@ impl Display for Type {
                 write!(f, "*{}", ty)
             }
             Type::SelfType => write!(f, "Self"),
-            Type::Never => write!(f, "!"),
+            Type::Never(_) => write!(f, "!"),
         }
     }
 }

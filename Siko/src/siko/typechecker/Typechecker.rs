@@ -157,14 +157,14 @@ impl<'a> Typechecker<'a> {
                             self.initializeVar(var, body);
                         }
                         InstructionKind::Return(var, _) => {
-                            self.types.insert(var.value.clone(), Type::Never);
+                            self.types.insert(var.value.clone(), Type::Never(false));
                         }
                         InstructionKind::Ref(var, _) => {
                             self.initializeVar(var, body);
                         }
                         InstructionKind::Drop(_) => {}
                         InstructionKind::Jump(var, _) => {
-                            self.types.insert(var.value.clone(), Type::Never);
+                            self.types.insert(var.value.clone(), Type::Never(false));
                         }
                         InstructionKind::Assign(_, _) => {}
                         InstructionKind::FieldAssign(_, _, _) => {}

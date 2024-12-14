@@ -91,7 +91,11 @@ impl<'a> DeadCodeEliminator<'a> {
                 return;
             }
             match &instruction.kind {
-                InstructionKind::FunctionCall(_, _, _) => {}
+                InstructionKind::FunctionCall(dest, _, _) => {
+                    if dest.getType().isNever() {
+                        return;
+                    }
+                }
                 InstructionKind::MethodCall(_, _, _, _) => unreachable!("method call in DCE"),
                 InstructionKind::DynamicFunctionCall(_, _, _) => {}
                 InstructionKind::ValueRef(_, _) => {}

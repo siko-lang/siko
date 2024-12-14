@@ -84,6 +84,10 @@ impl<'a> TypeParser for Parser<'a> {
                 let ty = self.parseType();
                 Type::Ptr(Box::new(ty))
             }
+            TokenKind::Misc(MiscKind::ExclamationMark) => {
+                self.expect(TokenKind::Misc(MiscKind::ExclamationMark));
+                Type::Never
+            }
             kind => self.reportError2("<type>", kind),
         }
     }

@@ -260,7 +260,7 @@ pub fn lowerType(ty: &HirType, program: &HirProgram) -> MirType {
         HirType::Reference(ty, _) => MirType::Ptr(Box::new(lowerType(ty, program))),
         HirType::Ptr(ty) => MirType::Ptr(Box::new(lowerType(ty, program))),
         HirType::SelfType => todo!(),
-        HirType::Never => MirType::Void,
+        HirType::Never(_) => MirType::Void,
     }
 }
 

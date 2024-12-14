@@ -10,6 +10,7 @@ pub enum Type {
     Reference(Box<Type>),
     Ptr(Box<Type>),
     SelfType,
+    Never,
 }
 
 impl fmt::Display for Type {
@@ -34,6 +35,7 @@ impl fmt::Display for Type {
             Type::Reference(inner) => write!(f, "&{}", inner),
             Type::Ptr(inner) => write!(f, "*{}", inner),
             Type::SelfType => write!(f, "Self"),
+            Type::Never => write!(f, "!"),
         }
     }
 }

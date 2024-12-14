@@ -40,7 +40,7 @@ impl Apply for Type {
             Type::Reference(arg, l) => Type::Reference(Box::new(arg.apply(sub)), l.clone()),
             Type::Ptr(arg) => Type::Ptr(Box::new(arg.apply(sub))),
             Type::SelfType => self.clone(),
-            Type::Never => self.clone(),
+            Type::Never(_) => self.clone(),
         }
     }
 }
