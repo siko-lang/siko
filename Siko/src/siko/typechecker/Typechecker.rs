@@ -6,7 +6,7 @@ use std::{
 use crate::siko::{
     hir::{
         Apply::{instantiateClass, instantiateEnum, instantiateType, instantiateType2, Apply, ApplyVariable},
-        ConstraintContext::{Constraint as HirConstraint, ConstraintContext},
+        ConstraintContext::ConstraintContext,
         Data::{Class, Enum},
         Function::{Body, Function, Instruction, InstructionKind, Parameter, Variable},
         InstanceResolver::ResolutionResult,
@@ -245,127 +245,6 @@ impl<'a> Typechecker<'a> {
         let constraints = constraintContext.apply(&self.substitution);
         self.checkConstraint(&constraints, knownConstraints, resultVar.location.clone());
         self.unify(self.getType(resultVar), fnResult, resultVar.location.clone());
-    }
-
-    fn checkTraitFunctionCall(
-        &mut self,
-        args: &Vec<Variable>,
-        resultVar: &Variable,
-        fnType: Type,
-        traitName: QualifiedName,
-        memberName: QualifiedName,
-        constraintContext: &ConstraintContext,
-    ) {
-        println!("checkTraitFunctionCall: {} {}", fnType, constraintContext);
-        let traitDef = self.program.getTrait(&traitName);
-        //println!("trait {}", traitDef);
-        let (fnType, sub) = instantiateType2(&mut self.allocator, &fnType);
-        let traitDef = traitDef.apply(&sub);
-        //println!("trait {}", traitDef);
-        //println!("fnType: {}", fnType);
-        let (fnArgs, mut fnResult) = match fnType.splitFnType() {
-            Some((fnArgs, fnResult)) => (fnArgs, fnResult),
-            None => return,
-        };
-        if args.len() != fnArgs.len() {
-            TypecheckerError::ArgCountMismatch(fnArgs.len() as u32, args.len() as u32, resultVar.location.clone()).report(self.ctx);
-        }
-        if fnArgs.len() > 0 {
-            fnResult = fnResult.changeSelfType(fnArgs[0].clone());
-        }
-        for (arg, fnArg) in zip(args, fnArgs) {
-            let mut argTy = self.getType(arg);
-            argTy = argTy.apply(&self.substitution);
-            let fnArg = fnArg.apply(&self.substitution);
-            if !argTy.isReference() && fnArg.isReference() {
-                argTy = Type::Reference(Box::new(argTy), None);
-                //println!("IMPLICIT REF FOR {}", arg);
-                self.implicitRefs.insert(arg.clone());
-            }
-            self.unify(argTy, fnArg, arg.location.clone());
-        }
-        self.unify(self.getType(resultVar), fnResult, resultVar.location.clone());
-        let traitDef = traitDef.apply(&self.substitution).unwrap();
-        //println!("final trait {}", traitDef);
-        let mut fullySpecified = true;
-        for param in &traitDef.params {
-            if !param.isConcrete() {
-                fullySpecified = false;
-            }
-        }
-        if fullySpecified {
-            if let Some(instances) = self.program.instanceResolver.lookupInstances(&traitName) {
-                let resolutionResult = instances.find(&mut self.allocator, &traitDef.params);
-                match resolutionResult {
-                    ResolutionResult::Winner(instance) => {
-                        //println!("winner instance {}", instance);
-                        for m in &instance.members {
-                            let base = m.fullName.base();
-                            if base == memberName {
-                                self.unify(self.getType(resultVar), m.result.clone(), resultVar.location.clone());
-                                break;
-                            }
-                        }
-                    }
-                    ResolutionResult::Ambiguous(_) => {
-                        TypecheckerError::AmbiguousInstances(
-                            traitName.toString(),
-                            formatTypes(&traitDef.params),
-                            resultVar.location.clone(),
-                            Vec::new(),
-                        )
-                        .report(self.ctx);
-                    }
-                    ResolutionResult::NoInstanceFound => {
-                        TypecheckerError::InstanceNotFound(traitName.toString(), formatTypes(&traitDef.params), resultVar.location.clone())
-                            .report(self.ctx);
-                    }
-                }
-            } else {
-                TypecheckerError::InstanceNotFound(traitName.toString(), formatTypes(&traitDef.params), resultVar.location.clone()).report(self.ctx);
-            }
-        } else {
-            let constraint = HirConstraint {
-                traitName: traitName.clone(),
-                args: traitDef.params.clone(),
-                associatedTypes: Vec::new(),
-            };
-            //println!("{}", constraint);
-            //println!("Available: constraints {}", constraintContext);
-            if !constraintContext.contains(&constraint) {
-                if let Some(instances) = self.program.instanceResolver.lookupInstances(&traitName) {
-                    let resolutionResult = instances.find(&mut self.allocator, &traitDef.params);
-                    match resolutionResult {
-                        ResolutionResult::Winner(instance) => {
-                            //println!("Winner {} for {}", instance, formatTypes(&traitDef.params));
-                            for m in &instance.members {
-                                let base = m.fullName.base();
-                                if base == memberName {
-                                    self.unify(self.getType(resultVar), m.result.clone(), resultVar.location.clone());
-                                    break;
-                                }
-                            }
-                        }
-                        ResolutionResult::Ambiguous(_) => {
-                            TypecheckerError::AmbiguousInstances(
-                                traitName.toString(),
-                                formatTypes(&traitDef.params),
-                                resultVar.location.clone(),
-                                Vec::new(),
-                            )
-                            .report(self.ctx);
-                        }
-                        ResolutionResult::NoInstanceFound => {
-                            TypecheckerError::InstanceNotFound(traitName.toString(), formatTypes(&traitDef.params), resultVar.location.clone())
-                                .report(self.ctx);
-                        }
-                    }
-                } else {
-                    TypecheckerError::InstanceNotFound(traitName.toString(), formatTypes(&traitDef.params), resultVar.location.clone())
-                        .report(self.ctx);
-                }
-            }
-        }
     }
 
     fn checkConstraint(&mut self, neededConstraints: &ConstraintContext, knownConstraints: &ConstraintContext, location: Location) {
