@@ -206,7 +206,12 @@ impl<'a> Builder<'a> {
                 MirFunctionKind::UserDefined(blocks)
             }
             FunctionKind::VariantCtor(i) => MirFunctionKind::VariantCtor(i),
-            FunctionKind::Extern => MirFunctionKind::Extern,
+            FunctionKind::Extern => {
+                if self.function.name.base() == getPtrToRefName() {
+                    return None;
+                }
+                MirFunctionKind::Extern
+            }
             FunctionKind::TraitMemberDecl(_) => return None,
         };
         let mirFunction = MirFunction {
