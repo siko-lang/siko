@@ -12,6 +12,7 @@ use crate::siko::{
     qualifiedname::QualifiedName,
     resolver::FunctionResolver::FunctionResolver,
     syntax::{
+        Function::Parameter as SynParam,
         Module::{Import, Module, ModuleItem},
         Type::{ConstraintArgument, TypeParameterDeclaration},
     },
@@ -294,13 +295,25 @@ impl<'a> Resolver<'a> {
                             let irParam = IrType::Var(TypeVar::Named(associatedType.name.toString()));
                             typeResolver.addTypeParams(irParam);
                         }
+                        let selfType = irParams[0].clone();
                         let mut irTrait = IrTrait::new(traitName, irParams, associatedTypes);
                         for method in &t.methods {
+                            let mut argTypes = Vec::new();
+                            for param in &method.params {
+                                let ty = match param {
+                                    SynParam::Named(_, ty, _) => typeResolver.resolveType(ty),
+                                    SynParam::SelfParam => selfType.clone(),
+                                    SynParam::MutSelfParam => selfType.clone(),
+                                    SynParam::RefSelfParam => selfType.clone(),
+                                };
+                                argTypes.push(ty);
+                            }
+                            let result = typeResolver.resolveType(&method.result).changeSelfType(selfType.clone());
                             irTrait.members.push(MemberInfo {
                                 name: method.name.toString(),
                                 fullName: QualifiedName::Item(Box::new(irTrait.name.clone()), method.name.toString()),
                                 default: method.body.is_some(),
-                                result: typeResolver.resolveType(&method.result),
+                                result: IrType::Function(argTypes, Box::new(result)),
                             })
                         }
                         //println!("Trait {}", irTrait);
@@ -323,7 +336,7 @@ impl<'a> Resolver<'a> {
                         let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
                         let constraintContext = createConstraintContext(&i.typeParams, &typeResolver, &self.program, &self.ctx);
                         let traitDef = moduleResolver.lookupTrait(&i.traitName, &self.program);
-                        let args = i.types.iter().map(|ty| typeResolver.resolveType(ty)).collect();
+                        let args: Vec<_> = i.types.iter().map(|ty| typeResolver.resolveType(ty)).collect();
                         let mut associatedTypes = Vec::new();
                         for associatedType in &i.associatedTypes {
                             let mut found = false;
@@ -348,8 +361,20 @@ impl<'a> Resolver<'a> {
                             };
                             associatedTypes.push(irAssociatedType);
                         }
+                        let selfType = args[0].clone();
                         let mut irInstance = IrInstance::new(i.id, traitDef.name.clone(), args, associatedTypes, constraintContext);
                         for method in &i.methods {
+                            let mut argTypes = Vec::new();
+                            for param in &method.params {
+                                let ty = match param {
+                                    SynParam::Named(_, ty, _) => typeResolver.resolveType(ty),
+                                    SynParam::SelfParam => selfType.clone(),
+                                    SynParam::MutSelfParam => selfType.clone(),
+                                    SynParam::RefSelfParam => selfType.clone(),
+                                };
+                                argTypes.push(ty);
+                            }
+                            let result = typeResolver.resolveType(&method.result).changeSelfType(selfType.clone());
                             irInstance.members.push(MemberInfo {
                                 name: method.name.toString(),
                                 fullName: QualifiedName::Instance(
@@ -357,7 +382,7 @@ impl<'a> Resolver<'a> {
                                     irInstance.id,
                                 ),
                                 default: false,
-                                result: typeResolver.resolveType(&method.result),
+                                result: IrType::Function(argTypes, Box::new(result)),
                             })
                         }
                         //println!("Instance {}", irInstance);

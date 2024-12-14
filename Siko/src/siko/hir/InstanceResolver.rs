@@ -3,7 +3,12 @@ use std::{cmp::Ordering, collections::BTreeMap};
 use crate::siko::{hir::Trait::CompareSpecificity, qualifiedname::QualifiedName};
 
 use super::{
-    Apply::instantiateInstance, Substitution::TypeSubstitution, Trait::Instance, Type::Type, TypeVarAllocator::TypeVarAllocator, Unification::unify,
+    Apply::{instantiateInstance, Apply},
+    Substitution::{createTypeSubstitutionFrom, TypeSubstitution},
+    Trait::Instance,
+    Type::Type,
+    TypeVarAllocator::TypeVarAllocator,
+    Unification::unify,
 };
 
 #[derive(Clone)]
@@ -33,11 +38,11 @@ impl Instances {
     pub fn find(&self, allocator: &mut TypeVarAllocator, types: &Vec<Type>) -> ResolutionResult {
         let mut matchingInstances = Vec::new();
         for i in &self.instances {
-            let i = instantiateInstance(allocator, i);
+            let i2 = instantiateInstance(allocator, i);
             let mut sub = TypeSubstitution::new();
             let mut noMatch = false;
             //println!("Matching {} {}", formatTypes(types), formatTypes(&i.types));
-            for (arg, ty) in i.types.iter().zip(types.iter()) {
+            for (arg, ty) in i2.types.iter().zip(types.iter()) {
                 let r = unify(&mut sub, arg, ty, false);
                 if r.is_err() {
                     //println!("no match");
@@ -48,7 +53,7 @@ impl Instances {
             if noMatch {
                 continue;
             }
-            matchingInstances.push(i);
+            matchingInstances.push(i.clone());
         }
         let mut winner: Option<&Instance> = None;
         let mut index = 0;
@@ -79,7 +84,9 @@ impl Instances {
             index += 1;
         }
         if let Some(winner) = winner {
-            ResolutionResult::Winner(winner.clone())
+            let winner = instantiateInstance(allocator, winner);
+            let sub = createTypeSubstitutionFrom(&winner.types, types);
+            ResolutionResult::Winner(winner.apply(&sub))
         } else {
             if matchingInstances.is_empty() {
                 ResolutionResult::NoInstanceFound

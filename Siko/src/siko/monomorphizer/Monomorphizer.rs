@@ -9,7 +9,7 @@ use crate::siko::{
         Function::{Block, Body, FieldInfo, FunctionKind, Instruction, InstructionKind, Parameter, Variable},
         InstanceResolver::ResolutionResult,
         Program::Program,
-        Substitution::TypeSubstitution,
+        Substitution::{createTypeSubstitutionFrom, TypeSubstitution},
         Type::{formatTypes, Type},
         TypeVarAllocator::TypeVarAllocator,
         Unification::unify,
@@ -22,14 +22,6 @@ fn createTypeSubstitution(ty1: &Type, ty2: &Type) -> TypeSubstitution {
     let mut sub = TypeSubstitution::new();
     if unify(&mut sub, ty1, &ty2, true).is_err() {
         panic!("Unification failed for {} {}", ty1, ty2);
-    }
-    sub
-}
-
-fn createTypeSubstitutionFrom(ty1: &Vec<Type>, ty2: &Vec<Type>) -> TypeSubstitution {
-    let mut sub = TypeSubstitution::new();
-    for (ty1, ty2) in ty1.iter().zip(ty2) {
-        unify(&mut sub, ty1, ty2, true).expect("Unification failed");
     }
     sub
 }
@@ -108,6 +100,7 @@ impl Monomorphize for Instruction {
                     let resolutionResult = instances.find(&mut allocator, &traitDef.params);
                     match resolutionResult {
                         ResolutionResult::Winner(instance) => {
+                            //println!("instance  {}", instance);
                             for m in &instance.members {
                                 let base = m.fullName.base();
                                 if base == name {
@@ -143,6 +136,17 @@ impl Monomorphize for Instruction {
                 //println!("Calling {}", name);
                 let target_fn = mono.program.functions.get(name).expect("function not found in mono");
                 let fn_ty = target_fn.getType();
+                let fnResult = fn_ty.getResult();
+                let fn_ty = if fnResult.hasSelfType() {
+                    //println!("fn type before {}", fn_ty);
+                    let (args, result) = fn_ty.splitFnType().unwrap();
+                    let result = result.changeSelfType(args[0].clone());
+                    let fn_ty = Type::Function(args, Box::new(result));
+                    //println!("fn type after {}", fn_ty);
+                    fn_ty
+                } else {
+                    fn_ty
+                };
                 let arg_types: Vec<_> = args
                     .iter()
                     .map(|arg| {
@@ -157,10 +161,13 @@ impl Monomorphize for Instruction {
                 //println!("context type {}", context_ty);
                 let sub = createTypeSubstitution(&context_ty, &fn_ty);
                 //println!("target ctx {}", target_fn.constraintContext);
-                let ty_args: Vec<_> = target_fn.constraintContext.typeParameters.iter().map(|ty| ty.apply(&sub)).collect();
-
-                //println!("{} type args {}", name, formatTypes(&ty_args));
                 let name = getFunctionName(target_fn.kind.clone(), name.clone(), mono, &sub);
+                let target_fn = mono.program.functions.get(&name).expect("function not found in mono");
+                //println!("real {} {}", target_fn.getType(), target_fn.constraintContext);
+                let sub = createTypeSubstitution(&context_ty, &target_fn.getType());
+                //println!("target ctx {}", target_fn.constraintContext);
+                let ty_args: Vec<_> = target_fn.constraintContext.typeParameters.iter().map(|ty| ty.apply(&sub)).collect();
+                //println!("{} type args {}", name, formatTypes(&ty_args));
                 let fn_name = mono.get_mono_name(&name, &ty_args);
                 mono.addKey(Key::Function(name.clone(), ty_args));
                 InstructionKind::FunctionCall(dest.clone(), fn_name, args.clone())

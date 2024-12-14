@@ -29,6 +29,10 @@ class Vec[T] {
         if self.size <= index {
             panic("OutOfBounds");
         }
+        self.getUnchecked(index)
+    }
+
+    fn getUnchecked(&self, index: Int) -> &T {
         let ptr = offset(self.items, index);
         toRef(ptr)
     }
@@ -46,6 +50,29 @@ class Vec[T] {
     fn drop(self) {
         deallocate(self.items);
     }
+
+    fn iter(&self) -> VecIterator[T] {
+        VecIterator(&self, 0)
+    }
 }
+
+class VecIterator[T] {
+    vec: &Vec[T]
+    index: Int
+}
+
+instance[T] Iterator[VecIterator[T]] {
+    type Item = &T
+
+    fn next(mut self) -> (Self, Option[&T]) {
+        if self.index >= self.vec.size {
+            return (self, None)
+        }
+        let item = self.vec.getUnchecked(self.index);
+        self.index = self.index + 1;
+        (self, Some(item))
+    }
+}
+
 
 }

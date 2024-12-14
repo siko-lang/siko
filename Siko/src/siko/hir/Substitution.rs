@@ -9,6 +9,7 @@ use super::{
     Apply::{Apply, ApplyVariable},
     Function::Variable,
     Type::Type,
+    Unification::unify,
 };
 
 #[derive(Debug)]
@@ -88,4 +89,12 @@ impl Display for VariableSubstitution {
         }
         Ok(())
     }
+}
+
+pub fn createTypeSubstitutionFrom(ty1: &Vec<Type>, ty2: &Vec<Type>) -> TypeSubstitution {
+    let mut sub = TypeSubstitution::new();
+    for (ty1, ty2) in ty1.iter().zip(ty2) {
+        unify(&mut sub, ty1, ty2, true).expect("Unification failed");
+    }
+    sub
 }

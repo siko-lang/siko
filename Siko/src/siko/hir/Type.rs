@@ -126,6 +126,17 @@ impl Type {
         }
     }
 
+    pub fn addSelfType(&self, selfType: Type) -> Type {
+        match &self {
+            Type::Tuple(args) => {
+                let mut args = args.clone();
+                args.insert(0, selfType);
+                return Type::Tuple(args);
+            }
+            ty => Type::Tuple(vec![selfType, (*ty).clone()]),
+        }
+    }
+
     pub fn hasSelfType(&self) -> bool {
         match &self {
             Type::Tuple(args) => {
@@ -150,7 +161,6 @@ impl Type {
         match &self {
             Type::Tuple(args) => {
                 assert!(args.len() > 0);
-                assert_eq!(args[0], Type::SelfType);
                 if args.len() == 2 && finalValue {
                     args[1].clone()
                 } else {
@@ -166,6 +176,13 @@ impl Type {
         match &self {
             Type::Tuple(args) => args.clone(),
             _ => Vec::new(),
+        }
+    }
+
+    pub fn isTuple(&self) -> bool {
+        match &self {
+            Type::Tuple(_) => true,
+            _ => false,
         }
     }
 

@@ -217,13 +217,14 @@ impl<'a> Typechecker<'a> {
         fnType: Type,
         neededConstraints: &ConstraintContext,
         knownConstraints: &ConstraintContext,
-    ) {
-        //println!("checkFunctionCall: {} {}", fnType, constraintContext);
+    ) -> Type {
+        //println!("checkFunctionCall: {} {} {}", fnType, neededConstraints, knownConstraints);
         let (fnType, sub) = instantiateType2(&mut self.allocator, &fnType);
+        //println!("inst {}", fnType);
         let constraintContext = neededConstraints.apply(&sub);
-        let (fnArgs, mut fnResult) = match fnType.splitFnType() {
+        let (fnArgs, mut fnResult) = match fnType.clone().splitFnType() {
             Some((fnArgs, fnResult)) => (fnArgs, fnResult),
-            None => return,
+            None => return fnType,
         };
         if args.len() != fnArgs.len() {
             TypecheckerError::ArgCountMismatch(fnArgs.len() as u32, args.len() as u32, resultVar.location.clone()).report(self.ctx);
@@ -244,7 +245,14 @@ impl<'a> Typechecker<'a> {
         }
         let constraints = constraintContext.apply(&self.substitution);
         self.checkConstraint(&constraints, knownConstraints, resultVar.location.clone());
+        //println!("fnResult {}", fnResult);
+        //println!("self.getType(resultVar) {}", self.getType(resultVar));
+        let fnResult = fnResult.apply(&self.substitution);
         self.unify(self.getType(resultVar), fnResult, resultVar.location.clone());
+        // let mut argTy = self.getType(resultVar);
+        // argTy = argTy.apply(&self.substitution);
+        // println!("ffff result {}", argTy);
+        fnType.apply(&self.substitution)
     }
 
     fn checkConstraint(&mut self, neededConstraints: &ConstraintContext, knownConstraints: &ConstraintContext, location: Location) {
@@ -253,13 +261,16 @@ impl<'a> Typechecker<'a> {
         for c in &neededConstraints.constraints {
             if !knownConstraints.contains(c) {
                 if let Some(instances) = self.program.instanceResolver.lookupInstances(&c.traitName) {
+                    //println!("c.args {}", formatTypes(&c.args));
                     let resolutionResult = instances.find(&mut self.allocator, &c.args);
                     match resolutionResult {
                         ResolutionResult::Winner(instance) => {
+                            let instance = instance.apply(&self.substitution);
                             //println!("Winner {} for {}", instance, formatTypes(&c.args));
                             for ctxAssocTy in &c.associatedTypes {
                                 for instanceAssocTy in &instance.associatedTypes {
                                     if instanceAssocTy.name == ctxAssocTy.name {
+                                        //println!("ASSOC MATCH {} {}", instanceAssocTy.ty, ctxAssocTy.ty);
                                         if let Err(_) = unify(&mut self.substitution, &instanceAssocTy.ty, &ctxAssocTy.ty, false) {
                                             reportError(
                                                 self.ctx,
@@ -375,12 +386,21 @@ impl<'a> Typechecker<'a> {
                     let mut fnType = targetFn.getType();
                     let mut args = args.clone();
                     args.insert(0, receiver.clone());
-                    if self.mutables.contains(&receiver.value) && fnType.getResult().hasSelfType() {
-                        let originalType = fnType.getResult();
+                    let mutableCall = self.mutables.contains(&receiver.value) && fnType.getResult().hasSelfType();
+                    if mutableCall {
                         fnType = fnType.changeMethodResult();
-                        let baseType = originalType.changeSelfType(receiverType);
-                        let selfLessType = originalType.getSelflessType(false);
-                        //println!("MUT METHOD {} => {}", originalType, selfLessType);
+                    }
+                    let fnType = self.checkFunctionCall(&args, dest, fnType, &targetFn.constraintContext, &f.constraintContext);
+                    if mutableCall {
+                        let result = fnType.getResult();
+                        let (baseType, selfLessType) = if targetFn.getType().getResult().isTuple() {
+                            let baseType = result.addSelfType(receiverType);
+                            let selfLessType = baseType.getSelflessType(false);
+                            (baseType, selfLessType)
+                        } else {
+                            (receiverType, Type::Tuple(Vec::new()))
+                        };
+                        //println!("MUT METHOD {} => {}", fnType, selfLessType);
                         //println!("MUT METHOD {} => {}", baseType, selfLessType);
                         self.mutableMethodCalls.insert(
                             dest.clone(),
@@ -391,11 +411,6 @@ impl<'a> Typechecker<'a> {
                             },
                         );
                     }
-                    //if let Some(traitName) = targetFn.kind.isTraitCall() {
-                    //    self.checkTraitFunctionCall(&args, dest, fnType, traitName, name.clone(), &f.constraintContext);
-                    //} else {
-                    self.checkFunctionCall(&args, dest, fnType, &targetFn.constraintContext, &f.constraintContext);
-                    //}
                 }
                 InstructionKind::DynamicFunctionCall(dest, callable, args) => {
                     let fnType = self.getType(callable);
