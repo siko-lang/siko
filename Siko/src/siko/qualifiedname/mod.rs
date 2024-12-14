@@ -112,3 +112,11 @@ pub fn getPtrOffsetName() -> QualifiedName {
 pub fn getPtrStoreName() -> QualifiedName {
     build("Ptr", "store")
 }
+
+pub fn getPtrToRefName() -> QualifiedName {
+    build("Ptr", "toRef")
+}
+
+pub fn getPtrPrintName() -> QualifiedName {
+    build("Ptr", "print")
+}

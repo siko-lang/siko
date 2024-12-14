@@ -14,7 +14,7 @@ use crate::siko::{
         Program::Program as MirProgram,
         Type::Type as MirType,
     },
-    qualifiedname::{getIntTypeName, QualifiedName},
+    qualifiedname::{getIntTypeName, getPtrToRefName, QualifiedName},
 };
 
 pub struct Builder<'a> {
@@ -54,10 +54,17 @@ impl<'a> Builder<'a> {
             }
             match &instruction.kind {
                 HirInstructionKind::FunctionCall(dest, name, args) => {
-                    let args = args.iter().map(|var| self.buildVariable(var)).collect();
-                    let dest = self.buildVariable(dest);
-                    block.instructions.push(Instruction::Declare(dest.clone()));
-                    block.instructions.push(Instruction::Call(dest, convertName(name), args));
+                    if name.base() == getPtrToRefName() {
+                        let dest = self.buildVariable(dest);
+                        let arg = &args[0];
+                        block.instructions.push(Instruction::Declare(dest.clone()));
+                        block.instructions.push(Instruction::Memcpy(self.buildVariable(arg), dest.clone()));
+                    } else {
+                        let args = args.iter().map(|var| self.buildVariable(var)).collect();
+                        let dest = self.buildVariable(dest);
+                        block.instructions.push(Instruction::Declare(dest.clone()));
+                        block.instructions.push(Instruction::Call(dest, convertName(name), args));
+                    }
                 }
                 HirInstructionKind::Tuple(_, _) => {
                     unreachable!("tuples in MIR??")
