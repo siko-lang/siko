@@ -241,7 +241,12 @@ impl<'a> ExprParser for Parser<'a> {
                     let rhs = self.parseExpr();
                     (StatementKind::Assign(expr, rhs), SemicolonRequirement::Required)
                 } else {
-                    (StatementKind::Expr(expr), SemicolonRequirement::TrailingOptional)
+                    let semicolonRequirement = if let SimpleExpr::Block(_) = &expr.expr {
+                        SemicolonRequirement::Optional
+                    } else {
+                        SemicolonRequirement::TrailingOptional
+                    };
+                    (StatementKind::Expr(expr), semicolonRequirement)
                 }
             }
         }
