@@ -363,7 +363,9 @@ impl<'a> ExprResolver<'a> {
             }
             SimpleExpr::BinaryOp(op, lhs, rhs) => {
                 let lhsId = self.resolveExpr(lhs, env);
+                let lhsId = self.indexVar(lhsId);
                 let rhsId = self.resolveExpr(rhs, env);
+                let rhsId = self.indexVar(rhsId);
                 let name = match op {
                     BinaryOp::And => createOpName("And", "and"),
                     BinaryOp::Or => createOpName("Or", "or"),

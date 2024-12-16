@@ -437,9 +437,10 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         }
         let value = self.resolver.createValue("matchValue", self.bodyLocation.clone());
         if returns {
+            let v = self.resolver.indexVar(self.matchValue.clone());
             self.resolver.addInstructionToBlock(
                 self.contBlockId,
-                InstructionKind::ValueRef(value.clone(), self.matchValue.clone()),
+                InstructionKind::ValueRef(value.clone(), v),
                 self.matchLocation.clone(),
                 true,
             );

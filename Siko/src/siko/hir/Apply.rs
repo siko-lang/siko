@@ -272,7 +272,7 @@ impl ApplyVariable for InstructionKind {
             InstructionKind::DynamicFunctionCall(dest, callable, args) => {
                 InstructionKind::DynamicFunctionCall(dest.applyVar(sub), callable.applyVar(sub), args.applyVar(sub))
             }
-            InstructionKind::ValueRef(dest, value) => InstructionKind::ValueRef(dest.applyVar(sub), value.clone()),
+            InstructionKind::ValueRef(dest, value) => InstructionKind::ValueRef(dest.applyVar(sub), value.applyVar(sub)),
             InstructionKind::FieldRef(dest, root, field) => InstructionKind::FieldRef(dest.applyVar(sub), root.applyVar(sub), field.clone()),
             InstructionKind::TupleIndex(dest, root, index) => InstructionKind::TupleIndex(dest.applyVar(sub), root.applyVar(sub), *index),
             InstructionKind::Bind(dest, rhs, mutable) => InstructionKind::Bind(dest.applyVar(sub), rhs.applyVar(sub), *mutable),

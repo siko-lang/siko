@@ -4,7 +4,7 @@
 mod siko;
 
 use siko::{
-    backend::{DeadCodeEliminator::eliminateDeadCode, RemoveTuples::removeTuples},
+    backend::{DeadCodeEliminator::eliminateDeadCode, Drop::checkDrops, RemoveTuples::removeTuples},
     hir::Program::Program,
     hir_lowering::Lowering::lowerProgram,
     location::{FileManager::FileManager, Report::ReportContext},
@@ -109,6 +109,8 @@ fn main() {
     //println!("after typchk\n{}", program);
     let program = eliminateDeadCode(&ctx, program);
     //println!("after dce\n{}", program);
+    let program = checkDrops(&ctx, program);
+    //println!("after dropcheck\n{}", program);
     let program = monomorphize(&ctx, program);
     //println!("after mono\n{}", program);
     let program = removeTuples(&program);

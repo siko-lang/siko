@@ -529,7 +529,8 @@ impl<'a> Typechecker<'a> {
             let publicVars = fnType.collectVars(BTreeSet::new());
             for block in &body.blocks {
                 for instruction in &block.instructions {
-                    if let Some(v) = instruction.kind.getResultVar() {
+                    let vars = instruction.kind.collectVariables();
+                    for v in vars {
                         if let Some(ty) = v.ty {
                             let vars = ty.collectVars(BTreeSet::new());
                             if !publicVars.is_superset(&vars) {
@@ -764,14 +765,13 @@ impl<'a> Typechecker<'a> {
 
         for block in &mut body.blocks {
             for instruction in &mut block.instructions {
-                for var in instruction.kind.collectVariables() {
+                let vars = instruction.kind.collectVariables();
+                for var in vars {
                     let ty = self.getType(&var);
                     let ty = ty.apply(&self.substitution);
                     let mut newVar = var.clone();
                     newVar.ty = Some(ty.clone());
-                    if newVar != var {
-                        varSwap.add(var, newVar);
-                    }
+                    varSwap.add(var, newVar);
                 }
             }
         }
