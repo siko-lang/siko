@@ -2,7 +2,7 @@ use core::panic;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::siko::hir::Data::Enum;
-use crate::siko::hir::Function::{Block as IrBlock, BlockId, FieldInfo, InstructionKind, Variable};
+use crate::siko::hir::Function::{Block as IrBlock, BlockId, BlockInfo, FieldInfo, InstructionKind, Variable};
 use crate::siko::location::Location::Location;
 use crate::siko::location::Report::ReportContext;
 use crate::siko::qualifiedname::QualifiedName;
@@ -142,7 +142,9 @@ impl<'a> ExprResolver<'a> {
         }
     }
 
-    fn resolveBlock<'e>(&mut self, block: &Block, env: &'e Environment<'e>) -> Variable {
+    fn resolveBlock<'e>(&mut self, block: &Block, env: &'e Environment<'e>, resultValue: Variable) {
+        let blockInfo = BlockInfo { id: format!("bu") };
+        self.addImplicitInstruction(InstructionKind::BlockStart(blockInfo.clone()), block.location.clone());
         let mut env = Environment::child(env);
         let mut lastHasSemicolon = false;
         let mut lastDoesNotReturn = false;
@@ -190,13 +192,14 @@ impl<'a> ExprResolver<'a> {
             }
         }
         if block.statements.is_empty() || lastHasSemicolon {
-            if !lastDoesNotReturn {
-                let unitValue = self.createValue("unit", block.location.clone());
-                self.addImplicitInstruction(InstructionKind::Tuple(unitValue.clone(), Vec::new()), block.location.clone());
-                blockValue = unitValue;
-            }
+            let unitValue = self.createValue("unit", block.location.clone());
+            self.addImplicitInstruction(InstructionKind::Tuple(unitValue.clone(), Vec::new()), block.location.clone());
+            blockValue = unitValue;
         }
-        blockValue
+        if !lastDoesNotReturn {
+            self.addImplicitInstruction(InstructionKind::Assign(resultValue, blockValue), block.location.clone());
+        }
+        self.addImplicitInstruction(InstructionKind::BlockEnd(blockInfo.clone()), block.location.clone());
     }
 
     pub fn addInstruction(&mut self, instruction: InstructionKind, location: Location) {
@@ -339,11 +342,10 @@ impl<'a> ExprResolver<'a> {
                     exit: loopExitId,
                     var: name.clone(),
                 });
-                let blockValue = match &body.expr {
-                    SimpleExpr::Block(block) => self.resolveBlock(block, &loopEnv),
-                    _ => panic!("If true branch is not a block!"),
+                match &body.expr {
+                    SimpleExpr::Block(block) => self.resolveBlock(block, &loopEnv, name),
+                    _ => panic!("for body is not a block!"),
                 };
-                self.addImplicitInstruction(InstructionKind::Assign(name.clone(), blockValue), init.location.clone());
                 let jumpValue = self.createValue("jump", expr.location.clone());
                 self.addImplicitInstruction(InstructionKind::Jump(jumpValue.clone(), loopBodyId), expr.location.clone());
                 self.loopInfos.pop();
@@ -398,7 +400,12 @@ impl<'a> ExprResolver<'a> {
                 let mut matchResolver = MatchCompiler::new(self, bodyId, expr.location.clone(), body.location.clone(), branches.clone(), env);
                 matchResolver.compile()
             }
-            SimpleExpr::Block(block) => self.resolveBlock(block, env),
+            SimpleExpr::Block(block) => {
+                let blockValue = self.createValue("blockValue", expr.location.clone());
+                self.addImplicitInstruction(InstructionKind::DeclareVar(blockValue.clone()), expr.location.clone());
+                self.resolveBlock(block, env, blockValue.clone());
+                blockValue
+            }
             SimpleExpr::Tuple(args) => {
                 let mut irArgs = Vec::new();
                 for arg in args {
@@ -520,18 +527,11 @@ impl<'a> ExprResolver<'a> {
     pub fn resolve<'e>(&mut self, body: &Block, env: &'e Environment<'e>) {
         let id = self.createBlock();
         self.setTargetBlockId(id);
-        let value = self.resolveBlock(body, env);
-        let lastBlock = self.body.getBlockById(self.targetBlockId);
-        let mut addReturn = true;
-        if let Some(lastInstruction) = lastBlock.instructions.last() {
-            if let InstructionKind::Return(_, _) = lastInstruction.kind {
-                addReturn = false;
-            }
-        }
-        if addReturn {
-            let retValue = self.createValue("ret", body.location.clone());
-            self.addImplicitInstruction(InstructionKind::Return(retValue, value), body.location.clone());
-        }
+        let functionResult = self.createValue("functionResult", body.location.clone());
+        self.addImplicitInstruction(InstructionKind::DeclareVar(functionResult.clone()), body.location.clone());
+        self.resolveBlock(body, env, functionResult.clone());
+        let retValue = self.createValue("ret", body.location.clone());
+        self.addImplicitInstruction(InstructionKind::Return(retValue, functionResult), body.location.clone());
         self.body.blocks.sort_by(|a, b| a.id.cmp(&b.id));
     }
 

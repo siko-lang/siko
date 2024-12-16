@@ -205,6 +205,8 @@ impl Apply for InstructionKind {
             InstructionKind::EnumSwitch(root, cases) => InstructionKind::EnumSwitch(root.apply(sub), cases.clone()),
             InstructionKind::IntegerSwitch(root, cases) => InstructionKind::IntegerSwitch(root.apply(sub), cases.clone()),
             InstructionKind::StringSwitch(root, cases) => InstructionKind::StringSwitch(root.apply(sub), cases.clone()),
+            InstructionKind::BlockStart(info) => InstructionKind::BlockStart(info.clone()),
+            InstructionKind::BlockEnd(info) => InstructionKind::BlockEnd(info.clone()),
         }
     }
 }
@@ -289,6 +291,8 @@ impl ApplyVariable for InstructionKind {
             InstructionKind::EnumSwitch(root, cases) => InstructionKind::EnumSwitch(root.applyVar(sub), cases.clone()),
             InstructionKind::IntegerSwitch(root, cases) => InstructionKind::IntegerSwitch(root.applyVar(sub), cases.clone()),
             InstructionKind::StringSwitch(root, cases) => InstructionKind::StringSwitch(root.applyVar(sub), cases.clone()),
+            InstructionKind::BlockStart(info) => InstructionKind::BlockStart(info.clone()),
+            InstructionKind::BlockEnd(info) => InstructionKind::BlockEnd(info.clone()),
         }
     }
 }

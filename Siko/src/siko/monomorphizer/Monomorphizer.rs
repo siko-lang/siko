@@ -229,6 +229,8 @@ impl Monomorphize for InstructionKind {
             InstructionKind::EnumSwitch(root, cases) => InstructionKind::EnumSwitch(root.process(sub, mono), cases.clone()),
             InstructionKind::IntegerSwitch(root, cases) => InstructionKind::IntegerSwitch(root.process(sub, mono), cases.clone()),
             InstructionKind::StringSwitch(root, cases) => InstructionKind::StringSwitch(root.process(sub, mono), cases.clone()),
+            InstructionKind::BlockStart(info) => InstructionKind::BlockStart(info.clone()),
+            InstructionKind::BlockEnd(info) => InstructionKind::BlockEnd(info.clone()),
         }
     }
 }

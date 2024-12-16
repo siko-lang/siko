@@ -152,6 +152,8 @@ impl RemoveTuples for InstructionKind {
             InstructionKind::EnumSwitch(root, cases) => InstructionKind::EnumSwitch(root.removeTuples(ctx), cases.clone()),
             InstructionKind::IntegerSwitch(root, cases) => InstructionKind::IntegerSwitch(root.removeTuples(ctx), cases.clone()),
             InstructionKind::StringSwitch(root, cases) => InstructionKind::StringSwitch(root.removeTuples(ctx), cases.clone()),
+            InstructionKind::BlockStart(info) => InstructionKind::BlockStart(info.clone()),
+            InstructionKind::BlockEnd(info) => InstructionKind::BlockEnd(info.clone()),
         }
     }
 }

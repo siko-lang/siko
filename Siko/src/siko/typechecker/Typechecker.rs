@@ -178,6 +178,8 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::EnumSwitch(_, _) => {}
                         InstructionKind::IntegerSwitch(_, _) => {}
                         InstructionKind::StringSwitch(_, _) => {}
+                        InstructionKind::BlockStart(_) => {}
+                        InstructionKind::BlockEnd(_) => {}
                     }
                 }
             }
@@ -515,6 +517,8 @@ impl<'a> Typechecker<'a> {
                         _ => TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(self.ctx),
                     }
                 }
+                InstructionKind::BlockStart(_) => {}
+                InstructionKind::BlockEnd(_) => {}
             }
         }
     }

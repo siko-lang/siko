@@ -175,6 +175,8 @@ impl<'a> Builder<'a> {
                     block.instructions.push(Instruction::Declare(dest.clone()));
                     block.instructions.push(Instruction::Reference(dest, arg));
                 }
+                HirInstructionKind::BlockStart(_) => {}
+                HirInstructionKind::BlockEnd(_) => {}
                 k => panic!("NYI {}", k),
             }
         }

@@ -146,6 +146,17 @@ impl Display for FieldInfo {
 }
 
 #[derive(Clone, PartialEq)]
+pub struct BlockInfo {
+    pub id: String,
+}
+
+impl Display for BlockInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.id)
+    }
+}
+
+#[derive(Clone, PartialEq)]
 pub enum InstructionKind {
     FunctionCall(Variable, QualifiedName, Vec<Variable>),
     MethodCall(Variable, Variable, String, Vec<Variable>),
@@ -169,6 +180,8 @@ pub enum InstructionKind {
     EnumSwitch(Variable, Vec<EnumCase>),
     IntegerSwitch(Variable, Vec<IntegerCase>),
     StringSwitch(Variable, Vec<StringCase>),
+    BlockStart(BlockInfo),
+    BlockEnd(BlockInfo),
 }
 
 impl Display for InstructionKind {
@@ -208,6 +221,8 @@ impl InstructionKind {
             InstructionKind::EnumSwitch(_, _) => None,
             InstructionKind::IntegerSwitch(_, _) => None,
             InstructionKind::StringSwitch(_, _) => None,
+            InstructionKind::BlockStart(_) => None,
+            InstructionKind::BlockEnd(_) => None,
         }
     }
 
@@ -257,6 +272,8 @@ impl InstructionKind {
             InstructionKind::StringSwitch(var, _) => {
                 vec![var.clone()]
             }
+            InstructionKind::BlockStart(_) => Vec::new(),
+            InstructionKind::BlockEnd(_) => Vec::new(),
         }
     }
 
@@ -299,6 +316,8 @@ impl InstructionKind {
             InstructionKind::EnumSwitch(root, cases) => format!("enumswitch({}, {:?})", root, cases),
             InstructionKind::IntegerSwitch(root, cases) => format!("integerswitch({}, {:?})", root, cases),
             InstructionKind::StringSwitch(root, cases) => format!("stringswitch({}, {:?})", root, cases),
+            InstructionKind::BlockStart(info) => format!("blockstart({})", info),
+            InstructionKind::BlockEnd(info) => format!("blockend({})", info),
         }
     }
 }
