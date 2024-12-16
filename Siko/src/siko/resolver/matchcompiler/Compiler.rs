@@ -154,8 +154,17 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         parentEnv: &'a Environment<'a>,
     ) -> MatchCompiler<'a, 'b> {
         let matchValue = resolver.createValue("match_var", matchLocation.clone());
-        resolver.addInstruction(InstructionKind::DeclareVar(matchValue.clone()), matchLocation.clone());
-        let contBlockId = resolver.createBlock();
+        let mut returns = false;
+        for b in &branches {
+            if !b.body.doesNotReturn() {
+                returns = true;
+            }
+        }
+        let mut contBlockId = BlockId::first();
+        if returns {
+            resolver.addInstruction(InstructionKind::DeclareVar(matchValue.clone()), matchLocation.clone());
+            contBlockId = resolver.createBlock();
+        }
         MatchCompiler {
             matchLocation: matchLocation,
             bodyLocation: bodyLocation,
@@ -420,14 +429,22 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
             self.bodyLocation.clone(),
             false,
         );
+        let mut returns = false;
+        for b in &self.branches {
+            if !b.body.doesNotReturn() {
+                returns = true;
+            }
+        }
         let value = self.resolver.createValue("matchValue", self.bodyLocation.clone());
-        self.resolver.addInstructionToBlock(
-            self.contBlockId,
-            InstructionKind::ValueRef(value.clone(), self.matchValue.clone()),
-            self.matchLocation.clone(),
-            true,
-        );
-        self.resolver.setTargetBlockId(self.contBlockId);
+        if returns {
+            self.resolver.addInstructionToBlock(
+                self.contBlockId,
+                InstructionKind::ValueRef(value.clone(), self.matchValue.clone()),
+                self.matchLocation.clone(),
+                true,
+            );
+            self.resolver.setTargetBlockId(self.contBlockId);
+        }
         value
     }
 
@@ -614,11 +631,13 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                         env.addValue(name.clone(), new);
                     }
                     let exprValue = self.resolver.resolveExpr(&branch.body, &mut env);
-                    self.resolver
-                        .addImplicitInstruction(InstructionKind::Assign(self.matchValue.clone(), exprValue), self.matchLocation.clone());
-                    let jumpValue = self.resolver.createValue("jump", self.bodyLocation.clone());
-                    self.resolver
-                        .addImplicitInstruction(InstructionKind::Jump(jumpValue, self.contBlockId), self.bodyLocation.clone());
+                    if !branch.body.doesNotReturn() {
+                        self.resolver
+                            .addImplicitInstruction(InstructionKind::Assign(self.matchValue.clone(), exprValue), self.matchLocation.clone());
+                        let jumpValue = self.resolver.createValue("jump", self.bodyLocation.clone());
+                        self.resolver
+                            .addImplicitInstruction(InstructionKind::Jump(jumpValue, self.contBlockId), self.bodyLocation.clone());
+                    }
                     blockId
                 } else {
                     unreachable!()

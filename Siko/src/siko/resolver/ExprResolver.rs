@@ -34,6 +34,7 @@ pub struct ExprResolver<'a> {
     pub ctx: &'a ReportContext,
     pub body: Body,
     blockId: u32,
+    syntaxBlockId: u32,
     valueId: u32,
     pub moduleResolver: &'a ModuleResolver<'a>,
     typeResolver: &'a TypeResolver<'a>,
@@ -58,6 +59,7 @@ impl<'a> ExprResolver<'a> {
             ctx: ctx,
             body: Body::new(),
             blockId: 0,
+            syntaxBlockId: 0,
             valueId: 0,
             moduleResolver: moduleResolver,
             typeResolver: typeResolver,
@@ -78,7 +80,14 @@ impl<'a> ExprResolver<'a> {
         blockId
     }
 
+    pub fn createSyntaxBlockId(&mut self) -> String {
+        let blockId = format!("block{}", self.syntaxBlockId);
+        self.syntaxBlockId += 1;
+        blockId
+    }
+
     pub fn setTargetBlockId(&mut self, id: BlockId) {
+        //println!("Setting target block {} => {}", self.targetBlockId, id);
         self.targetBlockId = id;
     }
 
@@ -143,11 +152,12 @@ impl<'a> ExprResolver<'a> {
     }
 
     fn resolveBlock<'e>(&mut self, block: &Block, env: &'e Environment<'e>, resultValue: Variable) {
-        let blockInfo = BlockInfo { id: format!("bu") };
+        let syntaxBlock = self.createSyntaxBlockId();
+        //println!("Resolving block {} with var {} current {}", syntaxBlock, resultValue, self.targetBlockId);
+        let blockInfo = BlockInfo { id: syntaxBlock };
         self.addImplicitInstruction(InstructionKind::BlockStart(blockInfo.clone()), block.location.clone());
         let mut env = Environment::child(env);
         let mut lastHasSemicolon = false;
-        let mut lastDoesNotReturn = false;
         let mut blockValue = self.createValue("block", block.location.clone());
         for (index, statement) in block.statements.iter().enumerate() {
             if index == block.statements.len() - 1 && statement.hasSemicolon {
@@ -185,7 +195,6 @@ impl<'a> ExprResolver<'a> {
                     }
                 }
                 StatementKind::Expr(expr) => {
-                    lastDoesNotReturn = expr.expr.doesNotReturn();
                     let var = self.resolveExpr(expr, &mut env);
                     blockValue = var;
                 }
@@ -196,8 +205,8 @@ impl<'a> ExprResolver<'a> {
             self.addImplicitInstruction(InstructionKind::Tuple(unitValue.clone(), Vec::new()), block.location.clone());
             blockValue = unitValue;
         }
-        if !lastDoesNotReturn {
-            self.addImplicitInstruction(InstructionKind::Assign(resultValue, blockValue), block.location.clone());
+        if !block.doesNotReturn() {
+            self.addImplicitInstruction(InstructionKind::Assign(resultValue.clone(), blockValue), block.location.clone());
         }
         self.addImplicitInstruction(InstructionKind::BlockEnd(blockInfo.clone()), block.location.clone());
     }
@@ -402,7 +411,9 @@ impl<'a> ExprResolver<'a> {
             }
             SimpleExpr::Block(block) => {
                 let blockValue = self.createValue("blockValue", expr.location.clone());
-                self.addImplicitInstruction(InstructionKind::DeclareVar(blockValue.clone()), expr.location.clone());
+                if !block.doesNotReturn() {
+                    self.addImplicitInstruction(InstructionKind::DeclareVar(blockValue.clone()), expr.location.clone());
+                }
                 self.resolveBlock(block, env, blockValue.clone());
                 blockValue
             }
