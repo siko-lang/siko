@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::siko::{
     hir::{
-        Function::{BlockId, Function, InstructionKind, Variable},
+        Function::{BlockId, Function, InstructionKind, Variable, VariableName},
         Program::Program,
     },
     location::{
@@ -30,8 +30,8 @@ struct InstructionId {
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct Context<'a> {
     ctx: &'a ReportContext,
-    live: BTreeSet<String>,
-    moved: BTreeMap<String, Location>,
+    live: BTreeSet<VariableName>,
+    moved: BTreeMap<VariableName, Location>,
 }
 
 impl<'a> Context<'a> {
@@ -59,7 +59,7 @@ impl<'a> Context<'a> {
         }
         //println!("addMove {}", var.value);
         if let Some(movLoc) = self.moved.get(&var.value) {
-            let slogan = format!("Value {} already moved", self.ctx.yellow(&var.value));
+            let slogan = format!("Value {} already moved", self.ctx.yellow(&var.value.userName()));
             let mut entries = Vec::new();
             entries.push(Entry::new(None, var.location.clone()));
             entries.push(Entry::new(Some(format!("NOTE: previous moved here")), movLoc.clone()));

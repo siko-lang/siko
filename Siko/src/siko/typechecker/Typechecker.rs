@@ -8,7 +8,7 @@ use crate::siko::{
         Apply::{instantiateClass, instantiateEnum, instantiateType, instantiateType2, Apply, ApplyVariable},
         ConstraintContext::ConstraintContext,
         Data::{Class, Enum},
-        Function::{Body, Function, Instruction, InstructionKind, Parameter, Variable},
+        Function::{Body, Function, Instruction, InstructionKind, Parameter, Variable, VariableName},
         InstanceResolver::ResolutionResult,
         Program::Program,
         Substitution::{TypeSubstitution, VariableSubstitution},
@@ -83,14 +83,14 @@ impl<'a> Typechecker<'a> {
     fn initializeVar(&mut self, var: &Variable, body: &Body) {
         match &var.ty {
             Some(ty) => {
-                self.types.insert(var.value.clone(), ty.clone());
+                self.types.insert(var.value.to_string(), ty.clone());
             }
             None => {
                 if let Some(ty) = body.varTypes.get(&var.value) {
-                    self.types.insert(var.value.clone(), ty.clone());
+                    self.types.insert(var.value.to_string(), ty.clone());
                 } else {
                     let ty = self.allocator.next();
-                    self.types.insert(var.value.clone(), ty.clone());
+                    self.types.insert(var.value.to_string(), ty.clone());
                 }
             }
         }
@@ -101,7 +101,7 @@ impl<'a> Typechecker<'a> {
         for param in &f.params {
             match &param {
                 Parameter::Named(name, ty, mutable) => {
-                    self.types.insert(name.clone(), ty.clone());
+                    self.types.insert(format!("{}", name), ty.clone());
                     if *mutable {
                         self.mutables.insert(name.clone());
                     }
@@ -141,7 +141,7 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::Bind(var, _, mutable) => {
                             self.initializeVar(var, body);
                             if *mutable {
-                                self.mutables.insert(var.value.clone());
+                                self.mutables.insert(var.value.to_string());
                             }
                         }
                         InstructionKind::Tuple(var, _) => {
@@ -157,20 +157,20 @@ impl<'a> Typechecker<'a> {
                             self.initializeVar(var, body);
                         }
                         InstructionKind::Return(var, _) => {
-                            self.types.insert(var.value.clone(), Type::Never(false));
+                            self.types.insert(var.value.to_string(), Type::Never(false));
                         }
                         InstructionKind::Ref(var, _) => {
                             self.initializeVar(var, body);
                         }
                         InstructionKind::Drop(_) => {}
                         InstructionKind::Jump(var, _) => {
-                            self.types.insert(var.value.clone(), Type::Never(false));
+                            self.types.insert(var.value.to_string(), Type::Never(false));
                         }
                         InstructionKind::Assign(_, _) => {}
                         InstructionKind::FieldAssign(_, _, _) => {}
                         InstructionKind::DeclareVar(var) => {
                             self.initializeVar(var, body);
-                            self.mutables.insert(var.value.clone());
+                            self.mutables.insert(var.value.to_string());
                         }
                         InstructionKind::Transform(var, _, _) => {
                             self.initializeVar(var, body);
@@ -187,7 +187,7 @@ impl<'a> Typechecker<'a> {
     }
 
     fn getType(&self, var: &Variable) -> Type {
-        match self.types.get(&var.value) {
+        match self.types.get(&var.value.to_string()) {
             Some(ty) => ty.clone(),
             None => panic!("No type found for {}!", var),
         }
@@ -388,7 +388,7 @@ impl<'a> Typechecker<'a> {
                     let mut fnType = targetFn.getType();
                     let mut args = args.clone();
                     args.insert(0, receiver.clone());
-                    let mutableCall = self.mutables.contains(&receiver.value) && fnType.getResult().hasSelfType();
+                    let mutableCall = self.mutables.contains(&receiver.value.to_string()) && fnType.getResult().hasSelfType();
                     if mutableCall {
                         fnType = fnType.changeMethodResult();
                     }
@@ -459,13 +459,13 @@ impl<'a> Typechecker<'a> {
                 InstructionKind::Drop(_) => {}
                 InstructionKind::Jump(_, _) => {}
                 InstructionKind::Assign(name, rhs) => {
-                    if !self.mutables.contains(&name.value) {
+                    if !self.mutables.contains(&name.value.to_string()) {
                         TypecheckerError::ImmutableAssign(instruction.location.clone()).report(self.ctx);
                     }
                     self.unify(self.getType(name), self.getType(rhs), instruction.location.clone());
                 }
                 InstructionKind::FieldAssign(name, rhs, fields) => {
-                    if !self.mutables.contains(&name.value) {
+                    if !self.mutables.contains(&name.value.to_string()) {
                         TypecheckerError::ImmutableAssign(instruction.location.clone()).report(self.ctx);
                     }
                     let receiverType = self.getType(name);
@@ -607,10 +607,10 @@ impl<'a> Typechecker<'a> {
                 for var in vars {
                     if self.implicitRefs.contains(&var) {
                         let mut dest = var.clone();
-                        dest.value = format!("implicitRef{}", nextImplicitRef);
+                        dest.value = VariableName::Local(format!("implicitRef"), nextImplicitRef);
                         nextImplicitRef += 1;
                         let ty = Type::Reference(Box::new(self.getType(&var)), None);
-                        self.types.insert(dest.value.clone(), ty);
+                        self.types.insert(dest.value.to_string(), ty);
                         let mut varSwap = VariableSubstitution::new();
                         varSwap.add(var.clone(), dest.clone());
                         let kind = InstructionKind::Ref(dest.clone(), var.clone());
@@ -647,9 +647,9 @@ impl<'a> Typechecker<'a> {
                 for var in vars {
                     if let Some(info) = self.mutableMethodCalls.get(&var) {
                         let mut dest = var.clone();
-                        dest.value = format!("implicitResult{}", nextImplicitResult);
+                        dest.value = VariableName::Local(format!("implicitResult"), nextImplicitResult);
                         nextImplicitResult += 1;
-                        self.types.insert(dest.value.clone(), info.baseType.clone());
+                        self.types.insert(dest.value.to_string(), info.baseType.clone());
                         let mut varSwap = VariableSubstitution::new();
                         varSwap.add(var.clone(), dest.clone());
                         let tupleTypes = info.selfLessType.getTupleTypes();
@@ -680,9 +680,9 @@ impl<'a> Typechecker<'a> {
                                 };
                                 block.instructions.insert(currentIndex, selfIndex);
                                 let mut argVar = var.clone();
-                                argVar.value = format!("argVar{}", nextImplicitResult);
+                                argVar.value = VariableName::Local(format!("argVar"), nextImplicitResult);
                                 nextImplicitResult += 1;
-                                self.types.insert(argVar.value.clone(), tupleTypes[0].clone());
+                                self.types.insert(argVar.value.to_string(), tupleTypes[0].clone());
                                 let kind = InstructionKind::TupleIndex(argVar.clone(), dest.clone(), 1);
                                 let argIndex = Instruction {
                                     implicit: true,
@@ -710,10 +710,10 @@ impl<'a> Typechecker<'a> {
                                 let mut args = Vec::new();
                                 for (argIndex, argType) in tupleTypes.iter().enumerate() {
                                     let mut argVar = var.clone();
-                                    argVar.value = format!("argVar{}", nextImplicitResult);
+                                    argVar.value = VariableName::Local(format!("argVar"), nextImplicitResult);
                                     args.push(argVar.clone());
                                     nextImplicitResult += 1;
-                                    self.types.insert(argVar.value.clone(), argType.clone());
+                                    self.types.insert(argVar.value.to_string(), argType.clone());
                                     let kind = InstructionKind::TupleIndex(argVar.clone(), dest.clone(), (argIndex + 1) as i32);
                                     let tupleIndex = Instruction {
                                         implicit: true,

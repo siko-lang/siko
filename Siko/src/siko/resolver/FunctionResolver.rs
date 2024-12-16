@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::siko::hir::ConstraintContext::ConstraintContext;
 use crate::siko::hir::Data::Enum;
-use crate::siko::hir::Function::{Function as IrFunction, FunctionKind, Parameter as IrParameter, Variable};
+use crate::siko::hir::Function::{Function as IrFunction, FunctionKind, Parameter as IrParameter, Variable, VariableName};
 use crate::siko::hir::Type::{Type as IrType, TypeVar};
 use crate::siko::location::Report::ReportContext;
 use crate::siko::qualifiedname::QualifiedName;
@@ -61,7 +61,7 @@ impl<'a> FunctionResolver<'a> {
             let irParam = match param {
                 Parameter::Named(id, ty, mutable) => {
                     let var = Variable {
-                        value: id.toString(),
+                        value: VariableName::Arg(id.toString()),
                         location: id.location.clone(),
                         ty: Some(typeResolver.resolveType(ty)),
                         index: 0,

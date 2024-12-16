@@ -23,17 +23,12 @@ impl<'a> Environment<'a> {
     }
 
     pub fn addArg(&mut self, arg: Variable) {
-        self.values.insert(arg.value.clone(), arg);
+        self.values.insert(arg.value.to_string(), arg);
     }
 
     pub fn addValue(&mut self, old: String, new: Variable) {
         //println!("Added value {}", new);
         self.values.insert(old.clone(), new);
-    }
-
-    pub fn addTmpValue(&mut self, var: Variable) {
-        //println!("Added value {}", new);
-        self.values.insert(var.value.clone(), var);
     }
 
     pub fn resolve(&self, value: &String) -> Option<Variable> {

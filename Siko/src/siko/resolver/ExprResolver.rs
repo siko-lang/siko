@@ -2,7 +2,7 @@ use core::panic;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::siko::hir::Data::Enum;
-use crate::siko::hir::Function::{Block as IrBlock, BlockId, BlockInfo, FieldInfo, InstructionKind, Variable};
+use crate::siko::hir::Function::{Block as IrBlock, BlockId, BlockInfo, FieldInfo, InstructionKind, Variable, VariableName};
 use crate::siko::location::Location::Location;
 use crate::siko::location::Report::ReportContext;
 use crate::siko::qualifiedname::QualifiedName;
@@ -96,7 +96,7 @@ impl<'a> ExprResolver<'a> {
     }
 
     pub fn indexVar(&mut self, mut var: Variable) -> Variable {
-        let index = self.varIndices.entry(var.value.clone()).or_insert(1);
+        let index = self.varIndices.entry(var.value.to_string()).or_insert(1);
         var.index = *index;
         *index += 1;
         var
@@ -127,7 +127,7 @@ impl<'a> ExprResolver<'a> {
                 }
                 SimpleExpr::SelfValue => {
                     let value = Variable {
-                        value: "self".to_string(),
+                        value: VariableName::Arg(format!("self")),
                         location: receiver.location.clone(),
                         ty: None,
                         index: 0,
@@ -236,7 +236,7 @@ impl<'a> ExprResolver<'a> {
                 }
             },
             SimpleExpr::SelfValue => Variable {
-                value: "self".to_string(),
+                value: VariableName::Arg(format!("self")),
                 location: expr.location.clone(),
                 ty: None,
                 index: 0,
@@ -506,7 +506,7 @@ impl<'a> ExprResolver<'a> {
         let valueId = self.valueId;
         self.valueId += 1;
         Variable {
-            value: format!("{}_{}", name, valueId),
+            value: VariableName::Local(name.to_string(), valueId),
             location: location,
             ty: None,
             index: 0,

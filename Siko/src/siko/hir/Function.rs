@@ -96,8 +96,41 @@ impl std::fmt::Debug for StringCase {
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum VariableName {
+    Local(String, u32),
+    Arg(String),
+}
+
+impl VariableName {
+    pub fn userName(&self) -> String {
+        match self {
+            VariableName::Local(n, _) => n.clone(),
+            VariableName::Arg(n) => n.clone(),
+        }
+    }
+}
+
+impl Display for VariableName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VariableName::Local(n, i) => write!(f, "{}_{}", n, i),
+            VariableName::Arg(n) => write!(f, "{}", n),
+        }
+    }
+}
+
+impl Debug for VariableName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VariableName::Local(n, i) => write!(f, "{}_{}", n, i),
+            VariableName::Arg(n) => write!(f, "{}", n),
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Variable {
-    pub value: String,
+    pub value: VariableName,
     pub location: Location,
     pub ty: Option<Type>,
     pub index: u32,
@@ -389,7 +422,7 @@ impl Display for Block {
 #[derive(Debug, Clone)]
 pub struct Body {
     pub blocks: Vec<Block>,
-    pub varTypes: BTreeMap<String, Type>,
+    pub varTypes: BTreeMap<VariableName, Type>,
 }
 
 impl Body {
