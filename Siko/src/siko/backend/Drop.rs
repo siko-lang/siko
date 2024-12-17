@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt::Display,
+};
 
 use crate::siko::{
     hir::{
@@ -31,7 +34,7 @@ struct InstructionId {
 struct Context<'a> {
     ctx: &'a ReportContext,
     live: BTreeSet<VariableName>,
-    moved: BTreeMap<VariableName, Location>,
+    moved: BTreeMap<Path, Location>,
 }
 
 impl<'a> Context<'a> {
@@ -50,24 +53,37 @@ impl<'a> Context<'a> {
     fn addLive(&mut self, var: &Variable) {
         //println!("addLive {}", var.value);
         self.live.insert(var.value.clone());
-        self.moved.remove(&var.value);
+        self.moved = self
+            .moved
+            .clone()
+            .into_iter()
+            .filter(|(path, _)| path.items[0] != var.value.to_string())
+            .collect();
     }
 
-    fn addMove(&mut self, var: &Variable) {
+    fn addMove(&mut self, paths: &BTreeMap<VariableName, Path>, var: &Variable) {
         if var.getType().isReference() {
             return;
         }
-        //println!("addMove {}", var.value);
-        if let Some(movLoc) = self.moved.get(&var.value) {
-            let slogan = format!("Value {} already moved", self.ctx.yellow(&var.value.visibleName()));
-            let mut entries = Vec::new();
-            entries.push(Entry::new(None, var.location.clone()));
-            entries.push(Entry::new(Some(format!("NOTE: previous moved here")), movLoc.clone()));
-            let r = Report::build(self.ctx, slogan, entries);
-            r.print();
-            self.exit();
+        let currentPath = if let Some(path) = paths.get(&var.value) {
+            path.clone()
+        } else {
+            Path::new().add(var.value.to_string())
+        };
+        //println!("addmove {}", currentPath);
+        for (path, movLoc) in &self.moved {
+            //println!("checking {} and {}", path, currentPath);
+            if path.parent(&currentPath) {
+                let slogan = format!("Value {} already moved", self.ctx.yellow(&currentPath.userPath()));
+                let mut entries = Vec::new();
+                entries.push(Entry::new(None, var.location.clone()));
+                entries.push(Entry::new(Some(format!("NOTE: previously moved here")), movLoc.clone()));
+                let r = Report::build(self.ctx, slogan, entries);
+                r.print();
+                self.exit();
+            }
         }
-        self.moved.insert(var.value.clone(), var.location.clone());
+        self.moved.insert(currentPath, var.location.clone());
     }
 }
 
@@ -77,9 +93,45 @@ struct VisitedBlock<'a> {
     id: BlockId,
 }
 
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct Path {
+    items: Vec<String>,
+}
+
+impl Path {
+    fn new() -> Path {
+        Path { items: Vec::new() }
+    }
+
+    fn add(&self, item: String) -> Path {
+        let mut p = self.clone();
+        p.items.push(item);
+        p
+    }
+
+    fn userPath(&self) -> String {
+        self.items.join(".")
+    }
+
+    fn parent(&self, other: &Path) -> bool {
+        if self.items.len() > other.items.len() {
+            return false;
+        }
+        let otherItems = &other.items[0..self.items.len()];
+        self.items == otherItems
+    }
+}
+
+impl Display for Path {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "({})", self.items.join(","))
+    }
+}
+
 pub struct DropChecker<'a> {
     function: &'a Function,
     visited: BTreeSet<VisitedBlock<'a>>,
+    paths: BTreeMap<VariableName, Path>,
 }
 
 impl<'a> DropChecker<'a> {
@@ -87,6 +139,7 @@ impl<'a> DropChecker<'a> {
         DropChecker {
             function: f,
             visited: BTreeSet::new(),
+            paths: BTreeMap::new(),
         }
     }
 
@@ -112,17 +165,23 @@ impl<'a> DropChecker<'a> {
             match &instruction.kind {
                 InstructionKind::FunctionCall(dest, _, args) => {
                     for arg in args {
-                        context.addMove(arg);
+                        context.addMove(&self.paths, arg);
                     }
                     context.addLive(dest);
                 }
                 InstructionKind::MethodCall(_, _, _, _) => unreachable!("method call in Drop checker"),
                 InstructionKind::DynamicFunctionCall(_, _, _) => {}
                 InstructionKind::ValueRef(dest, src) => {
-                    context.addMove(src);
+                    context.addMove(&self.paths, src);
                     context.addLive(dest);
                 }
                 InstructionKind::FieldRef(dest, receiver, fieldName) => {
+                    if let Some(path) = self.paths.get(&receiver.value) {
+                        self.paths.insert(dest.value.clone(), path.add(fieldName.clone()));
+                    } else {
+                        self.paths
+                            .insert(dest.value.clone(), Path::new().add(receiver.value.to_string()).add(fieldName.clone()));
+                    }
                     //println!("{}.{}", receiver, fieldName);
                     context.addLive(dest);
                 }
@@ -130,12 +189,12 @@ impl<'a> DropChecker<'a> {
                     context.addLive(dest);
                 }
                 InstructionKind::Bind(dest, src, _) => {
-                    context.addMove(src);
+                    context.addMove(&self.paths, src);
                     context.addLive(dest);
                 }
                 InstructionKind::Tuple(dest, args) => {
                     for arg in args {
-                        context.addMove(arg);
+                        context.addMove(&self.paths, arg);
                     }
                     context.addLive(dest);
                 }
@@ -149,7 +208,7 @@ impl<'a> DropChecker<'a> {
                     context.addLive(dest);
                 }
                 InstructionKind::Return(_, _) => return,
-                InstructionKind::Ref(dest, _) => {
+                InstructionKind::Ref(dest, src) => {
                     context.addLive(dest);
                 }
                 InstructionKind::Drop(_) => {}
@@ -158,7 +217,7 @@ impl<'a> DropChecker<'a> {
                     return;
                 }
                 InstructionKind::Assign(dest, src) => {
-                    context.addMove(src);
+                    context.addMove(&self.paths, src);
                     context.addLive(dest);
                 }
                 InstructionKind::FieldAssign(dest, _, _) => {
@@ -171,19 +230,19 @@ impl<'a> DropChecker<'a> {
                     context.addLive(dest);
                 }
                 InstructionKind::EnumSwitch(root, cases) => {
-                    context.addMove(root);
+                    context.addMove(&self.paths, root);
                     for case in cases {
                         self.processBlock(case.branch, context.clone());
                     }
                 }
                 InstructionKind::IntegerSwitch(root, cases) => {
-                    context.addMove(root);
+                    context.addMove(&self.paths, root);
                     for case in cases {
                         self.processBlock(case.branch, context.clone());
                     }
                 }
                 InstructionKind::StringSwitch(root, cases) => {
-                    context.addMove(root);
+                    context.addMove(&self.paths, root);
                     for case in cases {
                         self.processBlock(case.branch, context.clone());
                     }
