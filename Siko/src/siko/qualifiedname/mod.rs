@@ -120,3 +120,7 @@ pub fn getPtrToRefName() -> QualifiedName {
 pub fn getPtrPrintName() -> QualifiedName {
     build("Ptr", "print")
 }
+
+pub fn getCloneName() -> QualifiedName {
+    build("Std.Ops", "Clone").add(format!("clone"))
+}

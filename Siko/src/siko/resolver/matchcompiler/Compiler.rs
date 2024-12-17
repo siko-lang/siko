@@ -1,6 +1,6 @@
 use crate::siko::hir::Function::{BlockId, EnumCase, InstructionKind, IntegerCase, Variable};
 use crate::siko::location::Location::Location;
-use crate::siko::qualifiedname::{getStringEqName, QualifiedName};
+use crate::siko::qualifiedname::{getCloneName, getStringEqName, QualifiedName};
 use crate::siko::resolver::Environment::Environment;
 use crate::siko::resolver::Error::ResolverError;
 use crate::siko::resolver::ExprResolver::ExprResolver;
@@ -539,8 +539,22 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                             };
                             cases.push(c);
                         }
+                        let refValue = self.resolver.createValue("refValue", self.bodyLocation.clone());
                         self.resolver
-                            .addInstructionToBlock(blockId, InstructionKind::IntegerSwitch(root, cases), self.bodyLocation.clone(), false);
+                            .addInstructionToBlock(blockId, InstructionKind::Ref(refValue.clone(), root), self.bodyLocation.clone(), false);
+                        let cloneValue = self.resolver.createValue("cloneValue", self.bodyLocation.clone());
+                        self.resolver.addInstructionToBlock(
+                            blockId,
+                            InstructionKind::FunctionCall(cloneValue.clone(), getCloneName(), vec![refValue]),
+                            self.bodyLocation.clone(),
+                            false,
+                        );
+                        self.resolver.addInstructionToBlock(
+                            blockId,
+                            InstructionKind::IntegerSwitch(cloneValue, cases),
+                            self.bodyLocation.clone(),
+                            false,
+                        );
                     }
                     SwitchKind::String => {
                         let mut blocks = Vec::new();

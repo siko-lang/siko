@@ -102,7 +102,7 @@ pub enum VariableName {
 }
 
 impl VariableName {
-    pub fn userName(&self) -> String {
+    pub fn visibleName(&self) -> String {
         match self {
             VariableName::Local(n, _) => n.clone(),
             VariableName::Arg(n) => n.clone(),

@@ -59,7 +59,7 @@ impl<'a> Context<'a> {
         }
         //println!("addMove {}", var.value);
         if let Some(movLoc) = self.moved.get(&var.value) {
-            let slogan = format!("Value {} already moved", self.ctx.yellow(&var.value.userName()));
+            let slogan = format!("Value {} already moved", self.ctx.yellow(&var.value.visibleName()));
             let mut entries = Vec::new();
             entries.push(Entry::new(None, var.location.clone()));
             entries.push(Entry::new(Some(format!("NOTE: previous moved here")), movLoc.clone()));
