@@ -121,6 +121,10 @@ pub fn getPtrPrintName() -> QualifiedName {
     build("Ptr", "print")
 }
 
+pub fn getPtrCloneName() -> QualifiedName {
+    build("Ptr", "clone")
+}
+
 pub fn getCloneName() -> QualifiedName {
     build("Std.Ops", "Clone").add(format!("clone"))
 }

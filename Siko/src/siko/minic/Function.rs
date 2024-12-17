@@ -42,6 +42,12 @@ pub enum ReadMode {
     Deref,
 }
 
+pub enum GetMode {
+    Noop,
+    Ref,
+    Deref,
+}
+
 pub enum Instruction {
     Allocate(Variable),
     Store(Variable, Value),
@@ -49,7 +55,7 @@ pub enum Instruction {
     Reference(Variable, Variable),
     FunctionCallValue(Variable, String, Vec<Variable>),
     Return(Value),
-    GetFieldRef(Variable, Variable, i32),
+    GetField(Variable, Variable, i32, GetMode),
     SetField(Variable, Variable, Vec<i32>, ReadMode),
     Jump(String),
     Memcpy(Variable, Variable),

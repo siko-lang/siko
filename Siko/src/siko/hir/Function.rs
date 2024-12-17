@@ -318,7 +318,7 @@ impl InstructionKind {
                 format!("{} = DYN_CALL({}, {:?})", dest, callable, args)
             }
             InstructionKind::ValueRef(dest, v) => format!("{} = {}", dest, v),
-            InstructionKind::FieldRef(dest, v, name) => format!("{} = {}.{}", dest, v, name),
+            InstructionKind::FieldRef(dest, v, name) => format!("{} = ({}).{}", dest, v, name),
             InstructionKind::TupleIndex(dest, v, idx) => format!("{} = {}.t{}", dest, v, idx),
             InstructionKind::Bind(v, rhs, mutable) => {
                 if *mutable {

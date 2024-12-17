@@ -7,13 +7,13 @@ use super::{
     Type::Type,
 };
 
-use crate::siko::minic::Function::Block as LBlock;
 use crate::siko::minic::Function::Branch as LBranch;
 use crate::siko::minic::Function::Function as LFunction;
 use crate::siko::minic::Function::Instruction as LInstruction;
 use crate::siko::minic::Function::Param as LParam;
 use crate::siko::minic::Function::Value as LValue;
 use crate::siko::minic::Function::Variable as LVariable;
+use crate::siko::minic::Function::{Block as LBlock, GetMode};
 use crate::siko::minic::Program::Program as LProgram;
 use crate::siko::minic::Type::Type as LType;
 use crate::siko::minic::{Constant::StringConstant, Data::Field as LField};
@@ -150,7 +150,18 @@ impl<'a> MinicBuilder<'a> {
                     }
                 }
                 Instruction::GetFieldRef(dest, root, index) => {
-                    let minicInstruction = LInstruction::GetFieldRef(self.lowerVar(dest), self.lowerVar(root), *index);
+                    let field = &self.program.getStruct(&root.ty.getStruct()).fields[*index as usize];
+                    let mode = if dest.ty.isPtr() {
+                        let inner = dest.ty.getPtrInner();
+                        if inner == field.ty {
+                            GetMode::Ref
+                        } else {
+                            GetMode::Noop
+                        }
+                    } else {
+                        GetMode::Noop
+                    };
+                    let minicInstruction = LInstruction::GetField(self.lowerVar(dest), self.lowerVar(root), *index, mode);
                     minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::SetField(dest, root, indices) => {
@@ -196,7 +207,7 @@ impl<'a> MinicBuilder<'a> {
                         ty: Type::Int32,
                     };
                     let tmpVar = self.tmpVar(&switchVar);
-                    let minicInstruction = LInstruction::GetFieldRef(tmpVar.clone(), self.lowerVar(var), 0);
+                    let minicInstruction = LInstruction::GetField(tmpVar.clone(), self.lowerVar(var), 0, GetMode::Noop);
                     minicBlock.instructions.push(minicInstruction);
                     let mut branches = Vec::new();
                     for (index, case) in cases.iter().enumerate() {
@@ -241,7 +252,7 @@ impl<'a> MinicBuilder<'a> {
                     let recastVar = self.tmpVar(&recastVar);
                     let minicInstruction = LInstruction::Bitcast(recastVar.clone(), self.lowerVar(src));
                     minicBlock.instructions.push(minicInstruction);
-                    let minicInstruction = LInstruction::GetFieldRef(self.lowerVar(dest), recastVar, 1);
+                    let minicInstruction = LInstruction::GetField(self.lowerVar(dest), recastVar, 1, GetMode::Noop);
                     minicBlock.instructions.push(minicInstruction);
                 }
             };

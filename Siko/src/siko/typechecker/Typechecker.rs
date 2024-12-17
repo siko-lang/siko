@@ -351,6 +351,9 @@ impl<'a> Typechecker<'a> {
                     let classDef = self.instantiateClass(classDef, receiverType.unpackRef());
                     for f in &classDef.fields {
                         if f.name == *fieldName {
+                            if receiverType.isReference() {
+                                return Type::Reference(Box::new(f.ty.clone()), None);
+                            }
                             return f.ty.clone();
                         }
                     }

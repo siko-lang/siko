@@ -37,6 +37,13 @@ impl Type {
         }
     }
 
+    pub fn getPtrInner(&self) -> Type {
+        match self {
+            Type::Ptr(ty) => *ty.clone(),
+            _ => unreachable!("not a ptr!"),
+        }
+    }
+
     pub fn getUnion(&self) -> String {
         match self {
             Type::Union(v) => v.clone(),
@@ -48,6 +55,7 @@ impl Type {
     pub fn getStruct(&self) -> String {
         match self {
             Type::Struct(v) => v.clone(),
+            Type::Ptr(v) => v.getStruct(),
             ty => unreachable!("not a struct {}", ty),
         }
     }

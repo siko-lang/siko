@@ -122,7 +122,8 @@ impl<'a> DropChecker<'a> {
                     context.addMove(src);
                     context.addLive(dest);
                 }
-                InstructionKind::FieldRef(dest, _, _) => {
+                InstructionKind::FieldRef(dest, receiver, fieldName) => {
+                    //println!("{}.{}", receiver, fieldName);
                     context.addLive(dest);
                 }
                 InstructionKind::TupleIndex(dest, _, _) => {

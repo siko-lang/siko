@@ -7,14 +7,15 @@ use std::{
 use crate::siko::{
     minic::Function::Value,
     qualifiedname::{
-        getPtrAllocateArrayName, getPtrDeallocateName, getPtrMemcpyName, getPtrNullName, getPtrOffsetName, getPtrPrintName, getPtrStoreName,
+        getPtrAllocateArrayName, getPtrCloneName, getPtrDeallocateName, getPtrMemcpyName, getPtrNullName, getPtrOffsetName, getPtrPrintName,
+        getPtrStoreName,
     },
     util::DependencyProcessor::processDependencies,
 };
 
 use super::{
     Data::Struct,
-    Function::{Function, Instruction, ReadMode},
+    Function::{Function, GetMode, Instruction, ReadMode},
     Program::Program,
     Type::Type,
 };
@@ -111,11 +112,16 @@ impl MiniCGenerator {
                     self.getAlignment(&src.ty),
                 )
             }
-            Instruction::GetFieldRef(dest, root, index) => {
+            Instruction::GetField(dest, root, index, mode) => {
+                let mode = match mode {
+                    GetMode::Noop => "",
+                    GetMode::Ref => "&",
+                    GetMode::Deref => "*",
+                };
                 if root.ty.isPtr() {
-                    format!("{} = {}->field{};", dest.name, root.name, index)
+                    format!("{} = {}{}->field{};", dest.name, mode, root.name, index)
                 } else {
-                    format!("{} = {}.field{};", dest.name, root.name, index)
+                    format!("{} = {}{}.field{};", dest.name, mode, root.name, index)
                 }
             }
             Instruction::SetField(dest, src, indices, mode) => {
@@ -223,7 +229,7 @@ impl MiniCGenerator {
                         localVars.insert(dest.clone());
                     }
                     Instruction::Return(_) => {}
-                    Instruction::GetFieldRef(dest, _, _) => {
+                    Instruction::GetField(dest, _, _, _) => {
                         localVars.insert(dest.clone());
                     }
                     Instruction::SetField(dest, _, _, _) => {
@@ -275,6 +281,12 @@ impl MiniCGenerator {
         if f.name.starts_with(&getPtrOffsetName().toString().replace(".", "_")) {
             writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
             writeln!(buf, "    return &base[count];")?;
+            writeln!(buf, "}}\n")?;
+        }
+
+        if f.name.starts_with(&getPtrCloneName().toString().replace(".", "_")) {
+            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(buf, "    return *addr;")?;
             writeln!(buf, "}}\n")?;
         }
 
