@@ -53,12 +53,7 @@ impl<'a> Context<'a> {
     fn addLive(&mut self, var: &Variable) {
         //println!("addLive {}", var.value);
         self.live.insert(var.value.clone());
-        self.moved = self
-            .moved
-            .clone()
-            .into_iter()
-            .filter(|(path, _)| path.items[0] != var.value.to_string())
-            .collect();
+        self.moved = self.moved.clone().into_iter().filter(|(path, _)| path.root.value != var.value).collect();
     }
 
     fn addMove(&mut self, paths: &BTreeMap<VariableName, Path>, var: &Variable) {
@@ -68,13 +63,14 @@ impl<'a> Context<'a> {
         let currentPath = if let Some(path) = paths.get(&var.value) {
             path.clone()
         } else {
-            Path::new().add(var.value.to_string())
+            Path::new(var.clone())
         };
         //println!("addmove {}", currentPath);
         for (path, movLoc) in &self.moved {
             //println!("checking {} and {}", path, currentPath);
             if path.parent(&currentPath) {
                 let slogan = format!("Value {} already moved", self.ctx.yellow(&currentPath.userPath()));
+                //let slogan = format!("Value {} already moved", self.ctx.yellow(&currentPath.to_string()));
                 let mut entries = Vec::new();
                 entries.push(Entry::new(None, var.location.clone()));
                 entries.push(Entry::new(Some(format!("NOTE: previously moved here")), movLoc.clone()));
@@ -95,12 +91,16 @@ struct VisitedBlock<'a> {
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct Path {
+    root: Variable,
     items: Vec<String>,
 }
 
 impl Path {
-    fn new() -> Path {
-        Path { items: Vec::new() }
+    fn new(root: Variable) -> Path {
+        Path {
+            root: root,
+            items: Vec::new(),
+        }
     }
 
     fn add(&self, item: String) -> Path {
@@ -110,10 +110,17 @@ impl Path {
     }
 
     fn userPath(&self) -> String {
-        self.items.join(".")
+        if self.items.is_empty() {
+            self.root.value.visibleName()
+        } else {
+            format!("{}.{}", self.root.value.visibleName(), self.items.join("."))
+        }
     }
 
     fn parent(&self, other: &Path) -> bool {
+        if self.root.value != other.root.value {
+            return false;
+        }
         if self.items.len() > other.items.len() {
             return false;
         }
@@ -124,7 +131,11 @@ impl Path {
 
 impl Display for Path {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "({})", self.items.join(","))
+        if self.items.is_empty() {
+            writeln!(f, "{}", self.root.value)
+        } else {
+            writeln!(f, "{}.{}", self.root.value.visibleName(), self.items.join("."))
+        }
     }
 }
 
@@ -179,10 +190,8 @@ impl<'a> DropChecker<'a> {
                     if let Some(path) = self.paths.get(&receiver.value) {
                         self.paths.insert(dest.value.clone(), path.add(fieldName.clone()));
                     } else {
-                        self.paths
-                            .insert(dest.value.clone(), Path::new().add(receiver.value.to_string()).add(fieldName.clone()));
+                        self.paths.insert(dest.value.clone(), Path::new(receiver.clone()).add(fieldName.clone()));
                     }
-                    //println!("{}.{}", receiver, fieldName);
                     context.addLive(dest);
                 }
                 InstructionKind::TupleIndex(dest, _, _) => {
