@@ -6,19 +6,19 @@ use std::{
 use crate::siko::{
     hir::{
         Function::{BlockId, Function, InstructionKind, Variable, VariableName},
+        InstanceResolver::ResolutionResult,
         Program::Program,
+        TypeVarAllocator::TypeVarAllocator,
     },
-    location::{
-        Location::Location,
-        Report::{Entry, Report, ReportContext},
-    },
+    location::Report::{Entry, Report, ReportContext},
+    qualifiedname::getCopyName,
 };
 
 pub fn checkDrops(ctx: &ReportContext, program: Program) -> Program {
     let mut result = program.clone();
     for (name, f) in &program.functions {
-        let mut checker = DropChecker::new(f);
-        let f = checker.process(ctx);
+        let mut checker = DropChecker::new(f, ctx, &program);
+        let f = checker.process();
         result.functions.insert(name.clone(), f);
     }
     result
@@ -31,34 +31,42 @@ struct InstructionId {
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct Context<'a> {
-    ctx: &'a ReportContext,
-    live: BTreeSet<VariableName>,
-    moved: BTreeMap<Path, Location>,
+struct Usage {
+    var: Variable,
+    path: Path,
 }
 
-impl<'a> Context<'a> {
-    fn new(ctx: &'a ReportContext) -> Context<'a> {
-        Context {
-            ctx: ctx,
-            live: BTreeSet::new(),
-            moved: BTreeMap::new(),
-        }
-    }
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct Context {
+    live: BTreeSet<VariableName>,
+    moved: Vec<Usage>,
+}
 
-    fn exit(&self) {
-        std::process::exit(1)
+enum Result {
+    AlreadyMoved(Path, Usage),
+}
+
+impl Context {
+    fn new() -> Context {
+        Context {
+            live: BTreeSet::new(),
+            moved: Vec::new(),
+        }
     }
 
     fn addLive(&mut self, var: &Variable) {
         //println!("addLive {}", var.value);
         self.live.insert(var.value.clone());
-        self.moved = self.moved.clone().into_iter().filter(|(path, _)| path.root.value != var.value).collect();
+        self.moved.retain(|usage| usage.path.root.value != var.value);
     }
 
-    fn addMove(&mut self, paths: &BTreeMap<VariableName, Path>, var: &Variable) {
+    fn removeSpecificMove(&mut self, var: &Variable) {
+        self.moved.retain(|usage| usage.var != *var);
+    }
+
+    fn addMove(&mut self, paths: &BTreeMap<VariableName, Path>, var: &Variable) -> Option<Result> {
         if var.getType().isReference() {
-            return;
+            return None;
         }
         let currentPath = if let Some(path) = paths.get(&var.value) {
             path.clone()
@@ -66,26 +74,23 @@ impl<'a> Context<'a> {
             Path::new(var.clone())
         };
         //println!("addmove {}", currentPath);
-        for (path, movLoc) in &self.moved {
+        for usage in &self.moved {
             //println!("checking {} and {}", path, currentPath);
-            if path.parent(&currentPath) {
-                let slogan = format!("Value {} already moved", self.ctx.yellow(&currentPath.userPath()));
-                //let slogan = format!("Value {} already moved", self.ctx.yellow(&currentPath.to_string()));
-                let mut entries = Vec::new();
-                entries.push(Entry::new(None, var.location.clone()));
-                entries.push(Entry::new(Some(format!("NOTE: previously moved here")), movLoc.clone()));
-                let r = Report::build(self.ctx, slogan, entries);
-                r.print();
-                self.exit();
+            if usage.path.same(&currentPath) {
+                return Some(Result::AlreadyMoved(currentPath.clone(), usage.clone()));
             }
         }
-        self.moved.insert(currentPath, var.location.clone());
+        self.moved.push(Usage {
+            var: var.clone(),
+            path: currentPath,
+        });
+        return None;
     }
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
-struct VisitedBlock<'a> {
-    ctx: Context<'a>,
+struct VisitedBlock {
+    ctx: Context,
     id: BlockId,
 }
 
@@ -117,15 +122,16 @@ impl Path {
         }
     }
 
-    fn parent(&self, other: &Path) -> bool {
+    fn same(&self, other: &Path) -> bool {
         if self.root.value != other.root.value {
             return false;
         }
-        if self.items.len() > other.items.len() {
-            return false;
+        for (i1, i2) in self.items.iter().zip(other.items.iter()) {
+            if i1 != i2 {
+                return false;
+            }
         }
-        let otherItems = &other.items[0..self.items.len()];
-        self.items == otherItems
+        true
     }
 }
 
@@ -140,28 +146,56 @@ impl Display for Path {
 }
 
 pub struct DropChecker<'a> {
+    ctx: &'a ReportContext,
     function: &'a Function,
-    visited: BTreeSet<VisitedBlock<'a>>,
+    program: &'a Program,
+    visited: BTreeSet<VisitedBlock>,
     paths: BTreeMap<VariableName, Path>,
 }
 
 impl<'a> DropChecker<'a> {
-    pub fn new(f: &'a Function) -> DropChecker<'a> {
+    pub fn new(f: &'a Function, ctx: &'a ReportContext, program: &'a Program) -> DropChecker<'a> {
         DropChecker {
+            ctx: ctx,
             function: f,
+            program: program,
             visited: BTreeSet::new(),
             paths: BTreeMap::new(),
         }
     }
 
-    fn process(&mut self, ctx: &'a ReportContext) -> Function {
+    fn process(&mut self) -> Function {
         if self.function.body.is_some() {
-            self.processBlock(BlockId::first(), Context::new(ctx));
+            self.processBlock(BlockId::first(), Context::new());
         }
         self.function.clone()
     }
 
-    fn processBlock(&mut self, blockId: BlockId, mut context: Context<'a>) {
+    fn checkMove(&mut self, context: &mut Context, var: &Variable) {
+        if let Some(Result::AlreadyMoved(currentPath, prevUsage)) = context.addMove(&self.paths, var) {
+            if let Some(instances) = self.program.instanceResolver.lookupInstances(&getCopyName()) {
+                let mut allocator = TypeVarAllocator::new();
+                let result = instances.find(&mut allocator, &vec![prevUsage.var.getType().clone()]);
+                if let ResolutionResult::Winner(_) = result {
+                    //println!("Copy found for {}", prevUsage.var);
+                    context.removeSpecificMove(&prevUsage.var);
+                    context.addMove(&self.paths, var);
+                    return;
+                }
+            }
+
+            let slogan = format!("Value {} already moved", self.ctx.yellow(&currentPath.userPath()));
+            //let slogan = format!("Value {} already moved", self.ctx.yellow(&currentPath.to_string()));
+            let mut entries = Vec::new();
+            entries.push(Entry::new(None, var.location.clone()));
+            entries.push(Entry::new(Some(format!("NOTE: previously moved here")), prevUsage.var.location.clone()));
+            let r = Report::build(self.ctx, slogan, entries);
+            r.print();
+            std::process::exit(1)
+        }
+    }
+
+    fn processBlock(&mut self, blockId: BlockId, mut context: Context) {
         let visitedBlock = VisitedBlock {
             ctx: context.clone(),
             id: blockId,
@@ -176,14 +210,14 @@ impl<'a> DropChecker<'a> {
             match &instruction.kind {
                 InstructionKind::FunctionCall(dest, _, args) => {
                     for arg in args {
-                        context.addMove(&self.paths, arg);
+                        self.checkMove(&mut context, arg);
                     }
                     context.addLive(dest);
                 }
                 InstructionKind::MethodCall(_, _, _, _) => unreachable!("method call in Drop checker"),
                 InstructionKind::DynamicFunctionCall(_, _, _) => {}
                 InstructionKind::ValueRef(dest, src) => {
-                    context.addMove(&self.paths, src);
+                    self.checkMove(&mut context, src);
                     context.addLive(dest);
                 }
                 InstructionKind::FieldRef(dest, receiver, fieldName) => {
@@ -198,12 +232,12 @@ impl<'a> DropChecker<'a> {
                     context.addLive(dest);
                 }
                 InstructionKind::Bind(dest, src, _) => {
-                    context.addMove(&self.paths, src);
+                    self.checkMove(&mut context, src);
                     context.addLive(dest);
                 }
                 InstructionKind::Tuple(dest, args) => {
                     for arg in args {
-                        context.addMove(&self.paths, arg);
+                        self.checkMove(&mut context, arg);
                     }
                     context.addLive(dest);
                 }
@@ -226,7 +260,7 @@ impl<'a> DropChecker<'a> {
                     return;
                 }
                 InstructionKind::Assign(dest, src) => {
-                    context.addMove(&self.paths, src);
+                    self.checkMove(&mut context, src);
                     context.addLive(dest);
                 }
                 InstructionKind::FieldAssign(dest, _, _) => {
@@ -239,19 +273,19 @@ impl<'a> DropChecker<'a> {
                     context.addLive(dest);
                 }
                 InstructionKind::EnumSwitch(root, cases) => {
-                    context.addMove(&self.paths, root);
+                    self.checkMove(&mut context, root);
                     for case in cases {
                         self.processBlock(case.branch, context.clone());
                     }
                 }
                 InstructionKind::IntegerSwitch(root, cases) => {
-                    context.addMove(&self.paths, root);
+                    self.checkMove(&mut context, root);
                     for case in cases {
                         self.processBlock(case.branch, context.clone());
                     }
                 }
                 InstructionKind::StringSwitch(root, cases) => {
-                    context.addMove(&self.paths, root);
+                    self.checkMove(&mut context, root);
                     for case in cases {
                         self.processBlock(case.branch, context.clone());
                     }
