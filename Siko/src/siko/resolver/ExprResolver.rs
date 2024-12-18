@@ -206,6 +206,7 @@ impl<'a> ExprResolver<'a> {
             blockValue = unitValue;
         }
         if !block.doesNotReturn() {
+            let blockValue = self.indexVar(blockValue);
             self.addImplicitInstruction(InstructionKind::Assign(resultValue.clone(), blockValue), block.location.clone());
         }
         self.addImplicitInstruction(InstructionKind::BlockEnd(blockInfo.clone()), block.location.clone());

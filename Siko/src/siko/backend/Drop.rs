@@ -5,13 +5,16 @@ use std::{
 
 use crate::siko::{
     hir::{
-        Function::{BlockId, Function, InstructionKind, Variable, VariableName},
+        Apply::ApplyVariable,
+        Function::{BlockId, Function, Instruction, InstructionKind, Variable, VariableName},
         InstanceResolver::ResolutionResult,
         Program::Program,
+        Substitution::VariableSubstitution,
+        Type::Type,
         TypeVarAllocator::TypeVarAllocator,
     },
     location::Report::{Entry, Report, ReportContext},
-    qualifiedname::getCopyName,
+    qualifiedname::{getCloneName, getCopyName},
 };
 
 pub fn checkDrops(ctx: &ReportContext, program: Program) -> Program {
@@ -151,6 +154,7 @@ pub struct DropChecker<'a> {
     program: &'a Program,
     visited: BTreeSet<VisitedBlock>,
     paths: BTreeMap<VariableName, Path>,
+    implicitClones: BTreeSet<Variable>,
 }
 
 impl<'a> DropChecker<'a> {
@@ -161,14 +165,64 @@ impl<'a> DropChecker<'a> {
             program: program,
             visited: BTreeSet::new(),
             paths: BTreeMap::new(),
+            implicitClones: BTreeSet::new(),
         }
     }
 
     fn process(&mut self) -> Function {
+        let mut result = self.function.clone();
+        let mut nextVar = 1;
         if self.function.body.is_some() {
             self.processBlock(BlockId::first(), Context::new());
+            let body = result.body.as_mut().expect("no body");
+            for block in &mut body.blocks {
+                let mut index = 0;
+                loop {
+                    if index >= block.instructions.len() {
+                        break;
+                    }
+                    let mut instruction = block.instructions[index].clone();
+                    let vars = instruction.kind.collectVariables();
+                    let mut instructionIndex = index;
+                    for var in vars {
+                        if self.implicitClones.contains(&var) {
+                            let mut implicitRefDest = var.clone();
+                            implicitRefDest.value = VariableName::Local(format!("implicitRef"), nextVar);
+                            nextVar += 1;
+                            let ty = Type::Reference(Box::new(var.getType().clone()), None);
+                            implicitRefDest.ty = Some(ty);
+                            let kind = InstructionKind::Ref(implicitRefDest.clone(), var.clone());
+                            let implicitRef = Instruction {
+                                implicit: true,
+                                kind: kind,
+                                location: instruction.location.clone(),
+                            };
+                            block.instructions.insert(index, implicitRef);
+                            instructionIndex += 1;
+
+                            let mut implicitCloneDest = var.clone();
+                            implicitCloneDest.value = VariableName::Local(format!("implicitClone"), nextVar);
+                            nextVar += 1;
+                            let mut varSwap = VariableSubstitution::new();
+                            varSwap.add(var.clone(), implicitCloneDest.clone());
+                            let kind = InstructionKind::FunctionCall(implicitCloneDest.clone(), getCloneName(), vec![implicitRefDest]);
+                            let implicitRef = Instruction {
+                                implicit: true,
+                                kind: kind,
+                                location: instruction.location.clone(),
+                            };
+                            instruction.kind = instruction.kind.applyVar(&varSwap);
+                            block.instructions.insert(instructionIndex, implicitRef);
+                            instructionIndex += 1;
+                            self.implicitClones.remove(&var);
+                        }
+                    }
+                    block.instructions[instructionIndex] = instruction;
+                    index += 1;
+                }
+            }
         }
-        self.function.clone()
+        result
     }
 
     fn checkMove(&mut self, context: &mut Context, var: &Variable) {
@@ -178,6 +232,7 @@ impl<'a> DropChecker<'a> {
                 let result = instances.find(&mut allocator, &vec![prevUsage.var.getType().clone()]);
                 if let ResolutionResult::Winner(_) = result {
                     //println!("Copy found for {}", prevUsage.var);
+                    self.implicitClones.insert(prevUsage.var.clone());
                     context.removeSpecificMove(&prevUsage.var);
                     context.addMove(&self.paths, var);
                     return;
@@ -205,7 +260,7 @@ impl<'a> DropChecker<'a> {
         }
         self.visited.insert(visitedBlock);
         let block = self.function.getBlockById(blockId);
-        for (index, instruction) in block.instructions.iter().enumerate() {
+        for instruction in &block.instructions {
             //println!("PROCESSING {}", instruction.kind);
             match &instruction.kind {
                 InstructionKind::FunctionCall(dest, _, args) => {
@@ -251,7 +306,7 @@ impl<'a> DropChecker<'a> {
                     context.addLive(dest);
                 }
                 InstructionKind::Return(_, _) => return,
-                InstructionKind::Ref(dest, src) => {
+                InstructionKind::Ref(dest, _) => {
                     context.addLive(dest);
                 }
                 InstructionKind::Drop(_) => {}
