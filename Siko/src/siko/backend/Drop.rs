@@ -239,13 +239,22 @@ impl<'a> DropChecker<'a> {
                 }
             }
 
-            let slogan = format!("Value {} already moved", self.ctx.yellow(&currentPath.userPath()));
-            //let slogan = format!("Value {} already moved", self.ctx.yellow(&currentPath.to_string()));
-            let mut entries = Vec::new();
-            entries.push(Entry::new(None, var.location.clone()));
-            entries.push(Entry::new(Some(format!("NOTE: previously moved here")), prevUsage.var.location.clone()));
-            let r = Report::build(self.ctx, slogan, entries);
-            r.print();
+            if prevUsage.var == *var {
+                let slogan = format!("Value {} moved in previous iteration of loop", self.ctx.yellow(&currentPath.userPath()));
+                //let slogan = format!("Value {} already moved", self.ctx.yellow(&currentPath.to_string()));
+                let mut entries = Vec::new();
+                entries.push(Entry::new(None, var.location.clone()));
+                let r = Report::build(self.ctx, slogan, entries);
+                r.print();
+            } else {
+                let slogan = format!("Value {} already moved", self.ctx.yellow(&currentPath.userPath()));
+                //let slogan = format!("Value {} already moved", self.ctx.yellow(&currentPath.to_string()));
+                let mut entries = Vec::new();
+                entries.push(Entry::new(None, var.location.clone()));
+                entries.push(Entry::new(Some(format!("NOTE: previously moved here")), prevUsage.var.location.clone()));
+                let r = Report::build(self.ctx, slogan, entries);
+                r.print();
+            }
             std::process::exit(1)
         }
     }
