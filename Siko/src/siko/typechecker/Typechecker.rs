@@ -18,7 +18,7 @@ use crate::siko::{
         Unification::unify,
     },
     location::{Location::Location, Report::ReportContext},
-    qualifiedname::QualifiedName,
+    qualifiedname::{getCloneName, QualifiedName},
 };
 
 use super::Error::TypecheckerError;
@@ -50,6 +50,7 @@ pub struct Typechecker<'a> {
     selfType: Option<Type>,
     mutables: BTreeSet<String>,
     implicitRefs: BTreeSet<Variable>,
+    implicitClones: BTreeSet<Variable>,
     mutableMethodCalls: BTreeMap<Variable, MutableMethodCallInfo>,
     fieldTypes: BTreeMap<Variable, Vec<Type>>,
 }
@@ -67,6 +68,7 @@ impl<'a> Typechecker<'a> {
             selfType: None,
             mutables: BTreeSet::new(),
             implicitRefs: BTreeSet::new(),
+            implicitClones: BTreeSet::new(),
             mutableMethodCalls: BTreeMap::new(),
             fieldTypes: BTreeMap::new(),
         }
@@ -242,6 +244,13 @@ impl<'a> Typechecker<'a> {
                 argTy = Type::Reference(Box::new(argTy), None);
                 //println!("IMPLICIT REF FOR {}", arg);
                 self.implicitRefs.insert(arg.clone());
+            }
+            if argTy.isReference() && !fnArg.isReference() && !fnArg.isGeneric() {
+                if self.program.instanceResolver.isCopy(&fnArg) {
+                    argTy = argTy.unpackRef().clone();
+                    //println!("IMPLICIT CLONE FOR {} {} {}", arg, argTy, fnArg);
+                    self.implicitClones.insert(arg.clone());
+                }
             }
             self.unify(argTy, fnArg, arg.location.clone());
         }
@@ -634,6 +643,47 @@ impl<'a> Typechecker<'a> {
         }
     }
 
+    fn addImplicitClones(&mut self, f: &mut Function) {
+        let mut nextImplicitClone = 0;
+
+        let body = &mut f.body.as_mut().unwrap();
+
+        for block in &mut body.blocks {
+            let mut index = 0;
+            loop {
+                if index >= block.instructions.len() {
+                    break;
+                }
+                let mut instruction = block.instructions[index].clone();
+                let vars = instruction.kind.collectVariables();
+                let mut instructionIndex = index;
+                for var in vars {
+                    if self.implicitClones.contains(&var) {
+                        let mut dest = var.clone();
+                        dest.value = VariableName::Local(format!("implicitClone"), nextImplicitClone);
+                        nextImplicitClone += 1;
+                        let ty = self.getType(&var).apply(&self.substitution).unpackRef().clone();
+                        self.types.insert(dest.value.to_string(), ty);
+                        let mut varSwap = VariableSubstitution::new();
+                        varSwap.add(var.clone(), dest.clone());
+                        let kind = InstructionKind::FunctionCall(dest.clone(), getCloneName(), vec![var.clone()]);
+                        let implicitRef = Instruction {
+                            implicit: true,
+                            kind: kind,
+                            location: instruction.location.clone(),
+                        };
+                        instruction.kind = instruction.kind.applyVar(&varSwap);
+                        block.instructions.insert(index, implicitRef);
+                        instructionIndex += 1;
+                        self.implicitClones.remove(&var);
+                    }
+                }
+                block.instructions[instructionIndex] = instruction;
+                index += 1;
+            }
+        }
+    }
+
     fn transformMutableMethodCalls(&mut self, f: &mut Function) {
         let mut nextImplicitResult = 0;
 
@@ -799,6 +849,7 @@ impl<'a> Typechecker<'a> {
 
         self.convertMethodCalls(&mut result);
         self.addImplicitRefs(&mut result);
+        self.addImplicitClones(&mut result);
         self.transformMutableMethodCalls(&mut result);
         self.addFieldTypes(&mut result);
         self.addTypes(&mut result);

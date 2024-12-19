@@ -7,14 +7,12 @@ use crate::siko::{
     hir::{
         Apply::ApplyVariable,
         Function::{BlockId, Function, Instruction, InstructionKind, Variable, VariableName},
-        InstanceResolver::ResolutionResult,
         Program::Program,
         Substitution::VariableSubstitution,
         Type::Type,
-        TypeVarAllocator::TypeVarAllocator,
     },
     location::Report::{Entry, Report, ReportContext},
-    qualifiedname::{getCloneName, getCopyName},
+    qualifiedname::getCloneName,
 };
 
 pub fn checkDrops(ctx: &ReportContext, program: Program) -> Program {
@@ -227,16 +225,11 @@ impl<'a> DropChecker<'a> {
 
     fn checkMove(&mut self, context: &mut Context, var: &Variable) {
         if let Some(Result::AlreadyMoved(currentPath, prevUsage)) = context.addMove(&self.paths, var) {
-            if let Some(instances) = self.program.instanceResolver.lookupInstances(&getCopyName()) {
-                let mut allocator = TypeVarAllocator::new();
-                let result = instances.find(&mut allocator, &vec![prevUsage.var.getType().clone()]);
-                if let ResolutionResult::Winner(_) = result {
-                    //println!("Copy found for {}", prevUsage.var);
-                    self.implicitClones.insert(prevUsage.var.clone());
-                    context.removeSpecificMove(&prevUsage.var);
-                    context.addMove(&self.paths, var);
-                    return;
-                }
+            if self.program.instanceResolver.isCopy(&prevUsage.var.getType().clone()) {
+                self.implicitClones.insert(prevUsage.var.clone());
+                context.removeSpecificMove(&prevUsage.var);
+                context.addMove(&self.paths, var);
+                return;
             }
 
             if prevUsage.var == *var {

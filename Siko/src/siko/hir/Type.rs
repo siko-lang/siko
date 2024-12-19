@@ -256,6 +256,13 @@ impl Type {
         }
     }
 
+    pub fn isGeneric(&self) -> bool {
+        match &self {
+            Type::Var(_) => true,
+            _ => false,
+        }
+    }
+
     pub fn makeSingleRef(self) -> Type {
         match self {
             Type::Reference(inner, lifetime) => {

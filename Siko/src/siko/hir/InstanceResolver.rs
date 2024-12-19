@@ -1,6 +1,9 @@
 use std::{cmp::Ordering, collections::BTreeMap};
 
-use crate::siko::{hir::Trait::CompareSpecificity, qualifiedname::QualifiedName};
+use crate::siko::{
+    hir::Trait::CompareSpecificity,
+    qualifiedname::{getCopyName, QualifiedName},
+};
 
 use super::{
     Apply::{instantiateInstance, Apply},
@@ -122,5 +125,17 @@ impl InstanceResolver {
         } else {
             None
         }
+    }
+
+    pub fn isCopy(&self, ty: &Type) -> bool {
+        if let Some(instances) = self.lookupInstances(&getCopyName()) {
+            let mut allocator = TypeVarAllocator::new();
+            let result = instances.find(&mut allocator, &vec![ty.clone()]);
+            if let ResolutionResult::Winner(_) = result {
+                //println!("Copy found for {}", prevUsage.var);
+                return true;
+            }
+        }
+        false
     }
 }
