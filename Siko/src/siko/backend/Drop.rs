@@ -38,9 +38,50 @@ struct Usage {
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct SyntaxBlock {
+    id: String,
+    childBlocks: Vec<SyntaxBlock>,
+}
+
+impl SyntaxBlock {
+    fn new(id: String) -> SyntaxBlock {
+        SyntaxBlock {
+            id: id,
+            childBlocks: Vec::new(),
+        }
+    }
+
+    fn addBlock(&mut self, block: SyntaxBlock) {
+        if self.childBlocks.is_empty() {
+            self.childBlocks.push(block);
+        } else {
+            self.childBlocks.last_mut().unwrap().addBlock(block);
+        }
+    }
+
+    fn getCurrentBlockId(&self) -> String {
+        if self.childBlocks.is_empty() {
+            return format!("{}", self.id);
+        } else {
+            return format!("{}.{}", self.id, self.childBlocks.last().unwrap().getCurrentBlockId());
+        }
+    }
+
+    fn endBlock(&mut self) {
+        assert!(!self.childBlocks.is_empty());
+        if self.childBlocks.last().unwrap().childBlocks.is_empty() {
+            self.childBlocks.pop();
+        } else {
+            self.childBlocks.last_mut().unwrap().endBlock();
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct Context {
     live: BTreeSet<VariableName>,
     moved: Vec<Usage>,
+    rootBlock: SyntaxBlock,
 }
 
 enum Result {
@@ -49,14 +90,16 @@ enum Result {
 
 impl Context {
     fn new() -> Context {
+        let rootBlock = SyntaxBlock::new(format!("0"));
         Context {
             live: BTreeSet::new(),
             moved: Vec::new(),
+            rootBlock,
         }
     }
 
     fn addLive(&mut self, var: &Variable) {
-        //println!("addLive {}", var.value);
+        //println!("    addLive {} in block {}", var.value, self.rootBlock.getCurrentBlockId());
         self.live.insert(var.value.clone());
         self.moved.retain(|usage| usage.path.root.value != var.value);
     }
@@ -347,8 +390,15 @@ impl<'a> DropChecker<'a> {
                         self.processBlock(case.branch, context.clone());
                     }
                 }
-                InstructionKind::BlockStart(_) => {}
-                InstructionKind::BlockEnd(_) => {}
+                InstructionKind::BlockStart(name) => {
+                    let block = SyntaxBlock::new(name.id.clone());
+                    context.rootBlock.addBlock(block);
+                    //println!("block start {}", context.rootBlock.getCurrentBlockId());
+                }
+                InstructionKind::BlockEnd(_) => {
+                    //println!("block end {}", context.rootBlock.getCurrentBlockId());
+                    context.rootBlock.endBlock();
+                }
             }
         }
     }
