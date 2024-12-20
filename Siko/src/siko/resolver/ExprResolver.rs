@@ -418,7 +418,7 @@ impl<'a> ExprResolver<'a> {
                     self.addImplicitInstruction(InstructionKind::DeclareVar(blockValue.clone()), expr.location.clone());
                 }
                 self.resolveBlock(block, env, blockValue.clone());
-                blockValue
+                self.indexVar(blockValue)
             }
             SimpleExpr::Tuple(args) => {
                 let mut irArgs = Vec::new();

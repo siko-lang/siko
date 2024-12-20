@@ -108,7 +108,7 @@ fn main() {
     let program = typecheck(&ctx, program);
     //println!("after typchk\n{}", program);
     let program = eliminateDeadCode(&ctx, program);
-    //println!("after dce\n{}", program);
+    println!("after dce\n{}", program);
     let program = checkDrops(&ctx, program);
     //println!("after dropcheck\n{}", program);
     let program = monomorphize(&ctx, program);

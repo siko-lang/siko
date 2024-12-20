@@ -108,6 +108,15 @@ impl Context {
         self.moved.retain(|usage| usage.var != *var);
     }
 
+    fn isMoved(&mut self, var: &Variable) -> bool {
+        for usage in &self.moved {
+            if usage.var.value == var.value {
+                return true;
+            }
+        }
+        false
+    }
+
     fn addMove(&mut self, paths: &BTreeMap<VariableName, Path>, var: &Variable) -> Option<Result> {
         if var.getType().isReference() {
             return None;
@@ -117,13 +126,13 @@ impl Context {
         } else {
             Path::new(var.clone())
         };
-        //println!("addmove {}", currentPath);
         for usage in &self.moved {
             //println!("checking {} and {}", path, currentPath);
             if usage.path.same(&currentPath) {
                 return Some(Result::AlreadyMoved(currentPath.clone(), usage.clone()));
             }
         }
+        //println!("addMove {}", currentPath);
         self.moved.push(Usage {
             var: var.clone(),
             path: currentPath,
@@ -189,6 +198,17 @@ impl Display for Path {
     }
 }
 
+struct ValueInfo {
+    var: Variable,
+    block: String,
+}
+
+impl Display for ValueInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} ({})", self.var.value, self.block)
+    }
+}
+
 pub struct DropChecker<'a> {
     ctx: &'a ReportContext,
     function: &'a Function,
@@ -196,6 +216,7 @@ pub struct DropChecker<'a> {
     visited: BTreeSet<VisitedBlock>,
     paths: BTreeMap<VariableName, Path>,
     implicitClones: BTreeSet<Variable>,
+    values: BTreeMap<VariableName, ValueInfo>,
 }
 
 impl<'a> DropChecker<'a> {
@@ -207,61 +228,72 @@ impl<'a> DropChecker<'a> {
             visited: BTreeSet::new(),
             paths: BTreeMap::new(),
             implicitClones: BTreeSet::new(),
+            values: BTreeMap::new(),
+        }
+    }
+
+    fn addImplicitClone(&mut self, result: &mut Function) {
+        let mut nextVar = 1;
+        let body = result.body.as_mut().expect("no body");
+        for block in &mut body.blocks {
+            let mut index = 0;
+            loop {
+                if index >= block.instructions.len() {
+                    break;
+                }
+                let mut instruction = block.instructions[index].clone();
+                let vars = instruction.kind.collectVariables();
+                let mut instructionIndex = index;
+                for var in vars {
+                    if self.implicitClones.contains(&var) {
+                        let mut implicitRefDest = var.clone();
+                        implicitRefDest.value = VariableName::Local(format!("implicitRef"), nextVar);
+                        nextVar += 1;
+                        let ty = Type::Reference(Box::new(var.getType().clone()), None);
+                        implicitRefDest.ty = Some(ty);
+                        let kind = InstructionKind::Ref(implicitRefDest.clone(), var.clone());
+                        let implicitRef = Instruction {
+                            implicit: true,
+                            kind: kind,
+                            location: instruction.location.clone(),
+                        };
+                        block.instructions.insert(index, implicitRef);
+                        instructionIndex += 1;
+
+                        let mut implicitCloneDest = var.clone();
+                        implicitCloneDest.value = VariableName::Local(format!("implicitClone"), nextVar);
+                        nextVar += 1;
+                        let mut varSwap = VariableSubstitution::new();
+                        varSwap.add(var.clone(), implicitCloneDest.clone());
+                        let kind = InstructionKind::FunctionCall(implicitCloneDest.clone(), getCloneName(), vec![implicitRefDest]);
+                        let implicitRef = Instruction {
+                            implicit: true,
+                            kind: kind,
+                            location: instruction.location.clone(),
+                        };
+                        instruction.kind = instruction.kind.applyVar(&varSwap);
+                        block.instructions.insert(instructionIndex, implicitRef);
+                        instructionIndex += 1;
+                        self.implicitClones.remove(&var);
+                    }
+                }
+                block.instructions[instructionIndex] = instruction;
+                index += 1;
+            }
         }
     }
 
     fn process(&mut self) -> Function {
         let mut result = self.function.clone();
-        let mut nextVar = 1;
         if self.function.body.is_some() {
             self.processBlock(BlockId::first(), Context::new());
-            let body = result.body.as_mut().expect("no body");
-            for block in &mut body.blocks {
-                let mut index = 0;
-                loop {
-                    if index >= block.instructions.len() {
-                        break;
-                    }
-                    let mut instruction = block.instructions[index].clone();
-                    let vars = instruction.kind.collectVariables();
-                    let mut instructionIndex = index;
-                    for var in vars {
-                        if self.implicitClones.contains(&var) {
-                            let mut implicitRefDest = var.clone();
-                            implicitRefDest.value = VariableName::Local(format!("implicitRef"), nextVar);
-                            nextVar += 1;
-                            let ty = Type::Reference(Box::new(var.getType().clone()), None);
-                            implicitRefDest.ty = Some(ty);
-                            let kind = InstructionKind::Ref(implicitRefDest.clone(), var.clone());
-                            let implicitRef = Instruction {
-                                implicit: true,
-                                kind: kind,
-                                location: instruction.location.clone(),
-                            };
-                            block.instructions.insert(index, implicitRef);
-                            instructionIndex += 1;
 
-                            let mut implicitCloneDest = var.clone();
-                            implicitCloneDest.value = VariableName::Local(format!("implicitClone"), nextVar);
-                            nextVar += 1;
-                            let mut varSwap = VariableSubstitution::new();
-                            varSwap.add(var.clone(), implicitCloneDest.clone());
-                            let kind = InstructionKind::FunctionCall(implicitCloneDest.clone(), getCloneName(), vec![implicitRefDest]);
-                            let implicitRef = Instruction {
-                                implicit: true,
-                                kind: kind,
-                                location: instruction.location.clone(),
-                            };
-                            instruction.kind = instruction.kind.applyVar(&varSwap);
-                            block.instructions.insert(instructionIndex, implicitRef);
-                            instructionIndex += 1;
-                            self.implicitClones.remove(&var);
-                        }
-                    }
-                    block.instructions[instructionIndex] = instruction;
-                    index += 1;
-                }
+            println!("delcared values:");
+            for (_, info) in &self.values {
+                println!("{}", info);
             }
+
+            self.addImplicitClone(&mut result);
         }
         result
     }
@@ -295,6 +327,17 @@ impl<'a> DropChecker<'a> {
         }
     }
 
+    fn declareValue(&mut self, var: &Variable, context: &mut Context) {
+        context.addLive(var);
+        self.values.insert(
+            var.value.clone(),
+            ValueInfo {
+                var: var.clone(),
+                block: context.rootBlock.getCurrentBlockId(),
+            },
+        );
+    }
+
     fn processBlock(&mut self, blockId: BlockId, mut context: Context) {
         let visitedBlock = VisitedBlock {
             ctx: context.clone(),
@@ -312,13 +355,13 @@ impl<'a> DropChecker<'a> {
                     for arg in args {
                         self.checkMove(&mut context, arg);
                     }
-                    context.addLive(dest);
+                    self.declareValue(dest, &mut context);
                 }
                 InstructionKind::MethodCall(_, _, _, _) => unreachable!("method call in Drop checker"),
                 InstructionKind::DynamicFunctionCall(_, _, _) => {}
                 InstructionKind::ValueRef(dest, src) => {
                     self.checkMove(&mut context, src);
-                    context.addLive(dest);
+                    self.declareValue(dest, &mut context);
                 }
                 InstructionKind::FieldRef(dest, receiver, fieldName) => {
                     if let Some(path) = self.paths.get(&receiver.value) {
@@ -326,33 +369,33 @@ impl<'a> DropChecker<'a> {
                     } else {
                         self.paths.insert(dest.value.clone(), Path::new(receiver.clone()).add(fieldName.clone()));
                     }
-                    context.addLive(dest);
+                    self.declareValue(dest, &mut context);
                 }
                 InstructionKind::TupleIndex(dest, _, _) => {
-                    context.addLive(dest);
+                    self.declareValue(dest, &mut context);
                 }
                 InstructionKind::Bind(dest, src, _) => {
                     self.checkMove(&mut context, src);
-                    context.addLive(dest);
+                    self.declareValue(dest, &mut context);
                 }
                 InstructionKind::Tuple(dest, args) => {
                     for arg in args {
                         self.checkMove(&mut context, arg);
                     }
-                    context.addLive(dest);
+                    self.declareValue(dest, &mut context);
                 }
                 InstructionKind::StringLiteral(dest, _) => {
-                    context.addLive(dest);
+                    self.declareValue(dest, &mut context);
                 }
                 InstructionKind::IntegerLiteral(dest, _) => {
-                    context.addLive(dest);
+                    self.declareValue(dest, &mut context);
                 }
                 InstructionKind::CharLiteral(dest, _) => {
-                    context.addLive(dest);
+                    self.declareValue(dest, &mut context);
                 }
                 InstructionKind::Return(_, _) => return,
                 InstructionKind::Ref(dest, _) => {
-                    context.addLive(dest);
+                    self.declareValue(dest, &mut context);
                 }
                 InstructionKind::Drop(_) => {}
                 InstructionKind::Jump(_, id) => {
@@ -367,10 +410,10 @@ impl<'a> DropChecker<'a> {
                     context.addLive(dest);
                 }
                 InstructionKind::DeclareVar(var) => {
-                    context.addLive(var);
+                    self.declareValue(var, &mut context);
                 }
                 InstructionKind::Transform(dest, _, _) => {
-                    context.addLive(dest);
+                    self.declareValue(dest, &mut context);
                 }
                 InstructionKind::EnumSwitch(root, cases) => {
                     self.checkMove(&mut context, root);
@@ -397,6 +440,19 @@ impl<'a> DropChecker<'a> {
                 }
                 InstructionKind::BlockEnd(_) => {
                     //println!("block end {}", context.rootBlock.getCurrentBlockId());
+                    let current = context.rootBlock.getCurrentBlockId();
+                    println!("Dropping in {}", current);
+                    // for moves in context.moved.iter() {
+                    //     println!("{} {}", moves.var, moves.path);
+                    // }
+                    for (_, value) in &self.values {
+                        if value.block == current && context.live.contains(&value.var.value) {
+                            if !context.isMoved(&value.var) {
+                                println!("{}", value.var.value);
+                            }
+                        }
+                    }
+                    println!("---");
                     context.rootBlock.endBlock();
                 }
             }
