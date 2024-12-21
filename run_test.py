@@ -57,6 +57,23 @@ def compileSikoC(currentDir, files, extras):
         return None
     return bin_output_path
 
+def compare_output(output_txt_path, current_output):
+    if os.path.exists(output_txt_path):
+        with open(output_txt_path, "rb") as f:
+            existing_output = f.read()
+        if existing_output != current_output:
+            print(" - failed")
+            print("Expected:")
+            print(existing_output)
+            print("Got:")
+            print(current_output)
+            return False
+        return existing_output == current_output
+    else:
+        with open(output_txt_path, "wb") as f:
+            f.write(current_output)
+        return True
+
 def test_success(root, entry, extras):
     print("- %s" % entry, end='')
     currentDir = os.path.join(root, entry)
@@ -68,10 +85,11 @@ def test_success(root, entry, extras):
     binary = compileSikoC(currentDir, [inputPath], extras)
     if binary is None:
         return False
-    r = subprocess.run([binary])
+    r = subprocess.run([binary], capture_output=True)
     if r.returncode != 0:
         return False
-    return True
+    output_txt_path = os.path.join(root, entry, "output.txt")
+    return compare_output(output_txt_path, r.stdout + r.stderr)
 
 def test_fail(root, entry, extras):
     print("- %s" % entry, end = '')
@@ -87,10 +105,7 @@ def test_fail(root, entry, extras):
     if r.returncode == 0:
         return False
     output_txt_path = os.path.join(root, entry, "output.txt")
-    f = open(output_txt_path, "wb")
-    f.write(r.stdout)
-    f.close()
-    return True
+    return compare_output(output_txt_path, r.stdout + r.stderr)
 
 filters = []
 for arg in sys.argv[1:]:
