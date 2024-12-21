@@ -204,7 +204,7 @@ pub enum InstructionKind {
     CharLiteral(Variable, char),
     Return(Variable, Variable),
     Ref(Variable, Variable),
-    Drop(Vec<String>),
+    Drop(Variable),
     Jump(Variable, BlockId),
     Assign(Variable, Variable),
     FieldAssign(Variable, Variable, Vec<FieldInfo>),
@@ -333,8 +333,8 @@ impl InstructionKind {
             InstructionKind::CharLiteral(dest, v) => format!("{} = c:[{}]", dest, v),
             InstructionKind::Return(dest, id) => format!("{} = return({})", dest, id),
             InstructionKind::Ref(dest, id) => format!("{} = &({})", dest, id),
-            InstructionKind::Drop(values) => {
-                format!("drop({})", values.join(", "))
+            InstructionKind::Drop(value) => {
+                format!("drop({})", value)
             }
             InstructionKind::Jump(dest, id) => {
                 format!("{} = jump({})", dest, id)

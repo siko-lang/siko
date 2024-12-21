@@ -5,11 +5,12 @@ use std::{
 
 use crate::siko::{
     hir::{
-        Apply::ApplyVariable,
+        Apply::{instantiateClass, ApplyVariable},
         Function::{BlockId, Function, Instruction, InstructionKind, Variable, VariableName},
         Program::Program,
         Substitution::VariableSubstitution,
         Type::Type,
+        TypeVarAllocator::TypeVarAllocator,
     },
     location::Report::{Entry, Report, ReportContext},
     qualifiedname::getCloneName,
@@ -79,7 +80,7 @@ impl SyntaxBlock {
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct Context {
-    live: BTreeSet<VariableName>,
+    live: Vec<Variable>,
     moved: Vec<Usage>,
     rootBlock: SyntaxBlock,
 }
@@ -88,11 +89,18 @@ enum Result {
     AlreadyMoved(Path, Usage),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MoveKind {
+    Fully,
+    Partially,
+    NotMoved,
+}
+
 impl Context {
     fn new() -> Context {
         let rootBlock = SyntaxBlock::new(format!("0"));
         Context {
-            live: BTreeSet::new(),
+            live: Vec::new(),
             moved: Vec::new(),
             rootBlock,
         }
@@ -100,7 +108,7 @@ impl Context {
 
     fn addLive(&mut self, var: &Variable) {
         //println!("    addLive {} in block {}", var.value, self.rootBlock.getCurrentBlockId());
-        self.live.insert(var.value.clone());
+        self.live.push(var.clone());
         self.moved.retain(|usage| usage.path.root.value != var.value);
     }
 
@@ -108,13 +116,18 @@ impl Context {
         self.moved.retain(|usage| usage.var != *var);
     }
 
-    fn isMoved(&mut self, var: &Variable) -> bool {
+    fn isMoved(&self, path: &Path) -> MoveKind {
         for usage in &self.moved {
-            if usage.var.value == var.value {
-                return true;
+            if usage.path.same(path) {
+                //println!("paths {} {}", usage.path, path,);
+                if path.contains(&usage.path) {
+                    return MoveKind::Fully;
+                } else {
+                    return MoveKind::Partially;
+                }
             }
         }
-        false
+        MoveKind::NotMoved
     }
 
     fn addMove(&mut self, paths: &BTreeMap<VariableName, Path>, var: &Variable) -> Option<Result> {
@@ -186,14 +199,29 @@ impl Path {
         }
         true
     }
+
+    fn contains(&self, other: &Path) -> bool {
+        if self.root.value != other.root.value {
+            return false;
+        }
+        if self.items.len() < other.items.len() {
+            return false;
+        }
+        for (i1, i2) in self.items.iter().zip(other.items.iter()) {
+            if i1 != i2 {
+                return false;
+            }
+        }
+        true
+    }
 }
 
 impl Display for Path {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.items.is_empty() {
-            writeln!(f, "{}", self.root.value)
+            write!(f, "{}", self.root.value)
         } else {
-            writeln!(f, "{}.{}", self.root.value.visibleName(), self.items.join("."))
+            write!(f, "{}.{}", self.root.value.visibleName(), self.items.join("."))
         }
     }
 }
@@ -288,10 +316,10 @@ impl<'a> DropChecker<'a> {
         if self.function.body.is_some() {
             self.processBlock(BlockId::first(), Context::new());
 
-            println!("delcared values:");
-            for (_, info) in &self.values {
-                println!("{}", info);
-            }
+            // println!("delcared values:");
+            // for (_, info) in &self.values {
+            //     println!("{}", info);
+            // }
 
             self.addImplicitClone(&mut result);
         }
@@ -369,7 +397,6 @@ impl<'a> DropChecker<'a> {
                     } else {
                         self.paths.insert(dest.value.clone(), Path::new(receiver.clone()).add(fieldName.clone()));
                     }
-                    self.declareValue(dest, &mut context);
                 }
                 InstructionKind::TupleIndex(dest, _, _) => {
                     self.declareValue(dest, &mut context);
@@ -441,21 +468,50 @@ impl<'a> DropChecker<'a> {
                 InstructionKind::BlockEnd(_) => {
                     //println!("block end {}", context.rootBlock.getCurrentBlockId());
                     let current = context.rootBlock.getCurrentBlockId();
-                    println!("Dropping in {}", current);
-                    // for moves in context.moved.iter() {
-                    //     println!("{} {}", moves.var, moves.path);
-                    // }
-                    for (_, value) in &self.values {
-                        if value.block == current && context.live.contains(&value.var.value) {
-                            if !context.isMoved(&value.var) {
-                                println!("{}", value.var.value);
-                            }
-                        }
-                    }
-                    println!("---");
+                    self.dropValues(&mut context, current);
                     context.rootBlock.endBlock();
                 }
             }
         }
+    }
+
+    fn dropPath(&self, rootPath: &Path, ty: &Type, context: &Context) {
+        match context.isMoved(&&rootPath) {
+            MoveKind::NotMoved => {
+                //println!("not moved - drop {}", rootPath);
+            }
+            MoveKind::Partially => {
+                //println!("partially moved {}", rootPath);
+                //println!("already moved (maybe partially?) {}", rootPath);
+                if let Some(className) = ty.getName() {
+                    if let Some(classDef) = self.program.getClass(&className) {
+                        let mut allocator = TypeVarAllocator::new();
+                        let classInstance = instantiateClass(&mut allocator, &classDef, ty);
+                        for field in &classInstance.fields {
+                            let path = rootPath.add(field.name.clone());
+                            self.dropPath(&path, &field.ty, context);
+                        }
+                    }
+                }
+            }
+            MoveKind::Fully => {
+                //println!("already moved {}", rootPath);
+            }
+        }
+    }
+
+    fn dropValues(&mut self, context: &mut Context, block: String) {
+        //println!("Dropping in {}", block);
+        // for usage in &context.moved {
+        //     println!("move {}", usage.path);
+        // }
+        for var in &context.live {
+            let info = self.values.get(&var.value).expect("value not found");
+            if info.block == block {
+                //println!("live {}", var.value);
+                self.dropPath(&Path::new(var.clone()), &var.getType(), context);
+            }
+        }
+        //println!("---");
     }
 }
