@@ -15,7 +15,7 @@ use crate::siko::{
         Unification::unify,
     },
     location::Report::{Report, ReportContext},
-    qualifiedname::{build, QualifiedName},
+    qualifiedname::{build, getDropFnName, getDropName, QualifiedName},
 };
 
 fn createTypeSubstitution(ty1: &Type, ty2: &Type) -> TypeSubstitution {
@@ -119,11 +119,19 @@ impl Monomorphize for Instruction {
                             panic!("Ambiguous instances in mono!");
                         }
                         ResolutionResult::NoInstanceFound => {
-                            panic!("no instance found in mono!");
+                            if traitName == getDropName() {
+                                return getDropFnName();
+                            } else {
+                                panic!("instance not found in mono for {}!", traitName);
+                            }
                         }
                     }
                 } else {
-                    panic!("no instances for found trait {} in mono!", traitName);
+                    if traitName == getDropName() {
+                        return getDropFnName();
+                    } else {
+                        panic!("instances not found in mono for {}!", traitName);
+                    }
                 }
             } else {
                 name.clone()
@@ -134,7 +142,7 @@ impl Monomorphize for Instruction {
         let kind: InstructionKind = match &self.kind {
             InstructionKind::FunctionCall(dest, name, args) => {
                 //println!("Calling {}", name);
-                let target_fn = mono.program.functions.get(name).expect("function not found in mono");
+                let target_fn = mono.program.getFunction(name).expect("function not found in mono");
                 let fn_ty = target_fn.getType();
                 let fnResult = fn_ty.getResult();
                 let fn_ty = if fnResult.hasSelfType() {

@@ -129,6 +129,14 @@ pub fn getCloneName() -> QualifiedName {
     build("Std.Ops", "Clone").add(format!("clone"))
 }
 
+pub fn getDropFnName() -> QualifiedName {
+    build("Std.Ops", "Drop").add(format!("drop"))
+}
+
+pub fn getDropName() -> QualifiedName {
+    build("Std.Ops", "Drop")
+}
+
 pub fn getCopyName() -> QualifiedName {
     build("Std.Ops", "Copy")
 }

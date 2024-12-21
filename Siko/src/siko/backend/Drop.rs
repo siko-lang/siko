@@ -13,7 +13,7 @@ use crate::siko::{
         TypeVarAllocator::TypeVarAllocator,
     },
     location::Report::{Entry, Report, ReportContext},
-    qualifiedname::getCloneName,
+    qualifiedname::{getCloneName, getDropFnName},
 };
 
 pub fn checkDrops(ctx: &ReportContext, program: Program) -> Program {
@@ -96,6 +96,20 @@ enum MoveKind {
     NotMoved,
 }
 
+struct DropList {
+    paths: Vec<Path>,
+}
+
+impl DropList {
+    fn new() -> DropList {
+        DropList { paths: Vec::new() }
+    }
+
+    fn add(&mut self, path: Path) {
+        self.paths.push(path);
+    }
+}
+
 impl Context {
     fn new() -> Context {
         let rootBlock = SyntaxBlock::new(format!("0"));
@@ -166,12 +180,6 @@ impl Display for Context {
             self.rootBlock.getCurrentBlockId()
         )
     }
-}
-
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
-struct VisitedBlockInfo {
-    ctx: Context,
-    id: BlockId,
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -259,6 +267,7 @@ pub struct DropChecker<'a> {
     paths: BTreeMap<VariableName, Path>,
     implicitClones: BTreeSet<Variable>,
     values: BTreeMap<VariableName, ValueInfo>,
+    dropLists: BTreeMap<String, DropList>,
 }
 
 impl<'a> DropChecker<'a> {
@@ -271,6 +280,7 @@ impl<'a> DropChecker<'a> {
             paths: BTreeMap::new(),
             implicitClones: BTreeSet::new(),
             values: BTreeMap::new(),
+            dropLists: BTreeMap::new(),
         }
     }
 
@@ -301,7 +311,6 @@ impl<'a> DropChecker<'a> {
                         };
                         block.instructions.insert(index, implicitRef);
                         instructionIndex += 1;
-
                         let mut implicitCloneDest = var.clone();
                         implicitCloneDest.value = VariableName::Local(format!("implicitClone"), nextVar);
                         nextVar += 1;
@@ -336,8 +345,88 @@ impl<'a> DropChecker<'a> {
             // }
 
             self.addImplicitClone(&mut result);
+            self.generateDrops(&mut result);
         }
         result
+    }
+
+    fn generateDrops(&mut self, result: &mut Function) {
+        let mut nextDropVar = 0;
+        let body = result.body.as_mut().expect("no body");
+        for block in &mut body.blocks {
+            let mut index = 0;
+            loop {
+                if index >= block.instructions.len() {
+                    break;
+                }
+                let instruction = block.instructions[index].clone();
+                let mut instructionIndex = index;
+                if let InstructionKind::BlockEnd(id) = &instruction.kind {
+                    if let Some(dropList) = self.dropLists.remove(&id.id) {
+                        for path in &dropList.paths {
+                            // create FieldRef instructionsfor the path and drop the  dest of the fieldref
+                            let mut receiver = path.root.clone();
+                            let mut currentTy = receiver.getType().clone();
+
+                            for item in &path.items {
+                                if let Some(className) = currentTy.getName() {
+                                    if let Some(classDef) = self.program.getClass(&className) {
+                                        let mut allocator = TypeVarAllocator::new();
+                                        let classInstance = instantiateClass(&mut allocator, &classDef, &currentTy);
+                                        for field in &classInstance.fields {
+                                            if field.name == *item {
+                                                currentTy = field.ty.clone();
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                let mut dest = Variable {
+                                    value: VariableName::Local(format!("drop"), nextDropVar),
+                                    ty: Some(currentTy.clone()),
+                                    location: instruction.location.clone(),
+                                    index: 0,
+                                };
+
+                                nextDropVar += 1;
+
+                                let kind = InstructionKind::FieldRef(dest.clone(), receiver, item.clone());
+                                let fieldRef = Instruction {
+                                    implicit: true,
+                                    kind: kind,
+                                    location: instruction.location.clone(),
+                                };
+                                block.instructions.insert(instructionIndex, fieldRef);
+                                instructionIndex += 1;
+                                dest.index = 1;
+                                receiver = dest;
+                            }
+
+                            let dropRes = Variable {
+                                value: VariableName::Local(format!("dropRes"), nextDropVar),
+                                ty: Some(Type::getUnitType()),
+                                location: instruction.location.clone(),
+                                index: 0,
+                            };
+
+                            nextDropVar += 1;
+
+                            let kind = InstructionKind::FunctionCall(dropRes, getDropFnName(), vec![receiver.clone()]);
+                            let drop = Instruction {
+                                implicit: true,
+                                kind: kind,
+                                location: instruction.location.clone(),
+                            };
+                            //println!("Adding drop for {}", path);
+                            block.instructions.insert(instructionIndex, drop);
+                            instructionIndex += 1;
+                        }
+                    }
+                }
+                index += 1;
+            }
+        }
     }
 
     fn checkMove(&mut self, context: &mut Context, var: &Variable) {
@@ -482,20 +571,23 @@ impl<'a> DropChecker<'a> {
                     context.rootBlock.addBlock(block);
                     //println!("block start {}", context.rootBlock.getCurrentBlockId());
                 }
-                InstructionKind::BlockEnd(_) => {
+                InstructionKind::BlockEnd(endId) => {
                     //println!("block end {}", context.rootBlock.getCurrentBlockId());
                     let current = context.rootBlock.getCurrentBlockId();
-                    self.dropValues(&mut context, current);
+                    let mut dropList = DropList::new();
+                    self.dropValues(&mut context, current, &mut dropList);
+                    self.dropLists.insert(endId.id.clone(), dropList);
                     context.rootBlock.endBlock();
                 }
             }
         }
     }
 
-    fn dropPath(&self, rootPath: &Path, ty: &Type, context: &Context) {
+    fn dropPath(&self, rootPath: &Path, ty: &Type, context: &Context, dropList: &mut DropList) {
         match context.isMoved(&&rootPath) {
             MoveKind::NotMoved => {
                 //println!("not moved - drop {}", rootPath);
+                dropList.add(rootPath.clone());
             }
             MoveKind::Partially => {
                 //println!("partially moved {}", rootPath);
@@ -506,7 +598,7 @@ impl<'a> DropChecker<'a> {
                         let classInstance = instantiateClass(&mut allocator, &classDef, ty);
                         for field in &classInstance.fields {
                             let path = rootPath.add(field.name.clone());
-                            self.dropPath(&path, &field.ty, context);
+                            self.dropPath(&path, &field.ty, context, dropList);
                         }
                     }
                 }
@@ -517,7 +609,7 @@ impl<'a> DropChecker<'a> {
         }
     }
 
-    fn dropValues(&mut self, context: &mut Context, block: String) {
+    fn dropValues(&mut self, context: &mut Context, block: String, dropList: &mut DropList) {
         //println!("Dropping in {}", block);
         // for usage in &context.moved {
         //     println!("move {}", usage.path);
@@ -526,7 +618,9 @@ impl<'a> DropChecker<'a> {
             if let Some(info) = self.values.get(&var.value) {
                 if info.block == block {
                     //println!("live {}", var.value);
-                    self.dropPath(&Path::new(var.clone()), &var.getType(), context);
+                    if !var.getType().isReference() {
+                        self.dropPath(&Path::new(var.clone()), &var.getType(), context, dropList);
+                    }
                 }
             }
         }
