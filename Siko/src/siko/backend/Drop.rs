@@ -108,7 +108,9 @@ impl Context {
 
     fn addLive(&mut self, var: &Variable) {
         //println!("    addLive {} in block {}", var.value, self.rootBlock.getCurrentBlockId());
-        self.live.push(var.clone());
+        if !self.live.contains(var) {
+            self.live.push(var.clone());
+        }
         self.moved.retain(|usage| usage.path.root.value != var.value);
     }
 
@@ -154,8 +156,20 @@ impl Context {
     }
 }
 
+impl Display for Context {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            " live {}, moved {}, block {}",
+            self.live.iter().map(|v| v.value.visibleName()).collect::<Vec<String>>().join(", "),
+            self.moved.iter().map(|u| u.path.userPath()).collect::<Vec<String>>().join(", "),
+            self.rootBlock.getCurrentBlockId()
+        )
+    }
+}
+
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
-struct VisitedBlock {
+struct VisitedBlockInfo {
     ctx: Context,
     id: BlockId,
 }
@@ -241,7 +255,7 @@ pub struct DropChecker<'a> {
     ctx: &'a ReportContext,
     function: &'a Function,
     program: &'a Program,
-    visited: BTreeSet<VisitedBlock>,
+    visited: BTreeMap<BlockId, BTreeSet<Context>>,
     paths: BTreeMap<VariableName, Path>,
     implicitClones: BTreeSet<Variable>,
     values: BTreeMap<VariableName, ValueInfo>,
@@ -253,7 +267,7 @@ impl<'a> DropChecker<'a> {
             ctx: ctx,
             function: f,
             program: program,
-            visited: BTreeSet::new(),
+            visited: BTreeMap::new(),
             paths: BTreeMap::new(),
             implicitClones: BTreeSet::new(),
             values: BTreeMap::new(),
@@ -367,14 +381,17 @@ impl<'a> DropChecker<'a> {
     }
 
     fn processBlock(&mut self, blockId: BlockId, mut context: Context) {
-        let visitedBlock = VisitedBlock {
-            ctx: context.clone(),
-            id: blockId,
-        };
-        if self.visited.contains(&visitedBlock) {
-            return;
+        let contexts = self.visited.entry(blockId).or_insert(BTreeSet::new());
+        if contexts.is_empty() {
+            contexts.insert(context.clone());
+        } else {
+            let first = contexts.first().unwrap();
+            context.rootBlock = first.rootBlock.clone();
+            if !contexts.insert(context.clone()) {
+                //println!("already visited {}", context);
+                return;
+            }
         }
-        self.visited.insert(visitedBlock);
         let block = self.function.getBlockById(blockId);
         for instruction in &block.instructions {
             //println!("PROCESSING {}", instruction.kind);
@@ -506,10 +523,11 @@ impl<'a> DropChecker<'a> {
         //     println!("move {}", usage.path);
         // }
         for var in &context.live {
-            let info = self.values.get(&var.value).expect("value not found");
-            if info.block == block {
-                //println!("live {}", var.value);
-                self.dropPath(&Path::new(var.clone()), &var.getType(), context);
+            if let Some(info) = self.values.get(&var.value) {
+                if info.block == block {
+                    //println!("live {}", var.value);
+                    self.dropPath(&Path::new(var.clone()), &var.getType(), context);
+                }
             }
         }
         //println!("---");
