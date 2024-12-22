@@ -542,13 +542,10 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                         let refValue = self.resolver.createValue("refValue", self.bodyLocation.clone());
                         self.resolver
                             .addInstructionToBlock(blockId, InstructionKind::Ref(refValue.clone(), root), self.bodyLocation.clone(), false);
-                        let cloneValue = self.resolver.createValue("cloneValue", self.bodyLocation.clone());
-                        self.resolver.addInstructionToBlock(
-                            blockId,
-                            InstructionKind::FunctionCall(cloneValue.clone(), getCloneName(), vec![refValue]),
-                            self.bodyLocation.clone(),
-                            false,
-                        );
+                        let cloneValue =
+                            self.resolver
+                                .bodyBuilder
+                                .addFunctionCallToBlock(blockId, getCloneName(), vec![refValue], self.bodyLocation.clone());
                         self.resolver.addInstructionToBlock(
                             blockId,
                             InstructionKind::IntegerSwitch(cloneValue, cases),
@@ -590,14 +587,13 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                                         self.bodyLocation.clone(),
                                         true,
                                     );
-                                    let eqValue = self.resolver.createValue("eq", self.bodyLocation.clone());
                                     let root = self.resolver.indexVar(root.clone());
                                     let value = self.resolver.indexVar(value);
-                                    self.resolver.addInstructionToBlock(
+                                    let eqValue = self.resolver.bodyBuilder.addFunctionCallToBlock(
                                         current,
-                                        InstructionKind::FunctionCall(eqValue.clone(), getStringEqName(), vec![root, value]),
+                                        getStringEqName(),
+                                        vec![root, value],
                                         self.bodyLocation.clone(),
-                                        true,
                                     );
                                     let mut cases = Vec::new();
                                     if blocks.is_empty() {

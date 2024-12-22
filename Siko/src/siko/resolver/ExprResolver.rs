@@ -1,8 +1,9 @@
 use core::panic;
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::siko::hir::BodyBuilder::BodyBuilder;
 use crate::siko::hir::Data::Enum;
-use crate::siko::hir::Function::{Block as IrBlock, BlockId, BlockInfo, FieldInfo, InstructionKind, Variable, VariableName};
+use crate::siko::hir::Function::{BlockId, BlockInfo, FieldInfo, InstructionKind, Variable, VariableName};
 use crate::siko::location::Location::Location;
 use crate::siko::location::Report::ReportContext;
 use crate::siko::qualifiedname::QualifiedName;
@@ -32,17 +33,14 @@ struct LoopInfo {
 
 pub struct ExprResolver<'a> {
     pub ctx: &'a ReportContext,
-    pub body: Body,
-    blockId: u32,
+    pub bodyBuilder: BodyBuilder,
     syntaxBlockId: u32,
-    valueId: u32,
     pub moduleResolver: &'a ModuleResolver<'a>,
     typeResolver: &'a TypeResolver<'a>,
     emptyVariants: &'a BTreeSet<QualifiedName>,
     pub variants: &'a BTreeMap<QualifiedName, QualifiedName>,
     pub enums: &'a BTreeMap<QualifiedName, Enum>,
     loopInfos: Vec<LoopInfo>,
-    targetBlockId: BlockId,
     varIndices: BTreeMap<String, u32>,
 }
 
@@ -57,27 +55,20 @@ impl<'a> ExprResolver<'a> {
     ) -> ExprResolver<'a> {
         ExprResolver {
             ctx: ctx,
-            body: Body::new(),
-            blockId: 0,
+            bodyBuilder: BodyBuilder::new(),
             syntaxBlockId: 0,
-            valueId: 0,
             moduleResolver: moduleResolver,
             typeResolver: typeResolver,
             emptyVariants: emptyVariants,
             variants: variants,
             enums: enums,
             loopInfos: Vec::new(),
-            targetBlockId: BlockId::first(),
             varIndices: BTreeMap::new(),
         }
     }
 
     pub fn createBlock(&mut self) -> BlockId {
-        let blockId = BlockId { id: self.blockId };
-        self.blockId += 1;
-        let irBlock = IrBlock::new(blockId);
-        self.body.addBlock(irBlock);
-        blockId
+        self.bodyBuilder.createBlock()
     }
 
     pub fn createSyntaxBlockId(&mut self) -> String {
@@ -87,12 +78,11 @@ impl<'a> ExprResolver<'a> {
     }
 
     pub fn setTargetBlockId(&mut self, id: BlockId) {
-        //println!("Setting target block {} => {}", self.targetBlockId, id);
-        self.targetBlockId = id;
+        self.bodyBuilder.setTargetBlockId(id);
     }
 
     pub fn getTargetBlockId(&mut self) -> BlockId {
-        self.targetBlockId
+        self.bodyBuilder.getTargetBlockId()
     }
 
     pub fn indexVar(&mut self, mut var: Variable) -> Variable {
@@ -168,7 +158,7 @@ impl<'a> ExprResolver<'a> {
                     let rhs = self.resolveExpr(rhs, &mut env);
                     if let Some(ty) = ty {
                         let ty = self.typeResolver.resolveType(ty);
-                        self.body.setType(rhs.clone(), ty);
+                        self.bodyBuilder.setTypeInBody(rhs.clone(), ty);
                     }
                     self.resolvePattern(pat, &mut env, rhs);
                 }
@@ -213,16 +203,15 @@ impl<'a> ExprResolver<'a> {
     }
 
     pub fn addInstruction(&mut self, instruction: InstructionKind, location: Location) {
-        self.addInstructionToBlock(self.targetBlockId, instruction, location, false)
+        self.bodyBuilder.addInstruction(instruction, location);
     }
 
     pub fn addImplicitInstruction(&mut self, instruction: InstructionKind, location: Location) {
-        self.addInstructionToBlock(self.targetBlockId, instruction, location, true)
+        self.bodyBuilder.addImplicitInstruction(instruction, location);
     }
 
     pub fn addInstructionToBlock(&mut self, id: BlockId, instruction: InstructionKind, location: Location, implicit: bool) {
-        let irBlock = &mut self.body.blocks[id.id as usize];
-        return irBlock.addWithImplicit(instruction, location, implicit);
+        self.bodyBuilder.addInstructionToBlock(id, instruction, location, implicit);
     }
 
     pub fn resolveExpr(&mut self, expr: &Expr, env: &mut Environment) -> Variable {
@@ -245,9 +234,7 @@ impl<'a> ExprResolver<'a> {
             SimpleExpr::Name(name) => {
                 let irName = self.moduleResolver.resolverName(name);
                 if self.emptyVariants.contains(&irName) {
-                    let value = self.createValue("call", expr.location.clone());
-                    self.addInstruction(InstructionKind::FunctionCall(value.clone(), irName, Vec::new()), expr.location.clone());
-                    return value;
+                    return self.bodyBuilder.addFunctionCall(irName, Vec::new(), expr.location.clone());
                 }
                 ResolverError::UnknownValue(name.name.clone(), name.location.clone()).report(self.ctx);
             }
@@ -270,9 +257,7 @@ impl<'a> ExprResolver<'a> {
                         if self.enums.get(&irName).is_some() {
                             ResolverError::NotAConstructor(name.name.clone(), name.location.clone()).report(self.ctx);
                         }
-                        let value = self.createValue("call", expr.location.clone());
-                        self.addInstruction(InstructionKind::FunctionCall(value.clone(), irName, irArgs), expr.location.clone());
-                        value
+                        return self.bodyBuilder.addFunctionCall(irName, irArgs, expr.location.clone());
                     }
                     SimpleExpr::Value(name) => {
                         if let Some(name) = env.resolve(&name.name) {
@@ -286,9 +271,7 @@ impl<'a> ExprResolver<'a> {
                             value
                         } else {
                             let irName = self.moduleResolver.resolverName(name);
-                            let value = self.createValue("call", expr.location.clone());
-                            self.addInstruction(InstructionKind::FunctionCall(value.clone(), irName, irArgs), expr.location.clone());
-                            value
+                            self.bodyBuilder.addFunctionCall(irName, irArgs, expr.location.clone())
                         }
                     }
                     _ => {
@@ -386,12 +369,7 @@ impl<'a> ExprResolver<'a> {
                     location: expr.location.clone(),
                 };
                 let name = self.moduleResolver.resolverName(&id);
-                let value = self.createValue("call", expr.location.clone());
-                self.addInstruction(
-                    InstructionKind::FunctionCall(value.clone(), name, vec![lhsId, rhsId]),
-                    expr.location.clone(),
-                );
-                value
+                self.bodyBuilder.addFunctionCall(name, vec![lhsId, rhsId], expr.location.clone())
             }
             SimpleExpr::UnaryOp(op, rhs) => {
                 let rhsId = self.resolveExpr(rhs, env);
@@ -403,9 +381,7 @@ impl<'a> ExprResolver<'a> {
                     location: expr.location.clone(),
                 };
                 let name = self.moduleResolver.resolverName(&id);
-                let value = self.createValue("call", expr.location.clone());
-                self.addInstruction(InstructionKind::FunctionCall(value.clone(), name, vec![rhsId]), expr.location.clone());
-                value
+                self.bodyBuilder.addFunctionCall(name, vec![rhsId], expr.location.clone())
             }
             SimpleExpr::Match(body, branches) => {
                 let bodyId = self.resolveExpr(body, env);
@@ -504,14 +480,7 @@ impl<'a> ExprResolver<'a> {
     }
 
     pub fn createValue(&mut self, name: &str, location: Location) -> Variable {
-        let valueId = self.valueId;
-        self.valueId += 1;
-        Variable {
-            value: VariableName::Local(name.to_string(), valueId),
-            location: location,
-            ty: None,
-            index: 0,
-        }
+        self.bodyBuilder.createValue(name, location)
     }
 
     fn resolvePattern(&mut self, pat: &Pattern, env: &mut Environment, root: Variable) {
@@ -546,10 +515,10 @@ impl<'a> ExprResolver<'a> {
         self.resolveBlock(body, env, functionResult.clone());
         let retValue = self.createValue("ret", body.location.clone());
         self.addImplicitInstruction(InstructionKind::Return(retValue, functionResult), body.location.clone());
-        self.body.blocks.sort_by(|a, b| a.id.cmp(&b.id));
+        self.bodyBuilder.sortBlocks();
     }
 
     pub fn body(self) -> Body {
-        self.body
+        self.bodyBuilder.build()
     }
 }
