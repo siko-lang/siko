@@ -128,6 +128,10 @@ impl Context {
         self.moved.retain(|usage| usage.path.root.value != var.value);
     }
 
+    fn removeSpecificMoveByRoot(&mut self, var: &Variable) {
+        self.moved.retain(|usage| usage.path.root.value != var.value);
+    }
+
     fn removeSpecificMove(&mut self, var: &Variable) {
         self.moved.retain(|usage| usage.var != *var);
     }
@@ -537,7 +541,7 @@ impl<'a> DropChecker<'a> {
                 }
                 InstructionKind::Assign(dest, src) => {
                     self.checkMove(&mut context, src);
-                    context.addLive(dest);
+                    context.removeSpecificMoveByRoot(dest);
                 }
                 InstructionKind::FieldAssign(dest, _, _) => {
                     context.addLive(dest);

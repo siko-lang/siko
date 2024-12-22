@@ -47,10 +47,6 @@ class Vec[T] {
         self
     }
 
-    fn drop(self) {
-        deallocate(self.items);
-    }
-
     fn iter(&self) -> VecIterator[T] {
         VecIterator(&self, 0)
     }
@@ -74,5 +70,15 @@ instance[T] Iterator[VecIterator[T]] {
     }
 }
 
+instance[T] Drop[Vec[T]] {
+    fn drop(mut self) -> Self {
+        if self.capacity > 0 {
+            deallocate(Ptr.clone(self.items));
+            self.capacity = 0;
+            self.items = null();
+        }
+        self
+    }
+}
 
 }

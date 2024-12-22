@@ -232,6 +232,7 @@ pub fn convertName(name: &QualifiedName) -> String {
             .replace(")", "_t_")
             .replace(",", "_")
             .replace(" ", "_")
+            .replace("*", "s")
             .replace("#", "_")
             .replace("/", "_")
             .replace("[", "_")
