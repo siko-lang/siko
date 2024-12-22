@@ -110,6 +110,12 @@ impl DropList {
     }
 }
 
+impl Display for DropList {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[{}]", self.paths.iter().map(|p| p.to_string()).collect::<Vec<String>>().join(", "))
+    }
+}
+
 impl Context {
     fn new() -> Context {
         let rootBlock = SyntaxBlock::new(format!("0"));
@@ -118,6 +124,15 @@ impl Context {
             moved: Vec::new(),
             rootBlock,
         }
+    }
+
+    fn isLive(&self, var: &VariableName) -> bool {
+        for v in &self.live {
+            if v.value == *var {
+                return true;
+            }
+        }
+        false
     }
 
     fn addLive(&mut self, var: &Variable) {
@@ -542,13 +557,18 @@ impl<'a> DropChecker<'a> {
                 InstructionKind::Assign(dest, src) => {
                     self.checkMove(&mut context, src);
                     context.removeSpecificMoveByRoot(dest);
+                    if !dest.getType().isReference() {
+                        if context.isLive(&dest.value) {
+                            let mut dropList = DropList::new();
+                            self.dropPath(&Path::new(dest.clone()), &dest.getType(), &context, &mut dropList);
+                            //println!("drop list {}", dropList);
+                        }
+                    }
                 }
                 InstructionKind::FieldAssign(dest, _, _) => {
                     context.addLive(dest);
                 }
-                InstructionKind::DeclareVar(var) => {
-                    self.declareValue(var, &mut context);
-                }
+                InstructionKind::DeclareVar(_) => {}
                 InstructionKind::Transform(dest, _, _) => {
                     self.declareValue(dest, &mut context);
                 }
