@@ -108,7 +108,7 @@ impl<'a> DeadCodeEliminator<'a> {
                 InstructionKind::CharLiteral(_, _) => {}
                 InstructionKind::Return(_, _) => return,
                 InstructionKind::Ref(_, _) => {}
-                InstructionKind::Drop(_) => {}
+                InstructionKind::Drop(_, _) => {}
                 InstructionKind::Jump(_, id) => {
                     self.processBlock(*id);
                     return;

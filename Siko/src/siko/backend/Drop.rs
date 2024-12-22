@@ -13,7 +13,7 @@ use crate::siko::{
         TypeVarAllocator::TypeVarAllocator,
     },
     location::Report::{Entry, Report, ReportContext},
-    qualifiedname::{getCloneName, getDropFnName},
+    qualifiedname::getCloneName,
 };
 
 pub fn checkDrops(ctx: &ReportContext, program: Program) -> Program {
@@ -404,7 +404,7 @@ impl<'a> DropChecker<'a> {
                             }
 
                             let dropRes = Variable {
-                                value: VariableName::Local(format!("dropRes"), nextDropVar),
+                                value: VariableName::Local(format!("autoDropRes"), nextDropVar),
                                 ty: Some(Type::getUnitType()),
                                 location: instruction.location.clone(),
                                 index: 0,
@@ -412,7 +412,7 @@ impl<'a> DropChecker<'a> {
 
                             nextDropVar += 1;
 
-                            let kind = InstructionKind::FunctionCall(dropRes, getDropFnName(), vec![receiver.clone()]);
+                            let kind = InstructionKind::Drop(dropRes, receiver.clone());
                             let drop = Instruction {
                                 implicit: true,
                                 kind: kind,
@@ -530,7 +530,7 @@ impl<'a> DropChecker<'a> {
                 InstructionKind::Ref(dest, _) => {
                     self.declareValue(dest, &mut context);
                 }
-                InstructionKind::Drop(_) => {}
+                InstructionKind::Drop(_, _) => {}
                 InstructionKind::Jump(_, id) => {
                     self.processBlock(*id, context);
                     return;

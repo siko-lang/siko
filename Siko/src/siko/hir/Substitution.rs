@@ -37,6 +37,7 @@ impl TypeSubstitution {
 
 impl Display for TypeSubstitution {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        print!("[");
         for (index, (key, value)) in self.substitutions.iter().enumerate() {
             if index == 0 {
                 write!(f, "{}: {}", key, value)?;
@@ -44,6 +45,7 @@ impl Display for TypeSubstitution {
                 write!(f, ", {}: {}", key, value)?;
             }
         }
+        print!("]");
         Ok(())
     }
 }

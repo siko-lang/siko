@@ -49,9 +49,6 @@ impl<'a> Builder<'a> {
             instructions: Vec::new(),
         };
         for instruction in &hirBlock.instructions {
-            if let HirInstructionKind::Drop(_) = instruction.kind {
-                continue;
-            }
             match &instruction.kind {
                 HirInstructionKind::FunctionCall(dest, name, args) => {
                     if name.base() == getPtrToRefName() {
@@ -69,7 +66,7 @@ impl<'a> Builder<'a> {
                 HirInstructionKind::Tuple(_, _) => {
                     unreachable!("tuples in MIR??")
                 }
-                HirInstructionKind::Drop(_) => {}
+                HirInstructionKind::Drop(_, _) => unreachable!("drop in MIR??"),
                 HirInstructionKind::DeclareVar(var) => {
                     let var = self.buildVariable(var);
                     block.instructions.push(Instruction::Declare(var.clone()));
@@ -231,8 +228,8 @@ pub fn convertName(name: &QualifiedName) -> String {
         "{}",
         name.toString()
             .replace(".", "_")
-            .replace("(", "")
-            .replace(")", "")
+            .replace("(", "_t_")
+            .replace(")", "_t_")
             .replace(",", "_")
             .replace(" ", "_")
             .replace("#", "_")

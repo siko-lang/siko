@@ -164,7 +164,7 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::Ref(var, _) => {
                             self.initializeVar(var, body);
                         }
-                        InstructionKind::Drop(_) => {}
+                        InstructionKind::Drop(_, _) => {}
                         InstructionKind::Jump(var, _) => {
                             self.types.insert(var.value.to_string(), Type::Never(false));
                         }
@@ -468,7 +468,7 @@ impl<'a> Typechecker<'a> {
                         instruction.location.clone(),
                     );
                 }
-                InstructionKind::Drop(_) => {}
+                InstructionKind::Drop(_, _) => unreachable!("drop in typechecker!"),
                 InstructionKind::Jump(_, _) => {}
                 InstructionKind::Assign(name, rhs) => {
                     if !self.mutables.contains(&name.value.to_string()) {

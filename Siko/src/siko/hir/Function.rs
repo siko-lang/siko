@@ -204,7 +204,7 @@ pub enum InstructionKind {
     CharLiteral(Variable, char),
     Return(Variable, Variable),
     Ref(Variable, Variable),
-    Drop(Variable),
+    Drop(Variable, Variable),
     Jump(Variable, BlockId),
     Assign(Variable, Variable),
     FieldAssign(Variable, Variable, Vec<FieldInfo>),
@@ -245,7 +245,7 @@ impl InstructionKind {
             InstructionKind::CharLiteral(v, _) => Some(v.clone()),
             InstructionKind::Return(v, _) => Some(v.clone()),
             InstructionKind::Ref(v, _) => Some(v.clone()),
-            InstructionKind::Drop(_) => None,
+            InstructionKind::Drop(_, _) => None,
             InstructionKind::Jump(v, _) => Some(v.clone()),
             InstructionKind::Assign(_, _) => None,
             InstructionKind::FieldAssign(_, _, _) => None,
@@ -290,7 +290,7 @@ impl InstructionKind {
             InstructionKind::CharLiteral(var, _) => vec![var.clone()],
             InstructionKind::Return(var, value) => vec![var.clone(), value.clone()],
             InstructionKind::Ref(var, target) => vec![var.clone(), target.clone()],
-            InstructionKind::Drop(_) => vec![],
+            InstructionKind::Drop(_, _) => vec![],
             InstructionKind::Jump(var, _) => vec![var.clone()],
             InstructionKind::Assign(var, value) => vec![var.clone(), value.clone()],
             InstructionKind::FieldAssign(var, value, _) => vec![var.clone(), value.clone()],
@@ -333,8 +333,8 @@ impl InstructionKind {
             InstructionKind::CharLiteral(dest, v) => format!("{} = c:[{}]", dest, v),
             InstructionKind::Return(dest, id) => format!("{} = return({})", dest, id),
             InstructionKind::Ref(dest, id) => format!("{} = &({})", dest, id),
-            InstructionKind::Drop(value) => {
-                format!("drop({})", value)
+            InstructionKind::Drop(dest, value) => {
+                format!("drop({}/{})", dest, value)
             }
             InstructionKind::Jump(dest, id) => {
                 format!("{} = jump({})", dest, id)

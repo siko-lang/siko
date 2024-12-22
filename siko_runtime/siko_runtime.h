@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-struct siko_Tuple_
+struct siko_Tuple__t__t_
 {
 };
 
@@ -22,15 +22,15 @@ typedef int64_t Int_Int;
 
 void Std_Basic_Util_siko_runtime_abort();
 
-struct siko_Tuple_ Std_Basic_Util_siko_runtime_num(Int_Int v);
+struct siko_Tuple__t__t_ Std_Basic_Util_siko_runtime_num(Int_Int v);
 
-struct siko_Tuple_ Std_Basic_Util_siko_runtime_str(struct String_String *v);
+struct siko_Tuple__t__t_ Std_Basic_Util_siko_runtime_str(struct String_String *v);
 
 struct Bool_Bool Std_Basic_Util_siko_runtime_true();
 
 struct Bool_Bool Std_Basic_Util_siko_runtime_false();
 
-struct siko_Tuple_ Std_Basic_Util_siko_runtime_bool(struct Bool_Bool v);
+struct siko_Tuple__t__t_ Std_Basic_Util_siko_runtime_bool(struct Bool_Bool v);
 
 Int_Int Int_Int_add(Int_Int v1, Int_Int v2);
 

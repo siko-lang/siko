@@ -6,7 +6,8 @@ use std::{
 use crate::siko::{
     hir::{
         Apply::{instantiateClass, instantiateEnum, Apply},
-        Function::{Block, Body, FieldInfo, FunctionKind, Instruction, InstructionKind, Parameter, Variable},
+        ConstraintContext::ConstraintContext,
+        Function::{Block, BlockId, Body, FieldInfo, Function, FunctionKind, Instruction, InstructionKind, Parameter, Variable, VariableName},
         InstanceResolver::ResolutionResult,
         Program::Program,
         Substitution::{createTypeSubstitutionFrom, TypeSubstitution},
@@ -14,8 +15,11 @@ use crate::siko::{
         TypeVarAllocator::TypeVarAllocator,
         Unification::unify,
     },
-    location::Report::{Report, ReportContext},
-    qualifiedname::{build, getDropFnName, getDropName, QualifiedName},
+    location::{
+        Location::Location,
+        Report::{Report, ReportContext},
+    },
+    qualifiedname::{build, getAutoDropFnName, getDropFnName, getDropName, QualifiedName},
 };
 
 fn createTypeSubstitution(ty1: &Type, ty2: &Type) -> TypeSubstitution {
@@ -31,6 +35,7 @@ enum Key {
     Class(QualifiedName, Vec<Type>),
     Enum(QualifiedName, Vec<Type>),
     Function(QualifiedName, Vec<Type>),
+    AutoDropFn(QualifiedName, Type),
 }
 
 impl Display for Key {
@@ -39,6 +44,7 @@ impl Display for Key {
             Key::Class(name, types) => write!(f, "{}/{}", name, formatTypes(types)),
             Key::Enum(name, types) => write!(f, "{}/{}", name, formatTypes(types)),
             Key::Function(name, types) => write!(f, "{}/{}", name, formatTypes(types)),
+            Key::AutoDropFn(name, ty) => write!(f, "{}/{}", name, ty),
         }
     }
 }
@@ -163,6 +169,7 @@ impl Monomorphize for Instruction {
                         ty.apply(&sub)
                     })
                     .collect();
+                //println!("sub {}", sub);
                 let result = dest.getType().apply(sub);
                 let context_ty = Type::Function(arg_types, Box::new(result));
                 //println!("fn type {}", fn_ty);
@@ -186,6 +193,12 @@ impl Monomorphize for Instruction {
                 } else {
                     InstructionKind::Ref(dest.clone(), src.clone())
                 }
+            }
+            InstructionKind::Drop(dest, dropVar) => {
+                let ty = dropVar.ty.apply(sub).unwrap();
+                let monoName = mono.get_mono_name(&getAutoDropFnName(), &vec![ty.clone()]);
+                mono.addKey(Key::AutoDropFn(getAutoDropFnName(), ty.clone()));
+                InstructionKind::FunctionCall(dest.clone(), monoName, vec![dropVar.clone()])
             }
             k => k.clone(),
         };
@@ -224,7 +237,7 @@ impl Monomorphize for InstructionKind {
             InstructionKind::CharLiteral(dest, lit) => InstructionKind::CharLiteral(dest.process(sub, mono), *lit),
             InstructionKind::Return(dest, arg) => InstructionKind::Return(dest.process(sub, mono), arg.process(sub, mono)),
             InstructionKind::Ref(dest, arg) => InstructionKind::Ref(dest.process(sub, mono), arg.process(sub, mono)),
-            InstructionKind::Drop(args) => InstructionKind::Drop(args.clone()),
+            InstructionKind::Drop(dest, dropVar) => InstructionKind::Drop(dest.process(sub, mono), dropVar.process(sub, mono)),
             InstructionKind::Jump(dest, block_id) => InstructionKind::Jump(dest.process(sub, mono), *block_id),
             InstructionKind::Assign(dest, rhs) => InstructionKind::Assign(dest.process(sub, mono), rhs.process(sub, mono)),
             InstructionKind::FieldAssign(dest, rhs, fields) => {
@@ -330,6 +343,10 @@ impl<'a> Monomorphizer<'a> {
                         Key::Enum(name, args) => {
                             //println!("Processing enum {}", key);
                             self.monomorphizeEnum(name, args);
+                        }
+                        Key::AutoDropFn(name, ty) => {
+                            //println!("Processing auto drop {}", key);
+                            self.monomorphizeAutoDropFn(name, ty);
                         }
                     }
                 }
@@ -443,5 +460,97 @@ impl<'a> Monomorphizer<'a> {
         e.methods.clear();
         e.name = name.clone();
         self.monomorphizedProgram.enums.insert(name, e);
+    }
+
+    fn monomorphizeAutoDropFn(&mut self, name: QualifiedName, ty: Type) {
+        //println!("MONO AUTO DROP: {} {}", name, ty);
+        let monoName = self.get_mono_name(&name, &vec![ty.clone()]);
+
+        let mut instructions = Vec::new();
+
+        // vec![Instruction {
+        //     dest: Variable::new(0, ty.clone()),
+        //     kind: InstructionKind::Drop(Variable::new(0, ty.clone()), Variable::new(0, ty.clone())),
+        //     implicit: false,
+        //     location: Location::empty(),
+        // }],
+
+        if let Some(instances) = self.program.instanceResolver.lookupInstances(&&getDropName()) {
+            let mut allocator = TypeVarAllocator::new();
+            let result = instances.find(&mut allocator, &vec![ty.clone()]);
+            if let ResolutionResult::Winner(_) = result {
+                //println!("Drop found for {}", ty);
+
+                let dropVar = Variable {
+                    value: VariableName::Local("dropRes".to_string(), 0),
+                    ty: Some(ty.clone()),
+                    location: Location::empty(),
+                    index: 0,
+                };
+
+                instructions.push(Instruction {
+                    kind: InstructionKind::FunctionCall(
+                        dropVar,
+                        getDropFnName(),
+                        vec![Variable {
+                            value: VariableName::Arg("self".to_string()),
+                            ty: Some(ty.clone()),
+                            location: Location::empty(),
+                            index: 1,
+                        }],
+                    ),
+                    implicit: false,
+                    location: Location::empty(),
+                });
+            }
+        }
+
+        let functionResult = Variable {
+            value: VariableName::Local("functionResult".to_string(), 0),
+            ty: Some(Type::getUnitType()),
+            location: Location::empty(),
+            index: 0,
+        };
+
+        instructions.push(Instruction {
+            kind: InstructionKind::Tuple(functionResult.clone(), Vec::new()),
+            implicit: false,
+            location: Location::empty(),
+        });
+
+        let mut functionResultUse = functionResult.clone();
+        functionResultUse.index = 1;
+
+        instructions.push(Instruction {
+            kind: InstructionKind::Return(
+                Variable {
+                    value: VariableName::Local("res".to_string(), 0),
+                    ty: Some(Type::getUnitType()),
+                    location: Location::empty(),
+                    index: 0,
+                },
+                functionResultUse,
+            ),
+            implicit: false,
+            location: Location::empty(),
+        });
+
+        let dropFn = Function {
+            name: monoName.clone(),
+            params: vec![Parameter::Named("self".to_string(), ty.clone(), false)],
+            result: Type::getUnitType(),
+            body: Some(Body {
+                blocks: vec![Block {
+                    id: BlockId::first(),
+                    instructions: instructions,
+                }],
+                varTypes: BTreeMap::new(),
+            }),
+            constraintContext: ConstraintContext::new(),
+            kind: FunctionKind::UserDefined,
+        };
+
+        self.program.functions.insert(monoName.clone(), dropFn);
+        self.addKey(Key::Function(monoName, Vec::new()));
     }
 }

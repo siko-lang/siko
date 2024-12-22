@@ -393,7 +393,7 @@ impl MiniCGenerator {
                 if item == "Int_Int" {
                     continue;
                 }
-                if item == "siko_Tuple_" {
+                if item == "siko_Tuple__t__t_" {
                     continue;
                 }
                 let s = self.program.getStruct(&item);

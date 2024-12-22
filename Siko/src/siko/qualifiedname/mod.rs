@@ -140,3 +140,7 @@ pub fn getDropName() -> QualifiedName {
 pub fn getCopyName() -> QualifiedName {
     build("Std.Ops", "Copy")
 }
+
+pub fn getAutoDropFnName() -> QualifiedName {
+    build("siko", "autoDrop")
+}

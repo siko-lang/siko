@@ -10,16 +10,16 @@ extern void Std_Basic_Util_siko_runtime_abort()
     abort();
 }
 
-extern struct siko_Tuple_ Std_Basic_Util_siko_runtime_num(Int_Int v)
+extern struct siko_Tuple__t__t_ Std_Basic_Util_siko_runtime_num(Int_Int v)
 {
-    struct siko_Tuple_ result;
+    struct siko_Tuple__t__t_ result;
     printf("%ld\n", v);
     return result;
 }
 
-extern struct siko_Tuple_ Std_Basic_Util_siko_runtime_str(struct String_String *v)
+extern struct siko_Tuple__t__t_ Std_Basic_Util_siko_runtime_str(struct String_String *v)
 {
-    struct siko_Tuple_ result;
+    struct siko_Tuple__t__t_ result;
     printf("%.*s\n", (int)v->field1, v->field0);
     return result;
 }
@@ -38,9 +38,9 @@ extern struct Bool_Bool Std_Basic_Util_siko_runtime_false()
     return result;
 }
 
-extern struct siko_Tuple_ Std_Basic_Util_siko_runtime_bool(struct Bool_Bool v)
+extern struct siko_Tuple__t__t_ Std_Basic_Util_siko_runtime_bool(struct Bool_Bool v)
 {
-    struct siko_Tuple_ result;
+    struct siko_Tuple__t__t_ result;
     if (v.field0)
     {
         printf("siko_runtime_bool true\n");
