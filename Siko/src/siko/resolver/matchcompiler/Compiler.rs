@@ -422,10 +422,10 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         let ctx = CompileContext::new().add(node.getDataPath(), self.bodyId.clone());
         let startBlock = self.resolver.getTargetBlockId();
         let firstBlockId = self.compileNode(&node, &ctx);
-        let jumpValue = self.resolver.createValue("jump", self.bodyLocation.clone());
-        self.resolver.bodyBuilder.setTargetBlockId(startBlock);
         self.resolver
-            .addInstruction(InstructionKind::Jump(jumpValue, firstBlockId), self.bodyLocation.clone());
+            .bodyBuilder
+            .block(startBlock)
+            .addJump(firstBlockId, self.bodyLocation.clone());
         self.resolver.bodyBuilder.setTargetBlockId(firstBlockId);
         let mut returns = false;
         for b in &self.branches {
@@ -448,8 +448,8 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         //println!("compileNode: node {:?}, ctx {}", node, ctx);
         match node {
             Node::Tuple(tuple) => {
-                let blockId = self.resolver.createBlock();
-                self.resolver.setTargetBlockId(blockId);
+                let mut builder = self.resolver.bodyBuilder.createBlock2();
+                builder.current();
                 let root = ctx.get(&tuple.dataPath);
                 let mut ctx = ctx.clone();
                 for index in 0..tuple.size {
@@ -461,11 +461,8 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     ctx = ctx.add(DataPath::TupleIndex(Box::new(tuple.dataPath.clone()), index), value);
                 }
                 let nextId = self.compileNode(&tuple.next, &ctx);
-                let jumpValue = self.resolver.createValue("jump", self.bodyLocation.clone());
-                self.resolver.setTargetBlockId(blockId);
-                self.resolver
-                    .addInstruction(InstructionKind::Jump(jumpValue, nextId), self.bodyLocation.clone());
-                blockId
+                builder.addJump(nextId, self.bodyLocation.clone());
+                builder.getBlockId()
             }
             Node::Switch(switch) => {
                 let root = ctx.get(&switch.dataPath);
@@ -477,8 +474,8 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                         let enumDef = self.resolver.enums.get(enumName).expect("enum not found");
                         for (case, node) in &switch.cases {
                             if let Case::Variant(name) = case {
-                                let itemBlockId = self.resolver.createBlock();
-                                self.resolver.setTargetBlockId(itemBlockId);
+                                let mut builder = self.resolver.bodyBuilder.createBlock2();
+                                builder.current();
                                 let (v, index) = enumDef.getVariant(name);
                                 let ctx = if v.items.len() > 0 {
                                     let transformValue = self.resolver.createValue("transform", self.bodyLocation.clone());
@@ -500,11 +497,11 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                                     ctx.clone()
                                 };
                                 let blockId = self.compileNode(&node, &ctx);
-                                let jumpValue = self.resolver.createValue("jump", self.bodyLocation.clone());
-                                self.resolver.setTargetBlockId(itemBlockId);
-                                self.resolver
-                                    .addInstruction(InstructionKind::Jump(jumpValue, blockId), self.bodyLocation.clone());
-                                let c = EnumCase { index, branch: itemBlockId };
+                                builder.addJump(blockId, self.bodyLocation.clone());
+                                let c = EnumCase {
+                                    index,
+                                    branch: builder.getBlockId(),
+                                };
                                 cases.push(c);
                             }
                         }
@@ -544,10 +541,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                             }
                         }
                         if switch.cases.len() == 1 {
-                            let jumpValue = self.resolver.createValue("jump", self.bodyLocation.clone());
-                            builder
-                                .implicit()
-                                .addInstruction(InstructionKind::Jump(jumpValue, defaultBranch), self.bodyLocation.clone());
+                            builder.implicit().addJump(defaultBranch, self.bodyLocation.clone());
                         }
                         for (case, node) in &switch.cases {
                             match case {
@@ -603,11 +597,13 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                         self.resolver
                             .bodyBuilder
                             .current()
+                            .implicit()
                             .addAssign(self.matchValue.clone(), exprValue, self.matchLocation.clone());
-                        self.resolver.bodyBuilder.setImplicit();
-                        let jumpValue = self.resolver.createValue("jump", self.bodyLocation.clone());
                         self.resolver
-                            .addImplicitInstruction(InstructionKind::Jump(jumpValue, self.contBlockId), self.bodyLocation.clone());
+                            .bodyBuilder
+                            .current()
+                            .implicit()
+                            .addJump(self.contBlockId, self.bodyLocation.clone());
                     }
                     blockId
                 } else {
