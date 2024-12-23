@@ -578,7 +578,7 @@ impl<'a> Typechecker<'a> {
             if let Some(blockId) = allblocksIds.pop_front() {
                 self.queue.push_back(blockId);
                 loop {
-                    if let Some(blockId) = self.queue.pop_back() {
+                    if let Some(blockId) = self.queue.pop_front() {
                         if self.visitedBlocks.contains(&blockId) {
                             continue;
                         }
