@@ -46,17 +46,14 @@ impl Builder {
         self.targetBlockId
     }
 
-    pub fn addInstruction(&mut self, instruction: InstructionKind, location: Location) {
-        self.addInstructionToBlock(self.targetBlockId, instruction, location, false)
-    }
-
-    pub fn addImplicitInstruction(&mut self, instruction: InstructionKind, location: Location) {
-        self.addInstructionToBlock(self.targetBlockId, instruction, location, true)
-    }
-
-    pub fn addInstructionToBlock(&mut self, id: BlockId, instruction: InstructionKind, location: Location, implicit: bool) {
+    pub fn addInstruction(&mut self, id: BlockId, instruction: InstructionKind, location: Location, implicit: bool) {
         let irBlock = &mut self.body.blocks[id.id as usize];
-        return irBlock.addWithImplicit(instruction, location, implicit);
+        return irBlock.add(instruction, location, implicit);
+    }
+
+    pub fn insertInstruction(&mut self, id: BlockId, index: usize, instruction: InstructionKind, location: Location, implicit: bool) {
+        let irBlock = &mut self.body.blocks[id.id as usize];
+        return irBlock.insert(index, instruction, location, implicit);
     }
 
     pub fn sortBlocks(&mut self) {
@@ -122,19 +119,14 @@ impl BodyBuilder {
         bodyBuilder.getTargetBlockId()
     }
 
-    pub fn addInstruction(&mut self, instruction: InstructionKind, location: Location) {
+    pub fn addInstruction(&mut self, id: BlockId, instruction: InstructionKind, location: Location, implicit: bool) {
         let mut bodyBuilder = self.bodyBuilder.borrow_mut();
-        bodyBuilder.addInstruction(instruction, location);
+        bodyBuilder.addInstruction(id, instruction, location, implicit);
     }
 
-    pub fn addImplicitInstruction(&mut self, instruction: InstructionKind, location: Location) {
+    pub fn insertInstruction(&mut self, id: BlockId, index: usize, instruction: InstructionKind, location: Location, implicit: bool) {
         let mut bodyBuilder = self.bodyBuilder.borrow_mut();
-        bodyBuilder.addImplicitInstruction(instruction, location);
-    }
-
-    pub fn addInstructionToBlock(&mut self, id: BlockId, instruction: InstructionKind, location: Location, implicit: bool) {
-        let mut bodyBuilder = self.bodyBuilder.borrow_mut();
-        bodyBuilder.addInstructionToBlock(id, instruction, location, implicit);
+        bodyBuilder.insertInstruction(id, index, instruction, location, implicit);
     }
 
     pub fn sortBlocks(&mut self) {

@@ -389,16 +389,23 @@ impl Block {
         }
     }
 
-    pub fn add(&mut self, kind: InstructionKind, location: Location) {
-        self.addWithImplicit(kind, location, false)
-    }
-
-    pub fn addWithImplicit(&mut self, kind: InstructionKind, location: Location, implicit: bool) {
+    pub fn add(&mut self, kind: InstructionKind, location: Location, implicit: bool) {
         self.instructions.push(Instruction {
             implicit: implicit,
             kind: kind,
             location: location,
         });
+    }
+
+    pub fn insert(&mut self, index: usize, kind: InstructionKind, location: Location, implicit: bool) {
+        self.instructions.insert(
+            index,
+            Instruction {
+                implicit: implicit,
+                kind: kind,
+                location: location,
+            },
+        );
     }
 
     pub fn dump(&self) {

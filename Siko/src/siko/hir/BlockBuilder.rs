@@ -33,8 +33,7 @@ impl BlockBuilder {
     }
 
     pub fn addInstruction(&mut self, instruction: InstructionKind, location: Location) {
-        self.bodyBuilder
-            .addInstructionToBlock(self.blockId, instruction, location, self.isImplicit)
+        self.bodyBuilder.addInstruction(self.blockId, instruction, location, self.isImplicit)
     }
 
     pub fn addAssign(&mut self, target: Variable, source: Variable, location: Location) {
