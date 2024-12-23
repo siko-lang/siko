@@ -82,6 +82,11 @@ impl Builder {
         return irBlock.insert(index, instruction, location, implicit);
     }
 
+    pub fn replaceInstruction(&mut self, id: BlockId, index: usize, instruction: InstructionKind, location: Location, implicit: bool) {
+        let irBlock = &mut self.body.blocks[id.id as usize];
+        return irBlock.replace(index, instruction, location, implicit);
+    }
+
     pub fn sortBlocks(&mut self) {
         self.body.blocks.sort_by(|a, b| a.id.cmp(&b.id));
     }
@@ -136,7 +141,7 @@ impl BodyBuilder {
         BlockBuilder::new(blockId, self.clone(), Mode::Iterator(0))
     }
 
-    pub fn build(self) -> Body {
+    pub fn build(&self) -> Body {
         let bodyBuilder = self.bodyBuilder.borrow();
         bodyBuilder.body.clone()
     }
@@ -169,6 +174,11 @@ impl BodyBuilder {
     pub fn insertInstruction(&mut self, id: BlockId, index: usize, instruction: InstructionKind, location: Location, implicit: bool) {
         let mut bodyBuilder = self.bodyBuilder.borrow_mut();
         bodyBuilder.insertInstruction(id, index, instruction, location, implicit);
+    }
+
+    pub fn replaceInstruction(&mut self, id: BlockId, index: usize, instruction: InstructionKind, location: Location, implicit: bool) {
+        let mut bodyBuilder = self.bodyBuilder.borrow_mut();
+        bodyBuilder.replaceInstruction(id, index, instruction, location, implicit);
     }
 
     pub fn sortBlocks(&mut self) {

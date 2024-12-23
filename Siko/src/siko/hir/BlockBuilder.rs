@@ -71,6 +71,18 @@ impl BlockBuilder {
         }
     }
 
+    pub fn replaceInstruction(&mut self, instruction: InstructionKind, location: Location) {
+        match self.mode {
+            Mode::Append => {
+                panic!("Cannot replace instruction in append mode");
+            }
+            Mode::Iterator(index) => {
+                self.bodyBuilder
+                    .replaceInstruction(self.blockId, index, instruction, location, self.isImplicit);
+            }
+        }
+    }
+
     pub fn addAssign(&mut self, target: Variable, source: Variable, location: Location) {
         self.addInstruction(InstructionKind::Assign(target, source), location);
     }

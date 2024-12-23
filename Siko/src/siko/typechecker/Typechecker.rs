@@ -6,6 +6,7 @@ use std::{
 use crate::siko::{
     hir::{
         Apply::{instantiateClass, instantiateEnum, instantiateType, instantiateType2, Apply, ApplyVariable},
+        BlockBuilder::BlockBuilder,
         BodyBuilder::BodyBuilder,
         ConstraintContext::ConstraintContext,
         Data::{Class, Enum},
@@ -47,7 +48,6 @@ pub struct Typechecker<'a> {
     traitMethodSelector: &'a TraitMethodSelector,
     allocator: TypeVarAllocator,
     substitution: TypeSubstitution,
-    methodCalls: BTreeMap<Variable, QualifiedName>,
     types: BTreeMap<String, Type>,
     selfType: Option<Type>,
     mutables: BTreeSet<String>,
@@ -69,7 +69,6 @@ impl<'a> Typechecker<'a> {
             traitMethodSelector: traitMethodSelector,
             allocator: TypeVarAllocator::new(),
             substitution: TypeSubstitution::new(),
-            methodCalls: BTreeMap::new(),
             types: BTreeMap::new(),
             selfType: None,
             mutables: BTreeSet::new(),
@@ -391,7 +390,7 @@ impl<'a> Typechecker<'a> {
         loop {
             match builder.getInstruction() {
                 Some(instruction) => {
-                    self.checkInstruction(instruction);
+                    self.checkInstruction(instruction, &mut builder);
                     builder.step();
                 }
                 None => {
@@ -401,7 +400,7 @@ impl<'a> Typechecker<'a> {
         }
     }
 
-    fn checkInstruction(&mut self, instruction: Instruction) {
+    fn checkInstruction(&mut self, instruction: Instruction, builder: &mut BlockBuilder) {
         //println!("checkInstruction {}", instruction);
         match &instruction.kind {
             InstructionKind::FunctionCall(dest, name, args) => {
@@ -414,11 +413,15 @@ impl<'a> Typechecker<'a> {
                 let receiverType = receiverType.apply(&self.substitution);
                 //println!("METHOD {} {} {}", methodName, receiver, receiverType);
                 let name = self.lookupMethod(receiverType.clone(), methodName, instruction.location.clone());
-                self.methodCalls.insert(dest.clone(), name.clone());
-                let targetFn = self.program.functions.get(&name).expect("Function not found");
-                let mut fnType = targetFn.getType();
                 let mut args = args.clone();
                 args.insert(0, receiver.clone());
+                builder.replaceInstruction(
+                    InstructionKind::FunctionCall(dest.clone(), name.clone(), args.clone()),
+                    instruction.location.clone(),
+                );
+                let targetFn = self.program.functions.get(&name).expect("Function not found");
+                let mut fnType = targetFn.getType();
+
                 let mutableCall = self.mutables.contains(&receiver.value.to_string()) && fnType.getResult().hasSelfType();
                 if mutableCall {
                     fnType = fnType.changeMethodResult();
@@ -638,23 +641,6 @@ impl<'a> Typechecker<'a> {
                         None => {
                             println!("  {}", instruction);
                         }
-                    }
-                }
-            }
-        }
-    }
-
-    fn convertMethodCalls(&mut self, f: &mut Function) {
-        let body = &mut f.body.as_mut().unwrap();
-
-        for block in &mut body.blocks {
-            for instruction in &mut block.instructions {
-                if let InstructionKind::MethodCall(dest, root, _, args) = &mut instruction.kind {
-                    if let Some(fnName) = self.methodCalls.get(&dest) {
-                        let mut newArgs = Vec::new();
-                        newArgs.push(root.clone());
-                        newArgs.extend(args.clone());
-                        instruction.kind = InstructionKind::FunctionCall(dest.clone(), fnName.clone(), newArgs);
                     }
                 }
             }
@@ -902,11 +888,11 @@ impl<'a> Typechecker<'a> {
         }
 
         let mut result = self.f.clone();
+        result.body = Some(self.bodyBuilder.build());
         if let Some(selfType) = self.selfType.clone() {
             result.result = result.result.changeSelfType(selfType);
         }
 
-        self.convertMethodCalls(&mut result);
         self.addImplicitRefs(&mut result);
         self.addImplicitClones(&mut result);
         self.transformMutableMethodCalls(&mut result);

@@ -408,6 +408,14 @@ impl Block {
         );
     }
 
+    pub fn replace(&mut self, index: usize, kind: InstructionKind, location: Location, implicit: bool) {
+        self.instructions[index] = Instruction {
+            implicit: implicit,
+            kind: kind,
+            location: location,
+        };
+    }
+
     pub fn dump(&self) {
         println!("  Block {}:", self.id);
         for instruction in &self.instructions {
