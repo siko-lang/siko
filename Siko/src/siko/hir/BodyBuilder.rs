@@ -51,7 +51,7 @@ impl Builder {
         self.body.setType(var, ty);
     }
 
-    fn getTypeInBody(&mut self, var: &Variable) -> Option<Type> {
+    pub fn getTypeInBody(&self, var: &Variable) -> Option<Type> {
         self.body.getType(var)
     }
 
@@ -144,6 +144,11 @@ impl BodyBuilder {
     pub fn setTypeInBody(&mut self, var: Variable, ty: Type) {
         let mut bodyBuilder = self.bodyBuilder.borrow_mut();
         bodyBuilder.setTypeInBody(var, ty);
+    }
+
+    pub fn getTypeInBody(&mut self, var: &Variable) -> Option<Type> {
+        let bodyBuilder = self.bodyBuilder.borrow();
+        bodyBuilder.getTypeInBody(var)
     }
 
     pub fn setTargetBlockId(&mut self, id: BlockId) {

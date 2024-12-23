@@ -9,7 +9,7 @@ use crate::siko::{
         BodyBuilder::BodyBuilder,
         ConstraintContext::ConstraintContext,
         Data::{Class, Enum},
-        Function::{BlockId, Body, Function, Instruction, InstructionKind, Parameter, Variable, VariableName},
+        Function::{BlockId, Function, Instruction, InstructionKind, Parameter, Variable, VariableName},
         InstanceResolver::ResolutionResult,
         Program::Program,
         Substitution::{TypeSubstitution, VariableSubstitution},
@@ -43,6 +43,7 @@ struct Constraint {
 pub struct Typechecker<'a> {
     ctx: &'a ReportContext,
     program: &'a Program,
+    f: &'a Function,
     traitMethodSelector: &'a TraitMethodSelector,
     allocator: TypeVarAllocator,
     substitution: TypeSubstitution,
@@ -60,10 +61,11 @@ pub struct Typechecker<'a> {
 }
 
 impl<'a> Typechecker<'a> {
-    pub fn new(ctx: &'a ReportContext, program: &'a Program, traitMethodSelector: &'a TraitMethodSelector, f: &Function) -> Typechecker<'a> {
+    pub fn new(ctx: &'a ReportContext, program: &'a Program, traitMethodSelector: &'a TraitMethodSelector, f: &'a Function) -> Typechecker<'a> {
         Typechecker {
             ctx: ctx,
             program: program,
+            f: f,
             traitMethodSelector: traitMethodSelector,
             allocator: TypeVarAllocator::new(),
             substitution: TypeSubstitution::new(),
@@ -81,21 +83,21 @@ impl<'a> Typechecker<'a> {
         }
     }
 
-    pub fn run(&mut self, f: &Function) -> Function {
-        self.initialize(f);
+    pub fn run(&mut self) -> Function {
+        self.initialize();
         //self.dump(f);
-        self.check(f);
+        self.check();
         //self.dump(f);
-        self.generate(f)
+        self.generate()
     }
 
-    fn initializeVar(&mut self, var: &Variable, body: &Body) {
+    fn initializeVar(&mut self, var: &Variable) {
         match &var.ty {
             Some(ty) => {
                 self.types.insert(var.value.to_string(), ty.clone());
             }
             None => {
-                if let Some(ty) = body.varTypes.get(&var.value) {
+                if let Some(ty) = self.bodyBuilder.getTypeInBody(&var) {
                     self.types.insert(var.value.to_string(), ty.clone());
                 } else {
                     let ty = self.allocator.next();
@@ -105,9 +107,9 @@ impl<'a> Typechecker<'a> {
         }
     }
 
-    pub fn initialize(&mut self, f: &Function) {
+    pub fn initialize(&mut self) {
         //println!("Initializing {}", f.name);
-        for param in &f.params {
+        for param in &self.f.params {
             match &param {
                 Parameter::Named(name, ty, mutable) => {
                     self.types.insert(format!("{}", name), ty.clone());
@@ -125,51 +127,51 @@ impl<'a> Typechecker<'a> {
                 }
             }
         }
-        if let Some(body) = &f.body {
+        if let Some(body) = &self.f.body {
             for block in &body.blocks {
                 for instruction in &block.instructions {
                     match &instruction.kind {
                         InstructionKind::FunctionCall(var, _, _) => {
-                            self.initializeVar(var, body);
+                            self.initializeVar(var);
                         }
                         InstructionKind::MethodCall(var, _, _, _) => {
-                            self.initializeVar(var, body);
+                            self.initializeVar(var);
                         }
                         InstructionKind::DynamicFunctionCall(var, _, _) => {
-                            self.initializeVar(var, body);
+                            self.initializeVar(var);
                         }
                         InstructionKind::ValueRef(var, _) => {
-                            self.initializeVar(var, body);
+                            self.initializeVar(var);
                         }
                         InstructionKind::FieldRef(var, _, _) => {
-                            self.initializeVar(var, body);
+                            self.initializeVar(var);
                         }
                         InstructionKind::TupleIndex(var, _, _) => {
-                            self.initializeVar(var, body);
+                            self.initializeVar(var);
                         }
                         InstructionKind::Bind(var, _, mutable) => {
-                            self.initializeVar(var, body);
+                            self.initializeVar(var);
                             if *mutable {
                                 self.mutables.insert(var.value.to_string());
                             }
                         }
                         InstructionKind::Tuple(var, _) => {
-                            self.initializeVar(var, body);
+                            self.initializeVar(var);
                         }
                         InstructionKind::StringLiteral(var, _) => {
-                            self.initializeVar(var, body);
+                            self.initializeVar(var);
                         }
                         InstructionKind::IntegerLiteral(var, _) => {
-                            self.initializeVar(var, body);
+                            self.initializeVar(var);
                         }
                         InstructionKind::CharLiteral(var, _) => {
-                            self.initializeVar(var, body);
+                            self.initializeVar(var);
                         }
                         InstructionKind::Return(var, _) => {
                             self.types.insert(var.value.to_string(), Type::Never(false));
                         }
                         InstructionKind::Ref(var, _) => {
-                            self.initializeVar(var, body);
+                            self.initializeVar(var);
                         }
                         InstructionKind::Drop(_, _) => {}
                         InstructionKind::Jump(var, _) => {
@@ -178,11 +180,11 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::Assign(_, _) => {}
                         InstructionKind::FieldAssign(_, _, _) => {}
                         InstructionKind::DeclareVar(var) => {
-                            self.initializeVar(var, body);
+                            self.initializeVar(var);
                             self.mutables.insert(var.value.to_string());
                         }
                         InstructionKind::Transform(var, _, _) => {
-                            self.initializeVar(var, body);
+                            self.initializeVar(var);
                         }
                         InstructionKind::EnumSwitch(_, _) => {}
                         InstructionKind::IntegerSwitch(_, _) => {}
@@ -384,12 +386,12 @@ impl<'a> Typechecker<'a> {
         }
     }
 
-    fn checkBlock(&mut self, blockId: BlockId, f: &Function) {
+    fn checkBlock(&mut self, blockId: BlockId) {
         let mut builder = self.bodyBuilder.iterator(blockId);
         loop {
             match builder.getInstruction() {
                 Some(instruction) => {
-                    self.checkInstruction(instruction, &f);
+                    self.checkInstruction(instruction);
                     builder.step();
                 }
                 None => {
@@ -399,12 +401,12 @@ impl<'a> Typechecker<'a> {
         }
     }
 
-    fn checkInstruction(&mut self, instruction: Instruction, f: &Function) {
+    fn checkInstruction(&mut self, instruction: Instruction) {
         match &instruction.kind {
             InstructionKind::FunctionCall(dest, name, args) => {
                 let targetFn = self.program.functions.get(name).expect("Function not found");
                 let fnType = targetFn.getType();
-                self.checkFunctionCall(args, dest, fnType, &targetFn.constraintContext, &f.constraintContext);
+                self.checkFunctionCall(args, dest, fnType, &targetFn.constraintContext, &self.f.constraintContext);
             }
             InstructionKind::MethodCall(dest, receiver, methodName, args) => {
                 let receiverType = self.getType(receiver);
@@ -420,7 +422,7 @@ impl<'a> Typechecker<'a> {
                 if mutableCall {
                     fnType = fnType.changeMethodResult();
                 }
-                let fnType = self.checkFunctionCall(&args, dest, fnType, &targetFn.constraintContext, &f.constraintContext);
+                let fnType = self.checkFunctionCall(&args, dest, fnType, &targetFn.constraintContext, &self.f.constraintContext);
                 if mutableCall {
                     let result = fnType.getResult();
                     let (baseType, selfLessType) = if targetFn.getType().getResult().isTuple() {
@@ -444,7 +446,7 @@ impl<'a> Typechecker<'a> {
             }
             InstructionKind::DynamicFunctionCall(dest, callable, args) => {
                 let fnType = self.getType(callable);
-                self.checkFunctionCall(&args, dest, fnType, &ConstraintContext::new(), &f.constraintContext);
+                self.checkFunctionCall(&args, dest, fnType, &ConstraintContext::new(), &self.f.constraintContext);
             }
             InstructionKind::ValueRef(dest, value) => {
                 let receiverType = self.getType(value);
@@ -470,7 +472,7 @@ impl<'a> Typechecker<'a> {
                 self.unify(self.getType(dest), Type::getCharType(), instruction.location.clone());
             }
             InstructionKind::Return(_, arg) => {
-                let mut result = f.result.clone();
+                let mut result = self.f.result.clone();
                 if let Some(selfType) = self.selfType.clone() {
                     result = result.changeSelfType(selfType);
                 }
@@ -564,9 +566,9 @@ impl<'a> Typechecker<'a> {
         }
     }
 
-    fn check(&mut self, f: &Function) {
+    fn check(&mut self) {
         //println!("checking {}", f.name);
-        if f.body.is_none() {
+        if self.f.body.is_none() {
             return;
         };
         self.queue.push(BlockId::first());
@@ -576,7 +578,7 @@ impl<'a> Typechecker<'a> {
                     continue;
                 }
                 self.visitedBlocks.insert(blockId);
-                self.checkBlock(blockId, f);
+                self.checkBlock(blockId);
             } else {
                 break;
             }
@@ -584,7 +586,7 @@ impl<'a> Typechecker<'a> {
     }
 
     pub fn verify(&self, f: &Function) {
-        if let Some(body) = &f.body {
+        if let Some(body) = &self.f.body {
             let fnType = f.getType();
             let publicVars = fnType.collectVars(BTreeSet::new());
             for block in &body.blocks {
@@ -884,13 +886,13 @@ impl<'a> Typechecker<'a> {
         }
     }
 
-    pub fn generate(&mut self, f: &Function) -> Function {
+    pub fn generate(&mut self) -> Function {
         //println!("Generating {}", f.name);
-        if f.body.is_none() {
-            return f.clone();
+        if self.f.body.is_none() {
+            return self.f.clone();
         }
 
-        let mut result = f.clone();
+        let mut result = self.f.clone();
         if let Some(selfType) = self.selfType.clone() {
             result.result = result.result.changeSelfType(selfType);
         }
