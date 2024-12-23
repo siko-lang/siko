@@ -238,10 +238,8 @@ impl<'a> ExprResolver<'a> {
                 ResolverError::UnknownValue(name.name.clone(), name.location.clone()).report(self.ctx);
             }
             SimpleExpr::FieldAccess(receiver, name) => {
-                let id = self.resolveExpr(receiver, env);
-                let value = self.createValue("fieldRef", expr.location.clone());
-                self.addInstruction(InstructionKind::FieldRef(value.clone(), id, name.toString()), expr.location.clone());
-                value
+                let receiver = self.resolveExpr(receiver, env);
+                self.bodyBuilder.current().addFieldRef(receiver, name.toString(), expr.location.clone())
             }
             SimpleExpr::Call(callable, args) => {
                 let mut irArgs = Vec::new();
@@ -318,9 +316,7 @@ impl<'a> ExprResolver<'a> {
                 let loopBodyId = self.createBlock();
                 let loopExitId = self.createBlock();
                 let finalValue = self.createValue("finalValueRef", expr.location.clone());
-
-                let jumpValue = self.createValue("jump", expr.location.clone());
-                self.addInstruction(InstructionKind::Jump(jumpValue, loopBodyId), expr.location.clone());
+                self.bodyBuilder.current().addJump(loopBodyId, expr.location.clone());
                 let mut loopEnv = Environment::child(env);
                 self.setTargetBlockId(loopBodyId);
                 self.resolvePattern(pattern, &mut loopEnv, name.clone());
@@ -333,8 +329,7 @@ impl<'a> ExprResolver<'a> {
                     SimpleExpr::Block(block) => self.resolveBlock(block, &loopEnv, name.clone()),
                     _ => panic!("for body is not a block!"),
                 };
-                let jumpValue = self.createValue("jump", expr.location.clone());
-                self.addImplicitInstruction(InstructionKind::Jump(jumpValue.clone(), loopBodyId), expr.location.clone());
+                self.bodyBuilder.current().implicit().addJump(loopBodyId, expr.location.clone());
                 self.loopInfos.pop();
                 self.setTargetBlockId(loopExitId);
                 self.addInstruction(InstructionKind::ValueRef(finalValue.clone(), name), expr.location.clone());
@@ -404,67 +399,39 @@ impl<'a> ExprResolver<'a> {
                 self.addInstruction(InstructionKind::Tuple(value.clone(), irArgs), expr.location.clone());
                 value
             }
-            SimpleExpr::StringLiteral(v) => {
-                let value = self.createValue("literal", expr.location.clone());
-                self.addInstruction(InstructionKind::StringLiteral(value.clone(), v.clone()), expr.location.clone());
-                value
-            }
-            SimpleExpr::IntegerLiteral(v) => {
-                let value = self.createValue("lit", expr.location.clone());
-                self.addInstruction(InstructionKind::IntegerLiteral(value.clone(), v.clone()), expr.location.clone());
-                value
-            }
-            SimpleExpr::CharLiteral(v) => {
-                let value = self.createValue("lit", expr.location.clone());
-                self.addInstruction(InstructionKind::CharLiteral(value.clone(), v.clone()), expr.location.clone());
-                value
-            }
+            SimpleExpr::StringLiteral(v) => self.bodyBuilder.current().addStringLiteral(v.clone(), expr.location.clone()),
+            SimpleExpr::IntegerLiteral(v) => self.bodyBuilder.current().addIntegerLiteral(v.clone(), expr.location.clone()),
+            SimpleExpr::CharLiteral(v) => self.bodyBuilder.current().addCharLiteral(v.clone(), expr.location.clone()),
             SimpleExpr::Return(arg) => {
                 let argId = match arg {
                     Some(arg) => self.resolveExpr(arg, env),
-                    None => {
-                        let value = self.createValue("unit", expr.location.clone());
-                        self.addInstruction(InstructionKind::Tuple(value.clone(), Vec::new()), expr.location.clone());
-                        value
-                    }
+                    None => self.bodyBuilder.current().addUnit(expr.location.clone()),
                 };
                 self.bodyBuilder.current().addReturn(argId, expr.location.clone())
             }
             SimpleExpr::Break(arg) => {
                 let argId = match arg {
                     Some(arg) => self.resolveExpr(arg, env),
-                    None => {
-                        let value = self.createValue("unit", expr.location.clone());
-                        self.addInstruction(InstructionKind::Tuple(value.clone(), Vec::new()), expr.location.clone());
-                        value
-                    }
+                    None => self.bodyBuilder.current().addUnit(expr.location.clone()),
                 };
                 let info = match self.loopInfos.last() {
                     Some(info) => info.clone(),
                     None => ResolverError::BreakOutsideLoop(expr.location.clone()).report(self.ctx),
                 };
                 self.bodyBuilder.current().addAssign(info.var, argId, expr.location.clone());
-                let jumpValue = self.createValue("jump", expr.location.clone());
-                self.addInstruction(InstructionKind::Jump(jumpValue.clone(), info.exit), expr.location.clone());
-                jumpValue
+                self.bodyBuilder.current().addJump(info.exit, expr.location.clone())
             }
             SimpleExpr::Continue(arg) => {
                 let argId = match arg {
                     Some(arg) => self.resolveExpr(arg, env),
-                    None => {
-                        let value = self.createValue("unit", expr.location.clone());
-                        self.addInstruction(InstructionKind::Tuple(value.clone(), Vec::new()), expr.location.clone());
-                        value
-                    }
+                    None => self.bodyBuilder.current().addUnit(expr.location.clone()),
                 };
                 let info = match self.loopInfos.last() {
                     Some(info) => info.clone(),
                     None => ResolverError::BreakOutsideLoop(expr.location.clone()).report(self.ctx),
                 };
                 self.bodyBuilder.current().addAssign(info.var, argId, expr.location.clone());
-                let jumpValue = self.createValue("jump", expr.location.clone());
-                self.addInstruction(InstructionKind::Jump(jumpValue.clone(), info.body), expr.location.clone());
-                jumpValue
+                self.bodyBuilder.current().addJump(info.body, expr.location.clone())
             }
             SimpleExpr::Ref(arg) => {
                 let arg = self.resolveExpr(arg, env);

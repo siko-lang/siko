@@ -58,4 +58,44 @@ impl BlockBuilder {
         self.addInstruction(InstructionKind::FunctionCall(result.clone(), functionName, args), location);
         result
     }
+
+    pub fn addFieldRef(&mut self, receiveer: Variable, field: String, location: Location) -> Variable {
+        let value = self.bodyBuilder.createValue("fieldRef", location.clone());
+        self.addInstruction(InstructionKind::FieldRef(value.clone(), receiveer, field), location.clone());
+        value
+    }
+
+    pub fn addStringLiteral(&mut self, literal: String, location: Location) -> Variable {
+        let value = self.bodyBuilder.createValue("lit", location.clone());
+        self.addInstruction(InstructionKind::StringLiteral(value.clone(), literal), location.clone());
+        value
+    }
+
+    pub fn addIntegerLiteral(&mut self, literal: String, location: Location) -> Variable {
+        let value = self.bodyBuilder.createValue("lit", location.clone());
+        self.addInstruction(InstructionKind::IntegerLiteral(value.clone(), literal), location.clone());
+        value
+    }
+
+    pub fn addCharLiteral(&mut self, literal: char, location: Location) -> Variable {
+        let value = self.bodyBuilder.createValue("lit", location.clone());
+        self.addInstruction(InstructionKind::CharLiteral(value.clone(), literal), location.clone());
+        value
+    }
+
+    pub fn addUnit(&mut self, location: Location) -> Variable {
+        let value = self.bodyBuilder.createValue("unit", location.clone());
+        self.addInstruction(InstructionKind::Tuple(value.clone(), Vec::new()), location.clone());
+        value
+    }
+
+    pub fn addJump(&mut self, target: BlockId, location: Location) -> Variable {
+        let value = self.bodyBuilder.createValue("jump", location.clone());
+        self.addInstruction(InstructionKind::Jump(value.clone(), target), location.clone());
+        value
+    }
+
+    pub fn getBlockId(&self) -> BlockId {
+        self.blockId
+    }
 }

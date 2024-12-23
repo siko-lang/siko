@@ -108,6 +108,10 @@ impl BodyBuilder {
         BlockBuilder::new(blockId, self.clone())
     }
 
+    pub fn block(&mut self, blockId: BlockId) -> BlockBuilder {
+        BlockBuilder::new(blockId, self.clone())
+    }
+
     pub fn build(self) -> Body {
         let bodyBuilder = self.bodyBuilder.borrow();
         bodyBuilder.body.clone()

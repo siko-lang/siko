@@ -469,8 +469,8 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
             }
             Node::Switch(switch) => {
                 let root = ctx.get(&switch.dataPath);
-                let blockId = self.resolver.createBlock();
-                self.resolver.setTargetBlockId(blockId);
+                let mut builder = self.resolver.bodyBuilder.createBlock2();
+                builder.current();
                 match &switch.kind {
                     SwitchKind::Enum(enumName) => {
                         let mut cases = Vec::new();
@@ -508,9 +508,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                                 cases.push(c);
                             }
                         }
-                        self.resolver.setTargetBlockId(blockId);
-                        self.resolver
-                            .addInstruction(InstructionKind::EnumSwitch(root.clone(), cases), self.bodyLocation.clone());
+                        builder.addInstruction(InstructionKind::EnumSwitch(root.clone(), cases), self.bodyLocation.clone());
                     }
                     SwitchKind::Integer => {
                         let mut cases = Vec::new();
@@ -527,21 +525,13 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                             };
                             cases.push(c);
                         }
-                        self.resolver.bodyBuilder.setTargetBlockId(blockId);
-                        let refValue = self.resolver.createValue("refValue", self.bodyLocation.clone());
-                        self.resolver
-                            .addInstruction(InstructionKind::Ref(refValue.clone(), root), self.bodyLocation.clone());
-                        let cloneValue =
-                            self.resolver
-                                .bodyBuilder
-                                .current()
-                                .addFunctionCall(getCloneName(), vec![refValue], self.bodyLocation.clone());
-                        self.resolver
-                            .addInstruction(InstructionKind::IntegerSwitch(cloneValue, cases), self.bodyLocation.clone());
+                        let refValue = builder.addRef(root, self.bodyLocation.clone());
+                        let cloneValue = builder.addFunctionCall(getCloneName(), vec![refValue], self.bodyLocation.clone());
+                        builder.addInstruction(InstructionKind::IntegerSwitch(cloneValue, cases), self.bodyLocation.clone());
                     }
                     SwitchKind::String => {
                         let mut blocks = Vec::new();
-                        blocks.push(blockId);
+                        blocks.push(builder.getBlockId());
                         for _ in 0..switch.cases.len() {
                             if blocks.len() < switch.cases.len() - 1 {
                                 blocks.push(self.resolver.createBlock());
@@ -555,27 +545,20 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                         }
                         if switch.cases.len() == 1 {
                             let jumpValue = self.resolver.createValue("jump", self.bodyLocation.clone());
-                            self.resolver.setTargetBlockId(blockId);
-                            self.resolver
+                            builder
+                                .implicit()
                                 .addInstruction(InstructionKind::Jump(jumpValue, defaultBranch), self.bodyLocation.clone());
-                            self.resolver.bodyBuilder.setImplicit();
                         }
                         for (case, node) in &switch.cases {
                             match case {
                                 Case::String(v) => {
                                     let current = blocks.remove(0);
-                                    let value = self.resolver.createValue("lit", self.bodyLocation.clone());
-                                    self.resolver.bodyBuilder.setTargetBlockId(current);
-                                    self.resolver
-                                        .addInstruction(InstructionKind::StringLiteral(value.clone(), v.clone()), self.bodyLocation.clone());
-                                    self.resolver.bodyBuilder.setImplicit();
+                                    let mut builder = self.resolver.bodyBuilder.block(current);
+                                    builder.current();
+                                    let value = builder.implicit().addStringLiteral(v.clone(), self.bodyLocation.clone());
                                     let root = self.resolver.indexVar(root.clone());
                                     let value = self.resolver.indexVar(value);
-                                    let eqValue = self.resolver.bodyBuilder.current().addFunctionCall(
-                                        getStringEqName(),
-                                        vec![root, value],
-                                        self.bodyLocation.clone(),
-                                    );
+                                    let eqValue = builder.addFunctionCall(getStringEqName(), vec![root, value], self.bodyLocation.clone());
                                     let mut cases = Vec::new();
                                     if blocks.is_empty() {
                                         cases.push(EnumCase {
@@ -589,10 +572,9 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                                         index: 1,
                                         branch: self.compileNode(&node, ctx),
                                     });
-                                    self.resolver.setTargetBlockId(current);
-                                    self.resolver
+                                    builder
+                                        .implicit()
                                         .addInstruction(InstructionKind::EnumSwitch(eqValue, cases), self.bodyLocation.clone());
-                                    self.resolver.bodyBuilder.setImplicit();
                                 }
                                 Case::Default => {}
                                 c => unreachable!("string case {:?}", c),
@@ -600,7 +582,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                         }
                     }
                 }
-                blockId
+                builder.getBlockId()
             }
             Node::End(end) => {
                 let m = end.matches.last().expect("no match");
