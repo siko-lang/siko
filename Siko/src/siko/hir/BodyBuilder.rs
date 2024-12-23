@@ -1,30 +1,31 @@
-use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
+use std::{cell::RefCell, rc::Rc};
+
+use crate::siko::location::Location::Location;
 
 use super::{
+    BlockBuilder::BlockBuilder,
     Function::{Block, BlockId, Body, InstructionKind, Variable, VariableName},
     Type::Type,
 };
 
-pub struct BodyBuilder {
+struct Builder {
     body: Body,
-    currentBlock: BlockId,
     nextBlockId: u32,
     targetBlockId: BlockId,
     valueId: u32,
 }
 
-impl BodyBuilder {
-    pub fn new() -> BodyBuilder {
-        BodyBuilder {
+impl Builder {
+    fn new() -> Builder {
+        Builder {
             body: Body::new(),
-            currentBlock: BlockId::first(),
             nextBlockId: 0,
             targetBlockId: BlockId::first(),
             valueId: 0,
         }
     }
 
-    pub fn createBlock(&mut self) -> BlockId {
+    fn createBlock(&mut self) -> BlockId {
         let blockId = BlockId { id: self.nextBlockId };
         self.nextBlockId += 1;
         let irBlock = Block::new(blockId);
@@ -32,11 +33,7 @@ impl BodyBuilder {
         blockId
     }
 
-    pub fn build(self) -> Body {
-        self.body
-    }
-
-    pub fn setTypeInBody(&mut self, var: Variable, ty: Type) {
+    fn setTypeInBody(&mut self, var: Variable, ty: Type) {
         self.body.setType(var, ty);
     }
 
@@ -77,27 +74,87 @@ impl BodyBuilder {
         }
     }
 
-    pub fn addFunctionCall(&mut self, functionName: QualifiedName, args: Vec<Variable>, location: Location) -> Variable {
-        self.addFunctionCallToBlock(self.targetBlockId, functionName, args, location)
-    }
-
-    pub fn addFunctionCallToBlock(&mut self, blockId: BlockId, functionName: QualifiedName, args: Vec<Variable>, location: Location) -> Variable {
-        let result = self.createValue("call", location.clone());
-        self.addInstructionToBlock(
-            blockId,
-            InstructionKind::FunctionCall(result.clone(), functionName, args),
-            location,
-            false,
-        );
-        result
-    }
-
-    pub fn addAssign(&mut self, target: Variable, source: Variable, location: Location) {
-        self.addInstruction(InstructionKind::Assign(target, source), location);
-    }
-
     pub fn setImplicit(&mut self) {
         let irBlock = &mut self.body.blocks[self.targetBlockId.id as usize];
         irBlock.instructions.last_mut().unwrap().implicit = true;
+    }
+}
+
+#[derive(Clone)]
+pub struct BodyBuilder {
+    bodyBuilder: Rc<RefCell<Builder>>,
+}
+
+impl BodyBuilder {
+    pub fn new() -> BodyBuilder {
+        BodyBuilder {
+            bodyBuilder: Rc::new(RefCell::new(Builder::new())),
+        }
+    }
+
+    pub fn createBlock(&mut self) -> BlockId {
+        let mut bodyBuilder = self.bodyBuilder.borrow_mut();
+        let blockId = bodyBuilder.createBlock();
+        blockId
+    }
+
+    pub fn createBlock2(&mut self) -> BlockBuilder {
+        let id = self.createBlock();
+        BlockBuilder::new(id, self.clone())
+    }
+
+    pub fn current(&mut self) -> BlockBuilder {
+        let blockId = self.getTargetBlockId();
+        BlockBuilder::new(blockId, self.clone())
+    }
+
+    pub fn build(self) -> Body {
+        let bodyBuilder = self.bodyBuilder.borrow();
+        bodyBuilder.body.clone()
+    }
+
+    pub fn setTypeInBody(&mut self, var: Variable, ty: Type) {
+        let mut bodyBuilder = self.bodyBuilder.borrow_mut();
+        bodyBuilder.setTypeInBody(var, ty);
+    }
+
+    pub fn setTargetBlockId(&mut self, id: BlockId) {
+        let mut bodyBuilder = self.bodyBuilder.borrow_mut();
+        bodyBuilder.setTargetBlockId(id);
+    }
+
+    pub fn getTargetBlockId(&mut self) -> BlockId {
+        let mut bodyBuilder = self.bodyBuilder.borrow_mut();
+        bodyBuilder.getTargetBlockId()
+    }
+
+    pub fn addInstruction(&mut self, instruction: InstructionKind, location: Location) {
+        let mut bodyBuilder = self.bodyBuilder.borrow_mut();
+        bodyBuilder.addInstruction(instruction, location);
+    }
+
+    pub fn addImplicitInstruction(&mut self, instruction: InstructionKind, location: Location) {
+        let mut bodyBuilder = self.bodyBuilder.borrow_mut();
+        bodyBuilder.addImplicitInstruction(instruction, location);
+    }
+
+    pub fn addInstructionToBlock(&mut self, id: BlockId, instruction: InstructionKind, location: Location, implicit: bool) {
+        let mut bodyBuilder = self.bodyBuilder.borrow_mut();
+        bodyBuilder.addInstructionToBlock(id, instruction, location, implicit);
+    }
+
+    pub fn sortBlocks(&mut self) {
+        let mut bodyBuilder = self.bodyBuilder.borrow_mut();
+        bodyBuilder.sortBlocks();
+    }
+
+    pub fn createValue(&mut self, name: &str, location: Location) -> Variable {
+        let mut bodyBuilder = self.bodyBuilder.borrow_mut();
+        bodyBuilder.createValue(name, location)
+    }
+
+    pub fn setImplicit(&mut self) {
+        let mut bodyBuilder = self.bodyBuilder.borrow_mut();
+        bodyBuilder.setImplicit();
     }
 }

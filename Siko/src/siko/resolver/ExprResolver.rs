@@ -169,7 +169,7 @@ impl<'a> ExprResolver<'a> {
                             let value = env.resolve(&name.toString());
                             match value {
                                 Some(value) => {
-                                    self.bodyBuilder.addAssign(value.clone(), rhsId, lhs.location.clone());
+                                    self.bodyBuilder.current().addAssign(value.clone(), rhsId, lhs.location.clone());
                                 }
                                 None => {
                                     ResolverError::UnknownValue(name.name.clone(), name.location.clone()).report(self.ctx);
@@ -197,7 +197,9 @@ impl<'a> ExprResolver<'a> {
         }
         if !block.doesNotReturn() {
             let blockValue = self.indexVar(blockValue);
-            self.bodyBuilder.addAssign(resultValue.clone(), blockValue, block.location.clone());
+            self.bodyBuilder
+                .current()
+                .addAssign(resultValue.clone(), blockValue, block.location.clone());
             self.bodyBuilder.setImplicit();
         }
         self.addImplicitInstruction(InstructionKind::BlockEnd(blockInfo.clone()), block.location.clone());
@@ -231,7 +233,7 @@ impl<'a> ExprResolver<'a> {
             SimpleExpr::Name(name) => {
                 let irName = self.moduleResolver.resolverName(name);
                 if self.emptyVariants.contains(&irName) {
-                    return self.bodyBuilder.addFunctionCall(irName, Vec::new(), expr.location.clone());
+                    return self.bodyBuilder.current().addFunctionCall(irName, Vec::new(), expr.location.clone());
                 }
                 ResolverError::UnknownValue(name.name.clone(), name.location.clone()).report(self.ctx);
             }
@@ -254,7 +256,7 @@ impl<'a> ExprResolver<'a> {
                         if self.enums.get(&irName).is_some() {
                             ResolverError::NotAConstructor(name.name.clone(), name.location.clone()).report(self.ctx);
                         }
-                        return self.bodyBuilder.addFunctionCall(irName, irArgs, expr.location.clone());
+                        return self.bodyBuilder.current().addFunctionCall(irName, irArgs, expr.location.clone());
                     }
                     SimpleExpr::Value(name) => {
                         if let Some(name) = env.resolve(&name.name) {
@@ -268,7 +270,7 @@ impl<'a> ExprResolver<'a> {
                             value
                         } else {
                             let irName = self.moduleResolver.resolverName(name);
-                            self.bodyBuilder.addFunctionCall(irName, irArgs, expr.location.clone())
+                            self.bodyBuilder.current().addFunctionCall(irName, irArgs, expr.location.clone())
                         }
                     }
                     _ => {
@@ -363,7 +365,9 @@ impl<'a> ExprResolver<'a> {
                     location: expr.location.clone(),
                 };
                 let name = self.moduleResolver.resolverName(&id);
-                self.bodyBuilder.addFunctionCall(name, vec![lhsId, rhsId], expr.location.clone())
+                self.bodyBuilder
+                    .current()
+                    .addFunctionCall(name, vec![lhsId, rhsId], expr.location.clone())
             }
             SimpleExpr::UnaryOp(op, rhs) => {
                 let rhsId = self.resolveExpr(rhs, env);
@@ -375,7 +379,7 @@ impl<'a> ExprResolver<'a> {
                     location: expr.location.clone(),
                 };
                 let name = self.moduleResolver.resolverName(&id);
-                self.bodyBuilder.addFunctionCall(name, vec![rhsId], expr.location.clone())
+                self.bodyBuilder.current().addFunctionCall(name, vec![rhsId], expr.location.clone())
             }
             SimpleExpr::Match(body, branches) => {
                 let bodyId = self.resolveExpr(body, env);
@@ -416,7 +420,6 @@ impl<'a> ExprResolver<'a> {
                 value
             }
             SimpleExpr::Return(arg) => {
-                let value = self.createValue("ret", expr.location.clone());
                 let argId = match arg {
                     Some(arg) => self.resolveExpr(arg, env),
                     None => {
@@ -425,8 +428,7 @@ impl<'a> ExprResolver<'a> {
                         value
                     }
                 };
-                self.addInstruction(InstructionKind::Return(value.clone(), argId), expr.location.clone());
-                value
+                self.bodyBuilder.current().addReturn(argId, expr.location.clone())
             }
             SimpleExpr::Break(arg) => {
                 let argId = match arg {
@@ -441,7 +443,7 @@ impl<'a> ExprResolver<'a> {
                     Some(info) => info.clone(),
                     None => ResolverError::BreakOutsideLoop(expr.location.clone()).report(self.ctx),
                 };
-                self.bodyBuilder.addAssign(info.var, argId, expr.location.clone());
+                self.bodyBuilder.current().addAssign(info.var, argId, expr.location.clone());
                 let jumpValue = self.createValue("jump", expr.location.clone());
                 self.addInstruction(InstructionKind::Jump(jumpValue.clone(), info.exit), expr.location.clone());
                 jumpValue
@@ -459,16 +461,14 @@ impl<'a> ExprResolver<'a> {
                     Some(info) => info.clone(),
                     None => ResolverError::BreakOutsideLoop(expr.location.clone()).report(self.ctx),
                 };
-                self.bodyBuilder.addAssign(info.var, argId, expr.location.clone());
+                self.bodyBuilder.current().addAssign(info.var, argId, expr.location.clone());
                 let jumpValue = self.createValue("jump", expr.location.clone());
                 self.addInstruction(InstructionKind::Jump(jumpValue.clone(), info.body), expr.location.clone());
                 jumpValue
             }
             SimpleExpr::Ref(arg) => {
                 let arg = self.resolveExpr(arg, env);
-                let value = self.createValue("ref", expr.location.clone());
-                self.addInstruction(InstructionKind::Ref(value.clone(), arg), expr.location.clone());
-                value
+                self.bodyBuilder.current().addRef(arg, expr.location.clone())
             }
         }
     }
@@ -502,13 +502,15 @@ impl<'a> ExprResolver<'a> {
     }
 
     pub fn resolve<'e>(&mut self, body: &Block, env: &'e Environment<'e>) {
-        let id = self.createBlock();
-        self.setTargetBlockId(id);
+        let mut blockBuilder = self.bodyBuilder.createBlock2();
+        blockBuilder.current();
         let functionResult = self.createValue("functionResult", body.location.clone());
-        self.addImplicitInstruction(InstructionKind::DeclareVar(functionResult.clone()), body.location.clone());
+        self.bodyBuilder
+            .current()
+            .implicit()
+            .addInstruction(InstructionKind::DeclareVar(functionResult.clone()), body.location.clone());
         self.resolveBlock(body, env, functionResult.clone());
-        let retValue = self.createValue("ret", body.location.clone());
-        self.addImplicitInstruction(InstructionKind::Return(retValue, functionResult), body.location.clone());
+        self.bodyBuilder.current().implicit().addReturn(functionResult, body.location.clone());
         self.bodyBuilder.sortBlocks();
     }
 

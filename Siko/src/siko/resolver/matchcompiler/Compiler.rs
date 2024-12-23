@@ -534,7 +534,8 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                         let cloneValue =
                             self.resolver
                                 .bodyBuilder
-                                .addFunctionCallToBlock(blockId, getCloneName(), vec![refValue], self.bodyLocation.clone());
+                                .current()
+                                .addFunctionCall(getCloneName(), vec![refValue], self.bodyLocation.clone());
                         self.resolver
                             .addInstruction(InstructionKind::IntegerSwitch(cloneValue, cases), self.bodyLocation.clone());
                     }
@@ -570,8 +571,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                                     self.resolver.bodyBuilder.setImplicit();
                                     let root = self.resolver.indexVar(root.clone());
                                     let value = self.resolver.indexVar(value);
-                                    let eqValue = self.resolver.bodyBuilder.addFunctionCallToBlock(
-                                        current,
+                                    let eqValue = self.resolver.bodyBuilder.current().addFunctionCall(
                                         getStringEqName(),
                                         vec![root, value],
                                         self.bodyLocation.clone(),
@@ -620,6 +620,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     if !branch.body.doesNotReturn() {
                         self.resolver
                             .bodyBuilder
+                            .current()
                             .addAssign(self.matchValue.clone(), exprValue, self.matchLocation.clone());
                         self.resolver.bodyBuilder.setImplicit();
                         let jumpValue = self.resolver.createValue("jump", self.bodyLocation.clone());
