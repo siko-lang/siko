@@ -162,7 +162,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         }
         let mut contBlockId = BlockId::first();
         if returns {
-            resolver.addInstruction(InstructionKind::DeclareVar(matchValue.clone()), matchLocation.clone());
+            resolver.bodyBuilder.current().addDeclare(matchValue.clone(), matchLocation.clone());
             contBlockId = resolver.bodyBuilder.createBlock().getBlockId();
         }
         MatchCompiler {
@@ -451,11 +451,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                 let root = ctx.get(&tuple.dataPath);
                 let mut ctx = ctx.clone();
                 for index in 0..tuple.size {
-                    let value = self.resolver.createValue("tupleField", self.bodyLocation.clone());
-                    self.resolver.addInstruction(
-                        InstructionKind::TupleIndex(value.clone(), root.clone(), index as i32),
-                        self.bodyLocation.clone(),
-                    );
+                    let value = builder.addTupleIndex(root.clone(), index as i32, self.bodyLocation.clone());
                     ctx = ctx.add(DataPath::TupleIndex(Box::new(tuple.dataPath.clone()), index), value);
                 }
                 let nextId = self.compileNode(&tuple.next, &ctx);
@@ -478,14 +474,10 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                                 let ctx = if v.items.len() > 0 {
                                     let transformValue = self.resolver.createValue("transform", self.bodyLocation.clone());
                                     let transform = InstructionKind::Transform(transformValue.clone(), root.clone(), index);
-                                    self.resolver.addInstruction(transform, self.bodyLocation.clone());
+                                    builder.addInstruction(transform, self.bodyLocation.clone());
                                     let mut ctx = ctx.clone();
                                     for (index, _) in v.items.iter().enumerate() {
-                                        let value = self.resolver.createValue("tupleField", self.bodyLocation.clone());
-                                        self.resolver.addInstruction(
-                                            InstructionKind::TupleIndex(value.clone(), transformValue.clone(), index as i32),
-                                            self.bodyLocation.clone(),
-                                        );
+                                        let value = builder.addTupleIndex(transformValue.clone(), index as i32, self.bodyLocation.clone());
                                         let path = DataPath::Variant(Box::new(switch.dataPath.clone()), name.clone(), enumName.clone());
                                         let path = DataPath::ItemIndex(Box::new(path), index as i64);
                                         ctx = ctx.add(path, value.clone());
@@ -587,7 +579,9 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                         let bindValue = ctx.get(path.decisions.last().unwrap());
                         let new = self.resolver.createValue(&name, self.bodyLocation.clone());
                         self.resolver
-                            .addInstruction(InstructionKind::Bind(new.clone(), bindValue, false), self.bodyLocation.clone());
+                            .bodyBuilder
+                            .current()
+                            .addBind(new.clone(), bindValue, false, self.bodyLocation.clone());
                         env.addValue(name.clone(), new);
                     }
                     let exprValue = self.resolver.resolveExpr(&branch.body, &mut env);

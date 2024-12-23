@@ -2,7 +2,7 @@ use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
 
 use super::{
     BodyBuilder::BodyBuilder,
-    Function::{BlockId, InstructionKind, Variable},
+    Function::{BlockId, FieldInfo, InstructionKind, Variable},
 };
 
 pub struct BlockBuilder {
@@ -59,6 +59,18 @@ impl BlockBuilder {
         result
     }
 
+    pub fn addMethodCall(&mut self, name: String, receiver: Variable, args: Vec<Variable>, location: Location) -> Variable {
+        let result = self.bodyBuilder.createValue("call", location.clone());
+        self.addInstruction(InstructionKind::MethodCall(result.clone(), receiver, name, args), location);
+        result
+    }
+
+    pub fn addDynamicFunctionCall(&mut self, value: Variable, args: Vec<Variable>, location: Location) -> Variable {
+        let result = self.bodyBuilder.createValue("call", location.clone());
+        self.addInstruction(InstructionKind::DynamicFunctionCall(result.clone(), value, args), location);
+        result
+    }
+
     pub fn addFieldRef(&mut self, receiveer: Variable, field: String, location: Location) -> Variable {
         let value = self.bodyBuilder.createValue("fieldRef", location.clone());
         self.addInstruction(InstructionKind::FieldRef(value.clone(), receiveer, field), location.clone());
@@ -105,6 +117,18 @@ impl BlockBuilder {
         let value = self.bodyBuilder.createValue("jump", location.clone());
         self.addInstruction(InstructionKind::Jump(value.clone(), target), location.clone());
         value
+    }
+
+    pub fn addDeclare(&mut self, name: Variable, location: Location) {
+        self.addInstruction(InstructionKind::DeclareVar(name), location.clone());
+    }
+
+    pub fn addBind(&mut self, name: Variable, rhs: Variable, mutable: bool, location: Location) {
+        self.addInstruction(InstructionKind::Bind(name, rhs, mutable), location.clone());
+    }
+
+    pub fn addFieldAssign(&mut self, receiver: Variable, rhs: Variable, fields: Vec<FieldInfo>, location: Location) {
+        self.addInstruction(InstructionKind::FieldAssign(receiver, rhs, fields), location.clone());
     }
 
     pub fn getBlockId(&self) -> BlockId {

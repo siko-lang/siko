@@ -95,7 +95,7 @@ impl<'a> ExprResolver<'a> {
                     match value {
                         Some(value) => {
                             fields.reverse();
-                            self.addInstruction(InstructionKind::FieldAssign(value.clone(), rhsId, fields), location.clone());
+                            self.bodyBuilder.current().addFieldAssign(value.clone(), rhsId, fields, location.clone());
                             return;
                         }
                         None => {
@@ -111,7 +111,7 @@ impl<'a> ExprResolver<'a> {
                         index: 0,
                     };
                     fields.reverse();
-                    self.addInstruction(InstructionKind::FieldAssign(value.clone(), rhsId, fields), location.clone());
+                    self.bodyBuilder.current().addFieldAssign(value.clone(), rhsId, fields, location.clone());
                     return;
                 }
                 SimpleExpr::FieldAccess(r, name) => {
@@ -197,10 +197,6 @@ impl<'a> ExprResolver<'a> {
             .addInstruction(InstructionKind::BlockEnd(blockInfo.clone()), block.location.clone());
     }
 
-    pub fn addInstruction(&mut self, instruction: InstructionKind, location: Location) {
-        self.bodyBuilder.addInstruction(instruction, location);
-    }
-
     pub fn resolveExpr(&mut self, expr: &Expr, env: &mut Environment) -> Variable {
         match &expr.expr {
             SimpleExpr::Value(name) => match env.resolve(&name.name) {
@@ -246,14 +242,7 @@ impl<'a> ExprResolver<'a> {
                     }
                     SimpleExpr::Value(name) => {
                         if let Some(name) = env.resolve(&name.name) {
-                            let valueRef = self.createValue("valueRef", expr.location.clone());
-                            self.addInstruction(InstructionKind::ValueRef(valueRef.clone(), name), expr.location.clone());
-                            let value = self.createValue("call", expr.location.clone());
-                            self.addInstruction(
-                                InstructionKind::DynamicFunctionCall(value.clone(), valueRef, irArgs),
-                                expr.location.clone(),
-                            );
-                            value
+                            self.bodyBuilder.current().addDynamicFunctionCall(name, irArgs, expr.location.clone())
                         } else {
                             let irName = self.moduleResolver.resolverName(name);
                             self.bodyBuilder.current().addFunctionCall(irName, irArgs, expr.location.clone())
@@ -261,30 +250,24 @@ impl<'a> ExprResolver<'a> {
                     }
                     _ => {
                         let callableId = self.resolveExpr(&callable, env);
-                        let value = self.createValue("call", expr.location.clone());
-                        self.addInstruction(
-                            InstructionKind::DynamicFunctionCall(value.clone(), callableId, irArgs),
-                            expr.location.clone(),
-                        );
-                        value
+                        self.bodyBuilder
+                            .current()
+                            .addDynamicFunctionCall(callableId, irArgs, expr.location.clone())
                     }
                 }
             }
             SimpleExpr::MethodCall(receiver, name, args) => {
                 let receiver = self.resolveExpr(&receiver, env);
                 let receiver = self.indexVar(receiver);
-                let value = self.createValue("call", expr.location.clone());
                 let mut irArgs = Vec::new();
                 for arg in args {
                     let argId = self.resolveExpr(arg, env);
                     let argId = self.indexVar(argId);
                     irArgs.push(argId)
                 }
-                self.addInstruction(
-                    InstructionKind::MethodCall(value.clone(), receiver, name.toString(), irArgs),
-                    expr.location.clone(),
-                );
-                value
+                self.bodyBuilder
+                    .current()
+                    .addMethodCall(name.toString(), receiver, irArgs, expr.location.clone())
             }
             SimpleExpr::TupleIndex(receiver, index) => {
                 let receiver = self.resolveExpr(&receiver, env);
@@ -297,10 +280,12 @@ impl<'a> ExprResolver<'a> {
             SimpleExpr::Loop(pattern, init, body) => {
                 let initId = self.resolveExpr(&init, env);
                 let name = self.createValue("loopVar", expr.location.clone());
-                self.addInstruction(InstructionKind::Bind(name.clone(), initId, true), init.location.clone());
+                self.bodyBuilder
+                    .current()
+                    .implicit()
+                    .addBind(name.clone(), initId, true, expr.location.clone());
                 let mut loopBodyBuilder = self.bodyBuilder.createBlock();
                 let mut loopExitBuilder = self.bodyBuilder.createBlock();
-                let finalValue = self.createValue("finalValueRef", expr.location.clone());
                 self.bodyBuilder.current().addJump(loopBodyBuilder.getBlockId(), expr.location.clone());
                 let mut loopEnv = Environment::child(env);
                 loopBodyBuilder.current();
@@ -320,9 +305,8 @@ impl<'a> ExprResolver<'a> {
                     .addJump(loopBodyBuilder.getBlockId(), expr.location.clone());
                 self.loopInfos.pop();
                 loopExitBuilder.current();
-                loopExitBuilder
-                    .implicit()
-                    .addInstruction(InstructionKind::ValueRef(finalValue.clone(), name), expr.location.clone());
+                let finalValue = self.createValue("finalValueRef", expr.location.clone());
+                loopExitBuilder.implicit().addBind(finalValue.clone(), name, false, expr.location.clone());
                 finalValue
             }
             SimpleExpr::BinaryOp(op, lhs, rhs) => {
@@ -376,7 +360,7 @@ impl<'a> ExprResolver<'a> {
                     self.bodyBuilder
                         .current()
                         .implicit()
-                        .addInstruction(InstructionKind::DeclareVar(blockValue.clone()), expr.location.clone());
+                        .addDeclare(blockValue.clone(), expr.location.clone());
                 }
                 self.resolveBlock(block, env, blockValue.clone());
                 self.indexVar(blockValue)
@@ -439,7 +423,7 @@ impl<'a> ExprResolver<'a> {
             SimplePattern::Named(_name, _args) => todo!(),
             SimplePattern::Bind(name, mutable) => {
                 let new = self.createValue(&name.name, pat.location.clone());
-                self.addInstruction(InstructionKind::Bind(new.clone(), root, *mutable), pat.location.clone());
+                self.bodyBuilder.current().addBind(new.clone(), root, *mutable, pat.location.clone());
                 env.addValue(name.toString(), new);
             }
             SimplePattern::Tuple(args) => {
@@ -461,7 +445,7 @@ impl<'a> ExprResolver<'a> {
         self.bodyBuilder
             .current()
             .implicit()
-            .addInstruction(InstructionKind::DeclareVar(functionResult.clone()), body.location.clone());
+            .addDeclare(functionResult.clone(), body.location.clone());
         self.resolveBlock(body, env, functionResult.clone());
         self.bodyBuilder.current().implicit().addReturn(functionResult, body.location.clone());
         self.bodyBuilder.sortBlocks();
