@@ -89,6 +89,18 @@ impl BlockBuilder {
         value
     }
 
+    pub fn addTuple(&mut self, args: Vec<Variable>, location: Location) -> Variable {
+        let value = self.bodyBuilder.createValue("tuple", location.clone());
+        self.addInstruction(InstructionKind::Tuple(value.clone(), args), location.clone());
+        value
+    }
+
+    pub fn addTupleIndex(&mut self, tuple: Variable, index: i32, location: Location) -> Variable {
+        let value = self.bodyBuilder.createValue("tupleIndex", location.clone());
+        self.addInstruction(InstructionKind::TupleIndex(value.clone(), tuple, index), location.clone());
+        value
+    }
+
     pub fn addJump(&mut self, target: BlockId, location: Location) -> Variable {
         let value = self.bodyBuilder.createValue("jump", location.clone());
         self.addInstruction(InstructionKind::Jump(value.clone(), target), location.clone());

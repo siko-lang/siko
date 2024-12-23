@@ -67,22 +67,10 @@ impl<'a> ExprResolver<'a> {
         }
     }
 
-    pub fn createBlock(&mut self) -> BlockId {
-        self.bodyBuilder.createBlock()
-    }
-
     pub fn createSyntaxBlockId(&mut self) -> String {
         let blockId = format!("block{}", self.syntaxBlockId);
         self.syntaxBlockId += 1;
         blockId
-    }
-
-    pub fn setTargetBlockId(&mut self, id: BlockId) {
-        self.bodyBuilder.setTargetBlockId(id);
-    }
-
-    pub fn getTargetBlockId(&mut self) -> BlockId {
-        self.bodyBuilder.getTargetBlockId()
     }
 
     pub fn indexVar(&mut self, mut var: Variable) -> Variable {
@@ -145,7 +133,10 @@ impl<'a> ExprResolver<'a> {
         let syntaxBlock = self.createSyntaxBlockId();
         //println!("Resolving block {} with var {} current {}", syntaxBlock, resultValue, self.targetBlockId);
         let blockInfo = BlockInfo { id: syntaxBlock };
-        self.addImplicitInstruction(InstructionKind::BlockStart(blockInfo.clone()), block.location.clone());
+        self.bodyBuilder
+            .current()
+            .implicit()
+            .addInstruction(InstructionKind::BlockStart(blockInfo.clone()), block.location.clone());
         let mut env = Environment::child(env);
         let mut lastHasSemicolon = false;
         let mut blockValue = self.createValue("block", block.location.clone());
@@ -191,26 +182,23 @@ impl<'a> ExprResolver<'a> {
             }
         }
         if block.statements.is_empty() || lastHasSemicolon {
-            let unitValue = self.createValue("unit", block.location.clone());
-            self.addImplicitInstruction(InstructionKind::Tuple(unitValue.clone(), Vec::new()), block.location.clone());
-            blockValue = unitValue;
+            blockValue = self.bodyBuilder.current().implicit().addUnit(block.location.clone());
         }
         if !block.doesNotReturn() {
             let blockValue = self.indexVar(blockValue);
             self.bodyBuilder
                 .current()
+                .implicit()
                 .addAssign(resultValue.clone(), blockValue, block.location.clone());
-            self.bodyBuilder.setImplicit();
         }
-        self.addImplicitInstruction(InstructionKind::BlockEnd(blockInfo.clone()), block.location.clone());
+        self.bodyBuilder
+            .current()
+            .implicit()
+            .addInstruction(InstructionKind::BlockEnd(blockInfo.clone()), block.location.clone());
     }
 
     pub fn addInstruction(&mut self, instruction: InstructionKind, location: Location) {
         self.bodyBuilder.addInstruction(instruction, location);
-    }
-
-    pub fn addImplicitInstruction(&mut self, instruction: InstructionKind, location: Location) {
-        self.bodyBuilder.addImplicitInstruction(instruction, location);
     }
 
     pub fn resolveExpr(&mut self, expr: &Expr, env: &mut Environment) -> Variable {
@@ -301,39 +289,40 @@ impl<'a> ExprResolver<'a> {
             SimpleExpr::TupleIndex(receiver, index) => {
                 let receiver = self.resolveExpr(&receiver, env);
                 let receiver = self.indexVar(receiver);
-                let value = self.createValue("tupleIndex", expr.location.clone());
-                self.addInstruction(
-                    InstructionKind::TupleIndex(value.clone(), receiver, index.parse().unwrap()),
-                    expr.location.clone(),
-                );
-                value
+                self.bodyBuilder
+                    .current()
+                    .addTupleIndex(receiver, index.parse().unwrap(), expr.location.clone())
             }
             SimpleExpr::For(_, _, _) => todo!(),
             SimpleExpr::Loop(pattern, init, body) => {
                 let initId = self.resolveExpr(&init, env);
                 let name = self.createValue("loopVar", expr.location.clone());
                 self.addInstruction(InstructionKind::Bind(name.clone(), initId, true), init.location.clone());
-                let loopBodyId = self.createBlock();
-                let loopExitId = self.createBlock();
+                let mut loopBodyBuilder = self.bodyBuilder.createBlock();
+                let mut loopExitBuilder = self.bodyBuilder.createBlock();
                 let finalValue = self.createValue("finalValueRef", expr.location.clone());
-                self.bodyBuilder.current().addJump(loopBodyId, expr.location.clone());
+                self.bodyBuilder.current().addJump(loopBodyBuilder.getBlockId(), expr.location.clone());
                 let mut loopEnv = Environment::child(env);
-                self.setTargetBlockId(loopBodyId);
+                loopBodyBuilder.current();
                 self.resolvePattern(pattern, &mut loopEnv, name.clone());
                 self.loopInfos.push(LoopInfo {
-                    body: loopBodyId,
-                    exit: loopExitId,
+                    body: loopBodyBuilder.getBlockId(),
+                    exit: loopExitBuilder.getBlockId(),
                     var: name.clone(),
                 });
                 match &body.expr {
                     SimpleExpr::Block(block) => self.resolveBlock(block, &loopEnv, name.clone()),
                     _ => panic!("for body is not a block!"),
                 };
-                self.bodyBuilder.current().implicit().addJump(loopBodyId, expr.location.clone());
+                self.bodyBuilder
+                    .current()
+                    .implicit()
+                    .addJump(loopBodyBuilder.getBlockId(), expr.location.clone());
                 self.loopInfos.pop();
-                self.setTargetBlockId(loopExitId);
-                self.addInstruction(InstructionKind::ValueRef(finalValue.clone(), name), expr.location.clone());
-                self.bodyBuilder.setImplicit();
+                loopExitBuilder.current();
+                loopExitBuilder
+                    .implicit()
+                    .addInstruction(InstructionKind::ValueRef(finalValue.clone(), name), expr.location.clone());
                 finalValue
             }
             SimpleExpr::BinaryOp(op, lhs, rhs) => {
@@ -384,7 +373,10 @@ impl<'a> ExprResolver<'a> {
             SimpleExpr::Block(block) => {
                 let blockValue = self.createValue("blockValue", expr.location.clone());
                 if !block.doesNotReturn() {
-                    self.addImplicitInstruction(InstructionKind::DeclareVar(blockValue.clone()), expr.location.clone());
+                    self.bodyBuilder
+                        .current()
+                        .implicit()
+                        .addInstruction(InstructionKind::DeclareVar(blockValue.clone()), expr.location.clone());
                 }
                 self.resolveBlock(block, env, blockValue.clone());
                 self.indexVar(blockValue)
@@ -395,9 +387,7 @@ impl<'a> ExprResolver<'a> {
                     let argId = self.resolveExpr(arg, env);
                     irArgs.push(argId)
                 }
-                let value = self.createValue("tuple", expr.location.clone());
-                self.addInstruction(InstructionKind::Tuple(value.clone(), irArgs), expr.location.clone());
-                value
+                self.bodyBuilder.current().addTuple(irArgs, expr.location.clone())
             }
             SimpleExpr::StringLiteral(v) => self.bodyBuilder.current().addStringLiteral(v.clone(), expr.location.clone()),
             SimpleExpr::IntegerLiteral(v) => self.bodyBuilder.current().addIntegerLiteral(v.clone(), expr.location.clone()),
@@ -454,11 +444,7 @@ impl<'a> ExprResolver<'a> {
             }
             SimplePattern::Tuple(args) => {
                 for (index, arg) in args.iter().enumerate() {
-                    let tupleValue = self.createValue("tupleIndex", pat.location.clone());
-                    self.addInstruction(
-                        InstructionKind::TupleIndex(tupleValue.clone(), root.clone(), index as i32),
-                        pat.location.clone(),
-                    );
+                    let tupleValue = self.bodyBuilder.current().addTupleIndex(root.clone(), index as i32, pat.location.clone());
                     self.resolvePattern(arg, env, tupleValue);
                 }
             }
@@ -469,7 +455,7 @@ impl<'a> ExprResolver<'a> {
     }
 
     pub fn resolve<'e>(&mut self, body: &Block, env: &'e Environment<'e>) {
-        let mut blockBuilder = self.bodyBuilder.createBlock2();
+        let mut blockBuilder = self.bodyBuilder.createBlock();
         blockBuilder.current();
         let functionResult = self.createValue("functionResult", body.location.clone());
         self.bodyBuilder

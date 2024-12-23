@@ -73,11 +73,6 @@ impl Builder {
             index: 0,
         }
     }
-
-    pub fn setImplicit(&mut self) {
-        let irBlock = &mut self.body.blocks[self.targetBlockId.id as usize];
-        irBlock.instructions.last_mut().unwrap().implicit = true;
-    }
 }
 
 #[derive(Clone)]
@@ -92,15 +87,10 @@ impl BodyBuilder {
         }
     }
 
-    pub fn createBlock(&mut self) -> BlockId {
+    pub fn createBlock(&mut self) -> BlockBuilder {
         let mut bodyBuilder = self.bodyBuilder.borrow_mut();
         let blockId = bodyBuilder.createBlock();
-        blockId
-    }
-
-    pub fn createBlock2(&mut self) -> BlockBuilder {
-        let id = self.createBlock();
-        BlockBuilder::new(id, self.clone())
+        BlockBuilder::new(blockId, self.clone())
     }
 
     pub fn current(&mut self) -> BlockBuilder {
@@ -155,10 +145,5 @@ impl BodyBuilder {
     pub fn createValue(&mut self, name: &str, location: Location) -> Variable {
         let mut bodyBuilder = self.bodyBuilder.borrow_mut();
         bodyBuilder.createValue(name, location)
-    }
-
-    pub fn setImplicit(&mut self) {
-        let mut bodyBuilder = self.bodyBuilder.borrow_mut();
-        bodyBuilder.setImplicit();
     }
 }

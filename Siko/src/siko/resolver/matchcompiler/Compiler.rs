@@ -163,7 +163,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         let mut contBlockId = BlockId::first();
         if returns {
             resolver.addInstruction(InstructionKind::DeclareVar(matchValue.clone()), matchLocation.clone());
-            contBlockId = resolver.createBlock();
+            contBlockId = resolver.bodyBuilder.createBlock().getBlockId();
         }
         MatchCompiler {
             matchLocation: matchLocation,
@@ -420,12 +420,9 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         }
 
         let ctx = CompileContext::new().add(node.getDataPath(), self.bodyId.clone());
-        let startBlock = self.resolver.getTargetBlockId();
+        let mut startBlockBuilder = self.resolver.bodyBuilder.current();
         let firstBlockId = self.compileNode(&node, &ctx);
-        self.resolver
-            .bodyBuilder
-            .block(startBlock)
-            .addJump(firstBlockId, self.bodyLocation.clone());
+        startBlockBuilder.addJump(firstBlockId, self.bodyLocation.clone());
         self.resolver.bodyBuilder.setTargetBlockId(firstBlockId);
         let mut returns = false;
         for b in &self.branches {
@@ -436,10 +433,11 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         let value = self.resolver.createValue("matchValue", self.bodyLocation.clone());
         if returns {
             let v = self.resolver.indexVar(self.matchValue.clone());
-            self.resolver.setTargetBlockId(self.contBlockId);
-            self.resolver
+            let mut builder = self.resolver.bodyBuilder.block(self.contBlockId);
+            builder.current();
+            builder
+                .implicit()
                 .addInstruction(InstructionKind::ValueRef(value.clone(), v), self.matchLocation.clone());
-            self.resolver.bodyBuilder.setImplicit();
         }
         value
     }
@@ -448,7 +446,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         //println!("compileNode: node {:?}, ctx {}", node, ctx);
         match node {
             Node::Tuple(tuple) => {
-                let mut builder = self.resolver.bodyBuilder.createBlock2();
+                let mut builder = self.resolver.bodyBuilder.createBlock();
                 builder.current();
                 let root = ctx.get(&tuple.dataPath);
                 let mut ctx = ctx.clone();
@@ -466,7 +464,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
             }
             Node::Switch(switch) => {
                 let root = ctx.get(&switch.dataPath);
-                let mut builder = self.resolver.bodyBuilder.createBlock2();
+                let mut builder = self.resolver.bodyBuilder.createBlock();
                 builder.current();
                 match &switch.kind {
                     SwitchKind::Enum(enumName) => {
@@ -474,7 +472,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                         let enumDef = self.resolver.enums.get(enumName).expect("enum not found");
                         for (case, node) in &switch.cases {
                             if let Case::Variant(name) = case {
-                                let mut builder = self.resolver.bodyBuilder.createBlock2();
+                                let mut builder = self.resolver.bodyBuilder.createBlock();
                                 builder.current();
                                 let (v, index) = enumDef.getVariant(name);
                                 let ctx = if v.items.len() > 0 {
@@ -531,7 +529,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                         blocks.push(builder.getBlockId());
                         for _ in 0..switch.cases.len() {
                             if blocks.len() < switch.cases.len() - 1 {
-                                blocks.push(self.resolver.createBlock());
+                                blocks.push(self.resolver.bodyBuilder.createBlock().getBlockId());
                             }
                         }
                         let mut defaultBranch = BlockId::first();
@@ -583,8 +581,8 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                 if let MatchKind::UserDefined(index) = &m.kind {
                     let branch = &self.branches[*index as usize];
                     let mut env = Environment::child(self.parentEnv);
-                    let blockId = self.resolver.createBlock();
-                    self.resolver.setTargetBlockId(blockId);
+                    let mut builder = self.resolver.bodyBuilder.createBlock();
+                    builder.current();
                     for (path, name) in &m.bindings.bindings {
                         let bindValue = ctx.get(path.decisions.last().unwrap());
                         let new = self.resolver.createValue(&name, self.bodyLocation.clone());
@@ -594,18 +592,11 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     }
                     let exprValue = self.resolver.resolveExpr(&branch.body, &mut env);
                     if !branch.body.doesNotReturn() {
-                        self.resolver
-                            .bodyBuilder
-                            .current()
-                            .implicit()
-                            .addAssign(self.matchValue.clone(), exprValue, self.matchLocation.clone());
-                        self.resolver
-                            .bodyBuilder
-                            .current()
-                            .implicit()
-                            .addJump(self.contBlockId, self.bodyLocation.clone());
+                        let mut builder = self.resolver.bodyBuilder.current().implicit();
+                        builder.addAssign(self.matchValue.clone(), exprValue, self.matchLocation.clone());
+                        builder.addJump(self.contBlockId, self.bodyLocation.clone());
                     }
-                    blockId
+                    builder.getBlockId()
                 } else {
                     unreachable!()
                 }
