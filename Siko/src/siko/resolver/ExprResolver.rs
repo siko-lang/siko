@@ -169,7 +169,7 @@ impl<'a> ExprResolver<'a> {
                             let value = env.resolve(&name.toString());
                             match value {
                                 Some(value) => {
-                                    self.addInstruction(InstructionKind::Assign(value.clone(), rhsId), lhs.location.clone());
+                                    self.bodyBuilder.addAssign(value.clone(), rhsId, lhs.location.clone());
                                 }
                                 None => {
                                     ResolverError::UnknownValue(name.name.clone(), name.location.clone()).report(self.ctx);
@@ -197,7 +197,8 @@ impl<'a> ExprResolver<'a> {
         }
         if !block.doesNotReturn() {
             let blockValue = self.indexVar(blockValue);
-            self.addImplicitInstruction(InstructionKind::Assign(resultValue.clone(), blockValue), block.location.clone());
+            self.bodyBuilder.addAssign(resultValue.clone(), blockValue, block.location.clone());
+            self.bodyBuilder.setImplicit();
         }
         self.addImplicitInstruction(InstructionKind::BlockEnd(blockInfo.clone()), block.location.clone());
     }
@@ -208,10 +209,6 @@ impl<'a> ExprResolver<'a> {
 
     pub fn addImplicitInstruction(&mut self, instruction: InstructionKind, location: Location) {
         self.bodyBuilder.addImplicitInstruction(instruction, location);
-    }
-
-    pub fn addInstructionToBlock(&mut self, id: BlockId, instruction: InstructionKind, location: Location, implicit: bool) {
-        self.bodyBuilder.addInstructionToBlock(id, instruction, location, implicit);
     }
 
     pub fn resolveExpr(&mut self, expr: &Expr, env: &mut Environment) -> Variable {
@@ -319,12 +316,7 @@ impl<'a> ExprResolver<'a> {
                 let loopBodyId = self.createBlock();
                 let loopExitId = self.createBlock();
                 let finalValue = self.createValue("finalValueRef", expr.location.clone());
-                self.addInstructionToBlock(
-                    loopExitId,
-                    InstructionKind::ValueRef(finalValue.clone(), name.clone()),
-                    expr.location.clone(),
-                    true,
-                );
+
                 let jumpValue = self.createValue("jump", expr.location.clone());
                 self.addInstruction(InstructionKind::Jump(jumpValue, loopBodyId), expr.location.clone());
                 let mut loopEnv = Environment::child(env);
@@ -336,13 +328,15 @@ impl<'a> ExprResolver<'a> {
                     var: name.clone(),
                 });
                 match &body.expr {
-                    SimpleExpr::Block(block) => self.resolveBlock(block, &loopEnv, name),
+                    SimpleExpr::Block(block) => self.resolveBlock(block, &loopEnv, name.clone()),
                     _ => panic!("for body is not a block!"),
                 };
                 let jumpValue = self.createValue("jump", expr.location.clone());
                 self.addImplicitInstruction(InstructionKind::Jump(jumpValue.clone(), loopBodyId), expr.location.clone());
                 self.loopInfos.pop();
                 self.setTargetBlockId(loopExitId);
+                self.addInstruction(InstructionKind::ValueRef(finalValue.clone(), name), expr.location.clone());
+                self.bodyBuilder.setImplicit();
                 finalValue
             }
             SimpleExpr::BinaryOp(op, lhs, rhs) => {
@@ -447,7 +441,7 @@ impl<'a> ExprResolver<'a> {
                     Some(info) => info.clone(),
                     None => ResolverError::BreakOutsideLoop(expr.location.clone()).report(self.ctx),
                 };
-                self.addInstruction(InstructionKind::Assign(info.var, argId), expr.location.clone());
+                self.bodyBuilder.addAssign(info.var, argId, expr.location.clone());
                 let jumpValue = self.createValue("jump", expr.location.clone());
                 self.addInstruction(InstructionKind::Jump(jumpValue.clone(), info.exit), expr.location.clone());
                 jumpValue
@@ -465,7 +459,7 @@ impl<'a> ExprResolver<'a> {
                     Some(info) => info.clone(),
                     None => ResolverError::BreakOutsideLoop(expr.location.clone()).report(self.ctx),
                 };
-                self.addInstruction(InstructionKind::Assign(info.var, argId), expr.location.clone());
+                self.bodyBuilder.addAssign(info.var, argId, expr.location.clone());
                 let jumpValue = self.createValue("jump", expr.location.clone());
                 self.addInstruction(InstructionKind::Jump(jumpValue.clone(), info.body), expr.location.clone());
                 jumpValue

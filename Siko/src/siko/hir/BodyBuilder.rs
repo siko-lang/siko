@@ -91,4 +91,13 @@ impl BodyBuilder {
         );
         result
     }
+
+    pub fn addAssign(&mut self, target: Variable, source: Variable, location: Location) {
+        self.addInstruction(InstructionKind::Assign(target, source), location);
+    }
+
+    pub fn setImplicit(&mut self) {
+        let irBlock = &mut self.body.blocks[self.targetBlockId.id as usize];
+        irBlock.instructions.last_mut().unwrap().implicit = true;
+    }
 }
