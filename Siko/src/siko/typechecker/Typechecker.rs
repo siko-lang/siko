@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     iter::zip,
 };
 
@@ -57,7 +57,7 @@ pub struct Typechecker<'a> {
     fieldTypes: BTreeMap<Variable, Vec<Type>>,
     bodyBuilder: BodyBuilder,
     visitedBlocks: BTreeSet<BlockId>,
-    queue: Vec<BlockId>,
+    queue: VecDeque<BlockId>,
 }
 
 impl<'a> Typechecker<'a> {
@@ -79,7 +79,7 @@ impl<'a> Typechecker<'a> {
             fieldTypes: BTreeMap::new(),
             bodyBuilder: BodyBuilder::cloneFunction(f),
             visitedBlocks: BTreeSet::new(),
-            queue: Vec::new(),
+            queue: VecDeque::new(),
         }
     }
 
@@ -489,7 +489,7 @@ impl<'a> Typechecker<'a> {
             }
             InstructionKind::Drop(_, _) => unreachable!("drop in typechecker!"),
             InstructionKind::Jump(_, id) => {
-                self.queue.push(*id);
+                self.queue.push_back(*id);
             }
             InstructionKind::Assign(name, rhs) => {
                 if !self.mutables.contains(&name.value.to_string()) {
@@ -530,17 +530,17 @@ impl<'a> Typechecker<'a> {
             }
             InstructionKind::EnumSwitch(_, cases) => {
                 for case in cases {
-                    self.queue.push(case.branch);
+                    self.queue.push_back(case.branch);
                 }
             }
             InstructionKind::IntegerSwitch(_, cases) => {
                 for case in cases {
-                    self.queue.push(case.branch);
+                    self.queue.push_back(case.branch);
                 }
             }
             InstructionKind::StringSwitch(_, cases) => {
                 for case in cases {
-                    self.queue.push(case.branch);
+                    self.queue.push_back(case.branch);
                 }
             }
             InstructionKind::FieldRef(dest, receiver, fieldName) => {
@@ -572,23 +572,24 @@ impl<'a> Typechecker<'a> {
         if self.f.body.is_none() {
             return;
         };
-        let mut allblocksIds = self.f.body.as_ref().unwrap().blocks.iter().map(|b| b.id).collect::<Vec<BlockId>>();
+        // the double loop is needed to reach even the unreachable blocks
+        let mut allblocksIds = self.f.body.as_ref().unwrap().blocks.iter().map(|b| b.id).collect::<VecDeque<BlockId>>();
         loop {
-            if allblocksIds.len() == 0 {
-                break;
-            }
-            let first = allblocksIds.remove(0);
-            self.queue.push(first);
-            loop {
-                if let Some(blockId) = self.queue.pop() {
-                    if self.visitedBlocks.contains(&blockId) {
-                        continue;
+            if let Some(blockId) = allblocksIds.pop_front() {
+                self.queue.push_back(blockId);
+                loop {
+                    if let Some(blockId) = self.queue.pop_back() {
+                        if self.visitedBlocks.contains(&blockId) {
+                            continue;
+                        }
+                        self.visitedBlocks.insert(blockId);
+                        self.checkBlock(blockId);
+                    } else {
+                        break;
                     }
-                    self.visitedBlocks.insert(blockId);
-                    self.checkBlock(blockId);
-                } else {
-                    break;
                 }
+            } else {
+                break;
             }
         }
     }
