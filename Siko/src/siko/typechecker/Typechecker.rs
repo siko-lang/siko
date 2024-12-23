@@ -85,9 +85,9 @@ impl<'a> Typechecker<'a> {
 
     pub fn run(&mut self) -> Function {
         self.initialize();
-        //self.dump(f);
+        //self.dump(self.f);
         self.check();
-        //self.dump(f);
+        //self.dump(self.f);
         self.generate()
     }
 
@@ -108,7 +108,7 @@ impl<'a> Typechecker<'a> {
     }
 
     pub fn initialize(&mut self) {
-        //println!("Initializing {}", f.name);
+        //println!("Initializing {}", self.f.name);
         for param in &self.f.params {
             match &param {
                 Parameter::Named(name, ty, mutable) => {
@@ -402,6 +402,7 @@ impl<'a> Typechecker<'a> {
     }
 
     fn checkInstruction(&mut self, instruction: Instruction) {
+        //println!("checkInstruction {}", instruction);
         match &instruction.kind {
             InstructionKind::FunctionCall(dest, name, args) => {
                 let targetFn = self.program.functions.get(name).expect("Function not found");
@@ -571,22 +572,29 @@ impl<'a> Typechecker<'a> {
         if self.f.body.is_none() {
             return;
         };
-        self.queue.push(BlockId::first());
+        let mut allblocksIds = self.f.body.as_ref().unwrap().blocks.iter().map(|b| b.id).collect::<Vec<BlockId>>();
         loop {
-            if let Some(blockId) = self.queue.pop() {
-                if self.visitedBlocks.contains(&blockId) {
-                    continue;
-                }
-                self.visitedBlocks.insert(blockId);
-                self.checkBlock(blockId);
-            } else {
+            if allblocksIds.len() == 0 {
                 break;
+            }
+            let first = allblocksIds.remove(0);
+            self.queue.push(first);
+            loop {
+                if let Some(blockId) = self.queue.pop() {
+                    if self.visitedBlocks.contains(&blockId) {
+                        continue;
+                    }
+                    self.visitedBlocks.insert(blockId);
+                    self.checkBlock(blockId);
+                } else {
+                    break;
+                }
             }
         }
     }
 
     pub fn verify(&self, f: &Function) {
-        if let Some(body) = &self.f.body {
+        if let Some(body) = &f.body {
             let fnType = f.getType();
             let publicVars = fnType.collectVars(BTreeSet::new());
             for block in &body.blocks {
@@ -887,7 +895,7 @@ impl<'a> Typechecker<'a> {
     }
 
     pub fn generate(&mut self) -> Function {
-        //println!("Generating {}", f.name);
+        //println!("Generating {}", self.f.name);
         if self.f.body.is_none() {
             return self.f.clone();
         }
