@@ -3,8 +3,8 @@ use std::{cell::RefCell, rc::Rc};
 use crate::siko::location::Location::Location;
 
 use super::{
-    BlockBuilder::BlockBuilder,
-    Function::{Block, BlockId, Body, InstructionKind, Variable, VariableName},
+    BlockBuilder::{BlockBuilder, Mode},
+    Function::{Block, BlockId, Body, Function, Instruction, InstructionKind, Variable, VariableName},
     Type::Type,
 };
 
@@ -25,6 +25,20 @@ impl Builder {
         }
     }
 
+    fn cloneFunction(function: &Function) -> Builder {
+        let body = match function.body {
+            Some(ref body) => body.clone(),
+            None => Body::new(),
+        };
+        let blockCount = body.blocks.len();
+        Builder {
+            body: body,
+            nextBlockId: blockCount as u32,
+            targetBlockId: BlockId::first(),
+            valueId: 0,
+        }
+    }
+
     fn createBlock(&mut self) -> BlockId {
         let blockId = BlockId { id: self.nextBlockId };
         self.nextBlockId += 1;
@@ -37,6 +51,10 @@ impl Builder {
         self.body.setType(var, ty);
     }
 
+    fn getTypeInBody(&mut self, var: &Variable) -> Option<Type> {
+        self.body.getType(var)
+    }
+
     pub fn setTargetBlockId(&mut self, id: BlockId) {
         //println!("Setting target block {} => {}", self.targetBlockId, id);
         self.targetBlockId = id;
@@ -44,6 +62,14 @@ impl Builder {
 
     pub fn getTargetBlockId(&mut self) -> BlockId {
         self.targetBlockId
+    }
+
+    pub fn getInstruction(&self, id: BlockId, index: usize) -> Option<Instruction> {
+        let irBlock = &self.body.blocks[id.id as usize];
+        match irBlock.instructions.get(index) {
+            Some(instruction) => Some(instruction.clone()),
+            None => None,
+        }
     }
 
     pub fn addInstruction(&mut self, id: BlockId, instruction: InstructionKind, location: Location, implicit: bool) {
@@ -84,19 +110,30 @@ impl BodyBuilder {
         }
     }
 
+    pub fn cloneFunction(function: &Function) -> BodyBuilder {
+        let bodyBuilder = Builder::cloneFunction(function);
+        BodyBuilder {
+            bodyBuilder: Rc::new(RefCell::new(bodyBuilder)),
+        }
+    }
+
     pub fn createBlock(&mut self) -> BlockBuilder {
         let mut bodyBuilder = self.bodyBuilder.borrow_mut();
         let blockId = bodyBuilder.createBlock();
-        BlockBuilder::new(blockId, self.clone())
+        BlockBuilder::new(blockId, self.clone(), Mode::Append)
     }
 
     pub fn current(&mut self) -> BlockBuilder {
         let blockId = self.getTargetBlockId();
-        BlockBuilder::new(blockId, self.clone())
+        BlockBuilder::new(blockId, self.clone(), Mode::Append)
     }
 
     pub fn block(&mut self, blockId: BlockId) -> BlockBuilder {
-        BlockBuilder::new(blockId, self.clone())
+        BlockBuilder::new(blockId, self.clone(), Mode::Append)
+    }
+
+    pub fn iterator(&mut self, blockId: BlockId) -> BlockBuilder {
+        BlockBuilder::new(blockId, self.clone(), Mode::Iterator(0))
     }
 
     pub fn build(self) -> Body {
@@ -137,5 +174,10 @@ impl BodyBuilder {
     pub fn createValue(&mut self, name: &str, location: Location) -> Variable {
         let mut bodyBuilder = self.bodyBuilder.borrow_mut();
         bodyBuilder.createValue(name, location)
+    }
+
+    pub fn getInstruction(&self, id: BlockId, index: usize) -> Option<Instruction> {
+        let bodyBuilder = self.bodyBuilder.borrow();
+        bodyBuilder.getInstruction(id, index)
     }
 }

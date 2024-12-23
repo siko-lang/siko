@@ -1,22 +1,32 @@
+use core::panic;
+
 use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
 
 use super::{
     BodyBuilder::BodyBuilder,
-    Function::{BlockId, FieldInfo, InstructionKind, Variable},
+    Function::{BlockId, FieldInfo, Instruction, InstructionKind, Variable},
 };
+
+#[derive(Clone, Copy)]
+pub enum Mode {
+    Append,
+    Iterator(usize),
+}
 
 pub struct BlockBuilder {
     bodyBuilder: BodyBuilder,
     blockId: BlockId,
     isImplicit: bool,
+    mode: Mode,
 }
 
 impl BlockBuilder {
-    pub fn new(blockId: BlockId, bodyBuilder: BodyBuilder) -> BlockBuilder {
+    pub fn new(blockId: BlockId, bodyBuilder: BodyBuilder, mode: Mode) -> BlockBuilder {
         BlockBuilder {
             bodyBuilder: bodyBuilder,
             blockId,
             isImplicit: false,
+            mode: mode,
         }
     }
 
@@ -29,11 +39,36 @@ impl BlockBuilder {
             bodyBuilder: self.bodyBuilder.clone(),
             blockId: self.blockId,
             isImplicit: true,
+            mode: self.mode,
+        }
+    }
+
+    pub fn getInstruction(&self) -> Option<Instruction> {
+        match self.mode {
+            Mode::Append => panic!("Cannot get instruction in append mode"),
+            Mode::Iterator(index) => self.bodyBuilder.getInstruction(self.blockId, index),
+        }
+    }
+
+    pub fn step(&mut self) {
+        match self.mode {
+            Mode::Append => panic!("Cannot step in append mode"),
+            Mode::Iterator(index) => {
+                self.mode = Mode::Iterator(index + 1);
+            }
         }
     }
 
     pub fn addInstruction(&mut self, instruction: InstructionKind, location: Location) {
-        self.bodyBuilder.addInstruction(self.blockId, instruction, location, self.isImplicit)
+        match self.mode {
+            Mode::Append => {
+                self.bodyBuilder.addInstruction(self.blockId, instruction, location, self.isImplicit);
+            }
+            Mode::Iterator(index) => {
+                self.bodyBuilder
+                    .insertInstruction(self.blockId, index, instruction, location, self.isImplicit);
+            }
+        }
     }
 
     pub fn addAssign(&mut self, target: Variable, source: Variable, location: Location) {

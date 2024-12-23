@@ -6,9 +6,10 @@ use std::{
 use crate::siko::{
     hir::{
         Apply::{instantiateClass, instantiateEnum, instantiateType, instantiateType2, Apply, ApplyVariable},
+        BodyBuilder::BodyBuilder,
         ConstraintContext::ConstraintContext,
         Data::{Class, Enum},
-        Function::{Body, Function, Instruction, InstructionKind, Parameter, Variable, VariableName},
+        Function::{BlockId, Body, Function, Instruction, InstructionKind, Parameter, Variable, VariableName},
         InstanceResolver::ResolutionResult,
         Program::Program,
         Substitution::{TypeSubstitution, VariableSubstitution},
@@ -53,10 +54,13 @@ pub struct Typechecker<'a> {
     implicitClones: BTreeSet<Variable>,
     mutableMethodCalls: BTreeMap<Variable, MutableMethodCallInfo>,
     fieldTypes: BTreeMap<Variable, Vec<Type>>,
+    bodyBuilder: BodyBuilder,
+    visitedBlocks: BTreeSet<BlockId>,
+    queue: Vec<BlockId>,
 }
 
 impl<'a> Typechecker<'a> {
-    pub fn new(ctx: &'a ReportContext, program: &'a Program, traitMethodSelector: &'a TraitMethodSelector) -> Typechecker<'a> {
+    pub fn new(ctx: &'a ReportContext, program: &'a Program, traitMethodSelector: &'a TraitMethodSelector, f: &Function) -> Typechecker<'a> {
         Typechecker {
             ctx: ctx,
             program: program,
@@ -71,6 +75,9 @@ impl<'a> Typechecker<'a> {
             implicitClones: BTreeSet::new(),
             mutableMethodCalls: BTreeMap::new(),
             fieldTypes: BTreeMap::new(),
+            bodyBuilder: BodyBuilder::cloneFunction(f),
+            visitedBlocks: BTreeSet::new(),
+            queue: Vec::new(),
         }
     }
 
@@ -377,160 +384,201 @@ impl<'a> Typechecker<'a> {
         }
     }
 
+    fn checkBlock(&mut self, blockId: BlockId, f: &Function) {
+        let mut builder = self.bodyBuilder.iterator(blockId);
+        loop {
+            match builder.getInstruction() {
+                Some(instruction) => {
+                    self.checkInstruction(instruction, &f);
+                    builder.step();
+                }
+                None => {
+                    break;
+                }
+            }
+        }
+    }
+
+    fn checkInstruction(&mut self, instruction: Instruction, f: &Function) {
+        match &instruction.kind {
+            InstructionKind::FunctionCall(dest, name, args) => {
+                let targetFn = self.program.functions.get(name).expect("Function not found");
+                let fnType = targetFn.getType();
+                self.checkFunctionCall(args, dest, fnType, &targetFn.constraintContext, &f.constraintContext);
+            }
+            InstructionKind::MethodCall(dest, receiver, methodName, args) => {
+                let receiverType = self.getType(receiver);
+                let receiverType = receiverType.apply(&self.substitution);
+                //println!("METHOD {} {} {}", methodName, receiver, receiverType);
+                let name = self.lookupMethod(receiverType.clone(), methodName, instruction.location.clone());
+                self.methodCalls.insert(dest.clone(), name.clone());
+                let targetFn = self.program.functions.get(&name).expect("Function not found");
+                let mut fnType = targetFn.getType();
+                let mut args = args.clone();
+                args.insert(0, receiver.clone());
+                let mutableCall = self.mutables.contains(&receiver.value.to_string()) && fnType.getResult().hasSelfType();
+                if mutableCall {
+                    fnType = fnType.changeMethodResult();
+                }
+                let fnType = self.checkFunctionCall(&args, dest, fnType, &targetFn.constraintContext, &f.constraintContext);
+                if mutableCall {
+                    let result = fnType.getResult();
+                    let (baseType, selfLessType) = if targetFn.getType().getResult().isTuple() {
+                        let baseType = result.addSelfType(receiverType);
+                        let selfLessType = baseType.getSelflessType(false);
+                        (baseType, selfLessType)
+                    } else {
+                        (receiverType, Type::Tuple(Vec::new()))
+                    };
+                    //println!("MUT METHOD {} => {}", fnType, selfLessType);
+                    //println!("MUT METHOD {} => {}", baseType, selfLessType);
+                    self.mutableMethodCalls.insert(
+                        dest.clone(),
+                        MutableMethodCallInfo {
+                            receiver: receiver.clone(),
+                            baseType,
+                            selfLessType,
+                        },
+                    );
+                }
+            }
+            InstructionKind::DynamicFunctionCall(dest, callable, args) => {
+                let fnType = self.getType(callable);
+                self.checkFunctionCall(&args, dest, fnType, &ConstraintContext::new(), &f.constraintContext);
+            }
+            InstructionKind::ValueRef(dest, value) => {
+                let receiverType = self.getType(value);
+                self.unify(receiverType, self.getType(dest), instruction.location.clone());
+            }
+            InstructionKind::Bind(name, rhs, _) => {
+                self.unify(self.getType(name), self.getType(rhs), instruction.location.clone());
+            }
+            InstructionKind::Tuple(dest, args) => {
+                let mut argTypes = Vec::new();
+                for arg in args {
+                    argTypes.push(self.getType(arg));
+                }
+                self.unify(self.getType(dest), Type::Tuple(argTypes), instruction.location.clone());
+            }
+            InstructionKind::StringLiteral(dest, _) => {
+                self.unify(self.getType(dest), Type::getStringType(), instruction.location.clone());
+            }
+            InstructionKind::IntegerLiteral(dest, _) => {
+                self.unify(self.getType(dest), Type::getIntType(), instruction.location.clone());
+            }
+            InstructionKind::CharLiteral(dest, _) => {
+                self.unify(self.getType(dest), Type::getCharType(), instruction.location.clone());
+            }
+            InstructionKind::Return(_, arg) => {
+                let mut result = f.result.clone();
+                if let Some(selfType) = self.selfType.clone() {
+                    result = result.changeSelfType(selfType);
+                }
+                self.unify(result, self.getType(arg), instruction.location.clone());
+            }
+            InstructionKind::Ref(dest, arg) => {
+                let arg_type = self.getType(arg);
+                self.unify(
+                    self.getType(dest),
+                    Type::Reference(Box::new(arg_type), None),
+                    instruction.location.clone(),
+                );
+            }
+            InstructionKind::Drop(_, _) => unreachable!("drop in typechecker!"),
+            InstructionKind::Jump(_, id) => {
+                self.queue.push(*id);
+            }
+            InstructionKind::Assign(name, rhs) => {
+                if !self.mutables.contains(&name.value.to_string()) {
+                    TypecheckerError::ImmutableAssign(instruction.location.clone()).report(self.ctx);
+                }
+                self.unify(self.getType(name), self.getType(rhs), instruction.location.clone());
+            }
+            InstructionKind::FieldAssign(name, rhs, fields) => {
+                if !self.mutables.contains(&name.value.to_string()) {
+                    TypecheckerError::ImmutableAssign(instruction.location.clone()).report(self.ctx);
+                }
+                let receiverType = self.getType(name);
+                let mut types = Vec::new();
+                let mut receiverType = receiverType.apply(&self.substitution);
+                for field in fields {
+                    let fieldTy = self.checkField(receiverType, field.name.clone(), field.location.clone());
+                    types.push(fieldTy.clone());
+                    receiverType = fieldTy;
+                }
+                self.fieldTypes.insert(name.clone(), types);
+                self.unify(self.getType(rhs), receiverType, instruction.location.clone());
+            }
+            InstructionKind::DeclareVar(_) => {}
+            InstructionKind::Transform(dest, root, index) => {
+                let rootTy = self.getType(root);
+                let rootTy = rootTy.apply(&self.substitution);
+                match rootTy.unpackRef().getName() {
+                    Some(name) => {
+                        let e = self.program.enums.get(&name).expect("not an enum in transform!");
+                        let e = self.instantiateEnum(e, &rootTy.unpackRef());
+                        let v = &e.variants[*index as usize];
+                        self.unify(self.getType(dest), Type::Tuple(v.items.clone()), instruction.location.clone());
+                    }
+                    None => {
+                        TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(self.ctx);
+                    }
+                };
+            }
+            InstructionKind::EnumSwitch(_, cases) => {
+                for case in cases {
+                    self.queue.push(case.branch);
+                }
+            }
+            InstructionKind::IntegerSwitch(_, cases) => {
+                for case in cases {
+                    self.queue.push(case.branch);
+                }
+            }
+            InstructionKind::StringSwitch(_, cases) => {
+                for case in cases {
+                    self.queue.push(case.branch);
+                }
+            }
+            InstructionKind::FieldRef(dest, receiver, fieldName) => {
+                let receiverType = self.getType(receiver);
+                let fieldTy = self.checkField(receiverType, fieldName.clone(), instruction.location.clone());
+                self.unify(self.getType(dest), fieldTy, instruction.location.clone());
+            }
+            InstructionKind::TupleIndex(dest, receiver, index) => {
+                let receiverType = self.getType(receiver);
+                let receiverType = receiverType.apply(&self.substitution);
+                match receiverType {
+                    Type::Tuple(t) => {
+                        if *index as usize >= t.len() {
+                            TypecheckerError::FieldNotFound(format!(".{}", index), instruction.location.clone()).report(&self.ctx);
+                        }
+                        let fieldType = t[*index as usize].clone();
+                        self.unify(self.getType(dest), fieldType, instruction.location.clone());
+                    }
+                    _ => TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(self.ctx),
+                }
+            }
+            InstructionKind::BlockStart(_) => {}
+            InstructionKind::BlockEnd(_) => {}
+        }
+    }
+
     fn check(&mut self, f: &Function) {
         //println!("checking {}", f.name);
         if f.body.is_none() {
             return;
         };
-        for instruction in f.instructions() {
-            //println!("Type checking {}", instruction);
-            match &instruction.kind {
-                InstructionKind::FunctionCall(dest, name, args) => {
-                    let targetFn = self.program.functions.get(name).expect("Function not found");
-                    let fnType = targetFn.getType();
-                    self.checkFunctionCall(args, dest, fnType, &targetFn.constraintContext, &f.constraintContext);
+        self.queue.push(BlockId::first());
+        loop {
+            if let Some(blockId) = self.queue.pop() {
+                if self.visitedBlocks.contains(&blockId) {
+                    continue;
                 }
-                InstructionKind::MethodCall(dest, receiver, methodName, args) => {
-                    let receiverType = self.getType(receiver);
-                    let receiverType = receiverType.apply(&self.substitution);
-                    //println!("METHOD {} {} {}", methodName, receiver, receiverType);
-                    let name = self.lookupMethod(receiverType.clone(), methodName, instruction.location.clone());
-                    self.methodCalls.insert(dest.clone(), name.clone());
-                    let targetFn = self.program.functions.get(&name).expect("Function not found");
-                    let mut fnType = targetFn.getType();
-                    let mut args = args.clone();
-                    args.insert(0, receiver.clone());
-                    let mutableCall = self.mutables.contains(&receiver.value.to_string()) && fnType.getResult().hasSelfType();
-                    if mutableCall {
-                        fnType = fnType.changeMethodResult();
-                    }
-                    let fnType = self.checkFunctionCall(&args, dest, fnType, &targetFn.constraintContext, &f.constraintContext);
-                    if mutableCall {
-                        let result = fnType.getResult();
-                        let (baseType, selfLessType) = if targetFn.getType().getResult().isTuple() {
-                            let baseType = result.addSelfType(receiverType);
-                            let selfLessType = baseType.getSelflessType(false);
-                            (baseType, selfLessType)
-                        } else {
-                            (receiverType, Type::Tuple(Vec::new()))
-                        };
-                        //println!("MUT METHOD {} => {}", fnType, selfLessType);
-                        //println!("MUT METHOD {} => {}", baseType, selfLessType);
-                        self.mutableMethodCalls.insert(
-                            dest.clone(),
-                            MutableMethodCallInfo {
-                                receiver: receiver.clone(),
-                                baseType,
-                                selfLessType,
-                            },
-                        );
-                    }
-                }
-                InstructionKind::DynamicFunctionCall(dest, callable, args) => {
-                    let fnType = self.getType(callable);
-                    self.checkFunctionCall(&args, dest, fnType, &ConstraintContext::new(), &f.constraintContext);
-                }
-                InstructionKind::ValueRef(dest, value) => {
-                    let receiverType = self.getType(value);
-                    self.unify(receiverType, self.getType(dest), instruction.location.clone());
-                }
-                InstructionKind::Bind(name, rhs, _) => {
-                    self.unify(self.getType(name), self.getType(rhs), instruction.location.clone());
-                }
-                InstructionKind::Tuple(dest, args) => {
-                    let mut argTypes = Vec::new();
-                    for arg in args {
-                        argTypes.push(self.getType(arg));
-                    }
-                    self.unify(self.getType(dest), Type::Tuple(argTypes), instruction.location.clone());
-                }
-                InstructionKind::StringLiteral(dest, _) => {
-                    self.unify(self.getType(dest), Type::getStringType(), instruction.location.clone());
-                }
-                InstructionKind::IntegerLiteral(dest, _) => {
-                    self.unify(self.getType(dest), Type::getIntType(), instruction.location.clone());
-                }
-                InstructionKind::CharLiteral(dest, _) => {
-                    self.unify(self.getType(dest), Type::getCharType(), instruction.location.clone());
-                }
-                InstructionKind::Return(_, arg) => {
-                    let mut result = f.result.clone();
-                    if let Some(selfType) = self.selfType.clone() {
-                        result = result.changeSelfType(selfType);
-                    }
-                    self.unify(result, self.getType(arg), instruction.location.clone());
-                }
-                InstructionKind::Ref(dest, arg) => {
-                    let arg_type = self.getType(arg);
-                    self.unify(
-                        self.getType(dest),
-                        Type::Reference(Box::new(arg_type), None),
-                        instruction.location.clone(),
-                    );
-                }
-                InstructionKind::Drop(_, _) => unreachable!("drop in typechecker!"),
-                InstructionKind::Jump(_, _) => {}
-                InstructionKind::Assign(name, rhs) => {
-                    if !self.mutables.contains(&name.value.to_string()) {
-                        TypecheckerError::ImmutableAssign(instruction.location.clone()).report(self.ctx);
-                    }
-                    self.unify(self.getType(name), self.getType(rhs), instruction.location.clone());
-                }
-                InstructionKind::FieldAssign(name, rhs, fields) => {
-                    if !self.mutables.contains(&name.value.to_string()) {
-                        TypecheckerError::ImmutableAssign(instruction.location.clone()).report(self.ctx);
-                    }
-                    let receiverType = self.getType(name);
-                    let mut types = Vec::new();
-                    let mut receiverType = receiverType.apply(&self.substitution);
-                    for field in fields {
-                        let fieldTy = self.checkField(receiverType, field.name.clone(), field.location.clone());
-                        types.push(fieldTy.clone());
-                        receiverType = fieldTy;
-                    }
-                    self.fieldTypes.insert(name.clone(), types);
-                    self.unify(self.getType(rhs), receiverType, instruction.location.clone());
-                }
-                InstructionKind::DeclareVar(_) => {}
-                InstructionKind::Transform(dest, root, index) => {
-                    let rootTy = self.getType(root);
-                    let rootTy = rootTy.apply(&self.substitution);
-                    match rootTy.unpackRef().getName() {
-                        Some(name) => {
-                            let e = self.program.enums.get(&name).expect("not an enum in transform!");
-                            let e = self.instantiateEnum(e, &rootTy.unpackRef());
-                            let v = &e.variants[*index as usize];
-                            self.unify(self.getType(dest), Type::Tuple(v.items.clone()), instruction.location.clone());
-                        }
-                        None => {
-                            TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(self.ctx);
-                        }
-                    };
-                }
-                InstructionKind::EnumSwitch(_root, _cases) => {}
-                InstructionKind::IntegerSwitch(_root, _cases) => {}
-                InstructionKind::StringSwitch(_root, _cases) => {}
-                InstructionKind::FieldRef(dest, receiver, fieldName) => {
-                    let receiverType = self.getType(receiver);
-                    let fieldTy = self.checkField(receiverType, fieldName.clone(), instruction.location.clone());
-                    self.unify(self.getType(dest), fieldTy, instruction.location.clone());
-                }
-                InstructionKind::TupleIndex(dest, receiver, index) => {
-                    let receiverType = self.getType(receiver);
-                    let receiverType = receiverType.apply(&self.substitution);
-                    match receiverType {
-                        Type::Tuple(t) => {
-                            if *index as usize >= t.len() {
-                                TypecheckerError::FieldNotFound(format!(".{}", index), instruction.location.clone()).report(&self.ctx);
-                            }
-                            let fieldType = t[*index as usize].clone();
-                            self.unify(self.getType(dest), fieldType, instruction.location.clone());
-                        }
-                        _ => TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(self.ctx),
-                    }
-                }
-                InstructionKind::BlockStart(_) => {}
-                InstructionKind::BlockEnd(_) => {}
+                self.visitedBlocks.insert(blockId);
+                self.checkBlock(blockId, f);
+            } else {
+                break;
             }
         }
     }

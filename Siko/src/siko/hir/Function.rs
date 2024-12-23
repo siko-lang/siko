@@ -452,10 +452,23 @@ impl Body {
         self.varTypes.insert(var.value, ty);
     }
 
+    pub fn getType(&self, var: &Variable) -> Option<Type> {
+        self.varTypes.get(&var.value).cloned()
+    }
+
     pub fn dump(&self) {
         for block in &self.blocks {
             block.dump();
         }
+    }
+
+    pub fn getInstruction(&self, block_id: BlockId, index: usize) -> Option<Instruction> {
+        if let Some(block) = self.blocks.get(block_id.id as usize) {
+            if let Some(instruction) = block.instructions.get(index) {
+                return Some(instruction.clone());
+            }
+        }
+        None
     }
 }
 
@@ -550,10 +563,6 @@ impl Function {
             None => println!("  <no body>"),
         }
     }
-
-    pub fn instructions<'a>(&'a self) -> InstructionIterator<'a> {
-        InstructionIterator::new(self)
-    }
 }
 
 impl Display for Function {
@@ -563,40 +572,6 @@ impl Display for Function {
         match &self.body {
             Some(body) => write!(f, "{}", body),
             None => write!(f, "  <no body>"),
-        }
-    }
-}
-
-pub struct InstructionIterator<'a> {
-    f: &'a Function,
-    block: usize,
-    instruction: usize,
-}
-
-impl<'a> InstructionIterator<'a> {
-    fn new(f: &'a Function) -> InstructionIterator<'a> {
-        InstructionIterator { f, block: 0, instruction: 0 }
-    }
-}
-
-impl<'a> Iterator for InstructionIterator<'a> {
-    type Item = &'a Instruction;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(body) = &self.f.body {
-            if self.block >= body.blocks.len() {
-                return None;
-            }
-            let block = &body.blocks[self.block];
-            let item = &block.instructions[self.instruction];
-            self.instruction += 1;
-            if self.instruction >= block.instructions.len() {
-                self.instruction = 0;
-                self.block += 1;
-            }
-            return Some(item);
-        } else {
-            return None;
         }
     }
 }
