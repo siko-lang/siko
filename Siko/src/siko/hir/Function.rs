@@ -487,11 +487,12 @@ impl Block {
     }
 
     pub fn replace(&mut self, index: usize, kind: InstructionKind, location: Location, implicit: bool) {
+        let tags = self.instructions[index].tags.clone();
         self.instructions[index] = Instruction {
             implicit: implicit,
             kind: kind,
             location: location,
-            tags: Vec::new(),
+            tags: tags,
         };
     }
 

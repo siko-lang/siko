@@ -978,19 +978,16 @@ impl<'a> Typechecker<'a> {
                         }
                         let mut sub = VariableSubstitution::new();
                         for tag in &instruction.tags {
-                            match self.markers.get(tag) {
-                                Some(MarkerInfo::ImplicitRef(var)) => {
-                                    //println!("IMPLICIT REF FOR {}", var);
-                                    let mut dest = var.clone();
-                                    dest.value = VariableName::ImplicitRef(*tag);
-                                    let ty = Type::Reference(Box::new(self.getType(var)), None);
-                                    self.types.insert(dest.value.to_string(), ty);
-                                    let kind = InstructionKind::Ref(dest.clone(), var.clone());
-                                    sub.add(var.clone(), dest.clone());
-                                    builder.addInstruction(kind, instruction.location.clone());
-                                    builder.step();
-                                }
-                                _ => {}
+                            if let Some(MarkerInfo::ImplicitRef(var)) = self.markers.get(tag) {
+                                //println!("IMPLICIT REF FOR {}", var);
+                                let mut dest = var.clone();
+                                dest.value = VariableName::ImplicitRef(*tag);
+                                let ty = Type::Reference(Box::new(self.getType(var)), None);
+                                self.types.insert(dest.value.to_string(), ty);
+                                let kind = InstructionKind::Ref(dest.clone(), var.clone());
+                                sub.add(var.clone(), dest.clone());
+                                builder.addInstruction(kind, instruction.location.clone());
+                                builder.step();
                             }
                         }
                         builder.replaceInstruction(instruction.kind.applyVar(&sub), instruction.location.clone());
