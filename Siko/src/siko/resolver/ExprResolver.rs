@@ -153,7 +153,9 @@ impl<'a> ExprResolver<'a> {
             .addInstruction(InstructionKind::BlockStart(blockInfo.clone()), block.location.clone());
         let mut env = Environment::child(env);
         let mut lastHasSemicolon = false;
-        let mut blockValue = self.createValue("block", block.location.clone());
+        let mut blockValue = self
+            .bodyBuilder
+            .createTempValue(VariableName::BlockValue, block.location.clone());
         for (index, statement) in block.statements.iter().enumerate() {
             if index == block.statements.len() - 1 && statement.hasSemicolon {
                 lastHasSemicolon = true;
@@ -308,7 +310,9 @@ impl<'a> ExprResolver<'a> {
             SimpleExpr::For(_, _, _) => todo!(),
             SimpleExpr::Loop(pattern, init, body) => {
                 let initId = self.resolveExpr(&init, env);
-                let name = self.createValue("loopVar", expr.location.clone());
+                let name = self
+                    .bodyBuilder
+                    .createTempValue(VariableName::LoopVar, expr.location.clone());
                 self.bodyBuilder
                     .current()
                     .implicit()
@@ -336,7 +340,9 @@ impl<'a> ExprResolver<'a> {
                     .addJump(loopBodyBuilder.getBlockId(), expr.location.clone());
                 self.loopInfos.pop();
                 loopExitBuilder.current();
-                let finalValue = self.createValue("finalValueRef", expr.location.clone());
+                let finalValue = self
+                    .bodyBuilder
+                    .createTempValue(VariableName::LoopFinalValue, expr.location.clone());
                 loopExitBuilder
                     .implicit()
                     .addBind(finalValue.clone(), name, false, expr.location.clone());
@@ -397,7 +403,9 @@ impl<'a> ExprResolver<'a> {
                 matchResolver.compile()
             }
             SimpleExpr::Block(block) => {
-                let blockValue = self.createValue("blockValue", expr.location.clone());
+                let blockValue = self
+                    .bodyBuilder
+                    .createTempValue(VariableName::BlockValue, expr.location.clone());
                 if !block.doesNotReturn() {
                     self.bodyBuilder
                         .current()
@@ -469,15 +477,11 @@ impl<'a> ExprResolver<'a> {
         }
     }
 
-    pub fn createValue(&mut self, name: &str, location: Location) -> Variable {
-        self.bodyBuilder.createValue(name, location)
-    }
-
     fn resolvePattern(&mut self, pat: &Pattern, env: &mut Environment, root: Variable) {
         match &pat.pattern {
             SimplePattern::Named(_name, _args) => todo!(),
             SimplePattern::Bind(name, mutable) => {
-                let new = self.createValue(&name.name, pat.location.clone());
+                let new = self.bodyBuilder.createLocalValue(&name.name, pat.location.clone());
                 self.bodyBuilder
                     .current()
                     .addBind(new.clone(), root, *mutable, pat.location.clone());
@@ -501,7 +505,9 @@ impl<'a> ExprResolver<'a> {
     pub fn resolve<'e>(&mut self, body: &Block, env: &'e Environment<'e>) {
         let mut blockBuilder = self.bodyBuilder.createBlock();
         blockBuilder.current();
-        let functionResult = self.createValue("functionResult", body.location.clone());
+        let functionResult = self
+            .bodyBuilder
+            .createTempValue(VariableName::FunctionResult, body.location.clone());
         self.bodyBuilder
             .current()
             .implicit()

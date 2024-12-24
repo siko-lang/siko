@@ -114,11 +114,22 @@ impl Builder {
         self.body.blocks.sort_by(|a, b| a.id.cmp(&b.id));
     }
 
-    pub fn createValue(&mut self, name: &str, location: Location) -> Variable {
+    pub fn createLocalValue(&mut self, name: &str, location: Location) -> Variable {
         let valueId = self.valueId;
         self.valueId += 1;
         Variable {
             value: VariableName::Local(name.to_string(), valueId),
+            location: location,
+            ty: None,
+            index: 0,
+        }
+    }
+
+    pub fn createTempValue(&mut self, name: fn(u32) -> VariableName, location: Location) -> Variable {
+        let valueId = self.valueId;
+        self.valueId += 1;
+        Variable {
+            value: name(valueId),
             location: location,
             ty: None,
             index: 0,
@@ -228,9 +239,14 @@ impl BodyBuilder {
         bodyBuilder.sortBlocks();
     }
 
-    pub fn createValue(&mut self, name: &str, location: Location) -> Variable {
+    pub fn createLocalValue(&mut self, name: &str, location: Location) -> Variable {
         let mut bodyBuilder = self.bodyBuilder.borrow_mut();
-        bodyBuilder.createValue(name, location)
+        bodyBuilder.createLocalValue(name, location)
+    }
+
+    pub fn createTempValue(&mut self, name: fn(u32) -> VariableName, location: Location) -> Variable {
+        let mut bodyBuilder = self.bodyBuilder.borrow_mut();
+        bodyBuilder.createTempValue(name, location)
     }
 
     pub fn getInstruction(&self, id: BlockId, index: usize) -> Option<Instruction> {

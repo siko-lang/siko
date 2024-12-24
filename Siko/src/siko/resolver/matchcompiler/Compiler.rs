@@ -1,4 +1,4 @@
-use crate::siko::hir::Function::{BlockId, EnumCase, InstructionKind, IntegerCase, Variable};
+use crate::siko::hir::Function::{BlockId, EnumCase, InstructionKind, IntegerCase, Variable, VariableName};
 use crate::siko::location::Location::Location;
 use crate::siko::qualifiedname::{getCloneName, getStringEqName, QualifiedName};
 use crate::siko::resolver::Environment::Environment;
@@ -153,7 +153,9 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         branches: Vec<Branch>,
         parentEnv: &'a Environment<'a>,
     ) -> MatchCompiler<'a, 'b> {
-        let matchValue = resolver.createValue("match_var", matchLocation.clone());
+        let matchValue = resolver
+            .bodyBuilder
+            .createTempValue(VariableName::MatchVar, matchLocation.clone());
         let mut returns = false;
         for b in &branches {
             if !b.body.doesNotReturn() {
@@ -449,7 +451,10 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                 returns = true;
             }
         }
-        let value = self.resolver.createValue("matchValue", self.bodyLocation.clone());
+        let value = self
+            .resolver
+            .bodyBuilder
+            .createTempValue(VariableName::MatchValue, self.bodyLocation.clone());
         if returns {
             let v = self.resolver.indexVar(self.matchValue.clone());
             let mut builder = self.resolver.bodyBuilder.block(self.contBlockId);
@@ -492,7 +497,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                                 let (v, index) = enumDef.getVariant(name);
                                 let ctx = if v.items.len() > 0 {
                                     let transformValue =
-                                        self.resolver.createValue("transform", self.bodyLocation.clone());
+                                        builder.addTransform(root.clone(), index, self.bodyLocation.clone());
                                     let transform =
                                         InstructionKind::Transform(transformValue.clone(), root.clone(), index);
                                     builder.addInstruction(transform, self.bodyLocation.clone());
@@ -623,7 +628,10 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     builder.current();
                     for (path, name) in &m.bindings.bindings {
                         let bindValue = ctx.get(path.decisions.last().unwrap());
-                        let new = self.resolver.createValue(&name, self.bodyLocation.clone());
+                        let new = self
+                            .resolver
+                            .bodyBuilder
+                            .createLocalValue(&name, self.bodyLocation.clone());
                         self.resolver.bodyBuilder.current().addBind(
                             new.clone(),
                             bindValue,

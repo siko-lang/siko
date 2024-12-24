@@ -982,7 +982,7 @@ impl<'a> Typechecker<'a> {
                                 Some(MarkerInfo::ImplicitRef(var)) => {
                                     //println!("IMPLICIT REF FOR {}", var);
                                     let mut dest = var.clone();
-                                    dest.value = VariableName::Local(format!("implicitRef"), *tag);
+                                    dest.value = VariableName::ImplicitRef(*tag);
                                     let ty = Type::Reference(Box::new(self.getType(var)), None);
                                     self.types.insert(dest.value.to_string(), ty);
                                     let kind = InstructionKind::Ref(dest.clone(), var.clone());

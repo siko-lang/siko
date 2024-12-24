@@ -98,6 +98,23 @@ impl std::fmt::Debug for StringCase {
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum VariableName {
+    Transform(u32),
+    MatchVar(u32),
+    MatchValue(u32),
+    LoopVar(u32),
+    LoopFinalValue(u32),
+    FunctionResult(u32),
+    BlockValue(u32),
+    ImplicitRef(u32),
+    Ref(u32),
+    FieldRef(u32),
+    Unit(u32),
+    Tuple(u32),
+    TupleIndex(u32),
+    Jump(u32),
+    Literal(u32),
+    Ret(u32),
+    Call(u32),
     Local(String, u32),
     Arg(String),
 }
@@ -105,6 +122,23 @@ pub enum VariableName {
 impl VariableName {
     pub fn visibleName(&self) -> String {
         match self {
+            VariableName::Transform(i) => format!("transform{}", i),
+            VariableName::MatchVar(i) => format!("matchVar{}", i),
+            VariableName::MatchValue(i) => format!("matchValue{}", i),
+            VariableName::LoopVar(i) => format!("loopVar{}", i),
+            VariableName::LoopFinalValue(i) => format!("loopFinalValue{}", i),
+            VariableName::FunctionResult(i) => format!("functionResult{}", i),
+            VariableName::BlockValue(i) => format!("blockValue{}", i),
+            VariableName::ImplicitRef(i) => format!("implicitRef{}", i),
+            VariableName::Ref(i) => format!("ref{}", i),
+            VariableName::FieldRef(i) => format!("fieldRef{}", i),
+            VariableName::Unit(i) => format!("unit{}", i),
+            VariableName::Tuple(i) => format!("tuple{}", i),
+            VariableName::TupleIndex(i) => format!("tupleIndex{}", i),
+            VariableName::Jump(i) => format!("jump{}", i),
+            VariableName::Literal(i) => format!("lit{}", i),
+            VariableName::Ret(i) => format!("ret{}", i),
+            VariableName::Call(i) => format!("call{}", i),
             VariableName::Local(n, _) => n.clone(),
             VariableName::Arg(n) => n.clone(),
         }
@@ -114,6 +148,23 @@ impl VariableName {
 impl Display for VariableName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            VariableName::Transform(i) => write!(f, "transform{}", i),
+            VariableName::MatchVar(i) => write!(f, "matchVar{}", i),
+            VariableName::MatchValue(i) => write!(f, "matchValue{}", i),
+            VariableName::LoopVar(i) => write!(f, "loopVar{}", i),
+            VariableName::LoopFinalValue(i) => write!(f, "loopFinalValue{}", i),
+            VariableName::FunctionResult(i) => write!(f, "functionResult{}", i),
+            VariableName::BlockValue(i) => write!(f, "blockValue{}", i),
+            VariableName::ImplicitRef(i) => write!(f, "implicitRef{}", i),
+            VariableName::Ref(i) => write!(f, "ref{}", i),
+            VariableName::FieldRef(i) => write!(f, "fieldRef{}", i),
+            VariableName::Unit(i) => write!(f, "unit{}", i),
+            VariableName::Tuple(i) => write!(f, "tuple{}", i),
+            VariableName::TupleIndex(i) => write!(f, "tupleIndex{}", i),
+            VariableName::Jump(i) => write!(f, "jump{}", i),
+            VariableName::Literal(i) => write!(f, "lit{}", i),
+            VariableName::Ret(i) => write!(f, "ret{}", i),
+            VariableName::Call(i) => write!(f, "call{}", i),
             VariableName::Local(n, i) => write!(f, "{}_{}", n, i),
             VariableName::Arg(n) => write!(f, "{}", n),
         }
@@ -123,6 +174,23 @@ impl Display for VariableName {
 impl Debug for VariableName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            VariableName::Transform(i) => write!(f, "transform{}", i),
+            VariableName::MatchVar(i) => write!(f, "matchVar{}", i),
+            VariableName::MatchValue(i) => write!(f, "matchValue{}", i),
+            VariableName::LoopVar(i) => write!(f, "loopVar{}", i),
+            VariableName::LoopFinalValue(i) => write!(f, "loopFinalValue{}", i),
+            VariableName::FunctionResult(i) => write!(f, "functionResult{}", i),
+            VariableName::BlockValue(i) => write!(f, "blockValue{}", i),
+            VariableName::ImplicitRef(i) => write!(f, "implicitRef{}", i),
+            VariableName::Ref(i) => write!(f, "ref{}", i),
+            VariableName::FieldRef(i) => write!(f, "fieldRef{}", i),
+            VariableName::Unit(i) => write!(f, "unit{}", i),
+            VariableName::Tuple(i) => write!(f, "tuple{}", i),
+            VariableName::TupleIndex(i) => write!(f, "tupleIndex{}", i),
+            VariableName::Jump(i) => write!(f, "jump{}", i),
+            VariableName::Literal(i) => write!(f, "lit{}", i),
+            VariableName::Ret(i) => write!(f, "ret{}", i),
+            VariableName::Call(i) => write!(f, "call{}", i),
             VariableName::Local(n, i) => write!(f, "{}_{}", n, i),
             VariableName::Arg(n) => write!(f, "{}", n),
         }
