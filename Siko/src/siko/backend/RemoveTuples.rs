@@ -178,7 +178,6 @@ impl RemoveTuples for InstructionKind {
             }
             InstructionKind::BlockStart(info) => InstructionKind::BlockStart(info.clone()),
             InstructionKind::BlockEnd(info) => InstructionKind::BlockEnd(info.clone()),
-            InstructionKind::Marker(info) => InstructionKind::Marker(info.clone()),
         }
     }
 }

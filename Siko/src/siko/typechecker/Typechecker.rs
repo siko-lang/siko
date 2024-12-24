@@ -41,6 +41,10 @@ struct Constraint {
     location: Location,
 }
 
+enum MarkerInfo {
+    ImplicitRef(Variable),
+}
+
 pub struct Typechecker<'a> {
     ctx: &'a ReportContext,
     program: &'a Program,
@@ -58,6 +62,7 @@ pub struct Typechecker<'a> {
     bodyBuilder: BodyBuilder,
     visitedBlocks: BTreeSet<BlockId>,
     queue: VecDeque<BlockId>,
+    markers: BTreeMap<u32, MarkerInfo>,
 }
 
 impl<'a> Typechecker<'a> {
@@ -84,6 +89,7 @@ impl<'a> Typechecker<'a> {
             bodyBuilder: BodyBuilder::cloneFunction(f),
             visitedBlocks: BTreeSet::new(),
             queue: VecDeque::new(),
+            markers: BTreeMap::new(),
         }
     }
 
@@ -93,6 +99,12 @@ impl<'a> Typechecker<'a> {
         self.check();
         //self.dump(self.f);
         self.generate()
+    }
+
+    fn addImplicitRefMarker(&mut self, var: &Variable) -> u32 {
+        let markerId = self.markers.len() as u32;
+        self.markers.insert(markerId, MarkerInfo::ImplicitRef(var.clone()));
+        markerId
     }
 
     fn initializeVar(&mut self, var: &Variable) {
@@ -195,7 +207,6 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::StringSwitch(_, _) => {}
                         InstructionKind::BlockStart(_) => {}
                         InstructionKind::BlockEnd(_) => {}
-                        InstructionKind::Marker(_) => {}
                     }
                 }
             }
@@ -264,7 +275,8 @@ impl<'a> Typechecker<'a> {
             if !argTy.isReference() && fnArg.isReference() {
                 argTy = Type::Reference(Box::new(argTy), None);
                 //println!("IMPLICIT REF FOR {}", arg);
-                self.implicitRefs.insert(arg.clone());
+                let id = self.addImplicitRefMarker(arg);
+                builder.addTag(id);
             }
             if argTy.isReference() && !fnArg.isReference() && !fnArg.isGeneric() {
                 if self.program.instanceResolver.isCopy(&fnArg) {
@@ -625,7 +637,6 @@ impl<'a> Typechecker<'a> {
             }
             InstructionKind::BlockStart(_) => {}
             InstructionKind::BlockEnd(_) => {}
-            InstructionKind::Marker(_) => {}
         }
     }
 
@@ -635,15 +646,7 @@ impl<'a> Typechecker<'a> {
             return;
         };
         // the double loop is needed to reach even the unreachable blocks
-        let mut allblocksIds = self
-            .f
-            .body
-            .as_ref()
-            .unwrap()
-            .blocks
-            .iter()
-            .map(|b| b.id)
-            .collect::<VecDeque<BlockId>>();
+        let mut allblocksIds = self.bodyBuilder.getAllBlockIds();
         loop {
             if let Some(blockId) = allblocksIds.pop_front() {
                 self.queue.push_back(blockId);
@@ -714,46 +717,46 @@ impl<'a> Typechecker<'a> {
         }
     }
 
-    fn addImplicitRefs(&mut self, f: &mut Function) {
-        let mut nextImplicitRef = 0;
+    // fn addImplicitRefs(&mut self, f: &mut Function) {
+    //     let mut nextImplicitRef = 0;
 
-        let body = &mut f.body.as_mut().unwrap();
+    //     let body = &mut f.body.as_mut().unwrap();
 
-        for block in &mut body.blocks {
-            let mut index = 0;
-            loop {
-                if index >= block.instructions.len() {
-                    break;
-                }
-                let mut instruction = block.instructions[index].clone();
-                let vars = instruction.kind.collectVariables();
-                let mut instructionIndex = index;
-                for var in vars {
-                    if self.implicitRefs.contains(&var) {
-                        let mut dest = var.clone();
-                        dest.value = VariableName::Local(format!("implicitRef"), nextImplicitRef);
-                        nextImplicitRef += 1;
-                        let ty = Type::Reference(Box::new(self.getType(&var)), None);
-                        self.types.insert(dest.value.to_string(), ty);
-                        let mut varSwap = VariableSubstitution::new();
-                        varSwap.add(var.clone(), dest.clone());
-                        let kind = InstructionKind::Ref(dest.clone(), var.clone());
-                        let implicitRef = Instruction {
-                            implicit: true,
-                            kind: kind,
-                            location: instruction.location.clone(),
-                        };
-                        instruction.kind = instruction.kind.applyVar(&varSwap);
-                        block.instructions.insert(index, implicitRef);
-                        instructionIndex += 1;
-                        self.implicitRefs.remove(&var);
-                    }
-                }
-                block.instructions[instructionIndex] = instruction;
-                index += 1;
-            }
-        }
-    }
+    //     for block in &mut body.blocks {
+    //         let mut index = 0;
+    //         loop {
+    //             if index >= block.instructions.len() {
+    //                 break;
+    //             }
+    //             let mut instruction = block.instructions[index].clone();
+    //             let vars = instruction.kind.collectVariables();
+    //             let mut instructionIndex = index;
+    //             for var in vars {
+    //                 if self.implicitRefs.contains(&var) {
+    //                     let mut dest = var.clone();
+    //                     dest.value = VariableName::Local(format!("implicitRef"), nextImplicitRef);
+    //                     nextImplicitRef += 1;
+    //                     let ty = Type::Reference(Box::new(self.getType(&var)), None);
+    //                     self.types.insert(dest.value.to_string(), ty);
+    //                     let mut varSwap = VariableSubstitution::new();
+    //                     varSwap.add(var.clone(), dest.clone());
+    //                     let kind = InstructionKind::Ref(dest.clone(), var.clone());
+    //                     let implicitRef = Instruction {
+    //                         implicit: true,
+    //                         kind: kind,
+    //                         location: instruction.location.clone(),
+    //                     };
+    //                     instruction.kind = instruction.kind.applyVar(&varSwap);
+    //                     block.instructions.insert(index, implicitRef);
+    //                     instructionIndex += 1;
+    //                     self.implicitRefs.remove(&var);
+    //                 }
+    //             }
+    //             block.instructions[instructionIndex] = instruction;
+    //             index += 1;
+    //         }
+    //     }
+    // }
 
     fn addImplicitClones(&mut self, f: &mut Function) {
         let mut nextImplicitClone = 0;
@@ -783,6 +786,7 @@ impl<'a> Typechecker<'a> {
                             implicit: true,
                             kind: kind,
                             location: instruction.location.clone(),
+                            tags: Vec::new(),
                         };
                         instruction.kind = instruction.kind.applyVar(&varSwap);
                         block.instructions.insert(index, implicitRef);
@@ -826,6 +830,7 @@ impl<'a> Typechecker<'a> {
                                     implicit: true,
                                     kind: kind,
                                     location: instruction.location.clone(),
+                                    tags: Vec::new(),
                                 };
                                 block.instructions.insert(currentIndex, selfIndex);
                                 let kind = InstructionKind::Tuple(var.clone(), Vec::new());
@@ -833,6 +838,7 @@ impl<'a> Typechecker<'a> {
                                     implicit: true,
                                     kind: kind,
                                     location: instruction.location.clone(),
+                                    tags: Vec::new(),
                                 };
                                 block.instructions.insert(index + 1, assign);
                             }
@@ -842,6 +848,7 @@ impl<'a> Typechecker<'a> {
                                     implicit: true,
                                     kind: kind,
                                     location: instruction.location.clone(),
+                                    tags: Vec::new(),
                                 };
                                 block.instructions.insert(currentIndex, selfIndex);
                                 let mut argVar = var.clone();
@@ -853,6 +860,7 @@ impl<'a> Typechecker<'a> {
                                     implicit: true,
                                     kind: kind,
                                     location: instruction.location.clone(),
+                                    tags: Vec::new(),
                                 };
                                 block.instructions.insert(currentIndex, argIndex);
                                 currentIndex += 1;
@@ -861,6 +869,7 @@ impl<'a> Typechecker<'a> {
                                     implicit: true,
                                     kind: kind,
                                     location: instruction.location.clone(),
+                                    tags: Vec::new(),
                                 };
                                 block.instructions.insert(currentIndex, assign);
                             }
@@ -870,6 +879,7 @@ impl<'a> Typechecker<'a> {
                                     implicit: true,
                                     kind: kind,
                                     location: instruction.location.clone(),
+                                    tags: Vec::new(),
                                 };
                                 block.instructions.insert(currentIndex, selfIndex);
                                 let mut args = Vec::new();
@@ -888,6 +898,7 @@ impl<'a> Typechecker<'a> {
                                         implicit: true,
                                         kind: kind,
                                         location: instruction.location.clone(),
+                                        tags: Vec::new(),
                                     };
                                     block.instructions.insert(currentIndex, tupleIndex);
                                     currentIndex += 1;
@@ -897,6 +908,7 @@ impl<'a> Typechecker<'a> {
                                     implicit: true,
                                     kind: kind,
                                     location: instruction.location.clone(),
+                                    tags: Vec::new(),
                                 };
                                 block.instructions.insert(currentIndex, tuple);
                             }
@@ -952,11 +964,53 @@ impl<'a> Typechecker<'a> {
         }
     }
 
+    pub fn addImplicitRefs(&mut self) {
+        let allblocksIds = self.bodyBuilder.getAllBlockIds();
+        for blockId in allblocksIds {
+            let mut builder = self.bodyBuilder.iterator(blockId);
+            loop {
+                match builder.getInstruction() {
+                    Some(instruction) => {
+                        //println!("instruction {} at {} {:?}", instruction, blockId, instruction.tags);
+                        if instruction.tags.is_empty() {
+                            builder.step();
+                            continue;
+                        }
+                        let mut sub = VariableSubstitution::new();
+                        for tag in &instruction.tags {
+                            match self.markers.get(tag) {
+                                Some(MarkerInfo::ImplicitRef(var)) => {
+                                    //println!("IMPLICIT REF FOR {}", var);
+                                    let mut dest = var.clone();
+                                    dest.value = VariableName::Local(format!("implicitRef"), *tag);
+                                    let ty = Type::Reference(Box::new(self.getType(var)), None);
+                                    self.types.insert(dest.value.to_string(), ty);
+                                    let kind = InstructionKind::Ref(dest.clone(), var.clone());
+                                    sub.add(var.clone(), dest.clone());
+                                    builder.addInstruction(kind, instruction.location.clone());
+                                    builder.step();
+                                }
+                                _ => {}
+                            }
+                        }
+                        builder.replaceInstruction(instruction.kind.applyVar(&sub), instruction.location.clone());
+                        builder.step();
+                    }
+                    None => {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     pub fn generate(&mut self) -> Function {
         //println!("Generating {}", self.f.name);
         if self.f.body.is_none() {
             return self.f.clone();
         }
+
+        self.addImplicitRefs();
 
         let mut result = self.f.clone();
         result.body = Some(self.bodyBuilder.build());
@@ -964,7 +1018,6 @@ impl<'a> Typechecker<'a> {
             result.result = result.result.changeSelfType(selfType);
         }
 
-        self.addImplicitRefs(&mut result);
         self.addImplicitClones(&mut result);
         self.transformMutableMethodCalls(&mut result);
         self.addFieldTypes(&mut result);

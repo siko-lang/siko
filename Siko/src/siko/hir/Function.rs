@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::fmt::Display;
 
@@ -215,7 +216,6 @@ pub enum InstructionKind {
     StringSwitch(Variable, Vec<StringCase>),
     BlockStart(BlockInfo),
     BlockEnd(BlockInfo),
-    Marker(u32),
 }
 
 impl Display for InstructionKind {
@@ -257,7 +257,6 @@ impl InstructionKind {
             InstructionKind::StringSwitch(_, _) => None,
             InstructionKind::BlockStart(_) => None,
             InstructionKind::BlockEnd(_) => None,
-            InstructionKind::Marker(_) => None,
         }
     }
 
@@ -309,7 +308,6 @@ impl InstructionKind {
             }
             InstructionKind::BlockStart(_) => Vec::new(),
             InstructionKind::BlockEnd(_) => Vec::new(),
-            InstructionKind::Marker(_) => Vec::new(),
         }
     }
 
@@ -360,7 +358,6 @@ impl InstructionKind {
             InstructionKind::StringSwitch(root, cases) => format!("stringswitch({}, {:?})", root, cases),
             InstructionKind::BlockStart(info) => format!("blockstart({})", info),
             InstructionKind::BlockEnd(info) => format!("blockend({})", info),
-            InstructionKind::Marker(id) => format!("marker({})", id),
         }
     }
 }
@@ -370,6 +367,7 @@ pub struct Instruction {
     pub implicit: bool,
     pub kind: InstructionKind,
     pub location: Location,
+    pub tags: Vec<u32>,
 }
 
 impl Instruction {
@@ -404,6 +402,7 @@ impl Block {
             implicit: implicit,
             kind: kind,
             location: location,
+            tags: Vec::new(),
         });
     }
 
@@ -414,6 +413,7 @@ impl Block {
                 implicit: implicit,
                 kind: kind,
                 location: location,
+                tags: Vec::new(),
             },
         );
     }
@@ -423,7 +423,12 @@ impl Block {
             implicit: implicit,
             kind: kind,
             location: location,
+            tags: Vec::new(),
         };
+    }
+
+    pub fn addTag(&mut self, index: usize, tag: u32) {
+        self.instructions[index].tags.push(tag);
     }
 
     pub fn dump(&self) {
@@ -487,6 +492,14 @@ impl Body {
             }
         }
         None
+    }
+
+    pub fn getAllBlockIds(&self) -> VecDeque<BlockId> {
+        let mut ids = VecDeque::new();
+        for block in &self.blocks {
+            ids.push_back(block.id);
+        }
+        ids
     }
 }
 

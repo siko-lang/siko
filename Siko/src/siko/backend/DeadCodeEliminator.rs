@@ -134,7 +134,6 @@ impl<'a> DeadCodeEliminator<'a> {
                 }
                 InstructionKind::BlockStart(_) => {}
                 InstructionKind::BlockEnd(_) => {}
-                InstructionKind::Marker(_) => {}
             }
         }
     }

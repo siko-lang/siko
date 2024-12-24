@@ -343,6 +343,7 @@ impl<'a> DropChecker<'a> {
                             implicit: true,
                             kind: kind,
                             location: instruction.location.clone(),
+                            tags: Vec::new(),
                         };
                         block.instructions.insert(index, implicitRef);
                         instructionIndex += 1;
@@ -360,6 +361,7 @@ impl<'a> DropChecker<'a> {
                             implicit: true,
                             kind: kind,
                             location: instruction.location.clone(),
+                            tags: Vec::new(),
                         };
                         instruction.kind = instruction.kind.applyVar(&varSwap);
                         block.instructions.insert(instructionIndex, implicitRef);
@@ -435,6 +437,7 @@ impl<'a> DropChecker<'a> {
                                     implicit: true,
                                     kind: kind,
                                     location: instruction.location.clone(),
+                                    tags: Vec::new(),
                                 };
                                 block.instructions.insert(instructionIndex, fieldRef);
                                 instructionIndex += 1;
@@ -456,6 +459,7 @@ impl<'a> DropChecker<'a> {
                                 implicit: true,
                                 kind: kind,
                                 location: instruction.location.clone(),
+                                tags: Vec::new(),
                             };
                             //println!("Adding drop for {}", path);
                             block.instructions.insert(instructionIndex, drop);
@@ -630,7 +634,6 @@ impl<'a> DropChecker<'a> {
                     self.dropLists.insert(endId.id.clone(), dropList);
                     context.rootBlock.endBlock();
                 }
-                InstructionKind::Marker(_) => {}
             }
         }
     }

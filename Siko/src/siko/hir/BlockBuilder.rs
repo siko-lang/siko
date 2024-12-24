@@ -84,6 +84,17 @@ impl BlockBuilder {
         }
     }
 
+    pub fn addTag(&mut self, tag: u32) {
+        match self.mode {
+            Mode::Append => {
+                panic!("Cannot add tag in append mode");
+            }
+            Mode::Iterator(index) => {
+                self.bodyBuilder.addTag(self.blockId, index, tag);
+            }
+        }
+    }
+
     pub fn addAssign(&mut self, target: Variable, source: Variable, location: Location) {
         self.addInstruction(InstructionKind::Assign(target, source), location);
     }

@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
 use crate::siko::location::Location::Location;
 
@@ -55,6 +55,10 @@ impl Builder {
         self.body.getType(var)
     }
 
+    pub fn getAllBlockIds(&self) -> VecDeque<BlockId> {
+        self.body.getAllBlockIds()
+    }
+
     pub fn setTargetBlockId(&mut self, id: BlockId) {
         //println!("Setting target block {} => {}", self.targetBlockId, id);
         self.targetBlockId = id;
@@ -99,6 +103,11 @@ impl Builder {
     ) {
         let irBlock = &mut self.body.blocks[id.id as usize];
         return irBlock.replace(index, instruction, location, implicit);
+    }
+
+    pub fn addTag(&mut self, blockId: BlockId, index: usize, tag: u32) {
+        let irBlock = &mut self.body.blocks[blockId.id as usize];
+        irBlock.addTag(index, tag);
     }
 
     pub fn sortBlocks(&mut self) {
@@ -180,6 +189,11 @@ impl BodyBuilder {
         bodyBuilder.getTargetBlockId()
     }
 
+    pub fn getAllBlockIds(&self) -> VecDeque<BlockId> {
+        let bodyBuilder = self.bodyBuilder.borrow();
+        bodyBuilder.getAllBlockIds()
+    }
+
     pub fn addInstruction(&mut self, id: BlockId, instruction: InstructionKind, location: Location, implicit: bool) {
         let mut bodyBuilder = self.bodyBuilder.borrow_mut();
         bodyBuilder.addInstruction(id, instruction, location, implicit);
@@ -222,5 +236,10 @@ impl BodyBuilder {
     pub fn getInstruction(&self, id: BlockId, index: usize) -> Option<Instruction> {
         let bodyBuilder = self.bodyBuilder.borrow();
         bodyBuilder.getInstruction(id, index)
+    }
+
+    pub fn addTag(&self, blockId: BlockId, index: usize, tag: u32) {
+        let mut bodyBuilder = self.bodyBuilder.borrow_mut();
+        bodyBuilder.addTag(blockId, index, tag);
     }
 }

@@ -221,7 +221,6 @@ impl Apply for InstructionKind {
             InstructionKind::StringSwitch(root, cases) => InstructionKind::StringSwitch(root.apply(sub), cases.clone()),
             InstructionKind::BlockStart(info) => InstructionKind::BlockStart(info.clone()),
             InstructionKind::BlockEnd(info) => InstructionKind::BlockEnd(info.clone()),
-            InstructionKind::Marker(info) => InstructionKind::Marker(info.clone()),
         }
     }
 }
@@ -329,7 +328,6 @@ impl ApplyVariable for InstructionKind {
             }
             InstructionKind::BlockStart(info) => InstructionKind::BlockStart(info.clone()),
             InstructionKind::BlockEnd(info) => InstructionKind::BlockEnd(info.clone()),
-            InstructionKind::Marker(info) => InstructionKind::Marker(info.clone()),
         }
     }
 }

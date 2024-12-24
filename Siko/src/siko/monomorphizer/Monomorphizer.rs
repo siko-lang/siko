@@ -295,7 +295,6 @@ impl Monomorphize for InstructionKind {
             }
             InstructionKind::BlockStart(info) => InstructionKind::BlockStart(info.clone()),
             InstructionKind::BlockEnd(info) => InstructionKind::BlockEnd(info.clone()),
-            InstructionKind::Marker(info) => InstructionKind::Marker(info.clone()),
         }
     }
 }
@@ -558,6 +557,7 @@ impl<'a> Monomorphizer<'a> {
                     ),
                     implicit: false,
                     location: Location::empty(),
+                    tags: Vec::new(),
                 });
             }
         }
@@ -573,6 +573,7 @@ impl<'a> Monomorphizer<'a> {
             kind: InstructionKind::Tuple(functionResult.clone(), Vec::new()),
             implicit: false,
             location: Location::empty(),
+            tags: Vec::new(),
         });
 
         let mut functionResultUse = functionResult.clone();
@@ -590,6 +591,7 @@ impl<'a> Monomorphizer<'a> {
             ),
             implicit: false,
             location: Location::empty(),
+            tags: Vec::new(),
         });
 
         let dropFn = Function {
