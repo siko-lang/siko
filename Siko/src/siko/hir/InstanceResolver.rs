@@ -107,7 +107,9 @@ pub struct InstanceResolver {
 
 impl InstanceResolver {
     pub fn new() -> InstanceResolver {
-        InstanceResolver { traits: BTreeMap::new() }
+        InstanceResolver {
+            traits: BTreeMap::new(),
+        }
     }
 
     pub fn addInstance(&mut self, instance: Instance) {

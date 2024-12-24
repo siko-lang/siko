@@ -15,7 +15,9 @@ pub struct TraitMethodSelector {
 
 impl TraitMethodSelector {
     pub fn new() -> TraitMethodSelector {
-        TraitMethodSelector { methods: BTreeMap::new() }
+        TraitMethodSelector {
+            methods: BTreeMap::new(),
+        }
     }
 
     pub fn add(&mut self, name: String, selection: TraitMethodSelection) {

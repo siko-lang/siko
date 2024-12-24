@@ -2,7 +2,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::siko::hir::ConstraintContext::ConstraintContext;
 use crate::siko::hir::Data::Enum;
-use crate::siko::hir::Function::{Function as IrFunction, FunctionKind, Parameter as IrParameter, Variable, VariableName};
+use crate::siko::hir::Function::{
+    Function as IrFunction, FunctionKind, Parameter as IrParameter, Variable, VariableName,
+};
 use crate::siko::hir::Type::{Type as IrType, TypeVar};
 use crate::siko::location::Report::ReportContext;
 use crate::siko::qualifiedname::QualifiedName;
@@ -21,7 +23,11 @@ pub struct FunctionResolver<'a> {
     owner: Option<IrType>,
 }
 
-pub fn createSelfType(name: &Identifier, typeParams: Option<&TypeParameterDeclaration>, moduleResolver: &ModuleResolver) -> IrType {
+pub fn createSelfType(
+    name: &Identifier,
+    typeParams: Option<&TypeParameterDeclaration>,
+    moduleResolver: &ModuleResolver,
+) -> IrType {
     let args = match &typeParams {
         Some(typeParams) => {
             let mut args = Vec::new();
@@ -33,11 +39,19 @@ pub fn createSelfType(name: &Identifier, typeParams: Option<&TypeParameterDeclar
         }
         None => Vec::new(),
     };
-    IrType::Named(QualifiedName::Module(moduleResolver.name.clone()).add(name.toString()), args, None)
+    IrType::Named(
+        QualifiedName::Module(moduleResolver.name.clone()).add(name.toString()),
+        args,
+        None,
+    )
 }
 
 impl<'a> FunctionResolver<'a> {
-    pub fn new(moduleResolver: &'a ModuleResolver, constraintContext: ConstraintContext, owner: Option<IrType>) -> FunctionResolver<'a> {
+    pub fn new(
+        moduleResolver: &'a ModuleResolver,
+        constraintContext: ConstraintContext,
+        owner: Option<IrType>,
+    ) -> FunctionResolver<'a> {
         FunctionResolver {
             moduleResolver: moduleResolver,
             constraintContext: constraintContext,
@@ -88,7 +102,8 @@ impl<'a> FunctionResolver<'a> {
         let result = typeResolver.resolveType(&f.result);
 
         let body = if let Some(body) = &f.body {
-            let mut exprResolver = ExprResolver::new(ctx, self.moduleResolver, &typeResolver, emptyVariants, variants, enums);
+            let mut exprResolver =
+                ExprResolver::new(ctx, self.moduleResolver, &typeResolver, emptyVariants, variants, enums);
             exprResolver.resolve(body, &env);
             Some(exprResolver.body())
         } else {
@@ -100,7 +115,11 @@ impl<'a> FunctionResolver<'a> {
             result,
             body,
             self.constraintContext.clone(),
-            if f.isExtern { FunctionKind::Extern } else { FunctionKind::UserDefined },
+            if f.isExtern {
+                FunctionKind::Extern
+            } else {
+                FunctionKind::UserDefined
+            },
         );
         irFunction
     }

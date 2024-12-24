@@ -7,7 +7,10 @@ use crate::siko::{
     hir::{
         Apply::{instantiateClass, instantiateEnum, Apply},
         ConstraintContext::ConstraintContext,
-        Function::{Block, BlockId, Body, FieldInfo, Function, FunctionKind, Instruction, InstructionKind, Parameter, Variable, VariableName},
+        Function::{
+            Block, BlockId, Body, FieldInfo, Function, FunctionKind, Instruction, InstructionKind, Parameter, Variable,
+            VariableName,
+        },
         InstanceResolver::ResolutionResult,
         Program::Program,
         Substitution::{createTypeSubstitutionFrom, TypeSubstitution},
@@ -94,7 +97,12 @@ impl Monomorphize for Parameter {
 
 impl Monomorphize for Instruction {
     fn process(&self, sub: &TypeSubstitution, mono: &mut Monomorphizer) -> Self {
-        fn getFunctionName(kind: FunctionKind, name: QualifiedName, mono: &mut Monomorphizer, sub: &TypeSubstitution) -> QualifiedName {
+        fn getFunctionName(
+            kind: FunctionKind,
+            name: QualifiedName,
+            mono: &mut Monomorphizer,
+            sub: &TypeSubstitution,
+        ) -> QualifiedName {
             if let Some(traitName) = kind.isTraitCall() {
                 //println!("Trait call in mono!");
                 let traitDef = mono.program.getTrait(&traitName).unwrap();
@@ -181,7 +189,12 @@ impl Monomorphize for Instruction {
                 //println!("real {} {}", target_fn.getType(), target_fn.constraintContext);
                 let sub = createTypeSubstitution(&context_ty, &target_fn.getType());
                 //println!("target ctx {}", target_fn.constraintContext);
-                let ty_args: Vec<_> = target_fn.constraintContext.typeParameters.iter().map(|ty| ty.apply(&sub)).collect();
+                let ty_args: Vec<_> = target_fn
+                    .constraintContext
+                    .typeParameters
+                    .iter()
+                    .map(|ty| ty.apply(&sub))
+                    .collect();
                 //println!("{} type args {}", name, formatTypes(&ty_args));
                 let fn_name = mono.get_mono_name(&name, &ty_args);
                 mono.addKey(Key::Function(name.clone(), ty_args));
@@ -224,34 +237,65 @@ impl Monomorphize for InstructionKind {
             InstructionKind::MethodCall(_, _, _, _) => {
                 unreachable!("method in mono??")
             }
-            InstructionKind::DynamicFunctionCall(dest, root, args) => {
-                InstructionKind::DynamicFunctionCall(dest.process(sub, mono), root.process(sub, mono), args.process(sub, mono))
+            InstructionKind::DynamicFunctionCall(dest, root, args) => InstructionKind::DynamicFunctionCall(
+                dest.process(sub, mono),
+                root.process(sub, mono),
+                args.process(sub, mono),
+            ),
+            InstructionKind::ValueRef(dest, value) => {
+                InstructionKind::ValueRef(dest.process(sub, mono), value.process(sub, mono))
             }
-            InstructionKind::ValueRef(dest, value) => InstructionKind::ValueRef(dest.process(sub, mono), value.process(sub, mono)),
-            InstructionKind::FieldRef(dest, root, name) => InstructionKind::FieldRef(dest.process(sub, mono), root.process(sub, mono), name.clone()),
-            InstructionKind::TupleIndex(dest, root, index) => InstructionKind::TupleIndex(dest.process(sub, mono), root.process(sub, mono), *index),
-            InstructionKind::Bind(lhs, rhs, mutable) => InstructionKind::Bind(lhs.process(sub, mono), rhs.process(sub, mono), mutable.clone()),
-            InstructionKind::Tuple(dest, args) => InstructionKind::Tuple(dest.process(sub, mono), args.process(sub, mono)),
-            InstructionKind::StringLiteral(dest, lit) => InstructionKind::StringLiteral(dest.process(sub, mono), lit.clone()),
-            InstructionKind::IntegerLiteral(dest, lit) => InstructionKind::IntegerLiteral(dest.process(sub, mono), lit.clone()),
+            InstructionKind::FieldRef(dest, root, name) => {
+                InstructionKind::FieldRef(dest.process(sub, mono), root.process(sub, mono), name.clone())
+            }
+            InstructionKind::TupleIndex(dest, root, index) => {
+                InstructionKind::TupleIndex(dest.process(sub, mono), root.process(sub, mono), *index)
+            }
+            InstructionKind::Bind(lhs, rhs, mutable) => {
+                InstructionKind::Bind(lhs.process(sub, mono), rhs.process(sub, mono), mutable.clone())
+            }
+            InstructionKind::Tuple(dest, args) => {
+                InstructionKind::Tuple(dest.process(sub, mono), args.process(sub, mono))
+            }
+            InstructionKind::StringLiteral(dest, lit) => {
+                InstructionKind::StringLiteral(dest.process(sub, mono), lit.clone())
+            }
+            InstructionKind::IntegerLiteral(dest, lit) => {
+                InstructionKind::IntegerLiteral(dest.process(sub, mono), lit.clone())
+            }
             InstructionKind::CharLiteral(dest, lit) => InstructionKind::CharLiteral(dest.process(sub, mono), *lit),
-            InstructionKind::Return(dest, arg) => InstructionKind::Return(dest.process(sub, mono), arg.process(sub, mono)),
-            InstructionKind::Ref(dest, arg) => InstructionKind::Ref(dest.process(sub, mono), arg.process(sub, mono)),
-            InstructionKind::Drop(dest, dropVar) => InstructionKind::Drop(dest.process(sub, mono), dropVar.process(sub, mono)),
-            InstructionKind::Jump(dest, block_id) => InstructionKind::Jump(dest.process(sub, mono), *block_id),
-            InstructionKind::Assign(dest, rhs) => InstructionKind::Assign(dest.process(sub, mono), rhs.process(sub, mono)),
-            InstructionKind::FieldAssign(dest, rhs, fields) => {
-                InstructionKind::FieldAssign(dest.process(sub, mono), rhs.process(sub, mono), fields.process(sub, mono))
+            InstructionKind::Return(dest, arg) => {
+                InstructionKind::Return(dest.process(sub, mono), arg.process(sub, mono))
             }
+            InstructionKind::Ref(dest, arg) => InstructionKind::Ref(dest.process(sub, mono), arg.process(sub, mono)),
+            InstructionKind::Drop(dest, dropVar) => {
+                InstructionKind::Drop(dest.process(sub, mono), dropVar.process(sub, mono))
+            }
+            InstructionKind::Jump(dest, block_id) => InstructionKind::Jump(dest.process(sub, mono), *block_id),
+            InstructionKind::Assign(dest, rhs) => {
+                InstructionKind::Assign(dest.process(sub, mono), rhs.process(sub, mono))
+            }
+            InstructionKind::FieldAssign(dest, rhs, fields) => InstructionKind::FieldAssign(
+                dest.process(sub, mono),
+                rhs.process(sub, mono),
+                fields.process(sub, mono),
+            ),
             InstructionKind::DeclareVar(var) => InstructionKind::DeclareVar(var.process(sub, mono)),
             InstructionKind::Transform(dest, root, index) => {
                 InstructionKind::Transform(dest.process(sub, mono), root.process(sub, mono), index.clone())
             }
-            InstructionKind::EnumSwitch(root, cases) => InstructionKind::EnumSwitch(root.process(sub, mono), cases.clone()),
-            InstructionKind::IntegerSwitch(root, cases) => InstructionKind::IntegerSwitch(root.process(sub, mono), cases.clone()),
-            InstructionKind::StringSwitch(root, cases) => InstructionKind::StringSwitch(root.process(sub, mono), cases.clone()),
+            InstructionKind::EnumSwitch(root, cases) => {
+                InstructionKind::EnumSwitch(root.process(sub, mono), cases.clone())
+            }
+            InstructionKind::IntegerSwitch(root, cases) => {
+                InstructionKind::IntegerSwitch(root.process(sub, mono), cases.clone())
+            }
+            InstructionKind::StringSwitch(root, cases) => {
+                InstructionKind::StringSwitch(root.process(sub, mono), cases.clone())
+            }
             InstructionKind::BlockStart(info) => InstructionKind::BlockStart(info.clone()),
             InstructionKind::BlockEnd(info) => InstructionKind::BlockEnd(info.clone()),
+            InstructionKind::Marker(info) => InstructionKind::Marker(info.clone()),
         }
     }
 }
@@ -304,7 +348,10 @@ impl<'a> Monomorphizer<'a> {
                 self.addKey(Key::Function(main_name, Vec::new()));
             }
             None => {
-                let slogan = format!("No {} function found", format!("{}", self.ctx.yellow(&main_name.toString())));
+                let slogan = format!(
+                    "No {} function found",
+                    format!("{}", self.ctx.yellow(&main_name.toString()))
+                );
                 let r = Report::new(self.ctx, slogan, None);
                 r.print();
             }
@@ -357,11 +404,21 @@ impl<'a> Monomorphizer<'a> {
 
     fn monomorphizeFunction(&mut self, name: QualifiedName, args: Vec<Type>) {
         //println!("MONO FN: {} {}", name, formatTypes(&args));
-        let function = self.program.functions.get(&name).expect("function not found in mono").clone();
+        let function = self
+            .program
+            .functions
+            .get(&name)
+            .expect("function not found in mono")
+            .clone();
         if let FunctionKind::TraitMemberDecl(_) = function.kind {
             return;
         }
-        let params = function.constraintContext.typeParameters.iter().map(|ty| ty.clone()).collect();
+        let params = function
+            .constraintContext
+            .typeParameters
+            .iter()
+            .map(|ty| ty.clone())
+            .collect();
         let sub = createTypeSubstitutionFrom(&params, &args);
         let mut monoFn = function.clone();
         monoFn.result = self.processType(monoFn.result.apply(&sub));

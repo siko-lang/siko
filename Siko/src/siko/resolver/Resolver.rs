@@ -70,8 +70,12 @@ fn addTypeParams(
                     }
                     ConstraintArgument::AssociatedType(name, ty) => {
                         if !traitDef.associatedTypes.contains(&name.toString()) {
-                            ResolverError::AssociatedTypeNotFound(name.toString(), traitDef.name.toString(), constraint.traitName.location.clone())
-                                .report(ctx);
+                            ResolverError::AssociatedTypeNotFound(
+                                name.toString(),
+                                traitDef.name.toString(),
+                                constraint.traitName.location.clone(),
+                            )
+                            .report(ctx);
                         }
                         let irTy = typeResolver.resolveType(ty);
                         let associatedType = AssociatedType {
@@ -202,7 +206,8 @@ impl<'a> Resolver<'a> {
                     ModuleItem::Class(c) => {
                         let typeParams = getTypeParams(&c.typeParams);
                         let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
-                        let constraintContext = createConstraintContext(&c.typeParams, &typeResolver, &self.program, &self.ctx);
+                        let constraintContext =
+                            createConstraintContext(&c.typeParams, &typeResolver, &self.program, &self.ctx);
                         let irType = typeResolver.createDataType(&c.name, &c.typeParams);
                         let mut irClass = IrClass::new(moduleResolver.resolverName(&c.name), irType.clone());
                         let mut ctorParams = Vec::new();
@@ -214,7 +219,14 @@ impl<'a> Resolver<'a> {
                                 ty,
                             })
                         }
-                        let ctor = IrFunction::new(irClass.name.clone(), ctorParams, irType, None, constraintContext, FunctionKind::ClassCtor);
+                        let ctor = IrFunction::new(
+                            irClass.name.clone(),
+                            ctorParams,
+                            irType,
+                            None,
+                            constraintContext,
+                            FunctionKind::ClassCtor,
+                        );
                         self.program.functions.insert(ctor.name.clone(), ctor);
                         for method in &c.methods {
                             irClass.methods.push(DataMethodInfo {
@@ -228,7 +240,8 @@ impl<'a> Resolver<'a> {
                     ModuleItem::Enum(e) => {
                         let typeParams = getTypeParams(&e.typeParams);
                         let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
-                        let constraintContext = createConstraintContext(&e.typeParams, &typeResolver, &self.program, &self.ctx);
+                        let constraintContext =
+                            createConstraintContext(&e.typeParams, &typeResolver, &self.program, &self.ctx);
                         let irType = typeResolver.createDataType(&e.name, &e.typeParams);
                         let mut irEnum = IrEnum::new(moduleResolver.resolverName(&e.name), irType.clone());
                         for (index, variant) in e.variants.iter().enumerate() {
@@ -308,7 +321,9 @@ impl<'a> Resolver<'a> {
                                 };
                                 argTypes.push(ty);
                             }
-                            let result = typeResolver.resolveType(&method.result).changeSelfType(selfType.clone());
+                            let result = typeResolver
+                                .resolveType(&method.result)
+                                .changeSelfType(selfType.clone());
                             irTrait.members.push(MemberInfo {
                                 name: method.name.toString(),
                                 fullName: QualifiedName::Item(Box::new(irTrait.name.clone()), method.name.toString()),
@@ -334,7 +349,8 @@ impl<'a> Resolver<'a> {
                         i.id = self.instances.len() as u64;
                         let typeParams = getTypeParams(&i.typeParams);
                         let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
-                        let constraintContext = createConstraintContext(&i.typeParams, &typeResolver, &self.program, &self.ctx);
+                        let constraintContext =
+                            createConstraintContext(&i.typeParams, &typeResolver, &self.program, &self.ctx);
                         let traitDef = moduleResolver.lookupTrait(&i.traitName, &self.program);
                         let args: Vec<_> = i.types.iter().map(|ty| typeResolver.resolveType(ty)).collect();
                         let mut associatedTypes = Vec::new();
@@ -362,7 +378,8 @@ impl<'a> Resolver<'a> {
                             associatedTypes.push(irAssociatedType);
                         }
                         let selfType = args[0].clone();
-                        let mut irInstance = IrInstance::new(i.id, traitDef.name.clone(), args, associatedTypes, constraintContext);
+                        let mut irInstance =
+                            IrInstance::new(i.id, traitDef.name.clone(), args, associatedTypes, constraintContext);
                         for method in &i.methods {
                             let mut argTypes = Vec::new();
                             for param in &method.params {
@@ -374,11 +391,16 @@ impl<'a> Resolver<'a> {
                                 };
                                 argTypes.push(ty);
                             }
-                            let result = typeResolver.resolveType(&method.result).changeSelfType(selfType.clone());
+                            let result = typeResolver
+                                .resolveType(&method.result)
+                                .changeSelfType(selfType.clone());
                             irInstance.members.push(MemberInfo {
                                 name: method.name.toString(),
                                 fullName: QualifiedName::Instance(
-                                    Box::new(QualifiedName::Item(Box::new(traitDef.name.clone()), method.name.toString())),
+                                    Box::new(QualifiedName::Item(
+                                        Box::new(traitDef.name.clone()),
+                                        method.name.toString(),
+                                    )),
                                     irInstance.id,
                                 ),
                                 default: false,
@@ -405,9 +427,11 @@ impl<'a> Resolver<'a> {
                         let owner = createSelfType(&c.name, c.typeParams.as_ref(), moduleResolver);
                         let typeParams = getTypeParams(&c.typeParams);
                         let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
-                        let constraintContext = createConstraintContext(&c.typeParams, &typeResolver, &self.program, &self.ctx);
+                        let constraintContext =
+                            createConstraintContext(&c.typeParams, &typeResolver, &self.program, &self.ctx);
                         for method in &c.methods {
-                            let functionResolver = FunctionResolver::new(moduleResolver, constraintContext.clone(), Some(owner.clone()));
+                            let functionResolver =
+                                FunctionResolver::new(moduleResolver, constraintContext.clone(), Some(owner.clone()));
                             let irFunction = functionResolver.resolve(
                                 self.ctx,
                                 method,
@@ -424,9 +448,11 @@ impl<'a> Resolver<'a> {
                         let owner = createSelfType(&e.name, e.typeParams.as_ref(), moduleResolver);
                         let typeParams = getTypeParams(&e.typeParams);
                         let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
-                        let constraintContext = createConstraintContext(&e.typeParams, &typeResolver, &self.program, &self.ctx);
+                        let constraintContext =
+                            createConstraintContext(&e.typeParams, &typeResolver, &self.program, &self.ctx);
                         for method in &e.methods {
-                            let functionResolver = FunctionResolver::new(moduleResolver, constraintContext.clone(), Some(owner.clone()));
+                            let functionResolver =
+                                FunctionResolver::new(moduleResolver, constraintContext.clone(), Some(owner.clone()));
                             let irFunction = functionResolver.resolve(
                                 self.ctx,
                                 method,
@@ -445,7 +471,8 @@ impl<'a> Resolver<'a> {
                         let owner = traitDef.params.first().expect("first trait param not found");
                         let typeParams = getTypeParams(&t.typeParams);
                         let mut typeResolver = TypeResolver::new(moduleResolver, &typeParams);
-                        let mut constraintContext = createConstraintContext(&t.typeParams, &typeResolver, &self.program, &self.ctx);
+                        let mut constraintContext =
+                            createConstraintContext(&t.typeParams, &typeResolver, &self.program, &self.ctx);
                         for param in &traitDef.params {
                             typeResolver.addTypeParams(param.clone());
                             constraintContext.addTypeParam(param.clone());
@@ -455,8 +482,13 @@ impl<'a> Resolver<'a> {
                         }
                         for method in &t.methods {
                             //println!("Processing trait method {}", method.name);
-                            let mut constraintContext =
-                                addTypeParams(constraintContext.clone(), &method.typeParams, &typeResolver, &self.program, &self.ctx);
+                            let mut constraintContext = addTypeParams(
+                                constraintContext.clone(),
+                                &method.typeParams,
+                                &typeResolver,
+                                &self.program,
+                                &self.ctx,
+                            );
                             let mut associatedTypes = Vec::new();
                             for assocTy in &traitDef.associatedTypes {
                                 associatedTypes.push(AssociatedType {
@@ -469,7 +501,8 @@ impl<'a> Resolver<'a> {
                                 args: traitDef.params.clone(),
                                 associatedTypes: associatedTypes,
                             });
-                            let functionResolver = FunctionResolver::new(moduleResolver, constraintContext, Some(owner.clone()));
+                            let functionResolver =
+                                FunctionResolver::new(moduleResolver, constraintContext, Some(owner.clone()));
                             let mut irFunction = functionResolver.resolve(
                                 self.ctx,
                                 method,
@@ -525,7 +558,11 @@ impl<'a> Resolver<'a> {
                                 &self.program,
                                 &self.ctx,
                             );
-                            let functionResolver = FunctionResolver::new(moduleResolver, constraintContext, Some(irInstance.types[0].clone()));
+                            let functionResolver = FunctionResolver::new(
+                                moduleResolver,
+                                constraintContext,
+                                Some(irInstance.types[0].clone()),
+                            );
                             let irFunction = functionResolver.resolve(
                                 self.ctx,
                                 method,
@@ -533,7 +570,10 @@ impl<'a> Resolver<'a> {
                                 &self.variants,
                                 &self.program.enums,
                                 QualifiedName::Instance(
-                                    Box::new(QualifiedName::Item(Box::new(irInstance.traitName.clone()), method.name.toString())),
+                                    Box::new(QualifiedName::Item(
+                                        Box::new(irInstance.traitName.clone()),
+                                        method.name.toString(),
+                                    )),
                                     irInstance.id,
                                 ),
                                 &typeResolver,
@@ -553,7 +593,8 @@ impl<'a> Resolver<'a> {
                         let typeParams = getTypeParams(&f.typeParams);
                         let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
                         //println!("Processing function {}", f.name);
-                        let constraintContext = createConstraintContext(&f.typeParams, &typeResolver, &self.program, &self.ctx);
+                        let constraintContext =
+                            createConstraintContext(&f.typeParams, &typeResolver, &self.program, &self.ctx);
                         let functionResolver = FunctionResolver::new(moduleResolver, constraintContext, None);
                         let irFunction = functionResolver.resolve(
                             self.ctx,

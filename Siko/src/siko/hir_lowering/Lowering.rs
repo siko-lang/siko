@@ -1,15 +1,17 @@
 use crate::siko::{
     hir::{
         Data::{Class as HirClass, Enum as HirEnum},
-        Function::{Block, BlockId, Function as HirFunction, FunctionKind, InstructionKind as HirInstructionKind, Variable},
+        Function::{
+            Block, BlockId, Function as HirFunction, FunctionKind, InstructionKind as HirInstructionKind, Variable,
+        },
         Program::Program as HirProgram,
         Type::Type as HirType,
     },
     mir::{
         Data::{Field as MirField, Struct, Union, Variant as MirVariant},
         Function::{
-            Block as MirBlock, EnumCase as MirEnumCase, Function as MirFunction, FunctionKind as MirFunctionKind, Instruction,
-            IntegerCase as MirIntegerCase, Param as MirParam, Value, Variable as MirVariable,
+            Block as MirBlock, EnumCase as MirEnumCase, Function as MirFunction, FunctionKind as MirFunctionKind,
+            Instruction, IntegerCase as MirIntegerCase, Param as MirParam, Value, Variable as MirVariable,
         },
         Program::Program as MirProgram,
         Type::Type as MirType,
@@ -55,12 +57,16 @@ impl<'a> Builder<'a> {
                         let dest = self.buildVariable(dest);
                         let arg = &args[0];
                         block.instructions.push(Instruction::Declare(dest.clone()));
-                        block.instructions.push(Instruction::Memcpy(self.buildVariable(arg), dest.clone()));
+                        block
+                            .instructions
+                            .push(Instruction::Memcpy(self.buildVariable(arg), dest.clone()));
                     } else {
                         let args = args.iter().map(|var| self.buildVariable(var)).collect();
                         let dest = self.buildVariable(dest);
                         block.instructions.push(Instruction::Declare(dest.clone()));
-                        block.instructions.push(Instruction::Call(dest, convertName(name), args));
+                        block
+                            .instructions
+                            .push(Instruction::Call(dest, convertName(name), args));
                     }
                 }
                 HirInstructionKind::Tuple(_, _) => {
@@ -98,12 +104,16 @@ impl<'a> Builder<'a> {
                     block.instructions.push(Instruction::Jump(self.getBlockName(*blockId)));
                 }
                 HirInstructionKind::Return(_, v) => {
-                    block.instructions.push(Instruction::Return(Value::Var(self.buildVariable(v))));
+                    block
+                        .instructions
+                        .push(Instruction::Return(Value::Var(self.buildVariable(v))));
                 }
                 HirInstructionKind::IntegerLiteral(dest, v) => {
                     let dest = self.buildVariable(dest);
                     block.instructions.push(Instruction::Declare(dest.clone()));
-                    block.instructions.push(Instruction::IntegerLiteral(dest, v.to_string()));
+                    block
+                        .instructions
+                        .push(Instruction::IntegerLiteral(dest, v.to_string()));
                 }
                 HirInstructionKind::StringLiteral(dest, v) => {
                     let dest = self.buildVariable(dest);
@@ -146,7 +156,12 @@ impl<'a> Builder<'a> {
                 }
                 HirInstructionKind::FieldRef(dest, root, name) => {
                     let dest = self.buildVariable(dest);
-                    let className = root.ty.as_ref().expect("no type").getName().expect("no name for field ref root");
+                    let className = root
+                        .ty
+                        .as_ref()
+                        .expect("no type")
+                        .getName()
+                        .expect("no name for field ref root");
                     let c = self.program.classes.get(&className).expect("class not found");
                     let (_, index) = c.getField(name);
                     let root = self.buildVariable(root);

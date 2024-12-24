@@ -21,8 +21,7 @@ impl Graph {
     }
 
     pub fn printDot(&self) {
-        let mut f = std::fs::File::create(format!("dots/{}.dot", self.name,))
-            .expect("failed to open dot file");
+        let mut f = std::fs::File::create(format!("dots/{}.dot", self.name,)).expect("failed to open dot file");
         write!(f, "digraph D {{\n").unwrap();
         write!(f, "node [shape=circle fontname=Arial splines=ortho];\n").unwrap();
         for (node, label) in &self.nodes {

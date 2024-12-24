@@ -179,7 +179,9 @@ impl Apply for FieldInfo {
 impl Apply for InstructionKind {
     fn apply(&self, sub: &TypeSubstitution) -> Self {
         match self {
-            InstructionKind::FunctionCall(dest, name, args) => InstructionKind::FunctionCall(dest.apply(sub), name.clone(), args.apply(sub)),
+            InstructionKind::FunctionCall(dest, name, args) => {
+                InstructionKind::FunctionCall(dest.apply(sub), name.clone(), args.apply(sub))
+            }
             InstructionKind::MethodCall(dest, receiver, name, args) => {
                 InstructionKind::MethodCall(dest.apply(sub), receiver.apply(sub), name.clone(), args.apply(sub))
             }
@@ -187,9 +189,15 @@ impl Apply for InstructionKind {
                 InstructionKind::DynamicFunctionCall(dest.apply(sub), callable.apply(sub), args.apply(sub))
             }
             InstructionKind::ValueRef(dest, value) => InstructionKind::ValueRef(dest.apply(sub), value.clone()),
-            InstructionKind::FieldRef(dest, root, field) => InstructionKind::FieldRef(dest.apply(sub), root.apply(sub), field.clone()),
-            InstructionKind::TupleIndex(dest, root, index) => InstructionKind::TupleIndex(dest.apply(sub), root.apply(sub), *index),
-            InstructionKind::Bind(dest, rhs, mutable) => InstructionKind::Bind(dest.apply(sub), rhs.apply(sub), *mutable),
+            InstructionKind::FieldRef(dest, root, field) => {
+                InstructionKind::FieldRef(dest.apply(sub), root.apply(sub), field.clone())
+            }
+            InstructionKind::TupleIndex(dest, root, index) => {
+                InstructionKind::TupleIndex(dest.apply(sub), root.apply(sub), *index)
+            }
+            InstructionKind::Bind(dest, rhs, mutable) => {
+                InstructionKind::Bind(dest.apply(sub), rhs.apply(sub), *mutable)
+            }
             InstructionKind::Tuple(dest, args) => InstructionKind::Tuple(dest.apply(sub), args.apply(sub)),
             InstructionKind::StringLiteral(dest, s) => InstructionKind::StringLiteral(dest.apply(sub), s.clone()),
             InstructionKind::IntegerLiteral(dest, n) => InstructionKind::IntegerLiteral(dest.apply(sub), n.clone()),
@@ -199,14 +207,21 @@ impl Apply for InstructionKind {
             InstructionKind::Drop(dest, drop) => InstructionKind::Drop(dest.apply(sub), drop.apply(sub)),
             InstructionKind::Jump(dest, block_id) => InstructionKind::Jump(dest.apply(sub), *block_id),
             InstructionKind::Assign(name, rhs) => InstructionKind::Assign(name.apply(sub), rhs.apply(sub)),
-            InstructionKind::FieldAssign(name, rhs, fields) => InstructionKind::FieldAssign(name.apply(sub), rhs.apply(sub), fields.apply(sub)),
+            InstructionKind::FieldAssign(name, rhs, fields) => {
+                InstructionKind::FieldAssign(name.apply(sub), rhs.apply(sub), fields.apply(sub))
+            }
             InstructionKind::DeclareVar(var) => InstructionKind::DeclareVar(var.apply(sub)),
-            InstructionKind::Transform(dest, root, index) => InstructionKind::Transform(dest.apply(sub), root.apply(sub), index.clone()),
+            InstructionKind::Transform(dest, root, index) => {
+                InstructionKind::Transform(dest.apply(sub), root.apply(sub), index.clone())
+            }
             InstructionKind::EnumSwitch(root, cases) => InstructionKind::EnumSwitch(root.apply(sub), cases.clone()),
-            InstructionKind::IntegerSwitch(root, cases) => InstructionKind::IntegerSwitch(root.apply(sub), cases.clone()),
+            InstructionKind::IntegerSwitch(root, cases) => {
+                InstructionKind::IntegerSwitch(root.apply(sub), cases.clone())
+            }
             InstructionKind::StringSwitch(root, cases) => InstructionKind::StringSwitch(root.apply(sub), cases.clone()),
             InstructionKind::BlockStart(info) => InstructionKind::BlockStart(info.clone()),
             InstructionKind::BlockEnd(info) => InstructionKind::BlockEnd(info.clone()),
+            InstructionKind::Marker(info) => InstructionKind::Marker(info.clone()),
         }
     }
 }
@@ -265,17 +280,30 @@ pub fn instantiateType2(allocator: &mut TypeVarAllocator, ty: &Type) -> (Type, T
 impl ApplyVariable for InstructionKind {
     fn applyVar(&self, sub: &VariableSubstitution) -> Self {
         match self {
-            InstructionKind::FunctionCall(dest, name, args) => InstructionKind::FunctionCall(dest.applyVar(sub), name.clone(), args.applyVar(sub)),
-            InstructionKind::MethodCall(dest, receiver, name, args) => {
-                InstructionKind::MethodCall(dest.applyVar(sub), receiver.applyVar(sub), name.clone(), args.applyVar(sub))
+            InstructionKind::FunctionCall(dest, name, args) => {
+                InstructionKind::FunctionCall(dest.applyVar(sub), name.clone(), args.applyVar(sub))
             }
+            InstructionKind::MethodCall(dest, receiver, name, args) => InstructionKind::MethodCall(
+                dest.applyVar(sub),
+                receiver.applyVar(sub),
+                name.clone(),
+                args.applyVar(sub),
+            ),
             InstructionKind::DynamicFunctionCall(dest, callable, args) => {
                 InstructionKind::DynamicFunctionCall(dest.applyVar(sub), callable.applyVar(sub), args.applyVar(sub))
             }
-            InstructionKind::ValueRef(dest, value) => InstructionKind::ValueRef(dest.applyVar(sub), value.applyVar(sub)),
-            InstructionKind::FieldRef(dest, root, field) => InstructionKind::FieldRef(dest.applyVar(sub), root.applyVar(sub), field.clone()),
-            InstructionKind::TupleIndex(dest, root, index) => InstructionKind::TupleIndex(dest.applyVar(sub), root.applyVar(sub), *index),
-            InstructionKind::Bind(dest, rhs, mutable) => InstructionKind::Bind(dest.applyVar(sub), rhs.applyVar(sub), *mutable),
+            InstructionKind::ValueRef(dest, value) => {
+                InstructionKind::ValueRef(dest.applyVar(sub), value.applyVar(sub))
+            }
+            InstructionKind::FieldRef(dest, root, field) => {
+                InstructionKind::FieldRef(dest.applyVar(sub), root.applyVar(sub), field.clone())
+            }
+            InstructionKind::TupleIndex(dest, root, index) => {
+                InstructionKind::TupleIndex(dest.applyVar(sub), root.applyVar(sub), *index)
+            }
+            InstructionKind::Bind(dest, rhs, mutable) => {
+                InstructionKind::Bind(dest.applyVar(sub), rhs.applyVar(sub), *mutable)
+            }
             InstructionKind::Tuple(dest, args) => InstructionKind::Tuple(dest.applyVar(sub), args.applyVar(sub)),
             InstructionKind::StringLiteral(dest, s) => InstructionKind::StringLiteral(dest.applyVar(sub), s.clone()),
             InstructionKind::IntegerLiteral(dest, n) => InstructionKind::IntegerLiteral(dest.applyVar(sub), n.clone()),
@@ -285,14 +313,23 @@ impl ApplyVariable for InstructionKind {
             InstructionKind::Drop(dest, drop) => InstructionKind::Drop(dest.applyVar(sub), drop.applyVar(sub)),
             InstructionKind::Jump(dest, block_id) => InstructionKind::Jump(dest.applyVar(sub), *block_id),
             InstructionKind::Assign(name, rhs) => InstructionKind::Assign(name.applyVar(sub), rhs.applyVar(sub)),
-            InstructionKind::FieldAssign(name, rhs, fields) => InstructionKind::FieldAssign(name.applyVar(sub), rhs.applyVar(sub), fields.clone()),
+            InstructionKind::FieldAssign(name, rhs, fields) => {
+                InstructionKind::FieldAssign(name.applyVar(sub), rhs.applyVar(sub), fields.clone())
+            }
             InstructionKind::DeclareVar(var) => InstructionKind::DeclareVar(var.applyVar(sub)),
-            InstructionKind::Transform(dest, root, index) => InstructionKind::Transform(dest.applyVar(sub), root.applyVar(sub), index.clone()),
+            InstructionKind::Transform(dest, root, index) => {
+                InstructionKind::Transform(dest.applyVar(sub), root.applyVar(sub), index.clone())
+            }
             InstructionKind::EnumSwitch(root, cases) => InstructionKind::EnumSwitch(root.applyVar(sub), cases.clone()),
-            InstructionKind::IntegerSwitch(root, cases) => InstructionKind::IntegerSwitch(root.applyVar(sub), cases.clone()),
-            InstructionKind::StringSwitch(root, cases) => InstructionKind::StringSwitch(root.applyVar(sub), cases.clone()),
+            InstructionKind::IntegerSwitch(root, cases) => {
+                InstructionKind::IntegerSwitch(root.applyVar(sub), cases.clone())
+            }
+            InstructionKind::StringSwitch(root, cases) => {
+                InstructionKind::StringSwitch(root.applyVar(sub), cases.clone())
+            }
             InstructionKind::BlockStart(info) => InstructionKind::BlockStart(info.clone()),
             InstructionKind::BlockEnd(info) => InstructionKind::BlockEnd(info.clone()),
+            InstructionKind::Marker(info) => InstructionKind::Marker(info.clone()),
         }
     }
 }

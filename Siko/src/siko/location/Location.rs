@@ -129,7 +129,10 @@ impl Location {
     }
 
     pub fn new(fileId: FileId, span: Span) -> Location {
-        Location { fileId: fileId, span: span }
+        Location {
+            fileId: fileId,
+            span: span,
+        }
     }
 
     pub fn merge(self, other: Location) -> Location {

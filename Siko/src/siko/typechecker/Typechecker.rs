@@ -61,7 +61,12 @@ pub struct Typechecker<'a> {
 }
 
 impl<'a> Typechecker<'a> {
-    pub fn new(ctx: &'a ReportContext, program: &'a Program, traitMethodSelector: &'a TraitMethodSelector, f: &'a Function) -> Typechecker<'a> {
+    pub fn new(
+        ctx: &'a ReportContext,
+        program: &'a Program,
+        traitMethodSelector: &'a TraitMethodSelector,
+        f: &'a Function,
+    ) -> Typechecker<'a> {
         Typechecker {
             ctx: ctx,
             program: program,
@@ -190,6 +195,7 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::StringSwitch(_, _) => {}
                         InstructionKind::BlockStart(_) => {}
                         InstructionKind::BlockEnd(_) => {}
+                        InstructionKind::Marker(_) => {}
                     }
                 }
             }
@@ -206,7 +212,12 @@ impl<'a> Typechecker<'a> {
     fn unify(&mut self, ty1: Type, ty2: Type, location: Location) {
         //println!("UNIFY {} {}", ty1, ty2);
         if let Err(_) = unify(&mut self.substitution, &ty1, &ty2, false) {
-            reportError(self.ctx, ty1.apply(&self.substitution), ty2.apply(&self.substitution), location);
+            reportError(
+                self.ctx,
+                ty1.apply(&self.substitution),
+                ty2.apply(&self.substitution),
+                location,
+            );
         }
     }
 
@@ -229,6 +240,7 @@ impl<'a> Typechecker<'a> {
         fnType: Type,
         neededConstraints: &ConstraintContext,
         knownConstraints: &ConstraintContext,
+        builder: &mut BlockBuilder,
     ) -> Type {
         //println!("checkFunctionCall: {} {} {}", fnType, neededConstraints, knownConstraints);
         let (fnType, sub) = instantiateType2(&mut self.allocator, &fnType);
@@ -239,7 +251,8 @@ impl<'a> Typechecker<'a> {
             None => return fnType,
         };
         if args.len() != fnArgs.len() {
-            TypecheckerError::ArgCountMismatch(fnArgs.len() as u32, args.len() as u32, resultVar.location.clone()).report(self.ctx);
+            TypecheckerError::ArgCountMismatch(fnArgs.len() as u32, args.len() as u32, resultVar.location.clone())
+                .report(self.ctx);
         }
         if fnArgs.len() > 0 {
             fnResult = fnResult.changeSelfType(fnArgs[0].clone());
@@ -274,7 +287,12 @@ impl<'a> Typechecker<'a> {
         fnType.apply(&self.substitution)
     }
 
-    fn checkConstraint(&mut self, neededConstraints: &ConstraintContext, knownConstraints: &ConstraintContext, location: Location) {
+    fn checkConstraint(
+        &mut self,
+        neededConstraints: &ConstraintContext,
+        knownConstraints: &ConstraintContext,
+        location: Location,
+    ) {
         //println!("needed {}", neededConstraints);
         //println!("known {}", knownConstraints);
         for c in &neededConstraints.constraints {
@@ -290,7 +308,9 @@ impl<'a> Typechecker<'a> {
                                 for instanceAssocTy in &instance.associatedTypes {
                                     if instanceAssocTy.name == ctxAssocTy.name {
                                         //println!("ASSOC MATCH {} {}", instanceAssocTy.ty, ctxAssocTy.ty);
-                                        if let Err(_) = unify(&mut self.substitution, &instanceAssocTy.ty, &ctxAssocTy.ty, false) {
+                                        if let Err(_) =
+                                            unify(&mut self.substitution, &instanceAssocTy.ty, &ctxAssocTy.ty, false)
+                                        {
                                             reportError(
                                                 self.ctx,
                                                 instanceAssocTy.ty.apply(&self.substitution),
@@ -303,15 +323,26 @@ impl<'a> Typechecker<'a> {
                             }
                         }
                         ResolutionResult::Ambiguous(_) => {
-                            TypecheckerError::AmbiguousInstances(c.traitName.toString(), formatTypes(&c.args), location.clone(), Vec::new())
-                                .report(self.ctx);
+                            TypecheckerError::AmbiguousInstances(
+                                c.traitName.toString(),
+                                formatTypes(&c.args),
+                                location.clone(),
+                                Vec::new(),
+                            )
+                            .report(self.ctx);
                         }
                         ResolutionResult::NoInstanceFound => {
-                            TypecheckerError::InstanceNotFound(c.traitName.toString(), formatTypes(&c.args), location.clone()).report(self.ctx);
+                            TypecheckerError::InstanceNotFound(
+                                c.traitName.toString(),
+                                formatTypes(&c.args),
+                                location.clone(),
+                            )
+                            .report(self.ctx);
                         }
                     }
                 } else {
-                    TypecheckerError::InstanceNotFound(c.traitName.toString(), formatTypes(&c.args), location.clone()).report(self.ctx);
+                    TypecheckerError::InstanceNotFound(c.traitName.toString(), formatTypes(&c.args), location.clone())
+                        .report(self.ctx);
                 }
             }
         }
@@ -406,7 +437,14 @@ impl<'a> Typechecker<'a> {
             InstructionKind::FunctionCall(dest, name, args) => {
                 let targetFn = self.program.functions.get(name).expect("Function not found");
                 let fnType = targetFn.getType();
-                self.checkFunctionCall(args, dest, fnType, &targetFn.constraintContext, &self.f.constraintContext);
+                self.checkFunctionCall(
+                    args,
+                    dest,
+                    fnType,
+                    &targetFn.constraintContext,
+                    &self.f.constraintContext,
+                    builder,
+                );
             }
             InstructionKind::MethodCall(dest, receiver, methodName, args) => {
                 let receiverType = self.getType(receiver);
@@ -422,11 +460,19 @@ impl<'a> Typechecker<'a> {
                 let targetFn = self.program.functions.get(&name).expect("Function not found");
                 let mut fnType = targetFn.getType();
 
-                let mutableCall = self.mutables.contains(&receiver.value.to_string()) && fnType.getResult().hasSelfType();
+                let mutableCall =
+                    self.mutables.contains(&receiver.value.to_string()) && fnType.getResult().hasSelfType();
                 if mutableCall {
                     fnType = fnType.changeMethodResult();
                 }
-                let fnType = self.checkFunctionCall(&args, dest, fnType, &targetFn.constraintContext, &self.f.constraintContext);
+                let fnType = self.checkFunctionCall(
+                    &args,
+                    dest,
+                    fnType,
+                    &targetFn.constraintContext,
+                    &self.f.constraintContext,
+                    builder,
+                );
                 if mutableCall {
                     let result = fnType.getResult();
                     let (baseType, selfLessType) = if targetFn.getType().getResult().isTuple() {
@@ -450,7 +496,14 @@ impl<'a> Typechecker<'a> {
             }
             InstructionKind::DynamicFunctionCall(dest, callable, args) => {
                 let fnType = self.getType(callable);
-                self.checkFunctionCall(&args, dest, fnType, &ConstraintContext::new(), &self.f.constraintContext);
+                self.checkFunctionCall(
+                    &args,
+                    dest,
+                    fnType,
+                    &ConstraintContext::new(),
+                    &self.f.constraintContext,
+                    builder,
+                );
             }
             InstructionKind::ValueRef(dest, value) => {
                 let receiverType = self.getType(value);
@@ -524,7 +577,11 @@ impl<'a> Typechecker<'a> {
                         let e = self.program.enums.get(&name).expect("not an enum in transform!");
                         let e = self.instantiateEnum(e, &rootTy.unpackRef());
                         let v = &e.variants[*index as usize];
-                        self.unify(self.getType(dest), Type::Tuple(v.items.clone()), instruction.location.clone());
+                        self.unify(
+                            self.getType(dest),
+                            Type::Tuple(v.items.clone()),
+                            instruction.location.clone(),
+                        );
                     }
                     None => {
                         TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(self.ctx);
@@ -557,7 +614,8 @@ impl<'a> Typechecker<'a> {
                 match receiverType {
                     Type::Tuple(t) => {
                         if *index as usize >= t.len() {
-                            TypecheckerError::FieldNotFound(format!(".{}", index), instruction.location.clone()).report(&self.ctx);
+                            TypecheckerError::FieldNotFound(format!(".{}", index), instruction.location.clone())
+                                .report(&self.ctx);
                         }
                         let fieldType = t[*index as usize].clone();
                         self.unify(self.getType(dest), fieldType, instruction.location.clone());
@@ -567,6 +625,7 @@ impl<'a> Typechecker<'a> {
             }
             InstructionKind::BlockStart(_) => {}
             InstructionKind::BlockEnd(_) => {}
+            InstructionKind::Marker(_) => {}
         }
     }
 
@@ -576,7 +635,15 @@ impl<'a> Typechecker<'a> {
             return;
         };
         // the double loop is needed to reach even the unreachable blocks
-        let mut allblocksIds = self.f.body.as_ref().unwrap().blocks.iter().map(|b| b.id).collect::<VecDeque<BlockId>>();
+        let mut allblocksIds = self
+            .f
+            .body
+            .as_ref()
+            .unwrap()
+            .blocks
+            .iter()
+            .map(|b| b.id)
+            .collect::<VecDeque<BlockId>>();
         loop {
             if let Some(blockId) = allblocksIds.pop_front() {
                 self.queue.push_back(blockId);
@@ -812,7 +879,11 @@ impl<'a> Typechecker<'a> {
                                     args.push(argVar.clone());
                                     nextImplicitResult += 1;
                                     self.types.insert(argVar.value.to_string(), argType.clone());
-                                    let kind = InstructionKind::TupleIndex(argVar.clone(), dest.clone(), (argIndex + 1) as i32);
+                                    let kind = InstructionKind::TupleIndex(
+                                        argVar.clone(),
+                                        dest.clone(),
+                                        (argIndex + 1) as i32,
+                                    );
                                     let tupleIndex = Instruction {
                                         implicit: true,
                                         kind: kind,

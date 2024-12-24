@@ -33,7 +33,11 @@ pub struct Variant {
 
 impl fmt::Display for Struct {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Struct {} (size: {}, alignment: {}) {{\n", self.name, self.size, self.alignment)?;
+        write!(
+            f,
+            "Struct {} (size: {}, alignment: {}) {{\n",
+            self.name, self.size, self.alignment
+        )?;
         for field in &self.fields {
             write!(f, "    {}\n", field)?;
         }

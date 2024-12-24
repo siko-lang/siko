@@ -62,7 +62,8 @@ impl BlockBuilder {
     pub fn addInstruction(&mut self, instruction: InstructionKind, location: Location) {
         match self.mode {
             Mode::Append => {
-                self.bodyBuilder.addInstruction(self.blockId, instruction, location, self.isImplicit);
+                self.bodyBuilder
+                    .addInstruction(self.blockId, instruction, location, self.isImplicit);
             }
             Mode::Iterator(index) => {
                 self.bodyBuilder
@@ -99,27 +100,50 @@ impl BlockBuilder {
         value
     }
 
-    pub fn addFunctionCall(&mut self, functionName: QualifiedName, args: Vec<Variable>, location: Location) -> Variable {
+    pub fn addFunctionCall(
+        &mut self,
+        functionName: QualifiedName,
+        args: Vec<Variable>,
+        location: Location,
+    ) -> Variable {
         let result = self.bodyBuilder.createValue("call", location.clone());
-        self.addInstruction(InstructionKind::FunctionCall(result.clone(), functionName, args), location);
+        self.addInstruction(
+            InstructionKind::FunctionCall(result.clone(), functionName, args),
+            location,
+        );
         result
     }
 
-    pub fn addMethodCall(&mut self, name: String, receiver: Variable, args: Vec<Variable>, location: Location) -> Variable {
+    pub fn addMethodCall(
+        &mut self,
+        name: String,
+        receiver: Variable,
+        args: Vec<Variable>,
+        location: Location,
+    ) -> Variable {
         let result = self.bodyBuilder.createValue("call", location.clone());
-        self.addInstruction(InstructionKind::MethodCall(result.clone(), receiver, name, args), location);
+        self.addInstruction(
+            InstructionKind::MethodCall(result.clone(), receiver, name, args),
+            location,
+        );
         result
     }
 
     pub fn addDynamicFunctionCall(&mut self, value: Variable, args: Vec<Variable>, location: Location) -> Variable {
         let result = self.bodyBuilder.createValue("call", location.clone());
-        self.addInstruction(InstructionKind::DynamicFunctionCall(result.clone(), value, args), location);
+        self.addInstruction(
+            InstructionKind::DynamicFunctionCall(result.clone(), value, args),
+            location,
+        );
         result
     }
 
     pub fn addFieldRef(&mut self, receiveer: Variable, field: String, location: Location) -> Variable {
         let value = self.bodyBuilder.createValue("fieldRef", location.clone());
-        self.addInstruction(InstructionKind::FieldRef(value.clone(), receiveer, field), location.clone());
+        self.addInstruction(
+            InstructionKind::FieldRef(value.clone(), receiveer, field),
+            location.clone(),
+        );
         value
     }
 
@@ -131,7 +155,10 @@ impl BlockBuilder {
 
     pub fn addIntegerLiteral(&mut self, literal: String, location: Location) -> Variable {
         let value = self.bodyBuilder.createValue("lit", location.clone());
-        self.addInstruction(InstructionKind::IntegerLiteral(value.clone(), literal), location.clone());
+        self.addInstruction(
+            InstructionKind::IntegerLiteral(value.clone(), literal),
+            location.clone(),
+        );
         value
     }
 
@@ -155,7 +182,10 @@ impl BlockBuilder {
 
     pub fn addTupleIndex(&mut self, tuple: Variable, index: i32, location: Location) -> Variable {
         let value = self.bodyBuilder.createValue("tupleIndex", location.clone());
-        self.addInstruction(InstructionKind::TupleIndex(value.clone(), tuple, index), location.clone());
+        self.addInstruction(
+            InstructionKind::TupleIndex(value.clone(), tuple, index),
+            location.clone(),
+        );
         value
     }
 

@@ -21,7 +21,10 @@ use super::TypeResolver::TypeResolver;
 
 fn createOpName(traitName: &str, method: &str) -> QualifiedName {
     let stdOps = Box::new(QualifiedName::Module("Std.Ops".to_string()));
-    QualifiedName::Item(Box::new(QualifiedName::Item(stdOps.clone(), traitName.to_string())), method.to_string())
+    QualifiedName::Item(
+        Box::new(QualifiedName::Item(stdOps.clone(), traitName.to_string())),
+        method.to_string(),
+    )
 }
 
 #[derive(Debug, Clone)]
@@ -80,7 +83,14 @@ impl<'a> ExprResolver<'a> {
         var
     }
 
-    fn processFieldAssign<'e>(&mut self, receiver: &Expr, name: &Identifier, env: &'e Environment<'e>, rhsId: Variable, location: Location) {
+    fn processFieldAssign<'e>(
+        &mut self,
+        receiver: &Expr,
+        name: &Identifier,
+        env: &'e Environment<'e>,
+        rhsId: Variable,
+        location: Location,
+    ) {
         let mut receiver = receiver;
         let mut fields: Vec<FieldInfo> = Vec::new();
         fields.push(FieldInfo {
@@ -95,7 +105,9 @@ impl<'a> ExprResolver<'a> {
                     match value {
                         Some(value) => {
                             fields.reverse();
-                            self.bodyBuilder.current().addFieldAssign(value.clone(), rhsId, fields, location.clone());
+                            self.bodyBuilder
+                                .current()
+                                .addFieldAssign(value.clone(), rhsId, fields, location.clone());
                             return;
                         }
                         None => {
@@ -111,7 +123,9 @@ impl<'a> ExprResolver<'a> {
                         index: 0,
                     };
                     fields.reverse();
-                    self.bodyBuilder.current().addFieldAssign(value.clone(), rhsId, fields, location.clone());
+                    self.bodyBuilder
+                        .current()
+                        .addFieldAssign(value.clone(), rhsId, fields, location.clone());
                     return;
                 }
                 SimpleExpr::FieldAccess(r, name) => {
@@ -160,10 +174,13 @@ impl<'a> ExprResolver<'a> {
                             let value = env.resolve(&name.toString());
                             match value {
                                 Some(value) => {
-                                    self.bodyBuilder.current().addAssign(value.clone(), rhsId, lhs.location.clone());
+                                    self.bodyBuilder
+                                        .current()
+                                        .addAssign(value.clone(), rhsId, lhs.location.clone());
                                 }
                                 None => {
-                                    ResolverError::UnknownValue(name.name.clone(), name.location.clone()).report(self.ctx);
+                                    ResolverError::UnknownValue(name.name.clone(), name.location.clone())
+                                        .report(self.ctx);
                                 }
                             }
                         }
@@ -217,13 +234,18 @@ impl<'a> ExprResolver<'a> {
             SimpleExpr::Name(name) => {
                 let irName = self.moduleResolver.resolverName(name);
                 if self.emptyVariants.contains(&irName) {
-                    return self.bodyBuilder.current().addFunctionCall(irName, Vec::new(), expr.location.clone());
+                    return self
+                        .bodyBuilder
+                        .current()
+                        .addFunctionCall(irName, Vec::new(), expr.location.clone());
                 }
                 ResolverError::UnknownValue(name.name.clone(), name.location.clone()).report(self.ctx);
             }
             SimpleExpr::FieldAccess(receiver, name) => {
                 let receiver = self.resolveExpr(receiver, env);
-                self.bodyBuilder.current().addFieldRef(receiver, name.toString(), expr.location.clone())
+                self.bodyBuilder
+                    .current()
+                    .addFieldRef(receiver, name.toString(), expr.location.clone())
             }
             SimpleExpr::Call(callable, args) => {
                 let mut irArgs = Vec::new();
@@ -238,14 +260,21 @@ impl<'a> ExprResolver<'a> {
                         if self.enums.get(&irName).is_some() {
                             ResolverError::NotAConstructor(name.name.clone(), name.location.clone()).report(self.ctx);
                         }
-                        return self.bodyBuilder.current().addFunctionCall(irName, irArgs, expr.location.clone());
+                        return self
+                            .bodyBuilder
+                            .current()
+                            .addFunctionCall(irName, irArgs, expr.location.clone());
                     }
                     SimpleExpr::Value(name) => {
                         if let Some(name) = env.resolve(&name.name) {
-                            self.bodyBuilder.current().addDynamicFunctionCall(name, irArgs, expr.location.clone())
+                            self.bodyBuilder
+                                .current()
+                                .addDynamicFunctionCall(name, irArgs, expr.location.clone())
                         } else {
                             let irName = self.moduleResolver.resolverName(name);
-                            self.bodyBuilder.current().addFunctionCall(irName, irArgs, expr.location.clone())
+                            self.bodyBuilder
+                                .current()
+                                .addFunctionCall(irName, irArgs, expr.location.clone())
                         }
                     }
                     _ => {
@@ -286,7 +315,9 @@ impl<'a> ExprResolver<'a> {
                     .addBind(name.clone(), initId, true, expr.location.clone());
                 let mut loopBodyBuilder = self.bodyBuilder.createBlock();
                 let mut loopExitBuilder = self.bodyBuilder.createBlock();
-                self.bodyBuilder.current().addJump(loopBodyBuilder.getBlockId(), expr.location.clone());
+                self.bodyBuilder
+                    .current()
+                    .addJump(loopBodyBuilder.getBlockId(), expr.location.clone());
                 let mut loopEnv = Environment::child(env);
                 loopBodyBuilder.current();
                 self.resolvePattern(pattern, &mut loopEnv, name.clone());
@@ -306,7 +337,9 @@ impl<'a> ExprResolver<'a> {
                 self.loopInfos.pop();
                 loopExitBuilder.current();
                 let finalValue = self.createValue("finalValueRef", expr.location.clone());
-                loopExitBuilder.implicit().addBind(finalValue.clone(), name, false, expr.location.clone());
+                loopExitBuilder
+                    .implicit()
+                    .addBind(finalValue.clone(), name, false, expr.location.clone());
                 finalValue
             }
             SimpleExpr::BinaryOp(op, lhs, rhs) => {
@@ -347,11 +380,20 @@ impl<'a> ExprResolver<'a> {
                     location: expr.location.clone(),
                 };
                 let name = self.moduleResolver.resolverName(&id);
-                self.bodyBuilder.current().addFunctionCall(name, vec![rhsId], expr.location.clone())
+                self.bodyBuilder
+                    .current()
+                    .addFunctionCall(name, vec![rhsId], expr.location.clone())
             }
             SimpleExpr::Match(body, branches) => {
                 let bodyId = self.resolveExpr(body, env);
-                let mut matchResolver = MatchCompiler::new(self, bodyId, expr.location.clone(), body.location.clone(), branches.clone(), env);
+                let mut matchResolver = MatchCompiler::new(
+                    self,
+                    bodyId,
+                    expr.location.clone(),
+                    body.location.clone(),
+                    branches.clone(),
+                    env,
+                );
                 matchResolver.compile()
             }
             SimpleExpr::Block(block) => {
@@ -373,9 +415,18 @@ impl<'a> ExprResolver<'a> {
                 }
                 self.bodyBuilder.current().addTuple(irArgs, expr.location.clone())
             }
-            SimpleExpr::StringLiteral(v) => self.bodyBuilder.current().addStringLiteral(v.clone(), expr.location.clone()),
-            SimpleExpr::IntegerLiteral(v) => self.bodyBuilder.current().addIntegerLiteral(v.clone(), expr.location.clone()),
-            SimpleExpr::CharLiteral(v) => self.bodyBuilder.current().addCharLiteral(v.clone(), expr.location.clone()),
+            SimpleExpr::StringLiteral(v) => self
+                .bodyBuilder
+                .current()
+                .addStringLiteral(v.clone(), expr.location.clone()),
+            SimpleExpr::IntegerLiteral(v) => self
+                .bodyBuilder
+                .current()
+                .addIntegerLiteral(v.clone(), expr.location.clone()),
+            SimpleExpr::CharLiteral(v) => self
+                .bodyBuilder
+                .current()
+                .addCharLiteral(v.clone(), expr.location.clone()),
             SimpleExpr::Return(arg) => {
                 let argId = match arg {
                     Some(arg) => self.resolveExpr(arg, env),
@@ -392,7 +443,9 @@ impl<'a> ExprResolver<'a> {
                     Some(info) => info.clone(),
                     None => ResolverError::BreakOutsideLoop(expr.location.clone()).report(self.ctx),
                 };
-                self.bodyBuilder.current().addAssign(info.var, argId, expr.location.clone());
+                self.bodyBuilder
+                    .current()
+                    .addAssign(info.var, argId, expr.location.clone());
                 self.bodyBuilder.current().addJump(info.exit, expr.location.clone())
             }
             SimpleExpr::Continue(arg) => {
@@ -404,7 +457,9 @@ impl<'a> ExprResolver<'a> {
                     Some(info) => info.clone(),
                     None => ResolverError::BreakOutsideLoop(expr.location.clone()).report(self.ctx),
                 };
-                self.bodyBuilder.current().addAssign(info.var, argId, expr.location.clone());
+                self.bodyBuilder
+                    .current()
+                    .addAssign(info.var, argId, expr.location.clone());
                 self.bodyBuilder.current().addJump(info.body, expr.location.clone())
             }
             SimpleExpr::Ref(arg) => {
@@ -423,12 +478,17 @@ impl<'a> ExprResolver<'a> {
             SimplePattern::Named(_name, _args) => todo!(),
             SimplePattern::Bind(name, mutable) => {
                 let new = self.createValue(&name.name, pat.location.clone());
-                self.bodyBuilder.current().addBind(new.clone(), root, *mutable, pat.location.clone());
+                self.bodyBuilder
+                    .current()
+                    .addBind(new.clone(), root, *mutable, pat.location.clone());
                 env.addValue(name.toString(), new);
             }
             SimplePattern::Tuple(args) => {
                 for (index, arg) in args.iter().enumerate() {
-                    let tupleValue = self.bodyBuilder.current().addTupleIndex(root.clone(), index as i32, pat.location.clone());
+                    let tupleValue =
+                        self.bodyBuilder
+                            .current()
+                            .addTupleIndex(root.clone(), index as i32, pat.location.clone());
                     self.resolvePattern(arg, env, tupleValue);
                 }
             }
@@ -447,7 +507,10 @@ impl<'a> ExprResolver<'a> {
             .implicit()
             .addDeclare(functionResult.clone(), body.location.clone());
         self.resolveBlock(body, env, functionResult.clone());
-        self.bodyBuilder.current().implicit().addReturn(functionResult, body.location.clone());
+        self.bodyBuilder
+            .current()
+            .implicit()
+            .addReturn(functionResult, body.location.clone());
         self.bodyBuilder.sortBlocks();
     }
 

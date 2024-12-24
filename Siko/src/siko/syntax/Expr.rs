@@ -74,10 +74,14 @@ impl SimpleExpr {
             SimpleExpr::TupleIndex(expr, _) => expr.doesNotReturn(),
             SimpleExpr::Call(func, args) => func.doesNotReturn() || args.iter().any(|arg| arg.doesNotReturn()),
             SimpleExpr::MethodCall(obj, _, args) => obj.doesNotReturn() || args.iter().any(|arg| arg.doesNotReturn()),
-            SimpleExpr::For(_, iter, body) | SimpleExpr::Loop(_, iter, body) => iter.doesNotReturn() || body.doesNotReturn(),
+            SimpleExpr::For(_, iter, body) | SimpleExpr::Loop(_, iter, body) => {
+                iter.doesNotReturn() || body.doesNotReturn()
+            }
             SimpleExpr::BinaryOp(_, left, right) => left.doesNotReturn() || right.doesNotReturn(),
             SimpleExpr::UnaryOp(_, expr) => expr.doesNotReturn(),
-            SimpleExpr::Match(expr, branches) => expr.doesNotReturn() || branches.iter().all(|branch| branch.body.doesNotReturn()),
+            SimpleExpr::Match(expr, branches) => {
+                expr.doesNotReturn() || branches.iter().all(|branch| branch.body.doesNotReturn())
+            }
             SimpleExpr::Block(block) => block.doesNotReturn(),
             SimpleExpr::Tuple(exprs) => exprs.iter().any(|expr| expr.doesNotReturn()),
             SimpleExpr::Ref(expr) => expr.doesNotReturn(),

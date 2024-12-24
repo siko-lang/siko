@@ -77,12 +77,26 @@ impl Builder {
         return irBlock.add(instruction, location, implicit);
     }
 
-    pub fn insertInstruction(&mut self, id: BlockId, index: usize, instruction: InstructionKind, location: Location, implicit: bool) {
+    pub fn insertInstruction(
+        &mut self,
+        id: BlockId,
+        index: usize,
+        instruction: InstructionKind,
+        location: Location,
+        implicit: bool,
+    ) {
         let irBlock = &mut self.body.blocks[id.id as usize];
         return irBlock.insert(index, instruction, location, implicit);
     }
 
-    pub fn replaceInstruction(&mut self, id: BlockId, index: usize, instruction: InstructionKind, location: Location, implicit: bool) {
+    pub fn replaceInstruction(
+        &mut self,
+        id: BlockId,
+        index: usize,
+        instruction: InstructionKind,
+        location: Location,
+        implicit: bool,
+    ) {
         let irBlock = &mut self.body.blocks[id.id as usize];
         return irBlock.replace(index, instruction, location, implicit);
     }
@@ -171,12 +185,26 @@ impl BodyBuilder {
         bodyBuilder.addInstruction(id, instruction, location, implicit);
     }
 
-    pub fn insertInstruction(&mut self, id: BlockId, index: usize, instruction: InstructionKind, location: Location, implicit: bool) {
+    pub fn insertInstruction(
+        &mut self,
+        id: BlockId,
+        index: usize,
+        instruction: InstructionKind,
+        location: Location,
+        implicit: bool,
+    ) {
         let mut bodyBuilder = self.bodyBuilder.borrow_mut();
         bodyBuilder.insertInstruction(id, index, instruction, location, implicit);
     }
 
-    pub fn replaceInstruction(&mut self, id: BlockId, index: usize, instruction: InstructionKind, location: Location, implicit: bool) {
+    pub fn replaceInstruction(
+        &mut self,
+        id: BlockId,
+        index: usize,
+        instruction: InstructionKind,
+        location: Location,
+        implicit: bool,
+    ) {
         let mut bodyBuilder = self.bodyBuilder.borrow_mut();
         bodyBuilder.replaceInstruction(id, index, instruction, location, implicit);
     }

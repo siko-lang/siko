@@ -36,7 +36,11 @@ impl TypecheckerError {
                 r.print();
             }
             TypecheckerError::InstanceNotFound(traitName, params, l) => {
-                let slogan = format!("Instance for {} not found with type(s): {}", ctx.yellow(traitName), ctx.yellow(params));
+                let slogan = format!(
+                    "Instance for {} not found with type(s): {}",
+                    ctx.yellow(traitName),
+                    ctx.yellow(params)
+                );
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }

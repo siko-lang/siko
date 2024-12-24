@@ -112,7 +112,15 @@ impl DropList {
 
 impl Display for DropList {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[{}]", self.paths.iter().map(|p| p.to_string()).collect::<Vec<String>>().join(", "))
+        write!(
+            f,
+            "[{}]",
+            self.paths
+                .iter()
+                .map(|p| p.to_string())
+                .collect::<Vec<String>>()
+                .join(", ")
+        )
     }
 }
 
@@ -194,8 +202,16 @@ impl Display for Context {
         write!(
             f,
             " live {}, moved {}, block {}",
-            self.live.iter().map(|v| v.value.visibleName()).collect::<Vec<String>>().join(", "),
-            self.moved.iter().map(|u| u.path.userPath()).collect::<Vec<String>>().join(", "),
+            self.live
+                .iter()
+                .map(|v| v.value.visibleName())
+                .collect::<Vec<String>>()
+                .join(", "),
+            self.moved
+                .iter()
+                .map(|u| u.path.userPath())
+                .collect::<Vec<String>>()
+                .join(", "),
             self.rootBlock.getCurrentBlockId()
         )
     }
@@ -335,7 +351,11 @@ impl<'a> DropChecker<'a> {
                         nextVar += 1;
                         let mut varSwap = VariableSubstitution::new();
                         varSwap.add(var.clone(), implicitCloneDest.clone());
-                        let kind = InstructionKind::FunctionCall(implicitCloneDest.clone(), getCloneName(), vec![implicitRefDest]);
+                        let kind = InstructionKind::FunctionCall(
+                            implicitCloneDest.clone(),
+                            getCloneName(),
+                            vec![implicitRefDest],
+                        );
                         let implicitRef = Instruction {
                             implicit: true,
                             kind: kind,
@@ -458,7 +478,10 @@ impl<'a> DropChecker<'a> {
             }
 
             if prevUsage.var == *var {
-                let slogan = format!("Value {} moved in previous iteration of loop", self.ctx.yellow(&currentPath.userPath()));
+                let slogan = format!(
+                    "Value {} moved in previous iteration of loop",
+                    self.ctx.yellow(&currentPath.userPath())
+                );
                 //let slogan = format!("Value {} already moved", self.ctx.yellow(&currentPath.to_string()));
                 let mut entries = Vec::new();
                 entries.push(Entry::new(None, var.location.clone()));
@@ -469,7 +492,10 @@ impl<'a> DropChecker<'a> {
                 //let slogan = format!("Value {} already moved", self.ctx.yellow(&currentPath.to_string()));
                 let mut entries = Vec::new();
                 entries.push(Entry::new(None, var.location.clone()));
-                entries.push(Entry::new(Some(format!("NOTE: previously moved here")), prevUsage.var.location.clone()));
+                entries.push(Entry::new(
+                    Some(format!("NOTE: previously moved here")),
+                    prevUsage.var.location.clone(),
+                ));
                 let r = Report::build(self.ctx, slogan, entries);
                 r.print();
             }
@@ -520,7 +546,8 @@ impl<'a> DropChecker<'a> {
                     if let Some(path) = self.paths.get(&receiver.value) {
                         self.paths.insert(dest.value.clone(), path.add(fieldName.clone()));
                     } else {
-                        self.paths.insert(dest.value.clone(), Path::new(receiver.clone()).add(fieldName.clone()));
+                        self.paths
+                            .insert(dest.value.clone(), Path::new(receiver.clone()).add(fieldName.clone()));
                     }
                 }
                 InstructionKind::TupleIndex(dest, _, _) => {
@@ -603,6 +630,7 @@ impl<'a> DropChecker<'a> {
                     self.dropLists.insert(endId.id.clone(), dropList);
                     context.rootBlock.endBlock();
                 }
+                InstructionKind::Marker(_) => {}
             }
         }
     }

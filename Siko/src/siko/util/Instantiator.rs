@@ -7,10 +7,7 @@ pub trait Allocator {
 
 pub trait Instantiable {
     type Item;
-    fn instantiate<A: Allocator<Item = Self::Item>>(
-        &self,
-        instantiator: &mut Instantiator<Self::Item, A>,
-    ) -> Self;
+    fn instantiate<A: Allocator<Item = Self::Item>>(&self, instantiator: &mut Instantiator<Self::Item, A>) -> Self;
 }
 
 pub struct Instantiator<T, A> {
@@ -67,9 +64,7 @@ impl<I, T: Instantiable<Item = I>> Instantiable for Option<T> {
     }
 }
 
-impl<I, K: Instantiable<Item = I> + Ord, V: Instantiable<Item = I>> Instantiable
-    for BTreeMap<K, V>
-{
+impl<I, K: Instantiable<Item = I> + Ord, V: Instantiable<Item = I>> Instantiable for BTreeMap<K, V> {
     type Item = I;
     fn instantiate<A: Allocator<Item = I>>(&self, instantiator: &mut Instantiator<I, A>) -> Self {
         let mut result = BTreeMap::new();

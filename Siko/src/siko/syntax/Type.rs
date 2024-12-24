@@ -25,11 +25,19 @@ impl fmt::Display for Type {
                 }
             }
             Type::Tuple(elements) => {
-                let elements = elements.iter().map(|el| format!("{}", el)).collect::<Vec<_>>().join(", ");
+                let elements = elements
+                    .iter()
+                    .map(|el| format!("{}", el))
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 write!(f, "({})", elements)
             }
             Type::Function(params, ret) => {
-                let params = params.iter().map(|param| format!("{}", param)).collect::<Vec<_>>().join(", ");
+                let params = params
+                    .iter()
+                    .map(|param| format!("{}", param))
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 write!(f, "fn({}) -> {}", params, ret)
             }
             Type::Reference(inner) => write!(f, "&{}", inner),
@@ -48,7 +56,12 @@ pub struct TypeParameterDeclaration {
 
 impl fmt::Display for TypeParameterDeclaration {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let params = self.params.iter().map(|param| format!("{}", param)).collect::<Vec<_>>().join(", ");
+        let params = self
+            .params
+            .iter()
+            .map(|param| format!("{}", param))
+            .collect::<Vec<_>>()
+            .join(", ");
 
         if self.constraints.is_empty() {
             write!(f, "[{}]", params)
@@ -87,7 +100,12 @@ impl fmt::Display for ConstraintArgument {
 
 impl fmt::Display for Constraint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let args = self.args.iter().map(|arg| format!("{}", arg)).collect::<Vec<_>>().join(", ");
+        let args = self
+            .args
+            .iter()
+            .map(|arg| format!("{}", arg))
+            .collect::<Vec<_>>()
+            .join(", ");
         write!(f, "{}[{}]", self.traitName, args)
     }
 }

@@ -215,6 +215,7 @@ pub enum InstructionKind {
     StringSwitch(Variable, Vec<StringCase>),
     BlockStart(BlockInfo),
     BlockEnd(BlockInfo),
+    Marker(u32),
 }
 
 impl Display for InstructionKind {
@@ -256,6 +257,7 @@ impl InstructionKind {
             InstructionKind::StringSwitch(_, _) => None,
             InstructionKind::BlockStart(_) => None,
             InstructionKind::BlockEnd(_) => None,
+            InstructionKind::Marker(_) => None,
         }
     }
 
@@ -307,13 +309,16 @@ impl InstructionKind {
             }
             InstructionKind::BlockStart(_) => Vec::new(),
             InstructionKind::BlockEnd(_) => Vec::new(),
+            InstructionKind::Marker(_) => Vec::new(),
         }
     }
 
     pub fn dump(&self) -> String {
         match self {
             InstructionKind::FunctionCall(dest, name, args) => format!("{} = call({}({:?}))", dest, name, args),
-            InstructionKind::MethodCall(dest, receiver, name, args) => format!("{} = methodcall({}.{}({:?}))", dest, receiver, name, args),
+            InstructionKind::MethodCall(dest, receiver, name, args) => {
+                format!("{} = methodcall({}.{}({:?}))", dest, receiver, name, args)
+            }
             InstructionKind::DynamicFunctionCall(dest, callable, args) => {
                 format!("{} = DYN_CALL({}, {:?})", dest, callable, args)
             }
@@ -341,7 +346,11 @@ impl InstructionKind {
             }
             InstructionKind::Assign(v, arg) => format!("assign({}, {})", v, arg),
             InstructionKind::FieldAssign(v, arg, fields) => {
-                let fields = fields.iter().map(|info| info.to_string()).collect::<Vec<_>>().join(", ");
+                let fields = fields
+                    .iter()
+                    .map(|info| info.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 format!("fieldassign({}, {}, {})", v, arg, fields)
             }
             InstructionKind::DeclareVar(v) => format!("declare({})", v),
@@ -351,6 +360,7 @@ impl InstructionKind {
             InstructionKind::StringSwitch(root, cases) => format!("stringswitch({}, {:?})", root, cases),
             InstructionKind::BlockStart(info) => format!("blockstart({})", info),
             InstructionKind::BlockEnd(info) => format!("blockend({})", info),
+            InstructionKind::Marker(id) => format!("marker({})", id),
         }
     }
 }

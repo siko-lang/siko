@@ -21,7 +21,10 @@ fn typecheck(ctx: &ReportContext, mut program: Program) -> Program {
     let mut result = BTreeMap::new();
     for (_, f) in &program.functions {
         let moduleName = f.name.module();
-        let traitMethodSelector = &program.traitMethodSelectors.get(&moduleName).expect("Trait method selector not found");
+        let traitMethodSelector = &program
+            .traitMethodSelectors
+            .get(&moduleName)
+            .expect("Trait method selector not found");
         let mut typechecker = Typechecker::new(ctx, &program, &traitMethodSelector, f);
         let typedFn = typechecker.run();
         //typedFn.dump();

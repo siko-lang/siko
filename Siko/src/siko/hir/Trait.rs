@@ -47,7 +47,12 @@ impl fmt::Display for Trait {
         };
 
         let members_str = if !self.members.is_empty() {
-            let members = self.members.iter().map(|m| format!("{}", m)).collect::<Vec<_>>().join("\n    ");
+            let members = self
+                .members
+                .iter()
+                .map(|m| format!("{}", m))
+                .collect::<Vec<_>>()
+                .join("\n    ");
             format!("\n    Members:\n    {}", members)
         } else {
             String::new()
@@ -107,8 +112,18 @@ impl Instance {
 
 impl fmt::Display for Instance {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let methods = self.members.iter().map(|m| format!("{}", m)).collect::<Vec<_>>().join(",\n    ");
-        let associatedTypes = self.associatedTypes.iter().map(|m| format!("{}", m)).collect::<Vec<_>>().join(",\n    ");
+        let methods = self
+            .members
+            .iter()
+            .map(|m| format!("{}", m))
+            .collect::<Vec<_>>()
+            .join(",\n    ");
+        let associatedTypes = self
+            .associatedTypes
+            .iter()
+            .map(|m| format!("{}", m))
+            .collect::<Vec<_>>()
+            .join(",\n    ");
         write!(
             f,
             "instance #{} of {} [{}] {} {{\n    {}\n    {}\n}}",
@@ -145,7 +160,9 @@ impl CompareSpecificity for Type {
             r
         }
         match (self, other) {
-            (Type::Named(n1, args1, _), Type::Named(n2, args2, _)) if n1 == n2 => CompareSpecificity::compare(args1, args2),
+            (Type::Named(n1, args1, _), Type::Named(n2, args2, _)) if n1 == n2 => {
+                CompareSpecificity::compare(args1, args2)
+            }
             (Type::Tuple(args1), Type::Tuple(args2)) => CompareSpecificity::compare(args1, args2),
             (Type::Function(args1, r1), Type::Function(args2, r2)) => {
                 let mut r = BTreeSet::new();

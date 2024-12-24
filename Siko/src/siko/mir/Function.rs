@@ -36,7 +36,11 @@ impl fmt::Display for Function {
                     f,
                     "Function: {}\nArguments: ({}) -> {}\nClassCtor",
                     self.name,
-                    self.args.iter().map(|arg| format!("{}", arg)).collect::<Vec<_>>().join(", "),
+                    self.args
+                        .iter()
+                        .map(|arg| format!("{}", arg))
+                        .collect::<Vec<_>>()
+                        .join(", "),
                     self.result,
                 )
             }
@@ -45,7 +49,11 @@ impl fmt::Display for Function {
                     f,
                     "Function: {}\nArguments: ({}) -> {}\nVariantCtor",
                     self.name,
-                    self.args.iter().map(|arg| format!("{}", arg)).collect::<Vec<_>>().join(", "),
+                    self.args
+                        .iter()
+                        .map(|arg| format!("{}", arg))
+                        .collect::<Vec<_>>()
+                        .join(", "),
                     self.result,
                 )
             }
@@ -54,9 +62,17 @@ impl fmt::Display for Function {
                     f,
                     "Function: {}\nArguments: ({}) -> {}\nBlocks:\n{}",
                     self.name,
-                    self.args.iter().map(|arg| format!("{}", arg)).collect::<Vec<_>>().join(", "),
+                    self.args
+                        .iter()
+                        .map(|arg| format!("{}", arg))
+                        .collect::<Vec<_>>()
+                        .join(", "),
                     self.result,
-                    blocks.iter().map(|block| format!("{}", block)).collect::<Vec<_>>().join("\n")
+                    blocks
+                        .iter()
+                        .map(|block| format!("{}", block))
+                        .collect::<Vec<_>>()
+                        .join("\n")
                 )
             }
             FunctionKind::Extern => {
@@ -64,7 +80,11 @@ impl fmt::Display for Function {
                     f,
                     "Function: {}\nArguments: ({}) -> {}\nExtern",
                     self.name,
-                    self.args.iter().map(|arg| format!("{}", arg)).collect::<Vec<_>>().join(", "),
+                    self.args
+                        .iter()
+                        .map(|arg| format!("{}", arg))
+                        .collect::<Vec<_>>()
+                        .join(", "),
                     self.result,
                 )
             }

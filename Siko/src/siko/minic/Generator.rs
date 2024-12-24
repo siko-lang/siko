@@ -7,8 +7,8 @@ use std::{
 use crate::siko::{
     minic::Function::Value,
     qualifiedname::{
-        getPtrAllocateArrayName, getPtrCloneName, getPtrDeallocateName, getPtrMemcpyName, getPtrNullName, getPtrOffsetName, getPtrPrintName,
-        getPtrStoreName,
+        getPtrAllocateArrayName, getPtrCloneName, getPtrDeallocateName, getPtrMemcpyName, getPtrNullName,
+        getPtrOffsetName, getPtrPrintName, getPtrStoreName,
     },
     util::DependencyProcessor::processDependencies,
 };
@@ -68,7 +68,13 @@ impl MiniCGenerator {
         writeln!(buf, "struct {} {{", name)?;
         for (index, field) in s.fields.iter().enumerate() {
             if field.ty.isArray() {
-                writeln!(buf, "  {} field{}[{}];", getTypeName(&field.ty), index, field.ty.getArraySize())?;
+                writeln!(
+                    buf,
+                    "  {} field{}[{}];",
+                    getTypeName(&field.ty),
+                    index,
+                    field.ty.getArraySize()
+                )?;
             } else {
                 writeln!(buf, "  {} field{};", getTypeName(&field.ty), index)?;
             }
@@ -264,9 +270,15 @@ impl MiniCGenerator {
             writeln!(buf, "}}\n")?;
         }
 
-        if f.name.starts_with(&getPtrAllocateArrayName().toString().replace(".", "_")) {
+        if f.name
+            .starts_with(&getPtrAllocateArrayName().toString().replace(".", "_"))
+        {
             writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    return malloc(sizeof({}) * count);", getTypeName(&f.result.getBase()))?;
+            writeln!(
+                buf,
+                "    return malloc(sizeof({}) * count);",
+                getTypeName(&f.result.getBase())
+            )?;
             writeln!(buf, "}}\n")?;
         }
 

@@ -101,7 +101,10 @@ impl<'a> ExprParser for Parser<'a> {
         let trueBranch = self.parseExpr();
         branches.push(Branch {
             pattern: Pattern {
-                pattern: SimplePattern::Named(Identifier::new(&getTrueName().toString(), self.currentLocation()), Vec::new()),
+                pattern: SimplePattern::Named(
+                    Identifier::new(&getTrueName().toString(), self.currentLocation()),
+                    Vec::new(),
+                ),
                 location: self.currentLocation(),
             },
             body: trueBranch,
@@ -115,7 +118,10 @@ impl<'a> ExprParser for Parser<'a> {
             let falseBranch = self.parseExpr();
             branches.push(Branch {
                 pattern: Pattern {
-                    pattern: SimplePattern::Named(Identifier::new(&getFalseName().toString(), self.currentLocation()), Vec::new()),
+                    pattern: SimplePattern::Named(
+                        Identifier::new(&getFalseName().toString(), self.currentLocation()),
+                        Vec::new(),
+                    ),
                     location: self.currentLocation(),
                 },
                 body: falseBranch,
@@ -123,7 +129,10 @@ impl<'a> ExprParser for Parser<'a> {
         } else {
             branches.push(Branch {
                 pattern: Pattern {
-                    pattern: SimplePattern::Named(Identifier::new(&getFalseName().toString(), self.currentLocation()), Vec::new()),
+                    pattern: SimplePattern::Named(
+                        Identifier::new(&getFalseName().toString(), self.currentLocation()),
+                        Vec::new(),
+                    ),
                     location: self.currentLocation(),
                 },
                 body: Expr {
@@ -395,7 +404,9 @@ impl<'a> ExprParser for Parser<'a> {
             }
             TokenKind::Keyword(KeywordKind::Return) => {
                 self.expect(TokenKind::Keyword(KeywordKind::Return));
-                let arg = if self.check(TokenKind::Misc(MiscKind::Semicolon)) || self.check(TokenKind::Misc(MiscKind::Comma)) {
+                let arg = if self.check(TokenKind::Misc(MiscKind::Semicolon))
+                    || self.check(TokenKind::Misc(MiscKind::Comma))
+                {
                     None
                 } else {
                     Some(Box::new(self.parseExpr()))
@@ -404,7 +415,9 @@ impl<'a> ExprParser for Parser<'a> {
             }
             TokenKind::Keyword(KeywordKind::Continue) => {
                 self.expect(TokenKind::Keyword(KeywordKind::Continue));
-                let arg = if self.check(TokenKind::Misc(MiscKind::Semicolon)) || self.check(TokenKind::Misc(MiscKind::Comma)) {
+                let arg = if self.check(TokenKind::Misc(MiscKind::Semicolon))
+                    || self.check(TokenKind::Misc(MiscKind::Comma))
+                {
                     None
                 } else {
                     Some(Box::new(self.parseExpr()))
@@ -413,7 +426,9 @@ impl<'a> ExprParser for Parser<'a> {
             }
             TokenKind::Keyword(KeywordKind::Break) => {
                 self.expect(TokenKind::Keyword(KeywordKind::Break));
-                let arg = if self.check(TokenKind::Misc(MiscKind::Semicolon)) || self.check(TokenKind::Misc(MiscKind::Comma)) {
+                let arg = if self.check(TokenKind::Misc(MiscKind::Semicolon))
+                    || self.check(TokenKind::Misc(MiscKind::Comma))
+                {
                     None
                 } else {
                     Some(Box::new(self.parseExpr()))

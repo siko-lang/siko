@@ -162,7 +162,10 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         }
         let mut contBlockId = BlockId::first();
         if returns {
-            resolver.bodyBuilder.current().addDeclare(matchValue.clone(), matchLocation.clone());
+            resolver
+                .bodyBuilder
+                .current()
+                .addDeclare(matchValue.clone(), matchLocation.clone());
             contBlockId = resolver.bodyBuilder.createBlock().getBlockId();
         }
         MatchCompiler {
@@ -307,11 +310,16 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     }
                     (decision, bindings)
                 } else {
-                    (decision.add(DataPath::Class(Box::new(parentData.clone()), name)), bindings)
+                    (
+                        decision.add(DataPath::Class(Box::new(parentData.clone()), name)),
+                        bindings,
+                    )
                 }
             }
             SimplePattern::Bind(name, _) => {
-                bindings.bindings.insert(decision.add(parentData.clone()), name.toString());
+                bindings
+                    .bindings
+                    .insert(decision.add(parentData.clone()), name.toString());
                 (decision.add(DataPath::Wildcard(Box::new(parentData.clone()))), bindings)
             }
             SimplePattern::Tuple(args) => {
@@ -324,8 +332,14 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                 }
                 (decision, bindings)
             }
-            SimplePattern::StringLiteral(v) => (decision.add(DataPath::StringLiteral(Box::new(parentData.clone()), v.clone())), bindings),
-            SimplePattern::IntegerLiteral(v) => (decision.add(DataPath::IntegerLiteral(Box::new(parentData.clone()), v.clone())), bindings),
+            SimplePattern::StringLiteral(v) => (
+                decision.add(DataPath::StringLiteral(Box::new(parentData.clone()), v.clone())),
+                bindings,
+            ),
+            SimplePattern::IntegerLiteral(v) => (
+                decision.add(DataPath::IntegerLiteral(Box::new(parentData.clone()), v.clone())),
+                bindings,
+            ),
             SimplePattern::Wildcard => (decision.add(DataPath::Wildcard(Box::new(parentData.clone()))), bindings),
         }
     }
@@ -334,7 +348,8 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         let mut matches = Vec::new();
         for (index, branch) in self.branches.clone().iter().enumerate() {
             let branchPattern = self.resolve(&branch.pattern);
-            let (decision, bindings) = self.generateDecisions(&branchPattern, &DataPath::Root, &DecisionPath::new(), Bindings::new());
+            let (decision, bindings) =
+                self.generateDecisions(&branchPattern, &DataPath::Root, &DecisionPath::new(), Bindings::new());
             //println!("{} Pattern {}\n decision: {}", index, branch.pattern, decision);
             let choices = self.generateChoices(&branchPattern);
             matches.push(Match {
@@ -345,7 +360,8 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
             });
             for choice in choices {
                 //println!("   Alt: {}", choice);
-                let (decision, bindings) = self.generateDecisions(&choice, &DataPath::Root, &DecisionPath::new(), Bindings::new());
+                let (decision, bindings) =
+                    self.generateDecisions(&choice, &DataPath::Root, &DecisionPath::new(), Bindings::new());
                 matches.push(Match {
                     kind: MatchKind::Alternative,
                     pattern: choice,
@@ -401,14 +417,17 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
 
         for (index, branch) in self.branches.clone().iter().enumerate() {
             if !self.usedPatterns.contains(&(index as i64)) {
-                self.errors.push(ResolverError::RedundantPattern(branch.pattern.location.clone()));
+                self.errors
+                    .push(ResolverError::RedundantPattern(branch.pattern.location.clone()));
             }
         }
 
         let missingPatterns: Vec<_> = self.missingPatterns.iter().map(|p| p.to_string()).collect();
         if !missingPatterns.is_empty() {
-            self.errors
-                .push(ResolverError::MissingPattern(missingPatterns, self.bodyLocation.clone()));
+            self.errors.push(ResolverError::MissingPattern(
+                missingPatterns,
+                self.bodyLocation.clone(),
+            ));
         }
 
         for err in &self.errors {
@@ -472,13 +491,23 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                                 builder.current();
                                 let (v, index) = enumDef.getVariant(name);
                                 let ctx = if v.items.len() > 0 {
-                                    let transformValue = self.resolver.createValue("transform", self.bodyLocation.clone());
-                                    let transform = InstructionKind::Transform(transformValue.clone(), root.clone(), index);
+                                    let transformValue =
+                                        self.resolver.createValue("transform", self.bodyLocation.clone());
+                                    let transform =
+                                        InstructionKind::Transform(transformValue.clone(), root.clone(), index);
                                     builder.addInstruction(transform, self.bodyLocation.clone());
                                     let mut ctx = ctx.clone();
                                     for (index, _) in v.items.iter().enumerate() {
-                                        let value = builder.addTupleIndex(transformValue.clone(), index as i32, self.bodyLocation.clone());
-                                        let path = DataPath::Variant(Box::new(switch.dataPath.clone()), name.clone(), enumName.clone());
+                                        let value = builder.addTupleIndex(
+                                            transformValue.clone(),
+                                            index as i32,
+                                            self.bodyLocation.clone(),
+                                        );
+                                        let path = DataPath::Variant(
+                                            Box::new(switch.dataPath.clone()),
+                                            name.clone(),
+                                            enumName.clone(),
+                                        );
                                         let path = DataPath::ItemIndex(Box::new(path), index as i64);
                                         ctx = ctx.add(path, value.clone());
                                     }
@@ -495,7 +524,10 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                                 cases.push(c);
                             }
                         }
-                        builder.addInstruction(InstructionKind::EnumSwitch(root.clone(), cases), self.bodyLocation.clone());
+                        builder.addInstruction(
+                            InstructionKind::EnumSwitch(root.clone(), cases),
+                            self.bodyLocation.clone(),
+                        );
                     }
                     SwitchKind::Integer => {
                         let mut cases = Vec::new();
@@ -513,8 +545,12 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                             cases.push(c);
                         }
                         let refValue = builder.addRef(root, self.bodyLocation.clone());
-                        let cloneValue = builder.addFunctionCall(getCloneName(), vec![refValue], self.bodyLocation.clone());
-                        builder.addInstruction(InstructionKind::IntegerSwitch(cloneValue, cases), self.bodyLocation.clone());
+                        let cloneValue =
+                            builder.addFunctionCall(getCloneName(), vec![refValue], self.bodyLocation.clone());
+                        builder.addInstruction(
+                            InstructionKind::IntegerSwitch(cloneValue, cases),
+                            self.bodyLocation.clone(),
+                        );
                     }
                     SwitchKind::String => {
                         let mut blocks = Vec::new();
@@ -539,10 +575,16 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                                     let current = blocks.remove(0);
                                     let mut builder = self.resolver.bodyBuilder.block(current);
                                     builder.current();
-                                    let value = builder.implicit().addStringLiteral(v.clone(), self.bodyLocation.clone());
+                                    let value = builder
+                                        .implicit()
+                                        .addStringLiteral(v.clone(), self.bodyLocation.clone());
                                     let root = self.resolver.indexVar(root.clone());
                                     let value = self.resolver.indexVar(value);
-                                    let eqValue = builder.addFunctionCall(getStringEqName(), vec![root, value], self.bodyLocation.clone());
+                                    let eqValue = builder.addFunctionCall(
+                                        getStringEqName(),
+                                        vec![root, value],
+                                        self.bodyLocation.clone(),
+                                    );
                                     let mut cases = Vec::new();
                                     if blocks.is_empty() {
                                         cases.push(EnumCase {
@@ -550,15 +592,19 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                                             branch: defaultBranch,
                                         });
                                     } else {
-                                        cases.push(EnumCase { index: 0, branch: blocks[0] });
+                                        cases.push(EnumCase {
+                                            index: 0,
+                                            branch: blocks[0],
+                                        });
                                     }
                                     cases.push(EnumCase {
                                         index: 1,
                                         branch: self.compileNode(&node, ctx),
                                     });
-                                    builder
-                                        .implicit()
-                                        .addInstruction(InstructionKind::EnumSwitch(eqValue, cases), self.bodyLocation.clone());
+                                    builder.implicit().addInstruction(
+                                        InstructionKind::EnumSwitch(eqValue, cases),
+                                        self.bodyLocation.clone(),
+                                    );
                                 }
                                 Case::Default => {}
                                 c => unreachable!("string case {:?}", c),
@@ -578,10 +624,12 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     for (path, name) in &m.bindings.bindings {
                         let bindValue = ctx.get(path.decisions.last().unwrap());
                         let new = self.resolver.createValue(&name, self.bodyLocation.clone());
-                        self.resolver
-                            .bodyBuilder
-                            .current()
-                            .addBind(new.clone(), bindValue, false, self.bodyLocation.clone());
+                        self.resolver.bodyBuilder.current().addBind(
+                            new.clone(),
+                            bindValue,
+                            false,
+                            self.bodyLocation.clone(),
+                        );
                         env.addValue(name.clone(), new);
                     }
                     let exprValue = self.resolver.resolveExpr(&branch.body, &mut env);
@@ -623,13 +671,17 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     let e = self.resolver.enums.get(enumName).expect("enumName not found");
                     let mut cases = BTreeMap::new();
                     for variant in &e.variants {
-                        let casePath = DataPath::Variant(Box::new(currentPath.clone()), variant.name.clone(), enumName.clone());
+                        let casePath =
+                            DataPath::Variant(Box::new(currentPath.clone()), variant.name.clone(), enumName.clone());
                         let currentDecision = currentDecision.add(casePath.clone());
                         let mut pendings = pendingPaths.clone();
                         for index in 0..variant.items.len() {
                             pendings.insert(
                                 0,
-                                DataPath::ItemIndex(Box::new(casePath.clone()), (variant.items.len() - index - 1) as i64),
+                                DataPath::ItemIndex(
+                                    Box::new(casePath.clone()),
+                                    (variant.items.len() - index - 1) as i64,
+                                ),
                             );
                         }
                         let node = self.buildNode(pendings, &currentDecision, dataTypes, allMatches);
@@ -918,7 +970,9 @@ struct Bindings {
 
 impl Bindings {
     pub fn new() -> Bindings {
-        Bindings { bindings: BTreeMap::new() }
+        Bindings {
+            bindings: BTreeMap::new(),
+        }
     }
 }
 
@@ -939,7 +993,9 @@ struct CompileContext {
 
 impl CompileContext {
     fn new() -> CompileContext {
-        CompileContext { values: BTreeMap::new() }
+        CompileContext {
+            values: BTreeMap::new(),
+        }
     }
 
     fn add(&self, path: DataPath, value: Variable) -> CompileContext {

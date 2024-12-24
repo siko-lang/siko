@@ -19,7 +19,12 @@ impl Display for Constraint {
             write!(f, "{}[{}]", self.traitName, formatTypes(&self.args))?;
         }
         if !self.associatedTypes.is_empty() {
-            let assocTypes = self.associatedTypes.iter().map(|m| format!("{}", m)).collect::<Vec<_>>().join(",");
+            let assocTypes = self
+                .associatedTypes
+                .iter()
+                .map(|m| format!("{}", m))
+                .collect::<Vec<_>>()
+                .join(",");
             write!(f, " Associated types : {}", assocTypes)?;
         }
         Ok(())
