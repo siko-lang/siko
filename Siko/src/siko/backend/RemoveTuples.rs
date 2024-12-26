@@ -161,7 +161,9 @@ impl RemoveTuples for InstructionKind {
             }
             InstructionKind::Ref(dest, arg) => InstructionKind::Ref(dest.removeTuples(ctx), arg.removeTuples(ctx)),
             InstructionKind::Drop(_, _) => unreachable!("drop in remove tuples!"),
-            InstructionKind::Jump(dest, blockId) => InstructionKind::Jump(dest.removeTuples(ctx), *blockId),
+            InstructionKind::Jump(dest, id, direction) => {
+                InstructionKind::Jump(dest.removeTuples(ctx), *id, direction.clone())
+            }
             InstructionKind::Assign(lhs, rhs) => InstructionKind::Assign(lhs.clone(), rhs.removeTuples(ctx)),
             InstructionKind::FieldAssign(lhs, rhs, fields) => {
                 InstructionKind::FieldAssign(lhs.clone(), rhs.removeTuples(ctx), fields.removeTuples(ctx))

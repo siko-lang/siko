@@ -100,7 +100,7 @@ impl<'a> Builder<'a> {
                     block.instructions.push(Instruction::Declare(var.clone()));
                     block.instructions.push(Instruction::Memcpy(rhs, var));
                 }
-                HirInstructionKind::Jump(_, blockId) => {
+                HirInstructionKind::Jump(_, blockId, _) => {
                     block.instructions.push(Instruction::Jump(self.getBlockName(*blockId)));
                 }
                 HirInstructionKind::Return(_, v) => {

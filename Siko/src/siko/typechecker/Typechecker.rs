@@ -190,7 +190,7 @@ impl<'a> Typechecker<'a> {
                             self.initializeVar(var);
                         }
                         InstructionKind::Drop(_, _) => {}
-                        InstructionKind::Jump(var, _) => {
+                        InstructionKind::Jump(var, _, _) => {
                             self.types.insert(var.value.to_string(), Type::Never(false));
                         }
                         InstructionKind::Assign(_, _) => {}
@@ -556,7 +556,7 @@ impl<'a> Typechecker<'a> {
                 );
             }
             InstructionKind::Drop(_, _) => unreachable!("drop in typechecker!"),
-            InstructionKind::Jump(_, id) => {
+            InstructionKind::Jump(_, id, _) => {
                 self.queue.push_back(*id);
             }
             InstructionKind::Assign(name, rhs) => {
@@ -716,47 +716,6 @@ impl<'a> Typechecker<'a> {
             }
         }
     }
-
-    // fn addImplicitRefs(&mut self, f: &mut Function) {
-    //     let mut nextImplicitRef = 0;
-
-    //     let body = &mut f.body.as_mut().unwrap();
-
-    //     for block in &mut body.blocks {
-    //         let mut index = 0;
-    //         loop {
-    //             if index >= block.instructions.len() {
-    //                 break;
-    //             }
-    //             let mut instruction = block.instructions[index].clone();
-    //             let vars = instruction.kind.collectVariables();
-    //             let mut instructionIndex = index;
-    //             for var in vars {
-    //                 if self.implicitRefs.contains(&var) {
-    //                     let mut dest = var.clone();
-    //                     dest.value = VariableName::Local(format!("implicitRef"), nextImplicitRef);
-    //                     nextImplicitRef += 1;
-    //                     let ty = Type::Reference(Box::new(self.getType(&var)), None);
-    //                     self.types.insert(dest.value.to_string(), ty);
-    //                     let mut varSwap = VariableSubstitution::new();
-    //                     varSwap.add(var.clone(), dest.clone());
-    //                     let kind = InstructionKind::Ref(dest.clone(), var.clone());
-    //                     let implicitRef = Instruction {
-    //                         implicit: true,
-    //                         kind: kind,
-    //                         location: instruction.location.clone(),
-    //                     };
-    //                     instruction.kind = instruction.kind.applyVar(&varSwap);
-    //                     block.instructions.insert(index, implicitRef);
-    //                     instructionIndex += 1;
-    //                     self.implicitRefs.remove(&var);
-    //                 }
-    //             }
-    //             block.instructions[instructionIndex] = instruction;
-    //             index += 1;
-    //         }
-    //     }
-    // }
 
     fn addImplicitClones(&mut self, f: &mut Function) {
         let mut nextImplicitClone = 0;

@@ -4,7 +4,7 @@ use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
 
 use super::{
     BodyBuilder::BodyBuilder,
-    Function::{BlockId, FieldInfo, Instruction, InstructionKind, Variable, VariableName},
+    Function::{BlockId, FieldInfo, Instruction, InstructionKind, JumpDirection, Variable, VariableName},
 };
 
 #[derive(Clone, Copy)]
@@ -213,9 +213,12 @@ impl BlockBuilder {
         result
     }
 
-    pub fn addJump(&mut self, target: BlockId, location: Location) -> Variable {
+    pub fn addJump(&mut self, target: BlockId, direction: JumpDirection, location: Location) -> Variable {
         let result = self.bodyBuilder.createTempValue(VariableName::Jump, location.clone());
-        self.addInstruction(InstructionKind::Jump(result.clone(), target), location.clone());
+        self.addInstruction(
+            InstructionKind::Jump(result.clone(), target, direction),
+            location.clone(),
+        );
         result
     }
 

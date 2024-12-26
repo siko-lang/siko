@@ -3,7 +3,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::siko::hir::BodyBuilder::BodyBuilder;
 use crate::siko::hir::Data::Enum;
-use crate::siko::hir::Function::{BlockId, BlockInfo, FieldInfo, InstructionKind, Variable, VariableName};
+use crate::siko::hir::Function::{
+    BlockId, BlockInfo, FieldInfo, InstructionKind, JumpDirection, Variable, VariableName,
+};
 use crate::siko::location::Location::Location;
 use crate::siko::location::Report::ReportContext;
 use crate::siko::qualifiedname::QualifiedName;
@@ -319,9 +321,11 @@ impl<'a> ExprResolver<'a> {
                     .addBind(name.clone(), initId, true, expr.location.clone());
                 let mut loopBodyBuilder = self.bodyBuilder.createBlock();
                 let mut loopExitBuilder = self.bodyBuilder.createBlock();
-                self.bodyBuilder
-                    .current()
-                    .addJump(loopBodyBuilder.getBlockId(), expr.location.clone());
+                self.bodyBuilder.current().addJump(
+                    loopBodyBuilder.getBlockId(),
+                    JumpDirection::Forward,
+                    expr.location.clone(),
+                );
                 let mut loopEnv = Environment::child(env);
                 loopBodyBuilder.current();
                 self.resolvePattern(pattern, &mut loopEnv, name.clone());
@@ -334,10 +338,11 @@ impl<'a> ExprResolver<'a> {
                     SimpleExpr::Block(block) => self.resolveBlock(block, &loopEnv, name.clone()),
                     _ => panic!("for body is not a block!"),
                 };
-                self.bodyBuilder
-                    .current()
-                    .implicit()
-                    .addJump(loopBodyBuilder.getBlockId(), expr.location.clone());
+                self.bodyBuilder.current().implicit().addJump(
+                    loopBodyBuilder.getBlockId(),
+                    JumpDirection::Backward,
+                    expr.location.clone(),
+                );
                 self.loopInfos.pop();
                 loopExitBuilder.current();
                 let finalValue = self
@@ -454,7 +459,9 @@ impl<'a> ExprResolver<'a> {
                 self.bodyBuilder
                     .current()
                     .addAssign(info.var, argId, expr.location.clone());
-                self.bodyBuilder.current().addJump(info.exit, expr.location.clone())
+                self.bodyBuilder
+                    .current()
+                    .addJump(info.exit, JumpDirection::Forward, expr.location.clone())
             }
             SimpleExpr::Continue(arg) => {
                 let argId = match arg {
@@ -468,7 +475,9 @@ impl<'a> ExprResolver<'a> {
                 self.bodyBuilder
                     .current()
                     .addAssign(info.var, argId, expr.location.clone());
-                self.bodyBuilder.current().addJump(info.body, expr.location.clone())
+                self.bodyBuilder
+                    .current()
+                    .addJump(info.body, JumpDirection::Backward, expr.location.clone())
             }
             SimpleExpr::Ref(arg) => {
                 let arg = self.resolveExpr(arg, env);

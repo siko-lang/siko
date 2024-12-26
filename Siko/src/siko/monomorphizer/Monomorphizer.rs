@@ -271,7 +271,9 @@ impl Monomorphize for InstructionKind {
             InstructionKind::Drop(dest, dropVar) => {
                 InstructionKind::Drop(dest.process(sub, mono), dropVar.process(sub, mono))
             }
-            InstructionKind::Jump(dest, block_id) => InstructionKind::Jump(dest.process(sub, mono), *block_id),
+            InstructionKind::Jump(dest, block_id, direction) => {
+                InstructionKind::Jump(dest.process(sub, mono), *block_id, direction.clone())
+            }
             InstructionKind::Assign(dest, rhs) => {
                 InstructionKind::Assign(dest.process(sub, mono), rhs.process(sub, mono))
             }

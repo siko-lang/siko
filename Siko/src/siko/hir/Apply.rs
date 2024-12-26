@@ -205,7 +205,9 @@ impl Apply for InstructionKind {
             InstructionKind::Return(dest, arg) => InstructionKind::Return(dest.apply(sub), arg.apply(sub)),
             InstructionKind::Ref(dest, arg) => InstructionKind::Ref(dest.apply(sub), arg.apply(sub)),
             InstructionKind::Drop(dest, drop) => InstructionKind::Drop(dest.apply(sub), drop.apply(sub)),
-            InstructionKind::Jump(dest, block_id) => InstructionKind::Jump(dest.apply(sub), *block_id),
+            InstructionKind::Jump(dest, targetBlockId, direction) => {
+                InstructionKind::Jump(dest.apply(sub), *targetBlockId, direction.clone())
+            }
             InstructionKind::Assign(name, rhs) => InstructionKind::Assign(name.apply(sub), rhs.apply(sub)),
             InstructionKind::FieldAssign(name, rhs, fields) => {
                 InstructionKind::FieldAssign(name.apply(sub), rhs.apply(sub), fields.apply(sub))
@@ -310,7 +312,9 @@ impl ApplyVariable for InstructionKind {
             InstructionKind::Return(dest, arg) => InstructionKind::Return(dest.applyVar(sub), arg.applyVar(sub)),
             InstructionKind::Ref(dest, arg) => InstructionKind::Ref(dest.applyVar(sub), arg.applyVar(sub)),
             InstructionKind::Drop(dest, drop) => InstructionKind::Drop(dest.applyVar(sub), drop.applyVar(sub)),
-            InstructionKind::Jump(dest, block_id) => InstructionKind::Jump(dest.applyVar(sub), *block_id),
+            InstructionKind::Jump(dest, targetBlock, direction) => {
+                InstructionKind::Jump(dest.applyVar(sub), *targetBlock, direction.clone())
+            }
             InstructionKind::Assign(name, rhs) => InstructionKind::Assign(name.applyVar(sub), rhs.applyVar(sub)),
             InstructionKind::FieldAssign(name, rhs, fields) => {
                 InstructionKind::FieldAssign(name.applyVar(sub), rhs.applyVar(sub), fields.clone())

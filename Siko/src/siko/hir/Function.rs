@@ -29,7 +29,7 @@ impl Parameter {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub struct BlockId {
     pub id: u32,
 }
@@ -41,6 +41,12 @@ impl BlockId {
 }
 
 impl Display for BlockId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "#{}", self.id)
+    }
+}
+
+impl Debug for BlockId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "#{}", self.id)
     }
@@ -259,6 +265,21 @@ impl Display for BlockInfo {
 }
 
 #[derive(Clone, PartialEq)]
+pub enum JumpDirection {
+    Forward,
+    Backward,
+}
+
+impl Display for JumpDirection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            JumpDirection::Forward => write!(f, "forward"),
+            JumpDirection::Backward => write!(f, "backward"),
+        }
+    }
+}
+
+#[derive(Clone, PartialEq)]
 pub enum InstructionKind {
     FunctionCall(Variable, QualifiedName, Vec<Variable>),
     MethodCall(Variable, Variable, String, Vec<Variable>),
@@ -274,7 +295,7 @@ pub enum InstructionKind {
     Return(Variable, Variable),
     Ref(Variable, Variable),
     Drop(Variable, Variable),
-    Jump(Variable, BlockId),
+    Jump(Variable, BlockId, JumpDirection),
     Assign(Variable, Variable),
     FieldAssign(Variable, Variable, Vec<FieldInfo>),
     DeclareVar(Variable),
@@ -315,7 +336,7 @@ impl InstructionKind {
             InstructionKind::Return(v, _) => Some(v.clone()),
             InstructionKind::Ref(v, _) => Some(v.clone()),
             InstructionKind::Drop(_, _) => None,
-            InstructionKind::Jump(v, _) => Some(v.clone()),
+            InstructionKind::Jump(v, _, _) => Some(v.clone()),
             InstructionKind::Assign(_, _) => None,
             InstructionKind::FieldAssign(_, _, _) => None,
             InstructionKind::DeclareVar(v) => Some(v.clone()),
@@ -360,7 +381,7 @@ impl InstructionKind {
             InstructionKind::Return(var, value) => vec![var.clone(), value.clone()],
             InstructionKind::Ref(var, target) => vec![var.clone(), target.clone()],
             InstructionKind::Drop(_, _) => vec![],
-            InstructionKind::Jump(var, _) => vec![var.clone()],
+            InstructionKind::Jump(var, _, _) => vec![var.clone()],
             InstructionKind::Assign(var, value) => vec![var.clone(), value.clone()],
             InstructionKind::FieldAssign(var, value, _) => vec![var.clone(), value.clone()],
             InstructionKind::DeclareVar(var) => vec![var.clone()],
@@ -407,8 +428,8 @@ impl InstructionKind {
             InstructionKind::Drop(dest, value) => {
                 format!("drop({}/{})", dest, value)
             }
-            InstructionKind::Jump(dest, id) => {
-                format!("{} = jump({})", dest, id)
+            InstructionKind::Jump(dest, id, direction) => {
+                format!("{} = jump({}, {})", dest, id, direction)
             }
             InstructionKind::Assign(v, arg) => format!("assign({}, {})", v, arg),
             InstructionKind::FieldAssign(v, arg, fields) => {

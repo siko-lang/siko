@@ -6,6 +6,7 @@ use std::{
 use crate::siko::{
     hir::{
         Apply::{instantiateClass, ApplyVariable},
+        BodyBuilder::BodyBuilder,
         Function::{BlockId, Function, Instruction, InstructionKind, Variable, VariableName},
         Program::Program,
         Substitution::VariableSubstitution,
@@ -14,12 +15,15 @@ use crate::siko::{
     },
     location::Report::{Entry, Report, ReportContext},
     qualifiedname::getCloneName,
+    util::DependencyProcessor,
 };
 
 pub fn checkDrops(ctx: &ReportContext, program: Program) -> Program {
     let mut result = program.clone();
     for (name, f) in &program.functions {
         let mut checker = DropChecker::new(f, ctx, &program);
+        //println!("Checking drops for {}", name);
+        checker.processDeps();
         let f = checker.process();
         result.functions.insert(name.clone(), f);
     }
@@ -195,6 +199,16 @@ impl Context {
         });
         return None;
     }
+
+    fn merge(&mut self, terminal_context: &Context) {
+        for var in &terminal_context.live {
+            self.addLive(var);
+        }
+        for usage in &terminal_context.moved {
+            self.moved.push(usage.clone());
+        }
+        self.rootBlock = terminal_context.rootBlock.clone();
+    }
 }
 
 impl Display for Context {
@@ -296,6 +310,7 @@ impl Display for ValueInfo {
 
 pub struct DropChecker<'a> {
     ctx: &'a ReportContext,
+    bodyBuilder: BodyBuilder,
     function: &'a Function,
     program: &'a Program,
     visited: BTreeMap<BlockId, BTreeSet<Context>>,
@@ -303,12 +318,14 @@ pub struct DropChecker<'a> {
     implicitClones: BTreeSet<Variable>,
     values: BTreeMap<VariableName, ValueInfo>,
     dropLists: BTreeMap<String, DropList>,
+    terminalContexts: BTreeMap<BlockId, Context>,
 }
 
 impl<'a> DropChecker<'a> {
     pub fn new(f: &'a Function, ctx: &'a ReportContext, program: &'a Program) -> DropChecker<'a> {
         DropChecker {
             ctx: ctx,
+            bodyBuilder: BodyBuilder::cloneFunction(f),
             function: f,
             program: program,
             visited: BTreeMap::new(),
@@ -316,6 +333,7 @@ impl<'a> DropChecker<'a> {
             implicitClones: BTreeSet::new(),
             values: BTreeMap::new(),
             dropLists: BTreeMap::new(),
+            terminalContexts: BTreeMap::new(),
         }
     }
 
@@ -372,6 +390,52 @@ impl<'a> DropChecker<'a> {
                 block.instructions[instructionIndex] = instruction;
                 index += 1;
             }
+        }
+    }
+
+    fn processDeps(&mut self) {
+        let allblocksIds = self.bodyBuilder.getAllBlockIds();
+        let mut blockDeps = BTreeMap::new();
+        for blockId in &allblocksIds {
+            blockDeps.insert(*blockId, Vec::new());
+        }
+        for blockId in allblocksIds {
+            let mut builder = self.bodyBuilder.iterator(blockId);
+            loop {
+                if let Some(instruction) = builder.getInstruction() {
+                    builder.step();
+                    match instruction.kind {
+                        InstructionKind::Jump(_, id, _) => {
+                            blockDeps.entry(id).or_default().push(blockId);
+                        }
+                        InstructionKind::EnumSwitch(_, cases) => {
+                            for case in cases {
+                                blockDeps.entry(case.branch).or_default().push(blockId);
+                            }
+                        }
+                        InstructionKind::IntegerSwitch(_, cases) => {
+                            for case in cases {
+                                blockDeps.entry(case.branch).or_default().push(blockId);
+                            }
+                        }
+                        InstructionKind::StringSwitch(_, cases) => {
+                            for case in cases {
+                                blockDeps.entry(case.branch).or_default().push(blockId);
+                            }
+                        }
+                        _ => {}
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
+        let groups = DependencyProcessor::processDependencies(&mut blockDeps);
+        //println!("all deps {:?}", blockDeps);
+        //println!("groups {:?}", groups);
+        for g in &groups {
+            //println!("groups {:?}", g);
+            self.processGroup(&g.items, &blockDeps);
         }
     }
 
@@ -518,7 +582,7 @@ impl<'a> DropChecker<'a> {
         );
     }
 
-    fn processBlock(&mut self, blockId: BlockId, mut context: Context) {
+    fn processBlock(&mut self, blockId: BlockId, mut context: Context) -> bool {
         let contexts = self.visited.entry(blockId).or_insert(BTreeSet::new());
         if contexts.is_empty() {
             contexts.insert(context.clone());
@@ -527,7 +591,7 @@ impl<'a> DropChecker<'a> {
             context.rootBlock = first.rootBlock.clone();
             if !contexts.insert(context.clone()) {
                 //println!("already visited {}", context);
-                return;
+                return false;
             }
         }
         let block = self.function.getBlockById(blockId);
@@ -576,15 +640,12 @@ impl<'a> DropChecker<'a> {
                 InstructionKind::CharLiteral(dest, _) => {
                     self.declareValue(dest, &mut context);
                 }
-                InstructionKind::Return(_, _) => return,
+                InstructionKind::Return(_, _) => {}
                 InstructionKind::Ref(dest, _) => {
                     self.declareValue(dest, &mut context);
                 }
                 InstructionKind::Drop(_, _) => {}
-                InstructionKind::Jump(_, id) => {
-                    self.processBlock(*id, context);
-                    return;
-                }
+                InstructionKind::Jump(_, _, _) => {}
                 InstructionKind::Assign(dest, src) => {
                     self.checkMove(&mut context, src);
                     context.removeSpecificMoveByRoot(dest);
@@ -603,23 +664,14 @@ impl<'a> DropChecker<'a> {
                 InstructionKind::Transform(dest, _, _) => {
                     self.declareValue(dest, &mut context);
                 }
-                InstructionKind::EnumSwitch(root, cases) => {
+                InstructionKind::EnumSwitch(root, _) => {
                     self.checkMove(&mut context, root);
-                    for case in cases {
-                        self.processBlock(case.branch, context.clone());
-                    }
                 }
-                InstructionKind::IntegerSwitch(root, cases) => {
+                InstructionKind::IntegerSwitch(root, _) => {
                     self.checkMove(&mut context, root);
-                    for case in cases {
-                        self.processBlock(case.branch, context.clone());
-                    }
                 }
-                InstructionKind::StringSwitch(root, cases) => {
+                InstructionKind::StringSwitch(root, _) => {
                     self.checkMove(&mut context, root);
-                    for case in cases {
-                        self.processBlock(case.branch, context.clone());
-                    }
                 }
                 InstructionKind::BlockStart(name) => {
                     let block = SyntaxBlock::new(name.id.clone());
@@ -636,6 +688,8 @@ impl<'a> DropChecker<'a> {
                 }
             }
         }
+        self.terminalContexts.insert(blockId, context.clone());
+        true
     }
 
     fn dropPath(&self, rootPath: &Path, ty: &Type, context: &Context, dropList: &mut DropList) {
@@ -680,5 +734,37 @@ impl<'a> DropChecker<'a> {
             }
         }
         //println!("---");
+    }
+
+    fn processGroup(&mut self, items: &Vec<BlockId>, blockDeps: &BTreeMap<BlockId, Vec<BlockId>>) {
+        loop {
+            let mut changed = false;
+            for item in items {
+                //println!("processing block {}", item);
+                let deps = blockDeps.get(item).expect("deps not found");
+                let mut mergedContext = Context::new();
+                let mut empty = !deps.is_empty();
+                for dep in deps {
+                    if let Some(terminalContext) = self.terminalContexts.get(dep) {
+                        mergedContext.merge(terminalContext);
+                        empty = false;
+                    } else {
+                        if !items.contains(dep) {
+                            panic!("terminal context not found for {}", dep);
+                        }
+                    }
+                }
+                if empty {
+                    continue;
+                }
+                //println!("merged context {}", mergedContext);
+                if self.processBlock(item.clone(), mergedContext) {
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
     }
 }

@@ -1,4 +1,6 @@
-use crate::siko::hir::Function::{BlockId, EnumCase, InstructionKind, IntegerCase, Variable, VariableName};
+use crate::siko::hir::Function::{
+    BlockId, EnumCase, InstructionKind, IntegerCase, JumpDirection, Variable, VariableName,
+};
 use crate::siko::location::Location::Location;
 use crate::siko::qualifiedname::{getCloneName, getStringEqName, QualifiedName};
 use crate::siko::resolver::Environment::Environment;
@@ -443,7 +445,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         let ctx = CompileContext::new().add(node.getDataPath(), self.bodyId.clone());
         let mut startBlockBuilder = self.resolver.bodyBuilder.current();
         let firstBlockId = self.compileNode(&node, &ctx);
-        startBlockBuilder.addJump(firstBlockId, self.bodyLocation.clone());
+        startBlockBuilder.addJump(firstBlockId, JumpDirection::Forward, self.bodyLocation.clone());
         self.resolver.bodyBuilder.setTargetBlockId(firstBlockId);
         let mut returns = false;
         for b in &self.branches {
@@ -479,7 +481,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     ctx = ctx.add(DataPath::TupleIndex(Box::new(tuple.dataPath.clone()), index), value);
                 }
                 let nextId = self.compileNode(&tuple.next, &ctx);
-                builder.addJump(nextId, self.bodyLocation.clone());
+                builder.addJump(nextId, JumpDirection::Forward, self.bodyLocation.clone());
                 builder.getBlockId()
             }
             Node::Switch(switch) => {
@@ -521,7 +523,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                                     ctx.clone()
                                 };
                                 let blockId = self.compileNode(&node, &ctx);
-                                builder.addJump(blockId, self.bodyLocation.clone());
+                                builder.addJump(blockId, JumpDirection::Forward, self.bodyLocation.clone());
                                 let c = EnumCase {
                                     index,
                                     branch: builder.getBlockId(),
@@ -572,7 +574,11 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                             }
                         }
                         if switch.cases.len() == 1 {
-                            builder.implicit().addJump(defaultBranch, self.bodyLocation.clone());
+                            builder.implicit().addJump(
+                                defaultBranch,
+                                JumpDirection::Forward,
+                                self.bodyLocation.clone(),
+                            );
                         }
                         for (case, node) in &switch.cases {
                             match case {
@@ -644,7 +650,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     if !branch.body.doesNotReturn() {
                         let mut builder = self.resolver.bodyBuilder.current().implicit();
                         builder.addAssign(self.matchValue.clone(), exprValue, self.matchLocation.clone());
-                        builder.addJump(self.contBlockId, self.bodyLocation.clone());
+                        builder.addJump(self.contBlockId, JumpDirection::Forward, self.bodyLocation.clone());
                     }
                     builder.getBlockId()
                 } else {
