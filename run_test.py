@@ -133,16 +133,29 @@ def processResult(r):
 
 buildRuntime()
 
+def collect_tests(base_path):
+    tests = []
+    for root, dirs, files in os.walk(base_path):
+        if any(file.endswith(".sk") for file in files):
+            tests.append(root)
+    return tests
+
 print("Success tests:")
-for entry in os.listdir(successes_path):
-    if len(filters) > 0 and entry not in filters:
+success_tests = collect_tests(successes_path)
+for test_path in success_tests:
+    entry = os.path.relpath(test_path, successes_path)
+    if filters and entry not in filters:
         continue
     processResult(test_success(successes_path, entry, ["std"]))
+
 print("Error tests:")
-for entry in os.listdir(errors_path):
+failed_tests = collect_tests(errors_path)
+for test_path in failed_tests:
+    entry = os.path.relpath(test_path, errors_path)
     if len(filters) > 0 and entry not in filters:
         continue
     processResult(test_fail(errors_path, entry, ["std"]))
+
 percent = 0
 if (success+failure) != 0:
     percent = success/(success+failure)*100
