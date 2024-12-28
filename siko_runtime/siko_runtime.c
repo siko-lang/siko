@@ -126,3 +126,8 @@ extern struct Bool_Bool String_String_eq(struct String_String *v1, struct String
     result.field0 = strncmp((const char *)v1->field0, (const char *)v2->field0, v1->field1) == 0;
     return result;
 }
+
+struct String_String String_String_clone(struct String_String *v1) 
+{
+    return *v1;
+}

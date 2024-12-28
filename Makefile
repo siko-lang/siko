@@ -4,6 +4,9 @@ test: Siko/target/release/siko
 Siko/target/release/siko: $(shell find Siko/src/ -type f)
 	@cd Siko && cargo build --release
 
+clean:
+	@cd Siko && cargo clean
+
 teststd: Siko/target/release/siko
 	@./siko test.sk std/*
 

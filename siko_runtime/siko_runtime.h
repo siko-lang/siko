@@ -47,3 +47,5 @@ struct Bool_Bool Int_Int_lessThan(Int_Int *v1, Int_Int *v2);
 Int_Int Int_Int_clone(Int_Int *v);
 
 struct Bool_Bool String_String_eq(struct String_String *v1, struct String_String *v2);
+
+struct String_String String_String_clone(struct String_String *v1);
