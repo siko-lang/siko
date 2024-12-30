@@ -410,58 +410,44 @@ impl<'a> DropChecker<'a> {
         }
     }
 
-    fn addImplicitClone(&mut self, result: &mut Function) {
+    fn addImplicitClone(&mut self) {
         let mut nextVar = 1;
-        let body = result.body.as_mut().expect("no body");
-        for block in &mut body.blocks {
-            let mut index = 0;
+        let allblocksIds = self.bodyBuilder.getAllBlockIds();
+        for block in allblocksIds {
+            let mut builder = self.bodyBuilder.iterator(block);
             loop {
-                if index >= block.instructions.len() {
+                if let Some(instruction) = builder.getInstruction() {
+                    let vars = instruction.kind.collectVariables();
+                    for var in vars {
+                        if self.implicitClones.contains(&var) {
+                            let mut implicitRefDest = var.clone();
+                            implicitRefDest.value = VariableName::Local(format!("implicitRef"), nextVar);
+                            nextVar += 1;
+                            let ty = Type::Reference(Box::new(var.getType().clone()), None);
+                            implicitRefDest.ty = Some(ty);
+                            let implicitRefKind = InstructionKind::Ref(implicitRefDest.clone(), var.clone());
+
+                            let mut implicitCloneDest = var.clone();
+                            implicitCloneDest.value = VariableName::Local(format!("implicitClone"), nextVar);
+                            nextVar += 1;
+                            let mut varSwap = VariableSubstitution::new();
+                            varSwap.add(var.clone(), implicitCloneDest.clone());
+                            let implicitCloneKind = InstructionKind::FunctionCall(
+                                implicitCloneDest.clone(),
+                                getCloneName(),
+                                vec![implicitRefDest],
+                            );
+                            let newKind = instruction.kind.applyVar(&varSwap);
+                            builder.replaceInstruction(newKind, instruction.location.clone());
+                            builder.addInstruction(implicitCloneKind, instruction.location.clone());
+                            builder.addInstruction(implicitRefKind, instruction.location.clone());
+                            self.implicitClones.remove(&var);
+                        }
+                    }
+                    builder.step();
+                } else {
                     break;
                 }
-                let mut instruction = block.instructions[index].clone();
-                let vars = instruction.kind.collectVariables();
-                let mut instructionIndex = index;
-                for var in vars {
-                    if self.implicitClones.contains(&var) {
-                        let mut implicitRefDest = var.clone();
-                        implicitRefDest.value = VariableName::Local(format!("implicitRef"), nextVar);
-                        nextVar += 1;
-                        let ty = Type::Reference(Box::new(var.getType().clone()), None);
-                        implicitRefDest.ty = Some(ty);
-                        let kind = InstructionKind::Ref(implicitRefDest.clone(), var.clone());
-                        let implicitRef = Instruction {
-                            implicit: true,
-                            kind: kind,
-                            location: instruction.location.clone(),
-                            tags: Vec::new(),
-                        };
-                        block.instructions.insert(index, implicitRef);
-                        instructionIndex += 1;
-                        let mut implicitCloneDest = var.clone();
-                        implicitCloneDest.value = VariableName::Local(format!("implicitClone"), nextVar);
-                        nextVar += 1;
-                        let mut varSwap = VariableSubstitution::new();
-                        varSwap.add(var.clone(), implicitCloneDest.clone());
-                        let kind = InstructionKind::FunctionCall(
-                            implicitCloneDest.clone(),
-                            getCloneName(),
-                            vec![implicitRefDest],
-                        );
-                        let implicitRef = Instruction {
-                            implicit: true,
-                            kind: kind,
-                            location: instruction.location.clone(),
-                            tags: Vec::new(),
-                        };
-                        instruction.kind = instruction.kind.applyVar(&varSwap);
-                        block.instructions.insert(instructionIndex, implicitRef);
-                        instructionIndex += 1;
-                        self.implicitClones.remove(&var);
-                    }
-                }
-                block.instructions[instructionIndex] = instruction;
-                index += 1;
             }
         }
     }
@@ -559,15 +545,15 @@ impl<'a> DropChecker<'a> {
     }
 
     fn process(&mut self) -> Function {
-        let mut result = self.function.clone();
-        if self.function.body.is_some() {
-            self.processBlock(BlockId::first(), Context::new());
-
-            self.processCollision();
-
-            self.addImplicitClone(&mut result);
-            self.generateDrops(&mut result);
+        if self.function.body.is_none() {
+            return self.function.clone();
         }
+        let mut result = self.function.clone();
+        self.processBlock(BlockId::first(), Context::new());
+        self.processCollision();
+        self.addImplicitClone();
+        result.body = Some(self.bodyBuilder.build());
+        self.generateDrops(&mut result);
         result
     }
 
