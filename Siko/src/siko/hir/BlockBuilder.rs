@@ -5,7 +5,7 @@ use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
 use super::{
     BodyBuilder::BodyBuilder,
     Function::{BlockId, Variable, VariableName},
-    Instruction::{FieldInfo, Instruction, InstructionKind, JumpDirection},
+    Instruction::{FieldInfo, Instruction, InstructionKind, JumpDirection, Tag, TagKind},
 };
 
 #[derive(Clone, Copy)]
@@ -85,7 +85,18 @@ impl BlockBuilder {
         }
     }
 
-    pub fn addTag(&mut self, tag: u32) {
+    pub fn buildTag(&mut self, builder: fn(u32) -> Tag) -> Tag {
+        self.bodyBuilder.buildTag(builder)
+    }
+
+    pub fn buildTagByKind(&mut self, kind: TagKind) -> Tag {
+        match kind {
+            TagKind::ImplicitRef => self.buildTag(Tag::ImplicitRef),
+            TagKind::Usage => self.buildTag(Tag::Usage),
+        }
+    }
+
+    pub fn addTag(&mut self, tag: Tag) {
         match self.mode {
             Mode::Append => {
                 panic!("Cannot add tag in append mode");
@@ -93,6 +104,31 @@ impl BlockBuilder {
             Mode::Iterator(index) => {
                 self.bodyBuilder.addTag(self.blockId, index, tag);
             }
+        }
+    }
+
+    pub fn getUniqueTag(&mut self, kind: TagKind) -> Tag {
+        let mut tag = None;
+        for oldTag in self.getTags() {
+            if oldTag.isKind(kind) {
+                tag = Some(oldTag);
+            }
+        }
+
+        if tag.is_none() {
+            let newTag = self.buildTagByKind(kind);
+            self.addTag(newTag);
+            tag = Some(newTag);
+        }
+        tag.unwrap()
+    }
+
+    pub fn getTags(&self) -> Vec<Tag> {
+        match self.mode {
+            Mode::Append => {
+                panic!("Cannot get tags in append mode");
+            }
+            Mode::Iterator(index) => self.bodyBuilder.getTags(self.blockId, index),
         }
     }
 

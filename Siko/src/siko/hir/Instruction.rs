@@ -271,12 +271,40 @@ impl InstructionKind {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Tag {
+    ImplicitRef(u32),
+    Usage(u32),
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum TagKind {
+    ImplicitRef,
+    Usage,
+}
+
+impl Tag {
+    pub fn getId(&self) -> u32 {
+        match self {
+            Tag::ImplicitRef(id) => *id,
+            Tag::Usage(id) => *id,
+        }
+    }
+
+    pub fn isKind(&self, kind: TagKind) -> bool {
+        match self {
+            Tag::ImplicitRef(_) => kind == TagKind::ImplicitRef,
+            Tag::Usage(_) => kind == TagKind::Usage,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Instruction {
     pub implicit: bool,
     pub kind: InstructionKind,
     pub location: Location,
-    pub tags: Vec<u32>,
+    pub tags: Vec<Tag>,
 }
 
 impl Instruction {

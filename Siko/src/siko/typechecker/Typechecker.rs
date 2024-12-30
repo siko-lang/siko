@@ -12,7 +12,7 @@ use crate::siko::{
         Data::{Class, Enum},
         Function::{BlockId, Function, Parameter, Variable, VariableName},
         InstanceResolver::ResolutionResult,
-        Instruction::{Instruction, InstructionKind},
+        Instruction::{Instruction, InstructionKind, Tag},
         Program::Program,
         Substitution::{TypeSubstitution, VariableSubstitution},
         TraitMethodSelector::TraitMethodSelector,
@@ -63,7 +63,7 @@ pub struct Typechecker<'a> {
     bodyBuilder: BodyBuilder,
     visitedBlocks: BTreeSet<BlockId>,
     queue: VecDeque<BlockId>,
-    markers: BTreeMap<u32, MarkerInfo>,
+    markers: BTreeMap<Tag, MarkerInfo>,
 }
 
 impl<'a> Typechecker<'a> {
@@ -102,10 +102,10 @@ impl<'a> Typechecker<'a> {
         self.generate()
     }
 
-    fn addImplicitRefMarker(&mut self, var: &Variable) -> u32 {
-        let markerId = self.markers.len() as u32;
-        self.markers.insert(markerId, MarkerInfo::ImplicitRef(var.clone()));
-        markerId
+    fn addImplicitRefMarker(&mut self, var: &Variable) -> Tag {
+        let tag = self.bodyBuilder.buildTag(Tag::ImplicitRef);
+        self.markers.insert(tag, MarkerInfo::ImplicitRef(var.clone()));
+        tag
     }
 
     fn initializeVar(&mut self, var: &Variable) {
@@ -276,8 +276,8 @@ impl<'a> Typechecker<'a> {
             if !argTy.isReference() && fnArg.isReference() {
                 argTy = Type::Reference(Box::new(argTy), None);
                 //println!("IMPLICIT REF FOR {}", arg);
-                let id = self.addImplicitRefMarker(arg);
-                builder.addTag(id);
+                let tag = self.addImplicitRefMarker(arg);
+                builder.addTag(tag);
             }
             if argTy.isReference() && !fnArg.isReference() && !fnArg.isGeneric() {
                 if self.program.instanceResolver.isCopy(&fnArg) {
@@ -941,7 +941,7 @@ impl<'a> Typechecker<'a> {
                             if let Some(MarkerInfo::ImplicitRef(var)) = self.markers.get(tag) {
                                 //println!("IMPLICIT REF FOR {}", var);
                                 let mut dest = var.clone();
-                                dest.value = VariableName::ImplicitRef(*tag);
+                                dest.value = VariableName::ImplicitRef(tag.getId());
                                 let ty = Type::Reference(Box::new(self.getType(var)), None);
                                 self.types.insert(dest.value.to_string(), ty);
                                 let kind = InstructionKind::Ref(dest.clone(), var.clone());

@@ -5,7 +5,7 @@ use crate::siko::location::Location::Location;
 use super::{
     BlockBuilder::{BlockBuilder, Mode},
     Function::{Block, BlockId, Body, Function, Variable, VariableName},
-    Instruction::{Instruction, InstructionKind},
+    Instruction::{Instruction, InstructionKind, Tag},
     Type::Type,
 };
 
@@ -13,7 +13,7 @@ struct Builder {
     body: Body,
     nextBlockId: u32,
     targetBlockId: BlockId,
-    valueId: u32,
+    nextId: u32,
 }
 
 impl Builder {
@@ -22,7 +22,7 @@ impl Builder {
             body: Body::new(),
             nextBlockId: 0,
             targetBlockId: BlockId::first(),
-            valueId: 0,
+            nextId: 0,
         }
     }
 
@@ -36,7 +36,7 @@ impl Builder {
             body: body,
             nextBlockId: blockCount as u32,
             targetBlockId: BlockId::first(),
-            valueId: 0,
+            nextId: 0,
         }
     }
 
@@ -106,18 +106,28 @@ impl Builder {
         return irBlock.replace(index, instruction, location, implicit);
     }
 
-    pub fn addTag(&mut self, blockId: BlockId, index: usize, tag: u32) {
+    pub fn addTag(&mut self, blockId: BlockId, index: usize, tag: Tag) {
         let irBlock = &mut self.body.blocks[blockId.id as usize];
         irBlock.addTag(index, tag);
+    }
+
+    pub fn getTags(&self, blockId: BlockId, index: usize) -> Vec<Tag> {
+        let irBlock = &self.body.blocks[blockId.id as usize];
+        irBlock.getTags(index)
     }
 
     pub fn sortBlocks(&mut self) {
         self.body.blocks.sort_by(|a, b| a.id.cmp(&b.id));
     }
 
+    pub fn getNextId(&mut self) -> u32 {
+        let id = self.nextId;
+        self.nextId += 1;
+        id
+    }
+
     pub fn createLocalValue(&mut self, name: &str, location: Location) -> Variable {
-        let valueId = self.valueId;
-        self.valueId += 1;
+        let valueId = self.getNextId();
         Variable {
             value: VariableName::Local(name.to_string(), valueId),
             location: location,
@@ -127,8 +137,7 @@ impl Builder {
     }
 
     pub fn createTempValue(&mut self, name: fn(u32) -> VariableName, location: Location) -> Variable {
-        let valueId = self.valueId;
-        self.valueId += 1;
+        let valueId = self.getNextId();
         Variable {
             value: name(valueId),
             location: location,
@@ -255,8 +264,19 @@ impl BodyBuilder {
         bodyBuilder.getInstruction(id, index)
     }
 
-    pub fn addTag(&self, blockId: BlockId, index: usize, tag: u32) {
+    pub fn buildTag(&self, builder: fn(u32) -> Tag) -> Tag {
+        let mut bodyBuilder = self.bodyBuilder.borrow_mut();
+        let id = bodyBuilder.getNextId();
+        builder(id)
+    }
+
+    pub fn addTag(&self, blockId: BlockId, index: usize, tag: Tag) {
         let mut bodyBuilder = self.bodyBuilder.borrow_mut();
         bodyBuilder.addTag(blockId, index, tag);
+    }
+
+    pub fn getTags(&self, blockId: BlockId, index: usize) -> Vec<Tag> {
+        let bodyBuilder = self.bodyBuilder.borrow();
+        bodyBuilder.getTags(blockId, index)
     }
 }

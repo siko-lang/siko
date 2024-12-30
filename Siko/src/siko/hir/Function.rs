@@ -7,6 +7,7 @@ use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
 
 use super::Instruction::Instruction;
 use super::Instruction::InstructionKind;
+use super::Instruction::Tag;
 use super::{ConstraintContext::ConstraintContext, Type::Type};
 
 #[derive(Debug, Clone)]
@@ -233,7 +234,7 @@ impl Block {
         };
     }
 
-    pub fn addTag(&mut self, index: usize, tag: u32) {
+    pub fn addTag(&mut self, index: usize, tag: Tag) {
         self.instructions[index].tags.push(tag);
     }
 
@@ -242,6 +243,10 @@ impl Block {
         for instruction in &self.instructions {
             instruction.dump();
         }
+    }
+
+    pub fn getTags(&self, index: usize) -> Vec<Tag> {
+        self.instructions[index].tags.clone()
     }
 }
 

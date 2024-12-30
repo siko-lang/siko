@@ -6,9 +6,10 @@ use std::{
 use crate::siko::{
     hir::{
         Apply::{instantiateClass, ApplyVariable},
+        BlockBuilder::BlockBuilder,
         BodyBuilder::BodyBuilder,
         Function::{BlockId, Function, Variable, VariableName},
-        Instruction::{Instruction, InstructionKind},
+        Instruction::{Instruction, InstructionKind, Tag, TagKind},
         Program::Program,
         Substitution::VariableSubstitution,
         Type::Type,
@@ -57,6 +58,7 @@ struct Usage {
     var: Variable,
     path: Path,
     kind: UsageKind,
+    tag: Tag,
 }
 
 impl Usage {
@@ -206,7 +208,13 @@ impl Context {
         MoveKind::NotMoved
     }
 
-    fn addUsage(&mut self, paths: &BTreeMap<VariableName, Path>, var: &Variable, kind: UsageKind) -> Option<Result> {
+    fn addUsage(
+        &mut self,
+        paths: &BTreeMap<VariableName, Path>,
+        var: &Variable,
+        kind: UsageKind,
+        builder: &mut BlockBuilder,
+    ) -> Option<Result> {
         let currentPath = if let Some(path) = paths.get(&var.value) {
             path.clone()
         } else {
@@ -219,10 +227,13 @@ impl Context {
             }
         }
 
+        let tag = builder.getUniqueTag(TagKind::Usage);
+
         let usage = Usage {
             var: var.clone(),
             path: currentPath,
             kind: kind,
+            tag: tag,
         };
         //println!("    addUsage {}", usage);
         self.usages.push(usage);
@@ -573,12 +584,12 @@ impl<'a> DropChecker<'a> {
         }
     }
 
-    fn checkMove(&mut self, context: &mut Context, var: &Variable, kind: UsageKind) {
-        if let Some(Result::AlreadyMoved(currentPath, prevUsage)) = context.addUsage(&self.paths, var, kind) {
+    fn checkMove(&mut self, context: &mut Context, var: &Variable, kind: UsageKind, builder: &mut BlockBuilder) {
+        if let Some(Result::AlreadyMoved(currentPath, prevUsage)) = context.addUsage(&self.paths, var, kind, builder) {
             if self.program.instanceResolver.isCopy(&prevUsage.var.getType().clone()) {
                 self.implicitClones.insert(prevUsage.var.clone());
                 context.removeSpecificMove(&prevUsage.var);
-                context.addUsage(&self.paths, var, kind);
+                context.addUsage(&self.paths, var, kind, builder);
                 return;
             }
 
@@ -631,99 +642,104 @@ impl<'a> DropChecker<'a> {
                 return false;
             }
         }
-        let block = self.function.getBlockById(blockId);
-        for instruction in &block.instructions {
-            //println!("PROCESSING {}", instruction.kind);
-            match &instruction.kind {
-                InstructionKind::FunctionCall(dest, _, args) => {
-                    for arg in args {
-                        self.checkMove(&mut context, arg, getUsageKind(arg));
+        let mut builder = self.bodyBuilder.iterator(blockId);
+        loop {
+            if let Some(instruction) = builder.getInstruction() {
+                //println!("PROCESSING {}", instruction.kind);
+                match &instruction.kind {
+                    InstructionKind::FunctionCall(dest, _, args) => {
+                        for arg in args {
+                            self.checkMove(&mut context, arg, getUsageKind(arg), &mut builder);
+                        }
+                        self.declareValue(dest, &mut context);
                     }
-                    self.declareValue(dest, &mut context);
-                }
-                InstructionKind::MethodCall(_, _, _, _) => unreachable!("method call in Drop checker"),
-                InstructionKind::DynamicFunctionCall(_, _, _) => {}
-                InstructionKind::ValueRef(dest, src) => {
-                    self.checkMove(&mut context, src, getUsageKind(src));
-                    self.declareValue(dest, &mut context);
-                }
-                InstructionKind::FieldRef(dest, receiver, fieldName) => {
-                    if let Some(path) = self.paths.get(&receiver.value) {
-                        self.paths.insert(dest.value.clone(), path.add(fieldName.clone()));
-                    } else {
-                        self.paths
-                            .insert(dest.value.clone(), Path::new(receiver.clone()).add(fieldName.clone()));
+                    InstructionKind::MethodCall(_, _, _, _) => unreachable!("method call in Drop checker"),
+                    InstructionKind::DynamicFunctionCall(_, _, _) => {}
+                    InstructionKind::ValueRef(dest, src) => {
+                        self.checkMove(&mut context, src, getUsageKind(src), &mut builder);
+                        self.declareValue(dest, &mut context);
                     }
-                }
-                InstructionKind::TupleIndex(dest, _, _) => {
-                    self.declareValue(dest, &mut context);
-                }
-                InstructionKind::Bind(dest, src, _) => {
-                    self.checkMove(&mut context, src, getUsageKind(src));
-                    self.declareValue(dest, &mut context);
-                }
-                InstructionKind::Tuple(dest, args) => {
-                    for arg in args {
-                        self.checkMove(&mut context, arg, getUsageKind(arg));
-                    }
-                    self.declareValue(dest, &mut context);
-                }
-                InstructionKind::StringLiteral(dest, _) => {
-                    self.declareValue(dest, &mut context);
-                }
-                InstructionKind::IntegerLiteral(dest, _) => {
-                    self.declareValue(dest, &mut context);
-                }
-                InstructionKind::CharLiteral(dest, _) => {
-                    self.declareValue(dest, &mut context);
-                }
-                InstructionKind::Return(_, _) => {}
-                InstructionKind::Ref(dest, value) => {
-                    self.checkMove(&mut context, value, UsageKind::Ref);
-                    self.declareValue(dest, &mut context);
-                }
-                InstructionKind::Drop(_, _) => {}
-                InstructionKind::Jump(_, _, _) => {}
-                InstructionKind::Assign(dest, src) => {
-                    self.checkMove(&mut context, src, getUsageKind(src));
-                    context.removeSpecificMoveByRoot(dest);
-                    if !dest.getType().isReference() {
-                        if context.isLive(&dest.value) {
-                            let mut dropList = DropList::new();
-                            self.dropPath(&Path::new(dest.clone()), &dest.getType(), &context, &mut dropList);
-                            //println!("drop list {}", dropList);
+                    InstructionKind::FieldRef(dest, receiver, fieldName) => {
+                        if let Some(path) = self.paths.get(&receiver.value) {
+                            self.paths.insert(dest.value.clone(), path.add(fieldName.clone()));
+                        } else {
+                            self.paths
+                                .insert(dest.value.clone(), Path::new(receiver.clone()).add(fieldName.clone()));
                         }
                     }
+                    InstructionKind::TupleIndex(dest, _, _) => {
+                        self.declareValue(dest, &mut context);
+                    }
+                    InstructionKind::Bind(dest, src, _) => {
+                        self.checkMove(&mut context, src, getUsageKind(src), &mut builder);
+                        self.declareValue(dest, &mut context);
+                    }
+                    InstructionKind::Tuple(dest, args) => {
+                        for arg in args {
+                            self.checkMove(&mut context, arg, getUsageKind(arg), &mut builder);
+                        }
+                        self.declareValue(dest, &mut context);
+                    }
+                    InstructionKind::StringLiteral(dest, _) => {
+                        self.declareValue(dest, &mut context);
+                    }
+                    InstructionKind::IntegerLiteral(dest, _) => {
+                        self.declareValue(dest, &mut context);
+                    }
+                    InstructionKind::CharLiteral(dest, _) => {
+                        self.declareValue(dest, &mut context);
+                    }
+                    InstructionKind::Return(_, _) => {}
+                    InstructionKind::Ref(dest, value) => {
+                        self.checkMove(&mut context, value, UsageKind::Ref, &mut builder);
+                        self.declareValue(dest, &mut context);
+                    }
+                    InstructionKind::Drop(_, _) => {}
+                    InstructionKind::Jump(_, _, _) => {}
+                    InstructionKind::Assign(dest, src) => {
+                        self.checkMove(&mut context, src, getUsageKind(src), &mut builder);
+                        context.removeSpecificMoveByRoot(dest);
+                        if !dest.getType().isReference() {
+                            if context.isLive(&dest.value) {
+                                let mut dropList = DropList::new();
+                                self.dropPath(&Path::new(dest.clone()), &dest.getType(), &context, &mut dropList);
+                                //println!("drop list {}", dropList);
+                            }
+                        }
+                    }
+                    InstructionKind::FieldAssign(dest, _, _) => {
+                        context.addLive(dest);
+                    }
+                    InstructionKind::DeclareVar(_) => {}
+                    InstructionKind::Transform(dest, _, _) => {
+                        self.declareValue(dest, &mut context);
+                    }
+                    InstructionKind::EnumSwitch(root, _) => {
+                        self.checkMove(&mut context, root, getUsageKind(root), &mut builder);
+                    }
+                    InstructionKind::IntegerSwitch(root, _) => {
+                        self.checkMove(&mut context, root, getUsageKind(root), &mut builder);
+                    }
+                    InstructionKind::StringSwitch(root, _) => {
+                        self.checkMove(&mut context, root, getUsageKind(root), &mut builder);
+                    }
+                    InstructionKind::BlockStart(name) => {
+                        let block = SyntaxBlock::new(name.id.clone());
+                        context.rootBlock.addBlock(block);
+                        //println!("block start {}", context.rootBlock.getCurrentBlockId());
+                    }
+                    InstructionKind::BlockEnd(endId) => {
+                        //println!("block end {}", context.rootBlock.getCurrentBlockId());
+                        let current = context.rootBlock.getCurrentBlockId();
+                        let mut dropList = DropList::new();
+                        self.dropValues(&mut context, current, &mut dropList);
+                        self.dropLists.insert(endId.id.clone(), dropList);
+                        context.rootBlock.endBlock();
+                    }
                 }
-                InstructionKind::FieldAssign(dest, _, _) => {
-                    context.addLive(dest);
-                }
-                InstructionKind::DeclareVar(_) => {}
-                InstructionKind::Transform(dest, _, _) => {
-                    self.declareValue(dest, &mut context);
-                }
-                InstructionKind::EnumSwitch(root, _) => {
-                    self.checkMove(&mut context, root, getUsageKind(root));
-                }
-                InstructionKind::IntegerSwitch(root, _) => {
-                    self.checkMove(&mut context, root, getUsageKind(root));
-                }
-                InstructionKind::StringSwitch(root, _) => {
-                    self.checkMove(&mut context, root, getUsageKind(root));
-                }
-                InstructionKind::BlockStart(name) => {
-                    let block = SyntaxBlock::new(name.id.clone());
-                    context.rootBlock.addBlock(block);
-                    //println!("block start {}", context.rootBlock.getCurrentBlockId());
-                }
-                InstructionKind::BlockEnd(endId) => {
-                    //println!("block end {}", context.rootBlock.getCurrentBlockId());
-                    let current = context.rootBlock.getCurrentBlockId();
-                    let mut dropList = DropList::new();
-                    self.dropValues(&mut context, current, &mut dropList);
-                    self.dropLists.insert(endId.id.clone(), dropList);
-                    context.rootBlock.endBlock();
-                }
+                builder.step();
+            } else {
+                break;
             }
         }
         self.terminalContexts.insert(blockId, context.clone());
