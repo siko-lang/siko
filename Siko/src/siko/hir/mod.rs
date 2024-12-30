@@ -5,6 +5,7 @@ pub mod ConstraintContext;
 pub mod Data;
 pub mod Function;
 pub mod InstanceResolver;
+pub mod Instruction;
 pub mod Lifetime;
 pub mod Program;
 pub mod Substitution;

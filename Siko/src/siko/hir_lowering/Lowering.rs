@@ -1,9 +1,8 @@
 use crate::siko::{
     hir::{
         Data::{Class as HirClass, Enum as HirEnum},
-        Function::{
-            Block, BlockId, Function as HirFunction, FunctionKind, InstructionKind as HirInstructionKind, Variable,
-        },
+        Function::{Block, BlockId, Function as HirFunction, FunctionKind, Variable},
+        Instruction::InstructionKind as HirInstructionKind,
         Program::Program as HirProgram,
         Type::Type as HirType,
     },

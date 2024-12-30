@@ -7,11 +7,9 @@ use crate::siko::{
     hir::{
         Apply::{instantiateClass, instantiateEnum, Apply},
         ConstraintContext::ConstraintContext,
-        Function::{
-            Block, BlockId, Body, FieldInfo, Function, FunctionKind, Instruction, InstructionKind, Parameter, Variable,
-            VariableName,
-        },
+        Function::{Block, BlockId, Body, Function, FunctionKind, Parameter, Variable, VariableName},
         InstanceResolver::ResolutionResult,
+        Instruction::{FieldInfo, Instruction, InstructionKind},
         Program::Program,
         Substitution::{createTypeSubstitutionFrom, TypeSubstitution},
         Type::{formatTypes, Type},

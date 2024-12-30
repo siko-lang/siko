@@ -5,7 +5,8 @@ use crate::siko::hir::Type::Type;
 use super::{
     ConstraintContext::{Constraint, ConstraintContext},
     Data::{Class, Enum, Field, Variant},
-    Function::{FieldInfo, InstructionKind, Variable},
+    Function::Variable,
+    Instruction::{FieldInfo, InstructionKind},
     Substitution::{TypeSubstitution, VariableSubstitution},
     Trait::{AssociatedType, Instance, MemberInfo, Trait},
     TypeVarAllocator::TypeVarAllocator,

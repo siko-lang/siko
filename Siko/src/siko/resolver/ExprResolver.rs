@@ -3,9 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::siko::hir::BodyBuilder::BodyBuilder;
 use crate::siko::hir::Data::Enum;
-use crate::siko::hir::Function::{
-    BlockId, BlockInfo, FieldInfo, InstructionKind, JumpDirection, Variable, VariableName,
-};
+use crate::siko::hir::Function::{BlockId, Variable, VariableName};
+use crate::siko::hir::Instruction::{BlockInfo, FieldInfo, InstructionKind, JumpDirection};
 use crate::siko::location::Location::Location;
 use crate::siko::location::Report::ReportContext;
 use crate::siko::qualifiedname::QualifiedName;

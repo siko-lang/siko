@@ -7,7 +7,8 @@ use crate::siko::{
     hir::{
         Apply::{instantiateClass, ApplyVariable},
         BodyBuilder::BodyBuilder,
-        Function::{BlockId, Function, Instruction, InstructionKind, Variable, VariableName},
+        Function::{BlockId, Function, Variable, VariableName},
+        Instruction::{Instruction, InstructionKind},
         Program::Program,
         Substitution::VariableSubstitution,
         Type::Type,

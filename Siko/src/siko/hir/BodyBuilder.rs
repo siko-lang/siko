@@ -4,7 +4,8 @@ use crate::siko::location::Location::Location;
 
 use super::{
     BlockBuilder::{BlockBuilder, Mode},
-    Function::{Block, BlockId, Body, Function, Instruction, InstructionKind, Variable, VariableName},
+    Function::{Block, BlockId, Body, Function, Variable, VariableName},
+    Instruction::{Instruction, InstructionKind},
     Type::Type,
 };
 

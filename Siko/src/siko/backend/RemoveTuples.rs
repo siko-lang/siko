@@ -4,7 +4,8 @@ use crate::siko::{
     hir::{
         ConstraintContext::ConstraintContext,
         Data::{Class, Enum, Field, Variant},
-        Function::{Block, Body, FieldInfo, Function, FunctionKind, Instruction, InstructionKind, Parameter, Variable},
+        Function::{Block, Body, Function, FunctionKind, Parameter, Variable},
+        Instruction::{FieldInfo, Instruction, InstructionKind},
         Program::Program,
         Type::Type,
     },
