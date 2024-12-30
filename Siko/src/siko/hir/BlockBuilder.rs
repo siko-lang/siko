@@ -92,7 +92,6 @@ impl BlockBuilder {
     pub fn buildTagByKind(&mut self, kind: TagKind) -> Tag {
         match kind {
             TagKind::ImplicitRef => self.buildTag(Tag::ImplicitRef),
-            TagKind::Usage => self.buildTag(Tag::Usage),
         }
     }
 
