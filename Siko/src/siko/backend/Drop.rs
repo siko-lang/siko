@@ -69,7 +69,7 @@ impl Usage {
 
 impl Display for Usage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {}", self.path, self.kind)
+        write!(f, "{} {} {}", self.kind, self.path, self.tag)
     }
 }
 
@@ -129,6 +129,12 @@ enum MoveKind {
     Fully,
     Partially,
     NotMoved,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct PossibleCollision {
+    first: Tag,
+    second: Tag,
 }
 
 struct DropList {
@@ -214,20 +220,35 @@ impl Context {
         var: &Variable,
         kind: UsageKind,
         builder: &mut BlockBuilder,
-    ) -> Option<Result> {
+        collisions: &mut BTreeSet<PossibleCollision>,
+        usages: &mut BTreeMap<Tag, Usage>,
+    ) {
         let currentPath = if let Some(path) = paths.get(&var.value) {
             path.clone()
         } else {
             Path::new(var.clone())
         };
+
+        let tag = builder.getUniqueTag(TagKind::Usage);
+
+        let mut alreadyAdded = false;
+
         for usage in &self.usages {
             //println!("checking {} and {}", path, currentPath);
             if usage.path.same(&currentPath) && usage.isMove() {
-                return Some(Result::AlreadyMoved(currentPath.clone(), usage.clone()));
+                collisions.insert(PossibleCollision {
+                    first: usage.tag,
+                    second: tag,
+                });
+            }
+            if usage.tag == tag {
+                alreadyAdded = true;
             }
         }
 
-        let tag = builder.getUniqueTag(TagKind::Usage);
+        if alreadyAdded {
+            return;
+        }
 
         let usage = Usage {
             var: var.clone(),
@@ -236,8 +257,8 @@ impl Context {
             tag: tag,
         };
         //println!("    addUsage {}", usage);
-        self.usages.push(usage);
-        return None;
+        self.usages.push(usage.clone());
+        usages.insert(tag, usage);
     }
 
     fn merge(&mut self, terminal_context: &Context) {
@@ -367,6 +388,8 @@ pub struct DropChecker<'a> {
     values: BTreeMap<VariableName, ValueInfo>,
     dropLists: BTreeMap<String, DropList>,
     terminalContexts: BTreeMap<BlockId, Context>,
+    collisions: BTreeSet<PossibleCollision>,
+    usages: BTreeMap<Tag, Usage>,
 }
 
 impl<'a> DropChecker<'a> {
@@ -382,6 +405,8 @@ impl<'a> DropChecker<'a> {
             values: BTreeMap::new(),
             dropLists: BTreeMap::new(),
             terminalContexts: BTreeMap::new(),
+            collisions: BTreeSet::new(),
+            usages: BTreeMap::new(),
         }
     }
 
@@ -487,15 +512,58 @@ impl<'a> DropChecker<'a> {
         }
     }
 
+    fn processCollision(&mut self) {
+        let mut failed = false;
+        for collision in &self.collisions {
+            let prevUsage = self.usages.get(&collision.first).unwrap();
+            let currentUsage = self.usages.get(&collision.second).unwrap();
+
+            if !prevUsage.isMove() {
+                continue;
+            }
+
+            if self.program.instanceResolver.isCopy(&prevUsage.var.getType().clone()) {
+                self.implicitClones.insert(prevUsage.var.clone());
+                continue;
+            }
+
+            failed = true;
+
+            if prevUsage.var == currentUsage.var {
+                let slogan = format!(
+                    "Value {} moved in previous iteration of loop",
+                    self.ctx.yellow(&currentUsage.path.userPath())
+                );
+                //let slogan = format!("Value {} already moved", self.ctx.yellow(&currentPath.to_string()));
+                let mut entries = Vec::new();
+                entries.push(Entry::new(None, currentUsage.var.location.clone()));
+                let r = Report::build(self.ctx, slogan, entries);
+                r.print();
+            } else {
+                let slogan = format!("Value {} already moved", self.ctx.yellow(&currentUsage.path.userPath()));
+                //let slogan = format!("Value {} already moved", self.ctx.yellow(&currentPath.to_string()));
+                let mut entries = Vec::new();
+                entries.push(Entry::new(None, currentUsage.var.location.clone()));
+                entries.push(Entry::new(
+                    Some(format!("NOTE: previously moved here")),
+                    prevUsage.var.location.clone(),
+                ));
+                let r = Report::build(self.ctx, slogan, entries);
+                r.print();
+            }
+        }
+
+        if failed {
+            std::process::exit(1);
+        }
+    }
+
     fn process(&mut self) -> Function {
         let mut result = self.function.clone();
         if self.function.body.is_some() {
             self.processBlock(BlockId::first(), Context::new());
 
-            // println!("delcared values:");
-            // for (_, info) in &self.values {
-            //     println!("{}", info);
-            // }
+            self.processCollision();
 
             self.addImplicitClone(&mut result);
             self.generateDrops(&mut result);
@@ -585,38 +653,7 @@ impl<'a> DropChecker<'a> {
     }
 
     fn checkMove(&mut self, context: &mut Context, var: &Variable, kind: UsageKind, builder: &mut BlockBuilder) {
-        if let Some(Result::AlreadyMoved(currentPath, prevUsage)) = context.addUsage(&self.paths, var, kind, builder) {
-            if self.program.instanceResolver.isCopy(&prevUsage.var.getType().clone()) {
-                self.implicitClones.insert(prevUsage.var.clone());
-                context.removeSpecificMove(&prevUsage.var);
-                context.addUsage(&self.paths, var, kind, builder);
-                return;
-            }
-
-            if prevUsage.var == *var {
-                let slogan = format!(
-                    "Value {} moved in previous iteration of loop",
-                    self.ctx.yellow(&currentPath.userPath())
-                );
-                //let slogan = format!("Value {} already moved", self.ctx.yellow(&currentPath.to_string()));
-                let mut entries = Vec::new();
-                entries.push(Entry::new(None, var.location.clone()));
-                let r = Report::build(self.ctx, slogan, entries);
-                r.print();
-            } else {
-                let slogan = format!("Value {} already moved", self.ctx.yellow(&currentPath.userPath()));
-                //let slogan = format!("Value {} already moved", self.ctx.yellow(&currentPath.to_string()));
-                let mut entries = Vec::new();
-                entries.push(Entry::new(None, var.location.clone()));
-                entries.push(Entry::new(
-                    Some(format!("NOTE: previously moved here")),
-                    prevUsage.var.location.clone(),
-                ));
-                let r = Report::build(self.ctx, slogan, entries);
-                r.print();
-            }
-            std::process::exit(1)
-        }
+        context.addUsage(&self.paths, var, kind, builder, &mut self.collisions, &mut self.usages)
     }
 
     fn declareValue(&mut self, var: &Variable, context: &mut Context) {
@@ -742,8 +779,13 @@ impl<'a> DropChecker<'a> {
                 break;
             }
         }
-        self.terminalContexts.insert(blockId, context.clone());
-        true
+        let old = self.terminalContexts.insert(blockId, context.clone());
+        match old {
+            Some(oldContext) => oldContext != context,
+            None => {
+                return true;
+            }
+        }
     }
 
     fn dropPath(&self, rootPath: &Path, ty: &Type, context: &Context, dropList: &mut DropList) {
