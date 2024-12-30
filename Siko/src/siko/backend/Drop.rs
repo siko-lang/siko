@@ -6,10 +6,9 @@ use std::{
 use crate::siko::{
     hir::{
         Apply::{instantiateClass, ApplyVariable},
-        BlockBuilder::BlockBuilder,
         BodyBuilder::BodyBuilder,
         Function::{BlockId, Function, Variable, VariableName},
-        Instruction::{Instruction, InstructionKind, Tag, TagKind},
+        Instruction::{Instruction, InstructionKind},
         Program::Program,
         Substitution::VariableSubstitution,
         Type::Type,
@@ -58,7 +57,6 @@ struct Usage {
     var: Variable,
     path: Path,
     kind: UsageKind,
-    tag: Tag,
 }
 
 impl Usage {
@@ -69,7 +67,7 @@ impl Usage {
 
 impl Display for Usage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {} {}", self.kind, self.path, self.tag)
+        write!(f, "{} {} {}", self.kind, self.path, self.var)
     }
 }
 
@@ -133,8 +131,8 @@ enum MoveKind {
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct PossibleCollision {
-    first: Tag,
-    second: Tag,
+    first: Variable,
+    second: Variable,
 }
 
 struct DropList {
@@ -219,17 +217,15 @@ impl Context {
         paths: &BTreeMap<VariableName, Path>,
         var: &Variable,
         kind: UsageKind,
-        builder: &mut BlockBuilder,
         collisions: &mut BTreeSet<PossibleCollision>,
-        usages: &mut BTreeMap<Tag, Usage>,
+        usages: &mut BTreeMap<Variable, Usage>,
     ) {
+        //println!("    addUsage {} {}", var, kind);
         let currentPath = if let Some(path) = paths.get(&var.value) {
             path.clone()
         } else {
             Path::new(var.clone())
         };
-
-        let tag = builder.getUniqueTag(TagKind::Usage);
 
         let mut alreadyAdded = false;
 
@@ -237,16 +233,17 @@ impl Context {
             //println!("checking {} and {}", path, currentPath);
             if usage.path.same(&currentPath) && usage.isMove() {
                 collisions.insert(PossibleCollision {
-                    first: usage.tag,
-                    second: tag,
+                    first: usage.var.clone(),
+                    second: var.clone(),
                 });
             }
-            if usage.tag == tag {
+            if usage.var == *var {
                 alreadyAdded = true;
             }
         }
 
         if alreadyAdded {
+            //println!("    already added");
             return;
         }
 
@@ -254,11 +251,10 @@ impl Context {
             var: var.clone(),
             path: currentPath,
             kind: kind,
-            tag: tag,
         };
         //println!("    addUsage {}", usage);
         self.usages.push(usage.clone());
-        usages.insert(tag, usage);
+        usages.insert(var.clone(), usage);
     }
 
     fn merge(&mut self, terminal_context: &Context) {
@@ -389,7 +385,7 @@ pub struct DropChecker<'a> {
     dropLists: BTreeMap<String, DropList>,
     terminalContexts: BTreeMap<BlockId, Context>,
     collisions: BTreeSet<PossibleCollision>,
-    usages: BTreeMap<Tag, Usage>,
+    usages: BTreeMap<Variable, Usage>,
 }
 
 impl<'a> DropChecker<'a> {
@@ -416,8 +412,9 @@ impl<'a> DropChecker<'a> {
         for block in allblocksIds {
             let mut builder = self.bodyBuilder.iterator(block);
             loop {
-                if let Some(instruction) = builder.getInstruction() {
+                if let Some(mut instruction) = builder.getInstruction() {
                     let vars = instruction.kind.collectVariables();
+                    let mut kinds = Vec::new();
                     for var in vars {
                         if self.implicitClones.contains(&var) {
                             let mut implicitRefDest = var.clone();
@@ -437,12 +434,15 @@ impl<'a> DropChecker<'a> {
                                 getCloneName(),
                                 vec![implicitRefDest],
                             );
-                            let newKind = instruction.kind.applyVar(&varSwap);
-                            builder.replaceInstruction(newKind, instruction.location.clone());
-                            builder.addInstruction(implicitCloneKind, instruction.location.clone());
-                            builder.addInstruction(implicitRefKind, instruction.location.clone());
+                            instruction.kind = instruction.kind.applyVar(&varSwap);
+                            kinds.push(implicitCloneKind);
+                            kinds.push(implicitRefKind);
                             self.implicitClones.remove(&var);
                         }
+                    }
+                    builder.replaceInstruction(instruction.kind, instruction.location.clone());
+                    for k in kinds {
+                        builder.addInstruction(k, instruction.location.clone());
                     }
                     builder.step();
                 } else {
@@ -508,7 +508,10 @@ impl<'a> DropChecker<'a> {
                 continue;
             }
 
+            //println!("collision {} {}", prevUsage.var, currentUsage.var);
+
             if self.program.instanceResolver.isCopy(&prevUsage.var.getType().clone()) {
+                //println!("implict clone for {}", prevUsage.var);
                 self.implicitClones.insert(prevUsage.var.clone());
                 continue;
             }
@@ -638,8 +641,8 @@ impl<'a> DropChecker<'a> {
         }
     }
 
-    fn checkMove(&mut self, context: &mut Context, var: &Variable, kind: UsageKind, builder: &mut BlockBuilder) {
-        context.addUsage(&self.paths, var, kind, builder, &mut self.collisions, &mut self.usages)
+    fn checkMove(&mut self, context: &mut Context, var: &Variable, kind: UsageKind) {
+        context.addUsage(&self.paths, var, kind, &mut self.collisions, &mut self.usages)
     }
 
     fn declareValue(&mut self, var: &Variable, context: &mut Context) {
@@ -672,14 +675,14 @@ impl<'a> DropChecker<'a> {
                 match &instruction.kind {
                     InstructionKind::FunctionCall(dest, _, args) => {
                         for arg in args {
-                            self.checkMove(&mut context, arg, getUsageKind(arg), &mut builder);
+                            self.checkMove(&mut context, arg, getUsageKind(arg));
                         }
                         self.declareValue(dest, &mut context);
                     }
                     InstructionKind::MethodCall(_, _, _, _) => unreachable!("method call in Drop checker"),
                     InstructionKind::DynamicFunctionCall(_, _, _) => {}
                     InstructionKind::ValueRef(dest, src) => {
-                        self.checkMove(&mut context, src, getUsageKind(src), &mut builder);
+                        self.checkMove(&mut context, src, getUsageKind(src));
                         self.declareValue(dest, &mut context);
                     }
                     InstructionKind::FieldRef(dest, receiver, fieldName) => {
@@ -694,12 +697,12 @@ impl<'a> DropChecker<'a> {
                         self.declareValue(dest, &mut context);
                     }
                     InstructionKind::Bind(dest, src, _) => {
-                        self.checkMove(&mut context, src, getUsageKind(src), &mut builder);
+                        self.checkMove(&mut context, src, getUsageKind(src));
                         self.declareValue(dest, &mut context);
                     }
                     InstructionKind::Tuple(dest, args) => {
                         for arg in args {
-                            self.checkMove(&mut context, arg, getUsageKind(arg), &mut builder);
+                            self.checkMove(&mut context, arg, getUsageKind(arg));
                         }
                         self.declareValue(dest, &mut context);
                     }
@@ -714,13 +717,13 @@ impl<'a> DropChecker<'a> {
                     }
                     InstructionKind::Return(_, _) => {}
                     InstructionKind::Ref(dest, value) => {
-                        self.checkMove(&mut context, value, UsageKind::Ref, &mut builder);
+                        self.checkMove(&mut context, value, UsageKind::Ref);
                         self.declareValue(dest, &mut context);
                     }
                     InstructionKind::Drop(_, _) => {}
                     InstructionKind::Jump(_, _, _) => {}
                     InstructionKind::Assign(dest, src) => {
-                        self.checkMove(&mut context, src, getUsageKind(src), &mut builder);
+                        self.checkMove(&mut context, src, getUsageKind(src));
                         context.removeSpecificMoveByRoot(dest);
                         if !dest.getType().isReference() {
                             if context.isLive(&dest.value) {
@@ -738,13 +741,13 @@ impl<'a> DropChecker<'a> {
                         self.declareValue(dest, &mut context);
                     }
                     InstructionKind::EnumSwitch(root, _) => {
-                        self.checkMove(&mut context, root, getUsageKind(root), &mut builder);
+                        self.checkMove(&mut context, root, getUsageKind(root));
                     }
                     InstructionKind::IntegerSwitch(root, _) => {
-                        self.checkMove(&mut context, root, getUsageKind(root), &mut builder);
+                        self.checkMove(&mut context, root, getUsageKind(root));
                     }
                     InstructionKind::StringSwitch(root, _) => {
-                        self.checkMove(&mut context, root, getUsageKind(root), &mut builder);
+                        self.checkMove(&mut context, root, getUsageKind(root));
                     }
                     InstructionKind::BlockStart(name) => {
                         let block = SyntaxBlock::new(name.id.clone());
