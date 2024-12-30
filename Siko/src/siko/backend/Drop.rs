@@ -6,16 +6,17 @@ use std::{
 use crate::siko::{
     hir::{
         Apply::{instantiateClass, ApplyVariable},
+        BlockBuilder::BlockBuilder,
         BodyBuilder::BodyBuilder,
         Function::{BlockId, Function, Variable, VariableName},
-        Instruction::{Instruction, InstructionKind},
+        Instruction::InstructionKind,
         Program::Program,
         Substitution::VariableSubstitution,
         Type::Type,
         TypeVarAllocator::TypeVarAllocator,
     },
     location::{
-        self,
+        Location::Location,
         Report::{Entry, Report, ReportContext},
     },
     qualifiedname::getCloneName,
@@ -410,7 +411,6 @@ impl<'a> DropChecker<'a> {
     }
 
     fn addImplicitClone(&mut self) {
-        let mut nextVar = 1;
         let allblocksIds = self.bodyBuilder.getAllBlockIds();
         for block in allblocksIds {
             let mut builder = self.bodyBuilder.iterator(block);
@@ -420,16 +420,17 @@ impl<'a> DropChecker<'a> {
                     let mut kinds = Vec::new();
                     for var in vars {
                         if self.implicitClones.contains(&var) {
-                            let mut implicitRefDest = var.clone();
-                            implicitRefDest.value = VariableName::Local(format!("implicitRef"), nextVar);
-                            nextVar += 1;
+                            let mut implicitRefDest = self
+                                .bodyBuilder
+                                .createTempValue(VariableName::ImplicitCloneRef, instruction.location.clone());
                             let ty = Type::Reference(Box::new(var.getType().clone()), None);
                             implicitRefDest.ty = Some(ty);
                             let implicitRefKind = InstructionKind::Ref(implicitRefDest.clone(), var.clone());
 
-                            let mut implicitCloneDest = var.clone();
-                            implicitCloneDest.value = VariableName::Local(format!("implicitClone"), nextVar);
-                            nextVar += 1;
+                            let mut implicitCloneDest = self
+                                .bodyBuilder
+                                .createTempValue(VariableName::ImplicitClone, instruction.location.clone());
+                            implicitCloneDest.ty = var.ty.clone();
                             let mut varSwap = VariableSubstitution::new();
                             varSwap.add(var.clone(), implicitCloneDest.clone());
                             let implicitCloneKind = InstructionKind::FunctionCall(
@@ -563,8 +564,53 @@ impl<'a> DropChecker<'a> {
         result
     }
 
+    fn processDropList(&mut self, dropList: DropList, builder: &mut BlockBuilder, location: Location) {
+        let mut kinds = Vec::new();
+        for path in &dropList.paths {
+            // create FieldRef instructionsfor the path and drop the dest of the fieldref
+            let mut receiver = path.root.clone();
+            let mut currentTy = receiver.getType().clone();
+
+            for item in &path.items {
+                if let Some(className) = currentTy.getName() {
+                    if let Some(classDef) = self.program.getClass(&className) {
+                        let mut allocator = TypeVarAllocator::new();
+                        let classInstance = instantiateClass(&mut allocator, &classDef, &currentTy);
+                        for field in &classInstance.fields {
+                            if field.name == *item {
+                                currentTy = field.ty.clone();
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                let mut dest = self
+                    .bodyBuilder
+                    .createTempValue(VariableName::DropVar, location.clone());
+                dest.ty = Some(currentTy.clone());
+
+                let fieldRefKind = InstructionKind::FieldRef(dest.clone(), receiver, item.clone());
+                kinds.push(fieldRefKind);
+                dest.index = 1;
+                receiver = dest;
+            }
+
+            let mut dropRes = self
+                .bodyBuilder
+                .createTempValue(VariableName::AutoDropResult, location.clone());
+            dropRes.ty = Some(Type::getUnitType());
+
+            let dropKind = InstructionKind::Drop(dropRes, receiver.clone());
+
+            kinds.push(dropKind);
+        }
+        for k in kinds.into_iter().rev() {
+            builder.addInstruction(k, location.clone());
+        }
+    }
+
     fn generateDrops(&mut self) {
-        let mut nextDropVar = 0;
         let allBlocks = self.bodyBuilder.getAllBlockIds();
         for blockId in allBlocks {
             let mut builder = self.bodyBuilder.iterator(blockId);
@@ -572,60 +618,8 @@ impl<'a> DropChecker<'a> {
                 if let Some(instruction) = builder.getInstruction() {
                     match &instruction.kind {
                         InstructionKind::BlockEnd(id) => {
-                            let mut kinds = Vec::new();
                             if let Some(dropList) = self.dropLists.remove(&id.id) {
-                                for path in &dropList.paths {
-                                    // create FieldRef instructionsfor the path and drop the dest of the fieldref
-                                    let mut receiver = path.root.clone();
-                                    let mut currentTy = receiver.getType().clone();
-
-                                    for item in &path.items {
-                                        if let Some(className) = currentTy.getName() {
-                                            if let Some(classDef) = self.program.getClass(&className) {
-                                                let mut allocator = TypeVarAllocator::new();
-                                                let classInstance =
-                                                    instantiateClass(&mut allocator, &classDef, &currentTy);
-                                                for field in &classInstance.fields {
-                                                    if field.name == *item {
-                                                        currentTy = field.ty.clone();
-                                                        break;
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        let mut dest = Variable {
-                                            value: VariableName::Local(format!("drop"), nextDropVar),
-                                            ty: Some(currentTy.clone()),
-                                            location: instruction.location.clone(),
-                                            index: 0,
-                                        };
-
-                                        nextDropVar += 1;
-
-                                        let fieldRefKind =
-                                            InstructionKind::FieldRef(dest.clone(), receiver, item.clone());
-                                        kinds.push(fieldRefKind);
-                                        dest.index = 1;
-                                        receiver = dest;
-                                    }
-
-                                    let dropRes = Variable {
-                                        value: VariableName::Local(format!("autoDropRes"), nextDropVar),
-                                        ty: Some(Type::getUnitType()),
-                                        location: instruction.location.clone(),
-                                        index: 0,
-                                    };
-
-                                    nextDropVar += 1;
-
-                                    let dropKind = InstructionKind::Drop(dropRes, receiver.clone());
-
-                                    kinds.push(dropKind);
-                                }
-                            }
-                            for k in kinds.into_iter().rev() {
-                                builder.addInstruction(k, instruction.location.clone());
+                                self.processDropList(dropList, &mut builder, instruction.location.clone());
                             }
                         }
                         _ => {}
@@ -636,19 +630,6 @@ impl<'a> DropChecker<'a> {
                 }
             }
         }
-        // for block in &mut body.blocks {
-        //     let mut index = 0;
-        //     loop {
-        //         if index >= block.instructions.len() {
-        //             break;
-        //         }
-        //         let instruction = block.instructions[index].clone();
-        //         let mut instructionIndex = index;
-        //         if let InstructionKind::BlockEnd(id) = &instruction.kind {
-
-        //         index += 1;
-        //     }
-        // }
     }
 
     fn checkMove(&mut self, context: &mut Context, var: &Variable, kind: UsageKind) {
