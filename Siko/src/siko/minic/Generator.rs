@@ -7,8 +7,8 @@ use std::{
 use crate::siko::{
     minic::Function::Value,
     qualifiedname::{
-        getPtrAllocateArrayName, getPtrCloneName, getPtrDeallocateName, getPtrMemcpyName, getPtrNullName,
-        getPtrOffsetName, getPtrPrintName, getPtrStoreName,
+        getPtrAllocateArrayName, getPtrCloneName, getPtrDeallocateName, getPtrLoadName, getPtrMemcpyName,
+        getPtrNullName, getPtrOffsetName, getPtrPrintName, getPtrStoreName,
     },
     util::DependencyProcessor::processDependencies,
 };
@@ -307,6 +307,12 @@ impl MiniCGenerator {
             writeln!(buf, "    {} result;", getTypeName(&f.result))?;
             writeln!(buf, "    *addr = item;")?;
             writeln!(buf, "    return result;")?;
+            writeln!(buf, "}}\n")?;
+        }
+
+        if f.name.starts_with(&getPtrLoadName().toString().replace(".", "_")) {
+            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(buf, "    return *addr;")?;
             writeln!(buf, "}}\n")?;
         }
 

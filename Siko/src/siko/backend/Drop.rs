@@ -126,9 +126,9 @@ enum Result {
     AlreadyMoved(Path, Usage),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum MoveKind {
-    Fully,
+    Fully(Variable),
     Partially,
     NotMoved,
 }
@@ -207,7 +207,7 @@ impl Context {
             if usage.path.same(path) && usage.isMove() {
                 //println!("paths {} {}", usage.path, path,);
                 if path.contains(&usage.path) {
-                    return MoveKind::Fully;
+                    return MoveKind::Fully(usage.var.clone());
                 } else {
                     return MoveKind::Partially;
                 }
@@ -234,7 +234,7 @@ impl Context {
         let mut alreadyAdded = false;
 
         for usage in &self.usages {
-            //println!("checking {} and {}", path, currentPath);
+            //println!("checking {} and {}", usage.path, currentPath);
             if usage.path.same(&currentPath) && usage.isMove() {
                 collisions.insert(PossibleCollision {
                     first: usage.var.clone(),
@@ -266,6 +266,9 @@ impl Context {
             self.addLive(var);
         }
         for usage in &terminal_context.usages {
+            if self.usages.contains(usage) {
+                continue;
+            }
             self.usages.push(usage.clone());
         }
         self.rootBlock = terminal_context.rootBlock.clone();
@@ -279,12 +282,12 @@ impl Display for Context {
             " live {}, moved {}, block {}",
             self.live
                 .iter()
-                .map(|v| v.value.visibleName())
+                .map(|v| v.to_string())
                 .collect::<Vec<String>>()
                 .join(", "),
             self.usages
                 .iter()
-                .map(|u| u.path.userPath())
+                .map(|u| u.to_string())
                 .collect::<Vec<String>>()
                 .join(", "),
             self.rootBlock.getCurrentBlockId()
@@ -505,8 +508,8 @@ impl<'a> DropChecker<'a> {
     fn processCollision(&mut self) {
         let mut failed = false;
         for collision in &self.collisions {
-            let prevUsage = self.usages.get(&collision.first).unwrap();
-            let currentUsage = self.usages.get(&collision.second).unwrap();
+            let mut prevUsage = self.usages.get(&collision.first).unwrap().clone();
+            let currentUsage = self.usages.get(&collision.second).unwrap().clone();
 
             if !prevUsage.isMove() {
                 continue;
@@ -517,6 +520,8 @@ impl<'a> DropChecker<'a> {
             if self.program.instanceResolver.isCopy(&prevUsage.var.getType().clone()) {
                 //println!("implict clone for {}", prevUsage.var);
                 self.implicitClones.insert(prevUsage.var.clone());
+                prevUsage.kind = UsageKind::Ref;
+                self.usages.insert(prevUsage.var.clone(), prevUsage);
                 continue;
             }
 
@@ -788,8 +793,8 @@ impl<'a> DropChecker<'a> {
                     }
                 }
             }
-            MoveKind::Fully => {
-                //println!("already moved {}", rootPath);
+            MoveKind::Fully(var) => {
+                //println!("already moved {} by {}", rootPath, var);
             }
         }
     }

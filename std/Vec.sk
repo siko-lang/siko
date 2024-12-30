@@ -2,13 +2,13 @@ module Vec {
 
 import Ptr
 
-class Vec[T] {
+class InnerVec[T] {
     items: *T,
     size: Int,
-    capacity: Int,
+    capacity: Int
 
-    fn new() -> Vec[T] {
-        Vec(null(), 0, 0)
+    fn new() -> InnerVec[T] {
+        InnerVec(null(), 0, 0)
     }
 
     fn push(mut self, item: T) -> Self {
@@ -46,22 +46,85 @@ class Vec[T] {
         self.items = newItems;
         self
     }
+}
 
-    fn iter(&self) -> VecIterator[T] {
-        VecIterator(&self, 0)
+class Vec[T] {
+    inner: InnerVec[T]
+
+    fn new() -> Vec[T] {
+        Vec(InnerVec.new())
+    }
+
+    fn push(mut self, item: T) -> Self {
+        self.inner = self.inner.push(item); // TODO: mut self should apply to self.inner.push as well?!
+        self
+    }
+
+    fn get(&self, index: Int) -> &T {
+        self.inner.get(index)
+    }
+
+    fn getUnchecked(&self, index: Int) -> &T {
+        self.inner.getUnchecked(index)
+    }
+
+    fn iter(&self) -> VecIteratorRef[T] {
+        VecIteratorRef(&self, 0)
+    }
+
+    fn into_iter(self) -> VecIterator[T] {
+        VecIterator(self.inner, 0)
     }
 }
 
 class VecIterator[T] {
+    inner: InnerVec[T],
+    index: Int
+}
+
+instance[T] Drop[VecIterator[T]] {
+    fn drop(mut self) -> Self {
+        if self.inner.capacity == 0 {
+            return self
+        }
+        loop {
+            if self.index >= self.inner.size {
+                break;
+            }
+            let ptr = offset(Ptr.clone(self.inner.items), self.index);
+            self.index = self.index + 1;
+            let item = Ptr.load(ptr);
+        }
+        deallocate(Ptr.clone(self.inner.items));
+        self.inner.items = null();
+        self
+    }
+}
+
+instance[T] Iterator[VecIterator[T]] {
+    type Item = T
+
+    fn next(mut self) -> (Self, Option[T]) {
+        if self.index >= self.inner.size {
+            return (self, None)
+        }
+        let ptr = offset(Ptr.clone(self.inner.items), self.index);
+        self.index = self.index + 1;
+        let item = Ptr.load(ptr);
+        (self, Some(item))
+    }
+}
+
+class VecIteratorRef[T] {
     vec: &Vec[T]
     index: Int
 }
 
-instance[T] Iterator[VecIterator[T]] {
+instance[T] Iterator[VecIteratorRef[T]] {
     type Item = &T
 
     fn next(mut self) -> (Self, Option[&T]) {
-        if self.index >= self.vec.size {
+        if self.index >= self.vec.inner.size {
             return (self, None)
         }
         let item = self.vec.getUnchecked(self.index);
@@ -72,10 +135,9 @@ instance[T] Iterator[VecIterator[T]] {
 
 instance[T] Drop[Vec[T]] {
     fn drop(mut self) -> Self {
-        if self.capacity > 0 {
-            deallocate(Ptr.clone(self.items));
-            self.capacity = 0;
-            self.items = null();
+        {
+            let iter = VecIterator(self.inner, 0);
+            self.inner = InnerVec.new();
         }
         self
     }
