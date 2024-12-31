@@ -274,23 +274,27 @@ impl InstructionKind {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Tag {
     ImplicitRef(u32),
+    Assign(u32),
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TagKind {
     ImplicitRef,
+    Assign,
 }
 
 impl Tag {
     pub fn getId(&self) -> u32 {
         match self {
             Tag::ImplicitRef(id) => *id,
+            Tag::Assign(id) => *id,
         }
     }
 
     pub fn isKind(&self, kind: TagKind) -> bool {
         match self {
             Tag::ImplicitRef(_) => kind == TagKind::ImplicitRef,
+            Tag::Assign(_) => kind == TagKind::Assign,
         }
     }
 }
@@ -299,6 +303,7 @@ impl Display for Tag {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Tag::ImplicitRef(id) => write!(f, "implicit_ref_{}", id),
+            Tag::Assign(id) => write!(f, "assign_{}", id),
         }
     }
 }

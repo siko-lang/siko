@@ -9,7 +9,7 @@ use crate::siko::{
         BlockBuilder::BlockBuilder,
         BodyBuilder::BodyBuilder,
         Function::{BlockId, Function, Variable, VariableName},
-        Instruction::InstructionKind,
+        Instruction::{InstructionKind, Tag, TagKind},
         Program::Program,
         Substitution::VariableSubstitution,
         Type::Type,
@@ -393,6 +393,7 @@ pub struct DropChecker<'a> {
     terminalContexts: BTreeMap<BlockId, Context>,
     collisions: BTreeSet<PossibleCollision>,
     usages: BTreeMap<Variable, Usage>,
+    assigns: BTreeMap<Tag, DropList>,
 }
 
 impl<'a> DropChecker<'a> {
@@ -410,6 +411,7 @@ impl<'a> DropChecker<'a> {
             terminalContexts: BTreeMap::new(),
             collisions: BTreeSet::new(),
             usages: BTreeMap::new(),
+            assigns: BTreeMap::new(),
         }
     }
 
@@ -622,6 +624,16 @@ impl<'a> DropChecker<'a> {
             loop {
                 if let Some(instruction) = builder.getInstruction() {
                     match &instruction.kind {
+                        InstructionKind::Assign(_, _) => {
+                            let tags = builder.getTags();
+                            for tag in tags {
+                                if tag.isKind(TagKind::Assign) {
+                                    if let Some(dropList) = self.assigns.remove(&tag) {
+                                        self.processDropList(dropList, &mut builder, instruction.location.clone());
+                                    }
+                                }
+                            }
+                        }
                         InstructionKind::BlockEnd(id) => {
                             if let Some(dropList) = self.dropLists.remove(&id.id) {
                                 self.processDropList(dropList, &mut builder, instruction.location.clone());
@@ -720,14 +732,16 @@ impl<'a> DropChecker<'a> {
                     InstructionKind::Jump(_, _, _) => {}
                     InstructionKind::Assign(dest, src) => {
                         self.checkMove(&mut context, src, getUsageKind(src));
-                        context.removeSpecificMoveByRoot(dest);
+                        let tag = builder.getUniqueTag(TagKind::Assign);
                         if !dest.getType().isReference() {
                             if context.isLive(&dest.value) {
                                 let mut dropList = DropList::new();
                                 self.dropPath(&Path::new(dest.clone()), &dest.getType(), &context, &mut dropList);
                                 //println!("drop list {}", dropList);
+                                self.assigns.insert(tag, dropList);
                             }
                         }
+                        context.removeSpecificMoveByRoot(dest);
                     }
                     InstructionKind::FieldAssign(dest, _, _) => {
                         context.addLive(dest);
