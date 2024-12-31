@@ -64,6 +64,7 @@ pub enum SimpleExpr {
     Break(Option<Box<Expr>>),
     Continue(Option<Box<Expr>>),
     Ref(Box<Expr>),
+    List(Vec<Expr>),
 }
 
 impl SimpleExpr {
@@ -85,6 +86,7 @@ impl SimpleExpr {
             SimpleExpr::Block(block) => block.doesNotReturn(),
             SimpleExpr::Tuple(exprs) => exprs.iter().any(|expr| expr.doesNotReturn()),
             SimpleExpr::Ref(expr) => expr.doesNotReturn(),
+            SimpleExpr::List(exprs) => exprs.iter().any(|expr| expr.doesNotReturn()),
             _ => false,
         }
     }

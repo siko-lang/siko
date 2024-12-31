@@ -7,7 +7,7 @@ use crate::siko::hir::Function::{BlockId, Variable, VariableName};
 use crate::siko::hir::Instruction::{BlockInfo, FieldInfo, InstructionKind, JumpDirection};
 use crate::siko::location::Location::Location;
 use crate::siko::location::Report::ReportContext;
-use crate::siko::qualifiedname::QualifiedName;
+use crate::siko::qualifiedname::{getVecNewName, getVecPushName, QualifiedName};
 use crate::siko::resolver::matchcompiler::Compiler::MatchCompiler;
 use crate::siko::syntax::Expr::{BinaryOp, Expr, SimpleExpr, UnaryOp};
 use crate::siko::syntax::Identifier::Identifier;
@@ -481,6 +481,21 @@ impl<'a> ExprResolver<'a> {
             SimpleExpr::Ref(arg) => {
                 let arg = self.resolveExpr(arg, env);
                 self.bodyBuilder.current().addRef(arg, expr.location.clone())
+            }
+            SimpleExpr::List(args) => {
+                let mut listVar =
+                    self.bodyBuilder
+                        .current()
+                        .addFunctionCall(getVecNewName(), Vec::new(), expr.location.clone());
+                for arg in args {
+                    let argId = self.resolveExpr(arg, env);
+                    listVar = self.bodyBuilder.current().addFunctionCall(
+                        getVecPushName(),
+                        vec![listVar, argId],
+                        expr.location.clone(),
+                    );
+                }
+                listVar
             }
         }
     }

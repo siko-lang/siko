@@ -148,3 +148,11 @@ pub fn getCopyName() -> QualifiedName {
 pub fn getAutoDropFnName() -> QualifiedName {
     build("siko", "autoDrop")
 }
+
+pub fn getVecNewName() -> QualifiedName {
+    build("Vec", "Vec").add(format!("new"))
+}
+
+pub fn getVecPushName() -> QualifiedName {
+    build("Vec", "Vec").add(format!("push"))
+}

@@ -470,6 +470,21 @@ impl<'a> ExprParser for Parser<'a> {
                 let arg = self.parseExpr();
                 self.buildExpr(SimpleExpr::Ref(Box::new(arg)), start)
             }
+            TokenKind::LeftBracket(BracketKind::Square) => {
+                self.expect(TokenKind::LeftBracket(BracketKind::Square));
+                let mut args = Vec::new();
+                while !self.check(TokenKind::RightBracket(BracketKind::Square)) {
+                    let arg = self.parseExpr();
+                    args.push(arg);
+                    if self.check(TokenKind::RightBracket(BracketKind::Square)) {
+                        break;
+                    } else {
+                        self.expect(TokenKind::Misc(MiscKind::Comma));
+                    }
+                }
+                self.expect(TokenKind::RightBracket(BracketKind::Square));
+                self.buildExpr(SimpleExpr::List(args), start)
+            }
             kind => self.reportError2("<expr>", kind),
         }
     }
