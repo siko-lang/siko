@@ -187,7 +187,11 @@ impl Context {
     }
 
     fn addLive(&mut self, var: &Variable) {
-        //println!("    addLive {} in block {}", var.value, self.rootBlock.getCurrentBlockId());
+        // println!(
+        //     "    addLive {} in block {}",
+        //     var.value,
+        //     self.rootBlock.getCurrentBlockId()
+        // );
         if !self.live.contains(var) {
             self.live.push(var.clone());
         }
@@ -196,6 +200,10 @@ impl Context {
 
     fn removeSpecificMoveByRoot(&mut self, var: &Variable) {
         self.usages.retain(|usage| usage.path.root.value != var.value);
+    }
+
+    fn removeSpecificMoveByPath(&mut self, path: &Path) {
+        self.usages.retain(|usage| !usage.path.contains(path));
     }
 
     fn removeSpecificMove(&mut self, var: &Variable) {
@@ -701,8 +709,14 @@ impl<'a> DropChecker<'a> {
                                 .insert(dest.value.clone(), Path::new(receiver.clone()).add(fieldName.clone()));
                         }
                     }
-                    InstructionKind::TupleIndex(dest, _, _) => {
-                        self.declareValue(dest, &mut context);
+                    InstructionKind::TupleIndex(dest, src, index) => {
+                        let fieldName = format!("{}", index);
+                        if let Some(path) = self.paths.get(&src.value) {
+                            self.paths.insert(dest.value.clone(), path.add(fieldName.clone()));
+                        } else {
+                            self.paths
+                                .insert(dest.value.clone(), Path::new(src.clone()).add(fieldName.clone()));
+                        }
                     }
                     InstructionKind::Bind(dest, src, _) => {
                         self.checkMove(&mut context, src, getUsageKind(src));
@@ -743,8 +757,20 @@ impl<'a> DropChecker<'a> {
                         }
                         context.removeSpecificMoveByRoot(dest);
                     }
-                    InstructionKind::FieldAssign(dest, _, _) => {
-                        context.addLive(dest);
+                    InstructionKind::FieldAssign(dest, src, fields) => {
+                        self.checkMove(&mut context, src, getUsageKind(src));
+                        let ty = fields.last().unwrap().ty.clone().unwrap();
+                        if !ty.isReference() {
+                            let mut dropList = DropList::new();
+                            let mut path = Path::new(dest.clone());
+                            for f in fields {
+                                path = path.add(f.name.clone());
+                            }
+                            // TODO: check that parent path is live!
+                            self.dropPath(&path, &dest.getType(), &context, &mut dropList);
+                            //println!("drop list {}", dropList);
+                            context.removeSpecificMoveByPath(&path);
+                        }
                     }
                     InstructionKind::DeclareVar(_) => {}
                     InstructionKind::Transform(dest, _, _) => {
@@ -769,6 +795,16 @@ impl<'a> DropChecker<'a> {
                         let current = context.rootBlock.getCurrentBlockId();
                         let mut dropList = DropList::new();
                         self.dropValues(&mut context, current, &mut dropList);
+                        //println!("drop list {}", dropList);
+                        for p in &dropList.paths {
+                            context.addUsage(
+                                &self.paths,
+                                &p.root,
+                                UsageKind::Move,
+                                &mut self.collisions,
+                                &mut self.usages,
+                            );
+                        }
                         self.dropLists.insert(endId.id.clone(), dropList);
                         context.rootBlock.endBlock();
                     }
@@ -815,9 +851,6 @@ impl<'a> DropChecker<'a> {
 
     fn dropValues(&mut self, context: &mut Context, block: String, dropList: &mut DropList) {
         //println!("Dropping in {}", block);
-        // for usage in &context.moved {
-        //     println!("move {}", usage.path);
-        // }
         for var in &context.live {
             if let Some(info) = self.values.get(&var.value) {
                 if info.block == block {

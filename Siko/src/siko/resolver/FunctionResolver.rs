@@ -80,19 +80,46 @@ impl<'a> FunctionResolver<'a> {
                         ty: Some(typeResolver.resolveType(ty)),
                         index: 0,
                     };
-                    env.addArg(var);
+                    env.addArg(var, *mutable);
                     IrParameter::Named(id.toString(), typeResolver.resolveType(ty), *mutable)
                 }
                 Parameter::SelfParam => match &self.owner {
-                    Some(owner) => IrParameter::SelfParam(false, owner.clone()),
+                    Some(owner) => {
+                        let var = Variable {
+                            value: VariableName::Arg(format!("self")),
+                            location: f.name.location.clone(),
+                            ty: Some(owner.clone()),
+                            index: 0,
+                        };
+                        env.addArg(var, false);
+                        IrParameter::SelfParam(false, owner.clone())
+                    }
                     None => error(format!("No owner for self type!")),
                 },
                 Parameter::MutSelfParam => match &self.owner {
-                    Some(owner) => IrParameter::SelfParam(true, owner.clone()),
+                    Some(owner) => {
+                        let var = Variable {
+                            value: VariableName::Arg(format!("self")),
+                            location: f.name.location.clone(),
+                            ty: Some(owner.clone()),
+                            index: 0,
+                        };
+                        env.addArg(var, true);
+                        IrParameter::SelfParam(true, owner.clone())
+                    }
                     None => error(format!("No owner for self type!")),
                 },
                 Parameter::RefSelfParam => match &self.owner {
-                    Some(owner) => IrParameter::SelfParam(false, IrType::Reference(Box::new(owner.clone()), None)),
+                    Some(owner) => {
+                        let var = Variable {
+                            value: VariableName::Arg(format!("self")),
+                            location: f.name.location.clone(),
+                            ty: Some(IrType::Reference(Box::new(owner.clone()), None)),
+                            index: 0,
+                        };
+                        env.addArg(var, false);
+                        IrParameter::SelfParam(false, IrType::Reference(Box::new(owner.clone()), None))
+                    }
                     None => error(format!("No owner for self type!")),
                 },
             };

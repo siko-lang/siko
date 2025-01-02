@@ -80,6 +80,7 @@ pub enum VariableName {
     AutoDropResult(u32),
     ImplicitCloneRef(u32),
     ImplicitClone(u32),
+    LocalArg(u32),
 }
 
 impl VariableName {
@@ -108,6 +109,7 @@ impl VariableName {
             VariableName::AutoDropResult(i) => format!("autoDropResult{}", i),
             VariableName::ImplicitCloneRef(i) => format!("implicitCloneRef{}", i),
             VariableName::ImplicitClone(i) => format!("implicitClone{}", i),
+            VariableName::LocalArg(i) => format!("localArg{}", i),
         }
     }
 }
@@ -138,6 +140,7 @@ impl Display for VariableName {
             VariableName::AutoDropResult(i) => write!(f, "autoDropResult{}", i),
             VariableName::ImplicitCloneRef(i) => write!(f, "implicitCloneRef{}", i),
             VariableName::ImplicitClone(i) => write!(f, "implicitClone{}", i),
+            VariableName::LocalArg(i) => write!(f, "localArg{}", i),
         }
     }
 }
@@ -168,6 +171,7 @@ impl Debug for VariableName {
             VariableName::AutoDropResult(i) => write!(f, "autoDropResult{}", i),
             VariableName::ImplicitCloneRef(i) => write!(f, "implicitCloneRef{}", i),
             VariableName::ImplicitClone(i) => write!(f, "implicitClone{}", i),
+            VariableName::LocalArg(i) => write!(f, "localArg{}", i),
         }
     }
 }

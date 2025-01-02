@@ -1,10 +1,11 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::siko::hir::Function::Variable;
 
 pub struct Environment<'a> {
     values: BTreeMap<String, Variable>,
     parent: Option<&'a Environment<'a>>,
+    mutables: BTreeSet<String>,
 }
 
 impl<'a> Environment<'a> {
@@ -12,6 +13,7 @@ impl<'a> Environment<'a> {
         Environment {
             values: BTreeMap::new(),
             parent: None,
+            mutables: BTreeSet::new(),
         }
     }
 
@@ -19,11 +21,16 @@ impl<'a> Environment<'a> {
         Environment {
             values: BTreeMap::new(),
             parent: Some(parent),
+            mutables: BTreeSet::new(),
         }
     }
 
-    pub fn addArg(&mut self, arg: Variable) {
+    pub fn addArg(&mut self, arg: Variable, mutable: bool) {
+        let name = arg.value.to_string();
         self.values.insert(arg.value.to_string(), arg);
+        if mutable {
+            self.mutables.insert(name);
+        }
     }
 
     pub fn addValue(&mut self, old: String, new: Variable) {
@@ -42,5 +49,13 @@ impl<'a> Environment<'a> {
                 }
             }
         }
+    }
+
+    pub fn values(&self) -> &BTreeMap<String, Variable> {
+        &self.values
+    }
+
+    pub fn isMutable(&self, name: &String) -> bool {
+        self.mutables.contains(name)
     }
 }

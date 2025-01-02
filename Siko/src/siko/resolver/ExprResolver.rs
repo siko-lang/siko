@@ -117,11 +117,15 @@ impl<'a> ExprResolver<'a> {
                     }
                 }
                 SimpleExpr::SelfValue => {
-                    let value = Variable {
-                        value: VariableName::Arg(format!("self")),
-                        location: receiver.location.clone(),
-                        ty: None,
-                        index: 0,
+                    let selfStr = format!("self");
+                    let value = match env.resolve(&selfStr) {
+                        Some(mut var) => {
+                            var.location = receiver.location.clone();
+                            self.indexVar(var)
+                        }
+                        None => {
+                            ResolverError::UnknownValue(selfStr.clone(), receiver.location.clone()).report(self.ctx);
+                        }
                     };
                     fields.reverse();
                     self.bodyBuilder
@@ -228,12 +232,18 @@ impl<'a> ExprResolver<'a> {
                     ResolverError::UnknownValue(name.name.clone(), name.location.clone()).report(self.ctx);
                 }
             },
-            SimpleExpr::SelfValue => Variable {
-                value: VariableName::Arg(format!("self")),
-                location: expr.location.clone(),
-                ty: None,
-                index: 0,
-            },
+            SimpleExpr::SelfValue => {
+                let selfStr = format!("self");
+                match env.resolve(&selfStr) {
+                    Some(mut var) => {
+                        var.location = expr.location.clone();
+                        self.indexVar(var)
+                    }
+                    None => {
+                        ResolverError::UnknownValue(selfStr.clone(), expr.location.clone()).report(self.ctx);
+                    }
+                }
+            }
             SimpleExpr::Name(name) => {
                 let irName = self.moduleResolver.resolverName(name);
                 if self.emptyVariants.contains(&irName) {
@@ -535,7 +545,32 @@ impl<'a> ExprResolver<'a> {
             .current()
             .implicit()
             .addDeclare(functionResult.clone(), body.location.clone());
-        self.resolveBlock(body, env, functionResult.clone());
+        let syntaxBlock = self.createSyntaxBlockId();
+        //println!("Resolving block {} with var {} current {}", syntaxBlock, resultValue, self.targetBlockId);
+        let blockInfo = BlockInfo { id: syntaxBlock };
+        self.bodyBuilder
+            .current()
+            .implicit()
+            .addInstruction(InstructionKind::BlockStart(blockInfo.clone()), body.location.clone());
+        let mut localEnv = Environment::child(env);
+        for value in env.values() {
+            blockBuilder
+                .implicit()
+                .addDeclare(value.1.clone(), body.location.clone());
+            let name = self.bodyBuilder.createLocalValue(value.0, body.location.clone());
+            blockBuilder.implicit().addBind(
+                name.clone(),
+                value.1.clone(),
+                env.isMutable(value.0),
+                value.1.location.clone(),
+            );
+            localEnv.addValue(value.0.clone(), name);
+        }
+        self.resolveBlock(body, &localEnv, functionResult.clone());
+        self.bodyBuilder
+            .current()
+            .implicit()
+            .addInstruction(InstructionKind::BlockEnd(blockInfo.clone()), body.location.clone());
         self.bodyBuilder
             .current()
             .implicit()
