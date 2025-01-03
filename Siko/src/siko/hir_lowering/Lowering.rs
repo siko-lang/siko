@@ -15,7 +15,7 @@ use crate::siko::{
         Program::Program as MirProgram,
         Type::Type as MirType,
     },
-    qualifiedname::{getIntTypeName, getPtrToRefName, QualifiedName},
+    qualifiedname::{getIntTypeName, getPtrToRefName, getU8TypeName, QualifiedName},
 };
 
 pub struct Builder<'a> {
@@ -281,12 +281,6 @@ pub fn lowerType(ty: &HirType, program: &HirProgram) -> MirType {
 pub fn lowerClass(c: &HirClass, program: &HirProgram) -> Struct {
     //println!("Lowering class {}", c.name);
     let mut fields = Vec::new();
-    if c.name.toString() == "Int.Int" {
-        fields.push(MirField {
-            name: "value".to_string(),
-            ty: MirType::Int64,
-        });
-    }
     if c.name.toString() == "String.String" {
         fields.push(MirField {
             name: "value".to_string(),
@@ -339,6 +333,12 @@ pub fn lowerProgram(program: &HirProgram) -> MirProgram {
     //println!("Lowering classes");
 
     for (n, c) in &program.classes {
+        if n.base() == getIntTypeName() {
+            continue;
+        }
+        if n.base() == getU8TypeName() {
+            continue;
+        }
         let c = lowerClass(c, program);
         mirProgram.structs.insert(convertName(n), c);
     }

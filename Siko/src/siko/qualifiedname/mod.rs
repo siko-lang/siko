@@ -69,6 +69,10 @@ pub fn getIntTypeName() -> QualifiedName {
     build("Int", "Int")
 }
 
+pub fn getU8TypeName() -> QualifiedName {
+    build("Int", "U8")
+}
+
 pub fn getStringTypeName() -> QualifiedName {
     build("String", "String")
 }
@@ -159,6 +163,34 @@ pub fn getIntLessThanName() -> QualifiedName {
 
 pub fn getIntCloneName() -> QualifiedName {
     build("Int", "Int").add(format!("clone"))
+}
+
+pub fn getU8AddName() -> QualifiedName {
+    build("Int", "U8").add(format!("add"))
+}
+
+pub fn getU8SubName() -> QualifiedName {
+    build("Int", "U8").add(format!("sub"))
+}
+
+pub fn getU8MulName() -> QualifiedName {
+    build("Int", "U8").add(format!("mul"))
+}
+
+pub fn getU8DivName() -> QualifiedName {
+    build("Int", "U8").add(format!("div"))
+}
+
+pub fn getU8EqName() -> QualifiedName {
+    build("Int", "U8").add(format!("eq"))
+}
+
+pub fn getU8LessThanName() -> QualifiedName {
+    build("Int", "U8").add(format!("lessThan"))
+}
+
+pub fn getU8CloneName() -> QualifiedName {
+    build("Int", "U8").add(format!("clone"))
 }
 
 pub fn getDropFnName() -> QualifiedName {

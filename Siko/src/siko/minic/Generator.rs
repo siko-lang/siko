@@ -9,7 +9,8 @@ use crate::siko::{
     qualifiedname::{
         getIntAddName, getIntCloneName, getIntDivName, getIntEqName, getIntLessThanName, getIntMulName, getIntSubName,
         getPtrAllocateArrayName, getPtrCloneName, getPtrDeallocateName, getPtrLoadName, getPtrMemcpyName,
-        getPtrNullName, getPtrOffsetName, getPtrPrintName, getPtrStoreName,
+        getPtrNullName, getPtrOffsetName, getPtrPrintName, getPtrStoreName, getU8AddName, getU8CloneName, getU8DivName,
+        getU8EqName, getU8LessThanName, getU8MulName, getU8SubName,
     },
     util::DependencyProcessor::processDependencies,
 };
@@ -371,6 +372,52 @@ impl MiniCGenerator {
             writeln!(buf, "}}\n")?;
         }
 
+        if f.name.starts_with(&getU8AddName().toString().replace(".", "_")) {
+            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(buf, "    return self + other;")?;
+            writeln!(buf, "}}\n")?;
+        }
+
+        if f.name.starts_with(&getU8SubName().toString().replace(".", "_")) {
+            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(buf, "    return self - other;")?;
+            writeln!(buf, "}}\n")?;
+        }
+
+        if f.name.starts_with(&getU8MulName().toString().replace(".", "_")) {
+            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(buf, "    return self * other;")?;
+            writeln!(buf, "}}\n")?;
+        }
+
+        if f.name.starts_with(&getU8DivName().toString().replace(".", "_")) {
+            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(buf, "    return self / other;")?;
+            writeln!(buf, "}}\n")?;
+        }
+
+        if f.name.starts_with(&getU8EqName().toString().replace(".", "_")) {
+            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(buf, "    {} result;", getTypeName(&f.result))?;
+            writeln!(buf, "    result.field0 = *self == *other;")?;
+            writeln!(buf, "    return result;")?;
+            writeln!(buf, "}}\n")?;
+        }
+
+        if f.name.starts_with(&getU8LessThanName().toString().replace(".", "_")) {
+            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(buf, "    {} result;", getTypeName(&f.result))?;
+            writeln!(buf, "    result.field0 = *self < *other;")?;
+            writeln!(buf, "    return result;")?;
+            writeln!(buf, "}}\n")?;
+        }
+
+        if f.name.starts_with(&getU8CloneName().toString().replace(".", "_")) {
+            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(buf, "    return *self;")?;
+            writeln!(buf, "}}\n")?;
+        }
+
         if !f.blocks.is_empty() {
             if f.result.isVoid() {
                 write!(buf, "[[ noreturn ]] ")?;
@@ -453,9 +500,6 @@ impl MiniCGenerator {
                     continue;
                 }
                 if item == "Bool_Bool" {
-                    continue;
-                }
-                if item == "Int_Int" {
                     continue;
                 }
                 if item == "siko_Tuple__t__t_" {
