@@ -105,10 +105,12 @@ impl<'a> ExprResolver<'a> {
                     let value = env.resolve(&name.toString());
                     match value {
                         Some(value) => {
+                            let mut value = self.indexVar(value);
+                            value.location = location.clone();
                             fields.reverse();
                             self.bodyBuilder
                                 .current()
-                                .addFieldAssign(value.clone(), rhsId, fields, location.clone());
+                                .addFieldAssign(value, rhsId, fields, location.clone());
                             return;
                         }
                         None => {

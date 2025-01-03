@@ -85,9 +85,10 @@ impl<'a> ExprParser for Parser<'a> {
     }
 
     fn buildExpr(&mut self, e: SimpleExpr, start: Span) -> Expr {
+        let end = self.endSpan();
         Expr {
             expr: e,
-            location: Location::new(self.fileId.clone(), start.merge(self.currentSpan())),
+            location: Location::new(self.fileId.clone(), start.merge(end)),
         }
     }
 

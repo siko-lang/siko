@@ -212,7 +212,7 @@ impl Context {
 
     fn isMoved(&self, path: &Path) -> MoveKind {
         for usage in &self.usages {
-            if usage.path.same(path) && usage.isMove() {
+            if usage.path.shares_prefix_with(path) && usage.isMove() {
                 //println!("paths {} {}", usage.path, path,);
                 if path.contains(&usage.path) {
                     return MoveKind::Fully(usage.var.clone());
@@ -242,8 +242,8 @@ impl Context {
         let mut alreadyAdded = false;
 
         for usage in &self.usages {
-            //println!("checking {} and {}", usage.path, currentPath);
-            if usage.path.same(&currentPath) && usage.isMove() {
+            //println!("checking {}/{} and {}/{}", usage.var, usage.path, currentPath.root, var);
+            if usage.path.shares_prefix_with(&currentPath) && usage.isMove() {
                 collisions.insert(PossibleCollision {
                     first: usage.var.clone(),
                     second: var.clone(),
@@ -331,8 +331,23 @@ impl Path {
         }
     }
 
+    fn shares_prefix_with(&self, other: &Path) -> bool {
+        if self.root.value != other.root.value {
+            return false;
+        }
+        for (i1, i2) in self.items.iter().zip(other.items.iter()) {
+            if i1 != i2 {
+                return false;
+            }
+        }
+        true
+    }
+
     fn same(&self, other: &Path) -> bool {
         if self.root.value != other.root.value {
+            return false;
+        }
+        if self.items.len() != other.items.len() {
             return false;
         }
         for (i1, i2) in self.items.iter().zip(other.items.iter()) {
@@ -766,7 +781,25 @@ impl<'a> DropChecker<'a> {
                             for f in fields {
                                 path = path.add(f.name.clone());
                             }
-                            // TODO: check that parent path is live!
+                            let mut parent = path.clone();
+                            parent.items.pop();
+                            for usage in &context.usages {
+                                //println!("checking {}/{} and {}/{}", usage.var, usage.path, currentPath.root, var);
+                                if usage.path.shares_prefix_with(&parent) && !usage.path.same(&path) && usage.isMove() {
+                                    self.collisions.insert(PossibleCollision {
+                                        first: usage.var.clone(),
+                                        second: dest.clone(),
+                                    });
+                                }
+                            }
+                            self.usages.insert(
+                                dest.clone(),
+                                Usage {
+                                    var: dest.clone(),
+                                    path: parent.clone(),
+                                    kind: UsageKind::Move,
+                                },
+                            );
                             self.dropPath(&path, &dest.getType(), &context, &mut dropList);
                             //println!("drop list {}", dropList);
                             context.removeSpecificMoveByPath(&path);
@@ -797,13 +830,8 @@ impl<'a> DropChecker<'a> {
                         self.dropValues(&mut context, current, &mut dropList);
                         //println!("drop list {}", dropList);
                         for p in &dropList.paths {
-                            context.addUsage(
-                                &self.paths,
-                                &p.root,
-                                UsageKind::Move,
-                                &mut self.collisions,
-                                &mut self.usages,
-                            );
+                            let mut collisions = BTreeSet::new();
+                            context.addUsage(&self.paths, &p.root, UsageKind::Move, &mut collisions, &mut self.usages);
                         }
                         self.dropLists.insert(endId.id.clone(), dropList);
                         context.rootBlock.endBlock();
