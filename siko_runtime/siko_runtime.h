@@ -13,8 +13,6 @@ struct String_String
     int64_t field1;
 };
 
-void Std_Basic_Util_siko_runtime_abort();
-
 struct siko_Tuple__t__t_ Std_Basic_Util_siko_runtime_str(struct String_String *v);
 
 int64_t String_String_eq(struct String_String *v1, struct String_String *v2);

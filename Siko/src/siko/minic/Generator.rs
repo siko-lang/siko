@@ -9,8 +9,8 @@ use crate::siko::{
     qualifiedname::{
         getIntAddName, getIntCloneName, getIntDivName, getIntEqName, getIntLessThanName, getIntMulName, getIntSubName,
         getPtrAllocateArrayName, getPtrCloneName, getPtrDeallocateName, getPtrLoadName, getPtrMemcpyName,
-        getPtrNullName, getPtrOffsetName, getPtrPrintName, getPtrStoreName, getU8AddName, getU8CloneName, getU8DivName,
-        getU8EqName, getU8LessThanName, getU8MulName, getU8SubName,
+        getPtrNullName, getPtrOffsetName, getPtrPrintName, getPtrStoreName, getStdBasicUtilAbortName, getU8AddName,
+        getU8CloneName, getU8DivName, getU8EqName, getU8LessThanName, getU8MulName, getU8SubName,
     },
     util::DependencyProcessor::processDependencies,
 };
@@ -407,6 +407,14 @@ impl MiniCGenerator {
         if f.name.starts_with(&getU8CloneName().toString().replace(".", "_")) {
             writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
             writeln!(buf, "    return *self;")?;
+            writeln!(buf, "}}\n")?;
+        }
+
+        if f.name
+            .starts_with(&getStdBasicUtilAbortName().toString().replace(".", "_"))
+        {
+            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(buf, "    abort();")?;
             writeln!(buf, "}}\n")?;
         }
 

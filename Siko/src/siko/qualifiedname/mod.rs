@@ -216,3 +216,7 @@ pub fn getVecNewName() -> QualifiedName {
 pub fn getVecPushName() -> QualifiedName {
     build("Vec", "Vec").add(format!("push"))
 }
+
+pub fn getStdBasicUtilAbortName() -> QualifiedName {
+    build("Std.Basic.Util", "abort")
+}

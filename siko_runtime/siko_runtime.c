@@ -4,12 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-extern void Std_Basic_Util_siko_runtime_abort()
-{
-    printf("siko_runtime_abort called\n");
-    abort();
-}
-
 extern struct siko_Tuple__t__t_ Std_Basic_Util_siko_runtime_str(struct String_String *v)
 {
     struct siko_Tuple__t__t_ result;
