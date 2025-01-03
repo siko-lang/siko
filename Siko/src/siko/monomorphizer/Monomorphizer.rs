@@ -10,7 +10,7 @@ use crate::siko::{
         ConstraintContext::ConstraintContext,
         Function::{Block, Body, Function, FunctionKind, Parameter, Variable, VariableName},
         InstanceResolver::ResolutionResult,
-        Instruction::{FieldInfo, Instruction, InstructionKind},
+        Instruction::{EnumCase, FieldInfo, Instruction, InstructionKind, JumpDirection},
         Program::Program,
         Substitution::{createTypeSubstitutionFrom, TypeSubstitution},
         Type::{formatTypes, Type},
@@ -569,6 +569,35 @@ impl<'a> Monomorphizer<'a> {
                         let dropKind = InstructionKind::Drop(dropRes, field.clone());
                         builder.addInstruction(dropKind, location.clone());
                     }
+                }
+                if let Some(e) = self.program.getEnum(&name) {
+                    let mut allocator = &mut TypeVarAllocator::new();
+                    let e = instantiateEnum(&mut allocator, &e, &ty);
+                    let contBuilder = bodyBuilder.createBlock();
+                    let mut cases = Vec::new();
+                    for (index, v) in e.variants.iter().enumerate() {
+                        let mut caseBuilder = bodyBuilder.createBlock();
+                        let case = EnumCase {
+                            index: index as u32,
+                            branch: caseBuilder.getBlockId(),
+                        };
+                        let transformType = Type::Tuple(v.items.clone());
+                        let transformValue = caseBuilder.addTypedTransform(
+                            dropVar.clone(),
+                            index as u32,
+                            location.clone(),
+                            transformType,
+                        );
+                        let mut dropRes = bodyBuilder.createTempValue(VariableName::AutoDropResult, location.clone());
+                        dropRes.ty = Some(Type::getUnitType());
+                        let dropKind = InstructionKind::Drop(dropRes, transformValue);
+                        caseBuilder.addInstruction(dropKind, location.clone());
+                        caseBuilder.addJump(contBuilder.getBlockId(), JumpDirection::Forward, location.clone());
+                        cases.push(case);
+                    }
+                    let enumKind = InstructionKind::EnumSwitch(dropVar.clone(), cases);
+                    builder.addInstruction(enumKind, location.clone());
+                    builder = contBuilder;
                 }
             }
             _ => {}

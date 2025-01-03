@@ -499,9 +499,6 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                                 let ctx = if v.items.len() > 0 {
                                     let transformValue =
                                         builder.addTransform(root.clone(), index, self.bodyLocation.clone());
-                                    let transform =
-                                        InstructionKind::Transform(transformValue.clone(), root.clone(), index);
-                                    builder.addInstruction(transform, self.bodyLocation.clone());
                                     let mut ctx = ctx.clone();
                                     for (index, _) in v.items.iter().enumerate() {
                                         let value = builder.addTupleIndex(

@@ -209,7 +209,8 @@ impl<'a> Resolver<'a> {
                         let constraintContext =
                             createConstraintContext(&c.typeParams, &typeResolver, &self.program, &self.ctx);
                         let irType = typeResolver.createDataType(&c.name, &c.typeParams);
-                        let mut irClass = IrClass::new(moduleResolver.resolverName(&c.name), irType.clone());
+                        let className = QualifiedName::Module(moduleResolver.name.clone()).add(c.name.toString());
+                        let mut irClass = IrClass::new(className, irType.clone());
                         let mut ctorParams = Vec::new();
                         for field in &c.fields {
                             let ty = typeResolver.resolveType(&field.ty);

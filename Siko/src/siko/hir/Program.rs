@@ -32,8 +32,8 @@ impl Program {
         }
     }
 
-    pub fn getEnum(&self, qn: &QualifiedName) -> Enum {
-        self.enums.get(qn).expect("enum not found").clone()
+    pub fn getEnum(&self, qn: &QualifiedName) -> Option<Enum> {
+        self.enums.get(qn).cloned()
     }
 
     pub fn getFunction(&self, qn: &QualifiedName) -> Option<Function> {

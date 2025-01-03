@@ -312,6 +312,18 @@ impl BlockBuilder {
         result
     }
 
+    pub fn addTypedTransform(&mut self, value: Variable, index: u32, location: Location, ty: Type) -> Variable {
+        let mut result = self
+            .bodyBuilder
+            .createTempValue(VariableName::Transform, location.clone());
+        result.ty = Some(ty);
+        self.addInstruction(
+            InstructionKind::Transform(result.clone(), value, index),
+            location.clone(),
+        );
+        result
+    }
+
     pub fn getBlockId(&self) -> BlockId {
         self.blockId
     }
