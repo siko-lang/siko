@@ -417,6 +417,7 @@ pub struct DropChecker<'a> {
     collisions: BTreeSet<PossibleCollision>,
     usages: BTreeMap<Variable, Usage>,
     assigns: BTreeMap<Tag, DropList>,
+    returns: BTreeMap<Variable, DropList>,
 }
 
 impl<'a> DropChecker<'a> {
@@ -435,6 +436,7 @@ impl<'a> DropChecker<'a> {
             collisions: BTreeSet::new(),
             usages: BTreeMap::new(),
             assigns: BTreeMap::new(),
+            returns: BTreeMap::new(),
         }
     }
 
@@ -662,6 +664,11 @@ impl<'a> DropChecker<'a> {
                                 self.processDropList(dropList, &mut builder, instruction.location.clone());
                             }
                         }
+                        InstructionKind::Return(dest, _) => {
+                            if let Some(dropList) = self.returns.remove(&dest) {
+                                self.processDropList(dropList, &mut builder, instruction.location.clone());
+                            }
+                        }
                         _ => {}
                     }
                     builder.step();
@@ -752,7 +759,17 @@ impl<'a> DropChecker<'a> {
                     InstructionKind::CharLiteral(dest, _) => {
                         self.declareValue(dest, &mut context);
                     }
-                    InstructionKind::Return(_, _) => {}
+                    InstructionKind::Return(dest, src) => {
+                        self.checkMove(&mut context, src, getUsageKind(src));
+                        let mut dropList = DropList::new();
+                        self.dropValues(&mut context, format!("0"), &mut dropList);
+                        //println!("drop list {}", dropList);
+                        let mut collisions = BTreeSet::new();
+                        for p in &dropList.paths {
+                            context.addUsage(&self.paths, &p.root, UsageKind::Move, &mut collisions, &mut self.usages);
+                        }
+                        self.returns.insert(dest.clone(), dropList);
+                    }
                     InstructionKind::Ref(dest, value) => {
                         self.checkMove(&mut context, value, UsageKind::Ref);
                         self.declareValue(dest, &mut context);
@@ -829,8 +846,8 @@ impl<'a> DropChecker<'a> {
                         let mut dropList = DropList::new();
                         self.dropValues(&mut context, current, &mut dropList);
                         //println!("drop list {}", dropList);
+                        let mut collisions = BTreeSet::new();
                         for p in &dropList.paths {
-                            let mut collisions = BTreeSet::new();
                             context.addUsage(&self.paths, &p.root, UsageKind::Move, &mut collisions, &mut self.usages);
                         }
                         self.dropLists.insert(endId.id.clone(), dropList);
@@ -881,7 +898,7 @@ impl<'a> DropChecker<'a> {
         //println!("Dropping in {}", block);
         for var in &context.live {
             if let Some(info) = self.values.get(&var.value) {
-                if info.block == block {
+                if info.block.starts_with(&block) {
                     //println!("live {}", var.value);
                     if !var.getType().isReference() {
                         self.dropPath(&Path::new(var.clone()), &var.getType(), context, dropList);
