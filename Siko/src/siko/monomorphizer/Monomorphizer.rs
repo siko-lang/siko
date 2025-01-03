@@ -600,6 +600,16 @@ impl<'a> Monomorphizer<'a> {
                     builder = contBuilder;
                 }
             }
+            Type::Tuple(args) => {
+                for (index, arg) in args.iter().enumerate() {
+                    let field =
+                        builder.addTypedTupleIndex(dropVar.clone(), index as i32, location.clone(), arg.clone());
+                    let mut dropRes = bodyBuilder.createTempValue(VariableName::AutoDropResult, location.clone());
+                    dropRes.ty = Some(Type::getUnitType());
+                    let dropKind = InstructionKind::Drop(dropRes, field);
+                    builder.addInstruction(dropKind, location.clone());
+                }
+            }
             _ => {}
         }
 
