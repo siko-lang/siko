@@ -6,8 +6,9 @@ use std::{
 use crate::siko::{
     hir::{
         Apply::{instantiateClass, instantiateEnum, Apply},
+        BodyBuilder::BodyBuilder,
         ConstraintContext::ConstraintContext,
-        Function::{Block, BlockId, Body, Function, FunctionKind, Parameter, Variable, VariableName},
+        Function::{Block, Body, Function, FunctionKind, Parameter, Variable, VariableName},
         InstanceResolver::ResolutionResult,
         Instruction::{FieldInfo, Instruction, InstructionKind},
         Program::Program,
@@ -522,89 +523,66 @@ impl<'a> Monomorphizer<'a> {
         //println!("MONO AUTO DROP: {} {}", name, ty);
         let monoName = self.get_mono_name(&name, &vec![ty.clone()]);
 
-        let mut instructions = Vec::new();
+        let mut bodyBuilder = BodyBuilder::new();
+        let mut builder = bodyBuilder.createBlock();
 
-        // vec![Instruction {
-        //     dest: Variable::new(0, ty.clone()),
-        //     kind: InstructionKind::Drop(Variable::new(0, ty.clone()), Variable::new(0, ty.clone())),
-        //     implicit: false,
-        //     location: Location::empty(),
-        // }],
+        let location = Location::empty();
+
+        let mut dropVar = bodyBuilder.createTempValue(VariableName::DropVar, location.clone());
+        dropVar.ty = Some(ty.clone());
+
+        let selfVar = Variable {
+            value: VariableName::Arg("self".to_string()),
+            ty: Some(ty.clone()),
+            location: Location::empty(),
+            index: 0,
+        };
+
+        let mut hasInstance = false;
 
         if let Some(instances) = self.program.instanceResolver.lookupInstances(&&getDropName()) {
             let mut allocator = TypeVarAllocator::new();
             let result = instances.find(&mut allocator, &vec![ty.clone()]);
             if let ResolutionResult::Winner(_) = result {
                 //println!("Drop found for {}", ty);
-
-                let dropVar = Variable {
-                    value: VariableName::Local("dropRes".to_string(), 0),
-                    ty: Some(ty.clone()),
-                    location: Location::empty(),
-                    index: 0,
-                };
-
-                instructions.push(Instruction {
-                    kind: InstructionKind::FunctionCall(
-                        dropVar,
-                        getDropFnName(),
-                        vec![Variable {
-                            value: VariableName::Arg("self".to_string()),
-                            ty: Some(ty.clone()),
-                            location: Location::empty(),
-                            index: 1,
-                        }],
-                    ),
-                    implicit: false,
-                    location: Location::empty(),
-                    tags: Vec::new(),
-                });
+                hasInstance = true;
+                let dropRes =
+                    builder.addTypedFunctionCall(getDropFnName(), vec![selfVar.clone()], location.clone(), ty.clone());
+                builder.addBind(dropVar.clone(), dropRes, false, location.clone());
             }
         }
 
-        let functionResult = Variable {
-            value: VariableName::Local("functionResult".to_string(), 0),
-            ty: Some(Type::getUnitType()),
-            location: Location::empty(),
-            index: 0,
-        };
+        if !hasInstance {
+            builder.addBind(dropVar.clone(), selfVar.clone(), false, location.clone());
+        }
 
-        instructions.push(Instruction {
-            kind: InstructionKind::Tuple(functionResult.clone(), Vec::new()),
-            implicit: false,
-            location: Location::empty(),
-            tags: Vec::new(),
-        });
+        match &ty {
+            Type::Named(name, _, _) => {
+                if let Some(c) = self.program.getClass(&name) {
+                    let mut allocator = &mut TypeVarAllocator::new();
+                    let c = instantiateClass(&mut allocator, &c, &ty);
+                    for f in &c.fields {
+                        let field =
+                            builder.addTypedFieldRef(dropVar.clone(), f.name.clone(), location.clone(), f.ty.clone());
+                        let mut dropRes = bodyBuilder.createTempValue(VariableName::AutoDropResult, location.clone());
+                        dropRes.ty = Some(Type::getUnitType());
+                        let dropKind = InstructionKind::Drop(dropRes, field.clone());
+                        builder.addInstruction(dropKind, location.clone());
+                    }
+                }
+            }
+            _ => {}
+        }
 
-        let mut functionResultUse = functionResult.clone();
-        functionResultUse.index = 1;
-
-        instructions.push(Instruction {
-            kind: InstructionKind::Return(
-                Variable {
-                    value: VariableName::Local("res".to_string(), 0),
-                    ty: Some(Type::getUnitType()),
-                    location: Location::empty(),
-                    index: 0,
-                },
-                functionResultUse,
-            ),
-            implicit: false,
-            location: Location::empty(),
-            tags: Vec::new(),
-        });
+        let mut unitValue = builder.addUnit(location.clone());
+        unitValue.ty = Some(Type::getUnitType());
+        builder.addReturn(unitValue, location);
 
         let dropFn = Function {
             name: monoName.clone(),
             params: vec![Parameter::Named("self".to_string(), ty.clone(), false)],
             result: Type::getUnitType(),
-            body: Some(Body {
-                blocks: vec![Block {
-                    id: BlockId::first(),
-                    instructions: instructions,
-                }],
-                varTypes: BTreeMap::new(),
-            }),
+            body: Some(bodyBuilder.build()),
             constraintContext: ConstraintContext::new(),
             kind: FunctionKind::UserDefined,
         };

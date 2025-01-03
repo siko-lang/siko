@@ -6,6 +6,7 @@ use super::{
     BodyBuilder::BodyBuilder,
     Function::{BlockId, Variable, VariableName},
     Instruction::{FieldInfo, Instruction, InstructionKind, JumpDirection, Tag, TagKind},
+    Type::Type,
 };
 
 #[derive(Clone, Copy)]
@@ -162,6 +163,22 @@ impl BlockBuilder {
         result
     }
 
+    pub fn addTypedFunctionCall(
+        &mut self,
+        functionName: QualifiedName,
+        args: Vec<Variable>,
+        location: Location,
+        ty: Type,
+    ) -> Variable {
+        let mut result = self.bodyBuilder.createTempValue(VariableName::Call, location.clone());
+        result.ty = Some(ty);
+        self.addInstruction(
+            InstructionKind::FunctionCall(result.clone(), functionName, args),
+            location,
+        );
+        result
+    }
+
     pub fn addMethodCall(
         &mut self,
         name: String,
@@ -190,6 +207,18 @@ impl BlockBuilder {
         let result = self
             .bodyBuilder
             .createTempValue(VariableName::FieldRef, location.clone());
+        self.addInstruction(
+            InstructionKind::FieldRef(result.clone(), receiver, field),
+            location.clone(),
+        );
+        result
+    }
+
+    pub fn addTypedFieldRef(&mut self, receiver: Variable, field: String, location: Location, ty: Type) -> Variable {
+        let mut result = self
+            .bodyBuilder
+            .createTempValue(VariableName::FieldRef, location.clone());
+        result.ty = Some(ty);
         self.addInstruction(
             InstructionKind::FieldRef(result.clone(), receiver, field),
             location.clone(),
@@ -228,7 +257,8 @@ impl BlockBuilder {
     }
 
     pub fn addUnit(&mut self, location: Location) -> Variable {
-        let result = self.bodyBuilder.createTempValue(VariableName::Unit, location.clone());
+        let mut result = self.bodyBuilder.createTempValue(VariableName::Unit, location.clone());
+        result.ty = Some(Type::getUnitType());
         self.addInstruction(InstructionKind::Tuple(result.clone(), Vec::new()), location.clone());
         result
     }
