@@ -7,6 +7,7 @@ use std::{
 use crate::siko::{
     minic::Function::Value,
     qualifiedname::{
+        getIntAddName, getIntCloneName, getIntDivName, getIntEqName, getIntLessThanName, getIntMulName, getIntSubName,
         getPtrAllocateArrayName, getPtrCloneName, getPtrDeallocateName, getPtrLoadName, getPtrMemcpyName,
         getPtrNullName, getPtrOffsetName, getPtrPrintName, getPtrStoreName,
     },
@@ -321,6 +322,52 @@ impl MiniCGenerator {
             writeln!(buf, "    {} result;", getTypeName(&f.result))?;
             writeln!(buf, "    printf(\"%p\\n\", addr);")?;
             writeln!(buf, "    return result;")?;
+            writeln!(buf, "}}\n")?;
+        }
+
+        if f.name.starts_with(&getIntAddName().toString().replace(".", "_")) {
+            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(buf, "    return self + other;")?;
+            writeln!(buf, "}}\n")?;
+        }
+
+        if f.name.starts_with(&getIntSubName().toString().replace(".", "_")) {
+            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(buf, "    return self - other;")?;
+            writeln!(buf, "}}\n")?;
+        }
+
+        if f.name.starts_with(&getIntMulName().toString().replace(".", "_")) {
+            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(buf, "    return self * other;")?;
+            writeln!(buf, "}}\n")?;
+        }
+
+        if f.name.starts_with(&getIntDivName().toString().replace(".", "_")) {
+            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(buf, "    return self / other;")?;
+            writeln!(buf, "}}\n")?;
+        }
+
+        if f.name.starts_with(&getIntEqName().toString().replace(".", "_")) {
+            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(buf, "    {} result;", getTypeName(&f.result))?;
+            writeln!(buf, "    result.field0 = *self == *other;")?;
+            writeln!(buf, "    return result;")?;
+            writeln!(buf, "}}\n")?;
+        }
+
+        if f.name.starts_with(&getIntLessThanName().toString().replace(".", "_")) {
+            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(buf, "    {} result;", getTypeName(&f.result))?;
+            writeln!(buf, "    result.field0 = *self < *other;")?;
+            writeln!(buf, "    return result;")?;
+            writeln!(buf, "}}\n")?;
+        }
+
+        if f.name.starts_with(&getIntCloneName().toString().replace(".", "_")) {
+            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(buf, "    return *self;")?;
             writeln!(buf, "}}\n")?;
         }
 

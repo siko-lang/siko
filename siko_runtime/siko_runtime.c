@@ -10,13 +10,6 @@ extern void Std_Basic_Util_siko_runtime_abort()
     abort();
 }
 
-extern struct siko_Tuple__t__t_ Std_Basic_Util_siko_runtime_num(Int_Int v)
-{
-    struct siko_Tuple__t__t_ result;
-    printf("%ld\n", v);
-    return result;
-}
-
 extern struct siko_Tuple__t__t_ Std_Basic_Util_siko_runtime_str(struct String_String *v)
 {
     struct siko_Tuple__t__t_ result;
@@ -50,63 +43,6 @@ extern struct siko_Tuple__t__t_ Std_Basic_Util_siko_runtime_bool(struct Bool_Boo
         printf("siko_runtime_num false\n");
     }
     return result;
-}
-
-extern Int_Int Int_Int_add(Int_Int v1, Int_Int v2)
-{
-    Int_Int result;
-    // printf("add %ld %ld\n", v1->field0, v2->field0);
-    result = v1 + v2;
-    return result;
-}
-
-extern Int_Int Int_Int_sub(Int_Int v1, Int_Int v2)
-{
-    Int_Int result;
-    result = v1 - v2;
-    return result;
-}
-
-extern Int_Int Int_Int_mul(Int_Int v1, Int_Int v2)
-{
-    Int_Int result;
-    result = v1 * v2;
-    return result;
-}
-
-extern Int_Int Int_Int_div(Int_Int v1, Int_Int v2)
-{
-    Int_Int result;
-    result = v1 / v2;
-    return result;
-}
-
-extern struct Bool_Bool Int_Int_eq(Int_Int *v1, Int_Int *v2)
-{
-    // printf("Int_Int_eq %ld %ld\n", v1.field0, v2.field0);
-    struct Bool_Bool result;
-    result.field0 = *v1 == *v2;
-    return result;
-}
-
-extern struct Bool_Bool Int_Int_lessThan(Int_Int *v1, Int_Int *v2)
-{
-    struct Bool_Bool result;
-    // printf("lessThan %ld %ld\n", v1->field0, v2->field0);
-    if (*v1 < *v2)
-    {
-        result.field0 = 1;
-    }
-    else
-    {
-        result.field0 = 0;
-    }
-    return result;
-}
-
-extern Int_Int Int_Int_clone(Int_Int *v)
-{
-    return *v;
 }
 
 extern struct Bool_Bool String_String_eq(struct String_String *v1, struct String_String *v2)

@@ -133,6 +133,34 @@ pub fn getCloneName() -> QualifiedName {
     build("Std.Ops", "Clone").add(format!("clone"))
 }
 
+pub fn getIntAddName() -> QualifiedName {
+    build("Int", "Int").add(format!("add"))
+}
+
+pub fn getIntSubName() -> QualifiedName {
+    build("Int", "Int").add(format!("sub"))
+}
+
+pub fn getIntMulName() -> QualifiedName {
+    build("Int", "Int").add(format!("mul"))
+}
+
+pub fn getIntDivName() -> QualifiedName {
+    build("Int", "Int").add(format!("div"))
+}
+
+pub fn getIntEqName() -> QualifiedName {
+    build("Int", "Int").add(format!("eq"))
+}
+
+pub fn getIntLessThanName() -> QualifiedName {
+    build("Int", "Int").add(format!("lessThan"))
+}
+
+pub fn getIntCloneName() -> QualifiedName {
+    build("Int", "Int").add(format!("clone"))
+}
+
 pub fn getDropFnName() -> QualifiedName {
     build("Std.Ops", "Drop").add(format!("drop"))
 }
