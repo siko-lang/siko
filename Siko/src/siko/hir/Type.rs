@@ -256,6 +256,13 @@ impl Type {
         }
     }
 
+    pub fn isPtr(&self) -> bool {
+        match &self {
+            Type::Ptr(_) => true,
+            _ => false,
+        }
+    }
+
     pub fn isGeneric(&self) -> bool {
         match &self {
             Type::Var(_) => true,

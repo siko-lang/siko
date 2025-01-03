@@ -19,7 +19,7 @@ class InnerVec[T] {
                 self.grow(self.capacity * 2);
             }
         }
-        let ptr = offset(Ptr.clone(self.items), self.size);
+        let ptr = offset(self.items, self.size);
         store(ptr, item);
         self.size = self.size + 1;
         self
@@ -41,7 +41,7 @@ class InnerVec[T] {
         self.capacity = capacity;
         let newItems: *T = allocateArray(self.capacity);
         if self.size > 0 {
-            memcpy(Ptr.clone(newItems), self.items, self.size);
+            memcpy(newItems, self.items, self.size);
         }
         self.items = newItems;
         self
@@ -91,11 +91,11 @@ instance[T] Drop[VecIterator[T]] {
             if self.index >= self.inner.size {
                 break;
             }
-            let ptr = offset(Ptr.clone(self.inner.items), self.index);
+            let ptr = offset(self.inner.items, self.index);
             self.index = self.index + 1;
             let item = Ptr.load(ptr);
         }
-        deallocate(Ptr.clone(self.inner.items));
+        deallocate(self.inner.items);
         self.inner.items = null();
         self
     }
@@ -108,7 +108,7 @@ instance[T] Iterator[VecIterator[T]] {
         if self.index >= self.inner.size {
             return (self, None)
         }
-        let ptr = offset(Ptr.clone(self.inner.items), self.index);
+        let ptr = offset(self.inner.items, self.index);
         self.index = self.index + 1;
         let item = Ptr.load(ptr);
         (self, Some(item))

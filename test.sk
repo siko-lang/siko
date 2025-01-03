@@ -1,24 +1,31 @@
 module Main {
 
-class Bar {
+class Baz {
 
+}
+
+class Bar {
+    baz: Baz,
+    baz2: Baz,
 }
 
 class Foo {
-    x: Bar
-    fn foo(self) -> (Self, Bar){
-        (self, Bar())
+    bar: Bar,
+    bar2: Bar,
+
+    fn stuff(mut self) -> Self {
+        sink(self.bar);
+        self.bar = Bar(Baz(), Baz());
+        self
     }
 }
 
-fn sink[T](f: T) {
-
-}
+fn sink[T](t: T) {}
 
 fn main() {
-    let mut f = Foo(Bar());
-    let b1 = f.foo();
-    let b2 = f.foo();
+    let mut f = Foo(Bar(Baz(), Baz()), Bar(Baz(), Baz()));
+    sink(f.bar);
+    f.bar.baz = Baz();
 }
 
 }

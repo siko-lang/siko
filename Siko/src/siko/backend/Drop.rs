@@ -396,7 +396,8 @@ impl Display for ValueInfo {
 }
 
 fn getUsageKind(var: &Variable) -> UsageKind {
-    if var.getType().isReference() {
+    let ty = var.getType();
+    if ty.isReference() || ty.isPtr() {
         UsageKind::Ref
     } else {
         UsageKind::Move
@@ -543,8 +544,7 @@ impl<'a> DropChecker<'a> {
             }
 
             //println!("collision {} {}", prevUsage.var, currentUsage.var);
-
-            if self.program.instanceResolver.isCopy(&prevUsage.var.getType().clone()) {
+            if self.program.instanceResolver.isCopy(prevUsage.var.getType()) {
                 //println!("implict clone for {}", prevUsage.var);
                 self.implicitClones.insert(prevUsage.var.clone());
                 prevUsage.kind = UsageKind::Ref;
