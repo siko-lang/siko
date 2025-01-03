@@ -15,7 +15,9 @@ use crate::siko::{
         Program::Program as MirProgram,
         Type::Type as MirType,
     },
-    qualifiedname::{getIntTypeName, getPtrToRefName, getU8TypeName, QualifiedName},
+    qualifiedname::{
+        getBoolTypeName, getFalseName, getIntTypeName, getPtrToRefName, getTrueName, getU8TypeName, QualifiedName,
+    },
 };
 
 pub struct Builder<'a> {
@@ -52,6 +54,22 @@ impl<'a> Builder<'a> {
         for instruction in &hirBlock.instructions {
             match &instruction.kind {
                 HirInstructionKind::FunctionCall(dest, name, args) => {
+                    if name.base() == getTrueName() {
+                        let dest = self.buildVariable(dest);
+                        block.instructions.push(Instruction::Declare(dest.clone()));
+                        block
+                            .instructions
+                            .push(Instruction::IntegerLiteral(dest, "1".to_string()));
+                        continue;
+                    }
+                    if name.base() == getFalseName() {
+                        let dest = self.buildVariable(dest);
+                        block.instructions.push(Instruction::Declare(dest.clone()));
+                        block
+                            .instructions
+                            .push(Instruction::IntegerLiteral(dest, "0".to_string()));
+                        continue;
+                    }
                     if name.base() == getPtrToRefName() {
                         let dest = self.buildVariable(dest);
                         let arg = &args[0];
@@ -120,16 +138,29 @@ impl<'a> Builder<'a> {
                     block.instructions.push(Instruction::StringLiteral(dest, v.to_string()));
                 }
                 HirInstructionKind::EnumSwitch(root, cases) => {
-                    let root = self.buildVariable(root);
-                    let mut mirCases = Vec::new();
-                    for case in cases {
-                        let mirCase = MirEnumCase {
-                            index: case.index,
-                            branch: self.getBlockName(case.branch),
-                        };
-                        mirCases.push(mirCase);
+                    if root.getType().getName().unwrap().base() == getBoolTypeName() {
+                        let dest = self.buildVariable(root);
+                        let mut mirCases = Vec::new();
+                        for case in cases {
+                            let mirCase = MirIntegerCase {
+                                value: Some(format!("{}", case.index)),
+                                branch: self.getBlockName(case.branch),
+                            };
+                            mirCases.push(mirCase);
+                        }
+                        block.instructions.push(Instruction::IntegerSwitch(dest, mirCases));
+                    } else {
+                        let root = self.buildVariable(root);
+                        let mut mirCases = Vec::new();
+                        for case in cases {
+                            let mirCase = MirEnumCase {
+                                index: case.index,
+                                branch: self.getBlockName(case.branch),
+                            };
+                            mirCases.push(mirCase);
+                        }
+                        block.instructions.push(Instruction::EnumSwitch(root, mirCases));
                     }
-                    block.instructions.push(Instruction::EnumSwitch(root, mirCases));
                 }
                 HirInstructionKind::IntegerSwitch(root, cases) => {
                     let root = self.buildVariable(root);
@@ -144,9 +175,13 @@ impl<'a> Builder<'a> {
                     block.instructions.push(Instruction::IntegerSwitch(root, mirCases));
                 }
                 HirInstructionKind::Transform(dest, root, index) => {
-                    let dest = self.buildVariable(dest);
-                    let root = self.buildVariable(root);
-                    block.instructions.push(Instruction::Transform(dest, root, *index));
+                    if root.getType().getName().unwrap().base() == getBoolTypeName() {
+                        block.instructions.push(Instruction::Declare(self.buildVariable(dest)));
+                    } else {
+                        let dest = self.buildVariable(dest);
+                        let root = self.buildVariable(root);
+                        block.instructions.push(Instruction::Transform(dest, root, *index));
+                    }
                 }
                 HirInstructionKind::TupleIndex(dest, root, index) => {
                     let dest = self.buildVariable(dest);
@@ -218,7 +253,15 @@ impl<'a> Builder<'a> {
                 }
                 MirFunctionKind::UserDefined(blocks)
             }
-            FunctionKind::VariantCtor(i) => MirFunctionKind::VariantCtor(i),
+            FunctionKind::VariantCtor(i) => {
+                if self.function.name.base() == getTrueName() {
+                    return None;
+                }
+                if self.function.name.base() == getFalseName() {
+                    return None;
+                }
+                MirFunctionKind::VariantCtor(i)
+            }
             FunctionKind::Extern => {
                 if self.function.name.base() == getPtrToRefName() {
                     return None;
@@ -265,7 +308,11 @@ pub fn lowerType(ty: &HirType, program: &HirProgram) -> MirType {
                     MirType::Struct(convertName(name))
                 }
             } else {
-                MirType::Union(convertName(name))
+                if name.base() == getBoolTypeName() {
+                    MirType::Int64
+                } else {
+                    MirType::Union(convertName(name))
+                }
             }
         }
         HirType::Tuple(_) => unreachable!("Tuple in MIR"),
@@ -346,6 +393,9 @@ pub fn lowerProgram(program: &HirProgram) -> MirProgram {
     //println!("Lowering enums");
 
     for (n, e) in &program.enums {
+        if n.base() == getBoolTypeName() {
+            continue;
+        }
         let u = lowerEnum(e, program);
         mirProgram.unions.insert(convertName(n), u);
     }

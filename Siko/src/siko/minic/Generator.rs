@@ -352,17 +352,13 @@ impl MiniCGenerator {
 
         if f.name.starts_with(&getIntEqName().toString().replace(".", "_")) {
             writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    {} result;", getTypeName(&f.result))?;
-            writeln!(buf, "    result.field0 = *self == *other;")?;
-            writeln!(buf, "    return result;")?;
+            writeln!(buf, "    return *self == *other;")?;
             writeln!(buf, "}}\n")?;
         }
 
         if f.name.starts_with(&getIntLessThanName().toString().replace(".", "_")) {
             writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    {} result;", getTypeName(&f.result))?;
-            writeln!(buf, "    result.field0 = *self < *other;")?;
-            writeln!(buf, "    return result;")?;
+            writeln!(buf, "    return *self < *other;")?;
             writeln!(buf, "}}\n")?;
         }
 
@@ -398,17 +394,13 @@ impl MiniCGenerator {
 
         if f.name.starts_with(&getU8EqName().toString().replace(".", "_")) {
             writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    {} result;", getTypeName(&f.result))?;
-            writeln!(buf, "    result.field0 = *self == *other;")?;
-            writeln!(buf, "    return result;")?;
+            writeln!(buf, "    return *self == *other;")?;
             writeln!(buf, "}}\n")?;
         }
 
         if f.name.starts_with(&getU8LessThanName().toString().replace(".", "_")) {
             writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    {} result;", getTypeName(&f.result))?;
-            writeln!(buf, "    result.field0 = *self < *other;")?;
-            writeln!(buf, "    return result;")?;
+            writeln!(buf, "    return *self < *other;")?;
             writeln!(buf, "}}\n")?;
         }
 
