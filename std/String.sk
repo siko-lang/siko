@@ -46,8 +46,23 @@ instance Drop[String] {
     }
 }
 
-instance Add[String] {
+instance Add[String, String] {
+    type Output = String
     fn add(self, other: String) -> String {
+        self + &other
+    }
+}
+
+instance Add[String, StringLiteral] {
+    type Output = String
+    fn add(self, other: StringLiteral) -> String {
+        self + other.toString()
+    }
+}
+
+instance Add[String, &String] {
+    type Output = String
+    fn add(self, other: &String) -> String {
         let newCapacity = self.size + other.size;
         let newValue = allocateArray(newCapacity);
         Ptr.memcpy(newValue, self.value, self.size);
@@ -102,5 +117,19 @@ instance ImplicitConvert[StringLiteral, String] {
 }
 
 instance Copy[StringLiteral]
+
+instance Add[StringLiteral, StringLiteral] {
+    type Output = String
+    fn add(self, other: StringLiteral) -> String {
+        self.toString() + other.toString()
+    }
+}
+
+instance Add[StringLiteral, &String] {
+    type Output = String
+    fn add(self, other: &String) -> String {
+        self.toString() + other
+    }
+}
 
 }
