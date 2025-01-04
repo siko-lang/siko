@@ -8,9 +8,10 @@ use crate::siko::{
     minic::Function::Value,
     qualifiedname::{
         getIntAddName, getIntCloneName, getIntDivName, getIntEqName, getIntLessThanName, getIntMulName, getIntSubName,
-        getPtrAllocateArrayName, getPtrCloneName, getPtrDeallocateName, getPtrLoadName, getPtrMemcpyName,
-        getPtrNullName, getPtrOffsetName, getPtrPrintName, getPtrStoreName, getStdBasicUtilAbortName, getU8AddName,
-        getU8CloneName, getU8DivName, getU8EqName, getU8LessThanName, getU8MulName, getU8SubName,
+        getPtrAllocateArrayName, getPtrCloneName, getPtrDeallocateName, getPtrLoadName, getPtrMemcmpName,
+        getPtrMemcpyName, getPtrNullName, getPtrOffsetName, getPtrPrintName, getPtrStoreName, getStdBasicUtilAbortName,
+        getStdBasicUtilPrintStrName, getU8AddName, getU8CloneName, getU8DivName, getU8EqName, getU8LessThanName,
+        getU8MulName, getU8SubName,
     },
     util::DependencyProcessor::processDependencies,
 };
@@ -34,7 +35,7 @@ pub fn getStructName(name: &String) -> String {
 pub fn getTypeName(ty: &Type) -> String {
     match &ty {
         Type::Void => "void".to_string(),
-        Type::Int8 => "uint8_t".to_string(),
+        Type::UInt8 => "uint8_t".to_string(),
         Type::Int16 => "int16_t".to_string(),
         Type::Int32 => "int32_t".to_string(),
         Type::Int64 => "int64_t".to_string(),
@@ -55,7 +56,7 @@ impl MiniCGenerator {
     fn getAlignment(&self, ty: &Type) -> u32 {
         match &ty {
             Type::Void => 0,
-            Type::Int8 => 1,
+            Type::UInt8 => 1,
             Type::Int16 => 2,
             Type::Int32 => 4,
             Type::Int64 => 8,
@@ -266,6 +267,12 @@ impl MiniCGenerator {
             writeln!(buf, "}}\n")?;
         }
 
+        if f.name.starts_with(&getPtrMemcmpName().toString().replace(".", "_")) {
+            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(buf, "    return memcmp(dest, src, sizeof(*src) * count);")?;
+            writeln!(buf, "}}\n")?;
+        }
+
         if f.name.starts_with(&getPtrNullName().toString().replace(".", "_")) {
             writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
             writeln!(buf, "    return NULL;")?;
@@ -418,6 +425,16 @@ impl MiniCGenerator {
             writeln!(buf, "}}\n")?;
         }
 
+        if f.name
+            .starts_with(&getStdBasicUtilPrintStrName().toString().replace(".", "_"))
+        {
+            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(buf, "    {} result;", getTypeName(&f.result))?;
+            writeln!(buf, "    printf(\"%.*s\\n\", (int)v->field1, v->field0);")?;
+            writeln!(buf, "    return result;")?;
+            writeln!(buf, "}}\n")?;
+        }
+
         if !f.blocks.is_empty() {
             if f.result.isVoid() {
                 write!(buf, "[[ noreturn ]] ")?;
@@ -496,15 +513,6 @@ impl MiniCGenerator {
         for group in groups {
             assert_eq!(group.items.len(), 1);
             for item in group.items {
-                if item == "String_String" {
-                    continue;
-                }
-                if item == "Bool_Bool" {
-                    continue;
-                }
-                if item == "siko_Tuple__t__t_" {
-                    continue;
-                }
                 let s = self.program.getStruct(&item);
                 self.dumpStruct(&s, &mut output)?;
             }

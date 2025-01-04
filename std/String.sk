@@ -1,11 +1,37 @@
 module String {
 
-extern class String {
-    fn len(&self) -> Int = extern
+import Ptr
 
-    fn eq(&self, other: &String) -> Bool = extern
+class String {
+    value: *U8,
+    size: Int,
+    capacity: Int,
 
-    fn clone(&self) -> String = extern
+    fn new() -> String {
+        String(null(), 0, 0)
+    }
+
+    fn len(&self) -> Int {
+        self.size
+    }
+
+    fn eq(&self, other: &String) -> Bool {
+        if self.size != other.size {
+            return False;
+        }
+        let result = Ptr.memcmp(self.value, other.value, self.size);
+        result == 0
+    }
+
+    fn clone(&self) -> String {
+        if self.capacity == 0 {
+            return String(self.value, self.size, self.capacity);
+        } else {
+            let newValue = allocateArray(self.capacity);
+            Ptr.memcpy(newValue, self.value, self.size);
+            String(newValue, self.size, self.capacity)
+        }
+    }
 }
 
 instance Clone[String] {
@@ -29,6 +55,30 @@ class StringLiteral {
     fn clone(&self) -> StringLiteral {
         StringLiteral(self.value, self.size)
     }
+
+    fn toString(&self) -> String {
+        String(self.value, self.size, 0)
+    }
 }
+
+instance Clone[StringLiteral] {
+    fn clone(&self) -> StringLiteral {
+        self.clone()
+    }
+}
+
+instance PartialEq[StringLiteral] {
+    fn eq(&self, other: &StringLiteral) -> Bool {
+        self.toString().eq(&other.toString())
+    }
+}
+
+instance ImplicitConvert[StringLiteral, String] {
+    fn implicitConvert(self) -> String {
+        self.toString()
+    }
+}
+
+instance Copy[StringLiteral]
 
 }

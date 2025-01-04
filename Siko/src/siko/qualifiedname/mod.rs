@@ -73,8 +73,16 @@ pub fn getU8TypeName() -> QualifiedName {
     build("Int", "U8")
 }
 
+pub fn getI32TypeName() -> QualifiedName {
+    build("Int", "I32")
+}
+
 pub fn getStringTypeName() -> QualifiedName {
     build("String", "String")
+}
+
+pub fn getStringLiteralTypeName() -> QualifiedName {
+    build("String", "StringLiteral")
 }
 
 pub fn getCharTypeName() -> QualifiedName {
@@ -107,6 +115,10 @@ pub fn getPtrDeallocateName() -> QualifiedName {
 
 pub fn getPtrMemcpyName() -> QualifiedName {
     build("Ptr", "memcpy")
+}
+
+pub fn getPtrMemcmpName() -> QualifiedName {
+    build("Ptr", "memcmp")
 }
 
 pub fn getPtrOffsetName() -> QualifiedName {
@@ -205,6 +217,14 @@ pub fn getCopyName() -> QualifiedName {
     build("Std.Ops", "Copy")
 }
 
+pub fn getImplicitConvertName() -> QualifiedName {
+    build("Std.Ops", "ImplicitConvert")
+}
+
+pub fn getImplicitConvertFnName() -> QualifiedName {
+    build("Std.Ops", "ImplicitConvert").add(format!("implicitConvert"))
+}
+
 pub fn getAutoDropFnName() -> QualifiedName {
     build("siko", "autoDrop")
 }
@@ -219,4 +239,8 @@ pub fn getVecPushName() -> QualifiedName {
 
 pub fn getStdBasicUtilAbortName() -> QualifiedName {
     build("Std.Basic.Util", "abort")
+}
+
+pub fn getStdBasicUtilPrintStrName() -> QualifiedName {
+    build("Std.Basic.Util", "printStr")
 }

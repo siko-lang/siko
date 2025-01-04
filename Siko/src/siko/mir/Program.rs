@@ -162,7 +162,7 @@ impl Program {
                 for f in &item.fields {
                     let size = match &f.ty {
                         Type::Void => 0,
-                        Type::Int8 => 1,
+                        Type::UInt8 => 1,
                         Type::Int16 => 2,
                         Type::Int32 => 4,
                         Type::Int64 => 8,
@@ -174,7 +174,7 @@ impl Program {
                     };
                     let alignment = match &f.ty {
                         Type::Void => 1,
-                        Type::Int8 => 1,
+                        Type::UInt8 => 1,
                         Type::Int16 => 2,
                         Type::Int32 => 4,
                         Type::Int64 => 8,
@@ -205,7 +205,7 @@ impl Program {
                 for v in &item.variants {
                     let size = match &v.ty {
                         Type::Void => 0,
-                        Type::Int8 => 1,
+                        Type::UInt8 => 1,
                         Type::Int16 => 2,
                         Type::Int32 => 4,
                         Type::Int64 => 8,
@@ -217,7 +217,7 @@ impl Program {
                     };
                     let alignment = match &v.ty {
                         Type::Void => 0,
-                        Type::Int8 => 1,
+                        Type::UInt8 => 1,
                         Type::Int16 => 2,
                         Type::Int32 => 4,
                         Type::Int64 => 8,

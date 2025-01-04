@@ -1,6 +1,8 @@
 use std::{collections::BTreeSet, fmt::Display};
 
-use crate::siko::qualifiedname::{getBoolTypeName, getCharTypeName, getIntTypeName, getStringTypeName, QualifiedName};
+use crate::siko::qualifiedname::{
+    getBoolTypeName, getCharTypeName, getIntTypeName, getStringLiteralTypeName, getStringTypeName, QualifiedName,
+};
 
 use super::Lifetime::{Lifetime, LifetimeInfo};
 
@@ -45,6 +47,13 @@ impl Type {
     pub fn unpackRef(&self) -> &Type {
         match self {
             Type::Reference(ty, _) => ty.unpackRef(),
+            ty => ty,
+        }
+    }
+
+    pub fn unpackPtr(&self) -> &Type {
+        match self {
+            Type::Ptr(ty) => ty,
             ty => ty,
         }
     }
@@ -293,6 +302,10 @@ impl Type {
 
     pub fn getStringType() -> Type {
         Type::Named(getStringTypeName(), Vec::new(), None)
+    }
+
+    pub fn getStringLiteralType() -> Type {
+        Type::Named(getStringLiteralTypeName(), Vec::new(), None)
     }
 
     pub fn getCharType() -> Type {

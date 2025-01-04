@@ -16,7 +16,8 @@ use crate::siko::{
         Type::Type as MirType,
     },
     qualifiedname::{
-        getBoolTypeName, getFalseName, getIntTypeName, getPtrToRefName, getTrueName, getU8TypeName, QualifiedName,
+        getBoolTypeName, getFalseName, getI32TypeName, getIntTypeName, getPtrToRefName, getTrueName, getU8TypeName,
+        QualifiedName,
     },
 };
 
@@ -304,6 +305,10 @@ pub fn lowerType(ty: &HirType, program: &HirProgram) -> MirType {
             if program.classes.get(name).is_some() {
                 if name.base() == getIntTypeName() {
                     MirType::Int64
+                } else if name.base() == getU8TypeName() {
+                    MirType::UInt8
+                } else if name.base() == getI32TypeName() {
+                    MirType::Int32
                 } else {
                     MirType::Struct(convertName(name))
                 }
@@ -328,17 +333,6 @@ pub fn lowerType(ty: &HirType, program: &HirProgram) -> MirType {
 pub fn lowerClass(c: &HirClass, program: &HirProgram) -> Struct {
     //println!("Lowering class {}", c.name);
     let mut fields = Vec::new();
-    if c.name.toString() == "String.String" {
-        fields.push(MirField {
-            name: "value".to_string(),
-            ty: MirType::Ptr(Box::new(MirType::Int8)),
-        });
-        fields.push(MirField {
-            name: "length".to_string(),
-            ty: MirType::Int64,
-        });
-    }
-
     for f in &c.fields {
         let mirField = MirField {
             name: f.name.clone(),
