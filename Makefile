@@ -10,18 +10,14 @@ clean:
 teststd: Siko/target/release/siko
 	@./siko test.sk std/*
 
-siko_runtime/siko_runtime.o: $(shell find siko_runtime -type f -name *.c)
-	siko_runtime/build.sh
-
-llvm: Siko/target/release/siko siko_runtime/siko_runtime.o
+llvm: Siko/target/release/siko
 	@./siko test.sk
 	@opt -O2 -S llvm.ll -o optimized.ll
 	@llvm-as optimized.ll -o main.bc
 	@llc -relocation-model=pic main.bc -filetype=obj -o main.o
 	@clang main.o siko_runtime/siko_runtime.o -o main.bin
 
-c: Siko/target/release/siko siko_runtime/siko_runtime.o
+c: Siko/target/release/siko
 	@./siko test.sk
-	@clang -c siko_main.c -o siko_main.o -I siko_runtime
-	@clang siko_main.o siko_runtime/siko_runtime.o -o main.bin
+	@clang siko_main.c -o main.bin
 	@./main.bin

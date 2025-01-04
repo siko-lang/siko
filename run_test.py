@@ -8,8 +8,6 @@ success = 0
 failure = 0
 skipped = 0
 
-runtimePath = os.path.join("siko_runtime", "siko_runtime.o")
-
 def compileSikoLLVM(currentDir, files, extras):
     output_path = os.path.join(currentDir, "main")
     llvm_ir_output_path = os.path.join(currentDir, "main.ll")
@@ -33,7 +31,7 @@ def compileSikoLLVM(currentDir, files, extras):
     r = subprocess.run(["llc", "-O0", "-relocation-model=pic", bitcode_path, "-filetype=obj", "-o", object_path])
     if r.returncode != 0:
         return None
-    r = subprocess.run(["clang", "-O0", object_path, runtimePath, "-o", llvm_output_path])
+    r = subprocess.run(["clang", "-O0", object_path, "-o", llvm_output_path])
     #r = subprocess.run(["rustc", output_path, "-o", rust_output_path])
     if r.returncode != 0:
         return None
@@ -51,7 +49,7 @@ def compileSikoC(currentDir, files, extras):
     r = subprocess.run(["clang", "-fsanitize=undefined,address", "-g", "-O1", "-c", c_output_path, "-o", object_path, "-I", "siko_runtime"])
     if r.returncode != 0:
         return None
-    r = subprocess.run(["clang", "-fsanitize=undefined,address", object_path, runtimePath, "-o", bin_output_path])
+    r = subprocess.run(["clang", "-fsanitize=undefined,address", object_path, "-o", bin_output_path])
     #r = subprocess.run(["rustc", output_path, "-o", rust_output_path])
     if r.returncode != 0:
         return None
@@ -115,9 +113,6 @@ successes_path = os.path.join(".", "test", "success")
 
 errors_path = os.path.join(".", "test", "errors")
 
-def buildRuntime():
-    subprocess.run("siko_runtime/build.sh")
-
 def processResult(r):
     global success, failure, skipped
     if r == "skip":
@@ -130,8 +125,6 @@ def processResult(r):
     else:
         print(" - failed")
         failure += 1
-
-buildRuntime()
 
 def collect_tests(base_path):
     tests = []

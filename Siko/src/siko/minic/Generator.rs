@@ -477,7 +477,10 @@ impl MiniCGenerator {
     pub fn dump(&mut self) -> io::Result<()> {
         let mut output = File::create(&self.fileName).expect("Failed to open llvm output");
 
-        writeln!(output, "#include <siko_runtime.h>")?;
+        writeln!(output, "#include <stdlib.h>")?;
+        writeln!(output, "#include <stdint.h>")?;
+        writeln!(output, "#include <string.h>")?;
+        writeln!(output, "#include <stdio.h>")?;
         writeln!(output, "")?;
 
         for s in &self.program.strings {
