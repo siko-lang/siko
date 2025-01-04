@@ -21,7 +21,7 @@ use crate::siko::{
         Unification::unify,
     },
     location::{Location::Location, Report::ReportContext},
-    qualifiedname::{getCloneName, QualifiedName},
+    qualifiedname::{getCloneName, getPtrCloneName, QualifiedName},
 };
 
 use super::Error::TypecheckerError;
@@ -286,6 +286,11 @@ impl<'a> Typechecker<'a> {
                     self.implicitClones.insert(arg.clone());
                 }
             }
+            if argTy.isReference() && fnArg.isPtr() {
+                argTy = argTy.unpackRef().clone();
+                //println!("IMPLICIT CLONE FOR {} {} {}", arg, argTy, fnArg);
+                self.implicitClones.insert(arg.clone());
+            }
             self.unify(argTy, fnArg, arg.location.clone());
         }
         let constraints = constraintContext.apply(&self.substitution);
@@ -546,7 +551,20 @@ impl<'a> Typechecker<'a> {
                 if let Some(selfType) = self.selfType.clone() {
                     result = result.changeSelfType(selfType);
                 }
-                self.unify(result, self.getType(arg), instruction.location.clone());
+                let mut argTy = self.getType(arg);
+                argTy = argTy.apply(&self.substitution);
+                if argTy.isReference() && !result.isReference() && !result.isGeneric() {
+                    if self.program.instanceResolver.isCopy(&result) {
+                        argTy = argTy.unpackRef().clone();
+                        self.implicitClones.insert(arg.clone());
+                    }
+                }
+                if argTy.isReference() && result.isPtr() {
+                    argTy = argTy.unpackRef().clone();
+                    //println!("IMPLICIT CLONE FOR {} {} {}", arg, argTy, fnArg);
+                    self.implicitClones.insert(arg.clone());
+                }
+                self.unify(result, argTy, instruction.location.clone());
             }
             InstructionKind::Ref(dest, arg) => {
                 let arg_type = self.getType(arg);
@@ -738,10 +756,14 @@ impl<'a> Typechecker<'a> {
                         dest.value = VariableName::Local(format!("implicitClone"), nextImplicitClone);
                         nextImplicitClone += 1;
                         let ty = self.getType(&var).apply(&self.substitution).unpackRef().clone();
-                        self.types.insert(dest.value.to_string(), ty);
+                        self.types.insert(dest.value.to_string(), ty.clone());
                         let mut varSwap = VariableSubstitution::new();
                         varSwap.add(var.clone(), dest.clone());
-                        let kind = InstructionKind::FunctionCall(dest.clone(), getCloneName(), vec![var.clone()]);
+                        let kind = if ty.isPtr() {
+                            InstructionKind::FunctionCall(dest.clone(), getPtrCloneName(), vec![var.clone()])
+                        } else {
+                            InstructionKind::FunctionCall(dest.clone(), getCloneName(), vec![var.clone()])
+                        };
                         let implicitRef = Instruction {
                             implicit: true,
                             kind: kind,

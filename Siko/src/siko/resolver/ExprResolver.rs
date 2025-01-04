@@ -568,15 +568,17 @@ impl<'a> ExprResolver<'a> {
             );
             localEnv.addValue(value.0.clone(), name);
         }
-        self.resolveBlock(body, &localEnv, functionResult.clone());
+        let result = self.indexVar(functionResult.clone());
+        self.resolveBlock(body, &localEnv, result);
         self.bodyBuilder
             .current()
             .implicit()
             .addInstruction(InstructionKind::BlockEnd(blockInfo.clone()), body.location.clone());
+        let result = self.indexVar(functionResult);
         self.bodyBuilder
             .current()
             .implicit()
-            .addReturn(functionResult, body.location.clone());
+            .addReturn(result, body.location.clone());
         self.bodyBuilder.sortBlocks();
     }
 
