@@ -34,6 +34,28 @@ class String {
     }
 }
 
+instance Drop[String] {
+    fn drop(mut self) -> Self {
+        if self.capacity > 0 {
+            Ptr.deallocate(self.value);
+        }
+        self.capacity = 0;
+        self.size = 0;
+        self.value = null();
+        self
+    }
+}
+
+instance Add[String] {
+    fn add(self, other: String) -> String {
+        let newCapacity = self.size + other.size;
+        let newValue = allocateArray(newCapacity);
+        Ptr.memcpy(newValue, self.value, self.size);
+        Ptr.memcpy(offset(newValue, self.size), other.value, other.size);
+        String(newValue, newCapacity, newCapacity)
+    }
+}
+
 instance Clone[String] {
     fn clone(&self) -> String {
         self.clone()
