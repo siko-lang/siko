@@ -33,6 +33,7 @@ struct LoopInfo {
     body: BlockId,
     exit: BlockId,
     var: Variable,
+    result: Variable,
 }
 
 pub struct ExprResolver<'a> {
@@ -320,16 +321,25 @@ impl<'a> ExprResolver<'a> {
                     .current()
                     .addTupleIndex(receiver, index.parse().unwrap(), expr.location.clone())
             }
-            SimpleExpr::For(_, _, _) => todo!(),
             SimpleExpr::Loop(pattern, init, body) => {
                 let initId = self.resolveExpr(&init, env);
-                let name = self
+                let loopVar = self
                     .bodyBuilder
                     .createTempValue(VariableName::LoopVar, expr.location.clone());
+                let finalValue = self
+                    .bodyBuilder
+                    .createTempValue(VariableName::LoopFinalValue, expr.location.clone());
+                let resultValue = self
+                    .bodyBuilder
+                    .createTempValue(VariableName::LoopFinalValue, expr.location.clone());
                 self.bodyBuilder
                     .current()
                     .implicit()
-                    .addBind(name.clone(), initId, true, expr.location.clone());
+                    .addBind(loopVar.clone(), initId, true, expr.location.clone());
+                self.bodyBuilder
+                    .current()
+                    .implicit()
+                    .addDeclare(resultValue.clone(), expr.location.clone());
                 let mut loopBodyBuilder = self.bodyBuilder.createBlock();
                 let mut loopExitBuilder = self.bodyBuilder.createBlock();
                 self.bodyBuilder.current().addJump(
@@ -339,14 +349,15 @@ impl<'a> ExprResolver<'a> {
                 );
                 let mut loopEnv = Environment::child(env);
                 loopBodyBuilder.current();
-                self.resolvePattern(pattern, &mut loopEnv, name.clone());
+                self.resolvePattern(pattern, &mut loopEnv, loopVar.clone());
                 self.loopInfos.push(LoopInfo {
                     body: loopBodyBuilder.getBlockId(),
                     exit: loopExitBuilder.getBlockId(),
-                    var: name.clone(),
+                    var: loopVar.clone(),
+                    result: resultValue.clone(),
                 });
                 match &body.expr {
-                    SimpleExpr::Block(block) => self.resolveBlock(block, &loopEnv, name.clone()),
+                    SimpleExpr::Block(block) => self.resolveBlock(block, &loopEnv, loopVar.clone()),
                     _ => panic!("for body is not a block!"),
                 };
                 self.bodyBuilder.current().implicit().addJump(
@@ -356,12 +367,9 @@ impl<'a> ExprResolver<'a> {
                 );
                 self.loopInfos.pop();
                 loopExitBuilder.current();
-                let finalValue = self
-                    .bodyBuilder
-                    .createTempValue(VariableName::LoopFinalValue, expr.location.clone());
                 loopExitBuilder
                     .implicit()
-                    .addBind(finalValue.clone(), name, false, expr.location.clone());
+                    .addBind(finalValue.clone(), resultValue, false, expr.location.clone());
                 finalValue
             }
             SimpleExpr::BinaryOp(op, lhs, rhs) => {
@@ -469,7 +477,7 @@ impl<'a> ExprResolver<'a> {
                 };
                 self.bodyBuilder
                     .current()
-                    .addAssign(info.var, argId, expr.location.clone());
+                    .addAssign(info.result, argId, expr.location.clone());
                 self.bodyBuilder
                     .current()
                     .addJump(info.exit, JumpDirection::Forward, expr.location.clone())

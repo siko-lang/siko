@@ -77,7 +77,7 @@ impl<'a> ExprParser for Parser<'a> {
             });
         }
         self.expect(TokenKind::RightBracket(BracketKind::Curly));
-        let end = self.currentSpan();
+        let end = self.endSpan();
         Block {
             statements,
             location: Location::new(self.fileId.clone(), start.merge(end)),
@@ -158,7 +158,108 @@ impl<'a> ExprParser for Parser<'a> {
         self.expect(TokenKind::LeftBracket(BracketKind::Curly));
         self.undo();
         let body = self.parseExpr();
-        self.buildExpr(SimpleExpr::For(pattern, Box::new(source), Box::new(body)), start)
+        let end = self.endSpan();
+        let location = Location::new(self.fileId.clone(), start.merge(end));
+        let mut statements = Vec::new();
+        let source = self.buildExpr(
+            SimpleExpr::MethodCall(
+                Box::new(source),
+                Identifier::new("intoIterator", location.clone()),
+                vec![],
+            ),
+            start.clone(),
+        );
+        let iter = Pattern {
+            pattern: SimplePattern::Bind(Identifier::new(".iter", location.clone()), true),
+            location: location.clone(),
+        };
+        statements.push(Statement {
+            kind: StatementKind::Let(iter, source, None),
+            hasSemicolon: false,
+        });
+        let someBranch = Branch {
+            pattern: Pattern {
+                pattern: SimplePattern::Named(Identifier::new("Option.Some", location.clone()), vec![pattern]),
+                location: location.clone(),
+            },
+            body: Expr {
+                expr: SimpleExpr::Block(Block {
+                    statements: vec![Statement {
+                        kind: StatementKind::Expr(body),
+                        hasSemicolon: true,
+                    }],
+                    location: location.clone(),
+                }),
+                location: location.clone(),
+            },
+        };
+        let noneBranch = Branch {
+            pattern: Pattern {
+                pattern: SimplePattern::Named(Identifier::new("Option.None", location.clone()), Vec::new()),
+                location: location.clone(),
+            },
+            body: Expr {
+                expr: SimpleExpr::Block(Block {
+                    statements: vec![Statement {
+                        kind: StatementKind::Expr(Expr {
+                            expr: SimpleExpr::Break(None),
+                            location: location.clone(),
+                        }),
+                        hasSemicolon: true,
+                    }],
+                    location: location.clone(),
+                }),
+                location: location.clone(),
+            },
+        };
+        let nextCall = Expr {
+            expr: SimpleExpr::MethodCall(
+                Box::new(Expr {
+                    expr: SimpleExpr::Value(Identifier::new(".iter", location.clone())),
+                    location: location.clone(),
+                }),
+                Identifier::new("next", location.clone()),
+                vec![],
+            ),
+            location: location.clone(),
+        };
+        let matchExpr = Expr {
+            expr: SimpleExpr::Match(Box::new(nextCall), vec![someBranch, noneBranch]),
+            location: location.clone(),
+        };
+        let loopBody = Expr {
+            expr: SimpleExpr::Block(Block {
+                statements: vec![Statement {
+                    kind: StatementKind::Expr(matchExpr),
+                    hasSemicolon: true,
+                }],
+                location: location.clone(),
+            }),
+            location: location.clone(),
+        };
+        let loopExpr = Expr {
+            expr: SimpleExpr::Loop(
+                Pattern {
+                    pattern: SimplePattern::Tuple(Vec::new()),
+                    location: location.clone(),
+                },
+                Box::new(Expr {
+                    expr: SimpleExpr::Tuple(Vec::new()),
+                    location: location.clone(),
+                }),
+                Box::new(loopBody),
+            ),
+            location: location.clone(),
+        };
+        statements.push(Statement {
+            kind: StatementKind::Expr(loopExpr),
+            hasSemicolon: true,
+        });
+        let block = SimpleExpr::Block(Block {
+            statements: statements,
+            location: location.clone(),
+        });
+        self.buildExpr(block, start)
     }
 
     fn parseLoop(&mut self) -> Expr {

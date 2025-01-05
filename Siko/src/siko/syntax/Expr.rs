@@ -50,7 +50,6 @@ pub enum SimpleExpr {
     TupleIndex(Box<Expr>, String),
     Call(Box<Expr>, Vec<Expr>),
     MethodCall(Box<Expr>, Identifier, Vec<Expr>),
-    For(Pattern, Box<Expr>, Box<Expr>),
     Loop(Pattern, Box<Expr>, Box<Expr>),
     BinaryOp(BinaryOp, Box<Expr>, Box<Expr>),
     UnaryOp(UnaryOp, Box<Expr>),
@@ -75,9 +74,6 @@ impl SimpleExpr {
             SimpleExpr::TupleIndex(expr, _) => expr.doesNotReturn(),
             SimpleExpr::Call(func, args) => func.doesNotReturn() || args.iter().any(|arg| arg.doesNotReturn()),
             SimpleExpr::MethodCall(obj, _, args) => obj.doesNotReturn() || args.iter().any(|arg| arg.doesNotReturn()),
-            SimpleExpr::For(_, iter, body) | SimpleExpr::Loop(_, iter, body) => {
-                iter.doesNotReturn() || body.doesNotReturn()
-            }
             SimpleExpr::BinaryOp(_, left, right) => left.doesNotReturn() || right.doesNotReturn(),
             SimpleExpr::UnaryOp(_, expr) => expr.doesNotReturn(),
             SimpleExpr::Match(expr, branches) => {

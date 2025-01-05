@@ -67,7 +67,7 @@ impl FileId {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Copy, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Position {
     pub line: i64,
     pub offset: i64,
@@ -85,7 +85,7 @@ impl Display for Position {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Copy, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Span {
     pub start: Position,
     pub end: Position,
