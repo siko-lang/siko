@@ -17,7 +17,6 @@ use crate::siko::{
     },
     qualifiedname::{
         getBoolTypeName, getFalseName, getI32TypeName, getIntTypeName, getPtrToRefName, getTrueName, getU8TypeName,
-        QualifiedName,
     },
 };
 
@@ -36,7 +35,7 @@ impl<'a> Builder<'a> {
 
     fn buildVariable(&self, id: &Variable) -> MirVariable {
         let ty = lowerType(&id.getType(), &self.program);
-        let name = format!("{}", id.value);
+        let name = convertName(&id.value);
         MirVariable { name: name, ty: ty }
     }
 
@@ -281,10 +280,10 @@ impl<'a> Builder<'a> {
     }
 }
 
-pub fn convertName(name: &QualifiedName) -> String {
+pub fn convertName<T: ToString>(name: &T) -> String {
     format!(
         "{}",
-        name.toString()
+        name.to_string()
             .replace(".", "_")
             .replace("(", "_t_")
             .replace(")", "_t_")
