@@ -7,11 +7,11 @@ use std::{
 use crate::siko::{
     minic::Function::Value,
     qualifiedname::{
-        getIntAddName, getIntCloneName, getIntDivName, getIntEqName, getIntLessThanName, getIntMulName, getIntSubName,
-        getPtrAllocateArrayName, getPtrCloneName, getPtrDeallocateName, getPtrLoadName, getPtrMemcmpName,
-        getPtrMemcpyName, getPtrNullName, getPtrOffsetName, getPtrPrintName, getPtrStoreName, getStdBasicUtilAbortName,
-        getStdBasicUtilPrintStrName, getU8AddName, getU8CloneName, getU8DivName, getU8EqName, getU8LessThanName,
-        getU8MulName, getU8SubName,
+        getIntAddName, getIntCloneName, getIntDivName, getIntEqName, getIntLessThanName, getIntModName, getIntMulName,
+        getIntSubName, getIntToU8Name, getPtrAllocateArrayName, getPtrCloneName, getPtrDeallocateName, getPtrLoadName,
+        getPtrMemcmpName, getPtrMemcpyName, getPtrNullName, getPtrOffsetName, getPtrPrintName, getPtrStoreName,
+        getStdBasicUtilAbortName, getStdBasicUtilPrintStrName, getU8AddName, getU8CloneName, getU8DivName, getU8EqName,
+        getU8LessThanName, getU8MulName, getU8SubName,
     },
     util::DependencyProcessor::processDependencies,
 };
@@ -179,7 +179,10 @@ impl MiniCGenerator {
                 Type::Int64 => {
                     format!("{} = {};", dest.name, src.name)
                 }
-                _ => panic!("Unsupported memcpy ty {:?}", dest.ty),
+                Type::UInt8 => {
+                    format!("{} = {};", dest.name, src.name)
+                }
+                _ => format!("INTERNALERROR"),
             },
             Instruction::MemcpyPtr(src, dest) => {
                 format!("{} = {};", dest.name, src.name)
@@ -354,6 +357,18 @@ impl MiniCGenerator {
         if f.name.starts_with(&getIntDivName().toString().replace(".", "_")) {
             writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
             writeln!(buf, "    return self / other;")?;
+            writeln!(buf, "}}\n")?;
+        }
+
+        if f.name.starts_with(&getIntModName().toString().replace(".", "_")) {
+            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(buf, "    return self % other;")?;
+            writeln!(buf, "}}\n")?;
+        }
+
+        if f.name.starts_with(&getIntToU8Name().toString().replace(".", "_")) {
+            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(buf, "    return (uint8_t)*self;")?;
             writeln!(buf, "}}\n")?;
         }
 

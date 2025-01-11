@@ -9,6 +9,10 @@ extern class Int {
 
     fn div(self, other: Int) -> Int = extern
 
+    fn mod(self, other: Int) -> Int = extern
+
+    fn toU8(&self) -> U8 = extern
+
     fn eq(&self, other: &Int) -> Bool = extern
 
     fn lessThan(&self, other: &Int) -> Bool = extern
@@ -71,6 +75,44 @@ instance PartialOrd[Int] {
 instance Clone[Int] {
     fn clone(&self) -> Int {
         self.clone()
+    }
+}
+
+instance Neg[Int] {
+    fn negative(self) -> Int {
+        0 - self
+    }
+}
+
+instance Show[Int] {
+    fn show(&self) -> String {
+        let mut n = self.clone();
+        if n == 0 {
+            return "0".toString();
+        }
+
+        let mut isNegative = False;
+
+        if n < 0 {
+            isNegative = True;
+            n = -n;
+        }
+
+        let mut digits: Vec[U8] = Vec.new();
+
+        while n > 0 {
+            let value = n.mod(10) + 48;
+            digits.push(value.toU8());
+            n = n / 10;
+        }
+
+        if isNegative {
+            digits.push(45.toU8());
+        }
+
+        digits.reverse();
+
+        String.fromU8(digits)
     }
 }
 

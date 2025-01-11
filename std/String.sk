@@ -32,6 +32,13 @@ class String {
             String(newValue, self.size, self.capacity)
         }
     }
+
+    fn fromU8(value: Vec[U8]) -> String {
+        let capacity = value.len();
+        let newValue = allocateArray(capacity);
+        Ptr.memcpy(newValue, value.as_ptr(), capacity);
+        String(newValue, capacity, capacity)
+    }
 }
 
 instance Drop[String] {
@@ -68,6 +75,12 @@ instance Add[String, &String] {
         Ptr.memcpy(newValue, self.value, self.size);
         Ptr.memcpy(offset(newValue, self.size), other.value, other.size);
         String(newValue, newCapacity, newCapacity)
+    }
+}
+
+instance PartialEq[String] {
+    fn eq(&self, other: &String) -> Bool {
+        self.eq(other)
     }
 }
 

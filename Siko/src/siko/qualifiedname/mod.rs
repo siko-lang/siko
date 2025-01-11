@@ -165,6 +165,14 @@ pub fn getIntDivName() -> QualifiedName {
     build("Int", "Int").add(format!("div"))
 }
 
+pub fn getIntModName() -> QualifiedName {
+    build("Int", "Int").add(format!("mod"))
+}
+
+pub fn getIntToU8Name() -> QualifiedName {
+    build("Int", "Int").add(format!("toU8"))
+}
+
 pub fn getIntEqName() -> QualifiedName {
     build("Int", "Int").add(format!("eq"))
 }

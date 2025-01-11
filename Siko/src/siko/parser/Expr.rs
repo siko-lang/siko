@@ -22,6 +22,7 @@ pub trait ExprParser {
     fn parseIf(&mut self) -> Expr;
     fn parseFor(&mut self) -> Expr;
     fn parseLoop(&mut self) -> Expr;
+    fn parseWhile(&mut self) -> Expr;
     fn parseMatch(&mut self) -> Expr;
     fn parseFieldAccessOrCall(&mut self) -> Expr;
     fn parseBinaryOp(&mut self, index: usize) -> Expr;
@@ -289,6 +290,70 @@ impl<'a> ExprParser for Parser<'a> {
         }
     }
 
+    fn parseWhile(&mut self) -> Expr {
+        let start = self.currentSpan();
+        self.expect(TokenKind::Keyword(KeywordKind::While));
+        let cond = self.parseExpr();
+        self.expect(TokenKind::LeftBracket(BracketKind::Curly));
+        self.undo();
+        let body = self.parseExpr();
+        let body = Expr {
+            expr: SimpleExpr::Match(
+                Box::new(cond),
+                vec![
+                    Branch {
+                        pattern: Pattern {
+                            pattern: SimplePattern::Named(
+                                Identifier::new(&getTrueName().toString(), self.currentLocation()),
+                                Vec::new(),
+                            ),
+                            location: self.currentLocation(),
+                        },
+                        body: body,
+                    },
+                    Branch {
+                        pattern: Pattern {
+                            pattern: SimplePattern::Named(
+                                Identifier::new(&getFalseName().toString(), self.currentLocation()),
+                                Vec::new(),
+                            ),
+                            location: self.currentLocation(),
+                        },
+                        body: Expr {
+                            expr: SimpleExpr::Break(None),
+                            location: self.currentLocation(),
+                        },
+                    },
+                ],
+            ),
+            location: self.currentLocation(),
+        };
+        let body = Expr {
+            expr: SimpleExpr::Block(Block {
+                statements: vec![Statement {
+                    kind: StatementKind::Expr(body),
+                    hasSemicolon: true,
+                }],
+                location: self.currentLocation(),
+            }),
+            location: self.currentLocation(),
+        };
+        self.buildExpr(
+            SimpleExpr::Loop(
+                Pattern {
+                    pattern: SimplePattern::Tuple(Vec::new()),
+                    location: self.currentLocation(),
+                },
+                Box::new(Expr {
+                    expr: SimpleExpr::Tuple(Vec::new()),
+                    location: self.currentLocation(),
+                }),
+                Box::new(body),
+            ),
+            start,
+        )
+    }
+
     fn parseMatch(&mut self) -> Expr {
         let start = self.currentSpan();
         self.expect(TokenKind::Keyword(KeywordKind::Match));
@@ -327,6 +392,10 @@ impl<'a> ExprParser for Parser<'a> {
             }
             TokenKind::Keyword(KeywordKind::Loop) => {
                 let expr = self.parseLoop();
+                (StatementKind::Expr(expr), SemicolonRequirement::Optional)
+            }
+            TokenKind::Keyword(KeywordKind::While) => {
+                let expr = self.parseWhile();
                 (StatementKind::Expr(expr), SemicolonRequirement::Optional)
             }
             TokenKind::Keyword(KeywordKind::Match) => {
@@ -454,6 +523,12 @@ impl<'a> ExprParser for Parser<'a> {
                 let expr = self.parseFieldAccessOrCall();
                 self.buildExpr(SimpleExpr::UnaryOp(UnaryOp::Not, Box::new(expr)), start)
             }
+            TokenKind::Op(OperatorKind::Sub) => {
+                let start = self.currentSpan();
+                self.expect(TokenKind::Op(OperatorKind::Sub));
+                let expr = self.parseFieldAccessOrCall();
+                self.buildExpr(SimpleExpr::UnaryOp(UnaryOp::Neg, Box::new(expr)), start)
+            }
             _ => self.parseFieldAccessOrCall(),
         }
     }
@@ -540,6 +615,7 @@ impl<'a> ExprParser for Parser<'a> {
             TokenKind::Keyword(KeywordKind::If) => self.parseIf(),
             TokenKind::Keyword(KeywordKind::For) => self.parseFor(),
             TokenKind::Keyword(KeywordKind::Loop) => self.parseLoop(),
+            TokenKind::Keyword(KeywordKind::While) => self.parseWhile(),
             TokenKind::Keyword(KeywordKind::Match) => self.parseMatch(),
             TokenKind::LeftBracket(BracketKind::Curly) => {
                 let block = self.parseBlock();

@@ -404,6 +404,7 @@ impl<'a> ExprResolver<'a> {
                 let rhsId = self.resolveExpr(rhs, env);
                 let name = match op {
                     UnaryOp::Not => createOpName("Not", "not"),
+                    UnaryOp::Neg => createOpName("Neg", "negative"),
                 };
                 let id = Identifier {
                     name: format!("{}", name),
