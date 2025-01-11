@@ -5,7 +5,7 @@ use std::{
 
 use crate::siko::{
     hir::{
-        Apply::{instantiateClass, instantiateEnum, instantiateType, instantiateType2, Apply, ApplyVariable},
+        Apply::{instantiateClass, instantiateEnum, instantiateType, instantiateType3, Apply, ApplyVariable},
         BlockBuilder::BlockBuilder,
         BodyBuilder::BodyBuilder,
         ConstraintContext::ConstraintContext,
@@ -289,8 +289,15 @@ impl<'a> Typechecker<'a> {
         knownConstraints: &ConstraintContext,
         builder: &mut BlockBuilder,
     ) -> Type {
-        //println!("checkFunctionCall: {} {} {}", fnType, neededConstraints, knownConstraints);
-        let (fnType, sub) = instantiateType2(&mut self.allocator, &fnType);
+        // println!(
+        //     "checkFunctionCall: {} {} {}",
+        //     fnType, neededConstraints, knownConstraints
+        // );
+        let mut contextArgs = BTreeSet::new();
+        for arg in &neededConstraints.typeParameters {
+            contextArgs = arg.collectVars(contextArgs);
+        }
+        let (fnType, sub) = instantiateType3(&mut self.allocator, &fnType, contextArgs);
         //println!("inst {}", fnType);
         let constraintContext = neededConstraints.apply(&sub);
         let (fnArgs, mut fnResult) = match fnType.clone().splitFnType() {
@@ -348,9 +355,20 @@ impl<'a> Typechecker<'a> {
             if !knownConstraints.contains(c) {
                 if let Some(instances) = self.program.instanceResolver.lookupInstances(&c.traitName) {
                     //println!("c.args {}", formatTypes(&c.args));
+                    let mut fullyGeneric = true;
+                    for arg in &c.args {
+                        if !arg.isTypeVar() {
+                            fullyGeneric = false;
+                            break;
+                        }
+                    }
+                    if fullyGeneric {
+                        continue;
+                    }
                     let resolutionResult = instances.find(&mut self.allocator, &c.args);
                     match resolutionResult {
                         ResolutionResult::Winner(instance) => {
+                            //println!("Base Winner {} for {}", instance, formatTypes(&c.args));
                             let instance = instance.apply(&self.substitution);
                             //println!("Winner {} for {}", instance, formatTypes(&c.args));
                             for ctxAssocTy in &c.associatedTypes {

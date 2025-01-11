@@ -14,7 +14,7 @@ use crate::siko::{
     syntax::{
         Function::Parameter as SynParam,
         Module::{Import, Module, ModuleItem},
-        Type::{ConstraintArgument, TypeParameterDeclaration},
+        Type::{Constraint, ConstraintArgument, TypeParameterDeclaration},
     },
     util::error,
 };
@@ -44,6 +44,49 @@ pub fn createConstraintContext(
     addTypeParams(ConstraintContext::new(), decl, typeResolver, program, ctx)
 }
 
+fn addConstraint(
+    mut context: ConstraintContext,
+    constraint: &Constraint,
+    typeResolver: &TypeResolver,
+    program: &Program,
+    ctx: &ReportContext,
+) -> ConstraintContext {
+    let traitDef = typeResolver.moduleResolver.lookupTrait(&constraint.traitName, program);
+    let mut args = Vec::new();
+    let mut associatedTypes = Vec::new();
+    for arg in &constraint.args {
+        match arg {
+            ConstraintArgument::Type(ty) => {
+                let irTy = typeResolver.resolveType(ty);
+                args.push(irTy);
+            }
+            ConstraintArgument::AssociatedType(name, ty) => {
+                if !traitDef.associatedTypes.contains(&name.toString()) {
+                    ResolverError::AssociatedTypeNotFound(
+                        name.toString(),
+                        traitDef.name.toString(),
+                        constraint.traitName.location.clone(),
+                    )
+                    .report(ctx);
+                }
+                let irTy = typeResolver.resolveType(ty);
+                let associatedType = AssociatedType {
+                    name: name.toString(),
+                    ty: irTy,
+                };
+                associatedTypes.push(associatedType);
+            }
+        }
+    }
+    let irConstraint = IrConstraint {
+        traitName: traitDef.name,
+        args: args,
+        associatedTypes: associatedTypes,
+    };
+    context.addConstraint(irConstraint);
+    context
+}
+
 fn addTypeParams(
     mut context: ConstraintContext,
     decl: &Option<TypeParameterDeclaration>,
@@ -58,40 +101,8 @@ fn addTypeParams(
             context.addTypeParam(irParam);
         }
         for constraint in &decl.constraints {
+            context = addConstraint(context, constraint, typeResolver, program, ctx);
             //println!("Processing constraint {}", constraint);
-            let traitDef = typeResolver.moduleResolver.lookupTrait(&constraint.traitName, program);
-            let mut args = Vec::new();
-            let mut associatedTypes = Vec::new();
-            for arg in &constraint.args {
-                match arg {
-                    ConstraintArgument::Type(ty) => {
-                        let irTy = typeResolver.resolveType(ty);
-                        args.push(irTy);
-                    }
-                    ConstraintArgument::AssociatedType(name, ty) => {
-                        if !traitDef.associatedTypes.contains(&name.toString()) {
-                            ResolverError::AssociatedTypeNotFound(
-                                name.toString(),
-                                traitDef.name.toString(),
-                                constraint.traitName.location.clone(),
-                            )
-                            .report(ctx);
-                        }
-                        let irTy = typeResolver.resolveType(ty);
-                        let associatedType = AssociatedType {
-                            name: name.toString(),
-                            ty: irTy,
-                        };
-                        associatedTypes.push(associatedType);
-                    }
-                }
-            }
-            let irConstraint = IrConstraint {
-                traitName: traitDef.name,
-                args: args,
-                associatedTypes: associatedTypes,
-            };
-            context.addConstraint(irConstraint);
         }
     }
     context
@@ -491,11 +502,17 @@ impl<'a> Resolver<'a> {
                                 &self.ctx,
                             );
                             let mut associatedTypes = Vec::new();
-                            for assocTy in &traitDef.associatedTypes {
+                            for assocTy in &t.associatedTypes {
+                                let ty = IrType::Var(TypeVar::Named(assocTy.name.toString()));
                                 associatedTypes.push(AssociatedType {
-                                    name: assocTy.clone(),
-                                    ty: IrType::Var(TypeVar::Named(assocTy.clone())),
+                                    name: assocTy.name.toString(),
+                                    ty: ty.clone(),
                                 });
+                                constraintContext.addTypeParam(ty);
+                                for c in &assocTy.constraints {
+                                    constraintContext =
+                                        addConstraint(constraintContext, c, &typeResolver, &self.program, &self.ctx);
+                                }
                             }
                             constraintContext.addConstraint(IrConstraint {
                                 traitName: traitDef.name.clone(),

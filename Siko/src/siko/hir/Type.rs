@@ -279,6 +279,13 @@ impl Type {
         }
     }
 
+    pub fn isTypeVar(&self) -> bool {
+        match &self {
+            Type::Var(TypeVar::Var(_)) => true,
+            _ => false,
+        }
+    }
+
     pub fn makeSingleRef(self) -> Type {
         match self {
             Type::Reference(inner, lifetime) => {

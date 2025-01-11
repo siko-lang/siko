@@ -9,6 +9,7 @@ use super::{
     Instruction::{FieldInfo, InstructionKind},
     Substitution::{TypeSubstitution, VariableSubstitution},
     Trait::{AssociatedType, Instance, MemberInfo, Trait},
+    Type::TypeVar,
     TypeVarAllocator::TypeVarAllocator,
     Unification::unify,
 };
@@ -272,6 +273,22 @@ pub fn instantiateType(allocator: &mut TypeVarAllocator, ty: &Type) -> Type {
 
 pub fn instantiateType2(allocator: &mut TypeVarAllocator, ty: &Type) -> (Type, TypeSubstitution) {
     let vars = ty.collectVars(BTreeSet::new());
+    let mut sub = TypeSubstitution::new();
+    for var in &vars {
+        sub.add(Type::Var(var.clone()), allocator.next());
+    }
+    (ty.apply(&sub), sub)
+}
+
+pub fn instantiateType3(
+    allocator: &mut TypeVarAllocator,
+    ty: &Type,
+    extra: BTreeSet<TypeVar>,
+) -> (Type, TypeSubstitution) {
+    let mut vars = ty.collectVars(BTreeSet::new());
+    for var in extra {
+        vars.insert(var);
+    }
     let mut sub = TypeSubstitution::new();
     for var in &vars {
         sub.add(Type::Var(var.clone()), allocator.next());
