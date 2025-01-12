@@ -15,6 +15,7 @@ pub struct Trait {
     pub typeParams: Option<TypeParameterDeclaration>,
     pub associatedTypes: Vec<AssociatedTypeDeclaration>,
     pub methods: Vec<Function>,
+    pub public: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]

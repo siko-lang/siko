@@ -11,11 +11,11 @@ use super::{
 };
 
 pub trait FunctionParser {
-    fn parseFunction(&mut self) -> Function;
+    fn parseFunction(&mut self, public: bool) -> Function;
 }
 
 impl<'a> FunctionParser for Parser<'a> {
-    fn parseFunction(&mut self) -> Function {
+    fn parseFunction(&mut self, public: bool) -> Function {
         self.expect(TokenKind::Keyword(KeywordKind::Fn));
         let name = self.parseVarIdentifier();
         let typeParams = if self.check(TokenKind::LeftBracket(BracketKind::Square)) {
@@ -85,6 +85,7 @@ impl<'a> FunctionParser for Parser<'a> {
             result,
             body: body,
             isExtern: isExtern,
+            public,
         }
     }
 }

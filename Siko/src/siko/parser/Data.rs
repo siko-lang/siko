@@ -11,14 +11,14 @@ use super::{
 };
 
 pub trait DataParser {
-    fn parseClass(&mut self, derives: Vec<Derive>) -> Class;
-    fn parseEnum(&mut self, derives: Vec<Derive>) -> Enum;
+    fn parseClass(&mut self, derives: Vec<Derive>, public: bool) -> Class;
+    fn parseEnum(&mut self, derives: Vec<Derive>, public: bool) -> Enum;
     fn parseVariant(&mut self) -> Variant;
-    fn parseField(&mut self) -> Field;
+    fn parseField(&mut self, public: bool) -> Field;
 }
 
 impl<'a> DataParser for Parser<'a> {
-    fn parseClass(&mut self, derives: Vec<Derive>) -> Class {
+    fn parseClass(&mut self, derives: Vec<Derive>, public: bool) -> Class {
         self.expect(TokenKind::Keyword(KeywordKind::Class));
         let name = self.parseTypeIdentifier();
         let typeParams = if self.check(TokenKind::LeftBracket(BracketKind::Square)) {
@@ -26,28 +26,26 @@ impl<'a> DataParser for Parser<'a> {
         } else {
             None
         };
-        let mut hasImplicitMember = false;
         self.expect(TokenKind::LeftBracket(BracketKind::Curly));
         let mut fields = Vec::new();
         let mut methods = Vec::new();
         while !self.check(TokenKind::RightBracket(BracketKind::Curly)) {
+            let mut public = false;
+            if self.check(TokenKind::Keyword(KeywordKind::Pub)) {
+                self.expect(TokenKind::Keyword(KeywordKind::Pub));
+                public = true;
+            }
             match self.peek() {
                 TokenKind::Keyword(KeywordKind::Fn) => {
-                    let method = self.parseFunction();
+                    let method = self.parseFunction(public);
                     methods.push(method);
                 }
                 TokenKind::VarIdentifier => {
-                    let name = self.parseVarIdentifier();
-                    self.expect(TokenKind::Misc(MiscKind::Colon));
-                    let ty = self.parseType();
+                    let field = self.parseField(public);
+                    fields.push(field);
                     if self.check(TokenKind::Misc(MiscKind::Comma)) {
                         self.expect(TokenKind::Misc(MiscKind::Comma));
                     }
-                    fields.push(Field { name: name, ty: ty });
-                }
-                TokenKind::Keyword(KeywordKind::Implicit) => {
-                    self.expect(TokenKind::Keyword(KeywordKind::Implicit));
-                    hasImplicitMember = true
                 }
                 kind => self.reportError2("<class member>", kind),
             }
@@ -60,11 +58,11 @@ impl<'a> DataParser for Parser<'a> {
             fields: fields,
             methods: methods,
             derives,
-            hasImplicitMember: hasImplicitMember,
+            public,
         }
     }
 
-    fn parseEnum(&mut self, derives: Vec<Derive>) -> Enum {
+    fn parseEnum(&mut self, derives: Vec<Derive>, public: bool) -> Enum {
         self.expect(TokenKind::Keyword(KeywordKind::Enum));
         let name = self.parseTypeIdentifier();
         let typeParams = if self.check(TokenKind::LeftBracket(BracketKind::Square)) {
@@ -76,9 +74,14 @@ impl<'a> DataParser for Parser<'a> {
         let mut methods = Vec::new();
         self.expect(TokenKind::LeftBracket(BracketKind::Curly));
         while !self.check(TokenKind::RightBracket(BracketKind::Curly)) {
+            let mut public = false;
+            if self.check(TokenKind::Keyword(KeywordKind::Pub)) {
+                self.expect(TokenKind::Keyword(KeywordKind::Pub));
+                public = true;
+            }
             match self.peek() {
                 TokenKind::Keyword(KeywordKind::Fn) => {
-                    let method = self.parseFunction();
+                    let method = self.parseFunction(public);
                     methods.push(method);
                 }
                 TokenKind::TypeIdentifier => {
@@ -98,14 +101,15 @@ impl<'a> DataParser for Parser<'a> {
             variants,
             methods,
             derives,
+            public,
         }
     }
 
-    fn parseField(&mut self) -> Field {
+    fn parseField(&mut self, public: bool) -> Field {
         let name = self.parseVarIdentifier();
         self.expect(TokenKind::Misc(MiscKind::Colon));
         let ty = self.parseType();
-        Field { name, ty }
+        Field { name, ty, public }
     }
 
     fn parseVariant(&mut self) -> Variant {

@@ -8,14 +8,14 @@ use super::{
 };
 
 pub trait TraitParser {
-    fn parseTrait(&mut self) -> Trait;
+    fn parseTrait(&mut self, public: bool) -> Trait;
     fn parseAssociatedTypeDeclaration(&mut self) -> AssociatedTypeDeclaration;
     fn parseAssociatedType(&mut self) -> AssociatedType;
     fn parseInstance(&mut self) -> Instance;
 }
 
 impl<'a> TraitParser for Parser<'a> {
-    fn parseTrait(&mut self) -> Trait {
+    fn parseTrait(&mut self, public: bool) -> Trait {
         self.expect(TokenKind::Keyword(KeywordKind::Trait));
         let typeParams = if self.check(TokenKind::LeftBracket(BracketKind::Square)) {
             Some(self.parseTypeParameterDeclaration())
@@ -32,7 +32,7 @@ impl<'a> TraitParser for Parser<'a> {
             self.expect(TokenKind::LeftBracket(BracketKind::Curly));
             while !self.check(TokenKind::RightBracket(BracketKind::Curly)) {
                 if self.check(TokenKind::Keyword(KeywordKind::Fn)) {
-                    let function = self.parseFunction();
+                    let function = self.parseFunction(true);
                     methods.push(function);
                     continue;
                 }
@@ -51,6 +51,7 @@ impl<'a> TraitParser for Parser<'a> {
             typeParams: typeParams,
             associatedTypes: associatedTypes,
             methods,
+            public: public,
         }
     }
 
@@ -105,7 +106,7 @@ impl<'a> TraitParser for Parser<'a> {
             self.expect(TokenKind::LeftBracket(BracketKind::Curly));
             while !self.check(TokenKind::RightBracket(BracketKind::Curly)) {
                 if self.check(TokenKind::Keyword(KeywordKind::Fn)) {
-                    let function = self.parseFunction();
+                    let function = self.parseFunction(true);
                     methods.push(function);
                     continue;
                 }

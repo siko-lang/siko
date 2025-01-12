@@ -20,4 +20,5 @@ pub struct Function {
     pub result: Type,
     pub body: Option<Block>,
     pub isExtern: bool,
+    pub public: bool,
 }

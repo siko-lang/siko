@@ -65,18 +65,23 @@ impl<'a> ModuleParser for Parser<'a> {
             } else {
                 Vec::new()
             };
+            let mut public = false;
+            if self.check(TokenKind::Keyword(KeywordKind::Pub)) {
+                self.expect(TokenKind::Keyword(KeywordKind::Pub));
+                public = true;
+            }
             let item = match self.peek() {
                 TokenKind::Keyword(KeywordKind::Extern) => {
                     self.expect(TokenKind::Keyword(KeywordKind::Extern));
-                    let mut c = self.parseClass(derives);
+                    let mut c = self.parseClass(derives, public);
                     c.isExtern = true;
                     ModuleItem::Class(c)
                 }
-                TokenKind::Keyword(KeywordKind::Class) => ModuleItem::Class(self.parseClass(derives)),
-                TokenKind::Keyword(KeywordKind::Enum) => ModuleItem::Enum(self.parseEnum(derives)),
-                TokenKind::Keyword(KeywordKind::Fn) => ModuleItem::Function(self.parseFunction()),
+                TokenKind::Keyword(KeywordKind::Class) => ModuleItem::Class(self.parseClass(derives, public)),
+                TokenKind::Keyword(KeywordKind::Enum) => ModuleItem::Enum(self.parseEnum(derives, public)),
+                TokenKind::Keyword(KeywordKind::Fn) => ModuleItem::Function(self.parseFunction(public)),
                 TokenKind::Keyword(KeywordKind::Import) => ModuleItem::Import(self.parseImport()),
-                TokenKind::Keyword(KeywordKind::Trait) => ModuleItem::Trait(self.parseTrait()),
+                TokenKind::Keyword(KeywordKind::Trait) => ModuleItem::Trait(self.parseTrait(public)),
                 TokenKind::Keyword(KeywordKind::Instance) => ModuleItem::Instance(self.parseInstance()),
                 kind => self.reportError2("<module item>", kind),
             };

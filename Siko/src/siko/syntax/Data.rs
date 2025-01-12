@@ -13,7 +13,7 @@ pub struct Class {
     pub fields: Vec<Field>,
     pub methods: Vec<Function>,
     pub derives: Vec<Derive>,
-    pub hasImplicitMember: bool,
+    pub public: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,6 +23,7 @@ pub struct Enum {
     pub variants: Vec<Variant>,
     pub methods: Vec<Function>,
     pub derives: Vec<Derive>,
+    pub public: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,4 +36,5 @@ pub struct Variant {
 pub struct Field {
     pub name: Identifier,
     pub ty: Type,
+    pub public: bool,
 }
