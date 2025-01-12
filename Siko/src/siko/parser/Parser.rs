@@ -1,6 +1,6 @@
 use super::Module::ModuleParser;
 use super::Token::{MiscKind, OperatorKind, Token, TokenInfo, TokenKind};
-use crate::siko::location::Location::{Location, Span};
+use crate::siko::location::Location::{Location, Position, Span};
 use crate::siko::location::Report::{Report, ReportContext};
 use crate::siko::syntax::Identifier::Identifier;
 use crate::siko::syntax::Module::Module;
@@ -208,8 +208,9 @@ impl<'a> Parser<'a> {
 
     pub fn parse(&mut self) {
         let content = std::fs::read_to_string(&self.fileName).unwrap();
-        let mut lexer = Lexer::new(content, self.fileId.clone());
-        let (tokens, errors) = lexer.lex();
+        let mut lexer = Lexer::new(content.chars().collect(), self.fileId.clone(), Position::new());
+        let (tokens, errors) = lexer.lex(true);
+        //println!("Tokens {:?}", tokens);
         let lexer_success = errors.is_empty();
 
         for e in errors {

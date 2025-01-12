@@ -192,7 +192,7 @@ impl<'a> MinicBuilder<'a> {
                     let value = match self.constants.entry(value.clone()) {
                         Entry::Occupied(v) => v.get().clone(),
                         Entry::Vacant(v) => {
-                            let newStr = format!("str_{}", new);
+                            let newStr = format!("_siko_literal_str_{}", new);
                             v.insert(newStr.clone());
                             newStr
                         }

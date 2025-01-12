@@ -47,12 +47,12 @@ pub struct Lexer {
 }
 
 impl Lexer {
-    pub fn new(content: String, fileId: FileId) -> Lexer {
+    pub fn new(content: Vec<char>, fileId: FileId, position: Position) -> Lexer {
         Lexer {
-            content: content.chars().collect(),
+            content: content,
             index: 0,
             current: String::new(),
-            position: Position::new(),
+            position: position,
             fileId: fileId,
             span: Span::new(),
             tokens: Vec::new(),
@@ -192,6 +192,50 @@ impl Lexer {
         }
     }
 
+    fn processStringInterpolation(&mut self) {
+        self.addToken(Token::Op(OperatorKind::Add));
+        self.addToken(Token::VarIdentifier("Std.Ops.Show.show".to_string()));
+        self.addToken(Token::LeftBracket(BracketKind::Paren));
+
+        self.step();
+        let start = self.position.clone();
+        let mut level = 1;
+        let mut subchars = Vec::new();
+        loop {
+            match self.peek() {
+                Some('}') => {
+                    self.step();
+                    level = level - 1;
+                    if level == 0 {
+                        break;
+                    }
+                }
+                Some('{') => {
+                    self.step();
+                    level = level + 1;
+                }
+                Some(c) => {
+                    subchars.push(c);
+                    self.step();
+                }
+                None => {
+                    self.addError(LexerError::UnendingStringLiteral(self.span.clone()));
+                    return;
+                }
+            }
+        }
+
+        let mut sublexer = Lexer::new(subchars, self.fileId.clone(), start);
+        sublexer.resetSpan();
+        let (tokens, errors) = sublexer.lex(false);
+        //println!("Tokens: {:?}", tokens);
+        self.errors.extend(errors);
+        self.tokens.extend(tokens);
+
+        self.addToken(Token::RightBracket(BracketKind::Paren));
+        self.addToken(Token::Op(OperatorKind::Add));
+    }
+
     fn processString(&mut self) {
         let mut literal = String::new();
         self.step();
@@ -241,16 +285,9 @@ impl Lexer {
                     self.step();
                     match self.peek() {
                         Some('{') => {
-                            self.step();
                             self.addToken(Token::StringLiteral(literal));
                             literal = String::new();
-                            self.addToken(Token::Op(OperatorKind::Add));
-                            self.addToken(Token::VarIdentifier("Std.Ops.Show.show".to_string()));
-                            self.addToken(Token::LeftBracket(BracketKind::Paren));
-                            self.processIdentifier(self.peek().unwrap());
-                            self.addToken(Token::RightBracket(BracketKind::Paren));
-                            self.addToken(Token::Op(OperatorKind::Add));
-                            self.expect('}');
+                            self.processStringInterpolation();
                         }
                         _ => {
                             literal.push('$');
@@ -274,7 +311,7 @@ impl Lexer {
         }
     }
 
-    pub fn lex(&mut self) -> (Vec<TokenInfo>, Vec<LexerError>) {
+    pub fn lex(&mut self, addEOF: bool) -> (Vec<TokenInfo>, Vec<LexerError>) {
         loop {
             match self.peek() {
                 Some(c) if isIdentifier(c) => self.processIdentifier(c),
@@ -372,7 +409,9 @@ impl Lexer {
                 None => break,
             }
         }
-        self.addToken(Token::EOF);
+        if addEOF {
+            self.addToken(Token::EOF);
+        }
         (self.tokens.clone(), self.errors.clone())
     }
 }
