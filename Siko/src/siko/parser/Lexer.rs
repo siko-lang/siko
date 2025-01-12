@@ -182,6 +182,15 @@ impl Lexer {
             }
         }
     }
+
+    fn expect(&mut self, c: char) {
+        match self.peek() {
+            Some(c1) if c1 == c => self.step(),
+            Some(c1) => self.addError(LexerError::UnexpectedCharacter(c1, self.span.clone())),
+            None => self.addError(LexerError::UnexpectedEndOfFile(self.span.clone())),
+        }
+    }
+
     fn processString(&mut self) {
         let mut literal = String::new();
         self.step();
@@ -190,6 +199,62 @@ impl Lexer {
                 Some('"') => {
                     self.step();
                     break;
+                }
+                Some('\\') => {
+                    self.step();
+                    match self.peek() {
+                        Some('n') => {
+                            literal.push('\n');
+                            self.step();
+                        }
+                        Some('t') => {
+                            literal.push('\t');
+                            self.step();
+                        }
+                        Some('r') => {
+                            literal.push('\r');
+                            self.step();
+                        }
+                        Some('\\') => {
+                            literal.push('\\');
+                            self.step();
+                        }
+                        Some('"') => {
+                            literal.push('"');
+                            self.step();
+                        }
+                        Some('\'') => {
+                            literal.push('\'');
+                            self.step();
+                        }
+                        Some(c) => {
+                            self.addError(LexerError::InvalidEscapeSequence(format!("\\{}", c), self.span.clone()));
+                            self.step();
+                        }
+                        None => {
+                            self.addError(LexerError::UnendingStringLiteral(self.span.clone()));
+                        }
+                    }
+                }
+                Some('$') => {
+                    self.step();
+                    match self.peek() {
+                        Some('{') => {
+                            self.step();
+                            self.addToken(Token::StringLiteral(literal));
+                            literal = String::new();
+                            self.addToken(Token::Op(OperatorKind::Add));
+                            self.addToken(Token::VarIdentifier("Std.Ops.Show.show".to_string()));
+                            self.addToken(Token::LeftBracket(BracketKind::Paren));
+                            self.processIdentifier(self.peek().unwrap());
+                            self.addToken(Token::RightBracket(BracketKind::Paren));
+                            self.addToken(Token::Op(OperatorKind::Add));
+                            self.expect('}');
+                        }
+                        _ => {
+                            literal.push('$');
+                        }
+                    }
                 }
                 Some(c) => {
                     literal.push(c);

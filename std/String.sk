@@ -74,6 +74,9 @@ instance Add[String, &String] {
         let newValue = allocateArray(newCapacity);
         Ptr.memcpy(newValue, self.value, self.size);
         Ptr.memcpy(offset(newValue, self.size), other.value, other.size);
+        if self.capacity > 0 {
+            Ptr.deallocate(self.value);
+        }
         String(newValue, newCapacity, newCapacity)
     }
 }
@@ -147,6 +150,13 @@ instance Add[StringLiteral, StringLiteral] {
 instance Add[StringLiteral, &String] {
     type Output = String
     fn add(self, other: &String) -> String {
+        self.toString() + other
+    }
+}
+
+instance Add[StringLiteral, String] {
+    type Output = String
+    fn add(self, other: String) -> String {
         self.toString() + other
     }
 }

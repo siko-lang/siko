@@ -100,7 +100,7 @@ impl<'a> Parser<'a> {
         let line = self.tokens[self.index].span.start.line + 1;
         let offset = self.tokens[self.index].span.start.offset + 1;
         error(format!(
-            "Expected {:?} found {:?} at {}:{}:{}",
+            "Expected {} found {} at {}:{}:{}",
             expected, found, self.fileName, line, offset,
         ));
     }
@@ -109,7 +109,7 @@ impl<'a> Parser<'a> {
         let line = self.tokens[self.index].span.start.line + 1;
         let offset = self.tokens[self.index].span.start.offset + 1;
         error(format!(
-            "Expected {:?} found {:?} at {}:{}:{}",
+            "Expected {} found {} at {}:{}:{}",
             expected, found, self.fileName, line, offset,
         ));
     }
@@ -226,6 +226,21 @@ impl<'a> Parser<'a> {
                 }
                 super::Error::LexerError::UnendingStringLiteral(span) => {
                     let slogan = format!("unending string literal");
+                    let r = Report::new(self.ctx, slogan, Some(Location::new(self.fileId.clone(), span)));
+                    r.print();
+                }
+                super::Error::LexerError::InvalidEscapeSequence(s, span) => {
+                    let slogan = format!("invalid escape sequence {}", self.ctx.yellow(&s));
+                    let r = Report::new(self.ctx, slogan, Some(Location::new(self.fileId.clone(), span)));
+                    r.print();
+                }
+                super::Error::LexerError::UnexpectedCharacter(c, span) => {
+                    let slogan = format!("unexpected character {}", self.ctx.yellow(&format!("{}", c)));
+                    let r = Report::new(self.ctx, slogan, Some(Location::new(self.fileId.clone(), span)));
+                    r.print();
+                }
+                super::Error::LexerError::UnexpectedEndOfFile(span) => {
+                    let slogan = format!("unexpected end of file");
                     let r = Report::new(self.ctx, slogan, Some(Location::new(self.fileId.clone(), span)));
                     r.print();
                 }

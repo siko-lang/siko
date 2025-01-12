@@ -1,3 +1,6 @@
+use std::fmt::Debug;
+use std::fmt::Display;
+
 use crate::siko::location::Location::Span;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -127,6 +130,57 @@ impl Token {
     }
 }
 
+impl Display for Token {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Token::VarIdentifier(v) => write!(f, "{}", v),
+            Token::TypeIdentifier(v) => write!(f, "{}", v),
+            Token::LeftBracket(BracketKind::Curly) => write!(f, "{{"),
+            Token::LeftBracket(BracketKind::Paren) => write!(f, "("),
+            Token::LeftBracket(BracketKind::Square) => write!(f, "["),
+            Token::RightBracket(BracketKind::Curly) => write!(f, "}}"),
+            Token::RightBracket(BracketKind::Paren) => write!(f, ")"),
+            Token::RightBracket(BracketKind::Square) => write!(f, "]"),
+            Token::StringLiteral(v) => write!(f, "\"{}\"", v),
+            Token::IntegerLiteral(v) => write!(f, "{}", v),
+            Token::CharLiteral(v) => write!(f, "'{}'", v),
+            Token::Keyword(k) => write!(f, "{:?}", k),
+            Token::Arrow(ArrowKind::DoubleLeft) => write!(f, "<="),
+            Token::Arrow(ArrowKind::DoubleRight) => write!(f, "=>"),
+            Token::Arrow(ArrowKind::Left) => write!(f, "<-"),
+            Token::Arrow(ArrowKind::Right) => write!(f, "->"),
+            Token::Range(RangeKind::Exclusive) => write!(f, ".."),
+            Token::Range(RangeKind::Inclusive) => write!(f, "..="),
+            Token::Misc(MiscKind::Ampersand) => write!(f, "&"),
+            Token::Misc(MiscKind::At) => write!(f, "@"),
+            Token::Misc(MiscKind::Backslash) => write!(f, "\\"),
+            Token::Misc(MiscKind::Colon) => write!(f, ":"),
+            Token::Misc(MiscKind::Comma) => write!(f, ","),
+            Token::Misc(MiscKind::Dot) => write!(f, "."),
+            Token::Misc(MiscKind::Equal) => write!(f, "="),
+            Token::Misc(MiscKind::ExclamationMark) => write!(f, "!"),
+            Token::Misc(MiscKind::Percent) => write!(f, "%"),
+            Token::Misc(MiscKind::Pipe) => write!(f, "|"),
+            Token::Misc(MiscKind::Semicolon) => write!(f, ";"),
+            Token::Misc(MiscKind::Tilde) => write!(f, "~"),
+            Token::Misc(MiscKind::Wildcard) => write!(f, "_"),
+            Token::Op(OperatorKind::Add) => write!(f, "+"),
+            Token::Op(OperatorKind::And) => write!(f, "&&"),
+            Token::Op(OperatorKind::Div) => write!(f, "/"),
+            Token::Op(OperatorKind::Equal) => write!(f, "=="),
+            Token::Op(OperatorKind::GreaterThan) => write!(f, ">"),
+            Token::Op(OperatorKind::GreaterThanOrEqual) => write!(f, ">="),
+            Token::Op(OperatorKind::LessThan) => write!(f, "<"),
+            Token::Op(OperatorKind::LessThanOrEqual) => write!(f, "<="),
+            Token::Op(OperatorKind::Mul) => write!(f, "*"),
+            Token::Op(OperatorKind::NotEqual) => write!(f, "!="),
+            Token::Op(OperatorKind::Or) => write!(f, "||"),
+            Token::Op(OperatorKind::Sub) => write!(f, "-"),
+            Token::EOF => write!(f, "EOF"),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum TokenKind {
     VarIdentifier,
@@ -144,7 +198,58 @@ pub enum TokenKind {
     EOF,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+impl Display for TokenKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TokenKind::VarIdentifier => write!(f, "identifier"),
+            TokenKind::TypeIdentifier => write!(f, "type identifier"),
+            TokenKind::LeftBracket(BracketKind::Curly) => write!(f, "{{"),
+            TokenKind::LeftBracket(BracketKind::Paren) => write!(f, "("),
+            TokenKind::LeftBracket(BracketKind::Square) => write!(f, "["),
+            TokenKind::RightBracket(BracketKind::Curly) => write!(f, "}}"),
+            TokenKind::RightBracket(BracketKind::Paren) => write!(f, ")"),
+            TokenKind::RightBracket(BracketKind::Square) => write!(f, "]"),
+            TokenKind::StringLiteral => write!(f, "string literal"),
+            TokenKind::IntegerLiteral => write!(f, "integer literal"),
+            TokenKind::CharLiteral => write!(f, "char literal"),
+            TokenKind::Keyword(k) => write!(f, "{:?}", k),
+            TokenKind::Arrow(ArrowKind::DoubleLeft) => write!(f, "<="),
+            TokenKind::Arrow(ArrowKind::DoubleRight) => write!(f, "=>"),
+            TokenKind::Arrow(ArrowKind::Left) => write!(f, "<-"),
+            TokenKind::Arrow(ArrowKind::Right) => write!(f, "->"),
+            TokenKind::Range(RangeKind::Exclusive) => write!(f, ".."),
+            TokenKind::Range(RangeKind::Inclusive) => write!(f, "..="),
+            TokenKind::Misc(MiscKind::Ampersand) => write!(f, "&"),
+            TokenKind::Misc(MiscKind::At) => write!(f, "@"),
+            TokenKind::Misc(MiscKind::Backslash) => write!(f, "\\"),
+            TokenKind::Misc(MiscKind::Colon) => write!(f, ":"),
+            TokenKind::Misc(MiscKind::Comma) => write!(f, ","),
+            TokenKind::Misc(MiscKind::Dot) => write!(f, "."),
+            TokenKind::Misc(MiscKind::Equal) => write!(f, "="),
+            TokenKind::Misc(MiscKind::ExclamationMark) => write!(f, "!"),
+            TokenKind::Misc(MiscKind::Percent) => write!(f, "%"),
+            TokenKind::Misc(MiscKind::Pipe) => write!(f, "|"),
+            TokenKind::Misc(MiscKind::Semicolon) => write!(f, ";"),
+            TokenKind::Misc(MiscKind::Tilde) => write!(f, "~"),
+            TokenKind::Misc(MiscKind::Wildcard) => write!(f, "_"),
+            TokenKind::Op(OperatorKind::Add) => write!(f, "+"),
+            TokenKind::Op(OperatorKind::And) => write!(f, "&&"),
+            TokenKind::Op(OperatorKind::Div) => write!(f, "/"),
+            TokenKind::Op(OperatorKind::Equal) => write!(f, "=="),
+            TokenKind::Op(OperatorKind::GreaterThan) => write!(f, ">"),
+            TokenKind::Op(OperatorKind::GreaterThanOrEqual) => write!(f, ">="),
+            TokenKind::Op(OperatorKind::LessThan) => write!(f, "<"),
+            TokenKind::Op(OperatorKind::LessThanOrEqual) => write!(f, "<="),
+            TokenKind::Op(OperatorKind::Mul) => write!(f, "*"),
+            TokenKind::Op(OperatorKind::NotEqual) => write!(f, "!="),
+            TokenKind::Op(OperatorKind::Or) => write!(f, "||"),
+            TokenKind::Op(OperatorKind::Sub) => write!(f, "-"),
+            TokenKind::EOF => write!(f, "EOF"),
+        }
+    }
+}
+
+#[derive(PartialEq, Eq, Clone)]
 pub struct TokenInfo {
     pub token: Token,
     pub span: Span,
@@ -153,5 +258,17 @@ pub struct TokenInfo {
 impl TokenInfo {
     pub fn kind(&self) -> TokenKind {
         self.token.kind()
+    }
+}
+
+impl Display for TokenInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.token)
+    }
+}
+
+impl Debug for TokenInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.token)
     }
 }
