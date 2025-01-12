@@ -2,7 +2,7 @@ use core::panic;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::siko::hir::BodyBuilder::BodyBuilder;
-use crate::siko::hir::Data::Enum;
+use crate::siko::hir::Data::{Class, Enum};
 use crate::siko::hir::Function::{BlockId, Variable, VariableName};
 use crate::siko::hir::Instruction::{BlockInfo, FieldInfo, InstructionKind, JumpDirection};
 use crate::siko::location::Location::Location;
@@ -43,6 +43,7 @@ pub struct ExprResolver<'a> {
     pub moduleResolver: &'a ModuleResolver<'a>,
     typeResolver: &'a TypeResolver<'a>,
     emptyVariants: &'a BTreeSet<QualifiedName>,
+    classes: &'a BTreeMap<QualifiedName, Class>,
     pub variants: &'a BTreeMap<QualifiedName, QualifiedName>,
     pub enums: &'a BTreeMap<QualifiedName, Enum>,
     loopInfos: Vec<LoopInfo>,
@@ -55,6 +56,7 @@ impl<'a> ExprResolver<'a> {
         moduleResolver: &'a ModuleResolver,
         typeResolver: &'a TypeResolver<'a>,
         emptyVariants: &'a BTreeSet<QualifiedName>,
+        classes: &'a BTreeMap<QualifiedName, Class>,
         variants: &'a BTreeMap<QualifiedName, QualifiedName>,
         enums: &'a BTreeMap<QualifiedName, Enum>,
     ) -> ExprResolver<'a> {
@@ -65,6 +67,7 @@ impl<'a> ExprResolver<'a> {
             moduleResolver: moduleResolver,
             typeResolver: typeResolver,
             emptyVariants: emptyVariants,
+            classes: classes,
             variants: variants,
             enums: enums,
             loopInfos: Vec::new(),
@@ -523,7 +526,39 @@ impl<'a> ExprResolver<'a> {
 
     fn resolvePattern(&mut self, pat: &Pattern, env: &mut Environment, root: Variable) {
         match &pat.pattern {
-            SimplePattern::Named(_name, _args) => todo!(),
+            SimplePattern::Named(name, args) => {
+                let name = &self.moduleResolver.resolverName(name);
+                match self.classes.get(name) {
+                    Some(class) => {
+                        if class.fields.len() != args.len() {
+                            ResolverError::InvalidArgCount(
+                                class.name.toString(),
+                                class.fields.len() as i64,
+                                args.len() as i64,
+                                pat.location.clone(),
+                            )
+                            .report(self.ctx);
+                        }
+                        for (index, arg) in args.iter().enumerate() {
+                            let field = &class.fields[index];
+                            let fieldId = self.bodyBuilder.current().addFieldRef(
+                                root.clone(),
+                                field.name.clone(),
+                                pat.location.clone(),
+                            );
+                            self.resolvePattern(arg, env, fieldId);
+                        }
+                    }
+                    _ => ResolverError::NotAConstructor(name.toString(), pat.location.clone()).report(self.ctx),
+                }
+                // for (index, arg) in args.iter().enumerate() {
+                //     let tupleValue =
+                //         self.bodyBuilder
+                //             .current()
+                //             .addFieldRef(root.clone(), index as i32, pat.location.clone());
+                //     self.resolvePattern(arg, env, tupleValue);
+                // }
+            }
             SimplePattern::Bind(name, mutable) => {
                 let new = self.bodyBuilder.createLocalValue(&name.name, pat.location.clone());
                 self.bodyBuilder

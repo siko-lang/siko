@@ -1,0 +1,125 @@
+module Siko.Location {
+
+import Siko.Location.FileManager
+
+@derive(PartialEq, Eq, PartialOrd, Ord, Clone)
+pub class FileId {
+    pub index: Int,
+    pub fileManager: FileManager,
+
+    pub fn empty() -> FileId {
+        FileId(0, FileManager.new())
+    }
+
+    pub fn new(index: Int, fileManager: FileManager) -> FileId {
+        FileId(index, fileManager)
+    }
+
+    pub fn getLines(&self) -> Vec[String] {
+        // let fileName = self.fileManager.get(&self);
+        // let content = std::fs::read(fileName).expect("Failed to read file");
+        // let content = String::from_utf8(content).expect("not utf8!");
+        // content.split("\n").map(|s| s.to_string()).collect()
+        []
+    }
+
+    pub fn getFileName(&self) -> String {
+        //self.fileManager.get(self)
+        "TODO"
+    }
+}
+
+instance Show[FileId] {
+    fn show(&self) -> String {
+        show(self.index)
+    }
+}
+
+instance PartialEq[FileId] {
+    fn eq(&self, other: &FileId) -> Bool {
+        self.index == other.index
+    }
+}
+
+instance Eq[FileId]
+
+instance PartialOrd[FileId] {
+    fn partialCmp(&self, other: &FileId) -> Option[Ordering] {
+        self.index.partialCmp(&other.index)
+    }
+}
+
+instance Ord[FileId] {
+    fn cmp(&self, other: &FileId) -> Ordering {
+        self.index.cmp(&other.index)
+    }
+}
+
+@derive(Debug, Copy, PartialEq, Eq, PartialOrd, Ord, Clone)
+pub class Position {
+    pub line: Int,
+    pub offset: Int,
+
+    pub fn new() -> Position {
+        Position(0, 0)
+    }
+}
+
+instance Show[Position] {
+    fn show(&self) -> String {
+        "${self.line}:${self.offset}"
+    }
+}
+
+@derive(Debug, Copy, PartialEq, Eq, PartialOrd, Ord, Clone)
+pub class Span {
+    pub start: Position,
+    pub end: Position,
+
+    pub fn new() -> Span {
+        Span(Position.new(), Position.new())
+    }
+
+    pub fn merge(self, other: Span) -> Span {
+        let Span(s1, e1) = self;
+        let Span(s2, e2) = other;
+        assert(s1 <= s2);
+        assert(e1 <= e2);
+        Span(s1, e2)
+    }
+}
+
+instance Show[Span] {
+    fn show(&self) -> String {
+        "${self.start}-${self.end}"
+    }
+}
+
+@derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)
+pub class Location {
+    pub fileId: FileId,
+    pub span: Span,
+
+    pub fn empty() -> Location {
+        Location(FileId.empty(), Span.new())
+    }
+
+    pub fn new(fileId: FileId, span: Span) -> Location {
+        Location(fileId, span)
+    }
+
+    pub fn merge(self, other: Location) -> Location {
+        let Location(f1, s1) = self;
+        let Location(f2, s2) = other;
+        assert(f1 == f2);
+        Location(f1, s1.merge(s2))
+    }
+}
+
+instance Show[Location] {
+    fn show(&self) -> String {
+        "${self.fileId}:${self.span}"
+    }
+}
+
+}

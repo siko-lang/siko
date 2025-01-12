@@ -17,6 +17,7 @@ pub enum ResolverError {
     InvalidInstanceMember(String, String, Location),
     MissingInstanceMembers(Vec<String>, String, Location),
     InvalidAssignment(Location),
+    InvalidArgCount(String, i64, i64, Location),
 }
 
 impl ResolverError {
@@ -103,6 +104,16 @@ impl ResolverError {
             }
             ResolverError::InvalidAssignment(l) => {
                 let slogan = format!("Invalid assignment target");
+                let r = Report::new(ctx, slogan, Some(l.clone()));
+                r.print();
+            }
+            ResolverError::InvalidArgCount(name, expected, actual, l) => {
+                let slogan = format!(
+                    "Invalid number of arguments for ctor {}. Expected {}, got {}",
+                    ctx.yellow(name),
+                    ctx.yellow(&expected.to_string()),
+                    ctx.yellow(&actual.to_string())
+                );
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }

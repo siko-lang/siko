@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::siko::hir::ConstraintContext::ConstraintContext;
-use crate::siko::hir::Data::Enum;
+use crate::siko::hir::Data::{Class, Enum};
 use crate::siko::hir::Function::{
     Function as IrFunction, FunctionKind, Parameter as IrParameter, Variable, VariableName,
 };
@@ -64,6 +64,7 @@ impl<'a> FunctionResolver<'a> {
         ctx: &ReportContext,
         f: &Function,
         emptyVariants: &BTreeSet<QualifiedName>,
+        classes: &BTreeMap<QualifiedName, Class>,
         variants: &BTreeMap<QualifiedName, QualifiedName>,
         enums: &BTreeMap<QualifiedName, Enum>,
         name: QualifiedName,
@@ -129,8 +130,15 @@ impl<'a> FunctionResolver<'a> {
         let result = typeResolver.resolveType(&f.result);
 
         let body = if let Some(body) = &f.body {
-            let mut exprResolver =
-                ExprResolver::new(ctx, self.moduleResolver, &typeResolver, emptyVariants, variants, enums);
+            let mut exprResolver = ExprResolver::new(
+                ctx,
+                self.moduleResolver,
+                &typeResolver,
+                emptyVariants,
+                classes,
+                variants,
+                enums,
+            );
             exprResolver.resolve(body, &env);
             Some(exprResolver.body())
         } else {
