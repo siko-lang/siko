@@ -107,6 +107,8 @@ impl Apply for Trait {
         //println!("Applying for {}", self.value);
         let mut t = self.clone();
         t.params = t.params.apply(sub);
+        t.constraint = t.constraint.apply(sub);
+        t.members = t.members.apply(sub);
         t
     }
 }
@@ -294,6 +296,18 @@ pub fn instantiateType3(
         sub.add(Type::Var(var.clone()), allocator.next());
     }
     (ty.apply(&sub), sub)
+}
+
+pub fn instantiateType4(allocator: &mut TypeVarAllocator, types: &Vec<Type>) -> TypeSubstitution {
+    let mut vars = BTreeSet::new();
+    for ty in types {
+        vars = ty.collectVars(vars);
+    }
+    let mut sub = TypeSubstitution::new();
+    for var in &vars {
+        sub.add(Type::Var(var.clone()), allocator.next());
+    }
+    sub
 }
 
 impl ApplyVariable for InstructionKind {

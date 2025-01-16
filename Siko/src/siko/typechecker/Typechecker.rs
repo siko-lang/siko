@@ -5,7 +5,10 @@ use std::{
 
 use crate::siko::{
     hir::{
-        Apply::{instantiateClass, instantiateEnum, instantiateType, instantiateType3, Apply, ApplyVariable},
+        Apply::{
+            instantiateClass, instantiateEnum, instantiateType, instantiateType3, instantiateType4, Apply,
+            ApplyVariable,
+        },
         BlockBuilder::BlockBuilder,
         BodyBuilder::BodyBuilder,
         ConstraintContext::ConstraintContext,
@@ -70,6 +73,7 @@ pub struct Typechecker<'a> {
     visitedBlocks: BTreeSet<BlockId>,
     queue: VecDeque<BlockId>,
     markers: BTreeMap<Tag, MarkerInfo>,
+    knownConstraints: ConstraintContext,
 }
 
 impl<'a> Typechecker<'a> {
@@ -98,11 +102,13 @@ impl<'a> Typechecker<'a> {
             visitedBlocks: BTreeSet::new(),
             queue: VecDeque::new(),
             markers: BTreeMap::new(),
+            knownConstraints: f.constraintContext.clone(),
         }
     }
 
     pub fn run(&mut self) -> Function {
         self.initialize();
+        self.expandKnownConstraints();
         //self.dump(self.f);
         self.check();
         //self.dump(self.f);
@@ -286,7 +292,6 @@ impl<'a> Typechecker<'a> {
         resultVar: &Variable,
         fnType: Type,
         neededConstraints: &ConstraintContext,
-        knownConstraints: &ConstraintContext,
         builder: &mut BlockBuilder,
     ) -> Type {
         // println!(
@@ -332,7 +337,7 @@ impl<'a> Typechecker<'a> {
             self.unify(argTy, fnArg, arg.location.clone());
         }
         let constraints = constraintContext.apply(&self.substitution);
-        self.checkConstraint(&constraints, knownConstraints, resultVar.location.clone());
+        self.checkConstraint(&constraints, resultVar.location.clone());
         //println!("fnResult {}", fnResult);
         //println!("self.getType(resultVar) {}", self.getType(resultVar));
         let fnResult = fnResult.apply(&self.substitution);
@@ -343,16 +348,12 @@ impl<'a> Typechecker<'a> {
         fnType.apply(&self.substitution)
     }
 
-    fn checkConstraint(
-        &mut self,
-        neededConstraints: &ConstraintContext,
-        knownConstraints: &ConstraintContext,
-        location: Location,
-    ) {
+    fn checkConstraint(&mut self, neededConstraints: &ConstraintContext, location: Location) {
         //println!("needed {}", neededConstraints);
-        //println!("known {}", knownConstraints);
+        //println!("known {}", self.knownConstraints);
         for c in &neededConstraints.constraints {
-            if !knownConstraints.contains(c) {
+            //println!("knownConstraints.contains(c) {}", self.knownConstraints.contains(c));
+            if !self.knownConstraints.contains(c) {
                 if let Some(instances) = self.program.instanceResolver.lookupInstances(&c.traitName) {
                     //println!("c.args {}", formatTypes(&c.args));
                     let mut fullyGeneric = true;
@@ -504,14 +505,7 @@ impl<'a> Typechecker<'a> {
             InstructionKind::FunctionCall(dest, name, args) => {
                 let targetFn = self.program.functions.get(name).expect("Function not found");
                 let fnType = targetFn.getType();
-                self.checkFunctionCall(
-                    args,
-                    dest,
-                    fnType,
-                    &targetFn.constraintContext,
-                    &self.f.constraintContext,
-                    builder,
-                );
+                self.checkFunctionCall(args, dest, fnType, &targetFn.constraintContext, builder);
             }
             InstructionKind::MethodCall(dest, receiver, methodName, args) => {
                 let receiverType = self.getType(receiver);
@@ -532,14 +526,7 @@ impl<'a> Typechecker<'a> {
                 if mutableCall {
                     fnType = fnType.changeMethodResult();
                 }
-                let fnType = self.checkFunctionCall(
-                    &args,
-                    dest,
-                    fnType,
-                    &targetFn.constraintContext,
-                    &self.f.constraintContext,
-                    builder,
-                );
+                let fnType = self.checkFunctionCall(&args, dest, fnType, &targetFn.constraintContext, builder);
                 if mutableCall {
                     let result = fnType.getResult();
                     let (baseType, selfLessType) = if targetFn.getType().getResult().isTuple() {
@@ -563,14 +550,7 @@ impl<'a> Typechecker<'a> {
             }
             InstructionKind::DynamicFunctionCall(dest, callable, args) => {
                 let fnType = self.getType(callable);
-                self.checkFunctionCall(
-                    &args,
-                    dest,
-                    fnType,
-                    &ConstraintContext::new(),
-                    &self.f.constraintContext,
-                    builder,
-                );
+                self.checkFunctionCall(&args, dest, fnType, &ConstraintContext::new(), builder);
             }
             InstructionKind::ValueRef(dest, value) => {
                 let receiverType = self.getType(value);
@@ -1141,5 +1121,21 @@ impl<'a> Typechecker<'a> {
         //self.dump(&result);
         self.verify(&result);
         result
+    }
+
+    fn expandKnownConstraints(&mut self) {
+        let mut newConstraints = Vec::new();
+        for c in &self.knownConstraints.constraints {
+            let traitDef = self.program.getTrait(&c.traitName).expect("Trait not found");
+            let sub = instantiateType4(&mut self.allocator, &traitDef.params);
+            let traitDef = traitDef.apply(&sub);
+            let mut sub = TypeSubstitution::new();
+            for (arg, ctxArg) in zip(&traitDef.params, &c.args) {
+                sub.add(arg.clone(), ctxArg.clone());
+            }
+            let traitDef = traitDef.apply(&sub);
+            newConstraints.extend(traitDef.constraint.constraints);
+        }
+        self.knownConstraints.constraints.extend(newConstraints);
     }
 }

@@ -24,15 +24,22 @@ pub struct Trait {
     pub params: Vec<Type>,
     pub associatedTypes: Vec<String>,
     pub members: Vec<MemberInfo>,
+    pub constraint: ConstraintContext,
 }
 
 impl Trait {
-    pub fn new(name: QualifiedName, params: Vec<Type>, associatedTypes: Vec<String>) -> Trait {
+    pub fn new(
+        name: QualifiedName,
+        params: Vec<Type>,
+        associatedTypes: Vec<String>,
+        constraint: ConstraintContext,
+    ) -> Trait {
         Trait {
             name: name,
             params: params,
             associatedTypes: associatedTypes,
             members: Vec::new(),
+            constraint: constraint,
         }
     }
 }
@@ -60,11 +67,12 @@ impl fmt::Display for Trait {
 
         write!(
             f,
-            "trait {}{}{}{}",
+            "trait {}{}: => {}{}{}",
             self.name,
             formatTypes(&self.params),
+            self.constraint,
             associated_types_str,
-            members_str
+            members_str,
         )
     }
 }

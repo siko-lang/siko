@@ -21,3 +21,8 @@ c: Siko/target/release/siko
 	@./siko test.sk
 	@clang siko_main.c -o main.bin
 	@./main.bin
+
+self.bin: self Siko/target/release/siko std
+	@./siko self ./std -o self
+	@clang self.c -o self.bin
+	@./self.bin

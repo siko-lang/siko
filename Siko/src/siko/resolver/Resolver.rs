@@ -307,6 +307,8 @@ impl<'a> Resolver<'a> {
                     ModuleItem::Trait(t) => {
                         let typeParams = getTypeParams(&t.typeParams);
                         let mut typeResolver = TypeResolver::new(moduleResolver, &typeParams);
+                        let constraintContext =
+                            createConstraintContext(&t.typeParams, &typeResolver, &self.program, &self.ctx);
                         let mut irParams = Vec::new();
                         for param in &t.params {
                             let irParam = IrType::Var(TypeVar::Named(param.toString()));
@@ -321,7 +323,7 @@ impl<'a> Resolver<'a> {
                             typeResolver.addTypeParams(irParam);
                         }
                         let selfType = irParams[0].clone();
-                        let mut irTrait = IrTrait::new(traitName, irParams, associatedTypes);
+                        let mut irTrait = IrTrait::new(traitName, irParams, associatedTypes, constraintContext);
                         for method in &t.methods {
                             let mut argTypes = Vec::new();
                             for param in &method.params {
