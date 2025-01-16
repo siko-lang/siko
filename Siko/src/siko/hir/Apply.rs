@@ -9,7 +9,6 @@ use super::{
     Instruction::{FieldInfo, InstructionKind},
     Substitution::{TypeSubstitution, VariableSubstitution},
     Trait::{AssociatedType, Instance, MemberInfo, Trait},
-    Type::TypeVar,
     TypeVarAllocator::TypeVarAllocator,
     Unification::unify,
 };
@@ -232,7 +231,7 @@ impl Apply for InstructionKind {
 }
 
 pub fn instantiateEnum(allocator: &mut TypeVarAllocator, e: &Enum, ty: &Type) -> Enum {
-    let (_, sub) = instantiateType2(allocator, &e.ty);
+    let sub = instantiateType4(allocator, &vec![e.ty.clone()]);
     let mut e = e.clone();
     e = e.apply(&sub);
     let mut sub = TypeSubstitution::new();
@@ -242,12 +241,12 @@ pub fn instantiateEnum(allocator: &mut TypeVarAllocator, e: &Enum, ty: &Type) ->
 }
 
 pub fn instantiateEnum2(allocator: &mut TypeVarAllocator, e: &Enum) -> Enum {
-    let (_, sub) = instantiateType2(allocator, &e.ty);
+    let sub = instantiateType4(allocator, &vec![e.ty.clone()]);
     e.apply(&sub)
 }
 
 pub fn instantiateClass(allocator: &mut TypeVarAllocator, c: &Class, ty: &Type) -> Class {
-    let (_, sub) = instantiateType2(allocator, &c.ty);
+    let sub = instantiateType4(allocator, &vec![c.ty.clone()]);
     let mut res = c.clone();
     res = res.apply(&sub);
     let mut sub = TypeSubstitution::new();
@@ -268,34 +267,9 @@ pub fn instantiateInstance(allocator: &mut TypeVarAllocator, i: &Instance) -> In
     i.apply(&sub)
 }
 
-pub fn instantiateType(allocator: &mut TypeVarAllocator, ty: &Type) -> Type {
-    let (ty, _) = instantiateType2(allocator, ty);
-    ty
-}
-
-pub fn instantiateType2(allocator: &mut TypeVarAllocator, ty: &Type) -> (Type, TypeSubstitution) {
-    let vars = ty.collectVars(BTreeSet::new());
-    let mut sub = TypeSubstitution::new();
-    for var in &vars {
-        sub.add(Type::Var(var.clone()), allocator.next());
-    }
-    (ty.apply(&sub), sub)
-}
-
-pub fn instantiateType3(
-    allocator: &mut TypeVarAllocator,
-    ty: &Type,
-    extra: BTreeSet<TypeVar>,
-) -> (Type, TypeSubstitution) {
-    let mut vars = ty.collectVars(BTreeSet::new());
-    for var in extra {
-        vars.insert(var);
-    }
-    let mut sub = TypeSubstitution::new();
-    for var in &vars {
-        sub.add(Type::Var(var.clone()), allocator.next());
-    }
-    (ty.apply(&sub), sub)
+pub fn instantiateTrait(allocator: &mut TypeVarAllocator, t: &Trait) -> Trait {
+    let sub = instantiateType4(allocator, &t.params);
+    t.apply(&sub)
 }
 
 pub fn instantiateType4(allocator: &mut TypeVarAllocator, types: &Vec<Type>) -> TypeSubstitution {

@@ -5,10 +5,7 @@ use std::{
 
 use crate::siko::{
     hir::{
-        Apply::{
-            instantiateClass, instantiateEnum, instantiateType, instantiateType3, instantiateType4, Apply,
-            ApplyVariable,
-        },
+        Apply::{instantiateClass, instantiateEnum, instantiateTrait, instantiateType4, Apply, ApplyVariable},
         BlockBuilder::BlockBuilder,
         BodyBuilder::BodyBuilder,
         ConstraintContext::ConstraintContext,
@@ -246,10 +243,6 @@ impl<'a> Typechecker<'a> {
         }
     }
 
-    fn instantiateType(&mut self, ty: Type) -> Type {
-        instantiateType(&mut self.allocator, &ty)
-    }
-
     fn instantiateEnum(&mut self, e: &Enum, ty: &Type) -> Enum {
         instantiateEnum(&mut self.allocator, e, ty)
     }
@@ -302,7 +295,10 @@ impl<'a> Typechecker<'a> {
         for arg in &neededConstraints.typeParameters {
             contextArgs = arg.collectVars(contextArgs);
         }
-        let (fnType, sub) = instantiateType3(&mut self.allocator, &fnType, contextArgs);
+        let mut types = neededConstraints.typeParameters.clone();
+        types.push(fnType.clone());
+        let sub = instantiateType4(&mut self.allocator, &types);
+        let fnType = fnType.apply(&sub);
         //println!("inst {}", fnType);
         let constraintContext = neededConstraints.apply(&sub);
         let (fnArgs, mut fnResult) = match fnType.clone().splitFnType() {
@@ -1127,8 +1123,7 @@ impl<'a> Typechecker<'a> {
         let mut newConstraints = Vec::new();
         for c in &self.knownConstraints.constraints {
             let traitDef = self.program.getTrait(&c.traitName).expect("Trait not found");
-            let sub = instantiateType4(&mut self.allocator, &traitDef.params);
-            let traitDef = traitDef.apply(&sub);
+            let traitDef = instantiateTrait(&mut self.allocator, &traitDef);
             let mut sub = TypeSubstitution::new();
             for (arg, ctxArg) in zip(&traitDef.params, &c.args) {
                 sub.add(arg.clone(), ctxArg.clone());
