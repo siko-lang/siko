@@ -8,10 +8,10 @@ use crate::siko::{
     minic::Function::Value,
     qualifiedname::{
         getIntAddName, getIntCloneName, getIntDivName, getIntEqName, getIntLessThanName, getIntModName, getIntMulName,
-        getIntSubName, getIntToU8Name, getPtrAllocateArrayName, getPtrCloneName, getPtrDeallocateName, getPtrLoadName,
-        getPtrMemcmpName, getPtrMemcpyName, getPtrNullName, getPtrOffsetName, getPtrPrintName, getPtrStoreName,
-        getStdBasicUtilAbortName, getStdBasicUtilPrintStrName, getU8AddName, getU8CloneName, getU8DivName, getU8EqName,
-        getU8LessThanName, getU8MulName, getU8SubName,
+        getIntSubName, getIntToU8Name, getPtrAllocateArrayName, getPtrCloneName, getPtrDeallocateName,
+        getPtrIsNullName, getPtrLoadName, getPtrMemcmpName, getPtrMemcpyName, getPtrNullName, getPtrOffsetName,
+        getPtrPrintName, getPtrStoreName, getStdBasicUtilAbortName, getStdBasicUtilPrintStrName, getU8AddName,
+        getU8CloneName, getU8DivName, getU8EqName, getU8LessThanName, getU8MulName, getU8SubName,
     },
     util::DependencyProcessor::processDependencies,
 };
@@ -333,6 +333,12 @@ impl MiniCGenerator {
             writeln!(buf, "    {} result;", getTypeName(&f.result))?;
             writeln!(buf, "    printf(\"%p\\n\", addr);")?;
             writeln!(buf, "    return result;")?;
+            writeln!(buf, "}}\n")?;
+        }
+
+        if f.name.starts_with(&getPtrIsNullName().toString().replace(".", "_")) {
+            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(buf, "    return addr == NULL;")?;
             writeln!(buf, "}}\n")?;
         }
 

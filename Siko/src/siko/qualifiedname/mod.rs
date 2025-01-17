@@ -145,6 +145,10 @@ pub fn getPtrLoadName() -> QualifiedName {
     build("Ptr", "load")
 }
 
+pub fn getPtrIsNullName() -> QualifiedName {
+    build("Ptr", "isNull")
+}
+
 pub fn getCloneName() -> QualifiedName {
     build("Std.Ops", "Clone").add(format!("clone"))
 }
