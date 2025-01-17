@@ -16,7 +16,8 @@ use crate::siko::{
         Type::Type as MirType,
     },
     qualifiedname::{
-        getBoolTypeName, getFalseName, getI32TypeName, getIntTypeName, getPtrToRefName, getTrueName, getU8TypeName,
+        getBoolTypeName, getFalseName, getI32TypeName, getIntTypeName, getNativePtrToRefName, getTrueName,
+        getU8TypeName,
     },
 };
 
@@ -70,7 +71,7 @@ impl<'a> Builder<'a> {
                             .push(Instruction::IntegerLiteral(dest, "0".to_string()));
                         continue;
                     }
-                    if name.base() == getPtrToRefName() {
+                    if name.base() == getNativePtrToRefName() {
                         let dest = self.buildVariable(dest);
                         let arg = &args[0];
                         block.instructions.push(Instruction::Declare(dest.clone()));
@@ -263,7 +264,7 @@ impl<'a> Builder<'a> {
                 MirFunctionKind::VariantCtor(i)
             }
             FunctionKind::Extern => {
-                if self.function.name.base() == getPtrToRefName() {
+                if self.function.name.base() == getNativePtrToRefName() {
                     return None;
                 }
                 MirFunctionKind::Extern

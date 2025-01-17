@@ -1,6 +1,6 @@
 module Vec {
 
-import Ptr
+import NativePtr
 
 class InnerVec[T] {
     items: *T,
@@ -86,8 +86,8 @@ class Vec[T] {
         }
         let ptr = offset(self.inner.items, i);
         let ptr2 = offset(self.inner.items, j);
-        let item = Ptr.load(ptr);
-        let item2 = Ptr.load(ptr2);
+        let item = NativePtr.load(ptr);
+        let item2 = NativePtr.load(ptr2);
         store(ptr, item2);
         store(ptr2, item);
         self 
@@ -125,7 +125,7 @@ instance[T] Drop[VecIterator[T]] {
             }
             let ptr = offset(self.inner.items, self.index);
             self.index = self.index + 1;
-            let item = Ptr.load(ptr);
+            let item = NativePtr.load(ptr);
         }
         deallocate(self.inner.items);
         self.inner.items = null();
@@ -142,7 +142,7 @@ instance[T] Iterator[VecIterator[T]] {
         }
         let ptr = offset(self.inner.items, self.index);
         self.index = self.index + 1;
-        let item = Ptr.load(ptr);
+        let item = NativePtr.load(ptr);
         (self, Some(item))
     }
 }

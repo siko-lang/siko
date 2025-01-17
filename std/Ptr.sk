@@ -1,5 +1,75 @@
 module Ptr {
 
+import NativePtr as N
+
+class Ptr[T] {
+    addr: *T
+
+    fn null() -> Ptr[T] {
+        Ptr(N.null())
+    }
+
+    fn isNull(&self) -> Bool {
+        N.isNull(self.addr)
+    }
+
+    fn offset(&self, count: Int) -> Ptr[T] {
+        Ptr(N.offset(self.addr, count))
+    }
+
+    fn store(&self, item: T) {
+        N.store(self.addr, item)
+    }
+
+    fn load(&self) -> T {
+        N.load(self.addr)
+    }
+
+    fn clone(&self) -> Ptr[T] {
+        Ptr(N.clone(&self.addr))
+    }
+
+    fn allocateArray(count: Int) -> Ptr[T] {
+        Ptr(N.allocateArray(count))
+    }
+
+    fn deallocate(&self) {
+        N.deallocate(self.addr)
+    }
+
+    fn memcmp(&self, other: Ptr[T], count: Int) -> Int {
+        N.memcmp(self.addr, other.addr, count)
+    }
+
+    fn memcpy(&self, other: Ptr[T], count: Int) {
+        N.memcpy(self.addr, other.addr, count)
+    }
+
+    fn allocate() -> Ptr[T] {
+        Ptr(N.allocateArray(1))
+    }
+}
+
+instance[T] PartialEq[Ptr[T]] {
+    fn eq(&self, other: &Ptr[T]) -> Bool {
+       N.eq(self.addr, other.addr)
+    }
+}
+
+instance[T] Eq[Ptr[T]] 
+
+instance[T] Clone[Ptr[T]] {
+    fn clone(&self) -> Ptr[T] {
+        self.clone()
+    }
+}
+
+}
+
+module NativePtr {
+
+fn eq[T](a: *T, b: *T) -> Bool = extern
+
 fn null[T]() -> *T = extern
 
 fn isNull[T](addr: *T) -> Bool = extern

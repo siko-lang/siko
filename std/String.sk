@@ -1,6 +1,6 @@
 module String {
 
-import Ptr
+import NativePtr
 
 class String {
     value: *U8,
@@ -19,7 +19,7 @@ class String {
         if self.size != other.size {
             return False;
         }
-        let result = Ptr.memcmp(self.value, other.value, self.size);
+        let result = NativePtr.memcmp(self.value, other.value, self.size);
         result == 0
     }
 
@@ -28,7 +28,7 @@ class String {
             return String(self.value, self.size, self.capacity);
         } else {
             let newValue = allocateArray(self.capacity);
-            Ptr.memcpy(newValue, self.value, self.size);
+            NativePtr.memcpy(newValue, self.value, self.size);
             String(newValue, self.size, self.capacity)
         }
     }
@@ -36,7 +36,7 @@ class String {
     fn fromU8(value: Vec[U8]) -> String {
         let capacity = value.len();
         let newValue = allocateArray(capacity);
-        Ptr.memcpy(newValue, value.as_ptr(), capacity);
+        NativePtr.memcpy(newValue, value.as_ptr(), capacity);
         String(newValue, capacity, capacity)
     }
 }
@@ -44,7 +44,7 @@ class String {
 instance Drop[String] {
     fn drop(mut self) -> Self {
         if self.capacity > 0 {
-            Ptr.deallocate(self.value);
+            NativePtr.deallocate(self.value);
         }
         self.capacity = 0;
         self.size = 0;
@@ -72,10 +72,10 @@ instance Add[String, &String] {
     fn add(self, other: &String) -> String {
         let newCapacity = self.size + other.size;
         let newValue = allocateArray(newCapacity);
-        Ptr.memcpy(newValue, self.value, self.size);
-        Ptr.memcpy(offset(newValue, self.size), other.value, other.size);
+        NativePtr.memcpy(newValue, self.value, self.size);
+        NativePtr.memcpy(offset(newValue, self.size), other.value, other.size);
         if self.capacity > 0 {
-            Ptr.deallocate(self.value);
+            NativePtr.deallocate(self.value);
         }
         String(newValue, newCapacity, newCapacity)
     }

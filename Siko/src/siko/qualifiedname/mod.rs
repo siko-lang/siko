@@ -101,52 +101,56 @@ pub fn getStringEqName() -> QualifiedName {
     build("String", "String").add("eq".to_string())
 }
 
-pub fn getPtrNullName() -> QualifiedName {
-    build("Ptr", "null")
+pub fn getNativePtrNullName() -> QualifiedName {
+    build("NativePtr", "null")
 }
 
-pub fn getPtrAllocateArrayName() -> QualifiedName {
-    build("Ptr", "allocateArray")
+pub fn getNativePtrAllocateArrayName() -> QualifiedName {
+    build("NativePtr", "allocateArray")
 }
 
-pub fn getPtrDeallocateName() -> QualifiedName {
-    build("Ptr", "deallocate")
+pub fn getNativePtrDeallocateName() -> QualifiedName {
+    build("NativePtr", "deallocate")
 }
 
-pub fn getPtrMemcpyName() -> QualifiedName {
-    build("Ptr", "memcpy")
+pub fn getNativePtrMemcpyName() -> QualifiedName {
+    build("NativePtr", "memcpy")
 }
 
-pub fn getPtrMemcmpName() -> QualifiedName {
-    build("Ptr", "memcmp")
+pub fn getNativePtrMemcmpName() -> QualifiedName {
+    build("NativePtr", "memcmp")
 }
 
-pub fn getPtrOffsetName() -> QualifiedName {
-    build("Ptr", "offset")
+pub fn getNativePtrOffsetName() -> QualifiedName {
+    build("NativePtr", "offset")
 }
 
-pub fn getPtrStoreName() -> QualifiedName {
-    build("Ptr", "store")
+pub fn getNativePtrStoreName() -> QualifiedName {
+    build("NativePtr", "store")
 }
 
-pub fn getPtrToRefName() -> QualifiedName {
-    build("Ptr", "toRef")
+pub fn getNativePtrToRefName() -> QualifiedName {
+    build("NativePtr", "toRef")
 }
 
-pub fn getPtrPrintName() -> QualifiedName {
-    build("Ptr", "print")
+pub fn getNativePtrPrintName() -> QualifiedName {
+    build("NativePtr", "print")
 }
 
-pub fn getPtrCloneName() -> QualifiedName {
-    build("Ptr", "clone")
+pub fn getNativePtrCloneName() -> QualifiedName {
+    build("NativePtr", "clone")
 }
 
-pub fn getPtrLoadName() -> QualifiedName {
-    build("Ptr", "load")
+pub fn getNativePtrLoadName() -> QualifiedName {
+    build("NativePtr", "load")
 }
 
-pub fn getPtrIsNullName() -> QualifiedName {
-    build("Ptr", "isNull")
+pub fn getNativePtrIsNullName() -> QualifiedName {
+    build("NativePtr", "isNull")
+}
+
+pub fn getNativePtrEqName() -> QualifiedName {
+    build("NativePtr", "eq")
 }
 
 pub fn getCloneName() -> QualifiedName {

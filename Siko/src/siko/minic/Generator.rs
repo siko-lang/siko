@@ -8,10 +8,11 @@ use crate::siko::{
     minic::Function::Value,
     qualifiedname::{
         getIntAddName, getIntCloneName, getIntDivName, getIntEqName, getIntLessThanName, getIntModName, getIntMulName,
-        getIntSubName, getIntToU8Name, getPtrAllocateArrayName, getPtrCloneName, getPtrDeallocateName,
-        getPtrIsNullName, getPtrLoadName, getPtrMemcmpName, getPtrMemcpyName, getPtrNullName, getPtrOffsetName,
-        getPtrPrintName, getPtrStoreName, getStdBasicUtilAbortName, getStdBasicUtilPrintStrName, getU8AddName,
-        getU8CloneName, getU8DivName, getU8EqName, getU8LessThanName, getU8MulName, getU8SubName,
+        getIntSubName, getIntToU8Name, getNativePtrAllocateArrayName, getNativePtrCloneName,
+        getNativePtrDeallocateName, getNativePtrEqName, getNativePtrIsNullName, getNativePtrLoadName,
+        getNativePtrMemcmpName, getNativePtrMemcpyName, getNativePtrNullName, getNativePtrOffsetName,
+        getNativePtrPrintName, getNativePtrStoreName, getStdBasicUtilAbortName, getStdBasicUtilPrintStrName,
+        getU8AddName, getU8CloneName, getU8DivName, getU8EqName, getU8LessThanName, getU8MulName, getU8SubName,
     },
     util::DependencyProcessor::processDependencies,
 };
@@ -262,7 +263,9 @@ impl MiniCGenerator {
             }
         }
 
-        if f.name.starts_with(&getPtrMemcpyName().toString().replace(".", "_")) {
+        if f.name
+            .starts_with(&getNativePtrMemcpyName().toString().replace(".", "_"))
+        {
             writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
             writeln!(buf, "    {} result;", getTypeName(&f.result))?;
             writeln!(buf, "    memcpy(dest, src, sizeof(*src) * count);")?;
@@ -270,20 +273,22 @@ impl MiniCGenerator {
             writeln!(buf, "}}\n")?;
         }
 
-        if f.name.starts_with(&getPtrMemcmpName().toString().replace(".", "_")) {
+        if f.name
+            .starts_with(&getNativePtrMemcmpName().toString().replace(".", "_"))
+        {
             writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
             writeln!(buf, "    return memcmp(dest, src, sizeof(*src) * count);")?;
             writeln!(buf, "}}\n")?;
         }
 
-        if f.name.starts_with(&getPtrNullName().toString().replace(".", "_")) {
+        if f.name.starts_with(&getNativePtrNullName().toString().replace(".", "_")) {
             writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
             writeln!(buf, "    return NULL;")?;
             writeln!(buf, "}}\n")?;
         }
 
         if f.name
-            .starts_with(&getPtrAllocateArrayName().toString().replace(".", "_"))
+            .starts_with(&getNativePtrAllocateArrayName().toString().replace(".", "_"))
         {
             writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
             writeln!(
@@ -294,7 +299,9 @@ impl MiniCGenerator {
             writeln!(buf, "}}\n")?;
         }
 
-        if f.name.starts_with(&getPtrDeallocateName().toString().replace(".", "_")) {
+        if f.name
+            .starts_with(&getNativePtrDeallocateName().toString().replace(".", "_"))
+        {
             writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
             writeln!(buf, "    {} result;", getTypeName(&f.result))?;
             writeln!(buf, "    free(addr);")?;
@@ -302,19 +309,25 @@ impl MiniCGenerator {
             writeln!(buf, "}}\n")?;
         }
 
-        if f.name.starts_with(&getPtrOffsetName().toString().replace(".", "_")) {
+        if f.name
+            .starts_with(&getNativePtrOffsetName().toString().replace(".", "_"))
+        {
             writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
             writeln!(buf, "    return &base[count];")?;
             writeln!(buf, "}}\n")?;
         }
 
-        if f.name.starts_with(&getPtrCloneName().toString().replace(".", "_")) {
+        if f.name
+            .starts_with(&getNativePtrCloneName().toString().replace(".", "_"))
+        {
             writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
             writeln!(buf, "    return *addr;")?;
             writeln!(buf, "}}\n")?;
         }
 
-        if f.name.starts_with(&getPtrStoreName().toString().replace(".", "_")) {
+        if f.name
+            .starts_with(&getNativePtrStoreName().toString().replace(".", "_"))
+        {
             writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
             writeln!(buf, "    {} result;", getTypeName(&f.result))?;
             writeln!(buf, "    *addr = item;")?;
@@ -322,13 +335,15 @@ impl MiniCGenerator {
             writeln!(buf, "}}\n")?;
         }
 
-        if f.name.starts_with(&getPtrLoadName().toString().replace(".", "_")) {
+        if f.name.starts_with(&getNativePtrLoadName().toString().replace(".", "_")) {
             writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
             writeln!(buf, "    return *addr;")?;
             writeln!(buf, "}}\n")?;
         }
 
-        if f.name.starts_with(&getPtrPrintName().toString().replace(".", "_")) {
+        if f.name
+            .starts_with(&getNativePtrPrintName().toString().replace(".", "_"))
+        {
             writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
             writeln!(buf, "    {} result;", getTypeName(&f.result))?;
             writeln!(buf, "    printf(\"%p\\n\", addr);")?;
@@ -336,9 +351,17 @@ impl MiniCGenerator {
             writeln!(buf, "}}\n")?;
         }
 
-        if f.name.starts_with(&getPtrIsNullName().toString().replace(".", "_")) {
+        if f.name
+            .starts_with(&getNativePtrIsNullName().toString().replace(".", "_"))
+        {
             writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
             writeln!(buf, "    return addr == NULL;")?;
+            writeln!(buf, "}}\n")?;
+        }
+
+        if f.name.starts_with(&getNativePtrEqName().toString().replace(".", "_")) {
+            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(buf, "    return a == b;")?;
             writeln!(buf, "}}\n")?;
         }
 

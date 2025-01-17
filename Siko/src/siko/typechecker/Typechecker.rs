@@ -21,7 +21,7 @@ use crate::siko::{
         Unification::unify,
     },
     location::{Location::Location, Report::ReportContext},
-    qualifiedname::{getCloneName, getImplicitConvertFnName, getPtrCloneName, QualifiedName},
+    qualifiedname::{getCloneName, getImplicitConvertFnName, getNativePtrCloneName, QualifiedName},
 };
 
 use super::Error::TypecheckerError;
@@ -499,7 +499,9 @@ impl<'a> Typechecker<'a> {
         //println!("checkInstruction {}", instruction);
         match &instruction.kind {
             InstructionKind::FunctionCall(dest, name, args) => {
-                let targetFn = self.program.functions.get(name).expect("Function not found");
+                let Some(targetFn) = self.program.functions.get(name) else {
+                    panic!("Function not found {}", name);
+                };
                 let fnType = targetFn.getType();
                 self.checkFunctionCall(args, dest, fnType, &targetFn.constraintContext, builder);
             }
@@ -777,7 +779,7 @@ impl<'a> Typechecker<'a> {
                         let mut varSwap = VariableSubstitution::new();
                         varSwap.add(var.clone(), dest.clone());
                         let kind = if ty.isPtr() {
-                            InstructionKind::FunctionCall(dest.clone(), getPtrCloneName(), vec![var.clone()])
+                            InstructionKind::FunctionCall(dest.clone(), getNativePtrCloneName(), vec![var.clone()])
                         } else {
                             InstructionKind::FunctionCall(dest.clone(), getCloneName(), vec![var.clone()])
                         };

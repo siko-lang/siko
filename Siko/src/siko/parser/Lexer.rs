@@ -176,6 +176,7 @@ impl Lexer {
                     "implicit" => Token::Keyword(KeywordKind::Implicit),
                     "type" => Token::Keyword(KeywordKind::Type),
                     "pub" => Token::Keyword(KeywordKind::Pub),
+                    "as" => Token::Keyword(KeywordKind::As),
                     "_" => Token::Misc(MiscKind::Wildcard),
                     _ => Token::VarIdentifier(self.current.clone()),
                 };
