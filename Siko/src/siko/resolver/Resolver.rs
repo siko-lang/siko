@@ -444,8 +444,15 @@ impl<'a> Resolver<'a> {
                         let constraintContext =
                             createConstraintContext(&c.typeParams, &typeResolver, &self.program, &self.ctx);
                         for method in &c.methods {
+                            let constraintContext = addTypeParams(
+                                constraintContext.clone(),
+                                &method.typeParams,
+                                &typeResolver,
+                                &self.program,
+                                &self.ctx,
+                            );
                             let functionResolver =
-                                FunctionResolver::new(moduleResolver, constraintContext.clone(), Some(owner.clone()));
+                                FunctionResolver::new(moduleResolver, constraintContext, Some(owner.clone()));
                             let irFunction = functionResolver.resolve(
                                 self.ctx,
                                 method,
@@ -466,6 +473,13 @@ impl<'a> Resolver<'a> {
                         let constraintContext =
                             createConstraintContext(&e.typeParams, &typeResolver, &self.program, &self.ctx);
                         for method in &e.methods {
+                            let constraintContext = addTypeParams(
+                                constraintContext.clone(),
+                                &method.typeParams,
+                                &typeResolver,
+                                &self.program,
+                                &self.ctx,
+                            );
                             let functionResolver =
                                 FunctionResolver::new(moduleResolver, constraintContext.clone(), Some(owner.clone()));
                             let irFunction = functionResolver.resolve(

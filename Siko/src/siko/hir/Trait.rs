@@ -77,7 +77,7 @@ impl fmt::Display for Trait {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AssociatedType {
     pub name: String,
     pub ty: Type,

@@ -8,6 +8,7 @@ use crate::siko::{
         Apply::{instantiateClass, instantiateEnum, instantiateTrait, instantiateType4, Apply, ApplyVariable},
         BlockBuilder::BlockBuilder,
         BodyBuilder::BodyBuilder,
+        ConstraintContext::Constraint as HirConstraint,
         ConstraintContext::ConstraintContext,
         Data::{Class, Enum},
         Function::{BlockId, Function, Parameter, Variable, VariableName},
@@ -1122,17 +1123,30 @@ impl<'a> Typechecker<'a> {
     }
 
     fn expandKnownConstraints(&mut self) {
-        let mut newConstraints = Vec::new();
-        for c in &self.knownConstraints.constraints {
-            let traitDef = self.program.getTrait(&c.traitName).expect("Trait not found");
-            let traitDef = instantiateTrait(&mut self.allocator, &traitDef);
-            let mut sub = TypeSubstitution::new();
-            for (arg, ctxArg) in zip(&traitDef.params, &c.args) {
-                sub.add(arg.clone(), ctxArg.clone());
-            }
-            let traitDef = traitDef.apply(&sub);
-            newConstraints.extend(traitDef.constraint.constraints);
+        //println!("expandKnownConstraints {}", self.f.name);
+        let mut processed = Vec::new();
+        let start = self.knownConstraints.constraints.clone();
+        for c in &start {
+            self.expandKnownConstraint(c, &mut processed);
         }
-        self.knownConstraints.constraints.extend(newConstraints);
+    }
+
+    fn expandKnownConstraint(&mut self, c: &HirConstraint, processed: &mut Vec<HirConstraint>) {
+        if processed.contains(c) {
+            return;
+        }
+        //println!("expandKnownConstraint {}", c);
+        processed.push(c.clone());
+        let traitDef = self.program.getTrait(&c.traitName).expect("Trait not found");
+        let traitDef = instantiateTrait(&mut self.allocator, &traitDef);
+        let mut sub = TypeSubstitution::new();
+        for (arg, ctxArg) in zip(&traitDef.params, &c.args) {
+            sub.add(arg.clone(), ctxArg.clone());
+        }
+        let traitDef = traitDef.apply(&sub);
+        self.knownConstraints.constraints.push(c.clone());
+        for c in traitDef.constraint.constraints {
+            self.expandKnownConstraint(&c, processed);
+        }
     }
 }
