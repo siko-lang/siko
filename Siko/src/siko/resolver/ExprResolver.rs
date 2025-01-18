@@ -381,8 +381,8 @@ impl<'a> ExprResolver<'a> {
                 let rhsId = self.resolveExpr(rhs, env);
                 let rhsId = self.indexVar(rhsId);
                 let name = match op {
-                    BinaryOp::And => createOpName("And", "and"),
-                    BinaryOp::Or => createOpName("Or", "or"),
+                    BinaryOp::And => createOpName("And", "opAnd"),
+                    BinaryOp::Or => createOpName("Or", "opOr"),
                     BinaryOp::Add => createOpName("Add", "add"),
                     BinaryOp::Sub => createOpName("Sub", "sub"),
                     BinaryOp::Mul => createOpName("Mul", "mul"),

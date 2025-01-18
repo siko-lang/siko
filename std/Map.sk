@@ -5,8 +5,8 @@ import Ptr
 class Node[K, V] {
     key: K,
     value: V,
-    left: Node[K, V],
-    right: Node[K, V],
+    left: Ptr[Node[K, V]],
+    right: Ptr[Node[K, V]],
     height: Int,
 
     fn new(key: K, value: V) -> Node[K, V] {
@@ -25,7 +25,7 @@ class Node[K, V] {
 }
 
 class Map[K, V] {
-    root: *Node[K, V],
+    root: Ptr[Node[K, V]],
 
     fn new() -> Map[K, V] {
         Map(null())
@@ -36,9 +36,11 @@ class Map[K, V] {
         self
     }
 
-    fn insertNode[K: Ord[K]](&self, root: *Node[K, V], key: K, value: V) -> *Node[K, V] {
+    fn insertNode[K: Ord[K]](&self, root: Ptr[Node[K, V]], key: K, value: V) -> Ptr[Node[K, V]] {
         if root == null() {
-            return Node.new(key, value);
+            let node = Ptr.allocate();
+            node.store(Node.new(key, value));
+            return node;
         } else {
             let mut rootNode = Ptr.load(root);
             if key < rootNode.key {
@@ -52,26 +54,26 @@ class Map[K, V] {
             let balance = rootNode.balance();
 
             // Left rotation
-            if balance > 1 && key < rootNode.left.key {
+            if balance > 1 and key < rootNode.left.key {
                 Ptr.store(root, rootNode); 
                 return self.rightRotate(root);
             }
 
             // Right rotation
-            if balance < -1 && key > rootNode.right.key {
+            if balance < -1 and key > rootNode.right.key {
                 Ptr.store(root, rootNode); 
                 return self.leftRotate(root);
             }
 
             // Left-Right rotation
-            if balance > 1 && key > rootNode.left.key {
+            if balance > 1 and key > rootNode.left.key {
                 rootNode.left = self.leftRotate(rootNode.left);
                 Ptr.store(root, rootNode); 
                 return self.rightRotate(root);
             }
 
             // Right-Left rotation
-            if balance < -1 && key < rootNode.right.key {
+            if balance < -1 and key < rootNode.right.key {
                 rootNode.right = self.rightRotate(rootNode.right);
                 Ptr.store(root, rootNode); 
                 return self.leftRotate(root);
