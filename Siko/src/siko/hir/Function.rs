@@ -67,6 +67,8 @@ pub enum VariableName {
     ImplicitRef(u32),
     ImplicitClone(u32),
     ImplicitConvert(u32),
+    ImplicitResult(u32),
+    ImplicitSelf(u32),
     Ref(u32),
     FieldRef(u32),
     Unit(u32),
@@ -98,6 +100,8 @@ impl VariableName {
             VariableName::ImplicitRef(i) => format!("implicitRef{}", i),
             VariableName::ImplicitClone(i) => format!("implicitClone{}", i),
             VariableName::ImplicitConvert(i) => format!("implicitConvert{}", i),
+            VariableName::ImplicitResult(i) => format!("implicitResult{}", i),
+            VariableName::ImplicitSelf(i) => format!("implicitSelf{}", i),
             VariableName::Ref(i) => format!("ref{}", i),
             VariableName::FieldRef(i) => format!("fieldRef{}", i),
             VariableName::Unit(i) => format!("unit{}", i),
@@ -131,6 +135,8 @@ impl Display for VariableName {
             VariableName::ImplicitRef(i) => write!(f, "implicitRef{}", i),
             VariableName::ImplicitClone(i) => write!(f, "implicitClone{}", i),
             VariableName::ImplicitConvert(i) => write!(f, "implicitConvert{}", i),
+            VariableName::ImplicitResult(i) => write!(f, "implicitResult{}", i),
+            VariableName::ImplicitSelf(i) => write!(f, "implicitSelf{}", i),
             VariableName::Ref(i) => write!(f, "ref{}", i),
             VariableName::FieldRef(i) => write!(f, "fieldRef{}", i),
             VariableName::Unit(i) => write!(f, "unit{}", i),
@@ -164,6 +170,8 @@ impl Debug for VariableName {
             VariableName::ImplicitRef(i) => write!(f, "implicitRef{}", i),
             VariableName::ImplicitClone(i) => write!(f, "implicitClone{}", i),
             VariableName::ImplicitConvert(i) => write!(f, "implicitConvert{}", i),
+            VariableName::ImplicitResult(i) => write!(f, "implicitResult{}", i),
+            VariableName::ImplicitSelf(i) => write!(f, "implicitSelf{}", i),
             VariableName::Ref(i) => write!(f, "ref{}", i),
             VariableName::FieldRef(i) => write!(f, "fieldRef{}", i),
             VariableName::Unit(i) => write!(f, "unit{}", i),
@@ -253,9 +261,10 @@ impl Block {
     }
 
     pub fn replace(&mut self, index: usize, kind: InstructionKind, location: Location, implicit: bool) {
+        let isImplicit = self.instructions[index].implicit || implicit;
         let tags = self.instructions[index].tags.clone();
         self.instructions[index] = Instruction {
-            implicit: implicit,
+            implicit: isImplicit,
             kind: kind,
             location: location,
             tags: tags,

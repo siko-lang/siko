@@ -766,220 +766,117 @@ impl<'a> Typechecker<'a> {
         }
     }
 
-    // fn addImplicitConverts(&mut self, f: &mut Function) {
-    //     let mut nextImplicitConvert = 0;
-
-    //     let body = &mut f.body.as_mut().unwrap();
-
-    //     for block in &mut body.blocks {
-    //         let mut index = 0;
-    //         loop {
-    //             if index >= block.instructions.len() {
-    //                 break;
-    //             }
-    //             let mut instruction = block.instructions[index].clone();
-    //             let vars = instruction.kind.collectVariables();
-    //             let mut instructionIndex = index;
-    //             for var in vars {
-    //                 if let Some(info) = self.implicitConverts.get(&var) {
-    //                     match info {
-    //                         ImplicitConvertInfo::Simple(targetTy) => {
-    //                             let mut dest = var.clone();
-    //                             dest.value = VariableName::Local(format!("implicitConvert"), nextImplicitConvert);
-    //                             nextImplicitConvert += 1;
-    //                             self.types.insert(dest.value.to_string(), targetTy.clone());
-    //                             let mut varSwap = VariableSubstitution::new();
-    //                             varSwap.add(var.clone(), dest.clone());
-    //                             let kind = InstructionKind::FunctionCall(
-    //                                 dest.clone(),
-    //                                 getImplicitConvertFnName(),
-    //                                 vec![var.clone()],
-    //                             );
-    //                             let implicitRef = Instruction {
-    //                                 implicit: true,
-    //                                 kind: kind,
-    //                                 location: instruction.location.clone(),
-    //                                 tags: Vec::new(),
-    //                             };
-    //                             instruction.kind = instruction.kind.applyVar(&varSwap);
-    //                             block.instructions.insert(index, implicitRef);
-    //                             instructionIndex += 1;
-    //                             self.implicitConverts.remove(&var);
-    //                         }
-    //                         ImplicitConvertInfo::Ref(targetTy) => {
-    //                             //println!("IMPLICIT CONVERT REF FOR {} {}", var, targetTy);
-    //                             let mut implicitConvertDest = var.clone();
-    //                             implicitConvertDest.value =
-    //                                 VariableName::Local(format!("implicitConvert"), nextImplicitConvert);
-    //                             nextImplicitConvert += 1;
-    //                             self.types
-    //                                 .insert(implicitConvertDest.value.to_string(), targetTy.clone());
-
-    //                             let mut implicitRefDest = var.clone();
-    //                             implicitRefDest.value =
-    //                                 VariableName::Local(format!("implicitRef"), nextImplicitConvert);
-    //                             nextImplicitConvert += 1;
-    //                             self.types.insert(
-    //                                 implicitRefDest.value.to_string(),
-    //                                 Type::Reference(Box::new(targetTy.clone()), None),
-    //                             );
-
-    //                             let mut varSwap = VariableSubstitution::new();
-    //                             varSwap.add(var.clone(), implicitRefDest.clone());
-    //                             let kind = InstructionKind::FunctionCall(
-    //                                 implicitConvertDest.clone(),
-    //                                 getImplicitConvertFnName(),
-    //                                 vec![var.clone()],
-    //                             );
-    //                             let implicitConvert = Instruction {
-    //                                 implicit: true,
-    //                                 kind: kind,
-    //                                 location: instruction.location.clone(),
-    //                                 tags: Vec::new(),
-    //                             };
-    //                             let kind = InstructionKind::Ref(implicitRefDest.clone(), implicitConvertDest.clone());
-    //                             let implicitRef = Instruction {
-    //                                 implicit: true,
-    //                                 kind: kind,
-    //                                 location: instruction.location.clone(),
-    //                                 tags: Vec::new(),
-    //                             };
-    //                             instruction.kind = instruction.kind.applyVar(&varSwap);
-    //                             block.instructions.insert(index, implicitRef);
-    //                             block.instructions.insert(index, implicitConvert);
-    //                             instructionIndex += 1;
-    //                             instructionIndex += 1;
-    //                             self.implicitConverts.remove(&var);
-    //                         }
-    //                     }
-    //                 }
-    //             }
-    //             block.instructions[instructionIndex] = instruction;
-    //             index += 1;
-    //         }
-    //     }
-    // }
-
-    fn transformMutableMethodCalls(&mut self, f: &mut Function) {
-        let mut nextImplicitResult = 0;
-
-        let body = &mut f.body.as_mut().unwrap();
-
-        for block in &mut body.blocks {
-            let mut index = 0;
+    fn transformMutableMethodCalls(&mut self) {
+        let allblocksIds = self.bodyBuilder.getAllBlockIds();
+        for blockId in allblocksIds {
+            let mut builder = self.bodyBuilder.iterator(blockId);
             loop {
-                if index >= block.instructions.len() {
-                    break;
-                }
-                let mut instruction = block.instructions[index].clone();
-                let vars = instruction.kind.collectVariables();
-                for var in vars {
-                    if let Some(info) = self.mutableMethodCalls.get(&var) {
-                        let mut dest = var.clone();
-                        dest.value = VariableName::Local(format!("implicitResult"), nextImplicitResult);
-                        nextImplicitResult += 1;
-                        self.types.insert(dest.value.to_string(), info.baseType.clone());
+                match builder.getInstruction() {
+                    Some(instruction) => {
+                        let vars = instruction.kind.collectVariables();
+                        let mut kinds = Vec::new();
                         let mut varSwap = VariableSubstitution::new();
-                        varSwap.add(var.clone(), dest.clone());
-                        let tupleTypes = info.selfLessType.getTupleTypes();
-                        let mut currentIndex = index + 1;
-                        match tupleTypes.len() {
-                            0 => {
-                                let kind = InstructionKind::Assign(info.receiver.clone(), dest.clone());
-                                let selfIndex = Instruction {
-                                    implicit: true,
-                                    kind: kind,
-                                    location: instruction.location.clone(),
-                                    tags: Vec::new(),
-                                };
-                                block.instructions.insert(currentIndex, selfIndex);
-                                let kind = InstructionKind::Tuple(var.clone(), Vec::new());
-                                let assign = Instruction {
-                                    implicit: true,
-                                    kind: kind,
-                                    location: instruction.location.clone(),
-                                    tags: Vec::new(),
-                                };
-                                block.instructions.insert(index + 1, assign);
-                            }
-                            1 => {
-                                let kind = InstructionKind::TupleIndex(info.receiver.clone(), dest.clone(), 0);
-                                let selfIndex = Instruction {
-                                    implicit: true,
-                                    kind: kind,
-                                    location: instruction.location.clone(),
-                                    tags: Vec::new(),
-                                };
-                                block.instructions.insert(currentIndex, selfIndex);
-                                let mut argVar = var.clone();
-                                argVar.value = VariableName::Local(format!("argVar"), nextImplicitResult);
-                                nextImplicitResult += 1;
-                                self.types.insert(argVar.value.to_string(), tupleTypes[0].clone());
-                                let kind = InstructionKind::TupleIndex(argVar.clone(), dest.clone(), 1);
-                                let argIndex = Instruction {
-                                    implicit: true,
-                                    kind: kind,
-                                    location: instruction.location.clone(),
-                                    tags: Vec::new(),
-                                };
-                                block.instructions.insert(currentIndex, argIndex);
-                                currentIndex += 1;
-                                let kind = InstructionKind::Assign(var.clone(), argVar.clone());
-                                let assign = Instruction {
-                                    implicit: true,
-                                    kind: kind,
-                                    location: instruction.location.clone(),
-                                    tags: Vec::new(),
-                                };
-                                block.instructions.insert(currentIndex, assign);
-                            }
-                            _ => {
-                                let kind = InstructionKind::TupleIndex(info.receiver.clone(), dest.clone(), 0);
-                                let selfIndex = Instruction {
-                                    implicit: true,
-                                    kind: kind,
-                                    location: instruction.location.clone(),
-                                    tags: Vec::new(),
-                                };
-                                block.instructions.insert(currentIndex, selfIndex);
-                                let mut args = Vec::new();
-                                for (argIndex, argType) in tupleTypes.iter().enumerate() {
-                                    let mut argVar = var.clone();
-                                    argVar.value = VariableName::Local(format!("argVar"), nextImplicitResult);
-                                    args.push(argVar.clone());
-                                    nextImplicitResult += 1;
-                                    self.types.insert(argVar.value.to_string(), argType.clone());
-                                    let kind = InstructionKind::TupleIndex(
-                                        argVar.clone(),
-                                        dest.clone(),
-                                        (argIndex + 1) as i32,
-                                    );
-                                    let tupleIndex = Instruction {
-                                        implicit: true,
-                                        kind: kind,
-                                        location: instruction.location.clone(),
-                                        tags: Vec::new(),
-                                    };
-                                    block.instructions.insert(currentIndex, tupleIndex);
-                                    currentIndex += 1;
+                        for var in vars {
+                            if let Some(info) = self.mutableMethodCalls.get(&var) {
+                                let mut implicitResult = self
+                                    .bodyBuilder
+                                    .createTempValue(VariableName::ImplicitResult, var.location.clone());
+                                implicitResult.ty = var.ty.clone();
+                                self.types
+                                    .insert(implicitResult.value.to_string(), info.baseType.clone());
+                                varSwap.add(var.clone(), implicitResult.clone());
+                                let tupleTypes = info.selfLessType.getTupleTypes();
+                                let receiverTy = self.getType(&info.receiver);
+                                match tupleTypes.len() {
+                                    0 => {
+                                        implicitResult.index += 1;
+                                        let assign =
+                                            InstructionKind::Assign(info.receiver.clone(), implicitResult.clone());
+                                        kinds.push(assign);
+                                        let tuple = InstructionKind::Tuple(var.clone(), Vec::new());
+                                        kinds.push(tuple);
+                                    }
+                                    1 => {
+                                        let mut implicitSelf = self
+                                            .bodyBuilder
+                                            .createTempValue(VariableName::ImplicitSelf, var.location.clone());
+                                        implicitSelf.ty = info.receiver.ty.clone();
+                                        implicitResult.index += 1;
+                                        self.types.insert(implicitSelf.value.to_string(), receiverTy.clone());
+                                        let implicitSelfIndex = InstructionKind::TupleIndex(
+                                            implicitSelf.clone(),
+                                            implicitResult.clone(),
+                                            0,
+                                        );
+                                        kinds.push(implicitSelfIndex);
+                                        implicitSelf.index += 1;
+                                        let assign =
+                                            InstructionKind::Assign(info.receiver.clone(), implicitSelf.clone());
+                                        kinds.push(assign);
+                                        let mut resVar = self
+                                            .bodyBuilder
+                                            .createTempValue(VariableName::ImplicitResult, var.location.clone());
+                                        resVar.ty = var.ty.clone();
+                                        self.types.insert(resVar.value.to_string(), tupleTypes[0].clone());
+                                        implicitResult.index += 1;
+                                        let resIndex =
+                                            InstructionKind::TupleIndex(resVar.clone(), implicitResult.clone(), 1);
+                                        kinds.push(resIndex);
+                                        resVar.index += 1;
+                                        let assign = InstructionKind::Assign(var.clone(), resVar.clone());
+                                        kinds.push(assign);
+                                    }
+                                    _ => {
+                                        let mut implicitSelf = self
+                                            .bodyBuilder
+                                            .createTempValue(VariableName::ImplicitSelf, var.location.clone());
+                                        implicitSelf.ty = info.receiver.ty.clone();
+                                        implicitResult.index += 1;
+                                        let implicitSelfIndex = InstructionKind::TupleIndex(
+                                            implicitSelf.clone(),
+                                            implicitResult.clone(),
+                                            0,
+                                        );
+                                        self.types.insert(implicitSelf.value.to_string(), receiverTy.clone());
+                                        kinds.push(implicitSelfIndex);
+                                        implicitSelf.index += 1;
+                                        let assign =
+                                            InstructionKind::Assign(info.receiver.clone(), implicitSelf.clone());
+                                        kinds.push(assign);
+                                        let mut args = Vec::new();
+                                        for (argIndex, argType) in tupleTypes.iter().enumerate() {
+                                            let mut resVar = self
+                                                .bodyBuilder
+                                                .createTempValue(VariableName::ImplicitResult, var.location.clone());
+                                            resVar.ty = var.ty.clone();
+                                            args.push(resVar.clone());
+                                            self.types.insert(resVar.value.to_string(), argType.clone());
+                                            implicitResult.index += 1;
+                                            let tupleIndexN = InstructionKind::TupleIndex(
+                                                resVar.clone(),
+                                                implicitResult.clone(),
+                                                (argIndex + 1) as i32,
+                                            );
+                                            kinds.push(tupleIndexN);
+                                        }
+                                        let tuple = InstructionKind::Tuple(var.clone(), args);
+                                        kinds.push(tuple);
+                                    }
                                 }
-                                let kind = InstructionKind::Tuple(var.clone(), args);
-                                let tuple = Instruction {
-                                    implicit: true,
-                                    kind: kind,
-                                    location: instruction.location.clone(),
-                                    tags: Vec::new(),
-                                };
-                                block.instructions.insert(currentIndex, tuple);
+                                self.mutableMethodCalls.remove(&var);
                             }
                         }
-                        instruction.kind = instruction.kind.applyVar(&varSwap);
-                        self.mutableMethodCalls.remove(&var);
+                        builder.replaceInstruction(instruction.kind.applyVar(&varSwap), instruction.location.clone());
+                        builder.step();
+                        for kind in kinds {
+                            builder.addInstruction(kind, instruction.location.clone());
+                            builder.step();
+                        }
+                    }
+                    None => {
                         break;
                     }
                 }
-                block.instructions[index] = instruction;
-                index += 1;
             }
         }
     }
@@ -999,7 +896,6 @@ impl<'a> Typechecker<'a> {
                                 fields[index].ty = Some(ty.apply(&self.substitution));
                             }
                             let kind = InstructionKind::FieldAssign(dest.clone(), root.clone(), fields);
-
                             builder.replaceInstruction(kind, instruction.location.clone());
                         }
                         builder.step();
@@ -1225,6 +1121,7 @@ impl<'a> Typechecker<'a> {
         self.addImplicitClones();
         self.addFieldTypes();
         self.addImplicitConverts();
+        self.transformMutableMethodCalls();
 
         let mut result = self.f.clone();
         result.body = Some(self.bodyBuilder.build());
@@ -1232,9 +1129,7 @@ impl<'a> Typechecker<'a> {
             result.result = result.result.changeSelfType(selfType);
         }
 
-        self.transformMutableMethodCalls(&mut result);
         self.addTypes(&mut result);
-
         //self.dump(&result);
         self.verify(&result);
         result

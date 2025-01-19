@@ -104,13 +104,10 @@ impl<'a> Builder<'a> {
                     block.instructions.push(Instruction::Declare(dest.clone()));
                     block.instructions.push(Instruction::Store(var, dest));
                 }
-                HirInstructionKind::Assign(name, rhs) => {
+                HirInstructionKind::Assign(lhs, rhs) => {
                     let rhs = self.buildVariable(rhs);
-                    let var = MirVariable {
-                        name: name.value.to_string(),
-                        ty: rhs.ty.clone(),
-                    };
-                    block.instructions.push(Instruction::Memcpy(rhs, var));
+                    let dest = self.buildVariable(lhs);
+                    block.instructions.push(Instruction::Memcpy(rhs, dest));
                 }
                 HirInstructionKind::Bind(var, rhs, _) => {
                     let rhs = self.buildVariable(rhs);
