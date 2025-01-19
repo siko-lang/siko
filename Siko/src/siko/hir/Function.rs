@@ -66,6 +66,7 @@ pub enum VariableName {
     BlockValue(u32),
     ImplicitRef(u32),
     ImplicitClone(u32),
+    ImplicitConvert(u32),
     Ref(u32),
     FieldRef(u32),
     Unit(u32),
@@ -96,6 +97,7 @@ impl VariableName {
             VariableName::BlockValue(i) => format!("blockValue{}", i),
             VariableName::ImplicitRef(i) => format!("implicitRef{}", i),
             VariableName::ImplicitClone(i) => format!("implicitClone{}", i),
+            VariableName::ImplicitConvert(i) => format!("implicitConvert{}", i),
             VariableName::Ref(i) => format!("ref{}", i),
             VariableName::FieldRef(i) => format!("fieldRef{}", i),
             VariableName::Unit(i) => format!("unit{}", i),
@@ -128,6 +130,7 @@ impl Display for VariableName {
             VariableName::BlockValue(i) => write!(f, "blockValue{}", i),
             VariableName::ImplicitRef(i) => write!(f, "implicitRef{}", i),
             VariableName::ImplicitClone(i) => write!(f, "implicitClone{}", i),
+            VariableName::ImplicitConvert(i) => write!(f, "implicitConvert{}", i),
             VariableName::Ref(i) => write!(f, "ref{}", i),
             VariableName::FieldRef(i) => write!(f, "fieldRef{}", i),
             VariableName::Unit(i) => write!(f, "unit{}", i),
@@ -160,6 +163,7 @@ impl Debug for VariableName {
             VariableName::BlockValue(i) => write!(f, "blockValue{}", i),
             VariableName::ImplicitRef(i) => write!(f, "implicitRef{}", i),
             VariableName::ImplicitClone(i) => write!(f, "implicitClone{}", i),
+            VariableName::ImplicitConvert(i) => write!(f, "implicitConvert{}", i),
             VariableName::Ref(i) => write!(f, "ref{}", i),
             VariableName::FieldRef(i) => write!(f, "fieldRef{}", i),
             VariableName::Unit(i) => write!(f, "unit{}", i),
@@ -271,6 +275,10 @@ impl Block {
 
     pub fn getTags(&self, index: usize) -> Vec<Tag> {
         self.instructions[index].tags.clone()
+    }
+
+    pub fn setTags(&mut self, index: usize, tags: Vec<Tag>) {
+        self.instructions[index].tags = tags;
     }
 }
 

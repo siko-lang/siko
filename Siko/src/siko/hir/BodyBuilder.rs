@@ -116,6 +116,11 @@ impl Builder {
         irBlock.getTags(index)
     }
 
+    pub fn setTags(&mut self, blockId: BlockId, index: usize, tags: Vec<Tag>) {
+        let irBlock = &mut self.body.blocks[blockId.id as usize];
+        irBlock.setTags(index, tags);
+    }
+
     pub fn sortBlocks(&mut self) {
         self.body.blocks.sort_by(|a, b| a.id.cmp(&b.id));
     }
@@ -278,5 +283,10 @@ impl BodyBuilder {
     pub fn getTags(&self, blockId: BlockId, index: usize) -> Vec<Tag> {
         let bodyBuilder = self.bodyBuilder.borrow();
         bodyBuilder.getTags(blockId, index)
+    }
+
+    pub fn setTags(&self, blockId: BlockId, index: usize, tags: Vec<Tag>) {
+        let mut bodyBuilder = self.bodyBuilder.borrow_mut();
+        bodyBuilder.setTags(blockId, index, tags);
     }
 }

@@ -133,6 +133,17 @@ impl BlockBuilder {
         }
     }
 
+    pub fn setTags(&mut self, tags: Vec<Tag>) {
+        match self.mode {
+            Mode::Append => {
+                panic!("Cannot set tags in append mode");
+            }
+            Mode::Iterator(index) => {
+                self.bodyBuilder.setTags(self.blockId, index, tags);
+            }
+        }
+    }
+
     pub fn addAssign(&mut self, target: Variable, source: Variable, location: Location) {
         self.addInstruction(InstructionKind::Assign(target, source), location);
     }
