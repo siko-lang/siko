@@ -2,7 +2,6 @@
 
 Status: ![](https://github.com/siko-lang/siko/workflows/Master/badge.svg)
 
-```
 Run tests
 ```
 make test
