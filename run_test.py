@@ -155,7 +155,7 @@ for test_path in failed_tests:
 percent = 0
 if (success+failure) != 0:
     percent = success/(success+failure)*100
-print("Success: %s failure: %s skip: %s - %.2f%%" % (success, success + failure, skipped, percent))
+print("Success: %s failure: %s skip: %s - %.2f%%" % (success, failure, skipped, percent))
 
 if failure > 0:
     print("Failures:")

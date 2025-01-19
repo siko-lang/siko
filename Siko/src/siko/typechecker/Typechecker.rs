@@ -979,15 +979,28 @@ impl<'a> Typechecker<'a> {
         }
     }
 
-    fn addFieldTypes(&mut self, f: &mut Function) {
-        let body = &mut f.body.as_mut().unwrap();
+    fn addFieldTypes(&mut self) {
+        // same as addFieldTypes but uses the bodybuilder api
+        let allblocksIds = self.bodyBuilder.getAllBlockIds();
+        for blockId in allblocksIds {
+            let mut builder = self.bodyBuilder.iterator(blockId);
+            loop {
+                match builder.getInstruction() {
+                    Some(instruction) => {
+                        if let InstructionKind::FieldAssign(dest, root, fields) = &instruction.kind {
+                            let mut fields = fields.clone();
+                            let types = self.fieldTypes.get(&dest).expect("field types are missing");
+                            for (index, ty) in types.iter().enumerate() {
+                                fields[index].ty = Some(ty.apply(&self.substitution));
+                            }
+                            let kind = InstructionKind::FieldAssign(dest.clone(), root.clone(), fields);
 
-        for block in &mut body.blocks {
-            for instruction in &mut block.instructions {
-                if let InstructionKind::FieldAssign(dest, _, fields) = &mut instruction.kind {
-                    let types = self.fieldTypes.get(&dest).expect("field types are missing");
-                    for (index, ty) in types.iter().enumerate() {
-                        fields[index].ty = Some(ty.apply(&self.substitution));
+                            builder.replaceInstruction(kind, instruction.location.clone());
+                        }
+                        builder.step();
+                    }
+                    None => {
+                        break;
                     }
                 }
             }
@@ -1107,6 +1120,7 @@ impl<'a> Typechecker<'a> {
 
         self.addImplicitRefs();
         self.addImplicitClones();
+        self.addFieldTypes();
 
         let mut result = self.f.clone();
         result.body = Some(self.bodyBuilder.build());
@@ -1116,7 +1130,6 @@ impl<'a> Typechecker<'a> {
 
         self.addImplicitConverts(&mut result);
         self.transformMutableMethodCalls(&mut result);
-        self.addFieldTypes(&mut result);
         self.addTypes(&mut result);
 
         //self.dump(&result);
