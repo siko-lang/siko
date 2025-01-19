@@ -1,7 +1,7 @@
 use crate::siko::hir::Function::{BlockId, Variable, VariableName};
 use crate::siko::hir::Instruction::{EnumCase, InstructionKind, IntegerCase, JumpDirection};
 use crate::siko::location::Location::Location;
-use crate::siko::qualifiedname::{getCloneName, getStringEqName, QualifiedName};
+use crate::siko::qualifiedname::{getCloneFnName, getStringEqName, QualifiedName};
 use crate::siko::resolver::Environment::Environment;
 use crate::siko::resolver::Error::ResolverError;
 use crate::siko::resolver::ExprResolver::ExprResolver;
@@ -549,7 +549,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                         }
                         let refValue = builder.addRef(root, self.bodyLocation.clone());
                         let cloneValue =
-                            builder.addFunctionCall(getCloneName(), vec![refValue], self.bodyLocation.clone());
+                            builder.addFunctionCall(getCloneFnName(), vec![refValue], self.bodyLocation.clone());
                         builder.addInstruction(
                             InstructionKind::IntegerSwitch(cloneValue, cases),
                             self.bodyLocation.clone(),

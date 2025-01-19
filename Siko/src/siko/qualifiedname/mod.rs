@@ -153,7 +153,7 @@ pub fn getNativePtrEqName() -> QualifiedName {
     build("NativePtr", "eq")
 }
 
-pub fn getCloneName() -> QualifiedName {
+pub fn getCloneFnName() -> QualifiedName {
     build("Std.Ops", "Clone").add(format!("clone"))
 }
 
@@ -231,6 +231,18 @@ pub fn getDropName() -> QualifiedName {
 
 pub fn getCopyName() -> QualifiedName {
     build("Std.Ops", "Copy")
+}
+
+pub fn getDerefName() -> QualifiedName {
+    build("Std.Ops", "Deref")
+}
+
+pub fn getDerefGetName() -> QualifiedName {
+    build("Std.Ops", "Deref").add(format!("get"))
+}
+
+pub fn getDerefSetName() -> QualifiedName {
+    build("Std.Ops", "Deref").add(format!("set"))
 }
 
 pub fn getImplicitConvertName() -> QualifiedName {

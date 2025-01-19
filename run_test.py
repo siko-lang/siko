@@ -113,7 +113,9 @@ successes_path = os.path.join(".", "test", "success")
 
 errors_path = os.path.join(".", "test", "errors")
 
-def processResult(r):
+failures = []
+
+def processResult(r, name):
     global success, failure, skipped
     if r == "skip":
         print(" - SKIPPED")
@@ -125,6 +127,7 @@ def processResult(r):
     else:
         print(" - failed")
         failure += 1
+        failures.append(name)
 
 def collect_tests(base_path):
     tests = []
@@ -139,7 +142,7 @@ for test_path in success_tests:
     entry = os.path.relpath(test_path, successes_path)
     if filters and entry not in filters:
         continue
-    processResult(test_success(successes_path, entry, ["std"]))
+    processResult(test_success(successes_path, entry, ["std"]), entry)
 
 print("Error tests:")
 failed_tests = collect_tests(errors_path)
@@ -147,9 +150,15 @@ for test_path in failed_tests:
     entry = os.path.relpath(test_path, errors_path)
     if len(filters) > 0 and entry not in filters:
         continue
-    processResult(test_fail(errors_path, entry, ["std"]))
+    processResult(test_fail(errors_path, entry, ["std"]), entry)
 
 percent = 0
 if (success+failure) != 0:
     percent = success/(success+failure)*100
-print("Success %s/%s/%s - %.2f%%" % (success, success + failure, skipped, percent))
+print("Success: %s failure: %s skip: %s - %.2f%%" % (success, success + failure, skipped, percent))
+
+if failure > 0:
+    print("Failures:")
+    for f in failures:
+        print(f)
+    sys.exit(1)

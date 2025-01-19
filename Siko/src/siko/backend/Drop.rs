@@ -19,7 +19,7 @@ use crate::siko::{
         Location::Location,
         Report::{Entry, Report, ReportContext},
     },
-    qualifiedname::getCloneName,
+    qualifiedname::getCloneFnName,
     util::DependencyProcessor,
 };
 
@@ -453,20 +453,20 @@ impl<'a> DropChecker<'a> {
                         if self.implicitClones.contains(&var) {
                             let mut implicitRefDest = self
                                 .bodyBuilder
-                                .createTempValue(VariableName::ImplicitCloneRef, instruction.location.clone());
+                                .createTempValue(VariableName::DropImplicitCloneRef, instruction.location.clone());
                             let ty = Type::Reference(Box::new(var.getType().clone()), None);
                             implicitRefDest.ty = Some(ty);
                             let implicitRefKind = InstructionKind::Ref(implicitRefDest.clone(), var.clone());
 
                             let mut implicitCloneDest = self
                                 .bodyBuilder
-                                .createTempValue(VariableName::ImplicitClone, instruction.location.clone());
+                                .createTempValue(VariableName::DropImplicitClone, instruction.location.clone());
                             implicitCloneDest.ty = var.ty.clone();
                             let mut varSwap = VariableSubstitution::new();
                             varSwap.add(var.clone(), implicitCloneDest.clone());
                             let implicitCloneKind = InstructionKind::FunctionCall(
                                 implicitCloneDest.clone(),
-                                getCloneName(),
+                                getCloneFnName(),
                                 vec![implicitRefDest],
                             );
                             instruction.kind = instruction.kind.applyVar(&varSwap);

@@ -65,6 +65,7 @@ pub enum VariableName {
     FunctionResult(u32),
     BlockValue(u32),
     ImplicitRef(u32),
+    ImplicitClone(u32),
     Ref(u32),
     FieldRef(u32),
     Unit(u32),
@@ -78,8 +79,8 @@ pub enum VariableName {
     Arg(String),
     DropVar(u32),
     AutoDropResult(u32),
-    ImplicitCloneRef(u32),
-    ImplicitClone(u32),
+    DropImplicitCloneRef(u32),
+    DropImplicitClone(u32),
     LocalArg(u32),
 }
 
@@ -94,6 +95,7 @@ impl VariableName {
             VariableName::FunctionResult(i) => format!("functionResult{}", i),
             VariableName::BlockValue(i) => format!("blockValue{}", i),
             VariableName::ImplicitRef(i) => format!("implicitRef{}", i),
+            VariableName::ImplicitClone(i) => format!("implicitClone{}", i),
             VariableName::Ref(i) => format!("ref{}", i),
             VariableName::FieldRef(i) => format!("fieldRef{}", i),
             VariableName::Unit(i) => format!("unit{}", i),
@@ -107,8 +109,8 @@ impl VariableName {
             VariableName::Arg(n) => n.clone(),
             VariableName::DropVar(i) => format!("dropVar{}", i),
             VariableName::AutoDropResult(i) => format!("autoDropResult{}", i),
-            VariableName::ImplicitCloneRef(i) => format!("implicitCloneRef{}", i),
-            VariableName::ImplicitClone(i) => format!("implicitClone{}", i),
+            VariableName::DropImplicitCloneRef(i) => format!("implicitCloneRef{}", i),
+            VariableName::DropImplicitClone(i) => format!("implicitClone{}", i),
             VariableName::LocalArg(i) => format!("localArg{}", i),
         }
     }
@@ -125,6 +127,7 @@ impl Display for VariableName {
             VariableName::FunctionResult(i) => write!(f, "functionResult{}", i),
             VariableName::BlockValue(i) => write!(f, "blockValue{}", i),
             VariableName::ImplicitRef(i) => write!(f, "implicitRef{}", i),
+            VariableName::ImplicitClone(i) => write!(f, "implicitClone{}", i),
             VariableName::Ref(i) => write!(f, "ref{}", i),
             VariableName::FieldRef(i) => write!(f, "fieldRef{}", i),
             VariableName::Unit(i) => write!(f, "unit{}", i),
@@ -138,8 +141,8 @@ impl Display for VariableName {
             VariableName::Arg(n) => write!(f, "{}", n),
             VariableName::DropVar(i) => write!(f, "dropVar{}", i),
             VariableName::AutoDropResult(i) => write!(f, "autoDropResult{}", i),
-            VariableName::ImplicitCloneRef(i) => write!(f, "implicitCloneRef{}", i),
-            VariableName::ImplicitClone(i) => write!(f, "implicitClone{}", i),
+            VariableName::DropImplicitCloneRef(i) => write!(f, "implicitCloneRef{}", i),
+            VariableName::DropImplicitClone(i) => write!(f, "implicitClone{}", i),
             VariableName::LocalArg(i) => write!(f, "localArg{}", i),
         }
     }
@@ -156,6 +159,7 @@ impl Debug for VariableName {
             VariableName::FunctionResult(i) => write!(f, "functionResult{}", i),
             VariableName::BlockValue(i) => write!(f, "blockValue{}", i),
             VariableName::ImplicitRef(i) => write!(f, "implicitRef{}", i),
+            VariableName::ImplicitClone(i) => write!(f, "implicitClone{}", i),
             VariableName::Ref(i) => write!(f, "ref{}", i),
             VariableName::FieldRef(i) => write!(f, "fieldRef{}", i),
             VariableName::Unit(i) => write!(f, "unit{}", i),
@@ -169,8 +173,8 @@ impl Debug for VariableName {
             VariableName::Arg(n) => write!(f, "{}", n),
             VariableName::DropVar(i) => write!(f, "dropVar{}", i),
             VariableName::AutoDropResult(i) => write!(f, "autoDropResult{}", i),
-            VariableName::ImplicitCloneRef(i) => write!(f, "implicitCloneRef{}", i),
-            VariableName::ImplicitClone(i) => write!(f, "implicitClone{}", i),
+            VariableName::DropImplicitCloneRef(i) => write!(f, "implicitCloneRef{}", i),
+            VariableName::DropImplicitClone(i) => write!(f, "implicitClone{}", i),
             VariableName::LocalArg(i) => write!(f, "localArg{}", i),
         }
     }

@@ -22,7 +22,7 @@ use crate::siko::{
         Unification::unify,
     },
     location::{Location::Location, Report::ReportContext},
-    qualifiedname::{getCloneName, getImplicitConvertFnName, getNativePtrCloneName, QualifiedName},
+    qualifiedname::{getCloneFnName, getImplicitConvertFnName, getNativePtrCloneName, QualifiedName},
 };
 
 use super::Error::TypecheckerError;
@@ -45,6 +45,7 @@ struct Constraint {
 
 enum MarkerInfo {
     ImplicitRef(Variable),
+    ImplicitClone(Variable),
 }
 
 enum ImplicitConvertInfo {
@@ -62,8 +63,6 @@ pub struct Typechecker<'a> {
     types: BTreeMap<String, Type>,
     selfType: Option<Type>,
     mutables: BTreeSet<String>,
-    implicitRefs: BTreeSet<Variable>,
-    implicitClones: BTreeSet<Variable>,
     implicitConverts: BTreeMap<Variable, ImplicitConvertInfo>,
     mutableMethodCalls: BTreeMap<Variable, MutableMethodCallInfo>,
     fieldTypes: BTreeMap<Variable, Vec<Type>>,
@@ -91,8 +90,6 @@ impl<'a> Typechecker<'a> {
             types: BTreeMap::new(),
             selfType: None,
             mutables: BTreeSet::new(),
-            implicitRefs: BTreeSet::new(),
-            implicitClones: BTreeSet::new(),
             implicitConverts: BTreeMap::new(),
             mutableMethodCalls: BTreeMap::new(),
             fieldTypes: BTreeMap::new(),
@@ -116,6 +113,12 @@ impl<'a> Typechecker<'a> {
     fn addImplicitRefMarker(&mut self, var: &Variable) -> Tag {
         let tag = self.bodyBuilder.buildTag(Tag::ImplicitRef);
         self.markers.insert(tag, MarkerInfo::ImplicitRef(var.clone()));
+        tag
+    }
+
+    fn addImplicitCloneMarker(&mut self, var: &Variable) -> Tag {
+        let tag = self.bodyBuilder.buildTag(Tag::ImplicitClone);
+        self.markers.insert(tag, MarkerInfo::ImplicitClone(var.clone()));
         tag
     }
 
@@ -252,13 +255,14 @@ impl<'a> Typechecker<'a> {
         instantiateClass(&mut self.allocator, c, ty)
     }
 
-    fn handleImplicits(&mut self, input: &Variable, output: &Type) -> Type {
+    fn handleImplicits(&mut self, input: &Variable, output: &Type, builder: &mut BlockBuilder) -> Type {
         let mut inputTy = self.getType(input).apply(&self.substitution);
         if inputTy.isReference() && !output.isReference() && !output.isGeneric() {
             if self.program.instanceResolver.isCopy(&output) {
                 inputTy = inputTy.unpackRef().clone();
                 //println!("IMPLICIT CLONE FOR {} {} {}", arg, argTy, fnArg);
-                self.implicitClones.insert(input.clone());
+                let tag = self.addImplicitCloneMarker(input);
+                builder.addTag(tag);
             }
         }
         if inputTy.isReference()
@@ -267,7 +271,8 @@ impl<'a> Typechecker<'a> {
         {
             inputTy = inputTy.unpackRef().clone();
             //println!("IMPLICIT CLONE FOR {} {} {}", arg, argTy, fnArg);
-            self.implicitClones.insert(input.clone());
+            let tag = self.addImplicitCloneMarker(input);
+            builder.addTag(tag);
         }
         if !inputTy.isGeneric() && !output.isGeneric() && inputTy != *output {
             if self.program.instanceResolver.isImplicitConvert(&inputTy, &output) {
@@ -315,7 +320,7 @@ impl<'a> Typechecker<'a> {
         }
         for (arg, fnArg) in zip(args, fnArgs) {
             let fnArg = fnArg.apply(&self.substitution);
-            let mut argTy = self.handleImplicits(arg, &fnArg);
+            let mut argTy = self.handleImplicits(arg, &fnArg, builder);
             //println!("ARG {} {} {}", arg, argTy, fnArg);
             if !argTy.isReference() && fnArg.isReference() {
                 let targetTy = fnArg.unpackRef().clone();
@@ -583,7 +588,7 @@ impl<'a> Typechecker<'a> {
                 if let Some(selfType) = self.selfType.clone() {
                     result = result.changeSelfType(selfType);
                 }
-                let argTy = self.handleImplicits(arg, &result);
+                let argTy = self.handleImplicits(arg, &result, builder);
                 self.unify(result, argTy, instruction.location.clone());
             }
             InstructionKind::Ref(dest, arg) => {
@@ -752,52 +757,6 @@ impl<'a> Typechecker<'a> {
                         }
                     }
                 }
-            }
-        }
-    }
-
-    fn addImplicitClones(&mut self, f: &mut Function) {
-        let mut nextImplicitClone = 0;
-
-        let body = &mut f.body.as_mut().unwrap();
-
-        for block in &mut body.blocks {
-            let mut index = 0;
-            loop {
-                if index >= block.instructions.len() {
-                    break;
-                }
-                let mut instruction = block.instructions[index].clone();
-                let vars = instruction.kind.collectVariables();
-                let mut instructionIndex = index;
-                for var in vars {
-                    if self.implicitClones.contains(&var) {
-                        let mut dest = var.clone();
-                        dest.value = VariableName::Local(format!("implicitClone"), nextImplicitClone);
-                        nextImplicitClone += 1;
-                        let ty = self.getType(&var).apply(&self.substitution).unpackRef().clone();
-                        self.types.insert(dest.value.to_string(), ty.clone());
-                        let mut varSwap = VariableSubstitution::new();
-                        varSwap.add(var.clone(), dest.clone());
-                        let kind = if ty.isPtr() {
-                            InstructionKind::FunctionCall(dest.clone(), getNativePtrCloneName(), vec![var.clone()])
-                        } else {
-                            InstructionKind::FunctionCall(dest.clone(), getCloneName(), vec![var.clone()])
-                        };
-                        let implicitRef = Instruction {
-                            implicit: true,
-                            kind: kind,
-                            location: instruction.location.clone(),
-                            tags: Vec::new(),
-                        };
-                        instruction.kind = instruction.kind.applyVar(&varSwap);
-                        block.instructions.insert(index, implicitRef);
-                        instructionIndex += 1;
-                        self.implicitClones.remove(&var);
-                    }
-                }
-                block.instructions[instructionIndex] = instruction;
-                index += 1;
             }
         }
     }
@@ -1097,6 +1056,49 @@ impl<'a> Typechecker<'a> {
         }
     }
 
+    pub fn addImplicitClones(&mut self) {
+        let allblocksIds = self.bodyBuilder.getAllBlockIds();
+        for blockId in allblocksIds {
+            let mut builder = self.bodyBuilder.iterator(blockId);
+            loop {
+                match builder.getInstruction() {
+                    Some(instruction) => {
+                        if instruction.tags.is_empty() {
+                            builder.step();
+                            continue;
+                        }
+                        let mut sub = VariableSubstitution::new();
+                        for tag in &instruction.tags {
+                            if let Some(MarkerInfo::ImplicitClone(var)) = self.markers.get(tag) {
+                                let mut dest = var.clone();
+                                dest.value = VariableName::ImplicitClone(tag.getId());
+                                let ty = self.getType(&var).apply(&self.substitution).unpackRef().clone();
+                                let kind = if ty.isPtr() {
+                                    InstructionKind::FunctionCall(
+                                        dest.clone(),
+                                        getNativePtrCloneName(),
+                                        vec![var.clone()],
+                                    )
+                                } else {
+                                    InstructionKind::FunctionCall(dest.clone(), getCloneFnName(), vec![var.clone()])
+                                };
+                                self.types.insert(dest.value.to_string(), ty);
+                                sub.add(var.clone(), dest.clone());
+                                builder.addInstruction(kind, instruction.location.clone());
+                                builder.step();
+                            }
+                        }
+                        builder.replaceInstruction(instruction.kind.applyVar(&sub), instruction.location.clone());
+                        builder.step();
+                    }
+                    None => {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     pub fn generate(&mut self) -> Function {
         //println!("Generating {}", self.f.name);
         if self.f.body.is_none() {
@@ -1104,6 +1106,7 @@ impl<'a> Typechecker<'a> {
         }
 
         self.addImplicitRefs();
+        self.addImplicitClones();
 
         let mut result = self.f.clone();
         result.body = Some(self.bodyBuilder.build());
@@ -1111,7 +1114,6 @@ impl<'a> Typechecker<'a> {
             result.result = result.result.changeSelfType(selfType);
         }
 
-        self.addImplicitClones(&mut result);
         self.addImplicitConverts(&mut result);
         self.transformMutableMethodCalls(&mut result);
         self.addFieldTypes(&mut result);
