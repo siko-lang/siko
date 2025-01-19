@@ -1,4 +1,4 @@
-test: Siko/target/release/siko
+simple: Siko/target/release/siko
 	@./siko test.sk
 
 Siko/target/release/siko: $(shell find Siko/src/ -type f)
@@ -26,3 +26,6 @@ self.bin: self Siko/target/release/siko std
 	@./siko self ./std -o self
 	@clang self.c -o self.bin
 	@./self.bin
+
+test: Siko/target/release/siko
+	@./run_test.py
