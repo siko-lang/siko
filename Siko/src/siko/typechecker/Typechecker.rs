@@ -480,7 +480,48 @@ impl<'a> Typechecker<'a> {
                             return f.ty.clone();
                         }
                     }
-                    TypecheckerError::FieldNotFound(fieldName.clone(), location.clone()).report(self.ctx);
+                    if let Some(i) = self.program.instanceResolver.isDeref(&receiverType) {
+                        let receiverType = i.associatedTypes[0].ty.clone();
+                        return self.checkField(receiverType, fieldName, location);
+                    } else {
+                        TypecheckerError::FieldNotFound(fieldName.clone(), location.clone()).report(self.ctx);
+                    }
+                } else {
+                    TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
+                }
+            }
+            _ => {
+                TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
+            }
+        }
+    }
+
+    fn readField(&mut self, receiverType: Type, fieldName: String, location: Location) -> Type {
+        let receiverType = receiverType.apply(&self.substitution);
+        match receiverType.unpackRef() {
+            Type::Named(name, _, _) => {
+                if let Some(classDef) = self.program.classes.get(&name) {
+                    let classDef = self.instantiateClass(classDef, receiverType.unpackRef());
+                    for f in &classDef.fields {
+                        if f.name == *fieldName {
+                            if receiverType.isReference() {
+                                return Type::Reference(Box::new(f.ty.clone()), None);
+                            }
+                            return f.ty.clone();
+                        }
+                    }
+                    if let Some(i) = self.program.instanceResolver.isDeref(&receiverType) {
+                        let receiverType = i.associatedTypes[0].ty.clone();
+                        let fieldTy = self.readField(receiverType, fieldName.clone(), location.clone());
+                        if self.program.instanceResolver.isCopy(&fieldTy) {
+                            return fieldTy;
+                        } else {
+                            TypecheckerError::DerefNotCopy(fieldTy.to_string(), fieldName, location.clone())
+                                .report(self.ctx);
+                        }
+                    } else {
+                        TypecheckerError::FieldNotFound(fieldName.clone(), location.clone()).report(self.ctx);
+                    }
                 } else {
                     TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
                 }
@@ -666,7 +707,7 @@ impl<'a> Typechecker<'a> {
             }
             InstructionKind::FieldRef(dest, receiver, fieldName) => {
                 let receiverType = self.getType(receiver);
-                let fieldTy = self.checkField(receiverType, fieldName.clone(), instruction.location.clone());
+                let fieldTy = self.readField(receiverType, fieldName.clone(), instruction.location.clone());
                 self.unify(self.getType(dest), fieldTy, instruction.location.clone());
             }
             InstructionKind::TupleIndex(dest, receiver, index) => {
