@@ -8,8 +8,7 @@ use crate::siko::{
         Apply::{instantiateClass, instantiateEnum, instantiateTrait, instantiateType4, Apply, ApplyVariable},
         BlockBuilder::BlockBuilder,
         BodyBuilder::BodyBuilder,
-        ConstraintContext::Constraint as HirConstraint,
-        ConstraintContext::ConstraintContext,
+        ConstraintContext::{Constraint as HirConstraint, ConstraintContext},
         Data::{Class, Enum},
         Function::{BlockId, Function, Parameter, Variable, VariableName},
         InstanceResolver::ResolutionResult,
@@ -22,13 +21,18 @@ use crate::siko::{
         Unification::unify,
     },
     location::{Location::Location, Report::ReportContext},
-    qualifiedname::{getCloneFnName, getImplicitConvertFnName, getNativePtrCloneName, QualifiedName},
+    qualifiedname::{getCloneFnName, getDerefGetName, getImplicitConvertFnName, getNativePtrCloneName, QualifiedName},
 };
 
 use super::Error::TypecheckerError;
 
 fn reportError(ctx: &ReportContext, ty1: Type, ty2: Type, location: Location) {
     TypecheckerError::TypeMismatch(format!("{}", ty1), format!("{}", ty2), location).report(ctx)
+}
+
+struct ReadFieldResult {
+    ty: Type,
+    derefs: Vec<Type>,
 }
 
 struct MutableMethodCallInfo {
@@ -47,6 +51,7 @@ enum MarkerInfo {
     ImplicitRef(Variable),
     ImplicitClone(Variable),
     ImplicitConvert(Variable, ImplicitConvertInfo),
+    Deref(Variable, Vec<Type>),
 }
 
 enum ImplicitConvertInfo {
@@ -124,6 +129,12 @@ impl<'a> Typechecker<'a> {
     fn addImplicitConvertMarker(&mut self, var: &Variable, info: ImplicitConvertInfo) -> Tag {
         let tag = self.bodyBuilder.buildTag(Tag::ImplicitConvert);
         self.markers.insert(tag, MarkerInfo::ImplicitConvert(var.clone(), info));
+        tag
+    }
+
+    fn addDerefMarker(&mut self, var: &Variable, derefs: Vec<Type>) -> Tag {
+        let tag = self.bodyBuilder.buildTag(Tag::Deref);
+        self.markers.insert(tag, MarkerInfo::Deref(var.clone(), derefs));
         tag
     }
 
@@ -496,7 +507,7 @@ impl<'a> Typechecker<'a> {
         }
     }
 
-    fn readField(&mut self, receiverType: Type, fieldName: String, location: Location) -> Type {
+    fn readField(&mut self, receiverType: Type, fieldName: String, location: Location) -> ReadFieldResult {
         let receiverType = receiverType.apply(&self.substitution);
         match receiverType.unpackRef() {
             Type::Named(name, _, _) => {
@@ -504,19 +515,24 @@ impl<'a> Typechecker<'a> {
                     let classDef = self.instantiateClass(classDef, receiverType.unpackRef());
                     for f in &classDef.fields {
                         if f.name == *fieldName {
+                            let mut result = ReadFieldResult {
+                                ty: f.ty.clone(),
+                                derefs: Vec::new(),
+                            };
                             if receiverType.isReference() {
-                                return Type::Reference(Box::new(f.ty.clone()), None);
+                                result.ty = Type::Reference(Box::new(f.ty.clone()), None);
                             }
-                            return f.ty.clone();
+                            return result;
                         }
                     }
                     if let Some(i) = self.program.instanceResolver.isDeref(&receiverType) {
                         let receiverType = i.associatedTypes[0].ty.clone();
-                        let fieldTy = self.readField(receiverType, fieldName.clone(), location.clone());
-                        if self.program.instanceResolver.isCopy(&fieldTy) {
-                            return fieldTy;
+                        let mut result = self.readField(receiverType.clone(), fieldName.clone(), location.clone());
+                        if self.program.instanceResolver.isCopy(&result.ty) {
+                            result.derefs.push(receiverType);
+                            return result;
                         } else {
-                            TypecheckerError::DerefNotCopy(fieldTy.to_string(), fieldName, location.clone())
+                            TypecheckerError::DerefNotCopy(result.ty.to_string(), fieldName, location.clone())
                                 .report(self.ctx);
                         }
                     } else {
@@ -707,8 +723,12 @@ impl<'a> Typechecker<'a> {
             }
             InstructionKind::FieldRef(dest, receiver, fieldName) => {
                 let receiverType = self.getType(receiver);
-                let fieldTy = self.readField(receiverType, fieldName.clone(), instruction.location.clone());
-                self.unify(self.getType(dest), fieldTy, instruction.location.clone());
+                let result = self.readField(receiverType, fieldName.clone(), instruction.location.clone());
+                if result.derefs.len() > 0 {
+                    let tag = self.addDerefMarker(receiver, result.derefs);
+                    builder.addTag(tag);
+                }
+                self.unify(self.getType(dest), result.ty, instruction.location.clone());
             }
             InstructionKind::TupleIndex(dest, receiver, index) => {
                 let receiverType = self.getType(receiver);
@@ -1055,6 +1075,59 @@ impl<'a> Typechecker<'a> {
         }
     }
 
+    fn addImplicitDerefs(&mut self) {
+        let allblocksIds = self.bodyBuilder.getAllBlockIds();
+        for blockId in allblocksIds {
+            let mut builder = self.bodyBuilder.iterator(blockId);
+            loop {
+                match builder.getInstruction() {
+                    Some(instruction) => {
+                        if instruction.tags.is_empty() {
+                            builder.step();
+                            continue;
+                        }
+                        let mut sub = VariableSubstitution::new();
+                        for tag in &instruction.tags {
+                            if let Some(MarkerInfo::Deref(var, derefs)) = self.markers.get(tag) {
+                                let mut derefBaseVar = var.clone();
+                                let current = derefs[0].clone();
+                                let mut implicitDerefVar = var.clone();
+                                implicitDerefVar.value = VariableName::ImplicitDeref(tag.getId());
+                                let ty = self.getType(&var).apply(&self.substitution);
+                                if !ty.isReference() {
+                                    let mut implicitRefVar = var.clone();
+                                    implicitRefVar.value = VariableName::ImplicitRef(tag.getId());
+                                    self.types.insert(
+                                        implicitRefVar.value.to_string(),
+                                        Type::Reference(Box::new(ty.clone()), None),
+                                    );
+                                    let kind = InstructionKind::Ref(implicitRefVar.clone(), var.clone());
+                                    builder.addInstruction(kind, instruction.location.clone());
+                                    builder.step();
+                                    derefBaseVar = implicitRefVar;
+                                }
+                                let kind = InstructionKind::FunctionCall(
+                                    implicitDerefVar.clone(),
+                                    getDerefGetName(),
+                                    vec![derefBaseVar.clone()],
+                                );
+                                self.types.insert(implicitDerefVar.value.to_string(), current.clone());
+                                sub.add(var.clone(), implicitDerefVar.clone());
+                                builder.addInstruction(kind, instruction.location.clone());
+                                builder.step();
+                            }
+                        }
+                        builder.replaceInstruction(instruction.kind.applyVar(&sub), instruction.location.clone());
+                        builder.step();
+                    }
+                    None => {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     fn addImplicitConverts(&mut self) {
         let allblocksIds = self.bodyBuilder.getAllBlockIds();
         for blockId in allblocksIds {
@@ -1160,6 +1233,7 @@ impl<'a> Typechecker<'a> {
 
         self.addImplicitRefs();
         self.addImplicitClones();
+        self.addImplicitDerefs();
         self.addFieldTypes();
         self.addImplicitConverts();
         self.transformMutableMethodCalls();

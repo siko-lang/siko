@@ -277,12 +277,14 @@ pub enum Tag {
     ImplicitClone(u32),
     ImplicitConvert(u32),
     Assign(u32),
+    Deref(u32),
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TagKind {
     ImplicitRef,
     Assign,
+    Deref,
 }
 
 impl Tag {
@@ -292,6 +294,7 @@ impl Tag {
             Tag::ImplicitClone(id) => *id,
             Tag::ImplicitConvert(id) => *id,
             Tag::Assign(id) => *id,
+            Tag::Deref(id) => *id,
         }
     }
 
@@ -301,6 +304,7 @@ impl Tag {
             Tag::ImplicitClone(_) => kind == TagKind::ImplicitRef,
             Tag::ImplicitConvert(_) => kind == TagKind::ImplicitRef,
             Tag::Assign(_) => kind == TagKind::Assign,
+            Tag::Deref(_) => kind == TagKind::Deref,
         }
     }
 }
@@ -312,6 +316,7 @@ impl Display for Tag {
             Tag::ImplicitClone(id) => write!(f, "implicit_clone_{}", id),
             Tag::ImplicitConvert(id) => write!(f, "implicit_convert_{}", id),
             Tag::Assign(id) => write!(f, "assign_{}", id),
+            Tag::Deref(id) => write!(f, "deref_{}", id),
         }
     }
 }

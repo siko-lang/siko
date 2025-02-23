@@ -94,6 +94,7 @@ impl BlockBuilder {
         match kind {
             TagKind::ImplicitRef => self.buildTag(Tag::ImplicitRef),
             TagKind::Assign => self.buildTag(Tag::Assign),
+            TagKind::Deref => self.buildTag(Tag::Deref),
         }
     }
 
