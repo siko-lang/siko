@@ -4,10 +4,11 @@ use crate::siko::{
     hir::{
         ConstraintContext::ConstraintContext,
         Data::{Class, Enum, Field, Variant},
-        Function::{Block, Body, Function, FunctionKind, Parameter, Variable},
+        Function::{Block, Body, Function, FunctionKind, Parameter},
         Instruction::{FieldInfo, Instruction, InstructionKind},
         Program::Program,
         Type::Type,
+        Variable::Variable,
     },
     qualifiedname::QualifiedName,
 };

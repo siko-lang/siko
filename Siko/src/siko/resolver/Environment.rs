@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::siko::hir::Function::Variable;
+use crate::siko::hir::Variable::Variable;
 
 pub struct Environment<'a> {
     values: BTreeMap<String, Variable>,

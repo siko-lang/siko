@@ -2,10 +2,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::siko::hir::ConstraintContext::ConstraintContext;
 use crate::siko::hir::Data::{Class, Enum};
-use crate::siko::hir::Function::{
-    Function as IrFunction, FunctionKind, Parameter as IrParameter, Variable, VariableName,
-};
+use crate::siko::hir::Function::{Function as IrFunction, FunctionKind, Parameter as IrParameter};
 use crate::siko::hir::Type::{Type as IrType, TypeVar};
+use crate::siko::hir::Variable::Variable;
+use crate::siko::hir::Variable::VariableName;
 use crate::siko::location::Report::ReportContext;
 use crate::siko::qualifiedname::QualifiedName;
 use crate::siko::syntax::Function::{Function, Parameter};

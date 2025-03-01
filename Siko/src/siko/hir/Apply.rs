@@ -5,12 +5,12 @@ use crate::siko::hir::Type::Type;
 use super::{
     ConstraintContext::{Constraint, ConstraintContext},
     Data::{Class, Enum, Field, Variant},
-    Function::Variable,
     Instruction::{FieldInfo, InstructionKind},
     Substitution::{TypeSubstitution, VariableSubstitution},
     Trait::{AssociatedType, Instance, MemberInfo, Trait},
     TypeVarAllocator::TypeVarAllocator,
     Unification::unify,
+    Variable::Variable,
 };
 
 pub trait Apply {

@@ -4,9 +4,10 @@ use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
 
 use super::{
     BodyBuilder::BodyBuilder,
-    Function::{BlockId, Variable, VariableName},
+    Function::BlockId,
     Instruction::{FieldInfo, Instruction, InstructionKind, JumpDirection, Tag, TagKind},
     Type::Type,
+    Variable::{Variable, VariableName},
 };
 
 #[derive(Clone, Copy)]

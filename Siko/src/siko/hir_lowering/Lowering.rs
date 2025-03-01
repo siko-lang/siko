@@ -1,10 +1,11 @@
 use crate::siko::{
     hir::{
         Data::{Class as HirClass, Enum as HirEnum},
-        Function::{Block, BlockId, Function as HirFunction, FunctionKind, Variable},
+        Function::{Block, BlockId, Function as HirFunction, FunctionKind},
         Instruction::InstructionKind as HirInstructionKind,
         Program::Program as HirProgram,
         Type::Type as HirType,
+        Variable::Variable,
     },
     mir::{
         Data::{Field as MirField, Struct, Union, Variant as MirVariant},

@@ -3,8 +3,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::siko::hir::BodyBuilder::BodyBuilder;
 use crate::siko::hir::Data::{Class, Enum};
-use crate::siko::hir::Function::{BlockId, Variable, VariableName};
+use crate::siko::hir::Function::BlockId;
 use crate::siko::hir::Instruction::{BlockInfo, FieldInfo, InstructionKind, JumpDirection};
+use crate::siko::hir::Variable::Variable;
+use crate::siko::hir::Variable::VariableName;
 use crate::siko::location::Location::Location;
 use crate::siko::location::Report::ReportContext;
 use crate::siko::qualifiedname::{getVecNewName, getVecPushName, QualifiedName};

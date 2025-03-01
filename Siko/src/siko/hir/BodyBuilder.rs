@@ -4,9 +4,10 @@ use crate::siko::location::Location::Location;
 
 use super::{
     BlockBuilder::{BlockBuilder, Mode},
-    Function::{Block, BlockId, Body, Function, Variable, VariableName},
+    Function::{Block, BlockId, Body, Function},
     Instruction::{Instruction, InstructionKind, Tag},
     Type::Type,
+    Variable::{Variable, VariableName},
 };
 
 struct Builder {

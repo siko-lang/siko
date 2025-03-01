@@ -8,7 +8,7 @@ use crate::siko::{
         Apply::{instantiateClass, instantiateEnum, Apply},
         BodyBuilder::BodyBuilder,
         ConstraintContext::ConstraintContext,
-        Function::{Block, Body, Function, FunctionKind, Parameter, Variable, VariableName},
+        Function::{Block, Body, Function, FunctionKind, Parameter},
         InstanceResolver::ResolutionResult,
         Instruction::{EnumCase, FieldInfo, Instruction, InstructionKind, JumpDirection},
         Program::Program,
@@ -16,6 +16,7 @@ use crate::siko::{
         Type::{formatTypes, Type},
         TypeVarAllocator::TypeVarAllocator,
         Unification::unify,
+        Variable::{Variable, VariableName},
     },
     location::{
         Location::Location,

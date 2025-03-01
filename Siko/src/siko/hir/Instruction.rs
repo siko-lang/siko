@@ -1,10 +1,11 @@
 use std::fmt::Debug;
 use std::fmt::Display;
 
-use crate::siko::{hir::Function::Variable, location::Location::Location, qualifiedname::QualifiedName};
+use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
 
 use super::Function::BlockId;
 use super::Type::Type;
+use super::Variable::Variable;
 
 #[derive(Clone, PartialEq)]
 pub enum JumpDirection {

@@ -5,9 +5,9 @@ use std::{
 
 use super::{
     Apply::{Apply, ApplyVariable},
-    Function::Variable,
     Type::Type,
     Unification::unify,
+    Variable::Variable,
 };
 
 #[derive(Debug)]
