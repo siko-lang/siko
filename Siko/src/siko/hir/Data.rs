@@ -99,9 +99,9 @@ impl fmt::Display for MethodInfo {
 impl fmt::Display for Class {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(lifetime_info) = &self.lifetime_info {
-            writeln!(f, "class {}{} {{", self.name, lifetime_info)?;
+            writeln!(f, "structDef {}{} {{", self.name, lifetime_info)?;
         } else {
-            writeln!(f, "class {} {{", self.name)?;
+            writeln!(f, "structDef {} {{", self.name)?;
         }
         //writeln!(f, "    type: {},", self.ty)?;
         for field in &self.fields {

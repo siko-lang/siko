@@ -215,7 +215,7 @@ impl Display for TokenKind {
             TokenKind::CharLiteral => write!(f, "char literal"),
             TokenKind::Keyword(KeywordKind::As) => write!(f, "as"),
             TokenKind::Keyword(KeywordKind::Break) => write!(f, "break"),
-            TokenKind::Keyword(KeywordKind::Class) => write!(f, "class"),
+            TokenKind::Keyword(KeywordKind::Class) => write!(f, "struct"),
             TokenKind::Keyword(KeywordKind::Continue) => write!(f, "continue"),
             TokenKind::Keyword(KeywordKind::Derive) => write!(f, "derive"),
             TokenKind::Keyword(KeywordKind::Effect) => write!(f, "effect"),

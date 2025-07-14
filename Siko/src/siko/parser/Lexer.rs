@@ -151,7 +151,7 @@ impl Lexer {
             } else {
                 let token = match self.current.as_ref() {
                     "module" => Token::Keyword(KeywordKind::Module),
-                    "class" => Token::Keyword(KeywordKind::Class),
+                    "struct" => Token::Keyword(KeywordKind::Class),
                     "enum" => Token::Keyword(KeywordKind::Enum),
                     "fn" => Token::Keyword(KeywordKind::Fn),
                     "import" => Token::Keyword(KeywordKind::Import),

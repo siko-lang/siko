@@ -195,7 +195,7 @@ impl<'a> Builder<'a> {
                         .expect("no type")
                         .getName()
                         .expect("no name for field ref root");
-                    let c = self.program.classes.get(&className).expect("class not found");
+                    let c = self.program.classes.get(&className).expect("structDef not found");
                     let (_, index) = c.getField(name);
                     let root = self.buildVariable(root);
                     block.instructions.push(Instruction::GetFieldRef(dest, root, index));
@@ -205,7 +205,7 @@ impl<'a> Builder<'a> {
                     let mut ty = dest.ty.as_ref().expect("no type");
                     for field in fields {
                         let className = ty.getName().expect("no name for field ref root");
-                        let c = self.program.classes.get(&className).expect("class not found");
+                        let c = self.program.classes.get(&className).expect("structDef not found");
                         let (_, index) = c.getField(&field.name);
                         indices.push(index);
                         ty = field.ty.as_ref().expect("field without ty!");
@@ -329,7 +329,7 @@ pub fn lowerType(ty: &HirType, program: &HirProgram) -> MirType {
 }
 
 pub fn lowerClass(c: &HirClass, program: &HirProgram) -> Struct {
-    //println!("Lowering class {}", c.name);
+    //println!("Lowering structDef {}", c.name);
     let mut fields = Vec::new();
     for f in &c.fields {
         let mirField = MirField {

@@ -47,7 +47,7 @@ impl<'a> DataParser for Parser<'a> {
                         self.expect(TokenKind::Misc(MiscKind::Comma));
                     }
                 }
-                kind => self.reportError2("<class member>", kind),
+                kind => self.reportError2("<structDef member>", kind),
             }
         }
         self.expect(TokenKind::RightBracket(BracketKind::Curly));

@@ -385,7 +385,7 @@ impl<'a> Monomorphizer<'a> {
                             self.monomorphizeFunction(name, args);
                         }
                         Key::Class(name, args) => {
-                            //println!("Processing class {}", key);
+                            //println!("Processing structDef {}", key);
                             self.monomorphizeClass(name, args);
                         }
                         Key::Enum(name, args) => {
@@ -479,7 +479,7 @@ impl<'a> Monomorphizer<'a> {
     fn monomorphizeClass(&mut self, name: QualifiedName, args: Vec<Type>) {
         //println!("MONO CLASS: {} {}", name, formatTypes(&args));
         let targetTy = Type::Named(name.clone(), args.clone(), None);
-        let c = self.program.classes.get(&name).expect("class not found in mono");
+        let c = self.program.classes.get(&name).expect("structDef not found in mono");
         let mut c = instantiateClass(&mut TypeVarAllocator::new(), c, &targetTy);
         let name = self.get_mono_name(&name, &args);
         c.ty = self.processType(c.ty);

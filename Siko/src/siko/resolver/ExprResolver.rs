@@ -531,18 +531,18 @@ impl<'a> ExprResolver<'a> {
             SimplePattern::Named(name, args) => {
                 let name = &self.moduleResolver.resolverName(name);
                 match self.classes.get(name) {
-                    Some(class) => {
-                        if class.fields.len() != args.len() {
+                    Some(structDef) => {
+                        if structDef.fields.len() != args.len() {
                             ResolverError::InvalidArgCount(
-                                class.name.toString(),
-                                class.fields.len() as i64,
+                                structDef.name.toString(),
+                                structDef.fields.len() as i64,
                                 args.len() as i64,
                                 pat.location.clone(),
                             )
                             .report(self.ctx);
                         }
                         for (index, arg) in args.iter().enumerate() {
-                            let field = &class.fields[index];
+                            let field = &structDef.fields[index];
                             let fieldId = self.bodyBuilder.current().addFieldRef(
                                 root.clone(),
                                 field.name.clone(),
