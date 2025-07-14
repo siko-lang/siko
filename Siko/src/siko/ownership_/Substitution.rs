@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::siko::hir::{
-    Data::{Class, Field},
+    Data::{Struct, Field},
     Function::InstructionId,
     Lifetime::{Lifetime, LifetimeInfo},
     Type::Type,
@@ -125,7 +125,7 @@ impl Apply for Field {
     }
 }
 
-impl Apply for Class {
+impl Apply for Struct {
     fn apply(&self, sub: &Substitution) -> Self {
         let mut c = self.clone();
         c.ty = c.ty.apply(sub);

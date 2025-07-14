@@ -72,9 +72,9 @@ impl<'a> FunctionGroupProcessor<'a> {
                     self.inferenceData.insert(item.clone(), data);
                     //println!("profile {}", profile);
                 }
-                FunctionKind::ClassCtor => {
+                FunctionKind::StructCtor => {
                     let cName = f.result.getName().expect("no result type");
-                    let c = self.program.getClass(&cName);
+                    let c = self.program.getStruct(&cName);
                     //println!("{}", c);
                     let mut args = Vec::new();
                     for f in c.fields {
@@ -201,7 +201,7 @@ impl<'a> FunctionGroupProcessor<'a> {
                     for index in indices {
                         let c = self
                             .program
-                            .getClass(&current.getName().expect("current is not a structDef"));
+                            .getStruct(&current.getName().expect("current is not a structDef"));
                         let sub = Substitution::from(&current, &c.ty);
                         let c = c.apply(&sub);
                         let field = &c.fields[*index as usize];
@@ -242,7 +242,7 @@ impl<'a> FunctionGroupProcessor<'a> {
     fn instantiateType(&mut self, ty: &Type) -> Type {
         match ty {
             Type::Named(name, _, _) => {
-                if let Some(c) = self.program.classes.get(&name) {
+                if let Some(c) = self.program.structs.get(&name) {
                     let c = self.instantiator.instantiate(c);
                     self.instantiator.reset();
                     c.ty

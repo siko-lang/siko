@@ -5,6 +5,7 @@ pub mod location;
 pub mod minic;
 pub mod mir;
 pub mod monomorphizer;
+pub mod ownership;
 pub mod parser;
 pub mod qualifiedname;
 pub mod resolver;

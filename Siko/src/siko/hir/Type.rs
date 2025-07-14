@@ -1,10 +1,11 @@
 use std::{collections::BTreeSet, fmt::Display};
 
-use crate::siko::qualifiedname::{
-    getBoolTypeName, getCharTypeName, getIntTypeName, getStringLiteralTypeName, getStringTypeName, QualifiedName,
+use crate::siko::{
+    hir::OwnershipVar::{OwnershipVar, OwnershipVarInfo},
+    qualifiedname::{
+        getBoolTypeName, getCharTypeName, getIntTypeName, getStringLiteralTypeName, getStringTypeName, QualifiedName,
+    },
 };
-
-use super::Lifetime::{Lifetime, LifetimeInfo};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TypeVar {
@@ -25,11 +26,11 @@ impl Display for TypeVar {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Type {
-    Named(QualifiedName, Vec<Type>, Option<LifetimeInfo>),
+    Named(QualifiedName, Vec<Type>, Option<OwnershipVarInfo>),
     Tuple(Vec<Type>),
     Function(Vec<Type>, Box<Type>),
     Var(TypeVar),
-    Reference(Box<Type>, Option<Lifetime>),
+    Reference(Box<Type>, Option<OwnershipVar>),
     Ptr(Box<Type>),
     SelfType,
     Never(bool), // true = explicit never i.e. !
@@ -96,27 +97,6 @@ impl Type {
             Type::Never(_) => {}
         }
         vars
-    }
-
-    pub fn collectLifetimes(&self) -> Vec<Lifetime> {
-        match &self {
-            Type::Named(_, _, lifetimes) => lifetimes.as_ref().expect("lifetime info missing").args.clone(),
-            Type::Tuple(_) => Vec::new(),
-            Type::Function(_, _) => {
-                unreachable!()
-            }
-            Type::Var(_) => {
-                unreachable!()
-            }
-            Type::Reference(ty, lifetime) => {
-                let mut lifetimes = ty.collectLifetimes();
-                lifetimes.insert(0, lifetime.expect("no lifetime for ref"));
-                lifetimes
-            }
-            Type::Ptr(_) => Vec::new(),
-            Type::SelfType => Vec::new(),
-            Type::Never(_) => Vec::new(),
-        }
     }
 
     pub fn changeSelfType(&self, selfType: Type) -> Type {

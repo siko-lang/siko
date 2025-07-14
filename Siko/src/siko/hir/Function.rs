@@ -200,7 +200,7 @@ impl Display for Body {
 pub enum FunctionKind {
     UserDefined,
     VariantCtor(i64),
-    ClassCtor,
+    StructCtor,
     Extern,
     TraitMemberDecl(QualifiedName),
     TraitMemberDefinition(QualifiedName),

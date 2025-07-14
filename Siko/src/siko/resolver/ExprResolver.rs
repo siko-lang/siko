@@ -2,7 +2,7 @@ use core::panic;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::siko::hir::BodyBuilder::BodyBuilder;
-use crate::siko::hir::Data::{Class, Enum};
+use crate::siko::hir::Data::{Enum, Struct};
 use crate::siko::hir::Function::BlockId;
 use crate::siko::hir::Instruction::{BlockInfo, FieldInfo, InstructionKind, JumpDirection};
 use crate::siko::hir::Variable::Variable;
@@ -45,7 +45,7 @@ pub struct ExprResolver<'a> {
     pub moduleResolver: &'a ModuleResolver<'a>,
     typeResolver: &'a TypeResolver<'a>,
     emptyVariants: &'a BTreeSet<QualifiedName>,
-    classes: &'a BTreeMap<QualifiedName, Class>,
+    structs: &'a BTreeMap<QualifiedName, Struct>,
     pub variants: &'a BTreeMap<QualifiedName, QualifiedName>,
     pub enums: &'a BTreeMap<QualifiedName, Enum>,
     loopInfos: Vec<LoopInfo>,
@@ -58,7 +58,7 @@ impl<'a> ExprResolver<'a> {
         moduleResolver: &'a ModuleResolver,
         typeResolver: &'a TypeResolver<'a>,
         emptyVariants: &'a BTreeSet<QualifiedName>,
-        classes: &'a BTreeMap<QualifiedName, Class>,
+        structs: &'a BTreeMap<QualifiedName, Struct>,
         variants: &'a BTreeMap<QualifiedName, QualifiedName>,
         enums: &'a BTreeMap<QualifiedName, Enum>,
     ) -> ExprResolver<'a> {
@@ -69,7 +69,7 @@ impl<'a> ExprResolver<'a> {
             moduleResolver: moduleResolver,
             typeResolver: typeResolver,
             emptyVariants: emptyVariants,
-            classes: classes,
+            structs: structs,
             variants: variants,
             enums: enums,
             loopInfos: Vec::new(),
@@ -530,7 +530,7 @@ impl<'a> ExprResolver<'a> {
         match &pat.pattern {
             SimplePattern::Named(name, args) => {
                 let name = &self.moduleResolver.resolverName(name);
-                match self.classes.get(name) {
+                match self.structs.get(name) {
                     Some(structDef) => {
                         if structDef.fields.len() != args.len() {
                             ResolverError::InvalidArgCount(

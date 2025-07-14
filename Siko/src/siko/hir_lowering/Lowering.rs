@@ -1,6 +1,6 @@
 use crate::siko::{
     hir::{
-        Data::{Class as HirClass, Enum as HirEnum},
+        Data::{Enum as HirEnum, Struct as HirStruct},
         Function::{Block, BlockId, Function as HirFunction, FunctionKind},
         Instruction::InstructionKind as HirInstructionKind,
         Program::Program as HirProgram,
@@ -189,13 +189,13 @@ impl<'a> Builder<'a> {
                 }
                 HirInstructionKind::FieldRef(dest, root, name) => {
                     let dest = self.buildVariable(dest);
-                    let className = root
+                    let structName = root
                         .ty
                         .as_ref()
                         .expect("no type")
                         .getName()
                         .expect("no name for field ref root");
-                    let c = self.program.classes.get(&className).expect("structDef not found");
+                    let c = self.program.structs.get(&structName).expect("structDef not found");
                     let (_, index) = c.getField(name);
                     let root = self.buildVariable(root);
                     block.instructions.push(Instruction::GetFieldRef(dest, root, index));
@@ -204,8 +204,8 @@ impl<'a> Builder<'a> {
                     let mut indices = Vec::new();
                     let mut ty = dest.ty.as_ref().expect("no type");
                     for field in fields {
-                        let className = ty.getName().expect("no name for field ref root");
-                        let c = self.program.classes.get(&className).expect("structDef not found");
+                        let structName = ty.getName().expect("no name for field ref root");
+                        let c = self.program.structs.get(&structName).expect("structDef not found");
                         let (_, index) = c.getField(&field.name);
                         indices.push(index);
                         ty = field.ty.as_ref().expect("field without ty!");
@@ -240,7 +240,7 @@ impl<'a> Builder<'a> {
         }
 
         let kind = match self.function.kind {
-            FunctionKind::ClassCtor => MirFunctionKind::ClassCtor,
+            FunctionKind::StructCtor => MirFunctionKind::StructCtor,
             FunctionKind::UserDefined | FunctionKind::TraitMemberDefinition(_) => {
                 let mut blocks = Vec::new();
                 if let Some(body) = self.function.body.clone() {
@@ -300,7 +300,7 @@ pub fn convertName<T: ToString>(name: &T) -> String {
 pub fn lowerType(ty: &HirType, program: &HirProgram) -> MirType {
     match ty {
         HirType::Named(name, _, _) => {
-            if program.classes.get(name).is_some() {
+            if program.structs.get(name).is_some() {
                 if name.base() == getIntTypeName() {
                     MirType::Int64
                 } else if name.base() == getU8TypeName() {
@@ -328,7 +328,7 @@ pub fn lowerType(ty: &HirType, program: &HirProgram) -> MirType {
     }
 }
 
-pub fn lowerClass(c: &HirClass, program: &HirProgram) -> Struct {
+pub fn lowerStruct(c: &HirStruct, program: &HirProgram) -> Struct {
     //println!("Lowering structDef {}", c.name);
     let mut fields = Vec::new();
     for f in &c.fields {
@@ -369,16 +369,16 @@ pub fn lowerEnum(e: &HirEnum, program: &HirProgram) -> Union {
 pub fn lowerProgram(program: &HirProgram) -> MirProgram {
     let mut mirProgram = MirProgram::new();
 
-    //println!("Lowering classes");
+    //println!("Lowering structs");
 
-    for (n, c) in &program.classes {
+    for (n, c) in &program.structs {
         if n.base() == getIntTypeName() {
             continue;
         }
         if n.base() == getU8TypeName() {
             continue;
         }
-        let c = lowerClass(c, program);
+        let c = lowerStruct(c, program);
         mirProgram.structs.insert(convertName(n), c);
     }
 

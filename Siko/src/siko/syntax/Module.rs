@@ -12,7 +12,7 @@ pub struct Derive {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ModuleItem {
-    Class(Class),
+    Struct(Struct),
     Enum(Enum),
     Function(Function),
     Import(Import),

@@ -1,6 +1,6 @@
 use crate::siko::{
     hir::{
-        Data::{Class, Enum, Field, Variant},
+        Data::{Struct, Enum, Field, Variant},
         Lifetime::{Lifetime, LifetimeInfo},
         Type::Type,
     },
@@ -90,7 +90,7 @@ impl Instantiable for Type {
     }
 }
 
-impl Instantiable for Class {
+impl Instantiable for Struct {
     type Item = Lifetime;
 
     fn instantiate<A: Allocator<Item = Self::Item>>(

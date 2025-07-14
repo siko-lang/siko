@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::siko::{
-    hir::Data::{Class, Enum},
+    hir::Data::{Struct, Enum},
     qualifiedname::QualifiedName,
     util::DependencyProcessor::{processDependencies, DependencyGroup},
 };
@@ -9,12 +9,12 @@ use crate::siko::{
 pub struct DataGroup {}
 
 pub fn createDataGroups(
-    classes: &BTreeMap<QualifiedName, Class>,
+    structs: &BTreeMap<QualifiedName, Struct>,
     enums: &BTreeMap<QualifiedName, Enum>,
 ) -> Vec<DependencyGroup<QualifiedName>> {
     let mut dependency_map = BTreeMap::new();
 
-    for (name, c) in classes {
+    for (name, c) in structs {
         let deps = dependency_map
             .entry(name.clone())
             .or_insert_with(|| Vec::new());

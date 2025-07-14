@@ -1,5 +1,5 @@
 use crate::siko::syntax::{
-    Data::{Class, Enum, Field, Variant},
+    Data::{Enum, Field, Struct, Variant},
     Module::Derive,
 };
 
@@ -11,15 +11,15 @@ use super::{
 };
 
 pub trait DataParser {
-    fn parseClass(&mut self, derives: Vec<Derive>, public: bool) -> Class;
+    fn parseStruct(&mut self, derives: Vec<Derive>, public: bool) -> Struct;
     fn parseEnum(&mut self, derives: Vec<Derive>, public: bool) -> Enum;
     fn parseVariant(&mut self) -> Variant;
     fn parseField(&mut self, public: bool) -> Field;
 }
 
 impl<'a> DataParser for Parser<'a> {
-    fn parseClass(&mut self, derives: Vec<Derive>, public: bool) -> Class {
-        self.expect(TokenKind::Keyword(KeywordKind::Class));
+    fn parseStruct(&mut self, derives: Vec<Derive>, public: bool) -> Struct {
+        self.expect(TokenKind::Keyword(KeywordKind::Struct));
         let name = self.parseTypeIdentifier();
         let typeParams = if self.check(TokenKind::LeftBracket(BracketKind::Square)) {
             Some(self.parseTypeParameterDeclaration())
@@ -51,7 +51,7 @@ impl<'a> DataParser for Parser<'a> {
             }
         }
         self.expect(TokenKind::RightBracket(BracketKind::Curly));
-        Class {
+        Struct {
             name,
             typeParams: typeParams,
             isExtern: false,

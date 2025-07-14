@@ -73,11 +73,11 @@ impl<'a> ModuleParser for Parser<'a> {
             let item = match self.peek() {
                 TokenKind::Keyword(KeywordKind::Extern) => {
                     self.expect(TokenKind::Keyword(KeywordKind::Extern));
-                    let mut c = self.parseClass(derives, public);
+                    let mut c = self.parseStruct(derives, public);
                     c.isExtern = true;
-                    ModuleItem::Class(c)
+                    ModuleItem::Struct(c)
                 }
-                TokenKind::Keyword(KeywordKind::Class) => ModuleItem::Class(self.parseClass(derives, public)),
+                TokenKind::Keyword(KeywordKind::Struct) => ModuleItem::Struct(self.parseStruct(derives, public)),
                 TokenKind::Keyword(KeywordKind::Enum) => ModuleItem::Enum(self.parseEnum(derives, public)),
                 TokenKind::Keyword(KeywordKind::Fn) => ModuleItem::Function(self.parseFunction(public)),
                 TokenKind::Keyword(KeywordKind::Import) => ModuleItem::Import(self.parseImport()),

@@ -22,7 +22,7 @@ pub enum DataPath {
     Variant(Box<DataPath>, QualifiedName, QualifiedName),
     IntegerLiteral(Box<DataPath>, String),
     StringLiteral(Box<DataPath>, String),
-    Class(Box<DataPath>, QualifiedName),
+    Struct(Box<DataPath>, QualifiedName),
     Wildcard(Box<DataPath>),
 }
 
@@ -49,7 +49,7 @@ impl DataPath {
             DataPath::Variant(p, _, _) => *p.clone(),
             DataPath::IntegerLiteral(p, _) => *p.clone(),
             DataPath::StringLiteral(p, _) => *p.clone(),
-            DataPath::Class(p, _) => *p.clone(),
+            DataPath::Struct(p, _) => *p.clone(),
             DataPath::Wildcard(p) => *p.clone(),
         }
     }
@@ -65,7 +65,7 @@ impl fmt::Display for DataPath {
             DataPath::Variant(path, name, _) => write!(f, "{}.{}", path, name),
             DataPath::IntegerLiteral(path, literal) => write!(f, "{}[int:{}]", path, literal),
             DataPath::StringLiteral(path, literal) => write!(f, "{}[str:\"{}\"]", path, literal),
-            DataPath::Class(path, name) => write!(f, "{}.{}", path, name),
+            DataPath::Struct(path, name) => write!(f, "{}.{}", path, name),
             DataPath::Wildcard(path) => write!(f, "{}._", path),
         }
     }
@@ -79,7 +79,7 @@ impl fmt::Debug for DataPath {
 
 #[derive(Debug)]
 pub enum DataType {
-    Class(QualifiedName),
+    Struct(QualifiedName),
     Enum(QualifiedName),
     Tuple(i64),
     Integer,
@@ -90,7 +90,7 @@ pub enum DataType {
 impl fmt::Display for DataType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            DataType::Class(name) => write!(f, "Class({})", name),
+            DataType::Struct(name) => write!(f, "Struct({})", name),
             DataType::Enum(name) => write!(f, "Enum({})", name),
             DataType::Tuple(size) => write!(f, "Tuple({})", size),
             DataType::Integer => write!(f, "Integer"),
@@ -315,7 +315,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     (decision, bindings)
                 } else {
                     (
-                        decision.add(DataPath::Class(Box::new(parentData.clone()), name)),
+                        decision.add(DataPath::Struct(Box::new(parentData.clone()), name)),
                         bindings,
                     )
                 }
@@ -394,8 +394,8 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     DataPath::StringLiteral(parent, _) => {
                         dataTypes.insert(parent.clone(), DataType::String);
                     }
-                    DataPath::Class(parent, name) => {
-                        dataTypes.insert(parent.clone(), DataType::Class(name.clone()));
+                    DataPath::Struct(parent, name) => {
+                        dataTypes.insert(parent.clone(), DataType::Struct(name.clone()));
                     }
                     DataPath::Wildcard(parent) => {
                         if !dataTypes.contains_key(parent.as_ref()) {
@@ -677,7 +677,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         if let Some(ty) = dataTypes.get(&currentPath) {
             //println!("Building node for {}, {} / [{}] / {:?}", currentPath, ty, currentDecision, pendingPaths);
             match ty {
-                DataType::Class(_) => todo!(),
+                DataType::Struct(_) => todo!(),
                 DataType::Enum(enumName) => {
                     let e = self.resolver.enums.get(enumName).expect("enumName not found");
                     let mut cases = BTreeMap::new();

@@ -1,8 +1,11 @@
 use std::fmt;
 
-use crate::siko::{hir::Type::formatTypes, qualifiedname::QualifiedName};
+use crate::siko::{
+    hir::{OwnershipVar::OwnershipVarInfo, Type::formatTypes},
+    qualifiedname::QualifiedName,
+};
 
-use super::{Lifetime::LifetimeInfo, Type::Type};
+use super::Type::Type;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Field {
@@ -17,22 +20,22 @@ pub struct MethodInfo {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Class {
+pub struct Struct {
     pub name: QualifiedName,
     pub ty: Type,
     pub fields: Vec<Field>,
     pub methods: Vec<MethodInfo>,
-    pub lifetime_info: Option<LifetimeInfo>,
+    pub ownership_info: Option<OwnershipVarInfo>,
 }
 
-impl Class {
-    pub fn new(name: QualifiedName, ty: Type) -> Class {
-        Class {
+impl Struct {
+    pub fn new(name: QualifiedName, ty: Type) -> Struct {
+        Struct {
             name: name,
             ty: ty,
             fields: Vec::new(),
             methods: Vec::new(),
-            lifetime_info: None,
+            ownership_info: None,
         }
     }
 
@@ -60,7 +63,7 @@ pub struct Enum {
     pub ty: Type,
     pub variants: Vec<Variant>,
     pub methods: Vec<MethodInfo>,
-    pub lifetime_info: Option<LifetimeInfo>,
+    pub ownership_info: Option<OwnershipVarInfo>,
 }
 
 impl Enum {
@@ -70,7 +73,7 @@ impl Enum {
             ty: ty,
             variants: Vec::new(),
             methods: Vec::new(),
-            lifetime_info: None,
+            ownership_info: None,
         }
     }
 
@@ -96,10 +99,10 @@ impl fmt::Display for MethodInfo {
     }
 }
 
-impl fmt::Display for Class {
+impl fmt::Display for Struct {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(lifetime_info) = &self.lifetime_info {
-            writeln!(f, "structDef {}{} {{", self.name, lifetime_info)?;
+        if let Some(ownership_info) = &self.ownership_info {
+            writeln!(f, "structDef {}{} {{", self.name, ownership_info)?;
         } else {
             writeln!(f, "structDef {} {{", self.name)?;
         }
@@ -114,15 +117,15 @@ impl fmt::Display for Class {
 
 impl fmt::Display for Variant {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let formatted_items = formatTypes(&self.items); // Using formatTypes function
+        let formatted_items = formatTypes(&self.items);
         write!(f, "{}({})", self.name, formatted_items)
     }
 }
 
 impl fmt::Display for Enum {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(lifetime_info) = &self.lifetime_info {
-            writeln!(f, "enum {} {} {{", self.name, lifetime_info)?;
+        if let Some(ownership_info) = &self.ownership_info {
+            writeln!(f, "enum {} {} {{", self.name, ownership_info)?;
         } else {
             writeln!(f, "enum {} {{", self.name)?;
         }

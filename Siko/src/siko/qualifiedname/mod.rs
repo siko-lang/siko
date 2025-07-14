@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Display};
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum QualifiedName {
     Module(String),
     Instance(Box<QualifiedName>, u64),
@@ -32,7 +32,10 @@ impl QualifiedName {
     }
 
     pub fn monomorphized(&self, args: String) -> QualifiedName {
-        QualifiedName::Monomorphized(Box::new(self.clone()), args)
+        match self {
+            QualifiedName::Monomorphized(_, _) => self.clone(),
+            _ => QualifiedName::Monomorphized(Box::new(self.clone()), args),
+        }
     }
 
     pub fn toString(&self) -> String {
@@ -48,12 +51,18 @@ impl Display for QualifiedName {
             QualifiedName::Item(p, i) => write!(f, "{}.{}", p, i),
             QualifiedName::Monomorphized(p, args) => {
                 if args.is_empty() {
-                    write!(f, "{}", p)
+                    write!(f, "{}#", p)
                 } else {
                     write!(f, "{}#{}", p, args)
                 }
             }
         }
+    }
+}
+
+impl Debug for QualifiedName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
     }
 }
 

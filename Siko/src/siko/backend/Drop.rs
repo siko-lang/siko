@@ -5,7 +5,7 @@ use std::{
 
 use crate::siko::{
     hir::{
-        Apply::{instantiateClass, ApplyVariable},
+        Apply::{instantiateStruct, ApplyVariable},
         BlockBuilder::BlockBuilder,
         BodyBuilder::BodyBuilder,
         Function::{BlockId, Function},
@@ -605,11 +605,11 @@ impl<'a> DropChecker<'a> {
             let mut currentTy = receiver.getType().clone();
 
             for item in &path.items {
-                if let Some(className) = currentTy.getName() {
-                    if let Some(classDef) = self.program.getClass(&className) {
+                if let Some(structName) = currentTy.getName() {
+                    if let Some(structDef) = self.program.getStruct(&structName) {
                         let mut allocator = TypeVarAllocator::new();
-                        let classInstance = instantiateClass(&mut allocator, &classDef, &currentTy);
-                        for field in &classInstance.fields {
+                        let structInstance = instantiateStruct(&mut allocator, &structDef, &currentTy);
+                        for field in &structInstance.fields {
                             if field.name == *item {
                                 currentTy = field.ty.clone();
                                 break;
@@ -878,11 +878,11 @@ impl<'a> DropChecker<'a> {
             MoveKind::Partially => {
                 //println!("partially moved {}", rootPath);
                 //println!("already moved (maybe partially?) {}", rootPath);
-                if let Some(className) = ty.getName() {
-                    if let Some(classDef) = self.program.getClass(&className) {
+                if let Some(structName) = ty.getName() {
+                    if let Some(structDef) = self.program.getStruct(&structName) {
                         let mut allocator = TypeVarAllocator::new();
-                        let classInstance = instantiateClass(&mut allocator, &classDef, ty);
-                        for field in &classInstance.fields {
+                        let structInstance = instantiateStruct(&mut allocator, &structDef, ty);
+                        for field in &structInstance.fields {
                             let path = rootPath.add(field.name.clone());
                             self.dropPath(&path, &field.ty, context, dropList);
                         }

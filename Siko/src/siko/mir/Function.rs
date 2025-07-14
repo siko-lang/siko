@@ -16,7 +16,7 @@ impl fmt::Display for Param {
 
 pub enum FunctionKind {
     UserDefined(Vec<Block>),
-    ClassCtor,
+    StructCtor,
     VariantCtor(i64),
     Extern,
 }
@@ -31,10 +31,10 @@ pub struct Function {
 impl fmt::Display for Function {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.kind {
-            FunctionKind::ClassCtor => {
+            FunctionKind::StructCtor => {
                 write!(
                     f,
-                    "Function: {}\nArguments: ({}) -> {}\nClassCtor",
+                    "Function: {}\nArguments: ({}) -> {}\nStructCtor",
                     self.name,
                     self.args
                         .iter()

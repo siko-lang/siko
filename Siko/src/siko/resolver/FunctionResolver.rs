@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::siko::hir::ConstraintContext::ConstraintContext;
-use crate::siko::hir::Data::{Class, Enum};
+use crate::siko::hir::Data::{Enum, Struct};
 use crate::siko::hir::Function::{Function as IrFunction, FunctionKind, Parameter as IrParameter};
 use crate::siko::hir::Type::{Type as IrType, TypeVar};
 use crate::siko::hir::Variable::Variable;
@@ -64,7 +64,7 @@ impl<'a> FunctionResolver<'a> {
         ctx: &ReportContext,
         f: &Function,
         emptyVariants: &BTreeSet<QualifiedName>,
-        classes: &BTreeMap<QualifiedName, Class>,
+        structs: &BTreeMap<QualifiedName, Struct>,
         variants: &BTreeMap<QualifiedName, QualifiedName>,
         enums: &BTreeMap<QualifiedName, Enum>,
         name: QualifiedName,
@@ -135,7 +135,7 @@ impl<'a> FunctionResolver<'a> {
                 self.moduleResolver,
                 &typeResolver,
                 emptyVariants,
-                classes,
+                structs,
                 variants,
                 enums,
             );

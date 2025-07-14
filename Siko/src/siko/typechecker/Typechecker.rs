@@ -5,11 +5,11 @@ use std::{
 
 use crate::siko::{
     hir::{
-        Apply::{instantiateClass, instantiateEnum, instantiateTrait, instantiateType4, Apply, ApplyVariable},
+        Apply::{instantiateEnum, instantiateStruct, instantiateTrait, instantiateType4, Apply, ApplyVariable},
         BlockBuilder::BlockBuilder,
         BodyBuilder::BodyBuilder,
         ConstraintContext::{Constraint as HirConstraint, ConstraintContext},
-        Data::{Class, Enum},
+        Data::{Enum, Struct},
         Function::{BlockId, Function, Parameter},
         InstanceResolver::ResolutionResult,
         Instruction::{Instruction, InstructionKind, Tag},
@@ -269,8 +269,8 @@ impl<'a> Typechecker<'a> {
         instantiateEnum(&mut self.allocator, e, ty)
     }
 
-    fn instantiateClass(&mut self, c: &Class, ty: &Type) -> Class {
-        instantiateClass(&mut self.allocator, c, ty)
+    fn instantiateStruct(&mut self, c: &Struct, ty: &Type) -> Struct {
+        instantiateStruct(&mut self.allocator, c, ty)
     }
 
     fn handleImplicits(&mut self, input: &Variable, output: &Type, builder: &mut BlockBuilder) -> Type {
@@ -449,9 +449,9 @@ impl<'a> Typechecker<'a> {
     fn lookupMethod(&mut self, receiverType: Type, methodName: &String, location: Location) -> QualifiedName {
         match receiverType.unpackRef() {
             Type::Named(name, _, _) => {
-                if let Some(classDef) = self.program.classes.get(&name) {
-                    let classDef = self.instantiateClass(classDef, receiverType.unpackRef());
-                    for m in &classDef.methods {
+                if let Some(structDef) = self.program.structs.get(&name) {
+                    let structDef = self.instantiateStruct(structDef, receiverType.unpackRef());
+                    for m in &structDef.methods {
                         if m.name == *methodName {
                             //println!("Added {} {}", dest, m.fullName);
                             return m.fullName.clone();
@@ -483,9 +483,9 @@ impl<'a> Typechecker<'a> {
         let receiverType = receiverType.apply(&self.substitution);
         match receiverType.unpackRef() {
             Type::Named(name, _, _) => {
-                if let Some(classDef) = self.program.classes.get(&name) {
-                    let classDef = self.instantiateClass(classDef, receiverType.unpackRef());
-                    for f in &classDef.fields {
+                if let Some(structDef) = self.program.structs.get(&name) {
+                    let structDef = self.instantiateStruct(structDef, receiverType.unpackRef());
+                    for f in &structDef.fields {
                         if f.name == *fieldName {
                             if receiverType.isReference() {
                                 return Type::Reference(Box::new(f.ty.clone()), None);
@@ -513,9 +513,9 @@ impl<'a> Typechecker<'a> {
         let receiverType = receiverType.apply(&self.substitution);
         match receiverType.unpackRef() {
             Type::Named(name, _, _) => {
-                if let Some(classDef) = self.program.classes.get(&name) {
-                    let classDef = self.instantiateClass(classDef, receiverType.unpackRef());
-                    for f in &classDef.fields {
+                if let Some(structDef) = self.program.structs.get(&name) {
+                    let structDef = self.instantiateStruct(structDef, receiverType.unpackRef());
+                    for f in &structDef.fields {
                         if f.name == *fieldName {
                             let mut result = ReadFieldResult {
                                 ty: f.ty.clone(),

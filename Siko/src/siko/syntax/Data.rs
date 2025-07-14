@@ -6,7 +6,7 @@ use super::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Class {
+pub struct Struct {
     pub name: Identifier,
     pub typeParams: Option<TypeParameterDeclaration>,
     pub isExtern: bool,

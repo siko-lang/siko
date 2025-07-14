@@ -5,7 +5,7 @@ use std::{
 
 use crate::siko::{
     hir::{
-        Apply::{instantiateClass, instantiateEnum, Apply},
+        Apply::{instantiateEnum, instantiateStruct, Apply},
         BodyBuilder::BodyBuilder,
         ConstraintContext::ConstraintContext,
         Function::{Block, Body, Function, FunctionKind, Parameter},
@@ -35,7 +35,7 @@ fn createTypeSubstitution(ty1: &Type, ty2: &Type) -> TypeSubstitution {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Key {
-    Class(QualifiedName, Vec<Type>),
+    Struct(QualifiedName, Vec<Type>),
     Enum(QualifiedName, Vec<Type>),
     Function(QualifiedName, Vec<Type>),
     AutoDropFn(QualifiedName, Type),
@@ -44,7 +44,7 @@ enum Key {
 impl Display for Key {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
-            Key::Class(name, types) => write!(f, "{}/{}", name, formatTypes(types)),
+            Key::Struct(name, types) => write!(f, "{}/{}", name, formatTypes(types)),
             Key::Enum(name, types) => write!(f, "{}/{}", name, formatTypes(types)),
             Key::Function(name, types) => write!(f, "{}/{}", name, formatTypes(types)),
             Key::AutoDropFn(name, ty) => write!(f, "{}/{}", name, ty),
@@ -384,9 +384,9 @@ impl<'a> Monomorphizer<'a> {
                             //println!("Processing func {}", key);
                             self.monomorphizeFunction(name, args);
                         }
-                        Key::Class(name, args) => {
+                        Key::Struct(name, args) => {
                             //println!("Processing structDef {}", key);
-                            self.monomorphizeClass(name, args);
+                            self.monomorphizeStruct(name, args);
                         }
                         Key::Enum(name, args) => {
                             //println!("Processing enum {}", key);
@@ -441,8 +441,8 @@ impl<'a> Monomorphizer<'a> {
         let r = match ty.clone() {
             Type::Named(name, args, _) => {
                 let monoName = self.get_mono_name(&name, &args);
-                if self.program.classes.contains_key(&name) {
-                    self.addKey(Key::Class(name, args))
+                if self.program.structs.contains_key(&name) {
+                    self.addKey(Key::Struct(name, args))
                 } else if self.program.enums.contains_key(&name) {
                     self.addKey(Key::Enum(name, args))
                 }
@@ -476,11 +476,11 @@ impl<'a> Monomorphizer<'a> {
         }
     }
 
-    fn monomorphizeClass(&mut self, name: QualifiedName, args: Vec<Type>) {
-        //println!("MONO CLASS: {} {}", name, formatTypes(&args));
+    fn monomorphizeStruct(&mut self, name: QualifiedName, args: Vec<Type>) {
+        //println!("MONO Struct: {} {}", name, formatTypes(&args));
         let targetTy = Type::Named(name.clone(), args.clone(), None);
-        let c = self.program.classes.get(&name).expect("structDef not found in mono");
-        let mut c = instantiateClass(&mut TypeVarAllocator::new(), c, &targetTy);
+        let c = self.program.structs.get(&name).expect("structDef not found in mono");
+        let mut c = instantiateStruct(&mut TypeVarAllocator::new(), c, &targetTy);
         let name = self.get_mono_name(&name, &args);
         c.ty = self.processType(c.ty);
         c.fields = c
@@ -494,7 +494,7 @@ impl<'a> Monomorphizer<'a> {
             .collect();
         c.methods.clear();
         c.name = name.clone();
-        self.monomorphizedProgram.classes.insert(name, c);
+        self.monomorphizedProgram.structs.insert(name, c);
     }
 
     fn monomorphizeEnum(&mut self, name: QualifiedName, args: Vec<Type>) {
@@ -559,9 +559,9 @@ impl<'a> Monomorphizer<'a> {
 
         match &ty {
             Type::Named(name, _, _) => {
-                if let Some(c) = self.program.getClass(&name) {
+                if let Some(c) = self.program.getStruct(&name) {
                     let mut allocator = &mut TypeVarAllocator::new();
-                    let c = instantiateClass(&mut allocator, &c, &ty);
+                    let c = instantiateStruct(&mut allocator, &c, &ty);
                     for f in &c.fields {
                         let field =
                             builder.addTypedFieldRef(dropVar.clone(), f.name.clone(), location.clone(), f.ty.clone());

@@ -15,7 +15,15 @@ use siko::{
     typechecker::Typechecker::Typechecker,
 };
 
+use core::panic;
 use std::{collections::BTreeMap, env::args, fs, path::Path};
+
+use crate::siko::{
+    ownership::{
+        DataOwnershipVar::DataOwnershipVarInference, FunctionGroups, OwnershipProfileInference::ownershipInference,
+    },
+    util::DependencyProcessor::DependencyGroup,
+};
 
 fn typecheck(ctx: &ReportContext, mut program: Program) -> Program {
     let mut result = BTreeMap::new();
@@ -118,8 +126,7 @@ fn main() {
     //println!("after mono\n{}", program);
     let program = removeTuples(&program);
     //println!("after remove\n{}", program);
-    //let data_lifetime_inferer = DataLifeTimeInference::new(program);
-    //let program = data_lifetime_inferer.process();
+    //ownershipInference(program.clone());
     //println!("after backend\n {}", program);
     let mut mir_program = lowerProgram(&program);
     //println!("mir\n{}", mir_program);

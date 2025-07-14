@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::siko::{
     hir::{
         ConstraintContext::ConstraintContext,
-        Data::{Class, Enum, Field, Variant},
+        Data::{Struct, Enum, Field, Variant},
         Function::{Block, Body, Function, FunctionKind, Parameter},
         Instruction::{FieldInfo, Instruction, InstructionKind},
         Program::Program,
@@ -14,7 +14,9 @@ use crate::siko::{
 };
 
 fn getTuple(ty: &Type) -> QualifiedName {
-    QualifiedName::Module("siko".to_string()).add(format!("Tuple_{}", ty))
+    QualifiedName::Module("siko".to_string())
+        .add(format!("Tuple_{}", ty))
+        .monomorphized("".to_string())
 }
 
 struct Context {
@@ -204,7 +206,7 @@ impl RemoveTuples for Field {
     }
 }
 
-impl RemoveTuples for Class {
+impl RemoveTuples for Struct {
     fn removeTuples(&self, ctx: &mut Context) -> Self {
         let mut c = self.clone();
         c.ty = c.ty.removeTuples(ctx);
@@ -235,7 +237,7 @@ pub fn removeTuples(program: &Program) -> Program {
     let mut result = Program::new();
     let mut ctx = Context::new();
     result.functions = program.functions.removeTuples(&mut ctx);
-    result.classes = program.classes.removeTuples(&mut ctx);
+    result.structs = program.structs.removeTuples(&mut ctx);
     result.enums = program.enums.removeTuples(&mut ctx);
     for tuple in ctx.tuples {
         let name = getTuple(&tuple);
@@ -252,12 +254,12 @@ pub fn removeTuples(program: &Program) -> Program {
                 let param = Parameter::Named(name, arg.clone(), false);
                 params.push(param);
             }
-            let tupleStruct = Class {
+            let tupleStruct = Struct {
                 name: name.clone(),
                 ty: Type::Named(name.clone(), Vec::new(), None),
                 fields: fields,
                 methods: Vec::new(),
-                lifetime_info: None,
+                ownership_info: None,
             };
             let unitFn = Function {
                 name: name.clone(),
@@ -265,9 +267,9 @@ pub fn removeTuples(program: &Program) -> Program {
                 result: Type::Named(name.clone(), Vec::new(), None),
                 body: None,
                 constraintContext: ConstraintContext::new(),
-                kind: FunctionKind::ClassCtor,
+                kind: FunctionKind::StructCtor,
             };
-            result.classes.insert(name.clone(), tupleStruct);
+            result.structs.insert(name.clone(), tupleStruct);
             result.functions.insert(name.clone(), unitFn);
         } else {
             unreachable!()

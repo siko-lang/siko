@@ -7,6 +7,7 @@ pub mod Function;
 pub mod InstanceResolver;
 pub mod Instruction;
 pub mod Lifetime;
+pub mod OwnershipVar;
 pub mod Program;
 pub mod Substitution;
 pub mod Trait;

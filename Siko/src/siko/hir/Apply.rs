@@ -4,7 +4,7 @@ use crate::siko::hir::Type::Type;
 
 use super::{
     ConstraintContext::{Constraint, ConstraintContext},
-    Data::{Class, Enum, Field, Variant},
+    Data::{Enum, Field, Struct, Variant},
     Instruction::{FieldInfo, InstructionKind},
     Substitution::{TypeSubstitution, VariableSubstitution},
     Trait::{AssociatedType, Instance, MemberInfo, Trait},
@@ -92,7 +92,7 @@ impl Apply for Field {
     }
 }
 
-impl Apply for Class {
+impl Apply for Struct {
     fn apply(&self, sub: &TypeSubstitution) -> Self {
         let mut c = self.clone();
         c.ty = c.ty.apply(sub);
@@ -245,7 +245,7 @@ pub fn instantiateEnum2(allocator: &mut TypeVarAllocator, e: &Enum) -> Enum {
     e.apply(&sub)
 }
 
-pub fn instantiateClass(allocator: &mut TypeVarAllocator, c: &Class, ty: &Type) -> Class {
+pub fn instantiateStruct(allocator: &mut TypeVarAllocator, c: &Struct, ty: &Type) -> Struct {
     let sub = instantiateType4(allocator, &vec![c.ty.clone()]);
     let mut res = c.clone();
     res = res.apply(&sub);

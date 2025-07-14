@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, fmt::Display};
 use crate::siko::qualifiedname::QualifiedName;
 
 use super::{
-    Data::{Class, Enum},
+    Data::{Enum, Struct},
     Function::Function,
     InstanceResolver::InstanceResolver,
     Trait::Trait,
@@ -13,7 +13,7 @@ use super::{
 #[derive(Clone)]
 pub struct Program {
     pub functions: BTreeMap<QualifiedName, Function>,
-    pub classes: BTreeMap<QualifiedName, Class>,
+    pub structs: BTreeMap<QualifiedName, Struct>,
     pub enums: BTreeMap<QualifiedName, Enum>,
     pub traits: BTreeMap<QualifiedName, Trait>,
     pub traitMethodSelectors: BTreeMap<QualifiedName, TraitMethodSelector>,
@@ -24,7 +24,7 @@ impl Program {
     pub fn new() -> Program {
         Program {
             functions: BTreeMap::new(),
-            classes: BTreeMap::new(),
+            structs: BTreeMap::new(),
             enums: BTreeMap::new(),
             traits: BTreeMap::new(),
             traitMethodSelectors: BTreeMap::new(),
@@ -40,8 +40,8 @@ impl Program {
         self.functions.get(qn).cloned()
     }
 
-    pub fn getClass(&self, qn: &QualifiedName) -> Option<Class> {
-        self.classes.get(qn).cloned()
+    pub fn getStruct(&self, qn: &QualifiedName) -> Option<Struct> {
+        self.structs.get(qn).cloned()
     }
 
     pub fn getTrait(&self, qn: &QualifiedName) -> Option<Trait> {
@@ -54,7 +54,7 @@ impl Display for Program {
         for (_, fun) in &self.functions {
             writeln!(f, "{}", fun)?;
         }
-        for (_, c) in &self.classes {
+        for (_, c) in &self.structs {
             writeln!(f, "{}", c)?;
         }
         for (_, e) in &self.enums {

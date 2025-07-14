@@ -296,7 +296,7 @@ impl<'a> MinicBuilder<'a> {
                     blocks: minicBlocks,
                 }
             }
-            FunctionKind::ClassCtor => {
+            FunctionKind::StructCtor => {
                 let mut block = LBlock {
                     id: format!("block0"),
                     instructions: Vec::new(),
