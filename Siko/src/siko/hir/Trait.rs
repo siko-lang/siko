@@ -168,9 +168,7 @@ impl CompareSpecificity for Type {
             r
         }
         match (self, other) {
-            (Type::Named(n1, args1, _), Type::Named(n2, args2, _)) if n1 == n2 => {
-                CompareSpecificity::compare(args1, args2)
-            }
+            (Type::Named(n1, args1), Type::Named(n2, args2)) if n1 == n2 => CompareSpecificity::compare(args1, args2),
             (Type::Tuple(args1), Type::Tuple(args2)) => CompareSpecificity::compare(args1, args2),
             (Type::Function(args1, r1), Type::Function(args2, r2)) => {
                 let mut r = BTreeSet::new();

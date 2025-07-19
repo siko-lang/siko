@@ -448,7 +448,7 @@ impl<'a> Typechecker<'a> {
 
     fn lookupMethod(&mut self, receiverType: Type, methodName: &String, location: Location) -> QualifiedName {
         match receiverType.unpackRef() {
-            Type::Named(name, _, _) => {
+            Type::Named(name, _) => {
                 if let Some(structDef) = self.program.structs.get(&name) {
                     let structDef = self.instantiateStruct(structDef, receiverType.unpackRef());
                     for m in &structDef.methods {
@@ -482,7 +482,7 @@ impl<'a> Typechecker<'a> {
     fn checkField(&mut self, receiverType: Type, fieldName: String, location: Location) -> Type {
         let receiverType = receiverType.apply(&self.substitution);
         match receiverType.unpackRef() {
-            Type::Named(name, _, _) => {
+            Type::Named(name, _) => {
                 if let Some(structDef) = self.program.structs.get(&name) {
                     let structDef = self.instantiateStruct(structDef, receiverType.unpackRef());
                     for f in &structDef.fields {
@@ -512,7 +512,7 @@ impl<'a> Typechecker<'a> {
     fn readField(&mut self, receiverType: Type, fieldName: String, location: Location) -> ReadFieldResult {
         let receiverType = receiverType.apply(&self.substitution);
         match receiverType.unpackRef() {
-            Type::Named(name, _, _) => {
+            Type::Named(name, _) => {
                 if let Some(structDef) = self.program.structs.get(&name) {
                     let structDef = self.instantiateStruct(structDef, receiverType.unpackRef());
                     for f in &structDef.fields {

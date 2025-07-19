@@ -15,7 +15,7 @@ pub fn unify(sub: &mut TypeSubstitution, ty1: &Type, ty2: &Type, allowNamed: boo
     let ty2 = ty2.apply(sub).makeSingleRef();
     //println!("Unifying2 {}/{}", ty1, ty2);
     match (&ty1, &ty2) {
-        (Type::Named(name1, args1, _), Type::Named(name2, args2, _)) => {
+        (Type::Named(name1, args1), Type::Named(name2, args2)) => {
             if name1 != name2 {
                 return Err(Error {});
             } else {

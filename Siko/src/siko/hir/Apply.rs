@@ -24,9 +24,9 @@ pub trait ApplyVariable {
 impl Apply for Type {
     fn apply(&self, sub: &TypeSubstitution) -> Self {
         match &self {
-            Type::Named(n, args, lifetime) => {
+            Type::Named(n, args) => {
                 let newArgs = args.iter().map(|arg| arg.apply(sub)).collect();
-                Type::Named(n.clone(), newArgs, lifetime.clone())
+                Type::Named(n.clone(), newArgs)
             }
             Type::Tuple(args) => {
                 let newArgs = args.iter().map(|arg| arg.apply(sub)).collect();
@@ -42,6 +42,9 @@ impl Apply for Type {
             Type::Ptr(arg) => Type::Ptr(Box::new(arg.apply(sub))),
             Type::SelfType => self.clone(),
             Type::Never(_) => self.clone(),
+            Type::OwnershipVar(_, _, _) => {
+                panic!("OwnershipVar found in apply {}", self);
+            }
         }
     }
 }

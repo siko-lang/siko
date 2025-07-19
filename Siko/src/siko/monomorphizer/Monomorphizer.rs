@@ -439,14 +439,14 @@ impl<'a> Monomorphizer<'a> {
             panic!("non concrete type in mono {}", ty);
         }
         let r = match ty.clone() {
-            Type::Named(name, args, _) => {
+            Type::Named(name, args) => {
                 let monoName = self.get_mono_name(&name, &args);
                 if self.program.structs.contains_key(&name) {
                     self.addKey(Key::Struct(name, args))
                 } else if self.program.enums.contains_key(&name) {
                     self.addKey(Key::Enum(name, args))
                 }
-                Type::Named(monoName, Vec::new(), None)
+                Type::Named(monoName, Vec::new())
             }
             Type::Tuple(args) => {
                 let args = args.into_iter().map(|arg| self.processType(arg)).collect();
@@ -463,6 +463,9 @@ impl<'a> Monomorphizer<'a> {
             Type::Ptr(ty) => Type::Ptr(Box::new(self.processType(*ty))),
             Type::SelfType => Type::SelfType,
             Type::Never(v) => Type::Never(v),
+            Type::OwnershipVar(_, _, _) => {
+                panic!("OwnershipVar found in monomorphization {}", ty);
+            }
         };
         self.processed_type.insert(ty, r.clone());
         r
@@ -478,7 +481,7 @@ impl<'a> Monomorphizer<'a> {
 
     fn monomorphizeStruct(&mut self, name: QualifiedName, args: Vec<Type>) {
         //println!("MONO Struct: {} {}", name, formatTypes(&args));
-        let targetTy = Type::Named(name.clone(), args.clone(), None);
+        let targetTy = Type::Named(name.clone(), args.clone());
         let c = self.program.structs.get(&name).expect("structDef not found in mono");
         let mut c = instantiateStruct(&mut TypeVarAllocator::new(), c, &targetTy);
         let name = self.get_mono_name(&name, &args);
@@ -500,7 +503,7 @@ impl<'a> Monomorphizer<'a> {
     fn monomorphizeEnum(&mut self, name: QualifiedName, args: Vec<Type>) {
         //println!("MONO ENUM: {} {}", name, formatTypes(&args));
         let e = self.program.enums.get(&name).expect("enum not found in mono");
-        let targetTy = Type::Named(name.clone(), args.clone(), None);
+        let targetTy = Type::Named(name.clone(), args.clone());
         let mut e = instantiateEnum(&mut TypeVarAllocator::new(), e, &targetTy);
         //println!("Enum ty {}", e.ty);
         let name = self.get_mono_name(&name, &args);
@@ -558,7 +561,7 @@ impl<'a> Monomorphizer<'a> {
         }
 
         match &ty {
-            Type::Named(name, _, _) => {
+            Type::Named(name, _) => {
                 if let Some(c) = self.program.getStruct(&name) {
                     let mut allocator = &mut TypeVarAllocator::new();
                     let c = instantiateStruct(&mut allocator, &c, &ty);

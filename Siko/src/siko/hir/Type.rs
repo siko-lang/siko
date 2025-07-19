@@ -26,7 +26,7 @@ impl Display for TypeVar {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Type {
-    Named(QualifiedName, Vec<Type>, Option<OwnershipVarInfo>),
+    Named(QualifiedName, Vec<Type>),
     Tuple(Vec<Type>),
     Function(Vec<Type>, Box<Type>),
     Var(TypeVar),
@@ -34,12 +34,13 @@ pub enum Type {
     Ptr(Box<Type>),
     SelfType,
     Never(bool), // true = explicit never i.e. !
+    OwnershipVar(OwnershipVar, Box<Type>, OwnershipVarInfo),
 }
 
 impl Type {
     pub fn getName(&self) -> Option<QualifiedName> {
         match &self {
-            Type::Named(n, _, _) => Some(n.clone()),
+            Type::Named(n, _) => Some(n.clone()),
             Type::Reference(ty, _) => ty.getName(),
             _ => None,
         }
@@ -68,7 +69,7 @@ impl Type {
 
     pub fn collectVars(&self, mut vars: BTreeSet<TypeVar>) -> BTreeSet<TypeVar> {
         match &self {
-            Type::Named(_, args, _) => {
+            Type::Named(_, args) => {
                 for arg in args {
                     vars = arg.collectVars(vars);
                 }
@@ -95,6 +96,7 @@ impl Type {
             }
             Type::SelfType => {}
             Type::Never(_) => {}
+            Type::OwnershipVar(_, _, _) => {}
         }
         vars
     }
@@ -193,7 +195,7 @@ impl Type {
 
     pub fn isSpecified(&self, fully: bool) -> bool {
         match &self {
-            Type::Named(_, args, _) => {
+            Type::Named(_, args) => {
                 for arg in args {
                     if !arg.isSpecified(fully) {
                         return false;
@@ -235,6 +237,7 @@ impl Type {
             Type::Never(_) => {
                 return true;
             }
+            Type::OwnershipVar(_, _, _) => false,
         }
     }
 
@@ -280,23 +283,23 @@ impl Type {
     }
 
     pub fn getBoolType() -> Type {
-        Type::Named(getBoolTypeName(), Vec::new(), None)
+        Type::Named(getBoolTypeName(), Vec::new())
     }
 
     pub fn getIntType() -> Type {
-        Type::Named(getIntTypeName(), Vec::new(), None)
+        Type::Named(getIntTypeName(), Vec::new())
     }
 
     pub fn getStringType() -> Type {
-        Type::Named(getStringTypeName(), Vec::new(), None)
+        Type::Named(getStringTypeName(), Vec::new())
     }
 
     pub fn getStringLiteralType() -> Type {
-        Type::Named(getStringLiteralTypeName(), Vec::new(), None)
+        Type::Named(getStringLiteralTypeName(), Vec::new())
     }
 
     pub fn getCharType() -> Type {
-        Type::Named(getCharTypeName(), Vec::new(), None)
+        Type::Named(getCharTypeName(), Vec::new())
     }
 
     pub fn getUnitType() -> Type {
@@ -307,16 +310,12 @@ impl Type {
 impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
-            Type::Named(name, args, lifetimes) => {
-                let lifetimes = match lifetimes {
-                    Some(info) => format!("{}", info),
-                    None => String::new(),
-                };
+            Type::Named(name, args) => {
                 if args.is_empty() {
-                    write!(f, "{}{}", name, lifetimes)
+                    write!(f, "{}", name)
                 } else {
                     let args: Vec<String> = args.iter().map(|t| format!("{}", t)).collect();
-                    write!(f, "{}[{}]{}", name, args.join(", "), lifetimes)
+                    write!(f, "{}[{}]", name, args.join(", "))
                 }
             }
             Type::Tuple(args) => {
@@ -337,6 +336,9 @@ impl Display for Type {
             }
             Type::SelfType => write!(f, "Self"),
             Type::Never(_) => write!(f, "!"),
+            Type::OwnershipVar(var, ty, ownershipInfo) => {
+                write!(f, "{}/{}/({})", var, ty, ownershipInfo)
+            }
         }
     }
 }

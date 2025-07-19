@@ -299,7 +299,7 @@ pub fn convertName<T: ToString>(name: &T) -> String {
 
 pub fn lowerType(ty: &HirType, program: &HirProgram) -> MirType {
     match ty {
-        HirType::Named(name, _, _) => {
+        HirType::Named(name, _) => {
             if program.structs.get(name).is_some() {
                 if name.base() == getIntTypeName() {
                     MirType::Int64
@@ -325,6 +325,9 @@ pub fn lowerType(ty: &HirType, program: &HirProgram) -> MirType {
         HirType::Ptr(ty) => MirType::Ptr(Box::new(lowerType(ty, program))),
         HirType::SelfType => todo!(),
         HirType::Never(_) => MirType::Void,
+        HirType::OwnershipVar(_, _, _) => {
+            panic!("OwnershipVar found in lowerType {}", ty);
+        }
     }
 }
 

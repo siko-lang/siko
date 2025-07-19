@@ -42,7 +42,6 @@ pub fn createSelfType(
     IrType::Named(
         QualifiedName::Module(moduleResolver.name.clone()).add(name.toString()),
         args,
-        None,
     )
 }
 

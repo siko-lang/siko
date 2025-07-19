@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, ops::Deref};
 
 use crate::siko::{
     hir::{OwnershipVar::OwnershipVarInfo, Program::Program, Type::Type},
@@ -21,17 +21,17 @@ impl DataOwnershipVarInference {
         let data_groups = createDataGroups(&self.program.structs, &self.program.enums);
         for group in data_groups {
             let mut handler = GroupOwnershipVarInfoHandler::new(group.items.clone(), &ownershipVarInfoHandler);
-            //println!("Processing group {:?}", group.items);
+            // println!("Processing group {:?}", group.items);
             for item in &group.items {
                 if let Some(c) = self.program.structs.get_mut(&item) {
                     for f in &mut c.fields {
-                        f.ty = handler.processType(&f.ty, true);
+                        f.ty = handler.processType(&f.ty);
                     }
                 }
                 if let Some(e) = self.program.enums.get_mut(&item) {
                     for v in &mut e.variants {
                         for i in v.items.iter_mut() {
-                            *i = handler.processType(i, false);
+                            *i = handler.processType(i);
                         }
                     }
                 }
@@ -112,9 +112,9 @@ impl<'a> GroupOwnershipVarInfoHandler<'a> {
         }
     }
 
-    pub fn processType(&mut self, ty: &Type, allocSelf: bool) -> Type {
+    pub fn processType(&mut self, ty: &Type) -> Type {
         match ty {
-            Type::Named(n, _, None) => {
+            Type::Named(n, _) => {
                 //println!("Looking for base {}", n);
                 if !self.items.contains(&n) {
                     let mut ownershipVarInfo = OwnershipVarInfo::new();
@@ -123,16 +123,15 @@ impl<'a> GroupOwnershipVarInfoHandler<'a> {
                         .args
                         .get(&n)
                         .expect("dep not found in ownershipVarInfoHandler");
-                    if allocSelf {
-                        ownershipVarInfo.add(self.ownership_info.allocate());
-                    }
+                    let selfVar = self.ownership_info.allocate();
                     for _ in &args.args {
                         ownershipVarInfo.add(self.ownership_info.allocate());
                     }
                     //println!("Adding ownership var info for {}: {:?}", n, ownershipVarInfo);
-                    Type::Named(n.clone(), Vec::new(), Some(ownershipVarInfo))
+                    Type::OwnershipVar(selfVar, Box::new(ty.clone()), ownershipVarInfo)
                 } else {
-                    ty.clone()
+                    let selfVar = self.ownership_info.allocate();
+                    Type::OwnershipVar(selfVar, Box::new(ty.clone()), OwnershipVarInfo::new())
                 }
             }
             _ => ty.clone(),
@@ -141,12 +140,24 @@ impl<'a> GroupOwnershipVarInfoHandler<'a> {
 
     pub fn updateGroup(&mut self, ty: &Type) -> Type {
         match ty {
-            Type::Named(n, _, None) => {
+            Type::Named(n, _) => {
+                let mut info = self.ownership_info.clone();
                 //println!("Looking for base {}", n);
                 if self.items.contains(&n) {
-                    Type::Named(n.clone(), Vec::new(), Some(self.ownership_info.clone()))
+                    Type::OwnershipVar(info.allocate(), Box::new(ty.clone()), self.ownership_info.clone())
                 } else {
                     ty.clone()
+                }
+            }
+            Type::OwnershipVar(v, ity, _) => {
+                if let Type::Named(n, _) = ity.deref() {
+                    if self.items.contains(n) {
+                        Type::OwnershipVar(v.clone(), ity.clone(), self.ownership_info.clone())
+                    } else {
+                        ty.clone()
+                    }
+                } else {
+                    panic!("Expected OwnershipVar to have a named type, found {}", ty);
                 }
             }
             _ => ty.clone(),

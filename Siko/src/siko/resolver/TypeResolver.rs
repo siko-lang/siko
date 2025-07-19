@@ -38,7 +38,7 @@ impl<'a> TypeResolver<'a> {
                         irArgs.push(self.resolveType(arg));
                     }
                     let name = self.moduleResolver.resolverName(&name);
-                    IrType::Named(name, irArgs, None)
+                    IrType::Named(name, irArgs)
                 }
             }
             Type::Tuple(args) => {
@@ -74,6 +74,6 @@ impl<'a> TypeResolver<'a> {
             }
             None => Vec::new(),
         };
-        IrType::Named(self.moduleResolver.resolverName(name), args, None)
+        IrType::Named(self.moduleResolver.resolverName(name), args)
     }
 }

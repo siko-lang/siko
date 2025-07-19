@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::siko::{
     hir::{
         ConstraintContext::ConstraintContext,
-        Data::{Struct, Enum, Field, Variant},
+        Data::{Enum, Field, Struct, Variant},
         Function::{Block, Body, Function, FunctionKind, Parameter},
         Instruction::{FieldInfo, Instruction, InstructionKind},
         Program::Program,
@@ -40,7 +40,7 @@ impl RemoveTuples for Type {
         match self {
             Type::Tuple(_) => {
                 ctx.tuples.insert(self.clone());
-                Type::Named(getTuple(self), Vec::new(), None)
+                Type::Named(getTuple(self), Vec::new())
             }
             ty => ty.clone(),
         }
@@ -256,7 +256,7 @@ pub fn removeTuples(program: &Program) -> Program {
             }
             let tupleStruct = Struct {
                 name: name.clone(),
-                ty: Type::Named(name.clone(), Vec::new(), None),
+                ty: Type::Named(name.clone(), Vec::new()),
                 fields: fields,
                 methods: Vec::new(),
                 ownership_info: None,
@@ -264,7 +264,7 @@ pub fn removeTuples(program: &Program) -> Program {
             let unitFn = Function {
                 name: name.clone(),
                 params: params,
-                result: Type::Named(name.clone(), Vec::new(), None),
+                result: Type::Named(name.clone(), Vec::new()),
                 body: None,
                 constraintContext: ConstraintContext::new(),
                 kind: FunctionKind::StructCtor,

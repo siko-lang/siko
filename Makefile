@@ -4,6 +4,9 @@ simple: Siko/target/release/siko
 Siko/target/release/siko: $(shell find Siko/src/ -type f)
 	@cd Siko && cargo build --release
 
+fmt:
+	@cd Siko && cargo fmt
+
 clean:
 	@cd Siko && cargo clean
 
