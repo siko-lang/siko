@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     iter::zip,
+    ops::Deref,
 };
 
 use crate::siko::{
@@ -78,6 +79,7 @@ pub struct Typechecker<'a> {
     queue: VecDeque<BlockId>,
     markers: BTreeMap<Tag, MarkerInfo>,
     knownConstraints: ConstraintContext,
+    converterVars: BTreeMap<Variable, Variable>,
 }
 
 impl<'a> Typechecker<'a> {
@@ -104,6 +106,7 @@ impl<'a> Typechecker<'a> {
             queue: VecDeque::new(),
             markers: BTreeMap::new(),
             knownConstraints: f.constraintContext.clone(),
+            converterVars: BTreeMap::new(),
         }
     }
 
@@ -183,6 +186,9 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::FunctionCall(var, _, _) => {
                             self.initializeVar(var);
                         }
+                        InstructionKind::Converter(var, _) => {
+                            self.initializeVar(var);
+                        }
                         InstructionKind::MethodCall(var, _, _, _) => {
                             self.initializeVar(var);
                         }
@@ -254,7 +260,7 @@ impl<'a> Typechecker<'a> {
     }
 
     fn unify(&mut self, ty1: Type, ty2: Type, location: Location) {
-        //println!("UNIFY {} {}", ty1, ty2);
+        //!("UNIFY {} {}", ty1, ty2);
         if let Err(_) = unify(&mut self.substitution, &ty1, &ty2, false) {
             reportError(
                 self.ctx,
@@ -265,6 +271,14 @@ impl<'a> Typechecker<'a> {
         }
     }
 
+    fn tryUnify(&mut self, ty1: Type, ty2: Type) -> bool {
+        //println!("UNIFY {} {}", ty1, ty2);
+        if let Err(_) = unify(&mut self.substitution, &ty1, &ty2, false) {
+            return false;
+        }
+        true
+    }
+
     fn instantiateEnum(&mut self, e: &Enum, ty: &Type) -> Enum {
         instantiateEnum(&mut self.allocator, e, ty)
     }
@@ -273,34 +287,54 @@ impl<'a> Typechecker<'a> {
         instantiateStruct(&mut self.allocator, c, ty)
     }
 
-    fn handleImplicits(&mut self, input: &Variable, output: &Type, builder: &mut BlockBuilder) -> Type {
-        let mut inputTy = self.getType(input).apply(&self.substitution);
-        if inputTy.isReference() && !output.isReference() && !output.isGeneric() {
-            if self.program.instanceResolver.isCopy(&output) {
-                inputTy = inputTy.unpackRef().clone();
-                //println!("IMPLICIT CLONE FOR {} {} {}", arg, argTy, fnArg);
-                let tag = self.addImplicitCloneMarker(input);
-                builder.addTag(tag);
+    // fn handleImplicits(&mut self, input: &Variable, output: &Type, builder: &mut BlockBuilder) -> Type {
+    //     let mut inputTy = self.getType(input).apply(&self.substitution);
+    //     if inputTy.isReference() && !output.isReference() && !output.isGeneric() {
+    //         if self.program.instanceResolver.isCopy(&output) {
+    //             inputTy = inputTy.unpackRef().clone();
+    //             //println!("IMPLICIT CLONE FOR {} {} {}", arg, argTy, fnArg);
+    //             let tag = self.addImplicitCloneMarker(input);
+    //             builder.addTag(tag);
+    //         }
+    //     }
+    //     if inputTy.isReference()
+    //         && output.isPtr()
+    //         && ((inputTy.unpackRef() == output) || output.unpackPtr().isGeneric())
+    //     {
+    //         inputTy = inputTy.unpackRef().clone();
+    //         //println!("IMPLICIT CLONE FOR {} {} {}", arg, argTy, fnArg);
+    //         let tag = self.addImplicitCloneMarker(input);
+    //         builder.addTag(tag);
+    //     }
+    //     if !inputTy.isGeneric() && !output.isGeneric() && inputTy != *output {
+    //         if self.program.instanceResolver.isImplicitConvert(&inputTy, &output) {
+    //             inputTy = output.clone();
+    //             //println!("IMPLICIT CONVERT FOR {} {} {}", input, inputTy, output);
+    //             let tag = self.addImplicitConvertMarker(input, ImplicitConvertInfo::Simple(output.clone()));
+    //             builder.addTag(tag);
+    //         }
+    //     }
+    //     inputTy
+    // }
+
+    fn updateConverterDestination(&mut self, dest: &Variable, target: &Type) {
+        let destTy = self.getType(dest).apply(&self.substitution);
+        let targetTy = target.apply(&self.substitution);
+        if !self.tryUnify(destTy.clone(), targetTy.clone()) {
+            match (destTy, targetTy.clone()) {
+                (ty1, Type::Reference(ty2, _)) => {
+                    self.tryUnify(ty1, *ty2.clone());
+                }
+                (Type::Reference(ty1, _), ty2) => {
+                    self.tryUnify(*ty1.clone(), ty2);
+                }
+                (ty1, ty2) => {
+                    self.tryUnify(ty1, ty2);
+                }
             }
+            let targetTy = target.apply(&self.substitution);
+            self.types.insert(dest.value.to_string(), targetTy);
         }
-        if inputTy.isReference()
-            && output.isPtr()
-            && ((inputTy.unpackRef() == output) || output.unpackPtr().isGeneric())
-        {
-            inputTy = inputTy.unpackRef().clone();
-            //println!("IMPLICIT CLONE FOR {} {} {}", arg, argTy, fnArg);
-            let tag = self.addImplicitCloneMarker(input);
-            builder.addTag(tag);
-        }
-        if !inputTy.isGeneric() && !output.isGeneric() && inputTy != *output {
-            if self.program.instanceResolver.isImplicitConvert(&inputTy, &output) {
-                inputTy = output.clone();
-                //println!("IMPLICIT CONVERT FOR {} {} {}", input, inputTy, output);
-                let tag = self.addImplicitConvertMarker(input, ImplicitConvertInfo::Simple(output.clone()));
-                builder.addTag(tag);
-            }
-        }
-        inputTy
     }
 
     fn checkFunctionCall(
@@ -337,24 +371,42 @@ impl<'a> Typechecker<'a> {
             fnResult = fnResult.changeSelfType(fnArgs[0].clone());
         }
         for (arg, fnArg) in zip(args, fnArgs) {
-            let fnArg = fnArg.apply(&self.substitution);
-            let mut argTy = self.handleImplicits(arg, &fnArg, builder);
-            //println!("ARG {} {} {}", arg, argTy, fnArg);
-            if !argTy.isReference() && fnArg.isReference() {
-                let targetTy = fnArg.unpackRef().clone();
-                if targetTy != argTy && self.program.instanceResolver.isImplicitConvert(&argTy, &targetTy) {
-                    //println!("IMPLICIT CONVERT REF FOR {} {} {}", arg, argTy, targetTy);
-                    argTy = Type::Reference(Box::new(targetTy.clone()), None);
-                    let tag = self.addImplicitConvertMarker(arg, ImplicitConvertInfo::Ref(targetTy));
-                    builder.addTag(tag);
-                } else {
-                    argTy = Type::Reference(Box::new(argTy), None);
-                    //println!("IMPLICIT REF FOR {}", arg);
-                    let tag = self.addImplicitRefMarker(arg);
-                    builder.addTag(tag);
-                }
-            }
-            self.unify(argTy, fnArg, arg.location.clone());
+            let argTy = self.getType(arg).apply(&self.substitution);
+            let fnArg2 = fnArg.apply(&self.substitution);
+            // let mut argTy = self.handleImplicits(arg, &fnArg, builder);
+            // //println!("ARG {} {} {}", arg, argTy, fnArg);
+            // if !argTy.isReference() && fnArg.isReference() {
+            //     let targetTy = fnArg.unpackRef().clone();
+            //     if targetTy != argTy && self.program.instanceResolver.isImplicitConvert(&argTy, &targetTy) {
+            //         //println!("IMPLICIT CONVERT REF FOR {} {} {}", arg, argTy, targetTy);
+            //         argTy = Type::Reference(Box::new(targetTy.clone()), None);
+            //         let tag = self.addImplicitConvertMarker(arg, ImplicitConvertInfo::Ref(targetTy));
+            //         builder.addTag(tag);
+            //     } else {
+            //         argTy = Type::Reference(Box::new(argTy), None);
+            //         //println!("IMPLICIT REF FOR {}", arg);
+            //         let tag = self.addImplicitRefMarker(arg);
+            //         builder.addTag(tag);
+            //     }
+            // }
+            //self.unify(argTy, fnArg, arg.location.clone());
+            self.updateConverterDestination(arg, &fnArg2);
+            // if !self.tryUnify(argTy.clone(), fnArg2.clone()) {
+            //     println!("ARG {} {} {}", arg, argTy, fnArg2);
+            //     match (argTy, fnArg2) {
+            //         (ty1, Type::Reference(ty2, _)) => {
+            //             self.tryUnify(ty1, *ty2.clone());
+            //         }
+            //         (Type::Reference(ty1, _), ty2) => {
+            //             self.tryUnify(*ty1.clone(), ty2);
+            //         }
+            //         (ty1, ty2) => {
+            //             self.tryUnify(ty1, ty2);
+            //         }
+            //     }
+            //     let fnArg = fnArg.apply(&self.substitution);
+            //     self.types.insert(arg.value.to_string(), fnArg);
+            // }
         }
         let constraints = constraintContext.apply(&self.substitution);
         self.checkConstraint(&constraints, resultVar.location.clone());
@@ -575,6 +627,10 @@ impl<'a> Typechecker<'a> {
                 let fnType = targetFn.getType();
                 self.checkFunctionCall(args, dest, fnType, &targetFn.constraintContext, builder);
             }
+            InstructionKind::Converter(dest, source) => {
+                self.converterVars.insert(dest.clone(), source.clone());
+                self.unify(self.getType(dest), self.getType(source), instruction.location.clone());
+            }
             InstructionKind::MethodCall(dest, receiver, methodName, args) => {
                 let receiverType = self.getType(receiver);
                 let receiverType = receiverType.apply(&self.substitution);
@@ -588,7 +644,10 @@ impl<'a> Typechecker<'a> {
                 );
                 let targetFn = self.program.functions.get(&name).expect("Function not found");
                 let mut fnType = targetFn.getType();
-
+                let receiver = match self.converterVars.get(receiver) {
+                    Some(var) => var.clone(),
+                    None => receiver.clone(),
+                };
                 let mutableCall =
                     self.mutables.contains(&receiver.value.to_string()) && fnType.getResult().hasSelfType();
                 if mutableCall {
@@ -652,8 +711,7 @@ impl<'a> Typechecker<'a> {
                 if let Some(selfType) = self.selfType.clone() {
                     result = result.changeSelfType(selfType);
                 }
-                let argTy = self.handleImplicits(arg, &result, builder);
-                self.unify(result, argTy, instruction.location.clone());
+                self.updateConverterDestination(arg, &result);
             }
             InstructionKind::Ref(dest, arg) => {
                 let arg_type = self.getType(arg);
@@ -841,6 +899,7 @@ impl<'a> Typechecker<'a> {
                         let mut varSwap = VariableSubstitution::new();
                         for var in vars {
                             if let Some(info) = self.mutableMethodCalls.get(&var) {
+                                //println!("Transforming mutable method call {}", var);
                                 let mut implicitResult = self
                                     .bodyBuilder
                                     .createTempValue(VariableName::ImplicitResult, var.location.clone());
@@ -1147,7 +1206,7 @@ impl<'a> Typechecker<'a> {
                                 match info {
                                     ImplicitConvertInfo::Simple(targetTy) => {
                                         let mut dest = var.clone();
-                                        dest.value = VariableName::ImplicitConvert(tag.getId());
+                                        dest.value = VariableName::Tmp(tag.getId());
                                         self.types.insert(dest.value.to_string(), targetTy.clone());
                                         let kind = InstructionKind::FunctionCall(
                                             dest.clone(),
@@ -1160,7 +1219,7 @@ impl<'a> Typechecker<'a> {
                                     }
                                     ImplicitConvertInfo::Ref(targetTy) => {
                                         let mut implicitConvertDest = var.clone();
-                                        implicitConvertDest.value = VariableName::ImplicitConvert(tag.getId());
+                                        implicitConvertDest.value = VariableName::Tmp(tag.getId());
                                         self.types
                                             .insert(implicitConvertDest.value.to_string(), targetTy.clone());
 
@@ -1227,17 +1286,127 @@ impl<'a> Typechecker<'a> {
         }
     }
 
+    fn processConverters(&mut self) {
+        // println!("processConverters {}", self.f.name);
+        let allblocksIds = self.bodyBuilder.getAllBlockIds();
+        for blockId in allblocksIds {
+            let mut builder = self.bodyBuilder.iterator(blockId);
+            loop {
+                match builder.getInstruction() {
+                    Some(instruction) => {
+                        if let InstructionKind::Converter(dest, source) = &instruction.kind {
+                            let destTy = self.getType(dest).apply(&self.substitution);
+                            let sourceTy = self.getType(source).apply(&self.substitution);
+                            //println!("Processing converter {} : {} -> {}", instruction, sourceTy, destTy);
+                            match (&destTy, &sourceTy) {
+                                (Type::Reference(inner, _), Type::Reference(src, _)) => {
+                                    self.unify(*inner.clone(), *src.clone(), instruction.location.clone());
+                                    let kind = InstructionKind::ValueRef(dest.clone(), source.clone());
+                                    builder.replaceInstruction(kind, instruction.location.clone());
+                                }
+                                (destTy, Type::Reference(sourceInner, _)) => {
+                                    self.unify(destTy.clone(), *sourceInner.clone(), instruction.location.clone());
+                                    let kind = if destTy.isPtr() {
+                                        InstructionKind::FunctionCall(
+                                            dest.clone(),
+                                            getNativePtrCloneName(),
+                                            vec![source.clone()],
+                                        )
+                                    } else {
+                                        if self.program.instanceResolver.isCopy(destTy) {
+                                            InstructionKind::FunctionCall(
+                                                dest.clone(),
+                                                getCloneFnName(),
+                                                vec![source.clone()],
+                                            )
+                                        } else {
+                                            TypecheckerError::TypeMismatch(
+                                                sourceTy.to_string(),
+                                                destTy.to_string(),
+                                                instruction.location.clone(),
+                                            )
+                                            .report(self.ctx);
+                                        }
+                                    };
+                                    builder.replaceInstruction(kind, instruction.location.clone());
+                                }
+                                (Type::Reference(inner, _), src) => {
+                                    let mut refSource = source.clone();
+                                    if !self.tryUnify(*inner.clone(), src.clone()) {
+                                        // check implicit conversion is implemented for these types
+                                        if !self.program.instanceResolver.isImplicitConvert(&src, &inner) {
+                                            TypecheckerError::TypeMismatch(
+                                                destTy.to_string(),
+                                                sourceTy.to_string(),
+                                                instruction.location.clone(),
+                                            )
+                                            .report(self.ctx);
+                                        } else {
+                                            let mut newVar = self.bodyBuilder.createTempValue(
+                                                VariableName::ImplicitConvert,
+                                                instruction.location.clone(),
+                                            );
+                                            newVar.ty = Some(*inner.clone());
+                                            self.types.insert(newVar.value.to_string(), *inner.clone());
+                                            let kind = InstructionKind::FunctionCall(
+                                                newVar.clone(),
+                                                getImplicitConvertFnName(),
+                                                vec![source.clone()],
+                                            );
+                                            builder.addInstruction(kind, instruction.location.clone());
+                                            builder.step();
+                                            refSource = newVar;
+                                        }
+                                    }
+                                    let kind = InstructionKind::Ref(dest.clone(), refSource.clone());
+                                    builder.replaceInstruction(kind, instruction.location.clone());
+                                }
+                                (t1, t2) => {
+                                    if !self.tryUnify(t1.clone(), t2.clone()) {
+                                        if !self.program.instanceResolver.isImplicitConvert(&t2, &t1) {
+                                            TypecheckerError::TypeMismatch(
+                                                destTy.to_string(),
+                                                sourceTy.to_string(),
+                                                instruction.location.clone(),
+                                            )
+                                            .report(self.ctx);
+                                        } else {
+                                            let kind = InstructionKind::FunctionCall(
+                                                dest.clone(),
+                                                getImplicitConvertFnName(),
+                                                vec![source.clone()],
+                                            );
+                                            builder.replaceInstruction(kind, instruction.location.clone());
+                                        }
+                                    } else {
+                                        let kind = InstructionKind::ValueRef(dest.clone(), source.clone());
+                                        builder.replaceInstruction(kind, instruction.location.clone());
+                                    }
+                                }
+                            }
+                        }
+                        builder.step();
+                    }
+                    None => {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     pub fn generate(&mut self) -> Function {
         //println!("Generating {}", self.f.name);
         if self.f.body.is_none() {
             return self.f.clone();
         }
 
-        self.addImplicitRefs();
-        self.addImplicitClones();
+        self.processConverters();
+        // self.addImplicitRefs();
+        // self.addImplicitClones();
         self.addImplicitDerefs();
         self.addFieldTypes();
-        self.addImplicitConverts();
+        //self.addImplicitConverts();
         self.transformMutableMethodCalls();
 
         let mut result = self.f.clone();

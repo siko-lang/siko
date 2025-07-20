@@ -168,9 +168,19 @@ impl BlockBuilder {
         args: Vec<Variable>,
         location: Location,
     ) -> Variable {
+        // for each arg create a temp value and a converter instruction
+        let mut tempArgs = Vec::new();
+        for arg in &args {
+            let tempValue = self.bodyBuilder.createTempValue(VariableName::Tmp, location.clone());
+            self.addInstruction(
+                InstructionKind::Converter(tempValue.clone(), arg.clone()),
+                location.clone(),
+            );
+            tempArgs.push(tempValue);
+        }
         let result = self.bodyBuilder.createTempValue(VariableName::Call, location.clone());
         self.addInstruction(
-            InstructionKind::FunctionCall(result.clone(), functionName, args),
+            InstructionKind::FunctionCall(result.clone(), functionName, tempArgs),
             location,
         );
         result
@@ -200,8 +210,23 @@ impl BlockBuilder {
         location: Location,
     ) -> Variable {
         let result = self.bodyBuilder.createTempValue(VariableName::Call, location.clone());
+        // for each arg and the receiver create a temp value and a converter instruction
+        let receiverTemp = self.bodyBuilder.createTempValue(VariableName::Tmp, location.clone());
         self.addInstruction(
-            InstructionKind::MethodCall(result.clone(), receiver, name, args),
+            InstructionKind::Converter(receiverTemp.clone(), receiver.clone()),
+            location.clone(),
+        );
+        let mut tempArgs = Vec::new();
+        for arg in &args {
+            let tempValue = self.bodyBuilder.createTempValue(VariableName::Tmp, location.clone());
+            self.addInstruction(
+                InstructionKind::Converter(tempValue.clone(), arg.clone()),
+                location.clone(),
+            );
+            tempArgs.push(tempValue);
+        }
+        self.addInstruction(
+            InstructionKind::MethodCall(result.clone(), receiverTemp, name, tempArgs),
             location,
         );
         result
@@ -320,6 +345,10 @@ impl BlockBuilder {
 
     pub fn addBind(&mut self, name: Variable, rhs: Variable, mutable: bool, location: Location) {
         self.addInstruction(InstructionKind::Bind(name, rhs, mutable), location.clone());
+    }
+
+    pub fn addConverter(&mut self, lhs: Variable, rhs: Variable, location: Location) {
+        self.addInstruction(InstructionKind::Converter(lhs, rhs), location.clone());
     }
 
     pub fn addFieldAssign(&mut self, receiver: Variable, rhs: Variable, fields: Vec<FieldInfo>, location: Location) {

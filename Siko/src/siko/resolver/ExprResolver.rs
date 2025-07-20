@@ -470,7 +470,14 @@ impl<'a> ExprResolver<'a> {
                     Some(arg) => self.resolveExpr(arg, env),
                     None => self.bodyBuilder.current().addUnit(expr.location.clone()),
                 };
-                self.bodyBuilder.current().addReturn(argId, expr.location.clone())
+                let tempValue = self
+                    .bodyBuilder
+                    .createTempValue(VariableName::Tmp, expr.location.clone());
+                self.bodyBuilder.current().addInstruction(
+                    InstructionKind::Converter(tempValue.clone(), argId.clone()),
+                    expr.location.clone(),
+                );
+                self.bodyBuilder.current().addReturn(tempValue, expr.location.clone())
             }
             SimpleExpr::Break(arg) => {
                 let argId = match arg {
@@ -620,7 +627,13 @@ impl<'a> ExprResolver<'a> {
             .current()
             .implicit()
             .addInstruction(InstructionKind::BlockEnd(blockInfo.clone()), body.location.clone());
-        let result = self.indexVar(functionResult);
+        let result = self
+            .bodyBuilder
+            .createTempValue(VariableName::Tmp, body.location.clone());
+        self.bodyBuilder.current().implicit().addInstruction(
+            InstructionKind::Converter(result.clone(), functionResult),
+            body.location.clone(),
+        );
         self.bodyBuilder
             .current()
             .implicit()

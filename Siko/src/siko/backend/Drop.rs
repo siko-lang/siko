@@ -718,6 +718,9 @@ impl<'a> DropChecker<'a> {
                         }
                         self.declareValue(dest, &mut context);
                     }
+                    InstructionKind::Converter(dest, source) => {
+                        unreachable!("converter in Drop checker");
+                    }
                     InstructionKind::MethodCall(_, _, _, _) => unreachable!("method call in Drop checker"),
                     InstructionKind::DynamicFunctionCall(_, _, _) => {}
                     InstructionKind::ValueRef(dest, src) => {

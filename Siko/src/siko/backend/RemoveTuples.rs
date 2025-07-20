@@ -129,6 +129,9 @@ impl RemoveTuples for InstructionKind {
                 getTuple(&dest.getType()),
                 args.removeTuples(ctx),
             ),
+            InstructionKind::Converter(dest, source) => {
+                InstructionKind::Converter(dest.removeTuples(ctx), source.removeTuples(ctx))
+            }
             InstructionKind::Transform(dest, root, index) => {
                 InstructionKind::Transform(dest.removeTuples(ctx), root.removeTuples(ctx), *index)
             }

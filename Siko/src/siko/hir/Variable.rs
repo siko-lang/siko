@@ -7,6 +7,7 @@ use super::Type::Type;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum VariableName {
+    ImplicitConvert(u32),
     Transform(u32),
     MatchVar(u32),
     MatchValue(u32),
@@ -16,7 +17,7 @@ pub enum VariableName {
     BlockValue(u32),
     ImplicitRef(u32),
     ImplicitClone(u32),
-    ImplicitConvert(u32),
+    Tmp(u32),
     ImplicitResult(u32),
     ImplicitSelf(u32),
     ImplicitDeref(u32),
@@ -41,6 +42,7 @@ pub enum VariableName {
 impl VariableName {
     pub fn visibleName(&self) -> String {
         match self {
+            VariableName::ImplicitConvert(i) => format!("convert{}", i),
             VariableName::Transform(i) => format!("transform{}", i),
             VariableName::MatchVar(i) => format!("matchVar{}", i),
             VariableName::MatchValue(i) => format!("matchValue{}", i),
@@ -50,7 +52,7 @@ impl VariableName {
             VariableName::BlockValue(i) => format!("blockValue{}", i),
             VariableName::ImplicitRef(i) => format!("implicitRef{}", i),
             VariableName::ImplicitClone(i) => format!("implicitClone{}", i),
-            VariableName::ImplicitConvert(i) => format!("implicitConvert{}", i),
+            VariableName::Tmp(i) => format!("tmp{}", i),
             VariableName::ImplicitResult(i) => format!("implicitResult{}", i),
             VariableName::ImplicitSelf(i) => format!("implicitSelf{}", i),
             VariableName::ImplicitDeref(i) => format!("implicitDeref{}", i),
@@ -77,6 +79,7 @@ impl VariableName {
 impl Display for VariableName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            VariableName::ImplicitConvert(i) => write!(f, "convert{}", i),
             VariableName::Transform(i) => write!(f, "transform{}", i),
             VariableName::MatchVar(i) => write!(f, "matchVar{}", i),
             VariableName::MatchValue(i) => write!(f, "matchValue{}", i),
@@ -86,7 +89,7 @@ impl Display for VariableName {
             VariableName::BlockValue(i) => write!(f, "blockValue{}", i),
             VariableName::ImplicitRef(i) => write!(f, "implicitRef{}", i),
             VariableName::ImplicitClone(i) => write!(f, "implicitClone{}", i),
-            VariableName::ImplicitConvert(i) => write!(f, "implicitConvert{}", i),
+            VariableName::Tmp(i) => write!(f, "tmp{}", i),
             VariableName::ImplicitResult(i) => write!(f, "implicitResult{}", i),
             VariableName::ImplicitSelf(i) => write!(f, "implicitSelf{}", i),
             VariableName::ImplicitDeref(i) => write!(f, "implicitDeref{}", i),
@@ -113,6 +116,7 @@ impl Display for VariableName {
 impl Debug for VariableName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            VariableName::ImplicitConvert(i) => write!(f, "convert{}", i),
             VariableName::Transform(i) => write!(f, "transform{}", i),
             VariableName::MatchVar(i) => write!(f, "matchVar{}", i),
             VariableName::MatchValue(i) => write!(f, "matchValue{}", i),
@@ -122,7 +126,7 @@ impl Debug for VariableName {
             VariableName::BlockValue(i) => write!(f, "blockValue{}", i),
             VariableName::ImplicitRef(i) => write!(f, "implicitRef{}", i),
             VariableName::ImplicitClone(i) => write!(f, "implicitClone{}", i),
-            VariableName::ImplicitConvert(i) => write!(f, "implicitConvert{}", i),
+            VariableName::Tmp(i) => write!(f, "tmp{}", i),
             VariableName::ImplicitResult(i) => write!(f, "implicitResult{}", i),
             VariableName::ImplicitSelf(i) => write!(f, "implicitSelf{}", i),
             VariableName::ImplicitDeref(i) => write!(f, "implicitDeref{}", i),

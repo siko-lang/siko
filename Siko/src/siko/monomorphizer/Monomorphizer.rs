@@ -136,7 +136,11 @@ impl Monomorphize for Instruction {
                             if traitName == getDropName() {
                                 return getDropFnName();
                             } else {
-                                panic!("instance not found in mono for {}!", traitName);
+                                panic!(
+                                    "instance not found in mono for {} {}!",
+                                    traitName,
+                                    formatTypes(&traitDef.params)
+                                );
                             }
                         }
                     }
@@ -233,6 +237,9 @@ impl Monomorphize for InstructionKind {
         match self {
             InstructionKind::FunctionCall(dest, name, args) => {
                 InstructionKind::FunctionCall(dest.process(sub, mono), name.clone(), args.process(sub, mono))
+            }
+            InstructionKind::Converter(dest, source) => {
+                InstructionKind::Converter(dest.process(sub, mono), source.process(sub, mono))
             }
             InstructionKind::MethodCall(_, _, _, _) => {
                 unreachable!("method in mono??")

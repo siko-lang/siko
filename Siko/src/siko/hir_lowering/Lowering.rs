@@ -99,7 +99,7 @@ impl<'a> Builder<'a> {
                 HirInstructionKind::ValueRef(dest, name) => {
                     let dest = self.buildVariable(dest);
                     let var = MirVariable {
-                        name: name.value.to_string(),
+                        name: convertName(&name.value),
                         ty: dest.ty.clone(),
                     };
                     block.instructions.push(Instruction::Declare(dest.clone()));

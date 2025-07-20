@@ -103,6 +103,7 @@ impl std::fmt::Debug for StringCase {
 #[derive(Clone, PartialEq)]
 pub enum InstructionKind {
     FunctionCall(Variable, QualifiedName, Vec<Variable>),
+    Converter(Variable, Variable),
     MethodCall(Variable, Variable, String, Vec<Variable>),
     DynamicFunctionCall(Variable, Variable, Vec<Variable>),
     ValueRef(Variable, Variable),
@@ -144,6 +145,7 @@ impl InstructionKind {
     pub fn getResultVar(&self) -> Option<Variable> {
         match self {
             InstructionKind::FunctionCall(v, _, _) => Some(v.clone()),
+            InstructionKind::Converter(v, _) => Some(v.clone()),
             InstructionKind::MethodCall(v, _, _, _) => Some(v.clone()),
             InstructionKind::DynamicFunctionCall(v, _, _) => Some(v.clone()),
             InstructionKind::ValueRef(v, _) => Some(v.clone()),
@@ -177,6 +179,7 @@ impl InstructionKind {
                 vars.extend(args.clone());
                 vars
             }
+            InstructionKind::Converter(var, target) => vec![var.clone(), target.clone()],
             InstructionKind::MethodCall(var, obj, _, args) => {
                 let mut vars = vec![var.clone(), obj.clone()];
                 vars.extend(args.clone());
@@ -224,6 +227,7 @@ impl InstructionKind {
     pub fn dump(&self) -> String {
         match self {
             InstructionKind::FunctionCall(dest, name, args) => format!("{} = call({}({:?}))", dest, name, args),
+            InstructionKind::Converter(dest, source) => format!("{} = convert({})", dest, source),
             InstructionKind::MethodCall(dest, receiver, name, args) => {
                 format!("{} = methodcall({}.{}({:?}))", dest, receiver, name, args)
             }
@@ -235,9 +239,9 @@ impl InstructionKind {
             InstructionKind::TupleIndex(dest, v, idx) => format!("{} = {}.t{}", dest, v, idx),
             InstructionKind::Bind(v, rhs, mutable) => {
                 if *mutable {
-                    format!("mut ${} = {}", v, rhs)
+                    format!("mut {} = {}", v, rhs)
                 } else {
-                    format!("${} = {}", v, rhs)
+                    format!("{} = {}", v, rhs)
                 }
             }
             InstructionKind::Tuple(dest, args) => format!("{} = tuple({:?})", dest, args),
