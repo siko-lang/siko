@@ -458,7 +458,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
             .bodyBuilder
             .createTempValue(VariableName::MatchValue, self.bodyLocation.clone());
         if returns {
-            let v = self.resolver.indexVar(self.matchValue.clone());
+            let v = self.matchValue.clone();
             let mut builder = self.resolver.bodyBuilder.block(self.contBlockId);
             builder.current();
             builder
@@ -586,11 +586,9 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                                     let value = builder
                                         .implicit()
                                         .addStringLiteral(v.clone(), self.bodyLocation.clone());
-                                    let root = self.resolver.indexVar(root.clone());
-                                    let value = self.resolver.indexVar(value);
                                     let eqValue = builder.addFunctionCall(
                                         getStringEqName(),
-                                        vec![root, value],
+                                        vec![root.clone(), value],
                                         self.bodyLocation.clone(),
                                     );
                                     let mut cases = Vec::new();

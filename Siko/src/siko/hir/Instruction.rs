@@ -172,6 +172,118 @@ impl InstructionKind {
         }
     }
 
+    pub fn replaceVar(&self, from: Variable, to: Variable) -> InstructionKind {
+        match self {
+            InstructionKind::FunctionCall(var, name, args) => {
+                let new_var = var.replace(&from, to.clone());
+                let new_args = args.iter().map(|arg| arg.replace(&from, to.clone())).collect();
+                InstructionKind::FunctionCall(new_var, name.clone(), new_args)
+            }
+            InstructionKind::Converter(var, source) => {
+                let new_var = var.replace(&from, to.clone());
+                let new_source = source.replace(&from, to);
+                InstructionKind::Converter(new_var, new_source)
+            }
+            InstructionKind::MethodCall(var, obj, name, args) => {
+                let new_var = var.replace(&from, to.clone());
+                let new_obj = obj.replace(&from, to.clone());
+                let new_args = args.iter().map(|arg| arg.replace(&from, to.clone())).collect();
+                InstructionKind::MethodCall(new_var, new_obj, name.clone(), new_args)
+            }
+            InstructionKind::DynamicFunctionCall(var, func, args) => {
+                let new_var = var.replace(&from, to.clone());
+                let new_func = func.replace(&from, to.clone());
+                let new_args = args.iter().map(|arg| arg.replace(&from, to.clone())).collect();
+                InstructionKind::DynamicFunctionCall(new_var, new_func, new_args)
+            }
+            InstructionKind::ValueRef(var, target) => {
+                let new_var = var.replace(&from, to.clone());
+                let new_target = target.replace(&from, to);
+                InstructionKind::ValueRef(new_var, new_target)
+            }
+            InstructionKind::FieldRef(var, target, name) => {
+                let new_var = var.replace(&from, to.clone());
+                let new_target = target.replace(&from, to);
+                InstructionKind::FieldRef(new_var, new_target, name.clone())
+            }
+            InstructionKind::TupleIndex(var, target, idx) => {
+                let new_var = var.replace(&from, to.clone());
+                let new_target = target.replace(&from, to);
+                InstructionKind::TupleIndex(new_var, new_target, *idx)
+            }
+            InstructionKind::Bind(var, value, mutable) => {
+                let new_var = var.replace(&from, to.clone());
+                let new_value = value.replace(&from, to);
+                InstructionKind::Bind(new_var, new_value, *mutable)
+            }
+            InstructionKind::Tuple(var, elements) => {
+                let new_var = var.replace(&from, to.clone());
+                let new_elements = elements.iter().map(|elem| elem.replace(&from, to.clone())).collect();
+                InstructionKind::Tuple(new_var, new_elements)
+            }
+            InstructionKind::StringLiteral(var, value) => {
+                let new_var = var.replace(&from, to.clone());
+                InstructionKind::StringLiteral(new_var, value.clone())
+            }
+            InstructionKind::IntegerLiteral(var, value) => {
+                let new_var = var.replace(&from, to.clone());
+                InstructionKind::IntegerLiteral(new_var, value.clone())
+            }
+            InstructionKind::CharLiteral(var, value) => {
+                let new_var = var.replace(&from, to.clone());
+                InstructionKind::CharLiteral(new_var, *value)
+            }
+            InstructionKind::Return(var, value) => {
+                let new_var = var.replace(&from, to.clone());
+                let new_value = value.replace(&from, to);
+                InstructionKind::Return(new_var, new_value)
+            }
+            InstructionKind::Ref(var, target) => {
+                let new_var = var.replace(&from, to.clone());
+                let new_target = target.replace(&from, to);
+                InstructionKind::Ref(new_var, new_target)
+            }
+            InstructionKind::Drop(_, _) => self.clone(),
+            InstructionKind::Jump(var, id, direction) => {
+                let new_var = var.replace(&from, to.clone());
+                InstructionKind::Jump(new_var, id.clone(), direction.clone())
+            }
+            InstructionKind::Assign(var, arg) => {
+                let new_var = var.replace(&from, to.clone());
+                let new_arg = arg.replace(&from, to);
+                InstructionKind::Assign(new_var, new_arg)
+            }
+            InstructionKind::FieldAssign(var, arg, fields) => {
+                let new_var = var.replace(&from, to.clone());
+                let new_arg = arg.replace(&from, to);
+                InstructionKind::FieldAssign(new_var, new_arg, fields.clone())
+            }
+            InstructionKind::DeclareVar(var) => {
+                let new_var = var.replace(&from, to);
+                InstructionKind::DeclareVar(new_var)
+            }
+            InstructionKind::Transform(var, arg, index) => {
+                let new_var = var.replace(&from, to.clone());
+                let new_arg = arg.replace(&from, to);
+                InstructionKind::Transform(new_var, new_arg, *index)
+            }
+            InstructionKind::EnumSwitch(root, cases) => {
+                let new_root = root.replace(&from, to);
+                InstructionKind::EnumSwitch(new_root, cases.clone())
+            }
+            InstructionKind::IntegerSwitch(root, cases) => {
+                let new_root = root.replace(&from, to);
+                InstructionKind::IntegerSwitch(new_root, cases.clone())
+            }
+            InstructionKind::StringSwitch(root, cases) => {
+                let new_root = root.replace(&from, to);
+                InstructionKind::StringSwitch(new_root, cases.clone())
+            }
+            InstructionKind::BlockStart(info) => InstructionKind::BlockStart(info.clone()),
+            InstructionKind::BlockEnd(info) => InstructionKind::BlockEnd(info.clone()),
+        }
+    }
+
     pub fn collectVariables(&self) -> Vec<Variable> {
         match self {
             InstructionKind::FunctionCall(var, _, args) => {

@@ -155,7 +155,6 @@ pub struct Variable {
     pub value: VariableName,
     pub location: Location,
     pub ty: Option<Type>,
-    pub index: u32,
 }
 
 impl Variable {
@@ -165,14 +164,22 @@ impl Variable {
             None => panic!("No type found for var {}", self.value),
         }
     }
+
+    pub fn replace(&self, from: &Variable, to: Variable) -> Variable {
+        if self == from {
+            to
+        } else {
+            self.clone()
+        }
+    }
 }
 
 impl Display for Variable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(ty) = &self.ty {
-            write!(f, "${}/{}: {}", self.value, self.index, ty)
+            write!(f, "${}: {}", self.value, ty)
         } else {
-            write!(f, "${}/{}", self.value, self.index)
+            write!(f, "${}", self.value)
         }
     }
 }

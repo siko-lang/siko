@@ -78,7 +78,6 @@ impl<'a> FunctionResolver<'a> {
                         value: VariableName::Arg(id.toString()),
                         location: id.location.clone(),
                         ty: Some(typeResolver.resolveType(ty)),
-                        index: 0,
                     };
                     env.addArg(var, *mutable);
                     IrParameter::Named(id.toString(), typeResolver.resolveType(ty), *mutable)
@@ -89,7 +88,6 @@ impl<'a> FunctionResolver<'a> {
                             value: VariableName::Arg(format!("self")),
                             location: f.name.location.clone(),
                             ty: Some(owner.clone()),
-                            index: 0,
                         };
                         env.addArg(var, false);
                         IrParameter::SelfParam(false, owner.clone())
@@ -102,7 +100,6 @@ impl<'a> FunctionResolver<'a> {
                             value: VariableName::Arg(format!("self")),
                             location: f.name.location.clone(),
                             ty: Some(owner.clone()),
-                            index: 0,
                         };
                         env.addArg(var, true);
                         IrParameter::SelfParam(true, owner.clone())
@@ -115,7 +112,6 @@ impl<'a> FunctionResolver<'a> {
                             value: VariableName::Arg(format!("self")),
                             location: f.name.location.clone(),
                             ty: Some(IrType::Reference(Box::new(owner.clone()), None)),
-                            index: 0,
                         };
                         env.addArg(var, false);
                         IrParameter::SelfParam(false, IrType::Reference(Box::new(owner.clone()), None))

@@ -914,7 +914,6 @@ impl<'a> Typechecker<'a> {
                                 let receiverTy = self.getType(&info.receiver);
                                 match tupleTypes.len() {
                                     0 => {
-                                        implicitResult.index += 1;
                                         let assign =
                                             InstructionKind::Assign(info.receiver.clone(), implicitResult.clone());
                                         kinds.push(assign);
@@ -926,7 +925,6 @@ impl<'a> Typechecker<'a> {
                                             .bodyBuilder
                                             .createTempValue(VariableName::ImplicitSelf, var.location.clone());
                                         implicitSelf.ty = info.receiver.ty.clone();
-                                        implicitResult.index += 1;
                                         self.types.insert(implicitSelf.value.to_string(), receiverTy.clone());
                                         let implicitSelfIndex = InstructionKind::TupleIndex(
                                             implicitSelf.clone(),
@@ -934,7 +932,6 @@ impl<'a> Typechecker<'a> {
                                             0,
                                         );
                                         kinds.push(implicitSelfIndex);
-                                        implicitSelf.index += 1;
                                         let assign =
                                             InstructionKind::Assign(info.receiver.clone(), implicitSelf.clone());
                                         kinds.push(assign);
@@ -943,11 +940,9 @@ impl<'a> Typechecker<'a> {
                                             .createTempValue(VariableName::ImplicitResult, var.location.clone());
                                         resVar.ty = var.ty.clone();
                                         self.types.insert(resVar.value.to_string(), tupleTypes[0].clone());
-                                        implicitResult.index += 1;
                                         let resIndex =
                                             InstructionKind::TupleIndex(resVar.clone(), implicitResult.clone(), 1);
                                         kinds.push(resIndex);
-                                        resVar.index += 1;
                                         let assign = InstructionKind::Assign(var.clone(), resVar.clone());
                                         kinds.push(assign);
                                     }
@@ -956,7 +951,6 @@ impl<'a> Typechecker<'a> {
                                             .bodyBuilder
                                             .createTempValue(VariableName::ImplicitSelf, var.location.clone());
                                         implicitSelf.ty = info.receiver.ty.clone();
-                                        implicitResult.index += 1;
                                         let implicitSelfIndex = InstructionKind::TupleIndex(
                                             implicitSelf.clone(),
                                             implicitResult.clone(),
@@ -964,7 +958,6 @@ impl<'a> Typechecker<'a> {
                                         );
                                         self.types.insert(implicitSelf.value.to_string(), receiverTy.clone());
                                         kinds.push(implicitSelfIndex);
-                                        implicitSelf.index += 1;
                                         let assign =
                                             InstructionKind::Assign(info.receiver.clone(), implicitSelf.clone());
                                         kinds.push(assign);
@@ -976,7 +969,6 @@ impl<'a> Typechecker<'a> {
                                             resVar.ty = var.ty.clone();
                                             args.push(resVar.clone());
                                             self.types.insert(resVar.value.to_string(), argType.clone());
-                                            implicitResult.index += 1;
                                             let tupleIndexN = InstructionKind::TupleIndex(
                                                 resVar.clone(),
                                                 implicitResult.clone(),

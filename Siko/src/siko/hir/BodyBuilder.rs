@@ -123,7 +123,6 @@ impl Builder {
             value: VariableName::Local(name.to_string(), valueId),
             location: location,
             ty: None,
-            index: 0,
         }
     }
 
@@ -133,7 +132,6 @@ impl Builder {
             value: name(valueId),
             location: location,
             ty: None,
-            index: 0,
         }
     }
 }

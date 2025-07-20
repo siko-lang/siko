@@ -1,3 +1,4 @@
+use core::panic;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Display,
@@ -443,42 +444,88 @@ impl<'a> DropChecker<'a> {
     }
 
     fn addImplicitClone(&mut self) {
+        // println!(
+        //     "Adding implicit clones for {} {:?}",
+        //     self.function.name, self.implicitClones
+        // );
         let allblocksIds = self.bodyBuilder.getAllBlockIds();
         for block in allblocksIds {
             let mut builder = self.bodyBuilder.iterator(block);
             loop {
                 if let Some(mut instruction) = builder.getInstruction() {
-                    let vars = instruction.kind.collectVariables();
-                    let mut kinds = Vec::new();
-                    for var in vars {
-                        if self.implicitClones.contains(&var) {
-                            let mut implicitRefDest = self
-                                .bodyBuilder
-                                .createTempValue(VariableName::DropImplicitCloneRef, instruction.location.clone());
-                            let ty = Type::Reference(Box::new(var.getType().clone()), None);
-                            implicitRefDest.ty = Some(ty);
-                            let implicitRefKind = InstructionKind::Ref(implicitRefDest.clone(), var.clone());
-
-                            let mut implicitCloneDest = self
-                                .bodyBuilder
-                                .createTempValue(VariableName::DropImplicitClone, instruction.location.clone());
-                            implicitCloneDest.ty = var.ty.clone();
-                            let mut varSwap = VariableSubstitution::new();
-                            varSwap.add(var.clone(), implicitCloneDest.clone());
-                            let implicitCloneKind = InstructionKind::FunctionCall(
-                                implicitCloneDest.clone(),
-                                getCloneFnName(),
-                                vec![implicitRefDest],
-                            );
-                            instruction.kind = instruction.kind.applyVar(&varSwap);
-                            kinds.push(implicitCloneKind);
-                            kinds.push(implicitRefKind);
-                            self.implicitClones.remove(&var);
+                    if let Some(resultVar) = instruction.kind.getResultVar() {
+                        let mut variables = instruction.kind.collectVariables();
+                        variables.retain(|v| v.value != resultVar.value);
+                        let mut implicitClones = Vec::new();
+                        for v in &variables {
+                            if self.implicitClones.contains(v) {
+                                implicitClones.push(v.clone());
+                            }
                         }
-                    }
-                    builder.replaceInstruction(instruction.kind, instruction.location.clone());
-                    for k in kinds {
-                        builder.addInstruction(k, instruction.location.clone());
+                        if !implicitClones.is_empty() {
+                            match instruction.kind {
+                                InstructionKind::FieldRef(dest, receiver, name) => {
+                                    assert_eq!(implicitClones.len(), 1);
+                                    //println!("Adding implicit clone for {}", dest);
+                                    let mut implicitRefDest = self.bodyBuilder.createTempValue(
+                                        VariableName::DropImplicitCloneRef,
+                                        instruction.location.clone(),
+                                    );
+                                    let ty = Type::Reference(Box::new(receiver.getType().clone()), None);
+                                    implicitRefDest.ty = Some(ty);
+                                    let mut implicitFieldRefDest = self.bodyBuilder.createTempValue(
+                                        VariableName::DropImplicitCloneRef,
+                                        instruction.location.clone(),
+                                    );
+                                    implicitFieldRefDest.ty =
+                                        Some(Type::Reference(Box::new(dest.getType().clone()), None));
+                                    let implicitRefKind =
+                                        InstructionKind::Ref(implicitRefDest.clone(), receiver.clone());
+                                    let implicitCloneKind = InstructionKind::FunctionCall(
+                                        dest.clone(),
+                                        getCloneFnName(),
+                                        vec![implicitFieldRefDest.clone()],
+                                    );
+                                    builder.addInstruction(implicitRefKind.clone(), instruction.location.clone());
+                                    builder.step();
+                                    instruction.kind =
+                                        InstructionKind::FieldRef(implicitFieldRefDest.clone(), implicitRefDest, name);
+                                    builder.replaceInstruction(instruction.kind, instruction.location.clone());
+                                    builder.step();
+                                    builder.addInstruction(implicitCloneKind, instruction.location.clone());
+                                    builder.step();
+                                }
+                                _ => {
+                                    for c in implicitClones {
+                                        //println!("Adding implicit clone for {}", dest);
+                                        let mut implicitRefDest = self.bodyBuilder.createTempValue(
+                                            VariableName::DropImplicitCloneRef,
+                                            instruction.location.clone(),
+                                        );
+                                        let ty = Type::Reference(Box::new(c.getType().clone()), None);
+                                        implicitRefDest.ty = Some(ty);
+                                        let implicitRefKind = InstructionKind::Ref(implicitRefDest.clone(), c.clone());
+
+                                        let mut implicitCloneDest = self.bodyBuilder.createTempValue(
+                                            VariableName::DropImplicitClone,
+                                            instruction.location.clone(),
+                                        );
+                                        implicitCloneDest.ty = c.ty.clone();
+                                        let implicitCloneKind = InstructionKind::FunctionCall(
+                                            implicitCloneDest.clone(),
+                                            getCloneFnName(),
+                                            vec![implicitRefDest],
+                                        );
+                                        builder.addInstruction(implicitRefKind, instruction.location.clone());
+                                        builder.step();
+                                        builder.addInstruction(implicitCloneKind, instruction.location.clone());
+                                        builder.step();
+                                        let newKind = instruction.kind.replaceVar(c, implicitCloneDest.clone());
+                                        builder.replaceInstruction(newKind, instruction.location.clone());
+                                    }
+                                }
+                            }
+                        }
                     }
                     builder.step();
                 } else {
@@ -625,7 +672,6 @@ impl<'a> DropChecker<'a> {
 
                 let fieldRefKind = InstructionKind::FieldRef(dest.clone(), receiver, item.clone());
                 kinds.push(fieldRefKind);
-                dest.index = 1;
                 receiver = dest;
             }
 

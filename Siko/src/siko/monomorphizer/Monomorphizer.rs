@@ -546,7 +546,6 @@ impl<'a> Monomorphizer<'a> {
             value: VariableName::Arg("self".to_string()),
             ty: Some(ty.clone()),
             location: Location::empty(),
-            index: 0,
         };
 
         let mut hasInstance = false;

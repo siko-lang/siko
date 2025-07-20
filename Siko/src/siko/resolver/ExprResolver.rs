@@ -83,13 +83,6 @@ impl<'a> ExprResolver<'a> {
         blockId
     }
 
-    pub fn indexVar(&mut self, mut var: Variable) -> Variable {
-        let index = self.varIndices.entry(var.value.to_string()).or_insert(1);
-        var.index = *index;
-        *index += 1;
-        var
-    }
-
     fn processFieldAssign<'e>(
         &mut self,
         receiver: &Expr,
@@ -111,7 +104,7 @@ impl<'a> ExprResolver<'a> {
                     let value = env.resolve(&name.toString());
                     match value {
                         Some(value) => {
-                            let mut value = self.indexVar(value);
+                            let mut value = value;
                             value.location = location.clone();
                             fields.reverse();
                             self.bodyBuilder
@@ -129,7 +122,7 @@ impl<'a> ExprResolver<'a> {
                     let value = match env.resolve(&selfStr) {
                         Some(mut var) => {
                             var.location = receiver.location.clone();
-                            self.indexVar(var)
+                            var
                         }
                         None => {
                             ResolverError::UnknownValue(selfStr.clone(), receiver.location.clone()).report(self.ctx);
@@ -217,7 +210,6 @@ impl<'a> ExprResolver<'a> {
             blockValue = self.bodyBuilder.current().implicit().addUnit(block.location.clone());
         }
         if !block.doesNotReturn() {
-            let blockValue = self.indexVar(blockValue);
             self.bodyBuilder
                 .current()
                 .implicit()
@@ -234,7 +226,7 @@ impl<'a> ExprResolver<'a> {
             SimpleExpr::Value(name) => match env.resolve(&name.name) {
                 Some(mut var) => {
                     var.location = expr.location.clone();
-                    self.indexVar(var)
+                    var
                 }
                 None => {
                     ResolverError::UnknownValue(name.name.clone(), name.location.clone()).report(self.ctx);
@@ -245,7 +237,7 @@ impl<'a> ExprResolver<'a> {
                 match env.resolve(&selfStr) {
                     Some(mut var) => {
                         var.location = expr.location.clone();
-                        self.indexVar(var)
+                        var
                     }
                     None => {
                         ResolverError::UnknownValue(selfStr.clone(), expr.location.clone()).report(self.ctx);
@@ -272,7 +264,6 @@ impl<'a> ExprResolver<'a> {
                 let mut irArgs = Vec::new();
                 for arg in args {
                     let argId = self.resolveExpr(arg, env);
-                    let argId = self.indexVar(argId);
                     irArgs.push(argId)
                 }
                 match &callable.expr {
@@ -308,11 +299,9 @@ impl<'a> ExprResolver<'a> {
             }
             SimpleExpr::MethodCall(receiver, name, args) => {
                 let receiver = self.resolveExpr(&receiver, env);
-                let receiver = self.indexVar(receiver);
                 let mut irArgs = Vec::new();
                 for arg in args {
                     let argId = self.resolveExpr(arg, env);
-                    let argId = self.indexVar(argId);
                     irArgs.push(argId)
                 }
                 self.bodyBuilder
@@ -321,7 +310,6 @@ impl<'a> ExprResolver<'a> {
             }
             SimpleExpr::TupleIndex(receiver, index) => {
                 let receiver = self.resolveExpr(&receiver, env);
-                let receiver = self.indexVar(receiver);
                 self.bodyBuilder
                     .current()
                     .addTupleIndex(receiver, index.parse().unwrap(), expr.location.clone())
@@ -379,9 +367,7 @@ impl<'a> ExprResolver<'a> {
             }
             SimpleExpr::BinaryOp(op, lhs, rhs) => {
                 let lhsId = self.resolveExpr(lhs, env);
-                let lhsId = self.indexVar(lhsId);
                 let rhsId = self.resolveExpr(rhs, env);
-                let rhsId = self.indexVar(rhsId);
                 let name = match op {
                     BinaryOp::And => createOpName("And", "opAnd"),
                     BinaryOp::Or => createOpName("Or", "opOr"),
@@ -443,7 +429,7 @@ impl<'a> ExprResolver<'a> {
                         .addDeclare(blockValue.clone(), expr.location.clone());
                 }
                 self.resolveBlock(block, env, blockValue.clone());
-                self.indexVar(blockValue)
+                blockValue
             }
             SimpleExpr::Tuple(args) => {
                 let mut irArgs = Vec::new();
@@ -621,7 +607,7 @@ impl<'a> ExprResolver<'a> {
             );
             localEnv.addValue(value.0.clone(), name);
         }
-        let result = self.indexVar(functionResult.clone());
+        let result = functionResult.clone();
         self.resolveBlock(body, &localEnv, result);
         self.bodyBuilder
             .current()
