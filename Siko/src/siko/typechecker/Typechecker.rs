@@ -5,7 +5,7 @@ use std::{
 
 use crate::siko::{
     hir::{
-        Apply::{instantiateEnum, instantiateStruct, instantiateTrait, instantiateType4, Apply, ApplyVariable},
+        Apply::{instantiateEnum, instantiateStruct, instantiateTrait, instantiateType4, Apply},
         BlockBuilder::BlockBuilder,
         BodyBuilder::BodyBuilder,
         ConstraintContext::{Constraint as HirConstraint, ConstraintContext},
@@ -14,7 +14,7 @@ use crate::siko::{
         InstanceResolver::ResolutionResult,
         Instruction::{Instruction, InstructionKind},
         Program::Program,
-        Substitution::{TypeSubstitution, VariableSubstitution},
+        Substitution::TypeSubstitution,
         TraitMethodSelector::TraitMethodSelector,
         Type::{formatTypes, Type, TypeVar},
         TypeVarAllocator::TypeVarAllocator,
@@ -896,10 +896,9 @@ impl<'a> Typechecker<'a> {
             let mut builder = self.bodyBuilder.iterator(blockId);
             loop {
                 match builder.getInstruction() {
-                    Some(instruction) => {
+                    Some(mut instruction) => {
                         let vars = instruction.kind.collectVariables();
                         let mut kinds = Vec::new();
-                        let mut varSwap = VariableSubstitution::new();
                         for var in vars {
                             if let Some(info) = self.mutableMethodCalls.get(&var) {
                                 //println!("Transforming mutable method call {}", var);
@@ -909,7 +908,7 @@ impl<'a> Typechecker<'a> {
                                 implicitResult.ty = var.ty.clone();
                                 self.types
                                     .insert(implicitResult.value.to_string(), info.baseType.clone());
-                                varSwap.add(var.clone(), implicitResult.clone());
+                                instruction.kind = instruction.kind.replaceVar(var.clone(), implicitResult.clone());
                                 let tupleTypes = info.selfLessType.getTupleTypes();
                                 let receiverTy = self.getType(&info.receiver);
                                 match tupleTypes.len() {
@@ -983,7 +982,7 @@ impl<'a> Typechecker<'a> {
                                 self.mutableMethodCalls.remove(&var);
                             }
                         }
-                        builder.replaceInstruction(instruction.kind.applyVar(&varSwap), instruction.location.clone());
+                        builder.replaceInstruction(instruction.kind, instruction.location.clone());
                         builder.step();
                         for kind in kinds {
                             builder.addInstruction(kind, instruction.location.clone());
@@ -1026,8 +1025,6 @@ impl<'a> Typechecker<'a> {
     }
 
     fn addTypes(&mut self, f: &mut Function) {
-        let mut varSwap = VariableSubstitution::new();
-
         let body = &mut f.body.as_mut().unwrap();
 
         for block in &mut body.blocks {
@@ -1038,14 +1035,8 @@ impl<'a> Typechecker<'a> {
                     let ty = ty.apply(&self.substitution);
                     let mut newVar = var.clone();
                     newVar.ty = Some(ty.clone());
-                    varSwap.add(var, newVar);
+                    instruction.kind = instruction.kind.replaceVar(var, newVar);
                 }
-            }
-        }
-
-        for block in &mut body.blocks {
-            for instruction in &mut block.instructions {
-                instruction.kind = instruction.kind.applyVar(&varSwap);
             }
         }
     }

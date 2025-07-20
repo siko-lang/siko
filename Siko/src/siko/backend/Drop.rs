@@ -6,13 +6,12 @@ use std::{
 
 use crate::siko::{
     hir::{
-        Apply::{instantiateStruct, ApplyVariable},
+        Apply::instantiateStruct,
         BlockBuilder::BlockBuilder,
         BodyBuilder::BodyBuilder,
         Function::{BlockId, Function},
         Instruction::InstructionKind,
         Program::Program,
-        Substitution::VariableSubstitution,
         Type::Type,
         TypeVarAllocator::TypeVarAllocator,
         Variable::{Variable, VariableName},

@@ -3,12 +3,7 @@ use std::{
     fmt::{Debug, Display},
 };
 
-use super::{
-    Apply::{Apply, ApplyVariable},
-    Type::Type,
-    Unification::unify,
-    Variable::Variable,
-};
+use super::{Apply::Apply, Type::Type, Unification::unify};
 
 #[derive(Debug)]
 pub struct TypeSubstitution {
@@ -46,47 +41,6 @@ impl Display for TypeSubstitution {
             }
         }
         print!("]");
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
-pub struct VariableSubstitution {
-    substitutions: BTreeMap<Variable, Variable>,
-}
-
-impl VariableSubstitution {
-    pub fn new() -> VariableSubstitution {
-        VariableSubstitution {
-            substitutions: BTreeMap::new(),
-        }
-    }
-
-    pub fn add(&mut self, old: Variable, new: Variable) {
-        if old == new {
-            return;
-        }
-        assert_ne!(old, new);
-        self.substitutions.insert(old, new);
-    }
-
-    pub fn get(&self, old: Variable) -> Variable {
-        match self.substitutions.get(&old) {
-            Some(new) => new.applyVar(self),
-            None => old,
-        }
-    }
-}
-
-impl Display for VariableSubstitution {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for (index, (key, value)) in self.substitutions.iter().enumerate() {
-            if index == 0 {
-                write!(f, "{}: {}", key, value)?;
-            } else {
-                write!(f, ", {}: {}", key, value)?;
-            }
-        }
         Ok(())
     }
 }

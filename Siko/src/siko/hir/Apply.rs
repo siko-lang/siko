@@ -6,7 +6,7 @@ use super::{
     ConstraintContext::{Constraint, ConstraintContext},
     Data::{Enum, Field, Struct, Variant},
     Instruction::{FieldInfo, InstructionKind},
-    Substitution::{TypeSubstitution, VariableSubstitution},
+    Substitution::TypeSubstitution,
     Trait::{AssociatedType, Instance, MemberInfo, Trait},
     TypeVarAllocator::TypeVarAllocator,
     Unification::unify,
@@ -15,10 +15,6 @@ use super::{
 
 pub trait Apply {
     fn apply(&self, sub: &TypeSubstitution) -> Self;
-}
-
-pub trait ApplyVariable {
-    fn applyVar(&self, sub: &VariableSubstitution) -> Self;
 }
 
 impl Apply for Type {
@@ -61,12 +57,6 @@ impl<T: Apply> Apply for Option<T> {
 impl<T: Apply> Apply for Vec<T> {
     fn apply(&self, sub: &TypeSubstitution) -> Self {
         self.iter().map(|i| i.apply(sub)).collect()
-    }
-}
-
-impl<T: ApplyVariable> ApplyVariable for Vec<T> {
-    fn applyVar(&self, sub: &VariableSubstitution) -> Self {
-        self.iter().map(|i| i.applyVar(sub)).collect()
     }
 }
 
@@ -286,71 +276,4 @@ pub fn instantiateType4(allocator: &mut TypeVarAllocator, types: &Vec<Type>) -> 
         sub.add(Type::Var(var.clone()), allocator.next());
     }
     sub
-}
-
-impl ApplyVariable for InstructionKind {
-    fn applyVar(&self, sub: &VariableSubstitution) -> Self {
-        match self {
-            InstructionKind::FunctionCall(dest, name, args) => {
-                InstructionKind::FunctionCall(dest.applyVar(sub), name.clone(), args.applyVar(sub))
-            }
-            InstructionKind::Converter(dest, source) => {
-                InstructionKind::Converter(dest.applyVar(sub), source.applyVar(sub))
-            }
-            InstructionKind::MethodCall(dest, receiver, name, args) => InstructionKind::MethodCall(
-                dest.applyVar(sub),
-                receiver.applyVar(sub),
-                name.clone(),
-                args.applyVar(sub),
-            ),
-            InstructionKind::DynamicFunctionCall(dest, callable, args) => {
-                InstructionKind::DynamicFunctionCall(dest.applyVar(sub), callable.applyVar(sub), args.applyVar(sub))
-            }
-            InstructionKind::ValueRef(dest, value) => {
-                InstructionKind::ValueRef(dest.applyVar(sub), value.applyVar(sub))
-            }
-            InstructionKind::FieldRef(dest, root, field) => {
-                InstructionKind::FieldRef(dest.applyVar(sub), root.applyVar(sub), field.clone())
-            }
-            InstructionKind::TupleIndex(dest, root, index) => {
-                InstructionKind::TupleIndex(dest.applyVar(sub), root.applyVar(sub), *index)
-            }
-            InstructionKind::Bind(dest, rhs, mutable) => {
-                InstructionKind::Bind(dest.applyVar(sub), rhs.applyVar(sub), *mutable)
-            }
-            InstructionKind::Tuple(dest, args) => InstructionKind::Tuple(dest.applyVar(sub), args.applyVar(sub)),
-            InstructionKind::StringLiteral(dest, s) => InstructionKind::StringLiteral(dest.applyVar(sub), s.clone()),
-            InstructionKind::IntegerLiteral(dest, n) => InstructionKind::IntegerLiteral(dest.applyVar(sub), n.clone()),
-            InstructionKind::CharLiteral(dest, c) => InstructionKind::CharLiteral(dest.applyVar(sub), *c),
-            InstructionKind::Return(dest, arg) => InstructionKind::Return(dest.applyVar(sub), arg.applyVar(sub)),
-            InstructionKind::Ref(dest, arg) => InstructionKind::Ref(dest.applyVar(sub), arg.applyVar(sub)),
-            InstructionKind::Drop(dest, drop) => InstructionKind::Drop(dest.applyVar(sub), drop.applyVar(sub)),
-            InstructionKind::Jump(dest, targetBlock, direction) => {
-                InstructionKind::Jump(dest.applyVar(sub), *targetBlock, direction.clone())
-            }
-            InstructionKind::Assign(name, rhs) => InstructionKind::Assign(name.applyVar(sub), rhs.applyVar(sub)),
-            InstructionKind::FieldAssign(name, rhs, fields) => {
-                InstructionKind::FieldAssign(name.applyVar(sub), rhs.applyVar(sub), fields.clone())
-            }
-            InstructionKind::DeclareVar(var) => InstructionKind::DeclareVar(var.applyVar(sub)),
-            InstructionKind::Transform(dest, root, index) => {
-                InstructionKind::Transform(dest.applyVar(sub), root.applyVar(sub), index.clone())
-            }
-            InstructionKind::EnumSwitch(root, cases) => InstructionKind::EnumSwitch(root.applyVar(sub), cases.clone()),
-            InstructionKind::IntegerSwitch(root, cases) => {
-                InstructionKind::IntegerSwitch(root.applyVar(sub), cases.clone())
-            }
-            InstructionKind::StringSwitch(root, cases) => {
-                InstructionKind::StringSwitch(root.applyVar(sub), cases.clone())
-            }
-            InstructionKind::BlockStart(info) => InstructionKind::BlockStart(info.clone()),
-            InstructionKind::BlockEnd(info) => InstructionKind::BlockEnd(info.clone()),
-        }
-    }
-}
-
-impl ApplyVariable for Variable {
-    fn applyVar(&self, sub: &VariableSubstitution) -> Self {
-        sub.get(self.clone())
-    }
 }
