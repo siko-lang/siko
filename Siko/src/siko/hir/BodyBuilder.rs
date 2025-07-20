@@ -5,7 +5,7 @@ use crate::siko::location::Location::Location;
 use super::{
     BlockBuilder::{BlockBuilder, Mode},
     Function::{Block, BlockId, Body, Function},
-    Instruction::{Instruction, InstructionKind, Tag},
+    Instruction::{Instruction, InstructionKind},
     Type::Type,
     Variable::{Variable, VariableName},
 };
@@ -105,21 +105,6 @@ impl Builder {
     ) {
         let irBlock = &mut self.body.blocks[id.id as usize];
         return irBlock.replace(index, instruction, location, implicit);
-    }
-
-    pub fn addTag(&mut self, blockId: BlockId, index: usize, tag: Tag) {
-        let irBlock = &mut self.body.blocks[blockId.id as usize];
-        irBlock.addTag(index, tag);
-    }
-
-    pub fn getTags(&self, blockId: BlockId, index: usize) -> Vec<Tag> {
-        let irBlock = &self.body.blocks[blockId.id as usize];
-        irBlock.getTags(index)
-    }
-
-    pub fn setTags(&mut self, blockId: BlockId, index: usize, tags: Vec<Tag>) {
-        let irBlock = &mut self.body.blocks[blockId.id as usize];
-        irBlock.setTags(index, tags);
     }
 
     pub fn sortBlocks(&mut self) {
@@ -268,26 +253,5 @@ impl BodyBuilder {
     pub fn getInstruction(&self, id: BlockId, index: usize) -> Option<Instruction> {
         let bodyBuilder = self.bodyBuilder.borrow();
         bodyBuilder.getInstruction(id, index)
-    }
-
-    pub fn buildTag(&self, builder: fn(u32) -> Tag) -> Tag {
-        let mut bodyBuilder = self.bodyBuilder.borrow_mut();
-        let id = bodyBuilder.getNextId();
-        builder(id)
-    }
-
-    pub fn addTag(&self, blockId: BlockId, index: usize, tag: Tag) {
-        let mut bodyBuilder = self.bodyBuilder.borrow_mut();
-        bodyBuilder.addTag(blockId, index, tag);
-    }
-
-    pub fn getTags(&self, blockId: BlockId, index: usize) -> Vec<Tag> {
-        let bodyBuilder = self.bodyBuilder.borrow();
-        bodyBuilder.getTags(blockId, index)
-    }
-
-    pub fn setTags(&self, blockId: BlockId, index: usize, tags: Vec<Tag>) {
-        let mut bodyBuilder = self.bodyBuilder.borrow_mut();
-        bodyBuilder.setTags(blockId, index, tags);
     }
 }

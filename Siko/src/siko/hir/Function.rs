@@ -7,7 +7,6 @@ use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
 
 use super::Instruction::Instruction;
 use super::Instruction::InstructionKind;
-use super::Instruction::Tag;
 use super::Variable::Variable;
 use super::Variable::VariableName;
 use super::{ConstraintContext::ConstraintContext, Type::Type};
@@ -76,7 +75,6 @@ impl Block {
             implicit: implicit,
             kind: kind,
             location: location,
-            tags: Vec::new(),
         });
     }
 
@@ -87,24 +85,17 @@ impl Block {
                 implicit: implicit,
                 kind: kind,
                 location: location,
-                tags: Vec::new(),
             },
         );
     }
 
     pub fn replace(&mut self, index: usize, kind: InstructionKind, location: Location, implicit: bool) {
         let isImplicit = self.instructions[index].implicit || implicit;
-        let tags = self.instructions[index].tags.clone();
         self.instructions[index] = Instruction {
             implicit: isImplicit,
             kind: kind,
             location: location,
-            tags: tags,
         };
-    }
-
-    pub fn addTag(&mut self, index: usize, tag: Tag) {
-        self.instructions[index].tags.push(tag);
     }
 
     pub fn dump(&self) {
@@ -112,14 +103,6 @@ impl Block {
         for instruction in &self.instructions {
             instruction.dump();
         }
-    }
-
-    pub fn getTags(&self, index: usize) -> Vec<Tag> {
-        self.instructions[index].tags.clone()
-    }
-
-    pub fn setTags(&mut self, index: usize, tags: Vec<Tag>) {
-        self.instructions[index].tags = tags;
     }
 }
 

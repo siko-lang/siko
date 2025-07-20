@@ -276,62 +276,11 @@ impl InstructionKind {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Tag {
-    ImplicitRef(u32),
-    ImplicitClone(u32),
-    ImplicitConvert(u32),
-    Assign(u32),
-    Deref(u32),
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum TagKind {
-    ImplicitRef,
-    Assign,
-    Deref,
-}
-
-impl Tag {
-    pub fn getId(&self) -> u32 {
-        match self {
-            Tag::ImplicitRef(id) => *id,
-            Tag::ImplicitClone(id) => *id,
-            Tag::ImplicitConvert(id) => *id,
-            Tag::Assign(id) => *id,
-            Tag::Deref(id) => *id,
-        }
-    }
-
-    pub fn isKind(&self, kind: TagKind) -> bool {
-        match self {
-            Tag::ImplicitRef(_) => kind == TagKind::ImplicitRef,
-            Tag::ImplicitClone(_) => kind == TagKind::ImplicitRef,
-            Tag::ImplicitConvert(_) => kind == TagKind::ImplicitRef,
-            Tag::Assign(_) => kind == TagKind::Assign,
-            Tag::Deref(_) => kind == TagKind::Deref,
-        }
-    }
-}
-
-impl Display for Tag {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Tag::ImplicitRef(id) => write!(f, "implicit_ref_{}", id),
-            Tag::ImplicitClone(id) => write!(f, "implicit_clone_{}", id),
-            Tag::ImplicitConvert(id) => write!(f, "implicit_convert_{}", id),
-            Tag::Assign(id) => write!(f, "assign_{}", id),
-            Tag::Deref(id) => write!(f, "deref_{}", id),
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct Instruction {
     pub implicit: bool,
     pub kind: InstructionKind,
     pub location: Location,
-    pub tags: Vec<Tag>,
 }
 
 impl Instruction {

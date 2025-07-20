@@ -5,7 +5,7 @@ use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
 use super::{
     BodyBuilder::BodyBuilder,
     Function::BlockId,
-    Instruction::{FieldInfo, Instruction, InstructionKind, JumpDirection, Tag, TagKind},
+    Instruction::{FieldInfo, Instruction, InstructionKind, JumpDirection},
     Type::Type,
     Variable::{Variable, VariableName},
 };
@@ -83,65 +83,6 @@ impl BlockBuilder {
             Mode::Iterator(index) => {
                 self.bodyBuilder
                     .replaceInstruction(self.blockId, index, instruction, location, self.isImplicit);
-            }
-        }
-    }
-
-    pub fn buildTag(&mut self, builder: fn(u32) -> Tag) -> Tag {
-        self.bodyBuilder.buildTag(builder)
-    }
-
-    pub fn buildTagByKind(&mut self, kind: TagKind) -> Tag {
-        match kind {
-            TagKind::ImplicitRef => self.buildTag(Tag::ImplicitRef),
-            TagKind::Assign => self.buildTag(Tag::Assign),
-            TagKind::Deref => self.buildTag(Tag::Deref),
-        }
-    }
-
-    pub fn addTag(&mut self, tag: Tag) {
-        match self.mode {
-            Mode::Append => {
-                panic!("Cannot add tag in append mode");
-            }
-            Mode::Iterator(index) => {
-                self.bodyBuilder.addTag(self.blockId, index, tag);
-            }
-        }
-    }
-
-    pub fn getUniqueTag(&mut self, kind: TagKind) -> Tag {
-        let mut tag = None;
-        for oldTag in self.getTags() {
-            if oldTag.isKind(kind) {
-                tag = Some(oldTag);
-            }
-        }
-
-        if tag.is_none() {
-            let newTag = self.buildTagByKind(kind);
-            self.addTag(newTag);
-            tag = Some(newTag);
-        }
-        tag.unwrap()
-    }
-
-    pub fn getTags(&self) -> Vec<Tag> {
-        match self.mode {
-            Mode::Append => {
-                panic!("Cannot get tags in append mode");
-            }
-            Mode::Iterator(index) => self.bodyBuilder.getTags(self.blockId, index),
-        }
-    }
-
-    pub fn setTags(&mut self, tags: Vec<Tag>) {
-        match self.mode {
-            Mode::Append => {
-                panic!("Cannot set tags in append mode");
-            }
-            Mode::Iterator(index) => {
-                self.bodyBuilder.setTags(self.blockId, index, tags);
             }
         }
     }
