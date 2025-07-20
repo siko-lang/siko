@@ -579,7 +579,7 @@ impl<'a> Typechecker<'a> {
                             return result;
                         }
                     }
-                    if let Some(i) = self.program.instanceResolver.isDeref(&receiverType) {
+                    if let Some(i) = self.program.instanceResolver.isDeref(&receiverType.unpackRef()) {
                         let receiverType = i.associatedTypes[0].ty.clone();
                         let mut result = self.readField(receiverType.clone(), fieldName.clone(), location.clone());
                         if self.program.instanceResolver.isCopy(&result.ty) {
