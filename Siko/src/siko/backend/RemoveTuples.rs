@@ -175,7 +175,9 @@ impl RemoveTuples for InstructionKind {
             InstructionKind::FieldAssign(lhs, rhs, fields) => {
                 InstructionKind::FieldAssign(lhs.clone(), rhs.removeTuples(ctx), fields.removeTuples(ctx))
             }
-            InstructionKind::DeclareVar(var) => InstructionKind::DeclareVar(var.removeTuples(ctx)),
+            InstructionKind::DeclareVar(var, mutability) => {
+                InstructionKind::DeclareVar(var.removeTuples(ctx), mutability.clone())
+            }
             InstructionKind::EnumSwitch(root, cases) => {
                 InstructionKind::EnumSwitch(root.removeTuples(ctx), cases.clone())
             }

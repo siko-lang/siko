@@ -15,7 +15,6 @@ use siko::{
     typechecker::Typechecker::Typechecker,
 };
 
-use core::panic;
 use std::{collections::BTreeMap, env::args, fs, path::Path};
 
 use crate::siko::{

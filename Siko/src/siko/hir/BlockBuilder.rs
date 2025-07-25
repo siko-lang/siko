@@ -1,6 +1,6 @@
 use core::panic;
 
-use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
+use crate::siko::{hir::Instruction::Mutability, location::Location::Location, qualifiedname::QualifiedName};
 
 use super::{
     BodyBuilder::BodyBuilder,
@@ -120,6 +120,7 @@ impl BlockBuilder {
             tempArgs.push(tempValue);
         }
         let result = self.bodyBuilder.createTempValue(VariableName::Call, location.clone());
+        self.addDeclare(result.clone(), location.clone());
         self.addInstruction(
             InstructionKind::FunctionCall(result.clone(), functionName, tempArgs),
             location,
@@ -166,6 +167,7 @@ impl BlockBuilder {
             );
             tempArgs.push(tempValue);
         }
+        self.addDeclare(result.clone(), location.clone());
         self.addInstruction(
             InstructionKind::MethodCall(result.clone(), receiverTemp, name, tempArgs),
             location,
@@ -281,7 +283,7 @@ impl BlockBuilder {
     }
 
     pub fn addDeclare(&mut self, name: Variable, location: Location) {
-        self.addInstruction(InstructionKind::DeclareVar(name), location.clone());
+        self.addInstruction(InstructionKind::DeclareVar(name, Mutability::Mutable), location.clone());
     }
 
     pub fn addBind(&mut self, name: Variable, rhs: Variable, mutable: bool, location: Location) {

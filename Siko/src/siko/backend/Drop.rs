@@ -865,7 +865,7 @@ impl<'a> DropChecker<'a> {
                             context.removeSpecificMoveByPath(&path);
                         }
                     }
-                    InstructionKind::DeclareVar(_) => {}
+                    InstructionKind::DeclareVar(_, _) => {}
                     InstructionKind::Transform(dest, _, _) => {
                         self.declareValue(dest, &mut context);
                     }

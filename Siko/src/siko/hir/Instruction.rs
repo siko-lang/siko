@@ -101,6 +101,29 @@ impl std::fmt::Debug for StringCase {
 }
 
 #[derive(Clone, PartialEq)]
+pub enum Mutability {
+    Mutable,
+    Immutable,
+    ExplicitMutable,
+}
+
+impl std::fmt::Display for Mutability {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Mutability::Mutable => write!(f, "mutable"),
+            Mutability::Immutable => write!(f, "immutable"),
+            Mutability::ExplicitMutable => write!(f, "explicit mutable"),
+        }
+    }
+}
+
+impl std::fmt::Debug for Mutability {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+#[derive(Clone, PartialEq)]
 pub enum InstructionKind {
     FunctionCall(Variable, QualifiedName, Vec<Variable>),
     Converter(Variable, Variable),
@@ -120,7 +143,7 @@ pub enum InstructionKind {
     Jump(Variable, BlockId, JumpDirection),
     Assign(Variable, Variable),
     FieldAssign(Variable, Variable, Vec<FieldInfo>),
-    DeclareVar(Variable),
+    DeclareVar(Variable, Mutability),
     Transform(Variable, Variable, u32),
     EnumSwitch(Variable, Vec<EnumCase>),
     IntegerSwitch(Variable, Vec<IntegerCase>),
@@ -162,7 +185,7 @@ impl InstructionKind {
             InstructionKind::Jump(v, _, _) => Some(v.clone()),
             InstructionKind::Assign(_, _) => None,
             InstructionKind::FieldAssign(_, _, _) => None,
-            InstructionKind::DeclareVar(v) => Some(v.clone()),
+            InstructionKind::DeclareVar(v, _) => Some(v.clone()),
             InstructionKind::Transform(v, _, _) => Some(v.clone()),
             InstructionKind::EnumSwitch(_, _) => None,
             InstructionKind::IntegerSwitch(_, _) => None,
@@ -258,9 +281,9 @@ impl InstructionKind {
                 let new_arg = arg.replace(&from, to);
                 InstructionKind::FieldAssign(new_var, new_arg, fields.clone())
             }
-            InstructionKind::DeclareVar(var) => {
+            InstructionKind::DeclareVar(var, mutability) => {
                 let new_var = var.replace(&from, to);
-                InstructionKind::DeclareVar(new_var)
+                InstructionKind::DeclareVar(new_var, mutability.clone())
             }
             InstructionKind::Transform(var, arg, index) => {
                 let new_var = var.replace(&from, to.clone());
@@ -320,7 +343,7 @@ impl InstructionKind {
             InstructionKind::Jump(var, _, _) => vec![var.clone()],
             InstructionKind::Assign(var, value) => vec![var.clone(), value.clone()],
             InstructionKind::FieldAssign(var, value, _) => vec![var.clone(), value.clone()],
-            InstructionKind::DeclareVar(var) => vec![var.clone()],
+            InstructionKind::DeclareVar(var, _) => vec![var.clone()],
             InstructionKind::Transform(var, target, _) => vec![var.clone(), target.clone()],
             InstructionKind::EnumSwitch(var, _) => {
                 vec![var.clone()]
@@ -377,7 +400,7 @@ impl InstructionKind {
                     .join(", ");
                 format!("fieldassign({}, {}, {})", v, arg, fields)
             }
-            InstructionKind::DeclareVar(v) => format!("declare({})", v),
+            InstructionKind::DeclareVar(v, mutability) => format!("declare({}, {:?})", v, mutability),
             InstructionKind::Transform(dest, arg, index) => format!("{} = transform({}, {})", dest, arg, index),
             InstructionKind::EnumSwitch(root, cases) => format!("enumswitch({}, {:?})", root, cases),
             InstructionKind::IntegerSwitch(root, cases) => format!("integerswitch({}, {:?})", root, cases),

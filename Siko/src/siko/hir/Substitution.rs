@@ -6,13 +6,13 @@ use std::{
 use super::{Apply::Apply, Type::Type, Unification::unify};
 
 #[derive(Debug)]
-pub struct TypeSubstitution {
+pub struct Substitution {
     substitutions: BTreeMap<Type, Type>,
 }
 
-impl TypeSubstitution {
-    pub fn new() -> TypeSubstitution {
-        TypeSubstitution {
+impl Substitution {
+    pub fn new() -> Substitution {
+        Substitution {
             substitutions: BTreeMap::new(),
         }
     }
@@ -30,7 +30,7 @@ impl TypeSubstitution {
     }
 }
 
-impl Display for TypeSubstitution {
+impl Display for Substitution {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         print!("[");
         for (index, (key, value)) in self.substitutions.iter().enumerate() {
@@ -45,8 +45,8 @@ impl Display for TypeSubstitution {
     }
 }
 
-pub fn createTypeSubstitutionFrom(ty1: &Vec<Type>, ty2: &Vec<Type>) -> TypeSubstitution {
-    let mut sub = TypeSubstitution::new();
+pub fn createTypeSubstitutionFrom(ty1: &Vec<Type>, ty2: &Vec<Type>) -> Substitution {
+    let mut sub = Substitution::new();
     for (ty1, ty2) in ty1.iter().zip(ty2) {
         unify(&mut sub, ty1, ty2, true).expect("Unification failed");
     }

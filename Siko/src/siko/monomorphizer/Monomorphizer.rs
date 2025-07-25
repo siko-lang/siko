@@ -12,7 +12,7 @@ use crate::siko::{
         InstanceResolver::ResolutionResult,
         Instruction::{EnumCase, FieldInfo, Instruction, InstructionKind, JumpDirection},
         Program::Program,
-        Substitution::{createTypeSubstitutionFrom, TypeSubstitution},
+        Substitution::{createTypeSubstitutionFrom, Substitution},
         Type::{formatTypes, Type},
         TypeVarAllocator::TypeVarAllocator,
         Unification::unify,
@@ -25,8 +25,8 @@ use crate::siko::{
     qualifiedname::{build, getAutoDropFnName, getDropFnName, getDropName, QualifiedName},
 };
 
-fn createTypeSubstitution(ty1: &Type, ty2: &Type) -> TypeSubstitution {
-    let mut sub = TypeSubstitution::new();
+fn createTypeSubstitution(ty1: &Type, ty2: &Type) -> Substitution {
+    let mut sub = Substitution::new();
     if unify(&mut sub, ty1, &ty2, true).is_err() {
         panic!("Unification failed for {} {}", ty1, ty2);
     }
@@ -53,18 +53,18 @@ impl Display for Key {
 }
 
 trait Monomorphize {
-    fn process(&self, sub: &TypeSubstitution, mono: &mut Monomorphizer) -> Self;
+    fn process(&self, sub: &Substitution, mono: &mut Monomorphizer) -> Self;
 }
 
 impl Monomorphize for Type {
-    fn process(&self, sub: &TypeSubstitution, mono: &mut Monomorphizer) -> Self {
+    fn process(&self, sub: &Substitution, mono: &mut Monomorphizer) -> Self {
         let ty = self.apply(sub);
         mono.processType(ty)
     }
 }
 
 impl<T: Monomorphize> Monomorphize for Option<T> {
-    fn process(&self, sub: &TypeSubstitution, mono: &mut Monomorphizer) -> Self {
+    fn process(&self, sub: &Substitution, mono: &mut Monomorphizer) -> Self {
         match self {
             Some(v) => Some(v.process(sub, mono)),
             None => None,
@@ -73,13 +73,13 @@ impl<T: Monomorphize> Monomorphize for Option<T> {
 }
 
 impl<T: Monomorphize> Monomorphize for Vec<T> {
-    fn process(&self, sub: &TypeSubstitution, mono: &mut Monomorphizer) -> Self {
+    fn process(&self, sub: &Substitution, mono: &mut Monomorphizer) -> Self {
         self.iter().map(|i| i.process(sub, mono)).collect()
     }
 }
 
 impl Monomorphize for Variable {
-    fn process(&self, sub: &TypeSubstitution, mono: &mut Monomorphizer) -> Self {
+    fn process(&self, sub: &Substitution, mono: &mut Monomorphizer) -> Self {
         let mut v = self.clone();
         v.ty = v.ty.process(sub, mono);
         v
@@ -87,7 +87,7 @@ impl Monomorphize for Variable {
 }
 
 impl Monomorphize for Parameter {
-    fn process(&self, sub: &TypeSubstitution, mono: &mut Monomorphizer) -> Self {
+    fn process(&self, sub: &Substitution, mono: &mut Monomorphizer) -> Self {
         match self {
             Parameter::Named(name, ty, mutable) => Parameter::Named(name.clone(), ty.process(sub, mono), *mutable),
             Parameter::SelfParam(mutable, ty) => Parameter::SelfParam(*mutable, ty.process(sub, mono)),
@@ -96,12 +96,12 @@ impl Monomorphize for Parameter {
 }
 
 impl Monomorphize for Instruction {
-    fn process(&self, sub: &TypeSubstitution, mono: &mut Monomorphizer) -> Self {
+    fn process(&self, sub: &Substitution, mono: &mut Monomorphizer) -> Self {
         fn getFunctionName(
             kind: FunctionKind,
             name: QualifiedName,
             mono: &mut Monomorphizer,
-            sub: &TypeSubstitution,
+            sub: &Substitution,
         ) -> QualifiedName {
             if let Some(traitName) = kind.isTraitCall() {
                 //println!("Trait call in mono!");
@@ -225,7 +225,7 @@ impl Monomorphize for Instruction {
 }
 
 impl Monomorphize for FieldInfo {
-    fn process(&self, sub: &TypeSubstitution, mono: &mut Monomorphizer) -> Self {
+    fn process(&self, sub: &Substitution, mono: &mut Monomorphizer) -> Self {
         let mut result = self.clone();
         result.ty = result.ty.process(sub, mono);
         result
@@ -233,7 +233,7 @@ impl Monomorphize for FieldInfo {
 }
 
 impl Monomorphize for InstructionKind {
-    fn process(&self, sub: &TypeSubstitution, mono: &mut Monomorphizer) -> Self {
+    fn process(&self, sub: &Substitution, mono: &mut Monomorphizer) -> Self {
         match self {
             InstructionKind::FunctionCall(dest, name, args) => {
                 InstructionKind::FunctionCall(dest.process(sub, mono), name.clone(), args.process(sub, mono))
@@ -289,7 +289,9 @@ impl Monomorphize for InstructionKind {
                 rhs.process(sub, mono),
                 fields.process(sub, mono),
             ),
-            InstructionKind::DeclareVar(var) => InstructionKind::DeclareVar(var.process(sub, mono)),
+            InstructionKind::DeclareVar(var, mutability) => {
+                InstructionKind::DeclareVar(var.process(sub, mono), mutability.clone())
+            }
             InstructionKind::Transform(dest, root, index) => {
                 InstructionKind::Transform(dest.process(sub, mono), root.process(sub, mono), index.clone())
             }
@@ -309,7 +311,7 @@ impl Monomorphize for InstructionKind {
 }
 
 impl Monomorphize for Block {
-    fn process(&self, sub: &TypeSubstitution, mono: &mut Monomorphizer) -> Self {
+    fn process(&self, sub: &Substitution, mono: &mut Monomorphizer) -> Self {
         let instructions = self.instructions.process(sub, mono);
         Block {
             id: self.id.clone(),
@@ -319,7 +321,7 @@ impl Monomorphize for Block {
 }
 
 impl Monomorphize for Body {
-    fn process(&self, sub: &TypeSubstitution, mono: &mut Monomorphizer) -> Self {
+    fn process(&self, sub: &Substitution, mono: &mut Monomorphizer) -> Self {
         let blocks = self.blocks.process(sub, mono);
         Body {
             blocks: blocks,

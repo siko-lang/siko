@@ -92,7 +92,7 @@ impl<'a> Builder<'a> {
                     unreachable!("tuples in MIR??")
                 }
                 HirInstructionKind::Drop(_, _) => unreachable!("drop in MIR??"),
-                HirInstructionKind::DeclareVar(var) => {
+                HirInstructionKind::DeclareVar(var, _) => {
                     let var = self.buildVariable(var);
                     block.instructions.push(Instruction::Declare(var.clone()));
                 }

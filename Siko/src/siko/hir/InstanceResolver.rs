@@ -7,7 +7,7 @@ use crate::siko::{
 
 use super::{
     Apply::{instantiateInstance, Apply},
-    Substitution::{createTypeSubstitutionFrom, TypeSubstitution},
+    Substitution::{createTypeSubstitutionFrom, Substitution},
     Trait::Instance,
     Type::Type,
     TypeVarAllocator::TypeVarAllocator,
@@ -42,7 +42,7 @@ impl Instances {
         let mut matchingInstances = Vec::new();
         for i in &self.instances {
             let i2 = instantiateInstance(allocator, i);
-            let mut sub = TypeSubstitution::new();
+            let mut sub = Substitution::new();
             let mut noMatch = false;
             //println!("Matching {} {}", formatTypes(types), formatTypes(&i.types));
             for (arg, ty) in i2.types.iter().zip(types.iter()) {

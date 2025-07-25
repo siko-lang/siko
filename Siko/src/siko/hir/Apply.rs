@@ -6,7 +6,7 @@ use super::{
     ConstraintContext::{Constraint, ConstraintContext},
     Data::{Enum, Field, Struct, Variant},
     Instruction::{FieldInfo, InstructionKind},
-    Substitution::TypeSubstitution,
+    Substitution::Substitution,
     Trait::{AssociatedType, Instance, MemberInfo, Trait},
     TypeVarAllocator::TypeVarAllocator,
     Unification::unify,
@@ -14,11 +14,11 @@ use super::{
 };
 
 pub trait Apply {
-    fn apply(&self, sub: &TypeSubstitution) -> Self;
+    fn apply(&self, sub: &Substitution) -> Self;
 }
 
 impl Apply for Type {
-    fn apply(&self, sub: &TypeSubstitution) -> Self {
+    fn apply(&self, sub: &Substitution) -> Self {
         match &self {
             Type::Named(n, args) => {
                 let newArgs = args.iter().map(|arg| arg.apply(sub)).collect();
@@ -46,7 +46,7 @@ impl Apply for Type {
 }
 
 impl<T: Apply> Apply for Option<T> {
-    fn apply(&self, sub: &TypeSubstitution) -> Self {
+    fn apply(&self, sub: &Substitution) -> Self {
         match self {
             Some(t) => Some(t.apply(sub)),
             None => None,
@@ -55,13 +55,13 @@ impl<T: Apply> Apply for Option<T> {
 }
 
 impl<T: Apply> Apply for Vec<T> {
-    fn apply(&self, sub: &TypeSubstitution) -> Self {
+    fn apply(&self, sub: &Substitution) -> Self {
         self.iter().map(|i| i.apply(sub)).collect()
     }
 }
 
 impl Apply for Variant {
-    fn apply(&self, sub: &TypeSubstitution) -> Self {
+    fn apply(&self, sub: &Substitution) -> Self {
         let mut v = self.clone();
         v.items = v.items.apply(sub);
         v
@@ -69,7 +69,7 @@ impl Apply for Variant {
 }
 
 impl Apply for Enum {
-    fn apply(&self, sub: &TypeSubstitution) -> Self {
+    fn apply(&self, sub: &Substitution) -> Self {
         let mut e = self.clone();
         e.ty = e.ty.apply(sub);
         e.variants = e.variants.apply(sub);
@@ -78,7 +78,7 @@ impl Apply for Enum {
 }
 
 impl Apply for Field {
-    fn apply(&self, sub: &TypeSubstitution) -> Self {
+    fn apply(&self, sub: &Substitution) -> Self {
         let mut f = self.clone();
         f.ty = f.ty.apply(sub);
         f
@@ -86,7 +86,7 @@ impl Apply for Field {
 }
 
 impl Apply for Struct {
-    fn apply(&self, sub: &TypeSubstitution) -> Self {
+    fn apply(&self, sub: &Substitution) -> Self {
         let mut c = self.clone();
         c.ty = c.ty.apply(sub);
         c.fields = c.fields.apply(sub);
@@ -95,7 +95,7 @@ impl Apply for Struct {
 }
 
 impl Apply for Trait {
-    fn apply(&self, sub: &TypeSubstitution) -> Self {
+    fn apply(&self, sub: &Substitution) -> Self {
         //println!("Applying for {}", self.value);
         let mut t = self.clone();
         t.params = t.params.apply(sub);
@@ -106,7 +106,7 @@ impl Apply for Trait {
 }
 
 impl Apply for AssociatedType {
-    fn apply(&self, sub: &TypeSubstitution) -> Self {
+    fn apply(&self, sub: &Substitution) -> Self {
         //println!("Applying for {}", self.value);
         let mut n = self.clone();
         n.ty = n.ty.apply(sub);
@@ -115,7 +115,7 @@ impl Apply for AssociatedType {
 }
 
 impl Apply for MemberInfo {
-    fn apply(&self, sub: &TypeSubstitution) -> Self {
+    fn apply(&self, sub: &Substitution) -> Self {
         //println!("Applying for {}", self.value);
         let mut m = self.clone();
         m.result = m.result.apply(sub);
@@ -124,7 +124,7 @@ impl Apply for MemberInfo {
 }
 
 impl Apply for Instance {
-    fn apply(&self, sub: &TypeSubstitution) -> Self {
+    fn apply(&self, sub: &Substitution) -> Self {
         //println!("Applying for {}", self.value);
         let mut i = self.clone();
         i.types = i.types.apply(sub);
@@ -135,7 +135,7 @@ impl Apply for Instance {
 }
 
 impl Apply for Variable {
-    fn apply(&self, sub: &TypeSubstitution) -> Self {
+    fn apply(&self, sub: &Substitution) -> Self {
         //println!("Applying for {}", self.value);
         let mut v = self.clone();
         v.ty = v.ty.apply(sub);
@@ -144,7 +144,7 @@ impl Apply for Variable {
 }
 
 impl Apply for Constraint {
-    fn apply(&self, sub: &TypeSubstitution) -> Self {
+    fn apply(&self, sub: &Substitution) -> Self {
         //println!("Applying for {}", self.value);
         let mut ctx = self.clone();
         ctx.args = ctx.args.apply(sub);
@@ -154,7 +154,7 @@ impl Apply for Constraint {
 }
 
 impl Apply for ConstraintContext {
-    fn apply(&self, sub: &TypeSubstitution) -> Self {
+    fn apply(&self, sub: &Substitution) -> Self {
         //println!("Applying for {}", self.value);
         let mut ctx = self.clone();
         ctx.typeParameters = ctx.typeParameters.apply(sub);
@@ -164,7 +164,7 @@ impl Apply for ConstraintContext {
 }
 
 impl Apply for FieldInfo {
-    fn apply(&self, sub: &TypeSubstitution) -> Self {
+    fn apply(&self, sub: &Substitution) -> Self {
         //println!("Applying for {}", self.value);
         let mut info = self.clone();
         info.ty = info.ty.apply(sub);
@@ -173,7 +173,7 @@ impl Apply for FieldInfo {
 }
 
 impl Apply for InstructionKind {
-    fn apply(&self, sub: &TypeSubstitution) -> Self {
+    fn apply(&self, sub: &Substitution) -> Self {
         match self {
             InstructionKind::FunctionCall(dest, name, args) => {
                 InstructionKind::FunctionCall(dest.apply(sub), name.clone(), args.apply(sub))
@@ -209,7 +209,9 @@ impl Apply for InstructionKind {
             InstructionKind::FieldAssign(name, rhs, fields) => {
                 InstructionKind::FieldAssign(name.apply(sub), rhs.apply(sub), fields.apply(sub))
             }
-            InstructionKind::DeclareVar(var) => InstructionKind::DeclareVar(var.apply(sub)),
+            InstructionKind::DeclareVar(var, mutability) => {
+                InstructionKind::DeclareVar(var.apply(sub), mutability.clone())
+            }
             InstructionKind::Transform(dest, root, index) => {
                 InstructionKind::Transform(dest.apply(sub), root.apply(sub), index.clone())
             }
@@ -228,7 +230,7 @@ pub fn instantiateEnum(allocator: &mut TypeVarAllocator, e: &Enum, ty: &Type) ->
     let sub = instantiateType4(allocator, &vec![e.ty.clone()]);
     let mut e = e.clone();
     e = e.apply(&sub);
-    let mut sub = TypeSubstitution::new();
+    let mut sub = Substitution::new();
     let r = unify(&mut sub, ty, &e.ty, false);
     assert!(r.is_ok());
     e.apply(&sub)
@@ -243,7 +245,7 @@ pub fn instantiateStruct(allocator: &mut TypeVarAllocator, c: &Struct, ty: &Type
     let sub = instantiateType4(allocator, &vec![c.ty.clone()]);
     let mut res = c.clone();
     res = res.apply(&sub);
-    let mut sub = TypeSubstitution::new();
+    let mut sub = Substitution::new();
     let r = unify(&mut sub, ty, &res.ty, false);
     assert!(r.is_ok());
     res.apply(&sub)
@@ -254,7 +256,7 @@ pub fn instantiateInstance(allocator: &mut TypeVarAllocator, i: &Instance) -> In
     for ty in &i.types {
         vars = ty.collectVars(vars);
     }
-    let mut sub = TypeSubstitution::new();
+    let mut sub = Substitution::new();
     for var in &vars {
         sub.add(Type::Var(var.clone()), allocator.next());
     }
@@ -266,12 +268,12 @@ pub fn instantiateTrait(allocator: &mut TypeVarAllocator, t: &Trait) -> Trait {
     t.apply(&sub)
 }
 
-pub fn instantiateType4(allocator: &mut TypeVarAllocator, types: &Vec<Type>) -> TypeSubstitution {
+pub fn instantiateType4(allocator: &mut TypeVarAllocator, types: &Vec<Type>) -> Substitution {
     let mut vars = BTreeSet::new();
     for ty in types {
         vars = ty.collectVars(vars);
     }
-    let mut sub = TypeSubstitution::new();
+    let mut sub = Substitution::new();
     for var in &vars {
         sub.add(Type::Var(var.clone()), allocator.next());
     }
