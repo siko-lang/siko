@@ -1,3 +1,5 @@
+use core::panic;
+
 use crate::siko::{
     hir::{
         Data::{Enum as HirEnum, Struct as HirStruct},
@@ -96,25 +98,13 @@ impl<'a> Builder<'a> {
                     let var = self.buildVariable(var);
                     block.instructions.push(Instruction::Declare(var.clone()));
                 }
-                HirInstructionKind::ValueRef(dest, name) => {
-                    let dest = self.buildVariable(dest);
-                    let var = MirVariable {
-                        name: convertName(&name.value),
-                        ty: dest.ty.clone(),
-                    };
-                    block.instructions.push(Instruction::Declare(dest.clone()));
-                    block.instructions.push(Instruction::Store(var, dest));
-                }
                 HirInstructionKind::Assign(lhs, rhs) => {
                     let rhs = self.buildVariable(rhs);
                     let dest = self.buildVariable(lhs);
                     block.instructions.push(Instruction::Memcpy(rhs, dest));
                 }
-                HirInstructionKind::Bind(var, rhs, _) => {
-                    let rhs = self.buildVariable(rhs);
-                    let var = self.buildVariable(var);
-                    block.instructions.push(Instruction::Declare(var.clone()));
-                    block.instructions.push(Instruction::Memcpy(rhs, var));
+                HirInstructionKind::Bind(_, _, _) => {
+                    panic!("Bind instruction found in Lowering, this should not happen");
                 }
                 HirInstructionKind::Jump(_, blockId, _) => {
                     block.instructions.push(Instruction::Jump(self.getBlockName(*blockId)));

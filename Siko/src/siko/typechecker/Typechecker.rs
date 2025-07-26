@@ -36,28 +36,10 @@ struct ReadFieldResult {
     derefs: Vec<Type>,
 }
 
-struct MutableMethodCallInfo {
-    receiver: Variable,
-    baseType: Type,
-    selfLessType: Type,
-}
-
 struct Constraint {
     ty: Type,
     traitName: QualifiedName,
     location: Location,
-}
-
-enum MarkerInfo {
-    ImplicitRef(Variable),
-    ImplicitClone(Variable),
-    ImplicitConvert(Variable, ImplicitConvertInfo),
-    Deref(Variable, Vec<Type>),
-}
-
-enum ImplicitConvertInfo {
-    Simple(Type),
-    Ref(Type),
 }
 
 pub struct Typechecker<'a> {
@@ -70,7 +52,6 @@ pub struct Typechecker<'a> {
     types: BTreeMap<String, Type>,
     selfType: Option<Type>,
     mutables: BTreeMap<String, Mutability>,
-    mutableMethodCalls: BTreeMap<Variable, MutableMethodCallInfo>,
     fieldTypes: BTreeMap<Variable, Vec<Type>>,
     bodyBuilder: BodyBuilder,
     visitedBlocks: BTreeSet<BlockId>,
@@ -96,7 +77,6 @@ impl<'a> Typechecker<'a> {
             types: BTreeMap::new(),
             selfType: None,
             mutables: BTreeMap::new(),
-            mutableMethodCalls: BTreeMap::new(),
             fieldTypes: BTreeMap::new(),
             bodyBuilder: BodyBuilder::cloneFunction(f),
             visitedBlocks: BTreeSet::new(),
@@ -159,13 +139,10 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::Converter(var, _) => {
                             self.initializeVar(var);
                         }
-                        InstructionKind::MethodCall(var, _, _, _) => {
+                        InstructionKind::MethodCall(_, _, _, _) => {
                             //self.initializeVar(var);
                         }
                         InstructionKind::DynamicFunctionCall(var, _, _) => {
-                            self.initializeVar(var);
-                        }
-                        InstructionKind::ValueRef(var, _) => {
                             self.initializeVar(var);
                         }
                         InstructionKind::FieldRef(var, _, _) => {
@@ -208,9 +185,7 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::FieldAssign(_, _, _) => {}
                         InstructionKind::DeclareVar(var, mutability) => {
                             self.initializeVar(var);
-                            if *mutability == Mutability::Mutable {
-                                self.mutables.insert(var.value.to_string(), Mutability::Mutable);
-                            }
+                            self.mutables.insert(var.value.to_string(), mutability.clone());
                         }
                         InstructionKind::Transform(var, _, _) => {
                             self.initializeVar(var);
@@ -738,10 +713,6 @@ impl<'a> Typechecker<'a> {
                 let fnType = self.getType(callable);
                 self.checkFunctionCall(&args, dest, fnType, &ConstraintContext::new());
             }
-            InstructionKind::ValueRef(dest, value) => {
-                let receiverType = self.getType(value);
-                self.unify(receiverType, self.getType(dest), instruction.location.clone());
-            }
             InstructionKind::Bind(name, rhs, _) => {
                 self.unify(self.getType(name), self.getType(rhs), instruction.location.clone());
             }
@@ -1069,7 +1040,9 @@ impl<'a> Typechecker<'a> {
                             match (&destTy, &sourceTy) {
                                 (Type::Reference(inner, _), Type::Reference(src, _)) => {
                                     self.unify(*inner.clone(), *src.clone(), instruction.location.clone());
-                                    let kind = InstructionKind::ValueRef(dest.clone(), source.clone());
+                                    builder.addDeclare(dest.clone(), instruction.location.clone());
+                                    builder.step();
+                                    let kind = InstructionKind::Assign(dest.clone(), source.clone());
                                     builder.replaceInstruction(kind, instruction.location.clone());
                                 }
                                 (destTy, Type::Reference(sourceInner, _)) => {
@@ -1147,11 +1120,37 @@ impl<'a> Typechecker<'a> {
                                             builder.replaceInstruction(kind, instruction.location.clone());
                                         }
                                     } else {
-                                        let kind = InstructionKind::ValueRef(dest.clone(), source.clone());
+                                        builder.addDeclare(dest.clone(), instruction.location.clone());
+                                        builder.step();
+                                        let kind = InstructionKind::Assign(dest.clone(), source.clone());
                                         builder.replaceInstruction(kind, instruction.location.clone());
                                     }
                                 }
                             }
+                        }
+                        builder.step();
+                    }
+                    None => {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    fn removeBinds(&mut self) {
+        // println!("removeBinds {}", self.f.name);
+        let allblocksIds = self.bodyBuilder.getAllBlockIds();
+        for blockId in allblocksIds {
+            let mut builder = self.bodyBuilder.iterator(blockId);
+            loop {
+                match builder.getInstruction() {
+                    Some(instruction) => {
+                        if let InstructionKind::Bind(dest, src, _) = &instruction.kind {
+                            builder.addDeclare(dest.clone(), instruction.location.clone());
+                            let kind = InstructionKind::Assign(dest.clone(), src.clone());
+                            builder.step();
+                            builder.replaceInstruction(kind, instruction.location.clone());
                         }
                         builder.step();
                     }
@@ -1171,6 +1170,7 @@ impl<'a> Typechecker<'a> {
 
         self.processConverters();
         self.addFieldTypes();
+        self.removeBinds();
 
         let mut result = self.f.clone();
         result.body = Some(self.bodyBuilder.build());
@@ -1179,7 +1179,7 @@ impl<'a> Typechecker<'a> {
         }
 
         self.addTypes(&mut result);
-        self.dump(&result);
+        //self.dump(&result);
         self.verify(&result);
         result
     }

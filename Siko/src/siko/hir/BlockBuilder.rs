@@ -240,6 +240,7 @@ impl BlockBuilder {
     pub fn addUnit(&mut self, location: Location) -> Variable {
         let mut result = self.bodyBuilder.createTempValue(VariableName::Unit, location.clone());
         result.ty = Some(Type::getUnitType());
+        self.addDeclare(result.clone(), location.clone());
         self.addInstruction(InstructionKind::Tuple(result.clone(), Vec::new()), location.clone());
         result
     }
@@ -283,7 +284,11 @@ impl BlockBuilder {
     }
 
     pub fn addDeclare(&mut self, name: Variable, location: Location) {
-        self.addInstruction(InstructionKind::DeclareVar(name, Mutability::Mutable), location.clone());
+        self.addDeclareWithMutability(name, location, Mutability::Mutable);
+    }
+
+    pub fn addDeclareWithMutability(&mut self, name: Variable, location: Location, mutability: Mutability) {
+        self.addInstruction(InstructionKind::DeclareVar(name, mutability), location.clone());
     }
 
     pub fn addBind(&mut self, name: Variable, rhs: Variable, mutable: bool, location: Location) {

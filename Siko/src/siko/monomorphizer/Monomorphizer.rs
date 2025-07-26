@@ -1,3 +1,4 @@
+use core::panic;
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     fmt::Display,
@@ -249,17 +250,14 @@ impl Monomorphize for InstructionKind {
                 root.process(sub, mono),
                 args.process(sub, mono),
             ),
-            InstructionKind::ValueRef(dest, value) => {
-                InstructionKind::ValueRef(dest.process(sub, mono), value.process(sub, mono))
-            }
             InstructionKind::FieldRef(dest, root, name) => {
                 InstructionKind::FieldRef(dest.process(sub, mono), root.process(sub, mono), name.clone())
             }
             InstructionKind::TupleIndex(dest, root, index) => {
                 InstructionKind::TupleIndex(dest.process(sub, mono), root.process(sub, mono), *index)
             }
-            InstructionKind::Bind(lhs, rhs, mutable) => {
-                InstructionKind::Bind(lhs.process(sub, mono), rhs.process(sub, mono), mutable.clone())
+            InstructionKind::Bind(_, _, _) => {
+                panic!("Bind instruction found in Monomorphizer, this should not happen");
             }
             InstructionKind::Tuple(dest, args) => {
                 InstructionKind::Tuple(dest.process(sub, mono), args.process(sub, mono))

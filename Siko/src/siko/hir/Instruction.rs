@@ -129,7 +129,6 @@ pub enum InstructionKind {
     Converter(Variable, Variable),
     MethodCall(Variable, Variable, String, Vec<Variable>),
     DynamicFunctionCall(Variable, Variable, Vec<Variable>),
-    ValueRef(Variable, Variable),
     FieldRef(Variable, Variable, String),
     TupleIndex(Variable, Variable, i32),
     Bind(Variable, Variable, bool), //mutable
@@ -171,7 +170,6 @@ impl InstructionKind {
             InstructionKind::Converter(v, _) => Some(v.clone()),
             InstructionKind::MethodCall(v, _, _, _) => Some(v.clone()),
             InstructionKind::DynamicFunctionCall(v, _, _) => Some(v.clone()),
-            InstructionKind::ValueRef(v, _) => Some(v.clone()),
             InstructionKind::FieldRef(v, _, _) => Some(v.clone()),
             InstructionKind::TupleIndex(v, _, _) => Some(v.clone()),
             InstructionKind::Bind(v, _, _) => Some(v.clone()),
@@ -183,7 +181,7 @@ impl InstructionKind {
             InstructionKind::Ref(v, _) => Some(v.clone()),
             InstructionKind::Drop(_, _) => None,
             InstructionKind::Jump(v, _, _) => Some(v.clone()),
-            InstructionKind::Assign(_, _) => None,
+            InstructionKind::Assign(v, _) => Some(v.clone()),
             InstructionKind::FieldAssign(_, _, _) => None,
             InstructionKind::DeclareVar(v, _) => Some(v.clone()),
             InstructionKind::Transform(v, _, _) => Some(v.clone()),
@@ -218,11 +216,6 @@ impl InstructionKind {
                 let new_func = func.replace(&from, to.clone());
                 let new_args = args.iter().map(|arg| arg.replace(&from, to.clone())).collect();
                 InstructionKind::DynamicFunctionCall(new_var, new_func, new_args)
-            }
-            InstructionKind::ValueRef(var, target) => {
-                let new_var = var.replace(&from, to.clone());
-                let new_target = target.replace(&from, to);
-                InstructionKind::ValueRef(new_var, new_target)
             }
             InstructionKind::FieldRef(var, target, name) => {
                 let new_var = var.replace(&from, to.clone());
@@ -325,7 +318,6 @@ impl InstructionKind {
                 vars.extend(args.clone());
                 vars
             }
-            InstructionKind::ValueRef(var, target) => vec![var.clone(), target.clone()],
             InstructionKind::FieldRef(var, target, _) => vec![var.clone(), target.clone()],
             InstructionKind::TupleIndex(var, target, _) => vec![var.clone(), target.clone()],
             InstructionKind::Bind(var, value, _) => vec![var.clone(), value.clone()],
@@ -369,7 +361,6 @@ impl InstructionKind {
             InstructionKind::DynamicFunctionCall(dest, callable, args) => {
                 format!("{} = DYN_CALL({}, {:?})", dest, callable, args)
             }
-            InstructionKind::ValueRef(dest, v) => format!("{} = {}", dest, v),
             InstructionKind::FieldRef(dest, v, name) => format!("{} = ({}).{}", dest, v, name),
             InstructionKind::TupleIndex(dest, v, idx) => format!("{} = {}.t{}", dest, v, idx),
             InstructionKind::Bind(v, rhs, mutable) => {

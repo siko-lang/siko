@@ -1,3 +1,4 @@
+use core::panic;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::siko::{
@@ -146,15 +147,14 @@ impl RemoveTuples for InstructionKind {
                 root.removeTuples(ctx),
                 args.removeTuples(ctx),
             ),
-            InstructionKind::ValueRef(dest, arg) => InstructionKind::ValueRef(dest.removeTuples(ctx), arg.clone()),
             InstructionKind::FieldRef(dest, receiver, field) => {
                 InstructionKind::FieldRef(dest.removeTuples(ctx), receiver.removeTuples(ctx), field.clone())
             }
             InstructionKind::TupleIndex(dest, root, index) => {
                 InstructionKind::TupleIndex(dest.removeTuples(ctx), root.removeTuples(ctx), *index)
             }
-            InstructionKind::Bind(dest, rhs, mutable) => {
-                InstructionKind::Bind(dest.removeTuples(ctx), rhs.removeTuples(ctx), *mutable)
+            InstructionKind::Bind(_, _, _) => {
+                panic!("Bind instruction found in RemoveTuples, this should not happen");
             }
             InstructionKind::StringLiteral(dest, lit) => {
                 InstructionKind::StringLiteral(dest.removeTuples(ctx), lit.clone())

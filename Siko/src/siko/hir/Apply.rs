@@ -185,7 +185,6 @@ impl Apply for InstructionKind {
             InstructionKind::DynamicFunctionCall(dest, callable, args) => {
                 InstructionKind::DynamicFunctionCall(dest.apply(sub), callable.apply(sub), args.apply(sub))
             }
-            InstructionKind::ValueRef(dest, value) => InstructionKind::ValueRef(dest.apply(sub), value.clone()),
             InstructionKind::FieldRef(dest, root, field) => {
                 InstructionKind::FieldRef(dest.apply(sub), root.apply(sub), field.clone())
             }

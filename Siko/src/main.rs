@@ -4,7 +4,7 @@
 mod siko;
 
 use siko::{
-    backend::{DeadCodeEliminator::eliminateDeadCode, Drop::checkDrops, RemoveTuples::removeTuples},
+    backend::{drop::Drop::checkDrops, DeadCodeEliminator::eliminateDeadCode, RemoveTuples::removeTuples},
     hir::Program::Program,
     hir_lowering::Lowering::lowerProgram,
     location::{FileManager::FileManager, Report::ReportContext},
@@ -114,9 +114,9 @@ fn main() {
     }
     resolver.process();
     let program = resolver.ir();
-    //println!("after resolver\n{}", program);
+    println!("after resolver\n{}", program);
     let program = typecheck(&ctx, program);
-    //println!("after typchk\n{}", program);
+    println!("after typchk\n{}", program);
     let program = eliminateDeadCode(&ctx, program);
     //println!("after dce\n{}", program);
     let program = checkDrops(&ctx, program);

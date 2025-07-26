@@ -128,7 +128,12 @@ impl<'a> BorrowChecker<'a> {
                 );
             }
             Key::Instruction(instruction_id) => {
-                let i = self.function.body.as_ref().expect("no body").getInstruction(instruction_id);
+                let i = self
+                    .function
+                    .body
+                    .as_ref()
+                    .expect("no body")
+                    .getInstruction(instruction_id);
                 match &i.kind {
                     InstructionKind::Bind(name, _) => {
                         context.liveValues.insert(Value {
@@ -144,36 +149,36 @@ impl<'a> BorrowChecker<'a> {
                         println!("Path {} {} {}", path, ty, refLifetime);
                         context.refs.insert(refLifetime, path);
                     }
-                    InstructionKind::ValueRef(_, _, _) => {
-                        if let Some(usage) = &node.usage {
-                            let ty = i.ty.as_ref().unwrap();
-                            let lifetimes = ty.collectLifetimes();
-                            for l in lifetimes {
-                                match context.refs.get(&l) {
-                                    Some(path) => {
-                                        if let Some(_) = context.deadValues.get(path) {
-                                            let mut entries = Vec::new();
-                                            entries.push(Entry::new(None, i.location.clone()));
-                                            // let report = Report::build("reference to moved/dead value".to_string(), entries);
-                                            // report.print();
-                                        }
-                                    }
-                                    None => {}
-                                }
-                            }
-                            if let Some(loc) = context.deadValues.get(usage) {
-                                let mut entries = Vec::new();
-                                entries.push(Entry::new(Some("It was moved here".to_string()), loc.clone()));
-                                entries.push(Entry::new(Some("Trying to move again here".to_string()), i.location.clone()));
-                                // let report = Report::build(
-                                //     "trying to move already moved value".to_string(),
-                                //     entries,
-                                // );
-                                // report.print();
-                            }
-                            context.deadValues.insert(usage.clone(), i.location.clone());
-                        }
-                    }
+                    // InstructionKind::ValueRef(_, _, _) => {
+                    //     if let Some(usage) = &node.usage {
+                    //         let ty = i.ty.as_ref().unwrap();
+                    //         let lifetimes = ty.collectLifetimes();
+                    //         for l in lifetimes {
+                    //             match context.refs.get(&l) {
+                    //                 Some(path) => {
+                    //                     if let Some(_) = context.deadValues.get(path) {
+                    //                         let mut entries = Vec::new();
+                    //                         entries.push(Entry::new(None, i.location.clone()));
+                    //                         // let report = Report::build("reference to moved/dead value".to_string(), entries);
+                    //                         // report.print();
+                    //                     }
+                    //                 }
+                    //                 None => {}
+                    //             }
+                    //         }
+                    //         if let Some(loc) = context.deadValues.get(usage) {
+                    //             let mut entries = Vec::new();
+                    //             entries.push(Entry::new(Some("It was moved here".to_string()), loc.clone()));
+                    //             entries.push(Entry::new(Some("Trying to move again here".to_string()), i.location.clone()));
+                    //             // let report = Report::build(
+                    //             //     "trying to move already moved value".to_string(),
+                    //             //     entries,
+                    //             // );
+                    //             // report.print();
+                    //         }
+                    //         context.deadValues.insert(usage.clone(), i.location.clone());
+                    //     }
+                    // }
                     _ => {}
                 }
             }

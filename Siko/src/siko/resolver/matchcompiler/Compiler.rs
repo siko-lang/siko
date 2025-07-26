@@ -461,9 +461,10 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
             let v = self.matchValue.clone();
             let mut builder = self.resolver.bodyBuilder.block(self.contBlockId);
             builder.current();
+            builder.implicit().addDeclare(value.clone(), self.bodyLocation.clone());
             builder
                 .implicit()
-                .addInstruction(InstructionKind::ValueRef(value.clone(), v), self.matchLocation.clone());
+                .addInstruction(InstructionKind::Assign(value.clone(), v), self.matchLocation.clone());
         }
         value
     }
