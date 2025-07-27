@@ -6,7 +6,7 @@ use crate::siko::backend::drop::{
     Usage::{Usage, UsageKind},
 };
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Event {
     Usage(Usage),
     Assign(Path),
@@ -29,7 +29,7 @@ impl Display for Event {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct EventSeries {
     events: Vec<Event>,
 }
@@ -47,7 +47,7 @@ impl EventSeries {
         self.events.len()
     }
 
-    pub fn compress(&self, limit: usize) -> EventSeries {
+    pub fn prune(&self, limit: usize) -> EventSeries {
         fn usage_overwritten(event: &Event, assignPath: &Path) -> bool {
             if let Event::Usage(usage) = event {
                 // println!(
@@ -62,45 +62,53 @@ impl EventSeries {
             }
         }
 
-        let mut compressed = self.clone();
-        //println!("Compressing events (original): {:?}", compressed.events);
+        let mut pruned: EventSeries = self.clone();
+        //println!("Prune events (original): {:?}", pruned.events);
         let mut index = limit;
         while index > 0 {
-            if let Event::Assign(path) = compressed.events[index].clone() {
+            if let Event::Assign(path) = pruned.events[index].clone() {
                 for i in (0..index) {
-                    if usage_overwritten(&compressed.events[i], &path) {
-                        compressed.events[i] = Event::Noop;
+                    if usage_overwritten(&pruned.events[i], &path) {
+                        pruned.events[i] = Event::Noop;
                     }
                 }
             }
             index -= 1;
         }
-        //println!("Compressed events: {:?}", compressed.events);
+        //println!("Pruned events: {:?}", pruned.events);
+        pruned
+    }
+
+    pub fn compress(&self) -> EventSeries {
+        //println!("Before compression: {:?}", self.events);
+        let mut compressed = self.prune(self.len() - 1);
+        compressed.events.retain(|e| *e != Event::Noop);
+        //println!("After compression: {:?}", compressed.events);
         compressed
     }
 
-    pub fn validate(&self) -> Result<(), Vec<Error>> {
-        let mut errors = Vec::new();
+    pub fn validate(&self) -> Vec<Collision> {
+        let mut collisions = Vec::new();
         for (index, event) in self.events.iter().enumerate() {
             if let Event::Usage(usage) = event {
-                let compressed = self.compress(index);
+                let compressed = self.prune(index);
                 for prev in compressed.events.iter().take(index) {
                     if let Event::Usage(prevUsage) = prev {
                         if prevUsage.path.sharesPrefixWith(&usage.path) && prevUsage.kind == UsageKind::Move {
-                            errors.push(Error::AlreadyMoved {
+                            collisions.push(Collision {
                                 path: usage.path.clone(),
-                                prevMove: prevUsage.path.clone(),
+                                prev: prevUsage.path.clone(),
                             });
                         }
                     }
                 }
             }
         }
-
-        if errors.is_empty() {
-            Ok(())
-        } else {
-            Err(errors)
-        }
+        collisions
     }
+}
+
+pub struct Collision {
+    pub path: Path,
+    pub prev: Path,
 }

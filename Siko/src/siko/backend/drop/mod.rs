@@ -3,7 +3,6 @@ pub mod Context;
 pub mod Drop;
 pub mod Error;
 pub mod Event;
-pub mod Misc;
 pub mod Path;
 pub mod SingleUseVariables;
 pub mod SyntaxBlock;

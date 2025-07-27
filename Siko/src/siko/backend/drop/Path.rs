@@ -1,12 +1,22 @@
 use std::fmt::Display;
 
-use crate::siko::{hir::Variable::Variable, location::Location::Location};
+use crate::siko::{
+    hir::{Function::BlockId, Variable::Variable},
+    location::Location::Location,
+};
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct InstructionRef {
+    pub blockId: BlockId,
+    pub instructionId: u32,
+}
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Path {
     pub root: Variable,
     pub items: Vec<String>,
     pub location: Location,
+    pub instructionRef: InstructionRef,
 }
 
 impl Path {
@@ -15,6 +25,10 @@ impl Path {
             root: root,
             items: Vec::new(),
             location: location,
+            instructionRef: InstructionRef {
+                blockId: BlockId::first(),
+                instructionId: 0,
+            },
         }
     }
 
@@ -22,6 +36,12 @@ impl Path {
         let mut p = self.clone();
         p.items.push(item);
         p.location = location;
+        p
+    }
+
+    pub fn setInstructionRef(&self, instructionRef: InstructionRef) -> Path {
+        let mut p = self.clone();
+        p.instructionRef = instructionRef;
         p
     }
 

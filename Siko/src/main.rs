@@ -114,7 +114,7 @@ fn main() {
     }
     resolver.process();
     let program = resolver.ir();
-    println!("after resolver\n{}", program);
+    //println!("after resolver\n{}", program);
     let program = typecheck(&ctx, program);
     println!("after typchk\n{}", program);
     let program = eliminateDeadCode(&ctx, program);

@@ -1,84 +1,19 @@
-use std::{collections::BTreeMap, fmt::Display};
+use core::panic;
+use std::collections::BTreeMap;
 
 use crate::siko::{
     backend::drop::{
-        Error::Error,
-        Event::{Event, EventSeries},
-        Path::Path,
+        Context::Context,
+        Path::{InstructionRef, Path},
         SingleUseVariables::SingleUseVariableInfo,
         Usage::{Usage, UsageKind},
     },
     hir::{
-        Function::Block,
+        Function::{Block, BlockId},
         Instruction::InstructionKind,
-        Variable::{Variable, VariableName},
+        Variable::Variable,
     },
-    location::Report::{Entry, Report, ReportContext},
 };
-
-pub struct Context {
-    pub liveData: Vec<Path>,
-    pub usages: BTreeMap<VariableName, EventSeries>,
-}
-
-impl Context {
-    pub fn new() -> Context {
-        Context {
-            liveData: Vec::new(),
-            usages: BTreeMap::new(),
-        }
-    }
-
-    pub fn addLive(&mut self, data: Path) {
-        self.liveData.push(data);
-    }
-
-    pub fn addAssign(&mut self, path: Path) {
-        self.usages
-            .entry(path.root.value.clone())
-            .or_insert_with(EventSeries::new)
-            .push(Event::Assign(path));
-    }
-
-    pub fn addUsage(&mut self, usage: Usage) {
-        self.usages
-            .entry(usage.path.root.value.clone())
-            .or_insert_with(EventSeries::new)
-            .push(Event::Usage(usage));
-    }
-
-    pub fn useVar(&mut self, var: &Variable) {
-        let ty = var.getType();
-        //  println!("Using variable: {} {}", var.value.visibleName(), ty);
-        if ty.isReference() {
-            self.addUsage(Usage {
-                path: Path::new(var.clone(), var.location.clone()),
-                kind: UsageKind::Ref,
-            });
-        } else {
-            self.addUsage(Usage {
-                path: Path::new(var.clone(), var.location.clone()),
-                kind: UsageKind::Move,
-            });
-        }
-    }
-
-    pub fn validate(&self) -> Result<(), Vec<Error>> {
-        let mut errors = Vec::new();
-        for (var_name, usages) in &self.usages {
-            //println!("Validating usages for variable: {} {} usage(s)", var_name, usages.len());
-            if let Err(errs) = usages.validate() {
-                errors.extend(errs);
-            }
-        }
-
-        if errors.is_empty() {
-            Ok(())
-        } else {
-            Err(errors)
-        }
-    }
-}
 
 pub struct BlockProcessor<'a> {
     singleUseVars: &'a SingleUseVariableInfo,
@@ -93,10 +28,13 @@ impl<'a> BlockProcessor<'a> {
         }
     }
 
-    pub fn process(&mut self, block: &Block) {
-        // Process the block here
-        let mut context = Context::new();
-        //println!("Processing block with id: {}", block.id);
+    pub fn process(&mut self, block: &Block, mut context: Context) -> (Context, Vec<BlockId>) {
+        //println!("Processing block: {}", block.id);
+        let mut jumpTargets = Vec::new();
+        let mut instructionRef = InstructionRef {
+            blockId: block.id,
+            instructionId: 0,
+        };
         for instruction in &block.instructions {
             match &instruction.kind {
                 InstructionKind::DeclareVar(var, _) => {
@@ -106,80 +44,106 @@ impl<'a> BlockProcessor<'a> {
                 InstructionKind::BlockEnd(_) => {}
                 InstructionKind::FunctionCall(_, _, args) => {
                     for arg in args {
-                        context.useVar(arg);
+                        context.useVar(arg, instructionRef);
                     }
                 }
                 InstructionKind::Assign(dest, src) => {
-                    context.useVar(src);
+                    context.useVar(src, instructionRef);
                     let path = Path::new(dest.clone(), dest.location.clone());
                     context.addAssign(path.clone());
                 }
                 InstructionKind::Return(_, arg) => {
-                    context.useVar(arg);
+                    context.useVar(arg, instructionRef);
                 }
                 InstructionKind::FieldRef(dest, receiver, name) => {
-                    let destTy = dest.getType();
-                    let mut path =
-                        Path::new(receiver.clone(), receiver.location.clone()).add(name.clone(), dest.location.clone());
-                    if self.singleUseVars.isSingleUse(&dest.value) && self.singleUseVars.isReceiver(&dest.value) {
-                        self.receiverPaths.insert(dest.clone(), path.clone());
-                    } else {
-                        if let Some(origPath) = self.receiverPaths.get(receiver) {
-                            path = origPath.add(name.clone(), dest.location.clone());
-                        }
-                        if destTy.isReference() {
-                            context.addUsage(Usage {
-                                path,
-                                kind: UsageKind::Ref,
-                            });
-                        } else {
-                            context.addUsage(Usage {
-                                path,
-                                kind: UsageKind::Move,
-                            });
-                        }
+                    self.processFieldRef(dest, receiver, name.clone(), &mut context);
+                }
+                InstructionKind::FieldAssign(dest, receiver, fields) => {
+                    context.useVar(receiver, instructionRef);
+                    let mut path = Path::new(dest.clone(), dest.location.clone());
+                    for field in fields {
+                        path = path.add(field.name.clone(), dest.location.clone());
                     }
+                    context.addAssign(path.clone());
                 }
                 InstructionKind::Tuple(_, args) => {
                     for arg in args {
-                        context.useVar(arg);
+                        context.useVar(arg, instructionRef);
                     }
                 }
-                i => {
-                    panic!("Unhandled instruction kind: {}", i);
+                InstructionKind::Converter(_, _) => {
+                    panic!("Converter instruction found in block processor");
+                }
+                InstructionKind::MethodCall(_, _, _, _) => {
+                    panic!("Method call instruction found in block processor");
+                }
+                InstructionKind::DynamicFunctionCall(_, _, _) => {
+                    panic!("Dynamic function call found in block processor");
+                }
+                InstructionKind::TupleIndex(dest, receiver, index) => {
+                    self.processFieldRef(dest, receiver, format!(".{}", index), &mut context);
+                }
+                InstructionKind::Bind(_, _, _) => {
+                    panic!("Bind instruction found in block processor");
+                }
+                InstructionKind::StringLiteral(_, _) => {}
+                InstructionKind::IntegerLiteral(_, _) => {}
+                InstructionKind::CharLiteral(_, _) => {}
+                InstructionKind::Ref(_, src) => {
+                    context.useVar(src, instructionRef);
+                }
+                InstructionKind::Drop(_, _) => {
+                    panic!("Drop instruction found in block processor");
+                }
+                InstructionKind::Jump(_, blockId, _) => {
+                    jumpTargets.push(blockId.clone());
+                }
+                InstructionKind::Transform(_, src, _) => {
+                    context.useVar(src, instructionRef);
+                }
+                InstructionKind::EnumSwitch(var, cases) => {
+                    context.useVar(var, instructionRef);
+                    for case in cases {
+                        jumpTargets.push(case.branch.clone());
+                    }
+                }
+                InstructionKind::IntegerSwitch(var, cases) => {
+                    context.useVar(var, instructionRef);
+                    for case in cases {
+                        jumpTargets.push(case.branch.clone());
+                    }
+                }
+                InstructionKind::StringSwitch(var, cases) => {
+                    context.useVar(var, instructionRef);
+                    for case in cases {
+                        jumpTargets.push(case.branch.clone());
+                    }
                 }
             }
+            instructionRef.instructionId += 1;
         }
-
-        let ctx = &ReportContext::new();
-        let errors = context.validate();
-        match errors {
-            Ok(_) => {
-                //println!("Block processed successfully.");
-            }
-            Err(errs) => {
-                self.reportErrors(ctx, errs);
-            }
-        }
+        (context, jumpTargets)
     }
 
-    fn reportErrors(&self, ctx: &ReportContext, errors: Vec<Error>) {
-        for error in errors {
-            match error {
-                Error::AlreadyMoved { path, prevMove } => {
-                    let mut entries = Vec::new();
-                    entries.push(Entry::new(None, path.location.clone()));
-                    entries.push(Entry::new(
-                        Some(format!("NOTE: previous move was here")),
-                        prevMove.location.clone(),
-                    ));
-                    Report::build(
-                        ctx,
-                        format!("Value {} already moved", ctx.yellow(&path.userPath())),
-                        entries,
-                    )
-                    .print();
-                }
+    fn processFieldRef(&mut self, dest: &Variable, receiver: &Variable, name: String, context: &mut Context) {
+        let destTy = dest.getType();
+        let mut path = Path::new(receiver.clone(), receiver.location.clone()).add(name.clone(), dest.location.clone());
+        if self.singleUseVars.isSingleUse(&dest.value) && self.singleUseVars.isReceiver(&dest.value) {
+            self.receiverPaths.insert(dest.clone(), path.clone());
+        } else {
+            if let Some(origPath) = self.receiverPaths.get(receiver) {
+                path = origPath.add(name.clone(), dest.location.clone());
+            }
+            if destTy.isReference() {
+                context.addUsage(Usage {
+                    path,
+                    kind: UsageKind::Ref,
+                });
+            } else {
+                context.addUsage(Usage {
+                    path,
+                    kind: UsageKind::Move,
+                });
             }
         }
     }

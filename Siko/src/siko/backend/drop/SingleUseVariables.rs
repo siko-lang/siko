@@ -26,6 +26,9 @@ impl<'a> SingleUseVariables<'a> {
                     if let InstructionKind::FieldRef(_, receiver, _) = &i.kind {
                         self.receivers.insert(receiver.value.clone());
                     }
+                    if let InstructionKind::TupleIndex(_, receiver, _) = &i.kind {
+                        self.receivers.insert(receiver.value.clone());
+                    }
                     let mut allVariables = i.kind.collectVariables();
                     if let Some(result) = i.kind.getResultVar() {
                         allVariables.retain(|var| var != &result);
