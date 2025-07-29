@@ -1,4 +1,7 @@
-use std::collections::BTreeMap;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt::Display,
+};
 
 use crate::siko::{
     backend::drop::{
@@ -11,20 +14,20 @@ use crate::siko::{
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Context {
-    pub liveData: Vec<Path>,
+    pub liveData: BTreeSet<Path>,
     pub usages: BTreeMap<VariableName, EventSeries>,
 }
 
 impl Context {
     pub fn new() -> Context {
         Context {
-            liveData: Vec::new(),
+            liveData: BTreeSet::new(),
             usages: BTreeMap::new(),
         }
     }
 
     pub fn addLive(&mut self, data: Path) {
-        self.liveData.push(data);
+        self.liveData.insert(data);
     }
 
     pub fn addAssign(&mut self, path: Path) {
@@ -44,7 +47,7 @@ impl Context {
     pub fn useVar(&mut self, var: &Variable, instructionRef: InstructionRef) {
         let ty = var.getType();
         //  println!("Using variable: {} {}", var.value.visibleName(), ty);
-        if ty.isReference() {
+        if ty.isReference() || ty.isPtr() {
             self.addUsage(Usage {
                 path: Path::new(var.clone(), var.location.clone()).setInstructionRef(instructionRef),
                 kind: UsageKind::Ref,
@@ -77,5 +80,25 @@ impl Context {
             compressed.usages.insert(var_name.clone(), series.compress());
         }
         compressed
+    }
+}
+
+impl Display for Context {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Context: [")?;
+        for (i, path) in self.liveData.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{}", path)?;
+        }
+        if !self.liveData.is_empty() {
+            write!(f, ", ")?;
+        }
+        write!(f, "Usages: [")?;
+        for (var_name, series) in &self.usages {
+            write!(f, "\nVariable: {} {}", var_name, series)?;
+        }
+        write!(f, "]")
     }
 }

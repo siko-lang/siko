@@ -19,7 +19,7 @@ use crate::siko::{
         Type::{formatTypes, Type, TypeVar},
         TypeVarAllocator::TypeVarAllocator,
         Unification::unify,
-        Variable::{Variable, VariableName},
+        Variable::Variable,
     },
     location::{Location::Location, Report::ReportContext},
     qualifiedname::{getCloneFnName, getDerefGetName, getImplicitConvertFnName, getNativePtrCloneName, QualifiedName},

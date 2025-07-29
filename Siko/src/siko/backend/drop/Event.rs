@@ -49,16 +49,18 @@ impl EventSeries {
 
     pub fn prune(&self, limit: usize) -> EventSeries {
         fn usage_overwritten(event: &Event, assignPath: &Path) -> bool {
-            if let Event::Usage(usage) = event {
-                // println!(
-                //     "Checking usage: {} against assign path: {} {}",
-                //     usage.path,
-                //     assignPath,
-                //     usage.path.contains(assignPath)
-                // );
-                usage.path.contains(assignPath)
-            } else {
-                false
+            match event {
+                Event::Usage(usage) => {
+                    // println!(
+                    //     "Checking usage: {} against assign path: {} {}",
+                    //     usage.path,
+                    //     assignPath,
+                    //     usage.path.contains(assignPath)
+                    // );
+                    usage.path.contains(assignPath)
+                }
+                Event::Assign(path) => path.contains(assignPath),
+                _ => false,
             }
         }
 
@@ -66,12 +68,31 @@ impl EventSeries {
         //println!("Prune events (original): {:?}", pruned.events);
         let mut index = limit;
         while index > 0 {
-            if let Event::Assign(path) = pruned.events[index].clone() {
-                for i in (0..index) {
-                    if usage_overwritten(&pruned.events[i], &path) {
-                        pruned.events[i] = Event::Noop;
+            match pruned.events[index].clone() {
+                Event::Assign(path) => {
+                    for i in (0..index) {
+                        if usage_overwritten(&pruned.events[i], &path) {
+                            pruned.events[i] = Event::Noop;
+                        }
                     }
                 }
+                Event::Usage(usage) if usage.isMove() => {
+                    for i in (0..index) {
+                        if usage_overwritten(&pruned.events[i], &usage.path) {
+                            pruned.events[i] = Event::Noop;
+                        }
+                    }
+                }
+                Event::Usage(usage) if !usage.isMove() => {
+                    for i in (0..index) {
+                        if let Event::Usage(prevUsage) = &pruned.events[i] {
+                            if !prevUsage.isMove() && prevUsage.path == usage.path {
+                                pruned.events[i] = Event::Noop;
+                            }
+                        }
+                    }
+                }
+                _ => {}
             }
             index -= 1;
         }
@@ -105,6 +126,19 @@ impl EventSeries {
             }
         }
         collisions
+    }
+}
+
+impl Display for EventSeries {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "EventSeries: [")?;
+        for (i, event) in self.events.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{}", event)?;
+        }
+        write!(f, "]")
     }
 }
 

@@ -15,6 +15,10 @@ use crate::siko::{
     qualifiedname::QualifiedName,
 };
 
+fn fieldNameForIndex(index: usize) -> String {
+    format!("f{}", index)
+}
+
 fn getTuple(ty: &Type) -> QualifiedName {
     QualifiedName::Module("siko".to_string())
         .add(format!("Tuple_{}", ty))
@@ -153,7 +157,12 @@ impl RemoveTuples for InstructionKind {
                 InstructionKind::FieldRef(dest.removeTuples(ctx), receiver.removeTuples(ctx), field.clone())
             }
             InstructionKind::TupleIndex(dest, root, index) => {
-                InstructionKind::TupleIndex(dest.removeTuples(ctx), root.removeTuples(ctx), *index)
+                let info = FieldInfo {
+                    name: fieldNameForIndex(*index as usize),
+                    ty: Some(root.getType().removeTuples(ctx)),
+                    location: dest.location.clone(),
+                };
+                InstructionKind::FieldRef(dest.removeTuples(ctx), root.removeTuples(ctx), vec![info])
             }
             InstructionKind::Bind(_, _, _) => {
                 panic!("Bind instruction found in RemoveTuples, this should not happen");
@@ -254,7 +263,7 @@ pub fn removeTuples(program: &Program) -> Program {
             let mut fields = Vec::new();
             let mut params = Vec::new();
             for (index, arg) in args.iter().enumerate() {
-                let name = format!("f{}", index);
+                let name = fieldNameForIndex(index);
                 let field = Field {
                     name: name.clone(),
                     ty: arg.clone(),

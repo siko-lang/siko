@@ -285,7 +285,8 @@ impl BlockBuilder {
     }
 
     pub fn addDeclare(&mut self, name: Variable, location: Location) {
-        self.addDeclareWithMutability(name, location, Mutability::Mutable);
+        self.implicit()
+            .addDeclareWithMutability(name, location, Mutability::Mutable);
     }
 
     pub fn addDeclareWithMutability(&mut self, name: Variable, location: Location, mutability: Mutability) {

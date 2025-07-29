@@ -59,7 +59,7 @@ impl BlockProcessor {
                         path = path.add(field.name.clone(), dest.location.clone());
                     }
                     path = path.setInstructionRef(instructionRef);
-                    if destTy.isReference() {
+                    if destTy.isReference() || destTy.isPtr() {
                         context.addUsage(Usage {
                             path,
                             kind: UsageKind::Ref,

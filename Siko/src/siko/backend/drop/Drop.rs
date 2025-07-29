@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt::Display,
+};
 
 use crate::siko::{
     backend::drop::{
@@ -30,6 +33,18 @@ pub fn checkDrops(ctx: &ReportContext, program: Program) -> Program {
     result
 }
 
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct Case {
+    blockId: BlockId,
+    context: Context,
+}
+
+impl Display for Case {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Case: BlockId: {}, Context: {}", self.blockId, self.context)
+    }
+}
+
 pub struct DropChecker<'a> {
     ctx: &'a ReportContext,
     bodyBuilder: BodyBuilder,
@@ -53,12 +68,7 @@ impl<'a> DropChecker<'a> {
         if self.function.body.is_none() {
             return self.function.clone();
         }
-        //println!("Processing function: {}", self.function.name);
-        #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-        struct Case {
-            blockId: BlockId,
-            context: Context,
-        }
+        // println!("Processing function: {}", self.function.name);
 
         let mut visited = BTreeSet::new();
         let mut queue = Vec::new();
@@ -72,6 +82,8 @@ impl<'a> DropChecker<'a> {
             if !visited.insert(case.clone()) {
                 continue;
             }
+            // println!("Adding case {} to visited", case);
+            //println!("Processed {} cases", visited.len());
             let block = self.function.getBlockById(case.blockId);
             let mut blockProcessor = BlockProcessor::new();
             let (context, jumpTargets) = blockProcessor.process(&block, case.context);
