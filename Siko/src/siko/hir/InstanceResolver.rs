@@ -141,7 +141,7 @@ impl InstanceResolver {
             let mut allocator = TypeVarAllocator::new();
             let result = instances.find(&mut allocator, &vec![ty.clone()]);
             if let ResolutionResult::Winner(_) = result {
-                println!("Copy found for {}", ty);
+                // println!("Copy found for {}", ty);
                 return true;
             }
         }

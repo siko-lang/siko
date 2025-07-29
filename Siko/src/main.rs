@@ -117,9 +117,9 @@ fn main() {
     let program = removeTuples(&program);
     //println!("after remove tuples\n{}", program);
     let program = FieldRefMerger::mergeFieldRefs(program);
-    println!("after field ref merge\n{}", program);
+    //println!("after field ref merge\n{}", program);
     let program = checkDrops(&ctx, program);
-    println!("after dropcheck\n{}", program);
+    //println!("after dropcheck\n{}", program);
     let program = monomorphize(&ctx, program);
     //println!("after mono\n{}", program);
     let program = removeTuples(&program);

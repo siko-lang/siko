@@ -87,24 +87,23 @@ impl<'a> DropChecker<'a> {
         }
 
         let (allCollisions, implicitClones) = self.processImplicitClones(allCollisions);
-
-        println!(
-            "Found {} collisions and {} implicit clones in function {}",
-            allCollisions.len(),
-            implicitClones.len(),
-            self.function.name
-        );
+        // println!(
+        //     "Found {} collisions and {} implicit clones in function {}",
+        //     allCollisions.len(),
+        //     implicitClones.len(),
+        //     self.function.name
+        // );
         for (blockId, mut instructions) in implicitClones {
             instructions.sort();
             let mut builder = self.bodyBuilder.iterator(blockId);
-            println!("Processing {} implicit clones in block {}", instructions.len(), blockId);
+            //println!("Processing {} implicit clones in block {}", instructions.len(), blockId);
             let mut index = 0;
             loop {
                 if instructions.is_empty() {
                     break;
                 }
                 if instructions.contains(&(index as u32)) {
-                    println!("Processing implicit clone at index {} in block {}", index, blockId);
+                    //println!("Processing implicit clone at index {} in block {}", index, blockId);
                     let instruction = builder
                         .getInstruction()
                         .expect(&format!("No instruction at index {}", index));
@@ -128,26 +127,32 @@ impl<'a> DropChecker<'a> {
                         builder.addInstruction(implicitClone, dest.location.clone());
                         builder.step();
                     } else {
-                        let result = instruction
-                            .kind
-                            .getResultVar()
-                            .expect("No result var for implicit clone");
-                        let mut implicitCloneVar = self.bodyBuilder.createTempValue(result.location.clone());
-                        implicitCloneVar.ty = result.ty.clone();
-                        let mut implicitCloneVarRef = self.bodyBuilder.createTempValue(result.location.clone());
-                        implicitCloneVarRef.ty = result.ty.clone().map(|t| Type::Reference(Box::new(t), None));
-                        let implicitClone = InstructionKind::FunctionCall(
-                            result.clone(),
-                            getCloneFnName(),
-                            vec![implicitCloneVar.clone()],
+                        let mut vars = instruction.kind.collectVariables();
+                        if let Some(result) = instruction.kind.getResultVar() {
+                            vars.retain(|v| *v != result);
+                        }
+                        assert_eq!(
+                            vars.len(),
+                            1,
+                            "Implicit clone should have exactly one non result variable"
                         );
-                        let implicitCloneRef = InstructionKind::Ref(implicitCloneVarRef.clone(), result.clone());
-                        let updatedKind = instruction.kind.replaceVar(result.clone(), implicitCloneVarRef);
-                        builder.addInstruction(implicitCloneRef, result.location.clone());
+                        let input = vars[0].clone();
+                        let mut implicitCloneVar = self.bodyBuilder.createTempValue(input.location.clone());
+                        implicitCloneVar.ty = input.ty.clone();
+                        let mut implicitCloneVarRef = self.bodyBuilder.createTempValue(input.location.clone());
+                        implicitCloneVarRef.ty = input.ty.clone().map(|t| Type::Reference(Box::new(t), None));
+                        let implicitClone = InstructionKind::FunctionCall(
+                            implicitCloneVar.clone(),
+                            getCloneFnName(),
+                            vec![implicitCloneVarRef.clone()],
+                        );
+                        let implicitCloneRef = InstructionKind::Ref(implicitCloneVarRef.clone(), input.clone());
+                        let updatedKind = instruction.kind.replaceVar(input.clone(), implicitCloneVar);
+                        builder.addInstruction(implicitCloneRef, input.location.clone());
                         builder.step();
-                        builder.replaceInstruction(updatedKind, result.location.clone());
+                        builder.addInstruction(implicitClone, input.location.clone());
                         builder.step();
-                        builder.addInstruction(implicitClone, result.location.clone());
+                        builder.replaceInstruction(updatedKind, input.location.clone());
                         builder.step();
                     }
                     instructions.retain(|&x| x != index);
