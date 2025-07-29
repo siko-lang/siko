@@ -3,6 +3,7 @@ use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::fmt::Display;
 
+use crate::siko::hir::VariableAllocator::VariableAllocator;
 use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
 
 use super::Instruction::Instruction;
@@ -98,9 +99,14 @@ impl Block {
         };
     }
 
+    pub fn remove(&mut self, index: usize) {
+        self.instructions.remove(index);
+    }
+
     pub fn dump(&self) {
         println!("  Block {}:", self.id);
-        for instruction in &self.instructions {
+        for (index, instruction) in self.instructions.iter().enumerate() {
+            print!("{}: ", index);
             instruction.dump();
         }
     }
@@ -109,8 +115,8 @@ impl Block {
 impl Display for Block {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Block {}:", self.id)?;
-        for instruction in &self.instructions {
-            writeln!(f, "    {}", instruction)?;
+        for (index, instruction) in self.instructions.iter().enumerate() {
+            writeln!(f, "    {:3}: {}", index, instruction)?;
         }
         Ok(())
     }
@@ -120,6 +126,7 @@ impl Display for Block {
 pub struct Body {
     pub blocks: Vec<Block>,
     pub varTypes: BTreeMap<VariableName, Type>,
+    pub varAllocator: VariableAllocator,
 }
 
 impl Body {
@@ -127,6 +134,7 @@ impl Body {
         Body {
             blocks: Vec::new(),
             varTypes: BTreeMap::new(),
+            varAllocator: VariableAllocator::new(),
         }
     }
 

@@ -5,7 +5,6 @@ use crate::siko::{
     backend::drop::{
         Context::Context,
         Path::{InstructionRef, Path},
-        SingleUseVariables::SingleUseVariableInfo,
         Usage::{Usage, UsageKind},
     },
     hir::{
@@ -15,15 +14,13 @@ use crate::siko::{
     },
 };
 
-pub struct BlockProcessor<'a> {
-    singleUseVars: &'a SingleUseVariableInfo,
+pub struct BlockProcessor {
     receiverPaths: BTreeMap<Variable, Path>,
 }
 
-impl<'a> BlockProcessor<'a> {
-    pub fn new(singleUseVars: &'a SingleUseVariableInfo) -> BlockProcessor<'a> {
+impl BlockProcessor {
+    pub fn new() -> BlockProcessor {
         BlockProcessor {
-            singleUseVars,
             receiverPaths: BTreeMap::new(),
         }
     }
@@ -55,8 +52,24 @@ impl<'a> BlockProcessor<'a> {
                 InstructionKind::Return(_, arg) => {
                     context.useVar(arg, instructionRef);
                 }
-                InstructionKind::FieldRef(dest, receiver, name) => {
-                    self.processFieldRef(dest, receiver, name.clone(), &mut context);
+                InstructionKind::FieldRef(dest, receiver, names) => {
+                    let destTy = dest.getType();
+                    let mut path = Path::new(receiver.clone(), dest.location.clone());
+                    for field in names {
+                        path = path.add(field.name.clone(), dest.location.clone());
+                    }
+                    path = path.setInstructionRef(instructionRef);
+                    if destTy.isReference() {
+                        context.addUsage(Usage {
+                            path,
+                            kind: UsageKind::Ref,
+                        });
+                    } else {
+                        context.addUsage(Usage {
+                            path,
+                            kind: UsageKind::Move,
+                        });
+                    }
                 }
                 InstructionKind::FieldAssign(dest, receiver, fields) => {
                     context.useVar(receiver, instructionRef);
@@ -64,6 +77,7 @@ impl<'a> BlockProcessor<'a> {
                     for field in fields {
                         path = path.add(field.name.clone(), dest.location.clone());
                     }
+                    path = path.setInstructionRef(instructionRef);
                     context.addAssign(path.clone());
                 }
                 InstructionKind::Tuple(_, args) => {
@@ -80,8 +94,8 @@ impl<'a> BlockProcessor<'a> {
                 InstructionKind::DynamicFunctionCall(_, _, _) => {
                     panic!("Dynamic function call found in block processor");
                 }
-                InstructionKind::TupleIndex(dest, receiver, index) => {
-                    self.processFieldRef(dest, receiver, format!(".{}", index), &mut context);
+                InstructionKind::TupleIndex(_, _, _) => {
+                    panic!("Tuple index instruction found in block processor");
                 }
                 InstructionKind::Bind(_, _, _) => {
                     panic!("Bind instruction found in block processor");
@@ -123,28 +137,5 @@ impl<'a> BlockProcessor<'a> {
             instructionRef.instructionId += 1;
         }
         (context, jumpTargets)
-    }
-
-    fn processFieldRef(&mut self, dest: &Variable, receiver: &Variable, name: String, context: &mut Context) {
-        let destTy = dest.getType();
-        let mut path = Path::new(receiver.clone(), receiver.location.clone()).add(name.clone(), dest.location.clone());
-        if self.singleUseVars.isSingleUse(&dest.value) && self.singleUseVars.isReceiver(&dest.value) {
-            self.receiverPaths.insert(dest.clone(), path.clone());
-        } else {
-            if let Some(origPath) = self.receiverPaths.get(receiver) {
-                path = origPath.add(name.clone(), dest.location.clone());
-            }
-            if destTy.isReference() {
-                context.addUsage(Usage {
-                    path,
-                    kind: UsageKind::Ref,
-                });
-            } else {
-                context.addUsage(Usage {
-                    path,
-                    kind: UsageKind::Move,
-                });
-            }
-        }
     }
 }

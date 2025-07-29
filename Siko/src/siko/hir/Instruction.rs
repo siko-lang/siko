@@ -129,7 +129,7 @@ pub enum InstructionKind {
     Converter(Variable, Variable),
     MethodCall(Variable, Variable, String, Vec<Variable>),
     DynamicFunctionCall(Variable, Variable, Vec<Variable>),
-    FieldRef(Variable, Variable, String),
+    FieldRef(Variable, Variable, Vec<FieldInfo>),
     TupleIndex(Variable, Variable, i32),
     Bind(Variable, Variable, bool), //mutable
     Tuple(Variable, Vec<Variable>),
@@ -361,7 +361,12 @@ impl InstructionKind {
             InstructionKind::DynamicFunctionCall(dest, callable, args) => {
                 format!("{} = DYN_CALL({}, {:?})", dest, callable, args)
             }
-            InstructionKind::FieldRef(dest, v, name) => format!("{} = ({}).{}", dest, v, name),
+            InstructionKind::FieldRef(dest, v, fields) => format!(
+                "{} = ({}){}",
+                dest,
+                v,
+                fields.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(".")
+            ),
             InstructionKind::TupleIndex(dest, v, idx) => format!("{} = {}.t{}", dest, v, idx),
             InstructionKind::Bind(v, rhs, mutable) => {
                 if *mutable {
@@ -384,11 +389,7 @@ impl InstructionKind {
             }
             InstructionKind::Assign(v, arg) => format!("assign({}, {})", v, arg),
             InstructionKind::FieldAssign(v, arg, fields) => {
-                let fields = fields
-                    .iter()
-                    .map(|info| info.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                let fields = fields.iter().map(|info| info.to_string()).collect::<Vec<_>>().join(".");
                 format!("fieldassign({}, {}, {})", v, arg, fields)
             }
             InstructionKind::DeclareVar(v, mutability) => format!("declare({}, {:?})", v, mutability),

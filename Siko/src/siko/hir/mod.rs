@@ -16,3 +16,4 @@ pub mod Type;
 pub mod TypeVarAllocator;
 pub mod Unification;
 pub mod Variable;
+pub mod VariableAllocator;

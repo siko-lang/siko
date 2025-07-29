@@ -177,18 +177,30 @@ impl<'a> Builder<'a> {
                     let root = self.buildVariable(root);
                     block.instructions.push(Instruction::GetFieldRef(dest, root, *index));
                 }
-                HirInstructionKind::FieldRef(dest, root, name) => {
+                HirInstructionKind::FieldRef(dest, root, fields) => {
                     let dest = self.buildVariable(dest);
-                    let structName = root
-                        .ty
-                        .as_ref()
-                        .expect("no type")
-                        .getName()
-                        .expect("no name for field ref root");
-                    let c = self.program.structs.get(&structName).expect("structDef not found");
-                    let (_, index) = c.getField(name);
-                    let root = self.buildVariable(root);
-                    block.instructions.push(Instruction::GetFieldRef(dest, root, index));
+                    let mut currentReceiver = self.buildVariable(root);
+                    let mut receiverTy = root.getType();
+                    for (index, field) in fields.iter().enumerate() {
+                        let tmpVariable = MirVariable {
+                            name: format!("{}_{}.{}", root.value, index, field.name),
+                            ty: lowerType(field.ty.as_ref().expect("no type"), &self.program),
+                        };
+                        let destVar = if index == fields.len() - 1 {
+                            dest.clone()
+                        } else {
+                            tmpVariable.clone()
+                        };
+                        let structName = receiverTy.getName().expect("no name for field ty");
+                        let s = self.program.structs.get(&structName).expect("structDef not found");
+                        let (_, index) = s.getField(&field.name);
+
+                        block
+                            .instructions
+                            .push(Instruction::GetFieldRef(destVar, currentReceiver, index));
+                        currentReceiver = tmpVariable;
+                        receiverTy = field.ty.as_ref().expect("no type for field ref");
+                    }
                 }
                 HirInstructionKind::FieldAssign(dest, root, fields) => {
                     let mut indices = Vec::new();

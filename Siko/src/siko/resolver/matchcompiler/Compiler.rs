@@ -155,9 +155,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         branches: Vec<Branch>,
         parentEnv: &'a Environment<'a>,
     ) -> MatchCompiler<'a, 'b> {
-        let matchValue = resolver
-            .bodyBuilder
-            .createTempValue(VariableName::MatchVar, matchLocation.clone());
+        let matchValue = resolver.bodyBuilder.createTempValue(matchLocation.clone());
         let mut returns = false;
         for b in &branches {
             if !b.body.doesNotReturn() {
@@ -453,10 +451,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                 returns = true;
             }
         }
-        let value = self
-            .resolver
-            .bodyBuilder
-            .createTempValue(VariableName::MatchValue, self.bodyLocation.clone());
+        let value = self.resolver.bodyBuilder.createTempValue(self.bodyLocation.clone());
         if returns {
             let v = self.matchValue.clone();
             let mut builder = self.resolver.bodyBuilder.block(self.contBlockId);

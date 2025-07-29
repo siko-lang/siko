@@ -250,9 +250,11 @@ impl Monomorphize for InstructionKind {
                 root.process(sub, mono),
                 args.process(sub, mono),
             ),
-            InstructionKind::FieldRef(dest, root, name) => {
-                InstructionKind::FieldRef(dest.process(sub, mono), root.process(sub, mono), name.clone())
-            }
+            InstructionKind::FieldRef(dest, root, fields) => InstructionKind::FieldRef(
+                dest.process(sub, mono),
+                root.process(sub, mono),
+                fields.process(sub, mono),
+            ),
             InstructionKind::TupleIndex(dest, root, index) => {
                 InstructionKind::TupleIndex(dest.process(sub, mono), root.process(sub, mono), *index)
             }
@@ -324,6 +326,7 @@ impl Monomorphize for Body {
         Body {
             blocks: blocks,
             varTypes: BTreeMap::new(),
+            varAllocator: self.varAllocator.clone(),
         }
     }
 }
@@ -539,7 +542,7 @@ impl<'a> Monomorphizer<'a> {
 
         let location = Location::empty();
 
-        let mut dropVar = bodyBuilder.createTempValue(VariableName::DropVar, location.clone());
+        let mut dropVar = bodyBuilder.createTempValue(location.clone());
         dropVar.ty = Some(ty.clone());
 
         let selfVar = Variable {
@@ -572,9 +575,14 @@ impl<'a> Monomorphizer<'a> {
                     let mut allocator = &mut TypeVarAllocator::new();
                     let c = instantiateStruct(&mut allocator, &c, &ty);
                     for f in &c.fields {
+                        let fieldInfo = FieldInfo {
+                            name: f.name.clone(),
+                            ty: Some(f.ty.clone()),
+                            location: location.clone(),
+                        };
                         let field =
-                            builder.addTypedFieldRef(dropVar.clone(), f.name.clone(), location.clone(), f.ty.clone());
-                        let mut dropRes = bodyBuilder.createTempValue(VariableName::AutoDropResult, location.clone());
+                            builder.addTypedFieldRef(dropVar.clone(), vec![fieldInfo], location.clone(), f.ty.clone());
+                        let mut dropRes = bodyBuilder.createTempValue(location.clone());
                         dropRes.ty = Some(Type::getUnitType());
                         let dropKind = InstructionKind::Drop(dropRes, field.clone());
                         builder.addInstruction(dropKind, location.clone());
@@ -598,7 +606,7 @@ impl<'a> Monomorphizer<'a> {
                             location.clone(),
                             transformType,
                         );
-                        let mut dropRes = bodyBuilder.createTempValue(VariableName::AutoDropResult, location.clone());
+                        let mut dropRes = bodyBuilder.createTempValue(location.clone());
                         dropRes.ty = Some(Type::getUnitType());
                         let dropKind = InstructionKind::Drop(dropRes, transformValue);
                         caseBuilder.addInstruction(dropKind, location.clone());
@@ -614,7 +622,7 @@ impl<'a> Monomorphizer<'a> {
                 for (index, arg) in args.iter().enumerate() {
                     let field =
                         builder.addTypedTupleIndex(dropVar.clone(), index as i32, location.clone(), arg.clone());
-                    let mut dropRes = bodyBuilder.createTempValue(VariableName::AutoDropResult, location.clone());
+                    let mut dropRes = bodyBuilder.createTempValue(location.clone());
                     dropRes.ty = Some(Type::getUnitType());
                     let dropKind = InstructionKind::Drop(dropRes, field);
                     builder.addInstruction(dropKind, location.clone());

@@ -6,7 +6,6 @@ use crate::siko::hir::Data::{Enum, Struct};
 use crate::siko::hir::Function::BlockId;
 use crate::siko::hir::Instruction::{BlockInfo, FieldInfo, InstructionKind, JumpDirection};
 use crate::siko::hir::Variable::Variable;
-use crate::siko::hir::Variable::VariableName;
 use crate::siko::location::Location::Location;
 use crate::siko::location::Report::ReportContext;
 use crate::siko::qualifiedname::{getVecNewName, getVecPushName, QualifiedName};
@@ -159,9 +158,7 @@ impl<'a> ExprResolver<'a> {
             .addInstruction(InstructionKind::BlockStart(blockInfo.clone()), block.location.clone());
         let mut env = Environment::child(env);
         let mut lastHasSemicolon = false;
-        let mut blockValue = self
-            .bodyBuilder
-            .createTempValue(VariableName::BlockValue, block.location.clone());
+        let mut blockValue = self.bodyBuilder.createTempValue(block.location.clone());
         for (index, statement) in block.statements.iter().enumerate() {
             if index == block.statements.len() - 1 && statement.hasSemicolon {
                 lastHasSemicolon = true;
@@ -256,9 +253,14 @@ impl<'a> ExprResolver<'a> {
             }
             SimpleExpr::FieldAccess(receiver, name) => {
                 let receiver = self.resolveExpr(receiver, env);
+                let fieldInfos = vec![FieldInfo {
+                    name: name.toString(),
+                    ty: None,
+                    location: name.location.clone(),
+                }];
                 self.bodyBuilder
                     .current()
-                    .addFieldRef(receiver, name.toString(), expr.location.clone())
+                    .addFieldRef(receiver, fieldInfos, expr.location.clone())
             }
             SimpleExpr::Call(callable, args) => {
                 let mut irArgs = Vec::new();
@@ -316,15 +318,9 @@ impl<'a> ExprResolver<'a> {
             }
             SimpleExpr::Loop(pattern, init, body) => {
                 let initId = self.resolveExpr(&init, env);
-                let loopVar = self
-                    .bodyBuilder
-                    .createTempValue(VariableName::LoopVar, expr.location.clone());
-                let finalValue = self
-                    .bodyBuilder
-                    .createTempValue(VariableName::LoopFinalValue, expr.location.clone());
-                let resultValue = self
-                    .bodyBuilder
-                    .createTempValue(VariableName::LoopFinalValue, expr.location.clone());
+                let loopVar = self.bodyBuilder.createTempValue(expr.location.clone());
+                let finalValue = self.bodyBuilder.createTempValue(expr.location.clone());
+                let resultValue = self.bodyBuilder.createTempValue(expr.location.clone());
                 self.bodyBuilder
                     .current()
                     .implicit()
@@ -419,9 +415,7 @@ impl<'a> ExprResolver<'a> {
                 matchResolver.compile()
             }
             SimpleExpr::Block(block) => {
-                let blockValue = self
-                    .bodyBuilder
-                    .createTempValue(VariableName::BlockValue, expr.location.clone());
+                let blockValue = self.bodyBuilder.createTempValue(expr.location.clone());
                 if !block.doesNotReturn() {
                     self.bodyBuilder
                         .current()
@@ -456,9 +450,7 @@ impl<'a> ExprResolver<'a> {
                     Some(arg) => self.resolveExpr(arg, env),
                     None => self.bodyBuilder.current().addUnit(expr.location.clone()),
                 };
-                let tempValue = self
-                    .bodyBuilder
-                    .createTempValue(VariableName::Tmp, expr.location.clone());
+                let tempValue = self.bodyBuilder.createTempValue(expr.location.clone());
                 self.bodyBuilder.current().addInstruction(
                     InstructionKind::Converter(tempValue.clone(), argId.clone()),
                     expr.location.clone(),
@@ -538,7 +530,11 @@ impl<'a> ExprResolver<'a> {
                             let field = &structDef.fields[index];
                             let fieldId = self.bodyBuilder.current().addFieldRef(
                                 root.clone(),
-                                field.name.clone(),
+                                vec![FieldInfo {
+                                    name: field.name.clone(),
+                                    ty: None,
+                                    location: pat.location.clone(),
+                                }],
                                 pat.location.clone(),
                             );
                             self.resolvePattern(arg, env, fieldId);
@@ -579,9 +575,7 @@ impl<'a> ExprResolver<'a> {
     pub fn resolve<'e>(&mut self, body: &Block, env: &'e Environment<'e>) {
         let mut blockBuilder = self.bodyBuilder.createBlock();
         blockBuilder.current();
-        let functionResult = self
-            .bodyBuilder
-            .createTempValue(VariableName::FunctionResult, body.location.clone());
+        let functionResult = self.bodyBuilder.createTempValue(body.location.clone());
         self.bodyBuilder
             .current()
             .implicit()
@@ -613,9 +607,7 @@ impl<'a> ExprResolver<'a> {
             .current()
             .implicit()
             .addInstruction(InstructionKind::BlockEnd(blockInfo.clone()), body.location.clone());
-        let result = self
-            .bodyBuilder
-            .createTempValue(VariableName::Tmp, body.location.clone());
+        let result = self.bodyBuilder.createTempValue(body.location.clone());
         self.bodyBuilder.current().implicit().addInstruction(
             InstructionKind::Converter(result.clone(), functionResult),
             body.location.clone(),

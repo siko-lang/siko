@@ -98,6 +98,13 @@ impl Instances {
             }
         }
     }
+
+    pub fn dump(&self) {
+        println!("Instances for trait {}:", self.traitName);
+        for instance in &self.instances {
+            println!("{}", instance);
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -134,7 +141,7 @@ impl InstanceResolver {
             let mut allocator = TypeVarAllocator::new();
             let result = instances.find(&mut allocator, &vec![ty.clone()]);
             if let ResolutionResult::Winner(_) = result {
-                //println!("Copy found for {}", prevUsage.var);
+                println!("Copy found for {}", ty);
                 return true;
             }
         }
@@ -165,5 +172,13 @@ impl InstanceResolver {
             }
         }
         false
+    }
+
+    pub fn dump(&self) {
+        println!("InstanceResolver:");
+        for (_, instances) in &self.traits {
+            instances.dump();
+        }
+        println!("End of InstanceResolver");
     }
 }

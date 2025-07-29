@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::fmt::Display;
 
 use crate::siko::{
@@ -9,6 +10,18 @@ use crate::siko::{
 pub struct InstructionRef {
     pub blockId: BlockId,
     pub instructionId: u32,
+}
+
+impl Display for InstructionRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.blockId, self.instructionId)
+    }
+}
+
+impl Debug for InstructionRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -93,6 +106,10 @@ impl Path {
             }
         }
         true
+    }
+
+    pub fn isSimple(&self) -> bool {
+        self.items.is_empty()
     }
 }
 

@@ -10,6 +10,7 @@ use crate::siko::{
         Program::Program,
         Type::Type,
         Variable::Variable,
+        VariableAllocator::VariableAllocator,
     },
     qualifiedname::QualifiedName,
 };
@@ -84,6 +85,7 @@ impl RemoveTuples for Body {
         Body {
             blocks: blocks,
             varTypes: BTreeMap::new(),
+            varAllocator: self.varAllocator.clone(),
         }
     }
 }
@@ -240,10 +242,12 @@ impl RemoveTuples for Enum {
 
 pub fn removeTuples(program: &Program) -> Program {
     let mut result = Program::new();
+    result.instanceResolver = program.instanceResolver.clone();
     let mut ctx = Context::new();
     result.functions = program.functions.removeTuples(&mut ctx);
     result.structs = program.structs.removeTuples(&mut ctx);
     result.enums = program.enums.removeTuples(&mut ctx);
+    result.traits = program.traits.clone();
     for tuple in ctx.tuples {
         let name = getTuple(&tuple);
         if let Type::Tuple(args) = tuple {

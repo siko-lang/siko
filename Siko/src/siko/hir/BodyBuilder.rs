@@ -107,6 +107,11 @@ impl Builder {
         return irBlock.replace(index, instruction, location, implicit);
     }
 
+    pub fn removeInstruction(&mut self, id: BlockId, index: usize) {
+        let irBlock = &mut self.body.blocks[id.id as usize];
+        irBlock.remove(index);
+    }
+
     pub fn sortBlocks(&mut self) {
         self.body.blocks.sort_by(|a, b| a.id.cmp(&b.id));
     }
@@ -126,13 +131,8 @@ impl Builder {
         }
     }
 
-    pub fn createTempValue(&mut self, name: fn(u32) -> VariableName, location: Location) -> Variable {
-        let valueId = self.getNextId();
-        Variable {
-            value: name(valueId),
-            location: location,
-            ty: None,
-        }
+    pub fn createTempValue(&mut self, location: Location) -> Variable {
+        self.body.varAllocator.allocate(location)
     }
 }
 
@@ -233,6 +233,11 @@ impl BodyBuilder {
         bodyBuilder.replaceInstruction(id, index, instruction, location, implicit);
     }
 
+    pub fn removeInstruction(&mut self, id: BlockId, index: usize) {
+        let mut bodyBuilder = self.bodyBuilder.borrow_mut();
+        bodyBuilder.removeInstruction(id, index);
+    }
+
     pub fn sortBlocks(&mut self) {
         let mut bodyBuilder = self.bodyBuilder.borrow_mut();
         bodyBuilder.sortBlocks();
@@ -243,9 +248,9 @@ impl BodyBuilder {
         bodyBuilder.createLocalValue(name, location)
     }
 
-    pub fn createTempValue(&mut self, name: fn(u32) -> VariableName, location: Location) -> Variable {
+    pub fn createTempValue(&mut self, location: Location) -> Variable {
         let mut bodyBuilder = self.bodyBuilder.borrow_mut();
-        bodyBuilder.createTempValue(name, location)
+        bodyBuilder.createTempValue(location)
     }
 
     pub fn getInstruction(&self, id: BlockId, index: usize) -> Option<Instruction> {

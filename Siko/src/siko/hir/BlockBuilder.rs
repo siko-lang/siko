@@ -7,7 +7,7 @@ use super::{
     Function::BlockId,
     Instruction::{FieldInfo, Instruction, InstructionKind, JumpDirection},
     Type::Type,
-    Variable::{Variable, VariableName},
+    Variable::Variable,
 };
 
 #[derive(Clone, Copy)]
@@ -87,18 +87,27 @@ impl BlockBuilder {
         }
     }
 
+    pub fn removeInstruction(&mut self) {
+        match self.mode {
+            Mode::Append => panic!("Cannot remove instruction in append mode"),
+            Mode::Iterator(index) => {
+                self.bodyBuilder.removeInstruction(self.blockId, index);
+            }
+        }
+    }
+
     pub fn addAssign(&mut self, target: Variable, source: Variable, location: Location) {
         self.addInstruction(InstructionKind::Assign(target, source), location);
     }
 
     pub fn addReturn(&mut self, value: Variable, location: Location) -> Variable {
-        let result = self.bodyBuilder.createTempValue(VariableName::Ret, location.clone());
+        let result = self.bodyBuilder.createTempValue(location.clone());
         self.addInstruction(InstructionKind::Return(result.clone(), value), location);
         result
     }
 
     pub fn addRef(&mut self, arg: Variable, location: Location) -> Variable {
-        let value = self.bodyBuilder.createTempValue(VariableName::Ref, location.clone());
+        let value = self.bodyBuilder.createTempValue(location.clone());
         self.addInstruction(InstructionKind::Ref(value.clone(), arg), location.clone());
         value
     }
@@ -112,14 +121,14 @@ impl BlockBuilder {
         // for each arg create a temp value and a converter instruction
         let mut tempArgs = Vec::new();
         for arg in &args {
-            let tempValue = self.bodyBuilder.createTempValue(VariableName::Tmp, location.clone());
+            let tempValue = self.bodyBuilder.createTempValue(location.clone());
             self.addInstruction(
                 InstructionKind::Converter(tempValue.clone(), arg.clone()),
                 location.clone(),
             );
             tempArgs.push(tempValue);
         }
-        let result = self.bodyBuilder.createTempValue(VariableName::Call, location.clone());
+        let result = self.bodyBuilder.createTempValue(location.clone());
         self.addDeclare(result.clone(), location.clone());
         self.addInstruction(
             InstructionKind::FunctionCall(result.clone(), functionName, tempArgs),
@@ -135,7 +144,7 @@ impl BlockBuilder {
         location: Location,
         ty: Type,
     ) -> Variable {
-        let mut result = self.bodyBuilder.createTempValue(VariableName::Call, location.clone());
+        let mut result = self.bodyBuilder.createTempValue(location.clone());
         result.ty = Some(ty);
         self.addInstruction(
             InstructionKind::FunctionCall(result.clone(), functionName, args),
@@ -151,16 +160,16 @@ impl BlockBuilder {
         args: Vec<Variable>,
         location: Location,
     ) -> Variable {
-        let result = self.bodyBuilder.createTempValue(VariableName::Call, location.clone());
+        let result = self.bodyBuilder.createTempValue(location.clone());
         // for each arg and the receiver create a temp value and a converter instruction
-        let receiverTemp = self.bodyBuilder.createTempValue(VariableName::Tmp, location.clone());
+        let receiverTemp = self.bodyBuilder.createTempValue(location.clone());
         self.addInstruction(
             InstructionKind::Converter(receiverTemp.clone(), receiver.clone()),
             location.clone(),
         );
         let mut tempArgs = Vec::new();
         for arg in &args {
-            let tempValue = self.bodyBuilder.createTempValue(VariableName::Tmp, location.clone());
+            let tempValue = self.bodyBuilder.createTempValue(location.clone());
             self.addInstruction(
                 InstructionKind::Converter(tempValue.clone(), arg.clone()),
                 location.clone(),
@@ -176,7 +185,7 @@ impl BlockBuilder {
     }
 
     pub fn addDynamicFunctionCall(&mut self, value: Variable, args: Vec<Variable>, location: Location) -> Variable {
-        let result = self.bodyBuilder.createTempValue(VariableName::Call, location.clone());
+        let result = self.bodyBuilder.createTempValue(location.clone());
         self.addInstruction(
             InstructionKind::DynamicFunctionCall(result.clone(), value, args),
             location,
@@ -184,33 +193,33 @@ impl BlockBuilder {
         result
     }
 
-    pub fn addFieldRef(&mut self, receiver: Variable, field: String, location: Location) -> Variable {
-        let result = self
-            .bodyBuilder
-            .createTempValue(VariableName::FieldRef, location.clone());
+    pub fn addFieldRef(&mut self, receiver: Variable, fields: Vec<FieldInfo>, location: Location) -> Variable {
+        let result = self.bodyBuilder.createTempValue(location.clone());
         self.addInstruction(
-            InstructionKind::FieldRef(result.clone(), receiver, field),
+            InstructionKind::FieldRef(result.clone(), receiver, fields),
             location.clone(),
         );
         result
     }
 
-    pub fn addTypedFieldRef(&mut self, receiver: Variable, field: String, location: Location, ty: Type) -> Variable {
-        let mut result = self
-            .bodyBuilder
-            .createTempValue(VariableName::FieldRef, location.clone());
+    pub fn addTypedFieldRef(
+        &mut self,
+        receiver: Variable,
+        fields: Vec<FieldInfo>,
+        location: Location,
+        ty: Type,
+    ) -> Variable {
+        let mut result = self.bodyBuilder.createTempValue(location.clone());
         result.ty = Some(ty);
         self.addInstruction(
-            InstructionKind::FieldRef(result.clone(), receiver, field),
+            InstructionKind::FieldRef(result.clone(), receiver, fields),
             location.clone(),
         );
         result
     }
 
     pub fn addStringLiteral(&mut self, literal: String, location: Location) -> Variable {
-        let result = self
-            .bodyBuilder
-            .createTempValue(VariableName::Literal, location.clone());
+        let result = self.bodyBuilder.createTempValue(location.clone());
         self.addInstruction(
             InstructionKind::StringLiteral(result.clone(), literal),
             location.clone(),
@@ -219,9 +228,7 @@ impl BlockBuilder {
     }
 
     pub fn addIntegerLiteral(&mut self, literal: String, location: Location) -> Variable {
-        let result = self
-            .bodyBuilder
-            .createTempValue(VariableName::Literal, location.clone());
+        let result = self.bodyBuilder.createTempValue(location.clone());
         self.addInstruction(
             InstructionKind::IntegerLiteral(result.clone(), literal),
             location.clone(),
@@ -230,15 +237,13 @@ impl BlockBuilder {
     }
 
     pub fn addCharLiteral(&mut self, literal: char, location: Location) -> Variable {
-        let result = self
-            .bodyBuilder
-            .createTempValue(VariableName::Literal, location.clone());
+        let result = self.bodyBuilder.createTempValue(location.clone());
         self.addInstruction(InstructionKind::CharLiteral(result.clone(), literal), location.clone());
         result
     }
 
     pub fn addUnit(&mut self, location: Location) -> Variable {
-        let mut result = self.bodyBuilder.createTempValue(VariableName::Unit, location.clone());
+        let mut result = self.bodyBuilder.createTempValue(location.clone());
         result.ty = Some(Type::getUnitType());
         self.addDeclare(result.clone(), location.clone());
         self.addInstruction(InstructionKind::Tuple(result.clone(), Vec::new()), location.clone());
@@ -246,15 +251,13 @@ impl BlockBuilder {
     }
 
     pub fn addTuple(&mut self, args: Vec<Variable>, location: Location) -> Variable {
-        let result = self.bodyBuilder.createTempValue(VariableName::Tuple, location.clone());
+        let result = self.bodyBuilder.createTempValue(location.clone());
         self.addInstruction(InstructionKind::Tuple(result.clone(), args), location.clone());
         result
     }
 
     pub fn addTupleIndex(&mut self, tuple: Variable, index: i32, location: Location) -> Variable {
-        let result = self
-            .bodyBuilder
-            .createTempValue(VariableName::TupleIndex, location.clone());
+        let result = self.bodyBuilder.createTempValue(location.clone());
         self.addInstruction(
             InstructionKind::TupleIndex(result.clone(), tuple, index),
             location.clone(),
@@ -263,9 +266,7 @@ impl BlockBuilder {
     }
 
     pub fn addTypedTupleIndex(&mut self, tuple: Variable, index: i32, location: Location, ty: Type) -> Variable {
-        let mut result = self
-            .bodyBuilder
-            .createTempValue(VariableName::TupleIndex, location.clone());
+        let mut result = self.bodyBuilder.createTempValue(location.clone());
         result.ty = Some(ty);
         self.addInstruction(
             InstructionKind::TupleIndex(result.clone(), tuple, index),
@@ -275,7 +276,7 @@ impl BlockBuilder {
     }
 
     pub fn addJump(&mut self, target: BlockId, direction: JumpDirection, location: Location) -> Variable {
-        let result = self.bodyBuilder.createTempValue(VariableName::Jump, location.clone());
+        let result = self.bodyBuilder.createTempValue(location.clone());
         self.addInstruction(
             InstructionKind::Jump(result.clone(), target, direction),
             location.clone(),
@@ -304,9 +305,7 @@ impl BlockBuilder {
     }
 
     pub fn addTransform(&mut self, value: Variable, index: u32, location: Location) -> Variable {
-        let result = self
-            .bodyBuilder
-            .createTempValue(VariableName::Transform, location.clone());
+        let result = self.bodyBuilder.createTempValue(location.clone());
         self.addInstruction(
             InstructionKind::Transform(result.clone(), value, index),
             location.clone(),
@@ -315,9 +314,7 @@ impl BlockBuilder {
     }
 
     pub fn addTypedTransform(&mut self, value: Variable, index: u32, location: Location, ty: Type) -> Variable {
-        let mut result = self
-            .bodyBuilder
-            .createTempValue(VariableName::Transform, location.clone());
+        let mut result = self.bodyBuilder.createTempValue(location.clone());
         result.ty = Some(ty);
         self.addInstruction(
             InstructionKind::Transform(result.clone(), value, index),
