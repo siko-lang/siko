@@ -109,6 +109,7 @@ impl EventSeries {
     }
 
     pub fn validate(&self) -> Vec<Collision> {
+        //println!("Validating event series: {:?}", self.events);
         let mut collisions = Vec::new();
         for (index, event) in self.events.iter().enumerate() {
             if let Event::Usage(usage) = event {
@@ -116,6 +117,10 @@ impl EventSeries {
                 for prev in compressed.events.iter().take(index) {
                     if let Event::Usage(prevUsage) = prev {
                         if prevUsage.path.sharesPrefixWith(&usage.path) && prevUsage.kind == UsageKind::Move {
+                            //println!(
+                            //    "Collision detected: {} with previous usage: {}",
+                            //    usage.path, prevUsage.path
+                            //);
                             collisions.push(Collision {
                                 path: usage.path.clone(),
                                 prev: prevUsage.path.clone(),

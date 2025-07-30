@@ -68,7 +68,7 @@ impl<'a> DropChecker<'a> {
         if self.function.body.is_none() {
             return self.function.clone();
         }
-        // println!("Processing function: {}", self.function.name);
+        //println!("Processing function: {}", self.function.name);
 
         let mut visited = BTreeSet::new();
         let mut queue = Vec::new();
@@ -82,7 +82,7 @@ impl<'a> DropChecker<'a> {
             if !visited.insert(case.clone()) {
                 continue;
             }
-            // println!("Adding case {} to visited", case);
+            //println!("Adding case {} to visited", case);
             //println!("Processed {} cases", visited.len());
             let block = self.function.getBlockById(case.blockId);
             let mut blockProcessor = BlockProcessor::new();

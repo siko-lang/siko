@@ -46,7 +46,8 @@ impl BlockProcessor {
                 }
                 InstructionKind::Assign(dest, src) => {
                     context.useVar(src, instructionRef);
-                    let path = Path::new(dest.clone(), dest.location.clone());
+                    let mut path = Path::new(dest.clone(), dest.location.clone());
+                    path = path.setInstructionRef(instructionRef);
                     context.addAssign(path.clone());
                 }
                 InstructionKind::Return(_, arg) => {

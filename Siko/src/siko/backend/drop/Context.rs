@@ -31,6 +31,7 @@ impl Context {
     }
 
     pub fn addAssign(&mut self, path: Path) {
+        //println!("Adding assign path: {}", path);
         self.usages
             .entry(path.root.value.clone())
             .or_insert_with(EventSeries::new)

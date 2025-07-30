@@ -251,12 +251,10 @@ impl RemoveTuples for Enum {
 
 pub fn removeTuples(program: &Program) -> Program {
     let mut result = Program::new();
-    result.instanceResolver = program.instanceResolver.clone();
     let mut ctx = Context::new();
     result.functions = program.functions.removeTuples(&mut ctx);
     result.structs = program.structs.removeTuples(&mut ctx);
     result.enums = program.enums.removeTuples(&mut ctx);
-    result.traits = program.traits.clone();
     for tuple in ctx.tuples {
         let name = getTuple(&tuple);
         if let Type::Tuple(args) = tuple {

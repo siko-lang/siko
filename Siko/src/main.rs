@@ -114,8 +114,6 @@ fn main() {
     //println!("after typchk\n{}", program);
     let program = eliminateDeadCode(&ctx, program);
     //println!("after dce\n{}", program);
-    let program = removeTuples(&program);
-    //println!("after remove tuples\n{}", program);
     let program = FieldRefMerger::mergeFieldRefs(program);
     //println!("after field ref merge\n{}", program);
     let program = checkDrops(&ctx, program);

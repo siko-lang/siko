@@ -628,8 +628,17 @@ impl<'a> Typechecker<'a> {
                     //println!("MUT METHOD {} => {}", baseType, selfLessType);
                     match selfLessType.getTupleTypes().len() {
                         0 => {
+                            let mut implicitResult = self.bodyBuilder.createTempValue(instruction.location.clone());
+                            implicitResult.ty = Some(baseType.clone());
+                            self.types.insert(implicitResult.value.to_string(), baseType.clone());
                             let kind = InstructionKind::FunctionCall(origReceiver.clone(), name, extendedArgs);
                             builder.replaceInstruction(kind, instruction.location.clone());
+                            builder.step();
+                            builder.addAssign(
+                                origReceiver.clone(),
+                                implicitResult.clone(),
+                                instruction.location.clone(),
+                            );
                         }
                         1 => {
                             let mut implicitResult = self.bodyBuilder.createTempValue(instruction.location.clone());
@@ -695,7 +704,6 @@ impl<'a> Typechecker<'a> {
                         }
                     }
                 }
-                //println!("METHOD CALL {} {} {}", dest, name, fnType);
             }
             InstructionKind::DynamicFunctionCall(dest, callable, args) => {
                 let fnType = self.getType(callable);
