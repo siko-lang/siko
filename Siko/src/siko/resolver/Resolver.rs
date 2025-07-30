@@ -661,41 +661,64 @@ impl<'a> Resolver<'a> {
             let localModuleName = QualifiedName::Module(alias.toString());
             for item in &sourceModule.items {
                 match item {
-                    ModuleItem::Struct(c) => {
-                        let structName = moduleName.add(c.name.toString());
-                        let localStructName = localModuleName.add(c.name.toString());
+                    ModuleItem::Struct(structDef) => {
+                        if !structDef.public {
+                            continue;
+                        }
+                        let structName = moduleName.add(structDef.name.toString());
+                        let localStructName = localModuleName.add(structDef.name.toString());
                         importedNames.add(&localStructName, &structName);
-                        for m in &c.methods {
-                            let methodName = structName.add(m.name.toString());
-                            let localMethodName = localStructName.add(m.name.toString());
+                        for fnDef in &structDef.methods {
+                            if !fnDef.public {
+                                continue;
+                            }
+                            let methodName = structName.add(fnDef.name.to_string());
+                            let localMethodName = localStructName.add(fnDef.name.to_string());
                             importedNames.add(&localMethodName, &methodName);
                         }
                     }
-                    ModuleItem::Enum(e) => {
-                        let enumName = moduleName.add(e.name.toString());
-                        let localEnumName = localModuleName.add(e.name.toString());
+                    ModuleItem::Enum(enumDef) => {
+                        if !enumDef.public {
+                            continue;
+                        }
+                        let enumName = moduleName.add(enumDef.name.toString());
+                        let localEnumName = localModuleName.add(enumDef.name.toString());
                         importedNames.add(&localEnumName, &enumName);
-                        for v in &e.variants {
-                            let variantName = enumName.add(v.name.toString());
-                            let localVariantName = localEnumName.add(v.name.toString());
+                        for variantDef in &enumDef.variants {
+                            let variantName = enumName.add(variantDef.name.toString());
+                            let localVariantName = localEnumName.add(variantDef.name.toString());
                             importedNames.add(&localVariantName, &variantName);
                         }
-                        for m in &e.methods {
-                            let methodName = enumName.add(m.name.toString());
-                            let localMethodName = localEnumName.add(m.name.toString());
+                        for fnDef in &enumDef.methods {
+                            if !fnDef.public {
+                                continue;
+                            }
+                            let methodName = enumName.add(fnDef.name.toString());
+                            let localMethodName = localEnumName.add(fnDef.name.toString());
                             importedNames.add(&localMethodName, &methodName);
                         }
                     }
-                    ModuleItem::Function(f) => {
-                        let functionName = moduleName.add(f.name.toString());
-                        let localFunctionName = localModuleName.add(f.name.toString());
+                    ModuleItem::Function(fnDef) => {
+                        if !fnDef.public {
+                            continue;
+                        }
+                        let functionName = moduleName.add(fnDef.name.toString());
+                        let localFunctionName = localModuleName.add(fnDef.name.toString());
                         importedNames.add(&localFunctionName, &functionName);
                     }
                     ModuleItem::Import(_) => {}
-                    ModuleItem::Trait(t) => {
-                        let traitName = moduleName.add(t.name.toString());
-                        let localTraitName = localModuleName.add(t.name.toString());
+                    ModuleItem::Trait(traitDef) => {
+                        if !traitDef.public {
+                            continue;
+                        }
+                        let traitName = moduleName.add(traitDef.name.toString());
+                        let localTraitName = localModuleName.add(traitDef.name.toString());
                         importedNames.add(&localTraitName, &traitName);
+                        for fnDef in &traitDef.methods {
+                            let methodName = traitName.add(fnDef.name.toString());
+                            let localMethodName = localTraitName.add(fnDef.name.to_string());
+                            importedNames.add(&localMethodName, &methodName);
+                        }
                     }
                     ModuleItem::Instance(_) => {}
                 }
@@ -704,48 +727,66 @@ impl<'a> Resolver<'a> {
             let moduleName = QualifiedName::Module(sourceModule.name.toString());
             for item in &sourceModule.items {
                 match item {
-                    ModuleItem::Struct(c) => {
-                        let structName = moduleName.add(c.name.toString());
-                        importedNames.add(&c.name, &structName);
+                    ModuleItem::Struct(structDef) => {
+                        if !structDef.public {
+                            continue;
+                        }
+                        let structName = moduleName.add(structDef.name.toString());
+                        importedNames.add(&structDef.name, &structName);
                         importedNames.add(&structName, &structName);
-                        for m in &c.methods {
-                            let methodName = structName.add(m.name.toString());
-                            importedNames.add(&m.name, &methodName);
-                            importedNames.add(&format!("{}.{}", c.name, m.name), &methodName);
+                        for fnDef in &structDef.methods {
+                            if !fnDef.public {
+                                continue;
+                            }
+                            let methodName = structName.add(fnDef.name.toString());
+                            importedNames.add(&fnDef.name, &methodName);
+                            importedNames.add(&format!("{}.{}", structDef.name, fnDef.name), &methodName);
                             importedNames.add(&methodName, &methodName);
                         }
                     }
-                    ModuleItem::Enum(e) => {
-                        let enumName = moduleName.add(e.name.toString());
-                        importedNames.add(&e.name, &enumName);
+                    ModuleItem::Enum(enumDef) => {
+                        if !enumDef.public {
+                            continue;
+                        }
+                        let enumName = moduleName.add(enumDef.name.toString());
+                        importedNames.add(&enumDef.name, &enumName);
                         importedNames.add(&enumName, &enumName);
-                        for v in &e.variants {
-                            let variantName = enumName.add(v.name.toString());
-                            importedNames.add(&v.name, &variantName);
-                            importedNames.add(&format!("{}.{}", e.name, v.name), &variantName);
+                        for variantDef in &enumDef.variants {
+                            let variantName = enumName.add(variantDef.name.toString());
+                            importedNames.add(&variantDef.name, &variantName);
+                            importedNames.add(&format!("{}.{}", enumDef.name, variantDef.name), &variantName);
                             importedNames.add(&variantName, &variantName);
                         }
-                        for m in &e.methods {
-                            let methodName = enumName.add(m.name.toString());
-                            importedNames.add(&m.name, &methodName);
-                            importedNames.add(&format!("{}.{}", e.name, m.name), &methodName);
+                        for fnDef in &enumDef.methods {
+                            if !fnDef.public {
+                                continue;
+                            }
+                            let methodName = enumName.add(fnDef.name.toString());
+                            importedNames.add(&fnDef.name, &methodName);
+                            importedNames.add(&format!("{}.{}", enumDef.name, fnDef.name), &methodName);
                             importedNames.add(&methodName, &methodName);
                         }
                     }
-                    ModuleItem::Function(f) => {
-                        let functionName = moduleName.add(f.name.toString());
-                        importedNames.add(&f.name, &functionName);
+                    ModuleItem::Function(fnDef) => {
+                        if !fnDef.public {
+                            continue;
+                        }
+                        let functionName = moduleName.add(fnDef.name.toString());
+                        importedNames.add(&fnDef.name, &functionName);
                         importedNames.add(&functionName, &functionName);
                     }
                     ModuleItem::Import(_) => {}
-                    ModuleItem::Trait(t) => {
-                        let traitName = moduleName.add(t.name.toString());
-                        importedNames.add(&t.name, &traitName);
+                    ModuleItem::Trait(traitDef) => {
+                        if !traitDef.public {
+                            continue;
+                        }
+                        let traitName = moduleName.add(traitDef.name.toString());
+                        importedNames.add(&traitDef.name, &traitName);
                         importedNames.add(&traitName, &traitName);
-                        for m in &t.methods {
-                            let methodName = traitName.add(m.name.toString());
-                            importedNames.add(&m.name, &methodName);
-                            importedNames.add(&format!("{}.{}", t.name, m.name), &methodName);
+                        for fnDef in &traitDef.methods {
+                            let methodName = traitName.add(fnDef.name.toString());
+                            importedNames.add(&fnDef.name, &methodName);
+                            importedNames.add(&format!("{}.{}", traitDef.name, fnDef.name), &methodName);
                             importedNames.add(&methodName, &methodName);
                         }
                     }

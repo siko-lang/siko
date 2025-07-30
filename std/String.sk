@@ -2,20 +2,20 @@ module String {
 
 import NativePtr
 
-struct String {
+pub struct String {
     value: *U8,
     size: Int,
     capacity: Int,
 
-    fn new() -> String {
+    pub fn new() -> String {
         String(null(), 0, 0)
     }
 
-    fn len(&self) -> Int {
+    pub fn len(&self) -> Int {
         self.size
     }
 
-    fn eq(&self, other: &String) -> Bool {
+    pub fn eq(&self, other: &String) -> Bool {
         if self.size != other.size {
             return False;
         }
@@ -23,7 +23,7 @@ struct String {
         result == 0
     }
 
-    fn clone(&self) -> String {
+    pub fn clone(&self) -> String {
         if self.capacity == 0 {
             return String(self.value, self.size, self.capacity);
         } else {
@@ -33,10 +33,10 @@ struct String {
         }
     }
 
-    fn fromU8(value: Vec[U8]) -> String {
+    pub fn fromU8(value: Vec[U8]) -> String {
         let capacity = value.len();
         let newValue = allocateArray(capacity);
-        NativePtr.memcpy(newValue, value.as_ptr(), capacity);
+        NativePtr.memcpy(newValue, value.asPtr(), capacity);
         String(newValue, capacity, capacity)
     }
 }
@@ -99,23 +99,23 @@ instance Show[String] {
     }
 }
 
-struct StringLiteral {
+pub struct StringLiteral {
     value: *U8,
     size: Int,
 
-    fn new(value: *U8, size: Int) -> StringLiteral {
+    pub fn new(value: *U8, size: Int) -> StringLiteral {
         StringLiteral(value, size)
     }
 
-    fn len(&self) -> Int {
+    pub fn len(&self) -> Int {
         self.size
     }
 
-    fn clone(&self) -> StringLiteral {
+    pub fn clone(&self) -> StringLiteral {
         StringLiteral(self.value, self.size)
     }
 
-    fn toString(&self) -> String {
+    pub fn toString(&self) -> String {
         String(self.value, self.size, 0)
     }
 }
