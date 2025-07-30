@@ -649,7 +649,7 @@ impl<'a> Typechecker<'a> {
                             let mut implicitResult = self.bodyBuilder.createTempValue(instruction.location.clone());
                             implicitResult.ty = Some(baseType.clone());
                             self.types.insert(implicitResult.value.to_string(), baseType.clone());
-                            let kind = InstructionKind::FunctionCall(origReceiver.clone(), name, extendedArgs);
+                            let kind = InstructionKind::FunctionCall(implicitResult.clone(), name, extendedArgs);
                             builder.replaceInstruction(kind, instruction.location.clone());
                             builder.step();
                             builder.addAssign(
