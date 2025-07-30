@@ -25,9 +25,24 @@ impl Debug for InstructionRef {
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum PathSegment {
+    Named(String),
+    Indexed(u32),
+}
+
+impl Display for PathSegment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PathSegment::Named(name) => write!(f, "{}", name),
+            PathSegment::Indexed(index) => write!(f, "t{}", index),
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Path {
     pub root: Variable,
-    pub items: Vec<String>,
+    pub items: Vec<PathSegment>,
     pub location: Location,
     pub instructionRef: InstructionRef,
 }
@@ -45,7 +60,7 @@ impl Path {
         }
     }
 
-    pub fn add(&self, item: String, location: Location) -> Path {
+    pub fn add(&self, item: PathSegment, location: Location) -> Path {
         let mut p = self.clone();
         p.items.push(item);
         p.location = location;
@@ -62,7 +77,8 @@ impl Path {
         if self.items.is_empty() {
             self.root.value.visibleName()
         } else {
-            format!("{}.{}", self.root.value.visibleName(), self.items.join("."))
+            let items = self.items.iter().map(|i| i.to_string()).collect::<Vec<_>>();
+            format!("{}.{}", self.root.value.visibleName(), items.join("."))
         }
     }
 
@@ -118,7 +134,8 @@ impl Display for Path {
         if self.items.is_empty() {
             write!(f, "{}", self.root.value.visibleName())
         } else {
-            write!(f, "{}.{}", self.root.value.visibleName(), self.items.join("."))
+            let items = self.items.iter().map(|i| i.to_string()).collect::<Vec<_>>();
+            write!(f, "{}.{}", self.root.value.visibleName(), items.join("."))
         }
     }
 }

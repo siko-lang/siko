@@ -2,6 +2,7 @@ use core::panic;
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     fmt::Display,
+    vec,
 };
 
 use crate::siko::{
@@ -11,7 +12,7 @@ use crate::siko::{
         ConstraintContext::ConstraintContext,
         Function::{Block, Body, Function, FunctionKind, Parameter},
         InstanceResolver::ResolutionResult,
-        Instruction::{EnumCase, FieldInfo, Instruction, InstructionKind, JumpDirection},
+        Instruction::{EnumCase, FieldId, FieldInfo, Instruction, InstructionKind, JumpDirection},
         Program::Program,
         Substitution::{createTypeSubstitutionFrom, Substitution},
         Type::{formatTypes, Type},
@@ -255,9 +256,6 @@ impl Monomorphize for InstructionKind {
                 root.process(sub, mono),
                 fields.process(sub, mono),
             ),
-            InstructionKind::TupleIndex(dest, root, index) => {
-                InstructionKind::TupleIndex(dest.process(sub, mono), root.process(sub, mono), *index)
-            }
             InstructionKind::Bind(_, _, _) => {
                 panic!("Bind instruction found in Monomorphizer, this should not happen");
             }
@@ -576,7 +574,7 @@ impl<'a> Monomorphizer<'a> {
                     let c = instantiateStruct(&mut allocator, &c, &ty);
                     for f in &c.fields {
                         let fieldInfo = FieldInfo {
-                            name: f.name.clone(),
+                            name: FieldId::Named(f.name.clone()),
                             ty: Some(f.ty.clone()),
                             location: location.clone(),
                         };
@@ -620,8 +618,12 @@ impl<'a> Monomorphizer<'a> {
             }
             Type::Tuple(args) => {
                 for (index, arg) in args.iter().enumerate() {
-                    let field =
-                        builder.addTypedTupleIndex(dropVar.clone(), index as i32, location.clone(), arg.clone());
+                    let fields = vec![FieldInfo {
+                        name: FieldId::Indexed(index as u32),
+                        ty: Some(arg.clone()),
+                        location: location.clone(),
+                    }];
+                    let field = builder.addTypedFieldRef(dropVar.clone(), fields, location.clone(), arg.clone());
                     let mut dropRes = bodyBuilder.createTempValue(location.clone());
                     dropRes.ty = Some(Type::getUnitType());
                     let dropKind = InstructionKind::Drop(dropRes, field);

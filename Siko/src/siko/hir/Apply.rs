@@ -188,9 +188,6 @@ impl Apply for InstructionKind {
             InstructionKind::FieldRef(dest, root, field) => {
                 InstructionKind::FieldRef(dest.apply(sub), root.apply(sub), field.clone())
             }
-            InstructionKind::TupleIndex(dest, root, index) => {
-                InstructionKind::TupleIndex(dest.apply(sub), root.apply(sub), *index)
-            }
             InstructionKind::Bind(dest, rhs, mutable) => {
                 InstructionKind::Bind(dest.apply(sub), rhs.apply(sub), *mutable)
             }

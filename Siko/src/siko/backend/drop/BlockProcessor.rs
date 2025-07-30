@@ -4,12 +4,12 @@ use std::collections::BTreeMap;
 use crate::siko::{
     backend::drop::{
         Context::Context,
-        Path::{InstructionRef, Path},
+        Path::{InstructionRef, Path, PathSegment},
         Usage::{Usage, UsageKind},
     },
     hir::{
         Function::{Block, BlockId},
-        Instruction::InstructionKind,
+        Instruction::{FieldId, InstructionKind},
         Variable::Variable,
     },
 };
@@ -57,7 +57,14 @@ impl BlockProcessor {
                     let destTy = dest.getType();
                     let mut path = Path::new(receiver.clone(), dest.location.clone());
                     for field in names {
-                        path = path.add(field.name.clone(), dest.location.clone());
+                        match &field.name {
+                            FieldId::Named(name) => {
+                                path = path.add(PathSegment::Named(name.clone()), dest.location.clone());
+                            }
+                            FieldId::Indexed(index) => {
+                                path = path.add(PathSegment::Indexed(*index), dest.location.clone());
+                            }
+                        }
                     }
                     path = path.setInstructionRef(instructionRef);
                     if destTy.isReference() || destTy.isPtr() {
@@ -76,7 +83,14 @@ impl BlockProcessor {
                     context.useVar(receiver, instructionRef);
                     let mut path = Path::new(dest.clone(), dest.location.clone());
                     for field in fields {
-                        path = path.add(field.name.clone(), dest.location.clone());
+                        match &field.name {
+                            FieldId::Named(name) => {
+                                path = path.add(PathSegment::Named(name.clone()), dest.location.clone());
+                            }
+                            FieldId::Indexed(index) => {
+                                path = path.add(PathSegment::Indexed(*index), dest.location.clone());
+                            }
+                        }
                     }
                     path = path.setInstructionRef(instructionRef);
                     context.addAssign(path.clone());
@@ -94,9 +108,6 @@ impl BlockProcessor {
                 }
                 InstructionKind::DynamicFunctionCall(_, _, _) => {
                     panic!("Dynamic function call found in block processor");
-                }
-                InstructionKind::TupleIndex(_, _, _) => {
-                    panic!("Tuple index instruction found in block processor");
                 }
                 InstructionKind::Bind(_, _, _) => {
                     panic!("Bind instruction found in block processor");

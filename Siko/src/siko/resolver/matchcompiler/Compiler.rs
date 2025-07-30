@@ -1,5 +1,5 @@
 use crate::siko::hir::Function::BlockId;
-use crate::siko::hir::Instruction::{EnumCase, InstructionKind, IntegerCase, JumpDirection};
+use crate::siko::hir::Instruction::{EnumCase, FieldId, FieldInfo, InstructionKind, IntegerCase, JumpDirection};
 use crate::siko::hir::Variable::{Variable, VariableName};
 use crate::siko::location::Location::Location;
 use crate::siko::qualifiedname::{getCloneFnName, getStringEqName, QualifiedName};
@@ -10,8 +10,8 @@ use crate::siko::syntax::Expr::Branch;
 use crate::siko::syntax::Identifier::Identifier;
 use crate::siko::syntax::Pattern::{Pattern, SimplePattern};
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt;
 use std::iter::repeat;
+use std::{fmt, vec};
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DataPath {
@@ -473,7 +473,15 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                 let root = ctx.get(&tuple.dataPath);
                 let mut ctx = ctx.clone();
                 for index in 0..tuple.size {
-                    let value = builder.addTupleIndex(root.clone(), index as i32, self.bodyLocation.clone());
+                    let value = builder.addFieldRef(
+                        root.clone(),
+                        vec![FieldInfo {
+                            name: FieldId::Indexed(index as u32),
+                            ty: None,
+                            location: self.bodyLocation.clone(),
+                        }],
+                        self.bodyLocation.clone(),
+                    );
                     ctx = ctx.add(DataPath::TupleIndex(Box::new(tuple.dataPath.clone()), index), value);
                 }
                 let nextId = self.compileNode(&tuple.next, &ctx);
@@ -498,9 +506,13 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                                         builder.addTransform(root.clone(), index, self.bodyLocation.clone());
                                     let mut ctx = ctx.clone();
                                     for (index, _) in v.items.iter().enumerate() {
-                                        let value = builder.addTupleIndex(
+                                        let value = builder.addFieldRef(
                                             transformValue.clone(),
-                                            index as i32,
+                                            vec![FieldInfo {
+                                                name: FieldId::Indexed(index as u32),
+                                                ty: None,
+                                                location: self.bodyLocation.clone(),
+                                            }],
                                             self.bodyLocation.clone(),
                                         );
                                         let path = DataPath::Variant(

@@ -172,11 +172,6 @@ impl<'a> Builder<'a> {
                         block.instructions.push(Instruction::Transform(dest, root, *index));
                     }
                 }
-                HirInstructionKind::TupleIndex(dest, root, index) => {
-                    let dest = self.buildVariable(dest);
-                    let root = self.buildVariable(root);
-                    block.instructions.push(Instruction::GetFieldRef(dest, root, *index));
-                }
                 HirInstructionKind::FieldRef(dest, root, fields) => {
                     let dest = self.buildVariable(dest);
                     let mut currentReceiver = self.buildVariable(root);
@@ -193,7 +188,7 @@ impl<'a> Builder<'a> {
                         };
                         let structName = receiverTy.getName().expect("no name for field ty");
                         let s = self.program.structs.get(&structName).expect("structDef not found");
-                        let (_, index) = s.getField(&field.name);
+                        let (_, index) = s.getField(&field.name.name());
 
                         block
                             .instructions
@@ -208,7 +203,7 @@ impl<'a> Builder<'a> {
                     for field in fields {
                         let structName = ty.getName().expect("no name for field ref root");
                         let c = self.program.structs.get(&structName).expect("structDef not found");
-                        let (_, index) = c.getField(&field.name);
+                        let (_, index) = c.getField(&field.name.name());
                         indices.push(index);
                         ty = field.ty.as_ref().expect("field without ty!");
                     }

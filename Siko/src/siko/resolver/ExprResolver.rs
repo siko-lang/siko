@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::siko::hir::BodyBuilder::BodyBuilder;
 use crate::siko::hir::Data::{Enum, Struct};
 use crate::siko::hir::Function::BlockId;
-use crate::siko::hir::Instruction::{BlockInfo, FieldInfo, InstructionKind, JumpDirection};
+use crate::siko::hir::Instruction::{BlockInfo, FieldId, FieldInfo, InstructionKind, JumpDirection};
 use crate::siko::hir::Variable::Variable;
 use crate::siko::location::Location::Location;
 use crate::siko::location::Report::ReportContext;
@@ -93,7 +93,7 @@ impl<'a> ExprResolver<'a> {
         let mut receiver = receiver;
         let mut fields: Vec<FieldInfo> = Vec::new();
         fields.push(FieldInfo {
-            name: name.toString(),
+            name: FieldId::Named(name.toString()),
             location: name.location.clone(),
             ty: None,
         });
@@ -136,7 +136,7 @@ impl<'a> ExprResolver<'a> {
                 SimpleExpr::FieldAccess(r, name) => {
                     receiver = r;
                     fields.push(FieldInfo {
-                        name: name.toString(),
+                        name: FieldId::Named(name.toString()),
                         location: name.location.clone(),
                         ty: None,
                     });
@@ -254,7 +254,7 @@ impl<'a> ExprResolver<'a> {
             SimpleExpr::FieldAccess(receiver, name) => {
                 let receiver = self.resolveExpr(receiver, env);
                 let fieldInfos = vec![FieldInfo {
-                    name: name.toString(),
+                    name: FieldId::Named(name.toString()),
                     ty: None,
                     location: name.location.clone(),
                 }];
@@ -312,9 +312,15 @@ impl<'a> ExprResolver<'a> {
             }
             SimpleExpr::TupleIndex(receiver, index) => {
                 let receiver = self.resolveExpr(&receiver, env);
-                self.bodyBuilder
-                    .current()
-                    .addTupleIndex(receiver, index.parse().unwrap(), expr.location.clone())
+                self.bodyBuilder.current().addFieldRef(
+                    receiver,
+                    vec![FieldInfo {
+                        name: FieldId::Indexed(index.parse().unwrap()),
+                        ty: None,
+                        location: expr.location.clone(),
+                    }],
+                    expr.location.clone(),
+                )
             }
             SimpleExpr::Loop(pattern, init, body) => {
                 let initId = self.resolveExpr(&init, env);
@@ -531,7 +537,7 @@ impl<'a> ExprResolver<'a> {
                             let fieldId = self.bodyBuilder.current().addFieldRef(
                                 root.clone(),
                                 vec![FieldInfo {
-                                    name: field.name.clone(),
+                                    name: FieldId::Named(field.name.clone()),
                                     ty: None,
                                     location: pat.location.clone(),
                                 }],
@@ -559,10 +565,15 @@ impl<'a> ExprResolver<'a> {
             }
             SimplePattern::Tuple(args) => {
                 for (index, arg) in args.iter().enumerate() {
-                    let tupleValue =
-                        self.bodyBuilder
-                            .current()
-                            .addTupleIndex(root.clone(), index as i32, pat.location.clone());
+                    let tupleValue = self.bodyBuilder.current().addFieldRef(
+                        root.clone(),
+                        vec![FieldInfo {
+                            name: FieldId::Indexed(index as u32),
+                            ty: None,
+                            location: pat.location.clone(),
+                        }],
+                        pat.location.clone(),
+                    );
                     self.resolvePattern(arg, env, tupleValue);
                 }
             }

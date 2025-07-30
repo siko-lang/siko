@@ -6,11 +6,10 @@ use crate::siko::{
         ConstraintContext::ConstraintContext,
         Data::{Enum, Field, Struct, Variant},
         Function::{Block, Body, Function, FunctionKind, Parameter},
-        Instruction::{FieldInfo, Instruction, InstructionKind},
+        Instruction::{FieldId, FieldInfo, Instruction, InstructionKind},
         Program::Program,
         Type::Type,
         Variable::Variable,
-        VariableAllocator::VariableAllocator,
     },
     qualifiedname::QualifiedName,
 };
@@ -120,9 +119,19 @@ impl RemoveTuples for Variable {
     }
 }
 
+impl RemoveTuples for FieldId {
+    fn removeTuples(&self, _: &mut Context) -> Self {
+        match self {
+            FieldId::Named(name) => FieldId::Named(name.clone()),
+            FieldId::Indexed(index) => FieldId::Named(fieldNameForIndex(*index as usize)),
+        }
+    }
+}
+
 impl RemoveTuples for FieldInfo {
     fn removeTuples(&self, ctx: &mut Context) -> Self {
         let mut result = self.clone();
+        result.name = result.name.removeTuples(ctx);
         result.ty = result.ty.removeTuples(ctx);
         result
     }
@@ -153,17 +162,11 @@ impl RemoveTuples for InstructionKind {
                 root.removeTuples(ctx),
                 args.removeTuples(ctx),
             ),
-            InstructionKind::FieldRef(dest, receiver, field) => {
-                InstructionKind::FieldRef(dest.removeTuples(ctx), receiver.removeTuples(ctx), field.clone())
-            }
-            InstructionKind::TupleIndex(dest, root, index) => {
-                let info = FieldInfo {
-                    name: fieldNameForIndex(*index as usize),
-                    ty: Some(root.getType().removeTuples(ctx)),
-                    location: dest.location.clone(),
-                };
-                InstructionKind::FieldRef(dest.removeTuples(ctx), root.removeTuples(ctx), vec![info])
-            }
+            InstructionKind::FieldRef(dest, receiver, field) => InstructionKind::FieldRef(
+                dest.removeTuples(ctx),
+                receiver.removeTuples(ctx),
+                field.removeTuples(ctx),
+            ),
             InstructionKind::Bind(_, _, _) => {
                 panic!("Bind instruction found in RemoveTuples, this should not happen");
             }

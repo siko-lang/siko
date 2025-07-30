@@ -256,25 +256,6 @@ impl BlockBuilder {
         result
     }
 
-    pub fn addTupleIndex(&mut self, tuple: Variable, index: i32, location: Location) -> Variable {
-        let result = self.bodyBuilder.createTempValue(location.clone());
-        self.addInstruction(
-            InstructionKind::TupleIndex(result.clone(), tuple, index),
-            location.clone(),
-        );
-        result
-    }
-
-    pub fn addTypedTupleIndex(&mut self, tuple: Variable, index: i32, location: Location, ty: Type) -> Variable {
-        let mut result = self.bodyBuilder.createTempValue(location.clone());
-        result.ty = Some(ty);
-        self.addInstruction(
-            InstructionKind::TupleIndex(result.clone(), tuple, index),
-            location.clone(),
-        );
-        result
-    }
-
     pub fn addJump(&mut self, target: BlockId, direction: JumpDirection, location: Location) -> Variable {
         let result = self.bodyBuilder.createTempValue(location.clone());
         self.addInstruction(

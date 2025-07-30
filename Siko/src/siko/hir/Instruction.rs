@@ -23,10 +23,34 @@ impl Display for JumpDirection {
 }
 
 #[derive(Clone, PartialEq)]
+pub enum FieldId {
+    Named(String),
+    Indexed(u32),
+}
+
+impl FieldId {
+    pub fn name(&self) -> String {
+        match self {
+            FieldId::Named(name) => name.clone(),
+            FieldId::Indexed(index) => panic!("indexed field found in FieldId::name() {}", index),
+        }
+    }
+}
+
+#[derive(Clone, PartialEq)]
 pub struct FieldInfo {
-    pub name: String,
+    pub name: FieldId,
     pub location: Location,
     pub ty: Option<Type>,
+}
+
+impl Display for FieldId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FieldId::Named(name) => write!(f, "{}", name),
+            FieldId::Indexed(index) => write!(f, "t{}", index),
+        }
+    }
 }
 
 impl Display for FieldInfo {
@@ -130,7 +154,6 @@ pub enum InstructionKind {
     MethodCall(Variable, Variable, String, Vec<Variable>),
     DynamicFunctionCall(Variable, Variable, Vec<Variable>),
     FieldRef(Variable, Variable, Vec<FieldInfo>),
-    TupleIndex(Variable, Variable, i32),
     Bind(Variable, Variable, bool), //mutable
     Tuple(Variable, Vec<Variable>),
     StringLiteral(Variable, String),
@@ -171,7 +194,6 @@ impl InstructionKind {
             InstructionKind::MethodCall(v, _, _, _) => Some(v.clone()),
             InstructionKind::DynamicFunctionCall(v, _, _) => Some(v.clone()),
             InstructionKind::FieldRef(v, _, _) => Some(v.clone()),
-            InstructionKind::TupleIndex(v, _, _) => Some(v.clone()),
             InstructionKind::Bind(v, _, _) => Some(v.clone()),
             InstructionKind::Tuple(v, _) => Some(v.clone()),
             InstructionKind::StringLiteral(v, _) => Some(v.clone()),
@@ -221,11 +243,6 @@ impl InstructionKind {
                 let new_var = var.replace(&from, to.clone());
                 let new_target = target.replace(&from, to);
                 InstructionKind::FieldRef(new_var, new_target, name.clone())
-            }
-            InstructionKind::TupleIndex(var, target, idx) => {
-                let new_var = var.replace(&from, to.clone());
-                let new_target = target.replace(&from, to);
-                InstructionKind::TupleIndex(new_var, new_target, *idx)
             }
             InstructionKind::Bind(var, value, mutable) => {
                 let new_var = var.replace(&from, to.clone());
@@ -319,7 +336,6 @@ impl InstructionKind {
                 vars
             }
             InstructionKind::FieldRef(var, target, _) => vec![var.clone(), target.clone()],
-            InstructionKind::TupleIndex(var, target, _) => vec![var.clone(), target.clone()],
             InstructionKind::Bind(var, value, _) => vec![var.clone(), value.clone()],
             InstructionKind::Tuple(var, elements) => {
                 let mut vars = vec![var.clone()];
@@ -367,7 +383,6 @@ impl InstructionKind {
                 v,
                 fields.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(".")
             ),
-            InstructionKind::TupleIndex(dest, v, idx) => format!("{} = {}.t{}", dest, v, idx),
             InstructionKind::Bind(v, rhs, mutable) => {
                 if *mutable {
                     format!("mut {} = {}", v, rhs)

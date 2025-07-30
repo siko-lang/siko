@@ -12,7 +12,7 @@ use crate::siko::{
         Data::{Enum, Struct},
         Function::{BlockId, Function, Parameter},
         InstanceResolver::ResolutionResult,
-        Instruction::{Instruction, InstructionKind, Mutability},
+        Instruction::{FieldId, FieldInfo, Instruction, InstructionKind, Mutability},
         Program::Program,
         Substitution::Substitution,
         TraitMethodSelector::TraitMethodSelector,
@@ -146,9 +146,6 @@ impl<'a> Typechecker<'a> {
                             self.initializeVar(var);
                         }
                         InstructionKind::FieldRef(var, _, _) => {
-                            self.initializeVar(var);
-                        }
-                        InstructionKind::TupleIndex(var, _, _) => {
                             self.initializeVar(var);
                         }
                         InstructionKind::Bind(var, _, mutable) => {
@@ -480,34 +477,55 @@ impl<'a> Typechecker<'a> {
         };
     }
 
-    fn checkField(&mut self, receiverType: Type, fieldName: String, location: Location) -> Type {
-        let receiverType = receiverType.apply(&self.substitution);
-        match receiverType.unpackRef() {
-            Type::Named(name, _) => {
-                if let Some(structDef) = self.program.structs.get(&name) {
-                    let structDef = self.instantiateStruct(structDef, receiverType.unpackRef());
-                    for f in &structDef.fields {
-                        if f.name == *fieldName {
-                            if receiverType.isReference() {
-                                return Type::Reference(Box::new(f.ty.clone()), None);
+    fn checkField(&mut self, receiverType: Type, fieldId: &FieldId, location: Location) -> Type {
+        match &fieldId {
+            FieldId::Named(fieldName) => {
+                let receiverType = receiverType.apply(&self.substitution);
+                match receiverType.unpackRef() {
+                    Type::Named(name, _) => {
+                        if let Some(structDef) = self.program.structs.get(&name) {
+                            let structDef = self.instantiateStruct(structDef, receiverType.unpackRef());
+                            for f in &structDef.fields {
+                                if f.name == *fieldName {
+                                    if receiverType.isReference() {
+                                        return Type::Reference(Box::new(f.ty.clone()), None);
+                                    }
+                                    return f.ty.clone();
+                                }
                             }
-                            return f.ty.clone();
+                            if let Some(i) = self.program.instanceResolver.isDeref(&receiverType) {
+                                let receiverType = i.associatedTypes[0].ty.clone();
+                                return self.checkField(receiverType, fieldId, location);
+                            } else {
+                                TypecheckerError::FieldNotFound(fieldName.clone(), location.clone()).report(self.ctx);
+                            }
+                        } else {
+                            //println!("ReadField 1 on non-named type: {} {}", receiverType, fieldName);
+                            TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
                         }
                     }
-                    if let Some(i) = self.program.instanceResolver.isDeref(&receiverType) {
-                        let receiverType = i.associatedTypes[0].ty.clone();
-                        return self.checkField(receiverType, fieldName, location);
-                    } else {
-                        TypecheckerError::FieldNotFound(fieldName.clone(), location.clone()).report(self.ctx);
+                    _ => {
+                        //println!("ReadField 2 on non-named type: {} {}", receiverType, fieldName);
+                        TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
                     }
-                } else {
-                    //println!("ReadField 1 on non-named type: {} {}", receiverType, fieldName);
-                    TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
                 }
             }
-            _ => {
-                //println!("ReadField 2 on non-named type: {} {}", receiverType, fieldName);
-                TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
+            FieldId::Indexed(index) => {
+                let receiverType = receiverType.apply(&self.substitution);
+                match receiverType.unpackRef() {
+                    Type::Tuple(types) => {
+                        if *index as usize >= types.len() {
+                            TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
+                        }
+                        if receiverType.isReference() {
+                            return Type::Reference(Box::new(types[*index as usize].clone()), None);
+                        }
+                        return types[*index as usize].clone();
+                    }
+                    _ => {
+                        TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
+                    }
+                }
             }
         }
     }
@@ -649,15 +667,30 @@ impl<'a> Typechecker<'a> {
                             let receiverTy = self.getType(&origReceiver);
                             implicitSelf.ty = Some(receiverTy.clone());
                             self.types.insert(implicitSelf.value.to_string(), receiverTy.clone());
-                            let implicitSelfIndex =
-                                InstructionKind::TupleIndex(implicitSelf.clone(), implicitResult.clone(), 0);
+                            let implicitSelfIndex = InstructionKind::FieldRef(
+                                implicitSelf.clone(),
+                                implicitResult.clone(),
+                                vec![FieldInfo {
+                                    name: FieldId::Indexed(0),
+                                    ty: Some(receiverTy.clone()),
+                                    location: instruction.location.clone(),
+                                }],
+                            );
                             let assign2 = InstructionKind::Assign(origReceiver.clone(), implicitSelf.clone());
                             let mut resVar = self.bodyBuilder.createTempValue(instruction.location.clone());
                             let destTy = self.getType(dest);
                             resVar.ty = Some(destTy.clone());
                             self.types.insert(resVar.value.to_string(), destTy.clone());
                             let assign = InstructionKind::Assign(dest.clone(), resVar.clone());
-                            let resIndex = InstructionKind::TupleIndex(resVar.clone(), implicitResult.clone(), 1);
+                            let resIndex = InstructionKind::FieldRef(
+                                resVar.clone(),
+                                implicitResult.clone(),
+                                vec![FieldInfo {
+                                    name: FieldId::Indexed(1),
+                                    ty: Some(destTy.clone()),
+                                    location: instruction.location.clone(),
+                                }],
+                            );
                             builder.replaceInstruction(fnCall, instruction.location.clone());
                             builder.step();
                             builder.addInstruction(assign, instruction.location.clone());
@@ -674,8 +707,15 @@ impl<'a> Typechecker<'a> {
                             let receiverTy = self.getType(&origReceiver);
                             implicitSelf.ty = Some(receiverTy.clone());
                             self.types.insert(implicitSelf.value.to_string(), receiverTy.clone());
-                            let implicitSelfIndex =
-                                InstructionKind::TupleIndex(implicitSelf.clone(), implicitResult.clone(), 0);
+                            let implicitSelfIndex = InstructionKind::FieldRef(
+                                implicitSelf.clone(),
+                                implicitResult.clone(),
+                                vec![FieldInfo {
+                                    name: FieldId::Indexed(0),
+                                    ty: Some(receiverTy.clone()),
+                                    location: instruction.location.clone(),
+                                }],
+                            );
                             let assign = InstructionKind::Assign(origReceiver.clone(), implicitSelf.clone());
                             let mut args = Vec::new();
                             let tupleTypes = selfLessType.getTupleTypes();
@@ -685,10 +725,14 @@ impl<'a> Typechecker<'a> {
                                 resVar.ty = Some(argType.clone());
                                 args.push(resVar.clone());
                                 self.types.insert(resVar.value.to_string(), argType.clone());
-                                let tupleIndexN = InstructionKind::TupleIndex(
+                                let tupleIndexN = InstructionKind::FieldRef(
                                     resVar.clone(),
                                     implicitResult.clone(),
-                                    (argIndex + 1) as i32,
+                                    vec![FieldInfo {
+                                        name: FieldId::Indexed((argIndex + 1) as u32),
+                                        ty: Some(argType.clone()),
+                                        location: instruction.location.clone(),
+                                    }],
                                 );
                                 tupleIndices.push(tupleIndexN);
                             }
@@ -765,7 +809,7 @@ impl<'a> Typechecker<'a> {
                 let mut types = Vec::new();
                 let mut receiverType = receiverType.apply(&self.substitution);
                 for field in fields {
-                    let fieldTy = self.checkField(receiverType, field.name.clone(), field.location.clone());
+                    let fieldTy = self.checkField(receiverType, &field.name, field.location.clone());
                     types.push(fieldTy.clone());
                     receiverType = fieldTy;
                 }
@@ -812,56 +856,63 @@ impl<'a> Typechecker<'a> {
                 let receiverType = self.getType(receiver);
                 assert_eq!(fields.len(), 1, "FieldRef with multiple fields in typecheck!");
                 let fieldName = fields[0].name.clone();
-                let result = self.readField(receiverType, fieldName.clone(), instruction.location.clone());
-                if result.derefs.len() > 0 {
-                    let mut rootVar = receiver.clone();
-                    for deref in &result.derefs {
-                        let mut derefInputVar = rootVar.clone();
-                        let rootVarTy = self.getType(&rootVar).apply(&self.substitution);
-                        let derefResultVar = self.bodyBuilder.createTempValue(instruction.location.clone());
-                        if !rootVarTy.isReference() {
-                            let refResultVar = self.bodyBuilder.createTempValue(instruction.location.clone());
-                            self.types.insert(
-                                refResultVar.value.to_string(),
-                                Type::Reference(Box::new(rootVarTy.clone()), None),
+                match fieldName {
+                    FieldId::Named(n) => {
+                        let result = self.readField(receiverType, n, instruction.location.clone());
+                        if result.derefs.len() > 0 {
+                            let mut rootVar = receiver.clone();
+                            for deref in &result.derefs {
+                                let mut derefInputVar = rootVar.clone();
+                                let rootVarTy = self.getType(&rootVar).apply(&self.substitution);
+                                let derefResultVar = self.bodyBuilder.createTempValue(instruction.location.clone());
+                                if !rootVarTy.isReference() {
+                                    let refResultVar = self.bodyBuilder.createTempValue(instruction.location.clone());
+                                    self.types.insert(
+                                        refResultVar.value.to_string(),
+                                        Type::Reference(Box::new(rootVarTy.clone()), None),
+                                    );
+                                    let kind = InstructionKind::Ref(refResultVar.clone(), rootVar.clone());
+                                    builder.addInstruction(kind, instruction.location.clone());
+                                    builder.step();
+                                    derefInputVar = refResultVar;
+                                }
+                                let kind = InstructionKind::FunctionCall(
+                                    derefResultVar.clone(),
+                                    getDerefGetName(),
+                                    vec![derefInputVar.clone()],
+                                );
+                                self.types.insert(derefResultVar.value.to_string(), deref.clone());
+                                builder.addInstruction(kind, instruction.location.clone());
+                                builder.step();
+                                rootVar = derefResultVar;
+                            }
+                            builder.replaceInstruction(
+                                InstructionKind::FieldRef(dest.clone(), rootVar.clone(), fields.clone()),
+                                instruction.location.clone(),
                             );
-                            let kind = InstructionKind::Ref(refResultVar.clone(), rootVar.clone());
-                            builder.addInstruction(kind, instruction.location.clone());
-                            builder.step();
-                            derefInputVar = refResultVar;
                         }
-                        let kind = InstructionKind::FunctionCall(
-                            derefResultVar.clone(),
-                            getDerefGetName(),
-                            vec![derefInputVar.clone()],
-                        );
-                        self.types.insert(derefResultVar.value.to_string(), deref.clone());
-                        builder.addInstruction(kind, instruction.location.clone());
-                        builder.step();
-                        rootVar = derefResultVar;
+                        self.unify(self.getType(dest), result.ty, instruction.location.clone());
                     }
-                    builder.replaceInstruction(
-                        InstructionKind::FieldRef(dest.clone(), rootVar.clone(), fields.clone()),
-                        instruction.location.clone(),
-                    );
-                }
-                self.unify(self.getType(dest), result.ty, instruction.location.clone());
-            }
-            InstructionKind::TupleIndex(dest, receiver, index) => {
-                let receiverType = self.getType(receiver);
-                let receiverType = receiverType.apply(&self.substitution);
-                match receiverType {
-                    Type::Tuple(t) => {
-                        if *index as usize >= t.len() {
-                            TypecheckerError::FieldNotFound(format!(".{}", index), instruction.location.clone())
-                                .report(&self.ctx);
+                    FieldId::Indexed(index) => {
+                        let receiverType = self.getType(receiver);
+                        let receiverType = receiverType.apply(&self.substitution);
+                        match receiverType {
+                            Type::Tuple(t) => {
+                                if index as usize >= t.len() {
+                                    TypecheckerError::FieldNotFound(
+                                        format!(".{}", index),
+                                        instruction.location.clone(),
+                                    )
+                                    .report(&self.ctx);
+                                }
+                                let fieldType = t[index as usize].clone();
+                                self.unify(self.getType(dest), fieldType, instruction.location.clone());
+                            }
+                            _ => {
+                                //println!("TupleIndex on non-tuple type: {} {}", receiverType, instruction);
+                                TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(self.ctx);
+                            }
                         }
-                        let fieldType = t[*index as usize].clone();
-                        self.unify(self.getType(dest), fieldType, instruction.location.clone());
-                    }
-                    _ => {
-                        //println!("TupleIndex on non-tuple type: {} {}", receiverType, instruction);
-                        TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(self.ctx);
                     }
                 }
             }
