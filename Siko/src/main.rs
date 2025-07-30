@@ -121,8 +121,6 @@ fn main() {
     let program = monomorphize(&ctx, program);
     //println!("after mono\n{}", program);
     let program = removeTuples(&program);
-    //println!("after remove\n{}", program);
-    //ownershipInference(program.clone());
     //println!("after backend\n {}", program);
     let mut mir_program = lowerProgram(&program);
     //println!("mir\n{}", mir_program);

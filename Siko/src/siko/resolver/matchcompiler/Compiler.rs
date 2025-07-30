@@ -1,6 +1,6 @@
 use crate::siko::hir::Function::BlockId;
 use crate::siko::hir::Instruction::{EnumCase, FieldId, FieldInfo, InstructionKind, IntegerCase, JumpDirection};
-use crate::siko::hir::Variable::{Variable, VariableName};
+use crate::siko::hir::Variable::Variable;
 use crate::siko::location::Location::Location;
 use crate::siko::qualifiedname::{getCloneFnName, getStringEqName, QualifiedName};
 use crate::siko::resolver::Environment::Environment;

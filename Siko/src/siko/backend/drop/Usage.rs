@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::siko::{backend::drop::Path::Path, hir::Variable::Variable};
+use crate::siko::backend::drop::Path::Path;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum UsageKind {

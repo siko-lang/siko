@@ -1,7 +1,6 @@
 use std::fmt::{Debug, Display};
 
 use crate::siko::backend::drop::{
-    Error::Error,
     Path::Path,
     Usage::{Usage, UsageKind},
 };
@@ -70,21 +69,21 @@ impl EventSeries {
         while index > 0 {
             match pruned.events[index].clone() {
                 Event::Assign(path) => {
-                    for i in (0..index) {
+                    for i in 0..index {
                         if usage_overwritten(&pruned.events[i], &path) {
                             pruned.events[i] = Event::Noop;
                         }
                     }
                 }
                 Event::Usage(usage) if usage.isMove() => {
-                    for i in (0..index) {
+                    for i in 0..index {
                         if usage_overwritten(&pruned.events[i], &usage.path) {
                             pruned.events[i] = Event::Noop;
                         }
                     }
                 }
                 Event::Usage(usage) if !usage.isMove() => {
-                    for i in (0..index) {
+                    for i in 0..index {
                         if let Event::Usage(prevUsage) = &pruned.events[i] {
                             if !prevUsage.isMove() && prevUsage.path == usage.path {
                                 pruned.events[i] = Event::Noop;

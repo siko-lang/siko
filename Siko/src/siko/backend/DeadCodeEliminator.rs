@@ -97,7 +97,7 @@ impl<'a> DeadCodeEliminator<'a> {
                         return;
                     }
                 }
-                InstructionKind::Converter(dest, source) => {}
+                InstructionKind::Converter(_, _) => {}
                 InstructionKind::MethodCall(_, _, _, _) => unreachable!("method call in DCE"),
                 InstructionKind::DynamicFunctionCall(_, _, _) => {}
                 InstructionKind::FieldRef(_, _, _) => {}
