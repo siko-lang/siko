@@ -4,8 +4,10 @@ use std::collections::BTreeMap;
 use crate::siko::{
     backend::drop::{
         Context::Context,
+        DropList::DropListHandler,
         Path::{InstructionRef, Path, PathSegment},
         Usage::{Usage, UsageKind},
+        Util::buildFieldPath,
     },
     hir::{
         Function::{Block, BlockId},
@@ -14,14 +16,16 @@ use crate::siko::{
     },
 };
 
-pub struct BlockProcessor {
+pub struct BlockProcessor<'a> {
     receiverPaths: BTreeMap<Variable, Path>,
+    dropListHandler: &'a mut DropListHandler,
 }
 
-impl BlockProcessor {
-    pub fn new() -> BlockProcessor {
+impl<'a> BlockProcessor<'a> {
+    pub fn new(dropListHandler: &'a mut DropListHandler) -> BlockProcessor<'a> {
         BlockProcessor {
             receiverPaths: BTreeMap::new(),
+            dropListHandler,
         }
     }
 
@@ -81,17 +85,7 @@ impl BlockProcessor {
                 }
                 InstructionKind::FieldAssign(dest, receiver, fields) => {
                     context.useVar(receiver, instructionRef);
-                    let mut path = Path::new(dest.clone(), dest.location.clone());
-                    for field in fields {
-                        match &field.name {
-                            FieldId::Named(name) => {
-                                path = path.add(PathSegment::Named(name.clone()), dest.location.clone());
-                            }
-                            FieldId::Indexed(index) => {
-                                path = path.add(PathSegment::Indexed(*index), dest.location.clone());
-                            }
-                        }
-                    }
+                    let mut path = buildFieldPath(dest, fields);
                     path = path.setInstructionRef(instructionRef);
                     context.addAssign(path.clone());
                 }
@@ -118,10 +112,11 @@ impl BlockProcessor {
                 InstructionKind::Ref(_, src) => {
                     context.useVar(src, instructionRef);
                 }
+                InstructionKind::DropListPlaceholder(_) => {}
                 InstructionKind::Drop(_, _) => {
                     panic!("Drop instruction found in block processor");
                 }
-                InstructionKind::Jump(_, blockId, _) => {
+                InstructionKind::Jump(_, blockId) => {
                     jumpTargets.push(blockId.clone());
                 }
                 InstructionKind::Transform(_, src, _) => {
@@ -147,6 +142,20 @@ impl BlockProcessor {
                 }
             }
             instructionRef.instructionId += 1;
+        }
+        let allDropListIds = self.dropListHandler.getDropListIds();
+        for id in allDropListIds {
+            let dropList = self.dropListHandler.getDropList(id);
+            let rootPath = dropList.getRoot();
+            for (name, events) in context.usages.iter() {
+                if name.visibleName() == rootPath.root {
+                    for path in events.getAllPaths() {
+                        if path.toSimplePath().sharesPrefixWith(&rootPath) {
+                            self.dropListHandler.addPath(id, path.clone());
+                        }
+                    }
+                }
+            }
         }
         (context, jumpTargets)
     }

@@ -8,21 +8,6 @@ use super::Type::Type;
 use super::Variable::Variable;
 
 #[derive(Clone, PartialEq)]
-pub enum JumpDirection {
-    Forward,
-    Backward,
-}
-
-impl Display for JumpDirection {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            JumpDirection::Forward => write!(f, "forward"),
-            JumpDirection::Backward => write!(f, "backward"),
-        }
-    }
-}
-
-#[derive(Clone, PartialEq)]
 pub enum FieldId {
     Named(String),
     Indexed(u32),
@@ -63,14 +48,80 @@ impl Display for FieldInfo {
     }
 }
 
-#[derive(Clone, PartialEq)]
-pub struct BlockInfo {
-    pub id: String,
+#[derive(Clone, PartialEq, PartialOrd, Eq, Ord)]
+pub struct SyntaxBlockId {
+    pub items: Vec<String>,
 }
 
-impl Display for BlockInfo {
+impl SyntaxBlockId {
+    pub fn new() -> Self {
+        SyntaxBlockId { items: Vec::new() }
+    }
+
+    pub fn add(&self, item: String) -> Self {
+        let mut new_items = self.items.clone();
+        new_items.push(item);
+        SyntaxBlockId { items: new_items }
+    }
+
+    pub fn getParent(&self) -> SyntaxBlockId {
+        assert_ne!(self.items.len(), 0, "Cannot be empty");
+        if self.items.len() == 1 {
+            self.clone()
+        } else {
+            SyntaxBlockId {
+                items: self.items[0..self.items.len() - 1].to_vec(),
+            }
+        }
+    }
+
+    pub fn isParentOf(&self, other: &SyntaxBlockId) -> bool {
+        if self.items.len() >= other.items.len() {
+            return false;
+        }
+        for (i, j) in self.items.iter().zip(other.items.iter()) {
+            if i != j {
+                return false;
+            }
+        }
+        true
+    }
+
+    pub fn differenceToParent(&self, other: &SyntaxBlockId) -> Vec<SyntaxBlockId> {
+        if self.isParentOf(other) {
+            return vec![];
+        }
+        //println!("Difference from {} to {}", self, other);
+        let mut result = Vec::new();
+        if other == self {
+            return result;
+        }
+        let mut current = self.clone();
+        loop {
+            result.push(current.clone());
+            let parent = current.getParent();
+            //println!("Parent: {} {}", parent, other);
+            if parent == *other {
+                break;
+            }
+            if parent == current {
+                panic!("Cannot find parent for {}", current);
+            }
+            current = parent;
+        }
+        result
+    }
+}
+
+impl Display for SyntaxBlockId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.id)
+        write!(f, "{}", self.items.join("."))
+    }
+}
+
+impl Debug for SyntaxBlockId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
     }
 }
 
@@ -161,8 +212,9 @@ pub enum InstructionKind {
     CharLiteral(Variable, char),
     Return(Variable, Variable),
     Ref(Variable, Variable),
+    DropListPlaceholder(u32),
     Drop(Variable, Variable),
-    Jump(Variable, BlockId, JumpDirection),
+    Jump(Variable, BlockId),
     Assign(Variable, Variable),
     FieldAssign(Variable, Variable, Vec<FieldInfo>),
     DeclareVar(Variable, Mutability),
@@ -170,8 +222,8 @@ pub enum InstructionKind {
     EnumSwitch(Variable, Vec<EnumCase>),
     IntegerSwitch(Variable, Vec<IntegerCase>),
     StringSwitch(Variable, Vec<StringCase>),
-    BlockStart(BlockInfo),
-    BlockEnd(BlockInfo),
+    BlockStart(SyntaxBlockId),
+    BlockEnd(SyntaxBlockId),
 }
 
 impl Display for InstructionKind {
@@ -201,8 +253,9 @@ impl InstructionKind {
             InstructionKind::CharLiteral(v, _) => Some(v.clone()),
             InstructionKind::Return(v, _) => Some(v.clone()),
             InstructionKind::Ref(v, _) => Some(v.clone()),
+            InstructionKind::DropListPlaceholder(_) => None,
             InstructionKind::Drop(_, _) => None,
-            InstructionKind::Jump(v, _, _) => Some(v.clone()),
+            InstructionKind::Jump(v, _) => Some(v.clone()),
             InstructionKind::Assign(v, _) => Some(v.clone()),
             InstructionKind::FieldAssign(_, _, _) => None,
             InstructionKind::DeclareVar(v, _) => Some(v.clone()),
@@ -276,10 +329,11 @@ impl InstructionKind {
                 let new_target = target.replace(&from, to);
                 InstructionKind::Ref(new_var, new_target)
             }
+            InstructionKind::DropListPlaceholder(_) => self.clone(),
             InstructionKind::Drop(_, _) => self.clone(),
-            InstructionKind::Jump(var, id, direction) => {
+            InstructionKind::Jump(var, id) => {
                 let new_var = var.replace(&from, to.clone());
-                InstructionKind::Jump(new_var, id.clone(), direction.clone())
+                InstructionKind::Jump(new_var, id.clone())
             }
             InstructionKind::Assign(var, arg) => {
                 let new_var = var.replace(&from, to.clone());
@@ -347,8 +401,9 @@ impl InstructionKind {
             InstructionKind::CharLiteral(var, _) => vec![var.clone()],
             InstructionKind::Return(var, value) => vec![var.clone(), value.clone()],
             InstructionKind::Ref(var, target) => vec![var.clone(), target.clone()],
+            InstructionKind::DropListPlaceholder(_) => vec![],
             InstructionKind::Drop(_, _) => vec![],
-            InstructionKind::Jump(var, _, _) => vec![var.clone()],
+            InstructionKind::Jump(var, _) => vec![var.clone()],
             InstructionKind::Assign(var, value) => vec![var.clone(), value.clone()],
             InstructionKind::FieldAssign(var, value, _) => vec![var.clone(), value.clone()],
             InstructionKind::DeclareVar(var, _) => vec![var.clone()],
@@ -396,11 +451,12 @@ impl InstructionKind {
             InstructionKind::CharLiteral(dest, v) => format!("{} = c:[{}]", dest, v),
             InstructionKind::Return(dest, id) => format!("{} = return({})", dest, id),
             InstructionKind::Ref(dest, id) => format!("{} = &({})", dest, id),
+            InstructionKind::DropListPlaceholder(id) => format!("droplist_placeholder({})", id),
             InstructionKind::Drop(dest, value) => {
                 format!("drop({}/{})", dest, value)
             }
-            InstructionKind::Jump(dest, id, direction) => {
-                format!("{} = jump({}, {})", dest, id, direction)
+            InstructionKind::Jump(dest, id) => {
+                format!("{} = jump({})", dest, id)
             }
             InstructionKind::Assign(v, arg) => format!("assign({}, {})", v, arg),
             InstructionKind::FieldAssign(v, arg, fields) => {

@@ -197,10 +197,9 @@ impl Apply for InstructionKind {
             InstructionKind::CharLiteral(dest, c) => InstructionKind::CharLiteral(dest.apply(sub), *c),
             InstructionKind::Return(dest, arg) => InstructionKind::Return(dest.apply(sub), arg.apply(sub)),
             InstructionKind::Ref(dest, arg) => InstructionKind::Ref(dest.apply(sub), arg.apply(sub)),
+            InstructionKind::DropListPlaceholder(id) => InstructionKind::DropListPlaceholder(id.clone()),
             InstructionKind::Drop(dest, drop) => InstructionKind::Drop(dest.apply(sub), drop.apply(sub)),
-            InstructionKind::Jump(dest, targetBlockId, direction) => {
-                InstructionKind::Jump(dest.apply(sub), *targetBlockId, direction.clone())
-            }
+            InstructionKind::Jump(dest, targetBlockId) => InstructionKind::Jump(dest.apply(sub), *targetBlockId),
             InstructionKind::Assign(name, rhs) => InstructionKind::Assign(name.apply(sub), rhs.apply(sub)),
             InstructionKind::FieldAssign(name, rhs, fields) => {
                 InstructionKind::FieldAssign(name.apply(sub), rhs.apply(sub), fields.apply(sub))

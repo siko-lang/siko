@@ -1,10 +1,14 @@
 module Std.Ops {
 
-pub trait Clone[A] {
-    fn clone(&self) -> A
+pub trait Clone[T] {
+    fn clone(&self) -> T
 }
 
-pub trait Copy[A]
+pub trait Copy[T]
+
+pub trait Drop[T] {
+    fn drop(self) -> Self
+}
 
 }
 
@@ -21,38 +25,30 @@ struct Bar {
 
 }
 
-instance Clone[Bar] {
-    fn clone(&self) -> Bar {
-        Bar()
-    }
-}
+fn good() {}
 
-instance Copy[Bar]
-
-struct Foo {
-    b: Bar,
-
-    fn boo(self) -> Self {
-        self
-    }
-}
-
-struct Quux {
-    b : Bar,
-}
-
-fn id[A](a: A) -> A {
-    a
-}
+fn bad() {}
 
 fn main() {
-    let mut f = Foo(Bar());
-    if True {
-        f.boo();
-    } else {
-        f.boo();
+    let b1 = Bar();
+    {
+        let b2 = Bar();
+        loop {
+            {
+                let b3 = Bar();
+                {
+                    let b4 = Bar();
+                    if True {
+                        good();
+                        break;
+                    } else {
+                        bad();
+                        continue;
+                    }
+                }
+            }
+        }
     }
-    id(f.b);
 }
 
 }

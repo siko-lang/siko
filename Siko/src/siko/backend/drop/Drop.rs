@@ -7,8 +7,11 @@ use crate::siko::{
     backend::drop::{
         BlockProcessor::BlockProcessor,
         Context::Context,
+        DropList::DropListHandler,
         Error::{reportErrors, Error},
         Event::Collision,
+        Finalizer::Finalizer,
+        Initializer::Initializer,
         Path::Path,
     },
     hir::{
@@ -25,9 +28,14 @@ use crate::siko::{
 pub fn checkDrops(ctx: &ReportContext, program: Program) -> Program {
     let mut result = program.clone();
     for (name, f) in &program.functions {
-        let mut checker = DropChecker::new(f, ctx, &program);
+        let mut dropListHandler = DropListHandler::new();
+        let mut initializer = Initializer::new(f, &program, &mut dropListHandler);
+        let f = initializer.process();
+        let mut checker = DropChecker::new(&f, ctx, &program, &mut dropListHandler);
         //println!("Checking drops for {}", name);
         let f = checker.process();
+        let mut finalizer = Finalizer::new(&f, &program, &mut dropListHandler);
+        let f = finalizer.process();
         result.functions.insert(name.clone(), f);
     }
     result
@@ -51,16 +59,23 @@ pub struct DropChecker<'a> {
     function: &'a Function,
     program: &'a Program,
     visited: BTreeMap<BlockId, BTreeSet<Context>>,
+    dropListHandler: &'a mut DropListHandler,
 }
 
 impl<'a> DropChecker<'a> {
-    pub fn new(f: &'a Function, ctx: &'a ReportContext, program: &'a Program) -> DropChecker<'a> {
+    pub fn new(
+        f: &'a Function,
+        ctx: &'a ReportContext,
+        program: &'a Program,
+        dropListHandler: &'a mut DropListHandler,
+    ) -> DropChecker<'a> {
         DropChecker {
             ctx: ctx,
             bodyBuilder: BodyBuilder::cloneFunction(f),
             function: f,
             program: program,
             visited: BTreeMap::new(),
+            dropListHandler,
         }
     }
 
@@ -85,7 +100,7 @@ impl<'a> DropChecker<'a> {
             //println!("Adding case {} to visited", case);
             //println!("Processed {} cases", visited.len());
             let block = self.function.getBlockById(case.blockId);
-            let mut blockProcessor = BlockProcessor::new();
+            let mut blockProcessor = BlockProcessor::new(self.dropListHandler);
             let (context, jumpTargets) = blockProcessor.process(&block, case.context);
             let collisions = context.validate();
             allCollisions.extend(collisions);
@@ -221,7 +236,7 @@ impl<'a> DropChecker<'a> {
     fn canBeImplicitClone(&self, path: &Path) -> bool {
         let block = self.function.getBlockById(path.instructionRef.blockId);
         let instruction = block.instructions[path.instructionRef.instructionId as usize].clone();
-        if path.isSimple() {
+        if path.isRootOnly() {
             let ty = path.root.getType();
             assert!(!ty.isReference(), "path root should not be a reference for a move!",);
             self.program.instanceResolver.isCopy(&ty)

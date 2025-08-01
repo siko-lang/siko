@@ -5,7 +5,7 @@ use crate::siko::{hir::Instruction::Mutability, location::Location::Location, qu
 use super::{
     BodyBuilder::BodyBuilder,
     Function::BlockId,
-    Instruction::{FieldInfo, Instruction, InstructionKind, JumpDirection},
+    Instruction::{FieldInfo, Instruction, InstructionKind},
     Type::Type,
     Variable::Variable,
 };
@@ -16,6 +16,7 @@ pub enum Mode {
     Iterator(usize),
 }
 
+#[derive(Clone)]
 pub struct BlockBuilder {
     bodyBuilder: BodyBuilder,
     blockId: BlockId,
@@ -256,12 +257,9 @@ impl BlockBuilder {
         result
     }
 
-    pub fn addJump(&mut self, target: BlockId, direction: JumpDirection, location: Location) -> Variable {
+    pub fn addJump(&mut self, target: BlockId, location: Location) -> Variable {
         let result = self.bodyBuilder.createTempValue(location.clone());
-        self.addInstruction(
-            InstructionKind::Jump(result.clone(), target, direction),
-            location.clone(),
-        );
+        self.addInstruction(InstructionKind::Jump(result.clone(), target), location.clone());
         result
     }
 

@@ -1,11 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::siko::hir::Variable::Variable;
+use crate::siko::hir::{Instruction::SyntaxBlockId, Variable::Variable};
 
 pub struct Environment<'a> {
     values: BTreeMap<String, Variable>,
     parent: Option<&'a Environment<'a>>,
     mutables: BTreeSet<String>,
+    syntaxBlockId: SyntaxBlockId,
 }
 
 impl<'a> Environment<'a> {
@@ -14,14 +15,16 @@ impl<'a> Environment<'a> {
             values: BTreeMap::new(),
             parent: None,
             mutables: BTreeSet::new(),
+            syntaxBlockId: SyntaxBlockId::new().add("root".to_string()),
         }
     }
 
-    pub fn child(parent: &'a Environment<'a>) -> Environment<'a> {
+    pub fn child(parent: &'a Environment<'a>, syntaxBlockIdItem: String) -> Environment<'a> {
         Environment {
             values: BTreeMap::new(),
             parent: Some(parent),
             mutables: BTreeSet::new(),
+            syntaxBlockId: parent.syntaxBlockId.add(syntaxBlockIdItem),
         }
     }
 
@@ -57,5 +60,9 @@ impl<'a> Environment<'a> {
 
     pub fn isMutable(&self, name: &String) -> bool {
         self.mutables.contains(name)
+    }
+
+    pub fn getSyntaxBlockId(&self) -> SyntaxBlockId {
+        self.syntaxBlockId.clone()
     }
 }

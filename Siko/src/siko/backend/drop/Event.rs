@@ -30,7 +30,7 @@ impl Display for Event {
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct EventSeries {
-    events: Vec<Event>,
+    pub events: Vec<Event>,
 }
 
 impl EventSeries {
@@ -44,6 +44,26 @@ impl EventSeries {
 
     pub fn len(&self) -> usize {
         self.events.len()
+    }
+
+    pub fn getAllPaths(&self) -> Vec<Path> {
+        let mut paths = Vec::new();
+        for event in &self.events {
+            match event {
+                Event::Usage(usage) => {
+                    if !paths.contains(&usage.path) {
+                        paths.push(usage.path.clone());
+                    }
+                }
+                Event::Assign(path) => {
+                    if !paths.contains(path) {
+                        paths.push(path.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+        paths
     }
 
     pub fn prune(&self, limit: usize) -> EventSeries {

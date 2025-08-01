@@ -108,8 +108,11 @@ impl<'a> DeadCodeEliminator<'a> {
                 InstructionKind::CharLiteral(_, _) => {}
                 InstructionKind::Return(_, _) => return,
                 InstructionKind::Ref(_, _) => {}
+                InstructionKind::DropListPlaceholder(_) => {
+                    panic!("DropListPlaceholder found in DeadCodeEliminator, this should not happen");
+                }
                 InstructionKind::Drop(_, _) => {}
-                InstructionKind::Jump(_, id, _) => {
+                InstructionKind::Jump(_, id) => {
                     self.processBlock(*id);
                     return;
                 }
@@ -121,16 +124,19 @@ impl<'a> DeadCodeEliminator<'a> {
                     for case in cases {
                         self.processBlock(case.branch);
                     }
+                    return;
                 }
                 InstructionKind::IntegerSwitch(_, cases) => {
                     for case in cases {
                         self.processBlock(case.branch);
                     }
+                    return;
                 }
                 InstructionKind::StringSwitch(_, cases) => {
                     for case in cases {
                         self.processBlock(case.branch);
                     }
+                    return;
                 }
                 InstructionKind::BlockStart(_) => {}
                 InstructionKind::BlockEnd(_) => {}

@@ -12,7 +12,7 @@ use crate::siko::{
         ConstraintContext::ConstraintContext,
         Function::{Block, Body, Function, FunctionKind, Parameter},
         InstanceResolver::ResolutionResult,
-        Instruction::{EnumCase, FieldId, FieldInfo, Instruction, InstructionKind, JumpDirection},
+        Instruction::{EnumCase, FieldId, FieldInfo, Instruction, InstructionKind},
         Program::Program,
         Substitution::{createTypeSubstitutionFrom, Substitution},
         Type::{formatTypes, Type},
@@ -273,12 +273,16 @@ impl Monomorphize for InstructionKind {
                 InstructionKind::Return(dest.process(sub, mono), arg.process(sub, mono))
             }
             InstructionKind::Ref(dest, arg) => InstructionKind::Ref(dest.process(sub, mono), arg.process(sub, mono)),
+            InstructionKind::DropListPlaceholder(id) => {
+                panic!(
+                    "DropListPlaceholder found in Monomorphizer, this should not happen: {}",
+                    id
+                );
+            }
             InstructionKind::Drop(dest, dropVar) => {
                 InstructionKind::Drop(dest.process(sub, mono), dropVar.process(sub, mono))
             }
-            InstructionKind::Jump(dest, block_id, direction) => {
-                InstructionKind::Jump(dest.process(sub, mono), *block_id, direction.clone())
-            }
+            InstructionKind::Jump(dest, block_id) => InstructionKind::Jump(dest.process(sub, mono), *block_id),
             InstructionKind::Assign(dest, rhs) => {
                 InstructionKind::Assign(dest.process(sub, mono), rhs.process(sub, mono))
             }
@@ -608,7 +612,7 @@ impl<'a> Monomorphizer<'a> {
                         dropRes.ty = Some(Type::getUnitType());
                         let dropKind = InstructionKind::Drop(dropRes, transformValue);
                         caseBuilder.addInstruction(dropKind, location.clone());
-                        caseBuilder.addJump(contBuilder.getBlockId(), JumpDirection::Forward, location.clone());
+                        caseBuilder.addJump(contBuilder.getBlockId(), location.clone());
                         cases.push(case);
                     }
                     let enumKind = InstructionKind::EnumSwitch(dropVar.clone(), cases);

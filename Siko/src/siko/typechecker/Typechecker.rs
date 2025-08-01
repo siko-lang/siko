@@ -174,8 +174,11 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::Ref(var, _) => {
                             self.initializeVar(var);
                         }
+                        InstructionKind::DropListPlaceholder(_) => {
+                            panic!("DropListPlaceholder found in Typechecker, this should not happen");
+                        }
                         InstructionKind::Drop(_, _) => {}
-                        InstructionKind::Jump(var, _, _) => {
+                        InstructionKind::Jump(var, _) => {
                             self.types.insert(var.value.to_string(), Type::Never(false));
                         }
                         InstructionKind::Assign(_, _) => {}
@@ -791,8 +794,9 @@ impl<'a> Typechecker<'a> {
                     instruction.location.clone(),
                 );
             }
+            InstructionKind::DropListPlaceholder(_) => unreachable!("drop list placeholder in typechecker!"),
             InstructionKind::Drop(_, _) => unreachable!("drop in typechecker!"),
-            InstructionKind::Jump(_, id, _) => {
+            InstructionKind::Jump(_, id) => {
                 self.queue.push_back(*id);
             }
             InstructionKind::Assign(name, rhs) => {

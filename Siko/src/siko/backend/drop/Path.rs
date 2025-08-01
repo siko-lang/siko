@@ -24,7 +24,7 @@ impl Debug for InstructionRef {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PathSegment {
     Named(String),
     Indexed(u32),
@@ -39,7 +39,7 @@ impl Display for PathSegment {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Path {
     pub root: Variable,
     pub items: Vec<PathSegment>,
@@ -124,8 +124,15 @@ impl Path {
         true
     }
 
-    pub fn isSimple(&self) -> bool {
+    pub fn isRootOnly(&self) -> bool {
         self.items.is_empty()
+    }
+
+    pub fn toSimplePath(&self) -> SimplePath {
+        SimplePath {
+            root: self.root.value.visibleName(),
+            items: self.items.clone(),
+        }
     }
 }
 
@@ -136,6 +143,48 @@ impl Display for Path {
         } else {
             let items = self.items.iter().map(|i| i.to_string()).collect::<Vec<_>>();
             write!(f, "{}.{}", self.root.value.visibleName(), items.join("."))
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct SimplePath {
+    pub root: String,
+    items: Vec<PathSegment>,
+}
+
+impl SimplePath {
+    pub fn new(root: String) -> SimplePath {
+        SimplePath {
+            root,
+            items: Vec::new(),
+        }
+    }
+
+    pub fn add(&mut self, item: PathSegment) {
+        self.items.push(item);
+    }
+
+    pub fn sharesPrefixWith(&self, other: &SimplePath) -> bool {
+        if self.root != other.root {
+            return false;
+        }
+        for (i1, i2) in self.items.iter().zip(other.items.iter()) {
+            if i1 != i2 {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+impl Display for SimplePath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.items.is_empty() {
+            write!(f, "{}", self.root)
+        } else {
+            let items = self.items.iter().map(|i| i.to_string()).collect::<Vec<_>>();
+            write!(f, "{}.{}", self.root, items.join("."))
         }
     }
 }

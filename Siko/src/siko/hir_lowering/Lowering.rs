@@ -106,7 +106,7 @@ impl<'a> Builder<'a> {
                 HirInstructionKind::Bind(_, _, _) => {
                     panic!("Bind instruction found in Lowering, this should not happen");
                 }
-                HirInstructionKind::Jump(_, blockId, _) => {
+                HirInstructionKind::Jump(_, blockId) => {
                     block.instructions.push(Instruction::Jump(self.getBlockName(*blockId)));
                 }
                 HirInstructionKind::Return(_, v) => {

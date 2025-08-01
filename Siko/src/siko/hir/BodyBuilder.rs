@@ -66,7 +66,7 @@ impl Builder {
         self.targetBlockId = id;
     }
 
-    pub fn getTargetBlockId(&mut self) -> BlockId {
+    pub fn getTargetBlockId(&self) -> BlockId {
         self.targetBlockId
     }
 
@@ -194,8 +194,8 @@ impl BodyBuilder {
         bodyBuilder.setTargetBlockId(id);
     }
 
-    pub fn getTargetBlockId(&mut self) -> BlockId {
-        let mut bodyBuilder = self.bodyBuilder.borrow_mut();
+    pub fn getTargetBlockId(&self) -> BlockId {
+        let bodyBuilder = self.bodyBuilder.borrow();
         bodyBuilder.getTargetBlockId()
     }
 
