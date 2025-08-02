@@ -213,11 +213,11 @@ impl Monomorphize for Instruction {
                     InstructionKind::Ref(dest.clone(), src.clone())
                 }
             }
-            InstructionKind::Drop(dest, dropVar) => {
+            InstructionKind::Drop(dropRes, dropVar) => {
                 let ty = dropVar.ty.apply(sub).unwrap();
                 let monoName = mono.get_mono_name(&getAutoDropFnName(), &vec![ty.clone()]);
                 mono.addKey(Key::AutoDropFn(getAutoDropFnName(), ty.clone()));
-                InstructionKind::FunctionCall(dest.clone(), monoName, vec![dropVar.clone()])
+                InstructionKind::FunctionCall(dropRes.clone(), monoName, vec![dropVar.clone()])
             }
             k => k.clone(),
         };
@@ -546,6 +546,7 @@ impl<'a> Monomorphizer<'a> {
 
         let mut dropVar = bodyBuilder.createTempValue(location.clone());
         dropVar.ty = Some(ty.clone());
+        builder.addDeclare(dropVar.clone(), location.clone());
 
         let selfVar = Variable {
             value: VariableName::Arg("self".to_string()),
@@ -563,12 +564,12 @@ impl<'a> Monomorphizer<'a> {
                 hasInstance = true;
                 let dropRes =
                     builder.addTypedFunctionCall(getDropFnName(), vec![selfVar.clone()], location.clone(), ty.clone());
-                builder.addBind(dropVar.clone(), dropRes, false, location.clone());
+                builder.addAssign(dropVar.clone(), dropRes, location.clone());
             }
         }
 
         if !hasInstance {
-            builder.addBind(dropVar.clone(), selfVar.clone(), false, location.clone());
+            builder.addAssign(dropVar.clone(), selfVar.clone(), location.clone());
         }
 
         match &ty {

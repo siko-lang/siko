@@ -2,12 +2,16 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::siko::{
     backend::drop::{
+        DeclarationStore::DeclarationStore,
         DropList::{DropListHandler, Kind},
         Path::Path,
         Util::buildFieldPath,
     },
     hir::{
-        BodyBuilder::BodyBuilder, Function::Function, Instruction::InstructionKind, Program::Program,
+        BodyBuilder::BodyBuilder,
+        Function::Function,
+        Instruction::{InstructionKind, SyntaxBlockId},
+        Program::Program,
         Variable::Variable,
     },
 };
@@ -20,10 +24,16 @@ pub struct Initializer<'a> {
     implicitDestinations: BTreeSet<Variable>,
     destCounts: BTreeMap<Variable, usize>,
     dropListHandler: &'a mut DropListHandler,
+    declarationStore: &'a mut DeclarationStore,
 }
 
 impl<'a> Initializer<'a> {
-    pub fn new(f: &'a Function, program: &'a Program, dropListHandler: &'a mut DropListHandler) -> Initializer<'a> {
+    pub fn new(
+        f: &'a Function,
+        program: &'a Program,
+        dropListHandler: &'a mut DropListHandler,
+        declarationStore: &'a mut DeclarationStore,
+    ) -> Initializer<'a> {
         Initializer {
             bodyBuilder: BodyBuilder::cloneFunction(f),
             function: f,
@@ -32,6 +42,7 @@ impl<'a> Initializer<'a> {
             implicitDestinations: BTreeSet::new(),
             destCounts: BTreeMap::new(),
             dropListHandler,
+            declarationStore,
         }
     }
 
@@ -40,11 +51,17 @@ impl<'a> Initializer<'a> {
         *count += 1;
     }
 
+    fn declareVar(&mut self, var: &Variable, syntaxBlock: &SyntaxBlockId) {
+        self.declarationStore.declare(var.clone(), syntaxBlock.clone());
+    }
+
     pub fn process(&mut self) -> Function {
         if self.function.body.is_none() {
             return self.function.clone();
         }
         //println!("Drop initializer processing function: {}", self.function.name);
+
+        let mut currentSyntaxBlock = SyntaxBlockId::new();
 
         let allBlocksIds = self.bodyBuilder.getAllBlockIds();
         let mut placeHolderIndex = 0;
@@ -55,8 +72,14 @@ impl<'a> Initializer<'a> {
                     Some(instruction) => {
                         // Process the instruction
                         match &instruction.kind {
-                            InstructionKind::BlockEnd(_) => {}
+                            InstructionKind::BlockStart(blockId) => {
+                                currentSyntaxBlock = blockId.clone();
+                            }
+                            InstructionKind::BlockEnd(blockId) => {
+                                currentSyntaxBlock = blockId.getParent();
+                            }
                             InstructionKind::Assign(dest, _) => {
+                                self.declareVar(dest, &currentSyntaxBlock);
                                 self.dropListHandler.createDropList(
                                     placeHolderIndex,
                                     Kind::VariableAssign(
@@ -71,6 +94,7 @@ impl<'a> Initializer<'a> {
                                 builder.step();
                             }
                             InstructionKind::FieldAssign(dest, _, fields) => {
+                                self.declareVar(dest, &currentSyntaxBlock);
                                 let path = buildFieldPath(dest, fields);
                                 self.dropListHandler
                                     .createDropList(placeHolderIndex, Kind::FieldAssign(path.toSimplePath()));
@@ -82,9 +106,12 @@ impl<'a> Initializer<'a> {
                                 placeHolderIndex += 1;
                                 builder.step();
                             }
-                            InstructionKind::DeclareVar(_, _) => {}
+                            InstructionKind::DeclareVar(var, _) => {
+                                self.declareVar(var, &currentSyntaxBlock);
+                            }
                             kind => {
                                 if let Some(result) = kind.getResultVar() {
+                                    self.declareVar(&result, &currentSyntaxBlock);
                                     if !result.isTemp() {
                                         panic!(
                                             "Implicit destination should be a temporary variable, but found: {}",

@@ -1,6 +1,6 @@
 use crate::siko::{
-    backend::drop::DropList::DropListHandler,
-    hir::{BodyBuilder::BodyBuilder, Function::Function, Instruction::InstructionKind, Program::Program},
+    backend::drop::{DeclarationStore::DeclarationStore, DropList::DropListHandler},
+    hir::{BodyBuilder::BodyBuilder, Function::Function, Instruction::InstructionKind, Program::Program, Type::Type},
 };
 
 pub struct Finalizer<'a> {
@@ -8,15 +8,22 @@ pub struct Finalizer<'a> {
     function: &'a Function,
     program: &'a Program,
     dropListHandler: &'a mut DropListHandler,
+    declarationStore: &'a DeclarationStore,
 }
 
 impl<'a> Finalizer<'a> {
-    pub fn new(f: &'a Function, program: &'a Program, dropListHandler: &'a mut DropListHandler) -> Finalizer<'a> {
+    pub fn new(
+        f: &'a Function,
+        program: &'a Program,
+        dropListHandler: &'a mut DropListHandler,
+        declarationStore: &'a DeclarationStore,
+    ) -> Finalizer<'a> {
         Finalizer {
             bodyBuilder: BodyBuilder::cloneFunction(f),
             function: f,
             program: program,
             dropListHandler,
+            declarationStore,
         }
     }
 
@@ -35,13 +42,33 @@ impl<'a> Finalizer<'a> {
                     Some(instruction) => {
                         // Process the instruction
                         match &instruction.kind {
-                            InstructionKind::DropListPlaceholder(index) => {
+                            InstructionKind::DropListPlaceholder(_) => {
                                 // println!("Processing DropListPlaceholder at index: {}", index);
                                 // let dropList = self.dropListHandler.getDropList(*index);
                                 // for p in dropList.paths() {
                                 //     println!("Dropping path: {} {:?}", p, p);
                                 // }
                                 builder.removeInstruction();
+                            }
+                            InstructionKind::BlockEnd(id) => {
+                                if let Some(droppedValues) = self.declarationStore.getDeclarations(&id) {
+                                    for var in droppedValues {
+                                        let ty = var.ty.clone().expect("no type for variable in drop");
+                                        if ty.isNever() || ty.isPtr() || ty.isReference() || ty.isUnit() {
+                                            continue;
+                                        }
+                                        if true {
+                                            // NYI: without drop flags this just double frees everything, disable for now
+                                            continue;
+                                        }
+                                        let mut dropRes =
+                                            self.bodyBuilder.createTempValue(instruction.location.clone());
+                                        dropRes.ty = Some(Type::getUnitType());
+                                        let drop = InstructionKind::Drop(dropRes, var.clone());
+                                        builder.addInstruction(drop, var.location.clone());
+                                        builder.step();
+                                    }
+                                }
                             }
                             _ => {}
                         }

@@ -1,5 +1,6 @@
 pub mod BlockProcessor;
 pub mod Context;
+pub mod DeclarationStore;
 pub mod Drop;
 pub mod DropList;
 pub mod Error;

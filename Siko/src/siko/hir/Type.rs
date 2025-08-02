@@ -248,6 +248,13 @@ impl Type {
         }
     }
 
+    pub fn isUnit(&self) -> bool {
+        match &self {
+            Type::Tuple(args) => args.is_empty(),
+            _ => false,
+        }
+    }
+
     pub fn isPtr(&self) -> bool {
         match &self {
             Type::Ptr(_) => true,

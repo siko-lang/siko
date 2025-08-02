@@ -7,6 +7,7 @@ use crate::siko::{
     backend::drop::{
         BlockProcessor::BlockProcessor,
         Context::Context,
+        DeclarationStore::DeclarationStore,
         DropList::DropListHandler,
         Error::{reportErrors, Error},
         Event::Collision,
@@ -29,12 +30,14 @@ pub fn checkDrops(ctx: &ReportContext, program: Program) -> Program {
     let mut result = program.clone();
     for (name, f) in &program.functions {
         let mut dropListHandler = DropListHandler::new();
-        let mut initializer = Initializer::new(f, &program, &mut dropListHandler);
+        let mut declarationStore = DeclarationStore::new();
+        let mut initializer = Initializer::new(f, &program, &mut dropListHandler, &mut declarationStore);
         let f = initializer.process();
+        //declarationStore.dump();
         let mut checker = DropChecker::new(&f, ctx, &program, &mut dropListHandler);
         //println!("Checking drops for {}", name);
         let f = checker.process();
-        let mut finalizer = Finalizer::new(&f, &program, &mut dropListHandler);
+        let mut finalizer = Finalizer::new(&f, &program, &mut dropListHandler, &declarationStore);
         let f = finalizer.process();
         result.functions.insert(name.clone(), f);
     }
