@@ -161,11 +161,13 @@ impl<'a> DropChecker<'a> {
                         if let Some(result) = instruction.kind.getResultVar() {
                             vars.retain(|v| *v != result);
                         }
-                        assert_eq!(
-                            vars.len(),
-                            1,
-                            "Implicit clone should have exactly one non result variable"
-                        );
+                        if vars.len() != 1 {
+                            println!("Instruction: {}", instruction);
+                            panic!(
+                                "Implicit clone should have exactly one non result variable, found: {}",
+                                vars.len()
+                            );
+                        }
                         let input = vars[0].clone();
                         let mut implicitCloneVar = self.bodyBuilder.createTempValue(input.location.clone());
                         implicitCloneVar.ty = input.ty.clone();
@@ -226,6 +228,7 @@ impl<'a> DropChecker<'a> {
             // );
             let canBeClone = self.canBeImplicitClone(path);
             if canBeClone {
+                //println!("Path can be implicit clone: {}", path);
                 implicitClones
                     .entry(path.instructionRef.blockId)
                     .or_insert_with(Vec::new)

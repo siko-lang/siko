@@ -47,7 +47,7 @@ impl Context {
 
     pub fn useVar(&mut self, var: &Variable, instructionRef: InstructionRef) {
         let ty = var.getType();
-        //  println!("Using variable: {} {}", var.value.visibleName(), ty);
+        //println!("Using variable: {} {}", var.value.visibleName(), ty);
         if ty.isReference() || ty.isPtr() {
             self.addUsage(Usage {
                 path: Path::new(var.clone(), var.location.clone()).setInstructionRef(instructionRef),

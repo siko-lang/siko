@@ -37,13 +37,20 @@ impl<'a> BlockProcessor<'a> {
             instructionId: 0,
         };
         for instruction in &block.instructions {
+            // println!(
+            //     "Processing instruction: {} {} {}",
+            //     instruction.kind, instruction.location, instructionRef
+            // );
             match &instruction.kind {
                 InstructionKind::DeclareVar(var, _) => {
                     context.addLive(Path::new(var.clone(), var.location.clone()));
                 }
                 InstructionKind::BlockStart(_) => {}
                 InstructionKind::BlockEnd(_) => {}
-                InstructionKind::FunctionCall(_, _, args) => {
+                InstructionKind::FunctionCall(dest, _, args) => {
+                    let mut path = Path::new(dest.clone(), dest.location.clone());
+                    path = path.setInstructionRef(instructionRef);
+                    context.addAssign(path.clone());
                     for arg in args {
                         context.useVar(arg, instructionRef);
                     }
@@ -89,7 +96,10 @@ impl<'a> BlockProcessor<'a> {
                     path = path.setInstructionRef(instructionRef);
                     context.addAssign(path.clone());
                 }
-                InstructionKind::Tuple(_, args) => {
+                InstructionKind::Tuple(dest, args) => {
+                    let mut path = Path::new(dest.clone(), dest.location.clone());
+                    path = path.setInstructionRef(instructionRef);
+                    context.addAssign(path.clone());
                     for arg in args {
                         context.useVar(arg, instructionRef);
                     }
@@ -109,9 +119,7 @@ impl<'a> BlockProcessor<'a> {
                 InstructionKind::StringLiteral(_, _) => {}
                 InstructionKind::IntegerLiteral(_, _) => {}
                 InstructionKind::CharLiteral(_, _) => {}
-                InstructionKind::Ref(_, src) => {
-                    context.useVar(src, instructionRef);
-                }
+                InstructionKind::Ref(_, _) => {}
                 InstructionKind::DropListPlaceholder(_) => {}
                 InstructionKind::Drop(_, _) => {
                     panic!("Drop instruction found in block processor");
@@ -122,8 +130,8 @@ impl<'a> BlockProcessor<'a> {
                 InstructionKind::Transform(_, src, _) => {
                     context.useVar(src, instructionRef);
                 }
-                InstructionKind::EnumSwitch(var, cases) => {
-                    context.useVar(var, instructionRef);
+                InstructionKind::EnumSwitch(_, cases) => {
+                    // enum switch does not 'use' the variable, transform does
                     for case in cases {
                         jumpTargets.push(case.branch.clone());
                     }

@@ -18,7 +18,7 @@ impl VariableName {
         match self {
             VariableName::Tmp(i) => format!("tmp{}", i),
             VariableName::Local(n, _) => n.clone(),
-            VariableName::Arg(n) => n.clone(),
+            VariableName::Arg(n) => format!("arg_{}", n),
             VariableName::DropFlag(n) => format!("drop_flag_{}", n),
         }
     }
@@ -32,6 +32,13 @@ impl VariableName {
     pub fn isDropFlag(&self) -> bool {
         match self {
             VariableName::DropFlag(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn isArg(&self) -> bool {
+        match self {
+            VariableName::Arg(_) => true,
             _ => false,
         }
     }
@@ -90,9 +97,13 @@ impl Variable {
         self.value.isDropFlag()
     }
 
+    pub fn isArg(&self) -> bool {
+        self.value.isArg()
+    }
+
     pub fn getDropFlag(&self) -> Variable {
         Variable {
-            value: VariableName::DropFlag(self.value.visibleName()),
+            value: VariableName::DropFlag(self.value.to_string()),
             location: self.location.clone(),
             ty: Some(Type::getBoolType()),
         }

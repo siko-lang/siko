@@ -8,7 +8,7 @@ pub enum Error {
 }
 
 pub fn reportErrors(ctx: &ReportContext, errors: Vec<Error>) {
-    for error in errors {
+    for error in &errors {
         match error {
             Error::AlreadyMoved { path, prevMove } => {
                 let mut entries = Vec::new();
@@ -25,5 +25,8 @@ pub fn reportErrors(ctx: &ReportContext, errors: Vec<Error>) {
                 .print();
             }
         }
+    }
+    if errors.len() > 0 {
+        std::process::exit(1);
     }
 }

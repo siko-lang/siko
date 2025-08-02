@@ -54,25 +54,26 @@ impl<'a> Initializer<'a> {
     }
 
     fn declareVar(&mut self, var: &Variable, syntaxBlock: &SyntaxBlockId, builder: &mut BlockBuilder) {
-        if var.hasTrivialDrop() {
+        if var.hasTrivialDrop() || var.isArg() {
             return;
         }
-        self.declarationStore.declare(var.clone(), syntaxBlock.clone());
-        let dropFlag = var.getDropFlag();
-        builder.addInstruction(
-            InstructionKind::DeclareVar(dropFlag.clone(), Mutability::Mutable),
-            var.location.clone(),
-        );
-        builder.step();
-        builder.addInstruction(
-            InstructionKind::FunctionCall(dropFlag, getFalseName(), vec![]),
-            var.location.clone(),
-        );
-        builder.step();
+        if self.declarationStore.declare(var.clone(), syntaxBlock.clone()) {
+            let dropFlag = var.getDropFlag();
+            builder.addInstruction(
+                InstructionKind::DeclareVar(dropFlag.clone(), Mutability::Mutable),
+                var.location.clone(),
+            );
+            builder.step();
+            builder.addInstruction(
+                InstructionKind::FunctionCall(dropFlag, getFalseName(), vec![]),
+                var.location.clone(),
+            );
+            builder.step();
+        }
     }
 
     fn useVar(&mut self, var: &Variable, builder: &mut BlockBuilder) {
-        if var.hasTrivialDrop() {
+        if var.hasTrivialDrop() || var.isArg() {
             return;
         }
         let dropFlag = var.getDropFlag();

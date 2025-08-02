@@ -119,6 +119,43 @@ impl EventSeries {
         pruned
     }
 
+    pub fn prune_internal(&self, limit: usize) -> EventSeries {
+        fn usage_overwritten(event: &Event, assignPath: &Path) -> bool {
+            match event {
+                Event::Usage(usage) => {
+                    // println!(
+                    //     "Checking usage: {} against assign path: {} {}",
+                    //     usage.path,
+                    //     assignPath,
+                    //     usage.path.contains(assignPath)
+                    // );
+                    usage.path.contains(assignPath)
+                }
+                Event::Assign(path) => path.contains(assignPath),
+                _ => false,
+            }
+        }
+
+        let mut pruned: EventSeries = self.clone();
+        //println!("Prune events (original): {:?}", pruned.events);
+        let mut index = limit;
+        while index > 0 {
+            match pruned.events[index].clone() {
+                Event::Assign(path) => {
+                    for i in 0..index {
+                        if usage_overwritten(&pruned.events[i], &path) {
+                            pruned.events[i] = Event::Noop;
+                        }
+                    }
+                }
+                _ => {}
+            }
+            index -= 1;
+        }
+        //println!("Pruned events: {:?}", pruned.events);
+        pruned
+    }
+
     pub fn compress(&self) -> EventSeries {
         //println!("Before compression: {:?}", self.events);
         let mut compressed = self.prune(self.len() - 1);
@@ -132,14 +169,13 @@ impl EventSeries {
         let mut collisions = Vec::new();
         for (index, event) in self.events.iter().enumerate() {
             if let Event::Usage(usage) = event {
-                let compressed = self.prune(index);
-                for prev in compressed.events.iter().take(index) {
+                for prev in self.prune_internal(index).events.iter().take(index) {
                     if let Event::Usage(prevUsage) = prev {
                         if prevUsage.path.sharesPrefixWith(&usage.path) && prevUsage.kind == UsageKind::Move {
-                            //println!(
-                            //    "Collision detected: {} with previous usage: {}",
-                            //    usage.path, prevUsage.path
-                            //);
+                            // println!(
+                            //     "Collision detected: {} with previous usage: {}",
+                            //     usage.path, prevUsage.path
+                            // );
                             collisions.push(Collision {
                                 path: usage.path.clone(),
                                 prev: prevUsage.path.clone(),

@@ -20,9 +20,9 @@ impl DeclarationStore {
         }
     }
 
-    pub fn declare(&mut self, var: Variable, syntaxBlockId: SyntaxBlockId) {
+    pub fn declare(&mut self, var: Variable, syntaxBlockId: SyntaxBlockId) -> bool {
         if self.declarations.contains_key(&var.value) {
-            return;
+            return false;
         }
         self.declarations.insert(var.value.clone(), syntaxBlockId.clone());
         self.blockDeclarations
@@ -30,6 +30,7 @@ impl DeclarationStore {
             .or_insert_with(BTreeSet::new)
             .insert(var.value.clone());
         self.vars.insert(var.value.clone(), var);
+        true
     }
 
     pub fn getDeclarations(&self, syntaxBlockId: &SyntaxBlockId) -> Option<BTreeSet<Variable>> {
