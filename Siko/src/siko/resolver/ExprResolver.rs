@@ -690,15 +690,14 @@ impl<'a> ExprResolver<'a> {
             .implicit()
             .addDeclare(result.clone(), body.location.clone());
         self.resolveBlock(body, &localEnv, result.clone());
-        self.bodyBuilder
-            .current()
-            .implicit()
-            .addBlockEnd(localEnv.getSyntaxBlockId(), body.location.clone());
-
         self.bodyBuilder.current().implicit().addInstruction(
             InstructionKind::Converter(functionResult.clone(), result),
             body.location.clone(),
         );
+        self.bodyBuilder
+            .current()
+            .implicit()
+            .addBlockEnd(localEnv.getSyntaxBlockId(), body.location.clone());
         self.bodyBuilder
             .current()
             .implicit()
