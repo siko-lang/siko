@@ -176,6 +176,16 @@ impl Body {
         }
         ids
     }
+
+    pub fn cutBlock(&mut self, blockId: BlockId, index: usize, newBlockId: BlockId) {
+        let block = self.blocks.get_mut(blockId.id as usize).expect("Block not found");
+        let otherInstructions = block.instructions.split_off(index);
+        let newBlock = self
+            .blocks
+            .get_mut(newBlockId.id as usize)
+            .expect("New block not found");
+        newBlock.instructions = otherInstructions;
+    }
 }
 
 impl Display for Body {

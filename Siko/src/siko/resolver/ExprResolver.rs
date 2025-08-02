@@ -177,9 +177,7 @@ impl<'a> ExprResolver<'a> {
         //println!("Adding jump from {} to {} / {}", current, parentId, toBlock);
         let diff = current.differenceToParent(&parentId);
         for d in diff {
-            builder
-                .implicit()
-                .addInstruction(InstructionKind::BlockEnd(d), location.clone());
+            builder.implicit().addBlockEnd(d, location.clone());
         }
         builder.implicit().addJump(toBlock, location)
     }
@@ -202,10 +200,10 @@ impl<'a> ExprResolver<'a> {
             self.syntaxBlockIds
                 .insert(self.bodyBuilder.getTargetBlockId(), env.getSyntaxBlockId());
         }
-        self.bodyBuilder.current().implicit().addInstruction(
-            InstructionKind::BlockStart(env.getSyntaxBlockId()),
-            block.location.clone(),
-        );
+        self.bodyBuilder
+            .current()
+            .implicit()
+            .addBlockStart(env.getSyntaxBlockId(), block.location.clone());
         let mut lastHasSemicolon = false;
         let mut blockValue = self.bodyBuilder.createTempValue(block.location.clone());
         for (index, statement) in block.statements.iter().enumerate() {
@@ -260,10 +258,10 @@ impl<'a> ExprResolver<'a> {
                 .current()
                 .implicit()
                 .addAssign(resultValue.clone(), blockValue, block.location.clone());
-            self.bodyBuilder.current().implicit().addInstruction(
-                InstructionKind::BlockEnd(env.getSyntaxBlockId()),
-                block.location.clone(),
-            );
+            self.bodyBuilder
+                .current()
+                .implicit()
+                .addBlockEnd(env.getSyntaxBlockId(), block.location.clone());
         }
     }
 
@@ -387,10 +385,10 @@ impl<'a> ExprResolver<'a> {
                 let mut loopBodyBuilder = self.createBlock(env);
                 let mut loopExitBuilder = self.createBlock(env);
                 let mut loopEnv = Environment::child(env, self.createSyntaxBlockIdSegment());
-                self.bodyBuilder.current().implicit().addInstruction(
-                    InstructionKind::BlockStart(loopEnv.getSyntaxBlockId()),
-                    expr.location.clone(),
-                );
+                self.bodyBuilder
+                    .current()
+                    .implicit()
+                    .addBlockStart(loopEnv.getSyntaxBlockId(), expr.location.clone());
                 self.bodyBuilder
                     .current()
                     .addJump(loopBodyBuilder.getBlockId(), expr.location.clone());
@@ -528,10 +526,10 @@ impl<'a> ExprResolver<'a> {
 
                 let mut currentSyntaxBlockId = env.getSyntaxBlockId();
                 loop {
-                    self.bodyBuilder.current().implicit().addInstruction(
-                        InstructionKind::BlockEnd(currentSyntaxBlockId.clone()),
-                        expr.location.clone(),
-                    );
+                    self.bodyBuilder
+                        .current()
+                        .implicit()
+                        .addBlockEnd(currentSyntaxBlockId.clone(), expr.location.clone());
                     let parent = currentSyntaxBlockId.getParent();
                     if parent == currentSyntaxBlockId {
                         break;
@@ -669,10 +667,10 @@ impl<'a> ExprResolver<'a> {
         let syntaxBlockIdItem = self.createSyntaxBlockIdSegment();
         //println!("Resolving block {} with var {} current {}", syntaxBlock, resultValue, self.targetBlockId);
         let mut localEnv = Environment::child(env, syntaxBlockIdItem);
-        self.bodyBuilder.current().implicit().addInstruction(
-            InstructionKind::BlockStart(localEnv.getSyntaxBlockId()),
-            body.location.clone(),
-        );
+        self.bodyBuilder
+            .current()
+            .implicit()
+            .addBlockStart(localEnv.getSyntaxBlockId(), body.location.clone());
         for value in env.values() {
             blockBuilder
                 .implicit()
@@ -692,10 +690,10 @@ impl<'a> ExprResolver<'a> {
             .implicit()
             .addDeclare(result.clone(), body.location.clone());
         self.resolveBlock(body, &localEnv, result.clone());
-        self.bodyBuilder.current().implicit().addInstruction(
-            InstructionKind::BlockEnd(localEnv.getSyntaxBlockId()),
-            body.location.clone(),
-        );
+        self.bodyBuilder
+            .current()
+            .implicit()
+            .addBlockEnd(localEnv.getSyntaxBlockId(), body.location.clone());
 
         self.bodyBuilder.current().implicit().addInstruction(
             InstructionKind::Converter(functionResult.clone(), result),

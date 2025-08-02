@@ -1,6 +1,14 @@
+use std::collections::VecDeque;
+
 use crate::siko::{
     backend::drop::{DeclarationStore::DeclarationStore, DropList::DropListHandler},
-    hir::{BodyBuilder::BodyBuilder, Function::Function, Instruction::InstructionKind, Program::Program, Type::Type},
+    hir::{
+        BodyBuilder::BodyBuilder,
+        Function::{BlockId, Function},
+        Instruction::{EnumCase, InstructionKind},
+        Program::Program,
+        Type::Type,
+    },
 };
 
 pub struct Finalizer<'a> {
@@ -53,14 +61,6 @@ impl<'a> Finalizer<'a> {
                             InstructionKind::BlockEnd(id) => {
                                 if let Some(droppedValues) = self.declarationStore.getDeclarations(&id) {
                                     for var in droppedValues {
-                                        let ty = var.ty.clone().expect("no type for variable in drop");
-                                        if ty.isNever() || ty.isPtr() || ty.isReference() || ty.isUnit() {
-                                            continue;
-                                        }
-                                        if true {
-                                            // NYI: without drop flags this just double frees everything, disable for now
-                                            continue;
-                                        }
                                         let mut dropRes =
                                             self.bodyBuilder.createTempValue(instruction.location.clone());
                                         dropRes.ty = Some(Type::getUnitType());
@@ -79,8 +79,57 @@ impl<'a> Finalizer<'a> {
             }
         }
 
+        let mut queue = self.bodyBuilder.getAllBlockIds();
+        loop {
+            match queue.pop_front() {
+                Some(blockId) => {
+                    // Process the block
+                    self.processBlock(blockId, &mut queue);
+                }
+                None => break,
+            }
+        }
+
         let mut result = self.function.clone();
         result.body = Some(self.bodyBuilder.build());
         result
+    }
+
+    fn processBlock(&mut self, blockId: BlockId, queue: &mut VecDeque<BlockId>) {
+        let mut builder = self.bodyBuilder.iterator(blockId);
+        loop {
+            match builder.getInstruction() {
+                Some(instruction) => {
+                    // Process the instruction
+                    match &instruction.kind {
+                        InstructionKind::Drop(_, dropVar) => {
+                            let newBlockId = builder.cutBlock(1);
+                            let mut dropBlock = self.bodyBuilder.createBlock();
+                            dropBlock.addInstruction(instruction.kind.clone(), instruction.location.clone());
+                            dropBlock.addJump(newBlockId, instruction.location.clone());
+                            let cases = vec![
+                                EnumCase {
+                                    index: 0,
+                                    branch: newBlockId,
+                                },
+                                EnumCase {
+                                    index: 1,
+                                    branch: dropBlock.getBlockId(),
+                                },
+                            ];
+                            builder.replaceInstruction(
+                                InstructionKind::EnumSwitch(dropVar.getDropFlag(), cases),
+                                instruction.location.clone(),
+                            );
+                            queue.push_back(newBlockId);
+                            return;
+                        }
+                        _ => {}
+                    }
+                    builder.step();
+                }
+                None => break,
+            }
+        }
     }
 }

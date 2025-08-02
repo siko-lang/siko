@@ -1,6 +1,10 @@
 use core::panic;
 
-use crate::siko::{hir::Instruction::Mutability, location::Location::Location, qualifiedname::QualifiedName};
+use crate::siko::{
+    hir::Instruction::{Mutability, SyntaxBlockId},
+    location::Location::Location,
+    qualifiedname::QualifiedName,
+};
 
 use super::{
     BodyBuilder::BodyBuilder,
@@ -45,6 +49,10 @@ impl BlockBuilder {
             isImplicit: true,
             mode: self.mode,
         }
+    }
+
+    pub fn getBodyBuilder(&self) -> BodyBuilder {
+        self.bodyBuilder.clone()
     }
 
     pub fn getInstruction(&self) -> Option<Instruction> {
@@ -303,7 +311,22 @@ impl BlockBuilder {
         result
     }
 
+    pub fn addBlockStart(&mut self, syntaxBlockId: SyntaxBlockId, location: Location) {
+        self.addInstruction(InstructionKind::BlockStart(syntaxBlockId), location);
+    }
+
+    pub fn addBlockEnd(&mut self, syntaxBlockId: SyntaxBlockId, location: Location) {
+        self.addInstruction(InstructionKind::BlockEnd(syntaxBlockId), location);
+    }
+
     pub fn getBlockId(&self) -> BlockId {
         self.blockId
+    }
+
+    pub fn cutBlock(&self, offset: usize) -> BlockId {
+        match self.mode {
+            Mode::Append => panic!("Cannot cut block in append mode"),
+            Mode::Iterator(index) => self.bodyBuilder.cutBlock(self.blockId, index + offset),
+        }
     }
 }

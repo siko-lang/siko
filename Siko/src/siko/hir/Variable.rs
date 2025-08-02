@@ -10,6 +10,7 @@ pub enum VariableName {
     Tmp(u32),
     Local(String, u32),
     Arg(String),
+    DropFlag(String),
 }
 
 impl VariableName {
@@ -18,11 +19,19 @@ impl VariableName {
             VariableName::Tmp(i) => format!("tmp{}", i),
             VariableName::Local(n, _) => n.clone(),
             VariableName::Arg(n) => n.clone(),
+            VariableName::DropFlag(n) => format!("drop_flag_{}", n),
         }
     }
     pub fn isTemp(&self) -> bool {
         match self {
             VariableName::Tmp(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn isDropFlag(&self) -> bool {
+        match self {
+            VariableName::DropFlag(_) => true,
             _ => false,
         }
     }
@@ -34,6 +43,7 @@ impl Display for VariableName {
             VariableName::Tmp(i) => write!(f, "tmp{}", i),
             VariableName::Local(n, i) => write!(f, "{}_{}", n, i),
             VariableName::Arg(n) => write!(f, "{}", n),
+            VariableName::DropFlag(n) => write!(f, "drop_flag_{}", n),
         }
     }
 }
@@ -44,6 +54,7 @@ impl Debug for VariableName {
             VariableName::Tmp(i) => write!(f, "tmp{}", i),
             VariableName::Local(n, i) => write!(f, "{}_{}", n, i),
             VariableName::Arg(n) => write!(f, "{}", n),
+            VariableName::DropFlag(n) => write!(f, "drop_flag_{}", n),
         }
     }
 }
@@ -73,6 +84,18 @@ impl Variable {
 
     pub fn isTemp(&self) -> bool {
         self.value.isTemp()
+    }
+
+    pub fn isDropFlag(&self) -> bool {
+        self.value.isDropFlag()
+    }
+
+    pub fn getDropFlag(&self) -> Variable {
+        Variable {
+            value: VariableName::DropFlag(self.value.visibleName()),
+            location: self.location.clone(),
+            ty: Some(Type::getBoolType()),
+        }
     }
 }
 

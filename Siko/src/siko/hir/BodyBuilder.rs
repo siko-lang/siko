@@ -257,4 +257,11 @@ impl BodyBuilder {
         let bodyBuilder = self.bodyBuilder.borrow();
         bodyBuilder.getInstruction(id, index)
     }
+
+    pub fn cutBlock(&self, blockId: BlockId, index: usize) -> BlockId {
+        let mut bodyBuilder = self.bodyBuilder.borrow_mut();
+        let newBlock = bodyBuilder.createBlock();
+        bodyBuilder.body.cutBlock(blockId, index, newBlock);
+        newBlock
+    }
 }

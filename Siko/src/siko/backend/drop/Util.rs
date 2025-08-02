@@ -2,6 +2,7 @@ use crate::siko::{
     backend::drop::Path::{Path, PathSegment},
     hir::{
         Instruction::{FieldId, FieldInfo},
+        Type::Type,
         Variable::Variable,
     },
 };
@@ -19,4 +20,23 @@ pub fn buildFieldPath(root: &Variable, fields: &Vec<FieldInfo>) -> Path {
         }
     }
     path
+}
+
+pub trait HasTrivialDrop {
+    fn hasTrivialDrop(&self) -> bool;
+}
+
+impl HasTrivialDrop for Type {
+    fn hasTrivialDrop(&self) -> bool {
+        self.isNever() || self.isPtr() || self.isReference() || self.isUnit()
+    }
+}
+
+impl HasTrivialDrop for Variable {
+    fn hasTrivialDrop(&self) -> bool {
+        self.ty
+            .as_ref()
+            .expect("Variable type should be present")
+            .hasTrivialDrop()
+    }
 }

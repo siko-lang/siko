@@ -5,15 +5,17 @@ use crate::siko::{
         DeclarationStore::DeclarationStore,
         DropList::{DropListHandler, Kind},
         Path::Path,
-        Util::buildFieldPath,
+        Util::{buildFieldPath, HasTrivialDrop},
     },
     hir::{
+        BlockBuilder::BlockBuilder,
         BodyBuilder::BodyBuilder,
         Function::Function,
-        Instruction::{InstructionKind, SyntaxBlockId},
+        Instruction::{InstructionKind, Mutability, SyntaxBlockId},
         Program::Program,
         Variable::Variable,
     },
+    qualifiedname::{getFalseName, getTrueName},
 };
 
 pub struct Initializer<'a> {
@@ -51,8 +53,34 @@ impl<'a> Initializer<'a> {
         *count += 1;
     }
 
-    fn declareVar(&mut self, var: &Variable, syntaxBlock: &SyntaxBlockId) {
+    fn declareVar(&mut self, var: &Variable, syntaxBlock: &SyntaxBlockId, builder: &mut BlockBuilder) {
+        if var.hasTrivialDrop() {
+            return;
+        }
         self.declarationStore.declare(var.clone(), syntaxBlock.clone());
+        let dropFlag = var.getDropFlag();
+        builder.addInstruction(
+            InstructionKind::DeclareVar(dropFlag.clone(), Mutability::Mutable),
+            var.location.clone(),
+        );
+        builder.step();
+        builder.addInstruction(
+            InstructionKind::FunctionCall(dropFlag, getFalseName(), vec![]),
+            var.location.clone(),
+        );
+        builder.step();
+    }
+
+    fn useVar(&mut self, var: &Variable, builder: &mut BlockBuilder) {
+        if var.hasTrivialDrop() {
+            return;
+        }
+        let dropFlag = var.getDropFlag();
+        builder.addInstruction(
+            InstructionKind::FunctionCall(dropFlag, getFalseName(), vec![]),
+            var.location.clone(),
+        );
+        builder.step();
     }
 
     pub fn process(&mut self) -> Function {
@@ -78,8 +106,16 @@ impl<'a> Initializer<'a> {
                             InstructionKind::BlockEnd(blockId) => {
                                 currentSyntaxBlock = blockId.getParent();
                             }
-                            InstructionKind::Assign(dest, _) => {
-                                self.declareVar(dest, &currentSyntaxBlock);
+                            InstructionKind::Assign(dest, src) => {
+                                self.declareVar(dest, &currentSyntaxBlock, &mut builder);
+                                self.useVar(src, &mut builder);
+                                if !dest.hasTrivialDrop() {
+                                    builder.addInstruction(
+                                        InstructionKind::FunctionCall(dest.getDropFlag(), getTrueName(), vec![]),
+                                        instruction.location.clone(),
+                                    );
+                                    builder.step();
+                                }
                                 self.dropListHandler.createDropList(
                                     placeHolderIndex,
                                     Kind::VariableAssign(
@@ -90,11 +126,11 @@ impl<'a> Initializer<'a> {
                                     InstructionKind::DropListPlaceholder(placeHolderIndex),
                                     instruction.location.clone(),
                                 );
-                                placeHolderIndex += 1;
                                 builder.step();
+                                placeHolderIndex += 1;
                             }
                             InstructionKind::FieldAssign(dest, _, fields) => {
-                                self.declareVar(dest, &currentSyntaxBlock);
+                                self.declareVar(dest, &currentSyntaxBlock, &mut builder);
                                 let path = buildFieldPath(dest, fields);
                                 self.dropListHandler
                                     .createDropList(placeHolderIndex, Kind::FieldAssign(path.toSimplePath()));
@@ -103,22 +139,27 @@ impl<'a> Initializer<'a> {
                                     InstructionKind::DropListPlaceholder(placeHolderIndex),
                                     instruction.location.clone(),
                                 );
-                                placeHolderIndex += 1;
                                 builder.step();
+                                placeHolderIndex += 1;
                             }
                             InstructionKind::DeclareVar(var, _) => {
-                                self.declareVar(var, &currentSyntaxBlock);
+                                self.declareVar(var, &currentSyntaxBlock, &mut builder);
                             }
                             kind => {
+                                let mut allUsedVars = kind.collectVariables();
                                 if let Some(result) = kind.getResultVar() {
-                                    self.declareVar(&result, &currentSyntaxBlock);
-                                    if !result.isTemp() {
+                                    allUsedVars.retain(|var| var != &result);
+                                    self.declareVar(&result, &currentSyntaxBlock, &mut builder);
+                                    if !result.isTemp() && !result.isDropFlag() {
                                         panic!(
                                             "Implicit destination should be a temporary variable, but found: {}",
                                             result
                                         );
                                     }
                                     self.addDest(&result);
+                                }
+                                for var in allUsedVars {
+                                    self.useVar(&var, &mut builder);
                                 }
                             }
                         }

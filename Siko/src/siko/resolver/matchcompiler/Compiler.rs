@@ -657,10 +657,10 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     let mut builder = self.resolver.createBlock(&env);
                     //println!("Compile branch {} to block {}", index, builder.getBlockId());
                     builder.current();
-                    self.resolver.bodyBuilder.current().addInstruction(
-                        InstructionKind::BlockStart(env.getSyntaxBlockId()),
-                        self.bodyLocation.clone(),
-                    );
+                    self.resolver
+                        .bodyBuilder
+                        .current()
+                        .addBlockStart(env.getSyntaxBlockId(), self.bodyLocation.clone());
                     for (path, name) in &m.bindings.bindings {
                         let bindValue = ctx.get(path.decisions.last().unwrap());
                         let new = self
