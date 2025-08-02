@@ -1,6 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::siko::hir::{Instruction::SyntaxBlockId, Variable::Variable};
+use crate::siko::hir::{
+    Instruction::{SyntaxBlockId, SyntaxBlockIdSegment},
+    Variable::Variable,
+};
 
 pub struct Environment<'a> {
     values: BTreeMap<String, Variable>,
@@ -15,11 +18,11 @@ impl<'a> Environment<'a> {
             values: BTreeMap::new(),
             parent: None,
             mutables: BTreeSet::new(),
-            syntaxBlockId: SyntaxBlockId::new().add("root".to_string()),
+            syntaxBlockId: SyntaxBlockId::new(),
         }
     }
 
-    pub fn child(parent: &'a Environment<'a>, syntaxBlockIdItem: String) -> Environment<'a> {
+    pub fn child(parent: &'a Environment<'a>, syntaxBlockIdItem: SyntaxBlockIdSegment) -> Environment<'a> {
         Environment {
             values: BTreeMap::new(),
             parent: Some(parent),

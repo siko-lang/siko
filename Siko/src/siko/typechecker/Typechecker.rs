@@ -1175,8 +1175,6 @@ impl<'a> Typechecker<'a> {
                                             builder.replaceInstruction(kind, instruction.location.clone());
                                         }
                                     } else {
-                                        builder.addDeclare(dest.clone(), instruction.location.clone());
-                                        builder.step();
                                         let kind = InstructionKind::Assign(dest.clone(), source.clone());
                                         builder.replaceInstruction(kind, instruction.location.clone());
                                     }

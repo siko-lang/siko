@@ -652,11 +652,15 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                 let m = end.matches.last().expect("no match");
                 if let MatchKind::UserDefined(index) = &m.kind {
                     let branch = &self.branches[*index as usize];
-                    let syntaxBlockId = self.resolver.createSyntaxBlockIdItem();
+                    let syntaxBlockId = self.resolver.createSyntaxBlockIdSegment();
                     let mut env = Environment::child(self.parentEnv, syntaxBlockId);
                     let mut builder = self.resolver.createBlock(&env);
                     //println!("Compile branch {} to block {}", index, builder.getBlockId());
                     builder.current();
+                    self.resolver.bodyBuilder.current().addInstruction(
+                        InstructionKind::BlockStart(env.getSyntaxBlockId()),
+                        self.bodyLocation.clone(),
+                    );
                     for (path, name) in &m.bindings.bindings {
                         let bindValue = ctx.get(path.decisions.last().unwrap());
                         let new = self

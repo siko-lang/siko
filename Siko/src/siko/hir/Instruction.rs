@@ -49,8 +49,25 @@ impl Display for FieldInfo {
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Eq, Ord)]
+pub struct SyntaxBlockIdSegment {
+    pub value: u32,
+}
+
+impl Display for SyntaxBlockIdSegment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.value)
+    }
+}
+
+impl Debug for SyntaxBlockIdSegment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+#[derive(Clone, PartialEq, PartialOrd, Eq, Ord)]
 pub struct SyntaxBlockId {
-    pub items: Vec<String>,
+    pub items: Vec<SyntaxBlockIdSegment>,
 }
 
 impl SyntaxBlockId {
@@ -58,7 +75,7 @@ impl SyntaxBlockId {
         SyntaxBlockId { items: Vec::new() }
     }
 
-    pub fn add(&self, item: String) -> Self {
+    pub fn add(&self, item: SyntaxBlockIdSegment) -> Self {
         let mut new_items = self.items.clone();
         new_items.push(item);
         SyntaxBlockId { items: new_items }
@@ -115,7 +132,11 @@ impl SyntaxBlockId {
 
 impl Display for SyntaxBlockId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.items.join("."))
+        write!(
+            f,
+            "{}",
+            self.items.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(".")
+        )
     }
 }
 

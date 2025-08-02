@@ -5,7 +5,7 @@ use crate::siko::hir::BlockBuilder::BlockBuilder;
 use crate::siko::hir::BodyBuilder::BodyBuilder;
 use crate::siko::hir::Data::{Enum, Struct};
 use crate::siko::hir::Function::BlockId;
-use crate::siko::hir::Instruction::{FieldId, FieldInfo, InstructionKind, SyntaxBlockId};
+use crate::siko::hir::Instruction::{FieldId, FieldInfo, InstructionKind, SyntaxBlockId, SyntaxBlockIdSegment};
 use crate::siko::hir::Variable::Variable;
 use crate::siko::location::Location::Location;
 use crate::siko::location::Report::ReportContext;
@@ -50,6 +50,7 @@ pub struct ExprResolver<'a> {
     pub enums: &'a BTreeMap<QualifiedName, Enum>,
     loopInfos: Vec<LoopInfo>,
     syntaxBlockIds: BTreeMap<BlockId, SyntaxBlockId>,
+    resultVar: Option<Variable>,
 }
 
 impl<'a> ExprResolver<'a> {
@@ -74,13 +75,14 @@ impl<'a> ExprResolver<'a> {
             enums: enums,
             loopInfos: Vec::new(),
             syntaxBlockIds: BTreeMap::new(),
+            resultVar: None,
         }
     }
 
-    pub fn createSyntaxBlockIdItem(&mut self) -> String {
-        let blockId = format!("block{}", self.syntaxBlockId);
+    pub fn createSyntaxBlockIdSegment(&mut self) -> SyntaxBlockIdSegment {
+        let blockId = self.syntaxBlockId;
         self.syntaxBlockId += 1;
-        blockId
+        SyntaxBlockIdSegment { value: blockId }
     }
 
     fn processFieldAssign<'e>(
@@ -183,7 +185,7 @@ impl<'a> ExprResolver<'a> {
     }
 
     fn resolveBlock<'e>(&mut self, block: &Block, env: &'e Environment<'e>, resultValue: Variable) {
-        let syntaxBlockIdItem = self.createSyntaxBlockIdItem();
+        let syntaxBlockIdItem = self.createSyntaxBlockIdSegment();
         let mut env = Environment::child(env, syntaxBlockIdItem);
         // println!(
         //     "Resolving syntax block {} with var {} current {}",
@@ -384,7 +386,7 @@ impl<'a> ExprResolver<'a> {
                     .addDeclare(resultValue.clone(), expr.location.clone());
                 let mut loopBodyBuilder = self.createBlock(env);
                 let mut loopExitBuilder = self.createBlock(env);
-                let mut loopEnv = Environment::child(env, self.createSyntaxBlockIdItem());
+                let mut loopEnv = Environment::child(env, self.createSyntaxBlockIdSegment());
                 self.bodyBuilder.current().implicit().addInstruction(
                     InstructionKind::BlockStart(loopEnv.getSyntaxBlockId()),
                     expr.location.clone(),
@@ -518,12 +520,26 @@ impl<'a> ExprResolver<'a> {
                     Some(arg) => self.resolveExpr(arg, env),
                     None => self.bodyBuilder.current().addUnit(expr.location.clone()),
                 };
-                let tempValue = self.bodyBuilder.createTempValue(expr.location.clone());
+                let resultVar = self.resultVar.clone().expect("no result variable set for return");
                 self.bodyBuilder.current().addInstruction(
-                    InstructionKind::Converter(tempValue.clone(), argId.clone()),
+                    InstructionKind::Converter(resultVar.clone(), argId.clone()),
                     expr.location.clone(),
                 );
-                self.bodyBuilder.current().addReturn(tempValue, expr.location.clone())
+
+                let mut currentSyntaxBlockId = env.getSyntaxBlockId();
+                loop {
+                    self.bodyBuilder.current().implicit().addInstruction(
+                        InstructionKind::BlockEnd(currentSyntaxBlockId.clone()),
+                        expr.location.clone(),
+                    );
+                    let parent = currentSyntaxBlockId.getParent();
+                    if parent == currentSyntaxBlockId {
+                        break;
+                    }
+                    currentSyntaxBlockId = parent;
+                }
+
+                self.bodyBuilder.current().addReturn(resultVar, expr.location.clone())
             }
             SimpleExpr::Break(arg) => {
                 let argId = match arg {
@@ -645,11 +661,12 @@ impl<'a> ExprResolver<'a> {
         let mut blockBuilder = self.bodyBuilder.createBlock();
         blockBuilder.current();
         let functionResult = self.bodyBuilder.createTempValue(body.location.clone());
+        self.resultVar = Some(functionResult.clone());
         self.bodyBuilder
             .current()
             .implicit()
             .addDeclare(functionResult.clone(), body.location.clone());
-        let syntaxBlockIdItem = self.createSyntaxBlockIdItem();
+        let syntaxBlockIdItem = self.createSyntaxBlockIdSegment();
         //println!("Resolving block {} with var {} current {}", syntaxBlock, resultValue, self.targetBlockId);
         let mut localEnv = Environment::child(env, syntaxBlockIdItem);
         self.bodyBuilder.current().implicit().addInstruction(
@@ -669,21 +686,25 @@ impl<'a> ExprResolver<'a> {
             );
             localEnv.addValue(value.0.clone(), name);
         }
-        let result = functionResult.clone();
-        self.resolveBlock(body, &localEnv, result);
+        let result = self.bodyBuilder.createTempValue(body.location.clone());
+        self.bodyBuilder
+            .current()
+            .implicit()
+            .addDeclare(result.clone(), body.location.clone());
+        self.resolveBlock(body, &localEnv, result.clone());
         self.bodyBuilder.current().implicit().addInstruction(
             InstructionKind::BlockEnd(localEnv.getSyntaxBlockId()),
             body.location.clone(),
         );
-        let result = self.bodyBuilder.createTempValue(body.location.clone());
+
         self.bodyBuilder.current().implicit().addInstruction(
-            InstructionKind::Converter(result.clone(), functionResult),
+            InstructionKind::Converter(functionResult.clone(), result),
             body.location.clone(),
         );
         self.bodyBuilder
             .current()
             .implicit()
-            .addReturn(result, body.location.clone());
+            .addReturn(functionResult, body.location.clone());
         self.bodyBuilder.sortBlocks();
     }
 
