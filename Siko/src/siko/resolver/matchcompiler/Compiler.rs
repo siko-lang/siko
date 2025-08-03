@@ -682,7 +682,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                         self.resolver.addJumpToBuilder(
                             self.contBlockId,
                             self.bodyLocation.clone(),
-                            self.parentEnv.getSyntaxBlockId(),
+                            env.getSyntaxBlockId(),
                             &mut builder,
                         );
                     }
