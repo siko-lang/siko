@@ -124,7 +124,7 @@ impl Display for Block {
 
 #[derive(Debug, Clone)]
 pub struct Body {
-    pub blocks: Vec<Block>,
+    pub blocks: BTreeMap<BlockId, Block>,
     pub varTypes: BTreeMap<VariableName, Type>,
     pub varAllocator: VariableAllocator,
 }
@@ -132,18 +132,18 @@ pub struct Body {
 impl Body {
     pub fn new() -> Body {
         Body {
-            blocks: Vec::new(),
+            blocks: BTreeMap::new(),
             varTypes: BTreeMap::new(),
             varAllocator: VariableAllocator::new(),
         }
     }
 
     pub fn addBlock(&mut self, block: Block) {
-        self.blocks.push(block);
+        self.blocks.insert(block.id, block);
     }
 
     pub fn getBlockById(&self, id: BlockId) -> &Block {
-        &self.blocks[id.id as usize]
+        &self.blocks.get(&id).expect("Block not found")
     }
 
     pub fn setType(&mut self, var: Variable, ty: Type) {
@@ -155,13 +155,13 @@ impl Body {
     }
 
     pub fn dump(&self) {
-        for block in &self.blocks {
+        for (_, block) in &self.blocks {
             block.dump();
         }
     }
 
-    pub fn getInstruction(&self, block_id: BlockId, index: usize) -> Option<Instruction> {
-        if let Some(block) = self.blocks.get(block_id.id as usize) {
+    pub fn getInstruction(&self, blockId: BlockId, index: usize) -> Option<Instruction> {
+        if let Some(block) = self.blocks.get(&blockId) {
             if let Some(instruction) = block.instructions.get(index) {
                 return Some(instruction.clone());
             }
@@ -171,26 +171,31 @@ impl Body {
 
     pub fn getAllBlockIds(&self) -> VecDeque<BlockId> {
         let mut ids = VecDeque::new();
-        for block in &self.blocks {
-            ids.push_back(block.id);
+        for (id, _) in &self.blocks {
+            ids.push_back(*id);
         }
         ids
     }
 
     pub fn cutBlock(&mut self, blockId: BlockId, index: usize, newBlockId: BlockId) {
-        let block = self.blocks.get_mut(blockId.id as usize).expect("Block not found");
+        let block = self.blocks.get_mut(&blockId).expect("Block not found");
         let otherInstructions = block.instructions.split_off(index);
-        let newBlock = self
-            .blocks
-            .get_mut(newBlockId.id as usize)
-            .expect("New block not found");
+        let newBlock = self.blocks.get_mut(&newBlockId).expect("New block not found");
         newBlock.instructions = otherInstructions;
+    }
+
+    pub fn getBlockSize(&self, blockId: BlockId) -> usize {
+        self.blocks.get(&blockId).expect("Block not found").instructions.len()
+    }
+
+    pub fn removeBlock(&mut self, block_id: BlockId) {
+        self.blocks.remove(&block_id);
     }
 }
 
 impl Display for Body {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for block in &self.blocks {
+        for (_, block) in &self.blocks {
             write!(f, "{}", block)?;
         }
         Ok(())
@@ -255,7 +260,7 @@ impl Function {
 
     pub fn getFirstBlock(&self) -> &Block {
         if let Some(body) = &self.body {
-            &body.blocks[0]
+            &body.blocks.get(&BlockId::first()).expect("Block not found")
         } else {
             panic!("getFirstBlock: no body found");
         }

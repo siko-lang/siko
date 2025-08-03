@@ -702,7 +702,6 @@ impl<'a> ExprResolver<'a> {
             .current()
             .implicit()
             .addReturn(functionResult, body.location.clone());
-        self.bodyBuilder.sortBlocks();
     }
 
     pub fn body(self) -> Body {

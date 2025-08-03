@@ -132,7 +132,7 @@ impl<'a> Typechecker<'a> {
             }
         }
         if let Some(body) = &self.f.body {
-            for block in &body.blocks {
+            for (_, block) in &body.blocks {
                 for instruction in &block.instructions {
                     match &instruction.kind {
                         InstructionKind::FunctionCall(_, _, _) => {}
@@ -660,6 +660,10 @@ impl<'a> Typechecker<'a> {
                                 implicitResult.clone(),
                                 instruction.location.clone(),
                             );
+                            builder.addInstruction(
+                                InstructionKind::Tuple(dest.clone(), vec![]),
+                                instruction.location.clone(),
+                            );
                         }
                         1 => {
                             let mut implicitResult = self.bodyBuilder.createTempValue(instruction.location.clone());
@@ -956,7 +960,7 @@ impl<'a> Typechecker<'a> {
         if let Some(body) = &f.body {
             let fnType = f.getType();
             let publicVars = fnType.collectVars(BTreeSet::new());
-            for block in &body.blocks {
+            for (_, block) in &body.blocks {
                 for instruction in &block.instructions {
                     let vars = instruction.kind.collectVariables();
                     for v in vars {
@@ -979,7 +983,7 @@ impl<'a> Typechecker<'a> {
     pub fn dump(&self, f: &Function) {
         println!("Dumping {}", f.name);
         if let Some(body) = &f.body {
-            for block in &body.blocks {
+            for (_, block) in &body.blocks {
                 println!("{}:", block.id);
                 for instruction in &block.instructions {
                     match instruction.kind.getResultVar() {
@@ -1040,7 +1044,7 @@ impl<'a> Typechecker<'a> {
     fn addTypes(&mut self, f: &mut Function) {
         let body = &mut f.body.as_mut().unwrap();
 
-        for block in &mut body.blocks {
+        for (_, block) in &mut body.blocks {
             for instruction in &mut block.instructions {
                 let vars = instruction.kind.collectVariables();
                 for var in vars {

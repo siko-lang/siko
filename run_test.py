@@ -73,7 +73,7 @@ def compare_output(output_txt_path, current_output):
         return True
 
 def test_success(root, entry, extras):
-    print("- %s" % entry, end='', flush=True)
+    print("- %s" % entry, end='')
     currentDir = os.path.join(root, entry)
     skipPath = os.path.join(currentDir, "SKIP")
     if os.path.exists(skipPath):
@@ -90,7 +90,7 @@ def test_success(root, entry, extras):
     return compare_output(output_txt_path, r.stdout + r.stderr)
 
 def test_fail(root, entry, extras):
-    print("- %s" % entry, end = '', flush=True)
+    print("- %s" % entry, end = '')
     global success, failure, skipped
     skip_path = os.path.join(root, entry, "SKIP")
     if os.path.exists(skip_path):

@@ -43,7 +43,7 @@ impl<'a> DeadCodeEliminator<'a> {
             self.processBlock(BlockId::first());
         }
         if let Some(body) = &self.function.body {
-            for (blockIndex, block) in body.blocks.iter().enumerate() {
+            for (blockIndex, (_, block)) in body.blocks.iter().enumerate() {
                 for (index, instruction) in block.instructions.iter().enumerate() {
                     if !self.visited.contains(&InstructionId {
                         block: blockIndex,
@@ -61,7 +61,7 @@ impl<'a> DeadCodeEliminator<'a> {
         }
         let mut result = self.function.clone();
         if let Some(body) = &mut result.body {
-            for (blockIndex, block) in body.blocks.iter_mut().enumerate() {
+            for (blockIndex, (_, block)) in body.blocks.iter_mut().enumerate() {
                 let instructions: Vec<_> = block
                     .instructions
                     .iter()

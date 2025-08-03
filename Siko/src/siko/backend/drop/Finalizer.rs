@@ -58,6 +58,9 @@ impl<'a> Finalizer<'a> {
                                 // }
                                 builder.removeInstruction();
                             }
+                            InstructionKind::BlockStart(_) => {
+                                builder.removeInstruction();
+                            }
                             InstructionKind::BlockEnd(id) => {
                                 if let Some(droppedValues) = self.declarationStore.getDeclarations(&id) {
                                     for var in droppedValues {
@@ -69,10 +72,12 @@ impl<'a> Finalizer<'a> {
                                         builder.step();
                                     }
                                 }
+                                builder.removeInstruction();
                             }
-                            _ => {}
+                            _ => {
+                                builder.step();
+                            }
                         }
-                        builder.step();
                     }
                     None => break,
                 }

@@ -17,7 +17,10 @@ use siko::{
 
 use std::{collections::BTreeMap, env::args, fs, path::Path};
 
-use crate::siko::backend::FieldRefMerger;
+use crate::siko::backend::{
+    simplification::{JumpSimplifier, VarSimplifier},
+    FieldRefMerger,
+};
 
 fn typecheck(ctx: &ReportContext, mut program: Program) -> Program {
     let mut result = BTreeMap::new();
@@ -121,7 +124,11 @@ fn main() {
     let program = monomorphize(&ctx, program);
     //println!("after mono\n{}", program);
     let program = removeTuples(&program);
-    //println!("after backend\n {}", program);
+    //println!("after remove tuples\n{}", program);
+    let program = VarSimplifier::simplify(program);
+    //println!("after var simplifier\n{}", program);
+    let program = JumpSimplifier::simplify(program);
+    //println!("after jump simplifier\n{}", program);
     let mut mir_program = lowerProgram(&program);
     //println!("mir\n{}", mir_program);
     mir_program.process();

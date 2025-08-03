@@ -241,7 +241,7 @@ impl<'a> Builder<'a> {
             FunctionKind::UserDefined | FunctionKind::TraitMemberDefinition(_) => {
                 let mut blocks = Vec::new();
                 if let Some(body) = self.function.body.clone() {
-                    for block in &body.blocks {
+                    for (_, block) in &body.blocks {
                         if let Some(mirBlock) = self.lowerBlock(block) {
                             blocks.push(mirBlock);
                         }

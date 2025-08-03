@@ -71,7 +71,7 @@ impl Builder {
     }
 
     pub fn getInstruction(&self, id: BlockId, index: usize) -> Option<Instruction> {
-        let irBlock = &self.body.blocks[id.id as usize];
+        let irBlock = self.body.getBlockById(id);
         match irBlock.instructions.get(index) {
             Some(instruction) => Some(instruction.clone()),
             None => None,
@@ -79,7 +79,7 @@ impl Builder {
     }
 
     pub fn addInstruction(&mut self, id: BlockId, instruction: InstructionKind, location: Location, implicit: bool) {
-        let irBlock = &mut self.body.blocks[id.id as usize];
+        let irBlock = self.body.blocks.get_mut(&id).expect("Block not found");
         return irBlock.add(instruction, location, implicit);
     }
 
@@ -91,7 +91,7 @@ impl Builder {
         location: Location,
         implicit: bool,
     ) {
-        let irBlock = &mut self.body.blocks[id.id as usize];
+        let irBlock = self.body.blocks.get_mut(&id).expect("Block not found");
         return irBlock.insert(index, instruction, location, implicit);
     }
 
@@ -103,17 +103,13 @@ impl Builder {
         location: Location,
         implicit: bool,
     ) {
-        let irBlock = &mut self.body.blocks[id.id as usize];
+        let irBlock = self.body.blocks.get_mut(&id).expect("Block not found");
         return irBlock.replace(index, instruction, location, implicit);
     }
 
     pub fn removeInstruction(&mut self, id: BlockId, index: usize) {
-        let irBlock = &mut self.body.blocks[id.id as usize];
+        let irBlock = self.body.blocks.get_mut(&id).expect("Block not found");
         irBlock.remove(index);
-    }
-
-    pub fn sortBlocks(&mut self) {
-        self.body.blocks.sort_by(|a, b| a.id.cmp(&b.id));
     }
 
     pub fn getNextId(&mut self) -> u32 {
@@ -238,11 +234,6 @@ impl BodyBuilder {
         bodyBuilder.removeInstruction(id, index);
     }
 
-    pub fn sortBlocks(&mut self) {
-        let mut bodyBuilder = self.bodyBuilder.borrow_mut();
-        bodyBuilder.sortBlocks();
-    }
-
     pub fn createLocalValue(&mut self, name: &str, location: Location) -> Variable {
         let mut bodyBuilder = self.bodyBuilder.borrow_mut();
         bodyBuilder.createLocalValue(name, location)
@@ -263,5 +254,15 @@ impl BodyBuilder {
         let newBlock = bodyBuilder.createBlock();
         bodyBuilder.body.cutBlock(blockId, index, newBlock);
         newBlock
+    }
+
+    pub fn getBlockSize(&self, blockId: BlockId) -> usize {
+        let bodyBuilder = self.bodyBuilder.borrow();
+        bodyBuilder.body.getBlockSize(blockId)
+    }
+
+    pub fn removeBlock(&mut self, blockId: BlockId) {
+        let mut bodyBuilder = self.bodyBuilder.borrow_mut();
+        bodyBuilder.body.removeBlock(blockId);
     }
 }

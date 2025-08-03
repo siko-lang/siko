@@ -329,4 +329,8 @@ impl BlockBuilder {
             Mode::Iterator(index) => self.bodyBuilder.cutBlock(self.blockId, index + offset),
         }
     }
+
+    pub fn getBlockSize(&self) -> usize {
+        self.bodyBuilder.getBlockSize(self.blockId)
+    }
 }

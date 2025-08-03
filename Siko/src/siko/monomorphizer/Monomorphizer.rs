@@ -80,6 +80,12 @@ impl<T: Monomorphize> Monomorphize for Vec<T> {
     }
 }
 
+impl<T: Monomorphize, K: Ord + Clone> Monomorphize for BTreeMap<K, T> {
+    fn process(&self, sub: &Substitution, mono: &mut Monomorphizer) -> Self {
+        self.iter().map(|(k, v)| (k.clone(), v.process(sub, mono))).collect()
+    }
+}
+
 impl Monomorphize for Variable {
     fn process(&self, sub: &Substitution, mono: &mut Monomorphizer) -> Self {
         let mut v = self.clone();

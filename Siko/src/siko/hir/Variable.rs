@@ -42,6 +42,10 @@ impl VariableName {
             _ => false,
         }
     }
+
+    pub fn getDropFlag(&self) -> VariableName {
+        VariableName::DropFlag(self.to_string())
+    }
 }
 
 impl Display for VariableName {
@@ -103,7 +107,7 @@ impl Variable {
 
     pub fn getDropFlag(&self) -> Variable {
         Variable {
-            value: VariableName::DropFlag(self.value.to_string()),
+            value: self.value.getDropFlag(),
             location: self.location.clone(),
             ty: Some(Type::getBoolType()),
         }
