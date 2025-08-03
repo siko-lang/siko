@@ -3,25 +3,12 @@ use std::collections::BTreeMap;
 use crate::siko::hir::{
     BodyBuilder::BodyBuilder,
     Function::{BlockId, Function},
-    Instruction::{FieldInfo, InstructionKind},
-    Program::Program,
-    Variable::Variable,
+    Instruction::InstructionKind,
 };
 
-pub fn simplify(program: Program) -> Program {
-    let mut result = program.clone();
-    for (name, f) in &program.functions {
-        let mut simplifier = JumpSimplifier::new(f);
-        let f = simplifier.process();
-        result.functions.insert(name.clone(), f);
-    }
-    result
-}
-
-struct FieldRefInfo {
-    dest: Variable,
-    receiver: Variable,
-    fields: Vec<FieldInfo>,
+pub fn simplifyFunction(f: &Function) -> Option<Function> {
+    let mut simplifier = JumpSimplifier::new(&f);
+    return simplifier.process();
 }
 
 pub struct JumpSimplifier<'a> {
@@ -49,9 +36,9 @@ impl<'a> JumpSimplifier<'a> {
         }
     }
 
-    fn process(&mut self) -> Function {
+    fn process(&mut self) -> Option<Function> {
         if self.function.body.is_none() {
-            return self.function.clone();
+            return None;
         }
 
         //println!("VarSimplifier processing function: {}", self.function.name);
@@ -68,6 +55,10 @@ impl<'a> JumpSimplifier<'a> {
                     }
                 }
             }
+        }
+
+        if self.jumps.is_empty() {
+            return None; // No jumps to simplify
         }
 
         for (blockId, _) in &self.jumps {
@@ -133,6 +124,6 @@ impl<'a> JumpSimplifier<'a> {
 
         let mut f = self.function.clone();
         f.body = Some(bodyBuilder.build());
-        f
+        Some(f)
     }
 }

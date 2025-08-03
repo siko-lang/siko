@@ -4,19 +4,14 @@ use crate::siko::hir::{
     BodyBuilder::BodyBuilder,
     Function::Function,
     Instruction::InstructionKind,
-    Program::Program,
     Variable::{Variable, VariableName},
 };
 
-pub fn simplify(program: Program) -> Program {
-    let mut result = program.clone();
-    for (name, f) in &program.functions {
-        let mut simplifier = VarSimplifier::new(f);
-        let f = simplifier.process();
-        result.functions.insert(name.clone(), f);
-    }
-    result
+pub fn simplifyFunction(f: &Function) -> Option<Function> {
+    let mut simplifier = VarSimplifier::new(f);
+    simplifier.process()
 }
+
 pub struct VarSimplifier<'a> {
     function: &'a Function,
     useCounts: BTreeMap<VariableName, usize>,
@@ -56,9 +51,9 @@ impl<'a> VarSimplifier<'a> {
         *self.useCounts.entry(var.value).or_insert(0) += 1;
     }
 
-    fn process(&mut self) -> Function {
+    fn process(&mut self) -> Option<Function> {
         if self.function.body.is_none() {
-            return self.function.clone();
+            return None;
         }
 
         //println!("VarSimplifier processing function: {}", self.function.name);
@@ -123,6 +118,10 @@ impl<'a> VarSimplifier<'a> {
             } else {
                 //println!("Variable {} is used {} times, cannot simplify", src, useCount);
             }
+        }
+
+        if self.simplifiedVars.is_empty() {
+            return None; // No variables to simplify
         }
 
         let mut removedDropFlags = BTreeSet::new();
@@ -195,6 +194,6 @@ impl<'a> VarSimplifier<'a> {
         }
         let mut f = self.function.clone();
         f.body = Some(bodyBuilder.build());
-        f
+        Some(f)
     }
 }
