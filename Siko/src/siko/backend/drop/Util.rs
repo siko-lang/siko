@@ -5,6 +5,7 @@ use crate::siko::{
         Type::Type,
         Variable::Variable,
     },
+    qualifiedname::{getBoolTypeName, getIntTypeName},
 };
 
 pub fn buildFieldPath(root: &Variable, fields: &Vec<FieldInfo>) -> Path {
@@ -28,7 +29,10 @@ pub trait HasTrivialDrop {
 
 impl HasTrivialDrop for Type {
     fn hasTrivialDrop(&self) -> bool {
-        self.isNever() || self.isPtr() || self.isReference() || self.isUnit()
+        match self {
+            Type::Named(name, _) => getIntTypeName() == *name || getBoolTypeName() == *name, // TODO: make this more generic
+            _ => self.isNever() || self.isPtr() || self.isReference() || self.isUnit(),
+        }
     }
 }
 
