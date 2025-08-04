@@ -1,3 +1,4 @@
+pub mod BlockMerger;
 pub mod CompileTimeEvaluator;
 pub mod DeadCodeEliminator;
 pub mod JumpSimplifier;

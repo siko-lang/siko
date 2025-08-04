@@ -1,5 +1,5 @@
 use crate::siko::{
-    backend::simplification::{CompileTimeEvaluator, DeadCodeEliminator, JumpSimplifier, VarSimplifier},
+    backend::simplification::{BlockMerger, CompileTimeEvaluator, DeadCodeEliminator, JumpSimplifier, VarSimplifier},
     hir::Program::Program,
 };
 
@@ -15,6 +15,10 @@ pub fn simplify(program: Program) -> Program {
                 simplified = true;
             }
             if let Some(f) = JumpSimplifier::simplifyFunction(&simplifiedFunc) {
+                simplifiedFunc = f;
+                simplified = true;
+            }
+            if let Some(f) = BlockMerger::simplifyFunction(&simplifiedFunc) {
                 simplifiedFunc = f;
                 simplified = true;
             }

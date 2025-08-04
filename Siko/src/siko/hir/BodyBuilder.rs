@@ -265,4 +265,9 @@ impl BodyBuilder {
         let mut bodyBuilder = self.bodyBuilder.borrow_mut();
         bodyBuilder.body.removeBlock(blockId);
     }
+
+    pub fn mergeBlocks(&mut self, sourceBlockId: BlockId, targetBlockId: BlockId) {
+        let mut bodyBuilder = self.bodyBuilder.borrow_mut();
+        bodyBuilder.body.mergeBlocks(sourceBlockId, targetBlockId);
+    }
 }

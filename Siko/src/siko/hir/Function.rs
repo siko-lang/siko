@@ -191,6 +191,13 @@ impl Body {
     pub fn removeBlock(&mut self, block_id: BlockId) {
         self.blocks.remove(&block_id);
     }
+
+    pub fn mergeBlocks(&mut self, sourceBlockId: BlockId, targetBlockId: BlockId) {
+        let mut targetBlock = self.blocks.remove(&targetBlockId).expect("Target block not found");
+        let sourceBlock = self.blocks.get_mut(&sourceBlockId).expect("Source block not found");
+        sourceBlock.instructions.pop();
+        sourceBlock.instructions.append(&mut targetBlock.instructions);
+    }
 }
 
 impl Display for Body {
