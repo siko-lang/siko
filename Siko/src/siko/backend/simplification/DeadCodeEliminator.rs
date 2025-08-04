@@ -45,7 +45,7 @@ impl<'a> DeadCodeEliminator<'a> {
 
         if let Some(body) = &self.function.body {
             for (blockId, block) in body.blocks.iter() {
-                for (index, i) in block.instructions.iter().enumerate() {
+                for (index, _) in block.instructions.iter().enumerate() {
                     let id = InstructionId {
                         block: *blockId,
                         id: index,
@@ -69,7 +69,7 @@ impl<'a> DeadCodeEliminator<'a> {
             let mut builder = bodyBuilder.iterator(*blockId);
             let mut index = 0;
             loop {
-                if let Some(i) = builder.getInstruction() {
+                if let Some(_) = builder.getInstruction() {
                     //println!("DCE: Checking instruction: {}", i);
                     let id = InstructionId {
                         block: *blockId,

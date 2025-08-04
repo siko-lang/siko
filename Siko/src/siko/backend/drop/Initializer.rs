@@ -90,11 +90,17 @@ impl<'a> Initializer<'a> {
         }
         //println!("Drop initializer processing function: {}", self.function.name);
 
-        let mut currentSyntaxBlock = SyntaxBlockId::new();
-
         let allBlocksIds = self.bodyBuilder.getAllBlockIds();
         let mut placeHolderIndex = 0;
+
+        let mut blockSyntaxBlocks = BTreeMap::new();
         for blockId in &allBlocksIds {
+            blockSyntaxBlocks.insert(*blockId, SyntaxBlockId::new());
+        }
+
+        for blockId in &allBlocksIds {
+            let mut currentSyntaxBlock = blockSyntaxBlocks.get(blockId).expect("Block not found").clone();
+
             let mut builder = self.bodyBuilder.iterator(*blockId);
             loop {
                 match builder.getInstruction() {
@@ -145,6 +151,27 @@ impl<'a> Initializer<'a> {
                             }
                             InstructionKind::DeclareVar(var, _) => {
                                 self.declareVar(var, &currentSyntaxBlock, &mut builder);
+                            }
+                            InstructionKind::Jump(_, targetBlock) => {
+                                blockSyntaxBlocks.insert(*targetBlock, currentSyntaxBlock.clone());
+                            }
+                            InstructionKind::EnumSwitch(_, cases) => {
+                                for case in cases {
+                                    blockSyntaxBlocks.insert(case.branch, currentSyntaxBlock.clone());
+                                }
+                            }
+                            InstructionKind::StringSwitch(_, cases) => {
+                                for case in cases {
+                                    blockSyntaxBlocks.insert(case.branch, currentSyntaxBlock.clone());
+                                }
+                            }
+                            InstructionKind::IntegerSwitch(_, cases) => {
+                                for case in cases {
+                                    blockSyntaxBlocks.insert(case.branch, currentSyntaxBlock.clone());
+                                }
+                            }
+                            InstructionKind::Return(_, _) => {
+                                // No targets to propagate to
                             }
                             kind => {
                                 let mut allUsedVars = kind.collectVariables();

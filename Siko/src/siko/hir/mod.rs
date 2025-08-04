@@ -4,6 +4,7 @@ pub mod BodyBuilder;
 pub mod ConstraintContext;
 pub mod Data;
 pub mod Function;
+pub mod Graph;
 pub mod InstanceResolver;
 pub mod Instruction;
 pub mod Lifetime;
