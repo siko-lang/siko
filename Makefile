@@ -1,34 +1,34 @@
-simple: Siko/target/release/siko
+simple: compiler/target/release/siko
 	@./siko test.sk
 
-Siko/target/release/siko: $(shell find Siko/src/ -type f)
-	@cd Siko && cargo build --release
+compiler/target/release/siko: $(shell find compiler/src/ -type f)
+	@cd compiler && cargo build --release
 
 fmt:
-	@cd Siko && cargo fmt
+	@cd compiler && cargo fmt
 
 clean:
-	@cd Siko && cargo clean
+	@cd compiler && cargo clean
 
-teststd: Siko/target/release/siko
+teststd: compiler/target/release/siko
 	@./siko test.sk std/*
 
-llvm: Siko/target/release/siko
+llvm: compiler/target/release/siko
 	@./siko test.sk
 	@opt -O2 -S llvm.ll -o optimized.ll
 	@llvm-as optimized.ll -o main.bc
 	@llc -relocation-model=pic main.bc -filetype=obj -o main.o
 	@clang main.o siko_runtime/siko_runtime.o -o main.bin
 
-c: Siko/target/release/siko
+c: compiler/target/release/siko
 	@./siko test.sk
 	@clang siko_main.c -o main.bin
 	@./main.bin
 
-self.bin: self Siko/target/release/siko std
+self.bin: self compiler/target/release/siko std
 	@./siko self ./std -o self
 	@clang self.c -o self.bin
 	@./self.bin
 
-test: Siko/target/release/siko
+test: compiler/target/release/siko
 	@./run_test.py

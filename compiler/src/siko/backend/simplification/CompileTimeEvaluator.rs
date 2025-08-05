@@ -39,6 +39,7 @@ impl<'a> CompileTimeEvaluator<'a> {
         }
 
         // println!("CompileTimeEvaluator processing function: {}", self.function.name);
+        // println!("{}", self.function);
 
         let mut bodyBuilder = BodyBuilder::cloneFunction(self.function);
         let allBlockIds = bodyBuilder.getAllBlockIds();

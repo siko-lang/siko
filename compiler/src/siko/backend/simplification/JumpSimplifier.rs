@@ -41,7 +41,8 @@ impl<'a> JumpSimplifier<'a> {
             return None;
         }
 
-        //println!("VarSimplifier processing function: {}", self.function.name);
+        // println!("JumpSimplifier processing function: {}", self.function.name);
+        // println!("{}", self.function);
 
         let mut bodyBuilder = BodyBuilder::cloneFunction(self.function);
 

@@ -35,9 +35,8 @@ impl<'a> DeadCodeEliminator<'a> {
             return None;
         }
 
-        //println!("DeadCodeEliminator processing function: {}", self.function.name);
-
-        //println!("{}", self.function);
+        // println!("DeadCodeEliminator processing function: {}", self.function.name);
+        // println!("{}", self.function);
 
         self.processBlock(BlockId::first());
 
@@ -76,7 +75,7 @@ impl<'a> DeadCodeEliminator<'a> {
                         id: index,
                     };
                     if !self.visited.contains(&id) {
-                        //println!("DCE: Removing dead instruction: {}", i);
+                        // println!("DCE: Removing dead instruction: {}", i);
                         builder.removeInstruction();
                     } else {
                         builder.step();
@@ -87,7 +86,7 @@ impl<'a> DeadCodeEliminator<'a> {
                 }
             }
             if builder.getBlockSize() == 0 {
-                //println!("DCE: Removing empty block: {}", blockId);
+                // println!("DCE: Removing empty block: {}", blockId);
                 bodyBuilder.removeBlock(*blockId);
             }
         }

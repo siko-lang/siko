@@ -29,6 +29,9 @@ impl<'a> BlockMerger<'a> {
             return None;
         }
 
+        // println!("BlockMerger processing function: {}", self.function.name);
+        // println!("{}", self.function);
+
         // First pass: count all jumps to each block
         self.countJumps();
 

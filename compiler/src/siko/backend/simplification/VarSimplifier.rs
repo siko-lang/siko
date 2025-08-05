@@ -56,7 +56,8 @@ impl<'a> VarSimplifier<'a> {
             return None;
         }
 
-        //println!("VarSimplifier processing function: {}", self.function.name);
+        // println!("VarSimplifier processing function: {}", self.function.name);
+        // println!("{}", self.function);
 
         let mut bodyBuilder = BodyBuilder::cloneFunction(self.function);
 
@@ -94,18 +95,10 @@ impl<'a> VarSimplifier<'a> {
             if useCount == &1 {
                 if let Some(dest) = self.assignments.get(src) {
                     if self.assignCounts.get(dest) == Some(&1) {
-                        if src.isArg() {
-                            if dest.isArg() {
-                                // println!(
-                                //     "Cannot simplify argument variable {} to {} because both are arguments",
-                                //     src, dest
-                                // );
-                                continue;
-                            }
-                            self.simplifiedVars.insert(dest.clone(), src.clone());
-                        } else {
-                            self.simplifiedVars.insert(src.clone(), dest.clone());
+                        if src.isArg() || dest.isArg() {
+                            continue;
                         }
+                        self.simplifiedVars.insert(src.clone(), dest.clone());
                     } else {
                         //println!("Variable {} is assigned more than once, cannot simplify", dest);
                     }
