@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::siko::{
     backend::drop::{
@@ -10,6 +10,7 @@ use crate::siko::{
     hir::{
         BlockBuilder::BlockBuilder,
         BodyBuilder::BodyBuilder,
+        Function::BlockId,
         Function::Function,
         Instruction::{InstructionKind, Mutability, SyntaxBlockId},
         Program::Program,
@@ -27,6 +28,8 @@ pub struct Initializer<'a> {
     destCounts: BTreeMap<Variable, usize>,
     dropListHandler: &'a mut DropListHandler,
     declarationStore: &'a mut DeclarationStore,
+    queue: VecDeque<(BlockId, SyntaxBlockId)>,
+    placeHolderIndex: u32,
 }
 
 impl<'a> Initializer<'a> {
@@ -45,6 +48,8 @@ impl<'a> Initializer<'a> {
             destCounts: BTreeMap::new(),
             dropListHandler,
             declarationStore,
+            queue: VecDeque::new(),
+            placeHolderIndex: 0,
         }
     }
 
@@ -54,10 +59,13 @@ impl<'a> Initializer<'a> {
     }
 
     fn declareVar(&mut self, var: &Variable, syntaxBlock: &SyntaxBlockId, builder: &mut BlockBuilder) {
+        //println!("declareVar called for {} with syntaxBlock: {}", var, syntaxBlock);
         if var.hasTrivialDrop() || var.isArg() {
+            //println!("  -> skipping {} (trivial drop or arg)", var);
             return;
         }
         if self.declarationStore.declare(var.clone(), syntaxBlock.clone()) {
+            //println!("  -> declared {} in syntax block {}", var, syntaxBlock);
             let dropFlag = var.getDropFlag();
             builder.addInstruction(
                 InstructionKind::DeclareVar(dropFlag.clone(), Mutability::Mutable),
@@ -69,6 +77,8 @@ impl<'a> Initializer<'a> {
                 var.location.clone(),
             );
             builder.step();
+        } else {
+            //println!("  -> {} already declared, skipping", var);
         }
     }
 
@@ -84,6 +94,124 @@ impl<'a> Initializer<'a> {
         builder.step();
     }
 
+    fn processBlock(&mut self, blockId: BlockId, initialSyntaxBlock: SyntaxBlockId) {
+        let mut currentSyntaxBlock = initialSyntaxBlock;
+        // println!(
+        //     "Processing block {:?}, initial currentSyntaxBlock: {}",
+        //     blockId, currentSyntaxBlock
+        // );
+
+        let mut builder = self.bodyBuilder.iterator(blockId);
+        loop {
+            match builder.getInstruction() {
+                Some(instruction) => {
+                    // Process the instruction
+                    match &instruction.kind {
+                        InstructionKind::BlockStart(blockId) => {
+                            // println!(
+                            //     "BlockStart: {}, updating currentSyntaxBlock from {} to {}",
+                            //     blockId, currentSyntaxBlock, blockId
+                            // );
+                            currentSyntaxBlock = blockId.clone();
+                        }
+                        InstructionKind::BlockEnd(blockId) => {
+                            // println!(
+                            //     "BlockEnd: {}, updating currentSyntaxBlock from {} to {}",
+                            //     blockId,
+                            //     currentSyntaxBlock,
+                            //     blockId.getParent()
+                            // );
+                            currentSyntaxBlock = blockId.getParent();
+                        }
+                        InstructionKind::Assign(dest, src) => {
+                            self.declareVar(dest, &currentSyntaxBlock, &mut builder);
+                            self.useVar(src, &mut builder);
+                            if !dest.hasTrivialDrop() {
+                                builder.addInstruction(
+                                    InstructionKind::FunctionCall(dest.getDropFlag(), getTrueName(), vec![]),
+                                    instruction.location.clone(),
+                                );
+                                builder.step();
+                            }
+                            self.dropListHandler.createDropList(
+                                self.placeHolderIndex,
+                                Kind::VariableAssign(
+                                    Path::new(dest.clone(), instruction.location.clone()).toSimplePath(),
+                                ),
+                            );
+                            builder.addInstruction(
+                                InstructionKind::DropListPlaceholder(self.placeHolderIndex),
+                                instruction.location.clone(),
+                            );
+                            builder.step();
+                            self.placeHolderIndex += 1;
+                        }
+                        InstructionKind::FieldAssign(dest, _, fields) => {
+                            self.declareVar(dest, &currentSyntaxBlock, &mut builder);
+                            let path = buildFieldPath(dest, fields);
+                            self.dropListHandler
+                                .createDropList(self.placeHolderIndex, Kind::FieldAssign(path.toSimplePath()));
+                            self.dropListHandler.addPath(self.placeHolderIndex, path);
+                            builder.addInstruction(
+                                InstructionKind::DropListPlaceholder(self.placeHolderIndex),
+                                instruction.location.clone(),
+                            );
+                            builder.step();
+                            self.placeHolderIndex += 1;
+                        }
+                        InstructionKind::DeclareVar(var, _) => {
+                            // println!(
+                            //     "Processing DeclareVar instruction for {} with currentSyntaxBlock: {}",
+                            //     var, currentSyntaxBlock
+                            // );
+                            self.declareVar(var, &currentSyntaxBlock, &mut builder);
+                        }
+                        InstructionKind::Jump(_, targetBlock) => {
+                            self.queue.push_back((*targetBlock, currentSyntaxBlock.clone()));
+                        }
+                        InstructionKind::EnumSwitch(_, cases) => {
+                            for case in cases {
+                                self.queue.push_back((case.branch, currentSyntaxBlock.clone()));
+                            }
+                        }
+                        InstructionKind::StringSwitch(_, cases) => {
+                            for case in cases {
+                                self.queue.push_back((case.branch, currentSyntaxBlock.clone()));
+                            }
+                        }
+                        InstructionKind::IntegerSwitch(_, cases) => {
+                            for case in cases {
+                                self.queue.push_back((case.branch, currentSyntaxBlock.clone()));
+                            }
+                        }
+                        InstructionKind::Return(_, _) => {
+                            // No targets to propagate to
+                        }
+                        kind => {
+                            let mut allUsedVars = kind.collectVariables();
+                            if let Some(result) = kind.getResultVar() {
+                                allUsedVars.retain(|var| var != &result);
+                                self.declareVar(&result, &currentSyntaxBlock, &mut builder);
+                                if !result.isTemp() && !result.isDropFlag() {
+                                    panic!(
+                                        "Implicit destination should be a temporary variable, but found: {}",
+                                        result
+                                    );
+                                }
+                                self.addDest(&result);
+                            }
+                            for var in allUsedVars {
+                                self.useVar(&var, &mut builder);
+                            }
+                        }
+                    }
+                    builder.step();
+                }
+                None => break,
+            }
+        }
+    }
+
     pub fn process(&mut self) -> Function {
         if self.function.body.is_none() {
             return self.function.clone();
@@ -91,111 +219,31 @@ impl<'a> Initializer<'a> {
         //println!("Drop initializer processing function: {}", self.function.name);
 
         let allBlocksIds = self.bodyBuilder.getAllBlockIds();
-        let mut placeHolderIndex = 0;
 
+        // Queue-based traversal starting from the first block
         let mut blockSyntaxBlocks = BTreeMap::new();
-        for blockId in &allBlocksIds {
-            blockSyntaxBlocks.insert(*blockId, SyntaxBlockId::new());
-        }
+        let mut queue = std::collections::VecDeque::new();
 
-        for blockId in &allBlocksIds {
-            let mut currentSyntaxBlock = blockSyntaxBlocks.get(blockId).expect("Block not found").clone();
+        // Start with the first block and empty syntax block
+        let firstBlock = allBlocksIds.iter().min().expect("No blocks found");
+        queue.push_back((*firstBlock, SyntaxBlockId::new()));
 
-            let mut builder = self.bodyBuilder.iterator(*blockId);
-            loop {
-                match builder.getInstruction() {
-                    Some(instruction) => {
-                        // Process the instruction
-                        match &instruction.kind {
-                            InstructionKind::BlockStart(blockId) => {
-                                currentSyntaxBlock = blockId.clone();
-                            }
-                            InstructionKind::BlockEnd(blockId) => {
-                                currentSyntaxBlock = blockId.getParent();
-                            }
-                            InstructionKind::Assign(dest, src) => {
-                                self.declareVar(dest, &currentSyntaxBlock, &mut builder);
-                                self.useVar(src, &mut builder);
-                                if !dest.hasTrivialDrop() {
-                                    builder.addInstruction(
-                                        InstructionKind::FunctionCall(dest.getDropFlag(), getTrueName(), vec![]),
-                                        instruction.location.clone(),
-                                    );
-                                    builder.step();
-                                }
-                                self.dropListHandler.createDropList(
-                                    placeHolderIndex,
-                                    Kind::VariableAssign(
-                                        Path::new(dest.clone(), instruction.location.clone()).toSimplePath(),
-                                    ),
-                                );
-                                builder.addInstruction(
-                                    InstructionKind::DropListPlaceholder(placeHolderIndex),
-                                    instruction.location.clone(),
-                                );
-                                builder.step();
-                                placeHolderIndex += 1;
-                            }
-                            InstructionKind::FieldAssign(dest, _, fields) => {
-                                self.declareVar(dest, &currentSyntaxBlock, &mut builder);
-                                let path = buildFieldPath(dest, fields);
-                                self.dropListHandler
-                                    .createDropList(placeHolderIndex, Kind::FieldAssign(path.toSimplePath()));
-                                self.dropListHandler.addPath(placeHolderIndex, path);
-                                builder.addInstruction(
-                                    InstructionKind::DropListPlaceholder(placeHolderIndex),
-                                    instruction.location.clone(),
-                                );
-                                builder.step();
-                                placeHolderIndex += 1;
-                            }
-                            InstructionKind::DeclareVar(var, _) => {
-                                self.declareVar(var, &currentSyntaxBlock, &mut builder);
-                            }
-                            InstructionKind::Jump(_, targetBlock) => {
-                                blockSyntaxBlocks.insert(*targetBlock, currentSyntaxBlock.clone());
-                            }
-                            InstructionKind::EnumSwitch(_, cases) => {
-                                for case in cases {
-                                    blockSyntaxBlocks.insert(case.branch, currentSyntaxBlock.clone());
-                                }
-                            }
-                            InstructionKind::StringSwitch(_, cases) => {
-                                for case in cases {
-                                    blockSyntaxBlocks.insert(case.branch, currentSyntaxBlock.clone());
-                                }
-                            }
-                            InstructionKind::IntegerSwitch(_, cases) => {
-                                for case in cases {
-                                    blockSyntaxBlocks.insert(case.branch, currentSyntaxBlock.clone());
-                                }
-                            }
-                            InstructionKind::Return(_, _) => {
-                                // No targets to propagate to
-                            }
-                            kind => {
-                                let mut allUsedVars = kind.collectVariables();
-                                if let Some(result) = kind.getResultVar() {
-                                    allUsedVars.retain(|var| var != &result);
-                                    self.declareVar(&result, &currentSyntaxBlock, &mut builder);
-                                    if !result.isTemp() && !result.isDropFlag() {
-                                        panic!(
-                                            "Implicit destination should be a temporary variable, but found: {}",
-                                            result
-                                        );
-                                    }
-                                    self.addDest(&result);
-                                }
-                                for var in allUsedVars {
-                                    self.useVar(&var, &mut builder);
-                                }
-                            }
-                        }
-                        builder.step();
-                    }
-                    None => break,
+        while let Some((blockId, initialSyntaxBlock)) = queue.pop_front() {
+            // Skip if we've already processed this block
+            if blockSyntaxBlocks.contains_key(&blockId) {
+                // Assert that the syntax block is consistent
+                let existingSyntaxBlock = blockSyntaxBlocks.get(&blockId).unwrap();
+                if *existingSyntaxBlock != initialSyntaxBlock {
+                    panic!(
+                        "Inconsistent syntax block for block {:?}: existing {} vs new {}",
+                        blockId, existingSyntaxBlock, initialSyntaxBlock
+                    );
                 }
+                continue;
             }
+
+            blockSyntaxBlocks.insert(blockId, initialSyntaxBlock.clone());
+            self.processBlock(blockId, initialSyntaxBlock);
         }
 
         for (var, count) in &self.destCounts {
