@@ -169,7 +169,9 @@ impl EventSeries {
         let mut collisions = Vec::new();
         for (index, event) in self.events.iter().enumerate() {
             if let Event::Usage(usage) = event {
-                for prev in self.prune_internal(index).events.iter().take(index) {
+                let series = self.prune_internal(index);
+                //println!("Validating event series: {:?}", series.events);
+                for prev in series.events.iter().take(index) {
                     if let Event::Usage(prevUsage) = prev {
                         if prevUsage.path.sharesPrefixWith(&usage.path) && prevUsage.kind == UsageKind::Move {
                             // println!(

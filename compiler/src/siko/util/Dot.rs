@@ -42,7 +42,11 @@ impl Graph {
     }
 
     pub fn printDot(&self) {
-        let mut f = std::fs::File::create(format!("dots/{}.dot", self.name,)).expect("failed to open dot file");
+        let name = format!("{}.dot", self.name);
+        let name = name.replace("/", ".");
+        let name = format!("dots/{}", name);
+        println!("Writing dot file: {}", name);
+        let mut f = std::fs::File::create(name).expect("failed to open dot file");
         write!(f, "digraph D {{\n").unwrap();
         write!(f, "node [fontname=Arial splines=ortho];\n").unwrap();
         for (node, style) in &self.nodes {

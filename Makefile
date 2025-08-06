@@ -1,8 +1,8 @@
-simple: compiler/target/release/siko
-	@./siko test.sk
-
 compiler/target/release/siko: $(shell find compiler/src/ -type f)
 	@cd compiler && cargo build --release
+
+simple: compiler/target/release/siko
+	@./siko test.sk
 
 fmt:
 	@cd compiler && cargo fmt

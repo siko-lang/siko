@@ -30,7 +30,10 @@ impl<'a> BlockProcessor<'a> {
     }
 
     pub fn process(&mut self, block: &Block, mut context: Context) -> (Context, Vec<BlockId>) {
-        //println!("Processing block: {}", block.id);
+        // println!("Processing block: {}", block.id);
+
+        // println!("starting context: {}", context);
+        // println!("--------------");
         let mut jumpTargets = Vec::new();
         let mut instructionRef = InstructionRef {
             blockId: block.id,
@@ -48,12 +51,12 @@ impl<'a> BlockProcessor<'a> {
                 InstructionKind::BlockStart(_) => {}
                 InstructionKind::BlockEnd(_) => {}
                 InstructionKind::FunctionCall(dest, _, args) => {
-                    let mut path = Path::new(dest.clone(), dest.location.clone());
-                    path = path.setInstructionRef(instructionRef);
-                    context.addAssign(path.clone());
                     for arg in args {
                         context.useVar(arg, instructionRef);
                     }
+                    let mut path = Path::new(dest.clone(), dest.location.clone());
+                    path = path.setInstructionRef(instructionRef);
+                    context.addAssign(path.clone());
                 }
                 InstructionKind::Assign(dest, src) => {
                     context.useVar(src, instructionRef);
@@ -89,6 +92,9 @@ impl<'a> BlockProcessor<'a> {
                             kind: UsageKind::Move,
                         });
                     }
+                    let mut path = Path::new(dest.clone(), dest.location.clone());
+                    path = path.setInstructionRef(instructionRef);
+                    context.addAssign(path.clone());
                 }
                 InstructionKind::FieldAssign(dest, receiver, fields) => {
                     context.useVar(receiver, instructionRef);
@@ -165,6 +171,7 @@ impl<'a> BlockProcessor<'a> {
                 }
             }
         }
+        //println!("Final context: {}", context);
         (context, jumpTargets)
     }
 }

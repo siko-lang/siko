@@ -86,7 +86,11 @@ impl<'a> DropChecker<'a> {
         if self.function.body.is_none() {
             return self.function.clone();
         }
-        //println!("Processing function: {}", self.function.name);
+        // println!("Processing function: {}", self.function.name);
+
+        // let mut graph = GraphBuilder::new(self.function);
+        // graph = graph.withPostfix("dropcheck");
+        // graph.build().printDot();
 
         let mut visited = BTreeSet::new();
         let mut queue = Vec::new();
