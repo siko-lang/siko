@@ -47,6 +47,8 @@ impl RemoveTuples for Type {
                 ctx.tuples.insert(self.clone());
                 Type::Named(getTuple(self), Vec::new())
             }
+            Type::Reference(ty, ownership) => Type::Reference(Box::new(ty.removeTuples(ctx)), ownership.clone()),
+            Type::Ptr(ty) => Type::Ptr(Box::new(ty.removeTuples(ctx))),
             ty => ty.clone(),
         }
     }

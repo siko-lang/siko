@@ -121,7 +121,7 @@ fn main() {
     let program = monomorphize(&ctx, program);
     // println!("after mono\n{}", program);
     let program = removeTuples(&program);
-    // println!("after remove tuples\n{}", program);
+    //println!("after remove tuples\n{}", program);
     let program = Simplifier::simplify(program);
     // println!("after simplifier\n{}", program);
     let mut mir_program = lowerProgram(&program);
