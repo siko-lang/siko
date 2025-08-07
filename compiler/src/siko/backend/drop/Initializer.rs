@@ -278,6 +278,11 @@ impl<'a> Initializer<'a> {
 
         let mut result = self.function.clone();
         result.body = Some(self.bodyBuilder.build());
+
+        // println!("Drop initializer completed for function: {}", self.function.name);
+
+        // let graph = GraphBuilder::new(&result).withPostfix("initializer_end").build();
+        // graph.printDot();
         result
     }
 }

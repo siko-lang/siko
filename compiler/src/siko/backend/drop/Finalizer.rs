@@ -9,6 +9,7 @@ use crate::siko::{
         Program::Program,
         Type::Type,
     },
+    qualifiedname::getFalseName,
 };
 
 pub struct Finalizer<'a> {
@@ -67,8 +68,14 @@ impl<'a> Finalizer<'a> {
                                         let mut dropRes =
                                             self.bodyBuilder.createTempValue(instruction.location.clone());
                                         dropRes.ty = Some(Type::getUnitType());
+                                        let dropFlag = var.getDropFlag();
                                         let drop = InstructionKind::Drop(dropRes, var.clone());
                                         builder.addInstruction(drop, var.location.clone());
+                                        builder.step();
+                                        builder.addInstruction(
+                                            InstructionKind::FunctionCall(dropFlag, getFalseName(), vec![]),
+                                            instruction.location.clone(),
+                                        );
                                         builder.step();
                                     }
                                 }
