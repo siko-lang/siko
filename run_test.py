@@ -28,7 +28,7 @@ def compileSikoC(currentDir, files, extras):
     bin_output_path = os.path.join(currentDir, "main.bin")
     args = ["./siko", "-o", output_path] + extras + files
     if in_workflow:
-        clang_args = []
+        clang_args = ""
     r = subprocess.run(args)
     if r.returncode != 0:
         return None
