@@ -125,7 +125,12 @@ impl<'a> BlockProcessor<'a> {
                 InstructionKind::StringLiteral(_, _) => {}
                 InstructionKind::IntegerLiteral(_, _) => {}
                 InstructionKind::CharLiteral(_, _) => {}
-                InstructionKind::Ref(_, _) => {}
+                InstructionKind::Ref(_, var) => {
+                    context.addUsage(Usage {
+                        path: Path::new(var.clone(), var.location.clone()).setInstructionRef(instructionRef),
+                        kind: UsageKind::Ref,
+                    });
+                }
                 InstructionKind::DropListPlaceholder(_) => {}
                 InstructionKind::Drop(_, _) => {
                     panic!("Drop instruction found in block processor");
