@@ -10,8 +10,8 @@ use crate::siko::{
     hir::{
         BlockBuilder::BlockBuilder,
         BodyBuilder::BodyBuilder,
-        Function::BlockId,
-        Function::Function,
+        Function::{BlockId, Function},
+        Graph::GraphBuilder,
         Instruction::{InstructionKind, Mutability, SyntaxBlockId},
         Program::Program,
         Variable::Variable,
@@ -30,6 +30,7 @@ pub struct Initializer<'a> {
     declarationStore: &'a mut DeclarationStore,
     queue: VecDeque<(BlockId, SyntaxBlockId)>,
     placeHolderIndex: u32,
+    declaredDropFlags: BTreeSet<Variable>,
 }
 
 impl<'a> Initializer<'a> {
@@ -50,6 +51,7 @@ impl<'a> Initializer<'a> {
             declarationStore,
             queue: VecDeque::new(),
             placeHolderIndex: 0,
+            declaredDropFlags: BTreeSet::new(),
         }
     }
 
@@ -67,11 +69,8 @@ impl<'a> Initializer<'a> {
         if self.declarationStore.declare(var.clone(), syntaxBlock.clone()) {
             //println!("  -> declared {} in syntax block {}", var, syntaxBlock);
             let dropFlag = var.getDropFlag();
-            builder.addInstruction(
-                InstructionKind::DeclareVar(dropFlag.clone(), Mutability::Mutable),
-                var.location.clone(),
-            );
-            builder.step();
+
+            self.declaredDropFlags.insert(dropFlag.clone());
             builder.addInstruction(
                 InstructionKind::FunctionCall(dropFlag, getFalseName(), vec![]),
                 var.location.clone(),
@@ -127,11 +126,17 @@ impl<'a> Initializer<'a> {
                             self.declareVar(dest, &currentSyntaxBlock, &mut builder);
                             self.useVar(src, &mut builder);
                             if !dest.hasTrivialDrop() {
+                                //println!("Dropflag set to true for variable {} at {}", dest, instruction.location);
                                 builder.addInstruction(
                                     InstructionKind::FunctionCall(dest.getDropFlag(), getTrueName(), vec![]),
                                     instruction.location.clone(),
                                 );
                                 builder.step();
+                            } else {
+                                // println!(
+                                //     "Skipping drop flag for variable {} at {} because it has a trivial drop",
+                                //     dest, instruction.location
+                                // );
                             }
                             self.dropListHandler.createDropList(
                                 self.placeHolderIndex,
@@ -167,26 +172,24 @@ impl<'a> Initializer<'a> {
                             self.declareVar(var, &currentSyntaxBlock, &mut builder);
                         }
                         InstructionKind::Jump(_, targetBlock) => {
-                            self.queue.push_back((*targetBlock, currentSyntaxBlock.clone()));
+                            self.addToQueue(*targetBlock, currentSyntaxBlock.clone());
                         }
                         InstructionKind::EnumSwitch(_, cases) => {
                             for case in cases {
-                                self.queue.push_back((case.branch, currentSyntaxBlock.clone()));
+                                self.addToQueue(case.branch, currentSyntaxBlock.clone());
                             }
                         }
                         InstructionKind::StringSwitch(_, cases) => {
                             for case in cases {
-                                self.queue.push_back((case.branch, currentSyntaxBlock.clone()));
+                                self.addToQueue(case.branch, currentSyntaxBlock.clone());
                             }
                         }
                         InstructionKind::IntegerSwitch(_, cases) => {
                             for case in cases {
-                                self.queue.push_back((case.branch, currentSyntaxBlock.clone()));
+                                self.addToQueue(case.branch, currentSyntaxBlock.clone());
                             }
                         }
-                        InstructionKind::Return(_, _) => {
-                            // No targets to propagate to
-                        }
+                        InstructionKind::Return(_, _) => {}
                         kind => {
                             let mut allUsedVars = kind.collectVariables();
                             if let Some(result) = kind.getResultVar() {
@@ -212,28 +215,30 @@ impl<'a> Initializer<'a> {
         }
     }
 
+    pub fn addToQueue(&mut self, blockId: BlockId, syntaxBlock: SyntaxBlockId) {
+        //println!("Adding to queue: blockId = {}, syntaxBlock = {}", blockId, syntaxBlock);
+        self.queue.push_back((blockId, syntaxBlock));
+    }
+
     pub fn process(&mut self) -> Function {
         if self.function.body.is_none() {
             return self.function.clone();
         }
         //println!("Drop initializer processing function: {}", self.function.name);
 
-        let allBlocksIds = self.bodyBuilder.getAllBlockIds();
+        // let graph = GraphBuilder::new(self.function).withPostfix("drop").build();
+        // graph.printDot();
 
-        // Queue-based traversal starting from the first block
         let mut blockSyntaxBlocks = BTreeMap::new();
-        let mut queue = std::collections::VecDeque::new();
 
-        // Start with the first block and empty syntax block
-        let firstBlock = allBlocksIds.iter().min().expect("No blocks found");
-        queue.push_back((*firstBlock, SyntaxBlockId::new()));
+        self.addToQueue(BlockId::first(), SyntaxBlockId::new());
 
-        while let Some((blockId, initialSyntaxBlock)) = queue.pop_front() {
-            // Skip if we've already processed this block
+        while let Some((blockId, initialSyntaxBlock)) = self.queue.pop_front() {
             if blockSyntaxBlocks.contains_key(&blockId) {
-                // Assert that the syntax block is consistent
                 let existingSyntaxBlock = blockSyntaxBlocks.get(&blockId).unwrap();
                 if *existingSyntaxBlock != initialSyntaxBlock {
+                    println!("Function: {}", self.function);
+
                     panic!(
                         "Inconsistent syntax block for block {:?}: existing {} vs new {}",
                         blockId, existingSyntaxBlock, initialSyntaxBlock
@@ -254,6 +259,22 @@ impl<'a> Initializer<'a> {
                 );
             }
         }
+
+        let mut builder = self.bodyBuilder.iterator(BlockId::first());
+        for dropFlag in &self.declaredDropFlags {
+            builder.addInstruction(
+                InstructionKind::DeclareVar(dropFlag.clone(), Mutability::Mutable),
+                dropFlag.location.clone(),
+            );
+            builder.step();
+            builder.addInstruction(
+                InstructionKind::FunctionCall(dropFlag.clone(), getFalseName(), vec![]),
+                dropFlag.location.clone(),
+            );
+            builder.step();
+        }
+
+        // self.declarationStore.dump();
 
         let mut result = self.function.clone();
         result.body = Some(self.bodyBuilder.build());

@@ -174,7 +174,7 @@ impl<'a> ExprResolver<'a> {
             .syntaxBlockIds
             .get(&toBlock)
             .expect("toBlock ID not found in syntaxBlockIds");
-        //println!("Adding jump from {} to {} / {}", current, parentId, toBlock);
+        // println!("Adding jump from {} to {} / {}", current, parentId, toBlock);
         let diff = current.differenceToParent(&parentId);
         for d in diff {
             builder.implicit().addBlockEnd(d, location.clone());
@@ -382,9 +382,9 @@ impl<'a> ExprResolver<'a> {
                     .current()
                     .implicit()
                     .addDeclare(resultValue.clone(), expr.location.clone());
-                let mut loopBodyBuilder = self.createBlock(env);
                 let mut loopExitBuilder = self.createBlock(env);
                 let mut loopEnv = Environment::child(env, self.createSyntaxBlockIdSegment());
+                let mut loopBodyBuilder = self.createBlock(&loopEnv);
                 self.bodyBuilder
                     .current()
                     .implicit()

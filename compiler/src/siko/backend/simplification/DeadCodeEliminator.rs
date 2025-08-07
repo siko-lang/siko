@@ -35,8 +35,8 @@ impl<'a> DeadCodeEliminator<'a> {
             return None;
         }
 
-        // println!("DeadCodeEliminator processing function: {}", self.function.name);
-        // println!("{}", self.function);
+        //println!("DeadCodeEliminator processing function: {}", self.function.name);
+        //println!("{}", self.function);
 
         self.processBlock(BlockId::first());
 
@@ -44,7 +44,7 @@ impl<'a> DeadCodeEliminator<'a> {
 
         if let Some(body) = &self.function.body {
             for (blockId, block) in body.blocks.iter() {
-                for (index, _) in block.instructions.iter().enumerate() {
+                for (index, i) in block.instructions.iter().enumerate() {
                     let id = InstructionId {
                         block: *blockId,
                         id: index,
@@ -68,14 +68,14 @@ impl<'a> DeadCodeEliminator<'a> {
             let mut builder = bodyBuilder.iterator(*blockId);
             let mut index = 0;
             loop {
-                if let Some(_) = builder.getInstruction() {
+                if let Some(i) = builder.getInstruction() {
                     //println!("DCE: Checking instruction: {}", i);
                     let id = InstructionId {
                         block: *blockId,
                         id: index,
                     };
                     if !self.visited.contains(&id) {
-                        // println!("DCE: Removing dead instruction: {}", i);
+                        //println!("DCE: Removing dead instruction: {}", i);
                         builder.removeInstruction();
                     } else {
                         builder.step();
@@ -86,7 +86,7 @@ impl<'a> DeadCodeEliminator<'a> {
                 }
             }
             if builder.getBlockSize() == 0 {
-                // println!("DCE: Removing empty block: {}", blockId);
+                //println!("DCE: Removing empty block: {}", blockId);
                 bodyBuilder.removeBlock(*blockId);
             }
         }

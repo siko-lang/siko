@@ -69,6 +69,8 @@ impl<'a> FunctionResolver<'a> {
         name: QualifiedName,
         typeResolver: &TypeResolver,
     ) -> IrFunction {
+        //println!("Resolving function: {}", name);
+
         let mut params = Vec::new();
         let mut env = Environment::new();
         for (_, param) in f.params.iter().enumerate() {

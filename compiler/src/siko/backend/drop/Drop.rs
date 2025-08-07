@@ -18,6 +18,7 @@ use crate::siko::{
     hir::{
         BodyBuilder::BodyBuilder,
         Function::{BlockId, Function},
+        Graph::GraphBuilder,
         Instruction::InstructionKind,
         Program::Program,
         Type::Type,
@@ -39,6 +40,10 @@ pub fn checkDrops(ctx: &ReportContext, program: Program) -> Program {
         let f = checker.process();
         let mut finalizer = Finalizer::new(&f, &program, &mut dropListHandler, &declarationStore);
         let f = finalizer.process();
+        if false {
+            let graph = GraphBuilder::new(&f).withPostfix("dropcheck").build();
+            graph.printDot();
+        }
         result.functions.insert(name.clone(), f);
     }
     result
