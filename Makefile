@@ -32,3 +32,7 @@ self.bin: self compiler/target/release/siko std
 
 test: compiler/target/release/siko
 	@./run_test.py
+
+testworkflow: compiler/target/release/siko
+	sudo apt install -y valgrind
+	@./run_test.py --workflow

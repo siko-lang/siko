@@ -7,35 +7,19 @@ import sys
 success = 0
 failure = 0
 skipped = 0
+in_workflow = False
+clang_args = "-fsanitize=undefined,address,alignment,null,bounds,integer,enum,implicit-conversion,float-cast-overflow,float-divide-by-zero"
 
-def compileSikoLLVM(currentDir, files, extras):
-    output_path = os.path.join(currentDir, "main")
-    llvm_ir_output_path = os.path.join(currentDir, "main.ll")
-    optimized_path = os.path.join(currentDir, "main_optimized.ll")
-    bitcode_path = os.path.join(currentDir, "main.bc")
-    object_path = os.path.join(currentDir, "main.o")
-    llvm_output_path = os.path.join(currentDir, "main.bin")
-    args = ["./siko", "-o", output_path] + extras + files
-    r = subprocess.run(args)
+def runUnderValgrind(program, args):
+    valgrind_args = ["valgrind", "--leak-check=full", "--track-origins=yes", "--error-exitcode=1"]
+    valgrind_args += args
+    r = subprocess.run(valgrind_args, capture_output=True)
     if r.returncode != 0:
-        return None
-    r = subprocess.run(["opt", "-passes=verify", "-S", llvm_ir_output_path, "-o", "/dev/null"])
-    if r.returncode != 0:
-       return None
-    r = subprocess.run(["opt", "-O2", "-S", llvm_ir_output_path, "-o", optimized_path])
-    if r.returncode != 0:
-       return None
-    r = subprocess.run(["llvm-as", optimized_path, "-o", bitcode_path])
-    if r.returncode != 0:
-        return None
-    r = subprocess.run(["llc", "-O0", "-relocation-model=pic", bitcode_path, "-filetype=obj", "-o", object_path])
-    if r.returncode != 0:
-        return None
-    r = subprocess.run(["clang", "-O0", object_path, "-o", llvm_output_path])
-    #r = subprocess.run(["rustc", output_path, "-o", rust_output_path])
-    if r.returncode != 0:
-        return None
-    return llvm_output_path
+        print("Valgrind error:")
+        print(r.stdout.decode())
+        print(r.stderr.decode())
+        return False
+    return True
 
 def compileSikoC(currentDir, files, extras):
     output_path = os.path.join(currentDir, "main")
@@ -46,10 +30,10 @@ def compileSikoC(currentDir, files, extras):
     r = subprocess.run(args)
     if r.returncode != 0:
         return None
-    r = subprocess.run(["clang", "-fsanitize=undefined,address", "-g", "-O1", "-c", c_output_path, "-o", object_path, "-I", "siko_runtime"])
+    r = subprocess.run(["clang", clang_args, "-g", "-O1", "-c", c_output_path, "-o", object_path, "-I", "siko_runtime"])
     if r.returncode != 0:
         return None
-    r = subprocess.run(["clang", "-fsanitize=undefined,address", object_path, "-o", bin_output_path])
+    r = subprocess.run(["clang", clang_args, object_path, "-o", bin_output_path])
     #r = subprocess.run(["rustc", output_path, "-o", rust_output_path])
     if r.returncode != 0:
         return None
@@ -86,6 +70,9 @@ def test_success(root, entry, extras):
     r = subprocess.run([binary], capture_output=True)
     if r.returncode != 0:
         return False
+    if in_workflow:
+        if not runUnderValgrind(binary, []):
+            return False
     output_txt_path = os.path.join(root, entry, "output.txt")
     return compare_output(output_txt_path, r.stdout + r.stderr)
 
@@ -107,6 +94,9 @@ def test_fail(root, entry, extras):
 
 filters = []
 for arg in sys.argv[1:]:
+    if arg == "--workflow":
+        in_workflow = True
+        continue
     filters.append(arg)
 
 successes_path = os.path.join(".", "test", "success")
