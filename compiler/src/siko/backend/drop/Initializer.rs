@@ -171,6 +171,9 @@ impl<'a> Initializer<'a> {
                             // );
                             self.declareVar(var, &currentSyntaxBlock, &mut builder);
                         }
+                        InstructionKind::Ref(dest, _) => {
+                            self.declareVar(dest, &currentSyntaxBlock, &mut builder);
+                        }
                         InstructionKind::Jump(_, targetBlock) => {
                             self.addToQueue(*targetBlock, currentSyntaxBlock.clone());
                         }
