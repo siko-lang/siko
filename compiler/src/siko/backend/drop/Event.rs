@@ -186,6 +186,29 @@ impl EventSeries {
                     }
                 }
             }
+            if let Event::Assign(path) = event {
+                if path.isRootOnly() {
+                    continue; // Skip root-only paths
+                }
+                //println!("Validating event series: {:?}", series.events);
+                for prev in self.events.iter().take(index) {
+                    if let Event::Usage(prevUsage) = prev {
+                        if path.same(&prevUsage.path) {
+                            continue;
+                        }
+                        if path.contains(&prevUsage.path) && prevUsage.kind == UsageKind::Move {
+                            // println!(
+                            //     "Collision detected: {} with previous usage: {}",
+                            //     path, prevUsage.path
+                            // );
+                            collisions.push(Collision {
+                                path: path.clone(),
+                                prev: prevUsage.path.clone(),
+                            });
+                        }
+                    }
+                }
+            }
         }
         collisions
     }

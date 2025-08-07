@@ -13,10 +13,10 @@ pub fn buildFieldPath(root: &Variable, fields: &Vec<FieldInfo>) -> Path {
     for field in fields {
         match &field.name {
             FieldId::Named(name) => {
-                path = path.add(PathSegment::Named(name.clone()), field.location.clone());
+                path = path.add(PathSegment::Named(name.clone()), path.location.clone());
             }
             FieldId::Indexed(index) => {
-                path = path.add(PathSegment::Indexed(*index), field.location.clone());
+                path = path.add(PathSegment::Indexed(*index), path.location.clone());
             }
         }
     }

@@ -22,18 +22,33 @@ pub fn reportErrors(ctx: &ReportContext, errors: Vec<Error>) {
                     )
                     .print();
                 } else {
-                    let mut entries = Vec::new();
-                    entries.push(Entry::new(None, path.location.clone()));
-                    entries.push(Entry::new(
-                        Some(format!("NOTE: previously moved here")),
-                        prevMove.location.clone(),
-                    ));
-                    Report::build(
-                        ctx,
-                        format!("Value {} already moved", ctx.yellow(&path.userPath())),
-                        entries,
-                    )
-                    .print();
+                    if path.isRootOnly() {
+                        let mut entries = Vec::new();
+                        entries.push(Entry::new(None, path.location.clone()));
+                        entries.push(Entry::new(
+                            Some(format!("NOTE: previously moved here")),
+                            prevMove.location.clone(),
+                        ));
+                        Report::build(
+                            ctx,
+                            format!("Value {} already moved", ctx.yellow(&path.userPath())),
+                            entries,
+                        )
+                        .print();
+                    } else {
+                        let mut entries = Vec::new();
+                        entries.push(Entry::new(None, path.location.clone()));
+                        entries.push(Entry::new(
+                            Some(format!("NOTE: previously moved here")),
+                            prevMove.location.clone(),
+                        ));
+                        Report::build(
+                            ctx,
+                            format!("Value {} already moved", ctx.yellow(&prevMove.userPath())),
+                            entries,
+                        )
+                        .print();
+                    }
                 }
             }
         }
