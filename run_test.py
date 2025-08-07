@@ -12,7 +12,7 @@ clang_args = "-fsanitize=undefined,address,alignment,null,bounds,integer,enum,im
 
 def runUnderValgrind(program, args):
     valgrind_args = ["valgrind", "--leak-check=full", "--track-origins=yes", "--error-exitcode=1"]
-    valgrind_args += args
+    valgrind_args += [program] + args
     r = subprocess.run(valgrind_args, capture_output=True)
     if r.returncode != 0:
         print("Valgrind error:")
