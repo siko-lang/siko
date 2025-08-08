@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::fmt::Display;
+use std::io::Write;
 
 use crate::siko::hir::VariableAllocator::VariableAllocator;
 use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
@@ -290,6 +291,18 @@ impl Function {
             Some(body) => body.dump(),
             None => println!("  <no body>"),
         }
+    }
+
+    pub fn dumpToFile(&self, name: &str) -> std::io::Result<()> {
+        let mut file = std::fs::File::create(name).map_err(|e| {
+            eprintln!("Error creating file {}: {}", name, e);
+            std::io::Error::new(std::io::ErrorKind::Other, "Failed to create function file")
+        })?;
+        writeln!(file, "{}", self).map_err(|e| {
+            eprintln!("Error writing to file {}: {}", name, e);
+            std::io::Error::new(std::io::ErrorKind::Other, "Failed to write function name")
+        })?;
+        Ok(())
     }
 }
 

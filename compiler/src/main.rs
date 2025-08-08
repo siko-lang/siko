@@ -118,6 +118,9 @@ fn main() {
     //println!("after field ref merge\n{}", program);
     let program = checkDrops(&ctx, program);
     //println!("after dropcheck\n{}", program);
+    program
+        .dumpToFile("hirdump/afterdropcheck")
+        .expect("Failed to dump HIR");
     let program = monomorphize(&ctx, program);
     // println!("after mono\n{}", program);
     let program = removeTuples(&program);

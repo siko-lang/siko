@@ -47,6 +47,18 @@ impl Program {
     pub fn getTrait(&self, qn: &QualifiedName) -> Option<Trait> {
         self.traits.get(qn).cloned()
     }
+
+    pub fn dumpToFile(&self, folderName: &str) -> std::io::Result<()> {
+        std::fs::create_dir_all(folderName)?;
+        for (_, fun) in &self.functions {
+            fun.dumpToFile(&format!(
+                "{}/{}",
+                folderName,
+                fun.name.to_string().replace(".", "_").replace("/", "_")
+            ))?;
+        }
+        Ok(())
+    }
 }
 
 impl Display for Program {
