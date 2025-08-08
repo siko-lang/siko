@@ -33,14 +33,14 @@ impl Context {
     pub fn addAssign(&mut self, path: Path) {
         //println!("Adding assign path: {}", path);
         self.usages
-            .entry(path.root.value.clone())
+            .entry(path.root.name.clone())
             .or_insert_with(EventSeries::new)
             .push(Event::Assign(path));
     }
 
     pub fn addUsage(&mut self, usage: Usage) {
         self.usages
-            .entry(usage.path.root.value.clone())
+            .entry(usage.path.root.name.clone())
             .or_insert_with(EventSeries::new)
             .push(Event::Usage(usage));
     }

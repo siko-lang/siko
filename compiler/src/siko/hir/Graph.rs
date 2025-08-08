@@ -207,5 +207,5 @@ fn shouldIncludeInstruction(instruction: &InstructionKind, filter: InstructionFi
 
 fn instructionReferencesDropflag(instruction: &InstructionKind) -> bool {
     let variables = instruction.collectVariables();
-    variables.iter().any(|var| var.value.isDropFlag())
+    variables.iter().any(|var| var.name.isDropFlag())
 }

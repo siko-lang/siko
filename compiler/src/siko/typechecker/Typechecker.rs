@@ -98,14 +98,14 @@ impl<'a> Typechecker<'a> {
     fn initializeVar(&mut self, var: &Variable) {
         match &var.ty {
             Some(ty) => {
-                self.types.insert(var.value.to_string(), ty.clone());
+                self.types.insert(var.name.to_string(), ty.clone());
             }
             None => {
                 if let Some(ty) = self.bodyBuilder.getTypeInBody(&var) {
-                    self.types.insert(var.value.to_string(), ty.clone());
+                    self.types.insert(var.name.to_string(), ty.clone());
                 } else {
                     let ty = self.allocator.next();
-                    self.types.insert(var.value.to_string(), ty.clone());
+                    self.types.insert(var.name.to_string(), ty.clone());
                 }
             }
         }
@@ -151,9 +151,9 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::Bind(var, _, mutable) => {
                             self.initializeVar(var);
                             if *mutable {
-                                self.mutables.insert(var.value.to_string(), Mutability::ExplicitMutable);
+                                self.mutables.insert(var.name.to_string(), Mutability::ExplicitMutable);
                             } else {
-                                self.mutables.insert(var.value.to_string(), Mutability::Immutable);
+                                self.mutables.insert(var.name.to_string(), Mutability::Immutable);
                             }
                         }
                         InstructionKind::Tuple(var, _) => {
@@ -169,7 +169,7 @@ impl<'a> Typechecker<'a> {
                             self.initializeVar(var);
                         }
                         InstructionKind::Return(var, _) => {
-                            self.types.insert(var.value.to_string(), Type::Never(false));
+                            self.types.insert(var.name.to_string(), Type::Never(false));
                         }
                         InstructionKind::Ref(var, _) => {
                             self.initializeVar(var);
@@ -182,13 +182,13 @@ impl<'a> Typechecker<'a> {
                         }
                         InstructionKind::Drop(_, _) => {}
                         InstructionKind::Jump(var, _) => {
-                            self.types.insert(var.value.to_string(), Type::Never(false));
+                            self.types.insert(var.name.to_string(), Type::Never(false));
                         }
                         InstructionKind::Assign(_, _) => {}
                         InstructionKind::FieldAssign(_, _, _) => {}
                         InstructionKind::DeclareVar(var, mutability) => {
                             self.initializeVar(var);
-                            self.mutables.insert(var.value.to_string(), mutability.clone());
+                            self.mutables.insert(var.name.to_string(), mutability.clone());
                         }
                         InstructionKind::Transform(var, _, _) => {
                             self.initializeVar(var);
@@ -205,7 +205,7 @@ impl<'a> Typechecker<'a> {
     }
 
     fn getType(&self, var: &Variable) -> Type {
-        match self.types.get(&var.value.to_string()) {
+        match self.types.get(&var.name.to_string()) {
             Some(ty) => ty.clone(),
             None => panic!("No type found for {}!", var),
         }
@@ -285,7 +285,7 @@ impl<'a> Typechecker<'a> {
                 }
             }
             let targetTy = target.apply(&self.substitution);
-            self.types.insert(dest.value.to_string(), targetTy);
+            self.types.insert(dest.name.to_string(), targetTy);
         }
     }
 
@@ -632,7 +632,7 @@ impl<'a> Typechecker<'a> {
                     Some(var) => var.clone(),
                     None => receiver.clone(),
                 };
-                let mutableCall = self.mutables.get(&origReceiver.value.to_string())
+                let mutableCall = self.mutables.get(&origReceiver.name.to_string())
                     == Some(&Mutability::ExplicitMutable)
                     && fnType.getResult().hasSelfType();
                 if mutableCall {
@@ -654,7 +654,7 @@ impl<'a> Typechecker<'a> {
                         0 => {
                             let mut implicitResult = self.bodyBuilder.createTempValue(instruction.location.clone());
                             implicitResult.ty = Some(baseType.clone());
-                            self.types.insert(implicitResult.value.to_string(), baseType.clone());
+                            self.types.insert(implicitResult.name.to_string(), baseType.clone());
                             let kind = InstructionKind::FunctionCall(implicitResult.clone(), name, extendedArgs);
                             builder.replaceInstruction(kind, instruction.location.clone());
                             builder.step();
@@ -671,12 +671,12 @@ impl<'a> Typechecker<'a> {
                         1 => {
                             let mut implicitResult = self.bodyBuilder.createTempValue(instruction.location.clone());
                             implicitResult.ty = Some(baseType.clone());
-                            self.types.insert(implicitResult.value.to_string(), baseType.clone());
+                            self.types.insert(implicitResult.name.to_string(), baseType.clone());
                             let fnCall = InstructionKind::FunctionCall(implicitResult.clone(), name, extendedArgs);
                             let mut implicitSelf = self.bodyBuilder.createTempValue(instruction.location.clone());
                             let receiverTy = self.getType(&origReceiver);
                             implicitSelf.ty = Some(receiverTy.clone());
-                            self.types.insert(implicitSelf.value.to_string(), receiverTy.clone());
+                            self.types.insert(implicitSelf.name.to_string(), receiverTy.clone());
                             let implicitSelfIndex = InstructionKind::FieldRef(
                                 implicitSelf.clone(),
                                 implicitResult.clone(),
@@ -690,7 +690,7 @@ impl<'a> Typechecker<'a> {
                             let mut resVar = self.bodyBuilder.createTempValue(instruction.location.clone());
                             let destTy = self.getType(dest);
                             resVar.ty = Some(destTy.clone());
-                            self.types.insert(resVar.value.to_string(), destTy.clone());
+                            self.types.insert(resVar.name.to_string(), destTy.clone());
                             let assign = InstructionKind::Assign(dest.clone(), resVar.clone());
                             let resIndex = InstructionKind::FieldRef(
                                 resVar.clone(),
@@ -711,12 +711,12 @@ impl<'a> Typechecker<'a> {
                         _ => {
                             let mut implicitResult = self.bodyBuilder.createTempValue(instruction.location.clone());
                             implicitResult.ty = Some(baseType.clone());
-                            self.types.insert(implicitResult.value.to_string(), baseType.clone());
+                            self.types.insert(implicitResult.name.to_string(), baseType.clone());
                             let fnCall = InstructionKind::FunctionCall(implicitResult.clone(), name, extendedArgs);
                             let mut implicitSelf = self.bodyBuilder.createTempValue(instruction.location.clone());
                             let receiverTy = self.getType(&origReceiver);
                             implicitSelf.ty = Some(receiverTy.clone());
-                            self.types.insert(implicitSelf.value.to_string(), receiverTy.clone());
+                            self.types.insert(implicitSelf.name.to_string(), receiverTy.clone());
                             let implicitSelfIndex = InstructionKind::FieldRef(
                                 implicitSelf.clone(),
                                 implicitResult.clone(),
@@ -734,7 +734,7 @@ impl<'a> Typechecker<'a> {
                                 let mut resVar = self.bodyBuilder.createTempValue(instruction.location.clone());
                                 resVar.ty = Some(argType.clone());
                                 args.push(resVar.clone());
-                                self.types.insert(resVar.value.to_string(), argType.clone());
+                                self.types.insert(resVar.name.to_string(), argType.clone());
                                 let tupleIndexN = InstructionKind::FieldRef(
                                     resVar.clone(),
                                     implicitResult.clone(),
@@ -808,13 +808,13 @@ impl<'a> Typechecker<'a> {
                 self.queue.push_back(*id);
             }
             InstructionKind::Assign(name, rhs) => {
-                if self.mutables.get(&name.value.to_string()) == Some(&Mutability::Immutable) {
+                if self.mutables.get(&name.name.to_string()) == Some(&Mutability::Immutable) {
                     TypecheckerError::ImmutableAssign(instruction.location.clone()).report(self.ctx);
                 }
                 self.unify(self.getType(name), self.getType(rhs), instruction.location.clone());
             }
             InstructionKind::FieldAssign(name, rhs, fields) => {
-                if self.mutables.get(&name.value.to_string()) == Some(&Mutability::Immutable) {
+                if self.mutables.get(&name.name.to_string()) == Some(&Mutability::Immutable) {
                     TypecheckerError::ImmutableAssign(instruction.location.clone()).report(self.ctx);
                 }
                 let receiverType = self.getType(name);
@@ -880,7 +880,7 @@ impl<'a> Typechecker<'a> {
                                 if !rootVarTy.isReference() {
                                     let refResultVar = self.bodyBuilder.createTempValue(instruction.location.clone());
                                     self.types.insert(
-                                        refResultVar.value.to_string(),
+                                        refResultVar.name.to_string(),
                                         Type::Reference(Box::new(rootVarTy.clone()), None),
                                     );
                                     let kind = InstructionKind::Ref(refResultVar.clone(), rootVar.clone());
@@ -893,7 +893,7 @@ impl<'a> Typechecker<'a> {
                                     getDerefGetName(),
                                     vec![derefInputVar.clone()],
                                 );
-                                self.types.insert(derefResultVar.value.to_string(), deref.clone());
+                                self.types.insert(derefResultVar.name.to_string(), deref.clone());
                                 builder.addInstruction(kind, instruction.location.clone());
                                 builder.step();
                                 rootVar = derefResultVar;
@@ -1151,7 +1151,7 @@ impl<'a> Typechecker<'a> {
                                             let mut newVar =
                                                 self.bodyBuilder.createTempValue(instruction.location.clone());
                                             newVar.ty = Some(*inner.clone());
-                                            self.types.insert(newVar.value.to_string(), *inner.clone());
+                                            self.types.insert(newVar.name.to_string(), *inner.clone());
                                             let kind = InstructionKind::FunctionCall(
                                                 newVar.clone(),
                                                 getImplicitConvertFnName(),

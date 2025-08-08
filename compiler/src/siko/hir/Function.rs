@@ -148,11 +148,11 @@ impl Body {
     }
 
     pub fn setType(&mut self, var: Variable, ty: Type) {
-        self.varTypes.insert(var.value, ty);
+        self.varTypes.insert(var.name, ty);
     }
 
     pub fn getType(&self, var: &Variable) -> Option<Type> {
-        self.varTypes.get(&var.value).cloned()
+        self.varTypes.get(&var.name).cloned()
     }
 
     pub fn dump(&self) {

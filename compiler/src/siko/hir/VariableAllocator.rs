@@ -25,7 +25,7 @@ impl VariableAllocator {
             id
         };
         let id = Variable {
-            value: VariableName::Tmp(id),
+            name: VariableName::Tmp(id),
             ty: None,
             location: location,
         };

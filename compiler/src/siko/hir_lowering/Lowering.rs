@@ -39,7 +39,7 @@ impl<'a> Builder<'a> {
 
     fn buildVariable(&self, id: &Variable) -> MirVariable {
         let ty = lowerType(&id.getType(), &self.program);
-        let name = convertName(&id.value);
+        let name = convertName(&id.name);
         MirVariable { name: name, ty: ty }
     }
 
@@ -178,7 +178,7 @@ impl<'a> Builder<'a> {
                     let mut receiverTy = root.getType();
                     for (index, field) in fields.iter().enumerate() {
                         let tmpVariable = MirVariable {
-                            name: format!("{}_{}_{}", root.value, index, field.name),
+                            name: format!("{}_{}_{}", root.name, index, field.name),
                             ty: lowerType(field.ty.as_ref().expect("no type"), &self.program),
                         };
                         let destVar = if index == fields.len() - 1 {

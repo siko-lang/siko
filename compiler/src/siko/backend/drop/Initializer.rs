@@ -50,12 +50,12 @@ impl<'a> Initializer<'a> {
         if var.hasTrivialDrop() || var.isArg() {
             return;
         }
-        if !explicit && self.explicitDeclarations.contains(&var.value) {
+        if !explicit && self.explicitDeclarations.contains(&var.name) {
             return;
         }
         self.declarationStore.declare(var.clone(), syntaxBlock.clone());
-        self.dropMetadataStore.addVariable(var.value.clone());
-        let kind = MetadataKind::DeclarationList(var.value.clone());
+        self.dropMetadataStore.addVariable(var.name.clone());
+        let kind = MetadataKind::DeclarationList(var.name.clone());
         builder.addInstruction(InstructionKind::DropMetadata(kind), var.location.clone());
         builder.step();
     }
@@ -202,7 +202,7 @@ impl<'a> Initializer<'a> {
             loop {
                 if let Some(instruction) = builder.getInstruction() {
                     if let InstructionKind::DeclareVar(v, _) = &instruction.kind {
-                        self.explicitDeclarations.insert(v.value.clone());
+                        self.explicitDeclarations.insert(v.name.clone());
                     }
                     builder.step();
                 } else {

@@ -82,20 +82,20 @@ impl<'a> CompileTimeEvaluator<'a> {
                 //println!("Processing instruction: {}", instruction);
                 match instruction.kind {
                     InstructionKind::DeclareVar(var, _) => {
-                        newEnv.set(var.value.clone(), Value::Unknown);
+                        newEnv.set(var.name.clone(), Value::Unknown);
                     }
                     InstructionKind::Assign(var, value) => {
-                        let val = newEnv.get(&value.value);
-                        newEnv.set(var.value.clone(), val.clone());
+                        let val = newEnv.get(&value.name);
+                        newEnv.set(var.name.clone(), val.clone());
                     }
                     InstructionKind::FunctionCall(dest, name, _) => {
                         if name == getTrueName().monomorphized(String::new()) {
-                            newEnv.set(dest.value.clone(), Value::Bool(true));
+                            newEnv.set(dest.name.clone(), Value::Bool(true));
                         } else if name == getFalseName().monomorphized(String::new()) {
-                            newEnv.set(dest.value.clone(), Value::Bool(false));
+                            newEnv.set(dest.name.clone(), Value::Bool(false));
                         }
                     }
-                    InstructionKind::EnumSwitch(var, cases) => match newEnv.get(&var.value) {
+                    InstructionKind::EnumSwitch(var, cases) => match newEnv.get(&var.name) {
                         Value::Bool(true) => {
                             //println!("Enum switch to true branch");
                             let targetBranch = cases[1].branch;
@@ -148,7 +148,7 @@ impl<'a> CompileTimeEvaluator<'a> {
                     InstructionKind::Return(_, _) => {}
                     k => {
                         if let Some(result) = k.getResultVar() {
-                            newEnv.set(result.value.clone(), Value::Unknown);
+                            newEnv.set(result.name.clone(), Value::Unknown);
                         }
                     }
                 }

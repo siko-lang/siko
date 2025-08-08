@@ -121,7 +121,7 @@ impl Builder {
     pub fn createLocalValue(&mut self, name: &str, location: Location) -> Variable {
         let valueId = self.getNextId();
         Variable {
-            value: VariableName::Local(name.to_string(), valueId),
+            name: VariableName::Local(name.to_string(), valueId),
             location: location,
             ty: None,
         }

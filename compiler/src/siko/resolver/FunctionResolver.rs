@@ -77,7 +77,7 @@ impl<'a> FunctionResolver<'a> {
             let irParam = match param {
                 Parameter::Named(id, ty, mutable) => {
                     let var = Variable {
-                        value: VariableName::Arg(id.toString()),
+                        name: VariableName::Arg(id.toString()),
                         location: id.location.clone(),
                         ty: Some(typeResolver.resolveType(ty)),
                     };
@@ -87,7 +87,7 @@ impl<'a> FunctionResolver<'a> {
                 Parameter::SelfParam => match &self.owner {
                     Some(owner) => {
                         let var = Variable {
-                            value: VariableName::Arg(format!("self")),
+                            name: VariableName::Arg(format!("self")),
                             location: f.name.location.clone(),
                             ty: Some(owner.clone()),
                         };
@@ -99,7 +99,7 @@ impl<'a> FunctionResolver<'a> {
                 Parameter::MutSelfParam => match &self.owner {
                     Some(owner) => {
                         let var = Variable {
-                            value: VariableName::Arg(format!("self")),
+                            name: VariableName::Arg(format!("self")),
                             location: f.name.location.clone(),
                             ty: Some(owner.clone()),
                         };
@@ -111,7 +111,7 @@ impl<'a> FunctionResolver<'a> {
                 Parameter::RefSelfParam => match &self.owner {
                     Some(owner) => {
                         let var = Variable {
-                            value: VariableName::Arg(format!("self")),
+                            name: VariableName::Arg(format!("self")),
                             location: f.name.location.clone(),
                             ty: Some(IrType::Reference(Box::new(owner.clone()), None)),
                         };

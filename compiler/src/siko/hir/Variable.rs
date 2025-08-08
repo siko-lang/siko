@@ -72,7 +72,7 @@ impl Debug for VariableName {
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Variable {
-    pub value: VariableName,
+    pub name: VariableName,
     pub location: Location,
     pub ty: Option<Type>,
 }
@@ -81,7 +81,7 @@ impl Variable {
     pub fn getType(&self) -> &Type {
         match &self.ty {
             Some(ty) => ty,
-            None => panic!("No type found for var {}", self.value),
+            None => panic!("No type found for var {}", self.name),
         }
     }
 
@@ -94,20 +94,20 @@ impl Variable {
     }
 
     pub fn isTemp(&self) -> bool {
-        self.value.isTemp()
+        self.name.isTemp()
     }
 
     pub fn isDropFlag(&self) -> bool {
-        self.value.isDropFlag()
+        self.name.isDropFlag()
     }
 
     pub fn isArg(&self) -> bool {
-        self.value.isArg()
+        self.name.isArg()
     }
 
     pub fn getDropFlag(&self) -> Variable {
         Variable {
-            value: self.value.getDropFlag(),
+            name: self.name.getDropFlag(),
             location: self.location.clone(),
             ty: Some(Type::getBoolType()),
         }
@@ -117,9 +117,9 @@ impl Variable {
 impl Display for Variable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(ty) = &self.ty {
-            write!(f, "${}: {}", self.value, ty)
+            write!(f, "${}: {}", self.name, ty)
         } else {
-            write!(f, "${}", self.value)
+            write!(f, "${}", self.name)
         }
     }
 }

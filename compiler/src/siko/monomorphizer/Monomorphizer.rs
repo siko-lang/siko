@@ -558,7 +558,7 @@ impl<'a> Monomorphizer<'a> {
         builder.addDeclare(dropVar.clone(), location.clone());
 
         let selfVar = Variable {
-            value: VariableName::Arg("self".to_string()),
+            name: VariableName::Arg("self".to_string()),
             ty: Some(ty.clone()),
             location: Location::empty(),
         };

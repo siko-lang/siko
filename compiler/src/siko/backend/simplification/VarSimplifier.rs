@@ -44,11 +44,11 @@ impl<'a> VarSimplifier<'a> {
     }
 
     fn addAssign(&mut self, var: Variable) {
-        *self.assignCounts.entry(var.value).or_insert(0) += 1;
+        *self.assignCounts.entry(var.name).or_insert(0) += 1;
     }
 
     fn addUse(&mut self, var: Variable) {
-        *self.useCounts.entry(var.value).or_insert(0) += 1;
+        *self.useCounts.entry(var.name).or_insert(0) += 1;
     }
 
     fn process(&mut self) -> Option<Function> {
@@ -80,7 +80,7 @@ impl<'a> VarSimplifier<'a> {
                     }
                     match instruction.kind {
                         InstructionKind::Assign(dest, src) => {
-                            self.assignments.insert(src.value, dest.value);
+                            self.assignments.insert(src.name, dest.name);
                         }
                         _ => {}
                     }
@@ -131,26 +131,26 @@ impl<'a> VarSimplifier<'a> {
             loop {
                 if let Some(instruction) = builder.getInstruction() {
                     if let InstructionKind::DeclareVar(var, _) = &instruction.kind {
-                        if self.simplifiedVars.contains_key(&var.value) {
+                        if self.simplifiedVars.contains_key(&var.name) {
                             //println!("Removing declaration of variable {}", var);
                             builder.removeInstruction();
                             continue;
                         }
-                        if removedDropFlags.contains(&var.value) {
+                        if removedDropFlags.contains(&var.name) {
                             //println!("Removing drop flag declaration for variable {}", var);
                             builder.removeInstruction();
                             continue;
                         }
                     }
                     if let InstructionKind::FunctionCall(dest, _, _) = &instruction.kind {
-                        if removedDropFlags.contains(&dest.value) {
+                        if removedDropFlags.contains(&dest.name) {
                             //println!("Removing drop flag call for variable {}", dest);
                             builder.removeInstruction();
                             continue;
                         }
                     }
                     if let InstructionKind::EnumSwitch(var, cases) = &instruction.kind {
-                        if removedDropFlags.contains(&var.value) {
+                        if removedDropFlags.contains(&var.name) {
                             //println!("Removing drop flag switch {}", var);
                             let c = cases[0].branch;
                             let jumpVar = bodyBuilder.createTempValue(instruction.location.clone());
@@ -161,15 +161,15 @@ impl<'a> VarSimplifier<'a> {
                     let allVars = instruction.kind.collectVariables();
                     let mut kind = instruction.kind.clone();
                     for var in &allVars {
-                        if let Some(dest) = self.replace(var.value.clone()) {
+                        if let Some(dest) = self.replace(var.name.clone()) {
                             //println!("Replacing {} with {}", var.value, dest);
                             let mut simplifiedVar = var.clone();
-                            simplifiedVar.value = dest;
+                            simplifiedVar.name = dest;
                             kind = kind.replaceVar(var.clone(), simplifiedVar.clone());
                         }
                     }
                     if let InstructionKind::Assign(dest, src) = &kind {
-                        if dest.value == src.value {
+                        if dest.name == src.name {
                             //println!("Removing self-assignment of variable {}", dest);
                             builder.removeInstruction();
                             continue;
