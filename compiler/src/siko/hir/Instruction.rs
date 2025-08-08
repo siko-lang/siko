@@ -1,9 +1,7 @@
 use std::fmt::Debug;
 use std::fmt::Display;
-use std::fs::Metadata;
 
 use crate::siko::backend::drop::DropMetadataStore::MetadataKind;
-use crate::siko::hir::Variable::VariableName;
 use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
 
 use super::Function::BlockId;

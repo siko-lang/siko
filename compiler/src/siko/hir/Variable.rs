@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 use std::fmt::Display;
 
+use crate::siko::backend::drop::Path::Path;
 use crate::siko::location::Location::Location;
 
 use super::Type::Type;
@@ -111,6 +112,10 @@ impl Variable {
             location: self.location.clone(),
             ty: Some(Type::getBoolType()),
         }
+    }
+
+    pub fn toPath(&self) -> Path {
+        Path::new(self.clone(), self.location.clone())
     }
 }
 

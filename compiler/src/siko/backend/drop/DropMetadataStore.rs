@@ -7,7 +7,7 @@ use std::{
 
 use crate::siko::{
     backend::drop::Path::{Path, SimplePath},
-    hir::Variable::{Variable, VariableName},
+    hir::Variable::VariableName,
 };
 
 pub enum Kind {

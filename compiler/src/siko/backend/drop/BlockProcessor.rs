@@ -45,102 +45,8 @@ impl<'a> BlockProcessor<'a> {
             //     instruction.kind, instruction.location, instructionRef
             // );
             match &instruction.kind {
-                InstructionKind::DeclareVar(var, _) => {
-                    context.addLive(Path::new(var.clone(), var.location.clone()));
-                }
-                InstructionKind::BlockStart(_) => {}
-                InstructionKind::BlockEnd(_) => {}
-                InstructionKind::FunctionCall(dest, _, args) => {
-                    for arg in args {
-                        context.useVar(arg, instructionRef);
-                    }
-                    let mut path = Path::new(dest.clone(), dest.location.clone());
-                    path = path.setInstructionRef(instructionRef);
-                    context.addAssign(path.clone());
-                }
-                InstructionKind::Assign(dest, src) => {
-                    context.useVar(src, instructionRef);
-                    let mut path = Path::new(dest.clone(), dest.location.clone());
-                    path = path.setInstructionRef(instructionRef);
-                    context.addAssign(path.clone());
-                }
-                InstructionKind::Return(_, arg) => {
-                    context.useVar(arg, instructionRef);
-                }
-                InstructionKind::FieldRef(dest, receiver, names) => {
-                    let destTy = dest.getType();
-                    let mut path = Path::new(receiver.clone(), dest.location.clone());
-                    for field in names {
-                        match &field.name {
-                            FieldId::Named(name) => {
-                                path = path.add(PathSegment::Named(name.clone()), dest.location.clone());
-                            }
-                            FieldId::Indexed(index) => {
-                                path = path.add(PathSegment::Indexed(*index), dest.location.clone());
-                            }
-                        }
-                    }
-                    path = path.setInstructionRef(instructionRef);
-                    if destTy.isReference() || destTy.isPtr() {
-                        context.addUsage(Usage {
-                            path,
-                            kind: UsageKind::Ref,
-                        });
-                    } else {
-                        context.addUsage(Usage {
-                            path,
-                            kind: UsageKind::Move,
-                        });
-                    }
-                    let mut path = Path::new(dest.clone(), dest.location.clone());
-                    path = path.setInstructionRef(instructionRef);
-                    context.addAssign(path.clone());
-                }
-                InstructionKind::FieldAssign(dest, receiver, fields) => {
-                    context.useVar(receiver, instructionRef);
-                    let mut path = buildFieldPath(dest, fields);
-                    path = path.setInstructionRef(instructionRef);
-                    context.addAssign(path.clone());
-                }
-                InstructionKind::Tuple(dest, args) => {
-                    let mut path = Path::new(dest.clone(), dest.location.clone());
-                    path = path.setInstructionRef(instructionRef);
-                    context.addAssign(path.clone());
-                    for arg in args {
-                        context.useVar(arg, instructionRef);
-                    }
-                }
-                InstructionKind::Converter(_, _) => {
-                    panic!("Converter instruction found in block processor");
-                }
-                InstructionKind::MethodCall(_, _, _, _) => {
-                    panic!("Method call instruction found in block processor");
-                }
-                InstructionKind::DynamicFunctionCall(_, _, _) => {
-                    panic!("Dynamic function call found in block processor");
-                }
-                InstructionKind::Bind(_, _, _) => {
-                    panic!("Bind instruction found in block processor");
-                }
-                InstructionKind::StringLiteral(_, _) => {}
-                InstructionKind::IntegerLiteral(_, _) => {}
-                InstructionKind::CharLiteral(_, _) => {}
-                InstructionKind::Ref(_, var) => {
-                    context.addUsage(Usage {
-                        path: Path::new(var.clone(), var.location.clone()).setInstructionRef(instructionRef),
-                        kind: UsageKind::Ref,
-                    });
-                }
-                InstructionKind::DropListPlaceholder(_) => {}
-                InstructionKind::DropMetadata(_) => {}
-                InstructionKind::Drop(_, _) => {
-                    panic!("Drop instruction found in block processor");
-                }
                 InstructionKind::Jump(_, blockId) => {
                     jumpTargets.push(blockId.clone());
-                }
-                InstructionKind::Transform(_, src, _) => {
-                    context.useVar(src, instructionRef);
                 }
                 InstructionKind::EnumSwitch(_, cases) => {
                     // enum switch does not 'use' the variable, transform does
@@ -158,6 +64,17 @@ impl<'a> BlockProcessor<'a> {
                     context.useVar(var, instructionRef);
                     for case in cases {
                         jumpTargets.push(case.branch.clone());
+                    }
+                }
+                kind => {
+                    let usageinfo = getUsageInfo(kind.clone());
+                    for mut usage in usageinfo.usages {
+                        usage.path.instructionRef = instructionRef.clone();
+                        context.addUsage(usage);
+                    }
+                    if let Some(mut assignPath) = usageinfo.assign {
+                        assignPath.instructionRef = instructionRef.clone();
+                        context.addAssign(assignPath.clone());
                     }
                 }
             }
@@ -188,5 +105,116 @@ impl<'a> BlockProcessor<'a> {
 
         //println!("Final context: {}", context);
         (context, jumpTargets)
+    }
+}
+
+struct UsageInfo {
+    usages: Vec<Usage>,
+    assign: Option<Path>,
+}
+
+impl UsageInfo {
+    pub fn empty() -> Self {
+        UsageInfo {
+            usages: Vec::new(),
+            assign: None,
+        }
+    }
+
+    pub fn with(usages: Vec<Usage>, assign: Option<Path>) -> Self {
+        UsageInfo { usages, assign }
+    }
+}
+
+fn varToUsage(var: &Variable) -> Usage {
+    let ty = var.getType();
+    //println!("Using variable: {} {}", var.value.visibleName(), ty);
+    if ty.isReference() || ty.isPtr() {
+        Usage {
+            path: var.toPath(),
+            kind: UsageKind::Ref,
+        }
+    } else {
+        Usage {
+            path: var.toPath(),
+            kind: UsageKind::Move,
+        }
+    }
+}
+
+fn getUsageInfo(kind: InstructionKind) -> UsageInfo {
+    match kind {
+        InstructionKind::DeclareVar(_, _) => UsageInfo::empty(),
+        InstructionKind::BlockStart(_) => UsageInfo::empty(),
+        InstructionKind::BlockEnd(_) => UsageInfo::empty(),
+        InstructionKind::FunctionCall(dest, _, args) => {
+            UsageInfo::with(args.iter().map(|arg| varToUsage(arg)).collect(), Some(dest.toPath()))
+        }
+        InstructionKind::Assign(dest, src) => UsageInfo::with(vec![varToUsage(&src)], Some(dest.toPath())),
+        InstructionKind::Return(_, arg) => UsageInfo::with(vec![varToUsage(&arg)], None),
+        InstructionKind::FieldRef(dest, receiver, names) => {
+            let destTy = dest.getType();
+            let mut path = Path::new(receiver.clone(), dest.location.clone());
+            for field in names {
+                match &field.name {
+                    FieldId::Named(name) => {
+                        path = path.add(PathSegment::Named(name.clone()), dest.location.clone());
+                    }
+                    FieldId::Indexed(index) => {
+                        path = path.add(PathSegment::Indexed(*index), dest.location.clone());
+                    }
+                }
+            }
+            let kind = if destTy.isReference() || destTy.isPtr() {
+                UsageKind::Ref
+            } else {
+                UsageKind::Move
+            };
+            UsageInfo::with(vec![Usage { path, kind }], Some(dest.toPath()))
+        }
+        InstructionKind::FieldAssign(dest, receiver, fields) => UsageInfo::with(
+            vec![Usage {
+                path: receiver.toPath(),
+                kind: UsageKind::Move,
+            }],
+            Some(buildFieldPath(&dest, &fields)),
+        ),
+        InstructionKind::Tuple(dest, args) => {
+            UsageInfo::with(args.iter().map(|arg| varToUsage(arg)).collect(), Some(dest.toPath()))
+        }
+        InstructionKind::Converter(_, _) => {
+            panic!("Converter instruction found in block processor");
+        }
+        InstructionKind::MethodCall(_, _, _, _) => {
+            panic!("Method call instruction found in block processor");
+        }
+        InstructionKind::DynamicFunctionCall(_, _, _) => {
+            panic!("Dynamic function call found in block processor");
+        }
+        InstructionKind::Bind(_, _, _) => {
+            panic!("Bind instruction found in block processor");
+        }
+        InstructionKind::StringLiteral(_, _) => UsageInfo::empty(),
+        InstructionKind::IntegerLiteral(_, _) => UsageInfo::empty(),
+        InstructionKind::CharLiteral(_, _) => UsageInfo::empty(),
+        InstructionKind::Ref(_, var) => UsageInfo::with(
+            vec![Usage {
+                path: var.toPath(),
+                kind: UsageKind::Ref,
+            }],
+            None,
+        ),
+        InstructionKind::DropListPlaceholder(_) => UsageInfo::empty(),
+        InstructionKind::DropMetadata(_) => UsageInfo::empty(),
+        InstructionKind::Drop(_, _) => {
+            panic!("Drop instruction found in block processor");
+        }
+        InstructionKind::Jump(_, _) => {
+            UsageInfo::empty() // Jump instructions do not have usages
+        }
+        InstructionKind::Transform(dest, src, _) => UsageInfo::with(vec![varToUsage(&src)], Some(dest.toPath())),
+        InstructionKind::EnumSwitch(_, _) => UsageInfo::empty(),
+        InstructionKind::IntegerSwitch(_, _) => UsageInfo::empty(),
+        InstructionKind::StringSwitch(_, _) => UsageInfo::empty(),
     }
 }

@@ -1,7 +1,4 @@
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fmt::Display,
-};
+use std::{collections::BTreeMap, fmt::Display};
 
 use crate::siko::{
     backend::drop::{
@@ -14,20 +11,14 @@ use crate::siko::{
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Context {
-    pub liveData: BTreeSet<Path>,
     pub usages: BTreeMap<VariableName, EventSeries>,
 }
 
 impl Context {
     pub fn new() -> Context {
         Context {
-            liveData: BTreeSet::new(),
             usages: BTreeMap::new(),
         }
-    }
-
-    pub fn addLive(&mut self, data: Path) {
-        self.liveData.insert(data);
     }
 
     pub fn addAssign(&mut self, path: Path) {
@@ -74,9 +65,6 @@ impl Context {
 
     pub fn compress(&self) -> Context {
         let mut compressed = Context::new();
-        for path in &self.liveData {
-            compressed.addLive(path.clone());
-        }
         for (var_name, series) in &self.usages {
             compressed.usages.insert(var_name.clone(), series.compress());
         }
@@ -87,15 +75,6 @@ impl Context {
 impl Display for Context {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Context: [")?;
-        for (i, path) in self.liveData.iter().enumerate() {
-            if i > 0 {
-                write!(f, ", ")?;
-            }
-            write!(f, "{}", path)?;
-        }
-        if !self.liveData.is_empty() {
-            write!(f, ", ")?;
-        }
         write!(f, "Usages: [")?;
         for (var_name, series) in &self.usages {
             write!(f, "\nVariable: {} {}", var_name, series)?;
