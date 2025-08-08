@@ -4,6 +4,7 @@ use crate::siko::{
     backend::drop::{
         DeclarationStore::DeclarationStore,
         DropMetadataStore::{DropMetadataStore, MetadataKind},
+        Usage::getUsageInfo,
     },
     hir::{
         BodyBuilder::BodyBuilder,
@@ -13,7 +14,7 @@ use crate::siko::{
         Type::Type,
         Variable::Variable,
     },
-    qualifiedname::getFalseName,
+    qualifiedname::{getFalseName, getTrueName},
 };
 
 pub struct Finalizer<'a> {
@@ -123,7 +124,48 @@ impl<'a> Finalizer<'a> {
                                 }
                                 builder.removeInstruction();
                             }
-                            _ => {
+                            kind => {
+                                let usageInfo = getUsageInfo(kind.clone());
+                                for usage in usageInfo.usages {
+                                    if !usage.isMove() {
+                                        continue;
+                                    }
+                                    let declarationList =
+                                        self.dropMetadataStore.getDeclarationList(&usage.path.root.name);
+                                    if let Some(declarationList) = declarationList {
+                                        for path in declarationList.paths() {
+                                            // we are moving usage.path, need to disable dropflag for it
+                                            // and all other paths that share prefix with it
+                                            if path.sharesPrefixWith(&usage.path.toSimplePath()) {
+                                                // println!("Disabling dropflag for path: {}", path);
+                                                let dropFlag = path.getDropFlag();
+                                                builder.addInstruction(
+                                                    InstructionKind::FunctionCall(dropFlag, getFalseName(), vec![]),
+                                                    usage.path.location.clone(),
+                                                );
+                                                builder.step();
+                                            }
+                                        }
+                                    }
+                                }
+                                if let Some(assignPath) = usageInfo.assign {
+                                    // we are assigning to assignPath, need to enable dropflag for it and all other subpaths
+                                    let root = assignPath.root.clone();
+                                    let declarationList = self.dropMetadataStore.getDeclarationList(&root.name);
+                                    if let Some(declarationList) = declarationList {
+                                        for path in declarationList.paths() {
+                                            if path.contains(&assignPath.toSimplePath()) {
+                                                // println!("Enabling dropflag for path: {}", path);
+                                                let dropFlag = path.getDropFlag();
+                                                builder.addInstruction(
+                                                    InstructionKind::FunctionCall(dropFlag, getTrueName(), vec![]),
+                                                    assignPath.location.clone(),
+                                                );
+                                                builder.step();
+                                            }
+                                        }
+                                    }
+                                }
                                 builder.step();
                             }
                         }

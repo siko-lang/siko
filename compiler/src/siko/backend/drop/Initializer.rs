@@ -3,9 +3,9 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use crate::siko::{
     backend::drop::{
         DeclarationStore::DeclarationStore,
-        DropMetadataStore::{DropMetadataStore, Kind, MetadataKind},
-        Path::Path,
-        Util::{buildFieldPath, HasTrivialDrop},
+        DropMetadataStore::{DropMetadataStore, MetadataKind},
+        Usage::getUsageInfo,
+        Util::HasTrivialDrop,
     },
     hir::{
         BlockBuilder::BlockBuilder,
@@ -15,7 +15,6 @@ use crate::siko::{
         Program::Program,
         Variable::{Variable, VariableName},
     },
-    qualifiedname::{getFalseName, getTrueName},
 };
 
 pub struct Initializer<'a> {
@@ -60,17 +59,17 @@ impl<'a> Initializer<'a> {
         builder.step();
     }
 
-    fn useVar(&mut self, var: &Variable, builder: &mut BlockBuilder) {
-        if var.hasTrivialDrop() || var.isArg() {
-            return;
-        }
-        let dropFlag = var.getDropFlag();
-        builder.addInstruction(
-            InstructionKind::FunctionCall(dropFlag, getFalseName(), vec![]),
-            var.location.clone(),
-        );
-        builder.step();
-    }
+    // fn useVar(&mut self, var: &Variable, builder: &mut BlockBuilder) {
+    //     if var.hasTrivialDrop() || var.isArg() {
+    //         return;
+    //     }
+    //     let dropFlag = var.getDropFlag();
+    //     builder.addInstruction(
+    //         InstructionKind::FunctionCall(dropFlag, getFalseName(), vec![]),
+    //         var.location.clone(),
+    //     );
+    //     builder.step();
+    // }
 
     fn processBlock(&mut self, blockId: BlockId, initialSyntaxBlock: SyntaxBlockId) {
         let mut currentSyntaxBlock = initialSyntaxBlock;
@@ -101,48 +100,6 @@ impl<'a> Initializer<'a> {
                             // );
                             currentSyntaxBlock = blockId.getParent();
                         }
-                        InstructionKind::Assign(dest, src) => {
-                            self.declareVar(dest, &currentSyntaxBlock, &mut builder, false);
-                            self.useVar(src, &mut builder);
-                            if !dest.hasTrivialDrop() {
-                                //println!("Dropflag set to true for variable {} at {}", dest, instruction.location);
-                                builder.addInstruction(
-                                    InstructionKind::FunctionCall(dest.getDropFlag(), getTrueName(), vec![]),
-                                    instruction.location.clone(),
-                                );
-                                builder.step();
-                            }
-                            let index = self.dropMetadataStore.createDropList(Kind::VariableAssign(
-                                Path::new(dest.clone(), instruction.location.clone()).toSimplePath(),
-                            ));
-                            builder.addInstruction(
-                                InstructionKind::DropListPlaceholder(index),
-                                instruction.location.clone(),
-                            );
-                            builder.step();
-                        }
-                        InstructionKind::FieldAssign(dest, _, fields) => {
-                            self.declareVar(dest, &currentSyntaxBlock, &mut builder, false);
-                            let path = buildFieldPath(dest, fields);
-                            let index = self
-                                .dropMetadataStore
-                                .createDropList(Kind::FieldAssign(path.toSimplePath()));
-                            builder.addInstruction(
-                                InstructionKind::DropListPlaceholder(index),
-                                instruction.location.clone(),
-                            );
-                            builder.step();
-                        }
-                        InstructionKind::DeclareVar(var, _) => {
-                            // println!(
-                            //     "Processing DeclareVar instruction for {} with currentSyntaxBlock: {}",
-                            //     var, currentSyntaxBlock
-                            // );
-                            self.declareVar(var, &currentSyntaxBlock, &mut builder, true);
-                        }
-                        InstructionKind::Ref(dest, _) => {
-                            self.declareVar(dest, &currentSyntaxBlock, &mut builder, false);
-                        }
                         InstructionKind::Jump(_, targetBlock) => {
                             self.addToQueue(*targetBlock, currentSyntaxBlock.clone());
                         }
@@ -162,27 +119,81 @@ impl<'a> Initializer<'a> {
                             }
                         }
                         InstructionKind::Return(_, _) => {}
-                        kind => {
-                            let mut allUsedVars = kind.collectVariables();
-                            if let Some(dest) = kind.getResultVar() {
-                                allUsedVars.retain(|var| var != &dest);
-                                self.declareVar(&dest, &currentSyntaxBlock, &mut builder, false);
-                                if !dest.isTemp() && !dest.isDropFlag() {
-                                    panic!(
-                                        "Implicit destination should be a temporary variable, but found: {}",
-                                        dest
-                                    );
-                                }
-                                builder.step();
-                                builder.addInstruction(
-                                    InstructionKind::FunctionCall(dest.getDropFlag(), getTrueName(), vec![]),
-                                    instruction.location.clone(),
-                                );
-                            }
-                            for var in allUsedVars {
-                                self.useVar(&var, &mut builder);
-                            }
+                        InstructionKind::DeclareVar(var, _) => {
+                            self.declareVar(var, &currentSyntaxBlock, &mut builder, true);
                         }
+                        kind => {
+                            let usageInfo = getUsageInfo(kind.clone());
+                            if let Some(assignPath) = usageInfo.assign {
+                                if assignPath.isRootOnly() {
+                                    // println!("Declaring variable for assignPath: {}", assignPath);
+                                    self.declareVar(&assignPath.root, &currentSyntaxBlock, &mut builder, false);
+                                }
+                            }
+                        } // InstructionKind::Assign(dest, src) => {
+                          //     self.declareVar(dest, &currentSyntaxBlock, &mut builder, false);
+                          //     self.useVar(src, &mut builder);
+                          //     if !dest.hasTrivialDrop() {
+                          //         //println!("Dropflag set to true for variable {} at {}", dest, instruction.location);
+                          //         builder.addInstruction(
+                          //             InstructionKind::FunctionCall(dest.getDropFlag(), getTrueName(), vec![]),
+                          //             instruction.location.clone(),
+                          //         );
+                          //         builder.step();
+                          //     }
+                          //     let index = self.dropMetadataStore.createDropList(Kind::VariableAssign(
+                          //         Path::new(dest.clone(), instruction.location.clone()).toSimplePath(),
+                          //     ));
+                          //     builder.addInstruction(
+                          //         InstructionKind::DropListPlaceholder(index),
+                          //         instruction.location.clone(),
+                          //     );
+                          //     builder.step();
+                          // }
+                          // InstructionKind::FieldAssign(dest, _, fields) => {
+                          //     self.declareVar(dest, &currentSyntaxBlock, &mut builder, false);
+                          //     let path = buildFieldPath(dest, fields);
+                          //     let index = self
+                          //         .dropMetadataStore
+                          //         .createDropList(Kind::FieldAssign(path.toSimplePath()));
+                          //     builder.addInstruction(
+                          //         InstructionKind::DropListPlaceholder(index),
+                          //         instruction.location.clone(),
+                          //     );
+                          //     builder.step();
+                          // }
+                          // InstructionKind::DeclareVar(var, _) => {
+                          //     // println!(
+                          //     //     "Processing DeclareVar instruction for {} with currentSyntaxBlock: {}",
+                          //     //     var, currentSyntaxBlock
+                          //     // );
+                          //     self.declareVar(var, &currentSyntaxBlock, &mut builder, true);
+                          // }
+                          // InstructionKind::Ref(dest, _) => {
+                          //     self.declareVar(dest, &currentSyntaxBlock, &mut builder, false);
+                          // }
+
+                          // kind => {
+                          //     let mut allUsedVars = kind.collectVariables();
+                          //     if let Some(dest) = kind.getResultVar() {
+                          //         allUsedVars.retain(|var| var != &dest);
+                          //         self.declareVar(&dest, &currentSyntaxBlock, &mut builder, false);
+                          //         if !dest.isTemp() && !dest.isDropFlag() {
+                          //             panic!(
+                          //                 "Implicit destination should be a temporary variable, but found: {}",
+                          //                 dest
+                          //             );
+                          //         }
+                          //         builder.step();
+                          //         builder.addInstruction(
+                          //             InstructionKind::FunctionCall(dest.getDropFlag(), getTrueName(), vec![]),
+                          //             instruction.location.clone(),
+                          //         );
+                          //     }
+                          //     for var in allUsedVars {
+                          //         self.useVar(&var, &mut builder);
+                          //     }
+                          // }
                     }
                     builder.step();
                 }

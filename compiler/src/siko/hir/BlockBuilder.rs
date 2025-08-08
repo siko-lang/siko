@@ -1,4 +1,6 @@
 use core::panic;
+use std::fmt::Debug;
+use std::fmt::Display;
 
 use crate::siko::{
     hir::Instruction::{Mutability, SyntaxBlockId},
@@ -13,6 +15,24 @@ use super::{
     Type::Type,
     Variable::Variable,
 };
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct InstructionRef {
+    pub blockId: BlockId,
+    pub instructionId: u32,
+}
+
+impl Display for InstructionRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.blockId, self.instructionId)
+    }
+}
+
+impl Debug for InstructionRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}
 
 #[derive(Clone, Copy)]
 pub enum Mode {
@@ -59,6 +79,16 @@ impl BlockBuilder {
         match self.mode {
             Mode::Append => panic!("Cannot get instruction in append mode"),
             Mode::Iterator(index) => self.bodyBuilder.getInstruction(self.blockId, index),
+        }
+    }
+
+    pub fn getInstructionRef(&self) -> InstructionRef {
+        InstructionRef {
+            blockId: self.blockId,
+            instructionId: match self.mode {
+                Mode::Append => panic!("Cannot get instruction ref in append mode"),
+                Mode::Iterator(index) => index as u32,
+            },
         }
     }
 

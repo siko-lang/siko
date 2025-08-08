@@ -111,9 +111,9 @@ impl<'a> DropChecker<'a> {
             }
             //println!("Adding case {} to visited", case);
             //println!("Processed {} cases", visited.len());
-            let block = self.function.getBlockById(case.blockId);
+            let builder = self.bodyBuilder.iterator(case.blockId);
             let mut blockProcessor = BlockProcessor::new(self.dropMetadataStore);
-            let (context, jumpTargets) = blockProcessor.process(&block, case.context);
+            let (context, jumpTargets) = blockProcessor.process(builder, case.context);
             let collisions = context.validate();
             allCollisions.extend(collisions);
             let jumpContext = context.compress();
@@ -132,18 +132,20 @@ impl<'a> DropChecker<'a> {
         //     implicitClones.len(),
         //     self.function.name
         // );
+        if !allCollisions.is_empty() {
+            let mut errors = Vec::new();
+            for collision in allCollisions {
+                let err = Error::AlreadyMoved {
+                    path: collision.path,
+                    prevMove: collision.prev,
+                };
+                errors.push(err);
+            }
+            reportErrors(self.ctx, errors);
+        }
 
         self.applyImplicitClones(implicitClones);
 
-        let mut errors = Vec::new();
-        for collision in allCollisions {
-            let err = Error::AlreadyMoved {
-                path: collision.path,
-                prevMove: collision.prev,
-            };
-            errors.push(err);
-        }
-        reportErrors(self.ctx, errors);
         let mut result = self.function.clone();
         result.body = Some(self.bodyBuilder.build());
         result
@@ -267,7 +269,6 @@ impl<'a> DropChecker<'a> {
                 !resulTy.isReference(),
                 "result type should not be a reference for a move!",
             );
-            //println!("Checking if result type is copy: {}", resulTy);
             self.program.instanceResolver.isCopy(&resulTy)
         }
     }

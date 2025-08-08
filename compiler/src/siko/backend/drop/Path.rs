@@ -1,30 +1,14 @@
 use std::fmt::Debug;
 use std::fmt::Display;
+use std::vec;
 
+use crate::siko::hir::BlockBuilder::InstructionRef;
 use crate::siko::hir::Type::Type;
 use crate::siko::hir::Variable::VariableName;
 use crate::siko::{
     hir::{Function::BlockId, Variable::Variable},
     location::Location::Location,
 };
-
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct InstructionRef {
-    pub blockId: BlockId,
-    pub instructionId: u32,
-}
-
-impl Display for InstructionRef {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}", self.blockId, self.instructionId)
-    }
-}
-
-impl Debug for InstructionRef {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self)
-    }
-}
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PathSegment {
@@ -179,11 +163,44 @@ impl SimplePath {
         true
     }
 
+    pub fn contains(&self, other: &SimplePath) -> bool {
+        if self.root != other.root {
+            return false;
+        }
+        if self.items.len() < other.items.len() {
+            return false;
+        }
+        for (i1, i2) in self.items.iter().zip(other.items.iter()) {
+            if i1 != i2 {
+                return false;
+            }
+        }
+        true
+    }
+
     pub fn getDropFlag(&self) -> Variable {
         Variable {
             name: VariableName::DropFlag(self.to_string()),
             location: Location::empty(), // Assuming a default location, adjust as needed
             ty: Some(Type::getBoolType()),
+        }
+    }
+
+    pub fn getRootPath(&self) -> SimplePath {
+        SimplePath {
+            root: self.root.clone(),
+            items: vec![],
+        }
+    }
+
+    pub fn getParent(&self) -> Option<SimplePath> {
+        if self.items.is_empty() {
+            None
+        } else {
+            Some(SimplePath {
+                root: self.root.clone(),
+                items: self.items[..self.items.len() - 1].to_vec(),
+            })
         }
     }
 }

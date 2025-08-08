@@ -44,13 +44,13 @@ impl<'a> DeadCodeEliminator<'a> {
 
         if let Some(body) = &self.function.body {
             for (blockId, block) in body.blocks.iter() {
-                for (index, i) in block.instructions.iter().enumerate() {
+                for (index, _i) in block.instructions.iter().enumerate() {
                     let id = InstructionId {
                         block: *blockId,
                         id: index,
                     };
                     if !self.visited.contains(&id) {
-                        //println!("DCE: Found dead instruction: {}", i);
+                        //println!("DCE: Found dead instruction: {}", _i);
                         needsRemoval = true;
                     }
                 }
@@ -68,14 +68,14 @@ impl<'a> DeadCodeEliminator<'a> {
             let mut builder = bodyBuilder.iterator(*blockId);
             let mut index = 0;
             loop {
-                if let Some(i) = builder.getInstruction() {
-                    //println!("DCE: Checking instruction: {}", i);
+                if let Some(_i) = builder.getInstruction() {
+                    //println!("DCE: Checking instruction: {}", _i);
                     let id = InstructionId {
                         block: *blockId,
                         id: index,
                     };
                     if !self.visited.contains(&id) {
-                        //println!("DCE: Removing dead instruction: {}", i);
+                        //println!("DCE: Removing dead instruction: {}", _i);
                         builder.removeInstruction();
                     } else {
                         builder.step();

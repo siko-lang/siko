@@ -3,10 +3,13 @@ use std::{collections::BTreeMap, fmt::Display};
 use crate::siko::{
     backend::drop::{
         Event::{Collision, Event, EventSeries},
-        Path::{InstructionRef, Path},
+        Path::Path,
         Usage::{Usage, UsageKind},
     },
-    hir::Variable::{Variable, VariableName},
+    hir::{
+        BlockBuilder::InstructionRef,
+        Variable::{Variable, VariableName},
+    },
 };
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
