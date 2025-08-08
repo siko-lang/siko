@@ -111,14 +111,14 @@ failures = []
 def processResult(r, name):
     global success, failure, skipped
     if r == "skip":
-        print(" - SKIPPED")
+        print(" - SKIPPED", flush=True)
         skipped += 1
         return
     if r:
-        print(" - success")
+        print(" - success", flush=True)
         success += 1
     else:
-        print(" - failed")
+        print(" - failed", flush=True)
         failure += 1
         failures.append(name)
 
