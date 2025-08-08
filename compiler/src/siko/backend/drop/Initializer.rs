@@ -195,16 +195,21 @@ impl<'a> Initializer<'a> {
                         InstructionKind::Return(_, _) => {}
                         kind => {
                             let mut allUsedVars = kind.collectVariables();
-                            if let Some(result) = kind.getResultVar() {
-                                allUsedVars.retain(|var| var != &result);
-                                self.declareVar(&result, &currentSyntaxBlock, &mut builder);
-                                if !result.isTemp() && !result.isDropFlag() {
+                            if let Some(dest) = kind.getResultVar() {
+                                allUsedVars.retain(|var| var != &dest);
+                                self.declareVar(&dest, &currentSyntaxBlock, &mut builder);
+                                if !dest.isTemp() && !dest.isDropFlag() {
                                     panic!(
                                         "Implicit destination should be a temporary variable, but found: {}",
-                                        result
+                                        dest
                                     );
                                 }
-                                self.addDest(&result);
+                                builder.step();
+                                builder.addInstruction(
+                                    InstructionKind::FunctionCall(dest.getDropFlag(), getTrueName(), vec![]),
+                                    instruction.location.clone(),
+                                );
+                                self.addDest(&dest);
                             }
                             for var in allUsedVars {
                                 self.useVar(&var, &mut builder);
