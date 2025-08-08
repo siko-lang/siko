@@ -2,7 +2,7 @@ pub mod BlockProcessor;
 pub mod Context;
 pub mod DeclarationStore;
 pub mod Drop;
-pub mod DropList;
+pub mod DropMetadataStore;
 pub mod Error;
 pub mod Event;
 pub mod Finalizer;

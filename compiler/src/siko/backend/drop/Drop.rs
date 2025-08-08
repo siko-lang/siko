@@ -8,7 +8,7 @@ use crate::siko::{
         BlockProcessor::BlockProcessor,
         Context::Context,
         DeclarationStore::DeclarationStore,
-        DropList::DropListHandler,
+        DropMetadataStore::DropMetadataStore,
         Error::{reportErrors, Error},
         Event::Collision,
         Finalizer::Finalizer,
@@ -30,15 +30,15 @@ use crate::siko::{
 pub fn checkDrops(ctx: &ReportContext, program: Program) -> Program {
     let mut result = program.clone();
     for (name, f) in &program.functions {
-        let mut dropListHandler = DropListHandler::new();
+        let mut dropMetadataStore = DropMetadataStore::new();
         let mut declarationStore = DeclarationStore::new();
-        let mut initializer = Initializer::new(f, &program, &mut dropListHandler, &mut declarationStore);
+        let mut initializer = Initializer::new(f, &program, &mut dropMetadataStore, &mut declarationStore);
         let f = initializer.process();
         //declarationStore.dump();
-        let mut checker = DropChecker::new(&f, ctx, &program, &mut dropListHandler);
+        let mut checker = DropChecker::new(&f, ctx, &program, &mut dropMetadataStore);
         //println!("Checking drops for {}", name);
         let f = checker.process();
-        let mut finalizer = Finalizer::new(&f, &program, &mut dropListHandler, &declarationStore);
+        let mut finalizer = Finalizer::new(&f, &program, &mut dropMetadataStore, &declarationStore);
         let f = finalizer.process();
         if false {
             let graph = GraphBuilder::new(&f).withPostfix("dropcheck").build();
@@ -67,7 +67,7 @@ pub struct DropChecker<'a> {
     function: &'a Function,
     program: &'a Program,
     visited: BTreeMap<BlockId, BTreeSet<Context>>,
-    dropListHandler: &'a mut DropListHandler,
+    dropMetadataStore: &'a mut DropMetadataStore,
 }
 
 impl<'a> DropChecker<'a> {
@@ -75,7 +75,7 @@ impl<'a> DropChecker<'a> {
         f: &'a Function,
         ctx: &'a ReportContext,
         program: &'a Program,
-        dropListHandler: &'a mut DropListHandler,
+        dropMetadataStore: &'a mut DropMetadataStore,
     ) -> DropChecker<'a> {
         DropChecker {
             ctx: ctx,
@@ -83,7 +83,7 @@ impl<'a> DropChecker<'a> {
             function: f,
             program: program,
             visited: BTreeMap::new(),
-            dropListHandler,
+            dropMetadataStore,
         }
     }
 
@@ -112,7 +112,7 @@ impl<'a> DropChecker<'a> {
             //println!("Adding case {} to visited", case);
             //println!("Processed {} cases", visited.len());
             let block = self.function.getBlockById(case.blockId);
-            let mut blockProcessor = BlockProcessor::new(self.dropListHandler);
+            let mut blockProcessor = BlockProcessor::new(self.dropMetadataStore);
             let (context, jumpTargets) = blockProcessor.process(&block, case.context);
             let collisions = context.validate();
             allCollisions.extend(collisions);
@@ -132,6 +132,24 @@ impl<'a> DropChecker<'a> {
         //     implicitClones.len(),
         //     self.function.name
         // );
+
+        self.applyImplicitClones(implicitClones);
+
+        let mut errors = Vec::new();
+        for collision in allCollisions {
+            let err = Error::AlreadyMoved {
+                path: collision.path,
+                prevMove: collision.prev,
+            };
+            errors.push(err);
+        }
+        reportErrors(self.ctx, errors);
+        let mut result = self.function.clone();
+        result.body = Some(self.bodyBuilder.build());
+        result
+    }
+
+    fn applyImplicitClones(&mut self, implicitClones: BTreeMap<BlockId, Vec<u32>>) {
         for (blockId, mut instructions) in implicitClones {
             instructions.sort();
             let mut builder = self.bodyBuilder.iterator(blockId);
@@ -204,19 +222,6 @@ impl<'a> DropChecker<'a> {
                 }
             }
         }
-
-        let mut errors = Vec::new();
-        for collision in allCollisions {
-            let err = Error::AlreadyMoved {
-                path: collision.path,
-                prevMove: collision.prev,
-            };
-            errors.push(err);
-        }
-        reportErrors(self.ctx, errors);
-        let mut result = self.function.clone();
-        result.body = Some(self.bodyBuilder.build());
-        result
     }
 
     fn processImplicitClones(

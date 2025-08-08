@@ -46,11 +46,11 @@ impl EventSeries {
         self.events.len()
     }
 
-    pub fn getAllPaths(&self) -> Vec<Path> {
+    pub fn getAllWritePaths(&self) -> Vec<Path> {
         let mut paths = Vec::new();
         for event in &self.events {
             match event {
-                Event::Usage(usage) => {
+                Event::Usage(usage) if usage.isMove() => {
                     if !paths.contains(&usage.path) {
                         paths.push(usage.path.clone());
                     }

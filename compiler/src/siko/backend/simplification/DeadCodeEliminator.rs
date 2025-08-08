@@ -129,6 +129,9 @@ impl<'a> DeadCodeEliminator<'a> {
                 InstructionKind::DropListPlaceholder(_) => {
                     panic!("DropListPlaceholder found in DeadCodeEliminator, this should not happen");
                 }
+                InstructionKind::DropMetadata(_) => {
+                    panic!("DropMetadata found in DeadCodeEliminator, this should not happen");
+                }
                 InstructionKind::Drop(_, _) => {}
                 InstructionKind::Jump(_, id) => {
                     self.processBlock(*id);

@@ -285,6 +285,9 @@ impl Monomorphize for InstructionKind {
                     id
                 );
             }
+            InstructionKind::DropMetadata(id) => {
+                panic!("DropMetadata found in Monomorphizer, this should not happen: {}", id);
+            }
             InstructionKind::Drop(dest, dropVar) => {
                 InstructionKind::Drop(dest.process(sub, mono), dropVar.process(sub, mono))
             }

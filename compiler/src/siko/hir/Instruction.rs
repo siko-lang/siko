@@ -1,6 +1,9 @@
 use std::fmt::Debug;
 use std::fmt::Display;
+use std::fs::Metadata;
 
+use crate::siko::backend::drop::DropMetadataStore::MetadataKind;
+use crate::siko::hir::Variable::VariableName;
 use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
 
 use super::Function::BlockId;
@@ -234,6 +237,7 @@ pub enum InstructionKind {
     Return(Variable, Variable),
     Ref(Variable, Variable),
     DropListPlaceholder(u32),
+    DropMetadata(MetadataKind),
     Drop(Variable, Variable),
     Jump(Variable, BlockId),
     Assign(Variable, Variable),
@@ -275,6 +279,7 @@ impl InstructionKind {
             InstructionKind::Return(v, _) => Some(v.clone()),
             InstructionKind::Ref(v, _) => Some(v.clone()),
             InstructionKind::DropListPlaceholder(_) => None,
+            InstructionKind::DropMetadata(_) => None,
             InstructionKind::Drop(_, _) => None,
             InstructionKind::Jump(v, _) => Some(v.clone()),
             InstructionKind::Assign(v, _) => Some(v.clone()),
@@ -351,6 +356,7 @@ impl InstructionKind {
                 InstructionKind::Ref(new_var, new_target)
             }
             InstructionKind::DropListPlaceholder(_) => self.clone(),
+            InstructionKind::DropMetadata(_) => self.clone(),
             InstructionKind::Drop(_, _) => self.clone(),
             InstructionKind::Jump(var, id) => {
                 let new_var = var.replace(&from, to.clone());
@@ -423,6 +429,7 @@ impl InstructionKind {
             InstructionKind::Return(var, value) => vec![var.clone(), value.clone()],
             InstructionKind::Ref(var, target) => vec![var.clone(), target.clone()],
             InstructionKind::DropListPlaceholder(_) => vec![],
+            InstructionKind::DropMetadata(_) => vec![],
             InstructionKind::Drop(_, _) => vec![],
             InstructionKind::Jump(var, _) => vec![var.clone()],
             InstructionKind::Assign(var, value) => vec![var.clone(), value.clone()],
@@ -473,6 +480,7 @@ impl InstructionKind {
             InstructionKind::Return(dest, id) => format!("{} = return({})", dest, id),
             InstructionKind::Ref(dest, id) => format!("{} = &({})", dest, id),
             InstructionKind::DropListPlaceholder(id) => format!("droplist_placeholder({})", id),
+            InstructionKind::DropMetadata(id) => format!("drop_metadata({})", id),
             InstructionKind::Drop(dest, value) => {
                 format!("drop({}/{})", dest, value)
             }

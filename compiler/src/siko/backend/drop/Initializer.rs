@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use crate::siko::{
     backend::drop::{
         DeclarationStore::DeclarationStore,
-        DropList::{DropListHandler, Kind},
+        DropMetadataStore::{DropMetadataStore, Kind, MetadataKind},
         Path::Path,
         Util::{buildFieldPath, HasTrivialDrop},
     },
@@ -11,10 +11,9 @@ use crate::siko::{
         BlockBuilder::BlockBuilder,
         BodyBuilder::BodyBuilder,
         Function::{BlockId, Function},
-        Graph::GraphBuilder,
-        Instruction::{InstructionKind, Mutability, SyntaxBlockId},
+        Instruction::{InstructionKind, SyntaxBlockId},
         Program::Program,
-        Variable::Variable,
+        Variable::{Variable, VariableName},
     },
     qualifiedname::{getFalseName, getTrueName},
 };
@@ -23,62 +22,42 @@ pub struct Initializer<'a> {
     bodyBuilder: BodyBuilder,
     function: &'a Function,
     program: &'a Program,
-    assignDestinations: BTreeSet<Variable>,
-    implicitDestinations: BTreeSet<Variable>,
-    destCounts: BTreeMap<Variable, usize>,
-    dropListHandler: &'a mut DropListHandler,
+    explicitDeclarations: BTreeSet<VariableName>,
+    dropMetadataStore: &'a mut DropMetadataStore,
     declarationStore: &'a mut DeclarationStore,
     queue: VecDeque<(BlockId, SyntaxBlockId)>,
-    placeHolderIndex: u32,
-    declaredDropFlags: BTreeSet<Variable>,
 }
 
 impl<'a> Initializer<'a> {
     pub fn new(
         f: &'a Function,
         program: &'a Program,
-        dropListHandler: &'a mut DropListHandler,
+        dropMetadataStore: &'a mut DropMetadataStore,
         declarationStore: &'a mut DeclarationStore,
     ) -> Initializer<'a> {
         Initializer {
             bodyBuilder: BodyBuilder::cloneFunction(f),
             function: f,
             program: program,
-            assignDestinations: BTreeSet::new(),
-            implicitDestinations: BTreeSet::new(),
-            destCounts: BTreeMap::new(),
-            dropListHandler,
+            explicitDeclarations: BTreeSet::new(),
+            dropMetadataStore,
             declarationStore,
             queue: VecDeque::new(),
-            placeHolderIndex: 0,
-            declaredDropFlags: BTreeSet::new(),
         }
     }
 
-    fn addDest(&mut self, var: &Variable) {
-        let count = self.destCounts.entry(var.clone()).or_insert(0);
-        *count += 1;
-    }
-
-    fn declareVar(&mut self, var: &Variable, syntaxBlock: &SyntaxBlockId, builder: &mut BlockBuilder) {
-        //println!("declareVar called for {} with syntaxBlock: {}", var, syntaxBlock);
+    fn declareVar(&mut self, var: &Variable, syntaxBlock: &SyntaxBlockId, builder: &mut BlockBuilder, explicit: bool) {
         if var.hasTrivialDrop() || var.isArg() {
-            //println!("  -> skipping {} (trivial drop or arg)", var);
             return;
         }
-        if self.declarationStore.declare(var.clone(), syntaxBlock.clone()) {
-            //println!("  -> declared {} in syntax block {}", var, syntaxBlock);
-            let dropFlag = var.getDropFlag();
-
-            self.declaredDropFlags.insert(dropFlag.clone());
-            builder.addInstruction(
-                InstructionKind::FunctionCall(dropFlag, getFalseName(), vec![]),
-                var.location.clone(),
-            );
-            builder.step();
-        } else {
-            //println!("  -> {} already declared, skipping", var);
+        if !explicit && self.explicitDeclarations.contains(&var.value) {
+            return;
         }
+        self.declarationStore.declare(var.clone(), syntaxBlock.clone());
+        self.dropMetadataStore.addVariable(var.value.clone());
+        let kind = MetadataKind::DeclarationList(var.value.clone());
+        builder.addInstruction(InstructionKind::DropMetadata(kind), var.location.clone());
+        builder.step();
     }
 
     fn useVar(&mut self, var: &Variable, builder: &mut BlockBuilder) {
@@ -123,7 +102,7 @@ impl<'a> Initializer<'a> {
                             currentSyntaxBlock = blockId.getParent();
                         }
                         InstructionKind::Assign(dest, src) => {
-                            self.declareVar(dest, &currentSyntaxBlock, &mut builder);
+                            self.declareVar(dest, &currentSyntaxBlock, &mut builder, false);
                             self.useVar(src, &mut builder);
                             if !dest.hasTrivialDrop() {
                                 //println!("Dropflag set to true for variable {} at {}", dest, instruction.location);
@@ -132,47 +111,37 @@ impl<'a> Initializer<'a> {
                                     instruction.location.clone(),
                                 );
                                 builder.step();
-                            } else {
-                                // println!(
-                                //     "Skipping drop flag for variable {} at {} because it has a trivial drop",
-                                //     dest, instruction.location
-                                // );
                             }
-                            self.dropListHandler.createDropList(
-                                self.placeHolderIndex,
-                                Kind::VariableAssign(
-                                    Path::new(dest.clone(), instruction.location.clone()).toSimplePath(),
-                                ),
-                            );
+                            let index = self.dropMetadataStore.createDropList(Kind::VariableAssign(
+                                Path::new(dest.clone(), instruction.location.clone()).toSimplePath(),
+                            ));
                             builder.addInstruction(
-                                InstructionKind::DropListPlaceholder(self.placeHolderIndex),
+                                InstructionKind::DropListPlaceholder(index),
                                 instruction.location.clone(),
                             );
                             builder.step();
-                            self.placeHolderIndex += 1;
                         }
                         InstructionKind::FieldAssign(dest, _, fields) => {
-                            self.declareVar(dest, &currentSyntaxBlock, &mut builder);
+                            self.declareVar(dest, &currentSyntaxBlock, &mut builder, false);
                             let path = buildFieldPath(dest, fields);
-                            self.dropListHandler
-                                .createDropList(self.placeHolderIndex, Kind::FieldAssign(path.toSimplePath()));
-                            self.dropListHandler.addPath(self.placeHolderIndex, path);
+                            let index = self
+                                .dropMetadataStore
+                                .createDropList(Kind::FieldAssign(path.toSimplePath()));
                             builder.addInstruction(
-                                InstructionKind::DropListPlaceholder(self.placeHolderIndex),
+                                InstructionKind::DropListPlaceholder(index),
                                 instruction.location.clone(),
                             );
                             builder.step();
-                            self.placeHolderIndex += 1;
                         }
                         InstructionKind::DeclareVar(var, _) => {
                             // println!(
                             //     "Processing DeclareVar instruction for {} with currentSyntaxBlock: {}",
                             //     var, currentSyntaxBlock
                             // );
-                            self.declareVar(var, &currentSyntaxBlock, &mut builder);
+                            self.declareVar(var, &currentSyntaxBlock, &mut builder, true);
                         }
                         InstructionKind::Ref(dest, _) => {
-                            self.declareVar(dest, &currentSyntaxBlock, &mut builder);
+                            self.declareVar(dest, &currentSyntaxBlock, &mut builder, false);
                         }
                         InstructionKind::Jump(_, targetBlock) => {
                             self.addToQueue(*targetBlock, currentSyntaxBlock.clone());
@@ -197,7 +166,7 @@ impl<'a> Initializer<'a> {
                             let mut allUsedVars = kind.collectVariables();
                             if let Some(dest) = kind.getResultVar() {
                                 allUsedVars.retain(|var| var != &dest);
-                                self.declareVar(&dest, &currentSyntaxBlock, &mut builder);
+                                self.declareVar(&dest, &currentSyntaxBlock, &mut builder, false);
                                 if !dest.isTemp() && !dest.isDropFlag() {
                                     panic!(
                                         "Implicit destination should be a temporary variable, but found: {}",
@@ -209,7 +178,6 @@ impl<'a> Initializer<'a> {
                                     InstructionKind::FunctionCall(dest.getDropFlag(), getTrueName(), vec![]),
                                     instruction.location.clone(),
                                 );
-                                self.addDest(&dest);
                             }
                             for var in allUsedVars {
                                 self.useVar(&var, &mut builder);
@@ -223,20 +191,28 @@ impl<'a> Initializer<'a> {
         }
     }
 
-    pub fn addToQueue(&mut self, blockId: BlockId, syntaxBlock: SyntaxBlockId) {
+    fn addToQueue(&mut self, blockId: BlockId, syntaxBlock: SyntaxBlockId) {
         //println!("Adding to queue: blockId = {}, syntaxBlock = {}", blockId, syntaxBlock);
         self.queue.push_back((blockId, syntaxBlock));
     }
 
-    pub fn process(&mut self) -> Function {
-        if self.function.body.is_none() {
-            return self.function.clone();
+    fn collectExplicitDeclarations(&mut self) {
+        for blockId in self.bodyBuilder.getAllBlockIds() {
+            let mut builder = self.bodyBuilder.iterator(blockId);
+            loop {
+                if let Some(instruction) = builder.getInstruction() {
+                    if let InstructionKind::DeclareVar(v, _) = &instruction.kind {
+                        self.explicitDeclarations.insert(v.value.clone());
+                    }
+                    builder.step();
+                } else {
+                    break;
+                }
+            }
         }
-        //println!("Drop initializer processing function: {}", self.function.name);
+    }
 
-        // let graph = GraphBuilder::new(self.function).withPostfix("drop").build();
-        // graph.printDot();
-
+    fn buildDeclarationStore(&mut self) {
         let mut blockSyntaxBlocks = BTreeMap::new();
 
         self.addToQueue(BlockId::first(), SyntaxBlockId::new());
@@ -258,29 +234,20 @@ impl<'a> Initializer<'a> {
             blockSyntaxBlocks.insert(blockId, initialSyntaxBlock.clone());
             self.processBlock(blockId, initialSyntaxBlock);
         }
+    }
 
-        for (var, count) in &self.destCounts {
-            if *count > 1 {
-                panic!(
-                    "Variable {} is assigned more than once, but is temporary and should be only assigned once.",
-                    var
-                );
-            }
+    pub fn process(&mut self) -> Function {
+        if self.function.body.is_none() {
+            return self.function.clone();
         }
+        //println!("Drop initializer processing function: {}", self.function.name);
 
-        let mut builder = self.bodyBuilder.iterator(BlockId::first());
-        for dropFlag in &self.declaredDropFlags {
-            builder.addInstruction(
-                InstructionKind::DeclareVar(dropFlag.clone(), Mutability::Mutable),
-                dropFlag.location.clone(),
-            );
-            builder.step();
-            builder.addInstruction(
-                InstructionKind::FunctionCall(dropFlag.clone(), getFalseName(), vec![]),
-                dropFlag.location.clone(),
-            );
-            builder.step();
-        }
+        // let graph = GraphBuilder::new(self.function).withPostfix("drop").build();
+        // graph.printDot();
+
+        self.collectExplicitDeclarations();
+
+        self.buildDeclarationStore();
 
         // self.declarationStore.dump();
 
@@ -288,6 +255,7 @@ impl<'a> Initializer<'a> {
         result.body = Some(self.bodyBuilder.build());
 
         // println!("Drop initializer completed for function: {}", self.function.name);
+        // println!("result {}", result);
 
         // let graph = GraphBuilder::new(&result).withPostfix("initializer_end").build();
         // graph.printDot();

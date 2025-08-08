@@ -1,6 +1,8 @@
 use std::fmt::Debug;
 use std::fmt::Display;
 
+use crate::siko::hir::Type::Type;
+use crate::siko::hir::Variable::VariableName;
 use crate::siko::{
     hir::{Function::BlockId, Variable::Variable},
     location::Location::Location,
@@ -130,7 +132,7 @@ impl Path {
 
     pub fn toSimplePath(&self) -> SimplePath {
         SimplePath {
-            root: self.root.value.visibleName(),
+            root: self.root.value.to_string(),
             items: self.items.clone(),
         }
     }
@@ -175,6 +177,14 @@ impl SimplePath {
             }
         }
         true
+    }
+
+    pub fn getDropFlag(&self) -> Variable {
+        Variable {
+            value: VariableName::DropFlag(self.to_string()),
+            location: Location::empty(), // Assuming a default location, adjust as needed
+            ty: Some(Type::getBoolType()),
+        }
     }
 }
 

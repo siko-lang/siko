@@ -177,6 +177,9 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::DropListPlaceholder(_) => {
                             panic!("DropListPlaceholder found in Typechecker, this should not happen");
                         }
+                        InstructionKind::DropMetadata(_) => {
+                            panic!("DropMetadata found in Typechecker, this should not happen");
+                        }
                         InstructionKind::Drop(_, _) => {}
                         InstructionKind::Jump(var, _) => {
                             self.types.insert(var.value.to_string(), Type::Never(false));
@@ -799,6 +802,7 @@ impl<'a> Typechecker<'a> {
                 );
             }
             InstructionKind::DropListPlaceholder(_) => unreachable!("drop list placeholder in typechecker!"),
+            InstructionKind::DropMetadata(_) => unreachable!("drop metadata in typechecker!"),
             InstructionKind::Drop(_, _) => unreachable!("drop in typechecker!"),
             InstructionKind::Jump(_, id) => {
                 self.queue.push_back(*id);

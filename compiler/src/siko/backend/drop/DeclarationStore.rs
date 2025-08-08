@@ -20,9 +20,9 @@ impl DeclarationStore {
         }
     }
 
-    pub fn declare(&mut self, var: Variable, syntaxBlockId: SyntaxBlockId) -> bool {
+    pub fn declare(&mut self, var: Variable, syntaxBlockId: SyntaxBlockId) {
         if self.declarations.contains_key(&var.value) {
-            return false;
+            panic!("Variable {} is already declared in declaration store", var.value);
         }
         self.declarations.insert(var.value.clone(), syntaxBlockId.clone());
         self.blockDeclarations
@@ -30,7 +30,6 @@ impl DeclarationStore {
             .or_insert_with(BTreeSet::new)
             .insert(var.value.clone());
         self.vars.insert(var.value.clone(), var);
-        true
     }
 
     pub fn getDeclarations(&self, syntaxBlockId: &SyntaxBlockId) -> Option<BTreeSet<Variable>> {

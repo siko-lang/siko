@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use crate::siko::{
     backend::drop::{
         Context::Context,
-        DropList::DropListHandler,
+        DropMetadataStore::DropMetadataStore,
         Path::{InstructionRef, Path, PathSegment},
         Usage::{Usage, UsageKind},
         Util::buildFieldPath,
@@ -18,14 +18,14 @@ use crate::siko::{
 
 pub struct BlockProcessor<'a> {
     receiverPaths: BTreeMap<Variable, Path>,
-    dropListHandler: &'a mut DropListHandler,
+    dropMetadataStore: &'a mut DropMetadataStore,
 }
 
 impl<'a> BlockProcessor<'a> {
-    pub fn new(dropListHandler: &'a mut DropListHandler) -> BlockProcessor<'a> {
+    pub fn new(dropMetadataStore: &'a mut DropMetadataStore) -> BlockProcessor<'a> {
         BlockProcessor {
             receiverPaths: BTreeMap::new(),
-            dropListHandler,
+            dropMetadataStore,
         }
     }
 
@@ -132,6 +132,7 @@ impl<'a> BlockProcessor<'a> {
                     });
                 }
                 InstructionKind::DropListPlaceholder(_) => {}
+                InstructionKind::DropMetadata(_) => {}
                 InstructionKind::Drop(_, _) => {
                     panic!("Drop instruction found in block processor");
                 }
@@ -162,20 +163,29 @@ impl<'a> BlockProcessor<'a> {
             }
             instructionRef.instructionId += 1;
         }
-        let allDropListIds = self.dropListHandler.getDropListIds();
+        let allDropListIds = self.dropMetadataStore.getDropListIds();
         for id in allDropListIds {
-            let dropList = self.dropListHandler.getDropList(id);
+            let dropList = self.dropMetadataStore.getDropList(id);
             let rootPath = dropList.getRoot();
             for (name, events) in context.usages.iter() {
                 if name.visibleName() == rootPath.root {
-                    for path in events.getAllPaths() {
+                    for path in events.getAllWritePaths() {
                         if path.toSimplePath().sharesPrefixWith(&rootPath) {
-                            self.dropListHandler.addPath(id, path.clone());
+                            self.dropMetadataStore.addPath(id, path.clone());
                         }
                     }
                 }
             }
         }
+
+        for (name, events) in context.usages.iter() {
+            if let Some(declarationList) = self.dropMetadataStore.getDeclarationList(name) {
+                for path in events.getAllWritePaths() {
+                    declarationList.addPath(path.toSimplePath());
+                }
+            }
+        }
+
         //println!("Final context: {}", context);
         (context, jumpTargets)
     }
