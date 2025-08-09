@@ -126,7 +126,7 @@ impl<'a> DeadCodeEliminator<'a> {
                 InstructionKind::CharLiteral(_, _) => {}
                 InstructionKind::Return(_, _) => return,
                 InstructionKind::Ref(_, _) => {}
-                InstructionKind::DropListPlaceholder(_) => {
+                InstructionKind::DropPath(_) => {
                     panic!("DropListPlaceholder found in DeadCodeEliminator, this should not happen");
                 }
                 InstructionKind::DropMetadata(_) => {

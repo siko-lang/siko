@@ -52,7 +52,7 @@ impl Program {
         std::fs::create_dir_all(folderName)?;
         for (_, fun) in &self.functions {
             fun.dumpToFile(&format!(
-                "{}/{}",
+                "{}/{}.txt",
                 folderName,
                 fun.name.to_string().replace(".", "_").replace("/", "_")
             ))?;

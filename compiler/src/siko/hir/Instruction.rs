@@ -2,6 +2,7 @@ use std::fmt::Debug;
 use std::fmt::Display;
 
 use crate::siko::backend::drop::DropMetadataStore::MetadataKind;
+use crate::siko::backend::drop::Path::Path;
 use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
 
 use super::Function::BlockId;
@@ -234,7 +235,7 @@ pub enum InstructionKind {
     CharLiteral(Variable, char),
     Return(Variable, Variable),
     Ref(Variable, Variable),
-    DropListPlaceholder(u32),
+    DropPath(Path),
     DropMetadata(MetadataKind),
     Drop(Variable, Variable),
     Jump(Variable, BlockId),
@@ -276,7 +277,7 @@ impl InstructionKind {
             InstructionKind::CharLiteral(v, _) => Some(v.clone()),
             InstructionKind::Return(v, _) => Some(v.clone()),
             InstructionKind::Ref(v, _) => Some(v.clone()),
-            InstructionKind::DropListPlaceholder(_) => None,
+            InstructionKind::DropPath(_) => None,
             InstructionKind::DropMetadata(_) => None,
             InstructionKind::Drop(_, _) => None,
             InstructionKind::Jump(v, _) => Some(v.clone()),
@@ -353,7 +354,7 @@ impl InstructionKind {
                 let new_target = target.replace(&from, to);
                 InstructionKind::Ref(new_var, new_target)
             }
-            InstructionKind::DropListPlaceholder(_) => self.clone(),
+            InstructionKind::DropPath(_) => self.clone(),
             InstructionKind::DropMetadata(_) => self.clone(),
             InstructionKind::Drop(_, _) => self.clone(),
             InstructionKind::Jump(var, id) => {
@@ -426,7 +427,7 @@ impl InstructionKind {
             InstructionKind::CharLiteral(var, _) => vec![var.clone()],
             InstructionKind::Return(var, value) => vec![var.clone(), value.clone()],
             InstructionKind::Ref(var, target) => vec![var.clone(), target.clone()],
-            InstructionKind::DropListPlaceholder(_) => vec![],
+            InstructionKind::DropPath(_) => vec![],
             InstructionKind::DropMetadata(_) => vec![],
             InstructionKind::Drop(_, _) => vec![],
             InstructionKind::Jump(var, _) => vec![var.clone()],
@@ -477,7 +478,7 @@ impl InstructionKind {
             InstructionKind::CharLiteral(dest, v) => format!("{} = c:[{}]", dest, v),
             InstructionKind::Return(dest, id) => format!("{} = return({})", dest, id),
             InstructionKind::Ref(dest, id) => format!("{} = &({})", dest, id),
-            InstructionKind::DropListPlaceholder(id) => format!("droplist_placeholder({})", id),
+            InstructionKind::DropPath(id) => format!("droplist_placeholder({})", id),
             InstructionKind::DropMetadata(id) => format!("drop_metadata({})", id),
             InstructionKind::Drop(dest, value) => {
                 format!("drop({}/{})", dest, value)

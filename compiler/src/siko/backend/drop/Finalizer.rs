@@ -4,12 +4,13 @@ use crate::siko::{
     backend::drop::{
         DeclarationStore::DeclarationStore,
         DropMetadataStore::{DropMetadataStore, MetadataKind},
+        Path::{Path, PathSegment},
         Usage::getUsageInfo,
     },
     hir::{
         BodyBuilder::BodyBuilder,
         Function::{BlockId, Function},
-        Instruction::{EnumCase, InstructionKind, Mutability},
+        Instruction::{EnumCase, FieldId, FieldInfo, InstructionKind, Mutability},
         Program::Program,
         Type::Type,
         Variable::Variable,
@@ -74,13 +75,8 @@ impl<'a> Finalizer<'a> {
                     Some(instruction) => {
                         // Process the instruction
                         match &instruction.kind {
-                            InstructionKind::DropListPlaceholder(_) => {
-                                // println!("Processing DropListPlaceholder at index: {}", index);
-                                // let dropList = self.dropMetadataStore.getDropList(*index);
-                                // for p in dropList.paths() {
-                                //     println!("Dropping path: {} {:?}", p, p);
-                                // }
-                                builder.removeInstruction();
+                            InstructionKind::DropPath(_) => {
+                                panic!("drop path found in first pass of finalizer")
                             }
                             InstructionKind::DropMetadata(kind) => {
                                 match kind {
@@ -108,18 +104,25 @@ impl<'a> Finalizer<'a> {
                             InstructionKind::BlockEnd(id) => {
                                 if let Some(droppedValues) = self.declarationStore.getDeclarations(&id) {
                                     for var in droppedValues {
-                                        let mut dropRes =
-                                            self.bodyBuilder.createTempValue(instruction.location.clone());
-                                        dropRes.ty = Some(Type::getUnitType());
-                                        let dropFlag = var.getDropFlag();
-                                        let drop = InstructionKind::Drop(dropRes, var.clone());
-                                        builder.addInstruction(drop, var.location.clone());
-                                        builder.step();
-                                        builder.addInstruction(
-                                            InstructionKind::FunctionCall(dropFlag, getFalseName(), vec![]),
-                                            instruction.location.clone(),
-                                        );
-                                        builder.step();
+                                        let rootPath = var.toPath().toSimplePath();
+                                        let declarationList = self.dropMetadataStore.getDeclarationList(&var.name);
+                                        if let Some(declarationList) = declarationList {
+                                            for current in declarationList.paths() {
+                                                if current.contains(&rootPath) {
+                                                    let dropFlag = current.getDropFlag();
+                                                    let mut path = Path::new(var.clone(), var.location.clone());
+                                                    path.items = current.items.clone();
+                                                    let drop = InstructionKind::DropPath(path);
+                                                    builder.addInstruction(drop, var.location.clone());
+                                                    builder.step();
+                                                    builder.addInstruction(
+                                                        InstructionKind::FunctionCall(dropFlag, getFalseName(), vec![]),
+                                                        instruction.location.clone(),
+                                                    );
+                                                    builder.step();
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                                 builder.removeInstruction();
@@ -133,11 +136,15 @@ impl<'a> Finalizer<'a> {
                                     let declarationList =
                                         self.dropMetadataStore.getDeclarationList(&usage.path.root.name);
                                     if let Some(declarationList) = declarationList {
+                                        //println!("--------------------------");
                                         for path in declarationList.paths() {
                                             // we are moving usage.path, need to disable dropflag for it
                                             // and all other paths that share prefix with it
                                             if path.sharesPrefixWith(&usage.path.toSimplePath()) {
-                                                // println!("Disabling dropflag for path: {}", path);
+                                                // println!(
+                                                //     "Disabling dropflag for path: {} because {} is moved",
+                                                //     path, usage.path
+                                                // );
                                                 let dropFlag = path.getDropFlag();
                                                 builder.addInstruction(
                                                     InstructionKind::FunctionCall(dropFlag, getFalseName(), vec![]),
@@ -155,7 +162,10 @@ impl<'a> Finalizer<'a> {
                                     if let Some(declarationList) = declarationList {
                                         for path in declarationList.paths() {
                                             if path.contains(&assignPath.toSimplePath()) {
-                                                // println!("Enabling dropflag for path: {}", path);
+                                                // println!(
+                                                //     "Enabling dropflag for path: {} because {} is assigned",
+                                                //     path, assignPath
+                                                // );
                                                 let dropFlag = path.getDropFlag();
                                                 builder.addInstruction(
                                                     InstructionKind::FunctionCall(dropFlag, getTrueName(), vec![]),
@@ -219,6 +229,61 @@ impl<'a> Finalizer<'a> {
                             ];
                             builder.replaceInstruction(
                                 InstructionKind::EnumSwitch(dropVar.getDropFlag(), cases),
+                                instruction.location.clone(),
+                            );
+                            queue.push_back(newBlockId);
+                            return;
+                        }
+                        InstructionKind::DropPath(path) => {
+                            let newBlockId = builder.cutBlock(1);
+                            let mut dropBlock = self.bodyBuilder.createBlock();
+                            let dropVar = if path.isRootOnly() {
+                                path.root.clone()
+                            } else {
+                                let mut dropVar = self.bodyBuilder.createTempValue(instruction.location.clone());
+                                let mut fields = Vec::new();
+                                for segment in &path.items {
+                                    let fieldInfo = match segment {
+                                        PathSegment::Named(name, ty) => {
+                                            dropVar.ty = Some(ty.clone());
+                                            FieldInfo {
+                                                name: FieldId::Named(name.clone()),
+                                                location: instruction.location.clone(),
+                                                ty: Some(ty.clone()),
+                                            }
+                                        }
+                                        PathSegment::Indexed(index, ty) => {
+                                            dropVar.ty = Some(ty.clone());
+                                            FieldInfo {
+                                                name: FieldId::Indexed(*index),
+                                                location: instruction.location.clone(),
+                                                ty: Some(ty.clone()),
+                                            }
+                                        }
+                                    };
+                                    fields.push(fieldInfo);
+                                }
+                                let fieldAcess = InstructionKind::FieldRef(dropVar.clone(), path.root.clone(), fields);
+                                dropBlock.addInstruction(fieldAcess, instruction.location.clone());
+                                dropVar
+                            };
+                            let mut dropRes = self.bodyBuilder.createTempValue(instruction.location.clone());
+                            dropRes.ty = Some(Type::getUnitType());
+                            let dropInstruction = InstructionKind::Drop(dropRes, dropVar);
+                            dropBlock.addInstruction(dropInstruction, instruction.location.clone());
+                            dropBlock.addJump(newBlockId, instruction.location.clone());
+                            let cases = vec![
+                                EnumCase {
+                                    index: 0,
+                                    branch: newBlockId,
+                                },
+                                EnumCase {
+                                    index: 1,
+                                    branch: dropBlock.getBlockId(),
+                                },
+                            ];
+                            builder.replaceInstruction(
+                                InstructionKind::EnumSwitch(path.toSimplePath().getDropFlag(), cases),
                                 instruction.location.clone(),
                             );
                             queue.push_back(newBlockId);

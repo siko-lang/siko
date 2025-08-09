@@ -279,7 +279,7 @@ impl Monomorphize for InstructionKind {
                 InstructionKind::Return(dest.process(sub, mono), arg.process(sub, mono))
             }
             InstructionKind::Ref(dest, arg) => InstructionKind::Ref(dest.process(sub, mono), arg.process(sub, mono)),
-            InstructionKind::DropListPlaceholder(id) => {
+            InstructionKind::DropPath(id) => {
                 panic!(
                     "DropListPlaceholder found in Monomorphizer, this should not happen: {}",
                     id

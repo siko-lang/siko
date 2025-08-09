@@ -59,18 +59,6 @@ impl<'a> Initializer<'a> {
         builder.step();
     }
 
-    // fn useVar(&mut self, var: &Variable, builder: &mut BlockBuilder) {
-    //     if var.hasTrivialDrop() || var.isArg() {
-    //         return;
-    //     }
-    //     let dropFlag = var.getDropFlag();
-    //     builder.addInstruction(
-    //         InstructionKind::FunctionCall(dropFlag, getFalseName(), vec![]),
-    //         var.location.clone(),
-    //     );
-    //     builder.step();
-    // }
-
     fn processBlock(&mut self, blockId: BlockId, initialSyntaxBlock: SyntaxBlockId) {
         let mut currentSyntaxBlock = initialSyntaxBlock;
         // println!(

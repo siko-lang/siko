@@ -1,14 +1,8 @@
 use std::fmt::Display;
 
 use crate::siko::{
-    backend::drop::{
-        Path::{Path, PathSegment},
-        Util::buildFieldPath,
-    },
-    hir::{
-        Instruction::{FieldId, InstructionKind},
-        Variable::Variable,
-    },
+    backend::drop::{Path::Path, Util::buildFieldPath},
+    hir::{Instruction::InstructionKind, Variable::Variable},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -90,17 +84,7 @@ pub fn getUsageInfo(kind: InstructionKind) -> UsageInfo {
         InstructionKind::Return(_, arg) => UsageInfo::with(vec![varToUsage(&arg)], None),
         InstructionKind::FieldRef(dest, receiver, names) => {
             let destTy = dest.getType();
-            let mut path = Path::new(receiver.clone(), dest.location.clone());
-            for field in names {
-                match &field.name {
-                    FieldId::Named(name) => {
-                        path = path.add(PathSegment::Named(name.clone()), dest.location.clone());
-                    }
-                    FieldId::Indexed(index) => {
-                        path = path.add(PathSegment::Indexed(*index), dest.location.clone());
-                    }
-                }
-            }
+            let path = buildFieldPath(&receiver, &names);
             let kind = if destTy.isReference() || destTy.isPtr() {
                 UsageKind::Ref
             } else {
@@ -140,7 +124,7 @@ pub fn getUsageInfo(kind: InstructionKind) -> UsageInfo {
             }],
             Some(dest.toPath()),
         ),
-        InstructionKind::DropListPlaceholder(_) => UsageInfo::empty(),
+        InstructionKind::DropPath(_) => UsageInfo::empty(),
         InstructionKind::DropMetadata(_) => UsageInfo::empty(),
         InstructionKind::Drop(_, _) => {
             panic!("Drop instruction found in block processor");

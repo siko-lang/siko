@@ -12,15 +12,15 @@ use crate::siko::{
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PathSegment {
-    Named(String),
-    Indexed(u32),
+    Named(String, Type),
+    Indexed(u32, Type),
 }
 
 impl Display for PathSegment {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PathSegment::Named(name) => write!(f, "{}", name),
-            PathSegment::Indexed(index) => write!(f, "t{}", index),
+            PathSegment::Named(name, _) => write!(f, "{}", name),
+            PathSegment::Indexed(index, _) => write!(f, "{}", index),
         }
     }
 }
@@ -46,10 +46,9 @@ impl Path {
         }
     }
 
-    pub fn add(&self, item: PathSegment, location: Location) -> Path {
+    pub fn add(&self, item: PathSegment) -> Path {
         let mut p = self.clone();
         p.items.push(item);
-        p.location = location;
         p
     }
 
@@ -136,7 +135,7 @@ impl Display for Path {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SimplePath {
     pub root: String,
-    items: Vec<PathSegment>,
+    pub items: Vec<PathSegment>,
 }
 
 impl SimplePath {
