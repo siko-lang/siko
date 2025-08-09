@@ -4,10 +4,11 @@ use crate::siko::{
     backend::drop::{
         DeclarationStore::DeclarationStore,
         DropMetadataStore::{DropMetadataStore, MetadataKind},
-        Path::{Path, PathSegment},
+        Path::{Path, PathSegment, SimplePath},
         Usage::getUsageInfo,
     },
     hir::{
+        BlockBuilder::BlockBuilder,
         BodyBuilder::BodyBuilder,
         Function::{BlockId, Function},
         Instruction::{EnumCase, FieldId, FieldInfo, InstructionKind, Mutability},
@@ -109,17 +110,7 @@ impl<'a> Finalizer<'a> {
                                         if let Some(declarationList) = declarationList {
                                             for current in declarationList.paths() {
                                                 if current.contains(&rootPath) {
-                                                    let dropFlag = current.getDropFlag();
-                                                    let mut path = Path::new(var.clone(), var.location.clone());
-                                                    path.items = current.items.clone();
-                                                    let drop = InstructionKind::DropPath(path);
-                                                    builder.addInstruction(drop, var.location.clone());
-                                                    builder.step();
-                                                    builder.addInstruction(
-                                                        InstructionKind::FunctionCall(dropFlag, getFalseName(), vec![]),
-                                                        instruction.location.clone(),
-                                                    );
-                                                    builder.step();
+                                                    addDropPath(&mut builder, &current, &var);
                                                 }
                                             }
                                         }
@@ -166,6 +157,7 @@ impl<'a> Finalizer<'a> {
                                                 //     "Enabling dropflag for path: {} because {} is assigned",
                                                 //     path, assignPath
                                                 // );
+                                                addDropPath(&mut builder, &path, &root);
                                                 let dropFlag = path.getDropFlag();
                                                 builder.addInstruction(
                                                     InstructionKind::FunctionCall(dropFlag, getTrueName(), vec![]),
@@ -297,4 +289,18 @@ impl<'a> Finalizer<'a> {
             }
         }
     }
+}
+
+fn addDropPath(builder: &mut BlockBuilder, current: &SimplePath, var: &Variable) {
+    let dropFlag = current.getDropFlag();
+    let mut path = Path::new(var.clone(), var.location.clone());
+    path.items = current.items.clone();
+    let drop = InstructionKind::DropPath(path);
+    builder.addInstruction(drop, var.location.clone());
+    builder.step();
+    builder.addInstruction(
+        InstructionKind::FunctionCall(dropFlag, getFalseName(), vec![]),
+        var.location.clone(),
+    );
+    builder.step();
 }
