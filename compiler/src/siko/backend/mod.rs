@@ -1,3 +1,4 @@
+pub mod Backend;
 pub mod DeadCodeEliminator;
 pub mod FieldRefMerger;
 pub mod RemoveTuples;

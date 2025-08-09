@@ -4,12 +4,10 @@
 mod siko;
 
 use siko::{
-    backend::{drop::Drop::checkDrops, DeadCodeEliminator::eliminateDeadCode, RemoveTuples::removeTuples},
     hir::Program::Program,
     hir_lowering::Lowering::lowerProgram,
     location::{FileManager::FileManager, Report::ReportContext},
     minic::Generator::MiniCGenerator,
-    monomorphizer::Monomorphizer::Monomorphizer,
     parser::Parser::*,
     resolver::Resolver::Resolver,
     typechecker::Typechecker::Typechecker,
@@ -17,7 +15,7 @@ use siko::{
 
 use std::{collections::BTreeMap, env::args, fs, path::Path};
 
-use crate::siko::backend::{simplification::Simplifier, FieldRefMerger};
+use crate::siko::backend::Backend;
 
 fn typecheck(ctx: &ReportContext, mut program: Program) -> Program {
     let mut result = BTreeMap::new();
@@ -34,23 +32,6 @@ fn typecheck(ctx: &ReportContext, mut program: Program) -> Program {
     }
     program.functions = result;
     program
-}
-
-// fn borrowcheck(program: &Program) {
-//     let builder = DataFlowProfileBuilder::new(program);
-//     let program = builder.process();
-//     println!("{}", program);
-//     for (_, f) in &program.functions {
-//         if f.body.is_some() {
-//             let mut borrowchecker = BorrowChecker::BorrowChecker::new(f);
-//             borrowchecker.check();
-//         }
-//     }
-// }
-
-fn monomorphize(ctx: &ReportContext, program: Program) -> Program {
-    let monomorphizer = Monomorphizer::new(ctx, program);
-    monomorphizer.run()
 }
 
 fn collectFiles(input: &Path) -> Vec<String> {
@@ -112,20 +93,7 @@ fn main() {
     //println!("after resolver\n{}", program);
     let program = typecheck(&ctx, program);
     //println!("after typchk\n{}", program);
-    let program = eliminateDeadCode(&ctx, program);
-    //println!("after dce\n{}", program);
-    let program = FieldRefMerger::mergeFieldRefs(program);
-    //println!("after field ref merge\n{}", program);
-    let program = checkDrops(&ctx, program);
-    //println!("after dropcheck\n{}", program);
-    // program
-    //     .dumpToFile("hirdump/afterdropcheck")
-    //     .expect("Failed to dump HIR");
-    let program = monomorphize(&ctx, program);
-    // println!("after mono\n{}", program);
-    let program = removeTuples(&program);
-    //println!("after remove tuples\n{}", program);
-    let program = Simplifier::simplify(program);
+    let program = Backend::process(&ctx, program);
     //println!("after simplifier\n{}", program);
     let mut mir_program = lowerProgram(&program);
     //println!("mir\n{}", mir_program);
