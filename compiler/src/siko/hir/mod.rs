@@ -6,6 +6,7 @@ pub mod Data;
 pub mod Function;
 pub mod Graph;
 pub mod InstanceResolver;
+pub mod Instantiation;
 pub mod Instruction;
 pub mod Lifetime;
 pub mod OwnershipVar;

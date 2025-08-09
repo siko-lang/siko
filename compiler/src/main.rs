@@ -94,7 +94,7 @@ fn main() {
     let program = typecheck(&ctx, program);
     //println!("after typchk\n{}", program);
     let program = Backend::process(&ctx, program);
-    //println!("after simplifier\n{}", program);
+    //println!("after backend\n{}", program);
     let mut mir_program = lowerProgram(&program);
     //println!("mir\n{}", mir_program);
     mir_program.process();

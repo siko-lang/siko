@@ -5,13 +5,14 @@ use std::{
 
 use crate::siko::{
     hir::{
-        Apply::{instantiateEnum, instantiateStruct, instantiateTrait, instantiateType4, Apply},
+        Apply::Apply,
         BlockBuilder::BlockBuilder,
         BodyBuilder::BodyBuilder,
         ConstraintContext::{Constraint as HirConstraint, ConstraintContext},
         Data::{Enum, Struct},
         Function::{BlockId, Function, Parameter},
         InstanceResolver::ResolutionResult,
+        Instantiation::{instantiateEnum, instantiateStruct, instantiateTrait, instantiateType},
         Instruction::{FieldId, FieldInfo, Instruction, InstructionKind, Mutability},
         Program::Program,
         Substitution::Substitution,
@@ -241,36 +242,6 @@ impl<'a> Typechecker<'a> {
         instantiateStruct(&mut self.allocator, c, ty)
     }
 
-    // fn handleImplicits(&mut self, input: &Variable, output: &Type, builder: &mut BlockBuilder) -> Type {
-    //     let mut inputTy = self.getType(input).apply(&self.substitution);
-    //     if inputTy.isReference() && !output.isReference() && !output.isGeneric() {
-    //         if self.program.instanceResolver.isCopy(&output) {
-    //             inputTy = inputTy.unpackRef().clone();
-    //             //println!("IMPLICIT CLONE FOR {} {} {}", arg, argTy, fnArg);
-    //             let tag = self.addImplicitCloneMarker(input);
-    //             builder.addTag(tag);
-    //         }
-    //     }
-    //     if inputTy.isReference()
-    //         && output.isPtr()
-    //         && ((inputTy.unpackRef() == output) || output.unpackPtr().isGeneric())
-    //     {
-    //         inputTy = inputTy.unpackRef().clone();
-    //         //println!("IMPLICIT CLONE FOR {} {} {}", arg, argTy, fnArg);
-    //         let tag = self.addImplicitCloneMarker(input);
-    //         builder.addTag(tag);
-    //     }
-    //     if !inputTy.isGeneric() && !output.isGeneric() && inputTy != *output {
-    //         if self.program.instanceResolver.isImplicitConvert(&inputTy, &output) {
-    //             inputTy = output.clone();
-    //             //println!("IMPLICIT CONVERT FOR {} {} {}", input, inputTy, output);
-    //             let tag = self.addImplicitConvertMarker(input, ImplicitConvertInfo::Simple(output.clone()));
-    //             builder.addTag(tag);
-    //         }
-    //     }
-    //     inputTy
-    // }
-
     fn updateConverterDestination(&mut self, dest: &Variable, target: &Type) {
         let destTy = self.getType(dest).apply(&self.substitution);
         let targetTy = target.apply(&self.substitution);
@@ -308,7 +279,7 @@ impl<'a> Typechecker<'a> {
         }
         let mut types = neededConstraints.typeParameters.clone();
         types.push(fnType.clone());
-        let sub = instantiateType4(&mut self.allocator, &types);
+        let sub = instantiateType(&mut self.allocator, &types);
         let fnType = fnType.apply(&sub);
         //println!("inst {}", fnType);
         let constraintContext = neededConstraints.apply(&sub);

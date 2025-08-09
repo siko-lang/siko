@@ -1,12 +1,12 @@
 use std::{cmp::Ordering, collections::BTreeMap};
 
 use crate::siko::{
-    hir::Trait::CompareSpecificity,
+    hir::{Instantiation::instantiateInstance, Trait::CompareSpecificity},
     qualifiedname::{getCopyName, getDerefName, getImplicitConvertName, QualifiedName},
 };
 
 use super::{
-    Apply::{instantiateInstance, Apply},
+    Apply::Apply,
     Substitution::{createTypeSubstitutionFrom, Substitution},
     Trait::Instance,
     Type::Type,

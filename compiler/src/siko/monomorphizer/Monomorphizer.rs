@@ -7,11 +7,12 @@ use std::{
 
 use crate::siko::{
     hir::{
-        Apply::{instantiateEnum, instantiateStruct, Apply},
+        Apply::Apply,
         BodyBuilder::BodyBuilder,
         ConstraintContext::ConstraintContext,
         Function::{Block, Body, Function, FunctionKind, Parameter},
         InstanceResolver::ResolutionResult,
+        Instantiation::{instantiateEnum, instantiateStruct},
         Instruction::{EnumCase, FieldId, FieldInfo, Instruction, InstructionKind},
         Program::Program,
         Substitution::{createTypeSubstitutionFrom, Substitution},

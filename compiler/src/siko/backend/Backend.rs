@@ -1,7 +1,7 @@
 use crate::siko::{
     backend::{
-        drop::Drop::checkDrops, simplification::Simplifier, DeadCodeEliminator::eliminateDeadCode, FieldRefMerger,
-        RemoveTuples::removeTuples,
+        drop::Drop::checkDrops, recursivedatahandler::RecursiveDataHandler, simplification::Simplifier,
+        DeadCodeEliminator::eliminateDeadCode, FieldRefMerger, RemoveTuples::removeTuples,
     },
     hir::Program::Program,
     location::Report::ReportContext,
@@ -16,6 +16,8 @@ fn monomorphize(ctx: &ReportContext, program: Program) -> Program {
 pub fn process(ctx: &ReportContext, program: Program) -> Program {
     let program = eliminateDeadCode(&ctx, program);
     //println!("after dce\n{}", program);
+    //let program = RecursiveDataHandler::process(program);
+    //println!("after recursive data handling\n{}", program);
     let program = FieldRefMerger::mergeFieldRefs(program);
     //println!("after field ref merge\n{}", program);
     let program = checkDrops(&ctx, program);
@@ -28,5 +30,7 @@ pub fn process(ctx: &ReportContext, program: Program) -> Program {
     let program = removeTuples(&program);
     //println!("after remove tuples\n{}", program);
     let program = Simplifier::simplify(program);
+    //println!("after simplification\n{}", program);
+
     program
 }
