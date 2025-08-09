@@ -92,6 +92,7 @@ impl<'a> ModuleParser for Parser<'a> {
             "String",
             "List",
             "Bool",
+            "Box",
             "Int",
             "Char",
             "Result",

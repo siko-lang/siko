@@ -1,0 +1,30 @@
+module Box {
+
+import NativePtr
+
+pub struct Box[T] {
+    value: *T,
+
+    pub fn new(value: T) -> Box[T] {
+        let p: *T = allocateArray(1);
+        store(p, value);
+        Box(p)
+    }
+
+    pub fn get(&self) -> &T {
+        let ptr = offset(self.value, 0);
+        toRef(ptr)
+    }
+}
+
+instance[T] Drop[Box[T]] {
+    fn drop(self) -> Self {
+        {
+            let value = load(self.value);
+        }
+        deallocate(self.value);
+        self
+    }
+}
+
+}
