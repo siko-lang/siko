@@ -16,6 +16,15 @@ pub enum PathSegment {
     Indexed(u32, Type),
 }
 
+impl PathSegment {
+    pub fn getType(&self) -> &Type {
+        match self {
+            PathSegment::Named(_, ty) => ty,
+            PathSegment::Indexed(_, ty) => ty,
+        }
+    }
+}
+
 impl Display for PathSegment {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -146,8 +155,10 @@ impl SimplePath {
         }
     }
 
-    pub fn add(&mut self, item: PathSegment) {
-        self.items.push(item);
+    pub fn add(&self, item: PathSegment) -> SimplePath {
+        let mut new_path = self.clone();
+        new_path.items.push(item);
+        new_path
     }
 
     pub fn sharesPrefixWith(&self, other: &SimplePath) -> bool {

@@ -65,8 +65,11 @@ impl<'a> Finalizer<'a> {
         if self.function.body.is_none() {
             return self.function.clone();
         }
-        //println!("Drop initializer processing function: {}", self.function.name);
-        //println!("{}\n", self.function);
+
+        self.dropMetadataStore.expandPathLists(self.program);
+
+        // println!("Drop initializer processing function: {}", self.function.name);
+        // println!("{}\n", self.function);
 
         let allBlocksIds = self.bodyBuilder.getAllBlockIds();
         for blockId in &allBlocksIds {
@@ -82,7 +85,7 @@ impl<'a> Finalizer<'a> {
                             InstructionKind::DropMetadata(kind) => {
                                 match kind {
                                     MetadataKind::DeclarationList(name) => {
-                                        if let Some(declarationList) = self.dropMetadataStore.getDeclarationList(name) {
+                                        if let Some(declarationList) = self.dropMetadataStore.getPathList(name) {
                                             //println!("Processing DeclarationList: {}", name);
                                             for path in declarationList.paths() {
                                                 //println!("Creating dropflag for path: {}", path);
@@ -103,19 +106,23 @@ impl<'a> Finalizer<'a> {
                                 builder.removeInstruction();
                             }
                             InstructionKind::BlockEnd(id) => {
+                                //println!("block end: {}", id);
                                 if let Some(droppedValues) = self.declarationStore.getDeclarations(&id) {
                                     for var in droppedValues {
+                                        // println!("Generating drops for value {}", var);
                                         let rootPath = var.toPath().toSimplePath();
-                                        let declarationList = self.dropMetadataStore.getDeclarationList(&var.name);
-                                        if let Some(declarationList) = declarationList {
-                                            for current in declarationList.paths() {
+                                        let pathList = self.dropMetadataStore.getPathList(&var.name);
+                                        if let Some(pathList) = pathList {
+                                            for current in pathList.paths() {
                                                 if current.contains(&rootPath) {
+                                                    //println!("Adding drop path for {}", current);
                                                     addDropPath(&mut builder, &current, &var);
                                                 }
                                             }
                                         }
                                     }
                                 }
+                                // println!("---------------------");
                                 builder.removeInstruction();
                             }
                             kind => {
@@ -124,40 +131,30 @@ impl<'a> Finalizer<'a> {
                                     if !usage.isMove() {
                                         continue;
                                     }
-                                    let declarationList =
-                                        self.dropMetadataStore.getDeclarationList(&usage.path.root.name);
-                                    if let Some(declarationList) = declarationList {
-                                        //println!("--------------------------");
-                                        for path in declarationList.paths() {
-                                            // we are moving usage.path, need to disable dropflag for it
-                                            // and all other paths that share prefix with it
-                                            if path.sharesPrefixWith(&usage.path.toSimplePath()) {
-                                                // println!(
-                                                //     "Disabling dropflag for path: {} because {} is moved",
-                                                //     path, usage.path
-                                                // );
-                                                let dropFlag = path.getDropFlag();
-                                                builder.addInstruction(
-                                                    InstructionKind::FunctionCall(dropFlag, getFalseName(), vec![]),
-                                                    usage.path.location.clone(),
-                                                );
-                                                builder.step();
-                                            }
-                                        }
-                                    }
+                                    self.disablePath(&usage.path, &mut builder);
                                 }
                                 if let Some(assignPath) = usageInfo.assign {
                                     // we are assigning to assignPath, need to enable dropflag for it and all other subpaths
                                     let root = assignPath.root.clone();
-                                    let declarationList = self.dropMetadataStore.getDeclarationList(&root.name);
-                                    if let Some(declarationList) = declarationList {
-                                        for path in declarationList.paths() {
+                                    if let Some(pathList) = self.dropMetadataStore.getPathList(&root.name) {
+                                        // println!("--------------------------");
+                                        for path in pathList.paths() {
                                             if path.contains(&assignPath.toSimplePath()) {
                                                 // println!(
                                                 //     "Enabling dropflag for path: {} because {} is assigned",
                                                 //     path, assignPath
                                                 // );
-                                                addDropPath(&mut builder, &path, &root);
+                                                let generateDrop = if assignPath.isRootOnly() {
+                                                    // if this is an implicit variable then the first assignment is the only assignment
+                                                    // and we dont need to generate drop
+                                                    self.declarationStore.explicitDeclarations.contains(&root.name)
+                                                } else {
+                                                    true
+                                                };
+                                                if generateDrop {
+                                                    // println!("Adding drop path for {}", path);
+                                                    addDropPath(&mut builder, &path, &root);
+                                                }
                                                 let dropFlag = path.getDropFlag();
                                                 builder.addInstruction(
                                                     InstructionKind::FunctionCall(dropFlag, getTrueName(), vec![]),
@@ -166,6 +163,7 @@ impl<'a> Finalizer<'a> {
                                                 builder.step();
                                             }
                                         }
+                                        // println!("---------------------");
                                     }
                                 }
                                 builder.step();
@@ -177,6 +175,12 @@ impl<'a> Finalizer<'a> {
             }
         }
 
+        self.declareDropFlags();
+
+        // let mut preDropSwitchResult = self.function.clone();
+        // preDropSwitchResult.body = Some(self.bodyBuilder.build());
+        // println!("Pre-drop switch function: {}", preDropSwitchResult);
+
         let mut queue = self.bodyBuilder.getAllBlockIds();
         loop {
             match queue.pop_front() {
@@ -187,8 +191,6 @@ impl<'a> Finalizer<'a> {
                 None => break,
             }
         }
-
-        self.declareDropFlags();
 
         let mut result = self.function.clone();
         result.body = Some(self.bodyBuilder.build());
@@ -263,6 +265,8 @@ impl<'a> Finalizer<'a> {
                             dropRes.ty = Some(Type::getUnitType());
                             let dropInstruction = InstructionKind::Drop(dropRes, dropVar);
                             dropBlock.addInstruction(dropInstruction, instruction.location.clone());
+                            // when dropping a path we need to disable the drop flag for all sub-paths
+                            self.disablePath(&path, &mut dropBlock.iterator());
                             dropBlock.addJump(newBlockId, instruction.location.clone());
                             let cases = vec![
                                 EnumCase {
@@ -287,6 +291,25 @@ impl<'a> Finalizer<'a> {
                 }
                 None => break,
             }
+        }
+    }
+
+    fn disablePath(&mut self, rootPath: &Path, builder: &mut BlockBuilder) {
+        let pathList = self.dropMetadataStore.getPathList(&rootPath.root.name);
+        if let Some(pathList) = pathList {
+            // println!("--------------------------");
+            for path in pathList.paths() {
+                if path.sharesPrefixWith(&rootPath.toSimplePath()) {
+                    // println!("Disabling dropflag for path: {} because {} is moved", path, rootPath);
+                    let dropFlag = path.getDropFlag();
+                    builder.addInstruction(
+                        InstructionKind::FunctionCall(dropFlag, getFalseName(), vec![]),
+                        rootPath.location.clone(),
+                    );
+                    builder.step();
+                }
+            }
+            // println!("---------------------");
         }
     }
 }

@@ -478,7 +478,7 @@ impl InstructionKind {
             InstructionKind::CharLiteral(dest, v) => format!("{} = c:[{}]", dest, v),
             InstructionKind::Return(dest, id) => format!("{} = return({})", dest, id),
             InstructionKind::Ref(dest, id) => format!("{} = &({})", dest, id),
-            InstructionKind::DropPath(id) => format!("droplist_placeholder({})", id),
+            InstructionKind::DropPath(path) => format!("drop_path({})", path),
             InstructionKind::DropMetadata(id) => format!("drop_metadata({})", id),
             InstructionKind::Drop(dest, value) => {
                 format!("drop({}/{})", dest, value)

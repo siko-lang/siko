@@ -101,6 +101,18 @@ impl BlockBuilder {
         }
     }
 
+    pub fn iterator(&self) -> BlockBuilder {
+        match self.mode {
+            Mode::Append => BlockBuilder {
+                bodyBuilder: self.bodyBuilder.clone(),
+                blockId: self.blockId,
+                isImplicit: self.isImplicit,
+                mode: Mode::Iterator(self.bodyBuilder.getBlockSize(self.blockId)),
+            },
+            Mode::Iterator(_) => self.clone(),
+        }
+    }
+
     pub fn addInstruction(&mut self, instruction: InstructionKind, location: Location) {
         match self.mode {
             Mode::Append => {
@@ -168,7 +180,6 @@ impl BlockBuilder {
             tempArgs.push(tempValue);
         }
         let result = self.bodyBuilder.createTempValue(location.clone());
-        self.addDeclare(result.clone(), location.clone());
         self.addInstruction(
             InstructionKind::FunctionCall(result.clone(), functionName, tempArgs),
             location,
@@ -215,7 +226,6 @@ impl BlockBuilder {
             );
             tempArgs.push(tempValue);
         }
-        self.addDeclare(result.clone(), location.clone());
         self.addInstruction(
             InstructionKind::MethodCall(result.clone(), receiverTemp, name, tempArgs),
             location,
@@ -284,7 +294,6 @@ impl BlockBuilder {
     pub fn addUnit(&mut self, location: Location) -> Variable {
         let mut result = self.bodyBuilder.createTempValue(location.clone());
         result.ty = Some(Type::getUnitType());
-        self.addDeclare(result.clone(), location.clone());
         self.addInstruction(InstructionKind::Tuple(result.clone(), Vec::new()), location.clone());
         result
     }

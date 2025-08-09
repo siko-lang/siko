@@ -7,6 +7,7 @@ use crate::siko::hir::{
 
 pub struct DeclarationStore {
     vars: BTreeMap<VariableName, Variable>,
+    pub explicitDeclarations: BTreeSet<VariableName>,
     declarations: BTreeMap<VariableName, SyntaxBlockId>,
     blockDeclarations: BTreeMap<SyntaxBlockId, BTreeSet<VariableName>>,
 }
@@ -15,6 +16,7 @@ impl DeclarationStore {
     pub fn new() -> DeclarationStore {
         DeclarationStore {
             vars: BTreeMap::new(),
+            explicitDeclarations: BTreeSet::new(),
             declarations: BTreeMap::new(),
             blockDeclarations: BTreeMap::new(),
         }

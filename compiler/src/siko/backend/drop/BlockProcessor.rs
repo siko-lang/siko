@@ -85,7 +85,7 @@ impl<'a> BlockProcessor<'a> {
         // }
 
         for (name, events) in context.usages.iter() {
-            if let Some(declarationList) = self.dropMetadataStore.getDeclarationList(name) {
+            if let Some(declarationList) = self.dropMetadataStore.getPathList(name) {
                 for path in events.getAllWritePaths() {
                     let mut simplePath = path.toSimplePath();
                     loop {

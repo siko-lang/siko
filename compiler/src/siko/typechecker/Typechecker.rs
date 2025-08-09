@@ -135,12 +135,14 @@ impl<'a> Typechecker<'a> {
             for (_, block) in &body.blocks {
                 for instruction in &block.instructions {
                     match &instruction.kind {
-                        InstructionKind::FunctionCall(_, _, _) => {}
+                        InstructionKind::FunctionCall(dest, _, _) => {
+                            self.initializeVar(dest);
+                        }
                         InstructionKind::Converter(var, _) => {
                             self.initializeVar(var);
                         }
-                        InstructionKind::MethodCall(_, _, _, _) => {
-                            //self.initializeVar(var);
+                        InstructionKind::MethodCall(dest, _, _, _) => {
+                            self.initializeVar(dest);
                         }
                         InstructionKind::DynamicFunctionCall(var, _, _) => {
                             self.initializeVar(var);

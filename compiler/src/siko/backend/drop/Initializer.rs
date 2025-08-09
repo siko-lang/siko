@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
 
 use crate::siko::{
     backend::drop::{
@@ -13,7 +13,7 @@ use crate::siko::{
         Function::{BlockId, Function},
         Instruction::{InstructionKind, SyntaxBlockId},
         Program::Program,
-        Variable::{Variable, VariableName},
+        Variable::Variable,
     },
 };
 
@@ -21,7 +21,6 @@ pub struct Initializer<'a> {
     bodyBuilder: BodyBuilder,
     function: &'a Function,
     program: &'a Program,
-    explicitDeclarations: BTreeSet<VariableName>,
     dropMetadataStore: &'a mut DropMetadataStore,
     declarationStore: &'a mut DeclarationStore,
     queue: VecDeque<(BlockId, SyntaxBlockId)>,
@@ -38,7 +37,6 @@ impl<'a> Initializer<'a> {
             bodyBuilder: BodyBuilder::cloneFunction(f),
             function: f,
             program: program,
-            explicitDeclarations: BTreeSet::new(),
             dropMetadataStore,
             declarationStore,
             queue: VecDeque::new(),
@@ -49,11 +47,12 @@ impl<'a> Initializer<'a> {
         if var.hasTrivialDrop() || var.isArg() {
             return;
         }
-        if !explicit && self.explicitDeclarations.contains(&var.name) {
+        if !explicit && self.declarationStore.explicitDeclarations.contains(&var.name) {
             return;
         }
         self.declarationStore.declare(var.clone(), syntaxBlock.clone());
-        self.dropMetadataStore.addVariable(var.name.clone());
+        self.dropMetadataStore
+            .addVariable(var.name.clone(), var.getType().clone());
         let kind = MetadataKind::DeclarationList(var.name.clone());
         builder.addInstruction(InstructionKind::DropMetadata(kind), var.location.clone());
         builder.step();
@@ -201,7 +200,7 @@ impl<'a> Initializer<'a> {
             loop {
                 if let Some(instruction) = builder.getInstruction() {
                     if let InstructionKind::DeclareVar(v, _) = &instruction.kind {
-                        self.explicitDeclarations.insert(v.name.clone());
+                        self.declarationStore.explicitDeclarations.insert(v.name.clone());
                     }
                     builder.step();
                 } else {

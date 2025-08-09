@@ -6,8 +6,13 @@ use std::{
 };
 
 use crate::siko::{
-    backend::drop::Path::{Path, SimplePath},
-    hir::Variable::VariableName,
+    backend::drop::Path::{Path, PathSegment, SimplePath},
+    hir::{
+        Program::Program,
+        Type::Type,
+        Variable::{Variable, VariableName},
+    },
+    location::Location::Location,
 };
 
 pub enum Kind {
@@ -57,21 +62,62 @@ impl Display for MetadataKind {
     }
 }
 
-struct DeclarationListInner {
+struct PathListInner {
     name: VariableName,
+    ty: Type,
     paths: BTreeSet<SimplePath>,
 }
 
-#[derive(Clone)]
-pub struct DeclarationList {
-    list: Rc<RefCell<DeclarationListInner>>,
+impl PathListInner {
+    pub fn expand(&mut self, program: &Program) {
+        let var = Variable {
+            name: self.name.clone(),
+            location: Location::empty(),
+            ty: Some(self.ty.clone()),
+        };
+        let rootPath = var.toPath().toSimplePath();
+        self.expandPath(program, &rootPath, &self.ty.clone());
+    }
+
+    fn expandPath(&mut self, program: &Program, rootPath: &SimplePath, ty: &Type) {
+        if let Some(name) = ty.getName() {
+            if let Some(structDef) = program.getStruct(&name) {
+                let mut subPaths = Vec::new();
+                let mut present = Vec::new();
+                for field in &structDef.fields {
+                    let segment = PathSegment::Named(field.name.clone(), field.ty.clone());
+                    let fieldPath = rootPath.add(segment);
+                    for p in &self.paths {
+                        if p.contains(&fieldPath) {
+                            present.push(fieldPath.clone());
+                        }
+                        subPaths.push(fieldPath.clone());
+                    }
+                }
+                if !present.is_empty() {
+                    for s in subPaths {
+                        self.paths.insert(s);
+                    }
+                    for p in present {
+                        self.expandPath(program, &p, p.items.last().unwrap().getType());
+                    }
+                }
+            }
+        }
+    }
 }
 
-impl DeclarationList {
-    pub fn new(name: VariableName) -> Self {
-        DeclarationList {
-            list: Rc::new(RefCell::new(DeclarationListInner {
+#[derive(Clone)]
+pub struct PathList {
+    list: Rc<RefCell<PathListInner>>,
+}
+
+impl PathList {
+    pub fn new(name: VariableName, ty: Type) -> Self {
+        PathList {
+            list: Rc::new(RefCell::new(PathListInner {
                 name,
+                ty,
                 paths: BTreeSet::new(),
             })),
         }
@@ -84,56 +130,61 @@ impl DeclarationList {
     pub fn paths(&self) -> BTreeSet<SimplePath> {
         self.list.borrow().paths.clone()
     }
-}
 
-struct DropMetadata {
-    declaration_list: DeclarationList,
+    pub fn expand(&self, program: &Program) {
+        self.list.borrow_mut().expand(program);
+    }
 }
 
 pub struct DropMetadataStore {
-    drop_lists: BTreeMap<u32, DropList>,
-    variableMetadata: BTreeMap<VariableName, DropMetadata>,
+    variableMetadata: BTreeMap<VariableName, PathList>,
 }
 
 impl DropMetadataStore {
     pub fn new() -> Self {
         DropMetadataStore {
-            drop_lists: BTreeMap::new(),
             variableMetadata: BTreeMap::new(),
         }
     }
 
-    pub fn createDropList(&mut self, kind: Kind) -> u32 {
-        let id = self.drop_lists.len() as u32 + 1; // Generate a new ID
-        let drop_list = DropList::new(kind);
-        self.drop_lists.insert(id, drop_list);
-        id
+    pub fn addVariable(&mut self, name: VariableName, ty: Type) {
+        let path_list = PathList::new(name.clone(), ty);
+        self.variableMetadata.insert(name, path_list);
     }
 
-    pub fn addVariable(&mut self, name: VariableName) {
-        let declaration_list = DeclarationList::new(name.clone());
-        self.variableMetadata.insert(name, DropMetadata { declaration_list });
+    pub fn getPathList(&self, name: &VariableName) -> Option<PathList> {
+        self.variableMetadata.get(name).cloned()
     }
 
-    pub fn getDeclarationList(&self, name: &VariableName) -> Option<DeclarationList> {
-        self.variableMetadata
-            .get(name)
-            .map(|metadata| metadata.declaration_list.clone())
-    }
-
-    pub fn addPath(&mut self, id: u32, path: Path) {
-        if let Some(drop_list) = self.drop_lists.get_mut(&id) {
-            drop_list.addPath(path);
-        } else {
-            panic!("DropList with id {} not found", id);
+    pub fn expandPathLists(&mut self, program: &Program) {
+        for path_list in self.variableMetadata.values_mut() {
+            path_list.expand(program);
         }
     }
-
-    pub fn getDropListIds(&self) -> Vec<u32> {
-        self.drop_lists.keys().cloned().collect()
-    }
-
-    pub fn getDropList(&self, id: u32) -> &DropList {
-        self.drop_lists.get(&id).expect("DropList not found")
-    }
 }
+
+// fn dropPath(&self, rootPath: &Path, ty: &Type, context: &Context, dropList: &mut DropList) {
+//     match context.isMoved(&&rootPath) {
+//         MoveKind::NotMoved => {
+//             //println!("not moved - drop {}", rootPath);
+//             dropList.add(rootPath.clone());
+//         }
+//         MoveKind::Partially => {
+//             //println!("partially moved {}", rootPath);
+//             //println!("already moved (maybe partially?) {}", rootPath);
+//             if let Some(structName) = ty.getName() {
+//                 if let Some(structDef) = self.program.getStruct(&structName) {
+//                     let mut allocator = TypeVarAllocator::new();
+//                     let structInstance = instantiateStruct(&mut allocator, &structDef, ty);
+//                     for field in &structInstance.fields {
+//                         let path = rootPath.add(field.name.clone());
+//                         self.dropPath(&path, &field.ty, context, dropList);
+//                     }
+//                 }
+//             }
+//         }
+//         MoveKind::Fully(var) => {
+//             //println!("already moved {} by {}", rootPath, var);
+//         }
+//     }
+// }
