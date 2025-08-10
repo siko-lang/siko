@@ -260,10 +260,14 @@ impl<'a> MinicBuilder<'a> {
                     //println!("{} {} {} {}", dest.ty, src.ty, index, v.ty);
                     let mut recastVar = dest.clone();
                     recastVar.ty = Type::Struct(v.name.clone());
+                    if dest.ty.isPtr() {
+                        recastVar.ty = Type::Ptr(Box::new(recastVar.ty));
+                    }
                     let recastVar = self.tmpVar(&recastVar);
                     let minicInstruction = LInstruction::Bitcast(recastVar.clone(), self.lowerVar(src));
                     minicBlock.instructions.push(minicInstruction);
-                    let minicInstruction = LInstruction::GetField(self.lowerVar(dest), recastVar, 1, GetMode::Noop);
+                    let mode = if dest.ty.isPtr() { GetMode::Ref } else { GetMode::Noop };
+                    let minicInstruction = LInstruction::GetField(self.lowerVar(dest), recastVar, 1, mode);
                     minicBlock.instructions.push(minicInstruction);
                 }
             };

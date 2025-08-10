@@ -483,12 +483,12 @@ impl<'a> Typechecker<'a> {
                                 TypecheckerError::FieldNotFound(fieldName.clone(), location.clone()).report(self.ctx);
                             }
                         } else {
-                            //println!("ReadField 1 on non-named type: {} {}", receiverType, fieldName);
+                            println!("ReadField 1 on non-named type: {} {}", receiverType, fieldName);
                             TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
                         }
                     }
                     _ => {
-                        //println!("ReadField 2 on non-named type: {} {}", receiverType, fieldName);
+                        println!("ReadField 2 on non-named type: {} {}", receiverType, fieldName);
                         TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
                     }
                 }
@@ -498,6 +498,7 @@ impl<'a> Typechecker<'a> {
                 match receiverType.unpackRef() {
                     Type::Tuple(types) => {
                         if *index as usize >= types.len() {
+                            println!("ReadField 4 on out-of-bounds index: {} {}", receiverType, index);
                             TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
                         }
                         if receiverType.isReference() {
@@ -506,6 +507,7 @@ impl<'a> Typechecker<'a> {
                         return types[*index as usize].clone();
                     }
                     _ => {
+                        println!("ReadField 3 on non-tuple type: {} {}", receiverType, index);
                         TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
                     }
                 }
@@ -545,12 +547,12 @@ impl<'a> Typechecker<'a> {
                         TypecheckerError::FieldNotFound(fieldName.clone(), location.clone()).report(self.ctx);
                     }
                 } else {
-                    //println!("ReadField 1 on non-named type: {} {}", receiverType, fieldName);
+                    println!("ReadField 1 on non-named type: {} {}", receiverType, fieldName);
                     TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
                 }
             }
             _ => {
-                //println!("ReadField 2 on non-named type: {} {}", receiverType, fieldName);
+                println!("ReadField 2 on non-named type: {} {}", receiverType, fieldName);
                 TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
             }
         }
@@ -809,19 +811,21 @@ impl<'a> Typechecker<'a> {
             InstructionKind::Transform(dest, root, index) => {
                 let rootTy = self.getType(root);
                 let rootTy = rootTy.apply(&self.substitution);
+                let isRef = rootTy.isReference();
                 match rootTy.unpackRef().getName() {
                     Some(name) => {
                         let e = self.program.enums.get(&name).expect("not an enum in transform!");
                         let e = self.instantiateEnum(e, &rootTy.unpackRef());
                         let v = &e.variants[*index as usize];
-                        self.unify(
-                            self.getType(dest),
-                            Type::Tuple(v.items.clone()),
-                            instruction.location.clone(),
-                        );
+                        let destType = if isRef {
+                            Type::Reference(Box::new(Type::Tuple(v.items.clone())), None)
+                        } else {
+                            Type::Tuple(v.items.clone())
+                        };
+                        self.unify(self.getType(dest), destType, instruction.location.clone());
                     }
                     None => {
-                        //println!("Transform on non-enum type: {} {}", rootTy, instruction);
+                        println!("Transform on non-enum type: {} {}", rootTy, instruction);
                         TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(self.ctx);
                     }
                 };
@@ -885,7 +889,8 @@ impl<'a> Typechecker<'a> {
                     FieldId::Indexed(index) => {
                         let receiverType = self.getType(receiver);
                         let receiverType = receiverType.apply(&self.substitution);
-                        match receiverType {
+                        let isRef = receiverType.isReference();
+                        match receiverType.unpackRef() {
                             Type::Tuple(t) => {
                                 if index as usize >= t.len() {
                                     TypecheckerError::FieldNotFound(
@@ -894,11 +899,15 @@ impl<'a> Typechecker<'a> {
                                     )
                                     .report(&self.ctx);
                                 }
-                                let fieldType = t[index as usize].clone();
+                                let fieldType = if isRef {
+                                    Type::Reference(Box::new(t[index as usize].clone()), None)
+                                } else {
+                                    t[index as usize].clone()
+                                };
                                 self.unify(self.getType(dest), fieldType, instruction.location.clone());
                             }
                             _ => {
-                                //println!("TupleIndex on non-tuple type: {} {}", receiverType, instruction);
+                                println!("TupleIndex on non-tuple type: {} {}", receiverType, instruction);
                                 TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(self.ctx);
                             }
                         }

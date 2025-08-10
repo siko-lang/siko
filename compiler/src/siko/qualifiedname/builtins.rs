@@ -215,3 +215,15 @@ pub fn getStdBasicUtilPrintStrName() -> QualifiedName {
 pub fn getBoxTypeName() -> QualifiedName {
     build("Box", "Box")
 }
+
+pub fn getBoxNewFnName() -> QualifiedName {
+    build("Box", "Box").add(format!("new"))
+}
+
+pub fn getBoxReleaseFnName() -> QualifiedName {
+    build("Box", "Box").add(format!("release"))
+}
+
+pub fn getBoxGetFnName() -> QualifiedName {
+    build("Box", "Box").add(format!("get"))
+}

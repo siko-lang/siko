@@ -15,10 +15,20 @@ pub struct Box[T] {
         let ptr = offset(self.value, 0);
         toRef(ptr)
     }
+
+    pub fn release(mut self) -> T {
+        let value = load(self.value);
+        deallocate(self.value);
+        self.value = null();
+        value
+    }
 }
 
 instance[T] Drop[Box[T]] {
     fn drop(self) -> Self {
+        if isNull(self.value) {
+            return self;
+        }
         {
             let value = load(self.value);
         }

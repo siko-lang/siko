@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::siko::{
     hir::{
         Data::Enum,
+        Function::Parameter,
         Instantiation::{instantiateEnum, instantiateStruct},
         Program::Program,
         Substitution::Substitution,
@@ -145,6 +146,19 @@ fn processSingleDataGroup(mut program: Program, group: DependencyGroup<Type>) ->
             if let Some(e) = program.enums.get(&name) {
                 //println!("Processing enum: {}", e.name);
                 let e = processEnum(e.clone(), &sub);
+                for v in &e.variants {
+                    let ctorFunc = program.functions.get_mut(&v.name).expect("Variant ctor not found");
+                    for param in ctorFunc.params.iter_mut() {
+                        match param {
+                            Parameter::Named(_, ty, _) => {
+                                *ty = sub.get(ty.clone());
+                            }
+                            Parameter::SelfParam(_, ty) => {
+                                *ty = sub.get(ty.clone());
+                            }
+                        }
+                    }
+                }
                 //println!("Processed enum: {}", e);
                 program.enums.insert(name.clone(), e);
                 // for v in &e.variants {

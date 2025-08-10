@@ -192,7 +192,11 @@ impl MiniCGenerator {
                 format!("{} = &{};", dest.name, src.name)
             }
             Instruction::Bitcast(dest, src) => {
-                format!("{} = *({}*)&{};", dest.name, getTypeName(&dest.ty), src.name)
+                if dest.ty.isPtr() {
+                    format!("{} = ({})&{};", dest.name, getTypeName(&dest.ty), src.name)
+                } else {
+                    format!("{} = *({}*)&{};", dest.name, getTypeName(&dest.ty), src.name)
+                }
             }
             Instruction::Switch(root, default, branches) => {
                 let branches: Vec<_> = branches

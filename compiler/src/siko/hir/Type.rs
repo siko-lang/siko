@@ -193,6 +193,18 @@ impl Type {
         }
     }
 
+    pub fn isBoxed(&self, ty: &Type) -> bool {
+        match &self {
+            Type::Named(name, args) => {
+                if name == &getBoxTypeName() && args.len() == 1 && args[0] == *ty {
+                    return true;
+                }
+                false
+            }
+            _ => false,
+        }
+    }
+
     pub fn changeMethodResult(&self) -> Type {
         match &self {
             Type::Function(args, result) => Type::Function(args.clone(), Box::new(result.getSelflessType(true))),

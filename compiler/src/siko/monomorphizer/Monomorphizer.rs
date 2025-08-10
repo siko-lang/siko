@@ -434,6 +434,8 @@ impl<'a> Monomorphizer<'a> {
             .get(&name)
             .expect("function not found in mono")
             .clone();
+
+        //println!("Function: {}", function);
         if let FunctionKind::TraitMemberDecl(_) = function.kind {
             return;
         }
