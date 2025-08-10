@@ -328,7 +328,7 @@ impl<'a> ExprResolver<'a> {
                             .addFunctionCall(irName, irArgs, expr.location.clone());
                     }
                     SimpleExpr::Value(name) => {
-                        if let Some(name) = env.resolve(&name.name) {
+                        if let Some(_name) = env.resolve(&name.name) {
                             // self.bodyBuilder
                             //     .current()
                             //     .addDynamicFunctionCall(name, irArgs, expr.location.clone())
@@ -341,7 +341,7 @@ impl<'a> ExprResolver<'a> {
                         }
                     }
                     _ => {
-                        let callableId = self.resolveExpr(&callable, env);
+                        let _callableId = self.resolveExpr(&callable, env);
                         // self.bodyBuilder
                         //     .current()
                         //     .addDynamicFunctionCall(callableId, irArgs, expr.location.clone())
