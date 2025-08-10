@@ -372,4 +372,12 @@ impl BlockBuilder {
     pub fn getBlockSize(&self) -> usize {
         self.bodyBuilder.getBlockSize(self.blockId)
     }
+
+    pub fn getLastInstruction(&self) -> Option<Instruction> {
+        self.bodyBuilder.getLastInstruction(self.blockId)
+    }
+
+    pub fn isValid(&self) -> bool {
+        self.bodyBuilder.isValid(self.blockId)
+    }
 }

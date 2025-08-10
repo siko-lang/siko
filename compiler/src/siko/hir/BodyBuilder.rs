@@ -130,6 +130,15 @@ impl Builder {
     pub fn createTempValue(&mut self, location: Location) -> Variable {
         self.body.varAllocator.allocate(location)
     }
+
+    pub fn getLastInstruction(&self, block_id: BlockId) -> Option<Instruction> {
+        let block = self.body.getBlockById(block_id);
+        block.instructions.last().cloned()
+    }
+
+    pub fn isValid(&self, blockId: BlockId) -> bool {
+        self.body.blocks.contains_key(&blockId)
+    }
 }
 
 #[derive(Clone)]
@@ -269,5 +278,15 @@ impl BodyBuilder {
     pub fn mergeBlocks(&mut self, sourceBlockId: BlockId, targetBlockId: BlockId) {
         let mut bodyBuilder = self.bodyBuilder.borrow_mut();
         bodyBuilder.body.mergeBlocks(sourceBlockId, targetBlockId);
+    }
+
+    pub fn getLastInstruction(&self, blockId: BlockId) -> Option<Instruction> {
+        let bodyBuilder = self.bodyBuilder.borrow();
+        bodyBuilder.getLastInstruction(blockId)
+    }
+
+    pub fn isValid(&self, blockId: BlockId) -> bool {
+        let bodyBuilder = self.bodyBuilder.borrow();
+        bodyBuilder.isValid(blockId)
     }
 }

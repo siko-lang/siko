@@ -191,11 +191,15 @@ impl<'a> DropChecker<'a> {
                             vars.retain(|v| *v != result);
                         }
                         if vars.len() != 1 {
-                            println!("Instruction: {}", instruction);
-                            panic!(
-                                "Implicit clone should have exactly one non result variable, found: {}",
-                                vars.len()
-                            );
+                            if let InstructionKind::FieldAssign(_, value, _) = &instruction.kind {
+                                vars.retain(|v| *v != *value);
+                            } else {
+                                println!("Instruction: {}", instruction);
+                                panic!(
+                                    "Implicit clone should have exactly one non result variable, found: {}",
+                                    vars.len()
+                                );
+                            }
                         }
                         let input = vars[0].clone();
                         let mut implicitCloneVar = self.bodyBuilder.createTempValue(input.location.clone());

@@ -73,24 +73,35 @@ impl<'a> BlockMerger<'a> {
         let mut bodyBuilder = BodyBuilder::cloneFunction(self.function);
         let mut merged = false;
 
-        if let Some(body) = &self.function.body {
-            for (blockId, block) in body.blocks.iter() {
-                if let Some(lastInstruction) = block.instructions.last() {
-                    if let InstructionKind::Jump(_, targetId) = &lastInstruction.kind {
-                        // Check if target block has exactly one incoming jump
-                        if let Some(&count) = self.jumpCounts.get(targetId) {
+        let allBlockIds = bodyBuilder.getAllBlockIds();
+
+        for blockId in allBlockIds {
+            let builder = bodyBuilder.iterator(blockId);
+            if builder.isValid() {
+                loop {
+                    if let Some(lastInstruction) = builder.getLastInstruction() {
+                        if let InstructionKind::Jump(_, targetId) = &lastInstruction.kind {
+                            // Check if target block has exactly one incoming jump
+                            let count = *self.jumpCounts.get(targetId).expect("Target block not found");
                             if count == 1 {
-                                bodyBuilder.mergeBlocks(*blockId, *targetId);
+                                //println!("Merging single jump target block {} into block {}", targetId, blockId);
+                                bodyBuilder.mergeBlocks(blockId, *targetId);
                                 merged = true;
-                                break;
+                            } else {
+                                break; // target block has multiple incoming jumps - cannot merge
                             }
+                        } else {
+                            break; // No jump instruction, nothing to merge
                         }
+                    } else {
+                        break; // No more instructions to process in this block
                     }
                 }
             }
         }
 
         if merged {
+            //println!("Block count {}", bodyBuilder.getAllBlockIds().len());
             let mut f = self.function.clone();
             f.body = Some(bodyBuilder.build());
             Some(f)

@@ -58,6 +58,8 @@ instance PartialEq[Int] {
     }
 }
 
+instance Eq[Int]
+
 instance PartialOrd[Int] {
     fn partialCmp(&self, other: &Int) -> Option[Ordering] {
         if self.eq(other) {
@@ -91,6 +93,8 @@ instance Clone[Int] {
         self.clone()
     }
 }
+
+instance Copy[Int]
 
 instance Neg[Int] {
     fn negative(self) -> Int {
@@ -130,11 +134,9 @@ instance Show[Int] {
     }
 }
 
-instance Copy[Int]
-
 pub extern struct U8 {
     pub fn add(self, other: U8) -> U8 = extern
-    
+
     pub fn sub(self, other: U8) -> U8 = extern
 
     pub fn mul(self, other: U8) -> U8 = extern
@@ -179,6 +181,8 @@ instance PartialEq[U8] {
     }
 }
 
+instance Eq[U8]
+
 instance PartialOrd[U8] {
     fn partialCmp(&self, other: &U8) -> Option[Ordering] {
         if self.eq(other) {
@@ -188,6 +192,20 @@ instance PartialOrd[U8] {
                 Some(Less)
             } else {
                 Some(Greater)
+            }
+        }
+    }
+}
+
+instance Ord[U8] {
+    fn cmp(&self, other: &U8) -> Ordering {
+        if self.eq(other) {
+            Equal
+        } else {
+            if self.lessThan(other) {
+                Less
+            } else {
+                Greater
             }
         }
     }
@@ -203,7 +221,7 @@ instance Copy[U8]
 
 pub extern struct I32 {
     pub fn add(self, other: I32) -> I32 = extern
-    
+
     pub fn sub(self, other: I32) -> I32 = extern
 
     pub fn mul(self, other: I32) -> I32 = extern
@@ -255,6 +273,8 @@ instance PartialEq[I32] {
     }
 }
 
+instance Eq[I32]
+
 instance PartialOrd[I32] {
     fn partialCmp(&self, other: &I32) -> Option[Ordering] {
         if self.eq(other) {
@@ -264,6 +284,20 @@ instance PartialOrd[I32] {
                 Some(Less)
             } else {
                 Some(Greater)
+            }
+        }
+    }
+}
+
+instance Ord[I32] {
+    fn cmp(&self, other: &I32) -> Ordering {
+        if self.eq(other) {
+            Equal
+        } else {
+            if self.lessThan(other) {
+                Less
+            } else {
+                Greater
             }
         }
     }
