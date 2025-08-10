@@ -122,6 +122,34 @@ impl<'a> Parser<'a> {
         self.index -= 1;
     }
 
+    pub fn parseQualifiedTypeName(&mut self) -> Identifier {
+        let mut id = self.parseTypeIdentifier();
+        while self.check(TokenKind::Misc(MiscKind::Dot)) {
+            self.expect(TokenKind::Misc(MiscKind::Dot));
+            id.dot(self.currentLocation());
+            let next = self.parseTypeIdentifier();
+            id.merge(next);
+        }
+        id
+    }
+
+    pub fn parseQualifiedVarName(&mut self) -> Identifier {
+        let mut id = self.parseVarIdentifier();
+        while self.check(TokenKind::Misc(MiscKind::Dot)) {
+            self.expect(TokenKind::Misc(MiscKind::Dot));
+            id.dot(self.currentLocation());
+            if self.check(TokenKind::TypeIdentifier) {
+                id.merge(self.parseTypeIdentifier());
+            } else if self.check(TokenKind::VarIdentifier) {
+                id.merge(self.parseVarIdentifier());
+                break;
+            } else {
+                self.reportError2("<qualified variable name>", self.peek());
+            }
+        }
+        id
+    }
+
     pub fn parseTypeIdentifier(&mut self) -> Identifier {
         match self.tokens[self.index].token.clone() {
             Token::TypeIdentifier(v) => {

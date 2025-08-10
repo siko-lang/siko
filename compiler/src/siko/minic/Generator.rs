@@ -193,7 +193,7 @@ impl MiniCGenerator {
             }
             Instruction::Bitcast(dest, src) => {
                 if dest.ty.isPtr() {
-                    format!("{} = ({})&{};", dest.name, getTypeName(&dest.ty), src.name)
+                    format!("{} = ({}){};", dest.name, getTypeName(&dest.ty), src.name)
                 } else {
                     format!("{} = *({}*)&{};", dest.name, getTypeName(&dest.ty), src.name)
                 }

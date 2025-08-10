@@ -31,7 +31,7 @@ impl<'a> PatternParser for Parser<'a> {
                 self.buildPattern(SimplePattern::Bind(name, false))
             }
             TokenKind::TypeIdentifier => {
-                let name = self.parseTypeIdentifier();
+                let name = self.parseQualifiedTypeName();
                 let mut args = Vec::new();
                 if self.check(TokenKind::LeftBracket(BracketKind::Paren)) {
                     self.expect(TokenKind::LeftBracket(BracketKind::Paren));

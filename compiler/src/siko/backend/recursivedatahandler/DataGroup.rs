@@ -174,7 +174,7 @@ fn processSingleDataGroup(mut program: Program, group: DependencyGroup<Type>) ->
     program
 }
 
-fn getDataGroups(program: &Program) -> Vec<DependencyGroup<Type>> {
+fn getDataGroups(program: &Program) -> (Vec<DependencyGroup<Type>>, BTreeMap<Type, bool>) {
     let mut handler = DataGroupHandler::new(program);
     for (_, s) in &program.structs {
         handler.isRecursive(&s.ty);
@@ -189,20 +189,34 @@ fn getDataGroups(program: &Program) -> Vec<DependencyGroup<Type>> {
     //     println!("Type: {}, Dependencies: {}", ty, formatTypes(deps));
     // }
 
-    processDependencies(&handler.deps)
+    (processDependencies(&handler.deps), handler.recursive)
 }
 
 pub fn processDataGroups(ctx: &ReportContext, mut program: Program) -> Program {
-    let groups = getDataGroups(&program);
+    let (groups, cache) = getDataGroups(&program);
     for group in groups {
+        let mut recursive = false;
         if group.items.len() > 1 {
+            recursive = true;
+        }
+        if group.items.len() == 1 && cache.get(&group.items[0]) == Some(&true) {
+            recursive = true;
+        }
+        if recursive {
             program = processSingleDataGroup(program, group);
         }
     }
-    let groups = getDataGroups(&program);
+    let (groups, cache) = getDataGroups(&program);
     let mut success = true;
     for group in groups {
+        let mut recursive = false;
         if group.items.len() > 1 {
+            recursive = true;
+        }
+        if group.items.len() == 1 && cache.get(&group.items[0]) == Some(&true) {
+            recursive = true;
+        }
+        if recursive {
             for item in &group.items {
                 if let Some(name) = item.getName() {
                     if let Some(s) = program.structs.get(&name) {

@@ -1,0 +1,49 @@
+module Main {
+
+enum Value {
+    Int(Int.Int),
+    String(String.String)
+}
+
+enum Expr {
+    Int(Int.Int),
+    String(String.String),
+    Sum(Expr, Expr),
+    Mul(Expr, Expr)
+}
+
+fn toInt(value: Value) -> Int.Int {
+    match value {
+        Value.Int(v) -> v,
+        Value.String(v) -> 0,
+    }
+}
+
+fn eval(expr: Expr) -> Value {
+    match expr {
+        Expr.Int(value) -> Value.Int(value),
+        Expr.String(value) -> Value.String(value),
+        Expr.Sum(lhs, rhs) -> Value.Int(toInt(eval(lhs)) + toInt(eval(rhs))),
+        Expr.Mul(lhs, rhs) -> Value.Int(toInt(eval(lhs)) * toInt(eval(rhs))),
+    }
+}
+
+fn eval2(expr: &Expr) -> Value {
+    match expr {
+        Expr.Int(value) -> Value.Int(value),
+        Expr.String(value) -> Value.String(value.clone()),
+        Expr.Sum(lhs, rhs) -> Value.Int(toInt(eval2(lhs)) + toInt(eval2(rhs))),
+        Expr.Mul(lhs, rhs) -> Value.Int(toInt(eval2(lhs)) * toInt(eval2(rhs))),
+    }
+}
+
+fn main() {
+    let expr = Expr.Mul(
+        Expr.Sum(Expr.Int(4), Expr.Int(4)),
+        Expr.Int(2),
+    );
+    assert((toInt(eval2(expr)) == 16));
+    assert((toInt(eval(expr)) == 16));
+}
+
+}

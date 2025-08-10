@@ -20,7 +20,7 @@ impl<'a> TypeParser for Parser<'a> {
     fn parseType(&mut self) -> Type {
         match self.peek() {
             TokenKind::TypeIdentifier => {
-                let name = self.parseTypeIdentifier();
+                let name = self.parseQualifiedTypeName();
                 let mut args = Vec::new();
                 if self.check(TokenKind::LeftBracket(BracketKind::Square)) {
                     self.expect(TokenKind::LeftBracket(BracketKind::Square));

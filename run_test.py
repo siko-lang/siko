@@ -72,6 +72,8 @@ def test_success(root, entry, extras):
         return False
     r = subprocess.run([binary], capture_output=True)
     if r.returncode != 0:
+        sys.stdout.write(r.stdout.decode())
+        sys.stderr.write(r.stderr.decode())
         return False
     if in_workflow:
         if not runUnderValgrind(binary, []):
