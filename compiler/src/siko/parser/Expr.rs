@@ -97,10 +97,9 @@ impl<'a> ExprParser for Parser<'a> {
         let start = self.currentSpan();
         self.expect(TokenKind::Keyword(KeywordKind::If));
         let cond = self.parseExpr();
-        self.expect(TokenKind::LeftBracket(BracketKind::Curly));
-        self.undo();
+        let block = self.parseBlock();
         let mut branches = Vec::new();
-        let trueBranch = self.parseExpr();
+        let trueBranch = self.buildExpr(SimpleExpr::Block(block), start.clone());
         branches.push(Branch {
             pattern: Pattern {
                 pattern: SimplePattern::Named(
@@ -114,20 +113,31 @@ impl<'a> ExprParser for Parser<'a> {
         if self.check(TokenKind::Keyword(KeywordKind::Else)) {
             self.expect(TokenKind::Keyword(KeywordKind::Else));
             if !self.check(TokenKind::Keyword(KeywordKind::If)) {
-                self.expect(TokenKind::LeftBracket(BracketKind::Curly));
-                self.undo();
+                let block = self.parseBlock();
+                let falseBranch = self.buildExpr(SimpleExpr::Block(block), start.clone());
+                branches.push(Branch {
+                    pattern: Pattern {
+                        pattern: SimplePattern::Named(
+                            Identifier::new(&getFalseName().toString(), self.currentLocation()),
+                            Vec::new(),
+                        ),
+                        location: self.currentLocation(),
+                    },
+                    body: falseBranch,
+                });
+            } else {
+                let falseBranch = self.parseIf();
+                branches.push(Branch {
+                    pattern: Pattern {
+                        pattern: SimplePattern::Named(
+                            Identifier::new(&getFalseName().toString(), self.currentLocation()),
+                            Vec::new(),
+                        ),
+                        location: self.currentLocation(),
+                    },
+                    body: falseBranch,
+                });
             }
-            let falseBranch = self.parseExpr();
-            branches.push(Branch {
-                pattern: Pattern {
-                    pattern: SimplePattern::Named(
-                        Identifier::new(&getFalseName().toString(), self.currentLocation()),
-                        Vec::new(),
-                    ),
-                    location: self.currentLocation(),
-                },
-                body: falseBranch,
-            });
         } else {
             branches.push(Branch {
                 pattern: Pattern {
@@ -158,7 +168,7 @@ impl<'a> ExprParser for Parser<'a> {
         let source = self.parseExpr();
         self.expect(TokenKind::LeftBracket(BracketKind::Curly));
         self.undo();
-        let body = self.parseExpr();
+        let body = self.parseBlock();
         let end = self.endSpan();
         let location = Location::new(self.fileId.clone(), start.merge(end));
         let mut statements = Vec::new();
@@ -186,7 +196,10 @@ impl<'a> ExprParser for Parser<'a> {
             body: Expr {
                 expr: SimpleExpr::Block(Block {
                     statements: vec![Statement {
-                        kind: StatementKind::Expr(body),
+                        kind: StatementKind::Expr(Expr {
+                            expr: SimpleExpr::Block(body),
+                            location: location.clone(),
+                        }),
                         hasSemicolon: true,
                     }],
                     location: location.clone(),
@@ -269,7 +282,7 @@ impl<'a> ExprParser for Parser<'a> {
         if self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
             self.expect(TokenKind::LeftBracket(BracketKind::Curly));
             self.undo();
-            let body = self.parseExpr();
+            let body = self.parseBlock();
             let pattern = Pattern {
                 pattern: SimplePattern::Tuple(Vec::new()),
                 location: self.currentLocation(),
@@ -278,15 +291,21 @@ impl<'a> ExprParser for Parser<'a> {
                 expr: SimpleExpr::Tuple(Vec::new()),
                 location: self.currentLocation(),
             };
-            self.buildExpr(SimpleExpr::Loop(pattern, Box::new(init), Box::new(body)), start)
+            self.buildExpr(SimpleExpr::Loop(pattern, Box::new(init), Box::new(Expr {
+                expr: SimpleExpr::Block(body),
+                location: self.currentLocation(),
+            })), start)
         } else {
             let pattern = self.parsePattern();
             self.expect(TokenKind::Misc(MiscKind::Equal));
             let init = self.parseExpr();
             self.expect(TokenKind::LeftBracket(BracketKind::Curly));
             self.undo();
-            let body = self.parseExpr();
-            self.buildExpr(SimpleExpr::Loop(pattern, Box::new(init), Box::new(body)), start)
+            let body = self.parseBlock();
+            self.buildExpr(SimpleExpr::Loop(pattern, Box::new(init), Box::new(Expr {
+                expr: SimpleExpr::Block(body),
+                location: self.currentLocation(),
+            })), start)
         }
     }
 
@@ -296,7 +315,7 @@ impl<'a> ExprParser for Parser<'a> {
         let cond = self.parseExpr();
         self.expect(TokenKind::LeftBracket(BracketKind::Curly));
         self.undo();
-        let body = self.parseExpr();
+        let body = self.parseBlock();
         let body = Expr {
             expr: SimpleExpr::Match(
                 Box::new(cond),
@@ -309,7 +328,10 @@ impl<'a> ExprParser for Parser<'a> {
                             ),
                             location: self.currentLocation(),
                         },
-                        body: body,
+                        body: Expr {
+                            expr: SimpleExpr::Block(body),
+                            location: self.currentLocation(),
+                        },
                     },
                     Branch {
                         pattern: Pattern {
