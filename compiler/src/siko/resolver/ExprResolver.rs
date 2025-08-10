@@ -329,9 +329,10 @@ impl<'a> ExprResolver<'a> {
                     }
                     SimpleExpr::Value(name) => {
                         if let Some(name) = env.resolve(&name.name) {
-                            self.bodyBuilder
-                                .current()
-                                .addDynamicFunctionCall(name, irArgs, expr.location.clone())
+                            // self.bodyBuilder
+                            //     .current()
+                            //     .addDynamicFunctionCall(name, irArgs, expr.location.clone())
+                            ResolverError::DynamicFunctionCallNotSupported(expr.location.clone()).report(self.ctx);
                         } else {
                             let irName = self.moduleResolver.resolverName(name);
                             self.bodyBuilder
@@ -341,9 +342,10 @@ impl<'a> ExprResolver<'a> {
                     }
                     _ => {
                         let callableId = self.resolveExpr(&callable, env);
-                        self.bodyBuilder
-                            .current()
-                            .addDynamicFunctionCall(callableId, irArgs, expr.location.clone())
+                        // self.bodyBuilder
+                        //     .current()
+                        //     .addDynamicFunctionCall(callableId, irArgs, expr.location.clone())
+                        ResolverError::DynamicFunctionCallNotSupported(expr.location.clone()).report(self.ctx);
                     }
                 }
             }

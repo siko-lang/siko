@@ -1,6 +1,6 @@
 use super::ModuleResolver::ModuleResolver;
 use crate::siko::hir::Type::{Type as IrType, TypeVar};
-use crate::siko::syntax::Identifier::Identifier;
+use crate::siko::qualifiedname::QualifiedName;
 use crate::siko::syntax::Type::{Type, TypeParameterDeclaration};
 use std::collections::BTreeSet;
 
@@ -62,7 +62,7 @@ impl<'a> TypeResolver<'a> {
         }
     }
 
-    pub fn createDataType(&self, name: &Identifier, typeParams: &Option<TypeParameterDeclaration>) -> IrType {
+    pub fn createDataType(&self, name: &QualifiedName, typeParams: &Option<TypeParameterDeclaration>) -> IrType {
         let args = match &typeParams {
             Some(typeParams) => {
                 let mut args = Vec::new();
@@ -74,6 +74,6 @@ impl<'a> TypeResolver<'a> {
             }
             None => Vec::new(),
         };
-        IrType::Named(self.moduleResolver.resolverName(name), args)
+        IrType::Named(name.clone(), args)
     }
 }

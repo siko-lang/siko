@@ -18,6 +18,7 @@ pub enum ResolverError {
     MissingInstanceMembers(Vec<String>, String, Location),
     InvalidAssignment(Location),
     InvalidArgCount(String, i64, i64, Location),
+    DynamicFunctionCallNotSupported(Location),
 }
 
 impl ResolverError {
@@ -114,6 +115,11 @@ impl ResolverError {
                     ctx.yellow(&expected.to_string()),
                     ctx.yellow(&actual.to_string())
                 );
+                let r = Report::new(ctx, slogan, Some(l.clone()));
+                r.print();
+            }
+            ResolverError::DynamicFunctionCallNotSupported(l) => {
+                let slogan = format!("Dynamic function calls are not supported");
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }

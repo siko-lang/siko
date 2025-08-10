@@ -217,10 +217,10 @@ impl<'a> Resolver<'a> {
                     ModuleItem::Struct(c) => {
                         let typeParams = getTypeParams(&c.typeParams);
                         let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
+                        let structName = QualifiedName::Module(moduleResolver.name.clone()).add(c.name.toString());
                         let constraintContext =
                             createConstraintContext(&c.typeParams, &typeResolver, &self.program, &self.ctx);
-                        let irType = typeResolver.createDataType(&c.name, &c.typeParams);
-                        let structName = QualifiedName::Module(moduleResolver.name.clone()).add(c.name.toString());
+                        let irType = typeResolver.createDataType(&structName, &c.typeParams);
                         let mut irStruct = irStruct::new(structName, irType.clone(), c.name.location.clone());
                         let mut ctorParams = Vec::new();
                         for field in &c.fields {
@@ -252,14 +252,11 @@ impl<'a> Resolver<'a> {
                     ModuleItem::Enum(e) => {
                         let typeParams = getTypeParams(&e.typeParams);
                         let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
+                        let enumName = QualifiedName::Module(moduleResolver.name.clone()).add(e.name.toString());
                         let constraintContext =
                             createConstraintContext(&e.typeParams, &typeResolver, &self.program, &self.ctx);
-                        let irType = typeResolver.createDataType(&e.name, &e.typeParams);
-                        let mut irEnum = IrEnum::new(
-                            moduleResolver.resolverName(&e.name),
-                            irType.clone(),
-                            e.name.location.clone(),
-                        );
+                        let irType = typeResolver.createDataType(&enumName, &e.typeParams);
+                        let mut irEnum = IrEnum::new(enumName, irType.clone(), e.name.location.clone());
                         for (index, variant) in e.variants.iter().enumerate() {
                             let mut items = Vec::new();
                             let mut ctorParams = Vec::new();
@@ -268,7 +265,6 @@ impl<'a> Resolver<'a> {
                                 ctorParams.push(Parameter::Named(format!("f{}", index), ty.clone(), false));
                                 items.push(ty);
                             }
-
                             let variant = IrVariant {
                                 name: irEnum.name.add(variant.name.toString()),
                                 items: items,
