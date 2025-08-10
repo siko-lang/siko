@@ -23,7 +23,8 @@ use crate::siko::{
         Variable::Variable,
     },
     location::{Location::Location, Report::ReportContext},
-    qualifiedname::{getCloneFnName, getDerefGetName, getImplicitConvertFnName, getNativePtrCloneName, QualifiedName},
+    qualifiedname::builtins::{getCloneFnName, getDerefGetName, getImplicitConvertFnName, getNativePtrCloneName},
+    qualifiedname::QualifiedName,
 };
 
 use super::Error::TypecheckerError;
@@ -216,7 +217,7 @@ impl<'a> Typechecker<'a> {
 
     fn unify(&mut self, ty1: Type, ty2: Type, location: Location) {
         //println!("UNIFY {} {}", ty1, ty2);
-        if let Err(_) = unify(&mut self.substitution, &ty1, &ty2, false) {
+        if let Err(_) = unify(&mut self.substitution, ty1.clone(), ty2.clone(), false) {
             reportError(
                 self.ctx,
                 ty1.apply(&self.substitution),
@@ -228,7 +229,7 @@ impl<'a> Typechecker<'a> {
 
     fn tryUnify(&mut self, ty1: Type, ty2: Type) -> bool {
         //println!("UNIFY {} {}", ty1, ty2);
-        if let Err(_) = unify(&mut self.substitution, &ty1, &ty2, false) {
+        if let Err(_) = unify(&mut self.substitution, ty1.clone(), ty2.clone(), false) {
             return false;
         }
         true
@@ -244,7 +245,7 @@ impl<'a> Typechecker<'a> {
 
     fn updateConverterDestination(&mut self, dest: &Variable, target: &Type) {
         let destTy = self.getType(dest).apply(&self.substitution);
-        let targetTy = target.apply(&self.substitution);
+        let targetTy = target.clone().apply(&self.substitution);
         if !self.tryUnify(destTy.clone(), targetTy.clone()) {
             match (destTy, targetTy.clone()) {
                 (ty1, Type::Reference(ty2, _)) => {
@@ -257,7 +258,7 @@ impl<'a> Typechecker<'a> {
                     self.tryUnify(ty1, ty2);
                 }
             }
-            let targetTy = target.apply(&self.substitution);
+            let targetTy = target.clone().apply(&self.substitution);
             self.types.insert(dest.name.to_string(), targetTy);
         }
     }
@@ -282,7 +283,7 @@ impl<'a> Typechecker<'a> {
         let sub = instantiateType(&mut self.allocator, &types);
         let fnType = fnType.apply(&sub);
         //println!("inst {}", fnType);
-        let constraintContext = neededConstraints.apply(&sub);
+        let constraintContext = neededConstraints.clone().apply(&sub);
         let (fnArgs, mut fnResult) = match fnType.clone().splitFnType() {
             Some((fnArgs, fnResult)) => (fnArgs, fnResult),
             None => return fnType,
@@ -371,13 +372,16 @@ impl<'a> Typechecker<'a> {
                                 for instanceAssocTy in &instance.associatedTypes {
                                     if instanceAssocTy.name == ctxAssocTy.name {
                                         //println!("ASSOC MATCH {} {}", instanceAssocTy.ty, ctxAssocTy.ty);
-                                        if let Err(_) =
-                                            unify(&mut self.substitution, &instanceAssocTy.ty, &ctxAssocTy.ty, false)
-                                        {
+                                        if let Err(_) = unify(
+                                            &mut self.substitution,
+                                            instanceAssocTy.ty.clone(),
+                                            ctxAssocTy.ty.clone(),
+                                            false,
+                                        ) {
                                             reportError(
                                                 self.ctx,
-                                                instanceAssocTy.ty.apply(&self.substitution),
-                                                ctxAssocTy.ty.apply(&self.substitution),
+                                                instanceAssocTy.ty.clone().apply(&self.substitution),
+                                                ctxAssocTy.ty.clone().apply(&self.substitution),
                                                 location.clone(),
                                             );
                                         }
@@ -995,7 +999,7 @@ impl<'a> Typechecker<'a> {
                             let mut fields = fields.clone();
                             let types = self.fieldTypes.get(&dest).expect("field types are missing");
                             for (index, ty) in types.iter().enumerate() {
-                                fields[index].ty = Some(ty.apply(&self.substitution));
+                                fields[index].ty = Some(ty.clone().apply(&self.substitution));
                             }
                             let kind = InstructionKind::FieldAssign(dest.clone(), root.clone(), fields);
                             builder.replaceInstruction(kind, instruction.location.clone());

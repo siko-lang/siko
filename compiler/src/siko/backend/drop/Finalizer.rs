@@ -16,7 +16,7 @@ use crate::siko::{
         Type::Type,
         Variable::Variable,
     },
-    qualifiedname::{getFalseName, getTrueName},
+    qualifiedname::builtins::{getFalseName, getTrueName},
 };
 
 pub struct Finalizer<'a> {

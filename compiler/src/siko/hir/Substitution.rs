@@ -24,7 +24,7 @@ impl Substitution {
 
     pub fn get(&self, old: Type) -> Type {
         match self.substitutions.get(&old) {
-            Some(new) => new.apply(self),
+            Some(new) => new.clone().apply(self),
             None => old,
         }
     }
@@ -45,9 +45,9 @@ impl Display for Substitution {
     }
 }
 
-pub fn createTypeSubstitutionFrom(ty1: &Vec<Type>, ty2: &Vec<Type>) -> Substitution {
+pub fn createTypeSubstitutionFrom(ty1: Vec<Type>, ty2: Vec<Type>) -> Substitution {
     let mut sub = Substitution::new();
-    for (ty1, ty2) in ty1.iter().zip(ty2) {
+    for (ty1, ty2) in ty1.into_iter().zip(ty2) {
         unify(&mut sub, ty1, ty2, true).expect("Unification failed");
     }
     sub

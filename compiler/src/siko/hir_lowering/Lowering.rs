@@ -18,7 +18,7 @@ use crate::siko::{
         Program::Program as MirProgram,
         Type::Type as MirType,
     },
-    qualifiedname::{
+    qualifiedname::builtins::{
         getBoolTypeName, getFalseName, getI32TypeName, getIntTypeName, getNativePtrToRefName, getTrueName,
         getU8TypeName,
     },
@@ -322,9 +322,6 @@ pub fn lowerType(ty: &HirType, program: &HirProgram) -> MirType {
         HirType::Ptr(ty) => MirType::Ptr(Box::new(lowerType(ty, program))),
         HirType::SelfType => todo!(),
         HirType::Never(_) => MirType::Void,
-        HirType::OwnershipVar(_, _, _) => {
-            panic!("OwnershipVar found in lowerType {}", ty);
-        }
     }
 }
 

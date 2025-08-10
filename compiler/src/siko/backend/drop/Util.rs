@@ -5,7 +5,7 @@ use crate::siko::{
         Type::Type,
         Variable::Variable,
     },
-    qualifiedname::{getBoolTypeName, getIntTypeName},
+    qualifiedname::builtins::{getBoolTypeName, getIntTypeName},
 };
 
 pub fn buildFieldPath(root: &Variable, fields: &Vec<FieldInfo>) -> Path {

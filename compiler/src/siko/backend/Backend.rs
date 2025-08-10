@@ -16,7 +16,7 @@ fn monomorphize(ctx: &ReportContext, program: Program) -> Program {
 pub fn process(ctx: &ReportContext, program: Program) -> Program {
     let program = eliminateDeadCode(&ctx, program);
     //println!("after dce\n{}", program);
-    //let program = RecursiveDataHandler::process(program);
+    let program = RecursiveDataHandler::process(ctx, program);
     //println!("after recursive data handling\n{}", program);
     let program = FieldRefMerger::mergeFieldRefs(program);
     //println!("after field ref merge\n{}", program);

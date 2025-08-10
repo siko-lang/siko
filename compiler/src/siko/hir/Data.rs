@@ -2,6 +2,7 @@ use std::fmt;
 
 use crate::siko::{
     hir::{OwnershipVar::OwnershipVarInfo, Type::formatTypes},
+    location::Location::Location,
     qualifiedname::QualifiedName,
 };
 
@@ -22,6 +23,7 @@ pub struct MethodInfo {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Struct {
     pub name: QualifiedName,
+    pub location: Location,
     pub ty: Type,
     pub fields: Vec<Field>,
     pub methods: Vec<MethodInfo>,
@@ -29,12 +31,13 @@ pub struct Struct {
 }
 
 impl Struct {
-    pub fn new(name: QualifiedName, ty: Type) -> Struct {
+    pub fn new(name: QualifiedName, ty: Type, location: Location) -> Struct {
         Struct {
             name: name,
             ty: ty,
             fields: Vec::new(),
             methods: Vec::new(),
+            location: location,
             ownership_info: None,
         }
     }
@@ -60,6 +63,7 @@ pub struct Variant {
 #[derive(Clone, Debug)]
 pub struct Enum {
     pub name: QualifiedName,
+    pub location: Location,
     pub ty: Type,
     pub variants: Vec<Variant>,
     pub methods: Vec<MethodInfo>,
@@ -67,10 +71,11 @@ pub struct Enum {
 }
 
 impl Enum {
-    pub fn new(name: QualifiedName, ty: Type) -> Enum {
+    pub fn new(name: QualifiedName, ty: Type, location: Location) -> Enum {
         Enum {
             name: name,
             ty: ty,
+            location: location,
             variants: Vec::new(),
             methods: Vec::new(),
             ownership_info: None,

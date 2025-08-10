@@ -9,12 +9,12 @@ use super::{
 #[derive(Debug)]
 pub struct Error {}
 
-pub fn unify(sub: &mut Substitution, ty1: &Type, ty2: &Type, allowNamed: bool) -> Result<(), Error> {
+pub fn unify(sub: &mut Substitution, ty1: Type, ty2: Type, allowNamed: bool) -> Result<(), Error> {
     //println!("Unifying {}/{}", ty1, ty2);
     let ty1 = ty1.apply(sub).makeSingleRef();
     let ty2 = ty2.apply(sub).makeSingleRef();
     //println!("Unifying2 {}/{}", ty1, ty2);
-    match (&ty1, &ty2) {
+    match (ty1, ty2) {
         (Type::Named(name1, args1), Type::Named(name2, args2)) => {
             if name1 != name2 {
                 return Err(Error {});
@@ -45,39 +45,39 @@ pub fn unify(sub: &mut Substitution, ty1: &Type, ty2: &Type, allowNamed: bool) -
         (Type::Var(TypeVar::Var(v1)), Type::Var(TypeVar::Var(v2))) if v1 == v2 => Ok(()),
         (Type::Never(false), Type::Var(_)) => Ok(()),
         (Type::Var(_), Type::Never(false)) => Ok(()),
-        (Type::Var(_), Type::Never(true)) => {
-            sub.add(ty1, Type::Never(false));
+        (Type::Var(v), Type::Never(true)) => {
+            sub.add(Type::Var(v), Type::Never(false));
             Ok(())
         }
-        (Type::Never(true), Type::Var(_)) => {
-            sub.add(ty2, Type::Never(false));
+        (Type::Never(true), Type::Var(v)) => {
+            sub.add(Type::Var(v), Type::Never(false));
             Ok(())
         }
-        (_, Type::Var(TypeVar::Var(_))) => {
-            sub.add(ty2, ty1);
+        (ty1, Type::Var(TypeVar::Var(v))) => {
+            sub.add(Type::Var(TypeVar::Var(v)), ty1);
             Ok(())
         }
-        (Type::Var(TypeVar::Var(_)), _) => {
-            sub.add(ty1, ty2);
+        (Type::Var(TypeVar::Var(v)), ty2) => {
+            sub.add(Type::Var(TypeVar::Var(v)), ty2);
             Ok(())
         }
-        (_, Type::Var(_)) if allowNamed => {
-            sub.add(ty2, ty1);
+        (ty1, Type::Var(v)) if allowNamed => {
+            sub.add(Type::Var(v), ty1);
             Ok(())
         }
-        (Type::Var(_), _) if allowNamed => {
-            sub.add(ty1, ty2);
+        (Type::Var(v), ty2) if allowNamed => {
+            sub.add(Type::Var(v), ty2);
             Ok(())
         }
-        (Type::Reference(v1, _), Type::Reference(v2, _)) => unify(sub, &v1, &v2, allowNamed),
-        (Type::Ptr(v1), Type::Ptr(v2)) => unify(sub, &v1, &v2, allowNamed),
+        (Type::Reference(v1, _), Type::Reference(v2, _)) => unify(sub, *v1, *v2, allowNamed),
+        (Type::Ptr(v1), Type::Ptr(v2)) => unify(sub, *v1, *v2, allowNamed),
         (Type::Never(_), _) => Ok(()),
         (_, Type::Never(_)) => Ok(()),
         (Type::Function(args1, res1), Type::Function(args2, res2)) => {
             for (arg1, arg2) in zip(args1, args2) {
                 unify(sub, arg1, arg2, allowNamed)?;
             }
-            return unify(sub, &res1, &res2, allowNamed);
+            return unify(sub, *res1, *res2, allowNamed);
         }
         _ => return Err(Error {}),
     }

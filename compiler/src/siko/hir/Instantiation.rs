@@ -15,7 +15,7 @@ pub fn instantiateEnum(allocator: &mut TypeVarAllocator, e: &Enum, ty: &Type) ->
     let mut e = e.clone();
     e = e.apply(&sub);
     let mut sub = Substitution::new();
-    let r = unify(&mut sub, ty, &e.ty, false);
+    let r = unify(&mut sub, ty.clone(), e.ty.clone(), false);
     assert!(r.is_ok());
     e.apply(&sub)
 }
@@ -25,7 +25,7 @@ pub fn instantiateStruct(allocator: &mut TypeVarAllocator, c: &Struct, ty: &Type
     let mut res = c.clone();
     res = res.apply(&sub);
     let mut sub = Substitution::new();
-    let r = unify(&mut sub, ty, &res.ty, false);
+    let r = unify(&mut sub, ty.clone(), res.ty.clone(), false);
     assert!(r.is_ok());
     res.apply(&sub)
 }
@@ -39,12 +39,12 @@ pub fn instantiateInstance(allocator: &mut TypeVarAllocator, i: &Instance) -> In
     for var in &vars {
         sub.add(Type::Var(var.clone()), allocator.next());
     }
-    i.apply(&sub)
+    i.clone().apply(&sub)
 }
 
 pub fn instantiateTrait(allocator: &mut TypeVarAllocator, t: &Trait) -> Trait {
     let sub = instantiateType(allocator, &t.params);
-    t.apply(&sub)
+    t.clone().apply(&sub)
 }
 
 pub fn instantiateType(allocator: &mut TypeVarAllocator, types: &Vec<Type>) -> Substitution {

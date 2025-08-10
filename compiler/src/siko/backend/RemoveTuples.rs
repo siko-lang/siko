@@ -11,6 +11,7 @@ use crate::siko::{
         Type::Type,
         Variable::Variable,
     },
+    location::Location::Location,
     qualifiedname::QualifiedName,
 };
 
@@ -284,6 +285,7 @@ pub fn removeTuples(program: &Program) -> Program {
             }
             let tupleStruct = Struct {
                 name: name.clone(),
+                location: Location::empty(),
                 ty: Type::Named(name.clone(), Vec::new()),
                 fields: fields,
                 methods: Vec::new(),

@@ -8,7 +8,7 @@ use crate::siko::{
         Instruction::InstructionKind,
         Variable::VariableName,
     },
-    qualifiedname::{getFalseName, getTrueName},
+    qualifiedname::builtins::{getFalseName, getTrueName},
 };
 
 pub fn simplifyFunction(f: &Function) -> Option<Function> {

@@ -1,9 +1,13 @@
-use std::{collections::BTreeSet, fmt::Display};
+use std::{collections::BTreeSet, fmt::Display, vec};
 
 use crate::siko::{
-    hir::OwnershipVar::{OwnershipVar, OwnershipVarInfo},
+    hir::OwnershipVar::OwnershipVar,
     qualifiedname::{
-        getBoolTypeName, getCharTypeName, getIntTypeName, getStringLiteralTypeName, getStringTypeName, QualifiedName,
+        builtins::{
+            getBoolTypeName, getBoxTypeName, getCharTypeName, getIntTypeName, getStringLiteralTypeName,
+            getStringTypeName,
+        },
+        QualifiedName,
     },
 };
 
@@ -34,7 +38,6 @@ pub enum Type {
     Ptr(Box<Type>),
     SelfType,
     Never(bool), // true = explicit never i.e. !
-    OwnershipVar(OwnershipVar, Box<Type>, OwnershipVarInfo),
 }
 
 impl Type {
@@ -96,7 +99,6 @@ impl Type {
             }
             Type::SelfType => {}
             Type::Never(_) => {}
-            Type::OwnershipVar(_, _, _) => {}
         }
         vars
     }
@@ -176,12 +178,21 @@ impl Type {
             _ => false,
         }
     }
+
     pub fn isNever(&self) -> bool {
         match &self {
             Type::Never(_) => true,
             _ => false,
         }
     }
+
+    pub fn isNamed(&self) -> bool {
+        match &self {
+            Type::Named(_, _) => true,
+            _ => false,
+        }
+    }
+
     pub fn changeMethodResult(&self) -> Type {
         match &self {
             Type::Function(args, result) => Type::Function(args.clone(), Box::new(result.getSelflessType(true))),
@@ -237,7 +248,6 @@ impl Type {
             Type::Never(_) => {
                 return true;
             }
-            Type::OwnershipVar(_, _, _) => false,
         }
     }
 
@@ -287,6 +297,10 @@ impl Type {
             }
             ty => ty,
         }
+    }
+
+    pub fn getBoxedType(&self) -> Type {
+        Type::Named(getBoxTypeName(), vec![self.clone()])
     }
 
     pub fn getBoolType() -> Type {
@@ -343,9 +357,6 @@ impl Display for Type {
             }
             Type::SelfType => write!(f, "Self"),
             Type::Never(_) => write!(f, "!"),
-            Type::OwnershipVar(var, ty, ownershipInfo) => {
-                write!(f, "{}/{}/({})", var, ty, ownershipInfo)
-            }
         }
     }
 }

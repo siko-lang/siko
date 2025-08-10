@@ -221,7 +221,7 @@ impl<'a> Resolver<'a> {
                             createConstraintContext(&c.typeParams, &typeResolver, &self.program, &self.ctx);
                         let irType = typeResolver.createDataType(&c.name, &c.typeParams);
                         let structName = QualifiedName::Module(moduleResolver.name.clone()).add(c.name.toString());
-                        let mut irStruct = irStruct::new(structName, irType.clone());
+                        let mut irStruct = irStruct::new(structName, irType.clone(), c.name.location.clone());
                         let mut ctorParams = Vec::new();
                         for field in &c.fields {
                             let ty = typeResolver.resolveType(&field.ty);
@@ -255,7 +255,11 @@ impl<'a> Resolver<'a> {
                         let constraintContext =
                             createConstraintContext(&e.typeParams, &typeResolver, &self.program, &self.ctx);
                         let irType = typeResolver.createDataType(&e.name, &e.typeParams);
-                        let mut irEnum = IrEnum::new(moduleResolver.resolverName(&e.name), irType.clone());
+                        let mut irEnum = IrEnum::new(
+                            moduleResolver.resolverName(&e.name),
+                            irType.clone(),
+                            e.name.location.clone(),
+                        );
                         for (index, variant) in e.variants.iter().enumerate() {
                             let mut items = Vec::new();
                             let mut ctorParams = Vec::new();

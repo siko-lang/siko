@@ -9,7 +9,8 @@ use crate::siko::hir::Instruction::{FieldId, FieldInfo, InstructionKind, SyntaxB
 use crate::siko::hir::Variable::Variable;
 use crate::siko::location::Location::Location;
 use crate::siko::location::Report::ReportContext;
-use crate::siko::qualifiedname::{getVecNewName, getVecPushName, QualifiedName};
+use crate::siko::qualifiedname::builtins::{getVecNewName, getVecPushName};
+use crate::siko::qualifiedname::QualifiedName;
 use crate::siko::resolver::matchcompiler::Compiler::MatchCompiler;
 use crate::siko::syntax::Expr::{BinaryOp, Expr, SimpleExpr, UnaryOp};
 use crate::siko::syntax::Identifier::Identifier;

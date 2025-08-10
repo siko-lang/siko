@@ -6,7 +6,7 @@ use std::{
 
 use crate::siko::{
     minic::Function::Value,
-    qualifiedname::{
+    qualifiedname::builtins::{
         getIntAddName, getIntCloneName, getIntDivName, getIntEqName, getIntLessThanName, getIntModName, getIntMulName,
         getIntSubName, getIntToU8Name, getNativePtrAllocateArrayName, getNativePtrCloneName,
         getNativePtrDeallocateName, getNativePtrEqName, getNativePtrIsNullName, getNativePtrLoadName,

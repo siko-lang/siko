@@ -10,39 +10,36 @@ use super::{
 };
 
 pub trait Apply {
-    fn apply(&self, sub: &Substitution) -> Self;
+    fn apply(self, sub: &Substitution) -> Self;
 }
 
 impl Apply for Type {
-    fn apply(&self, sub: &Substitution) -> Self {
-        match &self {
+    fn apply(self, sub: &Substitution) -> Self {
+        match self {
             Type::Named(n, args) => {
-                let newArgs = args.iter().map(|arg| arg.apply(sub)).collect();
+                let newArgs = args.into_iter().map(|arg| arg.apply(sub)).collect();
                 Type::Named(n.clone(), newArgs)
             }
             Type::Tuple(args) => {
-                let newArgs = args.iter().map(|arg| arg.apply(sub)).collect();
+                let newArgs = args.into_iter().map(|arg| arg.apply(sub)).collect();
                 Type::Tuple(newArgs)
             }
             Type::Function(args, fnResult) => {
-                let newArgs = args.iter().map(|arg| arg.apply(sub)).collect();
+                let newArgs = args.into_iter().map(|arg| arg.apply(sub)).collect();
                 let newFnResult = fnResult.apply(sub);
                 Type::Function(newArgs, Box::new(newFnResult))
             }
-            Type::Var(_) => sub.get(self.clone()),
+            Type::Var(v) => sub.get(Type::Var(v)),
             Type::Reference(arg, l) => Type::Reference(Box::new(arg.apply(sub)), l.clone()),
             Type::Ptr(arg) => Type::Ptr(Box::new(arg.apply(sub))),
-            Type::SelfType => self.clone(),
-            Type::Never(_) => self.clone(),
-            Type::OwnershipVar(_, _, _) => {
-                panic!("OwnershipVar found in apply {}", self);
-            }
+            Type::SelfType => Type::SelfType,
+            Type::Never(v) => Type::Never(v),
         }
     }
 }
 
 impl<T: Apply> Apply for Option<T> {
-    fn apply(&self, sub: &Substitution) -> Self {
+    fn apply(self, sub: &Substitution) -> Self {
         match self {
             Some(t) => Some(t.apply(sub)),
             None => None,
@@ -51,125 +48,113 @@ impl<T: Apply> Apply for Option<T> {
 }
 
 impl<T: Apply> Apply for Vec<T> {
-    fn apply(&self, sub: &Substitution) -> Self {
-        self.iter().map(|i| i.apply(sub)).collect()
+    fn apply(self, sub: &Substitution) -> Self {
+        self.into_iter().map(|i| i.apply(sub)).collect()
     }
 }
 
 impl Apply for Variant {
-    fn apply(&self, sub: &Substitution) -> Self {
-        let mut v = self.clone();
-        v.items = v.items.apply(sub);
-        v
+    fn apply(mut self, sub: &Substitution) -> Self {
+        self.items = self.items.apply(sub);
+        self
     }
 }
 
 impl Apply for Enum {
-    fn apply(&self, sub: &Substitution) -> Self {
-        let mut e = self.clone();
-        e.ty = e.ty.apply(sub);
-        e.variants = e.variants.apply(sub);
-        e
+    fn apply(mut self, sub: &Substitution) -> Self {
+        self.ty = self.ty.apply(sub);
+        self.variants = self.variants.apply(sub);
+        self
     }
 }
 
 impl Apply for Field {
-    fn apply(&self, sub: &Substitution) -> Self {
-        let mut f = self.clone();
-        f.ty = f.ty.apply(sub);
-        f
+    fn apply(mut self, sub: &Substitution) -> Self {
+        self.ty = self.ty.apply(sub);
+        self
     }
 }
 
 impl Apply for Struct {
-    fn apply(&self, sub: &Substitution) -> Self {
-        let mut c = self.clone();
-        c.ty = c.ty.apply(sub);
-        c.fields = c.fields.apply(sub);
-        c
+    fn apply(mut self, sub: &Substitution) -> Self {
+        self.ty = self.ty.apply(sub);
+        self.fields = self.fields.apply(sub);
+        self
     }
 }
 
 impl Apply for Trait {
-    fn apply(&self, sub: &Substitution) -> Self {
+    fn apply(mut self, sub: &Substitution) -> Self {
         //println!("Applying for {}", self.value);
-        let mut t = self.clone();
-        t.params = t.params.apply(sub);
-        t.constraint = t.constraint.apply(sub);
-        t.members = t.members.apply(sub);
-        t
+        self.params = self.params.apply(sub);
+        self.constraint = self.constraint.apply(sub);
+        self.members = self.members.apply(sub);
+        self
     }
 }
 
 impl Apply for AssociatedType {
-    fn apply(&self, sub: &Substitution) -> Self {
+    fn apply(mut self, sub: &Substitution) -> Self {
         //println!("Applying for {}", self.value);
-        let mut n = self.clone();
-        n.ty = n.ty.apply(sub);
-        n
+        self.ty = self.ty.apply(sub);
+        self
     }
 }
 
 impl Apply for MemberInfo {
-    fn apply(&self, sub: &Substitution) -> Self {
+    fn apply(mut self, sub: &Substitution) -> Self {
         //println!("Applying for {}", self.value);
-        let mut m = self.clone();
-        m.result = m.result.apply(sub);
-        m
+        self.result = self.result.apply(sub);
+        self
     }
 }
 
 impl Apply for Instance {
-    fn apply(&self, sub: &Substitution) -> Self {
+    fn apply(mut self, sub: &Substitution) -> Self {
         //println!("Applying for {}", self.value);
-        let mut i = self.clone();
-        i.types = i.types.apply(sub);
-        i.associatedTypes = i.associatedTypes.apply(sub);
-        i.members = i.members.apply(sub);
-        i
+        self.types = self.types.apply(sub);
+        self.associatedTypes = self.associatedTypes.apply(sub);
+        self.members = self.members.apply(sub);
+        self
     }
 }
 
 impl Apply for Variable {
-    fn apply(&self, sub: &Substitution) -> Self {
+    fn apply(mut self, sub: &Substitution) -> Self {
         //println!("Applying for {}", self.value);
-        let mut v = self.clone();
-        v.ty = v.ty.apply(sub);
-        v
+        self.ty = self.ty.apply(sub);
+        self
     }
 }
 
 impl Apply for Constraint {
-    fn apply(&self, sub: &Substitution) -> Self {
+    fn apply(mut self, sub: &Substitution) -> Self {
         //println!("Applying for {}", self.value);
-        let mut ctx = self.clone();
-        ctx.args = ctx.args.apply(sub);
-        ctx.associatedTypes = ctx.associatedTypes.apply(sub);
-        ctx
+        self.args = self.args.apply(sub);
+        self.associatedTypes = self.associatedTypes.apply(sub);
+        self
     }
 }
 
 impl Apply for ConstraintContext {
-    fn apply(&self, sub: &Substitution) -> Self {
+    fn apply(mut self, sub: &Substitution) -> Self {
         //println!("Applying for {}", self.value);
-        let mut ctx = self.clone();
-        ctx.typeParameters = ctx.typeParameters.apply(sub);
-        ctx.constraints = ctx.constraints.apply(sub);
-        ctx
+        self.typeParameters = self.typeParameters.apply(sub);
+        self.constraints = self.constraints.apply(sub);
+        self
     }
 }
 
 impl Apply for FieldInfo {
-    fn apply(&self, sub: &Substitution) -> Self {
+    fn apply(mut self, sub: &Substitution) -> Self {
         //println!("Applying for {}", self.value);
-        let mut info = self.clone();
-        info.ty = info.ty.apply(sub);
-        info
+        self.ty = self.ty.apply(sub);
+        self
     }
 }
 
 impl Apply for InstructionKind {
-    fn apply(&self, sub: &Substitution) -> Self {
+    fn apply(self, sub: &Substitution) -> Self {
         match self {
             InstructionKind::FunctionCall(dest, name, args) => {
                 InstructionKind::FunctionCall(dest.apply(sub), name.clone(), args.apply(sub))
@@ -185,18 +170,18 @@ impl Apply for InstructionKind {
                 InstructionKind::FieldRef(dest.apply(sub), root.apply(sub), field.clone())
             }
             InstructionKind::Bind(dest, rhs, mutable) => {
-                InstructionKind::Bind(dest.apply(sub), rhs.apply(sub), *mutable)
+                InstructionKind::Bind(dest.apply(sub), rhs.apply(sub), mutable)
             }
             InstructionKind::Tuple(dest, args) => InstructionKind::Tuple(dest.apply(sub), args.apply(sub)),
             InstructionKind::StringLiteral(dest, s) => InstructionKind::StringLiteral(dest.apply(sub), s.clone()),
             InstructionKind::IntegerLiteral(dest, n) => InstructionKind::IntegerLiteral(dest.apply(sub), n.clone()),
-            InstructionKind::CharLiteral(dest, c) => InstructionKind::CharLiteral(dest.apply(sub), *c),
+            InstructionKind::CharLiteral(dest, c) => InstructionKind::CharLiteral(dest.apply(sub), c),
             InstructionKind::Return(dest, arg) => InstructionKind::Return(dest.apply(sub), arg.apply(sub)),
             InstructionKind::Ref(dest, arg) => InstructionKind::Ref(dest.apply(sub), arg.apply(sub)),
             InstructionKind::DropPath(id) => InstructionKind::DropPath(id.clone()),
             InstructionKind::DropMetadata(id) => InstructionKind::DropMetadata(id.clone()),
             InstructionKind::Drop(dest, drop) => InstructionKind::Drop(dest.apply(sub), drop.apply(sub)),
-            InstructionKind::Jump(dest, targetBlockId) => InstructionKind::Jump(dest.apply(sub), *targetBlockId),
+            InstructionKind::Jump(dest, targetBlockId) => InstructionKind::Jump(dest.apply(sub), targetBlockId),
             InstructionKind::Assign(name, rhs) => InstructionKind::Assign(name.apply(sub), rhs.apply(sub)),
             InstructionKind::FieldAssign(name, rhs, fields) => {
                 InstructionKind::FieldAssign(name.apply(sub), rhs.apply(sub), fields.apply(sub))

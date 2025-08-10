@@ -25,12 +25,13 @@ use crate::siko::{
         Location::Location,
         Report::{Report, ReportContext},
     },
-    qualifiedname::{build, getAutoDropFnName, getDropFnName, getDropName, QualifiedName},
+    qualifiedname::builtins::{getAutoDropFnName, getDropFnName, getDropName},
+    qualifiedname::{build, QualifiedName},
 };
 
-fn createTypeSubstitution(ty1: &Type, ty2: &Type) -> Substitution {
+fn createTypeSubstitution(ty1: Type, ty2: Type) -> Substitution {
     let mut sub = Substitution::new();
-    if unify(&mut sub, ty1, &ty2, true).is_err() {
+    if unify(&mut sub, ty1.clone(), ty2.clone(), true).is_err() {
         panic!("Unification failed for {} {}", ty1, ty2);
     }
     sub
@@ -61,7 +62,7 @@ trait Monomorphize {
 
 impl Monomorphize for Type {
     fn process(&self, sub: &Substitution, mono: &mut Monomorphizer) -> Self {
-        let ty = self.apply(sub);
+        let ty = self.clone().apply(sub);
         mono.processType(ty)
     }
 }
@@ -187,26 +188,26 @@ impl Monomorphize for Instruction {
                     .map(|arg| {
                         //println!("arg {}", arg);
                         let ty = arg.getType();
-                        ty.apply(&sub)
+                        ty.clone().apply(&sub)
                     })
                     .collect();
                 //println!("sub {}", sub);
-                let result = dest.getType().apply(sub);
+                let result = dest.getType().clone().apply(sub);
                 let context_ty = Type::Function(arg_types, Box::new(result));
                 //println!("fn type {}", fn_ty);
                 //println!("context type {}", context_ty);
-                let sub = createTypeSubstitution(&context_ty, &fn_ty);
+                let sub = createTypeSubstitution(context_ty.clone(), fn_ty.clone());
                 //println!("target ctx {}", target_fn.constraintContext);
                 let name = getFunctionName(target_fn.kind.clone(), name.clone(), mono, &sub);
                 let target_fn = mono.program.functions.get(&name).expect("function not found in mono");
                 //println!("real {} {}", target_fn.getType(), target_fn.constraintContext);
-                let sub = createTypeSubstitution(&context_ty, &target_fn.getType());
+                let sub = createTypeSubstitution(context_ty.clone(), target_fn.getType().clone());
                 //println!("target ctx {}", target_fn.constraintContext);
                 let ty_args: Vec<_> = target_fn
                     .constraintContext
                     .typeParameters
                     .iter()
-                    .map(|ty| ty.apply(&sub))
+                    .map(|ty| ty.clone().apply(&sub))
                     .collect();
                 //println!("{} type args {}", name, formatTypes(&ty_args));
                 let fn_name = mono.get_mono_name(&name, &ty_args);
@@ -221,7 +222,7 @@ impl Monomorphize for Instruction {
                 }
             }
             InstructionKind::Drop(dropRes, dropVar) => {
-                let ty = dropVar.ty.apply(sub).unwrap();
+                let ty = dropVar.ty.clone().apply(sub).unwrap();
                 let monoName = mono.get_mono_name(&getAutoDropFnName(), &vec![ty.clone()]);
                 mono.addKey(Key::AutoDropFn(getAutoDropFnName(), ty.clone()));
                 InstructionKind::FunctionCall(dropRes.clone(), monoName, vec![dropVar.clone()])
@@ -442,12 +443,13 @@ impl<'a> Monomorphizer<'a> {
             .iter()
             .map(|ty| ty.clone())
             .collect();
-        let sub = createTypeSubstitutionFrom(&params, &args);
+        let monoName = self.get_mono_name(&name, &args);
+        let sub = createTypeSubstitutionFrom(params, args);
         let mut monoFn = function.clone();
         monoFn.result = self.processType(monoFn.result.apply(&sub));
         monoFn.params = monoFn.params.process(&sub, self);
         monoFn.body = monoFn.body.process(&sub, self);
-        let monoName = self.get_mono_name(&name, &args);
+
         monoFn.name = monoName.clone();
         self.monomorphizedProgram.functions.insert(monoName, monoFn);
     }
@@ -485,9 +487,6 @@ impl<'a> Monomorphizer<'a> {
             Type::Ptr(ty) => Type::Ptr(Box::new(self.processType(*ty))),
             Type::SelfType => Type::SelfType,
             Type::Never(v) => Type::Never(v),
-            Type::OwnershipVar(_, _, _) => {
-                panic!("OwnershipVar found in monomorphization {}", ty);
-            }
         };
         self.processed_type.insert(ty, r.clone());
         r

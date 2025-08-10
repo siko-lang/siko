@@ -2,7 +2,10 @@ use std::{cmp::Ordering, collections::BTreeMap};
 
 use crate::siko::{
     hir::{Instantiation::instantiateInstance, Trait::CompareSpecificity},
-    qualifiedname::{getCopyName, getDerefName, getImplicitConvertName, QualifiedName},
+    qualifiedname::{
+        builtins::{getCopyName, getDerefName, getImplicitConvertName},
+        QualifiedName,
+    },
 };
 
 use super::{
@@ -46,7 +49,7 @@ impl Instances {
             let mut noMatch = false;
             //println!("Matching {} {}", formatTypes(types), formatTypes(&i.types));
             for (arg, ty) in i2.types.iter().zip(types.iter()) {
-                let r = unify(&mut sub, arg, ty, false);
+                let r = unify(&mut sub, arg.clone(), ty.clone(), false);
                 if r.is_err() {
                     //println!("no match");
                     noMatch = true;
@@ -88,7 +91,7 @@ impl Instances {
         }
         if let Some(winner) = winner {
             let winner = instantiateInstance(allocator, winner);
-            let sub = createTypeSubstitutionFrom(&winner.types, types);
+            let sub = createTypeSubstitutionFrom(winner.types.clone(), types.clone());
             ResolutionResult::Winner(winner.apply(&sub))
         } else {
             if matchingInstances.is_empty() {

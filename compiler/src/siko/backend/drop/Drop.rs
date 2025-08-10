@@ -24,7 +24,7 @@ use crate::siko::{
         Type::Type,
     },
     location::Report::ReportContext,
-    qualifiedname::getCloneFnName,
+    qualifiedname::builtins::getCloneFnName,
 };
 
 pub fn checkDrops(ctx: &ReportContext, program: Program) -> Program {

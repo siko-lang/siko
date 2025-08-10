@@ -1,6 +1,6 @@
 use crate::siko::{
     location::Location::{Location, Span},
-    qualifiedname::{getFalseName, getTrueName},
+    qualifiedname::builtins::{getFalseName, getTrueName},
     syntax::{
         Expr::{BinaryOp, Branch, Expr, SimpleExpr, UnaryOp},
         Identifier::Identifier,
