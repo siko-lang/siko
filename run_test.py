@@ -59,11 +59,11 @@ def compare_output(output_txt_path, current_output):
             f.write(current_output)
         return True
 
-def test_success(root, entry, extras):
+def test_success(root, entry, extras, explicit):
     print("- %s" % entry, end='')
     currentDir = os.path.join(root, entry)
     skipPath = os.path.join(currentDir, "SKIP")
-    if os.path.exists(skipPath):
+    if os.path.exists(skipPath) and not explicit:
         return "skip"
     inputPath = os.path.join(currentDir, "main.sk")
     #binary = compileSikoLLVM(currentDir, [inputPath], extras)
@@ -137,7 +137,7 @@ for test_path in success_tests:
     entry = os.path.relpath(test_path, successes_path)
     if filters and entry not in filters:
         continue
-    processResult(test_success(successes_path, entry, ["std"]), entry)
+    processResult(test_success(successes_path, entry, ["std"], entry in filters), entry)
 
 print("Error tests:")
 failed_tests = collect_tests(errors_path)
