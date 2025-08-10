@@ -645,7 +645,7 @@ impl<'a> Resolver<'a> {
                             &self.program.structs,
                             &self.variants,
                             &self.program.enums,
-                            moduleResolver.resolverName(&f.name),
+                            QualifiedName::Module(moduleResolver.name.clone()).add(f.name.toString()),
                             &typeResolver,
                         );
                         self.program.functions.insert(irFunction.name.clone(), irFunction);

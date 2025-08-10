@@ -1,0 +1,313 @@
+module Main {
+
+import Ptr
+
+pub enum InsertResult {
+    Inserted(Ptr[Node]),
+    Duplicate(Ptr[Node]),
+}
+
+pub struct Node {
+    pub value: Int,
+    pub height: Int,
+    pub left: Ptr[Node],
+    pub right: Ptr[Node],
+
+    fn new(value: Int) -> Ptr[Node] {
+        let node = Node(value, 1, null(), null());
+        let p = Ptr.allocateArray(1);
+        p.store(node);
+        p
+    }
+}
+
+pub struct AvlTree {
+    pub root: Ptr[Node],
+
+    pub fn new() -> AvlTree {
+        AvlTree(null())
+    }
+
+    pub fn insert(mut self, value: Int) -> (Self, InsertResult) {
+        let (res, new_root) = Main.insert(self.root, value);
+        self.root = new_root;
+        (self, res)
+    }
+
+    pub fn delete(mut self, value: Int) -> Self {
+        self.root = Main.delete(self.root, value);
+        self
+    }
+
+    pub fn search(&self, value: Int) -> Ptr[Node] {
+        Main.search(self.root, value)
+    }
+
+    fn drop(self) -> Self {
+        free_nodes(self.root);
+        self.root = null();
+        self
+    }
+}
+
+instance Drop[AvlTree] {
+    fn drop(self) -> Self {
+        self.drop()
+    }
+}
+
+fn height(n: Ptr[Node]) -> Int {
+    if n.isNull() {
+        0
+    } else {
+        let node = n.load();
+        node.height
+    }
+}
+
+fn update_height(n: Ptr[Node]) {
+    if !n.isNull() {
+        let mut node = n.load();
+        node.height = 1 + max(height(node.left), height(node.right));
+        n.store(node);
+    }
+}
+
+fn balance_factor(n: Ptr[Node]) -> Int {
+    if n.isNull() {
+        0
+    } else {
+        height(n.left) - height(n.right)
+    }
+}
+
+fn min_value_node(mut current: Ptr[Node]) -> Ptr[Node] {
+    if current.isNull() {
+        return current;
+    }
+    while !current.left.isNull() {
+        current = current.left;
+    }
+    current
+}
+
+// ======================== Rotations ========================
+
+fn right_rotate(z: Ptr[Node]) -> Ptr[Node] {
+        let y = z.left;
+        let t3 = y.right;
+
+        y.right = z;
+        z.left = t3;
+
+        update_height(z);
+        update_height(y);
+
+        y
+}
+
+fn left_rotate(z: Ptr[Node]) -> Ptr[Node] {
+    let y = z.right;
+    let t2 = y.left;
+
+    y.left = z;
+    z.right = t2;
+
+    update_height(z);
+    update_height(y);
+
+    y
+}
+
+// ======================== Core ops ========================
+
+fn insert(mut root: Ptr[Node], value: Int) -> (InsertResult, Ptr[Node]) {
+    if root.isNull() {
+        let n = Node.new(value);
+        return (Inserted(n), n);
+    }
+
+    if value < root.value {
+        let (res, new_left) = Main.insert(root.left, value);
+        root.left = new_left;
+        match res {
+            Inserted(_) -> {
+                update_height(root);
+                let bf = balance_factor(root);
+                // Left-Left
+                if bf > 1 and value < (root.left).value {
+                    let r = right_rotate(root);
+                    return (Inserted(r), r);
+                }
+                // Right-Right
+                if bf < -1 and value > (root.right).value {
+                    let r = left_rotate(root);
+                    return (Inserted(r), r);
+                }
+                // Left-Right
+                if bf > 1 and value > (root.left).value {
+                    root.left = left_rotate(root.left);
+                    let r = right_rotate(root);
+                    return (Inserted(r), r);
+                }
+                // Right-Left
+                if bf < -1 and value < (root.right).value {
+                    root.right = right_rotate(root.right);
+                    let r = left_rotate(root);
+                    return (Inserted(r), r);
+                }
+                (Inserted(root), root)
+            }
+            Duplicate(node) -> (Duplicate(node), root),
+        }
+    } else if value > root.value {
+        let (res, new_right) = Main.insert(root.right, value);
+        root.right = new_right;
+        match res {
+            Inserted(_) -> {
+                update_height(root);
+                let bf = balance_factor(root);
+                // Left-Left
+                if bf > 1 and value < (root.left).value {
+                    let r = right_rotate(root);
+                    return (Inserted(r), r);
+                }
+                // Right-Right
+                if bf < -1 and value > (root.right).value {
+                    let r = left_rotate(root);
+                    return (Inserted(r), r);
+                }
+                // Left-Right
+                if bf > 1 and value > (root.left).value {
+                    root.left = left_rotate(root.left);
+                    let r = right_rotate(root);
+                    return (Inserted(r), r);
+                }
+                // Right-Left
+                if bf < -1 and value < (root.right).value {
+                    root.right = right_rotate(root.right);
+                    let r = left_rotate(root);
+                    return (Inserted(r), r);
+                }
+                (Inserted(root), root)
+            }
+            Duplicate(node) -> (Duplicate(node), root),
+        }
+    } else {
+        // Duplicate found — no insert
+        return (Duplicate(root), root);
+    }
+}
+
+fn delete(mut root: Ptr[Node], value: Int) -> Ptr[Node] {
+    if root.isNull() {
+        return root;
+    }
+
+    if value < root.value {
+        root.left = Main.delete(root.left, value);
+    } else if value > root.value {
+        root.right = Main.delete(root.right, value);
+    } else {
+        let left = root.left;
+        let right = root.right;
+
+        if left.isNull() or right.isNull() {
+            let child = if !left.isNull() { left } else { right };
+            root.deallocate();
+            return child;
+        } else {
+            let succ = min_value_node(right);
+            root.value = succ.value;
+            root.right = Main.delete(right, succ.value);
+        }
+    }
+
+    if root.isNull() {
+        return root;
+    }
+
+    update_height(root);
+    let bf = balance_factor(root);
+
+    if bf > 1 and balance_factor(root.left) >= 0 {
+        return right_rotate(root);
+    }
+    if bf > 1 and balance_factor(root.left) < 0 {
+        root.left = left_rotate(root.left);
+        return right_rotate(root);
+    }
+    if bf < -1 and balance_factor(root.right) <= 0 {
+        return left_rotate(root);
+    }
+    if bf < -1 and balance_factor(root.right) > 0 {
+        root.right = right_rotate(root.right);
+        return left_rotate(root);
+    }
+
+    root
+}
+
+fn search(mut root: Ptr[Node], value: Int) -> Ptr[Node] {
+    while !root.isNull() {
+        if value == root.value {
+            return root;
+        } else if value < root.value {
+            root = root.left;
+        } else {
+            root = root.right;
+        }
+    }
+    null()
+}
+
+// ======================== Cleanup ========================
+
+fn free_nodes(root: Ptr[Node]) {
+    if root.isNull() {
+        return;
+    }
+    let left = root.left;
+    let right = root.right;
+    free_nodes(left);
+    free_nodes(right);
+    root.deallocate();
+}
+
+// ======================== Traversal ========================
+
+fn inorder(root: Ptr[Node]) {
+    if root.isNull() {
+        return;
+    }
+    inorder(root.left);
+    print("${root.value} ");
+    inorder(root.right);
+}
+
+// ======================== Main Demo ========================
+
+fn main() {
+    let mut tree = AvlTree.new();
+
+    for v in [10, 20, 30, 40, 50, 25, 25] {
+        match tree.insert(v) {
+            Inserted(_) -> println("Inserted ${v}"),
+            Duplicate(_) -> println("Duplicate ${v} rejected"),
+        }
+    }
+
+    println("Inorder after inserts:");
+    inorder(tree.root);
+    println();
+
+    let found = tree.search(25);
+    println("Search 25 -> {}", if found.isNull() { "Not found" } else { "Found" });
+
+    tree.delete(40);
+    println("Inorder after deleting 40:");
+    inorder(tree.root);
+    println();
+}
+
+}

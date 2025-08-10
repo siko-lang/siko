@@ -212,6 +212,10 @@ pub fn getStdBasicUtilPrintStrName() -> QualifiedName {
     build("Std.Basic.Util", "printStr")
 }
 
+pub fn getStdBasicUtilPrintlnStrName() -> QualifiedName {
+    build("Std.Basic.Util", "printlnStr")
+}
+
 pub fn getBoxTypeName() -> QualifiedName {
     build("Box", "Box")
 }

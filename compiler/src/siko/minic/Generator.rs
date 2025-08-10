@@ -12,7 +12,8 @@ use crate::siko::{
         getNativePtrDeallocateName, getNativePtrEqName, getNativePtrIsNullName, getNativePtrLoadName,
         getNativePtrMemcmpName, getNativePtrMemcpyName, getNativePtrNullName, getNativePtrOffsetName,
         getNativePtrPrintName, getNativePtrStoreName, getStdBasicUtilAbortName, getStdBasicUtilPrintStrName,
-        getU8AddName, getU8CloneName, getU8DivName, getU8EqName, getU8LessThanName, getU8MulName, getU8SubName,
+        getStdBasicUtilPrintlnStrName, getU8AddName, getU8CloneName, getU8DivName, getU8EqName, getU8LessThanName,
+        getU8MulName, getU8SubName,
     },
     util::DependencyProcessor::processDependencies,
 };
@@ -475,6 +476,16 @@ impl MiniCGenerator {
 
         if f.name
             .starts_with(&getStdBasicUtilPrintStrName().toString().replace(".", "_"))
+        {
+            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(buf, "    {} result;", getTypeName(&f.result))?;
+            writeln!(buf, "    printf(\"%.*s\", (int)v->field1, v->field0);")?;
+            writeln!(buf, "    return result;")?;
+            writeln!(buf, "}}\n")?;
+        }
+
+        if f.name
+            .starts_with(&getStdBasicUtilPrintlnStrName().toString().replace(".", "_"))
         {
             writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
             writeln!(buf, "    {} result;", getTypeName(&f.result))?;
