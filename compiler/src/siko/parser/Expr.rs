@@ -291,10 +291,17 @@ impl<'a> ExprParser for Parser<'a> {
                 expr: SimpleExpr::Tuple(Vec::new()),
                 location: self.currentLocation(),
             };
-            self.buildExpr(SimpleExpr::Loop(pattern, Box::new(init), Box::new(Expr {
-                expr: SimpleExpr::Block(body),
-                location: self.currentLocation(),
-            })), start)
+            self.buildExpr(
+                SimpleExpr::Loop(
+                    pattern,
+                    Box::new(init),
+                    Box::new(Expr {
+                        expr: SimpleExpr::Block(body),
+                        location: self.currentLocation(),
+                    }),
+                ),
+                start,
+            )
         } else {
             let pattern = self.parsePattern();
             self.expect(TokenKind::Misc(MiscKind::Equal));
@@ -302,10 +309,17 @@ impl<'a> ExprParser for Parser<'a> {
             self.expect(TokenKind::LeftBracket(BracketKind::Curly));
             self.undo();
             let body = self.parseBlock();
-            self.buildExpr(SimpleExpr::Loop(pattern, Box::new(init), Box::new(Expr {
-                expr: SimpleExpr::Block(body),
-                location: self.currentLocation(),
-            })), start)
+            self.buildExpr(
+                SimpleExpr::Loop(
+                    pattern,
+                    Box::new(init),
+                    Box::new(Expr {
+                        expr: SimpleExpr::Block(body),
+                        location: self.currentLocation(),
+                    }),
+                ),
+                start,
+            )
         }
     }
 
@@ -521,7 +535,79 @@ impl<'a> ExprParser for Parser<'a> {
                     OperatorKind::LessThanOrEqual => BinaryOp::LessThanOrEqual,
                     OperatorKind::GreaterThanOrEqual => BinaryOp::GreaterThanOrEqual,
                 };
-                left = self.buildExpr(SimpleExpr::BinaryOp(op, Box::new(left), Box::new(rhs)), start.clone());
+                if op == BinaryOp::And {
+                    let trueBranch = Branch {
+                        pattern: Pattern {
+                            pattern: SimplePattern::Named(
+                                Identifier::new(&getTrueName().toString(), self.currentLocation()),
+                                Vec::new(),
+                            ),
+                            location: self.currentLocation(),
+                        },
+                        body: rhs,
+                    };
+                    let falseBranch = Branch {
+                        pattern: Pattern {
+                            pattern: SimplePattern::Named(
+                                Identifier::new(&getFalseName().toString(), self.currentLocation()),
+                                Vec::new(),
+                            ),
+                            location: self.currentLocation(),
+                        },
+                        body: self.buildExpr(
+                            SimpleExpr::Call(
+                                Box::new(Expr {
+                                    expr: SimpleExpr::Value(Identifier::new(
+                                        &getFalseName().toString(),
+                                        self.currentLocation(),
+                                    )),
+                                    location: self.currentLocation(),
+                                }),
+                                Vec::new(),
+                            ),
+                            start,
+                        ),
+                    };
+                    left = self.buildExpr(SimpleExpr::Match(Box::new(left), vec![trueBranch, falseBranch]), start);
+                } else if op == BinaryOp::Or {
+                    let trueBranch = Branch {
+                        pattern: Pattern {
+                            pattern: SimplePattern::Named(
+                                Identifier::new(&getTrueName().toString(), self.currentLocation()),
+                                Vec::new(),
+                            ),
+                            location: self.currentLocation(),
+                        },
+                        body: self.buildExpr(
+                            SimpleExpr::Call(
+                                Box::new(Expr {
+                                    expr: SimpleExpr::Value(Identifier::new(
+                                        &getTrueName().toString(),
+                                        self.currentLocation(),
+                                    )),
+                                    location: self.currentLocation(),
+                                }),
+                                Vec::new(),
+                            ),
+                            start,
+                        ),
+                    };
+                    let falseBranch = Branch {
+                        pattern: Pattern {
+                            pattern: SimplePattern::Named(
+                                Identifier::new(&getFalseName().toString(), self.currentLocation()),
+                                Vec::new(),
+                            ),
+                            location: self.currentLocation(),
+                        },
+                        body: rhs,
+                    };
+                    left = self.buildExpr(SimpleExpr::Match(Box::new(left), vec![trueBranch, falseBranch]), start);
+                } else {
+                    assert_ne!(op, BinaryOp::And);
+                    assert_ne!(op, BinaryOp::Or);
+                    left = self.buildExpr(SimpleExpr::BinaryOp(op, Box::new(left), Box::new(rhs)), start.clone());
+                }
             } else {
                 break;
             }

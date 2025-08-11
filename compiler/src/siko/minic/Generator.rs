@@ -207,9 +207,14 @@ impl MiniCGenerator {
                         _ => todo!(),
                     })
                     .collect();
+                let value = if root.ty.isPtr() {
+                    format!("*{}", root.name)
+                } else {
+                    root.name.clone()
+                };
                 format!(
                     "switch ({}) {{\n{}\n    default:\n       goto {};\n   }}",
-                    root.name,
+                    value,
                     branches.join("\n"),
                     default
                 )

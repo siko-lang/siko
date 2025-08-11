@@ -7,6 +7,15 @@ pub enum InsertResult {
     Duplicate(Ptr[Node]),
 }
 
+instance Show[InsertResult] {
+    fn show(&self) -> String {
+        match self {
+            Inserted(node) -> "Inserted(${node.value})",
+            Duplicate(node) -> "Duplicate: ${node.value}",
+        }
+    }
+}
+
 pub struct Node {
     pub value: Int,
     pub height: Int,
@@ -14,10 +23,17 @@ pub struct Node {
     pub right: Ptr[Node],
 
     fn new(value: Int) -> Ptr[Node] {
+        println("Allocating node for ${value}");
         let node = Node(value, 1, null(), null());
         let p = Ptr.allocateArray(1);
         p.store(node);
         p
+    }
+}
+
+instance Clone[Node] {
+    fn clone(&self) -> Node {
+        Node(self.value, self.height, self.left.clone(), self.right.clone())
     }
 }
 
@@ -43,7 +59,7 @@ pub struct AvlTree {
         Main.search(self.root, value)
     }
 
-    fn drop(self) -> Self {
+    fn drop(mut self) -> Self {
         free_nodes(self.root);
         self.root = null();
         self
@@ -60,16 +76,13 @@ fn height(n: Ptr[Node]) -> Int {
     if n.isNull() {
         0
     } else {
-        let node = n.load();
-        node.height
+        n.height
     }
 }
 
-fn update_height(n: Ptr[Node]) {
+fn update_height(mut n: Ptr[Node]) {
     if !n.isNull() {
-        let mut node = n.load();
-        node.height = 1 + max(height(node.left), height(node.right));
-        n.store(node);
+        n.height = 1 + max(height(n.left), height(n.right));
     }
 }
 
@@ -93,21 +106,21 @@ fn min_value_node(mut current: Ptr[Node]) -> Ptr[Node] {
 
 // ======================== Rotations ========================
 
-fn right_rotate(z: Ptr[Node]) -> Ptr[Node] {
-        let y = z.left;
-        let t3 = y.right;
+fn right_rotate(mut z: Ptr[Node]) -> Ptr[Node] {
+    let mut y = z.left;
+    let t3 = y.right;
 
-        y.right = z;
-        z.left = t3;
+    y.right = z;
+    z.left = t3;
 
-        update_height(z);
-        update_height(y);
+    update_height(z);
+    update_height(y);
 
-        y
+    y
 }
 
-fn left_rotate(z: Ptr[Node]) -> Ptr[Node] {
-    let y = z.right;
+fn left_rotate(mut z: Ptr[Node]) -> Ptr[Node] {
+    let mut y = z.right;
     let t2 = y.left;
 
     y.left = z;
@@ -128,6 +141,7 @@ fn insert(mut root: Ptr[Node], value: Int) -> (InsertResult, Ptr[Node]) {
     }
 
     if value < root.value {
+        println("Inserting ${value} to the left of ${root.value}");
         let (res, new_left) = Main.insert(root.left, value);
         root.left = new_left;
         match res {
@@ -288,8 +302,10 @@ fn inorder(root: Ptr[Node]) {
 // ======================== Main Demo ========================
 
 fn main() {
+    println("AVL Tree Demo");
     let mut tree = AvlTree.new();
 
+    println("Inserting values:");
     for v in [10, 20, 30, 40, 50, 25, 25] {
         match tree.insert(v) {
             Inserted(_) -> println("Inserted ${v}"),
@@ -299,15 +315,16 @@ fn main() {
 
     println("Inorder after inserts:");
     inorder(tree.root);
-    println();
+    println("");
 
     let found = tree.search(25);
-    println("Search 25 -> {}", if found.isNull() { "Not found" } else { "Found" });
+    let res = if found.isNull() { "Not found" } else { "Found" };
+    println("Search 25 -> ${res}");
 
     tree.delete(40);
     println("Inorder after deleting 40:");
     inorder(tree.root);
-    println();
+    println("");
 }
 
 }

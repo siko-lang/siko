@@ -427,8 +427,8 @@ impl<'a> ExprResolver<'a> {
                 let lhsId = self.resolveExpr(lhs, env);
                 let rhsId = self.resolveExpr(rhs, env);
                 let name = match op {
-                    BinaryOp::And => createOpName("And", "opAnd"),
-                    BinaryOp::Or => createOpName("Or", "opOr"),
+                    BinaryOp::And => panic!("And operator reached resolver"),
+                    BinaryOp::Or => panic!("Or operator reached resolver"),
                     BinaryOp::Add => createOpName("Add", "add"),
                     BinaryOp::Sub => createOpName("Sub", "sub"),
                     BinaryOp::Mul => createOpName("Mul", "mul"),
