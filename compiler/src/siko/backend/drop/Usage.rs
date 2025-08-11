@@ -58,7 +58,7 @@ impl UsageInfo {
 
 fn varToUsage(var: &Variable) -> Usage {
     let ty = var.getType();
-    //println!("Using variable: {} {}", var.value.visibleName(), ty);
+    //println!("Using variable: {} {}", var.name.visibleName(), ty);
     if ty.isReference() || ty.isPtr() {
         Usage {
             path: var.toPath(),
@@ -92,13 +92,26 @@ pub fn getUsageInfo(kind: InstructionKind) -> UsageInfo {
             };
             UsageInfo::with(vec![Usage { path, kind }], Some(dest.toPath()))
         }
-        InstructionKind::FieldAssign(dest, receiver, fields) => UsageInfo::with(
-            vec![Usage {
-                path: receiver.toPath(),
-                kind: UsageKind::Move,
-            }],
-            Some(buildFieldPath(&dest, &fields)),
-        ),
+        InstructionKind::FieldAssign(dest, receiver, fields) => {
+            let receiverTy = receiver.getType();
+            if receiverTy.isReference() || receiverTy.isPtr() {
+                UsageInfo::with(
+                    vec![Usage {
+                        path: receiver.toPath(),
+                        kind: UsageKind::Ref,
+                    }],
+                    Some(buildFieldPath(&dest, &fields)),
+                )
+            } else {
+                UsageInfo::with(
+                    vec![Usage {
+                        path: receiver.toPath(),
+                        kind: UsageKind::Move,
+                    }],
+                    Some(buildFieldPath(&dest, &fields)),
+                )
+            }
+        }
         InstructionKind::Tuple(dest, args) => {
             UsageInfo::with(args.iter().map(|arg| varToUsage(arg)).collect(), Some(dest.toPath()))
         }

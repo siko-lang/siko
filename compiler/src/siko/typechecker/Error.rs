@@ -2,7 +2,6 @@ use crate::siko::location::{Location::Location, Report::Report, Report::ReportCo
 
 pub enum TypecheckerError {
     TypeMismatch(String, String, Location),
-    DerefNotCopy(String, String, Location),
     FieldNotFound(String, Location),
     MethodNotFound(String, Location),
     MethodAmbiguous(String, Location),
@@ -18,15 +17,6 @@ impl TypecheckerError {
         match &self {
             TypecheckerError::TypeMismatch(ty1, ty2, l) => {
                 let slogan = format!("Type mismatch: {}, {}", ctx.yellow(ty1), ctx.yellow(ty2));
-                let r = Report::new(ctx, slogan, Some(l.clone()));
-                r.print();
-            }
-            TypecheckerError::DerefNotCopy(ty, name, l) => {
-                let slogan = format!(
-                    "Field {} found on Deref target but it does not implement Copy: {}",
-                    ctx.yellow(name),
-                    ctx.yellow(ty)
-                );
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }

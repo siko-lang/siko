@@ -9,7 +9,9 @@ use crate::siko::hir::Instruction::{FieldId, FieldInfo, InstructionKind, SyntaxB
 use crate::siko::hir::Variable::Variable;
 use crate::siko::location::Location::Location;
 use crate::siko::location::Report::ReportContext;
-use crate::siko::qualifiedname::builtins::{getVecNewName, getVecPushName};
+use crate::siko::qualifiedname::builtins::{
+    getNativePtrLoadName, getNativePtrStoreName, getVecNewName, getVecPushName,
+};
 use crate::siko::qualifiedname::QualifiedName;
 use crate::siko::resolver::matchcompiler::Compiler::MatchCompiler;
 use crate::siko::syntax::Expr::{BinaryOp, Expr, SimpleExpr, UnaryOp};
@@ -86,7 +88,7 @@ impl<'a> ExprResolver<'a> {
         SyntaxBlockIdSegment { value: blockId }
     }
 
-    fn processFieldAssign<'e>(
+    fn processFieldAssign<'e, 'f>(
         &mut self,
         receiver: &Expr,
         name: &Identifier,
@@ -239,6 +241,14 @@ impl<'a> ExprResolver<'a> {
                         }
                         SimpleExpr::FieldAccess(receiver, name) => {
                             self.processFieldAssign(receiver, name, &mut env, rhsId, lhs.location.clone());
+                        }
+                        SimpleExpr::UnaryOp(UnaryOp::Deref, inner) => {
+                            let innerId = self.resolveExpr(inner, &mut env);
+                            self.bodyBuilder.current().addFunctionCall(
+                                getNativePtrStoreName(),
+                                vec![innerId, rhsId],
+                                lhs.location.clone(),
+                            );
                         }
                         _ => {
                             ResolverError::InvalidAssignment(lhs.location.clone()).report(self.ctx);
@@ -454,6 +464,7 @@ impl<'a> ExprResolver<'a> {
                 let name = match op {
                     UnaryOp::Not => createOpName("Not", "not"),
                     UnaryOp::Neg => createOpName("Neg", "negative"),
+                    UnaryOp::Deref => getNativePtrLoadName(),
                 };
                 let id = Identifier {
                     name: format!("{}", name),

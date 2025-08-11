@@ -20,7 +20,7 @@ use crate::siko::{
 
 use super::{
     Data::Struct,
-    Function::{Function, GetMode, Instruction, ReadMode},
+    Function::{Function, GetMode, Instruction},
     Program::Program,
     Type::Type,
 };
@@ -135,20 +135,10 @@ impl MiniCGenerator {
                     format!("{} = {}{}.field{};", dest.name, mode, root.name, index)
                 }
             }
-            Instruction::SetField(dest, src, indices, mode) => {
+            Instruction::SetField(dest, src, indices) => {
                 let path: Vec<_> = indices.iter().map(|i| format!(".field{}", i)).collect();
                 let path: String = path.join("");
-                match *mode {
-                    ReadMode::Noop => {
-                        format!("{}{} = {};", dest.name, path, src.name)
-                    }
-                    ReadMode::Ref => {
-                        format!("{}{} = *{};", dest.name, path, src.name)
-                    }
-                    ReadMode::Deref => {
-                        format!("{}{} = *{};", dest.name, path, src.name)
-                    }
-                }
+                format!("{}{} = {};", dest.name, path, src.name)
             }
             Instruction::Return(value) => match value {
                 Value::Void => format!("return;"),
@@ -255,7 +245,7 @@ impl MiniCGenerator {
                     Instruction::GetField(dest, _, _, _) => {
                         localVars.insert(dest.clone());
                     }
-                    Instruction::SetField(dest, _, _, _) => {
+                    Instruction::SetField(dest, _, _) => {
                         localVars.insert(dest.clone());
                     }
                     Instruction::Jump(_) => {}

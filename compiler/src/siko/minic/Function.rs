@@ -36,12 +36,6 @@ pub struct Branch {
     pub block: String,
 }
 
-pub enum ReadMode {
-    Noop,
-    Ref,
-    Deref,
-}
-
 pub enum GetMode {
     Noop,
     Ref,
@@ -56,7 +50,7 @@ pub enum Instruction {
     FunctionCallValue(Variable, String, Vec<Variable>),
     Return(Value),
     GetField(Variable, Variable, i32, GetMode),
-    SetField(Variable, Variable, Vec<i32>, ReadMode),
+    SetField(Variable, Variable, Vec<i32>),
     Jump(String),
     Memcpy(Variable, Variable),
     MemcpyPtr(Variable, Variable),

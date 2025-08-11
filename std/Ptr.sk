@@ -1,87 +1,3 @@
-module Ptr {
-
-import NativePtr as N
-
-pub struct Ptr[T] {
-    addr: *T
-
-    pub fn null() -> Ptr[T] {
-        Ptr(N.null())
-    }
-
-    pub fn isNull(&self) -> Bool {
-        N.isNull(self.addr)
-    }
-
-    pub fn offset(&self, count: Int) -> Ptr[T] {
-        Ptr(N.offset(self.addr, count))
-    }
-
-    pub fn store(&self, item: T) {
-        N.store(self.addr, item)
-    }
-
-    pub fn load(&self) -> T {
-        N.load(self.addr)
-    }
-
-    pub fn clone(&self) -> Ptr[T] {
-        Ptr(N.clone(&self.addr))
-    }
-
-    pub fn allocateArray(count: Int) -> Ptr[T] {
-        Ptr(N.allocateArray(count))
-    }
-
-    pub fn deallocate(&self) {
-        N.deallocate(self.addr)
-    }
-
-    pub fn memcmp(&self, other: Ptr[T], count: Int) -> Int {
-        N.memcmp(self.addr, other.addr, count)
-    }
-
-    pub fn memcpy(&self, other: Ptr[T], count: Int) {
-        N.memcpy(self.addr, other.addr, count)
-    }
-
-    pub fn allocate() -> Ptr[T] {
-        Ptr(N.allocateArray(1))
-    }
-}
-
-instance[T] PartialEq[Ptr[T]] {
-    fn eq(&self, other: &Ptr[T]) -> Bool {
-       N.eq(self.addr, other.addr)
-    }
-}
-
-instance[T] Eq[Ptr[T]]
-
-instance[T] Clone[Ptr[T]] {
-    fn clone(&self) -> Ptr[T] {
-        self.clone()
-    }
-}
-
-instance[T] Copy[Ptr[T]]
-
-instance[T: Clone[T]] Deref[Ptr[T]] {
-    type Target = T
-    fn get(&self) -> T {
-        self.load()
-    }
-
-    fn set(&self, value: T) {
-        self.store(value)
-    }
-
-    fn release(&self) {
-    }
-}
-
-}
-
 module NativePtr {
 
 pub fn eq[T](a: *T, b: *T) -> Bool = extern
@@ -91,6 +7,10 @@ pub fn null[T]() -> *T = extern
 pub fn isNull[T](addr: *T) -> Bool = extern
 
 pub fn allocateArray[T](count: Int) -> *T = extern
+
+pub fn allocate[T]() -> *T {
+    allocateArray(1)
+}
 
 pub fn deallocate[T](addr: *T) = extern
 
@@ -106,7 +26,7 @@ pub fn toRef[T](addr: *T) -> &T = extern
 
 pub fn load[T](addr: *T) -> T = extern
 
-pub fn print[T](addr: *T) = extern
+pub fn printPtr[T](addr: *T) = extern
 
 pub fn clone[T](addr: &*T) -> *T = extern
 

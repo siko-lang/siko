@@ -86,10 +86,10 @@ pub struct Vec[T] {
         }
         let ptr = offset(self.inner.items, i);
         let ptr2 = offset(self.inner.items, j);
-        let item = load(ptr);
-        let item2 = load(ptr2);
-        store(ptr, item2);
-        store(ptr2, item);
+        let item = *ptr;
+        let item2 = *ptr2;
+        *ptr = item2;
+        *ptr2 = item;
         self
     }
 
@@ -125,7 +125,7 @@ instance[T] Drop[VecIterator[T]] {
             }
             let ptr = offset(self.inner.items, self.index);
             self.index = self.index + 1;
-            let item = load(ptr);
+            let item = *ptr;
         }
         deallocate(self.inner.items);
         self.inner.items = null();
@@ -142,7 +142,7 @@ instance[T] Iterator[VecIterator[T]] {
         }
         let ptr = offset(self.inner.items, self.index);
         self.index = self.index + 1;
-        let item = load(ptr);
+        let item = *ptr;
         (self, Some(item))
     }
 }

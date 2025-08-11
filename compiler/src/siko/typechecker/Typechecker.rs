@@ -23,26 +23,19 @@ use crate::siko::{
         Variable::Variable,
     },
     location::{Location::Location, Report::ReportContext},
-    qualifiedname::builtins::{
-        getCloneFnName, getDerefGetName, getDerefSetName, getImplicitConvertFnName, getNativePtrCloneName,
+    qualifiedname::{
+        builtins::{
+            getCloneFnName, getImplicitConvertFnName, getNativePtrCloneName, getNativePtrIsNullName,
+            getNativePtrLoadName,
+        },
+        QualifiedName,
     },
-    qualifiedname::QualifiedName,
 };
 
 use super::Error::TypecheckerError;
 
 fn reportError(ctx: &ReportContext, ty1: Type, ty2: Type, location: Location) {
     TypecheckerError::TypeMismatch(format!("{}", ty1), format!("{}", ty2), location).report(ctx)
-}
-
-struct ReadFieldResult {
-    ty: Type,
-    derefs: Vec<Type>,
-}
-
-struct WriteFieldResult {
-    ty: Type,
-    derefs: Vec<Type>,
 }
 
 struct Constraint {
@@ -460,6 +453,14 @@ impl<'a> Typechecker<'a> {
             Type::Var(TypeVar::Named(_)) => {
                 return self.lookupTraitMethod(methodName, location);
             }
+            Type::Ptr(_) => {
+                if methodName == "isNull" {
+                    // TODO: make this nicer, somehow??
+                    return getNativePtrIsNullName();
+                } else {
+                    TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
+                }
+            }
             _ => {
                 println!("Lookup method 2 on non-named type: {} {}", receiverType, methodName);
                 TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
@@ -467,7 +468,14 @@ impl<'a> Typechecker<'a> {
         };
     }
 
-    fn checkField(&mut self, receiverType: Type, fieldId: &FieldId, location: Location) -> Type {
+    fn checkField(&mut self, mut receiverType: Type, fieldId: &FieldId, location: Location) -> Type {
+        receiverType = receiverType.apply(&self.substitution);
+        if let Type::Reference(innerTy, _) = &receiverType {
+            receiverType = *innerTy.clone();
+        }
+        if let Type::Ptr(innerTy) = &receiverType {
+            receiverType = *innerTy.clone();
+        }
         match &fieldId {
             FieldId::Named(fieldName) => {
                 let receiverType = receiverType.apply(&self.substitution);
@@ -483,19 +491,14 @@ impl<'a> Typechecker<'a> {
                                     return f.ty.clone();
                                 }
                             }
-                            if let Some(i) = self.program.instanceResolver.isDeref(&receiverType) {
-                                let receiverType = i.associatedTypes[0].ty.clone();
-                                return self.checkField(receiverType, fieldId, location);
-                            } else {
-                                TypecheckerError::FieldNotFound(fieldName.clone(), location.clone()).report(self.ctx);
-                            }
+                            TypecheckerError::FieldNotFound(fieldName.clone(), location.clone()).report(self.ctx);
                         } else {
-                            println!("ReadField 1 on non-named type: {} {}", receiverType, fieldName);
+                            println!("checkField 1 on non-named type: {} {}", receiverType, fieldName);
                             TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
                         }
                     }
                     _ => {
-                        println!("ReadField 2 on non-named type: {} {}", receiverType, fieldName);
+                        println!("checkField 2 on non-named type: {} {}", receiverType, fieldName);
                         TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
                     }
                 }
@@ -522,7 +525,7 @@ impl<'a> Typechecker<'a> {
         }
     }
 
-    fn readField(&mut self, receiverType: Type, fieldName: String, location: Location) -> ReadFieldResult {
+    fn readField(&mut self, receiverType: Type, fieldName: String, location: Location) -> Type {
         let receiverType = receiverType.apply(&self.substitution);
         match receiverType.unpackRef() {
             Type::Named(name, _) => {
@@ -530,29 +533,14 @@ impl<'a> Typechecker<'a> {
                     let structDef = self.instantiateStruct(structDef, receiverType.unpackRef());
                     for f in &structDef.fields {
                         if f.name == *fieldName {
-                            let mut result = ReadFieldResult {
-                                ty: f.ty.clone(),
-                                derefs: Vec::new(),
-                            };
+                            let mut result = f.ty.clone();
                             if receiverType.isReference() {
-                                result.ty = Type::Reference(Box::new(f.ty.clone()), None);
+                                result = Type::Reference(Box::new(f.ty.clone()), None);
                             }
                             return result;
                         }
                     }
-                    if let Some(i) = self.program.instanceResolver.isDeref(&receiverType.unpackRef()) {
-                        let receiverType = i.associatedTypes[0].ty.clone();
-                        let mut result = self.readField(receiverType.clone(), fieldName.clone(), location.clone());
-                        if self.program.instanceResolver.isCopy(&result.ty) {
-                            result.derefs.push(receiverType);
-                            return result;
-                        } else {
-                            TypecheckerError::DerefNotCopy(result.ty.to_string(), fieldName, location.clone())
-                                .report(self.ctx);
-                        }
-                    } else {
-                        TypecheckerError::FieldNotFound(fieldName.clone(), location.clone()).report(self.ctx);
-                    }
+                    TypecheckerError::FieldNotFound(fieldName.clone(), location.clone()).report(self.ctx);
                 } else {
                     println!("ReadField 1 on non-named type: {} {}", receiverType, fieldName);
                     TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
@@ -563,152 +551,6 @@ impl<'a> Typechecker<'a> {
                 TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
             }
         }
-    }
-
-    fn writeField(&mut self, receiverType: Type, fieldName: String, location: Location) -> WriteFieldResult {
-        let receiverType = receiverType.apply(&self.substitution);
-        match receiverType.unpackRef() {
-            Type::Named(name, _) => {
-                if let Some(structDef) = self.program.structs.get(&name) {
-                    let structDef = self.instantiateStruct(structDef, receiverType.unpackRef());
-                    for f in &structDef.fields {
-                        if f.name == *fieldName {
-                            let mut result = WriteFieldResult {
-                                ty: f.ty.clone(),
-                                derefs: Vec::new(),
-                            };
-                            if receiverType.isReference() {
-                                result.ty = Type::Reference(Box::new(f.ty.clone()), None);
-                            }
-                            return result;
-                        }
-                    }
-                    if let Some(i) = self.program.instanceResolver.isDeref(&receiverType.unpackRef()) {
-                        let derefTargetType = i.associatedTypes[0].ty.clone();
-                        let mut result = self.writeField(derefTargetType.clone(), fieldName.clone(), location.clone());
-                        result.derefs.push(derefTargetType);
-                        return result;
-                    } else {
-                        TypecheckerError::FieldNotFound(fieldName.clone(), location.clone()).report(self.ctx);
-                    }
-                } else {
-                    println!("WriteField 1 on non-named type: {} {}", receiverType, fieldName);
-                    TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
-                }
-            }
-            _ => {
-                println!("WriteField 2 on non-named type: {} {}", receiverType, fieldName);
-                TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
-            }
-        }
-    }
-
-    fn applyDerefWriteTransformation(
-        &mut self,
-        name: &Variable,
-        rhs: &Variable,
-        writeResult: &WriteFieldResult,
-        fields: Vec<FieldInfo>,
-        builder: &mut BlockBuilder,
-        location: Location,
-    ) {
-        // For field assignment with derefs: a.X = b
-        // We need to transform this into:
-        // tmp1 = Deref.get(a)
-        // tmp1.X = b  (this will be the real fieldassign)
-        // Deref.set(a, tmp1)
-
-        let mut currentVar = name.clone();
-        let mut allInstructions = Vec::new();
-
-        // Build the deref get instructions in the correct order
-        for derefType in writeResult.derefs.iter().rev() {
-            let mut derefInputVar = currentVar.clone();
-            let currentVarTy = self.getType(&currentVar).apply(&self.substitution);
-            let derefResultVar = self.bodyBuilder.createTempValue(location.clone());
-
-            // If the current var is not a reference, create a reference to it
-            if !currentVarTy.isReference() {
-                let refResultVar = self.bodyBuilder.createTempValue(location.clone());
-                self.types.insert(
-                    refResultVar.name.to_string(),
-                    Type::Reference(Box::new(currentVarTy.clone()), None),
-                );
-                let refInstruction = InstructionKind::Ref(refResultVar.clone(), currentVar.clone());
-                allInstructions.push(refInstruction);
-                derefInputVar = refResultVar;
-            }
-
-            // Build Deref.get instruction
-            let getInstruction =
-                InstructionKind::FunctionCall(derefResultVar.clone(), getDerefGetName(), vec![derefInputVar.clone()]);
-            self.types.insert(derefResultVar.name.to_string(), derefType.clone());
-            allInstructions.push(getInstruction);
-
-            currentVar = derefResultVar;
-        }
-
-        // Add the field assignment instruction
-        let finalFieldAssign = InstructionKind::FieldAssign(currentVar.clone(), rhs.clone(), fields.clone());
-        allInstructions.push(finalFieldAssign);
-
-        // Record field types for the FieldAssign instruction
-        let currentVarType = if writeResult.derefs.is_empty() {
-            self.getType(name).apply(&self.substitution)
-        } else {
-            writeResult.derefs.last().unwrap().clone()
-        };
-
-        let mut types = Vec::new();
-        let mut receiverType = currentVarType;
-        for field in &fields {
-            let fieldTy = self.checkField(receiverType.clone(), &field.name, field.location.clone());
-            types.push(fieldTy.clone());
-            receiverType = fieldTy;
-        }
-        self.fieldTypes.insert(currentVar.clone(), types);
-
-        // Add the deref.set instructions in reverse order (innermost to outermost)
-        let tempCurrentVar = currentVar.clone();
-        for _derefType in writeResult.derefs.iter() {
-            // Create a reference to the original variable for Deref.set (just like we do for Deref.get)
-            let originalVarTy = self.getType(name).apply(&self.substitution);
-            let setInputVar = if !originalVarTy.isReference() {
-                let refResultVar = self.bodyBuilder.createTempValue(location.clone());
-                self.types.insert(
-                    refResultVar.name.to_string(),
-                    Type::Reference(Box::new(originalVarTy.clone()), None),
-                );
-                let refInstruction = InstructionKind::Ref(refResultVar.clone(), name.clone());
-                allInstructions.push(refInstruction);
-                refResultVar
-            } else {
-                name.clone()
-            };
-
-            let setResultVar = self.bodyBuilder.createTempValue(location.clone());
-            self.types
-                .insert(setResultVar.name.to_string(), Type::Tuple(Vec::new()));
-            let setInstruction = InstructionKind::FunctionCall(
-                setResultVar,
-                getDerefSetName(),
-                vec![setInputVar, tempCurrentVar.clone()],
-            );
-            allInstructions.push(setInstruction);
-            break; // For now, only handle single-level deref
-        }
-
-        // Replace the original instruction with the first instruction
-        builder.replaceInstruction(allInstructions[0].clone(), location.clone());
-
-        // Add the remaining instructions after the current position
-        for instruction in allInstructions.into_iter().skip(1) {
-            builder.step();
-            builder.addInstruction(instruction, location.clone());
-        }
-
-        // Handle type checking for the final assignment
-        self.unify(self.getType(rhs), writeResult.ty.clone(), location.clone());
     }
 
     fn checkBlock(&mut self, blockId: BlockId) {
@@ -950,61 +792,15 @@ impl<'a> Typechecker<'a> {
                     TypecheckerError::ImmutableAssign(instruction.location.clone()).report(self.ctx);
                 }
                 let receiverType = self.getType(name);
-
-                // Handle single field for now (can be extended for multiple fields later)
-                if fields.len() != 1 {
-                    // Fall back to original behavior for multiple fields
-                    let mut types = Vec::new();
-                    let mut receiverType = receiverType.apply(&self.substitution);
-                    for field in fields {
-                        let fieldTy = self.checkField(receiverType, &field.name, field.location.clone());
-                        types.push(fieldTy.clone());
-                        receiverType = fieldTy;
-                    }
-                    self.fieldTypes.insert(name.clone(), types);
-                    self.unify(self.getType(rhs), receiverType, instruction.location.clone());
-                    return;
+                let mut types = Vec::new();
+                let mut receiverType = receiverType.apply(&self.substitution);
+                for field in fields {
+                    let fieldTy = self.checkField(receiverType, &field.name, field.location.clone());
+                    types.push(fieldTy.clone());
+                    receiverType = fieldTy;
                 }
-
-                let field = &fields[0];
-
-                if let FieldId::Named(fieldName) = &field.name {
-                    let writeResult = self.writeField(receiverType.clone(), fieldName.clone(), field.location.clone());
-
-                    if writeResult.derefs.len() > 0 {
-                        // We need to apply deref transformation
-                        self.applyDerefWriteTransformation(
-                            name,
-                            rhs,
-                            &writeResult,
-                            fields.clone(),
-                            builder,
-                            instruction.location.clone(),
-                        );
-                    } else {
-                        // Standard field assignment, no deref needed
-                        let mut types = Vec::new();
-                        let mut receiverType = receiverType.apply(&self.substitution);
-                        for field in fields {
-                            let fieldTy = self.checkField(receiverType, &field.name, field.location.clone());
-                            types.push(fieldTy.clone());
-                            receiverType = fieldTy;
-                        }
-                        self.fieldTypes.insert(name.clone(), types);
-                        self.unify(self.getType(rhs), receiverType, instruction.location.clone());
-                    }
-                } else {
-                    // Handle indexed fields (non-deref case)
-                    let mut types = Vec::new();
-                    let mut receiverType = receiverType.apply(&self.substitution);
-                    for field in fields {
-                        let fieldTy = self.checkField(receiverType, &field.name, field.location.clone());
-                        types.push(fieldTy.clone());
-                        receiverType = fieldTy;
-                    }
-                    self.fieldTypes.insert(name.clone(), types);
-                    self.unify(self.getType(rhs), receiverType, instruction.location.clone());
-                }
+                self.fieldTypes.insert(name.clone(), types);
+                self.unify(self.getType(rhs), receiverType, instruction.location.clone());
             }
             InstructionKind::DeclareVar(_, _) => {}
             InstructionKind::Transform(dest, root, index) => {
@@ -1045,49 +841,40 @@ impl<'a> Typechecker<'a> {
                 }
             }
             InstructionKind::FieldRef(dest, receiver, fields) => {
-                let receiverType = self.getType(receiver);
+                let receiver = receiver.clone();
+                let mut receiverType = self.getType(&receiver);
                 assert_eq!(fields.len(), 1, "FieldRef with multiple fields in typecheck!");
+                receiverType = receiverType.apply(&self.substitution);
+                if let Type::Reference(innerTy, _) = &receiverType {
+                    receiverType = *innerTy.clone();
+                }
+                if let Type::Ptr(innerTy) = &receiverType {
+                    let mut ptrLoadResultVar = self.bodyBuilder.createTempValue(instruction.location.clone());
+                    ptrLoadResultVar.ty = Some(*innerTy.clone());
+                    self.types.insert(ptrLoadResultVar.name.to_string(), *innerTy.clone());
+                    builder.addInstruction(
+                        InstructionKind::FunctionCall(
+                            ptrLoadResultVar.clone(),
+                            getNativePtrLoadName(),
+                            vec![receiver.clone()],
+                        ),
+                        instruction.location.clone(),
+                    );
+                    builder.step();
+                    let kind = instruction.kind.replaceVar(receiver.clone(), ptrLoadResultVar.clone());
+                    builder.replaceInstruction(kind, instruction.location.clone());
+                    receiverType = *innerTy.clone();
+                } else {
+                    receiverType = self.getType(&receiver);
+                }
                 let fieldName = fields[0].name.clone();
                 match fieldName {
                     FieldId::Named(n) => {
                         let result = self.readField(receiverType, n, instruction.location.clone());
-                        if result.derefs.len() > 0 {
-                            let mut rootVar = receiver.clone();
-                            for deref in &result.derefs {
-                                let mut derefInputVar = rootVar.clone();
-                                let rootVarTy = self.getType(&rootVar).apply(&self.substitution);
-                                let derefResultVar = self.bodyBuilder.createTempValue(instruction.location.clone());
-                                if !rootVarTy.isReference() {
-                                    let refResultVar = self.bodyBuilder.createTempValue(instruction.location.clone());
-                                    self.types.insert(
-                                        refResultVar.name.to_string(),
-                                        Type::Reference(Box::new(rootVarTy.clone()), None),
-                                    );
-                                    let kind = InstructionKind::Ref(refResultVar.clone(), rootVar.clone());
-                                    builder.addInstruction(kind, instruction.location.clone());
-                                    builder.step();
-                                    derefInputVar = refResultVar;
-                                }
-                                let kind = InstructionKind::FunctionCall(
-                                    derefResultVar.clone(),
-                                    getDerefGetName(),
-                                    vec![derefInputVar.clone()],
-                                );
-                                self.types.insert(derefResultVar.name.to_string(), deref.clone());
-                                builder.addInstruction(kind, instruction.location.clone());
-                                builder.step();
-                                rootVar = derefResultVar;
-                            }
-                            builder.replaceInstruction(
-                                InstructionKind::FieldRef(dest.clone(), rootVar.clone(), fields.clone()),
-                                instruction.location.clone(),
-                            );
-                        }
-                        self.unify(self.getType(dest), result.ty, instruction.location.clone());
+                        self.unify(self.getType(dest), result, instruction.location.clone());
                     }
                     FieldId::Indexed(index) => {
-                        let receiverType = self.getType(receiver);
-                        let receiverType = receiverType.apply(&self.substitution);
+                        receiverType = receiverType.apply(&self.substitution);
                         let isRef = receiverType.isReference();
                         match receiverType.unpackRef() {
                             Type::Tuple(t) => {

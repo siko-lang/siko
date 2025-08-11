@@ -637,6 +637,12 @@ impl<'a> ExprParser for Parser<'a> {
                 let expr = self.parseFieldAccessOrCall();
                 self.buildExpr(SimpleExpr::UnaryOp(UnaryOp::Neg, Box::new(expr)), start)
             }
+            TokenKind::Op(OperatorKind::Mul) => {
+                let start = self.currentSpan();
+                self.expect(TokenKind::Op(OperatorKind::Mul));
+                let expr = self.parseFieldAccessOrCall();
+                self.buildExpr(SimpleExpr::UnaryOp(UnaryOp::Deref, Box::new(expr)), start)
+            }
             _ => self.parseFieldAccessOrCall(),
         }
     }

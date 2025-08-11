@@ -7,6 +7,7 @@ use super::{
     Type::Type,
 };
 
+use crate::siko::minic::Data::Struct as LStruct;
 use crate::siko::minic::Function::Branch as LBranch;
 use crate::siko::minic::Function::Function as LFunction;
 use crate::siko::minic::Function::Instruction as LInstruction;
@@ -17,7 +18,6 @@ use crate::siko::minic::Function::{Block as LBlock, GetMode};
 use crate::siko::minic::Program::Program as LProgram;
 use crate::siko::minic::Type::Type as LType;
 use crate::siko::minic::{Constant::StringConstant, Data::Field as LField};
-use crate::siko::minic::{Data::Struct as LStruct, Function::ReadMode};
 
 pub struct MinicBuilder<'a> {
     program: &'a Program,
@@ -168,12 +168,8 @@ impl<'a> MinicBuilder<'a> {
                     minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::SetField(dest, root, indices) => {
-                    let minicInstruction = LInstruction::SetField(
-                        self.lowerVar(dest),
-                        self.lowerVar(root),
-                        indices.clone(),
-                        ReadMode::Noop,
-                    );
+                    let minicInstruction =
+                        LInstruction::SetField(self.lowerVar(dest), self.lowerVar(root), indices.clone());
                     minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::IntegerLiteral(var, value) => {
@@ -202,9 +198,9 @@ impl<'a> MinicBuilder<'a> {
                     let minicInstruction =
                         LInstruction::Store(tmpVar2.clone(), LValue::Numeric(format!("{}", strLen), LType::Int64));
                     minicBlock.instructions.push(minicInstruction);
-                    let minicInstruction = LInstruction::SetField(self.lowerVar(var), tmpVar, vec![0], ReadMode::Noop);
+                    let minicInstruction = LInstruction::SetField(self.lowerVar(var), tmpVar, vec![0]);
                     minicBlock.instructions.push(minicInstruction);
-                    let minicInstruction = LInstruction::SetField(self.lowerVar(var), tmpVar2, vec![1], ReadMode::Noop);
+                    let minicInstruction = LInstruction::SetField(self.lowerVar(var), tmpVar2, vec![1]);
                     minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::Jump(name) => {
@@ -321,14 +317,12 @@ impl<'a> MinicBuilder<'a> {
                             self.lowerVar(&this),
                             self.lowerVar(&argVar),
                             vec![index as i32],
-                            ReadMode::Noop,
                         ));
                     } else {
                         block.instructions.push(LInstruction::SetField(
                             self.lowerVar(&this),
                             self.lowerVar(&argVar),
                             vec![index as i32],
-                            ReadMode::Noop,
                         ));
                     }
                 }
@@ -366,12 +360,9 @@ impl<'a> MinicBuilder<'a> {
                     tmp.clone(),
                     LValue::Numeric(format!("{}", index), LType::Int32),
                 ));
-                block.instructions.push(LInstruction::SetField(
-                    self.lowerVar(&this),
-                    tmp,
-                    vec![0],
-                    ReadMode::Noop,
-                ));
+                block
+                    .instructions
+                    .push(LInstruction::SetField(self.lowerVar(&this), tmp, vec![0]));
                 for (index, field) in s.fields.iter().enumerate() {
                     let argVar = Variable {
                         name: field.name.clone(),
@@ -381,7 +372,6 @@ impl<'a> MinicBuilder<'a> {
                         self.lowerVar(&this),
                         self.lowerVar(&argVar),
                         vec![1, index as i32],
-                        ReadMode::Noop,
                     ));
                 }
                 let mut tmp2 = self.tmpVar(&this);

@@ -22,6 +22,7 @@ pub enum BinaryOp {
 pub enum UnaryOp {
     Not,
     Neg,
+    Deref,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

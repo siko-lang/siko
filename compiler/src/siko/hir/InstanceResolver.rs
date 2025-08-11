@@ -3,7 +3,7 @@ use std::{cmp::Ordering, collections::BTreeMap};
 use crate::siko::{
     hir::{Instantiation::instantiateInstance, Trait::CompareSpecificity},
     qualifiedname::{
-        builtins::{getCopyName, getDerefName, getImplicitConvertName},
+        builtins::{getCopyName, getImplicitConvertName},
         QualifiedName,
     },
 };
@@ -149,17 +149,6 @@ impl InstanceResolver {
             }
         }
         false
-    }
-
-    pub fn isDeref(&self, ty: &Type) -> Option<Instance> {
-        if let Some(instances) = self.lookupInstances(&getDerefName()) {
-            let mut allocator = TypeVarAllocator::new();
-            let result = instances.find(&mut allocator, &vec![ty.clone()]);
-            if let ResolutionResult::Winner(i) = result {
-                return Some(i);
-            }
-        }
-        None
     }
 
     pub fn isImplicitConvert(&self, ty1: &Type, ty2: &Type) -> bool {

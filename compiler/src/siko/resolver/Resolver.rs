@@ -290,7 +290,6 @@ impl<'a> Resolver<'a> {
                                 fullName: irEnum.name.add(method.name.toString()),
                             })
                         }
-                        //println!("Enum {:?}", irEnum);
                         self.program.enums.insert(irEnum.name.clone(), irEnum);
                     }
                     _ => {}

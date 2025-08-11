@@ -49,9 +49,11 @@ def compare_output(output_txt_path, current_output):
         if existing_output != current_output:
             print(" - failed")
             print("Expected:")
-            print(existing_output)
+            for line in existing_output.splitlines():
+                print("   ", line.decode())
             print("Got:")
-            print(current_output)
+            for line in current_output.splitlines():
+                print("   ", line.decode())
             return False
         return existing_output == current_output
     else:
