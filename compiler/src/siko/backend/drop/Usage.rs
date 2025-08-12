@@ -112,6 +112,7 @@ pub fn getUsageInfo(kind: InstructionKind) -> UsageInfo {
                 )
             }
         }
+        InstructionKind::AddressOfField(_, _, _) => UsageInfo::empty(), // ptr shenanigans are invisible for the dropchecker
         InstructionKind::Tuple(dest, args) => {
             UsageInfo::with(args.iter().map(|arg| varToUsage(arg)).collect(), Some(dest.toPath()))
         }
@@ -148,6 +149,5 @@ pub fn getUsageInfo(kind: InstructionKind) -> UsageInfo {
         InstructionKind::Transform(dest, src, _) => UsageInfo::with(vec![varToUsage(&src)], Some(dest.toPath())),
         InstructionKind::EnumSwitch(_, _) => UsageInfo::empty(),
         InstructionKind::IntegerSwitch(_, _) => UsageInfo::empty(),
-        InstructionKind::StringSwitch(_, _) => UsageInfo::empty(),
     }
 }

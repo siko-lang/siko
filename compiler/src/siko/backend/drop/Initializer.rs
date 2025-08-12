@@ -95,11 +95,6 @@ impl<'a> Initializer<'a> {
                                 self.addToQueue(case.branch, currentSyntaxBlock.clone());
                             }
                         }
-                        InstructionKind::StringSwitch(_, cases) => {
-                            for case in cases {
-                                self.addToQueue(case.branch, currentSyntaxBlock.clone());
-                            }
-                        }
                         InstructionKind::IntegerSwitch(_, cases) => {
                             for case in cases {
                                 self.addToQueue(case.branch, currentSyntaxBlock.clone());

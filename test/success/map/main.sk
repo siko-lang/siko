@@ -23,7 +23,6 @@ pub struct Node {
     pub right: *Node,
 
     fn new(value: Int) -> *Node {
-        println("Allocating node for ${value}");
         let node = Node(value, 1, null(), null());
         let p = allocate();
         *p = node;
@@ -41,7 +40,6 @@ pub struct AvlTree {
     pub fn insert(mut self, value: Int) -> (Self, InsertResult) {
         let (res, new_root) = Main.insert(self.root, value);
         self.root = new_root;
-        println("new root is ${get_value(self.root)}");
         (self, res)
     }
 
@@ -80,7 +78,6 @@ fn height(n: *Node) -> Int {
 
 fn update_height(mut n: *Node) {
     if !n.isNull() {
-        println("Updating height for node with value: ${get_value(n)}");
         n.height = 1 + max(height(n.left), height(n.right));
     }
 }
@@ -106,7 +103,6 @@ fn min_value_node(mut current: *Node) -> *Node {
 // ======================== Rotations ========================
 
 fn right_rotate(mut z: *Node) -> *Node {
-    println("Right rotating around ${get_value(z)}");
     let mut y = z.left;
     let t3 = y.right;
 
@@ -120,25 +116,11 @@ fn right_rotate(mut z: *Node) -> *Node {
 }
 
 fn left_rotate(mut z: *Node) -> *Node {
-    println("Left rotating around ${get_value(z)}");
     let mut y = z.right;
     let t2 = y.left;
 
-    println("${get_value(y)}.left = ${get_value(z)}");
-
     y.left = z;
-
-    println("${get_value(y)}.right = ${get_value(t2)}");
-
     z.right = t2;
-
-    println("z = ${get_value(z)}");
-    println("y = ${get_value(y)}");
-
-    println("y.left = ${get_value(y.left)}");
-    println("y.right = ${get_value(y.right)}");
-
-    println("t2 = ${get_value(t2)}");
 
     update_height(z);
     update_height(y);
@@ -155,7 +137,7 @@ fn insert(mut root: *Node, value: Int) -> (InsertResult, *Node) {
     }
 
     if value < root.value {
-        println("Inserting ${value} to the left of ${root.value}");
+        // println("Inserting ${value} to the left of ${root.value}");
         let (res, new_left) = Main.insert(root.left, value);
         root.left = new_left;
         match res {
@@ -189,7 +171,7 @@ fn insert(mut root: *Node, value: Int) -> (InsertResult, *Node) {
             Duplicate(node) -> (Duplicate(node), root),
         }
     } else if value > root.value {
-        println("Inserting ${value} to the right of ${root.value}");
+        //println("Inserting ${value} to the right of ${root.value}");
         let (res, new_right) = Main.insert(root.right, value);
         root.right = new_right;
         match res {
@@ -351,8 +333,8 @@ fn main() {
     for v in [10, 20, 30, 40, 50, 25, 25] {
         match tree.insert(v) {
             Inserted(_) -> {
-                dump_tree(tree.root, 0);
-                println("root is ${get_value(tree.root)}");
+                // dump_tree(tree.root, 0);
+                // println("root is ${get_value(tree.root)}");
                 println("Inserted ${v}");
             }
             Duplicate(_) -> println("Duplicate ${v} rejected"),
@@ -367,7 +349,7 @@ fn main() {
     let res = if found.isNull() { "Not found" } else { "Found" };
     println("Search 25 -> ${res}");
 
-    dump_tree(tree.root, 0);
+    //dump_tree(tree.root, 0);
 
     tree.delete(40);
     println("Inorder after deleting 40:");

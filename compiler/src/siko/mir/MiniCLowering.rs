@@ -266,6 +266,11 @@ impl<'a> MinicBuilder<'a> {
                     let minicInstruction = LInstruction::GetField(self.lowerVar(dest), recastVar, 1, mode);
                     minicBlock.instructions.push(minicInstruction);
                 }
+                Instruction::AddressOfField(dest, src, index) => {
+                    let minicInstruction =
+                        LInstruction::AddressOfField(self.lowerVar(dest), self.lowerVar(src), *index);
+                    minicBlock.instructions.push(minicInstruction);
+                }
             };
         }
         minicBlock

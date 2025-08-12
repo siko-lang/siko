@@ -185,6 +185,7 @@ pub enum Instruction {
     IntegerSwitch(Variable, Vec<IntegerCase>),
     Transform(Variable, Variable, u32),
     Jump(String),
+    AddressOfField(Variable, Variable, i32),
 }
 
 impl fmt::Display for Instruction {
@@ -207,10 +208,13 @@ impl fmt::Display for Instruction {
             Instruction::Store(var1, var2) => write!(f, "Store({} => {})", var1, var2),
             Instruction::IntegerLiteral(var, literal) => write!(f, "IntegerLiteral({}, {})", var, literal),
             Instruction::StringLiteral(var, literal) => write!(f, "StringLiteral({}, {})", var, literal),
-            Instruction::EnumSwitch(root, cases) => write!(f, "enumswitch({}, {:?})", root, cases),
-            Instruction::IntegerSwitch(root, cases) => write!(f, "integerswitch({}, {:?})", root, cases),
+            Instruction::EnumSwitch(root, cases) => write!(f, "EnumSwitch({}, {:?})", root, cases),
+            Instruction::IntegerSwitch(root, cases) => write!(f, "IntegerSwitch({}, {:?})", root, cases),
             Instruction::Jump(label) => write!(f, "Jump({})", label),
             Instruction::Transform(dest, src, ty) => write!(f, "Transform({}, {}, {})", dest, src, ty),
+            Instruction::AddressOfField(dest, root, field) => {
+                write!(f, "AddressOfField({}, {}, {})", dest, root, field)
+            }
         }
     }
 }

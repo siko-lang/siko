@@ -57,11 +57,6 @@ impl<'a> BlockMerger<'a> {
                                 *self.jumpCounts.entry(case.branch).or_insert(0) += 1;
                             }
                         }
-                        InstructionKind::StringSwitch(_, cases) => {
-                            for case in cases {
-                                *self.jumpCounts.entry(case.branch).or_insert(0) += 1;
-                            }
-                        }
                         _ => {}
                     }
                 }

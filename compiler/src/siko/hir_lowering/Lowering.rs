@@ -94,6 +94,10 @@ impl<'a> Builder<'a> {
                     unreachable!("tuples in MIR??")
                 }
                 HirInstructionKind::Drop(_, _) => unreachable!("drop in MIR??"),
+                HirInstructionKind::DropMetadata(_) => {
+                    unreachable!("drop metadata in MIR??")
+                }
+                HirInstructionKind::DropPath(_) => unreachable!("drop path in MIR??"),
                 HirInstructionKind::DeclareVar(var, _) => {
                     let var = self.buildVariable(var);
                     block.instructions.push(Instruction::Declare(var.clone()));
@@ -125,6 +129,9 @@ impl<'a> Builder<'a> {
                     let dest = self.buildVariable(dest);
                     block.instructions.push(Instruction::Declare(dest.clone()));
                     block.instructions.push(Instruction::StringLiteral(dest, v.to_string()));
+                }
+                HirInstructionKind::CharLiteral(_, _) => {
+                    unimplemented!("CharLiteral instruction found in HIR Lowering");
                 }
                 HirInstructionKind::EnumSwitch(root, cases) => {
                     if root.getType().getName().unwrap().base() == getBoolTypeName() {
@@ -219,7 +226,46 @@ impl<'a> Builder<'a> {
                 }
                 HirInstructionKind::BlockStart(_) => {}
                 HirInstructionKind::BlockEnd(_) => {}
-                k => panic!("NYI {}", k),
+                HirInstructionKind::AddressOfField(dest, root, fields) => {
+                    let dest = self.buildVariable(dest);
+                    let mut receiverTy = root.getType();
+                    let root = self.buildVariable(root);
+                    let mut currentReceiver = root.clone();
+                    block.instructions.push(Instruction::Declare(dest.clone()));
+                    for (index, field) in fields.iter().enumerate() {
+                        if let HirType::Ptr(inner) = receiverTy {
+                            receiverTy = inner;
+                        }
+                        let structName = receiverTy.getName().expect("no name for field ref root");
+                        let c = self.program.structs.get(&structName).expect("structDef not found");
+                        let (_, findex) = c.getField(&field.name.name());
+                        receiverTy = field.ty.as_ref().expect("no type for field ref");
+
+                        let tmpVariable = MirVariable {
+                            name: format!("{}_{}_{}", root.name, index, field.name),
+                            ty: lowerType(field.ty.as_ref().expect("no type"), &self.program),
+                        };
+                        let destVar = if index == fields.len() - 1 {
+                            dest.clone()
+                        } else {
+                            tmpVariable.clone()
+                        };
+
+                        block
+                            .instructions
+                            .push(Instruction::AddressOfField(destVar.clone(), currentReceiver, findex));
+                        currentReceiver = destVar;
+                    }
+                }
+                HirInstructionKind::Converter(_, _) => {
+                    panic!("Converter instruction found in Lowering, this should not happen");
+                }
+                HirInstructionKind::MethodCall(_, _, _, _) => {
+                    panic!("MethodCall instruction found in Lowering, this should not happen");
+                }
+                HirInstructionKind::DynamicFunctionCall(_, _, _) => {
+                    panic!("DynamicFunctionCall instruction found in Lowering, this should not happen");
+                }
             }
         }
         Some(block)

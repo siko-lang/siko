@@ -302,6 +302,11 @@ impl Monomorphize for InstructionKind {
                 rhs.process(sub, mono),
                 fields.process(sub, mono),
             ),
+            InstructionKind::AddressOfField(dest, receiver, fields) => InstructionKind::AddressOfField(
+                dest.process(sub, mono),
+                receiver.process(sub, mono),
+                fields.process(sub, mono),
+            ),
             InstructionKind::DeclareVar(var, mutability) => {
                 InstructionKind::DeclareVar(var.process(sub, mono), mutability.clone())
             }
@@ -313,9 +318,6 @@ impl Monomorphize for InstructionKind {
             }
             InstructionKind::IntegerSwitch(root, cases) => {
                 InstructionKind::IntegerSwitch(root.process(sub, mono), cases.clone())
-            }
-            InstructionKind::StringSwitch(root, cases) => {
-                InstructionKind::StringSwitch(root.process(sub, mono), cases.clone())
             }
             InstructionKind::BlockStart(info) => InstructionKind::BlockStart(info.clone()),
             InstructionKind::BlockEnd(info) => InstructionKind::BlockEnd(info.clone()),

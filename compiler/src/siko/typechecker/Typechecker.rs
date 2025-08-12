@@ -1,3 +1,4 @@
+use core::panic;
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     iter::zip,
@@ -26,7 +27,7 @@ use crate::siko::{
     qualifiedname::{
         builtins::{
             getCloneFnName, getImplicitConvertFnName, getNativePtrCloneName, getNativePtrIsNullName,
-            getNativePtrLoadName,
+            getNativePtrLoadName, getNativePtrStoreName,
         },
         QualifiedName,
     },
@@ -54,7 +55,6 @@ pub struct Typechecker<'a> {
     types: BTreeMap<String, Type>,
     selfType: Option<Type>,
     mutables: BTreeMap<String, Mutability>,
-    fieldTypes: BTreeMap<Variable, Vec<Type>>,
     bodyBuilder: BodyBuilder,
     visitedBlocks: BTreeSet<BlockId>,
     queue: VecDeque<BlockId>,
@@ -79,7 +79,6 @@ impl<'a> Typechecker<'a> {
             types: BTreeMap::new(),
             selfType: None,
             mutables: BTreeMap::new(),
-            fieldTypes: BTreeMap::new(),
             bodyBuilder: BodyBuilder::cloneFunction(f),
             visitedBlocks: BTreeSet::new(),
             queue: VecDeque::new(),
@@ -190,6 +189,9 @@ impl<'a> Typechecker<'a> {
                         }
                         InstructionKind::Assign(_, _) => {}
                         InstructionKind::FieldAssign(_, _, _) => {}
+                        InstructionKind::AddressOfField(_, _, _) => {
+                            panic!("AddressOfField found in Typechecker, this should not happen");
+                        }
                         InstructionKind::DeclareVar(var, mutability) => {
                             self.initializeVar(var);
                             self.mutables.insert(var.name.to_string(), mutability.clone());
@@ -199,7 +201,6 @@ impl<'a> Typechecker<'a> {
                         }
                         InstructionKind::EnumSwitch(_, _) => {}
                         InstructionKind::IntegerSwitch(_, _) => {}
-                        InstructionKind::StringSwitch(_, _) => {}
                         InstructionKind::BlockStart(_) => {}
                         InstructionKind::BlockEnd(_) => {}
                     }
@@ -297,40 +298,7 @@ impl<'a> Typechecker<'a> {
         }
         for (arg, fnArg) in zip(args, fnArgs) {
             let fnArg2 = fnArg.apply(&self.substitution);
-            // let mut argTy = self.handleImplicits(arg, &fnArg, builder);
-            // //println!("ARG {} {} {}", arg, argTy, fnArg);
-            // if !argTy.isReference() && fnArg.isReference() {
-            //     let targetTy = fnArg.unpackRef().clone();
-            //     if targetTy != argTy && self.program.instanceResolver.isImplicitConvert(&argTy, &targetTy) {
-            //         //println!("IMPLICIT CONVERT REF FOR {} {} {}", arg, argTy, targetTy);
-            //         argTy = Type::Reference(Box::new(targetTy.clone()), None);
-            //         let tag = self.addImplicitConvertMarker(arg, ImplicitConvertInfo::Ref(targetTy));
-            //         builder.addTag(tag);
-            //     } else {
-            //         argTy = Type::Reference(Box::new(argTy), None);
-            //         //println!("IMPLICIT REF FOR {}", arg);
-            //         let tag = self.addImplicitRefMarker(arg);
-            //         builder.addTag(tag);
-            //     }
-            // }
-            //self.unify(argTy, fnArg, arg.location.clone());
             self.updateConverterDestination(arg, &fnArg2);
-            // if !self.tryUnify(argTy.clone(), fnArg2.clone()) {
-            //     println!("ARG {} {} {}", arg, argTy, fnArg2);
-            //     match (argTy, fnArg2) {
-            //         (ty1, Type::Reference(ty2, _)) => {
-            //             self.tryUnify(ty1, *ty2.clone());
-            //         }
-            //         (Type::Reference(ty1, _), ty2) => {
-            //             self.tryUnify(*ty1.clone(), ty2);
-            //         }
-            //         (ty1, ty2) => {
-            //             self.tryUnify(ty1, ty2);
-            //         }
-            //     }
-            //     let fnArg = fnArg.apply(&self.substitution);
-            //     self.types.insert(arg.value.to_string(), fnArg);
-            // }
         }
         let constraints = constraintContext.apply(&self.substitution);
         self.checkConstraint(&constraints, resultVar.location.clone());
@@ -338,9 +306,6 @@ impl<'a> Typechecker<'a> {
         //println!("self.getType(resultVar) {}", self.getType(resultVar));
         let fnResult = fnResult.apply(&self.substitution);
         self.unify(self.getType(resultVar), fnResult, resultVar.location.clone());
-        // let mut argTy = self.getType(resultVar);
-        // argTy = argTy.apply(&self.substitution);
-        // println!("ffff result {}", argTy);
         fnType.apply(&self.substitution)
     }
 
@@ -487,9 +452,6 @@ impl<'a> Typechecker<'a> {
                         let structDef = self.instantiateStruct(&structDef, &receiverType);
                         for f in &structDef.fields {
                             if f.name == *fieldName {
-                                if origType.isPtr() {
-                                    return Type::Ptr(Box::new(f.ty.clone()));
-                                }
                                 return f.ty.clone();
                             }
                         }
@@ -803,15 +765,52 @@ impl<'a> Typechecker<'a> {
                     TypecheckerError::ImmutableAssign(instruction.location.clone()).report(self.ctx);
                 }
                 let receiverType = self.getType(name);
-                let mut types = Vec::new();
                 let mut receiverType = receiverType.apply(&self.substitution);
+                //println!("FieldAssign start {} {} {}", receiverType, name, instruction.location);
+                let mut ptrReceiver = false;
+                let mut newFields = Vec::new();
                 for field in fields {
+                    if receiverType.isPtr() {
+                        ptrReceiver = true;
+                    }
                     let fieldTy = self.checkField(receiverType, &field.name, field.location.clone());
-                    types.push(fieldTy.clone());
+                    let mut newField = field.clone();
+                    newField.ty = Some(fieldTy.clone());
+                    newFields.push(newField);
                     receiverType = fieldTy;
+                    //println!("FieldAssign updated {} {} {}", receiverType, field.name, field.location);
                 }
-                self.fieldTypes.insert(name.clone(), types);
+                if !ptrReceiver {
+                    let kind = InstructionKind::FieldAssign(name.clone(), rhs.clone(), newFields);
+                    builder.replaceInstruction(kind, instruction.location.clone());
+                } else {
+                    let mut addressOfVar = self.bodyBuilder.createTempValue(instruction.location.clone());
+                    addressOfVar.ty = Some(Type::Ptr(Box::new(receiverType.clone())));
+                    self.types
+                        .insert(addressOfVar.name.to_string(), Type::Ptr(Box::new(receiverType.clone())));
+                    let kind = InstructionKind::AddressOfField(addressOfVar.clone(), name.clone(), newFields);
+                    builder.addInstruction(kind, instruction.location.clone());
+                    builder.step();
+                    let mut storeVar = self.bodyBuilder.createTempValue(instruction.location.clone());
+                    storeVar.ty = Some(Type::getUnitType());
+                    self.types.insert(storeVar.name.to_string(), Type::getUnitType());
+                    let store = InstructionKind::FunctionCall(
+                        storeVar,
+                        getNativePtrStoreName(),
+                        vec![addressOfVar, rhs.clone()],
+                    );
+                    builder.replaceInstruction(store, instruction.location.clone());
+                }
+                // println!(
+                //     "FieldAssign check {} {} {}",
+                //     self.getType(rhs).apply(&self.substitution),
+                //     receiverType,
+                //     instruction.location
+                // );
                 self.unify(self.getType(rhs), receiverType, instruction.location.clone());
+            }
+            InstructionKind::AddressOfField(_, _, _) => {
+                panic!("AddressOfField not implemented");
             }
             InstructionKind::DeclareVar(_, _) => {}
             InstructionKind::Transform(dest, root, index) => {
@@ -842,11 +841,6 @@ impl<'a> Typechecker<'a> {
                 }
             }
             InstructionKind::IntegerSwitch(_, cases) => {
-                for case in cases {
-                    self.queue.push_back(case.branch);
-                }
-            }
-            InstructionKind::StringSwitch(_, cases) => {
                 for case in cases {
                     self.queue.push_back(case.branch);
                 }
@@ -1004,11 +998,30 @@ impl<'a> Typechecker<'a> {
                     Some(instruction) => {
                         if let InstructionKind::FieldAssign(dest, root, fields) = &instruction.kind {
                             let mut fields = fields.clone();
-                            let types = self.fieldTypes.get(&dest).expect("field types are missing");
-                            for (index, ty) in types.iter().enumerate() {
-                                fields[index].ty = Some(ty.clone().apply(&self.substitution));
+                            for field in &mut fields {
+                                field.ty = Some(
+                                    field
+                                        .ty
+                                        .clone()
+                                        .expect("field type is missing")
+                                        .apply(&self.substitution),
+                                );
                             }
                             let kind = InstructionKind::FieldAssign(dest.clone(), root.clone(), fields);
+                            builder.replaceInstruction(kind, instruction.location.clone());
+                        }
+                        if let InstructionKind::AddressOfField(dest, root, fields) = &instruction.kind {
+                            let mut fields = fields.clone();
+                            for field in &mut fields {
+                                field.ty = Some(
+                                    field
+                                        .ty
+                                        .clone()
+                                        .expect("field type is missing")
+                                        .apply(&self.substitution),
+                                );
+                            }
+                            let kind = InstructionKind::AddressOfField(dest.clone(), root.clone(), fields);
                             builder.replaceInstruction(kind, instruction.location.clone());
                         }
                         if let InstructionKind::FieldRef(dest, root, fields) = &instruction.kind {

@@ -186,6 +186,9 @@ impl Apply for InstructionKind {
             InstructionKind::FieldAssign(name, rhs, fields) => {
                 InstructionKind::FieldAssign(name.apply(sub), rhs.apply(sub), fields.apply(sub))
             }
+            InstructionKind::AddressOfField(var, receiver, fields) => {
+                InstructionKind::AddressOfField(var.apply(sub), receiver.apply(sub), fields.apply(sub))
+            }
             InstructionKind::DeclareVar(var, mutability) => {
                 InstructionKind::DeclareVar(var.apply(sub), mutability.clone())
             }
@@ -196,7 +199,6 @@ impl Apply for InstructionKind {
             InstructionKind::IntegerSwitch(root, cases) => {
                 InstructionKind::IntegerSwitch(root.apply(sub), cases.clone())
             }
-            InstructionKind::StringSwitch(root, cases) => InstructionKind::StringSwitch(root.apply(sub), cases.clone()),
             InstructionKind::BlockStart(info) => InstructionKind::BlockStart(info.clone()),
             InstructionKind::BlockEnd(info) => InstructionKind::BlockEnd(info.clone()),
         }

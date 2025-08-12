@@ -106,15 +106,6 @@ fn buildGraph(body: &Body, graph: &mut Graph, filter: InstructionFilter) {
                         edges.push((*block_id, case.branch, Some(label)));
                     }
                 }
-                InstructionKind::StringSwitch(_, cases) => {
-                    for case in cases {
-                        let label = match &case.value {
-                            Some(val) => format!("str_{}", val),
-                            None => "default".to_string(),
-                        };
-                        edges.push((*block_id, case.branch, Some(label)));
-                    }
-                }
                 _ => {}
             }
         }
@@ -144,7 +135,6 @@ fn addSequentialEdges(body: &Body, edges: &mut Vec<(BlockId, BlockId, Option<Str
                 InstructionKind::Jump(_, _)
                 | InstructionKind::EnumSwitch(_, _)
                 | InstructionKind::IntegerSwitch(_, _)
-                | InstructionKind::StringSwitch(_, _)
                 | InstructionKind::Return(_, _) => {
                     blocks_with_explicit_exits.insert(*block_id);
                     break;
@@ -180,7 +170,6 @@ fn shouldIncludeInstruction(instruction: &InstructionKind, filter: InstructionFi
                 InstructionKind::Jump(_, _)
                 | InstructionKind::EnumSwitch(_, _)
                 | InstructionKind::IntegerSwitch(_, _)
-                | InstructionKind::StringSwitch(_, _)
                 | InstructionKind::Return(_, _)
                 | InstructionKind::BlockStart(_)
                 | InstructionKind::BlockEnd(_) => true,
@@ -193,7 +182,6 @@ fn shouldIncludeInstruction(instruction: &InstructionKind, filter: InstructionFi
                 InstructionKind::Jump(_, _)
                 | InstructionKind::EnumSwitch(_, _)
                 | InstructionKind::IntegerSwitch(_, _)
-                | InstructionKind::StringSwitch(_, _)
                 | InstructionKind::Return(_, _)
                 | InstructionKind::BlockStart(_)
                 | InstructionKind::BlockEnd(_) => true,

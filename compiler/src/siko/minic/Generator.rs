@@ -209,6 +209,13 @@ impl MiniCGenerator {
                     default
                 )
             }
+            Instruction::AddressOfField(dest, src, index) => {
+                if src.ty.isPtr() {
+                    format!("{} = &{}->field{};", dest.name, src.name, index)
+                } else {
+                    format!("{} = &{}.field{};", dest.name, src.name, index)
+                }
+            }
         };
         Some(s)
     }
@@ -259,6 +266,10 @@ impl MiniCGenerator {
                         localVars.insert(dest.clone());
                     }
                     Instruction::Switch(_, _, _) => {}
+                    Instruction::AddressOfField(dest, src, _) => {
+                        localVars.insert(dest.clone());
+                        localVars.insert(src.clone());
+                    }
                 }
             }
         }

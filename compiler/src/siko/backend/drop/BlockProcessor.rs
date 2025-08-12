@@ -46,12 +46,6 @@ impl<'a> BlockProcessor<'a> {
                             jumpTargets.push(case.branch.clone());
                         }
                     }
-                    InstructionKind::StringSwitch(var, cases) => {
-                        context.useVar(var, builder.getInstructionRef());
-                        for case in cases {
-                            jumpTargets.push(case.branch.clone());
-                        }
-                    }
                     kind => {
                         let usageinfo = getUsageInfo(kind.clone());
                         for mut usage in usageinfo.usages {

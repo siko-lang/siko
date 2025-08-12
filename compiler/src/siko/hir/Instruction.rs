@@ -241,11 +241,11 @@ pub enum InstructionKind {
     Jump(Variable, BlockId),
     Assign(Variable, Variable),
     FieldAssign(Variable, Variable, Vec<FieldInfo>),
+    AddressOfField(Variable, Variable, Vec<FieldInfo>),
     DeclareVar(Variable, Mutability),
     Transform(Variable, Variable, u32),
     EnumSwitch(Variable, Vec<EnumCase>),
     IntegerSwitch(Variable, Vec<IntegerCase>),
-    StringSwitch(Variable, Vec<StringCase>),
     BlockStart(SyntaxBlockId),
     BlockEnd(SyntaxBlockId),
 }
@@ -283,11 +283,11 @@ impl InstructionKind {
             InstructionKind::Jump(v, _) => Some(v.clone()),
             InstructionKind::Assign(v, _) => Some(v.clone()),
             InstructionKind::FieldAssign(_, _, _) => None,
+            InstructionKind::AddressOfField(v, _, _) => Some(v.clone()),
             InstructionKind::DeclareVar(v, _) => Some(v.clone()),
             InstructionKind::Transform(v, _, _) => Some(v.clone()),
             InstructionKind::EnumSwitch(_, _) => None,
             InstructionKind::IntegerSwitch(_, _) => None,
-            InstructionKind::StringSwitch(_, _) => None,
             InstructionKind::BlockStart(_) => None,
             InstructionKind::BlockEnd(_) => None,
         }
@@ -371,6 +371,11 @@ impl InstructionKind {
                 let new_arg = arg.replace(&from, to);
                 InstructionKind::FieldAssign(new_var, new_arg, fields.clone())
             }
+            InstructionKind::AddressOfField(var, target, fields) => {
+                let new_var = var.replace(&from, to.clone());
+                let new_target = target.replace(&from, to);
+                InstructionKind::AddressOfField(new_var, new_target, fields.clone())
+            }
             InstructionKind::DeclareVar(var, mutability) => {
                 let new_var = var.replace(&from, to);
                 InstructionKind::DeclareVar(new_var, mutability.clone())
@@ -387,10 +392,6 @@ impl InstructionKind {
             InstructionKind::IntegerSwitch(root, cases) => {
                 let new_root = root.replace(&from, to);
                 InstructionKind::IntegerSwitch(new_root, cases.clone())
-            }
-            InstructionKind::StringSwitch(root, cases) => {
-                let new_root = root.replace(&from, to);
-                InstructionKind::StringSwitch(new_root, cases.clone())
             }
             InstructionKind::BlockStart(info) => InstructionKind::BlockStart(info.clone()),
             InstructionKind::BlockEnd(info) => InstructionKind::BlockEnd(info.clone()),
@@ -433,15 +434,13 @@ impl InstructionKind {
             InstructionKind::Jump(var, _) => vec![var.clone()],
             InstructionKind::Assign(var, value) => vec![var.clone(), value.clone()],
             InstructionKind::FieldAssign(var, value, _) => vec![var.clone(), value.clone()],
+            InstructionKind::AddressOfField(var, target, _) => vec![var.clone(), target.clone()],
             InstructionKind::DeclareVar(var, _) => vec![var.clone()],
             InstructionKind::Transform(var, target, _) => vec![var.clone(), target.clone()],
             InstructionKind::EnumSwitch(var, _) => {
                 vec![var.clone()]
             }
             InstructionKind::IntegerSwitch(var, _) => {
-                vec![var.clone()]
-            }
-            InstructionKind::StringSwitch(var, _) => {
                 vec![var.clone()]
             }
             InstructionKind::BlockStart(_) => Vec::new(),
@@ -491,11 +490,14 @@ impl InstructionKind {
                 let fields = fields.iter().map(|info| info.to_string()).collect::<Vec<_>>().join(".");
                 format!("fieldassign({}, {}, {})", v, arg, fields)
             }
+            InstructionKind::AddressOfField(v, receiver, fields) => {
+                let fields = fields.iter().map(|info| info.to_string()).collect::<Vec<_>>().join(".");
+                format!("address_of_field({}, {}, {})", v, receiver, fields)
+            }
             InstructionKind::DeclareVar(v, mutability) => format!("declare({}, {:?})", v, mutability),
             InstructionKind::Transform(dest, arg, index) => format!("{} = transform({}, {})", dest, arg, index),
             InstructionKind::EnumSwitch(root, cases) => format!("enumswitch({}, {:?})", root, cases),
             InstructionKind::IntegerSwitch(root, cases) => format!("integerswitch({}, {:?})", root, cases),
-            InstructionKind::StringSwitch(root, cases) => format!("stringswitch({}, {:?})", root, cases),
             InstructionKind::BlockStart(info) => format!("blockstart({})", info),
             InstructionKind::BlockEnd(info) => format!("blockend({})", info),
         }

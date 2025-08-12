@@ -56,4 +56,5 @@ pub enum Instruction {
     MemcpyPtr(Variable, Variable),
     Bitcast(Variable, Variable),
     Switch(Variable, String, Vec<Branch>),
+    AddressOfField(Variable, Variable, i32),
 }

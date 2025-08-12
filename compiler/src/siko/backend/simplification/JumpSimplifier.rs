@@ -92,18 +92,6 @@ impl<'a> JumpSimplifier<'a> {
                             instruction.location.clone(),
                         );
                     }
-                    if let InstructionKind::StringSwitch(var, cases) = &instruction.kind {
-                        let mut newCases = cases.clone();
-                        for case in &mut newCases {
-                            if let Some(newTarget) = self.replace(case.branch) {
-                                case.branch = newTarget;
-                            }
-                        }
-                        builder.replaceInstruction(
-                            InstructionKind::StringSwitch(var.clone(), newCases),
-                            instruction.location.clone(),
-                        );
-                    }
                     if let InstructionKind::IntegerSwitch(var, cases) = &instruction.kind {
                         let mut newCases = cases.clone();
                         for case in &mut newCases {

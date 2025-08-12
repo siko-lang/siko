@@ -139,6 +139,7 @@ impl<'a> DeadCodeEliminator<'a> {
                 }
                 InstructionKind::Assign(_, _) => {}
                 InstructionKind::FieldAssign(_, _, _) => {}
+                InstructionKind::AddressOfField(_, _, _) => {}
                 InstructionKind::DeclareVar(_, _) => {}
                 InstructionKind::Transform(_, _, _) => {}
                 InstructionKind::EnumSwitch(_, cases) => {
@@ -148,12 +149,6 @@ impl<'a> DeadCodeEliminator<'a> {
                     return;
                 }
                 InstructionKind::IntegerSwitch(_, cases) => {
-                    for case in cases {
-                        self.processBlock(case.branch);
-                    }
-                    return;
-                }
-                InstructionKind::StringSwitch(_, cases) => {
                     for case in cases {
                         self.processBlock(case.branch);
                     }
