@@ -1,6 +1,7 @@
 module Main {
 
 import NativePtr
+import Rand
 
 pub struct Node[K, V] {
     pub key: K,
@@ -280,7 +281,26 @@ struct Collector {
 
 // ======================== Main Demo ========================
 
+fn randTest() {
+    let mut rng = Rand.new(0);
+    let mut testValues = Vec.new();
+    let mut map = Map.new();
+    for i in 0..1000 {
+        let value = rng.next();
+        let inserted = map.insert(value, value);
+        if testValues.contains(&value) {
+            assert(!inserted);
+        } else {
+            testValues.push(value);
+            assert(inserted);
+        }
+        testValues.sort();
+        assert(testValues == Collector.getValues(&map));
+    }
+}
+
 fn main() {
+    randTest();
     let mut tree = Map.new();
     let mut expectedValues = Vec.new();
     let testValues = [10, 20, 30, 40, 50, 25];
