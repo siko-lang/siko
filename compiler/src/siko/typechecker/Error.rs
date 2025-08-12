@@ -2,8 +2,8 @@ use crate::siko::location::{Location::Location, Report::Report, Report::ReportCo
 
 pub enum TypecheckerError {
     TypeMismatch(String, String, Location),
-    FieldNotFound(String, Location),
-    MethodNotFound(String, Location),
+    FieldNotFound(String, String, Location),
+    MethodNotFound(String, String, Location),
     MethodAmbiguous(String, Location),
     InstanceNotFound(String, String, Location),
     AmbiguousInstances(String, String, Location, Vec<Location>),
@@ -20,13 +20,13 @@ impl TypecheckerError {
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }
-            TypecheckerError::FieldNotFound(name, l) => {
-                let slogan = format!("Field not found: {}", ctx.yellow(name));
+            TypecheckerError::FieldNotFound(name, ty, l) => {
+                let slogan = format!("Field not found: {} on type {}", ctx.yellow(name), ctx.yellow(ty));
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }
-            TypecheckerError::MethodNotFound(name, l) => {
-                let slogan = format!("Method not found: {}", ctx.yellow(name));
+            TypecheckerError::MethodNotFound(name, ty, l) => {
+                let slogan = format!("Method not found: {} on type {}", ctx.yellow(name), ctx.yellow(ty));
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }

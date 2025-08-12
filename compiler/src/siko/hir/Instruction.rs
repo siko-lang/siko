@@ -35,7 +35,7 @@ impl Display for FieldId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             FieldId::Named(name) => write!(f, "{}", name),
-            FieldId::Indexed(index) => write!(f, "t{}", index),
+            FieldId::Indexed(index) => write!(f, "{}", index),
         }
     }
 }

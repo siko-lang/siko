@@ -415,14 +415,15 @@ impl<'a> Typechecker<'a> {
         }
     }
 
-    fn lookupTraitMethod(&mut self, methodName: &String, location: Location) -> QualifiedName {
+    fn lookupTraitMethod(&mut self, receiverType: Type, methodName: &String, location: Location) -> QualifiedName {
         if let Some(selections) = self.traitMethodSelector.get(methodName) {
             if selections.len() > 1 {
                 TypecheckerError::MethodAmbiguous(methodName.clone(), location.clone()).report(self.ctx);
             }
             return selections[0].method.clone();
         }
-        TypecheckerError::MethodNotFound(methodName.clone(), location.clone()).report(self.ctx);
+        TypecheckerError::MethodNotFound(methodName.clone(), receiverType.to_string(), location.clone())
+            .report(self.ctx);
     }
 
     fn lookupMethod(&mut self, receiverType: Type, methodName: &String, location: Location) -> QualifiedName {
@@ -436,7 +437,7 @@ impl<'a> Typechecker<'a> {
                             return m.fullName.clone();
                         }
                     }
-                    return self.lookupTraitMethod(methodName, location);
+                    return self.lookupTraitMethod(receiverType, methodName, location);
                 } else if let Some(enumDef) = self.program.enums.get(&name) {
                     let enumDef = self.instantiateEnum(enumDef, receiverType.unpackRef());
                     for m in &enumDef.methods {
@@ -444,72 +445,77 @@ impl<'a> Typechecker<'a> {
                             return m.fullName.clone();
                         }
                     }
-                    return self.lookupTraitMethod(methodName, location);
+                    return self.lookupTraitMethod(receiverType, methodName, location);
                 } else {
-                    println!("Lookup method 1 on non-named type: {} {}", receiverType, methodName);
-                    TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
+                    TypecheckerError::MethodNotFound(methodName.clone(), receiverType.to_string(), location.clone())
+                        .report(self.ctx);
                 }
             }
             Type::Var(TypeVar::Named(_)) => {
-                return self.lookupTraitMethod(methodName, location);
+                return self.lookupTraitMethod(receiverType, methodName, location);
             }
             Type::Ptr(_) => {
                 if methodName == "isNull" {
                     // TODO: make this nicer, somehow??
                     return getNativePtrIsNullName();
                 } else {
-                    TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
+                    TypecheckerError::MethodNotFound(methodName.clone(), receiverType.to_string(), location.clone())
+                        .report(self.ctx);
                 }
             }
             _ => {
-                println!("Lookup method 2 on non-named type: {} {}", receiverType, methodName);
-                TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
+                TypecheckerError::MethodNotFound(methodName.clone(), receiverType.to_string(), location.clone())
+                    .report(self.ctx);
             }
         };
     }
 
     fn checkField(&mut self, mut receiverType: Type, fieldId: &FieldId, location: Location) -> Type {
+        let origType = receiverType.clone();
         receiverType = receiverType.apply(&self.substitution);
-        if let Type::Reference(innerTy, _) = &receiverType {
-            receiverType = *innerTy.clone();
+        if let Type::Reference(_, _) = &receiverType {
+            TypecheckerError::FieldNotFound(fieldId.to_string(), origType.to_string(), location.clone())
+                .report(self.ctx);
         }
         if let Type::Ptr(innerTy) = &receiverType {
             receiverType = *innerTy.clone();
         }
         match &fieldId {
-            FieldId::Named(fieldName) => {
-                let receiverType = receiverType.apply(&self.substitution);
-                match receiverType.unpackRef() {
-                    Type::Named(name, _) => {
-                        if let Some(structDef) = self.program.structs.get(&name) {
-                            let structDef = self.instantiateStruct(structDef, receiverType.unpackRef());
-                            for f in &structDef.fields {
-                                if f.name == *fieldName {
-                                    if receiverType.isReference() {
-                                        return Type::Reference(Box::new(f.ty.clone()), None);
-                                    }
-                                    return f.ty.clone();
+            FieldId::Named(fieldName) => match &receiverType {
+                Type::Named(name, _) => {
+                    if let Some(structDef) = self.program.getStruct(name) {
+                        let structDef = self.instantiateStruct(&structDef, &receiverType);
+                        for f in &structDef.fields {
+                            if f.name == *fieldName {
+                                if origType.isPtr() {
+                                    return Type::Ptr(Box::new(f.ty.clone()));
                                 }
+                                return f.ty.clone();
                             }
-                            TypecheckerError::FieldNotFound(fieldName.clone(), location.clone()).report(self.ctx);
-                        } else {
-                            println!("checkField 1 on non-named type: {} {}", receiverType, fieldName);
-                            TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
                         }
-                    }
-                    _ => {
-                        println!("checkField 2 on non-named type: {} {}", receiverType, fieldName);
-                        TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
+                        TypecheckerError::FieldNotFound(fieldName.clone(), origType.to_string(), location.clone())
+                            .report(self.ctx);
+                    } else {
+                        TypecheckerError::FieldNotFound(fieldName.clone(), origType.to_string(), location.clone())
+                            .report(self.ctx);
                     }
                 }
-            }
+                _ => {
+                    TypecheckerError::FieldNotFound(fieldName.clone(), origType.to_string(), location.clone())
+                        .report(self.ctx);
+                }
+            },
             FieldId::Indexed(index) => {
                 let receiverType = receiverType.apply(&self.substitution);
                 match receiverType.unpackRef() {
                     Type::Tuple(types) => {
                         if *index as usize >= types.len() {
-                            println!("ReadField 4 on out-of-bounds index: {} {}", receiverType, index);
-                            TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
+                            TypecheckerError::FieldNotFound(
+                                fieldId.to_string().clone(),
+                                origType.to_string(),
+                                location.clone(),
+                            )
+                            .report(self.ctx);
                         }
                         if receiverType.isReference() {
                             return Type::Reference(Box::new(types[*index as usize].clone()), None);
@@ -517,8 +523,12 @@ impl<'a> Typechecker<'a> {
                         return types[*index as usize].clone();
                     }
                     _ => {
-                        println!("ReadField 3 on non-tuple type: {} {}", receiverType, index);
-                        TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
+                        TypecheckerError::FieldNotFound(
+                            fieldId.to_string().clone(),
+                            origType.to_string(),
+                            location.clone(),
+                        )
+                        .report(self.ctx);
                     }
                 }
             }
@@ -540,15 +550,16 @@ impl<'a> Typechecker<'a> {
                             return result;
                         }
                     }
-                    TypecheckerError::FieldNotFound(fieldName.clone(), location.clone()).report(self.ctx);
+                    TypecheckerError::FieldNotFound(fieldName.clone(), receiverType.to_string(), location.clone())
+                        .report(self.ctx);
                 } else {
-                    println!("ReadField 1 on non-named type: {} {}", receiverType, fieldName);
-                    TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
+                    TypecheckerError::FieldNotFound(fieldName.clone(), receiverType.to_string(), location.clone())
+                        .report(self.ctx);
                 }
             }
             _ => {
-                println!("ReadField 2 on non-named type: {} {}", receiverType, fieldName);
-                TypecheckerError::TypeAnnotationNeeded(location.clone()).report(self.ctx);
+                TypecheckerError::FieldNotFound(fieldName.clone(), receiverType.to_string(), location.clone())
+                    .report(self.ctx);
             }
         }
     }
@@ -880,10 +891,11 @@ impl<'a> Typechecker<'a> {
                             Type::Tuple(t) => {
                                 if index as usize >= t.len() {
                                     TypecheckerError::FieldNotFound(
-                                        format!(".{}", index),
+                                        fieldName.to_string().clone(),
+                                        receiverType.to_string(),
                                         instruction.location.clone(),
                                     )
-                                    .report(&self.ctx);
+                                    .report(self.ctx);
                                 }
                                 let fieldType = if isRef {
                                     Type::Reference(Box::new(t[index as usize].clone()), None)
