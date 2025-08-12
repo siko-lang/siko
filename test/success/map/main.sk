@@ -23,6 +23,7 @@ pub struct Node {
     pub right: *Node,
 
     fn new(value: Int) -> *Node {
+        println("Creating new node with value: ${value}");
         let node = Node(value, 1, null(), null());
         let p = allocate();
         *p = node;
@@ -52,11 +53,17 @@ pub struct AvlTree {
         Main.search(self.root, value)
     }
 
-    fn drop(mut self) -> Self {
+    fn clean(mut self) -> Self {
         println("Dropping AVL Tree");
         free_nodes(self.root);
         self.root = null();
         self
+    }
+}
+
+instance Drop[AvlTree] {
+    fn drop(self) -> Self {
+        self.clean()
     }
 }
 
