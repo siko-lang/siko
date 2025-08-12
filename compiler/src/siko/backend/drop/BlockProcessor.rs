@@ -19,8 +19,7 @@ impl<'a> BlockProcessor<'a> {
     }
 
     pub fn process(&mut self, mut builder: BlockBuilder, mut context: Context) -> (Context, Vec<BlockId>) {
-        // println!("Processing block: {}", block.id);
-
+        // println!("Processing block: {}", builder.getBlockId());
         // println!("starting context: {}", context);
         // println!("--------------");
         let mut jumpTargets = Vec::new();

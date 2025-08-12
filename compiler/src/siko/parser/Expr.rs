@@ -1,6 +1,7 @@
 use crate::siko::{
     location::Location::{Location, Span},
-    qualifiedname::builtins::{getFalseName, getTrueName},
+    parser::Token::RangeKind,
+    qualifiedname::builtins::{getFalseName, getRangeCtorName, getTrueName},
     syntax::{
         Expr::{BinaryOp, Branch, Expr, SimpleExpr, UnaryOp},
         Identifier::Identifier,
@@ -678,7 +679,27 @@ impl<'a> ExprParser for Parser<'a> {
             }
             TokenKind::IntegerLiteral => {
                 let literal = self.parseIntegerLiteral();
-                self.buildExpr(SimpleExpr::IntegerLiteral(literal), start)
+                if self.check(TokenKind::Range(RangeKind::Exclusive)) {
+                    self.expect(TokenKind::Range(RangeKind::Exclusive));
+                    let end = self.parseIntegerLiteral();
+                    let startExpr = self.buildExpr(SimpleExpr::IntegerLiteral(literal), start);
+                    let endExpr = self.buildExpr(SimpleExpr::IntegerLiteral(end), start);
+                    self.buildExpr(
+                        SimpleExpr::Call(
+                            Box::new(Expr {
+                                expr: SimpleExpr::Value(Identifier::new(
+                                    &getRangeCtorName().toString(),
+                                    self.currentLocation(),
+                                )),
+                                location: self.currentLocation(),
+                            }),
+                            vec![startExpr, endExpr],
+                        ),
+                        start,
+                    )
+                } else {
+                    self.buildExpr(SimpleExpr::IntegerLiteral(literal), start)
+                }
             }
             TokenKind::CharLiteral => {
                 let tokenInfo = self.current().clone();

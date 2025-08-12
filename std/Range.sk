@@ -1,0 +1,52 @@
+module Range {
+
+pub struct Range {
+    start: Int,
+    end: Int
+
+    pub fn range(start: Int, end: Int) -> Range {
+        Range(start, end)
+    }
+
+    pub fn contains(&self, value: Int) -> Bool {
+        value >= self.start and value < self.end
+    }
+
+    pub fn intoIterator(self) -> RangeIterator {
+        RangeIterator.new(self)
+    }
+}
+
+pub struct RangeIterator {
+    range: Range,
+    current: Int,
+
+    pub fn new(range: Range) -> RangeIterator {
+        RangeIterator(range, range.start)
+    }
+}
+
+instance IntoIterator[Range] {
+    type Item = Int
+    type Iter = RangeIterator
+
+    fn intoIterator(self) -> RangeIterator {
+        RangeIterator.new(self)
+    }
+}
+
+instance Iterator[RangeIterator] {
+    type Item = Int
+
+    fn next(mut self) -> (Self, Option[Int]) {
+        if self.current < self.range.end {
+            let nextValue = self.current;
+            self.current = self.current + 1;
+            (self, Some(nextValue))
+        } else {
+            (self, None)
+        }
+    }
+}
+
+}

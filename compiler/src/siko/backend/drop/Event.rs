@@ -170,7 +170,7 @@ impl EventSeries {
         for (index, event) in self.events.iter().enumerate() {
             if let Event::Usage(usage) = event {
                 let series = self.prune_internal(index);
-                //println!("Validating event series: {:?}", series.events);
+                //println!("- Validating event series: {:?}", series.events);
                 for prev in series.events.iter().take(index) {
                     if let Event::Usage(prevUsage) = prev {
                         if prevUsage.path.sharesPrefixWith(&usage.path) && prevUsage.kind == UsageKind::Move {
@@ -190,15 +190,16 @@ impl EventSeries {
                 if path.isRootOnly() {
                     continue; // Skip root-only paths
                 }
-                //println!("Validating event series: {:?}", series.events);
-                for prev in self.events.iter().take(index) {
+                //println!("- Validating event series: {:?}", self.events);
+                let series = self.prune_internal(index);
+                for prev in series.events.iter().take(index) {
                     if let Event::Usage(prevUsage) = prev {
                         if path.same(&prevUsage.path) {
                             continue;
                         }
                         if path.contains(&prevUsage.path) && prevUsage.kind == UsageKind::Move {
                             // println!(
-                            //     "Collision detected: {} with previous usage: {}",
+                            //     "Collision detected: {} with previous usage: {} - assign",
                             //     path, prevUsage.path
                             // );
                             collisions.push(Collision {

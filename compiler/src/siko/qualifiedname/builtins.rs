@@ -219,3 +219,7 @@ pub fn getBoxReleaseFnName() -> QualifiedName {
 pub fn getBoxGetFnName() -> QualifiedName {
     build("Box", "Box").add(format!("get"))
 }
+
+pub fn getRangeCtorName() -> QualifiedName {
+    build("Range", "Range").add("range".to_string())
+}

@@ -184,4 +184,41 @@ instance[T] Drop[Vec[T]] {
     }
 }
 
+instance[T: Show[T]] Show[Vec[T]] {
+    fn show(&self) -> String {
+        let mut result = String.new();
+        result.push("[");
+        let mut first = True;
+        for item in self.iter() {
+            if !first {
+                result.push(", ");
+            }
+            first = False;
+            result.push(item.show());
+        }
+        result.push("]");
+        result
+    }
+}
+
+instance[T: PartialEq[T]] PartialEq[Vec[T]] {
+    fn eq(&self, other: &Vec[T]) -> Bool {
+        if self.len() != other.len() {
+            return False;
+        }
+        loop i = 0 {
+            if i >= self.len() {
+                break;
+            }
+            let a = self.getUnchecked(i);
+            let b = other.getUnchecked(i);
+            if a != b {
+                return False;
+            }
+            i + 1
+        }
+        True
+    }
+}
+
 }

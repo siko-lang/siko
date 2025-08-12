@@ -103,6 +103,7 @@ impl<'a> ModuleParser for Parser<'a> {
             "Std.Ops",
             "Std.Basic.Util",
             "Vec",
+            "Range",
         ];
         for i in implicitImports {
             items.push(ModuleItem::Import(Import {

@@ -92,6 +92,7 @@ impl<'a> DropChecker<'a> {
             return self.function.clone();
         }
         // println!("Processing function: {}", self.function.name);
+        // println!("Function: {}", self.function);
 
         // let mut graph = GraphBuilder::new(self.function);
         // graph = graph.withPostfix("dropcheck");
