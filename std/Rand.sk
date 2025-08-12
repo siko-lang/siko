@@ -1,0 +1,76 @@
+module Rand {
+
+pub struct Rand {
+    state: Int,
+
+    pub fn new(seed: Int) -> Rand {
+        let mut rng = Rand(0);
+        rng.seed(seed);
+        rng
+    }
+
+    fn getPM_M() -> Int {
+        2147483647
+    }
+
+    fn getPM_A() -> Int {
+        16807
+    }
+
+    fn getPM_Q() -> Int {
+        127773
+    }
+
+    fn getPM_R() -> Int {
+        2836
+    }
+
+    pub fn seed(mut self, seed: Int) -> Self {
+        self.state = seed.mod(getPM_M()); // keep in range
+        if self.state <= 0 {
+            self.state = self.state + getPM_M() - 1;
+        }
+        self
+    }
+
+    pub fn next(mut self) -> (Self, Int) {
+        let a = getPM_A();
+        let m = getPM_M();
+        let q = getPM_Q();
+        let r = getPM_R();
+
+        let t = a * (self.state.mod(q)) - r * (self.state / q);
+        self.state = if t > 0 { t } else { t + m };
+        let r = self.state;
+        (self, r)
+    }
+
+    pub fn iter(self) -> RandIter {
+        RandIter(self)
+    }
+}
+
+instance IntoIterator[Rand] {
+    type Item = Int
+    type Iter = RandIter
+
+    fn intoIterator(self) -> RandIter {
+        RandIter(Rand.new(self.state))
+    }
+}
+
+pub struct RandIter {
+    rand: Rand,
+}
+
+instance Iterator[RandIter] {
+    type Item = Int
+
+    fn next(mut self) -> (Self, Option[Int]) {
+        let (rand, value) = self.rand.next();
+        self.rand = rand;
+        (self, Some(value))
+    }
+}
+
+}
