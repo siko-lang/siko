@@ -1,6 +1,7 @@
 module Vec {
 
 import NativePtr
+import Slice
 
 struct InnerVec[T] {
     items: *T,
@@ -80,27 +81,22 @@ pub struct Vec[T] {
         self.inner.size
     }
 
+    pub fn slice(&self) -> Slice[T] {
+        Slice.new(self.inner.items, self.inner.size)
+    }
+
     pub fn swap(self, i: Int, j: Int) -> Self {
-        if i == j {
-            return self;
-        }
-        let ptr = offset(self.inner.items, i);
-        let ptr2 = offset(self.inner.items, j);
-        let item = *ptr;
-        let item2 = *ptr2;
-        *ptr = item2;
-        *ptr2 = item;
+        self.slice().swap(i, j);
         self
     }
 
-    pub fn reverse(mut self) -> Self {
-        let mut i = 0;
-        let mut j = self.len() - 1;
-        while i < j {
-            self.swap(i, j);
-            i = i + 1;
-            j = j - 1;
-        }
+    pub fn reverse(self) -> Self {
+        self.slice().reverse();
+        self
+    }
+
+    pub fn sort[T: Ord[T]](mut self) -> Self {
+        self.slice().sort();
         self
     }
 

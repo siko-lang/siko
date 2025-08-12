@@ -510,6 +510,23 @@ impl<'a> ExprParser for Parser<'a> {
     fn parseBinaryOp(&mut self, index: usize) -> Expr {
         let start = self.currentSpan();
         let mut left = self.callNext(index);
+        if self.check(TokenKind::Range(RangeKind::Exclusive)) {
+            self.expect(TokenKind::Range(RangeKind::Exclusive));
+            let end = self.parseExpr();
+            return self.buildExpr(
+                SimpleExpr::Call(
+                    Box::new(Expr {
+                        expr: SimpleExpr::Value(Identifier::new(
+                            &getRangeCtorName().toString(),
+                            self.currentLocation(),
+                        )),
+                        location: self.currentLocation(),
+                    }),
+                    vec![left, end],
+                ),
+                start,
+            );
+        }
         loop {
             let ops = &self.opTable[index];
             let mut matchingOp = None;
@@ -679,27 +696,7 @@ impl<'a> ExprParser for Parser<'a> {
             }
             TokenKind::IntegerLiteral => {
                 let literal = self.parseIntegerLiteral();
-                if self.check(TokenKind::Range(RangeKind::Exclusive)) {
-                    self.expect(TokenKind::Range(RangeKind::Exclusive));
-                    let end = self.parseIntegerLiteral();
-                    let startExpr = self.buildExpr(SimpleExpr::IntegerLiteral(literal), start);
-                    let endExpr = self.buildExpr(SimpleExpr::IntegerLiteral(end), start);
-                    self.buildExpr(
-                        SimpleExpr::Call(
-                            Box::new(Expr {
-                                expr: SimpleExpr::Value(Identifier::new(
-                                    &getRangeCtorName().toString(),
-                                    self.currentLocation(),
-                                )),
-                                location: self.currentLocation(),
-                            }),
-                            vec![startExpr, endExpr],
-                        ),
-                        start,
-                    )
-                } else {
-                    self.buildExpr(SimpleExpr::IntegerLiteral(literal), start)
-                }
+                self.buildExpr(SimpleExpr::IntegerLiteral(literal), start)
             }
             TokenKind::CharLiteral => {
                 let tokenInfo = self.current().clone();

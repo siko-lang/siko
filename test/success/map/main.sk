@@ -330,38 +330,47 @@ fn inorder(root: *Node) {
     inorder(root.right);
 }
 
+struct Collector {
+    values: Vec[Int],
+
+    fn collect(mut self, root: *Node) -> Self {
+        if root.isNull() {
+            return self;
+        }
+        self.collect(root.left);
+        self.values = self.values.push(root.value); // TODO: reassign of self in field method calls?
+        self.collect(root.right);
+        self
+    }
+
+    fn getValues(tree: &AvlTree) -> Vec[Int] {
+        let mut collector = Collector(Vec.new());
+        collector.collect(tree.root);
+        collector.values
+    }
+}
+
 // ======================== Main Demo ========================
 
 fn main() {
-    println("AVL Tree Demo");
     let mut tree = AvlTree.new();
-
-    println("Inserting values:");
+    let mut expectedValues = Vec.new();
     for v in [10, 20, 30, 40, 50, 25, 25] {
         match tree.insert(v) {
             Inserted(_) -> {
-                // dump_tree(tree.root, 0);
-                // println("root is ${get_value(tree.root)}");
-                println("Inserted ${v}");
+                expectedValues.push(v);
+                expectedValues.sort();
+                assert(expectedValues == Collector.getValues(tree));
             }
             Duplicate(_) -> println("Duplicate ${v} rejected"),
         }
     }
-
-    println("Inorder after inserts:");
-    inorder(tree.root);
-    println("");
-
     let found = tree.search(25);
-    let res = if found.isNull() { "Not found" } else { "Found" };
-    println("Search 25 -> ${res}");
-
-    //dump_tree(tree.root, 0);
-
+    assert(!found.isNull());
     tree.delete(40);
-    println("Inorder after deleting 40:");
-    inorder(tree.root);
-    println("");
+    let found = tree.search(40);
+    assert(found.isNull());
+    assert([10, 20, 25, 30, 50] == Collector.getValues(tree));
 }
 
 }
