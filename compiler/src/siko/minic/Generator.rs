@@ -10,10 +10,10 @@ use crate::siko::{
         getIntAddName, getIntCloneName, getIntDivName, getIntEqName, getIntLessThanName, getIntModName, getIntMulName,
         getIntSubName, getIntToU8Name, getNativePtrAllocateArrayName, getNativePtrCloneName,
         getNativePtrDeallocateName, getNativePtrEqName, getNativePtrIsNullName, getNativePtrLoadName,
-        getNativePtrMemcmpName, getNativePtrMemcpyName, getNativePtrNullName, getNativePtrOffsetName,
-        getNativePtrPrintName, getNativePtrStoreName, getStdBasicUtilAbortName, getStdBasicUtilPrintStrName,
-        getStdBasicUtilPrintlnStrName, getU8AddName, getU8CloneName, getU8DivName, getU8EqName, getU8LessThanName,
-        getU8MulName, getU8SubName,
+        getNativePtrMemcmpName, getNativePtrMemcpyName, getNativePtrMemmoveName, getNativePtrNullName,
+        getNativePtrOffsetName, getNativePtrPrintName, getNativePtrStoreName, getStdBasicUtilAbortName,
+        getStdBasicUtilPrintStrName, getStdBasicUtilPrintlnStrName, getU8AddName, getU8CloneName, getU8DivName,
+        getU8EqName, getU8LessThanName, getU8MulName, getU8SubName,
     },
     util::DependencyProcessor::processDependencies,
 };
@@ -280,6 +280,16 @@ impl MiniCGenerator {
             writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
             writeln!(buf, "    {} result;", getTypeName(&f.result))?;
             writeln!(buf, "    memcpy(dest, src, sizeof(*src) * count);")?;
+            writeln!(buf, "    return result;")?;
+            writeln!(buf, "}}\n")?;
+        }
+
+        if f.name
+            .starts_with(&getNativePtrMemmoveName().toString().replace(".", "_"))
+        {
+            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(buf, "    {} result;", getTypeName(&f.result))?;
+            writeln!(buf, "    memmove(dest, src, sizeof(*src) * count);")?;
             writeln!(buf, "    return result;")?;
             writeln!(buf, "}}\n")?;
         }

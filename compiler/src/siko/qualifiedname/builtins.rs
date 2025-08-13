@@ -56,6 +56,10 @@ pub fn getNativePtrMemcpyName() -> QualifiedName {
     build("NativePtr", "memcpy")
 }
 
+pub fn getNativePtrMemmoveName() -> QualifiedName {
+    build("NativePtr", "memmove")
+}
+
 pub fn getNativePtrMemcmpName() -> QualifiedName {
     build("NativePtr", "memcmp")
 }
