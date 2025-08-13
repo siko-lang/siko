@@ -287,6 +287,7 @@ fn randTest() {
     let mut map = Map.new();
     for i in 0..1000 {
         let value = rng.next();
+        // println("Inserting: ${value} len ${testValues.len()}");
         let inserted = map.insert(value, value);
         if testValues.contains(&value) {
             assert(!inserted);
@@ -299,8 +300,69 @@ fn randTest() {
     }
 }
 
-fn main() {
-    randTest();
+fn complexTest() {
+    let mut tree = Map.new();
+    let mut currentValues = Vec.new();
+    let mut rng = Rand.new(0);
+    for _ in 0..100 {
+        let cmd = rng.next();
+        //println("==========Command: ${cmd}");
+        match cmd.mod(3) {
+            0 -> { // insert
+                //println("Insert command");
+                let value = rng.next();
+                if currentValues.contains(&value) {
+                    //println("Insert command, but value already exists: ${value}");
+                    assert(!tree.insert(value, value));
+                } else {
+                    //println("Insert command with new value: ${value}");
+                    assert(tree.insert(value, value));
+                    currentValues.push(value);
+                    currentValues.sort2();
+                    //println("Current values after insertion: ${currentValues}");
+                    assert(currentValues == Collector.getValues(&tree));
+                }
+            }
+            1 -> {
+                //println("Search command");
+                //println("Len ${currentValues.len()}");
+                if currentValues.empty() {
+                    //println("No values to search for");
+                    continue;
+                }
+                let index = rng.next();
+                let index = index.mod(currentValues.len());
+                //println("Will look at value at index ${index}");
+                let value: Int = currentValues.get(index).clone();
+                //println("Searching for ${value}");
+                let found = tree.search(value);
+                assert(!found.isNull());
+            }
+            2 -> {
+                //println("Delete command");
+                if currentValues.empty() {
+                    //println("No values to delete");
+                    continue;
+                }
+                let index = rng.next().mod(currentValues.len());
+                let value: Int = currentValues.get(index).clone();
+                //println("Deleting ${value}");
+                let found = tree.search(value);
+                //println("Found: ${found.isNull()}");
+                assert(!found.isNull());
+                tree.delete(value);
+                currentValues.remove(index);
+                //println("Current values after deletion: ${currentValues}");
+                assert(currentValues == Collector.getValues(&tree));
+            }
+            _ -> {
+                panic("Unexpected command");
+            }
+        }
+    }
+}
+
+fn basicTest() {
     let mut tree = Map.new();
     let mut expectedValues = Vec.new();
     let testValues = [10, 20, 30, 40, 50, 25];
@@ -325,6 +387,12 @@ fn main() {
         let n = tree.search(v);
         assert(n.isNull());
     }
+}
+
+fn main() {
+    randTest();
+    complexTest();
+    basicTest();
 }
 
 }

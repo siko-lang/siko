@@ -53,6 +53,11 @@ enum BuildPhase {
     Build,
 }
 
+enum OptimizationLevel {
+    None,
+    O3,
+}
+
 fn main() {
     let ctx = ReportContext {};
     let fileManager = FileManager::new();
@@ -66,6 +71,7 @@ fn main() {
     }
     let mut sanitized = false;
     let phase;
+    let mut optimization = OptimizationLevel::None;
     match args[1].as_str() {
         "run" => {
             args.remove(1);
@@ -95,6 +101,9 @@ fn main() {
                     eprintln!("Error: -o option requires an argument");
                     return;
                 }
+            }
+            "-O3" => {
+                optimization = OptimizationLevel::O3;
             }
             "--sanitize" => {
                 sanitized = true;
@@ -140,11 +149,21 @@ fn main() {
         // Only build the project
         return;
     }
-    let mut compile_args = vec!["-g", "-O1", "-c", &c_output_path, "-o", &object_path];
-    let mut link_args = vec!["-g", "-O1", &object_path, "-o", &bin_output_path];
+    let mut compile_args = vec!["-g", "-c", &c_output_path, "-o", &object_path];
+    let mut link_args = vec!["-g", &object_path, "-o", &bin_output_path];
     if sanitized {
         compile_args.push(CLANG_SANITIZE_FLAGS);
         link_args.push(CLANG_SANITIZE_FLAGS);
+    }
+    match optimization {
+        OptimizationLevel::None => {
+            compile_args.push("-O1");
+            link_args.push("-O1");
+        }
+        OptimizationLevel::O3 => {
+            compile_args.push("-O3");
+            link_args.push("-O3");
+        }
     }
     Command::new("clang")
         .args(&compile_args)

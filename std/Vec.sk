@@ -38,6 +38,22 @@ struct InnerVec[T] {
         toRef(ptr)
     }
 
+    pub fn remove(mut self, index: Int) -> Self {
+        if index < 0 or index >= self.size {
+            panic("OutOfBounds");
+        }
+        let ptr = offset(self.items, index);
+        {
+            let item = *ptr; // drop the item at the index
+        }
+        // shift the items to the left using memcpy
+        let nextPtr = offset(self.items, index + 1);
+        let destPtr = offset(self.items, index);
+        memcpy(destPtr, nextPtr, (self.size - index - 1));
+        self.size = self.size - 1;
+        self
+    }
+
     fn grow(mut self, capacity: Int) -> Self {
         self.capacity = capacity;
         let newItems: *T = allocateArray(self.capacity);
@@ -70,6 +86,11 @@ pub struct Vec[T] {
         self.inner.getUnchecked(index)
     }
 
+    pub fn remove(mut self, index: Int) -> Self {
+        self.inner = self.inner.remove(index); // TODO: mut self should apply to self.inner.remove as well?!
+        self
+    }
+
     pub fn iter(&self) -> VecIteratorRef[T] {
         VecIteratorRef(&self, 0)
     }
@@ -80,6 +101,10 @@ pub struct Vec[T] {
 
     pub fn len(&self) -> Int {
         self.inner.size
+    }
+
+    pub fn empty(&self) -> Bool {
+        self.inner.size == 0
     }
 
     pub fn slice(&self) -> Slice[T] {
