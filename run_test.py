@@ -81,9 +81,7 @@ def test_fail(root, entry, extras):
     if os.path.exists(skip_path):
         return "skip"
     input_path = os.path.join(root, entry, "main.sk")
-    output_path = os.path.join(root, entry, "main.ll")
-    args = ["./siko", input_path, "-o", output_path] + extras
-    #print(args)
+    args = ["./siko", "build", input_path] + extras
     r = subprocess.run(args, capture_output=True)
     if r.returncode == 0:
         return False
