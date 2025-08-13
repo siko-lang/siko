@@ -4,35 +4,16 @@
 mod siko;
 
 use siko::{
-    hir::Program::Program,
     hir_lowering::Lowering::lowerProgram,
     location::{FileManager::FileManager, Report::ReportContext},
     minic::Generator::MiniCGenerator,
     parser::Parser::*,
     resolver::Resolver::Resolver,
-    typechecker::Typechecker::Typechecker,
 };
 
-use std::{collections::BTreeMap, env::args, fs, path::Path, process::Command};
+use std::{env::args, fs, path::Path, process::Command};
 
-use crate::siko::backend::Backend;
-
-fn typecheck(ctx: &ReportContext, mut program: Program) -> Program {
-    let mut result = BTreeMap::new();
-    for (_, f) in &program.functions {
-        let moduleName = f.name.module();
-        let traitMethodSelector = &program
-            .traitMethodSelectors
-            .get(&moduleName)
-            .expect("Trait method selector not found");
-        let mut typechecker = Typechecker::new(ctx, &program, &traitMethodSelector, f);
-        let typedFn = typechecker.run();
-        //typedFn.dump();
-        result.insert(typedFn.name.clone(), typedFn);
-    }
-    program.functions = result;
-    program
-}
+use crate::siko::{backend::Backend, typechecker::Typechecker::typecheck};
 
 fn collectFiles(input: &Path) -> Vec<String> {
     let mut allFiles = Vec::new();
