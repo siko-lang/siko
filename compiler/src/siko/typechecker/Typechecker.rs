@@ -13,7 +13,7 @@ use crate::siko::{
         Data::{Enum, Struct},
         Function::{BlockId, Function, Parameter},
         InstanceResolver::ResolutionResult,
-        Instantiation::{instantiateEnum, instantiateStruct, instantiateTrait, instantiateType},
+        Instantiation::{instantiateEnum, instantiateStruct, instantiateTrait, instantiateTypes},
         Instruction::{FieldId, FieldInfo, Instruction, InstructionKind, Mutability},
         Program::Program,
         Substitution::Substitution,
@@ -298,7 +298,7 @@ impl<'a> Typechecker<'a> {
         }
         let mut types = neededConstraints.typeParameters.clone();
         types.push(fnType.clone());
-        let sub = instantiateType(&mut self.allocator, &types);
+        let sub = instantiateTypes(&mut self.allocator, &types);
         let fnType = fnType.apply(&sub);
         //println!("inst {}", fnType);
         let constraintContext = neededConstraints.clone().apply(&sub);

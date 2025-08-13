@@ -13,7 +13,10 @@ use siko::{
 
 use std::{env::args, fs, path::Path, process::Command};
 
-use crate::siko::{backend::Backend, typechecker::Typechecker::typecheck};
+use crate::siko::{
+    backend::{Backend, TypeVerifier::verifyTypes},
+    typechecker::Typechecker::typecheck,
+};
 
 fn collectFiles(input: &Path) -> Vec<String> {
     let mut allFiles = Vec::new();
@@ -133,6 +136,7 @@ fn main() {
     let program = resolver.ir();
     //println!("after resolver\n{}", program);
     let program = typecheck(&ctx, program);
+    verifyTypes(&program);
     //println!("after typchk\n{}", program);
     let program = Backend::process(&ctx, program);
     //println!("after backend\n{}", program);

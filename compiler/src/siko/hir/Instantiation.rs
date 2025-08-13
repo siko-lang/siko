@@ -11,7 +11,7 @@ use crate::siko::hir::{
 };
 
 pub fn instantiateEnum(allocator: &mut TypeVarAllocator, e: &Enum, ty: &Type) -> Enum {
-    let sub = instantiateType(allocator, &vec![e.ty.clone()]);
+    let sub = instantiateTypes(allocator, &vec![e.ty.clone()]);
     let mut e = e.clone();
     e = e.apply(&sub);
     let mut sub = Substitution::new();
@@ -21,7 +21,7 @@ pub fn instantiateEnum(allocator: &mut TypeVarAllocator, e: &Enum, ty: &Type) ->
 }
 
 pub fn instantiateStruct(allocator: &mut TypeVarAllocator, c: &Struct, ty: &Type) -> Struct {
-    let sub = instantiateType(allocator, &vec![c.ty.clone()]);
+    let sub = instantiateTypes(allocator, &vec![c.ty.clone()]);
     let mut res = c.clone();
     res = res.apply(&sub);
     let mut sub = Substitution::new();
@@ -43,11 +43,11 @@ pub fn instantiateInstance(allocator: &mut TypeVarAllocator, i: &Instance) -> In
 }
 
 pub fn instantiateTrait(allocator: &mut TypeVarAllocator, t: &Trait) -> Trait {
-    let sub = instantiateType(allocator, &t.params);
+    let sub = instantiateTypes(allocator, &t.params);
     t.clone().apply(&sub)
 }
 
-pub fn instantiateType(allocator: &mut TypeVarAllocator, types: &Vec<Type>) -> Substitution {
+pub fn instantiateTypes(allocator: &mut TypeVarAllocator, types: &Vec<Type>) -> Substitution {
     let mut vars = BTreeSet::new();
     for ty in types {
         vars = ty.collectVars(vars);
@@ -57,4 +57,14 @@ pub fn instantiateType(allocator: &mut TypeVarAllocator, types: &Vec<Type>) -> S
         sub.add(Type::Var(var.clone()), allocator.next());
     }
     sub
+}
+
+pub fn instantiateType(allocator: &mut TypeVarAllocator, ty: Type) -> Type {
+    let mut vars = BTreeSet::new();
+    vars = ty.collectVars(vars);
+    let mut sub = Substitution::new();
+    for var in &vars {
+        sub.add(Type::Var(var.clone()), allocator.next());
+    }
+    ty.apply(&sub)
 }
