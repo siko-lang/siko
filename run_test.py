@@ -8,7 +8,6 @@ success = 0
 failure = 0
 skipped = 0
 in_workflow = False
-clang_args = "-fsanitize=undefined,address,alignment,null,bounds,integer,enum,implicit-conversion,float-cast-overflow,float-divide-by-zero"
 
 def runUnderValgrind(program, args):
     valgrind_args = ["valgrind", "--leak-check=full", "--track-origins=yes", "--error-exitcode=1"]
@@ -21,23 +20,16 @@ def runUnderValgrind(program, args):
         return False
     return True
 
-def compileSikoC(currentDir, files, extras):
-    output_path = os.path.join(currentDir, "main")
-    c_output_path = os.path.join(currentDir, "main.c")
-    object_path = os.path.join(currentDir, "main.o")
+def compileSiko(currentDir, files, extras):
     bin_output_path = os.path.join(currentDir, "main.bin")
-    args = ["./siko", "-o", output_path] + extras + files
-    global clang_args
+    sanitize = []
+    global in_workflow
     if in_workflow:
-        clang_args = ""
+        sanitize = []
+    else:
+        sanitize = ["--sanitize"]
+    args = ["./siko", "build"] + sanitize + ["-o", bin_output_path] + extras + files
     r = subprocess.run(args)
-    if r.returncode != 0:
-        return None
-    r = subprocess.run(["clang", clang_args, "-g", "-O1", "-c", c_output_path, "-o", object_path, "-I", "siko_runtime"])
-    if r.returncode != 0:
-        return None
-    r = subprocess.run(["clang", clang_args, object_path, "-o", bin_output_path])
-    #r = subprocess.run(["rustc", output_path, "-o", rust_output_path])
     if r.returncode != 0:
         return None
     return bin_output_path
@@ -68,8 +60,7 @@ def test_success(root, entry, extras, explicit):
     if os.path.exists(skipPath) and not explicit:
         return "skip"
     inputPath = os.path.join(currentDir, "main.sk")
-    #binary = compileSikoLLVM(currentDir, [inputPath], extras)
-    binary = compileSikoC(currentDir, [inputPath], extras)
+    binary = compileSiko(currentDir, [inputPath], extras)
     if binary is None:
         return False
     r = subprocess.run([binary], capture_output=True)

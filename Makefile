@@ -11,24 +11,10 @@ clean:
 	@cd compiler && cargo clean
 
 teststd: compiler/target/release/siko
-	@./siko test.sk std/*
-
-llvm: compiler/target/release/siko
-	@./siko test.sk
-	@opt -O2 -S llvm.ll -o optimized.ll
-	@llvm-as optimized.ll -o main.bc
-	@llc -relocation-model=pic main.bc -filetype=obj -o main.o
-	@clang main.o siko_runtime/siko_runtime.o -o main.bin
+	@./siko run test.sk std/*
 
 c: compiler/target/release/siko
-	@./siko test.sk
-	@clang siko_main.c -o main.bin
-	@./main.bin
-
-self.bin: self compiler/target/release/siko std
-	@./siko self ./std -o self
-	@clang self.c -o self.bin
-	@./self.bin
+	@./siko run test.sk
 
 test: compiler/target/release/siko
 	@./run_test.py

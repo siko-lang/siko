@@ -66,6 +66,15 @@ pub struct Slice[T] {
         self
     }
 
+    pub fn sort2[T: Ord[T]](mut self) -> Self {
+        if self.len() <= 1 {
+            return self;
+        }
+
+        self.quickSort2();
+        self
+    }
+
     fn quickSort[T: Ord[T]](mut self) -> Self {
         if self.len() <= 1 {
             return self;
@@ -91,6 +100,48 @@ pub struct Slice[T] {
         }
         self.swap(i + 1, hi);
         (self, i + 1)
+    }
+
+    fn quickSort2[T: Ord[T]](mut self) -> Self {
+        if self.len() <= 1 {
+            return self;
+        }
+
+        let (lt, gt) = self.partition3();
+
+        // Recursively sort < pivot
+        self.subSlice(0, lt).quickSort();
+
+        // Recursively sort > pivot
+        self.subSlice(gt + 1, self.len()).quickSort();
+
+        self
+    }
+
+    fn partition3[T: Ord[T]](mut self) -> (Self, Int, Int) {
+        let lo = 0;
+        let hi = self.len() - 1;
+        let pivot = self.getUnchecked(lo); // pick first element as pivot
+
+        let mut lt = lo;   // end of < pivot region
+        let mut gt = hi;   // start of > pivot region
+        let mut i  = lo;   // current element
+
+        while i <= gt {
+            if self.getUnchecked(i) < pivot {
+                self.swap(lt, i);
+                lt = lt + 1;
+                i = i + 1;
+            } else if self.getUnchecked(i) > pivot {
+                self.swap(i, gt);
+                gt = gt - 1;
+                // don't increment i, need to examine swapped element
+            } else {
+                i = i + 1; // equal to pivot
+            }
+        }
+
+        (self, lt, gt) // indices of first == pivot and last == pivot
     }
 
     pub fn reverse(mut self) -> Self {

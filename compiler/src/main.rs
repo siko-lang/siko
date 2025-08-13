@@ -13,7 +13,7 @@ use siko::{
     typechecker::Typechecker::Typechecker,
 };
 
-use std::{collections::BTreeMap, env::args, fs, path::Path};
+use std::{collections::BTreeMap, env::args, fs, path::Path, process::Command};
 
 use crate::siko::backend::Backend;
 
@@ -55,25 +55,76 @@ fn collectFiles(input: &Path) -> Vec<String> {
     allFiles
 }
 
+static CLANG_SANITIZE_FLAGS: &str = "-fsanitize=undefined,address,alignment,null,bounds,integer,enum,implicit-conversion,float-cast-overflow,float-divide-by-zero";
+
+fn usage() {
+    eprintln!("Usage: siko <command>");
+    eprintln!("Commands:");
+    eprintln!("  run       Compiles the source code into an executable and runs it, -o <output_file>s");
+    eprintln!("  buildsource     Only compiles the source code into source code, -o <output_file>");
+    eprintln!("  build     Compiles the source code into an executable, -o <output_file>");
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BuildPhase {
+    Run,
+    BuildSource,
+    Build,
+}
+
 fn main() {
     let ctx = ReportContext {};
     let fileManager = FileManager::new();
     let mut resolver = Resolver::new(&ctx);
-    let mut parseOutput = false;
     let mut outputFile = "siko_main".to_string();
     let mut inputFiles = Vec::new();
-    for arg in args().skip(1) {
-        if arg == "-o" {
-            parseOutput = true;
-            continue;
-        }
-        if parseOutput {
-            outputFile = arg.clone();
-            parseOutput = false;
-            continue;
-        }
-        inputFiles.push(arg.clone());
+    let mut args: Vec<String> = args().collect();
+    if args.len() < 2 {
+        usage();
+        return;
     }
+    let mut sanitized = false;
+    let phase;
+    match args[1].as_str() {
+        "run" => {
+            args.remove(1);
+            phase = BuildPhase::Run;
+        }
+        "build" => {
+            args.remove(1);
+            phase = BuildPhase::Build;
+        }
+        "buildsource" => {
+            args.remove(1);
+            phase = BuildPhase::BuildSource;
+        }
+        _ => {
+            usage();
+            return;
+        }
+    }
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "-o" => {
+                i += 1;
+                if i < args.len() {
+                    outputFile = args[i].clone();
+                } else {
+                    eprintln!("Error: -o option requires an argument");
+                    return;
+                }
+            }
+            "--sanitize" => {
+                sanitized = true;
+            }
+            _ => {
+                inputFiles.push(args[i].clone());
+            }
+        }
+        i += 1;
+    }
+
     let mut allFiles = Vec::new();
     for inputFile in inputFiles {
         let files = collectFiles(Path::new(&inputFile));
@@ -99,9 +150,35 @@ fn main() {
     //println!("mir\n{}", mir_program);
     mir_program.process();
     let c_program = mir_program.toMiniC();
-    let mut generator = MiniCGenerator::new(format!("{}.c", outputFile), c_program);
+    let c_output_path = format!("{}.c", outputFile);
+    let object_path = format!("{}.o", outputFile);
+    let bin_output_path = format!("./{}", outputFile);
+    let mut generator = MiniCGenerator::new(c_output_path.clone(), c_program);
     generator.dump().expect("c generator failed");
-    //println!("after data lifetime\n{}", program);
-    //borrowcheck(&program);
-    //dataflow(&functions);
+    if phase == BuildPhase::BuildSource {
+        // Only build the project
+        return;
+    }
+    let mut compile_args = vec!["-g", "-O1", "-c", &c_output_path, "-o", &object_path];
+    let mut link_args = vec!["-g", "-O1", &object_path, "-o", &bin_output_path];
+    if sanitized {
+        compile_args.push(CLANG_SANITIZE_FLAGS);
+        link_args.push(CLANG_SANITIZE_FLAGS);
+    }
+    Command::new("clang")
+        .args(&compile_args)
+        .status()
+        .expect("Failed to execute clang");
+    Command::new("clang")
+        .args(&link_args)
+        .status()
+        .expect("Failed to execute clang");
+    if phase == BuildPhase::Run {
+        // remove the c source and object
+        fs::remove_file(c_output_path).expect("Failed to remove C source file");
+        fs::remove_file(object_path).expect("Failed to remove object file");
+        Command::new(&bin_output_path)
+            .status()
+            .expect("Failed to execute binary");
+    }
 }

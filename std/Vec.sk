@@ -101,6 +101,11 @@ pub struct Vec[T] {
         self
     }
 
+    pub fn sort2[T: Ord[T]](mut self) -> Self {
+        self.slice().sort();
+        self
+    }
+
     pub fn contains[T: PartialEq[T]](&self, item: &T) -> Bool {
         self.slice().contains(item)
     }
@@ -219,6 +224,17 @@ instance[T: PartialEq[T]] PartialEq[Vec[T]] {
             i + 1
         }
         True
+    }
+}
+
+instance[T: Clone[T]] Clone[Vec[T]] {
+    fn clone(&self) -> Vec[T] {
+        let mut newVec = Vec.new();
+        newVec.inner = newVec.inner.grow(self.inner.capacity); // FIXME
+        for item in self.iter() {
+            newVec.push(item.clone());
+        }
+        newVec
     }
 }
 
