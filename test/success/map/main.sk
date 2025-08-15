@@ -3,6 +3,14 @@ module Main {
 import Map
 import Rand
 
+fn getValues(m: &Map[Int, Int]) -> Vec[Int] {
+    let mut values = Vec.new();
+    for i in m.iter() {
+        values.push(i.1);
+    }
+    values
+}
+
 fn randTest() {
     let mut rng = Rand.new(0);
     let mut testValues = Vec.new();
@@ -18,7 +26,7 @@ fn randTest() {
             assert(inserted.isNone());
         }
         testValues.sort2();
-        assert(testValues == Collector.getValues(&map));
+        assert(testValues == getValues(&map));
     }
 }
 
@@ -42,7 +50,7 @@ fn complexTest() {
                     currentValues.push(value);
                     currentValues.sort2();
                     //println("Current values after insertion: ${currentValues}");
-                    assert(currentValues == Collector.getValues(&m));
+                    assert(currentValues == getValues(&m));
                 }
             }
             1 -> {
@@ -92,7 +100,7 @@ fn complexTest() {
                     }
                     currentValues.remove(index);
                     //println("Current values after deletion: ${currentValues}");
-                    assert(currentValues == Collector.getValues(&m));
+                    assert(currentValues == getValues(&m));
                 }
             }
             _ -> {
@@ -111,7 +119,7 @@ fn basicTest() {
         if m.insert(v, v).isNone() {
             expectedValues.push(v);
             expectedValues.sort();
-            assert(expectedValues == Collector.getValues(&m));
+            assert(expectedValues == getValues(&m));
         }
     }
     let v = m.insert(25, 25);
@@ -121,7 +129,7 @@ fn basicTest() {
     m.remove(40);
     let found = m.get(40);
     assert(found.isNone());
-    assert([10, 20, 25, 30, 50] == Collector.getValues(&m));
+    assert([10, 20, 25, 30, 50] == getValues(&m));
     m.clear();
     let testValues = [10, 20, 30, 40, 50, 25, 25];
     for v in testValues {

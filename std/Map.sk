@@ -21,12 +21,18 @@ pub struct Map[K, V] {
     pub fn insert[K: Ord[K]](mut self, key: K, value: V) -> (Self, Option[V]) {
         let (value, new_root) = insertNode(self.root, key, value);
         self.root = new_root;
+        if !self.root.isNull() {
+            self.root.parent = null();  // Root should have no parent
+        }
         (self, value)
     }
 
     pub fn remove[K: Ord[K]](mut self, key: K) -> (Self, Option[V]) {
         let (value, new_root) = removeNode(self.root, key);
         self.root = new_root;
+        if !self.root.isNull() {
+            self.root.parent = null();  // Root should have no parent
+        }
         (self, value)
     }
 
@@ -99,6 +105,7 @@ fn rotateRight[K, V](mut z: *Node[K, V]) -> *Node[K, V] {
     y.right = z;
     z.left = t3;
 
+    y.parent = z.parent;  // Preserve parent of original root
     z.parent = y;
     if !t3.isNull() {
         t3.parent = z;
@@ -117,6 +124,7 @@ fn rotateLeft[K, V](mut z: *Node[K, V]) -> *Node[K, V] {
     y.left = z;
     z.right = t2;
 
+    y.parent = z.parent;  // Preserve parent of original root
     z.parent = y;
     if !t2.isNull() {
         t2.parent = z;
@@ -330,7 +338,6 @@ instance[K, V] Iterator[MapIterator[K, V]] {
         if self.current.isNull() {
             return (self, None)
         }
-        println("Iterator ${self.current}");
         let k = &self.current.key;
         let v = &self.current.value;
         self.current = successor(self.current);
@@ -344,43 +351,6 @@ instance[K, V] IntoIterator[Map[K, V]] {
 
     fn intoIterator(self) -> MapIterator[K, V] {
         self.iter()
-    }
-}
-
-//-----------------------------------------------------------------------------
-
-pub struct Collector {
-    values: Vec[Int],
-
-    fn collect(mut self, root: *Node[Int, Int]) -> Self {
-        if root.isNull() {
-            return self;
-        }
-        self.collect(root.left);
-        self.values = self.values.push(root.value); // TODO: reassign of self in field method calls?
-        self.collect(root.right);
-        self
-    }
-
-    pub fn getValues2(m: &Map[Int, Int]) -> Vec[Int] {
-        let mut values = Vec.new();
-        // for (_, v) in m.iter() {
-        //     values.push(v);
-        // }
-        println("Iteration started");
-        for i in m.iter() {
-            println("key: ${i.0}, value: ${i.1}");
-            values.push(i.1);
-            println("key: ${i.0}, value: ${i.1}");
-        }
-        println("Collected values: ${values}");
-        values
-    }
-
-    pub fn getValues(tree: &Map[Int, Int]) -> Vec[Int] {
-        let mut collector = Collector(Vec.new());
-        collector.collect(tree.root);
-        collector.values
     }
 }
 
