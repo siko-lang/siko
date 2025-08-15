@@ -206,8 +206,8 @@ impl<'a> Typechecker<'a> {
                         }
                         InstructionKind::Assign(_, _) => {}
                         InstructionKind::FieldAssign(_, _, _) => {}
-                        InstructionKind::AddressOfField(_, _, _) => {
-                            panic!("AddressOfField found in Typechecker, this should not happen");
+                        InstructionKind::AddressOfField(var, _, _) => {
+                            self.initializeVar(var);
                         }
                         InstructionKind::DeclareVar(var, mutability) => {
                             self.initializeVar(var);
@@ -777,11 +777,11 @@ impl<'a> Typechecker<'a> {
                 }
                 self.unify(self.getType(name), self.getType(rhs), instruction.location.clone());
             }
-            InstructionKind::FieldAssign(name, rhs, fields) => {
-                if self.mutables.get(&name.name.to_string()) == Some(&Mutability::Immutable) {
+            InstructionKind::FieldAssign(receiver, rhs, fields) => {
+                if self.mutables.get(&receiver.name.to_string()) == Some(&Mutability::Immutable) {
                     TypecheckerError::ImmutableAssign(instruction.location.clone()).report(self.ctx);
                 }
-                let receiverType = self.getType(name);
+                let receiverType = self.getType(receiver);
                 let mut receiverType = receiverType.apply(&self.substitution);
                 //println!("FieldAssign start {} {} {}", receiverType, name, instruction.location);
                 let mut ptrReceiver = false;
@@ -798,14 +798,14 @@ impl<'a> Typechecker<'a> {
                     //println!("FieldAssign updated {} {} {}", receiverType, field.name, field.location);
                 }
                 if !ptrReceiver {
-                    let kind = InstructionKind::FieldAssign(name.clone(), rhs.clone(), newFields);
+                    let kind = InstructionKind::FieldAssign(receiver.clone(), rhs.clone(), newFields);
                     builder.replaceInstruction(kind, instruction.location.clone());
                 } else {
                     let mut addressOfVar = self.bodyBuilder.createTempValue(instruction.location.clone());
                     addressOfVar.ty = Some(Type::Ptr(Box::new(receiverType.clone())));
                     self.types
                         .insert(addressOfVar.name.to_string(), Type::Ptr(Box::new(receiverType.clone())));
-                    let kind = InstructionKind::AddressOfField(addressOfVar.clone(), name.clone(), newFields);
+                    let kind = InstructionKind::AddressOfField(addressOfVar.clone(), receiver.clone(), newFields);
                     builder.addInstruction(kind, instruction.location.clone());
                     builder.step();
                     let mut storeVar = self.bodyBuilder.createTempValue(instruction.location.clone());
@@ -826,8 +826,21 @@ impl<'a> Typechecker<'a> {
                 // );
                 self.unify(self.getType(rhs), receiverType, instruction.location.clone());
             }
-            InstructionKind::AddressOfField(_, _, _) => {
-                panic!("AddressOfField not implemented");
+            InstructionKind::AddressOfField(dest, receiver, fields) => {
+                let receiverType = self.getType(receiver);
+                let mut receiverType = receiverType.apply(&self.substitution);
+                let mut newFields = Vec::new();
+                for field in fields {
+                    let fieldTy = self.checkField(receiverType, &field.name, field.location.clone());
+                    let mut newField = field.clone();
+                    newField.ty = Some(fieldTy.clone());
+                    newFields.push(newField);
+                    receiverType = fieldTy;
+                }
+                receiverType = Type::Reference(Box::new(receiverType), None);
+                let newKind = InstructionKind::AddressOfField(dest.clone(), receiver.clone(), newFields);
+                builder.replaceInstruction(newKind, instruction.location.clone());
+                self.unify(self.getType(dest), receiverType, instruction.location.clone());
             }
             InstructionKind::DeclareVar(_, _) => {}
             InstructionKind::Transform(dest, root, index) => {

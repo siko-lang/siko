@@ -1,0 +1,388 @@
+module Map {
+
+import NativePtr
+
+struct Node[K, V] {
+    key: K,
+    value: V,
+    height: Int,
+    left: *Node[K, V],
+    right: *Node[K, V],
+    parent: *Node[K, V],
+}
+
+pub struct Map[K, V] {
+    root: *Node[K, V],
+
+    pub fn new() -> Map[K, V] {
+        Map(null())
+    }
+
+    pub fn insert[K: Ord[K]](mut self, key: K, value: V) -> (Self, Option[V]) {
+        let (value, new_root) = insertNode(self.root, key, value);
+        self.root = new_root;
+        (self, value)
+    }
+
+    pub fn remove[K: Ord[K]](mut self, key: K) -> (Self, Option[V]) {
+        let (value, new_root) = removeNode(self.root, key);
+        self.root = new_root;
+        (self, value)
+    }
+
+    pub fn get[K: Ord[K]](&self, key: K) -> Option[&V] {
+        let result = searchNode(self.root, key);
+        if result.isNull() {
+            None
+        } else {
+            Some(&result.value)
+        }
+    }
+
+    pub fn clear(mut self) -> Self {
+        free_nodes(self.root);
+        self.root = null();
+        self
+    }
+
+    pub fn empty(&self) -> Bool {
+        self.root.isNull()
+    }
+
+    pub fn iter(&self) -> MapIterator[K, V] {
+        MapIterator.new(self)
+    }
+}
+
+instance[K, V] Drop[Map[K, V]] {
+    fn drop(self) -> Self {
+        self.clear()
+    }
+}
+
+fn height[K, V](n: *Node[K, V]) -> Int {
+    if n.isNull() {
+        0
+    } else {
+        n.height
+    }
+}
+
+fn updateHeight[K, V](mut n: *Node[K, V]) {
+    if !n.isNull() {
+        n.height = 1 + max(height(n.left), height(n.right));
+    }
+}
+
+fn balanceFactor[K, V](n: *Node[K, V]) -> Int {
+    if n.isNull() {
+        0
+    } else {
+        height(n.left) - height(n.right)
+    }
+}
+
+fn minValueNode[K, V](mut current: *Node[K, V]) -> *Node[K, V] {
+    if current.isNull() {
+        return current;
+    }
+    while !current.left.isNull() {
+        current = current.left;
+    }
+    current
+}
+
+fn rotateRight[K, V](mut z: *Node[K, V]) -> *Node[K, V] {
+    let mut y = z.left;
+    let mut t3 = y.right;
+
+    y.right = z;
+    z.left = t3;
+
+    z.parent = y;
+    if !t3.isNull() {
+        t3.parent = z;
+    }
+
+    updateHeight(z);
+    updateHeight(y);
+
+    y
+}
+
+fn rotateLeft[K, V](mut z: *Node[K, V]) -> *Node[K, V] {
+    let mut y = z.right;
+    let mut t2 = y.left;
+
+    y.left = z;
+    z.right = t2;
+
+    z.parent = y;
+    if !t2.isNull() {
+        t2.parent = z;
+    }
+
+    updateHeight(z);
+    updateHeight(y);
+
+    y
+}
+
+fn updateLeft[K, V](mut root: *Node[K, V], mut left: *Node[K, V]) {
+    root.left = left;
+    if !left.isNull() {
+        left.parent = root;
+    }
+}
+
+fn updateRight[K, V](mut root: *Node[K, V], mut right: *Node[K, V]) {
+    root.right = right;
+    if !right.isNull() {
+        right.parent = root;
+    }
+}
+
+fn rebalance[K, V](mut root: *Node[K, V]) -> *Node[K, V] {
+    updateHeight(root);
+    let bf = balanceFactor(root);
+    if bf > 1 {
+        // Left heavy
+        if balanceFactor(root.left) < 0 {
+            // LR case
+            let left = rotateLeft(root.left);
+            updateLeft(root, left);
+        }
+        return rotateRight(root);
+    }
+
+    if bf < -1 {
+        // Right heavy
+        if balanceFactor(root.right) > 0 {
+            // RL case
+            let right = rotateRight(root.right);
+            updateRight(root, right);
+        }
+        return rotateLeft(root);
+    }
+    root
+}
+
+fn insertNode[K, V: Ord[K]](mut root: *Node[K, V], key: K, value: V) -> (Option[V], *Node[K, V]) {
+    if root.isNull() {
+        let n = newNode(key, value);
+        return (None, n);
+    }
+    if key < root.key {
+        let (value, new_left) = insertNode(root.left, key, value);
+        updateLeft(root, new_left);
+        return (value, rebalance(root));
+    } else if key > root.key {
+        let (value, new_right) = insertNode(root.right, key, value);
+        updateRight(root, new_right);
+        return (value, rebalance(root));
+    } else {
+        // Duplicate found — update and return old
+        let old = Some(root.value);
+        root.value = value;
+        return (old, root);
+    }
+}
+
+fn dump_tree[K, V: Show[K], Show[V]](root: *Node[K, V], level: Int) {
+    loop index = 0 {
+        if index >= level {
+            break;
+        }
+        print("  ");
+        index + 1
+    }
+    if root.isNull() {
+        println("(null)");
+        return;
+    }
+    println("Node key: ${root.key}");
+    println("Node value: ${root.value}");
+    print("Left: ");
+    dump_tree(root.left, level + 1);
+    print("Right:");
+    dump_tree(root.right, level + 1);
+}
+
+fn removeNode[K, V: Ord[K]](mut root: *Node[K, V], key: K) -> (Option[V], *Node[K, V]) {
+    if root.isNull() {
+        return (None, root);
+    }
+
+    let mut value = None;
+
+    if key < root.key {
+        let (v, left) = removeNode(root.left, key);
+        value = v;
+        updateLeft(root, left);
+    } else if key > root.key {
+        let (v, right) = removeNode(root.right, key);
+        value = v;
+        updateRight(root, right);
+    } else {
+        let left = root.left;
+        let right = root.right;
+
+        value = Some(root.value);
+
+        if left.isNull() or right.isNull() {
+            let child = if !left.isNull() { left } else { right };
+            freeNode(root);
+            return (value, child);
+        } else {
+            let succ = minValueNode(right);
+            root.key = succ.key;
+            root.value = succ.value;
+            let (_, right) = removeNode(right, succ.key);
+            updateRight(root, right);
+        }
+    }
+
+    if root.isNull() {
+        return (value, root);
+    }
+
+    root = rebalance(root);
+    (value, root)
+}
+
+fn searchNode[K, V: Ord[K]](mut root: *Node[K, V], key: K) -> *Node[K, V] {
+    while !root.isNull() {
+        if key == root.key {
+            return root;
+        } else if key < root.key {
+            root = root.left;
+        } else {
+            root = root.right;
+        }
+    }
+    null()
+}
+
+fn newNode[K, V](key: K, value: V) -> *Node[K, V] {
+    let node = Node(key, value, 1, null(), null(), null());
+    let p = allocate();
+    *p = node;
+    p
+}
+
+fn freeNode[K, V](node: *Node[K, V]) {
+    if node.isNull() {
+        return;
+    }
+    deallocate(node);
+}
+
+fn free_nodes[K, V](root: *Node[K, V]) {
+    if root.isNull() {
+        return;
+    }
+    let left = root.left;
+    let right = root.right;
+    free_nodes(left);
+    free_nodes(right);
+    freeNode(root);
+}
+
+fn inorder[K, V: Show[V]](root: *Node[K, V]) {
+    if root.isNull() {
+        return;
+    }
+    inorder(root.left);
+    print("${root.value} ");
+    inorder(root.right);
+}
+
+pub struct MapIterator[K, V] {
+    m: &Map[K, V]
+    current: *Node[K, V],
+    prev: *Node[K, V]
+
+    pub fn new(m: &Map[K, V]) -> MapIterator[K, V] {
+        let current = minValueNode(m.root);
+        MapIterator(m, current, null())
+    }
+
+    fn successor(mut n: *Node[K, V]) -> *Node[K, V] {
+        if n.isNull() {
+            return null();
+        }
+        if !n.right.isNull() {
+            return minValueNode(n.right);
+        }
+        let mut p = n.parent;
+        while !p.isNull() and NativePtr.eq(n, p.right) {
+            n = p;
+            p = p.parent;
+        }
+        p
+    }
+}
+
+instance[K, V] Iterator[MapIterator[K, V]] {
+    type Item = (&K, &V)
+
+    fn next(mut self) -> (Self, Option[(&K, &V)]) {
+        if self.current.isNull() {
+            return (self, None)
+        }
+        println("Iterator");
+        printPtr(self.current);
+        let k = &self.current.key;
+        let v = &self.current.value;
+        self.current = successor(self.current);
+        (self, Some((k, v)))
+    }
+}
+
+instance[K, V] IntoIterator[Map[K, V]] {
+    type Item = (&K, &V)
+    type Iter = MapIterator[(&K, &V)]
+
+    fn intoIterator(self) -> MapIterator[K, V] {
+        self.iter()
+    }
+}
+
+//-----------------------------------------------------------------------------
+
+pub struct Collector {
+    values: Vec[Int],
+
+    fn collect(mut self, root: *Node[Int, Int]) -> Self {
+        if root.isNull() {
+            return self;
+        }
+        self.collect(root.left);
+        self.values = self.values.push(root.value); // TODO: reassign of self in field method calls?
+        self.collect(root.right);
+        self
+    }
+
+    pub fn getValues2(m: &Map[Int, Int]) -> Vec[Int] {
+        let mut values = Vec.new();
+        // for (_, v) in m.iter() {
+        //     values.push(v);
+        // }
+        println("Iteration started");
+        for i in m.iter() {
+            println("key: ${i.0}, value: ${i.1}");
+            values.push(i.1);
+            println("key: ${i.0}, value: ${i.1}");
+        }
+        println("Collected values: ${values}");
+        values
+    }
+
+    pub fn getValues(tree: &Map[Int, Int]) -> Vec[Int] {
+        let mut collector = Collector(Vec.new());
+        collector.collect(tree.root);
+        collector.values
+    }
+}
+
+}

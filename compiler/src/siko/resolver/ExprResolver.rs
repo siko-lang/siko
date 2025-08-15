@@ -582,8 +582,34 @@ impl<'a> ExprResolver<'a> {
                 self.addJump(info.body, env.getSyntaxBlockId(), expr.location.clone())
             }
             SimpleExpr::Ref(arg) => {
-                let arg = self.resolveExpr(arg, env);
-                self.bodyBuilder.current().addRef(arg, expr.location.clone())
+                if let SimpleExpr::FieldAccess(_, _) = &arg.expr {
+                    let mut fields = Vec::new();
+                    let mut current = &**arg;
+                    loop {
+                        if let SimpleExpr::FieldAccess(receiver, name) = &current.expr {
+                            let field = FieldInfo {
+                                name: FieldId::Named(name.toString()),
+                                location: name.location.clone(),
+                                ty: None,
+                            };
+                            fields.push(field);
+                            current = receiver;
+                        } else {
+                            break;
+                        }
+                    }
+                    let receiverVar = self.resolveExpr(current, env);
+                    let addrVar = self.bodyBuilder.createTempValue(expr.location.clone());
+                    fields.reverse();
+                    self.bodyBuilder.current().addInstruction(
+                        InstructionKind::AddressOfField(addrVar.clone(), receiverVar, fields),
+                        expr.location.clone(),
+                    );
+                    addrVar
+                } else {
+                    let argVar = self.resolveExpr(arg, env);
+                    self.bodyBuilder.current().addRef(argVar, expr.location.clone())
+                }
             }
             SimpleExpr::List(args) => {
                 let mut listVar =

@@ -1,285 +1,7 @@
 module Main {
 
-import NativePtr
+import Map
 import Rand
-
-pub struct Node[K, V] {
-    pub key: K,
-    pub value: V,
-    pub height: Int,
-    pub left: *Node[K, V],
-    pub right: *Node[K, V],
-
-    fn new(key: K, value: V) -> *Node[K, V] {
-        let node = Node(key, value, 1, null(), null());
-        let p = allocate();
-        *p = node;
-        p
-    }
-}
-
-pub struct Map[K, V] {
-    pub root: *Node[K, V],
-
-    pub fn new() -> Map[K, V] {
-        Map(null())
-    }
-
-    pub fn insert[K: Ord[K]](mut self, key: K, value: V) -> (Self, Bool) {
-        let (res, new_root) = Main.insert(self.root, key, value);
-        self.root = new_root;
-        (self, res)
-    }
-
-    pub fn delete[K: Ord[K]](mut self, key: K) -> Self {
-        self.root = Main.delete(self.root, key);
-        self
-    }
-
-    pub fn search[K: Ord[K]](&self, key: K) -> *Node[K, V] {
-        Main.search(self.root, key)
-    }
-
-    fn clear(mut self) -> Self {
-        free_nodes(self.root);
-        self.root = null();
-        self
-    }
-
-    fn is_empty(&self) -> Bool {
-        self.root.isNull()
-    }
-}
-
-instance[K, V] Drop[Map[K, V]] {
-    fn drop(self) -> Self {
-        self.clear()
-    }
-}
-
-fn height[K, V](n: *Node[K, V]) -> Int {
-    if n.isNull() {
-        0
-    } else {
-        n.height
-    }
-}
-
-fn update_height[K, V](mut n: *Node[K, V]) {
-    if !n.isNull() {
-        n.height = 1 + max(height(n.left), height(n.right));
-    }
-}
-
-fn balance_factor[K, V](n: *Node[K, V]) -> Int {
-    if n.isNull() {
-        0
-    } else {
-        height(n.left) - height(n.right)
-    }
-}
-
-fn min_value_node[K, V](mut current: *Node[K, V]) -> *Node[K, V] {
-    if current.isNull() {
-        return current;
-    }
-    while !current.left.isNull() {
-        current = current.left;
-    }
-    current
-}
-
-// ======================== Rotations ========================
-
-fn right_rotate[K, V](mut z: *Node[K, V]) -> *Node[K, V] {
-    let mut y = z.left;
-    let t3 = y.right;
-
-    y.right = z;
-    z.left = t3;
-
-    update_height(z);
-    update_height(y);
-
-    y
-}
-
-fn left_rotate[K, V](mut z: *Node[K, V]) -> *Node[K, V] {
-    let mut y = z.right;
-    let t2 = y.left;
-
-    y.left = z;
-    z.right = t2;
-
-    update_height(z);
-    update_height(y);
-
-    y
-}
-
-// ======================== Core ops ========================
-
-fn rebalance[K, V](mut root: *Node[K, V]) -> *Node[K, V] {
-    update_height(root);
-    let bf = balance_factor(root);
-    if bf > 1 {
-        // Left heavy
-        if balance_factor(root.left) < 0 {
-            // LR case
-            root.left = left_rotate(root.left);
-        }
-        return right_rotate(root);
-    }
-
-    if bf < -1 {
-        // Right heavy
-        if balance_factor(root.right) > 0 {
-            // RL case
-            root.right = right_rotate(root.right);
-        }
-        return left_rotate(root);
-    }
-    root
-}
-
-fn insert[K, V: Ord[K]](mut root: *Node[K, V], key: K, value: V) -> (Bool, *Node[K, V]) {
-    if root.isNull() {
-        let n = Node.new(key, value);
-        return (True, n);
-    }
-    if key < root.key {
-        // println("Inserting ${value} to the left of ${root.value}");
-        let (res, new_left) = Main.insert(root.left, key, value);
-        root.left = new_left;
-        return (res, rebalance(root));
-    } else if key > root.key {
-        //println("Inserting ${value} to the right of ${root.value}");
-        let (res, new_right) = Main.insert(root.right, key, value);
-        root.right = new_right;
-        return (res, rebalance(root));
-    } else {
-        // Duplicate found — no insert
-        return (False, root);
-    }
-}
-
-fn dump_tree[K, V: Show[K], Show[V]](root: *Node[K, V], level: Int) {
-    loop index = 0 {
-        if index >= level {
-            break;
-        }
-        print("  ");
-        index + 1
-    }
-    if root.isNull() {
-        println("(null)");
-        return;
-    }
-    println("Node key: ${root.key}");
-    println("Node value: ${root.value}");
-    print("Left: ");
-    dump_tree(root.left, level + 1);
-    print("Right:");
-    dump_tree(root.right, level + 1);
-}
-
-fn delete[K, V: Ord[K]](mut root: *Node[K, V], key: K) -> *Node[K, V] {
-    if root.isNull() {
-        return root;
-    }
-
-    if key < root.key {
-        root.left = Main.delete(root.left, key);
-    } else if key > root.key {
-        root.right = Main.delete(root.right, key);
-    } else {
-        let left = root.left;
-        let right = root.right;
-
-        if left.isNull() or right.isNull() {
-            let child = if !left.isNull() { left } else { right };
-            free_node(root);
-            return child;
-        } else {
-            let succ = min_value_node(right);
-            root.key = succ.key;
-            root.value = succ.value;
-            root.right = Main.delete(right, succ.key);
-        }
-    }
-
-    if root.isNull() {
-        return root;
-    }
-
-    rebalance(root)
-}
-
-fn search[K, V: Ord[K]](mut root: *Node[K, V], key: K) -> *Node[K, V] {
-    while !root.isNull() {
-        if key == root.key {
-            return root;
-        } else if key < root.key {
-            root = root.left;
-        } else {
-            root = root.right;
-        }
-    }
-    null()
-}
-
-// ======================== Cleanup ========================
-
-fn free_nodes[K, V](root: *Node[K, V]) {
-    if root.isNull() {
-        return;
-    }
-    let left = root.left;
-    let right = root.right;
-    free_nodes(left);
-    free_nodes(right);
-    free_node(root);
-}
-
-fn free_node[K, V](node: *Node[K, V]) {
-    if node.isNull() {
-        return;
-    }
-    deallocate(node);
-}
-
-// ======================== Traversal ========================
-
-fn inorder[K, V: Show[V]](root: *Node[K, V]) {
-    if root.isNull() {
-        return;
-    }
-    inorder(root.left);
-    print("${root.value} ");
-    inorder(root.right);
-}
-
-struct Collector {
-    values: Vec[Int],
-
-    fn collect(mut self, root: *Node[Int, Int]) -> Self {
-        if root.isNull() {
-            return self;
-        }
-        self.collect(root.left);
-        self.values = self.values.push(root.value); // TODO: reassign of self in field method calls?
-        self.collect(root.right);
-        self
-    }
-
-    fn getValues(tree: &Map[Int, Int]) -> Vec[Int] {
-        let mut collector = Collector(Vec.new());
-        collector.collect(tree.root);
-        collector.values
-    }
-}
-
-// ======================== Main Demo ========================
 
 fn randTest() {
     let mut rng = Rand.new(0);
@@ -290,10 +12,10 @@ fn randTest() {
         // println("Inserting: ${value} len ${testValues.len()}");
         let inserted = map.insert(value, value);
         if testValues.contains(&value) {
-            assert(!inserted);
+            assert(inserted.isSome());
         } else {
             testValues.push(value);
-            assert(inserted);
+            assert(inserted.isNone());
         }
         testValues.sort2();
         assert(testValues == Collector.getValues(&map));
@@ -301,7 +23,7 @@ fn randTest() {
 }
 
 fn complexTest() {
-    let mut tree = Map.new();
+    let mut m = Map.new();
     let mut currentValues = Vec.new();
     let mut rng = Rand.new(0);
     for _ in 0..100 {
@@ -313,14 +35,14 @@ fn complexTest() {
                 let value = rng.next();
                 if currentValues.contains(&value) {
                     //println("Insert command, but value already exists: ${value}");
-                    assert(!tree.insert(value, value));
+                    assert(m.insert(value, value).isSome());
                 } else {
                     //println("Insert command with new value: ${value}");
-                    assert(tree.insert(value, value));
+                    assert(m.insert(value, value).isNone());
                     currentValues.push(value);
                     currentValues.sort2();
                     //println("Current values after insertion: ${currentValues}");
-                    assert(currentValues == Collector.getValues(&tree));
+                    assert(currentValues == Collector.getValues(&m));
                 }
             }
             1 -> {
@@ -335,25 +57,43 @@ fn complexTest() {
                 //println("Will look at value at index ${index}");
                 let value = currentValues.get(index);
                 //println("Searching for ${value}");
-                let found = tree.search(value);
-                assert(!found.isNull());
+                let found = m.get(value);
+                assert(!found.isNone());
             }
             2 -> {
-                //println("Delete command");
+                //println("Remove command");
                 if currentValues.empty() {
-                    //println("No values to delete");
-                    continue;
+                    //println("No values to remove");
+                    let v = rng.next();
+                    let result = m.remove(v);
+                    match result {
+                        Some(v2) -> {
+                            panic("Removed non existing data ${v} and returned ${v2}");
+                        }
+                        None -> {}
+                    }
+                } else {
+                    let index = rng.next().mod(currentValues.len());
+                    let value = currentValues.get(index);
+                    //println("Deleting ${value}");
+                    let found = m.get(value);
+                    //println("Found: ${found.isNull()}");
+                    assert(!found.isNone());
+                    let removed = m.remove(value);
+                    match removed {
+                        Some(v) -> {
+                            if v != value {
+                                panic("removed ${value} but got ${v} as removed value in result");
+                            }
+                        }
+                        None -> {
+                            panic("Removed value not returned");
+                        }
+                    }
+                    currentValues.remove(index);
+                    //println("Current values after deletion: ${currentValues}");
+                    assert(currentValues == Collector.getValues(&m));
                 }
-                let index = rng.next().mod(currentValues.len());
-                let value = currentValues.get(index);
-                //println("Deleting ${value}");
-                let found = tree.search(value);
-                //println("Found: ${found.isNull()}");
-                assert(!found.isNull());
-                tree.delete(value);
-                currentValues.remove(index);
-                //println("Current values after deletion: ${currentValues}");
-                assert(currentValues == Collector.getValues(&tree));
             }
             _ -> {
                 panic("Unexpected command");
@@ -363,29 +103,30 @@ fn complexTest() {
 }
 
 fn basicTest() {
-    let mut tree = Map.new();
+    let mut m = Map.new();
     let mut expectedValues = Vec.new();
     let testValues = [10, 20, 30, 40, 50, 25];
     for v in testValues {
-        if tree.insert(v, v) {
+        //println("Inserting: ${v}");
+        if m.insert(v, v).isNone() {
             expectedValues.push(v);
             expectedValues.sort();
-            assert(expectedValues == Collector.getValues(&tree));
+            assert(expectedValues == Collector.getValues(&m));
         }
     }
-    let v = tree.insert(25, 25);
-    assert(!v);
-    let found = tree.search(25);
-    assert(!found.isNull());
-    tree.delete(40);
-    let found = tree.search(40);
-    assert(found.isNull());
-    assert([10, 20, 25, 30, 50] == Collector.getValues(&tree));
-    tree.clear();
+    let v = m.insert(25, 25);
+    assert(v.isSome());
+    let found = m.get(25);
+    assert(found.isSome());
+    m.remove(40);
+    let found = m.get(40);
+    assert(found.isNone());
+    assert([10, 20, 25, 30, 50] == Collector.getValues(&m));
+    m.clear();
     let testValues = [10, 20, 30, 40, 50, 25, 25];
     for v in testValues {
-        let n = tree.search(v);
-        assert(n.isNull());
+        let n = m.get(v);
+        assert(n.isNone());
     }
 }
 

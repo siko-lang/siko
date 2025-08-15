@@ -44,7 +44,10 @@ trait RemoveTuples {
 impl RemoveTuples for Type {
     fn removeTuples(&self, ctx: &mut Context) -> Self {
         match self {
-            Type::Tuple(_) => {
+            Type::Tuple(args) => {
+                for arg in args {
+                    arg.removeTuples(ctx);
+                }
                 ctx.tuples.insert(self.clone());
                 Type::Named(getTuple(self), Vec::new())
             }
@@ -276,13 +279,18 @@ pub fn removeTuples(program: &Program) -> Program {
             let mut fields = Vec::new();
             let mut params = Vec::new();
             for (index, arg) in args.iter().enumerate() {
+                let argType = if arg.isTuple() {
+                    Type::Named(getTuple(arg), Vec::new())
+                } else {
+                    arg.clone()
+                };
                 let name = fieldNameForIndex(index);
                 let field = Field {
                     name: name.clone(),
-                    ty: arg.clone(),
+                    ty: argType.clone(),
                 };
                 fields.push(field);
-                let param = Parameter::Named(name, arg.clone(), false);
+                let param = Parameter::Named(name, argType, false);
                 params.push(param);
             }
             let tupleStruct = Struct {

@@ -251,9 +251,17 @@ impl<'a> Builder<'a> {
                             tmpVariable.clone()
                         };
 
-                        block
-                            .instructions
-                            .push(Instruction::AddressOfField(destVar.clone(), currentReceiver, findex));
+                        if index == fields.len() - 1 {
+                            block.instructions.push(Instruction::AddressOfField(
+                                destVar.clone(),
+                                currentReceiver,
+                                findex,
+                            ));
+                        } else {
+                            block
+                                .instructions
+                                .push(Instruction::GetFieldRef(destVar.clone(), currentReceiver, findex));
+                        }
                         currentReceiver = destVar;
                     }
                 }
