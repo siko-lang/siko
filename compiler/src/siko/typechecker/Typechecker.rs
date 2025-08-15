@@ -12,13 +12,12 @@ use crate::siko::{
         ConstraintContext::{Constraint as HirConstraint, ConstraintContext},
         Data::{Enum, Struct},
         Function::{BlockId, Function, Parameter},
-        InstanceResolver::ResolutionResult,
         Instantiation::{instantiateEnum, instantiateStruct, instantiateTrait, instantiateTypes},
         Instruction::{FieldId, FieldInfo, Instruction, InstructionKind, Mutability},
         Program::Program,
         Substitution::Substitution,
         TraitMethodSelector::TraitMethodSelector,
-        Type::{formatTypes, Type, TypeVar},
+        Type::{Type, TypeVar},
         TypeVarAllocator::TypeVarAllocator,
         Unification::unify,
         Variable::Variable,
@@ -31,6 +30,7 @@ use crate::siko::{
         },
         QualifiedName,
     },
+    typechecker::ConstraintChecker::ConstraintChecker,
 };
 
 use super::Error::TypecheckerError;
@@ -52,7 +52,7 @@ pub fn typecheck(ctx: &ReportContext, mut program: Program) -> Program {
     program
 }
 
-fn reportError(ctx: &ReportContext, ty1: Type, ty2: Type, location: Location) {
+pub fn reportTypeMismatch(ctx: &ReportContext, ty1: Type, ty2: Type, location: Location) {
     TypecheckerError::TypeMismatch(format!("{}", ty1), format!("{}", ty2), location).report(ctx)
 }
 
@@ -236,7 +236,7 @@ impl<'a> Typechecker<'a> {
     fn unify(&mut self, ty1: Type, ty2: Type, location: Location) {
         //println!("UNIFY {} {}", ty1, ty2);
         if let Err(_) = unify(&mut self.substitution, ty1.clone(), ty2.clone(), false) {
-            reportError(
+            reportTypeMismatch(
                 self.ctx,
                 ty1.apply(&self.substitution),
                 ty2.apply(&self.substitution),
@@ -288,23 +288,20 @@ impl<'a> Typechecker<'a> {
         fnType: Type,
         neededConstraints: &ConstraintContext,
     ) -> Type {
-        // println!(
-        //     "checkFunctionCall: {} {} {}",
-        //     fnType, neededConstraints, knownConstraints
-        // );
-        let mut contextArgs = BTreeSet::new();
-        for arg in &neededConstraints.typeParameters {
-            contextArgs = arg.collectVars(contextArgs);
-        }
+        //println!(
+        //    "checkFunctionCall: {} {} {}",
+        //    fnType, neededConstraints, self.knownConstraints
+        //);
         let mut types = neededConstraints.typeParameters.clone();
         types.push(fnType.clone());
         let sub = instantiateTypes(&mut self.allocator, &types);
-        let fnType = fnType.apply(&sub);
-        //println!("inst {}", fnType);
+        let instantiatedFnType = fnType.apply(&sub);
+        //println!("inst {}", instantiatedFnType);
         let constraintContext = neededConstraints.clone().apply(&sub);
-        let (fnArgs, mut fnResult) = match fnType.clone().splitFnType() {
+        //println!("applied constraintContext {}", constraintContext);
+        let (fnArgs, mut fnResult) = match instantiatedFnType.clone().splitFnType() {
             Some((fnArgs, fnResult)) => (fnArgs, fnResult),
-            None => return fnType,
+            None => panic!("Function type {} is not a function type!", instantiatedFnType),
         };
         if args.len() != fnArgs.len() {
             TypecheckerError::ArgCountMismatch(fnArgs.len() as u32, args.len() as u32, resultVar.location.clone())
@@ -313,88 +310,71 @@ impl<'a> Typechecker<'a> {
         if fnArgs.len() > 0 {
             fnResult = fnResult.changeSelfType(fnArgs[0].clone());
         }
-        for (arg, fnArg) in zip(args, fnArgs) {
-            let fnArg2 = fnArg.apply(&self.substitution);
-            self.updateConverterDestination(arg, &fnArg2);
-        }
-        let constraints = constraintContext.apply(&self.substitution);
-        self.checkConstraint(&constraints, resultVar.location.clone());
         //println!("fnResult {}", fnResult);
         //println!("self.getType(resultVar) {}", self.getType(resultVar));
-        let fnResult = fnResult.apply(&self.substitution);
-        self.unify(self.getType(resultVar), fnResult, resultVar.location.clone());
-        fnType.apply(&self.substitution)
-    }
+        let fnResult = fnResult.clone().apply(&self.substitution);
+        //println!("fnResult {}", fnResult);
+        self.unify(self.getType(resultVar), fnResult.clone(), resultVar.location.clone());
+        let originalSub = self.substitution.clone();
+        let mut helperSub = Substitution::new();
+        loop {
+            for (arg, fnArg) in zip(args, &fnArgs) {
+                //println!("arg {} fnArg {}", arg, fnArg);
+                let mut fnArg2 = fnArg.clone().apply(&self.substitution);
+                //println!("fnArg2 {}", fnArg2);
+                if !helperSub.empty() {
+                    fnArg2 = fnArg2.apply(&helperSub);
+                }
+                //println!("Convert arg {} => fnArg {}", arg, fnArg2);
+                self.updateConverterDestination(arg, &fnArg2);
+            }
+            let constraints = constraintContext.clone().apply(&self.substitution);
 
-    fn checkConstraint(&mut self, neededConstraints: &ConstraintContext, location: Location) {
-        //println!("needed {}", neededConstraints);
-        //println!("known {}", self.knownConstraints);
-        for c in &neededConstraints.constraints {
-            //println!("knownConstraints.contains(c) {}", self.knownConstraints.contains(c));
-            if !self.knownConstraints.contains(c) {
-                if let Some(instances) = self.program.instanceResolver.lookupInstances(&c.traitName) {
-                    //println!("c.args {}", formatTypes(&c.args));
-                    let mut fullyGeneric = true;
-                    for arg in &c.args {
-                        if !arg.isTypeVar() {
-                            fullyGeneric = false;
-                            break;
-                        }
-                    }
-                    if fullyGeneric {
-                        continue;
-                    }
-                    let resolutionResult = instances.find(&mut self.allocator, &c.args);
-                    match resolutionResult {
-                        ResolutionResult::Winner(instance) => {
-                            //println!("Base Winner {} for {}", instance, formatTypes(&c.args));
-                            let instance = instance.apply(&self.substitution);
-                            //println!("Winner {} for {}", instance, formatTypes(&c.args));
-                            for ctxAssocTy in &c.associatedTypes {
-                                for instanceAssocTy in &instance.associatedTypes {
-                                    if instanceAssocTy.name == ctxAssocTy.name {
-                                        //println!("ASSOC MATCH {} {}", instanceAssocTy.ty, ctxAssocTy.ty);
-                                        if let Err(_) = unify(
-                                            &mut self.substitution,
-                                            instanceAssocTy.ty.clone(),
-                                            ctxAssocTy.ty.clone(),
-                                            false,
-                                        ) {
-                                            reportError(
-                                                self.ctx,
-                                                instanceAssocTy.ty.clone().apply(&self.substitution),
-                                                ctxAssocTy.ty.clone().apply(&self.substitution),
-                                                location.clone(),
-                                            );
-                                        }
+            let mut constraintChecker = ConstraintChecker::new(
+                &self.allocator,
+                self.ctx,
+                self.program,
+                &self.knownConstraints,
+                &self.substitution,
+            );
+
+            match constraintChecker.checkConstraint(&constraints, resultVar.location.clone()) {
+                Ok(()) => {
+                    self.allocator = constraintChecker.allocator;
+                    self.substitution = constraintChecker.substitution;
+                    break;
+                }
+                Err(err) => {
+                    if helperSub.empty() {
+                        let newFnType = instantiatedFnType.clone().apply(&constraintChecker.substitution);
+                        let (newFnArgs, _) = newFnType.splitFnType().expect("Failed to split function type");
+                        for (arg, newFnArg) in zip(fnArgs.clone(), &newFnArgs) {
+                            //println!("arg {} fnArg {}", arg, newFnArg);
+                            if arg.isGeneric() && newFnArg.isReference() {
+                                if let Type::Reference(inner, _) = newFnArg {
+                                    if self.program.instanceResolver.isCopy(&inner) {
+                                        //println!("Worth trying to clone {}", inner);
+                                        helperSub.add(arg.clone(), *inner.clone());
                                     }
                                 }
                             }
                         }
-                        ResolutionResult::Ambiguous(_) => {
-                            TypecheckerError::AmbiguousInstances(
-                                c.traitName.toString(),
-                                formatTypes(&c.args),
-                                location.clone(),
-                                Vec::new(),
-                            )
-                            .report(self.ctx);
-                        }
-                        ResolutionResult::NoInstanceFound => {
-                            TypecheckerError::InstanceNotFound(
-                                c.traitName.toString(),
-                                formatTypes(&c.args),
-                                location.clone(),
-                            )
-                            .report(self.ctx);
+                        if !helperSub.empty() {
+                            //println!("Applying helper substitution: {}", helperSub);
+                            self.substitution = originalSub.clone();
+                            continue;
                         }
                     }
-                } else {
-                    TypecheckerError::InstanceNotFound(c.traitName.toString(), formatTypes(&c.args), location.clone())
-                        .report(self.ctx);
+                    err.report(self.ctx);
                 }
             }
         }
+        // println!("fnResult {}", fnResult);
+        // println!("self.getType(resultVar) {}", self.getType(resultVar));
+        let fnResult = fnResult.apply(&self.substitution);
+        //println!("fnResult {}", fnResult);
+        self.unify(self.getType(resultVar), fnResult, resultVar.location.clone());
+        instantiatedFnType.apply(&self.substitution)
     }
 
     fn lookupTraitMethod(&mut self, receiverType: Type, methodName: &String, location: Location) -> QualifiedName {
@@ -562,6 +542,7 @@ impl<'a> Typechecker<'a> {
         //println!("checkInstruction {}", instruction);
         match &instruction.kind {
             InstructionKind::FunctionCall(dest, name, args) => {
+                //println!("FunctionCall {} {} {:?}", dest, name, args);
                 let Some(targetFn) = self.program.functions.get(name) else {
                     panic!("Function not found {}", name);
                 };

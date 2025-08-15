@@ -163,6 +163,8 @@ impl Program {
                     let size = match &f.ty {
                         Type::Void => 0,
                         Type::UInt8 => 1,
+                        Type::UInt32 => 4,
+                        Type::UInt64 => 8,
                         Type::Int16 => 2,
                         Type::Int32 => 4,
                         Type::Int64 => 8,
@@ -175,6 +177,8 @@ impl Program {
                     let alignment = match &f.ty {
                         Type::Void => 1,
                         Type::UInt8 => 1,
+                        Type::UInt32 => 4,
+                        Type::UInt64 => 8,
                         Type::Int16 => 2,
                         Type::Int32 => 4,
                         Type::Int64 => 8,
@@ -206,6 +210,8 @@ impl Program {
                     let size = match &v.ty {
                         Type::Void => 0,
                         Type::UInt8 => 1,
+                        Type::UInt32 => 4,
+                        Type::UInt64 => 8,
                         Type::Int16 => 2,
                         Type::Int32 => 4,
                         Type::Int64 => 8,
@@ -218,6 +224,8 @@ impl Program {
                     let alignment = match &v.ty {
                         Type::Void => 0,
                         Type::UInt8 => 1,
+                        Type::UInt32 => 4,
+                        Type::UInt64 => 8,
                         Type::Int16 => 2,
                         Type::Int32 => 4,
                         Type::Int64 => 8,

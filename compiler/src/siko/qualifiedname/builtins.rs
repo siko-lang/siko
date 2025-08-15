@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::siko::qualifiedname::{build, QualifiedName};
 
 pub fn getBoolTypeName() -> QualifiedName {
@@ -10,6 +12,10 @@ pub fn getIntTypeName() -> QualifiedName {
 
 pub fn getU8TypeName() -> QualifiedName {
     build("Int", "U8")
+}
+
+pub fn getU64TypeName() -> QualifiedName {
+    build("Int", "U64")
 }
 
 pub fn getI32TypeName() -> QualifiedName {
@@ -76,6 +82,10 @@ pub fn getNativePtrToRefName() -> QualifiedName {
     build("NativePtr", "toRef")
 }
 
+pub fn getNativePtrToU64Name() -> QualifiedName {
+    build("NativePtr", "toU64")
+}
+
 pub fn getNativePtrPrintName() -> QualifiedName {
     build("NativePtr", "print")
 }
@@ -100,68 +110,76 @@ pub fn getCloneFnName() -> QualifiedName {
     build("Std.Ops", "Clone").add(format!("clone"))
 }
 
-pub fn getIntAddName() -> QualifiedName {
-    build("Int", "Int").add(format!("add"))
+pub enum IntKind {
+    Int,
+    U8,
+    U32,
+    U64,
+    I32,
 }
 
-pub fn getIntSubName() -> QualifiedName {
-    build("Int", "Int").add(format!("sub"))
-}
-
-pub fn getIntMulName() -> QualifiedName {
-    build("Int", "Int").add(format!("mul"))
-}
-
-pub fn getIntDivName() -> QualifiedName {
-    build("Int", "Int").add(format!("div"))
-}
-
-pub fn getIntModName() -> QualifiedName {
-    build("Int", "Int").add(format!("mod"))
+impl fmt::Display for IntKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            IntKind::Int => write!(f, "Int"),
+            IntKind::U8 => write!(f, "U8"),
+            IntKind::U32 => write!(f, "U32"),
+            IntKind::U64 => write!(f, "U64"),
+            IntKind::I32 => write!(f, "I32"),
+        }
+    }
 }
 
 pub fn getIntToU8Name() -> QualifiedName {
     build("Int", "Int").add(format!("toU8"))
 }
 
-pub fn getIntEqName() -> QualifiedName {
-    build("Int", "Int").add(format!("eq"))
+pub fn getIntToU32Name() -> QualifiedName {
+    build("Int", "Int").add(format!("toU32"))
 }
 
-pub fn getIntLessThanName() -> QualifiedName {
-    build("Int", "Int").add(format!("lessThan"))
+pub fn getIntToU64Name() -> QualifiedName {
+    build("Int", "Int").add(format!("toU64"))
 }
 
-pub fn getIntCloneName() -> QualifiedName {
-    build("Int", "Int").add(format!("clone"))
+pub fn getIntToI32Name() -> QualifiedName {
+    build("Int", "Int").add(format!("toI32"))
 }
 
-pub fn getU8AddName() -> QualifiedName {
-    build("Int", "U8").add(format!("add"))
+pub fn getIntAddName(kind: IntKind) -> QualifiedName {
+    build("Int", &kind.to_string()).add(format!("add"))
 }
 
-pub fn getU8SubName() -> QualifiedName {
-    build("Int", "U8").add(format!("sub"))
+pub fn getIntSubName(kind: IntKind) -> QualifiedName {
+    build("Int", &kind.to_string()).add(format!("sub"))
 }
 
-pub fn getU8MulName() -> QualifiedName {
-    build("Int", "U8").add(format!("mul"))
+pub fn getIntMulName(kind: IntKind) -> QualifiedName {
+    build("Int", &kind.to_string()).add(format!("mul"))
 }
 
-pub fn getU8DivName() -> QualifiedName {
-    build("Int", "U8").add(format!("div"))
+pub fn getIntDivName(kind: IntKind) -> QualifiedName {
+    build("Int", &kind.to_string()).add(format!("div"))
 }
 
-pub fn getU8EqName() -> QualifiedName {
-    build("Int", "U8").add(format!("eq"))
+pub fn getIntModName(kind: IntKind) -> QualifiedName {
+    build("Int", &kind.to_string()).add(format!("mod"))
 }
 
-pub fn getU8LessThanName() -> QualifiedName {
-    build("Int", "U8").add(format!("lessThan"))
+pub fn getIntEqName(kind: IntKind) -> QualifiedName {
+    build("Int", &kind.to_string()).add(format!("eq"))
 }
 
-pub fn getU8CloneName() -> QualifiedName {
-    build("Int", "U8").add(format!("clone"))
+pub fn getIntLessThanName(kind: IntKind) -> QualifiedName {
+    build("Int", &kind.to_string()).add(format!("lessThan"))
+}
+
+pub fn getIntCloneName(kind: IntKind) -> QualifiedName {
+    build("Int", &kind.to_string()).add(format!("clone"))
+}
+
+pub fn getU64ToIntName() -> QualifiedName {
+    build("Int", "U64").add(format!("toInt"))
 }
 
 pub fn getDropFnName() -> QualifiedName {

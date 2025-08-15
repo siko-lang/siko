@@ -13,6 +13,12 @@ pub extern struct Int {
 
     pub fn toU8(&self) -> U8 = extern
 
+    pub fn toU32(&self) -> U32 = extern
+
+    pub fn toU64(&self) -> U64 = extern
+
+    pub fn toI32(&self) -> I32 = extern
+
     pub fn eq(&self, other: &Int) -> Bool = extern
 
     pub fn lessThan(&self, other: &Int) -> Bool = extern
@@ -23,13 +29,6 @@ pub extern struct Int {
 instance Add[Int, Int] {
     type Output = Int
     fn add(self, other: Int) -> Int {
-        self.add(other)
-    }
-}
-
-instance Add[Int, &Int] {
-    type Output = Int
-    fn add(self, other: &Int) -> Int {
         self.add(other)
     }
 }
@@ -104,34 +103,77 @@ instance Neg[Int] {
 
 instance Show[Int] {
     fn show(&self) -> String {
-        let mut n = self.clone();
-        if n == 0 {
-            return "0".toString();
-        }
-
-        let mut isNegative = False;
-
-        if n < 0 {
-            isNegative = True;
-            n = -n;
-        }
-
-        let mut digits: Vec[U8] = Vec.new();
-
-        while n > 0 {
-            let value = n.mod(10) + 48;
-            digits.push(value.toU8());
-            n = n / 10;
-        }
-
-        if isNegative {
-            digits.push(45.toU8());
-        }
-
-        digits.reverse();
-
-        String.fromU8(digits)
+        showNum(self)
     }
+}
+
+instance Mod[Int] {
+    fn mod(&self, other: &Int) -> Int {
+        self.mod(other)
+    }
+}
+
+instance IntoInt[Int] {
+    fn toInt(&self) -> Int {
+        self
+    }
+}
+
+instance FromInt[Int] {
+    fn fromInt(s: Int) -> Int {
+        s
+    }
+}
+
+trait Mod[T] {
+    fn mod(&self, other: &T) -> T
+}
+
+trait IntoInt[T] {
+    fn toInt(&self) -> Int
+}
+
+trait FromInt[T] {
+    fn fromInt(v: Int) -> T
+}
+
+fn showNum[T: Clone[T], PartialEq[T],
+              PartialOrd[T], Neg[T],
+              Mod[T], FromInt[T], IntoInt[T],
+              Div[T], Add[T, T, Output=T]](num: &T) -> String {
+    // FIXME: fix constants
+    let zero: T = fromInt(0);
+    let ten: T = fromInt(10);
+    let offset: T = fromInt(48);
+
+    let mut n = num.clone();
+    if n == zero {
+        return "0".toString();
+    }
+
+    let mut isNegative = False;
+
+    if n < zero {
+        isNegative = True;
+        n = -n;
+    }
+
+    let mut digits: Vec[U8] = Vec.new();
+
+    while n > zero {
+        let base: T = ten.clone();
+        let value: T = n.mod(base) + offset.clone();
+        digits.push(value.toInt().toU8());
+        n = n / base;
+    }
+
+    if isNegative {
+        digits.push(45.toU8());
+    }
+
+    digits.reverse();
+
+    String.fromU8(digits)
 }
 
 pub extern struct U8 {
@@ -242,13 +284,6 @@ instance Add[I32, I32] {
     }
 }
 
-instance Add[I32, &I32] {
-    type Output = I32
-    fn add(self, other: &I32) -> I32 {
-        self.add(other)
-    }
-}
-
 instance Sub[I32] {
     fn sub(self, other: I32) -> I32 {
         self.sub(other)
@@ -310,5 +345,233 @@ instance Clone[I32] {
 }
 
 instance Copy[I32]
+
+pub extern struct U32 {
+    pub fn add(self, other: U32) -> U32 = extern
+
+    pub fn sub(self, other: U32) -> U32 = extern
+
+    pub fn mul(self, other: U32) -> U32 = extern
+
+    pub fn div(self, other: U32) -> U32 = extern
+
+    pub fn eq(&self, other: &U32) -> Bool = extern
+
+    pub fn lessThan(&self, other: &U32) -> Bool = extern
+
+    pub fn clone(&self) -> U32 = extern
+}
+
+instance Add[U32, U32] {
+    type Output = U32
+    fn add(self, other: U32) -> U32 {
+        self.add(other)
+    }
+}
+
+instance Add[U32, &U32] {
+    type Output = U32
+    fn add(self, other: &U32) -> U32 {
+        self.add(other)
+    }
+}
+
+instance Sub[U32] {
+    fn sub(self, other: U32) -> U32 {
+        self.sub(other)
+    }
+}
+
+instance Mul[U32] {
+    fn mul(self, other: U32) -> U32 {
+        self.mul(other)
+    }
+}
+
+instance Div[U32] {
+    fn div(self, other: U32) -> U32 {
+        self.div(other)
+    }
+}
+
+instance PartialEq[U32] {
+    fn eq(&self, other: &U32) -> Bool {
+        self.eq(other)
+    }
+}
+
+instance Eq[U32]
+
+instance PartialOrd[U32] {
+    fn partialCmp(&self, other: &U32) -> Option[Ordering] {
+        if self.eq(other) {
+            Some(Equal)
+        } else {
+            if self.lessThan(other) {
+                Some(Less)
+            } else {
+                Some(Greater)
+            }
+        }
+    }
+}
+
+instance Ord[U32] {
+    fn cmp(&self, other: &U32) -> Ordering {
+        if self.eq(other) {
+            Equal
+        } else {
+            if self.lessThan(other) {
+                Less
+            } else {
+                Greater
+            }
+        }
+    }
+}
+
+instance Clone[U32] {
+    fn clone(&self) -> U32 {
+        self.clone()
+    }
+}
+
+instance Copy[U32]
+
+pub extern struct U64 {
+    pub fn add(self, other: U64) -> U64 = extern
+
+    pub fn sub(self, other: U64) -> U64 = extern
+
+    pub fn mul(self, other: U64) -> U64 = extern
+
+    pub fn div(self, other: U64) -> U64 = extern
+
+    pub fn mod(self, other: U64) -> U64 = extern
+
+    pub fn eq(&self, other: &U64) -> Bool = extern
+
+    pub fn toInt(&self) -> Int = extern
+
+    pub fn lessThan(&self, other: &U64) -> Bool = extern
+
+    pub fn clone(&self) -> U64 = extern
+
+    pub fn toHex(&self) -> String {
+        let digits = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d", "e", "f"];
+        let mut hex = String.new();
+        let mut n = self.clone();
+        let zero: U64 = fromInt(0);
+        let sixteen: U64 = fromInt(16);
+
+        while n > zero {
+            let rem = n.mod(sixteen);
+            hex = hex + digits.get(rem.toInt());
+            n = n / sixteen.clone();
+        }
+        hex = hex + "x0";
+        hex.reverse();
+        hex
+    }
+}
+
+instance Add[U64, U64] {
+    type Output = U64
+    fn add(self, other: U64) -> U64 {
+        self.add(other)
+    }
+}
+
+instance Sub[U64] {
+    fn sub(self, other: U64) -> U64 {
+        self.sub(other)
+    }
+}
+
+instance Mul[U64] {
+    fn mul(self, other: U64) -> U64 {
+        self.mul(other)
+    }
+}
+
+instance Div[U64] {
+    fn div(self, other: U64) -> U64 {
+        self.div(other)
+    }
+}
+
+instance PartialEq[U64] {
+    fn eq(&self, other: &U64) -> Bool {
+        self.eq(other)
+    }
+}
+
+instance Eq[U64]
+
+instance PartialOrd[U64] {
+    fn partialCmp(&self, other: &U64) -> Option[Ordering] {
+        if self.eq(other) {
+            Some(Equal)
+        } else {
+            if self.lessThan(other) {
+                Some(Less)
+            } else {
+                Some(Greater)
+            }
+        }
+    }
+}
+
+instance Ord[U64] {
+    fn cmp(&self, other: &U64) -> Ordering {
+        if self.eq(other) {
+            Equal
+        } else {
+            if self.lessThan(other) {
+                Less
+            } else {
+                Greater
+            }
+        }
+    }
+}
+
+instance Clone[U64] {
+    fn clone(&self) -> U64 {
+        self.clone()
+    }
+}
+
+instance Copy[U64]
+
+instance Show[U64] {
+    fn show(&self) -> String {
+        showNum(self)
+    }
+}
+
+instance Neg[U64] {
+    fn negative(self) -> U64 {
+        self
+    }
+}
+
+instance Mod[U64] {
+    fn mod(&self, other: &U64) -> U64 {
+        self.mod(other)
+    }
+}
+
+instance FromInt[U64] {
+    fn fromInt(v: Int) -> U64 {
+        v.toU64()
+    }
+}
+
+instance IntoInt[U64] {
+    fn toInt(&self) -> Int {
+        self.toInt()
+    }
+}
 
 }

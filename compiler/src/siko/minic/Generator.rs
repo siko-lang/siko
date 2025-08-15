@@ -4,21 +4,10 @@ use std::{
     io::{self, Write},
 };
 
-use crate::siko::{
-    minic::Function::Value,
-    qualifiedname::builtins::{
-        getIntAddName, getIntCloneName, getIntDivName, getIntEqName, getIntLessThanName, getIntModName, getIntMulName,
-        getIntSubName, getIntToU8Name, getNativePtrAllocateArrayName, getNativePtrCloneName,
-        getNativePtrDeallocateName, getNativePtrEqName, getNativePtrIsNullName, getNativePtrLoadName,
-        getNativePtrMemcmpName, getNativePtrMemcpyName, getNativePtrMemmoveName, getNativePtrNullName,
-        getNativePtrOffsetName, getNativePtrPrintName, getNativePtrStoreName, getStdBasicUtilAbortName,
-        getStdBasicUtilPrintStrName, getStdBasicUtilPrintlnStrName, getU8AddName, getU8CloneName, getU8DivName,
-        getU8EqName, getU8LessThanName, getU8MulName, getU8SubName,
-    },
-    util::DependencyProcessor::processDependencies,
-};
+use crate::siko::{minic::Function::Value, util::DependencyProcessor::processDependencies};
 
 use super::{
+    Builtins::dumpBuiltinFunction,
     Data::Struct,
     Function::{Function, GetMode, Instruction},
     Program::Program,
@@ -38,6 +27,8 @@ pub fn getTypeName(ty: &Type) -> String {
     match &ty {
         Type::Void => "void".to_string(),
         Type::UInt8 => "uint8_t".to_string(),
+        Type::UInt32 => "uint32_t".to_string(),
+        Type::UInt64 => "uint64_t".to_string(),
         Type::Int16 => "int16_t".to_string(),
         Type::Int32 => "int32_t".to_string(),
         Type::Int64 => "int64_t".to_string(),
@@ -59,6 +50,8 @@ impl MiniCGenerator {
         match &ty {
             Type::Void => 0,
             Type::UInt8 => 1,
+            Type::UInt32 => 4,
+            Type::UInt64 => 8,
             Type::Int16 => 2,
             Type::Int32 => 4,
             Type::Int64 => 8,
@@ -171,6 +164,15 @@ impl MiniCGenerator {
                 Type::Int64 => {
                     format!("{} = {};", dest.name, src.name)
                 }
+                Type::UInt64 => {
+                    format!("{} = {};", dest.name, src.name)
+                }
+                Type::Int32 => {
+                    format!("{} = {};", dest.name, src.name)
+                }
+                Type::UInt32 => {
+                    format!("{} = {};", dest.name, src.name)
+                }
                 Type::UInt8 => {
                     format!("{} = {};", dest.name, src.name)
                 }
@@ -274,240 +276,8 @@ impl MiniCGenerator {
             }
         }
 
-        if f.name
-            .starts_with(&getNativePtrMemcpyName().toString().replace(".", "_"))
-        {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    {} result;", getTypeName(&f.result))?;
-            writeln!(buf, "    memcpy(dest, src, sizeof(*src) * count);")?;
-            writeln!(buf, "    return result;")?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name
-            .starts_with(&getNativePtrMemmoveName().toString().replace(".", "_"))
-        {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    {} result;", getTypeName(&f.result))?;
-            writeln!(buf, "    memmove(dest, src, sizeof(*src) * count);")?;
-            writeln!(buf, "    return result;")?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name
-            .starts_with(&getNativePtrMemcmpName().toString().replace(".", "_"))
-        {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    return memcmp(dest, src, sizeof(*src) * count);")?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name.starts_with(&getNativePtrNullName().toString().replace(".", "_")) {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    return NULL;")?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name
-            .starts_with(&getNativePtrAllocateArrayName().toString().replace(".", "_"))
-        {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(
-                buf,
-                "    return malloc(sizeof({}) * count);",
-                getTypeName(&f.result.getBase())
-            )?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name
-            .starts_with(&getNativePtrDeallocateName().toString().replace(".", "_"))
-        {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    {} result;", getTypeName(&f.result))?;
-            writeln!(buf, "    free(addr);")?;
-            writeln!(buf, "    return result;")?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name
-            .starts_with(&getNativePtrOffsetName().toString().replace(".", "_"))
-        {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    return &base[count];")?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name
-            .starts_with(&getNativePtrCloneName().toString().replace(".", "_"))
-        {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    return *addr;")?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name
-            .starts_with(&getNativePtrStoreName().toString().replace(".", "_"))
-        {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    {} result;", getTypeName(&f.result))?;
-            writeln!(buf, "    *addr = item;")?;
-            writeln!(buf, "    return result;")?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name.starts_with(&getNativePtrLoadName().toString().replace(".", "_")) {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    return *addr;")?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name
-            .starts_with(&getNativePtrPrintName().toString().replace(".", "_"))
-        {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    {} result;", getTypeName(&f.result))?;
-            writeln!(buf, "    printf(\"%p\\n\", addr);")?;
-            writeln!(buf, "    return result;")?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name
-            .starts_with(&getNativePtrIsNullName().toString().replace(".", "_"))
-        {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    return addr == NULL;")?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name.starts_with(&getNativePtrEqName().toString().replace(".", "_")) {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    return a == b;")?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name.starts_with(&getIntAddName().toString().replace(".", "_")) {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    return self + other;")?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name.starts_with(&getIntSubName().toString().replace(".", "_")) {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    return self - other;")?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name.starts_with(&getIntMulName().toString().replace(".", "_")) {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    return self * other;")?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name.starts_with(&getIntDivName().toString().replace(".", "_")) {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    return self / other;")?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name.starts_with(&getIntModName().toString().replace(".", "_")) {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    return self % other;")?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name.starts_with(&getIntToU8Name().toString().replace(".", "_")) {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    return (uint8_t)*self;")?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name.starts_with(&getIntEqName().toString().replace(".", "_")) {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    return *self == *other;")?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name.starts_with(&getIntLessThanName().toString().replace(".", "_")) {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    return *self < *other;")?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name.starts_with(&getIntCloneName().toString().replace(".", "_")) {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    return *self;")?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name.starts_with(&getU8AddName().toString().replace(".", "_")) {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    return self + other;")?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name.starts_with(&getU8SubName().toString().replace(".", "_")) {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    return self - other;")?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name.starts_with(&getU8MulName().toString().replace(".", "_")) {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    return self * other;")?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name.starts_with(&getU8DivName().toString().replace(".", "_")) {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    return self / other;")?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name.starts_with(&getU8EqName().toString().replace(".", "_")) {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    return *self == *other;")?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name.starts_with(&getU8LessThanName().toString().replace(".", "_")) {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    return *self < *other;")?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name.starts_with(&getU8CloneName().toString().replace(".", "_")) {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    return *self;")?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name
-            .starts_with(&getStdBasicUtilAbortName().toString().replace(".", "_"))
-        {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    abort();")?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name
-            .starts_with(&getStdBasicUtilPrintStrName().toString().replace(".", "_"))
-        {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    {} result;", getTypeName(&f.result))?;
-            writeln!(buf, "    printf(\"%.*s\", (int)v->field1, v->field0);")?;
-            writeln!(buf, "    return result;")?;
-            writeln!(buf, "}}\n")?;
-        }
-
-        if f.name
-            .starts_with(&getStdBasicUtilPrintlnStrName().toString().replace(".", "_"))
-        {
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-            writeln!(buf, "    {} result;", getTypeName(&f.result))?;
-            writeln!(buf, "    printf(\"%.*s\\n\", (int)v->field1, v->field0);")?;
-            writeln!(buf, "    return result;")?;
-            writeln!(buf, "}}\n")?;
+        if dumpBuiltinFunction(f, &args, buf)? {
+            return Ok(());
         }
 
         if !f.blocks.is_empty() {

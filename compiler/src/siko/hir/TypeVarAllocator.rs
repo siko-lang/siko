@@ -1,5 +1,6 @@
 use crate::siko::hir::Type::{Type, TypeVar};
 
+#[derive(Clone)]
 pub struct TypeVarAllocator {
     next: u64,
 }

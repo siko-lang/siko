@@ -4,6 +4,8 @@ use std::fmt;
 pub enum Type {
     Void,
     UInt8,
+    UInt32,
+    UInt64,
     Int16,
     Int32,
     Int64,
@@ -19,6 +21,8 @@ impl Type {
         match self {
             Type::Void => true,
             Type::UInt8 => true,
+            Type::UInt32 => true,
+            Type::UInt64 => true,
             Type::Int16 => true,
             Type::Int32 => true,
             Type::Int64 => true,
@@ -65,7 +69,9 @@ impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Type::Void => write!(f, "void"),
-            Type::UInt8 => write!(f, "i8"),
+            Type::UInt8 => write!(f, "u8"),
+            Type::UInt32 => write!(f, "u32"),
+            Type::UInt64 => write!(f, "u64"),
             Type::Int16 => write!(f, "i16"),
             Type::Int32 => write!(f, "i32"),
             Type::Int64 => write!(f, "i64"),

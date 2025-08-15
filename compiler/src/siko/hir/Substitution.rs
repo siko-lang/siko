@@ -5,7 +5,7 @@ use std::{
 
 use super::{Apply::Apply, Type::Type, Unification::unify};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Substitution {
     substitutions: BTreeMap<Type, Type>,
 }
@@ -15,6 +15,10 @@ impl Substitution {
         Substitution {
             substitutions: BTreeMap::new(),
         }
+    }
+
+    pub fn empty(&self) -> bool {
+        self.substitutions.is_empty()
     }
 
     pub fn add(&mut self, old: Type, new: Type) {

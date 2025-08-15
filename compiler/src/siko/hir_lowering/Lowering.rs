@@ -20,7 +20,7 @@ use crate::siko::{
     },
     qualifiedname::builtins::{
         getBoolTypeName, getFalseName, getI32TypeName, getIntTypeName, getNativePtrToRefName, getTrueName,
-        getU8TypeName,
+        getU64TypeName, getU8TypeName,
     },
 };
 
@@ -358,6 +358,8 @@ pub fn lowerType(ty: &HirType, program: &HirProgram) -> MirType {
                     MirType::UInt8
                 } else if name.base() == getI32TypeName() {
                     MirType::Int32
+                } else if name.base() == getU64TypeName() {
+                    MirType::UInt64
                 } else {
                     MirType::Struct(convertName(name))
                 }
