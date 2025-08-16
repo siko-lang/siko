@@ -57,7 +57,9 @@ pub enum MetadataKind {
 impl Display for MetadataKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MetadataKind::DeclarationList(name) => write!(f, "DeclarationList({})", name),
+            MetadataKind::DeclarationList(name) => {
+                write!(f, "DeclarationList({})", name)
+            }
         }
     }
 }

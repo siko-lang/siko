@@ -33,10 +33,10 @@ pub fn processInstruction(
     let mut instruction = input.clone();
     let kind: InstructionKind = match &input.kind {
         InstructionKind::FunctionCall(dest, name, args) => {
-            //println!("Calling {}", name);
+            //println!("Calling {} in block {}", name, syntaxBlockId);
             let target_fn = mono.program.getFunction(name).expect("function not found in mono");
             //println!("Target function: {}", target_fn.kind);
-            let target_fn = match target_fn.kind {
+            let (target_fn, resolution) = match target_fn.kind {
                 FunctionKind::EffectMemberDecl(_) => {
                     //println!("Effect member call in mono!");
                     let effectResolution = effectResolutionStore.get(syntaxBlockId);
@@ -50,22 +50,25 @@ pub fn processInstruction(
                         r.print();
                         std::process::exit(1);
                     }
-                    mono.program
+                    let f = mono
+                        .program
                         .getFunction(&resolvedName.unwrap())
-                        .expect("effect resolved function not found in mono")
+                        .expect("effect resolved function not found in mono");
+                    (f, effectResolution.clone())
                 }
                 FunctionKind::EffectMemberDefinition(_) => {
                     let effectResolution = effectResolutionStore.get(syntaxBlockId);
                     let resolvedName = effectResolution.get(name);
-                    if !resolvedName.is_none() {
+                    let f = if !resolvedName.is_none() {
                         mono.program
                             .getFunction(&resolvedName.unwrap())
                             .expect("effect resolved function not found in mono")
                     } else {
                         target_fn
-                    }
+                    };
+                    (f, effectResolution.clone())
                 }
-                _ => target_fn,
+                _ => (target_fn, effectResolutionStore.get(syntaxBlockId).clone()),
             };
             let target_fn = if let FunctionKind::EffectMemberDecl(_) = target_fn.kind {
                 let effectResolution = effectResolutionStore.get(syntaxBlockId);
@@ -125,8 +128,14 @@ pub fn processInstruction(
                 .map(|ty| ty.clone().apply(&sub))
                 .collect();
             //println!("{} type args {}", name, formatTypes(&ty_args));
-            let fn_name = mono.getMonoName(&name, &ty_args);
-            mono.addKey(Key::Function(name.clone(), ty_args, EffectResolution::new()));
+            let resolution = if target_fn.kind.isCtor() {
+                EffectResolution::new()
+            } else {
+                resolution
+            };
+            let fn_name = mono.getMonoName(&name, &ty_args, resolution.clone());
+            //println!("MONO CALL: {}", fn_name);
+            mono.addKey(Key::Function(name.clone(), ty_args, resolution));
             InstructionKind::FunctionCall(dest.clone(), fn_name, args.clone())
         }
         InstructionKind::Ref(dest, src) => {
@@ -138,12 +147,9 @@ pub fn processInstruction(
         }
         InstructionKind::Drop(dropRes, dropVar) => {
             let ty = dropVar.ty.clone().apply(sub).unwrap();
-            let monoName = mono.getMonoName(&getAutoDropFnName(), &vec![ty.clone()]);
-            mono.addKey(Key::AutoDropFn(
-                getAutoDropFnName(),
-                ty.clone(),
-                EffectResolution::new(),
-            ));
+            let effectResolution = effectResolutionStore.get(syntaxBlockId).clone();
+            let monoName = mono.getMonoName(&getAutoDropFnName(), &vec![ty.clone()], effectResolution.clone());
+            mono.addKey(Key::AutoDropFn(getAutoDropFnName(), ty.clone(), effectResolution));
             InstructionKind::FunctionCall(dropRes.clone(), monoName, vec![dropVar.clone()])
         }
         k => k.clone(),

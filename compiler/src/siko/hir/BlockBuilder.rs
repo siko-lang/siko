@@ -86,7 +86,9 @@ impl BlockBuilder {
         InstructionRef {
             blockId: self.blockId,
             instructionId: match self.mode {
-                Mode::Append => panic!("Cannot get instruction ref in append mode"),
+                Mode::Append => {
+                    panic!("Cannot get instruction ref in append mode")
+                }
                 Mode::Iterator(index) => index as u32,
             },
         }

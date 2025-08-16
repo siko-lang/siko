@@ -93,7 +93,9 @@ impl fmt::Display for ConstraintArgument {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ConstraintArgument::Type(ty) => write!(f, "{}", ty),
-            ConstraintArgument::AssociatedType(id, ty) => write!(f, "{} = {}", id, ty),
+            ConstraintArgument::AssociatedType(id, ty) => {
+                write!(f, "{} = {}", id, ty)
+            }
         }
     }
 }

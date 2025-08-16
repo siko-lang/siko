@@ -96,7 +96,9 @@ impl<'a> Builder<'a> {
                 HirInstructionKind::DropMetadata(_) => {
                     unreachable!("drop metadata in MIR??")
                 }
-                HirInstructionKind::DropPath(_) => unreachable!("drop path in MIR??"),
+                HirInstructionKind::DropPath(_) => {
+                    unreachable!("drop path in MIR??")
+                }
                 HirInstructionKind::DeclareVar(var, _) => {
                     let var = self.buildVariable(var);
                     block.instructions.push(Instruction::Declare(var.clone()));
@@ -326,8 +328,12 @@ impl<'a> Builder<'a> {
                 };
                 MirFunctionKind::Extern(mirKind)
             }
-            FunctionKind::TraitMemberDecl(_) => unreachable!("TraitMemberDecl in MIR Lowering"),
-            FunctionKind::EffectMemberDecl(_) => unreachable!("EffectMemberDecl in MIR Lowering"),
+            FunctionKind::TraitMemberDecl(_) => {
+                unreachable!("TraitMemberDecl in MIR Lowering")
+            }
+            FunctionKind::EffectMemberDecl(_) => {
+                unreachable!("EffectMemberDecl in MIR Lowering")
+            }
         };
         let name = convertName(&self.function.name);
         let mirFunction = MirFunction {
@@ -355,6 +361,8 @@ pub fn convertName<T: ToString>(name: &T) -> String {
             .replace("[", "_")
             .replace("]", "_")
             .replace("&", "_r_")
+            .replace(">", "_l_")
+            .replace("-", "_minus_")
     )
 }
 

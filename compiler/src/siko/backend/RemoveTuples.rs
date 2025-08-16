@@ -198,7 +198,9 @@ impl RemoveTuples for InstructionKind {
             InstructionKind::DropMetadata(id) => {
                 panic!("DropMetadata found in RemoveTuples, this should not happen: {}", id);
             }
-            InstructionKind::Drop(_, _) => unreachable!("drop in remove tuples!"),
+            InstructionKind::Drop(_, _) => {
+                unreachable!("drop in remove tuples!")
+            }
             InstructionKind::Jump(dest, id) => InstructionKind::Jump(dest.removeTuples(ctx), *id),
             InstructionKind::Assign(lhs, rhs) => InstructionKind::Assign(lhs.removeTuples(ctx), rhs.removeTuples(ctx)),
             InstructionKind::FieldAssign(lhs, rhs, fields) => {

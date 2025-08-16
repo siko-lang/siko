@@ -194,7 +194,9 @@ impl MiniCGenerator {
                 let branches: Vec<_> = branches
                     .iter()
                     .map(|b| match &b.value {
-                        Value::Numeric(v, _) => format!("   case {}:\n      goto {};\n", v, b.block),
+                        Value::Numeric(v, _) => {
+                            format!("   case {}:\n      goto {};\n", v, b.block)
+                        }
                         _ => todo!(),
                     })
                     .collect();

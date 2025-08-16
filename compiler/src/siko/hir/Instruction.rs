@@ -19,7 +19,9 @@ impl FieldId {
     pub fn name(&self) -> String {
         match self {
             FieldId::Named(name) => name.clone(),
-            FieldId::Indexed(index) => panic!("indexed field found in FieldId::name() {}", index),
+            FieldId::Indexed(index) => {
+                panic!("indexed field found in FieldId::name() {}", index)
+            }
         }
     }
 }
@@ -410,7 +412,9 @@ impl InstructionKind {
                 vars.extend(args.clone());
                 vars
             }
-            InstructionKind::Converter(var, target) => vec![var.clone(), target.clone()],
+            InstructionKind::Converter(var, target) => {
+                vec![var.clone(), target.clone()]
+            }
             InstructionKind::MethodCall(var, obj, _, args) => {
                 let mut vars = vec![var.clone(), obj.clone()];
                 vars.extend(args.clone());
@@ -421,8 +425,12 @@ impl InstructionKind {
                 vars.extend(args.clone());
                 vars
             }
-            InstructionKind::FieldRef(var, target, _) => vec![var.clone(), target.clone()],
-            InstructionKind::Bind(var, value, _) => vec![var.clone(), value.clone()],
+            InstructionKind::FieldRef(var, target, _) => {
+                vec![var.clone(), target.clone()]
+            }
+            InstructionKind::Bind(var, value, _) => {
+                vec![var.clone(), value.clone()]
+            }
             InstructionKind::Tuple(var, elements) => {
                 let mut vars = vec![var.clone()];
                 vars.extend(elements.clone());
@@ -431,17 +439,29 @@ impl InstructionKind {
             InstructionKind::StringLiteral(var, _) => vec![var.clone()],
             InstructionKind::IntegerLiteral(var, _) => vec![var.clone()],
             InstructionKind::CharLiteral(var, _) => vec![var.clone()],
-            InstructionKind::Return(var, value) => vec![var.clone(), value.clone()],
-            InstructionKind::Ref(var, target) => vec![var.clone(), target.clone()],
+            InstructionKind::Return(var, value) => {
+                vec![var.clone(), value.clone()]
+            }
+            InstructionKind::Ref(var, target) => {
+                vec![var.clone(), target.clone()]
+            }
             InstructionKind::DropPath(_) => vec![],
             InstructionKind::DropMetadata(_) => vec![],
             InstructionKind::Drop(_, _) => vec![],
             InstructionKind::Jump(var, _) => vec![var.clone()],
-            InstructionKind::Assign(var, value) => vec![var.clone(), value.clone()],
-            InstructionKind::FieldAssign(var, value, _) => vec![var.clone(), value.clone()],
-            InstructionKind::AddressOfField(var, target, _) => vec![var.clone(), target.clone()],
+            InstructionKind::Assign(var, value) => {
+                vec![var.clone(), value.clone()]
+            }
+            InstructionKind::FieldAssign(var, value, _) => {
+                vec![var.clone(), value.clone()]
+            }
+            InstructionKind::AddressOfField(var, target, _) => {
+                vec![var.clone(), target.clone()]
+            }
             InstructionKind::DeclareVar(var, _) => vec![var.clone()],
-            InstructionKind::Transform(var, target, _) => vec![var.clone(), target.clone()],
+            InstructionKind::Transform(var, target, _) => {
+                vec![var.clone(), target.clone()]
+            }
             InstructionKind::EnumSwitch(var, _) => {
                 vec![var.clone()]
             }
@@ -456,8 +476,12 @@ impl InstructionKind {
 
     pub fn dump(&self) -> String {
         match self {
-            InstructionKind::FunctionCall(dest, name, args) => format!("{} = call({}({:?}))", dest, name, args),
-            InstructionKind::Converter(dest, source) => format!("{} = convert({})", dest, source),
+            InstructionKind::FunctionCall(dest, name, args) => {
+                format!("{} = call({}({:?}))", dest, name, args)
+            }
+            InstructionKind::Converter(dest, source) => {
+                format!("{} = convert({})", dest, source)
+            }
             InstructionKind::MethodCall(dest, receiver, name, args) => {
                 format!("{} = methodcall({}.{}({:?}))", dest, receiver, name, args)
             }
@@ -477,21 +501,35 @@ impl InstructionKind {
                     format!("{} = {}", v, rhs)
                 }
             }
-            InstructionKind::Tuple(dest, args) => format!("{} = tuple({:?})", dest, args),
-            InstructionKind::StringLiteral(dest, v) => format!("{} = s:[{}]", dest, v),
-            InstructionKind::IntegerLiteral(dest, v) => format!("{} = i:[{}]", dest, v),
-            InstructionKind::CharLiteral(dest, v) => format!("{} = c:[{}]", dest, v),
-            InstructionKind::Return(dest, id) => format!("{} = return({})", dest, id),
+            InstructionKind::Tuple(dest, args) => {
+                format!("{} = tuple({:?})", dest, args)
+            }
+            InstructionKind::StringLiteral(dest, v) => {
+                format!("{} = s:[{}]", dest, v)
+            }
+            InstructionKind::IntegerLiteral(dest, v) => {
+                format!("{} = i:[{}]", dest, v)
+            }
+            InstructionKind::CharLiteral(dest, v) => {
+                format!("{} = c:[{}]", dest, v)
+            }
+            InstructionKind::Return(dest, id) => {
+                format!("{} = return({})", dest, id)
+            }
             InstructionKind::Ref(dest, id) => format!("{} = &({})", dest, id),
             InstructionKind::DropPath(path) => format!("drop_path({})", path),
-            InstructionKind::DropMetadata(id) => format!("drop_metadata({})", id),
+            InstructionKind::DropMetadata(id) => {
+                format!("drop_metadata({})", id)
+            }
             InstructionKind::Drop(dest, value) => {
                 format!("drop({}/{})", dest, value)
             }
             InstructionKind::Jump(dest, id) => {
                 format!("{} = jump({})", dest, id)
             }
-            InstructionKind::Assign(v, arg) => format!("assign({}, {})", v, arg),
+            InstructionKind::Assign(v, arg) => {
+                format!("assign({}, {})", v, arg)
+            }
             InstructionKind::FieldAssign(v, arg, fields) => {
                 let fields = fields.iter().map(|info| info.to_string()).collect::<Vec<_>>().join(".");
                 format!("fieldassign({}, {}, {})", v, arg, fields)
@@ -500,11 +538,21 @@ impl InstructionKind {
                 let fields = fields.iter().map(|info| info.to_string()).collect::<Vec<_>>().join(".");
                 format!("address_of_field({}, {}, {})", v, receiver, fields)
             }
-            InstructionKind::DeclareVar(v, mutability) => format!("declare({}, {:?})", v, mutability),
-            InstructionKind::Transform(dest, arg, index) => format!("{} = transform({}, {})", dest, arg, index),
-            InstructionKind::EnumSwitch(root, cases) => format!("enumswitch({}, {:?})", root, cases),
-            InstructionKind::IntegerSwitch(root, cases) => format!("integerswitch({}, {:?})", root, cases),
-            InstructionKind::BlockStart(info) => format!("blockstart({})", info),
+            InstructionKind::DeclareVar(v, mutability) => {
+                format!("declare({}, {:?})", v, mutability)
+            }
+            InstructionKind::Transform(dest, arg, index) => {
+                format!("{} = transform({}, {})", dest, arg, index)
+            }
+            InstructionKind::EnumSwitch(root, cases) => {
+                format!("enumswitch({}, {:?})", root, cases)
+            }
+            InstructionKind::IntegerSwitch(root, cases) => {
+                format!("integerswitch({}, {:?})", root, cases)
+            }
+            InstructionKind::BlockStart(info) => {
+                format!("blockstart({})", info)
+            }
             InstructionKind::BlockEnd(info) => format!("blockend({})", info),
             InstructionKind::With(v, handlers, block_id, syntax_block_id) => {
                 let handlers_str = handlers.iter().map(|h| h.to_string()).collect::<Vec<_>>().join(", ");

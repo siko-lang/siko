@@ -22,6 +22,7 @@ pub fn processBody(
         Some(body) => {
             let bodyBuilder = BodyBuilder::withBody(body);
             let mut effectResolutionStore = EffectResolutionStore::new();
+            effectResolutionStore.insert(SyntaxBlockId::new(), effectResolution.clone());
             effectResolutionStore.insert(
                 SyntaxBlockId::new().add(SyntaxBlockIdSegment { value: 0 }),
                 effectResolution.clone(),

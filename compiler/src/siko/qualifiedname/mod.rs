@@ -44,7 +44,9 @@ impl QualifiedName {
 
     pub fn monomorphized(&self, context: Context) -> QualifiedName {
         match self {
-            QualifiedName::Monomorphized(_, _) => panic!("Cannot monomorphize a monomorphized name"),
+            QualifiedName::Monomorphized(_, _) => {
+                panic!("Cannot monomorphize a monomorphized name")
+            }
             _ => QualifiedName::Monomorphized(Box::new(self.clone()), context),
         }
     }
@@ -56,9 +58,18 @@ impl QualifiedName {
     pub fn getShortName(&self) -> String {
         match &self {
             QualifiedName::Module(name) => name.clone(),
-            QualifiedName::Instance(_, _) => panic!("Instance names are not supported"),
+            QualifiedName::Instance(_, _) => {
+                panic!("Instance names are not supported")
+            }
             QualifiedName::Item(_, name) => name.clone(),
             QualifiedName::Monomorphized(p, _) => p.getShortName(),
+        }
+    }
+
+    pub(crate) fn isMonomorphized(&self) -> bool {
+        match self {
+            QualifiedName::Monomorphized(_, _) => true,
+            _ => false,
         }
     }
 }

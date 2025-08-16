@@ -17,12 +17,18 @@ pub enum Key {
 impl Display for Key {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
-            Key::Struct(name, types) => write!(f, "{}/{}", name, formatTypes(types)),
-            Key::Enum(name, types) => write!(f, "{}/{}", name, formatTypes(types)),
+            Key::Struct(name, types) => {
+                write!(f, "{}/{}", name, formatTypes(types))
+            }
+            Key::Enum(name, types) => {
+                write!(f, "{}/{}", name, formatTypes(types))
+            }
             Key::Function(name, types, effectResolution) => {
                 write!(f, "{}/{}/{}", name, formatTypes(types), effectResolution)
             }
-            Key::AutoDropFn(name, ty, effectResolution) => write!(f, "{}/{}/{}", name, ty, effectResolution),
+            Key::AutoDropFn(name, ty, effectResolution) => {
+                write!(f, "{}/{}/{}", name, ty, effectResolution)
+            }
         }
     }
 }

@@ -214,8 +214,12 @@ impl<'a> TypeVerifier<'a> {
             InstructionKind::DropPath(_) => {
                 unreachable!("Drop path found in instruction verification");
             }
-            InstructionKind::DropMetadata(_) => unreachable!("Drop metadata found in instruction verification"),
-            InstructionKind::Drop(_, _) => unreachable!("Drop found in instruction verification"),
+            InstructionKind::DropMetadata(_) => {
+                unreachable!("Drop metadata found in instruction verification")
+            }
+            InstructionKind::Drop(_, _) => {
+                unreachable!("Drop found in instruction verification")
+            }
             InstructionKind::Jump(var, _) => {
                 self.checkVariable(var);
             }

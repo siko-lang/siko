@@ -61,11 +61,19 @@ impl fmt::Display for DataPath {
         match self {
             DataPath::Root => write!(f, "Root"),
             DataPath::Tuple(path, len) => write!(f, "{}/tuple{}", path, len),
-            DataPath::TupleIndex(path, index) => write!(f, "{}.t{}", path, index),
-            DataPath::ItemIndex(path, index) => write!(f, "{}.i{}", path, index),
+            DataPath::TupleIndex(path, index) => {
+                write!(f, "{}.t{}", path, index)
+            }
+            DataPath::ItemIndex(path, index) => {
+                write!(f, "{}.i{}", path, index)
+            }
             DataPath::Variant(path, name, _) => write!(f, "{}.{}", path, name),
-            DataPath::IntegerLiteral(path, literal) => write!(f, "{}[int:{}]", path, literal),
-            DataPath::StringLiteral(path, literal) => write!(f, "{}[str:\"{}\"]", path, literal),
+            DataPath::IntegerLiteral(path, literal) => {
+                write!(f, "{}[int:{}]", path, literal)
+            }
+            DataPath::StringLiteral(path, literal) => {
+                write!(f, "{}[str:\"{}\"]", path, literal)
+            }
             DataPath::Struct(path, name) => write!(f, "{}.{}", path, name),
             DataPath::Wildcard(path) => write!(f, "{}._", path),
         }
@@ -998,7 +1006,9 @@ enum MatchKind {
 impl fmt::Display for MatchKind {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            MatchKind::UserDefined(value) => write!(f, "UserDefined({})", value),
+            MatchKind::UserDefined(value) => {
+                write!(f, "UserDefined({})", value)
+            }
             MatchKind::Alternative => write!(f, "Alternative"),
         }
     }
@@ -1056,7 +1066,9 @@ impl CompileContext {
     fn get(&self, path: &DataPath) -> Variable {
         match self.values.get(path) {
             Some(id) => id.clone(),
-            None => panic!("not found value for path in compile context {}", path),
+            None => {
+                panic!("not found value for path in compile context {}", path)
+            }
         }
     }
 }

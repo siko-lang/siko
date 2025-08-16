@@ -235,10 +235,18 @@ impl Display for FunctionKind {
             FunctionKind::VariantCtor(id) => write!(f, "VariantCtor({})", id),
             FunctionKind::StructCtor => write!(f, "StructCtor"),
             FunctionKind::Extern(kind) => write!(f, "Extern({:?})", kind),
-            FunctionKind::TraitMemberDecl(qn) => write!(f, "TraitMemberDecl({})", qn),
-            FunctionKind::TraitMemberDefinition(qn) => write!(f, "TraitMemberDefinition({})", qn),
-            FunctionKind::EffectMemberDecl(qn) => write!(f, "EffectMemberDecl({})", qn),
-            FunctionKind::EffectMemberDefinition(qn) => write!(f, "EffectMemberDefinition({})", qn),
+            FunctionKind::TraitMemberDecl(qn) => {
+                write!(f, "TraitMemberDecl({})", qn)
+            }
+            FunctionKind::TraitMemberDefinition(qn) => {
+                write!(f, "TraitMemberDefinition({})", qn)
+            }
+            FunctionKind::EffectMemberDecl(qn) => {
+                write!(f, "EffectMemberDecl({})", qn)
+            }
+            FunctionKind::EffectMemberDefinition(qn) => {
+                write!(f, "EffectMemberDefinition({})", qn)
+            }
         }
     }
 }
@@ -254,6 +262,13 @@ impl FunctionKind {
     pub fn isExternC(&self) -> bool {
         match self {
             FunctionKind::Extern(kind) => *kind == ExternKind::C,
+            _ => false,
+        }
+    }
+
+    pub fn isCtor(&self) -> bool {
+        match self {
+            FunctionKind::VariantCtor(_) | FunctionKind::StructCtor => true,
             _ => false,
         }
     }

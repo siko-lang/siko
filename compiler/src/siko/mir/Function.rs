@@ -197,8 +197,12 @@ impl fmt::Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Instruction::Declare(var) => write!(f, "Declare({})", var),
-            Instruction::GetFieldRef(var1, var2, index) => write!(f, "GetFieldRef({}, {}, {})", var1, var2, index),
-            Instruction::Reference(var1, var2) => write!(f, "Reference({}, {})", var1, var2),
+            Instruction::GetFieldRef(var1, var2, index) => {
+                write!(f, "GetFieldRef({}, {}, {})", var1, var2, index)
+            }
+            Instruction::Reference(var1, var2) => {
+                write!(f, "Reference({}, {})", var1, var2)
+            }
             Instruction::Call(var, func_name, args) => match var {
                 Some(v) => write!(
                     f,
@@ -214,17 +218,35 @@ impl fmt::Display for Instruction {
                     args.iter().map(|arg| format!("{}", arg)).collect::<Vec<_>>().join(", ")
                 ),
             },
-            Instruction::Assign(var, value) => write!(f, "Assign({}, {})", var, value),
-            Instruction::SetField(dest, src, indices) => write!(f, "SetField({}, {}, {:?})", dest, src, indices),
+            Instruction::Assign(var, value) => {
+                write!(f, "Assign({}, {})", var, value)
+            }
+            Instruction::SetField(dest, src, indices) => {
+                write!(f, "SetField({}, {}, {:?})", dest, src, indices)
+            }
             Instruction::Return(value) => write!(f, "Return({})", value),
-            Instruction::Memcpy(var1, var2) => write!(f, "Memcpy({} => {})", var1, var2),
-            Instruction::Store(var1, var2) => write!(f, "Store({} => {})", var1, var2),
-            Instruction::IntegerLiteral(var, literal) => write!(f, "IntegerLiteral({}, {})", var, literal),
-            Instruction::StringLiteral(var, literal) => write!(f, "StringLiteral({}, {})", var, literal),
-            Instruction::EnumSwitch(root, cases) => write!(f, "EnumSwitch({}, {:?})", root, cases),
-            Instruction::IntegerSwitch(root, cases) => write!(f, "IntegerSwitch({}, {:?})", root, cases),
+            Instruction::Memcpy(var1, var2) => {
+                write!(f, "Memcpy({} => {})", var1, var2)
+            }
+            Instruction::Store(var1, var2) => {
+                write!(f, "Store({} => {})", var1, var2)
+            }
+            Instruction::IntegerLiteral(var, literal) => {
+                write!(f, "IntegerLiteral({}, {})", var, literal)
+            }
+            Instruction::StringLiteral(var, literal) => {
+                write!(f, "StringLiteral({}, {})", var, literal)
+            }
+            Instruction::EnumSwitch(root, cases) => {
+                write!(f, "EnumSwitch({}, {:?})", root, cases)
+            }
+            Instruction::IntegerSwitch(root, cases) => {
+                write!(f, "IntegerSwitch({}, {:?})", root, cases)
+            }
             Instruction::Jump(label) => write!(f, "Jump({})", label),
-            Instruction::Transform(dest, src, ty) => write!(f, "Transform({}, {}, {})", dest, src, ty),
+            Instruction::Transform(dest, src, ty) => {
+                write!(f, "Transform({}, {}, {})", dest, src, ty)
+            }
             Instruction::AddressOfField(dest, root, field) => {
                 write!(f, "AddressOfField({}, {}, {})", dest, root, field)
             }

@@ -749,8 +749,12 @@ impl<'a> Typechecker<'a> {
                     instruction.location.clone(),
                 );
             }
-            InstructionKind::DropPath(_) => unreachable!("drop list placeholder in typechecker!"),
-            InstructionKind::DropMetadata(_) => unreachable!("drop metadata in typechecker!"),
+            InstructionKind::DropPath(_) => {
+                unreachable!("drop list placeholder in typechecker!")
+            }
+            InstructionKind::DropMetadata(_) => {
+                unreachable!("drop metadata in typechecker!")
+            }
             InstructionKind::Drop(_, _) => unreachable!("drop in typechecker!"),
             InstructionKind::Jump(_, id) => {
                 self.queue.push_back(*id);
