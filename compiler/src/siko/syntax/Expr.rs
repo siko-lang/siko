@@ -32,6 +32,18 @@ pub struct Branch {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EffectHandler {
+    pub method: Identifier,
+    pub handler: Identifier,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct With {
+    pub handlers: Vec<EffectHandler>,
+    pub body: Expr,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Expr {
     pub expr: SimpleExpr,
     pub location: Location,
@@ -66,6 +78,7 @@ pub enum SimpleExpr {
     Continue(Option<Box<Expr>>),
     Ref(Box<Expr>),
     List(Vec<Expr>),
+    With(Box<With>),
 }
 
 impl SimpleExpr {

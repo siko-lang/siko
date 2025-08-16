@@ -248,6 +248,7 @@ pub enum InstructionKind {
     IntegerSwitch(Variable, Vec<IntegerCase>),
     BlockStart(SyntaxBlockId),
     BlockEnd(SyntaxBlockId),
+    With(Vec<EffectHandler>, BlockId), // Effect handlers and the block ID
 }
 
 impl Display for InstructionKind {
@@ -290,6 +291,7 @@ impl InstructionKind {
             InstructionKind::IntegerSwitch(_, _) => None,
             InstructionKind::BlockStart(_) => None,
             InstructionKind::BlockEnd(_) => None,
+            InstructionKind::With(_, _) => None,
         }
     }
 
@@ -395,6 +397,7 @@ impl InstructionKind {
             }
             InstructionKind::BlockStart(info) => InstructionKind::BlockStart(info.clone()),
             InstructionKind::BlockEnd(info) => InstructionKind::BlockEnd(info.clone()),
+            InstructionKind::With(h, blockId) => InstructionKind::With(h.clone(), *blockId),
         }
     }
 
@@ -445,6 +448,7 @@ impl InstructionKind {
             }
             InstructionKind::BlockStart(_) => Vec::new(),
             InstructionKind::BlockEnd(_) => Vec::new(),
+            InstructionKind::With(_, _) => vec![],
         }
     }
 
@@ -500,6 +504,10 @@ impl InstructionKind {
             InstructionKind::IntegerSwitch(root, cases) => format!("integerswitch({}, {:?})", root, cases),
             InstructionKind::BlockStart(info) => format!("blockstart({})", info),
             InstructionKind::BlockEnd(info) => format!("blockend({})", info),
+            InstructionKind::With(handlers, block_id) => {
+                let handlers_str = handlers.iter().map(|h| h.to_string()).collect::<Vec<_>>().join(", ");
+                format!("with([{}], {})", handlers_str, block_id)
+            }
         }
     }
 }
@@ -521,5 +529,18 @@ impl Display for Instruction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.kind.dump())?;
         Ok(())
+    }
+}
+
+#[derive(PartialEq, Clone)]
+pub struct EffectHandler {
+    pub method: QualifiedName,
+    pub handler: QualifiedName,
+    pub location: Location,
+}
+
+impl Display for EffectHandler {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} -> {}", self.method, self.handler)
     }
 }

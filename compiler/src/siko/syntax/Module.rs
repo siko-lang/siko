@@ -1,4 +1,5 @@
 use crate::siko::syntax::Data::*;
+use crate::siko::syntax::Effect::Effect;
 use crate::siko::syntax::Function::*;
 use crate::siko::syntax::Identifier::*;
 
@@ -18,6 +19,7 @@ pub enum ModuleItem {
     Import(Import),
     Trait(Trait),
     Instance(Instance),
+    Effect(Effect),
 }
 
 #[derive(Debug, PartialEq, Eq)]

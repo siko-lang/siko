@@ -220,6 +220,21 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::IntegerSwitch(_, _) => {}
                         InstructionKind::BlockStart(_) => {}
                         InstructionKind::BlockEnd(_) => {}
+                        InstructionKind::With(handlers, _) => {
+                            for effectHandler in handlers {
+                                let method = self
+                                    .program
+                                    .getFunction(&effectHandler.method)
+                                    .expect("Method function not found");
+                                let handlerFn = self
+                                    .program
+                                    .getFunction(&effectHandler.handler)
+                                    .expect("Handler function not found");
+                                let methodType = method.getType();
+                                let handlerType = handlerFn.getType();
+                                self.unify(methodType, handlerType, effectHandler.location.clone());
+                            }
+                        }
                     }
                 }
             }
@@ -919,6 +934,9 @@ impl<'a> Typechecker<'a> {
             }
             InstructionKind::BlockStart(_) => {}
             InstructionKind::BlockEnd(_) => {}
+            InstructionKind::With(_, blockId) => {
+                self.queue.push_back(*blockId);
+            }
         }
     }
 

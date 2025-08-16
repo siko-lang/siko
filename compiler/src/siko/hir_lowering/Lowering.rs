@@ -273,6 +273,9 @@ impl<'a> Builder<'a> {
                 HirInstructionKind::DynamicFunctionCall(_, _, _) => {
                     panic!("DynamicFunctionCall instruction found in Lowering, this should not happen");
                 }
+                HirInstructionKind::With(_, _) => {
+                    panic!("With instruction found in Lowering, this should not happen");
+                }
             }
         }
         Some(block)
@@ -321,7 +324,9 @@ impl<'a> Builder<'a> {
                 };
                 MirFunctionKind::Extern(mirKind)
             }
-            FunctionKind::TraitMemberDecl(_) => return None,
+            FunctionKind::TraitMemberDecl(_) => unreachable!("TraitMemberDecl in MIR Lowering"),
+            FunctionKind::EffectMemberDecl(_) => unreachable!("EffectMemberDecl in MIR Lowering"),
+            FunctionKind::EffectMemberDefinition(_) => unreachable!("EffectMemberDefinition in MIR Lowering"),
         };
         let name = convertName(&self.function.name);
         let mirFunction = MirFunction {

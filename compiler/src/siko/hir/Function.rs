@@ -224,6 +224,8 @@ pub enum FunctionKind {
     Extern(ExternKind),
     TraitMemberDecl(QualifiedName),
     TraitMemberDefinition(QualifiedName),
+    EffectMemberDecl(QualifiedName),
+    EffectMemberDefinition(QualifiedName),
 }
 
 impl FunctionKind {

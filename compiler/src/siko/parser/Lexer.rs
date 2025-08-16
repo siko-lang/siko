@@ -179,6 +179,7 @@ impl Lexer {
                     "as" => Token::Keyword(KeywordKind::As),
                     "and" => Token::Op(OperatorKind::And),
                     "or" => Token::Op(OperatorKind::Or),
+                    "with" => Token::Keyword(KeywordKind::With),
                     "_" => Token::Misc(MiscKind::Wildcard),
                     _ => Token::VarIdentifier(self.current.clone()),
                 };

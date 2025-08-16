@@ -645,6 +645,27 @@ impl<'a> Resolver<'a> {
                         );
                         self.program.functions.insert(irFunction.name.clone(), irFunction);
                     }
+                    ModuleItem::Effect(effect) => {
+                        let typeParams = getTypeParams(&None);
+                        let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
+                        for method in &effect.methods {
+                            let functionResolver =
+                                FunctionResolver::new(moduleResolver, ConstraintContext::new(), None);
+                            let irFunction = functionResolver.resolve(
+                                self.ctx,
+                                method,
+                                &self.emptyVariants,
+                                &self.program.structs,
+                                &self.variants,
+                                &self.program.enums,
+                                QualifiedName::Module(moduleResolver.name.clone())
+                                    .add(effect.name.toString())
+                                    .add(method.name.toString()),
+                                &typeResolver,
+                            );
+                            self.program.functions.insert(irFunction.name.clone(), irFunction);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -720,6 +741,19 @@ impl<'a> Resolver<'a> {
                         }
                     }
                     ModuleItem::Instance(_) => {}
+                    ModuleItem::Effect(effectDef) => {
+                        if !effectDef.public {
+                            continue;
+                        }
+                        let effectName = moduleName.add(effectDef.name.toString());
+                        let localEffectName = localModuleName.add(effectDef.name.toString());
+                        importedNames.add(&localEffectName, &effectName);
+                        for fnDef in &effectDef.methods {
+                            let methodName = effectName.add(fnDef.name.to_string());
+                            let localMethodName = localEffectName.add(fnDef.name.to_string());
+                            importedNames.add(&localMethodName, &methodName);
+                        }
+                    }
                 }
             }
         } else {
@@ -790,6 +824,20 @@ impl<'a> Resolver<'a> {
                         }
                     }
                     ModuleItem::Instance(_) => {}
+                    ModuleItem::Effect(effectDef) => {
+                        if !effectDef.public {
+                            continue;
+                        }
+                        let effectName = moduleName.add(effectDef.name.toString());
+                        importedNames.add(&effectDef.name, &effectName);
+                        importedNames.add(&effectName, &effectName);
+                        for fnDef in &effectDef.methods {
+                            let methodName = effectName.add(fnDef.name.to_string());
+                            importedNames.add(&fnDef.name, &methodName);
+                            importedNames.add(&format!("{}.{}", effectDef.name, fnDef.name), &methodName);
+                            importedNames.add(&methodName, &methodName);
+                        }
+                    }
                 }
             }
         }
@@ -890,6 +938,17 @@ impl<'a> Resolver<'a> {
                     }
                 }
                 ModuleItem::Instance(_) => {}
+                ModuleItem::Effect(e) => {
+                    let effectName = moduleName.add(e.name.toString());
+                    localNames.add(&e.name, &effectName);
+                    localNames.add(&effectName, &effectName);
+                    for m in &e.methods {
+                        let methodName = effectName.add(m.name.toString());
+                        localNames.add(&m.name, &methodName);
+                        localNames.add(&format!("{}.{}", e.name, m.name), &methodName);
+                        localNames.add(&methodName, &methodName);
+                    }
+                }
             }
         }
         localNames

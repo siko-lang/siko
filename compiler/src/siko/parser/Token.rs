@@ -54,11 +54,11 @@ pub enum KeywordKind {
     Break,
     Match,
     Effect,
+    Implicit,
     With,
     Using,
     Let,
     Derive,
-    Implicit,
     Type,
     Pub,
 }

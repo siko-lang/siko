@@ -138,6 +138,10 @@ impl<'a> DeadCodeEliminator<'a> {
                 }
                 InstructionKind::BlockStart(_) => {}
                 InstructionKind::BlockEnd(_) => {}
+                InstructionKind::With(_, blockId) => {
+                    self.processBlock(*blockId);
+                    return;
+                }
             }
         }
     }

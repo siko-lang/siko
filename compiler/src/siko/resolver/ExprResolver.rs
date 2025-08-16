@@ -5,7 +5,9 @@ use crate::siko::hir::BlockBuilder::BlockBuilder;
 use crate::siko::hir::BodyBuilder::BodyBuilder;
 use crate::siko::hir::Data::{Enum, Struct};
 use crate::siko::hir::Function::BlockId;
-use crate::siko::hir::Instruction::{FieldId, FieldInfo, InstructionKind, SyntaxBlockId, SyntaxBlockIdSegment};
+use crate::siko::hir::Instruction::{
+    EffectHandler, FieldId, FieldInfo, InstructionKind, SyntaxBlockId, SyntaxBlockIdSegment,
+};
 use crate::siko::hir::Variable::Variable;
 use crate::siko::location::Location::Location;
 use crate::siko::location::Report::ReportContext;
@@ -625,6 +627,35 @@ impl<'a> ExprResolver<'a> {
                     );
                 }
                 listVar
+            }
+            SimpleExpr::With(with) => {
+                let mut handlers = Vec::new();
+                for effectHandler in &with.handlers {
+                    let method = self.moduleResolver.resolverName(&effectHandler.method);
+                    let handlerName = self.moduleResolver.resolverName(&effectHandler.handler);
+                    handlers.push(EffectHandler {
+                        method,
+                        handler: handlerName,
+                        location: effectHandler.handler.location.clone(),
+                    });
+                }
+                let withResultVar = self.bodyBuilder.createTempValue(expr.location.clone());
+                let mut withBodyBuilder = self.createBlock(&env);
+                self.bodyBuilder
+                    .current()
+                    .implicit()
+                    .addDeclare(withResultVar.clone(), expr.location.clone());
+                let kind = InstructionKind::With(handlers, withBodyBuilder.getBlockId());
+                self.bodyBuilder.current().addInstruction(kind, expr.location.clone());
+                withBodyBuilder.current();
+                match &with.body.expr {
+                    SimpleExpr::Block(block) => {
+                        self.resolveBlock(block, &env, withResultVar.clone());
+                        block.doesNotReturn()
+                    }
+                    _ => panic!("with body is not a block!"),
+                };
+                withResultVar
             }
         }
     }

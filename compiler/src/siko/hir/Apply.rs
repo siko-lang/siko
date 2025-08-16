@@ -201,6 +201,7 @@ impl Apply for InstructionKind {
             }
             InstructionKind::BlockStart(info) => InstructionKind::BlockStart(info.clone()),
             InstructionKind::BlockEnd(info) => InstructionKind::BlockEnd(info.clone()),
+            InstructionKind::With(handlers, blockId) => InstructionKind::With(handlers.clone(), blockId.clone()),
         }
     }
 }

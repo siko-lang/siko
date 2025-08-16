@@ -3,7 +3,7 @@ use crate::siko::{
     parser::Token::RangeKind,
     qualifiedname::builtins::{getFalseName, getRangeCtorName, getTrueName},
     syntax::{
-        Expr::{BinaryOp, Branch, Expr, SimpleExpr, UnaryOp},
+        Expr::{BinaryOp, Branch, EffectHandler, Expr, SimpleExpr, UnaryOp, With},
         Identifier::Identifier,
         Pattern::{Pattern, SimplePattern},
         Statement::{Block, Statement, StatementKind},
@@ -25,6 +25,7 @@ pub trait ExprParser {
     fn parseLoop(&mut self) -> Expr;
     fn parseWhile(&mut self) -> Expr;
     fn parseMatch(&mut self) -> Expr;
+    fn parseWith(&mut self) -> Expr;
     fn parseFieldAccessOrCall(&mut self) -> Expr;
     fn parseBinaryOp(&mut self, index: usize) -> Expr;
     fn parseExpr(&mut self) -> Expr;
@@ -417,6 +418,30 @@ impl<'a> ExprParser for Parser<'a> {
         self.buildExpr(SimpleExpr::Match(Box::new(body), branches), start.clone())
     }
 
+    fn parseWith(&mut self) -> Expr {
+        let start = self.currentSpan();
+        self.expect(TokenKind::Keyword(KeywordKind::With));
+        let mut handlers = Vec::new();
+        while !self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
+            let method = self.parseVarIdentifier();
+            self.expect(TokenKind::Misc(MiscKind::Equal));
+            let handler = self.parseVarIdentifier();
+            handlers.push(EffectHandler { method, handler });
+            if self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
+                break;
+            } else {
+                self.expect(TokenKind::Misc(MiscKind::Comma));
+            }
+        }
+        let body = self.parseBlock();
+        let body = Expr {
+            expr: SimpleExpr::Block(body),
+            location: self.currentLocation(),
+        };
+        let with = With { handlers, body };
+        self.buildExpr(SimpleExpr::With(Box::new(with)), start)
+    }
+
     fn parseStatement(&mut self) -> (StatementKind, SemicolonRequirement) {
         match self.peek() {
             TokenKind::Keyword(KeywordKind::If) => {
@@ -749,6 +774,7 @@ impl<'a> ExprParser for Parser<'a> {
             TokenKind::Keyword(KeywordKind::Loop) => self.parseLoop(),
             TokenKind::Keyword(KeywordKind::While) => self.parseWhile(),
             TokenKind::Keyword(KeywordKind::Match) => self.parseMatch(),
+            TokenKind::Keyword(KeywordKind::With) => self.parseWith(),
             TokenKind::LeftBracket(BracketKind::Curly) => {
                 let block = self.parseBlock();
                 self.buildExpr(SimpleExpr::Block(block), start)
