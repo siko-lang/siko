@@ -464,6 +464,10 @@ impl<'a> ExprParser for Parser<'a> {
                 let expr = self.parseMatch();
                 (StatementKind::Expr(expr), SemicolonRequirement::Optional)
             }
+            TokenKind::Keyword(KeywordKind::With) => {
+                let expr = self.parseWith();
+                (StatementKind::Expr(expr), SemicolonRequirement::Optional)
+            }
             TokenKind::Keyword(KeywordKind::Let) => {
                 self.expect(TokenKind::Keyword(KeywordKind::Let));
                 let pattern = self.parsePattern();

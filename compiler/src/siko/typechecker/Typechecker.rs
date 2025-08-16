@@ -220,7 +220,7 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::IntegerSwitch(_, _) => {}
                         InstructionKind::BlockStart(_) => {}
                         InstructionKind::BlockEnd(_) => {}
-                        InstructionKind::With(handlers, _) => {
+                        InstructionKind::With(handlers, _, _) => {
                             for effectHandler in handlers {
                                 let method = self
                                     .program
@@ -934,7 +934,7 @@ impl<'a> Typechecker<'a> {
             }
             InstructionKind::BlockStart(_) => {}
             InstructionKind::BlockEnd(_) => {}
-            InstructionKind::With(_, blockId) => {
+            InstructionKind::With(_, blockId, _) => {
                 self.queue.push_back(*blockId);
             }
         }

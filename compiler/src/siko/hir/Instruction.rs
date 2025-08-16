@@ -248,7 +248,7 @@ pub enum InstructionKind {
     IntegerSwitch(Variable, Vec<IntegerCase>),
     BlockStart(SyntaxBlockId),
     BlockEnd(SyntaxBlockId),
-    With(Vec<EffectHandler>, BlockId), // Effect handlers and the block ID
+    With(Vec<EffectHandler>, BlockId, SyntaxBlockId), // Effect handlers and the block ID
 }
 
 impl Display for InstructionKind {
@@ -291,7 +291,7 @@ impl InstructionKind {
             InstructionKind::IntegerSwitch(_, _) => None,
             InstructionKind::BlockStart(_) => None,
             InstructionKind::BlockEnd(_) => None,
-            InstructionKind::With(_, _) => None,
+            InstructionKind::With(_, _, _) => None,
         }
     }
 
@@ -397,7 +397,9 @@ impl InstructionKind {
             }
             InstructionKind::BlockStart(info) => InstructionKind::BlockStart(info.clone()),
             InstructionKind::BlockEnd(info) => InstructionKind::BlockEnd(info.clone()),
-            InstructionKind::With(h, blockId) => InstructionKind::With(h.clone(), *blockId),
+            InstructionKind::With(h, blockId, syntaxBlockId) => {
+                InstructionKind::With(h.clone(), *blockId, syntaxBlockId.clone())
+            }
         }
     }
 
@@ -448,7 +450,7 @@ impl InstructionKind {
             }
             InstructionKind::BlockStart(_) => Vec::new(),
             InstructionKind::BlockEnd(_) => Vec::new(),
-            InstructionKind::With(_, _) => vec![],
+            InstructionKind::With(_, _, _) => vec![],
         }
     }
 
@@ -504,9 +506,9 @@ impl InstructionKind {
             InstructionKind::IntegerSwitch(root, cases) => format!("integerswitch({}, {:?})", root, cases),
             InstructionKind::BlockStart(info) => format!("blockstart({})", info),
             InstructionKind::BlockEnd(info) => format!("blockend({})", info),
-            InstructionKind::With(handlers, block_id) => {
+            InstructionKind::With(handlers, block_id, syntax_block_id) => {
                 let handlers_str = handlers.iter().map(|h| h.to_string()).collect::<Vec<_>>().join(", ");
-                format!("with([{}], {})", handlers_str, block_id)
+                format!("with([{}], {}, {})", handlers_str, block_id, syntax_block_id)
             }
         }
     }

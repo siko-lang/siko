@@ -187,7 +187,7 @@ impl<'a> ExprResolver<'a> {
         builder.implicit().addJump(toBlock, location)
     }
 
-    fn resolveBlock<'e>(&mut self, block: &Block, env: &'e Environment<'e>, resultValue: Variable) {
+    fn resolveBlock<'e>(&mut self, block: &Block, env: &'e Environment<'e>, resultValue: Variable) -> SyntaxBlockId {
         let syntaxBlockIdItem = self.createSyntaxBlockIdSegment();
         let mut env = Environment::child(env, syntaxBlockIdItem);
         // println!(
@@ -276,6 +276,7 @@ impl<'a> ExprResolver<'a> {
                 .implicit()
                 .addBlockEnd(env.getSyntaxBlockId(), block.location.clone());
         }
+        env.getSyntaxBlockId()
     }
 
     pub fn resolveExpr(&mut self, expr: &Expr, env: &mut Environment) -> Variable {
@@ -645,16 +646,18 @@ impl<'a> ExprResolver<'a> {
                     .current()
                     .implicit()
                     .addDeclare(withResultVar.clone(), expr.location.clone());
-                let kind = InstructionKind::With(handlers, withBodyBuilder.getBlockId());
-                self.bodyBuilder.current().addInstruction(kind, expr.location.clone());
+
+                let parentBlockId = self.bodyBuilder.current().getBlockId();
+                //self.bodyBuilder.current().addInstruction(kind, expr.location.clone());
                 withBodyBuilder.current();
-                match &with.body.expr {
-                    SimpleExpr::Block(block) => {
-                        self.resolveBlock(block, &env, withResultVar.clone());
-                        block.doesNotReturn()
-                    }
+                let syntaxBlockId = match &with.body.expr {
+                    SimpleExpr::Block(block) => self.resolveBlock(block, &env, withResultVar.clone()),
                     _ => panic!("with body is not a block!"),
                 };
+                let kind = InstructionKind::With(handlers, withBodyBuilder.getBlockId(), syntaxBlockId);
+                self.bodyBuilder
+                    .block(parentBlockId)
+                    .addInstruction(kind, expr.location.clone());
                 withResultVar
             }
         }

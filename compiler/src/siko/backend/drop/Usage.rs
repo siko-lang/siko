@@ -149,6 +149,6 @@ pub fn getUsageInfo(kind: InstructionKind) -> UsageInfo {
         InstructionKind::Transform(dest, src, _) => UsageInfo::with(vec![varToUsage(&src)], Some(dest.toPath())),
         InstructionKind::EnumSwitch(_, _) => UsageInfo::empty(),
         InstructionKind::IntegerSwitch(_, _) => UsageInfo::empty(),
-        InstructionKind::With(_, _) => UsageInfo::empty(),
+        InstructionKind::With(_, _, _) => UsageInfo::empty(),
     }
 }
