@@ -14,19 +14,29 @@ pub extern struct Int {
 
     pub fn mod(self, other: Int) -> Int = extern
 
-    pub fn toU8(&self) -> U8 = extern
+    pub fn toU8(&self) -> U8 {
+        transmute(self.clone())
+    }
 
-    pub fn toU32(&self) -> U32 = extern
+    pub fn toU32(&self) -> U32 {
+        transmute(self.clone())
+    }
 
-    pub fn toU64(&self) -> U64 = extern
+    pub fn toU64(&self) -> U64 {
+        transmute(self.clone())
+    }
 
-    pub fn toI32(&self) -> I32 = extern
+    pub fn toI32(&self) -> I32 {
+        transmute(self.clone())
+    }
 
     pub fn eq(&self, other: &Int) -> Bool = extern
 
     pub fn lessThan(&self, other: &Int) -> Bool = extern
 
-    pub fn clone(&self) -> Int = extern
+    pub fn clone(&self) -> Int {
+        *toPtr(self)
+    }
 }
 
 instance Add[Int, Int] {
@@ -116,14 +126,14 @@ instance Mod[Int] {
     }
 }
 
-instance IntoInt[Int] {
-    fn toInt(&self) -> Int {
-        self
+instance Into[Int, Int] {
+    fn into(self) -> Int {
+        self.clone()
     }
 }
 
-instance FromInt[Int] {
-    fn fromInt(s: Int) -> Int {
+instance From[Int, Int] {
+    fn from(s: Int) -> Int {
         s
     }
 }
@@ -132,22 +142,14 @@ trait Mod[T] {
     fn mod(&self, other: &T) -> T
 }
 
-trait IntoInt[T] {
-    fn toInt(&self) -> Int
-}
-
-trait FromInt[T] {
-    fn fromInt(v: Int) -> T
-}
-
 fn showNum[T: Clone[T], PartialEq[T],
               PartialOrd[T], Neg[T],
-              Mod[T], FromInt[T], IntoInt[T],
+              Mod[T], From[Int, T], Into[T, Int],
               Div[T], Add[T, T, Output=T]](num: &T) -> String {
     // FIXME: fix constants
-    let zero: T = fromInt(0);
-    let ten: T = fromInt(10);
-    let offset: T = fromInt(48);
+    let zero: T = from(0);
+    let ten: T = from(10);
+    let offset: T = from(48);
 
     let mut n = num.clone();
     if n == zero {
@@ -166,7 +168,8 @@ fn showNum[T: Clone[T], PartialEq[T],
     while n > zero {
         let base: T = ten.clone();
         let value: T = n.mod(base) + offset.clone();
-        digits.push(value.toInt().toU8());
+        let digit: Int = value.into();
+        digits.push(digit.toU8());
         n = n / base;
     }
 
@@ -192,7 +195,9 @@ pub extern struct U8 {
 
     pub fn lessThan(&self, other: &U8) -> Bool = extern
 
-    pub fn clone(&self) -> U8 = extern
+    pub fn clone(&self) -> U8 {
+        *toPtr(self)
+    }
 }
 
 instance Add[U8, U8] {
@@ -281,7 +286,9 @@ pub extern struct I32 {
 
     pub fn lessThan(&self, other: &I32) -> Bool = extern
 
-    pub fn clone(&self) -> I32 = extern
+    pub fn clone(&self) -> I32 {
+        *toPtr(self)
+    }
 }
 
 instance Add[I32, I32] {
@@ -372,7 +379,9 @@ pub extern struct U32 {
 
     pub fn lessThan(&self, other: &U32) -> Bool = extern
 
-    pub fn clone(&self) -> U32 = extern
+    pub fn clone(&self) -> U32 {
+        *toPtr(self)
+    }
 }
 
 instance Add[U32, U32] {
@@ -464,18 +473,22 @@ pub extern struct U64 {
 
     pub fn eq(&self, other: &U64) -> Bool = extern
 
-    pub fn toInt(&self) -> Int = extern
+    pub fn toInt(&self) -> Int {
+        transmute(self.clone())
+    }
 
     pub fn lessThan(&self, other: &U64) -> Bool = extern
 
-    pub fn clone(&self) -> U64 = extern
+    pub fn clone(&self) -> U64 {
+        *toPtr(self)
+    }
 
     pub fn toHex(&self) -> String {
         let digits = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d", "e", "f"];
         let mut hex = String.new();
         let mut n = self.clone();
-        let zero: U64 = fromInt(0);
-        let sixteen: U64 = fromInt(16);
+        let zero = 0.toU64();
+        let sixteen = 16.toU64();
 
         if n == zero {
             return "0x0";
@@ -579,14 +592,14 @@ instance Mod[U64] {
     }
 }
 
-instance FromInt[U64] {
-    fn fromInt(v: Int) -> U64 {
+instance From[Int, U64] {
+    fn from(v: Int) -> U64 {
         v.toU64()
     }
 }
 
-instance IntoInt[U64] {
-    fn toInt(&self) -> Int {
+instance Into[U64, Int] {
+    fn into(self) -> Int {
         self.toInt()
     }
 }

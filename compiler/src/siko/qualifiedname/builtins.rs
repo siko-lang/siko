@@ -142,18 +142,6 @@ pub fn getIntLessThanName(kind: IntKind) -> QualifiedName {
     build("Int", &kind.to_string()).add(format!("lessThan"))
 }
 
-pub fn getIntCloneName(kind: IntKind) -> QualifiedName {
-    build("Int", &kind.to_string()).add(format!("clone"))
-}
-
-pub fn getU64ToIntName() -> QualifiedName {
-    build("Int", "U64").add(format!("toInt"))
-}
-
-pub fn getI32ToIntName() -> QualifiedName {
-    build("Int", "I32").add(format!("toInt"))
-}
-
 pub fn getDropFnName() -> QualifiedName {
     build("Std.Ops", "Drop").add(format!("drop"))
 }

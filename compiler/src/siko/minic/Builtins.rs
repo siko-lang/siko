@@ -5,10 +5,10 @@ use std::{
 
 use crate::siko::qualifiedname::{
     builtins::{
-        getIntAddName, getIntCloneName, getIntDivName, getIntEqName, getIntLessThanName, getIntModName, getIntMulName,
-        getIntSubName, getIntToI32Name, getIntToU32Name, getIntToU64Name, getIntToU8Name, getNativePtrCastName,
-        getNativePtrLoadName, getNativePtrSizeOfName, getNativePtrStoreName, getNativePtrTransmuteName,
-        getStdBasicUtilAbortName, getStdBasicUtilPrintStrName, getStdBasicUtilPrintlnStrName, getU64ToIntName, IntKind,
+        getIntAddName, getIntDivName, getIntEqName, getIntLessThanName, getIntModName, getIntMulName, getIntSubName,
+        getIntToI32Name, getIntToU32Name, getIntToU64Name, getIntToU8Name, getNativePtrCastName, getNativePtrLoadName,
+        getNativePtrSizeOfName, getNativePtrStoreName, getNativePtrTransmuteName, getStdBasicUtilAbortName,
+        getStdBasicUtilPrintStrName, getStdBasicUtilPrintlnStrName, IntKind,
     },
     QualifiedName,
 };
@@ -85,12 +85,6 @@ pub fn dumpBuiltinFunction(f: &Function, args: &Vec<String>, buf: &mut File) -> 
         }
     }
 
-    for kind in [IntKind::Int, IntKind::I32, IntKind::U8, IntKind::U32, IntKind::U64] {
-        if isFn(f, &getIntCloneName(kind)) {
-            cloneInt(f, args, buf)?;
-        }
-    }
-
     if isFn(f, &getNativePtrCastName()) {
         writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
         writeln!(buf, "    return ({} *)addr;", getTypeName(&f.result))?;
@@ -122,20 +116,6 @@ pub fn dumpBuiltinFunction(f: &Function, args: &Vec<String>, buf: &mut File) -> 
     if f.name.starts_with(&getIntToU64Name().toString().replace(".", "_")) {
         writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
         writeln!(buf, "    return (uint64_t)*self;")?;
-        writeln!(buf, "}}\n")?;
-        return Ok(true);
-    }
-
-    if f.name.starts_with(&getU64ToIntName().toString().replace(".", "_")) {
-        writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-        writeln!(buf, "    return (int64_t)*self;")?;
-        writeln!(buf, "}}\n")?;
-        return Ok(true);
-    }
-
-    if f.name.starts_with(&getU64ToIntName().toString().replace(".", "_")) {
-        writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-        writeln!(buf, "    return (int64_t)*self;")?;
         writeln!(buf, "}}\n")?;
         return Ok(true);
     }
