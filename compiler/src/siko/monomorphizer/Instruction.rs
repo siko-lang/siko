@@ -8,6 +8,7 @@ use crate::siko::{
         Type::{formatTypes, Type},
         TypeVarAllocator::TypeVarAllocator,
     },
+    location::Report::Report,
     monomorphizer::{
         Context::EffectResolutionStore,
         Effect::EffectResolution,
@@ -35,11 +36,48 @@ pub fn processInstruction(
             //println!("Calling {}", name);
             let target_fn = mono.program.getFunction(name).expect("function not found in mono");
             //println!("Target function: {}", target_fn.kind);
+            let target_fn = match target_fn.kind {
+                FunctionKind::EffectMemberDecl(_) => {
+                    //println!("Effect member call in mono!");
+                    let effectResolution = effectResolutionStore.get(syntaxBlockId);
+                    let resolvedName = effectResolution.get(name);
+                    if resolvedName.is_none() {
+                        let slogan = format!(
+                            "Effect method not present in current effect context: {}",
+                            format!("{}", mono.ctx.yellow(&name.toString()))
+                        );
+                        let r = Report::new(mono.ctx, slogan, Some(input.location.clone()));
+                        r.print();
+                        std::process::exit(1);
+                    }
+                    mono.program
+                        .getFunction(&resolvedName.unwrap())
+                        .expect("effect resolved function not found in mono")
+                }
+                FunctionKind::EffectMemberDefinition(_) => {
+                    let effectResolution = effectResolutionStore.get(syntaxBlockId);
+                    let resolvedName = effectResolution.get(name);
+                    if !resolvedName.is_none() {
+                        mono.program
+                            .getFunction(&resolvedName.unwrap())
+                            .expect("effect resolved function not found in mono")
+                    } else {
+                        target_fn
+                    }
+                }
+                _ => target_fn,
+            };
             let target_fn = if let FunctionKind::EffectMemberDecl(_) = target_fn.kind {
                 let effectResolution = effectResolutionStore.get(syntaxBlockId);
                 let resolvedName = effectResolution.get(name);
                 if resolvedName.is_none() {
-                    panic!("Effect member not present in resolution context: {}", name);
+                    let slogan = format!(
+                        "Effect method not present in current effect context: {}",
+                        format!("{}", mono.ctx.yellow(&name.toString()))
+                    );
+                    let r = Report::new(mono.ctx, slogan, Some(input.location.clone()));
+                    r.print();
+                    std::process::exit(1);
                 }
                 mono.program
                     .getFunction(&resolvedName.unwrap())

@@ -294,7 +294,9 @@ impl<'a> Builder<'a> {
 
         let kind = match self.function.kind {
             FunctionKind::StructCtor => MirFunctionKind::StructCtor,
-            FunctionKind::UserDefined | FunctionKind::TraitMemberDefinition(_) => {
+            FunctionKind::UserDefined
+            | FunctionKind::TraitMemberDefinition(_)
+            | FunctionKind::EffectMemberDefinition(_) => {
                 let mut blocks = Vec::new();
                 if let Some(body) = self.function.body.clone() {
                     for (_, block) in &body.blocks {
@@ -326,7 +328,6 @@ impl<'a> Builder<'a> {
             }
             FunctionKind::TraitMemberDecl(_) => unreachable!("TraitMemberDecl in MIR Lowering"),
             FunctionKind::EffectMemberDecl(_) => unreachable!("EffectMemberDecl in MIR Lowering"),
-            FunctionKind::EffectMemberDefinition(_) => unreachable!("EffectMemberDefinition in MIR Lowering"),
         };
         let name = convertName(&self.function.name);
         let mirFunction = MirFunction {

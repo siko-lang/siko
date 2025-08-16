@@ -59,7 +59,7 @@ impl Monomorphize for FieldInfo {
 }
 
 pub struct Monomorphizer<'a> {
-    ctx: &'a ReportContext,
+    pub ctx: &'a ReportContext,
     pub program: Program,
     monomorphizedProgram: Program,
     queue: VecDeque<Key>,
