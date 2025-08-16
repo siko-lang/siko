@@ -1,6 +1,7 @@
 use core::panic;
 
 use crate::siko::{
+    backend::RemoveTuples::getUnitTypeName,
     hir::{
         Data::{Enum as HirEnum, Struct as HirStruct},
         Function::{Block, BlockId, ExternKind, Function as HirFunction, FunctionKind},
@@ -20,8 +21,7 @@ use crate::siko::{
         Type::Type as MirType,
     },
     qualifiedname::builtins::{
-        getBoolTypeName, getFalseName, getI32TypeName, getIntTypeName, getNativePtrToRefName, getTrueName,
-        getU64TypeName, getU8TypeName,
+        getBoolTypeName, getFalseName, getI32TypeName, getIntTypeName, getTrueName, getU64TypeName, getU8TypeName,
     },
 };
 
@@ -59,6 +59,7 @@ impl<'a> Builder<'a> {
         for instruction in &hirBlock.instructions {
             match &instruction.kind {
                 HirInstructionKind::FunctionCall(dest, name, args) => {
+                    let f = self.program.getFunction(name).expect("Function not found");
                     if name.base() == getTrueName() {
                         let dest = self.buildVariable(dest);
                         block.instructions.push(Instruction::Declare(dest.clone()));
@@ -75,26 +76,17 @@ impl<'a> Builder<'a> {
                             .push(Instruction::IntegerLiteral(dest, "0".to_string()));
                         continue;
                     }
-                    if name.base() == getNativePtrToRefName() {
+                    let args = args.iter().map(|var| self.buildVariable(var)).collect();
+                    if dest.getType().isNever() || (f.kind.isExternC() && *dest.getType() == getUnitTypeName()) {
+                        block
+                            .instructions
+                            .push(Instruction::Call(None, convertName(name), args));
+                    } else {
                         let dest = self.buildVariable(dest);
-                        let arg = &args[0];
                         block.instructions.push(Instruction::Declare(dest.clone()));
                         block
                             .instructions
-                            .push(Instruction::Memcpy(self.buildVariable(arg), dest.clone()));
-                    } else {
-                        let args = args.iter().map(|var| self.buildVariable(var)).collect();
-                        if dest.getType().isNever() {
-                            block
-                                .instructions
-                                .push(Instruction::Call(None, convertName(name), args));
-                        } else {
-                            let dest = self.buildVariable(dest);
-                            block.instructions.push(Instruction::Declare(dest.clone()));
-                            block
-                                .instructions
-                                .push(Instruction::Call(Some(dest), convertName(name), args));
-                        }
+                            .push(Instruction::Call(Some(dest), convertName(name), args));
                     }
                 }
                 HirInstructionKind::Tuple(_, _) => {
@@ -320,9 +312,6 @@ impl<'a> Builder<'a> {
                 MirFunctionKind::VariantCtor(i)
             }
             FunctionKind::Extern(kind) => {
-                if self.function.name.base() == getNativePtrToRefName() {
-                    return None;
-                }
                 let mirKind = match kind {
                     ExternKind::C => {
                         let name = self.function.name.getShortName();

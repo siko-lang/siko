@@ -6,12 +6,9 @@ use std::{
 use crate::siko::qualifiedname::{
     builtins::{
         getIntAddName, getIntCloneName, getIntDivName, getIntEqName, getIntLessThanName, getIntModName, getIntMulName,
-        getIntSubName, getIntToI32Name, getIntToU32Name, getIntToU64Name, getIntToU8Name,
-        getNativePtrAllocateArrayName, getNativePtrCloneName, getNativePtrDeallocateName, getNativePtrEqName,
-        getNativePtrIsNullName, getNativePtrLoadName, getNativePtrMemcmpName, getNativePtrMemmoveName,
-        getNativePtrNullName, getNativePtrOffsetName, getNativePtrSizeOfName, getNativePtrStoreName,
-        getNativePtrToU64Name, getStdBasicUtilAbortName, getStdBasicUtilPrintStrName, getStdBasicUtilPrintlnStrName,
-        getU64ToIntName, IntKind,
+        getIntSubName, getIntToI32Name, getIntToU32Name, getIntToU64Name, getIntToU8Name, getNativePtrCastName,
+        getNativePtrLoadName, getNativePtrSizeOfName, getNativePtrStoreName, getNativePtrTransmuteName,
+        getStdBasicUtilAbortName, getStdBasicUtilPrintStrName, getStdBasicUtilPrintlnStrName, getU64ToIntName, IntKind,
     },
     QualifiedName,
 };
@@ -19,84 +16,6 @@ use crate::siko::qualifiedname::{
 use super::{Function::Function, Generator::getTypeName};
 
 pub fn dumpBuiltinFunction(f: &Function, args: &Vec<String>, buf: &mut File) -> io::Result<bool> {
-    if f.name
-        .starts_with(&getNativePtrMemmoveName().toString().replace(".", "_"))
-    {
-        writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-        writeln!(buf, "    {} result;", getTypeName(&f.result))?;
-        writeln!(buf, "    memmove(dest, src, sizeof(*src) * count);")?;
-        writeln!(buf, "    return result;")?;
-        writeln!(buf, "}}\n")?;
-        return Ok(true);
-    }
-
-    if f.name
-        .starts_with(&getNativePtrMemcmpName().toString().replace(".", "_"))
-    {
-        writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-        writeln!(buf, "    return memcmp(dest, src, sizeof(*src) * count);")?;
-        writeln!(buf, "}}\n")?;
-        return Ok(true);
-    }
-
-    if f.name.starts_with(&getNativePtrNullName().toString().replace(".", "_")) {
-        writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-        writeln!(buf, "    return NULL;")?;
-        writeln!(buf, "}}\n")?;
-        return Ok(true);
-    }
-
-    if f.name
-        .starts_with(&getNativePtrAllocateArrayName().toString().replace(".", "_"))
-    {
-        writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-        writeln!(
-            buf,
-            "    return malloc(sizeof({}) * count);",
-            getTypeName(&f.result.getBase())
-        )?;
-        writeln!(buf, "}}\n")?;
-        return Ok(true);
-    }
-
-    if f.name
-        .starts_with(&getNativePtrDeallocateName().toString().replace(".", "_"))
-    {
-        writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-        writeln!(buf, "    {} result;", getTypeName(&f.result))?;
-        writeln!(buf, "    free(addr);")?;
-        writeln!(buf, "    return result;")?;
-        writeln!(buf, "}}\n")?;
-        return Ok(true);
-    }
-
-    if f.name
-        .starts_with(&getNativePtrToU64Name().toString().replace(".", "_"))
-    {
-        writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-        writeln!(buf, "    return (uint64_t)addr;")?;
-        writeln!(buf, "}}\n")?;
-        return Ok(true);
-    }
-
-    if f.name
-        .starts_with(&getNativePtrOffsetName().toString().replace(".", "_"))
-    {
-        writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-        writeln!(buf, "    return &base[count];")?;
-        writeln!(buf, "}}\n")?;
-        return Ok(true);
-    }
-
-    if f.name
-        .starts_with(&getNativePtrCloneName().toString().replace(".", "_"))
-    {
-        writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-        writeln!(buf, "    return *addr;")?;
-        writeln!(buf, "}}\n")?;
-        return Ok(true);
-    }
-
     if f.name
         .starts_with(&getNativePtrStoreName().toString().replace(".", "_"))
     {
@@ -120,22 +39,6 @@ pub fn dumpBuiltinFunction(f: &Function, args: &Vec<String>, buf: &mut File) -> 
     {
         writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
         writeln!(buf, "    return sizeof(*addr);")?;
-        writeln!(buf, "}}\n")?;
-        return Ok(true);
-    }
-
-    if f.name
-        .starts_with(&getNativePtrIsNullName().toString().replace(".", "_"))
-    {
-        writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-        writeln!(buf, "    return addr == NULL;")?;
-        writeln!(buf, "}}\n")?;
-        return Ok(true);
-    }
-
-    if f.name.starts_with(&getNativePtrEqName().toString().replace(".", "_")) {
-        writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-        writeln!(buf, "    return a == b;")?;
         writeln!(buf, "}}\n")?;
         return Ok(true);
     }
@@ -188,6 +91,20 @@ pub fn dumpBuiltinFunction(f: &Function, args: &Vec<String>, buf: &mut File) -> 
         }
     }
 
+    if isFn(f, &getNativePtrCastName()) {
+        writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+        writeln!(buf, "    return ({} *)addr;", getTypeName(&f.result))?;
+        writeln!(buf, "}}\n")?;
+        return Ok(true);
+    }
+
+    if isFn(f, &getNativePtrTransmuteName()) {
+        writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+        writeln!(buf, "    return ({})v;", getTypeName(&f.result))?;
+        writeln!(buf, "}}\n")?;
+        return Ok(true);
+    }
+
     if f.name.starts_with(&getIntToU8Name().toString().replace(".", "_")) {
         writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
         writeln!(buf, "    return (uint8_t)*self;")?;
@@ -205,6 +122,13 @@ pub fn dumpBuiltinFunction(f: &Function, args: &Vec<String>, buf: &mut File) -> 
     if f.name.starts_with(&getIntToU64Name().toString().replace(".", "_")) {
         writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
         writeln!(buf, "    return (uint64_t)*self;")?;
+        writeln!(buf, "}}\n")?;
+        return Ok(true);
+    }
+
+    if f.name.starts_with(&getU64ToIntName().toString().replace(".", "_")) {
+        writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+        writeln!(buf, "    return (int64_t)*self;")?;
         writeln!(buf, "}}\n")?;
         return Ok(true);
     }

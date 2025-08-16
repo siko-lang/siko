@@ -233,6 +233,13 @@ impl FunctionKind {
             _ => None,
         }
     }
+
+    pub fn isExternC(&self) -> bool {
+        match self {
+            FunctionKind::Extern(kind) => *kind == ExternKind::C,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

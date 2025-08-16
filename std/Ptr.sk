@@ -2,41 +2,73 @@ module NativePtr {
 
 import Libc
 
-pub fn eq[T](a: *T, b: *T) -> Bool = extern
+pub fn eq[T](a: *T, b: *T) -> Bool {
+    toU64(a) == toU64(b)
+}
 
-pub fn null[T]() -> *T = extern
+pub fn null[T]() -> *T {
+    transmute(0)
+}
 
-pub fn isNull[T](addr: *T) -> Bool = extern
+pub fn isNull[T](addr: *T) -> Bool {
+    toU64(addr) == 0.toU64()
+}
 
-pub fn allocateArray[T](count: Int) -> *T = extern
+pub fn allocateArray[T](count: Int) -> *T {
+    let p: *T = null();
+    Libc.malloc(count.toU64() * sizeOf(p))
+}
 
 pub fn allocate[T]() -> *T {
     allocateArray(1)
 }
 
-pub fn deallocate[T](addr: *T) = extern
+pub fn deallocate[T](addr: *T) {
+    Libc.free(addr);
+}
 
 pub fn sizeOf[T](addr: *T) -> U64 = extern
+
+pub fn store[T](addr: *T, item: T) = extern
+
+pub fn load[T](addr: *T) -> T = extern
+
+pub fn transmute[T, U](v: T) -> U = extern
+
+pub fn cast[T, U](addr: *T) -> *U = extern
 
 pub fn memcpy[T](dest: *T, src: *T, count: Int) {
     Libc.memcpy(dest, src, count.toU64() * sizeOf(src));
 }
 
-pub fn memmove[T](dest: *T, src: *T, count: Int) = extern
+pub fn memmove[T](dest: *T, src: *T, count: Int) {
+    Libc.memmove(dest, src, count.toU64() * sizeOf(src));
+}
 
-pub fn memcmp[T](dest: *T, src: *T, count: Int) -> Int = extern
+pub fn memcmp[T](dest: *T, src: *T, count: Int) -> Int {
+    Libc.memcmp(dest, src, count.toU64() * sizeOf(src)).toInt()
+}
 
-pub fn offset[T](base: *T, count: Int) -> *T = extern
+pub fn offset[T](base: *T, count: Int) -> *T {
+    let size = sizeOf(base);
+    transmute(toU64(base) + (count.toU64() * size))
+}
 
-pub fn store[T](addr: *T, item: T) = extern
+pub fn toRef[T](addr: *T) -> &T {
+    transmute(addr)
+}
 
-pub fn toRef[T](addr: *T) -> &T = extern
+pub fn toPtr[T](addr: &T) -> *T {
+    transmute(addr)
+}
 
-pub fn load[T](addr: *T) -> T = extern
+pub fn clone[T](addr: &*T) -> *T {
+    load(toPtr(addr))
+}
 
-pub fn clone[T](addr: &*T) -> *T = extern
-
-pub fn toU64[T](addr: &*T) -> U64 = extern
+pub fn toU64[T](addr: &*T) -> U64 {
+    transmute(clone(addr))
+}
 
 pub fn show[T](addr: &*T) -> String {
     let value = toU64(addr);

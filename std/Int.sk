@@ -1,5 +1,8 @@
 module Int {
 
+import Convert
+import NativePtr
+
 pub extern struct Int {
     pub fn add(self, other: Int) -> Int = extern
 
@@ -272,6 +275,10 @@ pub extern struct I32 {
 
     pub fn eq(&self, other: &I32) -> Bool = extern
 
+    pub fn toInt(&self) -> Int {
+        transmute(self.clone())
+    }
+
     pub fn lessThan(&self, other: &I32) -> Bool = extern
 
     pub fn clone(&self) -> I32 = extern
@@ -345,6 +352,12 @@ instance Clone[I32] {
 }
 
 instance Copy[I32]
+
+instance Into[I32, Int] {
+    fn into(self) -> Int {
+        self.toInt()
+    }
+}
 
 pub extern struct U32 {
     pub fn add(self, other: U32) -> U32 = extern
@@ -463,6 +476,10 @@ pub extern struct U64 {
         let mut n = self.clone();
         let zero: U64 = fromInt(0);
         let sixteen: U64 = fromInt(16);
+
+        if n == zero {
+            return "0x0";
+        }
 
         while n > zero {
             let rem = n.mod(sixteen);

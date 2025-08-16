@@ -46,60 +46,32 @@ pub fn getStringEqName() -> QualifiedName {
     build("String", "String").add("eq".to_string())
 }
 
-pub fn getNativePtrNullName() -> QualifiedName {
-    build("NativePtr", "null")
-}
-
-pub fn getNativePtrAllocateArrayName() -> QualifiedName {
-    build("NativePtr", "allocateArray")
-}
-
-pub fn getNativePtrDeallocateName() -> QualifiedName {
-    build("NativePtr", "deallocate")
-}
-
-pub fn getNativePtrMemmoveName() -> QualifiedName {
-    build("NativePtr", "memmove")
-}
-
 pub fn getNativePtrSizeOfName() -> QualifiedName {
     build("NativePtr", "sizeOf")
 }
 
-pub fn getNativePtrMemcmpName() -> QualifiedName {
-    build("NativePtr", "memcmp")
+pub fn getNativePtrTransmuteName() -> QualifiedName {
+    build("NativePtr", "transmute")
 }
 
-pub fn getNativePtrOffsetName() -> QualifiedName {
-    build("NativePtr", "offset")
+pub fn getNativePtrCastName() -> QualifiedName {
+    build("NativePtr", "cast")
 }
 
 pub fn getNativePtrStoreName() -> QualifiedName {
     build("NativePtr", "store")
 }
 
-pub fn getNativePtrToRefName() -> QualifiedName {
-    build("NativePtr", "toRef")
-}
-
-pub fn getNativePtrToU64Name() -> QualifiedName {
-    build("NativePtr", "toU64")
-}
-
 pub fn getNativePtrCloneName() -> QualifiedName {
     build("NativePtr", "clone")
-}
-
-pub fn getNativePtrLoadName() -> QualifiedName {
-    build("NativePtr", "load")
 }
 
 pub fn getNativePtrIsNullName() -> QualifiedName {
     build("NativePtr", "isNull")
 }
 
-pub fn getNativePtrEqName() -> QualifiedName {
-    build("NativePtr", "eq")
+pub fn getNativePtrLoadName() -> QualifiedName {
+    build("NativePtr", "load")
 }
 
 pub fn getCloneFnName() -> QualifiedName {
@@ -176,6 +148,10 @@ pub fn getIntCloneName(kind: IntKind) -> QualifiedName {
 
 pub fn getU64ToIntName() -> QualifiedName {
     build("Int", "U64").add(format!("toInt"))
+}
+
+pub fn getI32ToIntName() -> QualifiedName {
+    build("Int", "I32").add(format!("toInt"))
 }
 
 pub fn getDropFnName() -> QualifiedName {

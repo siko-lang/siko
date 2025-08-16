@@ -25,6 +25,10 @@ fn getTuple(ty: &Type) -> QualifiedName {
         .monomorphized("".to_string())
 }
 
+pub fn getUnitTypeName() -> Type {
+    Type::Named(getTuple(&Type::Tuple(Vec::new())), Vec::new())
+}
+
 struct Context {
     tuples: BTreeSet<Type>,
 }
