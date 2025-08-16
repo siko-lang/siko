@@ -307,6 +307,7 @@ impl<'a> MinicBuilder<'a> {
                 }
                 LFunction {
                     name: f.name.clone(),
+                    fullName: f.fullName.clone(),
                     args: args,
                     result: resultTy,
                     blocks: minicBlocks,
@@ -348,6 +349,7 @@ impl<'a> MinicBuilder<'a> {
                     .push(LInstruction::Return(LValue::Variable(self.lowerVar(&this))));
                 LFunction {
                     name: f.name.clone(),
+                    fullName: f.fullName.clone(),
                     args: args,
                     result: resultTy,
                     blocks: vec![block],
@@ -400,6 +402,7 @@ impl<'a> MinicBuilder<'a> {
                 block.instructions.push(LInstruction::Return(LValue::Variable(tmp2)));
                 LFunction {
                     name: f.name.clone(),
+                    fullName: f.fullName.clone(),
                     args: args,
                     result: resultTy,
                     blocks: vec![block],
@@ -414,6 +417,7 @@ impl<'a> MinicBuilder<'a> {
                 };
                 LFunction {
                     name: name,
+                    fullName: f.fullName.clone(),
                     args: args,
                     result: resultTy,
                     blocks: Vec::new(),

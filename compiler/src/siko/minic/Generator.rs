@@ -283,6 +283,7 @@ impl MiniCGenerator {
             return Ok(());
         }
 
+        writeln!(buf, "// Full Name: {}", f.fullName)?;
         if !f.blocks.is_empty() {
             if f.result.isVoid() {
                 write!(buf, "[[ noreturn ]] ")?;
@@ -315,6 +316,7 @@ impl MiniCGenerator {
         for arg in &f.args {
             args.push(format!("{} {}", getTypeName(&arg.ty), arg.name,));
         }
+        writeln!(buf, "// Full Name: {}", f.fullName)?;
         if f.result.isVoid() {
             write!(buf, "[[ noreturn ]] ")?;
         }

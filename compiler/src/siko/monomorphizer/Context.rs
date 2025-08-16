@@ -15,6 +15,15 @@ pub struct Context {
     pub effectResolution: EffectResolution,
 }
 
+impl Context {
+    pub fn new() -> Self {
+        Context {
+            args: Vec::new(),
+            effectResolution: EffectResolution::new(),
+        }
+    }
+}
+
 impl Display for Context {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.args.is_empty() {
@@ -23,7 +32,7 @@ impl Display for Context {
             write!(f, "{}", formatTypes(&self.args))?;
         }
         if !self.effectResolution.effects.is_empty() {
-            write!(f, "-{}", self.effectResolution)?;
+            write!(f, " effects: {{{}}}", self.effectResolution)?;
         }
         Ok(())
     }

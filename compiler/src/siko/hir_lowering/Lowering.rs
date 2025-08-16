@@ -1,4 +1,11 @@
+use base64::engine::general_purpose;
+use base64::Engine;
 use core::panic;
+
+fn base64(s: &str) -> String {
+    let encoded = general_purpose::STANDARD.encode(s);
+    encoded
+}
 
 use crate::siko::{
     backend::RemoveTuples::getUnitTypeName,
@@ -20,8 +27,11 @@ use crate::siko::{
         Program::Program as MirProgram,
         Type::Type as MirType,
     },
-    qualifiedname::builtins::{
-        getBoolTypeName, getFalseName, getI32TypeName, getIntTypeName, getTrueName, getU64TypeName, getU8TypeName,
+    qualifiedname::{
+        builtins::{
+            getBoolTypeName, getFalseName, getI32TypeName, getIntTypeName, getTrueName, getU64TypeName, getU8TypeName,
+        },
+        QualifiedName,
     },
 };
 
@@ -76,17 +86,18 @@ impl<'a> Builder<'a> {
                             .push(Instruction::IntegerLiteral(dest, "0".to_string()));
                         continue;
                     }
+                    let fnName = if f.kind.isCtor() || f.kind.isExternC() {
+                        convertName(&f.name)
+                    } else {
+                        convertFunctionName(name)
+                    };
                     let args = args.iter().map(|var| self.buildVariable(var)).collect();
                     if dest.getType().isNever() || (f.kind.isExternC() && *dest.getType() == getUnitTypeName()) {
-                        block
-                            .instructions
-                            .push(Instruction::Call(None, convertName(name), args));
+                        block.instructions.push(Instruction::Call(None, fnName, args));
                     } else {
                         let dest = self.buildVariable(dest);
                         block.instructions.push(Instruction::Declare(dest.clone()));
-                        block
-                            .instructions
-                            .push(Instruction::Call(Some(dest), convertName(name), args));
+                        block.instructions.push(Instruction::Call(Some(dest), fnName, args));
                     }
                 }
                 HirInstructionKind::Tuple(_, _) => {
@@ -335,9 +346,14 @@ impl<'a> Builder<'a> {
                 unreachable!("EffectMemberDecl in MIR Lowering")
             }
         };
-        let name = convertName(&self.function.name);
+        let fnName = if self.function.kind.isCtor() || self.function.kind.isExternC() {
+            convertName(&self.function.name)
+        } else {
+            convertFunctionName(&self.function.name)
+        };
         let mirFunction = MirFunction {
-            name,
+            name: fnName,
+            fullName: self.function.name.to_string(),
             args: args,
             result: lowerType(&self.function.result, &self.program),
             kind: kind,
@@ -353,6 +369,8 @@ pub fn convertName<T: ToString>(name: &T) -> String {
             .replace(".", "_")
             .replace("(", "_t_")
             .replace(")", "_t_")
+            .replace("{", "")
+            .replace("}", "")
             .replace(",", "_")
             .replace(" ", "_")
             .replace("*", "s")
@@ -363,7 +381,18 @@ pub fn convertName<T: ToString>(name: &T) -> String {
             .replace("&", "_r_")
             .replace(">", "_l_")
             .replace("-", "_minus_")
+            .replace(":", "_colon_")
     )
+}
+
+pub fn convertFunctionName(name: &QualifiedName) -> String {
+    let (base, context) = name.split();
+    let c = base64(&context.to_string()).replace('=', "").replace("+", "");
+    if c.is_empty() {
+        convertName(&base)
+    } else {
+        convertName(&base) + "_" + &c
+    }
 }
 
 pub fn lowerType(ty: &HirType, program: &HirProgram) -> MirType {

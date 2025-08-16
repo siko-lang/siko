@@ -7,6 +7,7 @@ pub struct Param {
 
 pub struct Function {
     pub name: String,
+    pub fullName: String,
     pub args: Vec<Param>,
     pub result: Type,
     pub blocks: Vec<Block>,

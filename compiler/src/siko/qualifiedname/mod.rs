@@ -51,6 +51,13 @@ impl QualifiedName {
         }
     }
 
+    pub fn split(&self) -> (QualifiedName, Context) {
+        match self {
+            QualifiedName::Monomorphized(p, context) => (*p.clone(), context.clone()),
+            p => (p.clone(), Context::new()),
+        }
+    }
+
     pub fn toString(&self) -> String {
         format!("{}", self)
     }
