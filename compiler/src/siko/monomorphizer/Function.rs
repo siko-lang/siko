@@ -32,6 +32,7 @@ pub fn processBody(
                 let instruction = processInstruction(instruction, sub, mono, syntaxBlockId, &mut effectResolutionStore);
                 blockBuilder.replaceInstruction(instruction.kind, instruction.location.clone());
             });
+            effectResolutionStore.checkUnused(&mono.ctx);
             Some(bodyBuilder.build())
         }
         None => None,

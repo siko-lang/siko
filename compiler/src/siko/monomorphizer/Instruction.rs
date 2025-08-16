@@ -40,8 +40,8 @@ pub fn processInstruction(
                 FunctionKind::EffectMemberDecl(_) => {
                     //println!("Effect member call in mono!");
                     let effectResolution = effectResolutionStore.get(syntaxBlockId);
-                    let resolvedName = effectResolution.get(name);
-                    if resolvedName.is_none() {
+                    let handler = effectResolution.get(name);
+                    if handler.is_none() {
                         let slogan = format!(
                             "Effect method not present in current effect context: {}",
                             format!("{}", mono.ctx.yellow(&name.toString()))
@@ -50,18 +50,21 @@ pub fn processInstruction(
                         r.print();
                         std::process::exit(1);
                     }
+                    let handler = handler.unwrap();
+                    handler.markUsed();
                     let f = mono
                         .program
-                        .getFunction(&resolvedName.unwrap())
+                        .getFunction(&handler.name)
                         .expect("effect resolved function not found in mono");
                     (f, effectResolution.clone())
                 }
                 FunctionKind::EffectMemberDefinition(_) => {
                     let effectResolution = effectResolutionStore.get(syntaxBlockId);
                     let resolvedName = effectResolution.get(name);
-                    let f = if !resolvedName.is_none() {
+                    let f = if let Some(handler) = resolvedName {
+                        handler.markUsed();
                         mono.program
-                            .getFunction(&resolvedName.unwrap())
+                            .getFunction(&handler.name)
                             .expect("effect resolved function not found in mono")
                     } else {
                         target_fn
@@ -69,24 +72,6 @@ pub fn processInstruction(
                     (f, effectResolution.clone())
                 }
                 _ => (target_fn, effectResolutionStore.get(syntaxBlockId).clone()),
-            };
-            let target_fn = if let FunctionKind::EffectMemberDecl(_) = target_fn.kind {
-                let effectResolution = effectResolutionStore.get(syntaxBlockId);
-                let resolvedName = effectResolution.get(name);
-                if resolvedName.is_none() {
-                    let slogan = format!(
-                        "Effect method not present in current effect context: {}",
-                        format!("{}", mono.ctx.yellow(&name.toString()))
-                    );
-                    let r = Report::new(mono.ctx, slogan, Some(input.location.clone()));
-                    r.print();
-                    std::process::exit(1);
-                }
-                mono.program
-                    .getFunction(&resolvedName.unwrap())
-                    .expect("effect resolved function not found in mono")
-            } else {
-                target_fn
             };
             //println!("Target function: {}", target_fn);
             let fn_ty = target_fn.getType();
@@ -237,7 +222,7 @@ pub fn processInstructionKind(
         InstructionKind::With(v, handlers, blockId, withSyntaxBlockId) => {
             let mut effectResolution = effectResolutionStore.get(syntaxBlockId).clone();
             for h in handlers {
-                effectResolution.add(h.method, h.handler);
+                effectResolution.add(h.method, h.handler, h.location);
             }
             effectResolutionStore.insert(withSyntaxBlockId, effectResolution);
             InstructionKind::Jump(v, blockId)

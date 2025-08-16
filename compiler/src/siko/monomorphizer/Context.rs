@@ -6,6 +6,7 @@ use crate::siko::{
         Instruction::SyntaxBlockId,
         Type::{formatTypes, Type},
     },
+    location::Report::{Report, ReportContext},
     monomorphizer::Effect::EffectResolution,
 };
 
@@ -69,5 +70,22 @@ impl EffectResolutionStore {
     pub fn insert(&mut self, syntaxBlockId: SyntaxBlockId, resolution: EffectResolution) {
         //println!("Inserting effect resolution for {}", syntaxBlockId);
         self.resolutions.insert(syntaxBlockId, resolution);
+    }
+
+    pub fn checkUnused(&self, ctx: &ReportContext) {
+        for (_, resolution) in &self.resolutions {
+            for (name, handler) in &resolution.effects {
+                if !handler.isUsed() {
+                    let slogan = format!(
+                        "Unused effect handler {} for {}",
+                        format!("{}", ctx.yellow(&handler.name.toString())),
+                        format!("{}", ctx.yellow(&name.toString())),
+                    );
+                    let r = Report::new(ctx, slogan, Some(handler.location.clone()));
+                    r.print();
+                    std::process::exit(1);
+                }
+            }
+        }
     }
 }
