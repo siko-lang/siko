@@ -3,7 +3,7 @@ use core::panic;
 use crate::siko::{
     hir::{
         Data::{Enum as HirEnum, Struct as HirStruct},
-        Function::{Block, BlockId, Function as HirFunction, FunctionKind},
+        Function::{Block, BlockId, ExternKind, Function as HirFunction, FunctionKind},
         Instruction::InstructionKind as HirInstructionKind,
         Program::Program as HirProgram,
         Type::Type as HirType,
@@ -12,8 +12,9 @@ use crate::siko::{
     mir::{
         Data::{Field as MirField, Struct, Union, Variant as MirVariant},
         Function::{
-            Block as MirBlock, EnumCase as MirEnumCase, Function as MirFunction, FunctionKind as MirFunctionKind,
-            Instruction, IntegerCase as MirIntegerCase, Param as MirParam, Value, Variable as MirVariable,
+            Block as MirBlock, EnumCase as MirEnumCase, ExternKind as MirExternKind, Function as MirFunction,
+            FunctionKind as MirFunctionKind, Instruction, IntegerCase as MirIntegerCase, Param as MirParam, Value,
+            Variable as MirVariable,
         },
         Program::Program as MirProgram,
         Type::Type as MirType,
@@ -83,11 +84,17 @@ impl<'a> Builder<'a> {
                             .push(Instruction::Memcpy(self.buildVariable(arg), dest.clone()));
                     } else {
                         let args = args.iter().map(|var| self.buildVariable(var)).collect();
-                        let dest = self.buildVariable(dest);
-                        block.instructions.push(Instruction::Declare(dest.clone()));
-                        block
-                            .instructions
-                            .push(Instruction::Call(dest, convertName(name), args));
+                        if dest.getType().isNever() {
+                            block
+                                .instructions
+                                .push(Instruction::Call(None, convertName(name), args));
+                        } else {
+                            let dest = self.buildVariable(dest);
+                            block.instructions.push(Instruction::Declare(dest.clone()));
+                            block
+                                .instructions
+                                .push(Instruction::Call(Some(dest), convertName(name), args));
+                        }
                     }
                 }
                 HirInstructionKind::Tuple(_, _) => {
@@ -312,16 +319,24 @@ impl<'a> Builder<'a> {
                 }
                 MirFunctionKind::VariantCtor(i)
             }
-            FunctionKind::Extern => {
+            FunctionKind::Extern(kind) => {
                 if self.function.name.base() == getNativePtrToRefName() {
                     return None;
                 }
-                MirFunctionKind::Extern
+                let mirKind = match kind {
+                    ExternKind::C => {
+                        let name = self.function.name.getShortName();
+                        MirExternKind::C(name)
+                    }
+                    ExternKind::Builtin => MirExternKind::Builtin,
+                };
+                MirFunctionKind::Extern(mirKind)
             }
             FunctionKind::TraitMemberDecl(_) => return None,
         };
+        let name = convertName(&self.function.name);
         let mirFunction = MirFunction {
-            name: convertName(&self.function.name),
+            name,
             args: args,
             result: lowerType(&self.function.result, &self.program),
             kind: kind,
@@ -450,7 +465,7 @@ pub fn lowerProgram(program: &HirProgram) -> MirProgram {
     for (_, function) in &program.functions {
         let mut builder = Builder::new(program, function);
         if let Some(f) = builder.lowerFunction() {
-            mirProgram.functions.push(f);
+            mirProgram.functions.insert(f.name.clone(), f);
         }
     }
 

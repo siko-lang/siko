@@ -29,7 +29,7 @@ pub struct String {
             return String(self.value, self.size, self.capacity);
         } else {
             let newValue = allocateArray(self.capacity);
-            NativePtr.memcpy(newValue, self.value, self.size);
+            memcpy(newValue, self.value, self.size);
             String(newValue, self.size, self.capacity)
         }
     }
@@ -46,7 +46,7 @@ pub struct String {
     pub fn fromU8(value: Vec[U8]) -> String {
         let capacity = value.len();
         let newValue = allocateArray(capacity);
-        NativePtr.memcpy(newValue, value.asPtr(), capacity);
+        memcpy(newValue, value.asPtr(), capacity);
         String(newValue, capacity, capacity)
     }
 }
@@ -82,8 +82,8 @@ instance Add[String, &String] {
     fn add(self, other: &String) -> String {
         let newCapacity = self.size + other.size;
         let newValue = allocateArray(newCapacity);
-        NativePtr.memcpy(newValue, self.value, self.size);
-        NativePtr.memcpy(offset(newValue, self.size), other.value, other.size);
+        memcpy(newValue, self.value, self.size);
+        memcpy(offset(newValue, self.size), other.value, other.size);
         if self.capacity > 0 {
             NativePtr.deallocate(self.value);
         }

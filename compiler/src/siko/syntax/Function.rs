@@ -13,12 +13,18 @@ pub enum Parameter {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FunctionExternKind {
+    Builtin,
+    C,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Function {
     pub name: Identifier,
     pub typeParams: Option<TypeParameterDeclaration>,
     pub params: Vec<Parameter>,
     pub result: Type,
     pub body: Option<Block>,
-    pub isExtern: bool,
+    pub externKind: Option<FunctionExternKind>,
     pub public: bool,
 }

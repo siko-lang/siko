@@ -42,6 +42,15 @@ impl QualifiedName {
     pub fn toString(&self) -> String {
         format!("{}", self)
     }
+
+    pub fn getShortName(&self) -> String {
+        match &self {
+            QualifiedName::Module(name) => name.clone(),
+            QualifiedName::Instance(_, _) => panic!("Instance names are not supported"),
+            QualifiedName::Item(_, name) => name.clone(),
+            QualifiedName::Monomorphized(p, _) => p.getShortName(),
+        }
+    }
 }
 
 impl Display for QualifiedName {

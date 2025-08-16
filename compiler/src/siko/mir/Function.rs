@@ -14,11 +14,16 @@ impl fmt::Display for Param {
     }
 }
 
+pub enum ExternKind {
+    C(String),
+    Builtin,
+}
+
 pub enum FunctionKind {
     UserDefined(Vec<Block>),
     StructCtor,
     VariantCtor(i64),
-    Extern,
+    Extern(ExternKind),
 }
 
 pub struct Function {
@@ -75,7 +80,7 @@ impl fmt::Display for Function {
                         .join("\n")
                 )
             }
-            FunctionKind::Extern => {
+            FunctionKind::Extern(_) => {
                 write!(
                     f,
                     "Function: {}\nArguments: ({}) -> {}\nExtern",
@@ -173,7 +178,7 @@ pub enum Instruction {
     Declare(Variable),
     GetFieldRef(Variable, Variable, i32),
     Reference(Variable, Variable),
-    Call(Variable, String, Vec<Variable>),
+    Call(Option<Variable>, String, Vec<Variable>),
     Assign(Variable, Value),
     SetField(Variable, Variable, Vec<i32>),
     Return(Value),
@@ -194,13 +199,21 @@ impl fmt::Display for Instruction {
             Instruction::Declare(var) => write!(f, "Declare({})", var),
             Instruction::GetFieldRef(var1, var2, index) => write!(f, "GetFieldRef({}, {}, {})", var1, var2, index),
             Instruction::Reference(var1, var2) => write!(f, "Reference({}, {})", var1, var2),
-            Instruction::Call(var, func_name, args) => write!(
-                f,
-                "Call({}, {}, [{}])",
-                var,
-                func_name,
-                args.iter().map(|arg| format!("{}", arg)).collect::<Vec<_>>().join(", ")
-            ),
+            Instruction::Call(var, func_name, args) => match var {
+                Some(v) => write!(
+                    f,
+                    "Call({}, {}, [{}])",
+                    v,
+                    func_name,
+                    args.iter().map(|arg| format!("{}", arg)).collect::<Vec<_>>().join(", ")
+                ),
+                None => write!(
+                    f,
+                    "Call({}, [{}])",
+                    func_name,
+                    args.iter().map(|arg| format!("{}", arg)).collect::<Vec<_>>().join(", ")
+                ),
+            },
             Instruction::Assign(var, value) => write!(f, "Assign({}, {})", var, value),
             Instruction::SetField(dest, src, indices) => write!(f, "SetField({}, {}, {:?})", dest, src, indices),
             Instruction::Return(value) => write!(f, "Return({})", value),

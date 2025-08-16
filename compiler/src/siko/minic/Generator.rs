@@ -96,15 +96,14 @@ impl MiniCGenerator {
                 }
                 Value::Void => unreachable!(),
             },
-            Instruction::FunctionCallValue(dest, name, args) => {
+            Instruction::FunctionCall(dest, name, args) => {
                 let mut argRefs = Vec::new();
                 for arg in args {
                     argRefs.push(format!("{}", arg.name));
                 }
-                if dest.ty.isVoid() {
-                    format!("{}({});", name, argRefs.join(", "))
-                } else {
-                    format!("{} = {}({});", dest.name, name, argRefs.join(", "))
+                match dest {
+                    Some(dest) => format!("{} = {}({});", dest.name, name, argRefs.join(", ")),
+                    None => format!("{}({});", name, argRefs.join(", ")),
                 }
             }
             Instruction::LoadVar(dest, src) => {
@@ -247,8 +246,10 @@ impl MiniCGenerator {
                     Instruction::Reference(dest, _) => {
                         localVars.insert(dest.clone());
                     }
-                    Instruction::FunctionCallValue(dest, _, _) => {
-                        localVars.insert(dest.clone());
+                    Instruction::FunctionCall(dest, _, _) => {
+                        if let Some(dest) = dest {
+                            localVars.insert(dest.clone());
+                        }
                     }
                     Instruction::Return(_) => {}
                     Instruction::GetField(dest, _, _, _) => {
@@ -367,10 +368,16 @@ impl MiniCGenerator {
         }
 
         for f in &self.program.functions {
+            if f.isExtern() {
+                continue;
+            }
             self.dumpFunctionDeclaration(f, &mut output)?;
         }
 
         for f in &self.program.functions {
+            if f.isExtern() {
+                continue;
+            }
             self.dumpFunction(f, &mut output)?;
         }
 

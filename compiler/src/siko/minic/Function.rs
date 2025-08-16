@@ -10,6 +10,13 @@ pub struct Function {
     pub args: Vec<Param>,
     pub result: Type,
     pub blocks: Vec<Block>,
+    pub isBuiltin: bool,
+}
+
+impl Function {
+    pub fn isExtern(&self) -> bool {
+        !self.isBuiltin && self.blocks.is_empty()
+    }
 }
 
 pub struct Block {
@@ -47,7 +54,7 @@ pub enum Instruction {
     Store(Variable, Value),
     LoadVar(Variable, Variable),
     Reference(Variable, Variable),
-    FunctionCallValue(Variable, String, Vec<Variable>),
+    FunctionCall(Option<Variable>, String, Vec<Variable>),
     Return(Value),
     GetField(Variable, Variable, i32, GetMode),
     SetField(Variable, Variable, Vec<i32>),

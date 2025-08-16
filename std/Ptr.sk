@@ -1,5 +1,7 @@
 module NativePtr {
 
+import Libc
+
 pub fn eq[T](a: *T, b: *T) -> Bool = extern
 
 pub fn null[T]() -> *T = extern
@@ -14,7 +16,11 @@ pub fn allocate[T]() -> *T {
 
 pub fn deallocate[T](addr: *T) = extern
 
-pub fn memcpy[T](dest: *T, src: *T, count: Int) = extern
+pub fn sizeOf[T](addr: *T) -> U64 = extern
+
+pub fn memcpy[T](dest: *T, src: *T, count: Int) {
+    Libc.memcpy(dest, src, count.toU64() * sizeOf(src));
+}
 
 pub fn memmove[T](dest: *T, src: *T, count: Int) = extern
 
@@ -28,8 +34,6 @@ pub fn toRef[T](addr: *T) -> &T = extern
 
 pub fn load[T](addr: *T) -> T = extern
 
-pub fn printPtr[T](addr: *T) = extern
-
 pub fn clone[T](addr: &*T) -> *T = extern
 
 pub fn toU64[T](addr: &*T) -> U64 = extern
@@ -42,6 +46,12 @@ pub fn show[T](addr: &*T) -> String {
 instance[T] Show[*T] {
     fn show(addr: &*T) -> String {
         show(addr)
+    }
+}
+
+instance[T] PartialEq[*T] {
+    fn eq(a: &*T, b: &*T) -> Bool {
+        NativePtr.eq(a, b)
     }
 }
 

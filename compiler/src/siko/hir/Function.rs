@@ -210,12 +210,18 @@ impl Display for Body {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExternKind {
+    C,
+    Builtin,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FunctionKind {
     UserDefined,
     VariantCtor(i64),
     StructCtor,
-    Extern,
+    Extern(ExternKind),
     TraitMemberDecl(QualifiedName),
     TraitMemberDefinition(QualifiedName),
 }

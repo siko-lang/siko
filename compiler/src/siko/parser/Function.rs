@@ -1,6 +1,9 @@
-use crate::siko::syntax::{
-    Function::{Function, Parameter},
-    Type::Type,
+use crate::siko::{
+    syntax::{
+        Function::{Function, FunctionExternKind, Parameter},
+        Type::Type,
+    },
+    util::error,
 };
 
 use super::{
@@ -65,17 +68,26 @@ impl<'a> FunctionParser for Parser<'a> {
             Type::Tuple(Vec::new())
         };
 
-        let (isExtern, body) = if self.check(TokenKind::Misc(MiscKind::Equal)) {
+        let (externKind, body) = if self.check(TokenKind::Misc(MiscKind::Equal)) {
             self.expect(TokenKind::Misc(MiscKind::Equal));
             self.expect(TokenKind::Keyword(KeywordKind::Extern));
-            (true, None)
+            if self.check(TokenKind::StringLiteral) {
+                let stringLiteral = self.parseStringLiteral();
+                if stringLiteral == "C" {
+                    (Some(FunctionExternKind::C), None)
+                } else {
+                    error(format!("Unknown extern kind: {}", stringLiteral));
+                }
+            } else {
+                (Some(FunctionExternKind::Builtin), None)
+            }
         } else {
             let body = if self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
                 Some(self.parseBlock())
             } else {
                 None
             };
-            (false, body)
+            (None, body)
         };
 
         Function {
@@ -84,7 +96,7 @@ impl<'a> FunctionParser for Parser<'a> {
             params,
             result,
             body: body,
-            isExtern: isExtern,
+            externKind,
             public,
         }
     }

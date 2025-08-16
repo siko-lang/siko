@@ -58,12 +58,12 @@ pub fn getNativePtrDeallocateName() -> QualifiedName {
     build("NativePtr", "deallocate")
 }
 
-pub fn getNativePtrMemcpyName() -> QualifiedName {
-    build("NativePtr", "memcpy")
-}
-
 pub fn getNativePtrMemmoveName() -> QualifiedName {
     build("NativePtr", "memmove")
+}
+
+pub fn getNativePtrSizeOfName() -> QualifiedName {
+    build("NativePtr", "sizeOf")
 }
 
 pub fn getNativePtrMemcmpName() -> QualifiedName {
@@ -84,10 +84,6 @@ pub fn getNativePtrToRefName() -> QualifiedName {
 
 pub fn getNativePtrToU64Name() -> QualifiedName {
     build("NativePtr", "toU64")
-}
-
-pub fn getNativePtrPrintName() -> QualifiedName {
-    build("NativePtr", "print")
 }
 
 pub fn getNativePtrCloneName() -> QualifiedName {

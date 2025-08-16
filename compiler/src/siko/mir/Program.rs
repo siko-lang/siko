@@ -12,7 +12,7 @@ use super::{
 use crate::siko::minic::Program::Program as CProgram;
 
 pub struct Program {
-    pub functions: Vec<Function>,
+    pub functions: BTreeMap<String, Function>,
     pub structs: BTreeMap<String, Struct>,
     pub unions: BTreeMap<String, Union>,
 }
@@ -21,7 +21,7 @@ impl fmt::Display for Program {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Program:\n")?;
         write!(f, "\nFunctions:\n")?;
-        for function in &self.functions {
+        for (_, function) in &self.functions {
             write!(f, "{}\n", function)?;
         }
         write!(f, "\nStructs:\n")?;
@@ -39,7 +39,7 @@ impl fmt::Display for Program {
 impl Program {
     pub fn new() -> Program {
         Program {
-            functions: Vec::new(),
+            functions: BTreeMap::new(),
             structs: BTreeMap::new(),
             unions: BTreeMap::new(),
         }

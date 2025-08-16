@@ -7,7 +7,6 @@ use super::{
     Type::Type,
 };
 
-use crate::siko::minic::Data::Struct as LStruct;
 use crate::siko::minic::Function::Branch as LBranch;
 use crate::siko::minic::Function::Function as LFunction;
 use crate::siko::minic::Function::Instruction as LInstruction;
@@ -18,6 +17,7 @@ use crate::siko::minic::Function::{Block as LBlock, GetMode};
 use crate::siko::minic::Program::Program as LProgram;
 use crate::siko::minic::Type::Type as LType;
 use crate::siko::minic::{Constant::StringConstant, Data::Field as LField};
+use crate::siko::{minic::Data::Struct as LStruct, mir::Function::ExternKind};
 
 pub struct MinicBuilder<'a> {
     program: &'a Program,
@@ -68,7 +68,7 @@ impl<'a> MinicBuilder<'a> {
             program.structs.insert(s.name.clone(), self.lowerStruct(s));
         }
 
-        for f in &self.program.functions {
+        for (_, f) in &self.program.functions {
             let f = self.lowerFunction(f);
             program.functions.push(f);
         }
@@ -105,12 +105,22 @@ impl<'a> MinicBuilder<'a> {
                     minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::Call(dest, name, args) => {
+                    let f = self.program.functions.get(name).expect("Function not found");
+                    let name = if let FunctionKind::Extern(ExternKind::C(name)) = &f.kind {
+                        name.clone()
+                    } else {
+                        name.clone()
+                    };
                     let mut minicArgs = Vec::new();
                     for arg in args {
                         minicArgs.push(self.lowerVar(arg));
                     }
-                    let minicInstruction =
-                        LInstruction::FunctionCallValue(self.lowerVar(dest), name.clone(), minicArgs);
+                    let minicDest = if let Some(dest) = dest {
+                        Some(self.lowerVar(dest))
+                    } else {
+                        None
+                    };
+                    let minicInstruction = LInstruction::FunctionCall(minicDest, name.clone(), minicArgs);
                     minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::Assign(dest, src) => {
@@ -299,6 +309,7 @@ impl<'a> MinicBuilder<'a> {
                     args: args,
                     result: resultTy,
                     blocks: minicBlocks,
+                    isBuiltin: false,
                 }
             }
             FunctionKind::StructCtor => {
@@ -339,6 +350,7 @@ impl<'a> MinicBuilder<'a> {
                     args: args,
                     result: resultTy,
                     blocks: vec![block],
+                    isBuiltin: false,
                 }
             }
             FunctionKind::VariantCtor(index) => {
@@ -390,14 +402,26 @@ impl<'a> MinicBuilder<'a> {
                     args: args,
                     result: resultTy,
                     blocks: vec![block],
+                    isBuiltin: false,
                 }
             }
-            FunctionKind::Extern => LFunction {
-                name: f.name.clone(),
-                args: args,
-                result: resultTy,
-                blocks: Vec::new(),
-            },
+            FunctionKind::Extern(kind) => {
+                let name = if let ExternKind::C(name) = kind {
+                    name.clone()
+                } else {
+                    f.name.clone()
+                };
+                LFunction {
+                    name: name,
+                    args: args,
+                    result: resultTy,
+                    blocks: Vec::new(),
+                    isBuiltin: match kind {
+                        ExternKind::C(_) => false,
+                        ExternKind::Builtin => true,
+                    },
+                }
+            }
         }
     }
 

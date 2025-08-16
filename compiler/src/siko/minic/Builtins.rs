@@ -8,10 +8,10 @@ use crate::siko::qualifiedname::{
         getIntAddName, getIntCloneName, getIntDivName, getIntEqName, getIntLessThanName, getIntModName, getIntMulName,
         getIntSubName, getIntToI32Name, getIntToU32Name, getIntToU64Name, getIntToU8Name,
         getNativePtrAllocateArrayName, getNativePtrCloneName, getNativePtrDeallocateName, getNativePtrEqName,
-        getNativePtrIsNullName, getNativePtrLoadName, getNativePtrMemcmpName, getNativePtrMemcpyName,
-        getNativePtrMemmoveName, getNativePtrNullName, getNativePtrOffsetName, getNativePtrPrintName,
-        getNativePtrStoreName, getNativePtrToU64Name, getStdBasicUtilAbortName, getStdBasicUtilPrintStrName,
-        getStdBasicUtilPrintlnStrName, getU64ToIntName, IntKind,
+        getNativePtrIsNullName, getNativePtrLoadName, getNativePtrMemcmpName, getNativePtrMemmoveName,
+        getNativePtrNullName, getNativePtrOffsetName, getNativePtrSizeOfName, getNativePtrStoreName,
+        getNativePtrToU64Name, getStdBasicUtilAbortName, getStdBasicUtilPrintStrName, getStdBasicUtilPrintlnStrName,
+        getU64ToIntName, IntKind,
     },
     QualifiedName,
 };
@@ -19,17 +19,6 @@ use crate::siko::qualifiedname::{
 use super::{Function::Function, Generator::getTypeName};
 
 pub fn dumpBuiltinFunction(f: &Function, args: &Vec<String>, buf: &mut File) -> io::Result<bool> {
-    if f.name
-        .starts_with(&getNativePtrMemcpyName().toString().replace(".", "_"))
-    {
-        writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-        writeln!(buf, "    {} result;", getTypeName(&f.result))?;
-        writeln!(buf, "    memcpy(dest, src, sizeof(*src) * count);")?;
-        writeln!(buf, "    return result;")?;
-        writeln!(buf, "}}\n")?;
-        return Ok(true);
-    }
-
     if f.name
         .starts_with(&getNativePtrMemmoveName().toString().replace(".", "_"))
     {
@@ -127,12 +116,10 @@ pub fn dumpBuiltinFunction(f: &Function, args: &Vec<String>, buf: &mut File) -> 
     }
 
     if f.name
-        .starts_with(&getNativePtrPrintName().toString().replace(".", "_"))
+        .starts_with(&getNativePtrSizeOfName().toString().replace(".", "_"))
     {
         writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-        writeln!(buf, "    {} result;", getTypeName(&f.result))?;
-        writeln!(buf, "    printf(\"%p\\n\", addr);")?;
-        writeln!(buf, "    return result;")?;
+        writeln!(buf, "    return sizeof(*addr);")?;
         writeln!(buf, "}}\n")?;
         return Ok(true);
     }

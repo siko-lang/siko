@@ -2,13 +2,13 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::siko::hir::ConstraintContext::ConstraintContext;
 use crate::siko::hir::Data::{Enum, Struct};
-use crate::siko::hir::Function::{Function as IrFunction, FunctionKind, Parameter as IrParameter};
+use crate::siko::hir::Function::{ExternKind, Function as IrFunction, FunctionKind, Parameter as IrParameter};
 use crate::siko::hir::Type::{Type as IrType, TypeVar};
 use crate::siko::hir::Variable::Variable;
 use crate::siko::hir::Variable::VariableName;
 use crate::siko::location::Report::ReportContext;
 use crate::siko::qualifiedname::QualifiedName;
-use crate::siko::syntax::Function::{Function, Parameter};
+use crate::siko::syntax::Function::{Function, FunctionExternKind, Parameter};
 use crate::siko::syntax::Identifier::Identifier;
 use crate::siko::syntax::Type::TypeParameterDeclaration;
 use crate::siko::util::error;
@@ -147,10 +147,10 @@ impl<'a> FunctionResolver<'a> {
             result,
             body,
             self.constraintContext.clone(),
-            if f.isExtern {
-                FunctionKind::Extern
-            } else {
-                FunctionKind::UserDefined
+            match f.externKind {
+                Some(FunctionExternKind::C) => FunctionKind::Extern(ExternKind::C),
+                Some(FunctionExternKind::Builtin) => FunctionKind::Extern(ExternKind::Builtin),
+                None => FunctionKind::UserDefined,
             },
         );
         irFunction
