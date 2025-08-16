@@ -45,6 +45,9 @@ impl<'a> BlockProcessor<'a> {
                             jumpTargets.push(case.branch.clone());
                         }
                     }
+                    InstructionKind::With(_, _, blockId, _) => {
+                        jumpTargets.push(blockId.clone());
+                    }
                     kind => {
                         let usageinfo = getUsageInfo(kind.clone());
                         for mut usage in usageinfo.usages {
@@ -62,21 +65,6 @@ impl<'a> BlockProcessor<'a> {
                 break;
             }
         }
-        // let allDropListIds = self.dropMetadataStore.getDropListIds();
-        // for id in allDropListIds {
-        //     let dropList = self.dropMetadataStore.getDropList(id);
-        //     let rootPath = dropList.getRoot();
-        //     for (name, events) in context.usages.iter() {
-        //         if name.visibleName() == rootPath.root {
-        //             for path in events.getAllWritePaths() {
-        //                 if path.toSimplePath().sharesPrefixWith(&rootPath) {
-        //                     self.dropMetadataStore.addPath(id, path.clone());
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
-
         for (name, events) in context.usages.iter() {
             if let Some(declarationList) = self.dropMetadataStore.getPathList(name) {
                 for path in events.getAllWritePaths() {
