@@ -9,6 +9,7 @@ use crate::siko::{
         TypeVarAllocator::TypeVarAllocator,
     },
     monomorphizer::{
+        Effect::EffectResolution,
         Monomorphizer::Monomorphizer,
         Queue::Key,
         Utils::{createTypeSubstitution, Monomorphize},
@@ -125,7 +126,7 @@ impl Monomorphize for Instruction {
                     .collect();
                 //println!("{} type args {}", name, formatTypes(&ty_args));
                 let fn_name = mono.getMonoName(&name, &ty_args);
-                mono.addKey(Key::Function(name.clone(), ty_args));
+                mono.addKey(Key::Function(name.clone(), ty_args, EffectResolution::new()));
                 InstructionKind::FunctionCall(dest.clone(), fn_name, args.clone())
             }
             InstructionKind::Ref(dest, src) => {
@@ -138,7 +139,11 @@ impl Monomorphize for Instruction {
             InstructionKind::Drop(dropRes, dropVar) => {
                 let ty = dropVar.ty.clone().apply(sub).unwrap();
                 let monoName = mono.getMonoName(&getAutoDropFnName(), &vec![ty.clone()]);
-                mono.addKey(Key::AutoDropFn(getAutoDropFnName(), ty.clone()));
+                mono.addKey(Key::AutoDropFn(
+                    getAutoDropFnName(),
+                    ty.clone(),
+                    EffectResolution::new(),
+                ));
                 InstructionKind::FunctionCall(dropRes.clone(), monoName, vec![dropVar.clone()])
             }
             k => k.clone(),

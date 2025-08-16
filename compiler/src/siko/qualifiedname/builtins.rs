@@ -2,6 +2,10 @@ use std::fmt;
 
 use crate::siko::qualifiedname::{build, QualifiedName};
 
+pub fn getMainName() -> QualifiedName {
+    build("Main", "main")
+}
+
 pub fn getBoolTypeName() -> QualifiedName {
     build("Bool", "Bool")
 }

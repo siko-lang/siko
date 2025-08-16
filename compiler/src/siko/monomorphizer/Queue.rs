@@ -2,6 +2,7 @@ use std::fmt::Display;
 
 use crate::siko::{
     hir::Type::{formatTypes, Type},
+    monomorphizer::Effect::EffectResolution,
     qualifiedname::QualifiedName,
 };
 
@@ -9,8 +10,8 @@ use crate::siko::{
 pub enum Key {
     Struct(QualifiedName, Vec<Type>),
     Enum(QualifiedName, Vec<Type>),
-    Function(QualifiedName, Vec<Type>),
-    AutoDropFn(QualifiedName, Type),
+    Function(QualifiedName, Vec<Type>, EffectResolution),
+    AutoDropFn(QualifiedName, Type, EffectResolution),
 }
 
 impl Display for Key {
@@ -18,8 +19,10 @@ impl Display for Key {
         match &self {
             Key::Struct(name, types) => write!(f, "{}/{}", name, formatTypes(types)),
             Key::Enum(name, types) => write!(f, "{}/{}", name, formatTypes(types)),
-            Key::Function(name, types) => write!(f, "{}/{}", name, formatTypes(types)),
-            Key::AutoDropFn(name, ty) => write!(f, "{}/{}", name, ty),
+            Key::Function(name, types, effectResolution) => {
+                write!(f, "{}/{}/{}", name, formatTypes(types), effectResolution)
+            }
+            Key::AutoDropFn(name, ty, effectResolution) => write!(f, "{}/{}/{}", name, ty, effectResolution),
         }
     }
 }

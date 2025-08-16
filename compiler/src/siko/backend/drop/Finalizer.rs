@@ -102,9 +102,6 @@ impl<'a> Finalizer<'a> {
                                 }
                                 builder.removeInstruction();
                             }
-                            InstructionKind::BlockStart(_) => {
-                                builder.removeInstruction();
-                            }
                             InstructionKind::BlockEnd(id) => {
                                 //println!("block end: {}", id);
                                 if let Some(droppedValues) = self.declarationStore.getDeclarations(&id) {
@@ -123,7 +120,7 @@ impl<'a> Finalizer<'a> {
                                     }
                                 }
                                 // println!("---------------------");
-                                builder.removeInstruction();
+                                builder.step();
                             }
                             kind => {
                                 let usageInfo = getUsageInfo(kind.clone());

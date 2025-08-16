@@ -1,5 +1,7 @@
 use core::panic;
 use std::fmt::{Debug, Display};
+
+use crate::siko::monomorphizer::Context::Context;
 pub mod builtins;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -7,7 +9,7 @@ pub enum QualifiedName {
     Module(String),
     Instance(Box<QualifiedName>, u64),
     Item(Box<QualifiedName>, String),
-    Monomorphized(Box<QualifiedName>, String),
+    Monomorphized(Box<QualifiedName>, Context),
 }
 
 impl QualifiedName {
@@ -40,10 +42,10 @@ impl QualifiedName {
         }
     }
 
-    pub fn monomorphized(&self, args: String) -> QualifiedName {
+    pub fn monomorphized(&self, context: Context) -> QualifiedName {
         match self {
             QualifiedName::Monomorphized(_, _) => panic!("Cannot monomorphize a monomorphized name"),
-            _ => QualifiedName::Monomorphized(Box::new(self.clone()), args),
+            _ => QualifiedName::Monomorphized(Box::new(self.clone()), context),
         }
     }
 
@@ -67,12 +69,8 @@ impl Display for QualifiedName {
             QualifiedName::Module(i) => write!(f, "{}", i),
             QualifiedName::Instance(p, i) => write!(f, "{}/{}", p, i),
             QualifiedName::Item(p, i) => write!(f, "{}.{}", p, i),
-            QualifiedName::Monomorphized(p, args) => {
-                if args.is_empty() {
-                    write!(f, "{}#", p)
-                } else {
-                    write!(f, "{}#{}", p, args)
-                }
+            QualifiedName::Monomorphized(p, context) => {
+                write!(f, "{}#{}", p, context)
             }
         }
     }

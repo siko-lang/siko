@@ -15,7 +15,7 @@ use crate::siko::{
         Instruction::{EnumCase, FieldId, FieldInfo, InstructionKind},
         Program::Program,
         Substitution::{createTypeSubstitutionFrom, Substitution},
-        Type::{formatTypes, Type},
+        Type::Type,
         TypeVarAllocator::TypeVarAllocator,
         Variable::{Variable, VariableName},
     },
@@ -23,10 +23,9 @@ use crate::siko::{
         Location::Location,
         Report::{Report, ReportContext},
     },
-    monomorphizer::{Queue::Key, Utils::Monomorphize},
+    monomorphizer::{Context::Context, Effect::EffectResolution, Queue::Key, Utils::Monomorphize},
     qualifiedname::{
-        build,
-        builtins::{getDropFnName, getDropName},
+        builtins::{getDropFnName, getDropName, getMainName},
         QualifiedName,
     },
 };
@@ -78,10 +77,10 @@ impl<'a> Monomorphizer<'a> {
     }
 
     pub fn run(mut self) -> Program {
-        let main_name = build("Main", "main");
+        let main_name = getMainName();
         match self.program.functions.get(&main_name) {
             Some(_) => {
-                self.addKey(Key::Function(main_name, Vec::new()));
+                self.addKey(Key::Function(main_name, Vec::new(), EffectResolution::new()));
             }
             None => {
                 let slogan = format!(
@@ -115,9 +114,9 @@ impl<'a> Monomorphizer<'a> {
                     //println!("MONO Processing {}", key);
                     self.processed.insert(key.clone());
                     match key.clone() {
-                        Key::Function(name, args) => {
+                        Key::Function(name, args, effectResolution) => {
                             //println!("Processing func {}", key);
-                            self.monomorphizeFunction(name, args);
+                            self.monomorphizeFunction(name, args, effectResolution);
                         }
                         Key::Struct(name, args) => {
                             //println!("Processing structDef {}", key);
@@ -127,9 +126,9 @@ impl<'a> Monomorphizer<'a> {
                             //println!("Processing enum {}", key);
                             self.monomorphizeEnum(name, args);
                         }
-                        Key::AutoDropFn(name, ty) => {
+                        Key::AutoDropFn(name, ty, effectResolution) => {
                             //println!("Processing auto drop {}", key);
-                            self.monomorphizeAutoDropFn(name, ty);
+                            self.monomorphizeAutoDropFn(name, ty, effectResolution);
                         }
                     }
                 }
@@ -138,7 +137,7 @@ impl<'a> Monomorphizer<'a> {
         }
     }
 
-    fn monomorphizeFunction(&mut self, name: QualifiedName, args: Vec<Type>) {
+    fn monomorphizeFunction(&mut self, name: QualifiedName, args: Vec<Type>, effectResolution: EffectResolution) {
         //println!("MONO FN: {} {}", name, formatTypes(&args));
         let function = self
             .program
@@ -211,7 +210,11 @@ impl<'a> Monomorphizer<'a> {
         if args.is_empty() {
             name.clone()
         } else {
-            name.monomorphized(formatTypes(args))
+            let context = Context {
+                args: args.iter().cloned().collect(),
+                effectResolution: EffectResolution::new(),
+            };
+            name.monomorphized(context)
         }
     }
 
@@ -259,7 +262,7 @@ impl<'a> Monomorphizer<'a> {
         self.monomorphizedProgram.enums.insert(name, e);
     }
 
-    fn monomorphizeAutoDropFn(&mut self, name: QualifiedName, ty: Type) {
+    fn monomorphizeAutoDropFn(&mut self, name: QualifiedName, ty: Type, effectResolution: EffectResolution) {
         //println!("MONO AUTO DROP: {} {}", name, ty);
         let monoName = self.getMonoName(&name, &vec![ty.clone()]);
 
@@ -376,6 +379,6 @@ impl<'a> Monomorphizer<'a> {
         };
 
         self.program.functions.insert(monoName.clone(), dropFn);
-        self.addKey(Key::Function(monoName, Vec::new()));
+        self.addKey(Key::Function(monoName, Vec::new(), effectResolution));
     }
 }
