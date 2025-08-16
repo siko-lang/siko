@@ -20,9 +20,7 @@ fn fieldNameForIndex(index: usize) -> String {
 }
 
 fn getTuple(ty: &Type) -> QualifiedName {
-    QualifiedName::Module("siko".to_string())
-        .add(format!("Tuple_{}", ty))
-        .monomorphized("".to_string())
+    QualifiedName::Module("siko".to_string()).add(format!("Tuple_{}", ty))
 }
 
 pub fn getUnitTypeName() -> Type {

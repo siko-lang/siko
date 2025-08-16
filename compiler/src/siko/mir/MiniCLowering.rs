@@ -1,3 +1,4 @@
+use core::panic;
 use std::collections::{btree_map::Entry, BTreeMap};
 
 use super::{
@@ -362,7 +363,7 @@ impl<'a> MinicBuilder<'a> {
                 let u = if let Type::Union(u) = &f.result {
                     self.program.getUnion(u)
                 } else {
-                    unreachable!()
+                    panic!("Expected union type, found {}", f.result)
                 };
                 let variant = &u.variants[*index as usize];
                 let s = self.program.getStruct(&variant.ty.getStruct());

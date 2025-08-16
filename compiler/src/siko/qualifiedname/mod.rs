@@ -1,3 +1,4 @@
+use core::panic;
 use std::fmt::{Debug, Display};
 pub mod builtins;
 
@@ -32,9 +33,16 @@ impl QualifiedName {
         }
     }
 
+    pub fn getTraitMemberName(&self) -> QualifiedName {
+        match self {
+            QualifiedName::Instance(p, _) => *p.clone(),
+            _ => panic!("getTraitMemberName called on non-instance QualifiedName"),
+        }
+    }
+
     pub fn monomorphized(&self, args: String) -> QualifiedName {
         match self {
-            QualifiedName::Monomorphized(_, _) => self.clone(),
+            QualifiedName::Monomorphized(_, _) => panic!("Cannot monomorphize a monomorphized name"),
             _ => QualifiedName::Monomorphized(Box::new(self.clone()), args),
         }
     }

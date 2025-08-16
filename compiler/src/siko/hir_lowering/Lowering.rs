@@ -60,7 +60,7 @@ impl<'a> Builder<'a> {
             match &instruction.kind {
                 HirInstructionKind::FunctionCall(dest, name, args) => {
                     let f = self.program.getFunction(name).expect("Function not found");
-                    if name.base() == getTrueName() {
+                    if *name == getTrueName() {
                         let dest = self.buildVariable(dest);
                         block.instructions.push(Instruction::Declare(dest.clone()));
                         block
@@ -68,7 +68,7 @@ impl<'a> Builder<'a> {
                             .push(Instruction::IntegerLiteral(dest, "1".to_string()));
                         continue;
                     }
-                    if name.base() == getFalseName() {
+                    if *name == getFalseName() {
                         let dest = self.buildVariable(dest);
                         block.instructions.push(Instruction::Declare(dest.clone()));
                         block
@@ -133,7 +133,7 @@ impl<'a> Builder<'a> {
                     unimplemented!("CharLiteral instruction found in HIR Lowering");
                 }
                 HirInstructionKind::EnumSwitch(root, cases) => {
-                    if root.getType().getName().unwrap().base() == getBoolTypeName() {
+                    if root.getType().getName().unwrap() == getBoolTypeName() {
                         let dest = self.buildVariable(root);
                         let mut mirCases = Vec::new();
                         for case in cases {
@@ -170,7 +170,7 @@ impl<'a> Builder<'a> {
                     block.instructions.push(Instruction::IntegerSwitch(root, mirCases));
                 }
                 HirInstructionKind::Transform(dest, root, index) => {
-                    if root.getType().getName().unwrap().base() == getBoolTypeName() {
+                    if root.getType().getName().unwrap() == getBoolTypeName() {
                         block.instructions.push(Instruction::Declare(self.buildVariable(dest)));
                     } else {
                         let dest = self.buildVariable(dest);
@@ -306,10 +306,10 @@ impl<'a> Builder<'a> {
                 MirFunctionKind::UserDefined(blocks)
             }
             FunctionKind::VariantCtor(i) => {
-                if self.function.name.base() == getTrueName() {
+                if self.function.name == getTrueName() {
                     return None;
                 }
-                if self.function.name.base() == getFalseName() {
+                if self.function.name == getFalseName() {
                     return None;
                 }
                 MirFunctionKind::VariantCtor(i)
@@ -361,19 +361,19 @@ pub fn lowerType(ty: &HirType, program: &HirProgram) -> MirType {
     match ty {
         HirType::Named(name, _) => {
             if program.structs.get(name).is_some() {
-                if name.base() == getIntTypeName() {
+                if *name == getIntTypeName() {
                     MirType::Int64
-                } else if name.base() == getU8TypeName() {
+                } else if *name == getU8TypeName() {
                     MirType::UInt8
-                } else if name.base() == getI32TypeName() {
+                } else if *name == getI32TypeName() {
                     MirType::Int32
-                } else if name.base() == getU64TypeName() {
+                } else if *name == getU64TypeName() {
                     MirType::UInt64
                 } else {
                     MirType::Struct(convertName(name))
                 }
             } else {
-                if name.base() == getBoolTypeName() {
+                if *name == getBoolTypeName() {
                     MirType::Int64
                 } else {
                     MirType::Union(convertName(name))
@@ -434,10 +434,10 @@ pub fn lowerProgram(program: &HirProgram) -> MirProgram {
     //println!("Lowering structs");
 
     for (n, c) in &program.structs {
-        if n.base() == getIntTypeName() {
+        if *n == getIntTypeName() {
             continue;
         }
-        if n.base() == getU8TypeName() {
+        if *n == getU8TypeName() {
             continue;
         }
         let c = lowerStruct(c, program);
@@ -447,7 +447,7 @@ pub fn lowerProgram(program: &HirProgram) -> MirProgram {
     //println!("Lowering enums");
 
     for (n, e) in &program.enums {
-        if n.base() == getBoolTypeName() {
+        if *n == getBoolTypeName() {
             continue;
         }
         let u = lowerEnum(e, program);

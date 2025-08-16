@@ -165,6 +165,7 @@ impl<'a> Monomorphizer<'a> {
         monoFn.body = monoFn.body.process(&sub, self);
 
         monoFn.name = monoName.clone();
+        //println!("MONO FN: {} => {}", name, monoName);
         self.monomorphizedProgram.functions.insert(monoName, monoFn);
     }
 
@@ -208,7 +209,7 @@ impl<'a> Monomorphizer<'a> {
 
     pub fn getMonoName(&self, name: &QualifiedName, args: &Vec<Type>) -> QualifiedName {
         if args.is_empty() {
-            name.monomorphized(String::new())
+            name.clone()
         } else {
             name.monomorphized(formatTypes(args))
         }

@@ -245,7 +245,7 @@ impl Program {
                 item.alignment = totalAlignment;
                 item.size = offset;
                 item.payloadSize = maxSize;
-                //println!("{} size: {}, alignment {}", item.name, item.size, item.alignment);
+                //println!("Union {} size: {}, alignment {}", item.name, item.size, item.alignment);
                 self.unions.insert(item.name.clone(), item);
             }
         }

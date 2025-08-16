@@ -382,7 +382,7 @@ impl MiniCGenerator {
         }
 
         writeln!(output, "int main() {{")?;
-        writeln!(output, "   Main_main_();")?;
+        writeln!(output, "   Main_main();")?;
         writeln!(output, "   return 0;")?;
         writeln!(output, "}}\n\n")?;
         Ok(())

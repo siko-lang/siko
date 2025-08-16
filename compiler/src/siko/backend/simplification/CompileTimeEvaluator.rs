@@ -89,9 +89,9 @@ impl<'a> CompileTimeEvaluator<'a> {
                         newEnv.set(var.name.clone(), val.clone());
                     }
                     InstructionKind::FunctionCall(dest, name, _) => {
-                        if name == getTrueName().monomorphized(String::new()) {
+                        if name == getTrueName() {
                             newEnv.set(dest.name.clone(), Value::Bool(true));
-                        } else if name == getFalseName().monomorphized(String::new()) {
+                        } else if name == getFalseName() {
                             newEnv.set(dest.name.clone(), Value::Bool(false));
                         }
                     }

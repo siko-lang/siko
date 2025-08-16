@@ -40,7 +40,7 @@ impl Monomorphize for Instruction {
                         ResolutionResult::Winner(instance) => {
                             //println!("instance  {}", instance);
                             for m in &instance.members {
-                                let base = m.fullName.base();
+                                let base = m.fullName.getTraitMemberName();
                                 if base == name {
                                     return m.fullName.clone();
                                 }
