@@ -12,6 +12,7 @@ pub mod Lifetime;
 pub mod OwnershipVar;
 pub mod Program;
 pub mod Substitution;
+pub mod SyntaxBlockIterator;
 pub mod Trait;
 pub mod TraitMethodSelector;
 pub mod Type;

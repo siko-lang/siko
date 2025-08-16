@@ -1,30 +1,38 @@
-use std::collections::BTreeMap;
-
 use crate::siko::{
     hir::{
-        Function::{Block, Body},
+        BodyBuilder::BodyBuilder,
+        Function::Body,
+        Instruction::{SyntaxBlockId, SyntaxBlockIdSegment},
         Substitution::Substitution,
+        SyntaxBlockIterator::SyntaxBlockIterator,
     },
-    monomorphizer::{Monomorphizer::Monomorphizer, Utils::Monomorphize},
+    monomorphizer::{
+        Context::EffectResolutionStore, Effect::EffectResolution, Instruction::processInstruction,
+        Monomorphizer::Monomorphizer,
+    },
 };
 
-impl Monomorphize for Block {
-    fn process(&self, sub: &Substitution, mono: &mut Monomorphizer) -> Self {
-        let instructions = self.instructions.process(sub, mono);
-        Block {
-            id: self.id.clone(),
-            instructions: instructions,
+pub fn processBody(
+    input: Option<Body>,
+    sub: &Substitution,
+    mono: &mut Monomorphizer,
+    effectResolution: EffectResolution,
+) -> Option<Body> {
+    match input {
+        Some(body) => {
+            let bodyBuilder = BodyBuilder::withBody(body);
+            let mut effectResolutionStore = EffectResolutionStore::new();
+            effectResolutionStore.insert(
+                SyntaxBlockId::new().add(SyntaxBlockIdSegment { value: 0 }),
+                effectResolution.clone(),
+            );
+            let mut syntaxBlockIterator = SyntaxBlockIterator::new(bodyBuilder.clone());
+            syntaxBlockIterator.iterate(|instruction, syntaxBlockId, blockBuilder| {
+                let instruction = processInstruction(instruction, sub, mono, syntaxBlockId, &mut effectResolutionStore);
+                blockBuilder.replaceInstruction(instruction.kind, instruction.location.clone());
+            });
+            Some(bodyBuilder.build())
         }
-    }
-}
-
-impl Monomorphize for Body {
-    fn process(&self, sub: &Substitution, mono: &mut Monomorphizer) -> Self {
-        let blocks = self.blocks.process(sub, mono);
-        Body {
-            blocks: blocks,
-            varTypes: BTreeMap::new(),
-            varAllocator: self.varAllocator.clone(),
-        }
+        None => None,
     }
 }

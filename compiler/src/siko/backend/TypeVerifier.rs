@@ -248,7 +248,9 @@ impl<'a> TypeVerifier<'a> {
             InstructionKind::BlockEnd(_) => {
                 // do nothing, block end is just a marker
             }
-            InstructionKind::With(_, _, _) => {}
+            InstructionKind::With(var, _, _, _) => {
+                self.checkVariable(var);
+            }
         }
     }
 

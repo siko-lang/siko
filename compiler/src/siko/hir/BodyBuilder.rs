@@ -139,6 +139,15 @@ impl Builder {
     pub fn isValid(&self, blockId: BlockId) -> bool {
         self.body.blocks.contains_key(&blockId)
     }
+
+    fn withBody(body: Body) -> Builder {
+        Builder {
+            body,
+            nextBlockId: 0,
+            targetBlockId: BlockId::first(),
+            nextId: 0,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -157,6 +166,12 @@ impl BodyBuilder {
         let bodyBuilder = Builder::cloneFunction(function);
         BodyBuilder {
             bodyBuilder: Rc::new(RefCell::new(bodyBuilder)),
+        }
+    }
+
+    pub fn withBody(body: Body) -> BodyBuilder {
+        BodyBuilder {
+            bodyBuilder: Rc::new(RefCell::new(Builder::withBody(body))),
         }
     }
 

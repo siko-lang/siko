@@ -220,20 +220,8 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::IntegerSwitch(_, _) => {}
                         InstructionKind::BlockStart(_) => {}
                         InstructionKind::BlockEnd(_) => {}
-                        InstructionKind::With(handlers, _, _) => {
-                            for effectHandler in handlers {
-                                let method = self
-                                    .program
-                                    .getFunction(&effectHandler.method)
-                                    .expect("Method function not found");
-                                let handlerFn = self
-                                    .program
-                                    .getFunction(&effectHandler.handler)
-                                    .expect("Handler function not found");
-                                let methodType = method.getType();
-                                let handlerType = handlerFn.getType();
-                                self.unify(methodType, handlerType, effectHandler.location.clone());
-                            }
+                        InstructionKind::With(v, _, _, _) => {
+                            self.types.insert(v.name.to_string(), Type::Never(false));
                         }
                     }
                 }
@@ -934,7 +922,20 @@ impl<'a> Typechecker<'a> {
             }
             InstructionKind::BlockStart(_) => {}
             InstructionKind::BlockEnd(_) => {}
-            InstructionKind::With(_, blockId, _) => {
+            InstructionKind::With(_, handlers, blockId, _) => {
+                for effectHandler in handlers {
+                    let method = self
+                        .program
+                        .getFunction(&effectHandler.method)
+                        .expect("Method function not found");
+                    let handlerFn = self
+                        .program
+                        .getFunction(&effectHandler.handler)
+                        .expect("Handler function not found");
+                    let methodType = method.getType();
+                    let handlerType = handlerFn.getType();
+                    self.unify(methodType, handlerType, effectHandler.location.clone());
+                }
                 self.queue.push_back(*blockId);
             }
         }

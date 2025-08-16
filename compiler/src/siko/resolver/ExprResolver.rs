@@ -654,7 +654,8 @@ impl<'a> ExprResolver<'a> {
                     SimpleExpr::Block(block) => self.resolveBlock(block, &env, withResultVar.clone()),
                     _ => panic!("with body is not a block!"),
                 };
-                let kind = InstructionKind::With(handlers, withBodyBuilder.getBlockId(), syntaxBlockId);
+                let jumpResultVar = self.bodyBuilder.createTempValue(expr.location.clone());
+                let kind = InstructionKind::With(jumpResultVar, handlers, withBodyBuilder.getBlockId(), syntaxBlockId);
                 self.bodyBuilder
                     .block(parentBlockId)
                     .addInstruction(kind, expr.location.clone());

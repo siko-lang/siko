@@ -228,6 +228,21 @@ pub enum FunctionKind {
     EffectMemberDefinition(QualifiedName),
 }
 
+impl Display for FunctionKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FunctionKind::UserDefined => write!(f, "UserDefined"),
+            FunctionKind::VariantCtor(id) => write!(f, "VariantCtor({})", id),
+            FunctionKind::StructCtor => write!(f, "StructCtor"),
+            FunctionKind::Extern(kind) => write!(f, "Extern({:?})", kind),
+            FunctionKind::TraitMemberDecl(qn) => write!(f, "TraitMemberDecl({})", qn),
+            FunctionKind::TraitMemberDefinition(qn) => write!(f, "TraitMemberDefinition({})", qn),
+            FunctionKind::EffectMemberDecl(qn) => write!(f, "EffectMemberDecl({})", qn),
+            FunctionKind::EffectMemberDefinition(qn) => write!(f, "EffectMemberDefinition({})", qn),
+        }
+    }
+}
+
 impl FunctionKind {
     pub fn isTraitCall(&self) -> Option<QualifiedName> {
         match self {

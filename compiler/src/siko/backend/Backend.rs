@@ -26,7 +26,7 @@ pub fn process(ctx: &ReportContext, program: Program) -> Program {
     //     .dumpToFile("hirdump/afterdropcheck")
     //     .expect("Failed to dump HIR");
     let program = monomorphize(&ctx, program);
-    // println!("after mono\n{}", program);
+    //println!("after mono\n{}", program);
     let program = removeTuples(&program);
     //println!("after remove tuples\n{}", program);
     let program = Simplifier::simplify(program);

@@ -273,7 +273,7 @@ impl<'a> Builder<'a> {
                 HirInstructionKind::DynamicFunctionCall(_, _, _) => {
                     panic!("DynamicFunctionCall instruction found in Lowering, this should not happen");
                 }
-                HirInstructionKind::With(_, _, _) => {
+                HirInstructionKind::With(_, _, _, _) => {
                     panic!("With instruction found in Lowering, this should not happen");
                 }
             }

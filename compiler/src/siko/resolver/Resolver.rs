@@ -651,18 +651,24 @@ impl<'a> Resolver<'a> {
                         for method in &effect.methods {
                             let functionResolver =
                                 FunctionResolver::new(moduleResolver, ConstraintContext::new(), None);
-                            let irFunction = functionResolver.resolve(
+                            let name = QualifiedName::Module(moduleResolver.name.clone())
+                                .add(effect.name.toString())
+                                .add(method.name.toString());
+                            let mut irFunction = functionResolver.resolve(
                                 self.ctx,
                                 method,
                                 &self.emptyVariants,
                                 &self.program.structs,
                                 &self.variants,
                                 &self.program.enums,
-                                QualifiedName::Module(moduleResolver.name.clone())
-                                    .add(effect.name.toString())
-                                    .add(method.name.toString()),
+                                name.clone(),
                                 &typeResolver,
                             );
+                            if irFunction.body.is_none() {
+                                irFunction.kind = FunctionKind::EffectMemberDecl(name.clone());
+                            } else {
+                                irFunction.kind = FunctionKind::EffectMemberDefinition(name.clone());
+                            }
                             self.program.functions.insert(irFunction.name.clone(), irFunction);
                         }
                     }

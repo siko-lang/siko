@@ -15,6 +15,7 @@ use crate::siko::{
         Instruction::{EnumCase, FieldId, FieldInfo, InstructionKind},
         Program::Program,
         Substitution::{createTypeSubstitutionFrom, Substitution},
+        //Type::formatTypes,
         Type::Type,
         TypeVarAllocator::TypeVarAllocator,
         Variable::{Variable, VariableName},
@@ -23,7 +24,9 @@ use crate::siko::{
         Location::Location,
         Report::{Report, ReportContext},
     },
-    monomorphizer::{Context::Context, Effect::EffectResolution, Queue::Key, Utils::Monomorphize},
+    monomorphizer::{
+        Context::Context, Effect::EffectResolution, Function::processBody, Queue::Key, Utils::Monomorphize,
+    },
     qualifiedname::{
         builtins::{getDropFnName, getDropName, getMainName},
         QualifiedName,
@@ -161,7 +164,7 @@ impl<'a> Monomorphizer<'a> {
         let mut monoFn = function.clone();
         monoFn.result = self.processType(monoFn.result.apply(&sub));
         monoFn.params = monoFn.params.process(&sub, self);
-        monoFn.body = monoFn.body.process(&sub, self);
+        monoFn.body = processBody(monoFn.body.clone(), &sub, self, effectResolution);
 
         monoFn.name = monoName.clone();
         //println!("MONO FN: {} => {}", name, monoName);
