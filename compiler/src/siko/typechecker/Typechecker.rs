@@ -13,7 +13,7 @@ use crate::siko::{
         Data::{Enum, Struct},
         Function::{BlockId, Function, Parameter},
         Instantiation::{instantiateEnum, instantiateStruct, instantiateTrait, instantiateTypes},
-        Instruction::{FieldId, FieldInfo, Instruction, InstructionKind, Mutability, WithContext},
+        Instruction::{FieldId, FieldInfo, ImplicitIndex, Instruction, InstructionKind, Mutability, WithContext},
         Program::Program,
         Substitution::Substitution,
         TraitMethodSelector::TraitMethodSelector,
@@ -954,7 +954,11 @@ impl<'a> Typechecker<'a> {
                 self.queue.push_back(*blockId);
             }
             InstructionKind::GetImplicit(var, name) => {
-                let implicit = self.program.getImplicit(&name).expect("Implicit not found");
+                let implicitName = match name {
+                    ImplicitIndex::Unresolved(name) => name,
+                    ImplicitIndex::Resolved(_) => panic!("Implicit index already resolved in typechecker!"),
+                };
+                let implicit = self.program.getImplicit(&implicitName).expect("Implicit not found");
                 self.unify(implicit.ty, self.getType(var), instruction.location.clone());
             }
         }

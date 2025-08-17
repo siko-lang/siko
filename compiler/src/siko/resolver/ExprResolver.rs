@@ -7,8 +7,8 @@ use crate::siko::hir::Data::{Enum, Struct};
 use crate::siko::hir::Function::BlockId;
 use crate::siko::hir::Implicit::Implicit;
 use crate::siko::hir::Instruction::{
-    EffectHandler as HirEffectHandler, FieldId, FieldInfo, ImplicitHandler as HirImplicitHandler, InstructionKind,
-    SyntaxBlockId, SyntaxBlockIdSegment, WithContext as HirWithContext,
+    EffectHandler as HirEffectHandler, FieldId, FieldInfo, ImplicitHandler as HirImplicitHandler, ImplicitIndex,
+    InstructionKind, SyntaxBlockId, SyntaxBlockIdSegment, WithContext as HirWithContext,
 };
 use crate::siko::hir::Variable::Variable;
 use crate::siko::location::Location::Location;
@@ -295,7 +295,8 @@ impl<'a> ExprResolver<'a> {
                     if let Some(irName) = self.moduleResolver.tryResolverName(name) {
                         if self.implicits.contains_key(&irName) {
                             let implicitVar = self.bodyBuilder.createTempValue(expr.location.clone());
-                            let kind = InstructionKind::GetImplicit(implicitVar.clone(), irName);
+                            let kind =
+                                InstructionKind::GetImplicit(implicitVar.clone(), ImplicitIndex::Unresolved(irName));
                             self.bodyBuilder.current().addInstruction(kind, name.location());
                             return implicitVar;
                         }

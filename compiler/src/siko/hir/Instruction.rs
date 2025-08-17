@@ -207,7 +207,7 @@ pub enum Mutability {
     ExplicitMutable,
 }
 
-impl std::fmt::Display for Mutability {
+impl Display for Mutability {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Mutability::Mutable => write!(f, "mutable"),
@@ -217,7 +217,43 @@ impl std::fmt::Display for Mutability {
     }
 }
 
-impl std::fmt::Debug for Mutability {
+impl Debug for Mutability {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ImplicitContextIndex(pub usize);
+
+impl Display for ImplicitContextIndex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "#{}", self.0)
+    }
+}
+
+impl Debug for ImplicitContextIndex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+#[derive(Clone, PartialEq)]
+pub enum ImplicitIndex {
+    Unresolved(QualifiedName),
+    Resolved(ImplicitContextIndex),
+}
+
+impl Display for ImplicitIndex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ImplicitIndex::Unresolved(name) => write!(f, "{}", name),
+            ImplicitIndex::Resolved(index) => write!(f, "{}", index),
+        }
+    }
+}
+
+impl Debug for ImplicitIndex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self)
     }
@@ -251,7 +287,7 @@ pub enum InstructionKind {
     BlockStart(SyntaxBlockId),
     BlockEnd(SyntaxBlockId),
     With(Variable, Vec<WithContext>, BlockId, SyntaxBlockId), // Effect handlers and the block ID
-    GetImplicit(Variable, QualifiedName),
+    GetImplicit(Variable, ImplicitIndex),
 }
 
 impl Display for InstructionKind {
@@ -564,8 +600,8 @@ impl InstructionKind {
                 let handlers_str = handlers.iter().map(|h| h.to_string()).collect::<Vec<_>>().join(", ");
                 format!("with({}, [{}], {}, {})", v, handlers_str, block_id, syntax_block_id)
             }
-            InstructionKind::GetImplicit(var, name) => {
-                format!("get_implicit({}, {})", var, name)
+            InstructionKind::GetImplicit(var, index) => {
+                format!("get_implicit({}, {})", var, index)
             }
         }
     }

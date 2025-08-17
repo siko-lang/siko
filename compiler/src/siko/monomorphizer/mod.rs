@@ -1,6 +1,6 @@
 pub mod Context;
-pub mod Effect;
 pub mod Function;
+pub mod Handler;
 pub mod Instruction;
 pub mod Monomorphizer;
 pub mod Queue;

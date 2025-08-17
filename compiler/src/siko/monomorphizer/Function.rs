@@ -7,7 +7,7 @@ use crate::siko::{
         SyntaxBlockIterator::SyntaxBlockIterator,
     },
     monomorphizer::{
-        Context::EffectResolutionStore, Effect::EffectResolution, Instruction::processInstruction,
+        Context::HandlerResolutionStore, Handler::HandlerResolution, Instruction::processInstruction,
         Monomorphizer::Monomorphizer,
     },
 };
@@ -16,23 +16,24 @@ pub fn processBody(
     input: Option<Body>,
     sub: &Substitution,
     mono: &mut Monomorphizer,
-    effectResolution: EffectResolution,
+    handlerResolution: HandlerResolution,
 ) -> Option<Body> {
     match input {
         Some(body) => {
             let bodyBuilder = BodyBuilder::withBody(body);
-            let mut effectResolutionStore = EffectResolutionStore::new();
-            effectResolutionStore.insert(SyntaxBlockId::new(), effectResolution.clone());
-            effectResolutionStore.insert(
+            let mut handlerResolutionStore = HandlerResolutionStore::new();
+            handlerResolutionStore.insert(SyntaxBlockId::new(), handlerResolution.clone());
+            handlerResolutionStore.insert(
                 SyntaxBlockId::new().add(SyntaxBlockIdSegment { value: 0 }),
-                effectResolution.clone(),
+                handlerResolution.clone(),
             );
             let mut syntaxBlockIterator = SyntaxBlockIterator::new(bodyBuilder.clone());
             syntaxBlockIterator.iterate(|instruction, syntaxBlockId, blockBuilder| {
-                let instruction = processInstruction(instruction, sub, mono, syntaxBlockId, &mut effectResolutionStore);
+                let instruction =
+                    processInstruction(instruction, sub, mono, syntaxBlockId, &mut handlerResolutionStore);
                 blockBuilder.replaceInstruction(instruction.kind, instruction.location.clone());
             });
-            effectResolutionStore.checkUnused(&mono.ctx);
+            handlerResolutionStore.checkUnused(&mono.ctx);
             Some(bodyBuilder.build())
         }
         None => None,

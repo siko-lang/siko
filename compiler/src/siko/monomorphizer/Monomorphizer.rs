@@ -25,7 +25,7 @@ use crate::siko::{
         Report::{Report, ReportContext},
     },
     monomorphizer::{
-        Context::Context, Effect::EffectResolution, Function::processBody, Queue::Key, Utils::Monomorphize,
+        Context::Context, Function::processBody, Handler::HandlerResolution, Queue::Key, Utils::Monomorphize,
     },
     qualifiedname::{
         builtins::{getDropFnName, getDropName, getMainName},
@@ -83,7 +83,7 @@ impl<'a> Monomorphizer<'a> {
         let main_name = getMainName();
         match self.program.functions.get(&main_name) {
             Some(_) => {
-                self.addKey(Key::Function(main_name, Vec::new(), EffectResolution::new()));
+                self.addKey(Key::Function(main_name, Vec::new(), HandlerResolution::new()));
             }
             None => {
                 let slogan = format!(
@@ -117,8 +117,8 @@ impl<'a> Monomorphizer<'a> {
                     //println!("MONO Processing {}", key);
                     self.processed.insert(key.clone());
                     match key.clone() {
-                        Key::Function(name, args, effectResolution) => {
-                            self.monomorphizeFunction(name, args, effectResolution);
+                        Key::Function(name, args, handlerResolution) => {
+                            self.monomorphizeFunction(name, args, handlerResolution);
                         }
                         Key::Struct(name, args) => {
                             //println!("Processing structDef {}", key);
@@ -128,9 +128,9 @@ impl<'a> Monomorphizer<'a> {
                             //println!("Processing enum {}", key);
                             self.monomorphizeEnum(name, args);
                         }
-                        Key::AutoDropFn(name, ty, effectResolution) => {
+                        Key::AutoDropFn(name, ty, handlerResolution) => {
                             //println!("Processing auto drop {}", key);
-                            self.monomorphizeAutoDropFn(name, ty, effectResolution);
+                            self.monomorphizeAutoDropFn(name, ty, handlerResolution);
                         }
                     }
                 }
@@ -139,7 +139,7 @@ impl<'a> Monomorphizer<'a> {
         }
     }
 
-    fn monomorphizeFunction(&mut self, name: QualifiedName, args: Vec<Type>, effectResolution: EffectResolution) {
+    fn monomorphizeFunction(&mut self, name: QualifiedName, args: Vec<Type>, handlerResolution: HandlerResolution) {
         //println!("MONO FN: {} {}", name, formatTypes(&args));
         let function = self
             .program
@@ -161,13 +161,13 @@ impl<'a> Monomorphizer<'a> {
         let monoName = if name.isMonomorphized() {
             name.clone()
         } else {
-            self.getMonoName(&name, &args, effectResolution.clone())
+            self.getMonoName(&name, &args, handlerResolution.clone())
         };
         let sub = createTypeSubstitutionFrom(params, args);
         let mut monoFn = function.clone();
         monoFn.result = self.processType(monoFn.result.apply(&sub));
         monoFn.params = monoFn.params.process(&sub, self);
-        monoFn.body = processBody(monoFn.body.clone(), &sub, self, effectResolution);
+        monoFn.body = processBody(monoFn.body.clone(), &sub, self, handlerResolution);
 
         monoFn.name = monoName.clone();
         //println!("MONO FN: {} => {}", name, monoName);
@@ -184,7 +184,7 @@ impl<'a> Monomorphizer<'a> {
         }
         let r = match ty.clone() {
             Type::Named(name, args) => {
-                let monoName = self.getMonoName(&name, &args, EffectResolution::new());
+                let monoName = self.getMonoName(&name, &args, HandlerResolution::new());
                 if self.program.structs.contains_key(&name) {
                     self.addKey(Key::Struct(name, args))
                 } else if self.program.enums.contains_key(&name) {
@@ -216,14 +216,14 @@ impl<'a> Monomorphizer<'a> {
         &self,
         name: &QualifiedName,
         args: &Vec<Type>,
-        effectResolution: EffectResolution,
+        handlerResolution: HandlerResolution,
     ) -> QualifiedName {
-        if args.is_empty() && effectResolution.isEmpty() {
+        if args.is_empty() && handlerResolution.isEmpty() {
             name.clone()
         } else {
             let context = Context {
                 args: args.iter().cloned().collect(),
-                effectResolution: effectResolution,
+                handlerResolution: handlerResolution,
             };
             name.monomorphized(context)
         }
@@ -234,7 +234,7 @@ impl<'a> Monomorphizer<'a> {
         let targetTy = Type::Named(name.clone(), args.clone());
         let c = self.program.structs.get(&name).expect("structDef not found in mono");
         let mut c = instantiateStruct(&mut TypeVarAllocator::new(), c, &targetTy);
-        let name = self.getMonoName(&name, &args, EffectResolution::new());
+        let name = self.getMonoName(&name, &args, HandlerResolution::new());
         c.ty = self.processType(c.ty);
         c.fields = c
             .fields
@@ -256,14 +256,14 @@ impl<'a> Monomorphizer<'a> {
         let targetTy = Type::Named(name.clone(), args.clone());
         let mut e = instantiateEnum(&mut TypeVarAllocator::new(), e, &targetTy);
         //println!("Enum ty {}", e.ty);
-        let name = self.getMonoName(&name, &args, EffectResolution::new());
+        let name = self.getMonoName(&name, &args, HandlerResolution::new());
         //println!("Sub {}", sub);
         e.variants = e
             .variants
             .iter()
             .cloned()
             .map(|mut v| {
-                v.name = self.getMonoName(&v.name, &args, EffectResolution::new());
+                v.name = self.getMonoName(&v.name, &args, HandlerResolution::new());
                 v.items = v.items.into_iter().map(|i| self.processType(i)).collect();
                 v
             })
@@ -273,9 +273,9 @@ impl<'a> Monomorphizer<'a> {
         self.monomorphizedProgram.enums.insert(name, e);
     }
 
-    fn monomorphizeAutoDropFn(&mut self, name: QualifiedName, ty: Type, effectResolution: EffectResolution) {
+    fn monomorphizeAutoDropFn(&mut self, name: QualifiedName, ty: Type, handlerResolution: HandlerResolution) {
         //println!("MONO AUTO DROP: {} {}", name, ty);
-        let monoName = self.getMonoName(&name, &vec![ty.clone()], effectResolution.clone());
+        let monoName = self.getMonoName(&name, &vec![ty.clone()], handlerResolution.clone());
 
         let mut bodyBuilder = BodyBuilder::new();
         let mut builder = bodyBuilder.createBlock();
@@ -390,6 +390,6 @@ impl<'a> Monomorphizer<'a> {
         };
 
         self.program.functions.insert(monoName.clone(), dropFn);
-        self.addKey(Key::Function(monoName, Vec::new(), effectResolution));
+        self.addKey(Key::Function(monoName, Vec::new(), handlerResolution));
     }
 }

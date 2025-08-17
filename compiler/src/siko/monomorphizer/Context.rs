@@ -7,20 +7,20 @@ use crate::siko::{
         Type::{formatTypes, Type},
     },
     location::Report::{Report, ReportContext},
-    monomorphizer::Effect::EffectResolution,
+    monomorphizer::Handler::HandlerResolution,
 };
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Context {
     pub args: Vec<Type>,
-    pub effectResolution: EffectResolution,
+    pub handlerResolution: HandlerResolution,
 }
 
 impl Context {
     pub fn new() -> Self {
         Context {
             args: Vec::new(),
-            effectResolution: EffectResolution::new(),
+            handlerResolution: HandlerResolution::new(),
         }
     }
 }
@@ -32,25 +32,25 @@ impl Display for Context {
         } else {
             write!(f, "{}", formatTypes(&self.args))?;
         }
-        if !self.effectResolution.effects.is_empty() {
-            write!(f, " effects: {{{}}}", self.effectResolution)?;
+        if !self.handlerResolution.effects.is_empty() {
+            write!(f, " effects: {{{}}}", self.handlerResolution)?;
         }
         Ok(())
     }
 }
 
-pub struct EffectResolutionStore {
-    pub resolutions: BTreeMap<SyntaxBlockId, EffectResolution>,
+pub struct HandlerResolutionStore {
+    pub resolutions: BTreeMap<SyntaxBlockId, HandlerResolution>,
 }
 
-impl EffectResolutionStore {
+impl HandlerResolutionStore {
     pub fn new() -> Self {
-        EffectResolutionStore {
+        HandlerResolutionStore {
             resolutions: BTreeMap::new(),
         }
     }
 
-    pub fn get(&self, syntaxBlockId: &SyntaxBlockId) -> &EffectResolution {
+    pub fn get(&self, syntaxBlockId: &SyntaxBlockId) -> &HandlerResolution {
         //println!("Getting effect resolution for {}", syntaxBlockId);
         let mut current = syntaxBlockId.clone();
         loop {
@@ -67,7 +67,7 @@ impl EffectResolutionStore {
         }
     }
 
-    pub fn insert(&mut self, syntaxBlockId: SyntaxBlockId, resolution: EffectResolution) {
+    pub fn insert(&mut self, syntaxBlockId: SyntaxBlockId, resolution: HandlerResolution) {
         //println!("Inserting effect resolution for {}", syntaxBlockId);
         self.resolutions.insert(syntaxBlockId, resolution);
     }
