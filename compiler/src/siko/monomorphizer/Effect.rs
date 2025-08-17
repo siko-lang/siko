@@ -44,7 +44,13 @@ impl EffectResolution {
     }
 
     pub fn add(&mut self, effect: QualifiedName, resolution: QualifiedName, location: Location) {
-        self.effects.insert(effect, Handler::new(resolution, location));
+        let mut handler = Handler::new(resolution, location);
+        if let Some(prev) = self.effects.get(&effect) {
+            // The handler shadows the prev handler so we clone its used flag
+            // if this new handler is used, prev will be marked as used as well
+            handler.used = Rc::clone(&prev.used);
+        }
+        self.effects.insert(effect, handler);
     }
 
     pub fn get(&self, effect: &QualifiedName) -> Option<&Handler> {
