@@ -475,7 +475,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
             Node::Tuple(tuple) => {
                 let mut builder = self.resolver.createBlock(self.parentEnv);
                 builder.current();
-                let root = ctx.get(&tuple.dataPath);
+                let root = ctx.get(&tuple.dataPath.getParent());
                 let mut ctx = ctx.clone();
                 for index in 0..tuple.size {
                     let value = builder.addFieldRef(
@@ -897,7 +897,7 @@ enum Node {
 impl Node {
     fn getDataPath(&self) -> DataPath {
         match self {
-            Node::Tuple(tuple) => tuple.dataPath.clone(),
+            Node::Tuple(tuple) => tuple.dataPath.getParent(),
             Node::Switch(switch) => switch.dataPath.clone(),
             Node::End(_) => unreachable!(),
             Node::Wildcard(_) => unreachable!(),

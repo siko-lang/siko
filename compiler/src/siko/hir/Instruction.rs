@@ -9,7 +9,7 @@ use super::Function::BlockId;
 use super::Type::Type;
 use super::Variable::Variable;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum FieldId {
     Named(String),
     Indexed(u32),
@@ -26,7 +26,7 @@ impl FieldId {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct FieldInfo {
     pub name: FieldId,
     pub location: Location,

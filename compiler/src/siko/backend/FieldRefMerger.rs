@@ -1,18 +1,24 @@
 use std::collections::BTreeMap;
 
-use crate::siko::hir::{
-    BodyBuilder::BodyBuilder,
-    Function::Function,
-    Instruction::{FieldInfo, InstructionKind},
-    Program::Program,
-    Variable::Variable,
+use crate::siko::{
+    backend::simplification::UnusedVariableEliminator,
+    hir::{
+        BodyBuilder::BodyBuilder,
+        Function::Function,
+        Instruction::{FieldInfo, InstructionKind},
+        Program::Program,
+        Variable::Variable,
+    },
 };
 
 pub fn mergeFieldRefs(program: Program) -> Program {
     let mut result = program.clone();
     for (name, f) in &program.functions {
         let mut merger = FieldRefMerger::new(f);
-        let f = merger.process();
+        let mut f = merger.process();
+        if let Some(updatedF) = UnusedVariableEliminator::eliminateUnusedVariable(&f) {
+            f = updatedF;
+        }
         result.functions.insert(name.clone(), f);
     }
     result
@@ -37,6 +43,9 @@ impl<'a> FieldRefMerger<'a> {
         if self.function.body.is_none() {
             return self.function.clone();
         }
+
+        //println!("Processing function: {}", self.function);
+
         let mut bodyBuilder = BodyBuilder::cloneFunction(self.function);
 
         let mut fieldRefInfos = BTreeMap::new();
@@ -47,13 +56,14 @@ impl<'a> FieldRefMerger<'a> {
             loop {
                 if let Some(instruction) = builder.getInstruction() {
                     if let InstructionKind::FieldRef(dest, receiver, fields) = instruction.kind {
-                        if receiver.isTemp() {
+                        if dest.isTemp() {
                             let info = FieldRefInfo {
-                                dest: dest,
+                                dest: dest.clone(),
                                 receiver: receiver.clone(),
                                 fields: fields,
                             };
-                            fieldRefInfos.insert(receiver, info);
+                            //println!("Found field ref: {} -> {}", receiver, dest);
+                            fieldRefInfos.insert(dest, info);
                         }
                     }
                     builder.step();
@@ -67,22 +77,16 @@ impl<'a> FieldRefMerger<'a> {
             loop {
                 if let Some(instruction) = builder.getInstruction() {
                     //println!("Processing instruction: {}", instruction);
-                    if let InstructionKind::FieldRef(dest, receiver, mut fields) = instruction.kind {
-                        if let Some(info) = fieldRefInfos.get(&dest) {
-                            fields.extend(info.fields.clone());
-                            let kind = InstructionKind::FieldRef(info.dest.clone(), receiver.clone(), fields);
-                            //println!("Replacing {}", kind);
+                    if let InstructionKind::FieldRef(dest, receiver, fields) = &instruction.kind {
+                        if let Some(info) = fieldRefInfos.get(&receiver) {
+                            let mut fields = fields.clone();
+                            fields.insert(0, info.fields[0].clone());
+                            let kind = InstructionKind::FieldRef(dest.clone(), info.receiver.clone(), fields);
                             builder.replaceInstruction(kind, instruction.location.clone());
-                            fieldRefInfos.remove(&dest);
                             continue;
                         }
                         if !receiver.isTemp() {
                             builder.step();
-                            continue;
-                        }
-                        if let None = fieldRefInfos.get(&receiver) {
-                            //println!("Removing instruction {} {}", dest, receiver);
-                            builder.removeInstruction();
                             continue;
                         }
                     }
