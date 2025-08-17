@@ -77,7 +77,7 @@ pub fn getUsageInfo(kind: InstructionKind) -> UsageInfo {
         InstructionKind::DeclareVar(_, _) => UsageInfo::empty(),
         InstructionKind::BlockStart(_) => UsageInfo::empty(),
         InstructionKind::BlockEnd(_) => UsageInfo::empty(),
-        InstructionKind::FunctionCall(dest, _, args) => {
+        InstructionKind::FunctionCall(dest, _, args, _) => {
             UsageInfo::with(args.iter().map(|arg| varToUsage(arg)).collect(), Some(dest.toPath()))
         }
         InstructionKind::Assign(dest, src) => UsageInfo::with(vec![varToUsage(&src)], Some(dest.toPath())),

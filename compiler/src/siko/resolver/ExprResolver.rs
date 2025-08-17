@@ -686,7 +686,10 @@ impl<'a> ExprResolver<'a> {
                 let withInfo = WithInfo {
                     contexts: handlers,
                     blockId: withBodyBuilder.getBlockId(),
+                    parentSyntaxBlockId: SyntaxBlockId::new(),
                     syntaxBlockId,
+                    operations: vec![],
+                    contextTypes: vec![],
                 };
                 let kind = InstructionKind::With(jumpResultVar, withInfo);
                 self.bodyBuilder

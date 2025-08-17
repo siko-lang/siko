@@ -153,7 +153,7 @@ impl<'a> Typechecker<'a> {
             for (_, block) in &body.blocks {
                 for instruction in &block.instructions {
                     match &instruction.kind {
-                        InstructionKind::FunctionCall(dest, _, _) => {
+                        InstructionKind::FunctionCall(dest, _, _, _) => {
                             self.initializeVar(dest);
                         }
                         InstructionKind::Converter(var, _) => {
@@ -547,7 +547,7 @@ impl<'a> Typechecker<'a> {
     fn checkInstruction(&mut self, instruction: Instruction, builder: &mut BlockBuilder) {
         //println!("checkInstruction {}", instruction);
         match &instruction.kind {
-            InstructionKind::FunctionCall(dest, name, args) => {
+            InstructionKind::FunctionCall(dest, name, args, _) => {
                 //println!("FunctionCall {} {} {:?}", dest, name, args);
                 let Some(targetFn) = self.program.functions.get(name) else {
                     panic!("Function not found {}", name);
@@ -574,7 +574,7 @@ impl<'a> Typechecker<'a> {
                 let mut extendedArgs = args.clone();
                 extendedArgs.insert(0, receiver.clone());
                 builder.replaceInstruction(
-                    InstructionKind::FunctionCall(dest.clone(), name.clone(), extendedArgs.clone()),
+                    InstructionKind::FunctionCall(dest.clone(), name.clone(), extendedArgs.clone(), None),
                     instruction.location.clone(),
                 );
                 let targetFn = self.program.functions.get(&name).expect("Function not found");
@@ -606,7 +606,7 @@ impl<'a> Typechecker<'a> {
                             let mut implicitResult = self.bodyBuilder.createTempValue(instruction.location.clone());
                             implicitResult.ty = Some(baseType.clone());
                             self.types.insert(implicitResult.name.to_string(), baseType.clone());
-                            let kind = InstructionKind::FunctionCall(implicitResult.clone(), name, extendedArgs);
+                            let kind = InstructionKind::FunctionCall(implicitResult.clone(), name, extendedArgs, None);
                             builder.replaceInstruction(kind, instruction.location.clone());
                             builder.step();
                             builder.addAssign(
@@ -623,7 +623,8 @@ impl<'a> Typechecker<'a> {
                             let mut implicitResult = self.bodyBuilder.createTempValue(instruction.location.clone());
                             implicitResult.ty = Some(baseType.clone());
                             self.types.insert(implicitResult.name.to_string(), baseType.clone());
-                            let fnCall = InstructionKind::FunctionCall(implicitResult.clone(), name, extendedArgs);
+                            let fnCall =
+                                InstructionKind::FunctionCall(implicitResult.clone(), name, extendedArgs, None);
                             let mut implicitSelf = self.bodyBuilder.createTempValue(instruction.location.clone());
                             let receiverTy = self.getType(&origReceiver);
                             implicitSelf.ty = Some(receiverTy.clone());
@@ -663,7 +664,8 @@ impl<'a> Typechecker<'a> {
                             let mut implicitResult = self.bodyBuilder.createTempValue(instruction.location.clone());
                             implicitResult.ty = Some(baseType.clone());
                             self.types.insert(implicitResult.name.to_string(), baseType.clone());
-                            let fnCall = InstructionKind::FunctionCall(implicitResult.clone(), name, extendedArgs);
+                            let fnCall =
+                                InstructionKind::FunctionCall(implicitResult.clone(), name, extendedArgs, None);
                             let mut implicitSelf = self.bodyBuilder.createTempValue(instruction.location.clone());
                             let receiverTy = self.getType(&origReceiver);
                             implicitSelf.ty = Some(receiverTy.clone());
@@ -806,6 +808,7 @@ impl<'a> Typechecker<'a> {
                         storeVar,
                         getNativePtrStoreName(),
                         vec![addressOfVar, rhs.clone()],
+                        None,
                     );
                     builder.replaceInstruction(store, instruction.location.clone());
                 }
@@ -883,6 +886,7 @@ impl<'a> Typechecker<'a> {
                             ptrLoadResultVar.clone(),
                             getNativePtrLoadName(),
                             vec![receiver.clone()],
+                            None,
                         ),
                         instruction.location.clone(),
                     );
@@ -1169,6 +1173,7 @@ impl<'a> Typechecker<'a> {
                                             dest.clone(),
                                             getNativePtrCloneName(),
                                             vec![source.clone()],
+                                            None,
                                         )
                                     } else {
                                         if self.program.instanceResolver.isCopy(destTy) {
@@ -1176,6 +1181,7 @@ impl<'a> Typechecker<'a> {
                                                 dest.clone(),
                                                 getCloneFnName(),
                                                 vec![source.clone()],
+                                                None,
                                             )
                                         } else {
                                             TypecheckerError::TypeMismatch(
@@ -1208,6 +1214,7 @@ impl<'a> Typechecker<'a> {
                                                 newVar.clone(),
                                                 getImplicitConvertFnName(),
                                                 vec![source.clone()],
+                                                None,
                                             );
                                             builder.addInstruction(kind, instruction.location.clone());
                                             builder.step();
@@ -1231,6 +1238,7 @@ impl<'a> Typechecker<'a> {
                                                 dest.clone(),
                                                 getImplicitConvertFnName(),
                                                 vec![source.clone()],
+                                                None,
                                             );
                                             builder.replaceInstruction(kind, instruction.location.clone());
                                         }

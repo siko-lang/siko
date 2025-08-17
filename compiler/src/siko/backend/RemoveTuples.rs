@@ -177,6 +177,7 @@ impl RemoveTuples for InstructionKind {
                 dest.removeTuples(ctx),
                 getTuple(&dest.getType()),
                 args.removeTuples(ctx),
+                None,
             ),
             InstructionKind::Converter(dest, source) => {
                 InstructionKind::Converter(dest.removeTuples(ctx), source.removeTuples(ctx))
@@ -184,9 +185,12 @@ impl RemoveTuples for InstructionKind {
             InstructionKind::Transform(dest, root, index) => {
                 InstructionKind::Transform(dest.removeTuples(ctx), root.removeTuples(ctx), *index)
             }
-            InstructionKind::FunctionCall(dest, name, args) => {
-                InstructionKind::FunctionCall(dest.removeTuples(ctx), name.clone(), args.removeTuples(ctx))
-            }
+            InstructionKind::FunctionCall(dest, name, args, info) => InstructionKind::FunctionCall(
+                dest.removeTuples(ctx),
+                name.clone(),
+                args.removeTuples(ctx),
+                info.clone(),
+            ),
             InstructionKind::MethodCall(_, _, _, _) => {
                 unreachable!("method call in remove tuples!")
             }

@@ -183,7 +183,7 @@ impl BlockBuilder {
         }
         let result = self.bodyBuilder.createTempValue(location.clone());
         self.addInstruction(
-            InstructionKind::FunctionCall(result.clone(), functionName, tempArgs),
+            InstructionKind::FunctionCall(result.clone(), functionName, tempArgs, None),
             location,
         );
         result
@@ -199,7 +199,7 @@ impl BlockBuilder {
         let mut result = self.bodyBuilder.createTempValue(location.clone());
         result.ty = Some(ty);
         self.addInstruction(
-            InstructionKind::FunctionCall(result.clone(), functionName, args),
+            InstructionKind::FunctionCall(result.clone(), functionName, args, None),
             location,
         );
         result

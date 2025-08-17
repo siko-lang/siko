@@ -68,7 +68,7 @@ impl<'a> Builder<'a> {
         };
         for instruction in &hirBlock.instructions {
             match &instruction.kind {
-                HirInstructionKind::FunctionCall(dest, name, args) => {
+                HirInstructionKind::FunctionCall(dest, name, args, _) => {
                     let f = self.program.getFunction(name).expect("Function not found");
                     if *name == getTrueName() {
                         let dest = self.buildVariable(dest);

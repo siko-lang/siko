@@ -3,6 +3,7 @@ use std::fmt::Display;
 
 use crate::siko::backend::drop::DropMetadataStore::MetadataKind;
 use crate::siko::backend::drop::Path::Path;
+use crate::siko::hir::Type::formatTypes;
 use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
 
 use super::Function::BlockId;
@@ -263,22 +264,34 @@ impl Debug for ImplicitIndex {
 pub struct WithInfo {
     pub contexts: Vec<WithContext>,
     pub blockId: BlockId,
+    pub parentSyntaxBlockId: SyntaxBlockId,
     pub syntaxBlockId: SyntaxBlockId,
+    pub operations: Vec<ImplicitContextOperation>,
+    pub contextTypes: Vec<Type>,
 }
 
 impl Display for WithInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "with_info({:?}, {}, {})",
-            self.contexts, self.blockId, self.syntaxBlockId
+            "with_info({:?}, {}, {}, {:?}{})",
+            self.contexts,
+            self.blockId,
+            self.syntaxBlockId,
+            self.operations,
+            formatTypes(&self.contextTypes)
         )
     }
 }
 
 #[derive(Clone, PartialEq)]
+pub struct CallContextInfo {
+    pub contextSyntaxBlockId: SyntaxBlockId,
+}
+
+#[derive(Clone, PartialEq)]
 pub enum InstructionKind {
-    FunctionCall(Variable, QualifiedName, Vec<Variable>),
+    FunctionCall(Variable, QualifiedName, Vec<Variable>, Option<CallContextInfo>),
     Converter(Variable, Variable),
     MethodCall(Variable, Variable, String, Vec<Variable>),
     DynamicFunctionCall(Variable, Variable, Vec<Variable>),
@@ -322,7 +335,7 @@ impl Debug for InstructionKind {
 impl InstructionKind {
     pub fn getResultVar(&self) -> Option<Variable> {
         match self {
-            InstructionKind::FunctionCall(v, _, _) => Some(v.clone()),
+            InstructionKind::FunctionCall(v, _, _, _) => Some(v.clone()),
             InstructionKind::Converter(v, _) => Some(v.clone()),
             InstructionKind::MethodCall(v, _, _, _) => Some(v.clone()),
             InstructionKind::DynamicFunctionCall(v, _, _) => Some(v.clone()),
@@ -354,10 +367,10 @@ impl InstructionKind {
 
     pub fn replaceVar(&self, from: Variable, to: Variable) -> InstructionKind {
         match self {
-            InstructionKind::FunctionCall(var, name, args) => {
+            InstructionKind::FunctionCall(var, name, args, info) => {
                 let new_var = var.replace(&from, to.clone());
                 let new_args = args.iter().map(|arg| arg.replace(&from, to.clone())).collect();
-                InstructionKind::FunctionCall(new_var, name.clone(), new_args)
+                InstructionKind::FunctionCall(new_var, name.clone(), new_args, info.clone())
             }
             InstructionKind::Converter(var, source) => {
                 let new_var = var.replace(&from, to.clone());
@@ -474,7 +487,7 @@ impl InstructionKind {
 
     pub fn collectVariables(&self) -> Vec<Variable> {
         match self {
-            InstructionKind::FunctionCall(var, _, args) => {
+            InstructionKind::FunctionCall(var, _, args, _) => {
                 let mut vars = vec![var.clone()];
                 vars.extend(args.clone());
                 vars
@@ -556,8 +569,16 @@ impl InstructionKind {
 
     pub fn dump(&self) -> String {
         match self {
-            InstructionKind::FunctionCall(dest, name, args) => {
-                format!("{} = call({}({:?}))", dest, name, args)
+            InstructionKind::FunctionCall(dest, name, args, info) => {
+                if let Some(context) = info {
+                    let contextSyntaxBlockId = context.contextSyntaxBlockId.clone();
+                    format!(
+                        "{} = call({}({:?}), context: {})",
+                        dest, name, args, contextSyntaxBlockId
+                    )
+                } else {
+                    format!("{} = call({}({:?}))", dest, name, args)
+                }
             }
             InstructionKind::Converter(dest, source) => {
                 format!("{} = convert({})", dest, source)

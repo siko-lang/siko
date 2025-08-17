@@ -182,12 +182,12 @@ impl Apply for WithInfo {
 impl Apply for InstructionKind {
     fn apply(self, sub: &Substitution) -> Self {
         match self {
-            InstructionKind::FunctionCall(dest, name, args) => {
-                InstructionKind::FunctionCall(dest.apply(sub), name.clone(), args.apply(sub))
+            InstructionKind::FunctionCall(dest, name, args, info) => {
+                InstructionKind::FunctionCall(dest.apply(sub), name, args.apply(sub), info)
             }
             InstructionKind::Converter(dest, source) => InstructionKind::Converter(dest.apply(sub), source.apply(sub)),
             InstructionKind::MethodCall(dest, receiver, name, args) => {
-                InstructionKind::MethodCall(dest.apply(sub), receiver.apply(sub), name.clone(), args.apply(sub))
+                InstructionKind::MethodCall(dest.apply(sub), receiver.apply(sub), name, args.apply(sub))
             }
             InstructionKind::DynamicFunctionCall(dest, callable, args) => {
                 InstructionKind::DynamicFunctionCall(dest.apply(sub), callable.apply(sub), args.apply(sub))
@@ -204,8 +204,8 @@ impl Apply for InstructionKind {
             InstructionKind::CharLiteral(dest, c) => InstructionKind::CharLiteral(dest.apply(sub), c),
             InstructionKind::Return(dest, arg) => InstructionKind::Return(dest.apply(sub), arg.apply(sub)),
             InstructionKind::Ref(dest, arg) => InstructionKind::Ref(dest.apply(sub), arg.apply(sub)),
-            InstructionKind::DropPath(id) => InstructionKind::DropPath(id.clone()),
-            InstructionKind::DropMetadata(id) => InstructionKind::DropMetadata(id.clone()),
+            InstructionKind::DropPath(id) => InstructionKind::DropPath(id),
+            InstructionKind::DropMetadata(id) => InstructionKind::DropMetadata(id),
             InstructionKind::Drop(dest, drop) => InstructionKind::Drop(dest.apply(sub), drop.apply(sub)),
             InstructionKind::Jump(dest, targetBlockId) => InstructionKind::Jump(dest.apply(sub), targetBlockId),
             InstructionKind::Assign(name, rhs) => InstructionKind::Assign(name.apply(sub), rhs.apply(sub)),

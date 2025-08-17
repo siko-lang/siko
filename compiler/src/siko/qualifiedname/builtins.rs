@@ -62,6 +62,10 @@ pub fn getNativePtrCastName() -> QualifiedName {
     build("NativePtr", "cast")
 }
 
+pub fn getNativePtrToPtrName() -> QualifiedName {
+    build("NativePtr", "toPtr")
+}
+
 pub fn getNativePtrStoreName() -> QualifiedName {
     build("NativePtr", "store")
 }

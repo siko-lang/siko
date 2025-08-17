@@ -6,8 +6,8 @@ use crate::siko::{
         Function::FunctionKind,
         InstanceResolver::ResolutionResult,
         Instruction::{
-            ImplicitContextIndex, ImplicitContextOperation, ImplicitIndex, Instruction, InstructionKind, SyntaxBlockId,
-            WithContext,
+            CallContextInfo, ImplicitContextIndex, ImplicitContextOperation, ImplicitIndex, Instruction,
+            InstructionKind, SyntaxBlockId, WithContext,
         },
         Substitution::Substitution,
         Type::{formatTypes, Type},
@@ -37,14 +37,14 @@ pub fn processInstruction(
     //println!("MONO INSTR {}", input);
     let mut instruction = input.clone();
     let kind: InstructionKind = match &input.kind {
-        InstructionKind::FunctionCall(dest, name, args) => {
+        InstructionKind::FunctionCall(dest, name, args, _) => {
             //println!("Calling {} in block {}", name, syntaxBlockId);
             let target_fn = mono.program.getFunction(name).expect("function not found in mono");
             //println!("Target function: {}", target_fn.kind);
-            let (target_fn, resolution) = match target_fn.kind {
+            let (target_fn, resolution, contextSyntaxBlockId) = match target_fn.kind {
                 FunctionKind::EffectMemberDecl(_) => {
                     //println!("Effect member call in mono!");
-                    let handlerResolution = handlerResolutionStore.get(syntaxBlockId);
+                    let (handlerResolution, contextSyntaxBlockId) = handlerResolutionStore.get(syntaxBlockId);
                     let handler = handlerResolution.getEffectHandler(name);
                     if handler.is_none() {
                         let slogan = format!(
@@ -61,10 +61,10 @@ pub fn processInstruction(
                         .program
                         .getFunction(&handler.name)
                         .expect("effect resolved function not found in mono");
-                    (f, handlerResolution.clone())
+                    (f, handlerResolution.clone(), contextSyntaxBlockId)
                 }
                 FunctionKind::EffectMemberDefinition(_) => {
-                    let handlerResolution = handlerResolutionStore.get(syntaxBlockId);
+                    let (handlerResolution, contextSyntaxBlockId) = handlerResolutionStore.get(syntaxBlockId);
                     let resolvedName = handlerResolution.getEffectHandler(name);
                     let f = if let Some(handler) = resolvedName {
                         handler.markUsed();
@@ -74,11 +74,14 @@ pub fn processInstruction(
                     } else {
                         target_fn
                     };
-                    (f, handlerResolution.clone())
+                    (f, handlerResolution.clone(), contextSyntaxBlockId)
                 }
-                _ => (target_fn, handlerResolutionStore.get(syntaxBlockId).clone()),
+                _ => {
+                    let (handlerResolution, contextSyntaxBlockId) = handlerResolutionStore.get(syntaxBlockId);
+                    (target_fn, handlerResolution.clone(), contextSyntaxBlockId)
+                }
             };
-            //println!("Target function: {}", target_fn);
+            //println!("Target function: {} {}", target_fn, contextSyntaxBlockId);
             let fn_ty = target_fn.getType();
             let fnResult = fn_ty.getResult();
             let fn_ty = if fnResult.hasSelfType() {
@@ -126,7 +129,12 @@ pub fn processInstruction(
             let fn_name = mono.getMonoName(&name, &ty_args, resolution.clone());
             //println!("MONO CALL: {}", fn_name);
             mono.addKey(Key::Function(name.clone(), ty_args, resolution));
-            InstructionKind::FunctionCall(dest.clone(), fn_name, args.clone())
+            InstructionKind::FunctionCall(
+                dest.clone(),
+                fn_name,
+                args.clone(),
+                Some(CallContextInfo { contextSyntaxBlockId }),
+            )
         }
         InstructionKind::Ref(dest, src) => {
             if dest.ty.as_ref().unwrap().isReference() && src.ty.as_ref().unwrap().isReference() {
@@ -137,17 +145,26 @@ pub fn processInstruction(
         }
         InstructionKind::Drop(dropRes, dropVar) => {
             let ty = dropVar.ty.clone().apply(sub).unwrap();
-            let handlerResolution = handlerResolutionStore.get(syntaxBlockId).clone();
+            let (handlerResolution, contextSyntaxBlockId) = handlerResolutionStore.get(syntaxBlockId);
             let monoName = mono.getMonoName(&getAutoDropFnName(), &vec![ty.clone()], handlerResolution.clone());
-            mono.addKey(Key::AutoDropFn(getAutoDropFnName(), ty.clone(), handlerResolution));
-            InstructionKind::FunctionCall(dropRes.clone(), monoName, vec![dropVar.clone()])
+            mono.addKey(Key::AutoDropFn(
+                getAutoDropFnName(),
+                ty.clone(),
+                handlerResolution.clone(),
+            ));
+            InstructionKind::FunctionCall(
+                dropRes.clone(),
+                monoName,
+                vec![dropVar.clone()],
+                Some(CallContextInfo { contextSyntaxBlockId }),
+            )
         }
         InstructionKind::GetImplicit(dest, index) => {
             let implicitName = match index {
                 ImplicitIndex::Resolved(_) => panic!("implicit index already resolved in mono"),
                 ImplicitIndex::Unresolved(name) => name,
             };
-            let handlerResolution = handlerResolutionStore.get(syntaxBlockId);
+            let (handlerResolution, _) = handlerResolutionStore.get(syntaxBlockId);
             if let Some(handler) = handlerResolution.getImplicitHandler(implicitName) {
                 handler.markUsed();
                 InstructionKind::GetImplicit(dest.process(sub, mono), ImplicitIndex::Resolved(handler.index.clone()))
@@ -173,11 +190,11 @@ pub fn processInstructionKind(
     sub: &Substitution,
     mono: &mut Monomorphizer,
     syntaxBlockId: &SyntaxBlockId,
-    handlerResolutioStore: &mut HandlerResolutionStore,
+    handlerResolutionStore: &mut HandlerResolutionStore,
 ) -> InstructionKind {
     match input {
-        InstructionKind::FunctionCall(dest, name, args) => {
-            InstructionKind::FunctionCall(dest.process(sub, mono), name.clone(), args.process(sub, mono))
+        InstructionKind::FunctionCall(dest, name, args, info) => {
+            InstructionKind::FunctionCall(dest.process(sub, mono), name.clone(), args.process(sub, mono), info)
         }
         InstructionKind::Converter(dest, source) => {
             InstructionKind::Converter(dest.process(sub, mono), source.process(sub, mono))
@@ -244,18 +261,24 @@ pub fn processInstructionKind(
         }
         InstructionKind::BlockStart(info) => InstructionKind::BlockStart(info.clone()),
         InstructionKind::BlockEnd(info) => InstructionKind::BlockEnd(info.clone()),
-        InstructionKind::With(v, info) => {
-            let mut handlerResolution = handlerResolutioStore.get(syntaxBlockId).clone();
+        InstructionKind::With(v, mut info) => {
+            let (handlerResolution, parentSyntaxBlockId) = handlerResolutionStore.get(syntaxBlockId);
+            info.parentSyntaxBlockId = parentSyntaxBlockId;
+            let mut handlerResolution = handlerResolution.clone();
             let mut addedImplicit = false;
             let mut operations = Vec::new();
             let originalContextTypes = handlerResolution.getContextTypes(&mono.program);
             for (index, _) in originalContextTypes.iter().enumerate() {
                 operations.push(ImplicitContextOperation::Copy(ImplicitContextIndex(index)));
             }
-            for c in info.contexts {
+            for c in &info.contexts {
                 match c {
                     WithContext::EffectHandler(handler) => {
-                        handlerResolution.addEffectHandler(handler.method, handler.handler, handler.location);
+                        handlerResolution.addEffectHandler(
+                            handler.method.clone(),
+                            handler.handler.clone(),
+                            handler.location.clone(),
+                        );
                     }
                     WithContext::Implicit(h) => {
                         addedImplicit = true;
@@ -269,19 +292,25 @@ pub fn processInstructionKind(
                                 operations.push(ImplicitContextOperation::Add(index, var));
                             }
                             ImplicitContextOperation::Overwrite(index, var) => {
-                                operations[index.0] = ImplicitContextOperation::Overwrite(index, var);
+                                operations[index.0] = ImplicitContextOperation::Add(index, var);
                             }
                         }
                     }
                 }
             }
             if addedImplicit {
-                let contextTypes = handlerResolution.getContextTypes(&mono.program);
+                let mut contextTypes = handlerResolution.getContextTypes(&mono.program);
+                for ty in &mut contextTypes {
+                    *ty = Type::Ptr(Box::new(mono.processType(ty.clone())));
+                }
                 // println!("Context types: {}", formatTypes(&contextTypes));
-                // println!("operations {:?}", operations)
+                // println!("Context type: {}", ty);
+                // println!("Context operations: {:?}", operations);
+                info.contextTypes = contextTypes;
+                info.operations = operations;
             }
-            handlerResolutioStore.insert(info.syntaxBlockId.clone(), handlerResolution);
-            InstructionKind::Jump(v, info.blockId)
+            handlerResolutionStore.insert(info.syntaxBlockId.clone(), handlerResolution);
+            InstructionKind::With(v, info)
         }
         InstructionKind::GetImplicit(var, index) => InstructionKind::GetImplicit(var.process(sub, mono), index.clone()),
     }

@@ -4,7 +4,7 @@ use crate::siko::{
     hir::{
         Instruction::{ImplicitContextIndex, ImplicitContextOperation},
         Program::Program,
-        Type::{formatTypes, Type},
+        Type::Type,
         Variable::Variable,
     },
     location::Location::Location,

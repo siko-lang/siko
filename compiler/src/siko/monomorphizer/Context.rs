@@ -50,13 +50,13 @@ impl HandlerResolutionStore {
         }
     }
 
-    pub fn get(&self, syntaxBlockId: &SyntaxBlockId) -> &HandlerResolution {
+    pub fn get(&self, syntaxBlockId: &SyntaxBlockId) -> (&HandlerResolution, SyntaxBlockId) {
         //println!("Getting effect resolution for {}", syntaxBlockId);
         let mut current = syntaxBlockId.clone();
         loop {
             //println!("Checking current syntax block: {}", current);
             if let Some(resolution) = self.resolutions.get(&current) {
-                return resolution;
+                return (resolution, current);
             } else {
                 let newCurrent = current.getParent();
                 if newCurrent == current {

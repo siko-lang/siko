@@ -49,7 +49,7 @@ fn processFunction(function: &Function, program: &Program) -> Function {
             if let Some(instruction) = builder.getInstruction() {
                 //println!("Processing instruction: {}", instruction);
                 match &instruction.kind {
-                    InstructionKind::FunctionCall(_, name, args) => {
+                    InstructionKind::FunctionCall(_, name, args, _) => {
                         let f = program.getFunction(&name).expect("function not found");
                         match f.kind {
                             FunctionKind::VariantCtor(index) => {
@@ -71,6 +71,7 @@ fn processFunction(function: &Function, program: &Program) -> Function {
                                             boxedVar.clone(),
                                             getBoxNewFnName(),
                                             vec![arg.clone()],
+                                            None,
                                         );
                                         newKind = newKind.replaceVar(arg.clone(), boxedVar);
                                         builder.addInstruction(boxCall, instruction.location.clone());
@@ -133,12 +134,18 @@ fn processFunction(function: &Function, program: &Program) -> Function {
                             let newKind = InstructionKind::FieldRef(newDest.clone(), newSource, fields.clone());
                             builder.replaceInstruction(newKind, instruction.location.clone());
                             let releaseCall = if isRef {
-                                InstructionKind::FunctionCall(dest.clone(), getBoxGetFnName(), vec![newDest.clone()])
+                                InstructionKind::FunctionCall(
+                                    dest.clone(),
+                                    getBoxGetFnName(),
+                                    vec![newDest.clone()],
+                                    None,
+                                )
                             } else {
                                 InstructionKind::FunctionCall(
                                     dest.clone(),
                                     getBoxReleaseFnName(),
                                     vec![newDest.clone()],
+                                    None,
                                 )
                             };
                             builder.step();

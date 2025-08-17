@@ -15,7 +15,6 @@ use crate::siko::{
         Instruction::{EnumCase, FieldId, FieldInfo, InstructionKind},
         Program::Program,
         Substitution::{createTypeSubstitutionFrom, Substitution},
-        //Type::formatTypes,
         Type::Type,
         TypeVarAllocator::TypeVarAllocator,
         Variable::{Variable, VariableName},
@@ -25,7 +24,8 @@ use crate::siko::{
         Report::{Report, ReportContext},
     },
     monomorphizer::{
-        Context::Context, Function::processBody, Handler::HandlerResolution, Queue::Key, Utils::Monomorphize,
+        Context::Context, Function::processBody, Handler::HandlerResolution,
+        ImplicitContextBuilder::ImplicitContextBuilder, Queue::Key, Utils::Monomorphize,
     },
     qualifiedname::{
         builtins::{getDropFnName, getDropName, getMainName},
@@ -95,7 +95,8 @@ impl<'a> Monomorphizer<'a> {
             }
         }
         self.processQueue();
-        self.monomorphizedProgram
+        let mut builder = ImplicitContextBuilder::new(&self.monomorphizedProgram);
+        builder.process()
     }
 
     pub fn addKey(&mut self, key: Key) {

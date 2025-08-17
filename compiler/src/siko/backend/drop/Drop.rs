@@ -176,6 +176,7 @@ impl<'a> DropChecker<'a> {
                             dest.clone(),
                             getCloneFnName(),
                             vec![implicitCloneVar.clone()],
+                            None,
                         );
                         let implicitCloneRef = InstructionKind::Ref(implicitCloneVarRef.clone(), receiver.clone());
                         let updatedKind =
@@ -211,6 +212,7 @@ impl<'a> DropChecker<'a> {
                             implicitCloneVar.clone(),
                             getCloneFnName(),
                             vec![implicitCloneVarRef.clone()],
+                            None,
                         );
                         let implicitCloneRef = InstructionKind::Ref(implicitCloneVarRef.clone(), input.clone());
                         let updatedKind = instruction.kind.replaceVar(input.clone(), implicitCloneVar);

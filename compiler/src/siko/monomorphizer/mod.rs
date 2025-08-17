@@ -1,6 +1,7 @@
 pub mod Context;
 pub mod Function;
 pub mod Handler;
+pub mod ImplicitContextBuilder;
 pub mod Instruction;
 pub mod Monomorphizer;
 pub mod Queue;
