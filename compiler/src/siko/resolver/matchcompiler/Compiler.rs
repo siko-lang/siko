@@ -200,10 +200,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         match &pattern.pattern {
             SimplePattern::Named(origId, args) => {
                 let name = self.resolver.moduleResolver.resolverName(&origId);
-                let id = Identifier {
-                    name: name.toString(),
-                    location: Location::empty(),
-                };
+                let id = Identifier::new(name.toString(), Location::empty());
                 let args = args.iter().map(|p| self.resolve(p)).collect();
                 Pattern {
                     pattern: SimplePattern::Named(id, args),
@@ -239,10 +236,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                         if variant.name == name {
                             continue;
                         }
-                        let id = Identifier {
-                            name: variant.name.toString(),
-                            location: Location::empty(),
-                        };
+                        let id = Identifier::new(variant.name.toString(), Location::empty());
 
                         let args = repeat(wildcardPattern.clone()).take(variant.items.len()).collect();
                         let pat = Pattern {
@@ -258,10 +252,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                             choiceArgs.extend(args.iter().cloned().take(index));
                             choiceArgs.push(choice);
                             choiceArgs.extend(repeat(wildcardPattern.clone()).take(args.len() - index - 1));
-                            let id = Identifier {
-                                name: name.toString(),
-                                location: Location::empty(),
-                            };
+                            let id = Identifier::new(name.toString(), Location::empty());
                             let pat = Pattern {
                                 pattern: SimplePattern::Named(id, choiceArgs),
                                 location: Location::empty(),

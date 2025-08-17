@@ -3,7 +3,7 @@ use crate::siko::{
     parser::Token::RangeKind,
     qualifiedname::builtins::{getFalseName, getRangeCtorName, getTrueName},
     syntax::{
-        Expr::{BinaryOp, Branch, EffectHandler, Expr, SimpleExpr, UnaryOp, With},
+        Expr::{BinaryOp, Branch, ContextHandler, Expr, SimpleExpr, UnaryOp, With},
         Identifier::Identifier,
         Pattern::{Pattern, SimplePattern},
         Statement::{Block, Statement, StatementKind},
@@ -105,7 +105,7 @@ impl<'a> ExprParser for Parser<'a> {
         branches.push(Branch {
             pattern: Pattern {
                 pattern: SimplePattern::Named(
-                    Identifier::new(&getTrueName().toString(), self.currentLocation()),
+                    Identifier::new(getTrueName().toString(), self.currentLocation()),
                     Vec::new(),
                 ),
                 location: self.currentLocation(),
@@ -120,7 +120,7 @@ impl<'a> ExprParser for Parser<'a> {
                 branches.push(Branch {
                     pattern: Pattern {
                         pattern: SimplePattern::Named(
-                            Identifier::new(&getFalseName().toString(), self.currentLocation()),
+                            Identifier::new(getFalseName().toString(), self.currentLocation()),
                             Vec::new(),
                         ),
                         location: self.currentLocation(),
@@ -132,7 +132,7 @@ impl<'a> ExprParser for Parser<'a> {
                 branches.push(Branch {
                     pattern: Pattern {
                         pattern: SimplePattern::Named(
-                            Identifier::new(&getFalseName().toString(), self.currentLocation()),
+                            Identifier::new(getFalseName().toString(), self.currentLocation()),
                             Vec::new(),
                         ),
                         location: self.currentLocation(),
@@ -144,7 +144,7 @@ impl<'a> ExprParser for Parser<'a> {
             branches.push(Branch {
                 pattern: Pattern {
                     pattern: SimplePattern::Named(
-                        Identifier::new(&getFalseName().toString(), self.currentLocation()),
+                        Identifier::new(getFalseName().toString(), self.currentLocation()),
                         Vec::new(),
                     ),
                     location: self.currentLocation(),
@@ -177,13 +177,13 @@ impl<'a> ExprParser for Parser<'a> {
         let source = self.buildExpr(
             SimpleExpr::MethodCall(
                 Box::new(source),
-                Identifier::new("intoIterator", location.clone()),
+                Identifier::new("intoIterator".to_string(), location.clone()),
                 vec![],
             ),
             start.clone(),
         );
         let iter = Pattern {
-            pattern: SimplePattern::Bind(Identifier::new(".iter", location.clone()), true),
+            pattern: SimplePattern::Bind(Identifier::new(".iter".to_string(), location.clone()), true),
             location: location.clone(),
         };
         statements.push(Statement {
@@ -192,7 +192,10 @@ impl<'a> ExprParser for Parser<'a> {
         });
         let someBranch = Branch {
             pattern: Pattern {
-                pattern: SimplePattern::Named(Identifier::new("Option.Some", location.clone()), vec![pattern]),
+                pattern: SimplePattern::Named(
+                    Identifier::new("Option.Some".to_string(), location.clone()),
+                    vec![pattern],
+                ),
                 location: location.clone(),
             },
             body: Expr {
@@ -211,7 +214,7 @@ impl<'a> ExprParser for Parser<'a> {
         };
         let noneBranch = Branch {
             pattern: Pattern {
-                pattern: SimplePattern::Named(Identifier::new("Option.None", location.clone()), Vec::new()),
+                pattern: SimplePattern::Named(Identifier::new("Option.None".to_string(), location.clone()), Vec::new()),
                 location: location.clone(),
             },
             body: Expr {
@@ -231,10 +234,10 @@ impl<'a> ExprParser for Parser<'a> {
         let nextCall = Expr {
             expr: SimpleExpr::MethodCall(
                 Box::new(Expr {
-                    expr: SimpleExpr::Value(Identifier::new(".iter", location.clone())),
+                    expr: SimpleExpr::Value(Identifier::new(".iter".to_string(), location.clone())),
                     location: location.clone(),
                 }),
-                Identifier::new("next", location.clone()),
+                Identifier::new("next".to_string(), location.clone()),
                 vec![],
             ),
             location: location.clone(),
@@ -339,7 +342,7 @@ impl<'a> ExprParser for Parser<'a> {
                     Branch {
                         pattern: Pattern {
                             pattern: SimplePattern::Named(
-                                Identifier::new(&getTrueName().toString(), self.currentLocation()),
+                                Identifier::new(getTrueName().toString(), self.currentLocation()),
                                 Vec::new(),
                             ),
                             location: self.currentLocation(),
@@ -352,7 +355,7 @@ impl<'a> ExprParser for Parser<'a> {
                     Branch {
                         pattern: Pattern {
                             pattern: SimplePattern::Named(
-                                Identifier::new(&getFalseName().toString(), self.currentLocation()),
+                                Identifier::new(getFalseName().toString(), self.currentLocation()),
                                 Vec::new(),
                             ),
                             location: self.currentLocation(),
@@ -421,12 +424,14 @@ impl<'a> ExprParser for Parser<'a> {
     fn parseWith(&mut self) -> Expr {
         let start = self.currentSpan();
         self.expect(TokenKind::Keyword(KeywordKind::With));
-        let mut handlers = Vec::new();
+        let mut contexts = Vec::new();
         while !self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
-            let method = self.parseVarIdentifier();
-            self.expect(TokenKind::Misc(MiscKind::Equal));
-            let handler = self.parseVarIdentifier();
-            handlers.push(EffectHandler { method, handler });
+            if self.check(TokenKind::VarIdentifier) {
+                let method = self.parseVarIdentifier();
+                self.expect(TokenKind::Misc(MiscKind::Equal));
+                let handler = self.parseVarIdentifier();
+                contexts.push(ContextHandler { name: method, handler });
+            }
             if self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
                 break;
             } else {
@@ -438,7 +443,10 @@ impl<'a> ExprParser for Parser<'a> {
             expr: SimpleExpr::Block(body),
             location: self.currentLocation(),
         };
-        let with = With { handlers, body };
+        let with = With {
+            handlers: contexts,
+            body,
+        };
         self.buildExpr(SimpleExpr::With(Box::new(with)), start)
     }
 
@@ -545,10 +553,7 @@ impl<'a> ExprParser for Parser<'a> {
             return self.buildExpr(
                 SimpleExpr::Call(
                     Box::new(Expr {
-                        expr: SimpleExpr::Value(Identifier::new(
-                            &getRangeCtorName().toString(),
-                            self.currentLocation(),
-                        )),
+                        expr: SimpleExpr::Value(Identifier::new(getRangeCtorName().toString(), self.currentLocation())),
                         location: self.currentLocation(),
                     }),
                     vec![left, end],
@@ -586,7 +591,7 @@ impl<'a> ExprParser for Parser<'a> {
                     let trueBranch = Branch {
                         pattern: Pattern {
                             pattern: SimplePattern::Named(
-                                Identifier::new(&getTrueName().toString(), self.currentLocation()),
+                                Identifier::new(getTrueName().toString(), self.currentLocation()),
                                 Vec::new(),
                             ),
                             location: self.currentLocation(),
@@ -596,7 +601,7 @@ impl<'a> ExprParser for Parser<'a> {
                     let falseBranch = Branch {
                         pattern: Pattern {
                             pattern: SimplePattern::Named(
-                                Identifier::new(&getFalseName().toString(), self.currentLocation()),
+                                Identifier::new(getFalseName().toString(), self.currentLocation()),
                                 Vec::new(),
                             ),
                             location: self.currentLocation(),
@@ -605,7 +610,7 @@ impl<'a> ExprParser for Parser<'a> {
                             SimpleExpr::Call(
                                 Box::new(Expr {
                                     expr: SimpleExpr::Value(Identifier::new(
-                                        &getFalseName().toString(),
+                                        getFalseName().toString(),
                                         self.currentLocation(),
                                     )),
                                     location: self.currentLocation(),
@@ -620,7 +625,7 @@ impl<'a> ExprParser for Parser<'a> {
                     let trueBranch = Branch {
                         pattern: Pattern {
                             pattern: SimplePattern::Named(
-                                Identifier::new(&getTrueName().toString(), self.currentLocation()),
+                                Identifier::new(getTrueName().toString(), self.currentLocation()),
                                 Vec::new(),
                             ),
                             location: self.currentLocation(),
@@ -629,7 +634,7 @@ impl<'a> ExprParser for Parser<'a> {
                             SimpleExpr::Call(
                                 Box::new(Expr {
                                     expr: SimpleExpr::Value(Identifier::new(
-                                        &getTrueName().toString(),
+                                        getTrueName().toString(),
                                         self.currentLocation(),
                                     )),
                                     location: self.currentLocation(),
@@ -642,7 +647,7 @@ impl<'a> ExprParser for Parser<'a> {
                     let falseBranch = Branch {
                         pattern: Pattern {
                             pattern: SimplePattern::Named(
-                                Identifier::new(&getFalseName().toString(), self.currentLocation()),
+                                Identifier::new(getFalseName().toString(), self.currentLocation()),
                                 Vec::new(),
                             ),
                             location: self.currentLocation(),
@@ -701,22 +706,7 @@ impl<'a> ExprParser for Parser<'a> {
                 self.buildExpr(SimpleExpr::Value(value), start)
             }
             TokenKind::TypeIdentifier => {
-                let mut value = self.parseTypeIdentifier();
-                while self.check(TokenKind::Misc(MiscKind::Dot)) {
-                    value.dot(self.currentLocation());
-                    self.expect(TokenKind::Misc(MiscKind::Dot));
-                    if self.check(TokenKind::VarIdentifier) {
-                        let id = self.parseVarIdentifier();
-                        value.merge(id);
-                        break;
-                    }
-                    if self.check(TokenKind::TypeIdentifier) {
-                        let id = self.parseTypeIdentifier();
-                        value.merge(id);
-                        continue;
-                    }
-                    self.reportError2("<identifier>", self.peek());
-                }
+                let value = self.parseQualifiedName();
                 self.buildExpr(SimpleExpr::Name(value), start)
             }
             TokenKind::StringLiteral => {

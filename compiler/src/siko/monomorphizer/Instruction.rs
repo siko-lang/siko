@@ -3,7 +3,7 @@ use crate::siko::{
         Apply::Apply,
         Function::FunctionKind,
         InstanceResolver::ResolutionResult,
-        Instruction::{Instruction, InstructionKind, SyntaxBlockId},
+        Instruction::{Instruction, InstructionKind, SyntaxBlockId, WithContext},
         Substitution::Substitution,
         Type::{formatTypes, Type},
         TypeVarAllocator::TypeVarAllocator,
@@ -219,14 +219,22 @@ pub fn processInstructionKind(
         }
         InstructionKind::BlockStart(info) => InstructionKind::BlockStart(info.clone()),
         InstructionKind::BlockEnd(info) => InstructionKind::BlockEnd(info.clone()),
-        InstructionKind::With(v, handlers, blockId, withSyntaxBlockId) => {
+        InstructionKind::With(v, contexts, blockId, withSyntaxBlockId) => {
             let mut effectResolution = effectResolutionStore.get(syntaxBlockId).clone();
-            for h in handlers {
-                effectResolution.add(h.method, h.handler, h.location);
+            for c in contexts {
+                match c {
+                    WithContext::EffectHandler(handler) => {
+                        effectResolution.add(handler.method, handler.handler, handler.location);
+                    }
+                    WithContext::Implicit(_) => {
+                        // Handle other contexts if needed
+                    }
+                }
             }
             effectResolutionStore.insert(withSyntaxBlockId, effectResolution);
             InstructionKind::Jump(v, blockId)
         }
+        InstructionKind::GetImplicit(_, _) => todo!(),
     }
 }
 

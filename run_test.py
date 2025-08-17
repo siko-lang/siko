@@ -120,6 +120,7 @@ def collect_tests(base_path):
     for root, dirs, files in os.walk(base_path):
         if any(file.endswith(".sk") for file in files):
             tests.append(root)
+    tests.sort()
     return tests
 
 print("Success tests:")

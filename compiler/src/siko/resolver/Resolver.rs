@@ -31,6 +31,7 @@ use crate::siko::hir::Data::Field as IrField;
 use crate::siko::hir::Data::Struct as irStruct;
 use crate::siko::hir::Data::Variant as IrVariant;
 use crate::siko::hir::Function::Function as IrFunction;
+use crate::siko::hir::Implicit::Implicit as IrImplicit;
 use crate::siko::hir::Trait::Instance as IrInstance;
 use crate::siko::hir::Trait::Trait as IrTrait;
 use crate::siko::hir::Type::Type as IrType;
@@ -65,7 +66,7 @@ fn addConstraint(
                     ResolverError::AssociatedTypeNotFound(
                         name.toString(),
                         traitDef.name.toString(),
-                        constraint.traitName.location.clone(),
+                        constraint.traitName.location(),
                     )
                     .report(ctx);
                 }
@@ -97,7 +98,7 @@ fn addTypeParams(
     if let Some(decl) = decl {
         //println!("Processing {}", decl);
         for param in &decl.params {
-            let irParam = IrType::Var(TypeVar::Named(param.name.clone()));
+            let irParam = IrType::Var(TypeVar::Named(param.name()));
             context.addTypeParam(irParam);
         }
         for constraint in &decl.constraints {
@@ -112,7 +113,7 @@ fn getTypeParams(decl: &Option<TypeParameterDeclaration>) -> Vec<IrType> {
     let mut params = Vec::new();
     if let Some(decl) = decl {
         for param in &decl.params {
-            params.push(IrType::Var(TypeVar::Named(param.name.clone())));
+            params.push(IrType::Var(TypeVar::Named(param.name())));
         }
     }
     params
@@ -166,6 +167,7 @@ impl<'a> Resolver<'a> {
         self.collectLocalNames();
         self.processImports();
         self.processDataTypes();
+        self.processImplicits();
         self.processTraits();
         self.processInstances();
         self.processFunctions();
@@ -211,7 +213,7 @@ impl<'a> Resolver<'a> {
 
     fn processDataTypes(&mut self) {
         for (_, m) in &self.modules {
-            let moduleResolver = self.resolvers.get(&m.name.name).unwrap();
+            let moduleResolver = self.resolvers.get(&m.name.name()).unwrap();
             for item in &m.items {
                 match item {
                     ModuleItem::Struct(c) => {
@@ -221,7 +223,7 @@ impl<'a> Resolver<'a> {
                         let constraintContext =
                             createConstraintContext(&c.typeParams, &typeResolver, &self.program, &self.ctx);
                         let irType = typeResolver.createDataType(&structName, &c.typeParams);
-                        let mut irStruct = irStruct::new(structName, irType.clone(), c.name.location.clone());
+                        let mut irStruct = irStruct::new(structName, irType.clone(), c.name.location());
                         let mut ctorParams = Vec::new();
                         for field in &c.fields {
                             let ty = typeResolver.resolveType(&field.ty);
@@ -256,7 +258,7 @@ impl<'a> Resolver<'a> {
                         let constraintContext =
                             createConstraintContext(&e.typeParams, &typeResolver, &self.program, &self.ctx);
                         let irType = typeResolver.createDataType(&enumName, &e.typeParams);
-                        let mut irEnum = IrEnum::new(enumName, irType.clone(), e.name.location.clone());
+                        let mut irEnum = IrEnum::new(enumName, irType.clone(), e.name.location());
                         for (index, variant) in e.variants.iter().enumerate() {
                             let mut items = Vec::new();
                             let mut ctorParams = Vec::new();
@@ -300,7 +302,7 @@ impl<'a> Resolver<'a> {
 
     fn processTraits(&mut self) {
         for (_, m) in &mut self.modules {
-            let moduleResolver = self.resolvers.get(&m.name.name).unwrap();
+            let moduleResolver = self.resolvers.get(&m.name.name()).unwrap();
             for item in &mut m.items {
                 match item {
                     ModuleItem::Trait(t) => {
@@ -317,7 +319,7 @@ impl<'a> Resolver<'a> {
                         let mut associatedTypes = Vec::new();
                         let traitName = moduleResolver.resolverName(&t.name);
                         for associatedType in &t.associatedTypes {
-                            associatedTypes.push(associatedType.name.name.clone());
+                            associatedTypes.push(associatedType.name.name());
                             let irParam = IrType::Var(TypeVar::Named(associatedType.name.toString()));
                             typeResolver.addTypeParams(irParam);
                         }
@@ -355,7 +357,7 @@ impl<'a> Resolver<'a> {
 
     fn processInstances(&mut self) {
         for (_, m) in &mut self.modules {
-            let moduleResolver = self.resolvers.get(&m.name.name).unwrap();
+            let moduleResolver = self.resolvers.get(&m.name.name()).unwrap();
             for item in &mut m.items {
                 match item {
                     ModuleItem::Instance(i) => {
@@ -370,16 +372,16 @@ impl<'a> Resolver<'a> {
                         for associatedType in &i.associatedTypes {
                             let mut found = false;
                             for traitAssociatedType in &traitDef.associatedTypes {
-                                if traitAssociatedType == &associatedType.name.name {
+                                if traitAssociatedType == &associatedType.name.name() {
                                     found = true;
                                     break;
                                 }
                             }
                             if !found {
                                 ResolverError::AssociatedTypeNotFound(
-                                    associatedType.name.name.clone(),
+                                    associatedType.name.name(),
                                     traitDef.name.toString(),
-                                    associatedType.name.location.clone(),
+                                    associatedType.name.location(),
                                 )
                                 .report(self.ctx);
                             }
@@ -432,7 +434,7 @@ impl<'a> Resolver<'a> {
 
     fn processFunctions(&mut self) {
         for (_, m) in &self.modules {
-            let moduleResolver = self.resolvers.get(&m.name.name).unwrap();
+            let moduleResolver = self.resolvers.get(&m.name.name()).unwrap();
             let mut traitMethodSelector = TraitMethodSelector::new();
             for item in &m.items {
                 match item {
@@ -459,6 +461,7 @@ impl<'a> Resolver<'a> {
                                 &self.program.structs,
                                 &self.variants,
                                 &self.program.enums,
+                                &self.program.implicits,
                                 owner.getName().unwrap().add(method.name.toString()),
                                 &typeResolver,
                             );
@@ -488,6 +491,7 @@ impl<'a> Resolver<'a> {
                                 &self.program.structs,
                                 &self.variants,
                                 &self.program.enums,
+                                &self.program.implicits,
                                 owner.getName().unwrap().add(method.name.toString()),
                                 &typeResolver,
                             );
@@ -545,6 +549,7 @@ impl<'a> Resolver<'a> {
                                 &self.program.structs,
                                 &self.variants,
                                 &self.program.enums,
+                                &self.program.implicits,
                                 QualifiedName::Item(Box::new(name.clone()), method.name.toString()),
                                 &typeResolver,
                             );
@@ -577,15 +582,15 @@ impl<'a> Resolver<'a> {
                         let mut implementedMembers = BTreeSet::new();
                         for method in &i.methods {
                             implementedMembers.insert(method.name.clone());
-                            if !allTraitMembers.contains(&method.name.name) {
+                            if !allTraitMembers.contains(&method.name.name()) {
                                 ResolverError::InvalidInstanceMember(
-                                    method.name.name.clone(),
+                                    method.name.name(),
                                     irInstance.traitName.toString(),
-                                    method.name.location.clone(),
+                                    method.name.location(),
                                 )
                                 .report(self.ctx);
                             }
-                            neededTraitMembers.remove(&method.name.name);
+                            neededTraitMembers.remove(&method.name.name());
                             //println!("Processing instance method {}", method.name);
                             let constraintContext = addTypeParams(
                                 irInstance.constraintContext.clone(),
@@ -606,6 +611,7 @@ impl<'a> Resolver<'a> {
                                 &self.program.structs,
                                 &self.variants,
                                 &self.program.enums,
+                                &self.program.implicits,
                                 QualifiedName::Instance(
                                     Box::new(QualifiedName::Item(
                                         Box::new(irInstance.traitName.clone()),
@@ -621,7 +627,7 @@ impl<'a> Resolver<'a> {
                             ResolverError::MissingInstanceMembers(
                                 neededTraitMembers.into_iter().collect(),
                                 irInstance.traitName.toString(),
-                                i.traitName.location.clone(),
+                                i.traitName.location(),
                             )
                             .report(self.ctx);
                         }
@@ -640,6 +646,7 @@ impl<'a> Resolver<'a> {
                             &self.program.structs,
                             &self.variants,
                             &self.program.enums,
+                            &self.program.implicits,
                             QualifiedName::Module(moduleResolver.name.clone()).add(f.name.toString()),
                             &typeResolver,
                         );
@@ -661,6 +668,7 @@ impl<'a> Resolver<'a> {
                                 &self.program.structs,
                                 &self.variants,
                                 &self.program.enums,
+                                &self.program.implicits,
                                 name.clone(),
                                 &typeResolver,
                             );
@@ -760,6 +768,14 @@ impl<'a> Resolver<'a> {
                             importedNames.add(&localMethodName, &methodName);
                         }
                     }
+                    ModuleItem::Implicit(i) => {
+                        if !i.public {
+                            continue;
+                        }
+                        let implicitName = moduleName.add(i.name.toString());
+                        let localImplicitName = localModuleName.add(i.name.toString());
+                        importedNames.add(&localImplicitName, &implicitName);
+                    }
                 }
             }
         } else {
@@ -843,6 +859,14 @@ impl<'a> Resolver<'a> {
                             importedNames.add(&format!("{}.{}", effectDef.name, fnDef.name), &methodName);
                             importedNames.add(&methodName, &methodName);
                         }
+                    }
+                    ModuleItem::Implicit(i) => {
+                        if !i.public {
+                            continue;
+                        }
+                        let implicitName = moduleName.add(i.name.toString());
+                        importedNames.add(&i.name, &implicitName);
+                        importedNames.add(&implicitName, &implicitName);
                     }
                 }
             }
@@ -955,8 +979,37 @@ impl<'a> Resolver<'a> {
                         localNames.add(&methodName, &methodName);
                     }
                 }
+                ModuleItem::Implicit(i) => {
+                    let implicitName = moduleName.add(i.name.toString());
+                    localNames.add(&i.name, &implicitName);
+                    localNames.add(&implicitName, &implicitName);
+                }
             }
         }
         localNames
+    }
+
+    fn processImplicits(&mut self) {
+        for (_, m) in &self.modules {
+            let moduleResolver = self.resolvers.get(&m.name.name()).unwrap();
+            for item in &m.items {
+                match item {
+                    ModuleItem::Implicit(i) => {
+                        let name = QualifiedName::Module(moduleResolver.name.clone()).add(i.name.to_string());
+                        let typeParams = getTypeParams(&None);
+                        let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
+                        let ty = typeResolver.resolveType(&i.ty);
+                        let irImplicit = IrImplicit {
+                            name: name.clone(),
+                            ty,
+                            mutable: i.mutable,
+                        };
+                        //println!("Adding implicit: {}", name);
+                        self.program.implicits.insert(name, irImplicit);
+                    }
+                    _ => {}
+                }
+            }
+        }
     }
 }

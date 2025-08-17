@@ -6,7 +6,7 @@ use super::{
 
 use crate::siko::{
     location::Location::{Location, Span},
-    parser::{Data::DataParser, Effect::EffectParser, Function::FunctionParser},
+    parser::{Data::DataParser, Effect::EffectParser, Function::FunctionParser, Implicit::ImplicitParser},
     syntax::{
         Identifier::Identifier,
         Module::{Derive, Import, Module, ModuleItem},
@@ -84,6 +84,7 @@ impl<'a> ModuleParser for Parser<'a> {
                 TokenKind::Keyword(KeywordKind::Trait) => ModuleItem::Trait(self.parseTrait(public)),
                 TokenKind::Keyword(KeywordKind::Instance) => ModuleItem::Instance(self.parseInstance()),
                 TokenKind::Keyword(KeywordKind::Effect) => ModuleItem::Effect(self.parseEffect(public)),
+                TokenKind::Keyword(KeywordKind::Implicit) => ModuleItem::Implicit(self.parseImplicit(public)),
                 kind => self.reportError2("<module item>", kind),
             };
             items.push(item);
@@ -108,10 +109,7 @@ impl<'a> ModuleParser for Parser<'a> {
         ];
         for i in implicitImports {
             items.push(ModuleItem::Import(Import {
-                moduleName: Identifier {
-                    name: i.to_string(),
-                    location: Location::new(self.fileId.clone(), Span::new()),
-                },
+                moduleName: Identifier::new(i.to_string(), Location::new(self.fileId.clone(), Span::new())),
                 alias: None,
                 implicitImport: true,
             }))

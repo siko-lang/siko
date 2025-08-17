@@ -162,6 +162,7 @@ impl<'a> DeadCodeEliminator<'a> {
                     self.processBlock(*blockId);
                     return;
                 }
+                InstructionKind::GetImplicit(_, _) => {}
             }
         }
     }

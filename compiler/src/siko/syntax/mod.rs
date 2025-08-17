@@ -3,6 +3,7 @@ pub mod Effect;
 pub mod Expr;
 pub mod Function;
 pub mod Identifier;
+pub mod Implicit;
 pub mod Module;
 pub mod Pattern;
 pub mod Statement;

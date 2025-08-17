@@ -255,6 +255,9 @@ impl<'a> TypeVerifier<'a> {
             InstructionKind::With(var, _, _, _) => {
                 self.checkVariable(var);
             }
+            InstructionKind::GetImplicit(var, _) => {
+                self.checkVariable(var);
+            }
         }
     }
 

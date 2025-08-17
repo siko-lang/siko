@@ -32,14 +32,14 @@ pub struct Branch {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EffectHandler {
-    pub method: Identifier,
+pub struct ContextHandler {
+    pub name: Identifier,
     pub handler: Identifier,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct With {
-    pub handlers: Vec<EffectHandler>,
+    pub handlers: Vec<ContextHandler>,
     pub body: Expr,
 }
 

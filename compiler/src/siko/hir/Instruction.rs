@@ -250,7 +250,8 @@ pub enum InstructionKind {
     IntegerSwitch(Variable, Vec<IntegerCase>),
     BlockStart(SyntaxBlockId),
     BlockEnd(SyntaxBlockId),
-    With(Variable, Vec<EffectHandler>, BlockId, SyntaxBlockId), // Effect handlers and the block ID
+    With(Variable, Vec<WithContext>, BlockId, SyntaxBlockId), // Effect handlers and the block ID
+    GetImplicit(Variable, QualifiedName),
 }
 
 impl Display for InstructionKind {
@@ -294,6 +295,7 @@ impl InstructionKind {
             InstructionKind::BlockStart(_) => None,
             InstructionKind::BlockEnd(_) => None,
             InstructionKind::With(v, _, _, _) => Some(v.clone()),
+            InstructionKind::GetImplicit(v, _) => Some(v.clone()),
         }
     }
 
@@ -402,6 +404,9 @@ impl InstructionKind {
             InstructionKind::With(v, h, blockId, syntaxBlockId) => {
                 InstructionKind::With(v.replace(&from, to), h.clone(), *blockId, syntaxBlockId.clone())
             }
+            InstructionKind::GetImplicit(var, name) => {
+                InstructionKind::GetImplicit(var.replace(&from, to.clone()), name.clone())
+            }
         }
     }
 
@@ -471,6 +476,7 @@ impl InstructionKind {
             InstructionKind::BlockStart(_) => Vec::new(),
             InstructionKind::BlockEnd(_) => Vec::new(),
             InstructionKind::With(v, _, _, _) => vec![v.clone()],
+            InstructionKind::GetImplicit(var, _) => vec![var.clone()],
         }
     }
 
@@ -558,6 +564,9 @@ impl InstructionKind {
                 let handlers_str = handlers.iter().map(|h| h.to_string()).collect::<Vec<_>>().join(", ");
                 format!("with({}, [{}], {}, {})", v, handlers_str, block_id, syntax_block_id)
             }
+            InstructionKind::GetImplicit(var, name) => {
+                format!("get_implicit({}, {})", var, name)
+            }
         }
     }
 }
@@ -592,5 +601,33 @@ pub struct EffectHandler {
 impl Display for EffectHandler {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} -> {}", self.method, self.handler)
+    }
+}
+
+#[derive(Clone, PartialEq)]
+pub struct ImplicitHandler {
+    pub implicit: QualifiedName,
+    pub var: Variable,
+    pub location: Location,
+}
+
+impl Display for ImplicitHandler {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} -> {}", self.implicit, self.var)
+    }
+}
+
+#[derive(Clone, PartialEq)]
+pub enum WithContext {
+    EffectHandler(EffectHandler),
+    Implicit(ImplicitHandler),
+}
+
+impl Display for WithContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WithContext::EffectHandler(handler) => write!(f, "effect_handler({})", handler),
+            WithContext::Implicit(handler) => write!(f, "implicit_handler({})", handler),
+        }
     }
 }

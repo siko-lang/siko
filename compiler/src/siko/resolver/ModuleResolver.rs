@@ -28,23 +28,30 @@ impl<'a> ModuleResolver<'a> {
         if let Some(traitDef) = program.getTrait(qn) {
             traitDef
         } else {
-            ResolverError::TraitNotFound(name.toString(), name.location.clone()).report(self.ctx);
+            ResolverError::TraitNotFound(name.toString(), name.location()).report(self.ctx);
         }
     }
 
     pub fn resolverName(&self, name: &Identifier) -> QualifiedName {
-        if let Some(names) = self.localNames.names.get(&name.name) {
-            if names.len() > 1 {
-                ResolverError::Ambiguous(name.toString(), name.location.clone()).report(self.ctx);
-            }
-            return names.first().unwrap().clone();
+        if let Some(qn) = self.tryResolverName(name) {
+            return qn;
         }
-        if let Some(names) = self.importedNames.names.get(&name.name) {
+        ResolverError::UnknownName(name.toString(), name.location()).report(self.ctx);
+    }
+
+    pub fn tryResolverName(&self, name: &Identifier) -> Option<QualifiedName> {
+        if let Some(names) = self.localNames.names.get(&name.name()) {
             if names.len() > 1 {
-                ResolverError::Ambiguous(name.toString(), name.location.clone()).report(self.ctx);
+                ResolverError::Ambiguous(name.toString(), name.location()).report(self.ctx);
             }
-            return names.first().unwrap().clone();
+            return Some(names.first().unwrap().clone());
         }
-        ResolverError::UnknownName(name.toString(), name.location.clone()).report(self.ctx);
+        if let Some(names) = self.importedNames.names.get(&name.name()) {
+            if names.len() > 1 {
+                ResolverError::Ambiguous(name.toString(), name.location()).report(self.ctx);
+            }
+            return Some(names.first().unwrap().clone());
+        }
+        None
     }
 }

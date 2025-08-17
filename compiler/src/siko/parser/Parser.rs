@@ -153,10 +153,7 @@ impl<'a> Parser<'a> {
     pub fn parseTypeIdentifier(&mut self) -> Identifier {
         match self.tokens[self.index].token.clone() {
             Token::TypeIdentifier(v) => {
-                let i = Identifier {
-                    name: v,
-                    location: self.currentLocation(),
-                };
+                let i = Identifier::new(v, self.currentLocation());
                 self.step();
                 i
             }
@@ -167,10 +164,7 @@ impl<'a> Parser<'a> {
     pub fn parseVarIdentifier(&mut self) -> Identifier {
         match self.tokens[self.index].token.clone() {
             Token::VarIdentifier(v) => {
-                let i = Identifier {
-                    name: v,
-                    location: self.currentLocation(),
-                };
+                let i = Identifier::new(v, self.currentLocation());
                 self.step();
                 i
             }

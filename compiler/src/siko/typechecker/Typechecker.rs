@@ -13,7 +13,7 @@ use crate::siko::{
         Data::{Enum, Struct},
         Function::{BlockId, Function, Parameter},
         Instantiation::{instantiateEnum, instantiateStruct, instantiateTrait, instantiateTypes},
-        Instruction::{FieldId, FieldInfo, Instruction, InstructionKind, Mutability},
+        Instruction::{FieldId, FieldInfo, Instruction, InstructionKind, Mutability, WithContext},
         Program::Program,
         Substitution::Substitution,
         TraitMethodSelector::TraitMethodSelector,
@@ -222,6 +222,9 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::BlockEnd(_) => {}
                         InstructionKind::With(v, _, _, _) => {
                             self.types.insert(v.name.to_string(), Type::Never(false));
+                        }
+                        InstructionKind::GetImplicit(var, _) => {
+                            self.initializeVar(var);
                         }
                     }
                 }
@@ -926,21 +929,33 @@ impl<'a> Typechecker<'a> {
             }
             InstructionKind::BlockStart(_) => {}
             InstructionKind::BlockEnd(_) => {}
-            InstructionKind::With(_, handlers, blockId, _) => {
-                for effectHandler in handlers {
-                    let method = self
-                        .program
-                        .getFunction(&effectHandler.method)
-                        .expect("Method function not found");
-                    let handlerFn = self
-                        .program
-                        .getFunction(&effectHandler.handler)
-                        .expect("Handler function not found");
-                    let methodType = method.getType();
-                    let handlerType = handlerFn.getType();
-                    self.unify(methodType, handlerType, effectHandler.location.clone());
+            InstructionKind::With(_, contexts, blockId, _) => {
+                for c in contexts {
+                    match c {
+                        WithContext::EffectHandler(effectHandler) => {
+                            let method = self
+                                .program
+                                .getFunction(&effectHandler.method)
+                                .expect("Method function not found");
+                            let handlerFn = self
+                                .program
+                                .getFunction(&effectHandler.handler)
+                                .expect("Handler function not found");
+                            let methodType = method.getType();
+                            let handlerType = handlerFn.getType();
+                            self.unify(methodType, handlerType, effectHandler.location.clone());
+                        }
+                        WithContext::Implicit(handler) => {
+                            let implicit = self.program.getImplicit(&handler.implicit).expect("Implicit not found");
+                            self.unify(implicit.ty, self.getType(&handler.var), handler.location.clone());
+                        }
+                    }
                 }
                 self.queue.push_back(*blockId);
+            }
+            InstructionKind::GetImplicit(var, name) => {
+                let implicit = self.program.getImplicit(&name).expect("Implicit not found");
+                self.unify(implicit.ty, self.getType(var), instruction.location.clone());
             }
         }
     }

@@ -289,6 +289,9 @@ impl<'a> Builder<'a> {
                 HirInstructionKind::With(_, _, _, _) => {
                     panic!("With instruction found in Lowering, this should not happen");
                 }
+                HirInstructionKind::GetImplicit(_, _) => {
+                    panic!("GetImplicit instruction found in Lowering, this should not happen");
+                }
             }
         }
         Some(block)

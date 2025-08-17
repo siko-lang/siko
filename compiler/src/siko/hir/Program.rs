@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, fmt::Display};
 
-use crate::siko::qualifiedname::QualifiedName;
+use crate::siko::{hir::Implicit::Implicit, qualifiedname::QualifiedName};
 
 use super::{
     Data::{Enum, Struct},
@@ -18,6 +18,7 @@ pub struct Program {
     pub traits: BTreeMap<QualifiedName, Trait>,
     pub traitMethodSelectors: BTreeMap<QualifiedName, TraitMethodSelector>,
     pub instanceResolver: InstanceResolver,
+    pub implicits: BTreeMap<QualifiedName, Implicit>,
 }
 
 impl Program {
@@ -29,6 +30,7 @@ impl Program {
             traits: BTreeMap::new(),
             traitMethodSelectors: BTreeMap::new(),
             instanceResolver: InstanceResolver::new(),
+            implicits: BTreeMap::new(),
         }
     }
 
@@ -46,6 +48,10 @@ impl Program {
 
     pub fn getTrait(&self, qn: &QualifiedName) -> Option<Trait> {
         self.traits.get(qn).cloned()
+    }
+
+    pub fn getImplicit(&self, qn: &QualifiedName) -> Option<Implicit> {
+        self.implicits.get(qn).cloned()
     }
 
     pub fn dumpToFile(&self, folderName: &str) -> std::io::Result<()> {
@@ -71,6 +77,9 @@ impl Display for Program {
         }
         for (_, e) in &self.enums {
             writeln!(f, "{}", e)?;
+        }
+        for (_, i) in &self.implicits {
+            writeln!(f, "{}", i)?;
         }
         Ok(())
     }

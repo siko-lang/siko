@@ -68,4 +68,17 @@ impl<'a> Environment<'a> {
     pub fn getSyntaxBlockId(&self) -> SyntaxBlockId {
         self.syntaxBlockId.clone()
     }
+
+    pub fn dump(&self) {
+        println!("Environment dump:");
+        for (name, var) in &self.values {
+            println!("  {}: {}", name, var);
+        }
+        if let Some(parent) = self.parent {
+            println!("Parent environment:");
+            parent.dump();
+        } else {
+            println!("No parent environment.");
+        }
+    }
 }

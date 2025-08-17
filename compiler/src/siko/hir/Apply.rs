@@ -204,6 +204,7 @@ impl Apply for InstructionKind {
             InstructionKind::With(v, handlers, blockId, syntaxBlockId) => {
                 InstructionKind::With(v.apply(sub), handlers.clone(), blockId.clone(), syntaxBlockId.clone())
             }
+            InstructionKind::GetImplicit(var, name) => InstructionKind::GetImplicit(var.apply(sub), name.clone()),
         }
     }
 }

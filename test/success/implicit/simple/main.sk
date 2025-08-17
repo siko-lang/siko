@@ -1,0 +1,30 @@
+module Main {
+
+struct Foo {}
+
+struct Bar {
+    foo: Foo
+}
+
+implicit mut myBar: Bar
+
+implicit readOnlyMyBar: Bar
+
+fn use(f: &Foo) {
+
+}
+
+fn foo() {
+    use(myBar.foo);
+    use(readOnlyMyBar.foo);
+}
+
+fn main() {
+    let bar = Bar(Foo());
+    let mut bar2 = Bar(Foo());
+    with myBar = bar2, readOnlyMyBar = bar {
+        foo();
+    }
+}
+
+}

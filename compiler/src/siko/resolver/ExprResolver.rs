@@ -5,8 +5,10 @@ use crate::siko::hir::BlockBuilder::BlockBuilder;
 use crate::siko::hir::BodyBuilder::BodyBuilder;
 use crate::siko::hir::Data::{Enum, Struct};
 use crate::siko::hir::Function::BlockId;
+use crate::siko::hir::Implicit::Implicit;
 use crate::siko::hir::Instruction::{
-    EffectHandler, FieldId, FieldInfo, InstructionKind, SyntaxBlockId, SyntaxBlockIdSegment,
+    EffectHandler as HirEffectHandler, FieldId, FieldInfo, ImplicitHandler as HirImplicitHandler, InstructionKind,
+    SyntaxBlockId, SyntaxBlockIdSegment, WithContext as HirWithContext,
 };
 use crate::siko::hir::Variable::Variable;
 use crate::siko::location::Location::Location;
@@ -53,6 +55,7 @@ pub struct ExprResolver<'a> {
     structs: &'a BTreeMap<QualifiedName, Struct>,
     pub variants: &'a BTreeMap<QualifiedName, QualifiedName>,
     pub enums: &'a BTreeMap<QualifiedName, Enum>,
+    implicits: &'a BTreeMap<QualifiedName, Implicit>,
     loopInfos: Vec<LoopInfo>,
     syntaxBlockIds: BTreeMap<BlockId, SyntaxBlockId>,
     resultVar: Option<Variable>,
@@ -67,6 +70,7 @@ impl<'a> ExprResolver<'a> {
         structs: &'a BTreeMap<QualifiedName, Struct>,
         variants: &'a BTreeMap<QualifiedName, QualifiedName>,
         enums: &'a BTreeMap<QualifiedName, Enum>,
+        implicits: &'a BTreeMap<QualifiedName, Implicit>,
     ) -> ExprResolver<'a> {
         ExprResolver {
             ctx: ctx,
@@ -78,6 +82,7 @@ impl<'a> ExprResolver<'a> {
             structs: structs,
             variants: variants,
             enums: enums,
+            implicits: implicits,
             loopInfos: Vec::new(),
             syntaxBlockIds: BTreeMap::new(),
             resultVar: None,
@@ -102,7 +107,7 @@ impl<'a> ExprResolver<'a> {
         let mut fields: Vec<FieldInfo> = Vec::new();
         fields.push(FieldInfo {
             name: FieldId::Named(name.toString()),
-            location: name.location.clone(),
+            location: name.location(),
             ty: None,
         });
         loop {
@@ -120,7 +125,7 @@ impl<'a> ExprResolver<'a> {
                             return;
                         }
                         None => {
-                            ResolverError::UnknownValue(name.name.clone(), name.location.clone()).report(self.ctx);
+                            ResolverError::UnknownValue(name.name(), name.location()).report(self.ctx);
                         }
                     }
                 }
@@ -145,7 +150,7 @@ impl<'a> ExprResolver<'a> {
                     receiver = r;
                     fields.push(FieldInfo {
                         name: FieldId::Named(name.toString()),
-                        location: name.location.clone(),
+                        location: name.location(),
                         ty: None,
                     });
                 }
@@ -236,8 +241,7 @@ impl<'a> ExprResolver<'a> {
                                         .addAssign(value.clone(), rhsId, lhs.location.clone());
                                 }
                                 None => {
-                                    ResolverError::UnknownValue(name.name.clone(), name.location.clone())
-                                        .report(self.ctx);
+                                    ResolverError::UnknownValue(name.name(), name.location()).report(self.ctx);
                                 }
                             }
                         }
@@ -280,14 +284,23 @@ impl<'a> ExprResolver<'a> {
     }
 
     pub fn resolveExpr(&mut self, expr: &Expr, env: &mut Environment) -> Variable {
+        //println!("Resolving expression: {:?}", expr);
         match &expr.expr {
-            SimpleExpr::Value(name) => match env.resolve(&name.name) {
+            SimpleExpr::Value(name) => match env.resolve(&name.name()) {
                 Some(mut var) => {
                     var.location = expr.location.clone();
                     var
                 }
                 None => {
-                    ResolverError::UnknownValue(name.name.clone(), name.location.clone()).report(self.ctx);
+                    if let Some(irName) = self.moduleResolver.tryResolverName(name) {
+                        if self.implicits.contains_key(&irName) {
+                            let implicitVar = self.bodyBuilder.createTempValue(expr.location.clone());
+                            let kind = InstructionKind::GetImplicit(implicitVar.clone(), irName);
+                            self.bodyBuilder.current().addInstruction(kind, name.location());
+                            return implicitVar;
+                        }
+                    }
+                    ResolverError::UnknownValue(name.name(), name.location()).report(self.ctx);
                 }
             },
             SimpleExpr::SelfValue => {
@@ -310,14 +323,14 @@ impl<'a> ExprResolver<'a> {
                         .current()
                         .addFunctionCall(irName, Vec::new(), expr.location.clone());
                 }
-                ResolverError::UnknownValue(name.name.clone(), name.location.clone()).report(self.ctx);
+                ResolverError::UnknownValue(name.name(), name.location()).report(self.ctx);
             }
             SimpleExpr::FieldAccess(receiver, name) => {
                 let receiver = self.resolveExpr(receiver, env);
                 let fieldInfos = vec![FieldInfo {
                     name: FieldId::Named(name.toString()),
                     ty: None,
-                    location: name.location.clone(),
+                    location: name.location(),
                 }];
                 self.bodyBuilder
                     .current()
@@ -333,7 +346,7 @@ impl<'a> ExprResolver<'a> {
                     SimpleExpr::Name(name) => {
                         let irName = self.moduleResolver.resolverName(name);
                         if self.enums.get(&irName).is_some() {
-                            ResolverError::NotAConstructor(name.name.clone(), name.location.clone()).report(self.ctx);
+                            ResolverError::NotAConstructor(name.name(), name.location()).report(self.ctx);
                         }
                         return self
                             .bodyBuilder
@@ -341,7 +354,7 @@ impl<'a> ExprResolver<'a> {
                             .addFunctionCall(irName, irArgs, expr.location.clone());
                     }
                     SimpleExpr::Value(name) => {
-                        if let Some(_name) = env.resolve(&name.name) {
+                        if let Some(_name) = env.resolve(&name.name()) {
                             // self.bodyBuilder
                             //     .current()
                             //     .addDynamicFunctionCall(name, irArgs, expr.location.clone())
@@ -453,10 +466,7 @@ impl<'a> ExprResolver<'a> {
                     BinaryOp::LessThanOrEqual => createOpName("PartialOrd", "lessOrEqual"),
                     BinaryOp::GreaterThanOrEqual => createOpName("PartialOrd", "greaterOrEqual"),
                 };
-                let id = Identifier {
-                    name: format!("{}", name),
-                    location: expr.location.clone(),
-                };
+                let id = Identifier::new(format!("{}", name), expr.location.clone());
                 let name = self.moduleResolver.resolverName(&id);
                 self.bodyBuilder
                     .current()
@@ -469,10 +479,7 @@ impl<'a> ExprResolver<'a> {
                     UnaryOp::Neg => createOpName("Neg", "negative"),
                     UnaryOp::Deref => getNativePtrLoadName(),
                 };
-                let id = Identifier {
-                    name: format!("{}", name),
-                    location: expr.location.clone(),
-                };
+                let id = Identifier::new(format!("{}", name), expr.location.clone());
                 let name = self.moduleResolver.resolverName(&id);
                 self.bodyBuilder
                     .current()
@@ -592,7 +599,7 @@ impl<'a> ExprResolver<'a> {
                         if let SimpleExpr::FieldAccess(receiver, name) = &current.expr {
                             let field = FieldInfo {
                                 name: FieldId::Named(name.toString()),
-                                location: name.location.clone(),
+                                location: name.location(),
                                 ty: None,
                             };
                             fields.push(field);
@@ -631,14 +638,34 @@ impl<'a> ExprResolver<'a> {
             }
             SimpleExpr::With(with) => {
                 let mut handlers = Vec::new();
-                for effectHandler in &with.handlers {
-                    let method = self.moduleResolver.resolverName(&effectHandler.method);
-                    let handlerName = self.moduleResolver.resolverName(&effectHandler.handler);
-                    handlers.push(EffectHandler {
-                        method,
-                        handler: handlerName,
-                        location: effectHandler.handler.location.clone(),
-                    });
+                for contextHandler in &with.handlers {
+                    let resolvedName = self.moduleResolver.resolverName(&contextHandler.name);
+                    if self.implicits.get(&resolvedName).is_some() {
+                        let handlerName = env.resolve(&contextHandler.handler.name());
+                        match handlerName {
+                            Some(name) => {
+                                handlers.push(HirWithContext::Implicit(HirImplicitHandler {
+                                    implicit: resolvedName.clone(),
+                                    var: name,
+                                    location: contextHandler.handler.location(),
+                                }));
+                            }
+                            None => {
+                                ResolverError::UnknownValue(
+                                    contextHandler.handler.name(),
+                                    contextHandler.handler.location(),
+                                )
+                                .report(self.ctx);
+                            }
+                        }
+                    } else {
+                        let handlerName = self.moduleResolver.resolverName(&contextHandler.handler);
+                        handlers.push(HirWithContext::EffectHandler(HirEffectHandler {
+                            method: resolvedName,
+                            handler: handlerName,
+                            location: contextHandler.handler.location(),
+                        }));
+                    }
                 }
                 let withResultVar = self.bodyBuilder.createTempValue(expr.location.clone());
                 let mut withBodyBuilder = self.createBlock(&env);
@@ -704,7 +731,7 @@ impl<'a> ExprResolver<'a> {
                 // }
             }
             SimplePattern::Bind(name, mutable) => {
-                let new = self.bodyBuilder.createLocalValue(&name.name, pat.location.clone());
+                let new = self.bodyBuilder.createLocalValue(&name.name(), pat.location.clone());
                 self.bodyBuilder
                     .current()
                     .addBind(new.clone(), root, *mutable, pat.location.clone());

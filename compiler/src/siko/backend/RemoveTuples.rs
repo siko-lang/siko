@@ -225,6 +225,9 @@ impl RemoveTuples for InstructionKind {
             InstructionKind::With(v, handlers, blockId, syntaxBlockId) => {
                 InstructionKind::With(v.clone(), handlers.clone(), *blockId, syntaxBlockId.clone())
             }
+            InstructionKind::GetImplicit(var, name) => {
+                InstructionKind::GetImplicit(var.removeTuples(ctx), name.clone())
+            }
         }
     }
 }

@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::siko::hir::ConstraintContext::ConstraintContext;
 use crate::siko::hir::Data::{Enum, Struct};
 use crate::siko::hir::Function::{ExternKind, Function as IrFunction, FunctionKind, Parameter as IrParameter};
+use crate::siko::hir::Implicit::Implicit;
 use crate::siko::hir::Type::{Type as IrType, TypeVar};
 use crate::siko::hir::Variable::Variable;
 use crate::siko::hir::Variable::VariableName;
@@ -32,7 +33,7 @@ pub fn createSelfType(
         Some(typeParams) => {
             let mut args = Vec::new();
             for param in &typeParams.params {
-                let arg = IrType::Var(TypeVar::Named(param.name.clone()));
+                let arg = IrType::Var(TypeVar::Named(param.name()));
                 args.push(arg);
             }
             args
@@ -66,6 +67,7 @@ impl<'a> FunctionResolver<'a> {
         structs: &BTreeMap<QualifiedName, Struct>,
         variants: &BTreeMap<QualifiedName, QualifiedName>,
         enums: &BTreeMap<QualifiedName, Enum>,
+        implicits: &BTreeMap<QualifiedName, Implicit>,
         name: QualifiedName,
         typeResolver: &TypeResolver,
     ) -> IrFunction {
@@ -78,7 +80,7 @@ impl<'a> FunctionResolver<'a> {
                 Parameter::Named(id, ty, mutable) => {
                     let var = Variable {
                         name: VariableName::Arg(id.toString()),
-                        location: id.location.clone(),
+                        location: id.location(),
                         ty: Some(typeResolver.resolveType(ty)),
                     };
                     env.addArg(var, *mutable);
@@ -88,7 +90,7 @@ impl<'a> FunctionResolver<'a> {
                     Some(owner) => {
                         let var = Variable {
                             name: VariableName::Arg(format!("self")),
-                            location: f.name.location.clone(),
+                            location: f.name.location(),
                             ty: Some(owner.clone()),
                         };
                         env.addArg(var, false);
@@ -100,7 +102,7 @@ impl<'a> FunctionResolver<'a> {
                     Some(owner) => {
                         let var = Variable {
                             name: VariableName::Arg(format!("self")),
-                            location: f.name.location.clone(),
+                            location: f.name.location(),
                             ty: Some(owner.clone()),
                         };
                         env.addArg(var, true);
@@ -112,7 +114,7 @@ impl<'a> FunctionResolver<'a> {
                     Some(owner) => {
                         let var = Variable {
                             name: VariableName::Arg(format!("self")),
-                            location: f.name.location.clone(),
+                            location: f.name.location(),
                             ty: Some(IrType::Reference(Box::new(owner.clone()), None)),
                         };
                         env.addArg(var, false);
@@ -135,6 +137,7 @@ impl<'a> FunctionResolver<'a> {
                 structs,
                 variants,
                 enums,
+                implicits,
             );
             exprResolver.resolve(body, &env);
             Some(exprResolver.body())
