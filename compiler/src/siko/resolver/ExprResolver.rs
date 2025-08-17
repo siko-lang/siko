@@ -720,7 +720,7 @@ impl<'a> ExprResolver<'a> {
                             self.resolvePattern(arg, env, fieldId);
                         }
                     }
-                    _ => ResolverError::NotAConstructor(name.toString(), pat.location.clone()).report(self.ctx),
+                    _ => ResolverError::NotStructConstructor(name.toString(), pat.location.clone()).report(self.ctx),
                 }
                 // for (index, arg) in args.iter().enumerate() {
                 //     let tupleValue =

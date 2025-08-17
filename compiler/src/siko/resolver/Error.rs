@@ -6,6 +6,7 @@ use crate::siko::location::{
 pub enum ResolverError {
     UnknownValue(String, Location),
     NotAConstructor(String, Location),
+    NotStructConstructor(String, Location),
     UnknownName(String, Location),
     Ambiguous(String, Location),
     RedundantPattern(Location),
@@ -36,6 +37,11 @@ impl ResolverError {
             }
             ResolverError::NotAConstructor(v, l) => {
                 let slogan = format!("Not a constructor {}", ctx.yellow(v));
+                let r = Report::new(ctx, slogan, Some(l.clone()));
+                r.print();
+            }
+            ResolverError::NotStructConstructor(v, l) => {
+                let slogan = format!("Not a struct constructor {}", ctx.yellow(v));
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }
