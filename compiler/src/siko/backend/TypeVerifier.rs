@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use crate::siko::hir::{
     Function::Function,
     Instantiation::{instantiateEnum, instantiateStruct, instantiateType},
-    Instruction::{FieldId, FieldInfo, Instruction, InstructionKind},
+    Instruction::{FieldId, FieldInfo, Instruction, InstructionKind, WithContext},
     Program::Program,
     Substitution::Substitution,
     Type::Type,
@@ -252,8 +252,16 @@ impl<'a> TypeVerifier<'a> {
             InstructionKind::BlockEnd(_) => {
                 // do nothing, block end is just a marker
             }
-            InstructionKind::With(var, _, _, _) => {
+            InstructionKind::With(var, info) => {
                 self.checkVariable(var);
+                for c in &info.contexts {
+                    match c {
+                        WithContext::EffectHandler(_) => {}
+                        WithContext::Implicit(handler) => {
+                            self.checkVariable(&handler.var);
+                        }
+                    }
+                }
             }
             InstructionKind::GetImplicit(var, _) => {
                 self.checkVariable(var);

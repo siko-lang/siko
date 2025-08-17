@@ -223,7 +223,7 @@ impl Debug for Mutability {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ImplicitContextIndex(pub usize);
 
 impl Display for ImplicitContextIndex {
@@ -260,6 +260,23 @@ impl Debug for ImplicitIndex {
 }
 
 #[derive(Clone, PartialEq)]
+pub struct WithInfo {
+    pub contexts: Vec<WithContext>,
+    pub blockId: BlockId,
+    pub syntaxBlockId: SyntaxBlockId,
+}
+
+impl Display for WithInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "with_info({:?}, {}, {})",
+            self.contexts, self.blockId, self.syntaxBlockId
+        )
+    }
+}
+
+#[derive(Clone, PartialEq)]
 pub enum InstructionKind {
     FunctionCall(Variable, QualifiedName, Vec<Variable>),
     Converter(Variable, Variable),
@@ -286,7 +303,7 @@ pub enum InstructionKind {
     IntegerSwitch(Variable, Vec<IntegerCase>),
     BlockStart(SyntaxBlockId),
     BlockEnd(SyntaxBlockId),
-    With(Variable, Vec<WithContext>, BlockId, SyntaxBlockId), // Effect handlers and the block ID
+    With(Variable, WithInfo),
     GetImplicit(Variable, ImplicitIndex),
 }
 
@@ -330,7 +347,7 @@ impl InstructionKind {
             InstructionKind::IntegerSwitch(_, _) => None,
             InstructionKind::BlockStart(_) => None,
             InstructionKind::BlockEnd(_) => None,
-            InstructionKind::With(v, _, _, _) => Some(v.clone()),
+            InstructionKind::With(v, _) => Some(v.clone()),
             InstructionKind::GetImplicit(v, _) => Some(v.clone()),
         }
     }
@@ -437,8 +454,17 @@ impl InstructionKind {
             }
             InstructionKind::BlockStart(info) => InstructionKind::BlockStart(info.clone()),
             InstructionKind::BlockEnd(info) => InstructionKind::BlockEnd(info.clone()),
-            InstructionKind::With(v, h, blockId, syntaxBlockId) => {
-                InstructionKind::With(v.replace(&from, to), h.clone(), *blockId, syntaxBlockId.clone())
+            InstructionKind::With(v, info) => {
+                let mut info = info.clone();
+                for c in &mut info.contexts {
+                    match c {
+                        WithContext::EffectHandler(_) => {}
+                        WithContext::Implicit(handler) => {
+                            handler.var = handler.var.replace(&from, to.clone());
+                        }
+                    }
+                }
+                InstructionKind::With(v.replace(&from, to), info)
             }
             InstructionKind::GetImplicit(var, name) => {
                 InstructionKind::GetImplicit(var.replace(&from, to.clone()), name.clone())
@@ -511,7 +537,19 @@ impl InstructionKind {
             }
             InstructionKind::BlockStart(_) => Vec::new(),
             InstructionKind::BlockEnd(_) => Vec::new(),
-            InstructionKind::With(v, _, _, _) => vec![v.clone()],
+            InstructionKind::With(v, info) => {
+                let mut result = Vec::new();
+                for c in &info.contexts {
+                    match c {
+                        WithContext::EffectHandler(_) => {}
+                        WithContext::Implicit(handler) => {
+                            result.push(handler.var.clone());
+                        }
+                    }
+                }
+                result.push(v.clone());
+                result
+            }
             InstructionKind::GetImplicit(var, _) => vec![var.clone()],
         }
     }
@@ -596,9 +634,8 @@ impl InstructionKind {
                 format!("blockstart({})", info)
             }
             InstructionKind::BlockEnd(info) => format!("blockend({})", info),
-            InstructionKind::With(v, handlers, block_id, syntax_block_id) => {
-                let handlers_str = handlers.iter().map(|h| h.to_string()).collect::<Vec<_>>().join(", ");
-                format!("with({}, [{}], {}, {})", v, handlers_str, block_id, syntax_block_id)
+            InstructionKind::With(v, info) => {
+                format!("with({}, {})", v, info)
             }
             InstructionKind::GetImplicit(var, index) => {
                 format!("get_implicit({}, {})", var, index)
@@ -665,5 +702,34 @@ impl Display for WithContext {
             WithContext::EffectHandler(handler) => write!(f, "effect_handler({})", handler),
             WithContext::Implicit(handler) => write!(f, "implicit_handler({})", handler),
         }
+    }
+}
+
+impl Debug for WithContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ImplicitContextOperation {
+    Copy(ImplicitContextIndex),
+    Add(ImplicitContextIndex, Variable),
+    Overwrite(ImplicitContextIndex, Variable),
+}
+
+impl Display for ImplicitContextOperation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ImplicitContextOperation::Copy(index) => write!(f, "copy({})", index),
+            ImplicitContextOperation::Add(index, var) => write!(f, "add({}, {})", index, var),
+            ImplicitContextOperation::Overwrite(index, var) => write!(f, "overwrite({}, {})", index, var),
+        }
+    }
+}
+
+impl Debug for ImplicitContextOperation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
     }
 }

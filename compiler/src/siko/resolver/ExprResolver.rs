@@ -8,7 +8,7 @@ use crate::siko::hir::Function::BlockId;
 use crate::siko::hir::Implicit::Implicit;
 use crate::siko::hir::Instruction::{
     EffectHandler as HirEffectHandler, FieldId, FieldInfo, ImplicitHandler as HirImplicitHandler, ImplicitIndex,
-    InstructionKind, SyntaxBlockId, SyntaxBlockIdSegment, WithContext as HirWithContext,
+    InstructionKind, SyntaxBlockId, SyntaxBlockIdSegment, WithContext as HirWithContext, WithInfo,
 };
 use crate::siko::hir::Variable::Variable;
 use crate::siko::location::Location::Location;
@@ -683,7 +683,12 @@ impl<'a> ExprResolver<'a> {
                     _ => panic!("with body is not a block!"),
                 };
                 let jumpResultVar = self.bodyBuilder.createTempValue(expr.location.clone());
-                let kind = InstructionKind::With(jumpResultVar, handlers, withBodyBuilder.getBlockId(), syntaxBlockId);
+                let withInfo = WithInfo {
+                    contexts: handlers,
+                    blockId: withBodyBuilder.getBlockId(),
+                    syntaxBlockId,
+                };
+                let kind = InstructionKind::With(jumpResultVar, withInfo);
                 self.bodyBuilder
                     .block(parentBlockId)
                     .addInstruction(kind, expr.location.clone());

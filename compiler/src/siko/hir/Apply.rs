@@ -1,4 +1,7 @@
-use crate::siko::hir::Type::Type;
+use crate::siko::hir::{
+    Instruction::{ImplicitHandler, WithContext, WithInfo},
+    Type::Type,
+};
 
 use super::{
     ConstraintContext::{Constraint, ConstraintContext},
@@ -153,6 +156,29 @@ impl Apply for FieldInfo {
     }
 }
 
+impl Apply for ImplicitHandler {
+    fn apply(mut self, sub: &Substitution) -> Self {
+        self.var = self.var.apply(sub);
+        self
+    }
+}
+
+impl Apply for WithContext {
+    fn apply(self, sub: &Substitution) -> Self {
+        match self {
+            WithContext::EffectHandler(handler) => WithContext::EffectHandler(handler.clone()),
+            WithContext::Implicit(handler) => WithContext::Implicit(handler.apply(sub)),
+        }
+    }
+}
+
+impl Apply for WithInfo {
+    fn apply(mut self, sub: &Substitution) -> Self {
+        self.contexts = self.contexts.apply(sub);
+        self
+    }
+}
+
 impl Apply for InstructionKind {
     fn apply(self, sub: &Substitution) -> Self {
         match self {
@@ -201,9 +227,7 @@ impl Apply for InstructionKind {
             }
             InstructionKind::BlockStart(info) => InstructionKind::BlockStart(info.clone()),
             InstructionKind::BlockEnd(info) => InstructionKind::BlockEnd(info.clone()),
-            InstructionKind::With(v, handlers, blockId, syntaxBlockId) => {
-                InstructionKind::With(v.apply(sub), handlers.clone(), blockId.clone(), syntaxBlockId.clone())
-            }
+            InstructionKind::With(v, info) => InstructionKind::With(v.apply(sub), info.apply(sub)),
             InstructionKind::GetImplicit(var, name) => InstructionKind::GetImplicit(var.apply(sub), name.clone()),
         }
     }

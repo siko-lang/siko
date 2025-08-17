@@ -6,7 +6,7 @@ use crate::siko::{
         ConstraintContext::ConstraintContext,
         Data::{Enum, Field, Struct, Variant},
         Function::{Block, Body, Function, FunctionKind, Parameter},
-        Instruction::{FieldId, FieldInfo, Instruction, InstructionKind},
+        Instruction::{FieldId, FieldInfo, ImplicitHandler, Instruction, InstructionKind, WithContext, WithInfo},
         Program::Program,
         Type::Type,
         Variable::Variable,
@@ -145,6 +145,31 @@ impl RemoveTuples for FieldInfo {
     }
 }
 
+impl RemoveTuples for ImplicitHandler {
+    fn removeTuples(&self, ctx: &mut Context) -> Self {
+        let mut result = self.clone();
+        result.var = result.var.removeTuples(ctx);
+        result
+    }
+}
+
+impl RemoveTuples for WithContext {
+    fn removeTuples(&self, ctx: &mut Context) -> Self {
+        match self {
+            WithContext::EffectHandler(handler) => WithContext::EffectHandler(handler.clone()),
+            WithContext::Implicit(handler) => WithContext::Implicit(handler.removeTuples(ctx)),
+        }
+    }
+}
+
+impl RemoveTuples for WithInfo {
+    fn removeTuples(&self, ctx: &mut Context) -> Self {
+        let mut result = self.clone();
+        result.contexts = result.contexts.removeTuples(ctx);
+        result
+    }
+}
+
 impl RemoveTuples for InstructionKind {
     fn removeTuples(&self, ctx: &mut Context) -> InstructionKind {
         match self {
@@ -222,9 +247,7 @@ impl RemoveTuples for InstructionKind {
             }
             InstructionKind::BlockStart(info) => InstructionKind::BlockStart(info.clone()),
             InstructionKind::BlockEnd(info) => InstructionKind::BlockEnd(info.clone()),
-            InstructionKind::With(v, handlers, blockId, syntaxBlockId) => {
-                InstructionKind::With(v.clone(), handlers.clone(), *blockId, syntaxBlockId.clone())
-            }
+            InstructionKind::With(v, info) => InstructionKind::With(v.clone(), info.clone()),
             InstructionKind::GetImplicit(var, name) => {
                 InstructionKind::GetImplicit(var.removeTuples(ctx), name.clone())
             }

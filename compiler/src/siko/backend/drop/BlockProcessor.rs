@@ -45,8 +45,8 @@ impl<'a> BlockProcessor<'a> {
                             jumpTargets.push(case.branch.clone());
                         }
                     }
-                    InstructionKind::With(_, _, blockId, _) => {
-                        jumpTargets.push(blockId.clone());
+                    InstructionKind::With(_, info) => {
+                        jumpTargets.push(info.blockId.clone());
                     }
                     kind => {
                         let usageinfo = getUsageInfo(kind.clone());

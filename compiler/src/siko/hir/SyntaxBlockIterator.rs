@@ -76,8 +76,8 @@ impl SyntaxBlockIterator {
                                 self.addToQueue(case.branch, currentSyntaxBlock.clone());
                             }
                         }
-                        InstructionKind::With(_, _, blockId, _) => {
-                            self.addToQueue(*blockId, currentSyntaxBlock.clone());
+                        InstructionKind::With(_, info) => {
+                            self.addToQueue(info.blockId, currentSyntaxBlock.clone());
                         }
                         _ => {}
                     }

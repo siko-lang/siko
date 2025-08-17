@@ -220,7 +220,7 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::IntegerSwitch(_, _) => {}
                         InstructionKind::BlockStart(_) => {}
                         InstructionKind::BlockEnd(_) => {}
-                        InstructionKind::With(v, _, _, _) => {
+                        InstructionKind::With(v, _) => {
                             self.types.insert(v.name.to_string(), Type::Never(false));
                         }
                         InstructionKind::GetImplicit(var, _) => {
@@ -929,7 +929,9 @@ impl<'a> Typechecker<'a> {
             }
             InstructionKind::BlockStart(_) => {}
             InstructionKind::BlockEnd(_) => {}
-            InstructionKind::With(_, contexts, blockId, _) => {
+            InstructionKind::With(_, info) => {
+                let contexts = &info.contexts;
+                let blockId = info.blockId;
                 for c in contexts {
                     match c {
                         WithContext::EffectHandler(effectHandler) => {
@@ -951,7 +953,7 @@ impl<'a> Typechecker<'a> {
                         }
                     }
                 }
-                self.queue.push_back(*blockId);
+                self.queue.push_back(blockId);
             }
             InstructionKind::GetImplicit(var, name) => {
                 let implicitName = match name {

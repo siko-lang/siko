@@ -1,9 +1,14 @@
+use core::panic;
+
 use crate::siko::{
     hir::{
         Apply::Apply,
         Function::FunctionKind,
         InstanceResolver::ResolutionResult,
-        Instruction::{ImplicitIndex, Instruction, InstructionKind, SyntaxBlockId, WithContext},
+        Instruction::{
+            ImplicitContextIndex, ImplicitContextOperation, ImplicitIndex, Instruction, InstructionKind, SyntaxBlockId,
+            WithContext,
+        },
         Substitution::Substitution,
         Type::{formatTypes, Type},
         TypeVarAllocator::TypeVarAllocator,
@@ -239,20 +244,44 @@ pub fn processInstructionKind(
         }
         InstructionKind::BlockStart(info) => InstructionKind::BlockStart(info.clone()),
         InstructionKind::BlockEnd(info) => InstructionKind::BlockEnd(info.clone()),
-        InstructionKind::With(v, contexts, blockId, withSyntaxBlockId) => {
+        InstructionKind::With(v, info) => {
             let mut handlerResolution = handlerResolutioStore.get(syntaxBlockId).clone();
-            for c in contexts {
+            let mut addedImplicit = false;
+            let mut operations = Vec::new();
+            let originalContextTypes = handlerResolution.getContextTypes(&mono.program);
+            for (index, _) in originalContextTypes.iter().enumerate() {
+                operations.push(ImplicitContextOperation::Copy(ImplicitContextIndex(index)));
+            }
+            for c in info.contexts {
                 match c {
                     WithContext::EffectHandler(handler) => {
                         handlerResolution.addEffectHandler(handler.method, handler.handler, handler.location);
                     }
                     WithContext::Implicit(h) => {
-                        handlerResolution.addImplicitHandler(h.implicit.clone(), h.location.clone());
+                        addedImplicit = true;
+                        let op =
+                            handlerResolution.addImplicitHandler(h.implicit.clone(), h.location.clone(), h.var.clone());
+                        match op {
+                            ImplicitContextOperation::Copy(_) => {
+                                panic!("Copy operation when adding new handler")
+                            }
+                            ImplicitContextOperation::Add(index, var) => {
+                                operations.push(ImplicitContextOperation::Add(index, var));
+                            }
+                            ImplicitContextOperation::Overwrite(index, var) => {
+                                operations[index.0] = ImplicitContextOperation::Overwrite(index, var);
+                            }
+                        }
                     }
                 }
             }
-            handlerResolutioStore.insert(withSyntaxBlockId, handlerResolution);
-            InstructionKind::Jump(v, blockId)
+            if addedImplicit {
+                let contextTypes = handlerResolution.getContextTypes(&mono.program);
+                // println!("Context types: {}", formatTypes(&contextTypes));
+                // println!("operations {:?}", operations)
+            }
+            handlerResolutioStore.insert(info.syntaxBlockId.clone(), handlerResolution);
+            InstructionKind::Jump(v, info.blockId)
         }
         InstructionKind::GetImplicit(var, index) => InstructionKind::GetImplicit(var.process(sub, mono), index.clone()),
     }

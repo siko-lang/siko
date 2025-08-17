@@ -32,8 +32,8 @@ impl Display for Context {
         } else {
             write!(f, "{}", formatTypes(&self.args))?;
         }
-        if !self.handlerResolution.effects.is_empty() {
-            write!(f, " effects: {{{}}}", self.handlerResolution)?;
+        if !self.handlerResolution.isEmpty() {
+            write!(f, " handlers: {{{}}}", self.handlerResolution)?;
         }
         Ok(())
     }
@@ -74,7 +74,7 @@ impl HandlerResolutionStore {
 
     pub fn checkUnused(&self, ctx: &ReportContext) {
         for (_, resolution) in &self.resolutions {
-            for (name, handler) in &resolution.effects {
+            for (name, handler) in &resolution.handlers {
                 if !handler.isUsed() {
                     let slogan = format!(
                         "Unused effect handler {} for {}",
