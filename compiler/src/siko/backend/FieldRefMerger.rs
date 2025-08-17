@@ -16,7 +16,7 @@ pub fn mergeFieldRefs(program: Program) -> Program {
     for (name, f) in &program.functions {
         let mut merger = FieldRefMerger::new(f);
         let mut f = merger.process();
-        if let Some(updatedF) = UnusedVariableEliminator::eliminateUnusedVariable(&f) {
+        if let Some(updatedF) = UnusedVariableEliminator::eliminateUnusedVariable(&f, &program) {
             f = updatedF;
         }
         result.functions.insert(name.clone(), f);

@@ -1,23 +1,26 @@
 use std::collections::BTreeMap;
 
 use crate::siko::hir::{
-    BodyBuilder::BodyBuilder, Function::Function, Instruction::InstructionKind, Variable::VariableName,
+    BodyBuilder::BodyBuilder, Function::Function, Instruction::InstructionKind, Program::Program,
+    Variable::VariableName,
 };
 
-pub fn eliminateUnusedVariable(f: &Function) -> Option<Function> {
-    let mut eliminator = UnusedVariableEliminator::new(f);
+pub fn eliminateUnusedVariable(f: &Function, program: &Program) -> Option<Function> {
+    let mut eliminator = UnusedVariableEliminator::new(f, program);
     eliminator.process()
 }
 
 pub struct UnusedVariableEliminator<'a> {
+    program: &'a Program,
     function: &'a Function,
     useCount: BTreeMap<VariableName, usize>,
 }
 
 impl<'a> UnusedVariableEliminator<'a> {
-    pub fn new(f: &'a Function) -> UnusedVariableEliminator<'a> {
+    pub fn new(f: &'a Function, program: &'a Program) -> UnusedVariableEliminator<'a> {
         UnusedVariableEliminator {
             function: f,
+            program,
             useCount: BTreeMap::new(),
         }
     }
@@ -48,16 +51,20 @@ impl<'a> UnusedVariableEliminator<'a> {
 
         let mut needsRemoval = false;
 
-        for (_, count) in &self.useCount {
-            if *count == 0 {
-                //println!("Unused variable: {}", name);
-                needsRemoval = true;
+        for (v, count) in &self.useCount {
+            if v.isTemp() {
+                if *count == 0 {
+                    //println!("Unused variable: {}", v);
+                    needsRemoval = true;
+                }
             }
         }
 
         if !needsRemoval {
             return None; // No dead code found
         }
+
+        let mut removed = false;
 
         let mut bodyBuilder = BodyBuilder::cloneFunction(self.function);
 
@@ -67,11 +74,14 @@ impl<'a> UnusedVariableEliminator<'a> {
             loop {
                 if let Some(i) = builder.getInstruction() {
                     if let Some(v) = i.kind.getResultVar() {
-                        if let Some(count) = self.useCount.get(&v.name) {
-                            if *count == 0 && canBeEliminated(&i.kind) {
-                                //println!("Removing unused variable: {} from {}", v.name, i);
-                                builder.removeInstruction();
-                                continue;
+                        if v.isTemp() {
+                            if let Some(count) = self.useCount.get(&v.name) {
+                                if *count == 0 && self.canBeEliminated(&i.kind) {
+                                    //println!("Removing unused variable: {} from {}", v.name, i);
+                                    removed = true;
+                                    builder.removeInstruction();
+                                    continue;
+                                }
                             }
                         }
                     }
@@ -85,17 +95,25 @@ impl<'a> UnusedVariableEliminator<'a> {
             }
         }
 
+        if !removed {
+            return None; // No dead code found
+        }
+
         let mut f = self.function.clone();
         f.body = Some(bodyBuilder.build());
         Some(f)
     }
-}
 
-fn canBeEliminated(i: &InstructionKind) -> bool {
-    match i {
-        InstructionKind::DeclareVar(_, _) => false,
-        InstructionKind::FieldRef(_, _, _) => true,
-        InstructionKind::Assign(_, _) => false,
-        _ => false,
+    fn canBeEliminated(&self, i: &InstructionKind) -> bool {
+        match i {
+            InstructionKind::DeclareVar(_, _) => true,
+            InstructionKind::FieldRef(_, _, _) => true,
+            InstructionKind::Assign(_, _) => true,
+            InstructionKind::FunctionCall(_, name, _) => {
+                let f = self.program.getFunction(name).expect("function not found");
+                f.isPure()
+            }
+            _ => false,
+        }
     }
 }

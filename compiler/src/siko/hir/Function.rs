@@ -303,6 +303,13 @@ impl Function {
         }
     }
 
+    pub fn isPure(&self) -> bool {
+        match self.kind {
+            FunctionKind::VariantCtor(_) | FunctionKind::StructCtor => true,
+            _ => false,
+        }
+    }
+
     pub fn getBlockById(&self, id: BlockId) -> &Block {
         if let Some(body) = &self.body {
             body.getBlockById(id)

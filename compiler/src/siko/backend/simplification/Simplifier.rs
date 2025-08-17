@@ -1,5 +1,7 @@
 use crate::siko::{
-    backend::simplification::{BlockMerger, CompileTimeEvaluator, DeadCodeEliminator, JumpSimplifier, VarSimplifier},
+    backend::simplification::{
+        BlockMerger, CompileTimeEvaluator, DeadCodeEliminator, JumpSimplifier, UnusedVariableEliminator, VarSimplifier,
+    },
     hir::Program::Program,
 };
 
@@ -34,6 +36,11 @@ pub fn simplify(program: Program) -> Program {
             }
             if let Some(f) = DeadCodeEliminator::eliminateDeadCode(&simplifiedFunc) {
                 //println!("DeadCodeEliminator made changes to function: {}", name);
+                simplifiedFunc = f;
+                simplified = true;
+            }
+            if let Some(f) = UnusedVariableEliminator::eliminateUnusedVariable(&simplifiedFunc, &program) {
+                //println!("UnusedVariableEliminator made changes to function: {}", name);
                 simplifiedFunc = f;
                 simplified = true;
             }
