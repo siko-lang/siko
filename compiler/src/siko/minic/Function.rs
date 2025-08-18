@@ -54,6 +54,7 @@ pub enum Instruction {
     Allocate(Variable),
     Store(Variable, Value),
     LoadPtr(Variable, Variable),
+    StorePtr(Variable, Variable),
     Reference(Variable, Variable),
     FunctionCall(Option<Variable>, String, Vec<Variable>),
     Return(Value),

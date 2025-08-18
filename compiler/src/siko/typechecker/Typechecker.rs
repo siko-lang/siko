@@ -24,10 +24,7 @@ use crate::siko::{
     },
     location::{Location::Location, Report::ReportContext},
     qualifiedname::{
-        builtins::{
-            getCloneFnName, getImplicitConvertFnName, getNativePtrCloneName, getNativePtrIsNullName,
-            getNativePtrStoreName,
-        },
+        builtins::{getCloneFnName, getImplicitConvertFnName, getNativePtrCloneName, getNativePtrIsNullName},
         QualifiedName,
     },
     typechecker::ConstraintChecker::ConstraintChecker,
@@ -230,6 +227,9 @@ impl<'a> Typechecker<'a> {
                             self.initializeVar(var);
                         }
                         InstructionKind::LoadPtr(dest, _) => {
+                            self.initializeVar(dest);
+                        }
+                        InstructionKind::StorePtr(dest, _) => {
                             self.initializeVar(dest);
                         }
                     }
@@ -815,15 +815,7 @@ impl<'a> Typechecker<'a> {
                     let kind = InstructionKind::AddressOfField(addressOfVar.clone(), receiver.clone(), newFields);
                     builder.addInstruction(kind, instruction.location.clone());
                     builder.step();
-                    let mut storeVar = self.bodyBuilder.createTempValue(instruction.location.clone());
-                    storeVar.ty = Some(Type::getUnitType());
-                    self.types.insert(storeVar.name.to_string(), Type::getUnitType());
-                    let store = InstructionKind::FunctionCall(
-                        storeVar,
-                        getNativePtrStoreName(),
-                        vec![addressOfVar, rhs.clone()],
-                        None,
-                    );
+                    let store = InstructionKind::StorePtr(addressOfVar, rhs.clone());
                     builder.replaceInstruction(store, instruction.location.clone());
                 }
                 // println!(
@@ -984,6 +976,16 @@ impl<'a> Typechecker<'a> {
                     self.unify(destType, *inner, instruction.location.clone());
                 } else {
                     TypecheckerError::NotAPtr(srcType.to_string(), instruction.location.clone()).report(self.ctx);
+                }
+            }
+            InstructionKind::StorePtr(dest, src) => {
+                let destType = self.getType(dest);
+                let destType = destType.apply(&self.substitution);
+                let srcType = self.getType(src);
+                if let Type::Ptr(inner) = destType {
+                    self.unify(srcType, *inner, instruction.location.clone());
+                } else {
+                    TypecheckerError::NotAPtr(destType.to_string(), instruction.location.clone()).report(self.ctx);
                 }
             }
         }

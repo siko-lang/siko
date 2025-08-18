@@ -259,6 +259,9 @@ impl RemoveTuples for InstructionKind {
             InstructionKind::LoadPtr(dest, src) => {
                 InstructionKind::LoadPtr(dest.removeTuples(ctx), src.removeTuples(ctx))
             }
+            InstructionKind::StorePtr(dest, src) => {
+                InstructionKind::StorePtr(dest.removeTuples(ctx), src.removeTuples(ctx))
+            }
         }
     }
 }

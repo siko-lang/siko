@@ -286,6 +286,10 @@ impl<'a> MinicBuilder<'a> {
                     let minicInstruction = LInstruction::LoadPtr(self.lowerVar(dest), self.lowerVar(src));
                     minicBlock.instructions.push(minicInstruction);
                 }
+                Instruction::StorePtr(dest, src) => {
+                    let minicInstruction = LInstruction::StorePtr(self.lowerVar(dest), self.lowerVar(src));
+                    minicBlock.instructions.push(minicInstruction);
+                }
             };
         }
         minicBlock

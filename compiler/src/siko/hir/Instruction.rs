@@ -324,6 +324,7 @@ pub enum InstructionKind {
     With(Variable, WithInfo),
     GetImplicit(Variable, ImplicitIndex),
     LoadPtr(Variable, Variable),
+    StorePtr(Variable, Variable),
 }
 
 impl Display for InstructionKind {
@@ -370,6 +371,7 @@ impl InstructionKind {
             InstructionKind::With(v, _) => Some(v.clone()),
             InstructionKind::GetImplicit(v, _) => Some(v.clone()),
             InstructionKind::LoadPtr(v, _) => Some(v.clone()),
+            InstructionKind::StorePtr(v, _) => Some(v.clone()),
         }
     }
 
@@ -498,6 +500,9 @@ impl InstructionKind {
             InstructionKind::LoadPtr(var, target) => {
                 InstructionKind::LoadPtr(var.replace(&from, to.clone()), target.replace(&from, to))
             }
+            InstructionKind::StorePtr(var, target) => {
+                InstructionKind::StorePtr(var.replace(&from, to.clone()), target.replace(&from, to))
+            }
         }
     }
 
@@ -583,7 +588,8 @@ impl InstructionKind {
                 result
             }
             InstructionKind::GetImplicit(var, _) => vec![var.clone()],
-            InstructionKind::LoadPtr(var, target) => vec![var.clone(), target.clone()],
+            InstructionKind::LoadPtr(dest, src) => vec![dest.clone(), src.clone()],
+            InstructionKind::StorePtr(dest, src) => vec![dest.clone(), src.clone()],
         }
     }
 
@@ -682,8 +688,11 @@ impl InstructionKind {
             InstructionKind::GetImplicit(var, index) => {
                 format!("get_implicit({}, {})", var, index)
             }
-            InstructionKind::LoadPtr(var, target) => {
-                format!("load_ptr({}, {})", var, target)
+            InstructionKind::LoadPtr(dest, src) => {
+                format!("load_ptr({}, {})", dest, src)
+            }
+            InstructionKind::StorePtr(dest, src) => {
+                format!("store_ptr({}, {})", dest, src)
             }
         }
     }

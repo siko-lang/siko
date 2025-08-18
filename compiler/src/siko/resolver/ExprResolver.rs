@@ -13,7 +13,7 @@ use crate::siko::hir::Instruction::{
 use crate::siko::hir::Variable::Variable;
 use crate::siko::location::Location::Location;
 use crate::siko::location::Report::ReportContext;
-use crate::siko::qualifiedname::builtins::{getNativePtrStoreName, getVecNewName, getVecPushName};
+use crate::siko::qualifiedname::builtins::{getVecNewName, getVecPushName};
 use crate::siko::qualifiedname::QualifiedName;
 use crate::siko::resolver::matchcompiler::Compiler::MatchCompiler;
 use crate::siko::syntax::Expr::{BinaryOp, Expr, SimpleExpr, UnaryOp};
@@ -248,11 +248,9 @@ impl<'a> ExprResolver<'a> {
                         }
                         SimpleExpr::UnaryOp(UnaryOp::Deref, inner) => {
                             let innerId = self.resolveExpr(inner, &mut env);
-                            self.bodyBuilder.current().addFunctionCall(
-                                getNativePtrStoreName(),
-                                vec![innerId, rhsId],
-                                lhs.location.clone(),
-                            );
+                            self.bodyBuilder
+                                .current()
+                                .addInstruction(InstructionKind::StorePtr(innerId, rhsId), lhs.location.clone());
                         }
                         _ => {
                             ResolverError::InvalidAssignment(lhs.location.clone()).report(self.ctx);

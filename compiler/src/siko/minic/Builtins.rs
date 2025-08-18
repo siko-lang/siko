@@ -7,8 +7,8 @@ use crate::siko::qualifiedname::{
     builtins::{
         getIntAddName, getIntDivName, getIntEqName, getIntLessThanName, getIntModName, getIntMulName, getIntSubName,
         getIntToI32Name, getIntToU32Name, getIntToU64Name, getIntToU8Name, getNativePtrCastName,
-        getNativePtrSizeOfName, getNativePtrStoreName, getNativePtrTransmuteName, getStdBasicUtilAbortName,
-        getStdBasicUtilPrintStrName, getStdBasicUtilPrintlnStrName, IntKind,
+        getNativePtrSizeOfName, getNativePtrTransmuteName, getStdBasicUtilAbortName, getStdBasicUtilPrintStrName,
+        getStdBasicUtilPrintlnStrName, IntKind,
     },
     QualifiedName,
 };
@@ -16,17 +16,6 @@ use crate::siko::qualifiedname::{
 use super::{Function::Function, Generator::getTypeName};
 
 pub fn dumpBuiltinFunction(f: &Function, args: &Vec<String>, buf: &mut File) -> io::Result<bool> {
-    if f.name
-        .starts_with(&getNativePtrStoreName().toString().replace(".", "_"))
-    {
-        writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-        writeln!(buf, "    {} result;", getTypeName(&f.result))?;
-        writeln!(buf, "    *addr = item;")?;
-        writeln!(buf, "    return result;")?;
-        writeln!(buf, "}}\n")?;
-        return Ok(true);
-    }
-
     if f.name
         .starts_with(&getNativePtrSizeOfName().toString().replace(".", "_"))
     {

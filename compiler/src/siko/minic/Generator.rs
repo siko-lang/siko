@@ -109,6 +109,9 @@ impl MiniCGenerator {
             Instruction::LoadPtr(dest, src) => {
                 format!("{} = *{};", dest.name, src.name)
             }
+            Instruction::StorePtr(dest, src) => {
+                format!("*{} = {};", dest.name, src.name)
+            }
             Instruction::GetField(dest, root, index, mode) => {
                 let mode = match mode {
                     GetMode::Noop => "",
@@ -237,6 +240,9 @@ impl MiniCGenerator {
                         localVars.insert(dest.clone());
                     }
                     Instruction::LoadPtr(dest, _) => {
+                        localVars.insert(dest.clone());
+                    }
+                    Instruction::StorePtr(dest, _) => {
                         localVars.insert(dest.clone());
                     }
                     Instruction::Reference(dest, _) => {

@@ -193,6 +193,7 @@ pub enum Instruction {
     Jump(String),
     AddressOfField(Variable, Variable, i32),
     LoadPtr(Variable, Variable),
+    StorePtr(Variable, Variable),
 }
 
 impl fmt::Display for Instruction {
@@ -254,6 +255,9 @@ impl fmt::Display for Instruction {
             }
             Instruction::LoadPtr(dest, src) => {
                 write!(f, "LoadPtr({}, {})", dest, src)
+            }
+            Instruction::StorePtr(dest, src) => {
+                write!(f, "StorePtr({}, {})", dest, src)
             }
         }
     }

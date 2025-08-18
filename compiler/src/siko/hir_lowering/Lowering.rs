@@ -304,6 +304,11 @@ impl<'a> Builder<'a> {
                     block.instructions.push(Instruction::Declare(dest.clone()));
                     block.instructions.push(Instruction::LoadPtr(dest, src));
                 }
+                HirInstructionKind::StorePtr(dest, src) => {
+                    let dest = self.buildVariable(dest);
+                    let src = self.buildVariable(src);
+                    block.instructions.push(Instruction::StorePtr(dest, src));
+                }
             }
         }
         Some(block)

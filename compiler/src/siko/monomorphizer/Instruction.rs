@@ -318,6 +318,9 @@ pub fn processInstructionKind(
         InstructionKind::LoadPtr(dest, src) => {
             InstructionKind::LoadPtr(dest.process(sub, mono), src.process(sub, mono))
         }
+        InstructionKind::StorePtr(dest, src) => {
+            InstructionKind::StorePtr(dest.process(sub, mono), src.process(sub, mono))
+        }
     }
 }
 
