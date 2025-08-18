@@ -45,7 +45,6 @@ pub struct Branch {
 pub enum GetMode {
     Noop,
     Ref,
-    Deref,
 }
 
 pub enum Instruction {

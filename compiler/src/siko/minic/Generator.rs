@@ -112,7 +112,6 @@ impl MiniCGenerator {
                 let mode = match mode {
                     GetMode::Noop => "",
                     GetMode::Ref => "&",
-                    GetMode::Deref => "*",
                 };
                 if root.ty.isPtr() {
                     format!("{} = {}{}->field{};", dest.name, mode, root.name, index)
