@@ -3,11 +3,11 @@ use std::{cell::RefCell, collections::BTreeMap, fmt::Display, rc::Rc};
 use crate::siko::{
     hir::{
         Instruction::{ImplicitContextIndex, ImplicitContextOperation},
-        Program::Program,
         Type::Type,
         Variable::Variable,
     },
     location::Location::Location,
+    monomorphizer::Monomorphizer::Monomorphizer,
     qualifiedname::QualifiedName,
 };
 
@@ -79,6 +79,10 @@ impl HandlerResolution {
         self.handlers.is_empty() && self.implicits.is_empty()
     }
 
+    pub fn isEmptyImplicits(&self) -> bool {
+        self.implicits.is_empty()
+    }
+
     pub fn addEffectHandler(&mut self, effect: QualifiedName, resolution: QualifiedName, location: Location) {
         let mut handler = EffectHandler::new(resolution, location);
         if let Some(prev) = self.handlers.get(&effect) {
@@ -119,14 +123,20 @@ impl HandlerResolution {
         self.implicits.get(effect)
     }
 
-    pub fn getContextTypes(&self, program: &Program) -> Vec<Type> {
+    pub fn getContextTypes(&self, mono: &mut Monomorphizer) -> Vec<Type> {
         let mut contextTypeMap = BTreeMap::new();
         for (implicitName, handler) in &self.implicits {
-            let implicitDef = program.getImplicit(&implicitName).expect("implicit not found in mono");
+            let implicitDef = mono
+                .program
+                .getImplicit(&implicitName)
+                .expect("implicit not found in mono");
             let index = handler.index.clone().0;
             contextTypeMap.insert(index, implicitDef.ty.clone());
         }
-        let contextTypes = contextTypeMap.values().cloned().collect::<Vec<_>>();
+        let mut contextTypes = contextTypeMap.values().cloned().collect::<Vec<_>>();
+        for ty in &mut contextTypes {
+            *ty = Type::Ptr(Box::new(mono.processType(ty.clone())));
+        }
         contextTypes
     }
 }

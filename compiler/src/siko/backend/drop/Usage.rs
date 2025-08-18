@@ -138,6 +138,7 @@ pub fn getUsageInfo(kind: InstructionKind) -> UsageInfo {
             }],
             Some(dest.toPath()),
         ),
+        InstructionKind::PtrOf(_, _) => UsageInfo::empty(),
         InstructionKind::DropPath(_) => UsageInfo::empty(),
         InstructionKind::DropMetadata(_) => UsageInfo::empty(),
         InstructionKind::Drop(_, _) => {

@@ -218,6 +218,7 @@ impl RemoveTuples for InstructionKind {
                 InstructionKind::Return(dest.removeTuples(ctx), arg.removeTuples(ctx))
             }
             InstructionKind::Ref(dest, arg) => InstructionKind::Ref(dest.removeTuples(ctx), arg.removeTuples(ctx)),
+            InstructionKind::PtrOf(dest, arg) => InstructionKind::PtrOf(dest.removeTuples(ctx), arg.removeTuples(ctx)),
             InstructionKind::DropPath(id) => {
                 panic!(
                     "DropListPlaceholder found in RemoveTuples, this should not happen: {}",

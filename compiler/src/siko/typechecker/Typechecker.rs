@@ -194,6 +194,9 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::Ref(var, _) => {
                             self.initializeVar(var);
                         }
+                        InstructionKind::PtrOf(var, _) => {
+                            self.initializeVar(var);
+                        }
                         InstructionKind::DropPath(_) => {
                             panic!("DropListPlaceholder found in Typechecker, this should not happen");
                         }
@@ -754,6 +757,14 @@ impl<'a> Typechecker<'a> {
                     instruction.location.clone(),
                 );
             }
+            InstructionKind::PtrOf(dest, arg) => {
+                let arg_type = self.getType(arg);
+                self.unify(
+                    self.getType(dest),
+                    Type::Ptr(Box::new(arg_type)),
+                    instruction.location.clone(),
+                );
+            }
             InstructionKind::DropPath(_) => {
                 unreachable!("drop list placeholder in typechecker!")
             }
@@ -962,7 +973,7 @@ impl<'a> Typechecker<'a> {
             InstructionKind::GetImplicit(var, name) => {
                 let implicitName = match name {
                     ImplicitIndex::Unresolved(name) => name,
-                    ImplicitIndex::Resolved(_) => panic!("Implicit index already resolved in typechecker!"),
+                    ImplicitIndex::Resolved(_, _) => panic!("Implicit index already resolved in typechecker!"),
                 };
                 let implicit = self.program.getImplicit(&implicitName).expect("Implicit not found");
                 self.unify(implicit.ty, self.getType(var), instruction.location.clone());

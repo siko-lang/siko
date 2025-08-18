@@ -153,6 +153,10 @@ impl<'a> TypeVerifier<'a> {
                 let ty = Type::Reference(Box::new(src.getType().clone()), None);
                 self.unify(&ty, dest.getType());
             }
+            InstructionKind::PtrOf(dest, src) => {
+                let ty = Type::Ptr(Box::new(src.getType().clone()));
+                self.unify(&ty, dest.getType());
+            }
             InstructionKind::FieldRef(dest, src, fields) => {
                 //println!("FieldRef: {} src {}", dest, src.getType());
                 let mut rootType = src.getType().clone();

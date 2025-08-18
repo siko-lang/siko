@@ -61,7 +61,7 @@ impl Monomorphize for FieldInfo {
 pub struct Monomorphizer<'a> {
     pub ctx: &'a ReportContext,
     pub program: Program,
-    monomorphizedProgram: Program,
+    pub monomorphizedProgram: Program,
     queue: VecDeque<Key>,
     processed: BTreeSet<Key>,
     processed_type: BTreeMap<Type, Type>,
@@ -80,6 +80,7 @@ impl<'a> Monomorphizer<'a> {
     }
 
     pub fn run(mut self) -> Program {
+        self.monomorphizedProgram.implicits = self.program.implicits.clone();
         let main_name = getMainName();
         match self.program.functions.get(&main_name) {
             Some(_) => {
@@ -95,7 +96,7 @@ impl<'a> Monomorphizer<'a> {
             }
         }
         self.processQueue();
-        let mut builder = ImplicitContextBuilder::new(&self.monomorphizedProgram);
+        let mut builder = ImplicitContextBuilder::new(&mut self);
         builder.process()
     }
 

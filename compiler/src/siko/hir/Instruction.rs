@@ -133,6 +133,10 @@ impl SyntaxBlockId {
         }
         result
     }
+
+    pub fn isEmpty(&self) -> bool {
+        self.items.is_empty()
+    }
 }
 
 impl Display for SyntaxBlockId {
@@ -242,14 +246,14 @@ impl Debug for ImplicitContextIndex {
 #[derive(Clone, PartialEq)]
 pub enum ImplicitIndex {
     Unresolved(QualifiedName),
-    Resolved(ImplicitContextIndex),
+    Resolved(ImplicitContextIndex, SyntaxBlockId),
 }
 
 impl Display for ImplicitIndex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ImplicitIndex::Unresolved(name) => write!(f, "{}", name),
-            ImplicitIndex::Resolved(index) => write!(f, "{}", index),
+            ImplicitIndex::Resolved(index, id) => write!(f, "{}, {}", index, id),
         }
     }
 }
@@ -303,6 +307,7 @@ pub enum InstructionKind {
     CharLiteral(Variable, char),
     Return(Variable, Variable),
     Ref(Variable, Variable),
+    PtrOf(Variable, Variable),
     DropPath(Path),
     DropMetadata(MetadataKind),
     Drop(Variable, Variable),
@@ -347,6 +352,7 @@ impl InstructionKind {
             InstructionKind::CharLiteral(v, _) => Some(v.clone()),
             InstructionKind::Return(v, _) => Some(v.clone()),
             InstructionKind::Ref(v, _) => Some(v.clone()),
+            InstructionKind::PtrOf(v, _) => Some(v.clone()),
             InstructionKind::DropPath(_) => None,
             InstructionKind::DropMetadata(_) => None,
             InstructionKind::Drop(_, _) => None,
@@ -425,6 +431,11 @@ impl InstructionKind {
                 let new_var = var.replace(&from, to.clone());
                 let new_target = target.replace(&from, to);
                 InstructionKind::Ref(new_var, new_target)
+            }
+            InstructionKind::PtrOf(var, target) => {
+                let new_var = var.replace(&from, to.clone());
+                let new_target = target.replace(&from, to);
+                InstructionKind::PtrOf(new_var, new_target)
             }
             InstructionKind::DropPath(_) => self.clone(),
             InstructionKind::DropMetadata(_) => self.clone(),
@@ -525,6 +536,9 @@ impl InstructionKind {
             InstructionKind::Ref(var, target) => {
                 vec![var.clone(), target.clone()]
             }
+            InstructionKind::PtrOf(var, target) => {
+                vec![var.clone(), target.clone()]
+            }
             InstructionKind::DropPath(_) => vec![],
             InstructionKind::DropMetadata(_) => vec![],
             InstructionKind::Drop(_, _) => vec![],
@@ -618,6 +632,7 @@ impl InstructionKind {
                 format!("{} = return({})", dest, id)
             }
             InstructionKind::Ref(dest, id) => format!("{} = &({})", dest, id),
+            InstructionKind::PtrOf(var, target) => format!("{} = ptr({})", var, target),
             InstructionKind::DropPath(path) => format!("drop_path({})", path),
             InstructionKind::DropMetadata(id) => {
                 format!("drop_metadata({})", id)

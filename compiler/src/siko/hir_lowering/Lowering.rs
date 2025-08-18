@@ -236,6 +236,12 @@ impl<'a> Builder<'a> {
                     block.instructions.push(Instruction::Declare(dest.clone()));
                     block.instructions.push(Instruction::Reference(dest, arg));
                 }
+                HirInstructionKind::PtrOf(dest, arg) => {
+                    let dest = self.buildVariable(dest);
+                    let arg = self.buildVariable(arg);
+                    block.instructions.push(Instruction::Declare(dest.clone()));
+                    block.instructions.push(Instruction::Reference(dest, arg));
+                }
                 HirInstructionKind::BlockStart(_) => {}
                 HirInstructionKind::BlockEnd(_) => {}
                 HirInstructionKind::AddressOfField(dest, root, fields) => {

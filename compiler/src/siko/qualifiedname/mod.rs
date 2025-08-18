@@ -73,10 +73,17 @@ impl QualifiedName {
         }
     }
 
-    pub(crate) fn isMonomorphized(&self) -> bool {
+    pub fn isMonomorphized(&self) -> bool {
         match self {
             QualifiedName::Monomorphized(_, _) => true,
             _ => false,
+        }
+    }
+
+    pub fn getUnmonomorphized(&self) -> (QualifiedName, Option<Context>) {
+        match self {
+            QualifiedName::Monomorphized(p, context) => (*p.clone(), Some(context.clone())),
+            n => (n.clone(), None),
         }
     }
 }

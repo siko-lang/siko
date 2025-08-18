@@ -204,6 +204,7 @@ impl Apply for InstructionKind {
             InstructionKind::CharLiteral(dest, c) => InstructionKind::CharLiteral(dest.apply(sub), c),
             InstructionKind::Return(dest, arg) => InstructionKind::Return(dest.apply(sub), arg.apply(sub)),
             InstructionKind::Ref(dest, arg) => InstructionKind::Ref(dest.apply(sub), arg.apply(sub)),
+            InstructionKind::PtrOf(dest, arg) => InstructionKind::PtrOf(dest.apply(sub), arg.apply(sub)),
             InstructionKind::DropPath(id) => InstructionKind::DropPath(id),
             InstructionKind::DropMetadata(id) => InstructionKind::DropMetadata(id),
             InstructionKind::Drop(dest, drop) => InstructionKind::Drop(dest.apply(sub), drop.apply(sub)),

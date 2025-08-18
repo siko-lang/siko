@@ -3,27 +3,32 @@ use std::collections::BTreeMap;
 use crate::siko::{
     hir::{
         BodyBuilder::BodyBuilder,
-        Function::Function,
-        Instruction::{FieldId, FieldInfo, ImplicitContextOperation, InstructionKind, SyntaxBlockId},
+        Function::{BlockId, Function, Parameter},
+        Instruction::{
+            FieldId, FieldInfo, ImplicitContextOperation, ImplicitIndex, InstructionKind, SyntaxBlockId,
+            SyntaxBlockIdSegment,
+        },
         Program::Program,
         Type::Type,
-        Variable::Variable,
+        Variable::{Variable, VariableName},
     },
-    qualifiedname::builtins::getNativePtrToPtrName,
+    location::Location::Location,
+    monomorphizer::Monomorphizer::Monomorphizer,
 };
 
-pub struct ImplicitContextBuilder<'a> {
-    program: &'a Program,
+pub struct ImplicitContextBuilder<'a, 'b> {
+    mono: &'a mut Monomorphizer<'b>,
 }
 
-impl<'a> ImplicitContextBuilder<'a> {
-    pub fn new(p: &'a Program) -> Self {
-        ImplicitContextBuilder { program: p }
+impl<'a, 'b> ImplicitContextBuilder<'a, 'b> {
+    pub fn new(mono: &'a mut Monomorphizer<'b>) -> Self {
+        ImplicitContextBuilder { mono }
     }
 
     pub fn process(&mut self) -> Program {
-        let mut result = self.program.clone();
-        for (name, function) in &self.program.functions {
+        let mut result = self.mono.monomorphizedProgram.clone();
+        let functions = result.functions.clone();
+        for (name, function) in &functions {
             let f = self.processFunction(&function);
             result.functions.insert(name.clone(), f);
         }
@@ -38,6 +43,47 @@ impl<'a> ImplicitContextBuilder<'a> {
         let mut bodyBuilder = BodyBuilder::withBody(body);
         let mut contextVarMap: BTreeMap<SyntaxBlockId, Variable> = BTreeMap::new();
         let allBlockIds = bodyBuilder.getAllBlockIds();
+
+        let mut function = function.clone();
+
+        // println!("Processing implicit context for function: {}", function.name);
+        // println!("Processing implicit context for function: {}", function);
+        let mut builder = bodyBuilder.iterator(BlockId::first());
+        let mut addInitialContext = true;
+        if let (_, Some(context)) = function.name.getUnmonomorphized() {
+            if !context.handlerResolution.isEmptyImplicits() {
+                addInitialContext = false;
+                //println!("Non main user function, patching context {}", function.name);
+                let contextTypes = context.handlerResolution.getContextTypes(self.mono);
+                let implicitContextArgName = format!("siko_implicit_context");
+                let argVar = Variable {
+                    name: VariableName::Arg(implicitContextArgName.clone()),
+                    location: Location::empty(),
+                    ty: Some(Type::Tuple(contextTypes.clone())),
+                };
+                let mut contextVar = bodyBuilder.createTempValue(Location::empty());
+                contextVar.ty = argVar.ty.clone();
+                builder.addDeclare(contextVar.clone(), Location::empty());
+                builder.step();
+                builder.addAssign(contextVar.clone(), argVar, Location::empty());
+                contextVarMap.insert(SyntaxBlockId::new(), contextVar.clone());
+                contextVarMap.insert(SyntaxBlockId::new().add(SyntaxBlockIdSegment { value: 0 }), contextVar);
+                let param = Parameter::Named(implicitContextArgName.clone(), Type::Tuple(contextTypes.clone()), false);
+                function.params.insert(0, param);
+            }
+        }
+        if addInitialContext {
+            let mut contextVar = bodyBuilder.createTempValue(Location::empty());
+            contextVar.ty = Some(Type::Tuple(vec![]));
+            builder.addDeclare(contextVar.clone(), Location::empty());
+            builder.step();
+            builder.addInstruction(
+                InstructionKind::Tuple(contextVar.clone(), Vec::new()),
+                Location::empty(),
+            );
+            contextVarMap.insert(SyntaxBlockId::new(), contextVar.clone());
+            contextVarMap.insert(SyntaxBlockId::new().add(SyntaxBlockIdSegment { value: 0 }), contextVar);
+        }
 
         for blockId in &allBlockIds {
             let mut builder = bodyBuilder.iterator(*blockId);
@@ -79,7 +125,7 @@ impl<'a> ImplicitContextBuilder<'a> {
                             for op in info.operations {
                                 match op {
                                     ImplicitContextOperation::Copy(index) => {
-                                        println!("Copying context variable at index {}", index);
+                                        //println!("Copying context variable at index {}", index);
                                         let prevContext = contextVarMap
                                             .get(&info.parentSyntaxBlockId)
                                             .expect("Parent context not found");
@@ -100,26 +146,14 @@ impl<'a> ImplicitContextBuilder<'a> {
                                         builder.step();
                                         args.push(fieldRefVar);
                                     }
-                                    ImplicitContextOperation::Add(index, var) => {
-                                        println!("Adding context variable {} at index {}", var, index);
-                                        let mut refVar = bodyBuilder.createTempValue(instruction.location.clone());
-                                        refVar.ty = Some(Type::Reference(Box::new(var.getType().clone()), None));
+                                    ImplicitContextOperation::Add(_, var) => {
+                                        // println!("Adding context variable {} at index {}", var, index);
                                         let mut ptrVar = bodyBuilder.createTempValue(instruction.location.clone());
                                         let ptrTy = Type::Ptr(Box::new(var.getType().clone()));
                                         ptrVar.ty = Some(ptrTy.clone());
                                         contextTypes.push(ptrTy);
                                         builder.addInstruction(
-                                            InstructionKind::Ref(refVar.clone(), var),
-                                            instruction.location.clone(),
-                                        );
-                                        builder.step();
-                                        builder.addInstruction(
-                                            InstructionKind::FunctionCall(
-                                                ptrVar.clone(),
-                                                getNativePtrToPtrName(),
-                                                vec![refVar],
-                                                None,
-                                            ),
+                                            InstructionKind::PtrOf(ptrVar.clone(), var),
                                             instruction.location.clone(),
                                         );
                                         builder.step();
@@ -137,6 +171,45 @@ impl<'a> ImplicitContextBuilder<'a> {
                             builder.step();
                             builder.replaceInstruction(jump, instruction.location.clone());
                         }
+                        InstructionKind::GetImplicit(dest, index) => match index {
+                            ImplicitIndex::Resolved(index, id) => {
+                                let contextVar = if let Some(contextVar) = contextVarMap.get(&id) {
+                                    contextVar.clone()
+                                } else {
+                                    panic!("Context variable not found for id in implicit context builder {}", id);
+                                };
+                                let mut fieldRefVar = bodyBuilder.createTempValue(instruction.location.clone());
+                                let fieldTy = dest.getType().clone();
+                                fieldRefVar.ty = Some(fieldTy.clone());
+                                let fieldInfo = FieldInfo {
+                                    name: FieldId::Indexed(index.0 as u32),
+                                    location: instruction.location.clone(),
+                                    ty: Some(fieldTy),
+                                };
+                                let kind = InstructionKind::FieldRef(dest.clone(), contextVar, vec![fieldInfo]);
+                                builder.replaceInstruction(kind, instruction.location.clone());
+                            }
+                            _ => {
+                                panic!("Implicit context index not resolved in implicit context builder");
+                            }
+                        },
+                        InstructionKind::FunctionCall(dest, name, args, info) => {
+                            if let Some(info) = info {
+                                let contextVar = if let Some(contextVar) = contextVarMap.get(&info.contextSyntaxBlockId)
+                                {
+                                    contextVar.clone()
+                                } else {
+                                    panic!(
+                                    "Context variable not found for id '{}' in implicit context builder for function call '{}'",
+                                    info.contextSyntaxBlockId, name
+                                );
+                                };
+                                let mut args = args.clone();
+                                args.insert(0, contextVar);
+                                let kind = InstructionKind::FunctionCall(dest.clone(), name.clone(), args, None);
+                                builder.replaceInstruction(kind, instruction.location.clone());
+                            }
+                        }
                         _ => {}
                     }
                     builder.step();
@@ -146,7 +219,6 @@ impl<'a> ImplicitContextBuilder<'a> {
             }
         }
 
-        let mut function = function.clone();
         function.body = Some(bodyBuilder.build());
 
         // println!("Implicit context builder processed function: {}", function.name);
