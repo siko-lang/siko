@@ -239,7 +239,21 @@ impl<'a> ExprResolver<'a> {
                                         .addAssign(value.clone(), rhsId, lhs.location.clone());
                                 }
                                 None => {
-                                    ResolverError::UnknownValue(name.name(), name.location()).report(self.ctx);
+                                    if let Some(irName) = self.moduleResolver.tryResolverName(name) {
+                                        if let Some(implicit) = self.implicits.get(&irName) {
+                                            if !implicit.mutable {
+                                                ResolverError::ImmutableImplicit(name.name(), name.location())
+                                                    .report(self.ctx);
+                                            }
+                                            let kind = InstructionKind::WriteImplicit(
+                                                ImplicitIndex::Unresolved(irName),
+                                                rhsId,
+                                            );
+                                            self.bodyBuilder.current().addInstruction(kind, name.location());
+                                        }
+                                    } else {
+                                        ResolverError::UnknownValue(name.name(), name.location()).report(self.ctx);
+                                    }
                                 }
                             }
                         }
@@ -292,7 +306,7 @@ impl<'a> ExprResolver<'a> {
                         if self.implicits.contains_key(&irName) {
                             let implicitVar = self.bodyBuilder.createTempValue(expr.location.clone());
                             let kind =
-                                InstructionKind::GetImplicit(implicitVar.clone(), ImplicitIndex::Unresolved(irName));
+                                InstructionKind::ReadImplicit(implicitVar.clone(), ImplicitIndex::Unresolved(irName));
                             self.bodyBuilder.current().addInstruction(kind, name.location());
                             return implicitVar;
                         }
@@ -646,7 +660,8 @@ impl<'a> ExprResolver<'a> {
                     if self.implicits.get(&resolvedName).is_some() {
                         let handlerName = env.resolve(&contextHandler.handler.name());
                         match handlerName {
-                            Some(name) => {
+                            Some(mut name) => {
+                                name.location = contextHandler.handler.location();
                                 handlers.push(HirWithContext::Implicit(HirImplicitHandler {
                                     implicit: resolvedName.clone(),
                                     var: name,

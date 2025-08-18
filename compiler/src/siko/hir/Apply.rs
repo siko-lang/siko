@@ -229,7 +229,8 @@ impl Apply for InstructionKind {
             InstructionKind::BlockStart(info) => InstructionKind::BlockStart(info.clone()),
             InstructionKind::BlockEnd(info) => InstructionKind::BlockEnd(info.clone()),
             InstructionKind::With(v, info) => InstructionKind::With(v.apply(sub), info.apply(sub)),
-            InstructionKind::GetImplicit(var, name) => InstructionKind::GetImplicit(var.apply(sub), name.clone()),
+            InstructionKind::ReadImplicit(var, index) => InstructionKind::ReadImplicit(var.apply(sub), index.clone()),
+            InstructionKind::WriteImplicit(index, var) => InstructionKind::WriteImplicit(index.clone(), var.apply(sub)),
             InstructionKind::LoadPtr(dest, src) => InstructionKind::LoadPtr(dest.apply(sub), src.apply(sub)),
             InstructionKind::StorePtr(dest, src) => InstructionKind::StorePtr(dest.apply(sub), src.apply(sub)),
         }

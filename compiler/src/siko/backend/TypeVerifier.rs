@@ -267,7 +267,10 @@ impl<'a> TypeVerifier<'a> {
                     }
                 }
             }
-            InstructionKind::GetImplicit(var, _) => {
+            InstructionKind::ReadImplicit(var, _) => {
+                self.checkVariable(var);
+            }
+            InstructionKind::WriteImplicit(_, var) => {
                 self.checkVariable(var);
             }
             InstructionKind::LoadPtr(dest, src) => {

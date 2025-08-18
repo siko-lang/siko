@@ -10,6 +10,7 @@ pub enum TypecheckerError {
     TypeAnnotationNeeded(Location),
     ArgCountMismatch(u32, u32, Location),
     ImmutableAssign(Location),
+    ImmutableImplicitHandler(Location),
     NotAPtr(String, Location),
 }
 
@@ -70,6 +71,11 @@ impl TypecheckerError {
             }
             TypecheckerError::ImmutableAssign(l) => {
                 let slogan = format!("Value is not mutable, cannot assign");
+                let r = Report::new(ctx, slogan, Some(l.clone()));
+                r.print();
+            }
+            TypecheckerError::ImmutableImplicitHandler(l) => {
+                let slogan = format!("Value is not mutable, cannot set as immutable handler");
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }

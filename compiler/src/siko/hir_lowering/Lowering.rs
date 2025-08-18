@@ -293,8 +293,11 @@ impl<'a> Builder<'a> {
                 HirInstructionKind::With(_, _) => {
                     panic!("With instruction found in Lowering, this should not happen");
                 }
-                HirInstructionKind::GetImplicit(_, _) => {
+                HirInstructionKind::ReadImplicit(_, _) => {
                     panic!("GetImplicit instruction found in Lowering, this should not happen");
+                }
+                HirInstructionKind::WriteImplicit(_, _) => {
+                    panic!("WriteImplicit instruction found in Lowering, this should not happen");
                 }
                 HirInstructionKind::LoadPtr(dest, src) => {
                     let dest = self.buildVariable(dest);

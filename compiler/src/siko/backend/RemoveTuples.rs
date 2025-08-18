@@ -253,8 +253,11 @@ impl RemoveTuples for InstructionKind {
             InstructionKind::BlockStart(info) => InstructionKind::BlockStart(info.clone()),
             InstructionKind::BlockEnd(info) => InstructionKind::BlockEnd(info.clone()),
             InstructionKind::With(v, info) => InstructionKind::With(v.clone(), info.clone()),
-            InstructionKind::GetImplicit(var, name) => {
-                InstructionKind::GetImplicit(var.removeTuples(ctx), name.clone())
+            InstructionKind::ReadImplicit(var, name) => {
+                InstructionKind::ReadImplicit(var.removeTuples(ctx), name.clone())
+            }
+            InstructionKind::WriteImplicit(index, var) => {
+                InstructionKind::WriteImplicit(index.clone(), var.removeTuples(ctx))
             }
             InstructionKind::LoadPtr(dest, src) => {
                 InstructionKind::LoadPtr(dest.removeTuples(ctx), src.removeTuples(ctx))

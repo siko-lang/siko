@@ -40,6 +40,12 @@ impl<'a> UnusedVariableEliminator<'a> {
                     if let Some(v) = i.kind.getResultVar() {
                         self.useCount.entry(v.name.clone()).or_insert(0);
                         allVars.retain(|var| var != &v);
+                        if let InstructionKind::StorePtr(v1, v2) = &i.kind {
+                            let c = self.useCount.entry(v1.name.clone()).or_insert(0);
+                            *c += 1;
+                            let c = self.useCount.entry(v2.name.clone()).or_insert(0);
+                            *c += 1;
+                        }
                     }
                     for v in allVars {
                         let count = self.useCount.entry(v.name.clone()).or_insert(0);

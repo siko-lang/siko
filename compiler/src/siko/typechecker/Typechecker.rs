@@ -223,7 +223,10 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::With(v, _) => {
                             self.types.insert(v.name.to_string(), Type::Never(false));
                         }
-                        InstructionKind::GetImplicit(var, _) => {
+                        InstructionKind::ReadImplicit(var, _) => {
+                            self.initializeVar(var);
+                        }
+                        InstructionKind::WriteImplicit(_, var) => {
                             self.initializeVar(var);
                         }
                         InstructionKind::LoadPtr(dest, _) => {
@@ -954,14 +957,32 @@ impl<'a> Typechecker<'a> {
                         }
                         WithContext::Implicit(handler) => {
                             let implicit = self.program.getImplicit(&handler.implicit).expect("Implicit not found");
+                            if implicit.mutable {
+                                let mut mutable = false;
+                                if let Some(m) = self.mutables.get(&handler.var.name.to_string()) {
+                                    mutable = *m == Mutability::ExplicitMutable;
+                                }
+                                if !mutable {
+                                    TypecheckerError::ImmutableImplicitHandler(handler.var.location.clone())
+                                        .report(self.ctx);
+                                }
+                            }
                             self.unify(implicit.ty, self.getType(&handler.var), handler.location.clone());
                         }
                     }
                 }
                 self.queue.push_back(blockId);
             }
-            InstructionKind::GetImplicit(var, name) => {
+            InstructionKind::ReadImplicit(var, name) => {
                 let implicitName = match name {
+                    ImplicitIndex::Unresolved(name) => name,
+                    ImplicitIndex::Resolved(_, _) => panic!("Implicit index already resolved in typechecker!"),
+                };
+                let implicit = self.program.getImplicit(&implicitName).expect("Implicit not found");
+                self.unify(implicit.ty, self.getType(var), instruction.location.clone());
+            }
+            InstructionKind::WriteImplicit(index, var) => {
+                let implicitName = match index {
                     ImplicitIndex::Unresolved(name) => name,
                     ImplicitIndex::Resolved(_, _) => panic!("Implicit index already resolved in typechecker!"),
                 };

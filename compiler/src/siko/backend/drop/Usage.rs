@@ -151,7 +151,8 @@ pub fn getUsageInfo(kind: InstructionKind) -> UsageInfo {
         InstructionKind::EnumSwitch(_, _) => UsageInfo::empty(),
         InstructionKind::IntegerSwitch(_, _) => UsageInfo::empty(),
         InstructionKind::With(_, _) => UsageInfo::empty(),
-        InstructionKind::GetImplicit(var, _) => UsageInfo::with(Vec::new(), Some(var.toPath())),
+        InstructionKind::ReadImplicit(var, _) => UsageInfo::with(Vec::new(), Some(var.toPath())),
+        InstructionKind::WriteImplicit(_, var) => UsageInfo::with(vec![varToUsage(&var)], None),
         InstructionKind::LoadPtr(dest, _) => UsageInfo::with(vec![], Some(dest.toPath())),
         InstructionKind::StorePtr(dest, src) => UsageInfo::with(vec![varToUsage(&src)], Some(dest.toPath())),
     }

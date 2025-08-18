@@ -160,7 +160,7 @@ pub fn processInstruction(
             };
             InstructionKind::FunctionCall(dropRes.clone(), monoName, vec![dropVar.clone()], info)
         }
-        InstructionKind::GetImplicit(dest, index) => {
+        InstructionKind::ReadImplicit(dest, index) => {
             let implicitName = match index {
                 ImplicitIndex::Resolved(_, _) => panic!("implicit index already resolved in mono"),
                 ImplicitIndex::Unresolved(name) => name,
@@ -168,9 +168,32 @@ pub fn processInstruction(
             let (handlerResolution, id) = handlerResolutionStore.get(syntaxBlockId);
             if let Some(handler) = handlerResolution.getImplicitHandler(implicitName) {
                 handler.markUsed();
-                InstructionKind::GetImplicit(
+                InstructionKind::ReadImplicit(
                     dest.process(sub, mono),
                     ImplicitIndex::Resolved(handler.index.clone(), id),
+                )
+            } else {
+                // report error
+                let slogan = format!(
+                    "Implicit variable not present in current implicit context: {}",
+                    format!("{}", mono.ctx.yellow(&implicitName.toString()))
+                );
+                let r = Report::new(mono.ctx, slogan, Some(input.location.clone()));
+                r.print();
+                std::process::exit(1);
+            }
+        }
+        InstructionKind::WriteImplicit(index, src) => {
+            let implicitName = match index {
+                ImplicitIndex::Resolved(_, _) => panic!("implicit index already resolved in mono"),
+                ImplicitIndex::Unresolved(name) => name,
+            };
+            let (handlerResolution, id) = handlerResolutionStore.get(syntaxBlockId);
+            if let Some(handler) = handlerResolution.getImplicitHandler(implicitName) {
+                handler.markUsed();
+                InstructionKind::WriteImplicit(
+                    ImplicitIndex::Resolved(handler.index.clone(), id),
+                    src.process(sub, mono),
                 )
             } else {
                 // report error
@@ -314,7 +337,12 @@ pub fn processInstructionKind(
             handlerResolutionStore.insert(info.syntaxBlockId.clone(), handlerResolution);
             InstructionKind::With(v, info)
         }
-        InstructionKind::GetImplicit(var, index) => InstructionKind::GetImplicit(var.process(sub, mono), index.clone()),
+        InstructionKind::ReadImplicit(var, index) => {
+            InstructionKind::ReadImplicit(var.process(sub, mono), index.clone())
+        }
+        InstructionKind::WriteImplicit(index, var) => {
+            InstructionKind::WriteImplicit(index.clone(), var.process(sub, mono))
+        }
         InstructionKind::LoadPtr(dest, src) => {
             InstructionKind::LoadPtr(dest.process(sub, mono), src.process(sub, mono))
         }

@@ -20,6 +20,7 @@ pub enum ResolverError {
     InvalidAssignment(Location),
     InvalidArgCount(String, i64, i64, Location),
     DynamicFunctionCallNotSupported(Location),
+    ImmutableImplicit(String, Location),
 }
 
 impl ResolverError {
@@ -127,6 +128,11 @@ impl ResolverError {
             ResolverError::DynamicFunctionCallNotSupported(l) => {
                 let slogan = format!("Dynamic function calls are not supported");
                 let r = Report::new(ctx, slogan, Some(l.clone()));
+                r.print();
+            }
+            ResolverError::ImmutableImplicit(name, location) => {
+                let slogan = format!("Cannot modify immutable implicit variable {}", ctx.yellow(name));
+                let r = Report::new(ctx, slogan, Some(location.clone()));
                 r.print();
             }
         }

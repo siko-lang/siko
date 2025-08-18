@@ -171,7 +171,7 @@ impl<'a, 'b> ImplicitContextBuilder<'a, 'b> {
                             builder.step();
                             builder.replaceInstruction(jump, instruction.location.clone());
                         }
-                        InstructionKind::GetImplicit(dest, index) => match index {
+                        InstructionKind::ReadImplicit(dest, index) => match index {
                             ImplicitIndex::Resolved(index, id) => {
                                 let contextVar = if let Some(contextVar) = contextVarMap.get(&id) {
                                     contextVar.clone()
@@ -190,6 +190,31 @@ impl<'a, 'b> ImplicitContextBuilder<'a, 'b> {
                                 builder.replaceInstruction(kind, instruction.location.clone());
                                 builder.step();
                                 let kind = InstructionKind::LoadPtr(dest, fieldRefVar);
+                                builder.addInstruction(kind, instruction.location.clone());
+                            }
+                            _ => {
+                                panic!("Implicit context index not resolved in implicit context builder");
+                            }
+                        },
+                        InstructionKind::WriteImplicit(index, src) => match index {
+                            ImplicitIndex::Resolved(index, id) => {
+                                let contextVar = if let Some(contextVar) = contextVarMap.get(&id) {
+                                    contextVar.clone()
+                                } else {
+                                    panic!("Context variable not found for id in implicit context builder {}", id);
+                                };
+                                let mut fieldRefVar = bodyBuilder.createTempValue(instruction.location.clone());
+                                let fieldTy = src.getType().clone();
+                                fieldRefVar.ty = Some(Type::Ptr(Box::new(fieldTy.clone())));
+                                let fieldInfo = FieldInfo {
+                                    name: FieldId::Indexed(index.0 as u32),
+                                    location: instruction.location.clone(),
+                                    ty: Some(fieldTy),
+                                };
+                                let kind = InstructionKind::FieldRef(fieldRefVar.clone(), contextVar, vec![fieldInfo]);
+                                builder.replaceInstruction(kind, instruction.location.clone());
+                                builder.step();
+                                let kind = InstructionKind::StorePtr(fieldRefVar, src);
                                 builder.addInstruction(kind, instruction.location.clone());
                             }
                             _ => {
