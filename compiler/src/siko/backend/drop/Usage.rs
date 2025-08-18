@@ -152,5 +152,6 @@ pub fn getUsageInfo(kind: InstructionKind) -> UsageInfo {
         InstructionKind::IntegerSwitch(_, _) => UsageInfo::empty(),
         InstructionKind::With(_, _) => UsageInfo::empty(),
         InstructionKind::GetImplicit(var, _) => UsageInfo::with(Vec::new(), Some(var.toPath())),
+        InstructionKind::LoadPtr(dest, _) => UsageInfo::with(vec![], Some(dest.toPath())),
     }
 }

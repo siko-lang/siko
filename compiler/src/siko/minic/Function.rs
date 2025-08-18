@@ -53,7 +53,7 @@ pub enum GetMode {
 pub enum Instruction {
     Allocate(Variable),
     Store(Variable, Value),
-    LoadVar(Variable, Variable),
+    LoadPtr(Variable, Variable),
     Reference(Variable, Variable),
     FunctionCall(Option<Variable>, String, Vec<Variable>),
     Return(Value),

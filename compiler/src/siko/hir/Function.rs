@@ -266,6 +266,13 @@ impl FunctionKind {
         }
     }
 
+    pub fn isBuiltin(&self) -> bool {
+        match self {
+            FunctionKind::Extern(kind) => *kind == ExternKind::Builtin,
+            _ => false,
+        }
+    }
+
     pub fn isCtor(&self) -> bool {
         match self {
             FunctionKind::VariantCtor(_) | FunctionKind::StructCtor => true,

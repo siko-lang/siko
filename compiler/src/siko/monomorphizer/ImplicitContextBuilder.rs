@@ -180,14 +180,17 @@ impl<'a, 'b> ImplicitContextBuilder<'a, 'b> {
                                 };
                                 let mut fieldRefVar = bodyBuilder.createTempValue(instruction.location.clone());
                                 let fieldTy = dest.getType().clone();
-                                fieldRefVar.ty = Some(fieldTy.clone());
+                                fieldRefVar.ty = Some(Type::Ptr(Box::new(fieldTy.clone())));
                                 let fieldInfo = FieldInfo {
                                     name: FieldId::Indexed(index.0 as u32),
                                     location: instruction.location.clone(),
                                     ty: Some(fieldTy),
                                 };
-                                let kind = InstructionKind::FieldRef(dest.clone(), contextVar, vec![fieldInfo]);
+                                let kind = InstructionKind::FieldRef(fieldRefVar.clone(), contextVar, vec![fieldInfo]);
                                 builder.replaceInstruction(kind, instruction.location.clone());
+                                builder.step();
+                                let kind = InstructionKind::LoadPtr(dest, fieldRefVar);
+                                builder.addInstruction(kind, instruction.location.clone());
                             }
                             _ => {
                                 panic!("Implicit context index not resolved in implicit context builder");

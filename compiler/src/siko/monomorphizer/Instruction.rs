@@ -121,16 +121,17 @@ pub fn processInstruction(
                 .map(|ty| ty.clone().apply(&sub))
                 .collect();
             //println!("{} type args {}", name, formatTypes(&ty_args));
-            let (resolution, info) = if target_fn.kind.isCtor() || target_fn.kind.isExternC() {
-                (HandlerResolution::new(), None)
-            } else {
-                let info = if resolution.isEmptyImplicits() {
-                    None
+            let (resolution, info) =
+                if target_fn.kind.isCtor() || target_fn.kind.isExternC() || target_fn.kind.isBuiltin() {
+                    (HandlerResolution::new(), None)
                 } else {
-                    Some(CallContextInfo { contextSyntaxBlockId })
+                    let info = if resolution.isEmptyImplicits() {
+                        None
+                    } else {
+                        Some(CallContextInfo { contextSyntaxBlockId })
+                    };
+                    (resolution, info)
                 };
-                (resolution, info)
-            };
             let fn_name = mono.getMonoName(&name, &ty_args, resolution.clone());
             //println!("MONO CALL: {}", fn_name);
             mono.addKey(Key::Function(name.clone(), ty_args, resolution));
@@ -314,6 +315,9 @@ pub fn processInstructionKind(
             InstructionKind::With(v, info)
         }
         InstructionKind::GetImplicit(var, index) => InstructionKind::GetImplicit(var.process(sub, mono), index.clone()),
+        InstructionKind::LoadPtr(dest, src) => {
+            InstructionKind::LoadPtr(dest.process(sub, mono), src.process(sub, mono))
+        }
     }
 }
 

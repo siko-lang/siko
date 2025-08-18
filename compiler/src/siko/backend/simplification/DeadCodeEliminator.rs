@@ -164,6 +164,7 @@ impl<'a> DeadCodeEliminator<'a> {
                     return;
                 }
                 InstructionKind::GetImplicit(_, _) => {}
+                InstructionKind::LoadPtr(_, _) => {}
             }
         }
     }

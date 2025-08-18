@@ -282,6 +282,10 @@ impl<'a> MinicBuilder<'a> {
                         LInstruction::AddressOfField(self.lowerVar(dest), self.lowerVar(src), *index);
                     minicBlock.instructions.push(minicInstruction);
                 }
+                Instruction::LoadPtr(dest, src) => {
+                    let minicInstruction = LInstruction::LoadPtr(self.lowerVar(dest), self.lowerVar(src));
+                    minicBlock.instructions.push(minicInstruction);
+                }
             };
         }
         minicBlock

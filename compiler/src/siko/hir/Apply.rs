@@ -230,6 +230,7 @@ impl Apply for InstructionKind {
             InstructionKind::BlockEnd(info) => InstructionKind::BlockEnd(info.clone()),
             InstructionKind::With(v, info) => InstructionKind::With(v.apply(sub), info.apply(sub)),
             InstructionKind::GetImplicit(var, name) => InstructionKind::GetImplicit(var.apply(sub), name.clone()),
+            InstructionKind::LoadPtr(var, target) => InstructionKind::LoadPtr(var.apply(sub), target.apply(sub)),
         }
     }
 }

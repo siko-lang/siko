@@ -1,41 +1,21 @@
 module Main {
 
-struct Foo {}
-
-struct Bar {
-    foo: Foo
-}
-
-implicit mut myBar: Bar
-
-implicit readOnlyMyBar: Bar
-
-fn use(f: &Foo) {
-
-}
+implicit myImplicit: Int
 
 fn foo() {
-    use(myBar.foo);
-    use(readOnlyMyBar.foo);
+    assert(myImplicit == 42);
+}
+
+fn foo2() {
+    assert(myImplicit == 43);
 }
 
 fn main() {
-    let bar = Bar(Foo());
-    let mut bar2 = Bar(Foo());
-    with myBar = bar2 {
-        with readOnlyMyBar = bar {
-            foo();
-        }
-    }
-    let bar = Bar(Foo());
-    let mut bar2 = Bar(Foo());
-    let bar3 = Bar(Foo());
-    with myBar = bar2 {
-        with readOnlyMyBar = bar {
-            with readOnlyMyBar = bar {
-                foo();
-            }
-        }
+    let mut counter = 42;
+    with myImplicit = counter {
+        foo();
+        counter = 43;
+        foo2();
     }
 }
 

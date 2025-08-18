@@ -256,6 +256,9 @@ impl RemoveTuples for InstructionKind {
             InstructionKind::GetImplicit(var, name) => {
                 InstructionKind::GetImplicit(var.removeTuples(ctx), name.clone())
             }
+            InstructionKind::LoadPtr(dest, src) => {
+                InstructionKind::LoadPtr(dest.removeTuples(ctx), src.removeTuples(ctx))
+            }
         }
     }
 }

@@ -229,6 +229,9 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::GetImplicit(var, _) => {
                             self.initializeVar(var);
                         }
+                        InstructionKind::LoadPtr(dest, _) => {
+                            self.initializeVar(dest);
+                        }
                     }
                 }
             }
@@ -977,6 +980,11 @@ impl<'a> Typechecker<'a> {
                 };
                 let implicit = self.program.getImplicit(&implicitName).expect("Implicit not found");
                 self.unify(implicit.ty, self.getType(var), instruction.location.clone());
+            }
+            InstructionKind::LoadPtr(dest, src) => {
+                let destType = self.getType(dest);
+                let srcType = Type::Ptr(Box::new(self.getType(src)));
+                self.unify(destType, srcType, instruction.location.clone());
             }
         }
     }

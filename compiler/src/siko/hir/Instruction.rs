@@ -323,6 +323,7 @@ pub enum InstructionKind {
     BlockEnd(SyntaxBlockId),
     With(Variable, WithInfo),
     GetImplicit(Variable, ImplicitIndex),
+    LoadPtr(Variable, Variable),
 }
 
 impl Display for InstructionKind {
@@ -368,6 +369,7 @@ impl InstructionKind {
             InstructionKind::BlockEnd(_) => None,
             InstructionKind::With(v, _) => Some(v.clone()),
             InstructionKind::GetImplicit(v, _) => Some(v.clone()),
+            InstructionKind::LoadPtr(v, _) => Some(v.clone()),
         }
     }
 
@@ -493,6 +495,9 @@ impl InstructionKind {
             InstructionKind::GetImplicit(var, name) => {
                 InstructionKind::GetImplicit(var.replace(&from, to.clone()), name.clone())
             }
+            InstructionKind::LoadPtr(var, target) => {
+                InstructionKind::LoadPtr(var.replace(&from, to.clone()), target.replace(&from, to))
+            }
         }
     }
 
@@ -578,6 +583,7 @@ impl InstructionKind {
                 result
             }
             InstructionKind::GetImplicit(var, _) => vec![var.clone()],
+            InstructionKind::LoadPtr(var, target) => vec![var.clone(), target.clone()],
         }
     }
 
@@ -675,6 +681,9 @@ impl InstructionKind {
             }
             InstructionKind::GetImplicit(var, index) => {
                 format!("get_implicit({}, {})", var, index)
+            }
+            InstructionKind::LoadPtr(var, target) => {
+                format!("load_ptr({}, {})", var, target)
             }
         }
     }

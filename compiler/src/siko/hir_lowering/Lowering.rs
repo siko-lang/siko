@@ -298,6 +298,12 @@ impl<'a> Builder<'a> {
                 HirInstructionKind::GetImplicit(_, _) => {
                     panic!("GetImplicit instruction found in Lowering, this should not happen");
                 }
+                HirInstructionKind::LoadPtr(dest, src) => {
+                    let dest = self.buildVariable(dest);
+                    let src = self.buildVariable(src);
+                    block.instructions.push(Instruction::Declare(dest.clone()));
+                    block.instructions.push(Instruction::LoadPtr(dest, src));
+                }
             }
         }
         Some(block)

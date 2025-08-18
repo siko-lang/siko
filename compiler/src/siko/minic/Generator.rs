@@ -106,14 +106,8 @@ impl MiniCGenerator {
                     None => format!("{}({});", name, argRefs.join(", ")),
                 }
             }
-            Instruction::LoadVar(dest, src) => {
-                format!(
-                    "{} = load {}, ptr {}, align {}",
-                    dest.name,
-                    getTypeName(&dest.ty),
-                    src.name,
-                    self.getAlignment(&src.ty),
-                )
+            Instruction::LoadPtr(dest, src) => {
+                format!("{} = *{};", dest.name, src.name)
             }
             Instruction::GetField(dest, root, index, mode) => {
                 let mode = match mode {
@@ -242,7 +236,7 @@ impl MiniCGenerator {
                     Instruction::Store(dest, _) => {
                         localVars.insert(dest.clone());
                     }
-                    Instruction::LoadVar(dest, _) => {
+                    Instruction::LoadPtr(dest, _) => {
                         localVars.insert(dest.clone());
                     }
                     Instruction::Reference(dest, _) => {
