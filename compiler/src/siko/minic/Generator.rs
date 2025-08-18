@@ -144,37 +144,8 @@ impl MiniCGenerator {
             Instruction::Jump(label) => {
                 format!("goto {};", label)
             }
-            Instruction::Memcpy(src, dest) => match &dest.ty {
-                ty if ty.getName().is_some() => {
-                    if dest.ty.isPtr() {
-                        if src.ty.isPtr() {
-                            format!("*{} = *({}){};", dest.name, getTypeName(&dest.ty), src.name)
-                        } else {
-                            format!("*{} = *({})&{};", dest.name, getTypeName(&dest.ty), src.name)
-                        }
-                    } else {
-                        format!("{} = {};", dest.name, src.name)
-                    }
-                    //let def = self.program.getStruct(&name);
-                }
-                Type::Int64 => {
-                    format!("{} = {};", dest.name, src.name)
-                }
-                Type::UInt64 => {
-                    format!("{} = {};", dest.name, src.name)
-                }
-                Type::Int32 => {
-                    format!("{} = {};", dest.name, src.name)
-                }
-                Type::UInt32 => {
-                    format!("{} = {};", dest.name, src.name)
-                }
-                Type::UInt8 => {
-                    format!("{} = {};", dest.name, src.name)
-                }
-                _ => format!("INTERNALERROR"),
-            },
-            Instruction::MemcpyPtr(src, dest) => {
+            Instruction::Memcpy(src, dest) => {
+                assert_eq!(src.ty, dest.ty);
                 format!("{} = {};", dest.name, src.name)
             }
             Instruction::Reference(dest, src) => {
@@ -262,9 +233,6 @@ impl MiniCGenerator {
                     }
                     Instruction::Jump(_) => {}
                     Instruction::Memcpy(_, dest) => {
-                        localVars.insert(dest.clone());
-                    }
-                    Instruction::MemcpyPtr(_, dest) => {
                         localVars.insert(dest.clone());
                     }
                     Instruction::Bitcast(dest, _) => {

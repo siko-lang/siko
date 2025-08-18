@@ -124,17 +124,6 @@ impl<'a> MinicBuilder<'a> {
                     let minicInstruction = LInstruction::FunctionCall(minicDest, name.clone(), minicArgs);
                     minicBlock.instructions.push(minicInstruction);
                 }
-                Instruction::Assign(dest, src) => {
-                    let minicInstruction = LInstruction::Store(
-                        self.lowerVar(dest),
-                        match src {
-                            Value::Void => unreachable!(),
-                            Value::Numeric(v) => LValue::Numeric(v.clone(), LType::Int64),
-                            Value::Var(v) => LValue::Variable(self.lowerVar(v)),
-                        },
-                    );
-                    minicBlock.instructions.push(minicInstruction);
-                }
                 Instruction::Return(v) => match v {
                     Value::Void => {
                         let minicInstruction = LInstruction::Return(LValue::Void);
@@ -148,19 +137,15 @@ impl<'a> MinicBuilder<'a> {
                         unreachable!()
                     }
                 },
-                Instruction::Store(src, dest) => {
-                    let minicInstruction =
-                        LInstruction::Store(self.lowerVar(dest), LValue::Variable(self.lowerVar(src)));
-                    minicBlock.instructions.push(minicInstruction);
-                }
                 Instruction::Memcpy(src, dest) => {
-                    if src.ty.isPtr() {
-                        let minicInstruction = LInstruction::MemcpyPtr(self.lowerVar(src), self.lowerVar(dest));
-                        minicBlock.instructions.push(minicInstruction);
-                    } else {
-                        let minicInstruction = LInstruction::Memcpy(self.lowerVar(src), self.lowerVar(dest));
-                        minicBlock.instructions.push(minicInstruction);
+                    if src.ty.isPtr() && !dest.ty.isPtr() {
+                        panic!("MIR: memcpy from pointer to non-pointer {} -> {}", src, dest);
                     }
+                    if dest.ty.isPtr() && !src.ty.isPtr() {
+                        panic!("MIR: memcpy from non-pointer to pointer {} -> {}", src, dest);
+                    }
+                    let minicInstruction = LInstruction::Memcpy(self.lowerVar(src), self.lowerVar(dest));
+                    minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::GetFieldRef(dest, root, index) => {
                     let field = &self.program.getStruct(&root.ty.getStruct()).fields[*index as usize];
