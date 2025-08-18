@@ -83,18 +83,14 @@ impl MiniCGenerator {
 
     fn dumpInstruction(&self, instruction: &Instruction) -> Option<String> {
         let s = match &instruction {
-            Instruction::Allocate(_) => return None,
-            Instruction::Store(dest, src) => match src {
+            Instruction::Declare(_) => return None,
+            Instruction::StoreLiteral(dest, src) => match src {
                 Value::Numeric(value, _) => {
                     format!("{} = {};", dest.name, value)
                 }
                 Value::String(value, _) => {
                     format!("{} = (uint8_t*){};", dest.name, value)
                 }
-                Value::Variable(src) => {
-                    format!("{} = {};", dest.name, src.name,)
-                }
-                Value::Void => unreachable!(),
             },
             Instruction::FunctionCall(dest, name, args) => {
                 let mut argRefs = Vec::new();
@@ -129,18 +125,9 @@ impl MiniCGenerator {
                 let path: String = path.join("");
                 format!("{}{} = {};", dest.name, path, src.name)
             }
-            Instruction::Return(value) => match value {
-                Value::Void => format!("return;"),
-                Value::Variable(var) => {
-                    format!("return {};", var.name)
-                }
-                Value::String(_, _) => {
-                    unreachable!()
-                }
-                Value::Numeric(v, _) => {
-                    format!("return {};", v)
-                }
-            },
+            Instruction::Return(var) => {
+                format!("return {};", var.name)
+            }
             Instruction::Jump(label) => {
                 format!("goto {};", label)
             }
@@ -204,10 +191,10 @@ impl MiniCGenerator {
         for block in &f.blocks {
             for i in &block.instructions {
                 match i {
-                    Instruction::Allocate(v) => {
+                    Instruction::Declare(v) => {
                         localVars.insert(v.clone());
                     }
-                    Instruction::Store(dest, _) => {
+                    Instruction::StoreLiteral(dest, _) => {
                         localVars.insert(dest.clone());
                     }
                     Instruction::LoadPtr(dest, _) => {

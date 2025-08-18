@@ -33,8 +33,6 @@ pub struct Variable {
 
 #[derive(Clone)]
 pub enum Value {
-    Void,
-    Variable(Variable),
     Numeric(String, Type),
     String(String, Type),
 }
@@ -51,13 +49,13 @@ pub enum GetMode {
 }
 
 pub enum Instruction {
-    Allocate(Variable),
-    Store(Variable, Value),
+    Declare(Variable),
+    StoreLiteral(Variable, Value),
     LoadPtr(Variable, Variable),
     StorePtr(Variable, Variable),
     Reference(Variable, Variable),
     FunctionCall(Option<Variable>, String, Vec<Variable>),
-    Return(Value),
+    Return(Variable),
     GetField(Variable, Variable, i32, GetMode),
     SetField(Variable, Variable, Vec<i32>),
     Jump(String),

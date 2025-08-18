@@ -3,7 +3,7 @@ use std::collections::{btree_map::Entry, BTreeMap};
 
 use super::{
     Data::Struct,
-    Function::{Block, Function, FunctionKind, Instruction, Param, Value, Variable},
+    Function::{Block, Function, FunctionKind, Instruction, Param, Variable},
     Program::Program,
     Type::Type,
 };
@@ -124,19 +124,10 @@ impl<'a> MinicBuilder<'a> {
                     let minicInstruction = LInstruction::FunctionCall(minicDest, name.clone(), minicArgs);
                     minicBlock.instructions.push(minicInstruction);
                 }
-                Instruction::Return(v) => match v {
-                    Value::Void => {
-                        let minicInstruction = LInstruction::Return(LValue::Void);
-                        minicBlock.instructions.push(minicInstruction);
-                    }
-                    Value::Var(v) => {
-                        let minicInstruction = LInstruction::Return(LValue::Variable(self.lowerVar(v)));
-                        minicBlock.instructions.push(minicInstruction);
-                    }
-                    _ => {
-                        unreachable!()
-                    }
-                },
+                Instruction::Return(var) => {
+                    let minicInstruction = LInstruction::Return(self.lowerVar(var));
+                    minicBlock.instructions.push(minicInstruction);
+                }
                 Instruction::Memcpy(src, dest) => {
                     if src.ty.isPtr() && !dest.ty.isPtr() {
                         panic!("MIR: memcpy from pointer to non-pointer {} -> {}", src, dest);
@@ -170,7 +161,7 @@ impl<'a> MinicBuilder<'a> {
                 }
                 Instruction::IntegerLiteral(var, value) => {
                     let minicInstruction =
-                        LInstruction::Store(self.lowerVar(var), LValue::Numeric(value.clone(), LType::Int64));
+                        LInstruction::StoreLiteral(self.lowerVar(var), LValue::Numeric(value.clone(), LType::Int64));
                     minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::StringLiteral(var, value) => {
@@ -189,10 +180,13 @@ impl<'a> MinicBuilder<'a> {
                             newStr
                         }
                     };
-                    let minicInstruction = LInstruction::Store(tmpVar.clone(), LValue::String(value.clone(), i8Ptr));
-                    minicBlock.instructions.push(minicInstruction);
                     let minicInstruction =
-                        LInstruction::Store(tmpVar2.clone(), LValue::Numeric(format!("{}", strLen), LType::Int64));
+                        LInstruction::StoreLiteral(tmpVar.clone(), LValue::String(value.clone(), i8Ptr));
+                    minicBlock.instructions.push(minicInstruction);
+                    let minicInstruction = LInstruction::StoreLiteral(
+                        tmpVar2.clone(),
+                        LValue::Numeric(format!("{}", strLen), LType::Int64),
+                    );
                     minicBlock.instructions.push(minicInstruction);
                     let minicInstruction = LInstruction::SetField(self.lowerVar(var), tmpVar, vec![0]);
                     minicBlock.instructions.push(minicInstruction);
@@ -295,7 +289,7 @@ impl<'a> MinicBuilder<'a> {
                 }
                 let mut minicBlocks: Vec<LBlock> = blocks.iter().map(|b| self.lowerBlock(b)).collect();
                 for var in localVars {
-                    let minicInstruction = LInstruction::Allocate(self.lowerVar(&var));
+                    let minicInstruction = LInstruction::Declare(self.lowerVar(&var));
                     minicBlocks[0].instructions.insert(0, minicInstruction)
                 }
                 LFunction {
@@ -317,7 +311,7 @@ impl<'a> MinicBuilder<'a> {
                     ty: f.result.clone(),
                 };
                 let s = self.program.getStruct(&f.name);
-                block.instructions.push(LInstruction::Allocate(self.lowerVar(&this)));
+                block.instructions.push(LInstruction::Declare(self.lowerVar(&this)));
                 for (index, field) in s.fields.iter().enumerate() {
                     let argVar = Variable {
                         name: field.name.clone(),
@@ -337,9 +331,7 @@ impl<'a> MinicBuilder<'a> {
                         ));
                     }
                 }
-                block
-                    .instructions
-                    .push(LInstruction::Return(LValue::Variable(self.lowerVar(&this))));
+                block.instructions.push(LInstruction::Return(self.lowerVar(&this)));
                 LFunction {
                     name: f.name.clone(),
                     fullName: f.fullName.clone(),
@@ -366,10 +358,10 @@ impl<'a> MinicBuilder<'a> {
                     name: "this".to_string(),
                     ty: Type::Struct(variant.name.clone()),
                 };
-                block.instructions.push(LInstruction::Allocate(self.lowerVar(&this)));
+                block.instructions.push(LInstruction::Declare(self.lowerVar(&this)));
                 let mut tmp = self.tmpVar(&this);
                 tmp.ty = LType::Int32;
-                block.instructions.push(LInstruction::Store(
+                block.instructions.push(LInstruction::StoreLiteral(
                     tmp.clone(),
                     LValue::Numeric(format!("{}", index), LType::Int32),
                 ));
@@ -392,7 +384,7 @@ impl<'a> MinicBuilder<'a> {
                 block
                     .instructions
                     .push(LInstruction::Bitcast(tmp2.clone(), self.lowerVar(&this)));
-                block.instructions.push(LInstruction::Return(LValue::Variable(tmp2)));
+                block.instructions.push(LInstruction::Return(tmp2));
                 LFunction {
                     name: f.name.clone(),
                     fullName: f.fullName.clone(),

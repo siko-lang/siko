@@ -130,22 +130,6 @@ impl fmt::Display for Variable {
     }
 }
 
-pub enum Value {
-    Void,
-    Numeric(String),
-    Var(Variable),
-}
-
-impl fmt::Display for Value {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Value::Void => write!(f, "Void"),
-            Value::Numeric(num) => write!(f, "Numeric({})", num),
-            Value::Var(var) => write!(f, "Var({})", var),
-        }
-    }
-}
-
 #[derive(Clone, PartialEq)]
 pub struct EnumCase {
     pub index: u32,
@@ -181,7 +165,7 @@ pub enum Instruction {
     Reference(Variable, Variable),
     Call(Option<Variable>, String, Vec<Variable>),
     SetField(Variable, Variable, Vec<i32>),
-    Return(Value),
+    Return(Variable),
     Memcpy(Variable, Variable), //src -> dest
     IntegerLiteral(Variable, String),
     StringLiteral(Variable, String),

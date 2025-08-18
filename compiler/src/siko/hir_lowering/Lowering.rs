@@ -21,7 +21,7 @@ use crate::siko::{
         Data::{Field as MirField, Struct, Union, Variant as MirVariant},
         Function::{
             Block as MirBlock, EnumCase as MirEnumCase, ExternKind as MirExternKind, Function as MirFunction,
-            FunctionKind as MirFunctionKind, Instruction, IntegerCase as MirIntegerCase, Param as MirParam, Value,
+            FunctionKind as MirFunctionKind, Instruction, IntegerCase as MirIntegerCase, Param as MirParam,
             Variable as MirVariable,
         },
         Program::Program as MirProgram,
@@ -126,9 +126,7 @@ impl<'a> Builder<'a> {
                     block.instructions.push(Instruction::Jump(self.getBlockName(*blockId)));
                 }
                 HirInstructionKind::Return(_, v) => {
-                    block
-                        .instructions
-                        .push(Instruction::Return(Value::Var(self.buildVariable(v))));
+                    block.instructions.push(Instruction::Return(self.buildVariable(v)));
                 }
                 HirInstructionKind::IntegerLiteral(dest, v) => {
                     let dest = self.buildVariable(dest);
