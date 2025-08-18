@@ -26,7 +26,7 @@ use crate::siko::{
     qualifiedname::{
         builtins::{
             getCloneFnName, getImplicitConvertFnName, getNativePtrCloneName, getNativePtrIsNullName,
-            getNativePtrLoadName, getNativePtrStoreName,
+            getNativePtrStoreName,
         },
         QualifiedName,
     },
@@ -896,12 +896,7 @@ impl<'a> Typechecker<'a> {
                     ptrLoadResultVar.ty = Some(*innerTy.clone());
                     self.types.insert(ptrLoadResultVar.name.to_string(), *innerTy.clone());
                     builder.addInstruction(
-                        InstructionKind::FunctionCall(
-                            ptrLoadResultVar.clone(),
-                            getNativePtrLoadName(),
-                            vec![receiver.clone()],
-                            None,
-                        ),
+                        InstructionKind::LoadPtr(ptrLoadResultVar.clone(), receiver.clone()),
                         instruction.location.clone(),
                     );
                     builder.step();
@@ -982,9 +977,14 @@ impl<'a> Typechecker<'a> {
                 self.unify(implicit.ty, self.getType(var), instruction.location.clone());
             }
             InstructionKind::LoadPtr(dest, src) => {
+                let srcType = self.getType(src);
+                let srcType = srcType.apply(&self.substitution);
                 let destType = self.getType(dest);
-                let srcType = Type::Ptr(Box::new(self.getType(src)));
-                self.unify(destType, srcType, instruction.location.clone());
+                if let Type::Ptr(inner) = srcType {
+                    self.unify(destType, *inner, instruction.location.clone());
+                } else {
+                    TypecheckerError::NotAPtr(srcType.to_string(), instruction.location.clone()).report(self.ctx);
+                }
             }
         }
     }

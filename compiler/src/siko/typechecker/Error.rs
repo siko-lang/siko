@@ -10,6 +10,7 @@ pub enum TypecheckerError {
     TypeAnnotationNeeded(Location),
     ArgCountMismatch(u32, u32, Location),
     ImmutableAssign(Location),
+    NotAPtr(String, Location),
 }
 
 impl TypecheckerError {
@@ -69,6 +70,11 @@ impl TypecheckerError {
             }
             TypecheckerError::ImmutableAssign(l) => {
                 let slogan = format!("Value is not mutable, cannot assign");
+                let r = Report::new(ctx, slogan, Some(l.clone()));
+                r.print();
+            }
+            TypecheckerError::NotAPtr(ty, l) => {
+                let slogan = format!("Value is not a pointer: {}", ctx.yellow(ty));
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }

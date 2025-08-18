@@ -13,9 +13,7 @@ use crate::siko::hir::Instruction::{
 use crate::siko::hir::Variable::Variable;
 use crate::siko::location::Location::Location;
 use crate::siko::location::Report::ReportContext;
-use crate::siko::qualifiedname::builtins::{
-    getNativePtrLoadName, getNativePtrStoreName, getVecNewName, getVecPushName,
-};
+use crate::siko::qualifiedname::builtins::{getNativePtrStoreName, getVecNewName, getVecPushName};
 use crate::siko::qualifiedname::QualifiedName;
 use crate::siko::resolver::matchcompiler::Compiler::MatchCompiler;
 use crate::siko::syntax::Expr::{BinaryOp, Expr, SimpleExpr, UnaryOp};
@@ -478,7 +476,13 @@ impl<'a> ExprResolver<'a> {
                 let name = match op {
                     UnaryOp::Not => createOpName("Not", "not"),
                     UnaryOp::Neg => createOpName("Neg", "negative"),
-                    UnaryOp::Deref => getNativePtrLoadName(),
+                    UnaryOp::Deref => {
+                        let resVar = self.bodyBuilder.createTempValue(expr.location.clone());
+                        self.bodyBuilder
+                            .current()
+                            .addInstruction(InstructionKind::LoadPtr(resVar.clone(), rhsId), expr.location.clone());
+                        return resVar;
+                    }
                 };
                 let id = Identifier::new(format!("{}", name), expr.location.clone());
                 let name = self.moduleResolver.resolverName(&id);

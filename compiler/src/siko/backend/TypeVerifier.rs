@@ -273,8 +273,8 @@ impl<'a> TypeVerifier<'a> {
             InstructionKind::LoadPtr(dest, src) => {
                 self.checkVariable(dest);
                 self.checkVariable(src);
-                let ty = Type::Ptr(Box::new(src.getType().clone()));
-                self.unify(&ty, dest.getType());
+                let ty = Type::Ptr(Box::new(dest.getType().clone()));
+                self.unify(&ty, src.getType());
             }
         }
     }

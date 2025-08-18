@@ -74,10 +74,6 @@ pub fn getNativePtrIsNullName() -> QualifiedName {
     build("NativePtr", "isNull")
 }
 
-pub fn getNativePtrLoadName() -> QualifiedName {
-    build("NativePtr", "load")
-}
-
 pub fn getCloneFnName() -> QualifiedName {
     build("Std.Ops", "Clone").add(format!("clone"))
 }
