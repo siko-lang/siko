@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use crate::siko::hir::Program::Program;
 use crate::siko::hir::Trait::Trait;
 use crate::siko::location::Report::ReportContext;
@@ -20,6 +22,7 @@ pub struct ModuleResolver<'a> {
     pub localNames: Names,
     pub importedNames: Names,
     pub importedModules: Vec<String>,
+    pub variants: BTreeSet<QualifiedName>,
 }
 
 impl<'a> ModuleResolver<'a> {
@@ -35,6 +38,38 @@ impl<'a> ModuleResolver<'a> {
     pub fn resolverName(&self, name: &Identifier) -> QualifiedName {
         if let Some(qn) = self.tryResolverName(name) {
             return qn;
+        }
+        ResolverError::UnknownName(name.toString(), name.location()).report(self.ctx);
+    }
+
+    pub fn resolveTypeName(&self, name: &Identifier) -> QualifiedName {
+        if let Some(names) = self.localNames.names.get(&name.name()) {
+            let mut typeNames = Vec::new();
+            for name in names {
+                if !self.variants.contains(name) {
+                    typeNames.push(name.clone());
+                }
+            }
+            if typeNames.len() > 1 {
+                ResolverError::Ambiguous(name.toString(), name.location()).report(self.ctx);
+            }
+            if typeNames.len() > 0 {
+                return typeNames.first().unwrap().clone();
+            }
+        }
+        if let Some(names) = self.importedNames.names.get(&name.name()) {
+            let mut typeNames = Vec::new();
+            for name in names {
+                if !self.variants.contains(name) {
+                    typeNames.push(name.clone());
+                }
+            }
+            if typeNames.len() > 1 {
+                ResolverError::Ambiguous(name.toString(), name.location()).report(self.ctx);
+            }
+            if typeNames.len() > 0 {
+                return typeNames.first().unwrap().clone();
+            }
         }
         ResolverError::UnknownName(name.toString(), name.location()).report(self.ctx);
     }

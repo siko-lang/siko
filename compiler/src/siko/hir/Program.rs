@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, fmt::Display};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt::Display,
+};
 
 use crate::siko::{hir::Implicit::Implicit, qualifiedname::QualifiedName};
 
@@ -19,6 +22,7 @@ pub struct Program {
     pub traitMethodSelectors: BTreeMap<QualifiedName, TraitMethodSelector>,
     pub instanceResolver: InstanceResolver,
     pub implicits: BTreeMap<QualifiedName, Implicit>,
+    pub variants: BTreeSet<QualifiedName>,
 }
 
 impl Program {
@@ -31,6 +35,7 @@ impl Program {
             traitMethodSelectors: BTreeMap::new(),
             instanceResolver: InstanceResolver::new(),
             implicits: BTreeMap::new(),
+            variants: BTreeSet::new(),
         }
     }
 
@@ -52,6 +57,18 @@ impl Program {
 
     pub fn getImplicit(&self, qn: &QualifiedName) -> Option<Implicit> {
         self.implicits.get(qn).cloned()
+    }
+
+    pub fn isStruct(&self, qn: &QualifiedName) -> bool {
+        self.structs.contains_key(qn)
+    }
+
+    pub fn isEnum(&self, qn: &QualifiedName) -> bool {
+        self.enums.contains_key(qn)
+    }
+
+    pub fn isVariant(&self, qn: &QualifiedName) -> bool {
+        self.variants.contains(qn)
     }
 
     pub fn dumpToFile(&self, folderName: &str) -> std::io::Result<()> {

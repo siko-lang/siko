@@ -4,7 +4,6 @@ use crate::siko::qualifiedname::QualifiedName;
 use crate::siko::syntax::Type::{Type, TypeParameterDeclaration};
 use std::collections::BTreeSet;
 
-#[derive(Debug)]
 pub struct TypeResolver<'a> {
     pub moduleResolver: &'a ModuleResolver<'a>,
     typeParameters: BTreeSet<IrType>,
@@ -37,7 +36,7 @@ impl<'a> TypeResolver<'a> {
                     for arg in args {
                         irArgs.push(self.resolveType(arg));
                     }
-                    let name = self.moduleResolver.resolverName(&name);
+                    let name = self.moduleResolver.resolveTypeName(&name);
                     IrType::Named(name, irArgs)
                 }
             }

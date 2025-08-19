@@ -284,6 +284,7 @@ impl<'a> Resolver<'a> {
                             );
                             self.program.functions.insert(ctor.name.clone(), ctor);
                             self.variants.insert(variant.name.clone(), irEnum.name.clone());
+                            self.program.variants.insert(variant.name.clone());
                             irEnum.variants.push(variant);
                         }
                         for method in &e.methods {
@@ -689,7 +690,12 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    pub fn processSourceModule(sourceModule: &Module, importedNames: &mut Names, i: &Import) {
+    pub fn processSourceModule(
+        sourceModule: &Module,
+        importedNames: &mut Names,
+        variants: &mut BTreeSet<QualifiedName>,
+        i: &Import,
+    ) {
         if let Some(alias) = &i.alias {
             let moduleName = QualifiedName::Module(i.moduleName.toString());
             let localModuleName = QualifiedName::Module(alias.toString());
@@ -720,6 +726,7 @@ impl<'a> Resolver<'a> {
                         importedNames.add(&localEnumName, &enumName);
                         for variantDef in &enumDef.variants {
                             let variantName = enumName.add(variantDef.name.toString());
+                            variants.insert(variantName.clone());
                             let localVariantName = localEnumName.add(variantDef.name.toString());
                             importedNames.add(&localVariantName, &variantName);
                         }
@@ -808,6 +815,7 @@ impl<'a> Resolver<'a> {
                         importedNames.add(&enumName, &enumName);
                         for variantDef in &enumDef.variants {
                             let variantName = enumName.add(variantDef.name.toString());
+                            variants.insert(variantName.clone());
                             importedNames.add(&variantDef.name, &variantName);
                             importedNames.add(&format!("{}.{}", enumDef.name, variantDef.name), &variantName);
                             importedNames.add(&variantName, &variantName);
@@ -875,17 +883,21 @@ impl<'a> Resolver<'a> {
 
     fn processImports(&mut self) {
         for (_, m) in &self.modules {
+            let moduleResolver = self.resolvers.get_mut(&m.name.toString()).unwrap();
             //println!("Processing module {}", name);
-            let mut importedNames = Names::new();
-            let mut importedModules = Vec::new();
             for item in &m.items {
                 match item {
                     ModuleItem::Import(i) => {
                         let moduleName = i.moduleName.toString();
                         match self.modules.get(&moduleName) {
                             Some(sourceModule) => {
-                                importedModules.push(moduleName);
-                                Resolver::processSourceModule(sourceModule, &mut importedNames, i);
+                                moduleResolver.importedModules.push(moduleName);
+                                Resolver::processSourceModule(
+                                    sourceModule,
+                                    &mut moduleResolver.importedNames,
+                                    &mut moduleResolver.variants,
+                                    i,
+                                );
                             }
                             None => {
                                 if !i.implicitImport {
@@ -897,28 +909,28 @@ impl<'a> Resolver<'a> {
                     _ => {}
                 }
             }
-            let moduleResolver = self.resolvers.get_mut(&m.name.toString()).unwrap();
-            moduleResolver.importedNames = importedNames;
-            moduleResolver.importedModules = importedModules;
         }
     }
 
     fn collectLocalNames(&mut self) {
         for (_, m) in &self.modules {
             //println!("Processing module {}", name);
+            let (localNames, variants) = Resolver::buildLocalNames(m);
             let moduleResolver = ModuleResolver {
                 ctx: self.ctx,
                 name: m.name.toString(),
-                localNames: Resolver::buildLocalNames(m),
+                localNames,
                 importedNames: Names::new(),
                 importedModules: Vec::new(),
+                variants,
             };
             self.resolvers.insert(m.name.toString(), moduleResolver);
         }
     }
 
-    pub fn buildLocalNames(m: &Module) -> Names {
+    pub fn buildLocalNames(m: &Module) -> (Names, BTreeSet<QualifiedName>) {
         let mut localNames = Names::new();
+        let mut variants = BTreeSet::new();
         let moduleName = QualifiedName::Module(m.name.toString());
         for item in &m.items {
             match item {
@@ -939,6 +951,7 @@ impl<'a> Resolver<'a> {
                     localNames.add(&enumName, &enumName);
                     for v in &e.variants {
                         let variantName = enumName.add(v.name.toString());
+                        variants.insert(variantName.clone());
                         localNames.add(&v.name, &variantName);
                         localNames.add(&format!("{}.{}", e.name, v.name), &variantName);
                         localNames.add(&variantName, &variantName);
@@ -986,7 +999,7 @@ impl<'a> Resolver<'a> {
                 }
             }
         }
-        localNames
+        (localNames, variants)
     }
 
     fn processImplicits(&mut self) {
