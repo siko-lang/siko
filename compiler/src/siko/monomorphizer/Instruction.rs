@@ -39,7 +39,18 @@ pub fn processInstruction(
     let kind: InstructionKind = match &input.kind {
         InstructionKind::FunctionCall(dest, name, args, _) => {
             //println!("Calling {} in block {}", name, syntaxBlockId);
-            let target_fn = mono.program.getFunction(name).expect("function not found in mono");
+            let target_fn = match mono.program.getFunction(name) {
+                Some(f) => f,
+                None => {
+                    let slogan = format!(
+                        "Function {} not found during monomorphization, maybe std is missing?",
+                        format!("{}", mono.ctx.yellow(&name.toString()))
+                    );
+                    let r = Report::new(mono.ctx, slogan, None);
+                    r.print();
+                    std::process::exit(1);
+                }
+            };
             //println!("Target function: {}", target_fn.kind);
             let (target_fn, resolution, contextSyntaxBlockId) = match target_fn.kind {
                 FunctionKind::EffectMemberDecl(_) => {

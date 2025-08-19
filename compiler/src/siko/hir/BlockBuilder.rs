@@ -325,10 +325,6 @@ impl BlockBuilder {
         self.addInstruction(InstructionKind::Bind(name, rhs, mutable), location.clone());
     }
 
-    pub fn addConverter(&mut self, lhs: Variable, rhs: Variable, location: Location) {
-        self.addInstruction(InstructionKind::Converter(lhs, rhs), location.clone());
-    }
-
     pub fn addFieldAssign(&mut self, receiver: Variable, rhs: Variable, fields: Vec<FieldInfo>, location: Location) {
         self.addInstruction(InstructionKind::FieldAssign(receiver, rhs, fields), location.clone());
     }
