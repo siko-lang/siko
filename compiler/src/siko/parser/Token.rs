@@ -24,6 +24,10 @@ pub enum OperatorKind {
     Div,
     And,
     Or,
+    AddAssign,
+    SubAssign,
+    MulAssign,
+    DivAssign,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -177,6 +181,10 @@ impl Display for Token {
             Token::Op(OperatorKind::NotEqual) => write!(f, "!="),
             Token::Op(OperatorKind::Or) => write!(f, "||"),
             Token::Op(OperatorKind::Sub) => write!(f, "-"),
+            Token::Op(OperatorKind::AddAssign) => write!(f, "+="),
+            Token::Op(OperatorKind::SubAssign) => write!(f, "-="),
+            Token::Op(OperatorKind::MulAssign) => write!(f, "*="),
+            Token::Op(OperatorKind::DivAssign) => write!(f, "/="),
             Token::EOF => write!(f, "EOF"),
         }
     }
@@ -277,6 +285,10 @@ impl Display for TokenKind {
             TokenKind::Op(OperatorKind::NotEqual) => write!(f, "!="),
             TokenKind::Op(OperatorKind::Or) => write!(f, "||"),
             TokenKind::Op(OperatorKind::Sub) => write!(f, "-"),
+            TokenKind::Op(OperatorKind::AddAssign) => write!(f, "+="),
+            TokenKind::Op(OperatorKind::SubAssign) => write!(f, "-="),
+            TokenKind::Op(OperatorKind::MulAssign) => write!(f, "*="),
+            TokenKind::Op(OperatorKind::DivAssign) => write!(f, "/="),
             TokenKind::EOF => write!(f, "EOF"),
         }
     }

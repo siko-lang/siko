@@ -8,6 +8,7 @@ use crate::siko::{
         Pattern::{Pattern, SimplePattern},
         Statement::{Block, Statement, StatementKind},
     },
+    util::error,
 };
 
 use super::{
@@ -494,6 +495,42 @@ impl<'a> ExprParser for Parser<'a> {
                     self.expect(TokenKind::Misc(MiscKind::Equal));
                     let rhs = self.parseExpr();
                     (StatementKind::Assign(expr, rhs), SemicolonRequirement::Required)
+                } else if self.check(TokenKind::Op(OperatorKind::AddAssign)) {
+                    self.expect(TokenKind::Op(OperatorKind::AddAssign));
+                    let start = self.currentSpan();
+                    let rhs = self.parseExpr();
+                    let addExpr = self.buildExpr(
+                        SimpleExpr::BinaryOp(BinaryOp::Add, Box::new(expr.clone()), Box::new(rhs)),
+                        start,
+                    );
+                    (StatementKind::Assign(expr, addExpr), SemicolonRequirement::Required)
+                } else if self.check(TokenKind::Op(OperatorKind::SubAssign)) {
+                    self.expect(TokenKind::Op(OperatorKind::SubAssign));
+                    let start = self.currentSpan();
+                    let rhs = self.parseExpr();
+                    let subExpr = self.buildExpr(
+                        SimpleExpr::BinaryOp(BinaryOp::Sub, Box::new(expr.clone()), Box::new(rhs)),
+                        start,
+                    );
+                    (StatementKind::Assign(expr, subExpr), SemicolonRequirement::Required)
+                } else if self.check(TokenKind::Op(OperatorKind::MulAssign)) {
+                    self.expect(TokenKind::Op(OperatorKind::MulAssign));
+                    let start = self.currentSpan();
+                    let rhs = self.parseExpr();
+                    let subExpr = self.buildExpr(
+                        SimpleExpr::BinaryOp(BinaryOp::Mul, Box::new(expr.clone()), Box::new(rhs)),
+                        start,
+                    );
+                    (StatementKind::Assign(expr, subExpr), SemicolonRequirement::Required)
+                } else if self.check(TokenKind::Op(OperatorKind::DivAssign)) {
+                    self.expect(TokenKind::Op(OperatorKind::DivAssign));
+                    let start = self.currentSpan();
+                    let rhs = self.parseExpr();
+                    let subExpr = self.buildExpr(
+                        SimpleExpr::BinaryOp(BinaryOp::Div, Box::new(expr.clone()), Box::new(rhs)),
+                        start,
+                    );
+                    (StatementKind::Assign(expr, subExpr), SemicolonRequirement::Required)
                 } else {
                     let semicolonRequirement = if let SimpleExpr::Block(_) = &expr.expr {
                         SemicolonRequirement::Optional
@@ -586,6 +623,18 @@ impl<'a> ExprParser for Parser<'a> {
                     OperatorKind::GreaterThan => BinaryOp::GreaterThan,
                     OperatorKind::LessThanOrEqual => BinaryOp::LessThanOrEqual,
                     OperatorKind::GreaterThanOrEqual => BinaryOp::GreaterThanOrEqual,
+                    OperatorKind::AddAssign => {
+                        error("AddAssign is not supported in expressions".to_string());
+                    }
+                    OperatorKind::SubAssign => {
+                        error("SubAssign is not supported in expressions".to_string());
+                    }
+                    OperatorKind::MulAssign => {
+                        error("MulAssign is not supported in expressions".to_string());
+                    }
+                    OperatorKind::DivAssign => {
+                        error("DivAssign is not supported in expressions".to_string());
+                    }
                 };
                 if op == BinaryOp::And {
                     let trueBranch = Branch {

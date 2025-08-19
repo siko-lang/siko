@@ -29,8 +29,6 @@ fn getSingleCharToken(c: char) -> Option<Token> {
         ';' => Token::Misc(MiscKind::Semicolon),
         '@' => Token::Misc(MiscKind::At),
         '&' => Token::Misc(MiscKind::Ampersand),
-        '+' => Token::Op(OperatorKind::Add),
-        '*' => Token::Op(OperatorKind::Mul),
         _ => return None,
     };
     Some(token)
@@ -335,7 +333,21 @@ impl Lexer {
                                     _ => self.ignore(),
                                 }
                             },
+                            Some('=') => {
+                                self.step();
+                                self.addToken(Token::Op(OperatorKind::DivAssign))
+                            }
                             _ => self.addToken(Token::Op(OperatorKind::Div)),
+                        }
+                    }
+                    '*' => {
+                        self.step();
+                        match self.peek() {
+                            Some('=') => {
+                                self.step();
+                                self.addToken(Token::Op(OperatorKind::MulAssign))
+                            }
+                            _ => self.addToken(Token::Op(OperatorKind::Mul)),
                         }
                     }
                     '-' => {
@@ -344,6 +356,10 @@ impl Lexer {
                             Some('>') => {
                                 self.step();
                                 self.addToken(Token::Arrow(ArrowKind::Right))
+                            }
+                            Some('=') => {
+                                self.step();
+                                self.addToken(Token::Op(OperatorKind::SubAssign))
                             }
                             _ => self.addToken(Token::Op(OperatorKind::Sub)),
                         }
@@ -366,6 +382,16 @@ impl Lexer {
                                 self.addToken(Token::Op(OperatorKind::LessThanOrEqual))
                             }
                             _ => self.addToken(Token::Op(OperatorKind::LessThan)),
+                        }
+                    }
+                    '+' => {
+                        self.step();
+                        match self.peek() {
+                            Some('=') => {
+                                self.step();
+                                self.addToken(Token::Op(OperatorKind::AddAssign))
+                            }
+                            _ => self.addToken(Token::Op(OperatorKind::Add)),
                         }
                     }
                     '=' => {
