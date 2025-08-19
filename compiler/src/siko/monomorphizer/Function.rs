@@ -33,7 +33,7 @@ pub fn processBody(
                     processInstruction(instruction, sub, mono, syntaxBlockId, &mut handlerResolutionStore);
                 blockBuilder.replaceInstruction(instruction.kind, instruction.location.clone());
             });
-            handlerResolutionStore.checkUnused(&mono.ctx);
+            mono.resolutionStores.push(handlerResolutionStore);
             Some(bodyBuilder.build())
         }
         None => None,

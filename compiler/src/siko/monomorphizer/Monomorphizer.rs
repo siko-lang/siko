@@ -24,8 +24,12 @@ use crate::siko::{
         Report::{Report, ReportContext},
     },
     monomorphizer::{
-        Context::Context, Function::processBody, Handler::HandlerResolution,
-        ImplicitContextBuilder::ImplicitContextBuilder, Queue::Key, Utils::Monomorphize,
+        Context::{Context, HandlerResolutionStore},
+        Function::processBody,
+        Handler::HandlerResolution,
+        ImplicitContextBuilder::ImplicitContextBuilder,
+        Queue::Key,
+        Utils::Monomorphize,
     },
     qualifiedname::{
         builtins::{getDropFnName, getDropName, getMainName},
@@ -65,6 +69,7 @@ pub struct Monomorphizer<'a> {
     queue: VecDeque<Key>,
     processed: BTreeSet<Key>,
     processed_type: BTreeMap<Type, Type>,
+    pub resolutionStores: Vec<HandlerResolutionStore>,
 }
 
 impl<'a> Monomorphizer<'a> {
@@ -76,6 +81,7 @@ impl<'a> Monomorphizer<'a> {
             queue: VecDeque::new(),
             processed: BTreeSet::new(),
             processed_type: BTreeMap::new(),
+            resolutionStores: Vec::new(),
         }
     }
 
@@ -96,6 +102,9 @@ impl<'a> Monomorphizer<'a> {
             }
         }
         self.processQueue();
+        for resolutionStore in &self.resolutionStores {
+            resolutionStore.checkUnused(self.ctx);
+        }
         let mut builder = ImplicitContextBuilder::new(&mut self);
         builder.process()
     }
@@ -142,7 +151,7 @@ impl<'a> Monomorphizer<'a> {
     }
 
     fn monomorphizeFunction(&mut self, name: QualifiedName, args: Vec<Type>, handlerResolution: HandlerResolution) {
-        //println!("MONO FN: {} {}", name, formatTypes(&args));
+        //println!("MONO FN: {} {}", name, crate::siko::hir::Type::formatTypes(&args));
         let function = self
             .program
             .functions

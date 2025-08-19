@@ -1,0 +1,115 @@
+module Ast {
+
+pub enum Expr {
+    Lit(Int),
+    Var(Int),
+    Add(Expr, Expr)
+}
+
+}
+
+module Utils {
+
+pub effect TypeIdAllocator {
+    fn allocateTypeId() -> Int
+}
+
+}
+
+module TypeCheck {
+
+import Map
+import Utils
+import Ast
+
+pub enum Type {
+    Int,
+    TypeVar(Int.Int)
+}
+
+instance Show[Type] {
+    fn show(&self) -> String {
+        match self {
+            Type.Int -> "Int".toString(),
+            Type.TypeVar(id) -> "TypeVar(${id})"
+        }
+    }
+}
+
+pub struct TypeChecker {
+    types: Map[Int.Int, Type]
+
+    pub fn new() -> TypeChecker {
+        TypeChecker(Map.new())
+    }
+
+    fn initialize(mut self, expr: Expr) -> Self {
+        match expr {
+            Expr.Lit(_) -> {
+                // do nothing here
+            }
+            Expr.Var(var) -> {
+                let new_type = Type.TypeVar(allocateTypeId());
+                let (types, _) = self.types.insert(var, new_type);
+                self.types = types;
+            }
+            Expr.Add(left, right) -> {
+                self.initialize(left);
+                self.initialize(right);
+            }
+        }
+        self
+    }
+
+    fn dump(self) {
+        for (var, ty) in self.types.iter() {
+            println("Variable ${var} has type ${ty}");
+        }
+    }
+
+    fn check(mut self, expr: Expr) {
+        self.initialize(expr);
+        self.dump();
+    }
+}
+
+}
+
+module Backend {
+
+import TypeCheck
+import Ast
+
+fn typecheck() {
+    let mut checker = TypeChecker.new();
+    let expr = Expr.Add(Var(1), Var(2));
+    checker.check(expr);
+}
+
+pub fn runBackend() {
+    typecheck();
+}
+
+}
+
+module Main {
+
+import Backend
+import Utils
+
+implicit mut nextId: Int
+
+fn myMagicalAllocate() -> Int {
+    let id = nextId;
+    nextId = nextId + 1;
+    id
+}
+
+fn main() {
+    let mut myId = 0;
+    with nextId = myId, allocateTypeId = myMagicalAllocate {
+        runBackend();
+    }
+}
+
+}
