@@ -45,15 +45,15 @@ pub struct TypeChecker {
 
     fn initialize(mut self, expr: Expr) -> Self {
         match expr {
-            Expr.Lit(_) -> {
+            Lit(_) -> {
                 // do nothing here
             }
-            Expr.Var(var) -> {
+            Var(var) -> {
                 let new_type = Type.TypeVar(allocateTypeId());
                 let (types, _) = self.types.insert(var, new_type);
                 self.types = types;
             }
-            Expr.Add(left, right) -> {
+            Add(left, right) -> {
                 self.initialize(left);
                 self.initialize(right);
             }
@@ -61,7 +61,7 @@ pub struct TypeChecker {
         self
     }
 
-    fn dump(self) {
+    fn dump(&self) {
         for (var, ty) in self.types.iter() {
             println("Variable ${var} has type ${ty}");
         }
@@ -82,7 +82,7 @@ import Ast
 
 fn typecheck() {
     let mut checker = TypeChecker.new();
-    let expr = Expr.Add(Var(1), Var(2));
+    let expr = Add(Var(1), Var(2));
     checker.check(expr);
 }
 

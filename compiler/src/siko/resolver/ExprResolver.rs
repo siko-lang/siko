@@ -35,6 +35,14 @@ fn createOpName(traitName: &str, method: &str) -> QualifiedName {
     )
 }
 
+fn createCmpOpName(traitName: &str, method: &str) -> QualifiedName {
+    let stdOps = Box::new(QualifiedName::Module("Std.Cmp".to_string()));
+    QualifiedName::Item(
+        Box::new(QualifiedName::Item(stdOps.clone(), traitName.to_string())),
+        method.to_string(),
+    )
+}
+
 #[derive(Debug, Clone)]
 struct LoopInfo {
     body: BlockId,
@@ -470,15 +478,13 @@ impl<'a> ExprResolver<'a> {
                     BinaryOp::Sub => createOpName("Sub", "sub"),
                     BinaryOp::Mul => createOpName("Mul", "mul"),
                     BinaryOp::Div => createOpName("Div", "div"),
-                    BinaryOp::Equal => createOpName("PartialEq", "eq"),
-                    BinaryOp::NotEqual => createOpName("PartialEq", "ne"),
-                    BinaryOp::LessThan => createOpName("PartialOrd", "lessThan"),
-                    BinaryOp::GreaterThan => createOpName("PartialOrd", "greaterThan"),
-                    BinaryOp::LessThanOrEqual => createOpName("PartialOrd", "lessOrEqual"),
-                    BinaryOp::GreaterThanOrEqual => createOpName("PartialOrd", "greaterOrEqual"),
+                    BinaryOp::Equal => createCmpOpName("PartialEq", "eq"),
+                    BinaryOp::NotEqual => createCmpOpName("PartialEq", "ne"),
+                    BinaryOp::LessThan => createCmpOpName("PartialOrd", "lessThan"),
+                    BinaryOp::GreaterThan => createCmpOpName("PartialOrd", "greaterThan"),
+                    BinaryOp::LessThanOrEqual => createCmpOpName("PartialOrd", "lessOrEqual"),
+                    BinaryOp::GreaterThanOrEqual => createCmpOpName("PartialOrd", "greaterOrEqual"),
                 };
-                let id = Identifier::new(format!("{}", name), expr.location.clone());
-                let name = self.moduleResolver.resolverName(&id);
                 self.bodyBuilder
                     .current()
                     .addFunctionCall(name, vec![lhsId, rhsId], expr.location.clone())
@@ -496,8 +502,6 @@ impl<'a> ExprResolver<'a> {
                         return resVar;
                     }
                 };
-                let id = Identifier::new(format!("{}", name), expr.location.clone());
-                let name = self.moduleResolver.resolverName(&id);
                 self.bodyBuilder
                     .current()
                     .addFunctionCall(name, vec![rhsId], expr.location.clone())

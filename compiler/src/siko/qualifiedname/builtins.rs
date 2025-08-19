@@ -71,7 +71,7 @@ pub fn getNativePtrIsNullName() -> QualifiedName {
 }
 
 pub fn getCloneFnName() -> QualifiedName {
-    build("Std.Ops", "Clone").add(format!("clone"))
+    build("Std.Ops.Basic", "Clone").add(format!("clone"))
 }
 
 pub enum IntKind {
@@ -139,23 +139,23 @@ pub fn getIntLessThanName(kind: IntKind) -> QualifiedName {
 }
 
 pub fn getDropFnName() -> QualifiedName {
-    build("Std.Ops", "Drop").add(format!("drop"))
+    build("Std.Ops.Basic", "Drop").add(format!("drop"))
 }
 
 pub fn getDropName() -> QualifiedName {
-    build("Std.Ops", "Drop")
+    build("Std.Ops.Basic", "Drop")
 }
 
 pub fn getCopyName() -> QualifiedName {
-    build("Std.Ops", "Copy")
+    build("Std.Ops.Basic", "Copy")
 }
 
 pub fn getImplicitConvertName() -> QualifiedName {
-    build("Std.Ops", "ImplicitConvert")
+    build("Std.Ops.Basic", "ImplicitConvert")
 }
 
 pub fn getImplicitConvertFnName() -> QualifiedName {
-    build("Std.Ops", "ImplicitConvert").add(format!("implicitConvert"))
+    build("Std.Ops.Basic", "ImplicitConvert").add(format!("implicitConvert"))
 }
 
 pub fn getAutoDropFnName() -> QualifiedName {

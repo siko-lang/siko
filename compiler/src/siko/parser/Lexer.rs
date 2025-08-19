@@ -198,7 +198,7 @@ impl Lexer {
 
     fn processStringInterpolation(&mut self) {
         self.addToken(Token::Op(OperatorKind::Add));
-        self.addToken(Token::VarIdentifier("Std.Ops.Show.show".to_string()));
+        self.addToken(Token::VarIdentifier("Std.Fmt.Show.show".to_string()));
         self.addToken(Token::LeftBracket(BracketKind::Paren));
 
         self.step();
