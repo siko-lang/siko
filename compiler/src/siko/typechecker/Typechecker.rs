@@ -295,6 +295,14 @@ impl<'a> Typechecker<'a> {
         true
     }
 
+    fn unifyVar(&mut self, var: &Variable, ty: Type) {
+        self.unify(self.getType(var), ty, var.location.clone());
+    }
+
+    fn unifyVars(&mut self, var1: &Variable, var2: &Variable) {
+        self.unify(self.getType(var1), self.getType(var2), var1.location.clone());
+    }
+
     fn instantiateEnum(&mut self, e: &Enum, ty: &Type) -> Enum {
         instantiateEnum(&mut self.allocator, e, ty)
     }
@@ -356,7 +364,7 @@ impl<'a> Typechecker<'a> {
         //println!("self.getType(resultVar) {}", self.getType(resultVar));
         let fnResult = fnResult.clone().apply(&self.substitution);
         //println!("fnResult {}", fnResult);
-        self.unify(self.getType(resultVar), fnResult.clone(), resultVar.location.clone());
+        self.unifyVar(resultVar, fnResult.clone());
         let originalSub = self.substitution.clone();
         let mut helperSub = Substitution::new();
         loop {
@@ -424,7 +432,7 @@ impl<'a> Typechecker<'a> {
         // println!("self.getType(resultVar) {}", self.getType(resultVar));
         let fnResult = fnResult.apply(&self.substitution);
         //println!("fnResult {}", fnResult);
-        self.unify(self.getType(resultVar), fnResult, resultVar.location.clone());
+        self.unifyVar(resultVar, fnResult);
         instantiatedFnType.apply(&self.substitution)
     }
 
@@ -616,7 +624,7 @@ impl<'a> Typechecker<'a> {
                 //     self.getType(dest).apply(&self.substitution),
                 //     self.getType(source).apply(&self.substitution)
                 // );
-                self.unify(self.getType(dest), self.getType(source), instruction.location.clone());
+                self.unifyVars(dest, source);
             }
             InstructionKind::MethodCall(dest, receiver, methodName, args) => {
                 self.handleMethodCall(&instruction, builder, dest, receiver, methodName, args);
@@ -626,27 +634,23 @@ impl<'a> Typechecker<'a> {
                 self.checkFunctionCall(&args, dest, fnType, &ConstraintContext::new());
             }
             InstructionKind::Bind(name, rhs, _) => {
-                self.unify(self.getType(name), self.getType(rhs), instruction.location.clone());
+                self.unifyVars(name, rhs);
             }
             InstructionKind::Tuple(dest, args) => {
                 let mut argTypes = Vec::new();
                 for arg in args {
                     argTypes.push(self.getType(arg));
                 }
-                self.unify(self.getType(dest), Type::Tuple(argTypes), instruction.location.clone());
+                self.unifyVar(dest, Type::Tuple(argTypes));
             }
             InstructionKind::StringLiteral(dest, _) => {
-                self.unify(
-                    self.getType(dest),
-                    Type::getStringLiteralType(),
-                    instruction.location.clone(),
-                );
+                self.unifyVar(dest, Type::getStringLiteralType());
             }
             InstructionKind::IntegerLiteral(dest, _) => {
-                self.unify(self.getType(dest), Type::getIntType(), instruction.location.clone());
+                self.unifyVar(dest, Type::getIntType());
             }
             InstructionKind::CharLiteral(dest, _) => {
-                self.unify(self.getType(dest), Type::getCharType(), instruction.location.clone());
+                self.unifyVar(dest, Type::getCharType());
             }
             InstructionKind::Return(_, arg) => {
                 let mut result = self.f.result.clone();
@@ -657,19 +661,11 @@ impl<'a> Typechecker<'a> {
             }
             InstructionKind::Ref(dest, arg) => {
                 let arg_type = self.getType(arg);
-                self.unify(
-                    self.getType(dest),
-                    Type::Reference(Box::new(arg_type), None),
-                    instruction.location.clone(),
-                );
+                self.unifyVar(dest, Type::Reference(Box::new(arg_type), None));
             }
             InstructionKind::PtrOf(dest, arg) => {
                 let arg_type = self.getType(arg);
-                self.unify(
-                    self.getType(dest),
-                    Type::Ptr(Box::new(arg_type)),
-                    instruction.location.clone(),
-                );
+                self.unifyVar(dest, Type::Ptr(Box::new(arg_type)));
             }
             InstructionKind::DropPath(_) => {
                 unreachable!("drop list placeholder in typechecker!")
@@ -685,7 +681,7 @@ impl<'a> Typechecker<'a> {
                 if self.mutables.get(&name.name.to_string()) == Some(&Mutability::Immutable) {
                     TypecheckerError::ImmutableAssign(instruction.location.clone()).report(self.ctx);
                 }
-                self.unify(self.getType(name), self.getType(rhs), instruction.location.clone());
+                self.unifyVars(name, rhs);
             }
             InstructionKind::FieldAssign(receiver, rhs, fields) => {
                 if self.mutables.get(&receiver.name.to_string()) == Some(&Mutability::Immutable) {
@@ -727,7 +723,7 @@ impl<'a> Typechecker<'a> {
                 //     receiverType,
                 //     instruction.location
                 // );
-                self.unify(self.getType(rhs), receiverType, instruction.location.clone());
+                self.unifyVar(rhs, receiverType);
             }
             InstructionKind::AddressOfField(dest, receiver, fields) => {
                 let receiverType = self.getType(receiver);
@@ -743,7 +739,7 @@ impl<'a> Typechecker<'a> {
                 receiverType = Type::Reference(Box::new(receiverType), None);
                 let newKind = InstructionKind::AddressOfField(dest.clone(), receiver.clone(), newFields);
                 builder.replaceInstruction(newKind, instruction.location.clone());
-                self.unify(self.getType(dest), receiverType, instruction.location.clone());
+                self.unifyVar(dest, receiverType);
             }
             InstructionKind::DeclareVar(_, _) => {}
             InstructionKind::Transform(dest, root, index) => {
@@ -760,7 +756,7 @@ impl<'a> Typechecker<'a> {
                         } else {
                             Type::Tuple(v.items.clone())
                         };
-                        self.unify(self.getType(dest), destType, instruction.location.clone());
+                        self.unifyVar(dest, destType);
                     }
                     None => {
                         println!("Transform on non-enum type: {} {}", rootTy, instruction);
@@ -813,7 +809,7 @@ impl<'a> Typechecker<'a> {
                 match fieldName {
                     FieldId::Named(n) => {
                         let result = self.readField(receiverType, n, instruction.location.clone());
-                        self.unify(self.getType(dest), result, instruction.location.clone());
+                        self.unifyVar(dest, result);
                     }
                     FieldId::Indexed(index) => {
                         receiverType = receiverType.apply(&self.substitution);
@@ -833,7 +829,7 @@ impl<'a> Typechecker<'a> {
                                 } else {
                                     t[index as usize].clone()
                                 };
-                                self.unify(self.getType(dest), fieldType, instruction.location.clone());
+                                self.unifyVar(dest, fieldType);
                             }
                             _ => {
                                 println!("TupleIndex on non-tuple type: {} {}", receiverType, instruction);
@@ -875,7 +871,7 @@ impl<'a> Typechecker<'a> {
                                         .report(self.ctx);
                                 }
                             }
-                            self.unify(implicit.ty, self.getType(&handler.var), handler.location.clone());
+                            self.unifyVar(&handler.var, implicit.ty);
                         }
                     }
                 }
@@ -887,7 +883,7 @@ impl<'a> Typechecker<'a> {
                     ImplicitIndex::Resolved(_, _) => panic!("Implicit index already resolved in typechecker!"),
                 };
                 let implicit = self.program.getImplicit(&implicitName).expect("Implicit not found");
-                self.unify(implicit.ty, self.getType(var), instruction.location.clone());
+                self.unifyVar(var, implicit.ty);
             }
             InstructionKind::WriteImplicit(index, var) => {
                 let implicitName = match index {
@@ -895,14 +891,13 @@ impl<'a> Typechecker<'a> {
                     ImplicitIndex::Resolved(_, _) => panic!("Implicit index already resolved in typechecker!"),
                 };
                 let implicit = self.program.getImplicit(&implicitName).expect("Implicit not found");
-                self.unify(implicit.ty, self.getType(var), instruction.location.clone());
+                self.unifyVar(var, implicit.ty);
             }
             InstructionKind::LoadPtr(dest, src) => {
                 let srcType = self.getType(src);
                 let srcType = srcType.apply(&self.substitution);
-                let destType = self.getType(dest);
                 if let Type::Ptr(inner) = srcType {
-                    self.unify(destType, *inner, instruction.location.clone());
+                    self.unifyVar(dest, *inner);
                 } else {
                     TypecheckerError::NotAPtr(srcType.to_string(), instruction.location.clone()).report(self.ctx);
                 }
@@ -910,9 +905,8 @@ impl<'a> Typechecker<'a> {
             InstructionKind::StorePtr(dest, src) => {
                 let destType = self.getType(dest);
                 let destType = destType.apply(&self.substitution);
-                let srcType = self.getType(src);
                 if let Type::Ptr(inner) = destType {
-                    self.unify(srcType, *inner, instruction.location.clone());
+                    self.unifyVar(src, *inner);
                 } else {
                     TypecheckerError::NotAPtr(destType.to_string(), instruction.location.clone()).report(self.ctx);
                 }
