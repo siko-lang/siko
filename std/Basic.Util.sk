@@ -1,15 +1,18 @@
 module Std.Basic.Util {
 
+import NativePtr
 import Libc
 
 pub fn abort() -> ! = extern
 
 pub fn printStr(v: &String) {
-    Libc.printf("%.*s".slice().asPtr(), v.slice().asPtr(), v.len());
+    let fmt = "%.*s".slice().asPtr();
+    Libc.printf(NativePtr.transmute(fmt), NativePtr.transmute(v.len()), v.slice().asPtr());
 }
 
 pub fn printlnStr(v: &String) {
-    Libc.printf("%.*s\\n".slice().asPtr(), v.slice().asPtr(), v.len());
+    let fmt = "%.*s\\n".slice().asPtr();
+    Libc.printf(NativePtr.transmute(fmt), NativePtr.transmute(v.len()), v.slice().asPtr());
 }
 
 pub fn assert(v: Bool) {
@@ -32,6 +35,38 @@ pub fn panic(msg: String) -> ! {
     printStr("PANIC");
     printStr(msg);
     abort();
+}
+
+pub fn readChar() -> Result[U8, ()] {
+    let buf: U8 = 0.toU8();
+    let bytesRead = Libc.read(0.toI32(), NativePtr.toPtr(&buf), 1.toU64());
+    if bytesRead <= 0 {
+        panic("Failed to read character");
+    }
+    Ok(buf)
+}
+
+pub fn readLine() -> String {
+    let mut buf = Vec.withCapacity(128);
+    let mut bytesRead = 0;
+    loop {
+        let result = readChar();
+        let c = match result {
+            Ok(c) -> {
+                buf.push(c);
+                c
+            }
+            Err(()) -> {
+                panic("Failed to read character")
+            }
+        };
+        if c == 10.toU8() { // 10 is \n : TODO: make char literals work!
+            break;
+        }
+        bytesRead += 1;
+    }
+    return String.fromU8(buf);
+
 }
 
 }

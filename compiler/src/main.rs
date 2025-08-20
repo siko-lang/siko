@@ -153,7 +153,7 @@ fn main() {
         // Only build the project
         return;
     }
-    let mut compile_args = vec!["-g", "-c", &c_output_path, "-o", &object_path];
+    let mut compile_args = vec!["-g", "-c", &c_output_path, "-o", &object_path, "-Wno-pointer-sign"];
     let mut link_args = vec!["-g", &object_path, "-o", &bin_output_path];
     if sanitized {
         compile_args.push(CLANG_SANITIZE_FLAGS);

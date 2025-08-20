@@ -439,6 +439,7 @@ impl<'a> MinicBuilder<'a> {
             Type::UInt8 => LType::UInt8,
             Type::UInt32 => LType::UInt32,
             Type::UInt64 => LType::UInt64,
+            Type::Int8 => LType::Int8,
             Type::Int16 => LType::Int16,
             Type::Int32 => LType::Int32,
             Type::Int64 => LType::Int64,

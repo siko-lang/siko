@@ -18,6 +18,10 @@ pub fn getU8TypeName() -> QualifiedName {
     build("Int", "U8")
 }
 
+pub fn getI8TypeName() -> QualifiedName {
+    build("Int", "I8")
+}
+
 pub fn getU64TypeName() -> QualifiedName {
     build("Int", "U64")
 }

@@ -29,6 +29,7 @@ pub fn getTypeName(ty: &Type) -> String {
         Type::UInt8 => "uint8_t".to_string(),
         Type::UInt32 => "uint32_t".to_string(),
         Type::UInt64 => "uint64_t".to_string(),
+        Type::Int8 => "int8_t".to_string(),
         Type::Int16 => "int16_t".to_string(),
         Type::Int32 => "int32_t".to_string(),
         Type::Int64 => "int64_t".to_string(),
@@ -52,6 +53,7 @@ impl MiniCGenerator {
             Type::UInt8 => 1,
             Type::UInt32 => 4,
             Type::UInt64 => 8,
+            Type::Int8 => 1,
             Type::Int16 => 2,
             Type::Int32 => 4,
             Type::Int64 => 8,
@@ -285,6 +287,7 @@ impl MiniCGenerator {
         writeln!(output, "#include <stdint.h>")?;
         writeln!(output, "#include <string.h>")?;
         writeln!(output, "#include <stdio.h>")?;
+        writeln!(output, "#include <unistd.h>")?;
         writeln!(output, "")?;
 
         for s in &self.program.strings {
