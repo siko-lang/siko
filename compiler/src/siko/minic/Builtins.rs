@@ -7,8 +7,7 @@ use crate::siko::qualifiedname::{
     builtins::{
         getIntAddName, getIntDivName, getIntEqName, getIntLessThanName, getIntModName, getIntMulName, getIntSubName,
         getIntToI32Name, getIntToU32Name, getIntToU64Name, getIntToU8Name, getNativePtrCastName,
-        getNativePtrSizeOfName, getNativePtrTransmuteName, getStdBasicUtilAbortName, getStdBasicUtilPrintStrName,
-        getStdBasicUtilPrintlnStrName, IntKind,
+        getNativePtrSizeOfName, getNativePtrTransmuteName, getStdBasicUtilAbortName, IntKind,
     },
     QualifiedName,
 };
@@ -114,28 +113,6 @@ pub fn dumpBuiltinFunction(f: &Function, args: &Vec<String>, buf: &mut File) -> 
     {
         writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
         writeln!(buf, "    abort();")?;
-        writeln!(buf, "}}\n")?;
-        return Ok(true);
-    }
-
-    if f.name
-        .starts_with(&getStdBasicUtilPrintStrName().toString().replace(".", "_"))
-    {
-        writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-        writeln!(buf, "    {} result;", getTypeName(&f.result))?;
-        writeln!(buf, "    printf(\"%.*s\", (int)v->field1, v->field0);")?;
-        writeln!(buf, "    return result;")?;
-        writeln!(buf, "}}\n")?;
-        return Ok(true);
-    }
-
-    if f.name
-        .starts_with(&getStdBasicUtilPrintlnStrName().toString().replace(".", "_"))
-    {
-        writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-        writeln!(buf, "    {} result;", getTypeName(&f.result))?;
-        writeln!(buf, "    printf(\"%.*s\\n\", (int)v->field1, v->field0);")?;
-        writeln!(buf, "    return result;")?;
         writeln!(buf, "}}\n")?;
         return Ok(true);
     }
