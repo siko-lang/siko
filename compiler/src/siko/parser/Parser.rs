@@ -134,7 +134,10 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parseQualifiedVarName(&mut self) -> Identifier {
-        let mut id = self.parseVarIdentifier();
+        if self.check(TokenKind::VarIdentifier) {
+            return self.parseVarIdentifier();
+        }
+        let mut id = self.parseTypeIdentifier();
         while self.check(TokenKind::Misc(MiscKind::Dot)) {
             self.expect(TokenKind::Misc(MiscKind::Dot));
             id.dot(self.currentLocation());

@@ -427,12 +427,10 @@ impl<'a> ExprParser for Parser<'a> {
         self.expect(TokenKind::Keyword(KeywordKind::With));
         let mut contexts = Vec::new();
         while !self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
-            if self.check(TokenKind::VarIdentifier) {
-                let method = self.parseVarIdentifier();
-                self.expect(TokenKind::Misc(MiscKind::Equal));
-                let handler = self.parseVarIdentifier();
-                contexts.push(ContextHandler { name: method, handler });
-            }
+            let method = self.parseQualifiedVarName();
+            self.expect(TokenKind::Misc(MiscKind::Equal));
+            let handler = self.parseVarIdentifier();
+            contexts.push(ContextHandler { name: method, handler });
             if self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
                 break;
             } else {

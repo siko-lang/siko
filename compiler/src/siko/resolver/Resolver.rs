@@ -773,6 +773,8 @@ impl<'a> Resolver<'a> {
                             let methodName = effectName.add(fnDef.name.to_string());
                             let localMethodName = localEffectName.add(fnDef.name.to_string());
                             importedNames.add(&localMethodName, &methodName);
+                            let localMethodName = localModuleName.add(fnDef.name.to_string());
+                            importedNames.add(&localMethodName, &methodName);
                         }
                     }
                     ModuleItem::Implicit(i) => {
