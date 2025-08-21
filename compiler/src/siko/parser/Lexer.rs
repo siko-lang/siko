@@ -306,6 +306,63 @@ impl Lexer {
         self.addToken(Token::StringLiteral(literal));
     }
 
+    fn processCharLiteral(&mut self) {
+        let mut literal = String::new();
+        self.step();
+        loop {
+            match self.peek() {
+                Some('\'') => {
+                    self.step();
+                    break;
+                }
+                Some('\\') => {
+                    self.step();
+                    match self.peek() {
+                        Some('n') => {
+                            literal.push('\n');
+                            self.step();
+                        }
+                        Some('t') => {
+                            literal.push('\t');
+                            self.step();
+                        }
+                        Some('r') => {
+                            literal.push('\r');
+                            self.step();
+                        }
+                        Some('\\') => {
+                            literal.push('\\');
+                            self.step();
+                        }
+                        Some('\'') => {
+                            literal.push('\'');
+                            self.step();
+                        }
+                        Some(c) => {
+                            self.addError(LexerError::InvalidEscapeSequence(format!("\\{}", c), self.span.clone()));
+                            self.step();
+                        }
+                        None => {
+                            self.addError(LexerError::UnendingCharLiteral(self.span.clone()));
+                        }
+                    }
+                }
+                Some(c) => {
+                    literal.push(c);
+                    self.step();
+                }
+                None => self.addError(LexerError::UnendingCharLiteral(self.span.clone())),
+            }
+        }
+        if literal.len() != 1 {
+            self.addError(LexerError::InvalidCharLiteral(literal, self.span.clone()));
+        } else {
+            let literal = literal.chars().next().unwrap() as u8;
+            let literal = literal.to_string();
+            self.addToken(Token::CharLiteral(literal));
+        }
+    }
+
     fn processSingle(&mut self, c: char) {
         if let Some(token) = getSingleCharToken(c) {
             self.step();
@@ -430,6 +487,9 @@ impl Lexer {
                     }
                     '"' => {
                         self.processString();
+                    }
+                    '\'' => {
+                        self.processCharLiteral();
                     }
                     _ => {
                         self.addError(LexerError::UnsupportedCharacter(c, self.span.clone()));

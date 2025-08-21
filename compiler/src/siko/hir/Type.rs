@@ -4,8 +4,7 @@ use crate::siko::{
     hir::OwnershipVar::OwnershipVar,
     qualifiedname::{
         builtins::{
-            getBoolTypeName, getBoxTypeName, getCharTypeName, getIntTypeName, getStringLiteralTypeName,
-            getStringTypeName,
+            getBoolTypeName, getBoxTypeName, getIntTypeName, getStringLiteralTypeName, getStringTypeName, getU8TypeName,
         },
         QualifiedName,
     },
@@ -323,16 +322,16 @@ impl Type {
         Type::Named(getIntTypeName(), Vec::new())
     }
 
+    pub fn getU8Type() -> Type {
+        Type::Named(getU8TypeName(), Vec::new())
+    }
+
     pub fn getStringType() -> Type {
         Type::Named(getStringTypeName(), Vec::new())
     }
 
     pub fn getStringLiteralType() -> Type {
         Type::Named(getStringLiteralTypeName(), Vec::new())
-    }
-
-    pub fn getCharType() -> Type {
-        Type::Named(getCharTypeName(), Vec::new())
     }
 
     pub fn getUnitType() -> Type {

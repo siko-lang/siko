@@ -213,7 +213,9 @@ impl RemoveTuples for InstructionKind {
             InstructionKind::IntegerLiteral(dest, lit) => {
                 InstructionKind::IntegerLiteral(dest.removeTuples(ctx), lit.clone())
             }
-            InstructionKind::CharLiteral(dest, lit) => InstructionKind::CharLiteral(dest.removeTuples(ctx), *lit),
+            InstructionKind::CharLiteral(dest, lit) => {
+                InstructionKind::CharLiteral(dest.removeTuples(ctx), lit.clone())
+            }
             InstructionKind::Return(dest, arg) => {
                 InstructionKind::Return(dest.removeTuples(ctx), arg.removeTuples(ctx))
             }

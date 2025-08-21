@@ -96,7 +96,6 @@ impl<'a> ModuleParser for Parser<'a> {
             "Bool",
             "Box",
             "Int",
-            "Char",
             "Result",
             "Option",
             "Ordering",

@@ -38,10 +38,6 @@ pub fn getStringLiteralTypeName() -> QualifiedName {
     build("String", "StringLiteral")
 }
 
-pub fn getCharTypeName() -> QualifiedName {
-    build("Char", "Char")
-}
-
 pub fn getTrueName() -> QualifiedName {
     build("Bool", "Bool").add("True".to_string())
 }

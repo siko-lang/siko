@@ -287,7 +287,7 @@ impl BlockBuilder {
         result
     }
 
-    pub fn addCharLiteral(&mut self, literal: char, location: Location) -> Variable {
+    pub fn addCharLiteral(&mut self, literal: String, location: Location) -> Variable {
         let result = self.bodyBuilder.createTempValue(location.clone());
         self.addInstruction(InstructionKind::CharLiteral(result.clone(), literal), location.clone());
         result

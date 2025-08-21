@@ -72,7 +72,7 @@ pub enum SimpleExpr {
     Tuple(Vec<Expr>),
     StringLiteral(String),
     IntegerLiteral(String),
-    CharLiteral(char),
+    CharLiteral(String),
     Return(Option<Box<Expr>>),
     Break(Option<Box<Expr>>),
     Continue(Option<Box<Expr>>),

@@ -304,7 +304,7 @@ pub enum InstructionKind {
     Tuple(Variable, Vec<Variable>),
     StringLiteral(Variable, String),
     IntegerLiteral(Variable, String),
-    CharLiteral(Variable, char),
+    CharLiteral(Variable, String),
     Return(Variable, Variable),
     Ref(Variable, Variable),
     PtrOf(Variable, Variable),
@@ -426,7 +426,7 @@ impl InstructionKind {
             }
             InstructionKind::CharLiteral(var, value) => {
                 let new_var = var.replace(&from, to.clone());
-                InstructionKind::CharLiteral(new_var, *value)
+                InstructionKind::CharLiteral(new_var, value.clone())
             }
             InstructionKind::Return(var, value) => {
                 let new_var = var.replace(&from, to.clone());

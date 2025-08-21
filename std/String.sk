@@ -44,6 +44,17 @@ pub struct String {
         self + other
     }
 
+    pub fn pushChar(self, c: U8) -> Self {
+        let newCapacity = self.size + 1;
+        let newValue = allocateArray(newCapacity);
+        memcpy(newValue, self.value, self.size);
+        *offset(newValue, self.size) = c;
+        if self.capacity > 0 {
+            NativePtr.deallocate(self.value);
+        }
+        String(newValue, newCapacity, newCapacity)
+    }
+
     pub fn reverse(mut self) -> Self {
         self.slice().reverse();
         self

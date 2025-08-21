@@ -106,7 +106,7 @@ pub enum Token {
     RightBracket(BracketKind),
     StringLiteral(String),
     IntegerLiteral(String),
-    CharLiteral(char),
+    CharLiteral(String),
     Keyword(KeywordKind),
     Arrow(ArrowKind),
     Range(RangeKind),

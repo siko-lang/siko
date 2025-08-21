@@ -141,8 +141,12 @@ impl<'a> Builder<'a> {
                     block.instructions.push(Instruction::Declare(dest.clone()));
                     block.instructions.push(Instruction::StringLiteral(dest, v.to_string()));
                 }
-                HirInstructionKind::CharLiteral(_, _) => {
-                    unimplemented!("CharLiteral instruction found in HIR Lowering");
+                HirInstructionKind::CharLiteral(dest, v) => {
+                    let dest = self.buildVariable(dest);
+                    block.instructions.push(Instruction::Declare(dest.clone()));
+                    block
+                        .instructions
+                        .push(Instruction::IntegerLiteral(dest, v.to_string()));
                 }
                 HirInstructionKind::EnumSwitch(root, cases) => {
                     if root.getType().getName().unwrap() == getBoolTypeName() {

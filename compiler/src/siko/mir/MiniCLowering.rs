@@ -443,7 +443,6 @@ impl<'a> MinicBuilder<'a> {
             Type::Int16 => LType::Int16,
             Type::Int32 => LType::Int32,
             Type::Int64 => LType::Int64,
-            Type::Char => LType::UInt8,
             Type::Struct(n) => LType::Struct(n.clone()),
             Type::Union(n) => LType::Struct(n.clone()),
             Type::Ptr(t) => LType::Ptr(Box::new(self.lowerType(t))),

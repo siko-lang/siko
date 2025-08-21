@@ -255,6 +255,16 @@ impl<'a> Parser<'a> {
                     let r = Report::new(self.ctx, slogan, Some(Location::new(self.fileId.clone(), span)));
                     r.print();
                 }
+                super::Error::LexerError::UnendingCharLiteral(span) => {
+                    let slogan = format!("unending char literal");
+                    let r = Report::new(self.ctx, slogan, Some(Location::new(self.fileId.clone(), span)));
+                    r.print();
+                }
+                super::Error::LexerError::InvalidCharLiteral(s, span) => {
+                    let slogan = format!("invalid char literal {}", self.ctx.yellow(&s));
+                    let r = Report::new(self.ctx, slogan, Some(Location::new(self.fileId.clone(), span)));
+                    r.print();
+                }
                 super::Error::LexerError::InvalidEscapeSequence(s, span) => {
                     let slogan = format!("invalid escape sequence {}", self.ctx.yellow(&s));
                     let r = Report::new(self.ctx, slogan, Some(Location::new(self.fileId.clone(), span)));

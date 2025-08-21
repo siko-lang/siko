@@ -650,7 +650,7 @@ impl<'a> Typechecker<'a> {
                 self.unifyVar(dest, Type::getIntType());
             }
             InstructionKind::CharLiteral(dest, _) => {
-                self.unifyVar(dest, Type::getCharType());
+                self.unifyVar(dest, Type::getU8Type());
             }
             InstructionKind::Return(_, arg) => {
                 let mut result = self.f.result.clone();
