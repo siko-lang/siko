@@ -925,10 +925,6 @@ impl<'a> Typechecker<'a> {
                 return (current, chainEntries);
             }
             if let Some(entry) = self.receiverChains.get(&current) {
-                if entry.field.is_some() {
-                    //println!("Skipping entries with fields for now");
-                    return (current.clone(), chainEntries);
-                }
                 //println!("Found receiver chain entry: {}", entry);
                 current = entry.source.clone();
                 chainEntries.push(entry.clone());
@@ -1010,36 +1006,41 @@ impl<'a> Typechecker<'a> {
         //     "Transforming mutable method call dest: {} {} args: {:?} orig receiver: {}, chain: {:?}",
         //     dest, name, extendedArgs, origReceiver, chainEntries
         // );
-        match selfLessType.getTupleTypes().len() {
+        let mut kinds = Vec::new();
+        let mut implicitResult = self.bodyBuilder.createTempValue(location.clone());
+        implicitResult.ty = Some(baseType.clone());
+        self.types.insert(implicitResult.name.to_string(), baseType.clone());
+        let kind = InstructionKind::FunctionCall(implicitResult.clone(), name, extendedArgs, None);
+        builder.replaceInstruction(kind, location.clone());
+        builder.step();
+        let mut fields = Vec::new();
+        for entry in chainEntries {
+            if let Some(mut field) = entry.field {
+                field.ty = Some(self.getType(&entry.dest));
+                fields.push(field);
+            }
+        }
+        let updatedReceiver = match selfLessType.getTupleTypes().len() {
             0 => {
-                let mut implicitResult = self.bodyBuilder.createTempValue(location.clone());
-                implicitResult.ty = Some(baseType.clone());
-                self.types.insert(implicitResult.name.to_string(), baseType.clone());
-                let kind = InstructionKind::FunctionCall(implicitResult.clone(), name, extendedArgs, None);
-                builder.replaceInstruction(kind, location.clone());
-                builder.step();
-                builder.addAssign(origReceiver.clone(), implicitResult.clone(), location.clone());
-                builder.addInstruction(InstructionKind::Tuple(dest.clone(), vec![]), location.clone());
+                let kind = InstructionKind::Tuple(dest.clone(), vec![]);
+                kinds.push(kind);
+                implicitResult.clone()
             }
             1 => {
-                let mut implicitResult = self.bodyBuilder.createTempValue(location.clone());
-                implicitResult.ty = Some(baseType.clone());
-                self.types.insert(implicitResult.name.to_string(), baseType.clone());
-                let fnCall = InstructionKind::FunctionCall(implicitResult.clone(), name, extendedArgs, None);
+                let tupleTypes = baseType.getTupleTypes();
+                let selfType = tupleTypes[0].clone();
                 let mut implicitSelf = self.bodyBuilder.createTempValue(location.clone());
-                let receiverTy = self.getType(&origReceiver);
-                implicitSelf.ty = Some(receiverTy.clone());
-                self.types.insert(implicitSelf.name.to_string(), receiverTy.clone());
+                implicitSelf.ty = Some(selfType.clone());
+                self.types.insert(implicitSelf.name.to_string(), selfType.clone());
                 let implicitSelfIndex = InstructionKind::FieldRef(
                     implicitSelf.clone(),
                     implicitResult.clone(),
                     vec![FieldInfo {
                         name: FieldId::Indexed(0),
-                        ty: Some(receiverTy.clone()),
+                        ty: Some(selfType.clone()),
                         location: location.clone(),
                     }],
                 );
-                let assign2 = InstructionKind::Assign(origReceiver.clone(), implicitSelf.clone());
                 let mut resVar = self.bodyBuilder.createTempValue(location.clone());
                 let destTy = self.getType(dest);
                 resVar.ty = Some(destTy.clone());
@@ -1054,36 +1055,29 @@ impl<'a> Typechecker<'a> {
                         location: location.clone(),
                     }],
                 );
-                builder.replaceInstruction(fnCall, location.clone());
-                builder.step();
-                builder.addInstruction(assign, location.clone());
-                builder.addInstruction(assign2, location.clone());
-                builder.addInstruction(resIndex, location.clone());
-                builder.addInstruction(implicitSelfIndex, location.clone());
+                kinds.push(resIndex);
+                kinds.push(implicitSelfIndex);
+                kinds.push(assign);
+                implicitSelf.clone()
             }
             _ => {
-                let mut implicitResult = self.bodyBuilder.createTempValue(location.clone());
-                implicitResult.ty = Some(baseType.clone());
-                self.types.insert(implicitResult.name.to_string(), baseType.clone());
-                let fnCall = InstructionKind::FunctionCall(implicitResult.clone(), name, extendedArgs, None);
+                let tupleTypes = baseType.getTupleTypes();
+                let selfType = tupleTypes[0].clone();
                 let mut implicitSelf = self.bodyBuilder.createTempValue(location.clone());
-                let receiverTy = self.getType(&origReceiver);
-                implicitSelf.ty = Some(receiverTy.clone());
-                self.types.insert(implicitSelf.name.to_string(), receiverTy.clone());
+                implicitSelf.ty = Some(selfType.clone());
+                self.types.insert(implicitSelf.name.to_string(), selfType.clone());
                 let implicitSelfIndex = InstructionKind::FieldRef(
                     implicitSelf.clone(),
                     implicitResult.clone(),
                     vec![FieldInfo {
                         name: FieldId::Indexed(0),
-                        ty: Some(receiverTy.clone()),
+                        ty: Some(selfType.clone()),
                         location: location.clone(),
                     }],
                 );
-                let assign = InstructionKind::Assign(origReceiver.clone(), implicitSelf.clone());
                 let mut args = Vec::new();
-                let tupleTypes = selfLessType.getTupleTypes();
                 let mut tupleIndices = Vec::new();
-                for (argIndex, argType) in tupleTypes.iter().enumerate() {
+                for (argIndex, argType) in tupleTypes.iter().skip(1).enumerate() {
                     let mut resVar = self.bodyBuilder.createTempValue(location.clone());
                     resVar.ty = Some(argType.clone());
                     args.push(resVar.clone());
@@ -1100,15 +1094,26 @@ impl<'a> Typechecker<'a> {
                     tupleIndices.push(tupleIndexN);
                 }
                 let tuple = InstructionKind::Tuple(dest.clone(), args);
-                builder.replaceInstruction(fnCall, location.clone());
-                builder.step();
-                builder.addInstruction(tuple, location.clone());
-                builder.addInstruction(assign, location.clone());
-                builder.addInstruction(implicitSelfIndex, location.clone());
+                kinds.push(implicitSelfIndex);
                 for i in tupleIndices {
-                    builder.addInstruction(i, location.clone());
+                    kinds.push(i);
                 }
+                kinds.push(tuple);
+                implicitSelf.clone()
             }
+        };
+        if fields.is_empty() {
+            let kind = InstructionKind::Assign(origReceiver.clone(), updatedReceiver.clone());
+            kinds.push(kind);
+        } else {
+            fields.reverse();
+            let kind = InstructionKind::FieldAssign(origReceiver.clone(), updatedReceiver.clone(), fields.clone());
+            kinds.push(kind);
+        }
+        kinds.reverse();
+        for kind in kinds {
+            //println!("Adding instruction: {}", kind);
+            builder.addInstruction(kind, location.clone());
         }
     }
 
