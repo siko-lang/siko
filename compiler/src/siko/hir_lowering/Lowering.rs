@@ -69,9 +69,9 @@ impl<'a> Builder<'a> {
         };
         for instruction in &hirBlock.instructions {
             match &instruction.kind {
-                HirInstructionKind::FunctionCall(dest, name, args, _) => {
-                    let f = self.program.getFunction(name).expect("Function not found");
-                    if *name == getTrueName() {
+                HirInstructionKind::FunctionCall(dest, info) => {
+                    let f = self.program.getFunction(&info.name).expect("Function not found");
+                    if info.name == getTrueName() {
                         let dest = self.buildVariable(dest);
                         block.instructions.push(Instruction::Declare(dest.clone()));
                         block
@@ -79,7 +79,7 @@ impl<'a> Builder<'a> {
                             .push(Instruction::IntegerLiteral(dest, "1".to_string()));
                         continue;
                     }
-                    if *name == getFalseName() {
+                    if info.name == getFalseName() {
                         let dest = self.buildVariable(dest);
                         block.instructions.push(Instruction::Declare(dest.clone()));
                         block
@@ -90,9 +90,9 @@ impl<'a> Builder<'a> {
                     let fnName = if f.kind.isCtor() || f.kind.isExternC() {
                         convertName(&f.name)
                     } else {
-                        convertFunctionName(name)
+                        convertFunctionName(&info.name)
                     };
-                    let args = args.iter().map(|var| self.buildVariable(var)).collect();
+                    let args = info.args.iter().map(|var| self.buildVariable(var)).collect();
                     if dest.getType().isNever() || (f.kind.isExternC() && *dest.getType() == getUnitTypeName()) {
                         block.instructions.push(Instruction::Call(None, fnName, args));
                     } else {
@@ -335,6 +335,7 @@ impl<'a> Builder<'a> {
             FunctionKind::StructCtor => MirFunctionKind::StructCtor,
             FunctionKind::UserDefined
             | FunctionKind::TraitMemberDefinition(_)
+            | FunctionKind::ProtocolMemberDefinition(_)
             | FunctionKind::EffectMemberDefinition(_) => {
                 let mut blocks = Vec::new();
                 if let Some(body) = self.function.body.clone() {
@@ -370,6 +371,9 @@ impl<'a> Builder<'a> {
             }
             FunctionKind::EffectMemberDecl(_) => {
                 unreachable!("EffectMemberDecl in MIR Lowering")
+            }
+            FunctionKind::ProtocolMemberDecl(_) => {
+                unreachable!("ProtocolMemberDecl in MIR Lowering")
             }
         };
         let fnName = if self.function.kind.isCtor() || self.function.kind.isExternC() {

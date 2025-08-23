@@ -115,8 +115,8 @@ impl<'a> UnusedVariableEliminator<'a> {
             InstructionKind::DeclareVar(_, _) => true,
             InstructionKind::FieldRef(_, _, _) => true,
             InstructionKind::Assign(_, _) => true,
-            InstructionKind::FunctionCall(_, name, _, _) => {
-                let f = self.program.getFunction(name).expect("function not found");
+            InstructionKind::FunctionCall(_, info) => {
+                let f = self.program.getFunction(&info.name).expect("function not found");
                 f.isPure()
             }
             _ => false,

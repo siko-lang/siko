@@ -56,39 +56,76 @@ fn addConstraint(
     program: &Program,
     ctx: &ReportContext,
 ) -> ConstraintContext {
-    let traitDef = typeResolver.moduleResolver.lookupTrait(&constraint.traitName, program);
-    let mut args = Vec::new();
-    let mut associatedTypes = Vec::new();
-    for arg in &constraint.args {
-        match arg {
-            ConstraintArgument::Type(ty) => {
-                let irTy = typeResolver.resolveType(ty);
-                args.push(irTy);
-            }
-            ConstraintArgument::AssociatedType(name, ty) => {
-                if !traitDef.associatedTypes.contains(&name.toString()) {
-                    ResolverError::AssociatedTypeNotFound(
-                        name.toString(),
-                        traitDef.name.toString(),
-                        constraint.traitName.location(),
-                    )
-                    .report(ctx);
+    let name = typeResolver.moduleResolver.resolveName(&constraint.name);
+    if program.isProtocol(&name) {
+        let protocolDef = typeResolver.moduleResolver.lookupProtocol(&constraint.name, program);
+        let mut args = Vec::new();
+        let mut associatedTypes = Vec::new();
+        for arg in &constraint.args {
+            match arg {
+                ConstraintArgument::Type(ty) => {
+                    let irTy = typeResolver.resolveType(ty);
+                    args.push(irTy);
                 }
-                let irTy = typeResolver.resolveType(ty);
-                let associatedType = AssociatedType {
-                    name: name.toString(),
-                    ty: irTy,
-                };
-                associatedTypes.push(associatedType);
+                ConstraintArgument::AssociatedType(name, ty) => {
+                    if !protocolDef.associatedTypes.contains(&name.toString()) {
+                        ResolverError::AssociatedTypeNotFound(
+                            name.toString(),
+                            protocolDef.name.toString(),
+                            constraint.name.location(),
+                        )
+                        .report(ctx);
+                    }
+                    let irTy = typeResolver.resolveType(ty);
+                    let associatedType = AssociatedType {
+                        name: name.toString(),
+                        ty: irTy,
+                    };
+                    associatedTypes.push(associatedType);
+                }
             }
         }
+        let irConstraint = IrConstraint {
+            name: protocolDef.name,
+            args: args,
+            associatedTypes: associatedTypes,
+        };
+        context.addConstraint(irConstraint);
+    } else {
+        let traitDef = typeResolver.moduleResolver.lookupTrait(&constraint.name, program);
+        let mut args = Vec::new();
+        let mut associatedTypes = Vec::new();
+        for arg in &constraint.args {
+            match arg {
+                ConstraintArgument::Type(ty) => {
+                    let irTy = typeResolver.resolveType(ty);
+                    args.push(irTy);
+                }
+                ConstraintArgument::AssociatedType(name, ty) => {
+                    if !traitDef.associatedTypes.contains(&name.toString()) {
+                        ResolverError::AssociatedTypeNotFound(
+                            name.toString(),
+                            traitDef.name.toString(),
+                            constraint.name.location(),
+                        )
+                        .report(ctx);
+                    }
+                    let irTy = typeResolver.resolveType(ty);
+                    let associatedType = AssociatedType {
+                        name: name.toString(),
+                        ty: irTy,
+                    };
+                    associatedTypes.push(associatedType);
+                }
+            }
+        }
+        let irConstraint = IrConstraint {
+            name: traitDef.name,
+            args: args,
+            associatedTypes: associatedTypes,
+        };
+        context.addConstraint(irConstraint);
     }
-    let irConstraint = IrConstraint {
-        name: traitDef.name,
-        args: args,
-        associatedTypes: associatedTypes,
-    };
-    context.addConstraint(irConstraint);
     context
 }
 
@@ -357,7 +394,7 @@ impl<'a> Resolver<'a> {
                             irParams.push(irParam);
                         }
                         let mut associatedTypes = Vec::new();
-                        let traitName = moduleResolver.resolverName(&t.name);
+                        let traitName = moduleResolver.resolveName(&t.name);
                         for associatedType in &t.associatedTypes {
                             associatedTypes.push(associatedType.name.name());
                             let irParam = IrType::Var(TypeVar::Named(associatedType.name.toString()));
@@ -412,7 +449,7 @@ impl<'a> Resolver<'a> {
                             irParams.push(irParam);
                         }
                         let mut associatedTypes = Vec::new();
-                        let traitName = moduleResolver.resolverName(&protoDef.name);
+                        let traitName = moduleResolver.resolveName(&protoDef.name);
                         for associatedType in &protoDef.associatedTypes {
                             associatedTypes.push(associatedType.name.name());
                             let irParam = IrType::Var(TypeVar::Named(associatedType.name.toString()));
@@ -536,7 +573,7 @@ impl<'a> Resolver<'a> {
             for item in &mut m.items {
                 match item {
                     ModuleItem::Implementation(i) => {
-                        let implName = moduleResolver.resolverName(&i.name);
+                        let implName = moduleResolver.resolveName(&i.name);
                         let typeParams = getTypeParams(&i.typeParams);
                         let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
                         let constraintContext =
@@ -582,7 +619,7 @@ impl<'a> Resolver<'a> {
                                     SynParam::Named(_, ty, _) => typeResolver.resolveType(ty),
                                     SynParam::SelfParam => selfType.clone(),
                                     SynParam::MutSelfParam => selfType.clone(),
-                                    SynParam::RefSelfParam => selfType.clone(),
+                                    SynParam::RefSelfParam => IrType::Reference(Box::new(selfType.clone()), None),
                                 };
                                 argTypes.push(ty);
                             }
@@ -673,7 +710,7 @@ impl<'a> Resolver<'a> {
                         }
                     }
                     ModuleItem::Trait(t) => {
-                        let name = moduleResolver.resolverName(&t.name);
+                        let name = moduleResolver.resolveName(&t.name);
                         let traitDef = self.program.getTrait(&name).unwrap();
                         let owner = traitDef.params.first().expect("first trait param not found");
                         let typeParams = getTypeParams(&t.typeParams);
@@ -741,7 +778,7 @@ impl<'a> Resolver<'a> {
                         }
                     }
                     ModuleItem::Protocol(syntaxProtoDef) => {
-                        let name = moduleResolver.resolverName(&syntaxProtoDef.name);
+                        let name = moduleResolver.resolveName(&syntaxProtoDef.name);
                         let protoDef = self.program.getProtocol(&name).unwrap();
                         let owner = protoDef.params.first().expect("first protocol param not found");
                         let typeParams = getTypeParams(&syntaxProtoDef.typeParams);
@@ -800,9 +837,9 @@ impl<'a> Resolver<'a> {
                                 &typeResolver,
                             );
                             if method.body.is_none() {
-                                irFunction.kind = FunctionKind::TraitMemberDecl(name.clone());
+                                irFunction.kind = FunctionKind::ProtocolMemberDecl(name.clone());
                             } else {
-                                irFunction.kind = FunctionKind::TraitMemberDefinition(name.clone());
+                                irFunction.kind = FunctionKind::ProtocolMemberDefinition(name.clone());
                             }
                             let selection = ProtocolMethodSelection {
                                 method: irFunction.name.clone(),

@@ -2,6 +2,7 @@ use core::panic;
 use std::fmt::Debug;
 use std::fmt::Display;
 
+use crate::siko::hir::Instruction::CallInfo;
 use crate::siko::{
     hir::Instruction::{Mutability, SyntaxBlockId},
     location::Location::Location,
@@ -183,7 +184,7 @@ impl BlockBuilder {
         }
         let result = self.bodyBuilder.createTempValue(location.clone());
         self.addInstruction(
-            InstructionKind::FunctionCall(result.clone(), functionName, tempArgs, None),
+            InstructionKind::FunctionCall(result.clone(), CallInfo::new(functionName, tempArgs)),
             location,
         );
         result
@@ -199,7 +200,7 @@ impl BlockBuilder {
         let mut result = self.bodyBuilder.createTempValue(location.clone());
         result.ty = Some(ty);
         self.addInstruction(
-            InstructionKind::FunctionCall(result.clone(), functionName, args, None),
+            InstructionKind::FunctionCall(result.clone(), CallInfo::new(functionName, args)),
             location,
         );
         result

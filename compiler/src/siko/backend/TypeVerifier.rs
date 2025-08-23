@@ -109,10 +109,10 @@ impl<'a> TypeVerifier<'a> {
     fn verifyInstruction(&mut self, instruction: &Instruction) {
         //println!("Verifying instruction: {}", instruction);
         match &instruction.kind {
-            InstructionKind::FunctionCall(dest, fname, args, _) => {
+            InstructionKind::FunctionCall(dest, info) => {
                 //println!("Function call: {} with args {:?}", fname, args);
-                let argTypes = args.iter().map(|arg| arg.getType().clone()).collect::<Vec<_>>();
-                let f = self.program.getFunction(fname).expect("Function not found");
+                let argTypes = info.args.iter().map(|arg| arg.getType().clone()).collect::<Vec<_>>();
+                let f = self.program.getFunction(&info.name).expect("Function not found");
                 let mut fnType = f.getType();
                 //println!("Orig Function type: {}", fnType);
                 let (fnArgTypes, fnResult) = fnType.clone().splitFnType().expect("Function type should be splitable");

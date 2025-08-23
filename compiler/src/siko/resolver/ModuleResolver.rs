@@ -27,7 +27,7 @@ pub struct ModuleResolver<'a> {
 
 impl<'a> ModuleResolver<'a> {
     pub fn lookupTrait(&self, name: &Identifier, program: &Program) -> Trait {
-        let qn = &self.resolverName(name);
+        let qn = &self.resolveName(name);
         if let Some(traitDef) = program.getTrait(qn) {
             traitDef
         } else {
@@ -36,7 +36,7 @@ impl<'a> ModuleResolver<'a> {
     }
 
     pub fn lookupProtocol(&self, name: &Identifier, program: &Program) -> Protocol {
-        let qn = &self.resolverName(name);
+        let qn = &self.resolveName(name);
         if let Some(protocolDef) = program.getProtocol(qn) {
             protocolDef
         } else {
@@ -44,7 +44,7 @@ impl<'a> ModuleResolver<'a> {
         }
     }
 
-    pub fn resolverName(&self, name: &Identifier) -> QualifiedName {
+    pub fn resolveName(&self, name: &Identifier) -> QualifiedName {
         if let Some(qn) = self.tryResolverName(name) {
             return qn;
         }

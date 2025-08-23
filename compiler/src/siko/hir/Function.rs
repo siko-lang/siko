@@ -226,6 +226,8 @@ pub enum FunctionKind {
     TraitMemberDefinition(QualifiedName),
     EffectMemberDecl(QualifiedName),
     EffectMemberDefinition(QualifiedName),
+    ProtocolMemberDecl(QualifiedName),
+    ProtocolMemberDefinition(QualifiedName),
 }
 
 impl Display for FunctionKind {
@@ -246,6 +248,12 @@ impl Display for FunctionKind {
             }
             FunctionKind::EffectMemberDefinition(qn) => {
                 write!(f, "EffectMemberDefinition({})", qn)
+            }
+            FunctionKind::ProtocolMemberDecl(qn) => {
+                write!(f, "ProtocolMemberDecl({})", qn)
+            }
+            FunctionKind::ProtocolMemberDefinition(qn) => {
+                write!(f, "ProtocolMemberDefinition({})", qn)
             }
         }
     }

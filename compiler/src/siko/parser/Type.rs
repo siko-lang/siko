@@ -118,7 +118,7 @@ impl<'a> TypeParser for Parser<'a> {
         }
         self.expect(TokenKind::RightBracket(BracketKind::Square));
         Constraint {
-            traitName: traitName,
+            name: traitName,
             args: args,
         }
     }

@@ -142,7 +142,7 @@ impl<'a> VarSimplifier<'a> {
                             continue;
                         }
                     }
-                    if let InstructionKind::FunctionCall(dest, _, _, _) = &instruction.kind {
+                    if let InstructionKind::FunctionCall(dest, _) = &instruction.kind {
                         if removedDropFlags.contains(&dest.name) {
                             //println!("Removing drop flag call for variable {}", dest);
                             builder.removeInstruction();

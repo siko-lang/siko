@@ -6,7 +6,7 @@ use crate::siko::{
         BodyBuilder::BodyBuilder,
         Function::{Function, FunctionKind},
         Instantiation::instantiateEnum,
-        Instruction::{FieldId, InstructionKind},
+        Instruction::{CallInfo, FieldId, InstructionKind},
         Program::Program,
         Type::Type,
         TypeVarAllocator::TypeVarAllocator,
@@ -49,8 +49,8 @@ fn processFunction(function: &Function, program: &Program) -> Function {
             if let Some(instruction) = builder.getInstruction() {
                 //println!("Processing instruction: {}", instruction);
                 match &instruction.kind {
-                    InstructionKind::FunctionCall(_, name, args, _) => {
-                        let f = program.getFunction(&name).expect("function not found");
+                    InstructionKind::FunctionCall(_, info) => {
+                        let f = program.getFunction(&info.name).expect("function not found");
                         match f.kind {
                             FunctionKind::VariantCtor(index) => {
                                 let mut newKind = instruction.kind.clone();
@@ -58,7 +58,7 @@ fn processFunction(function: &Function, program: &Program) -> Function {
                                 let e = program.getEnum(&enumName).expect("enum not found");
                                 let variant = &e.variants[index as usize];
                                 //println!("Calling {}.{} => {}", f.name, index, formatTypes(&variant.items));
-                                for (arg, ty) in args.iter().zip(&variant.items) {
+                                for (arg, ty) in info.args.iter().zip(&variant.items) {
                                     let argType = arg.getType();
                                     if argType == ty {
                                         continue;
@@ -69,9 +69,7 @@ fn processFunction(function: &Function, program: &Program) -> Function {
                                         boxedVar.ty = Some(ty.clone());
                                         let boxCall = InstructionKind::FunctionCall(
                                             boxedVar.clone(),
-                                            getBoxNewFnName(),
-                                            vec![arg.clone()],
-                                            None,
+                                            CallInfo::new(getBoxNewFnName(), vec![arg.clone()]),
                                         );
                                         newKind = newKind.replaceVar(arg.clone(), boxedVar);
                                         builder.addInstruction(boxCall, instruction.location.clone());
@@ -136,16 +134,12 @@ fn processFunction(function: &Function, program: &Program) -> Function {
                             let releaseCall = if isRef {
                                 InstructionKind::FunctionCall(
                                     dest.clone(),
-                                    getBoxGetFnName(),
-                                    vec![newDest.clone()],
-                                    None,
+                                    CallInfo::new(getBoxGetFnName(), vec![newDest.clone()]),
                                 )
                             } else {
                                 InstructionKind::FunctionCall(
                                     dest.clone(),
-                                    getBoxReleaseFnName(),
-                                    vec![newDest.clone()],
-                                    None,
+                                    CallInfo::new(getBoxReleaseFnName(), vec![newDest.clone()]),
                                 )
                             };
                             builder.step();

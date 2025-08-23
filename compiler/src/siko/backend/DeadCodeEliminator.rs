@@ -92,7 +92,7 @@ impl<'a> DeadCodeEliminator<'a> {
                 return;
             }
             match &instruction.kind {
-                InstructionKind::FunctionCall(dest, _, _, _) => {
+                InstructionKind::FunctionCall(dest, _) => {
                     if dest.getType().isNever() {
                         return;
                     }

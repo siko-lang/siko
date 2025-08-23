@@ -199,7 +199,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
     fn resolve(&self, pattern: &Pattern) -> Pattern {
         match &pattern.pattern {
             SimplePattern::Named(origId, args) => {
-                let name = self.resolver.moduleResolver.resolverName(&origId);
+                let name = self.resolver.moduleResolver.resolveName(&origId);
                 let id = Identifier::new(name.toString(), Location::empty());
                 let args = args.iter().map(|p| self.resolve(p)).collect();
                 Pattern {
@@ -228,7 +228,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         };
         match &pattern.pattern {
             SimplePattern::Named(origId, args) => {
-                let name = self.resolver.moduleResolver.resolverName(&origId);
+                let name = self.resolver.moduleResolver.resolveName(&origId);
                 let mut result = Vec::new();
                 if let Some(enumName) = self.resolver.variants.get(&name) {
                     let e = self.resolver.enums.get(enumName).expect("enum not found");
@@ -302,7 +302,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         //println!("generateDecisions: {}, {}, {}", pattern, parentData, decision);
         match &pattern.pattern {
             SimplePattern::Named(origId, args) => {
-                let name = self.resolver.moduleResolver.resolverName(&origId);
+                let name = self.resolver.moduleResolver.resolveName(&origId);
                 if let Some(enumName) = self.resolver.variants.get(&name) {
                     let path = DataPath::Variant(Box::new(parentData.clone()), name, enumName.clone());
                     let mut decision = decision.add(path.clone());

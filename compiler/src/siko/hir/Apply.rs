@@ -1,5 +1,5 @@
 use crate::siko::hir::{
-    Instruction::{ImplicitHandler, WithContext, WithInfo},
+    Instruction::{CallInfo, ImplicitHandler, WithContext, WithInfo},
     Trait::Implementation,
     Type::Type,
 };
@@ -190,11 +190,18 @@ impl Apply for WithInfo {
     }
 }
 
+impl Apply for CallInfo {
+    fn apply(mut self, sub: &Substitution) -> Self {
+        self.args = self.args.apply(sub);
+        self
+    }
+}
+
 impl Apply for InstructionKind {
     fn apply(self, sub: &Substitution) -> Self {
         match self {
-            InstructionKind::FunctionCall(dest, name, args, info) => {
-                InstructionKind::FunctionCall(dest.apply(sub), name, args.apply(sub), info)
+            InstructionKind::FunctionCall(dest, info) => {
+                InstructionKind::FunctionCall(dest.apply(sub), info.apply(sub))
             }
             InstructionKind::Converter(dest, source) => InstructionKind::Converter(dest.apply(sub), source.apply(sub)),
             InstructionKind::MethodCall(dest, receiver, name, args) => {

@@ -19,7 +19,7 @@ use crate::siko::{
         BodyBuilder::BodyBuilder,
         Function::{BlockId, Function},
         Graph::GraphBuilder,
-        Instruction::InstructionKind,
+        Instruction::{CallInfo, InstructionKind},
         Program::Program,
         Type::Type,
     },
@@ -174,9 +174,7 @@ impl<'a> DropChecker<'a> {
                         implicitCloneVarRef.ty = receiver.ty.clone().map(|t| Type::Reference(Box::new(t), None));
                         let implicitClone = InstructionKind::FunctionCall(
                             dest.clone(),
-                            getCloneFnName(),
-                            vec![implicitCloneVar.clone()],
-                            None,
+                            CallInfo::new(getCloneFnName(), vec![implicitCloneVar.clone()]),
                         );
                         let implicitCloneRef = InstructionKind::Ref(implicitCloneVarRef.clone(), receiver.clone());
                         let updatedKind =
@@ -210,9 +208,7 @@ impl<'a> DropChecker<'a> {
                         implicitCloneVarRef.ty = input.ty.clone().map(|t| Type::Reference(Box::new(t), None));
                         let implicitClone = InstructionKind::FunctionCall(
                             implicitCloneVar.clone(),
-                            getCloneFnName(),
-                            vec![implicitCloneVarRef.clone()],
-                            None,
+                            CallInfo::new(getCloneFnName(), vec![implicitCloneVarRef.clone()]),
                         );
                         let implicitCloneRef = InstructionKind::Ref(implicitCloneVarRef.clone(), input.clone());
                         let updatedKind = instruction.kind.replaceVar(input.clone(), implicitCloneVar);

@@ -335,7 +335,7 @@ impl<'a> ExprResolver<'a> {
                 }
             }
             SimpleExpr::Name(name) => {
-                let irName = self.moduleResolver.resolverName(name);
+                let irName = self.moduleResolver.resolveName(name);
                 if self.emptyVariants.contains(&irName) {
                     return self
                         .bodyBuilder
@@ -363,7 +363,7 @@ impl<'a> ExprResolver<'a> {
                 }
                 match &callable.expr {
                     SimpleExpr::Name(name) => {
-                        let irName = self.moduleResolver.resolverName(name);
+                        let irName = self.moduleResolver.resolveName(name);
                         if self.enums.get(&irName).is_some() {
                             ResolverError::NotAConstructor(name.name(), name.location()).report(self.ctx);
                         }
@@ -379,7 +379,7 @@ impl<'a> ExprResolver<'a> {
                             //     .addDynamicFunctionCall(name, irArgs, expr.location.clone())
                             ResolverError::DynamicFunctionCallNotSupported(expr.location.clone()).report(self.ctx);
                         } else {
-                            let irName = self.moduleResolver.resolverName(name);
+                            let irName = self.moduleResolver.resolveName(name);
                             self.bodyBuilder
                                 .current()
                                 .addFunctionCall(irName, irArgs, expr.location.clone())
@@ -660,7 +660,7 @@ impl<'a> ExprResolver<'a> {
             SimpleExpr::With(with) => {
                 let mut handlers = Vec::new();
                 for contextHandler in &with.handlers {
-                    let resolvedName = self.moduleResolver.resolverName(&contextHandler.name);
+                    let resolvedName = self.moduleResolver.resolveName(&contextHandler.name);
                     if self.implicits.get(&resolvedName).is_some() {
                         let handlerName = env.resolve(&contextHandler.handler.name());
                         match handlerName {
@@ -681,7 +681,7 @@ impl<'a> ExprResolver<'a> {
                             }
                         }
                     } else {
-                        let handlerName = self.moduleResolver.resolverName(&contextHandler.handler);
+                        let handlerName = self.moduleResolver.resolveName(&contextHandler.handler);
                         handlers.push(HirWithContext::EffectHandler(HirEffectHandler {
                             method: resolvedName,
                             handler: handlerName,
@@ -724,7 +724,7 @@ impl<'a> ExprResolver<'a> {
     fn resolvePattern(&mut self, pat: &Pattern, env: &mut Environment, root: Variable) {
         match &pat.pattern {
             SimplePattern::Named(name, args) => {
-                let name = &self.moduleResolver.resolverName(name);
+                let name = &self.moduleResolver.resolveName(name);
                 match self.structs.get(name) {
                     Some(structDef) => {
                         if structDef.fields.len() != args.len() {

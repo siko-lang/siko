@@ -11,7 +11,7 @@ use crate::siko::{
         BlockBuilder::BlockBuilder,
         BodyBuilder::BodyBuilder,
         Function::{BlockId, Function},
-        Instruction::{EnumCase, FieldId, FieldInfo, InstructionKind, Mutability},
+        Instruction::{CallInfo, EnumCase, FieldId, FieldInfo, InstructionKind, Mutability},
         Program::Program,
         Type::Type,
         Variable::Variable,
@@ -54,7 +54,7 @@ impl<'a> Finalizer<'a> {
             );
             builder.step();
             builder.addInstruction(
-                InstructionKind::FunctionCall(dropFlag.clone(), getFalseName(), vec![], None),
+                InstructionKind::FunctionCall(dropFlag.clone(), CallInfo::new(getFalseName(), vec![])),
                 dropFlag.location.clone(),
             );
             builder.step();
@@ -94,9 +94,7 @@ impl<'a> Finalizer<'a> {
                                                 builder.addInstruction(
                                                     InstructionKind::FunctionCall(
                                                         dropFlag,
-                                                        getFalseName(),
-                                                        vec![],
-                                                        None,
+                                                        CallInfo::new(getFalseName(), vec![]),
                                                     ),
                                                     instruction.location.clone(),
                                                 );
@@ -161,9 +159,7 @@ impl<'a> Finalizer<'a> {
                                                 builder.addInstruction(
                                                     InstructionKind::FunctionCall(
                                                         dropFlag,
-                                                        getTrueName(),
-                                                        vec![],
-                                                        None,
+                                                        CallInfo::new(getTrueName(), vec![]),
                                                     ),
                                                     assignPath.location.clone(),
                                                 );
@@ -310,7 +306,7 @@ impl<'a> Finalizer<'a> {
                     // println!("Disabling dropflag for path: {} because {} is moved", path, rootPath);
                     let dropFlag = path.getDropFlag();
                     builder.addInstruction(
-                        InstructionKind::FunctionCall(dropFlag, getFalseName(), vec![], None),
+                        InstructionKind::FunctionCall(dropFlag, CallInfo::new(getFalseName(), vec![])),
                         rootPath.location.clone(),
                     );
                     builder.step();
@@ -329,7 +325,7 @@ fn addDropPath(builder: &mut BlockBuilder, current: &SimplePath, var: &Variable)
     builder.addInstruction(drop, var.location.clone());
     builder.step();
     builder.addInstruction(
-        InstructionKind::FunctionCall(dropFlag, getFalseName(), vec![], None),
+        InstructionKind::FunctionCall(dropFlag, CallInfo::new(getFalseName(), vec![])),
         var.location.clone(),
     );
     builder.step();

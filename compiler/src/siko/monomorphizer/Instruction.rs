@@ -6,7 +6,7 @@ use crate::siko::{
         Function::FunctionKind,
         InstanceResolver::ResolutionResult,
         Instruction::{
-            CallContextInfo, ImplicitContextIndex, ImplicitContextOperation, ImplicitIndex, Instruction,
+            CallContextInfo, CallInfo, ImplicitContextIndex, ImplicitContextOperation, ImplicitIndex, Instruction,
             InstructionKind, SyntaxBlockId, WithContext,
         },
         Substitution::Substitution,
@@ -27,6 +27,18 @@ use crate::siko::{
     },
 };
 
+impl Monomorphize for CallInfo {
+    fn process(&self, sub: &Substitution, mono: &mut Monomorphizer) -> Self {
+        let args = self.args.process(sub, mono);
+        CallInfo {
+            name: self.name.clone(),
+            args,
+            context: self.context.clone(),
+            implementations: self.implementations.clone(),
+        }
+    }
+}
+
 pub fn processInstruction(
     input: &Instruction,
     sub: &Substitution,
@@ -37,14 +49,14 @@ pub fn processInstruction(
     //println!("MONO INSTR {}", input);
     let mut instruction = input.clone();
     let kind: InstructionKind = match &input.kind {
-        InstructionKind::FunctionCall(dest, name, args, _) => {
-            //println!("Calling {} in block {}", name, syntaxBlockId);
-            let target_fn = match mono.program.getFunction(name) {
+        InstructionKind::FunctionCall(dest, info) => {
+            //println!("Calling {} in block {}", info.name, syntaxBlockId);
+            let target_fn = match mono.program.getFunction(&info.name) {
                 Some(f) => f,
                 None => {
                     let slogan = format!(
                         "Function {} not found during monomorphization, maybe std is missing?",
-                        format!("{}", mono.ctx.yellow(&name.toString()))
+                        format!("{}", mono.ctx.yellow(&info.name.toString()))
                     );
                     let r = Report::new(mono.ctx, slogan, None);
                     r.print();
@@ -56,11 +68,11 @@ pub fn processInstruction(
                 FunctionKind::EffectMemberDecl(_) => {
                     //println!("Effect member call in mono!");
                     let (handlerResolution, contextSyntaxBlockId) = handlerResolutionStore.get(syntaxBlockId);
-                    let handler = handlerResolution.getEffectHandler(name);
+                    let handler = handlerResolution.getEffectHandler(&info.name);
                     if handler.is_none() {
                         let slogan = format!(
                             "Effect method not present in current effect context: {}",
-                            format!("{}", mono.ctx.yellow(&name.toString()))
+                            format!("{}", mono.ctx.yellow(&info.name.toString()))
                         );
                         let r = Report::new(mono.ctx, slogan, Some(input.location.clone()));
                         r.print();
@@ -76,7 +88,7 @@ pub fn processInstruction(
                 }
                 FunctionKind::EffectMemberDefinition(_) => {
                     let (handlerResolution, contextSyntaxBlockId) = handlerResolutionStore.get(syntaxBlockId);
-                    let resolvedName = handlerResolution.getEffectHandler(name);
+                    let resolvedName = handlerResolution.getEffectHandler(&info.name);
                     let f = if let Some(handler) = resolvedName {
                         handler.markUsed();
                         mono.program
@@ -105,7 +117,8 @@ pub fn processInstruction(
             } else {
                 fn_ty
             };
-            let arg_types: Vec<_> = args
+            let arg_types: Vec<_> = info
+                .args
                 .iter()
                 .map(|arg| {
                     //println!("arg {}", arg);
@@ -132,7 +145,7 @@ pub fn processInstruction(
                 .map(|ty| ty.clone().apply(&sub))
                 .collect();
             //println!("{} type args {}", name, formatTypes(&ty_args));
-            let (resolution, info) =
+            let (resolution, callCtx) =
                 if target_fn.kind.isCtor() || target_fn.kind.isExternC() || target_fn.kind.isBuiltin() {
                     (HandlerResolution::new(), None)
                 } else {
@@ -146,7 +159,9 @@ pub fn processInstruction(
             let fn_name = mono.getMonoName(&name, &ty_args, resolution.clone());
             //println!("MONO CALL: {}", fn_name);
             mono.addKey(Key::Function(name.clone(), ty_args, resolution));
-            InstructionKind::FunctionCall(dest.clone(), fn_name, args.clone(), info)
+            let mut callInfo = CallInfo::new(fn_name, info.args.clone());
+            callInfo.context = callCtx;
+            InstructionKind::FunctionCall(dest.clone(), callInfo)
         }
         InstructionKind::Ref(dest, src) => {
             if dest.ty.as_ref().unwrap().isReference() && src.ty.as_ref().unwrap().isReference() {
@@ -164,12 +179,14 @@ pub fn processInstruction(
                 ty.clone(),
                 handlerResolution.clone(),
             ));
-            let info = if handlerResolution.isEmptyImplicits() {
+            let callCtx = if handlerResolution.isEmptyImplicits() {
                 None
             } else {
                 Some(CallContextInfo { contextSyntaxBlockId })
             };
-            InstructionKind::FunctionCall(dropRes.clone(), monoName, vec![dropVar.clone()], info)
+            let mut callInfo = CallInfo::new(monoName.clone(), vec![dropVar.clone()]);
+            callInfo.context = callCtx;
+            InstructionKind::FunctionCall(dropRes.clone(), callInfo)
         }
         InstructionKind::ReadImplicit(dest, index) => {
             let implicitName = match index {
@@ -231,8 +248,8 @@ pub fn processInstructionKind(
     handlerResolutionStore: &mut HandlerResolutionStore,
 ) -> InstructionKind {
     match input {
-        InstructionKind::FunctionCall(dest, name, args, info) => {
-            InstructionKind::FunctionCall(dest.process(sub, mono), name.clone(), args.process(sub, mono), info)
+        InstructionKind::FunctionCall(dest, info) => {
+            InstructionKind::FunctionCall(dest.process(sub, mono), info.process(sub, mono))
         }
         InstructionKind::Converter(dest, source) => {
             InstructionKind::Converter(dest.process(sub, mono), source.process(sub, mono))

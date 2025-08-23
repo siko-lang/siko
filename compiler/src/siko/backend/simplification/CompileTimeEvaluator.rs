@@ -88,10 +88,10 @@ impl<'a> CompileTimeEvaluator<'a> {
                         let val = newEnv.get(&value.name);
                         newEnv.set(var.name.clone(), val.clone());
                     }
-                    InstructionKind::FunctionCall(dest, name, _, _) => {
-                        if name == getTrueName() {
+                    InstructionKind::FunctionCall(dest, info) => {
+                        if info.name == getTrueName() {
                             newEnv.set(dest.name.clone(), Value::Bool(true));
-                        } else if name == getFalseName() {
+                        } else if info.name == getFalseName() {
                             newEnv.set(dest.name.clone(), Value::Bool(false));
                         }
                     }

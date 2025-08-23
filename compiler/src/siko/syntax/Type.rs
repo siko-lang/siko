@@ -85,7 +85,7 @@ pub enum ConstraintArgument {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Constraint {
-    pub traitName: Identifier,
+    pub name: Identifier,
     pub args: Vec<ConstraintArgument>,
 }
 
@@ -108,6 +108,6 @@ impl fmt::Display for Constraint {
             .map(|arg| format!("{}", arg))
             .collect::<Vec<_>>()
             .join(", ");
-        write!(f, "{}[{}]", self.traitName, args)
+        write!(f, "{}[{}]", self.name, args)
     }
 }

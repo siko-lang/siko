@@ -5,7 +5,7 @@ use crate::siko::{
         BodyBuilder::BodyBuilder,
         Function::{BlockId, Function, Parameter},
         Instruction::{
-            FieldId, FieldInfo, ImplicitContextOperation, ImplicitIndex, InstructionKind, SyntaxBlockId,
+            CallInfo, FieldId, FieldInfo, ImplicitContextOperation, ImplicitIndex, InstructionKind, SyntaxBlockId,
             SyntaxBlockIdSegment,
         },
         Program::Program,
@@ -221,20 +221,21 @@ impl<'a, 'b> ImplicitContextBuilder<'a, 'b> {
                                 panic!("Implicit context index not resolved in implicit context builder");
                             }
                         },
-                        InstructionKind::FunctionCall(dest, name, args, info) => {
-                            if let Some(info) = info {
-                                let contextVar = if let Some(contextVar) = contextVarMap.get(&info.contextSyntaxBlockId)
+                        InstructionKind::FunctionCall(dest, info) => {
+                            if let Some(ctx) = &info.context {
+                                let contextVar = if let Some(contextVar) = contextVarMap.get(&ctx.contextSyntaxBlockId)
                                 {
                                     contextVar.clone()
                                 } else {
                                     panic!(
                                     "Context variable not found for id '{}' in implicit context builder for function call '{}'",
-                                    info.contextSyntaxBlockId, name
+                                    ctx.contextSyntaxBlockId, info.name
                                 );
                                 };
-                                let mut args = args.clone();
+                                let mut args = info.args.clone();
                                 args.insert(0, contextVar);
-                                let kind = InstructionKind::FunctionCall(dest.clone(), name.clone(), args, None);
+                                let kind =
+                                    InstructionKind::FunctionCall(dest.clone(), CallInfo::new(info.name.clone(), args));
                                 builder.replaceInstruction(kind, instruction.location.clone());
                             }
                         }

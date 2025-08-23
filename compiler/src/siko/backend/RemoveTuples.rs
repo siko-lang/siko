@@ -6,7 +6,9 @@ use crate::siko::{
         ConstraintContext::ConstraintContext,
         Data::{Enum, Field, Struct, Variant},
         Function::{Block, Body, Function, FunctionKind, Parameter},
-        Instruction::{FieldId, FieldInfo, ImplicitHandler, Instruction, InstructionKind, WithContext, WithInfo},
+        Instruction::{
+            CallInfo, FieldId, FieldInfo, ImplicitHandler, Instruction, InstructionKind, WithContext, WithInfo,
+        },
         Program::Program,
         Type::Type,
         Variable::Variable,
@@ -170,14 +172,20 @@ impl RemoveTuples for WithInfo {
     }
 }
 
+impl RemoveTuples for CallInfo {
+    fn removeTuples(&self, ctx: &mut Context) -> Self {
+        let mut result = self.clone();
+        result.args = result.args.removeTuples(ctx);
+        result
+    }
+}
+
 impl RemoveTuples for InstructionKind {
     fn removeTuples(&self, ctx: &mut Context) -> InstructionKind {
         match self {
             InstructionKind::Tuple(dest, args) => InstructionKind::FunctionCall(
                 dest.removeTuples(ctx),
-                getTuple(&dest.getType()),
-                args.removeTuples(ctx),
-                None,
+                CallInfo::new(getTuple(&dest.getType()), args.removeTuples(ctx)),
             ),
             InstructionKind::Converter(dest, source) => {
                 InstructionKind::Converter(dest.removeTuples(ctx), source.removeTuples(ctx))
@@ -185,12 +193,9 @@ impl RemoveTuples for InstructionKind {
             InstructionKind::Transform(dest, root, index) => {
                 InstructionKind::Transform(dest.removeTuples(ctx), root.removeTuples(ctx), *index)
             }
-            InstructionKind::FunctionCall(dest, name, args, info) => InstructionKind::FunctionCall(
-                dest.removeTuples(ctx),
-                name.clone(),
-                args.removeTuples(ctx),
-                info.clone(),
-            ),
+            InstructionKind::FunctionCall(dest, info) => {
+                InstructionKind::FunctionCall(dest.removeTuples(ctx), info.removeTuples(ctx))
+            }
             InstructionKind::MethodCall(_, _, _, _) => {
                 unreachable!("method call in remove tuples!")
             }

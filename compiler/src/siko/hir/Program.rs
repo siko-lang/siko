@@ -95,6 +95,14 @@ impl Program {
         self.variants.contains(qn)
     }
 
+    pub fn isProtocol(&self, qn: &QualifiedName) -> bool {
+        self.protocols.contains_key(qn)
+    }
+
+    pub fn isImplementation(&self, qn: &QualifiedName) -> bool {
+        self.implementations.contains_key(qn)
+    }
+
     pub fn dumpToFile(&self, folderName: &str) -> std::io::Result<()> {
         std::fs::create_dir_all(folderName)?;
         for (_, fun) in &self.functions {

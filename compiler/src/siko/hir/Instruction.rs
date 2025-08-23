@@ -294,8 +294,56 @@ pub struct CallContextInfo {
 }
 
 #[derive(Clone, PartialEq)]
+pub struct CallInfo {
+    pub name: QualifiedName,
+    pub args: Vec<Variable>,
+    pub context: Option<CallContextInfo>,
+    pub implementations: Vec<QualifiedName>,
+}
+
+impl CallInfo {
+    pub fn new(name: QualifiedName, args: Vec<Variable>) -> Self {
+        CallInfo {
+            name,
+            args,
+            context: None,
+            implementations: Vec::new(),
+        }
+    }
+}
+
+impl Display for CallInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(ctx) = &self.context {
+            write!(
+                f,
+                "call_info({}, [{}], {})",
+                self.name,
+                self.args
+                    .iter()
+                    .map(|arg| arg.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                ctx.contextSyntaxBlockId
+            )
+        } else {
+            write!(
+                f,
+                "call_info({}, [{}])",
+                self.name,
+                self.args
+                    .iter()
+                    .map(|arg| arg.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        }
+    }
+}
+
+#[derive(Clone, PartialEq)]
 pub enum InstructionKind {
-    FunctionCall(Variable, QualifiedName, Vec<Variable>, Option<CallContextInfo>),
+    FunctionCall(Variable, CallInfo),
     Converter(Variable, Variable),
     MethodCall(Variable, Variable, String, Vec<Variable>),
     DynamicFunctionCall(Variable, Variable, Vec<Variable>),
@@ -343,7 +391,7 @@ impl Debug for InstructionKind {
 impl InstructionKind {
     pub fn getResultVar(&self) -> Option<Variable> {
         match self {
-            InstructionKind::FunctionCall(v, _, _, _) => Some(v.clone()),
+            InstructionKind::FunctionCall(v, _) => Some(v.clone()),
             InstructionKind::Converter(v, _) => Some(v.clone()),
             InstructionKind::MethodCall(v, _, _, _) => Some(v.clone()),
             InstructionKind::DynamicFunctionCall(v, _, _) => Some(v.clone()),
@@ -379,10 +427,11 @@ impl InstructionKind {
 
     pub fn replaceVar(&self, from: Variable, to: Variable) -> InstructionKind {
         match self {
-            InstructionKind::FunctionCall(var, name, args, info) => {
+            InstructionKind::FunctionCall(var, info) => {
                 let new_var = var.replace(&from, to.clone());
-                let new_args = args.iter().map(|arg| arg.replace(&from, to.clone())).collect();
-                InstructionKind::FunctionCall(new_var, name.clone(), new_args, info.clone())
+                let mut info = info.clone();
+                info.args = info.args.iter().map(|arg| arg.replace(&from, to.clone())).collect();
+                InstructionKind::FunctionCall(new_var, info)
             }
             InstructionKind::Converter(var, source) => {
                 let new_var = var.replace(&from, to.clone());
@@ -513,9 +562,9 @@ impl InstructionKind {
 
     pub fn collectVariables(&self) -> Vec<Variable> {
         match self {
-            InstructionKind::FunctionCall(var, _, args, _) => {
+            InstructionKind::FunctionCall(var, info) => {
                 let mut vars = vec![var.clone()];
-                vars.extend(args.clone());
+                vars.extend(info.args.clone());
                 vars
             }
             InstructionKind::Converter(var, target) => {
@@ -601,16 +650,8 @@ impl InstructionKind {
 
     pub fn dump(&self) -> String {
         match self {
-            InstructionKind::FunctionCall(dest, name, args, info) => {
-                if let Some(context) = info {
-                    let contextSyntaxBlockId = context.contextSyntaxBlockId.clone();
-                    format!(
-                        "{} = call({}({:?}), context: {})",
-                        dest, name, args, contextSyntaxBlockId
-                    )
-                } else {
-                    format!("{} = call({}({:?}))", dest, name, args)
-                }
+            InstructionKind::FunctionCall(dest, info) => {
+                format!("{} = {}", dest, info)
             }
             InstructionKind::Converter(dest, source) => {
                 format!("{} = convert({})", dest, source)
