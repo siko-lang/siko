@@ -3,7 +3,15 @@ use std::{
     fmt::Display,
 };
 
-use crate::siko::{hir::Implicit::Implicit, qualifiedname::QualifiedName};
+use crate::siko::{
+    hir::{
+        ImplementationStore::ImplementationStore,
+        Implicit::Implicit,
+        ProtocolMethodSelector::ProtocolMethodSelector,
+        Trait::{Implementation, Protocol},
+    },
+    qualifiedname::QualifiedName,
+};
 
 use super::{
     Data::{Enum, Struct},
@@ -20,9 +28,13 @@ pub struct Program {
     pub enums: BTreeMap<QualifiedName, Enum>,
     pub traits: BTreeMap<QualifiedName, Trait>,
     pub traitMethodSelectors: BTreeMap<QualifiedName, TraitMethodSelector>,
+    pub protocolMethodSelectors: BTreeMap<QualifiedName, ProtocolMethodSelector>,
     pub instanceResolver: InstanceResolver,
     pub implicits: BTreeMap<QualifiedName, Implicit>,
     pub variants: BTreeSet<QualifiedName>,
+    pub protocols: BTreeMap<QualifiedName, Protocol>,
+    pub implementations: BTreeMap<QualifiedName, Implementation>,
+    pub implementationStores: BTreeMap<QualifiedName, ImplementationStore>,
 }
 
 impl Program {
@@ -33,9 +45,13 @@ impl Program {
             enums: BTreeMap::new(),
             traits: BTreeMap::new(),
             traitMethodSelectors: BTreeMap::new(),
+            protocolMethodSelectors: BTreeMap::new(),
             instanceResolver: InstanceResolver::new(),
             implicits: BTreeMap::new(),
             variants: BTreeSet::new(),
+            protocols: BTreeMap::new(),
+            implementations: BTreeMap::new(),
+            implementationStores: BTreeMap::new(),
         }
     }
 
@@ -57,6 +73,14 @@ impl Program {
 
     pub fn getImplicit(&self, qn: &QualifiedName) -> Option<Implicit> {
         self.implicits.get(qn).cloned()
+    }
+
+    pub fn getProtocol(&self, qn: &QualifiedName) -> Option<Protocol> {
+        self.protocols.get(qn).cloned()
+    }
+
+    pub fn getImplementation(&self, qn: &QualifiedName) -> Option<Implementation> {
+        self.implementations.get(qn).cloned()
     }
 
     pub fn isStruct(&self, qn: &QualifiedName) -> bool {

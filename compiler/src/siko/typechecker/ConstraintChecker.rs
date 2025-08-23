@@ -43,7 +43,7 @@ impl<'a> ConstraintChecker<'a> {
         for c in &neededConstraints.constraints {
             //println!("knownConstraints.contains(c) {}", self.knownConstraints.contains(c));
             if !self.knownConstraints.contains(c) {
-                if let Some(instances) = self.program.instanceResolver.lookupInstances(&c.traitName) {
+                if let Some(instances) = self.program.instanceResolver.lookupInstances(&c.name) {
                     //println!("c.args {}", formatTypes(&c.args));
                     let mut fullyGeneric = true;
                     for arg in &c.args {
@@ -83,7 +83,7 @@ impl<'a> ConstraintChecker<'a> {
                         }
                         ResolutionResult::Ambiguous(_) => {
                             return Err(TypecheckerError::AmbiguousInstances(
-                                c.traitName.toString(),
+                                c.name.toString(),
                                 formatTypes(&c.args),
                                 location.clone(),
                                 Vec::new(),
@@ -91,7 +91,7 @@ impl<'a> ConstraintChecker<'a> {
                         }
                         ResolutionResult::NoInstanceFound => {
                             return Err(TypecheckerError::InstanceNotFound(
-                                c.traitName.toString(),
+                                c.name.toString(),
                                 formatTypes(&c.args),
                                 location.clone(),
                             ));
@@ -99,7 +99,7 @@ impl<'a> ConstraintChecker<'a> {
                     }
                 } else {
                     return Err(TypecheckerError::InstanceNotFound(
-                        c.traitName.toString(),
+                        c.name.toString(),
                         formatTypes(&c.args),
                         location.clone(),
                     ));

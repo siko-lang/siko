@@ -3,7 +3,9 @@ use crate::siko::{
         ConstraintContext::{Constraint as IrConstraint, ConstraintContext},
         Data::MethodInfo as DataMethodInfo,
         Function::{FunctionKind, Parameter},
+        ImplementationStore::ImplementationStore,
         Program::Program,
+        ProtocolMethodSelector::{ProtocolMethodSelection, ProtocolMethodSelector},
         Trait::{AssociatedType, MemberInfo},
         TraitMethodSelector::{TraitMethodSelection, TraitMethodSelector},
         Type::TypeVar,
@@ -32,7 +34,9 @@ use crate::siko::hir::Data::Struct as irStruct;
 use crate::siko::hir::Data::Variant as IrVariant;
 use crate::siko::hir::Function::Function as IrFunction;
 use crate::siko::hir::Implicit::Implicit as IrImplicit;
+use crate::siko::hir::Trait::Implementation as IrImplementation;
 use crate::siko::hir::Trait::Instance as IrInstance;
+use crate::siko::hir::Trait::Protocol as IrProtocol;
 use crate::siko::hir::Trait::Trait as IrTrait;
 use crate::siko::hir::Type::Type as IrType;
 
@@ -80,7 +84,7 @@ fn addConstraint(
         }
     }
     let irConstraint = IrConstraint {
-        traitName: traitDef.name,
+        name: traitDef.name,
         args: args,
         associatedTypes: associatedTypes,
     };
@@ -169,9 +173,17 @@ impl<'a> Resolver<'a> {
         self.processDataTypes();
         self.processImplicits();
         self.processTraits();
+        self.processProtocols();
         self.processInstances();
+        self.processImplementations();
         self.processFunctions();
 
+        self.updateTraitMethodSelectors();
+        self.updateProtocolMethodSelectors();
+        //self.dump();
+    }
+
+    fn updateTraitMethodSelectors(&mut self) {
         let mut traitMethodSelectors = BTreeMap::new();
 
         for resolver in self.resolvers.values() {
@@ -197,7 +209,34 @@ impl<'a> Resolver<'a> {
             traitMethodSelectors.insert(name, selector);
         }
         self.program.traitMethodSelectors = traitMethodSelectors;
-        //self.dump();
+    }
+
+    fn updateProtocolMethodSelectors(&mut self) {
+        let mut protocolMethodSelectors = BTreeMap::new();
+
+        for resolver in self.resolvers.values() {
+            let name = QualifiedName::Module(resolver.name.clone());
+            let mut selector = self
+                .program
+                .protocolMethodSelectors
+                .get(&name)
+                .expect("protocol method selector not found")
+                .clone();
+            for importedModule in &resolver.importedModules {
+                let importedModuleName = QualifiedName::Module(importedModule.clone());
+                if importedModuleName == name {
+                    continue;
+                }
+                let moduleSelector = self
+                    .program
+                    .protocolMethodSelectors
+                    .get(&importedModuleName)
+                    .expect("protocol method selector not found");
+                selector.merge(moduleSelector);
+            }
+            protocolMethodSelectors.insert(name, selector);
+        }
+        self.program.protocolMethodSelectors = protocolMethodSelectors;
     }
 
     pub fn ir(self) -> Program {
@@ -344,11 +383,69 @@ impl<'a> Resolver<'a> {
                                 name: method.name.toString(),
                                 fullName: QualifiedName::Item(Box::new(irTrait.name.clone()), method.name.toString()),
                                 default: method.body.is_some(),
-                                result: IrType::Function(argTypes, Box::new(result)),
+                                memberType: IrType::Function(argTypes, Box::new(result)),
                             })
                         }
                         //println!("Trait {}", irTrait);
                         self.program.traits.insert(irTrait.name.clone(), irTrait);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    fn processProtocols(&mut self) {
+        for (_, m) in &mut self.modules {
+            let moduleResolver = self.resolvers.get(&m.name.name()).unwrap();
+            for item in &mut m.items {
+                match item {
+                    ModuleItem::Protocol(protoDef) => {
+                        let typeParams = getTypeParams(&protoDef.typeParams);
+                        let mut typeResolver = TypeResolver::new(moduleResolver, &typeParams);
+                        let constraintContext =
+                            createConstraintContext(&protoDef.typeParams, &typeResolver, &self.program, &self.ctx);
+                        let mut irParams = Vec::new();
+                        for param in &protoDef.params {
+                            let irParam = IrType::Var(TypeVar::Named(param.toString()));
+                            typeResolver.addTypeParams(irParam.clone());
+                            irParams.push(irParam);
+                        }
+                        let mut associatedTypes = Vec::new();
+                        let traitName = moduleResolver.resolverName(&protoDef.name);
+                        for associatedType in &protoDef.associatedTypes {
+                            associatedTypes.push(associatedType.name.name());
+                            let irParam = IrType::Var(TypeVar::Named(associatedType.name.toString()));
+                            typeResolver.addTypeParams(irParam);
+                        }
+                        let selfType = irParams[0].clone();
+                        let mut irProtocol = IrProtocol::new(traitName, irParams, associatedTypes, constraintContext);
+                        for method in &protoDef.methods {
+                            let mut argTypes = Vec::new();
+                            for param in &method.params {
+                                let ty = match param {
+                                    SynParam::Named(_, ty, _) => typeResolver.resolveType(ty),
+                                    SynParam::SelfParam => selfType.clone(),
+                                    SynParam::MutSelfParam => selfType.clone(),
+                                    SynParam::RefSelfParam => selfType.clone(),
+                                };
+                                argTypes.push(ty);
+                            }
+                            let result = typeResolver
+                                .resolveType(&method.result)
+                                .changeSelfType(selfType.clone());
+                            irProtocol.members.push(MemberInfo {
+                                name: method.name.toString(),
+                                fullName: QualifiedName::Item(
+                                    Box::new(irProtocol.name.clone()),
+                                    method.name.toString(),
+                                ),
+                                default: method.body.is_some(),
+                                memberType: IrType::Function(argTypes, Box::new(result)),
+                            })
+                        }
+                        //println!("Protocol {}", irProtocol);
+                        self.program.protocols.insert(irProtocol.name.clone(), irProtocol);
                     }
                     _ => {}
                 }
@@ -420,7 +517,7 @@ impl<'a> Resolver<'a> {
                                     irInstance.id,
                                 ),
                                 default: false,
-                                result: IrType::Function(argTypes, Box::new(result)),
+                                memberType: IrType::Function(argTypes, Box::new(result)),
                             })
                         }
                         //println!("Instance {}", irInstance);
@@ -433,10 +530,86 @@ impl<'a> Resolver<'a> {
         }
     }
 
+    fn processImplementations(&mut self) {
+        for (_, m) in &mut self.modules {
+            let moduleResolver = self.resolvers.get(&m.name.name()).unwrap();
+            for item in &mut m.items {
+                match item {
+                    ModuleItem::Implementation(i) => {
+                        let implName = moduleResolver.resolverName(&i.name);
+                        let typeParams = getTypeParams(&i.typeParams);
+                        let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
+                        let constraintContext =
+                            createConstraintContext(&i.typeParams, &typeResolver, &self.program, &self.ctx);
+                        let protocolDef = moduleResolver.lookupProtocol(&i.protocolName, &self.program);
+                        let args: Vec<_> = i.types.iter().map(|ty| typeResolver.resolveType(ty)).collect();
+                        let mut associatedTypes = Vec::new();
+                        for associatedType in &i.associatedTypes {
+                            let mut found = false;
+                            for protocolAssociatedType in &protocolDef.associatedTypes {
+                                if protocolAssociatedType == &associatedType.name.name() {
+                                    found = true;
+                                    break;
+                                }
+                            }
+                            if !found {
+                                ResolverError::AssociatedTypeNotFound(
+                                    associatedType.name.name(),
+                                    protocolDef.name.toString(),
+                                    associatedType.name.location(),
+                                )
+                                .report(self.ctx);
+                            }
+                            let ty = typeResolver.resolveType(&associatedType.ty);
+                            let irAssociatedType = AssociatedType {
+                                name: associatedType.name.toString(),
+                                ty: ty,
+                            };
+                            associatedTypes.push(irAssociatedType);
+                        }
+                        let selfType = args[0].clone();
+                        let mut irImpl = IrImplementation::new(
+                            implName,
+                            protocolDef.name.clone(),
+                            args,
+                            associatedTypes,
+                            constraintContext,
+                        );
+                        for method in &i.methods {
+                            let mut argTypes = Vec::new();
+                            for param in &method.params {
+                                let ty = match param {
+                                    SynParam::Named(_, ty, _) => typeResolver.resolveType(ty),
+                                    SynParam::SelfParam => selfType.clone(),
+                                    SynParam::MutSelfParam => selfType.clone(),
+                                    SynParam::RefSelfParam => selfType.clone(),
+                                };
+                                argTypes.push(ty);
+                            }
+                            let result = typeResolver
+                                .resolveType(&method.result)
+                                .changeSelfType(selfType.clone());
+                            irImpl.members.push(MemberInfo {
+                                name: method.name.toString(),
+                                fullName: QualifiedName::Item(Box::new(irImpl.name.clone()), method.name.toString()),
+                                default: false,
+                                memberType: IrType::Function(argTypes, Box::new(result)),
+                            });
+                        }
+                        //println!("IrImpl {}", irImpl);
+                        self.program.implementations.insert(irImpl.name.clone(), irImpl);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
     fn processFunctions(&mut self) {
         for (_, m) in &self.modules {
             let moduleResolver = self.resolvers.get(&m.name.name()).unwrap();
             let mut traitMethodSelector = TraitMethodSelector::new();
+            let mut protocolMethodSelector = ProtocolMethodSelector::new();
             for item in &m.items {
                 match item {
                     ModuleItem::Struct(c) => {
@@ -537,7 +710,7 @@ impl<'a> Resolver<'a> {
                                 }
                             }
                             constraintContext.addConstraint(IrConstraint {
-                                traitName: traitDef.name.clone(),
+                                name: traitDef.name.clone(),
                                 args: traitDef.params.clone(),
                                 associatedTypes: associatedTypes,
                             });
@@ -564,6 +737,78 @@ impl<'a> Resolver<'a> {
                                 traitName: name.clone(),
                             };
                             traitMethodSelector.add(method.name.toString(), selection);
+                            self.program.functions.insert(irFunction.name.clone(), irFunction);
+                        }
+                    }
+                    ModuleItem::Protocol(syntaxProtoDef) => {
+                        let name = moduleResolver.resolverName(&syntaxProtoDef.name);
+                        let protoDef = self.program.getProtocol(&name).unwrap();
+                        let owner = protoDef.params.first().expect("first protocol param not found");
+                        let typeParams = getTypeParams(&syntaxProtoDef.typeParams);
+                        let mut typeResolver = TypeResolver::new(moduleResolver, &typeParams);
+                        let mut constraintContext = createConstraintContext(
+                            &syntaxProtoDef.typeParams,
+                            &typeResolver,
+                            &self.program,
+                            &self.ctx,
+                        );
+                        for param in &protoDef.params {
+                            typeResolver.addTypeParams(param.clone());
+                            constraintContext.addTypeParam(param.clone());
+                        }
+                        for associatedType in &protoDef.associatedTypes {
+                            typeResolver.addTypeParams(IrType::Var(TypeVar::Named(associatedType.clone())));
+                        }
+                        for method in &syntaxProtoDef.methods {
+                            //println!("Processing protocol method {}", method.name);
+                            let mut constraintContext = addTypeParams(
+                                constraintContext.clone(),
+                                &method.typeParams,
+                                &typeResolver,
+                                &self.program,
+                                &self.ctx,
+                            );
+                            let mut associatedTypes = Vec::new();
+                            for assocTy in &syntaxProtoDef.associatedTypes {
+                                let ty = IrType::Var(TypeVar::Named(assocTy.name.toString()));
+                                associatedTypes.push(AssociatedType {
+                                    name: assocTy.name.toString(),
+                                    ty: ty.clone(),
+                                });
+                                constraintContext.addTypeParam(ty);
+                                for c in &assocTy.constraints {
+                                    constraintContext =
+                                        addConstraint(constraintContext, c, &typeResolver, &self.program, &self.ctx);
+                                }
+                            }
+                            constraintContext.addConstraint(IrConstraint {
+                                name: protoDef.name.clone(),
+                                args: protoDef.params.clone(),
+                                associatedTypes: associatedTypes,
+                            });
+                            let functionResolver =
+                                FunctionResolver::new(moduleResolver, constraintContext, Some(owner.clone()));
+                            let mut irFunction = functionResolver.resolve(
+                                self.ctx,
+                                method,
+                                &self.emptyVariants,
+                                &self.program.structs,
+                                &self.variants,
+                                &self.program.enums,
+                                &self.program.implicits,
+                                QualifiedName::Item(Box::new(name.clone()), method.name.toString()),
+                                &typeResolver,
+                            );
+                            if method.body.is_none() {
+                                irFunction.kind = FunctionKind::TraitMemberDecl(name.clone());
+                            } else {
+                                irFunction.kind = FunctionKind::TraitMemberDefinition(name.clone());
+                            }
+                            let selection = ProtocolMethodSelection {
+                                method: irFunction.name.clone(),
+                                ProtocolName: name.clone(),
+                            };
+                            protocolMethodSelector.add(method.name.toString(), selection);
                             self.program.functions.insert(irFunction.name.clone(), irFunction);
                         }
                     }
@@ -633,6 +878,64 @@ impl<'a> Resolver<'a> {
                             .report(self.ctx);
                         }
                     }
+                    ModuleItem::Implementation(i) => {
+                        let qn = &QualifiedName::Module(moduleResolver.name.clone()).add(i.name.toString());
+                        let irImpl = &self.program.getImplementation(qn).expect("Implementation not found");
+                        let typeParams = getTypeParams(&i.typeParams);
+                        let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
+                        let protocolDef = self.program.getProtocol(&irImpl.protocolName).unwrap();
+                        let mut allProtocolMembers = BTreeSet::new();
+                        let mut neededProtocolMembers = BTreeSet::new();
+                        for method in &protocolDef.members {
+                            allProtocolMembers.insert(method.name.clone());
+                            if !method.default {
+                                neededProtocolMembers.insert(method.name.clone());
+                            }
+                        }
+                        let mut implementedMembers = BTreeSet::new();
+                        for method in &i.methods {
+                            implementedMembers.insert(method.name.clone());
+                            if !allProtocolMembers.contains(&method.name.name()) {
+                                ResolverError::InvalidImplementationMember(
+                                    method.name.name(),
+                                    irImpl.protocolName.toString(),
+                                    method.name.location(),
+                                )
+                                .report(self.ctx);
+                            }
+                            neededProtocolMembers.remove(&method.name.name());
+                            //println!("Processing instance method {}", method.name);
+                            let constraintContext = addTypeParams(
+                                irImpl.constraintContext.clone(),
+                                &method.typeParams,
+                                &typeResolver,
+                                &self.program,
+                                &self.ctx,
+                            );
+                            let functionResolver =
+                                FunctionResolver::new(moduleResolver, constraintContext, Some(irImpl.types[0].clone()));
+                            let irFunction = functionResolver.resolve(
+                                self.ctx,
+                                method,
+                                &self.emptyVariants,
+                                &self.program.structs,
+                                &self.variants,
+                                &self.program.enums,
+                                &self.program.implicits,
+                                qn.add(method.name.toString()),
+                                &typeResolver,
+                            );
+                            self.program.functions.insert(irFunction.name.clone(), irFunction);
+                        }
+                        if !neededProtocolMembers.is_empty() {
+                            ResolverError::MissingProtocolMembers(
+                                neededProtocolMembers.into_iter().collect(),
+                                irImpl.protocolName.toString(),
+                                i.name.location(),
+                            )
+                            .report(self.ctx);
+                        }
+                    }
                     ModuleItem::Function(f) => {
                         let typeParams = getTypeParams(&f.typeParams);
                         let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
@@ -687,6 +990,9 @@ impl<'a> Resolver<'a> {
             self.program
                 .traitMethodSelectors
                 .insert(QualifiedName::Module(m.name.toString()), traitMethodSelector);
+            self.program
+                .protocolMethodSelectors
+                .insert(QualifiedName::Module(m.name.toString()), protocolMethodSelector);
         }
     }
 
@@ -695,6 +1001,7 @@ impl<'a> Resolver<'a> {
         importedNames: &mut Names,
         variants: &mut BTreeSet<QualifiedName>,
         i: &Import,
+        importedImplementations: &mut Vec<QualifiedName>,
     ) {
         if let Some(alias) = &i.alias {
             let moduleName = QualifiedName::Module(i.moduleName.toString());
@@ -761,7 +1068,34 @@ impl<'a> Resolver<'a> {
                             importedNames.add(&localMethodName, &methodName);
                         }
                     }
+                    ModuleItem::Protocol(protocolDef) => {
+                        if !protocolDef.public {
+                            continue;
+                        }
+                        let protocolName = moduleName.add(protocolDef.name.toString());
+                        let localProtocolName = localModuleName.add(protocolDef.name.toString());
+                        importedNames.add(&localProtocolName, &protocolName);
+                        for fnDef in &protocolDef.methods {
+                            let methodName = protocolName.add(fnDef.name.toString());
+                            let localMethodName = localProtocolName.add(fnDef.name.to_string());
+                            importedNames.add(&localMethodName, &methodName);
+                        }
+                    }
                     ModuleItem::Instance(_) => {}
+                    ModuleItem::Implementation(implDef) => {
+                        if !implDef.public {
+                            continue;
+                        }
+                        let implName = moduleName.add(implDef.name.toString());
+                        let localImplName = localModuleName.add(implDef.name.toString());
+                        importedNames.add(&localImplName, &implName);
+                        for fnDef in &implDef.methods {
+                            let methodName = implName.add(fnDef.name.to_string());
+                            let localMethodName = localImplName.add(fnDef.name.to_string());
+                            importedNames.add(&localMethodName, &methodName);
+                        }
+                        importedImplementations.push(implName);
+                    }
                     ModuleItem::Effect(effectDef) => {
                         if !effectDef.public {
                             continue;
@@ -855,7 +1189,36 @@ impl<'a> Resolver<'a> {
                             importedNames.add(&methodName, &methodName);
                         }
                     }
+                    ModuleItem::Protocol(protocolDef) => {
+                        if !protocolDef.public {
+                            continue;
+                        }
+                        let protocolName = moduleName.add(protocolDef.name.toString());
+                        importedNames.add(&protocolDef.name, &protocolName);
+                        importedNames.add(&protocolName, &protocolName);
+                        for fnDef in &protocolDef.methods {
+                            let methodName = protocolName.add(fnDef.name.toString());
+                            importedNames.add(&fnDef.name, &methodName);
+                            importedNames.add(&format!("{}.{}", protocolDef.name, fnDef.name), &methodName);
+                            importedNames.add(&methodName, &methodName);
+                        }
+                    }
                     ModuleItem::Instance(_) => {}
+                    ModuleItem::Implementation(implDef) => {
+                        if !implDef.public {
+                            continue;
+                        }
+                        let implName = moduleName.add(implDef.name.toString());
+                        importedNames.add(&implDef.name, &implName);
+                        importedNames.add(&implName, &implName);
+                        for fnDef in &implDef.methods {
+                            let methodName = implName.add(fnDef.name.to_string());
+                            importedNames.add(&fnDef.name, &methodName);
+                            importedNames.add(&format!("{}.{}", implDef.name, fnDef.name), &methodName);
+                            importedNames.add(&methodName, &methodName);
+                        }
+                        importedImplementations.push(implName);
+                    }
                     ModuleItem::Effect(effectDef) => {
                         if !effectDef.public {
                             continue;
@@ -887,6 +1250,7 @@ impl<'a> Resolver<'a> {
         for (_, m) in &self.modules {
             let moduleResolver = self.resolvers.get_mut(&m.name.toString()).unwrap();
             //println!("Processing module {}", name);
+            let mut importedImplementations = Vec::new();
             for item in &m.items {
                 match item {
                     ModuleItem::Import(i) => {
@@ -899,6 +1263,7 @@ impl<'a> Resolver<'a> {
                                     &mut moduleResolver.importedNames,
                                     &mut moduleResolver.variants,
                                     i,
+                                    &mut importedImplementations,
                                 );
                             }
                             None => {
@@ -911,13 +1276,19 @@ impl<'a> Resolver<'a> {
                     _ => {}
                 }
             }
+            let implementationStore = self
+                .program
+                .implementationStores
+                .entry(QualifiedName::Module(moduleResolver.name.clone()))
+                .or_insert_with(ImplementationStore::new);
+            implementationStore.importedImplementations = importedImplementations;
         }
     }
 
     fn collectLocalNames(&mut self) {
         for (_, m) in &self.modules {
             //println!("Processing module {}", name);
-            let (localNames, variants) = Resolver::buildLocalNames(m);
+            let (localNames, variants, implementations) = Resolver::buildLocalNames(m);
             let moduleResolver = ModuleResolver {
                 ctx: self.ctx,
                 name: m.name.toString(),
@@ -926,13 +1297,21 @@ impl<'a> Resolver<'a> {
                 importedModules: Vec::new(),
                 variants,
             };
+            self.program.implementationStores.insert(
+                QualifiedName::Module(m.name.toString()),
+                ImplementationStore {
+                    localImplementations: implementations.clone(),
+                    importedImplementations: Vec::new(),
+                },
+            );
             self.resolvers.insert(m.name.toString(), moduleResolver);
         }
     }
 
-    pub fn buildLocalNames(m: &Module) -> (Names, BTreeSet<QualifiedName>) {
+    pub fn buildLocalNames(m: &Module) -> (Names, BTreeSet<QualifiedName>, Vec<QualifiedName>) {
         let mut localNames = Names::new();
         let mut variants = BTreeSet::new();
+        let mut implementations = Vec::new();
         let moduleName = QualifiedName::Module(m.name.toString());
         for item in &m.items {
             match item {
@@ -982,7 +1361,24 @@ impl<'a> Resolver<'a> {
                         localNames.add(&methodName, &methodName);
                     }
                 }
+                ModuleItem::Protocol(t) => {
+                    let protocolName = moduleName.add(t.name.toString());
+                    localNames.add(&t.name, &protocolName);
+                    localNames.add(&protocolName, &protocolName);
+                    for m in &t.methods {
+                        let methodName = protocolName.add(m.name.toString());
+                        localNames.add(&m.name, &methodName);
+                        localNames.add(&format!("{}.{}", t.name, m.name), &methodName);
+                        localNames.add(&methodName, &methodName);
+                    }
+                }
                 ModuleItem::Instance(_) => {}
+                ModuleItem::Implementation(i) => {
+                    let implName = moduleName.add(i.name.toString());
+                    localNames.add(&i.name, &implName);
+                    localNames.add(&implName, &implName);
+                    implementations.push(implName);
+                }
                 ModuleItem::Effect(e) => {
                     let effectName = moduleName.add(e.name.toString());
                     localNames.add(&e.name, &effectName);
@@ -1001,7 +1397,7 @@ impl<'a> Resolver<'a> {
                 }
             }
         }
-        (localNames, variants)
+        (localNames, variants, implementations)
     }
 
     fn processImplicits(&mut self) {

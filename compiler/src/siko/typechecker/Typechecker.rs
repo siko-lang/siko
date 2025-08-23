@@ -11,15 +11,20 @@ use crate::siko::{
         Apply::Apply,
         BlockBuilder::BlockBuilder,
         BodyBuilder::BodyBuilder,
-        ConstraintContext::{Constraint as HirConstraint, ConstraintContext},
+        ConstraintContext::{Constraint, ConstraintContext},
         Data::{Enum, Struct},
         Function::{BlockId, Function, Parameter},
-        Instantiation::{instantiateEnum, instantiateStruct, instantiateTrait, instantiateTypes},
+        ImplementationStore::ImplementationStore,
+        Instantiation::{
+            instantiateEnum, instantiateImplementation, instantiateStruct, instantiateTrait, instantiateTypes,
+        },
         Instruction::{FieldId, FieldInfo, ImplicitIndex, Instruction, InstructionKind, Mutability, WithContext},
         Program::Program,
+        ProtocolMethodSelector::ProtocolMethodSelector,
         Substitution::Substitution,
+        Trait::Implementation,
         TraitMethodSelector::TraitMethodSelector,
-        Type::{Type, TypeVar},
+        Type::{formatTypes, Type, TypeVar},
         TypeVarAllocator::TypeVarAllocator,
         Unification::unify,
         Variable::Variable,
@@ -44,7 +49,22 @@ pub fn typecheck(ctx: &ReportContext, mut program: Program) -> Program {
             .traitMethodSelectors
             .get(&moduleName)
             .expect("Trait method selector not found");
-        let mut typechecker = Typechecker::new(ctx, &program, &traitMethodSelector, f);
+        let protocolMethodSelector = &program
+            .protocolMethodSelectors
+            .get(&moduleName)
+            .expect("Protocol method selector not found");
+        let implementationStore = &program
+            .implementationStores
+            .get(&moduleName)
+            .expect("Implementation store not found");
+        let mut typechecker = Typechecker::new(
+            ctx,
+            &program,
+            &traitMethodSelector,
+            &protocolMethodSelector,
+            implementationStore,
+            f,
+        );
         let typedFn = typechecker.run();
         //typedFn.dump();
         result.insert(typedFn.name.clone(), typedFn);
@@ -80,17 +100,13 @@ impl Debug for ReceiverChainEntry {
     }
 }
 
-struct Constraint {
-    ty: Type,
-    traitName: QualifiedName,
-    location: Location,
-}
-
 pub struct Typechecker<'a> {
     ctx: &'a ReportContext,
     program: &'a Program,
     f: &'a Function,
     traitMethodSelector: &'a TraitMethodSelector,
+    protocolMethodSelector: &'a ProtocolMethodSelector,
+    implementationStore: &'a ImplementationStore,
     allocator: TypeVarAllocator,
     substitution: Substitution,
     types: BTreeMap<String, Type>,
@@ -108,6 +124,8 @@ impl<'a> Typechecker<'a> {
         ctx: &'a ReportContext,
         program: &'a Program,
         traitMethodSelector: &'a TraitMethodSelector,
+        protocolMethodSelector: &'a ProtocolMethodSelector,
+        implementationStore: &'a ImplementationStore,
         f: &'a Function,
     ) -> Typechecker<'a> {
         Typechecker {
@@ -115,6 +133,8 @@ impl<'a> Typechecker<'a> {
             program: program,
             f: f,
             traitMethodSelector: traitMethodSelector,
+            protocolMethodSelector: protocolMethodSelector,
+            implementationStore: implementationStore,
             allocator: TypeVarAllocator::new(),
             substitution: Substitution::new(),
             types: BTreeMap::new(),
@@ -311,6 +331,10 @@ impl<'a> Typechecker<'a> {
         instantiateStruct(&mut self.allocator, c, ty)
     }
 
+    fn instantiateImplementation(&mut self, impl_def: &crate::siko::hir::Trait::Implementation) -> Implementation {
+        instantiateImplementation(&mut self.allocator, impl_def)
+    }
+
     fn updateConverterDestination(&mut self, dest: &Variable, target: &Type) {
         let destTy = self.getType(dest).apply(&self.substitution);
         let targetTy = target.clone().apply(&self.substitution);
@@ -331,7 +355,135 @@ impl<'a> Typechecker<'a> {
         }
     }
 
+    fn findImplementationForConstraint(
+        &mut self,
+        constraint: &Constraint,
+        location: Location,
+    ) -> Option<Implementation> {
+        let mut matchingImpls = Vec::new();
+        for implName in &self.implementationStore.localImplementations {
+            let implDef = self.program.getImplementation(implName).expect("Impl not found");
+            let mut implDef = self.instantiateImplementation(&implDef);
+            if constraint.name == implDef.protocolName {
+                if implDef.types.len() != constraint.args.len() {
+                    continue;
+                }
+                //println!("Trying impl {}", implDef.name);
+                let mut allMatch = true;
+                let mut sub = Substitution::new();
+                for (implArg, cArg) in zip(&implDef.types, &constraint.args) {
+                    if !unify(&mut sub, implArg.clone(), cArg.clone(), false).is_ok() {
+                        //println!("  Arg {} does not match {}", implArg, cArg);
+                        allMatch = false;
+                        break;
+                    }
+                }
+                implDef = implDef.apply(&sub);
+                if allMatch {
+                    matchingImpls.push(implDef);
+                }
+            }
+        }
+        if matchingImpls.len() > 1 {
+            TypecheckerError::AmbiguousImplementations(
+                constraint.name.toString(),
+                formatTypes(&constraint.args),
+                location,
+            )
+            .report(self.ctx);
+        } else {
+            matchingImpls.pop()
+        }
+    }
+
     fn checkFunctionCall(
+        &mut self,
+        fnName: &QualifiedName,
+        args: &Vec<Variable>,
+        resultVar: &Variable,
+        expectedFnType: Type,
+        neededConstraints: &ConstraintContext,
+        isProtocolMethod: bool,
+    ) -> (Type, QualifiedName) {
+        if isProtocolMethod {
+            // println!(
+            //     "Checking protocol method call: {} {} {} {}",
+            //     fnName, expectedFnType, neededConstraints, self.knownConstraints
+            // );
+            let mut types = neededConstraints.typeParameters.clone();
+            types.push(expectedFnType.clone());
+            let sub = instantiateTypes(&mut self.allocator, &types);
+            let expectedFnType = expectedFnType.apply(&sub);
+            let neededConstraints = neededConstraints.clone().apply(&sub);
+            let (expectedArgs, mut expectedResult) = match expectedFnType.clone().splitFnType() {
+                Some((fnArgs, fnResult)) => (fnArgs, fnResult),
+                None => panic!("Function type {} is not a function type!", expectedFnType),
+            };
+            if args.len() != expectedArgs.len() {
+                TypecheckerError::ArgCountMismatch(
+                    expectedArgs.len() as u32,
+                    args.len() as u32,
+                    resultVar.location.clone(),
+                )
+                .report(self.ctx);
+            }
+            if expectedArgs.len() > 0 {
+                expectedResult = expectedResult.changeSelfType(expectedArgs[0].clone());
+            }
+            // for arg in &expectedArgs {
+            //     println!("expected arg {}", arg);
+            // }
+            //println!("expectedResult {}", expectedResult);
+            //println!("needed constraints {}", neededConstraints);
+            // let mut argTypes = Vec::new();
+            // for arg in args {
+            //     argTypes.push(self.getType(arg).apply(&self.substitution));
+            // }
+            // println!("arg types:");
+            // for argType in argTypes {
+            //     println!("arg type {}", argType);
+            // }
+            for (arg, expectedArg) in zip(args, &expectedArgs) {
+                let expectedArg = expectedArg.clone().apply(&self.substitution);
+                self.updateConverterDestination(arg, &expectedArg);
+            }
+            let neededConstraints = neededConstraints.clone().apply(&self.substitution);
+            //println!("applied needed constraints {}", neededConstraints);
+
+            assert_eq!(neededConstraints.constraints.len(), 1);
+            let c = neededConstraints.constraints[0].clone();
+            if self.knownConstraints.contains(&c) {
+                // impl will be provided later during mono
+                unimplemented!("")
+            } else {
+                // we will select an impl now
+                //println!("Trying to find implementation for {}", c);
+                if let Some(implDef) = self.findImplementationForConstraint(&c, resultVar.location.clone()) {
+                    //println!("Found impl {}", implDef.name);
+                    for m in &implDef.members {
+                        if m.name == fnName.getShortName() {
+                            // Found matching member, apply substitution
+                            //println!("Impl member result ty {}", m.memberType);
+                            //println!("Impl member expected ty {}", expectedFnType);
+                            self.unify(expectedFnType.clone(), m.memberType.clone(), resultVar.location.clone());
+                            let expectedFnType = expectedFnType.apply(&self.substitution);
+                            let expectedResult = expectedResult.apply(&self.substitution);
+                            self.unifyVar(resultVar, expectedResult);
+                            return (expectedFnType, m.fullName.clone());
+                        }
+                    }
+                    panic!("Method {} not found in implementation {}", fnName, implDef.name);
+                } else {
+                    TypecheckerError::NoImplementationFound(c.to_string(), resultVar.location.clone()).report(self.ctx);
+                }
+            }
+        } else {
+            let ty = self.checkFunctionCall_legacy(args, resultVar, expectedFnType, neededConstraints);
+            (ty, fnName.clone())
+        }
+    }
+
+    fn checkFunctionCall_legacy(
         &mut self,
         args: &Vec<Variable>,
         resultVar: &Variable,
@@ -402,8 +554,8 @@ impl<'a> Typechecker<'a> {
                             //println!("arg {} fnArg {}", arg, newFnArg);
                             if arg.isGeneric() && newFnArg.isReference() {
                                 if let Type::Reference(inner, _) = newFnArg {
-                                    let copyConstraint = HirConstraint {
-                                        traitName: getCopyName(),
+                                    let copyConstraint = Constraint {
+                                        name: getCopyName(),
                                         args: vec![*inner.clone()],
                                         associatedTypes: Vec::new(),
                                     };
@@ -436,18 +588,38 @@ impl<'a> Typechecker<'a> {
         instantiatedFnType.apply(&self.substitution)
     }
 
-    fn lookupTraitMethod(&mut self, receiverType: Type, methodName: &String, location: Location) -> QualifiedName {
+    fn lookupTraitMethod(
+        &mut self,
+        receiverType: Type,
+        methodName: &String,
+        location: Location,
+    ) -> (QualifiedName, bool) {
         if let Some(selections) = self.traitMethodSelector.get(methodName) {
             if selections.len() > 1 {
                 TypecheckerError::MethodAmbiguous(methodName.clone(), location.clone()).report(self.ctx);
             }
-            return selections[0].method.clone();
+            return (selections[0].method.clone(), false);
+        }
+        return self.lookupProtocolMethod(receiverType, methodName, location);
+    }
+
+    fn lookupProtocolMethod(
+        &mut self,
+        receiverType: Type,
+        methodName: &String,
+        location: Location,
+    ) -> (QualifiedName, bool) {
+        if let Some(selections) = self.protocolMethodSelector.get(methodName) {
+            if selections.len() > 1 {
+                TypecheckerError::MethodAmbiguous(methodName.clone(), location.clone()).report(self.ctx);
+            }
+            return (selections[0].method.clone(), true);
         }
         TypecheckerError::MethodNotFound(methodName.clone(), receiverType.to_string(), location.clone())
             .report(self.ctx);
     }
 
-    fn lookupMethod(&mut self, receiverType: Type, methodName: &String, location: Location) -> QualifiedName {
+    fn lookupMethod(&mut self, receiverType: Type, methodName: &String, location: Location) -> (QualifiedName, bool) {
         match receiverType.unpackRef() {
             Type::Named(name, _) => {
                 if let Some(structDef) = self.program.structs.get(&name) {
@@ -455,7 +627,7 @@ impl<'a> Typechecker<'a> {
                     for m in &structDef.methods {
                         if m.name == *methodName {
                             //println!("Added {} {}", dest, m.fullName);
-                            return m.fullName.clone();
+                            return (m.fullName.clone(), false);
                         }
                     }
                     return self.lookupTraitMethod(receiverType, methodName, location);
@@ -463,7 +635,7 @@ impl<'a> Typechecker<'a> {
                     let enumDef = self.instantiateEnum(enumDef, receiverType.unpackRef());
                     for m in &enumDef.methods {
                         if m.name == *methodName {
-                            return m.fullName.clone();
+                            return (m.fullName.clone(), false);
                         }
                     }
                     return self.lookupTraitMethod(receiverType, methodName, location);
@@ -478,7 +650,7 @@ impl<'a> Typechecker<'a> {
             Type::Ptr(_) => {
                 if methodName == "isNull" {
                     // TODO: make this nicer, somehow??
-                    return getNativePtrIsNullName();
+                    return (getNativePtrIsNullName(), false);
                 } else {
                     TypecheckerError::MethodNotFound(methodName.clone(), receiverType.to_string(), location.clone())
                         .report(self.ctx);
@@ -606,7 +778,7 @@ impl<'a> Typechecker<'a> {
                     panic!("Function not found {}", name);
                 };
                 let fnType = targetFn.getType();
-                self.checkFunctionCall(args, dest, fnType, &targetFn.constraintContext);
+                self.checkFunctionCall(name, args, dest, fnType, &targetFn.constraintContext, false);
             }
             InstructionKind::Converter(dest, source) => {
                 self.receiverChains.insert(
@@ -629,9 +801,8 @@ impl<'a> Typechecker<'a> {
             InstructionKind::MethodCall(dest, receiver, methodName, args) => {
                 self.handleMethodCall(&instruction, builder, dest, receiver, methodName, args);
             }
-            InstructionKind::DynamicFunctionCall(dest, callable, args) => {
-                let fnType = self.getType(callable);
-                self.checkFunctionCall(&args, dest, fnType, &ConstraintContext::new());
+            InstructionKind::DynamicFunctionCall(_, _, _) => {
+                unimplemented!("Dynamic function call not yet implemented")
             }
             InstructionKind::Bind(name, rhs, _) => {
                 self.unifyVars(name, rhs);
@@ -949,13 +1120,10 @@ impl<'a> Typechecker<'a> {
         let receiverType = self.getType(&receiver);
         let receiverType = receiverType.apply(&self.substitution);
         //println!("MethodCall {} {} {} {}", dest, receiver, methodName, receiverType);
-        let name = self.lookupMethod(receiverType.clone(), methodName, instruction.location.clone());
+        let (name, isProtocolMethod) =
+            self.lookupMethod(receiverType.clone(), methodName, instruction.location.clone());
         let mut extendedArgs = args.clone();
         extendedArgs.insert(0, receiver.clone());
-        builder.replaceInstruction(
-            InstructionKind::FunctionCall(dest.clone(), name.clone(), extendedArgs.clone(), None),
-            instruction.location.clone(),
-        );
         let targetFn = self.program.functions.get(&name).expect("Function not found");
         let mut fnType = targetFn.getType();
         let (origReceiver, chainEntries) = self.resolveReceiverChain(&receiver);
@@ -964,7 +1132,18 @@ impl<'a> Typechecker<'a> {
         if mutableCall {
             fnType = fnType.changeMethodResult();
         }
-        let fnType = self.checkFunctionCall(&extendedArgs, dest, fnType, &targetFn.constraintContext);
+        let (fnType, name) = self.checkFunctionCall(
+            &targetFn.name,
+            &extendedArgs,
+            dest,
+            fnType,
+            &targetFn.constraintContext,
+            isProtocolMethod,
+        );
+        builder.replaceInstruction(
+            InstructionKind::FunctionCall(dest.clone(), name.clone(), extendedArgs.clone(), None),
+            instruction.location.clone(),
+        );
         if mutableCall {
             let result = fnType.getResult();
             let (baseType, selfLessType) = if targetFn.getType().getResult().isTuple() {
@@ -1274,13 +1453,16 @@ impl<'a> Typechecker<'a> {
         }
     }
 
-    fn expandKnownConstraint(&mut self, c: &HirConstraint, processed: &mut Vec<HirConstraint>) {
+    fn expandKnownConstraint(&mut self, c: &Constraint, processed: &mut Vec<Constraint>) {
         if processed.contains(c) {
             return;
         }
         //println!("expandKnownConstraint {}", c);
         processed.push(c.clone());
-        let traitDef = self.program.getTrait(&c.traitName).expect("Trait not found");
+        let traitDef = match self.program.getTrait(&c.name) {
+            Some(traitDef) => traitDef,
+            None => return, // protocol
+        };
         let traitDef = instantiateTrait(&mut self.allocator, &traitDef);
         let mut sub = Substitution::new();
         for (arg, ctxArg) in zip(&traitDef.params, &c.args) {
@@ -1447,7 +1629,7 @@ impl<'a> Typechecker<'a> {
         }
 
         self.addTypes(&mut result);
-        //self.dump(&result);
+        // self.dump(&result);
         self.verify(&result);
         result
     }

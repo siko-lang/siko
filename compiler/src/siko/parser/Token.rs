@@ -65,6 +65,8 @@ pub enum KeywordKind {
     Derive,
     Type,
     Pub,
+    Protocol,
+    Impl,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -254,6 +256,8 @@ impl Display for TokenKind {
             TokenKind::Keyword(KeywordKind::While) => write!(f, "while"),
             TokenKind::Keyword(KeywordKind::With) => write!(f, "with"),
             TokenKind::Keyword(KeywordKind::Then) => write!(f, "then"),
+            TokenKind::Keyword(KeywordKind::Protocol) => write!(f, "protocol"),
+            TokenKind::Keyword(KeywordKind::Impl) => write!(f, "impl"),
             TokenKind::Arrow(ArrowKind::DoubleLeft) => write!(f, "<="),
             TokenKind::Arrow(ArrowKind::DoubleRight) => write!(f, "=>"),
             TokenKind::Arrow(ArrowKind::Left) => write!(f, "<-"),

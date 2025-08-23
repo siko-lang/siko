@@ -12,6 +12,8 @@ pub enum TypecheckerError {
     ImmutableAssign(Location),
     ImmutableImplicitHandler(Location),
     NotAPtr(String, Location),
+    NoImplementationFound(String, Location),
+    AmbiguousImplementations(String, String, Location),
 }
 
 impl TypecheckerError {
@@ -82,6 +84,20 @@ impl TypecheckerError {
             TypecheckerError::NotAPtr(ty, l) => {
                 let slogan = format!("Value is not a pointer: {}", ctx.yellow(ty));
                 let r = Report::new(ctx, slogan, Some(l.clone()));
+                r.print();
+            }
+            TypecheckerError::NoImplementationFound(name, l) => {
+                let slogan = format!("No implementation found for: {}", ctx.yellow(name));
+                let r = Report::new(ctx, slogan, Some(l.clone()));
+                r.print();
+            }
+            TypecheckerError::AmbiguousImplementations(name, args, location) => {
+                let slogan = format!(
+                    "Ambiguous implementations for {} with args: {}",
+                    ctx.yellow(name),
+                    ctx.yellow(args)
+                );
+                let r = Report::new(ctx, slogan, Some(location.clone()));
                 r.print();
             }
         }

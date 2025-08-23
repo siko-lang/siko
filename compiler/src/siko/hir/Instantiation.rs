@@ -4,7 +4,7 @@ use crate::siko::hir::{
     Apply::Apply,
     Data::{Enum, Struct},
     Substitution::Substitution,
-    Trait::{Instance, Trait},
+    Trait::{Implementation, Instance, Trait},
     Type::Type,
     TypeVarAllocator::TypeVarAllocator,
     Unification::unify,
@@ -31,6 +31,18 @@ pub fn instantiateStruct(allocator: &mut TypeVarAllocator, c: &Struct, ty: &Type
 }
 
 pub fn instantiateInstance(allocator: &mut TypeVarAllocator, i: &Instance) -> Instance {
+    let mut vars = BTreeSet::new();
+    for ty in &i.types {
+        vars = ty.collectVars(vars);
+    }
+    let mut sub = Substitution::new();
+    for var in &vars {
+        sub.add(Type::Var(var.clone()), allocator.next());
+    }
+    i.clone().apply(&sub)
+}
+
+pub fn instantiateImplementation(allocator: &mut TypeVarAllocator, i: &Implementation) -> Implementation {
     let mut vars = BTreeSet::new();
     for ty in &i.types {
         vars = ty.collectVars(vars);

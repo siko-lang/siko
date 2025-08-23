@@ -1,5 +1,6 @@
 use crate::siko::hir::{
     Instruction::{ImplicitHandler, WithContext, WithInfo},
+    Trait::Implementation,
     Type::Type,
 };
 
@@ -107,12 +108,22 @@ impl Apply for AssociatedType {
 impl Apply for MemberInfo {
     fn apply(mut self, sub: &Substitution) -> Self {
         //println!("Applying for {}", self.value);
-        self.result = self.result.apply(sub);
+        self.memberType = self.memberType.apply(sub);
         self
     }
 }
 
 impl Apply for Instance {
+    fn apply(mut self, sub: &Substitution) -> Self {
+        //println!("Applying for {}", self.value);
+        self.types = self.types.apply(sub);
+        self.associatedTypes = self.associatedTypes.apply(sub);
+        self.members = self.members.apply(sub);
+        self
+    }
+}
+
+impl Apply for Implementation {
     fn apply(mut self, sub: &Substitution) -> Self {
         //println!("Applying for {}", self.value);
         self.types = self.types.apply(sub);

@@ -3,6 +3,8 @@ use crate::siko::syntax::Effect::Effect;
 use crate::siko::syntax::Function::*;
 use crate::siko::syntax::Identifier::*;
 use crate::siko::syntax::Implicit::Implicit;
+use crate::siko::syntax::Trait::Implementation;
+use crate::siko::syntax::Trait::Protocol;
 
 use super::Trait::Instance;
 use super::Trait::Trait;
@@ -22,6 +24,8 @@ pub enum ModuleItem {
     Instance(Instance),
     Effect(Effect),
     Implicit(Implicit),
+    Protocol(Protocol),
+    Implementation(Implementation),
 }
 
 #[derive(Debug, PartialEq, Eq)]

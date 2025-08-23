@@ -6,7 +6,7 @@ use super::{Trait::AssociatedType, Type::Type};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Constraint {
-    pub traitName: QualifiedName,
+    pub name: QualifiedName,
     pub args: Vec<Type>,
     pub associatedTypes: Vec<AssociatedType>,
 }
@@ -14,9 +14,9 @@ pub struct Constraint {
 impl Display for Constraint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.args.is_empty() {
-            write!(f, "{}", self.traitName)?;
+            write!(f, "{}", self.name)?;
         } else {
-            write!(f, "{}[{}]", self.traitName, formatTypes(&self.args))?;
+            write!(f, "{}[{}]", self.name, formatTypes(&self.args))?;
         }
         if !self.associatedTypes.is_empty() {
             let assocTypes = self
@@ -55,7 +55,7 @@ impl ConstraintContext {
 
     pub fn contains(&self, constraint: &Constraint) -> bool {
         for c in &self.constraints {
-            if c.traitName == constraint.traitName && c.args == constraint.args {
+            if c.name == constraint.name && c.args == constraint.args {
                 return true;
             }
         }

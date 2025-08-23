@@ -85,6 +85,8 @@ impl<'a> ModuleParser for Parser<'a> {
                 TokenKind::Keyword(KeywordKind::Instance) => ModuleItem::Instance(self.parseInstance()),
                 TokenKind::Keyword(KeywordKind::Effect) => ModuleItem::Effect(self.parseEffect(public)),
                 TokenKind::Keyword(KeywordKind::Implicit) => ModuleItem::Implicit(self.parseImplicit(public)),
+                TokenKind::Keyword(KeywordKind::Protocol) => ModuleItem::Protocol(self.parseProtocol(public)),
+                TokenKind::Keyword(KeywordKind::Impl) => ModuleItem::Implementation(self.parseImplementation(public)),
                 kind => self.reportError2("<module item>", kind),
             };
             items.push(item);
