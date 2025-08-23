@@ -12,6 +12,7 @@ use crate::siko::{
         Substitution::Substitution,
         Type::{formatTypes, Type},
         TypeVarAllocator::TypeVarAllocator,
+        Variable::Variable,
     },
     location::Report::Report,
     monomorphizer::{
@@ -39,12 +40,37 @@ impl Monomorphize for CallInfo {
     }
 }
 
+fn findMatchingImpl(
+    impls: &Vec<QualifiedName>,
+    shortName: String,
+    context_ty: &Type,
+    mono: &Monomorphizer,
+) -> QualifiedName {
+    for implName in impls {
+        //println!("impl {}", implName);
+        let implDef = mono
+            .program
+            .getImplementation(implName)
+            .expect("implementation not found in mono");
+        for m in &implDef.members {
+            // println!("members {}", m.name);
+            // println!("protocol call member type {}", m.memberType);
+            // println!("looking for {}/{}", shortName, context_ty);
+            if m.name == shortName && m.memberType == *context_ty {
+                return m.fullName.clone();
+            }
+        }
+    }
+    panic!("No matching impl found");
+}
+
 pub fn processInstruction(
     input: &Instruction,
     sub: &Substitution,
     mono: &mut Monomorphizer,
     syntaxBlockId: &SyntaxBlockId,
     handlerResolutionStore: &mut HandlerResolutionStore,
+    impls: &Vec<QualifiedName>,
 ) -> Instruction {
     //println!("MONO INSTR {}", input);
     let mut instruction = input.clone();
@@ -64,7 +90,7 @@ pub fn processInstruction(
                 }
             };
             //println!("Target function: {}", target_fn.kind);
-            let (target_fn, resolution, contextSyntaxBlockId) = match target_fn.kind {
+            let (target_fn, resolution, contextSyntaxBlockId) = match &target_fn.kind {
                 FunctionKind::EffectMemberDecl(_) => {
                     //println!("Effect member call in mono!");
                     let (handlerResolution, contextSyntaxBlockId) = handlerResolutionStore.get(syntaxBlockId);
@@ -99,38 +125,33 @@ pub fn processInstruction(
                     };
                     (f, handlerResolution.clone(), contextSyntaxBlockId)
                 }
+                FunctionKind::ProtocolMemberDecl(_protocolName) => {
+                    let (handlerResolution, contextSyntaxBlockId) = handlerResolutionStore.get(syntaxBlockId);
+                    let fnType = target_fn.getType();
+                    // println!(
+                    //     "Protocol member call in mono: {} {} {}",
+                    //     info.name, fnType, _protocolName
+                    // );
+                    let (_, context_ty) = prepareTypes(sub, dest, info, fnType);
+                    // println!("protocol call fn type {}", fn_ty);
+                    // println!("protocol call context type {}", context_ty);
+                    // println!("all available implementations: {:?}", impls);
+                    let implMemberName = findMatchingImpl(impls, target_fn.name.getShortName(), &context_ty, mono);
+                    let targetFn = mono
+                        .program
+                        .getFunction(&implMemberName)
+                        .expect("function not found in mono");
+                    (targetFn, handlerResolution.clone(), contextSyntaxBlockId)
+                }
                 _ => {
                     let (handlerResolution, contextSyntaxBlockId) = handlerResolutionStore.get(syntaxBlockId);
                     (target_fn, handlerResolution.clone(), contextSyntaxBlockId)
                 }
             };
             //println!("Target function: {} {}", target_fn, contextSyntaxBlockId);
-            let fn_ty = target_fn.getType();
-            let fnResult = fn_ty.getResult();
-            let fn_ty = if fnResult.hasSelfType() {
-                //println!("fn type before {}", fn_ty);
-                let (args, result) = fn_ty.splitFnType().unwrap();
-                let result = result.changeSelfType(args[0].clone());
-                let fn_ty = Type::Function(args, Box::new(result));
-                //println!("fn type after {}", fn_ty);
-                fn_ty
-            } else {
-                fn_ty
-            };
-            let arg_types: Vec<_> = info
-                .args
-                .iter()
-                .map(|arg| {
-                    //println!("arg {}", arg);
-                    let ty = arg.getType();
-                    ty.clone().apply(&sub)
-                })
-                .collect();
-            //println!("sub {}", sub);
-            let result = dest.getType().clone().apply(sub);
-            let context_ty = Type::Function(arg_types, Box::new(result));
-            //println!("fn type {}", fn_ty);
-            //println!("context type {}", context_ty);
+            let (fn_ty, context_ty) = prepareTypes(sub, dest, info, target_fn.getType());
+            // println!("fn type {}", fn_ty);
+            // println!("context type {}", context_ty);
             let sub = createTypeSubstitution(context_ty.clone(), fn_ty.clone());
             //println!("target ctx {}", target_fn.constraintContext);
             let name = getFunctionName(target_fn.kind.clone(), target_fn.name.clone(), mono, &sub);
@@ -156,9 +177,14 @@ pub fn processInstruction(
                     };
                     (resolution, info)
                 };
-            let fn_name = mono.getMonoName(&name, &ty_args, resolution.clone());
+            let fn_name = mono.getMonoName(&name, &ty_args, resolution.clone(), info.implementations.clone());
             //println!("MONO CALL: {}", fn_name);
-            mono.addKey(Key::Function(name.clone(), ty_args, resolution));
+            mono.addKey(Key::Function(
+                name.clone(),
+                ty_args,
+                resolution,
+                info.implementations.clone(),
+            ));
             let mut callInfo = CallInfo::new(fn_name, info.args.clone());
             callInfo.context = callCtx;
             InstructionKind::FunctionCall(dest.clone(), callInfo)
@@ -173,7 +199,12 @@ pub fn processInstruction(
         InstructionKind::Drop(dropRes, dropVar) => {
             let ty = dropVar.ty.clone().apply(sub).unwrap();
             let (handlerResolution, contextSyntaxBlockId) = handlerResolutionStore.get(syntaxBlockId);
-            let monoName = mono.getMonoName(&getAutoDropFnName(), &vec![ty.clone()], handlerResolution.clone());
+            let monoName = mono.getMonoName(
+                &getAutoDropFnName(),
+                &vec![ty.clone()],
+                handlerResolution.clone(),
+                Vec::new(),
+            );
             mono.addKey(Key::AutoDropFn(
                 getAutoDropFnName(),
                 ty.clone(),
@@ -238,6 +269,34 @@ pub fn processInstruction(
     };
     instruction.kind = processInstructionKind(kind, sub, mono, syntaxBlockId, handlerResolutionStore);
     instruction
+}
+
+fn prepareTypes(sub: &Substitution, dest: &Variable, info: &CallInfo, targetFnType: Type) -> (Type, Type) {
+    let fn_ty = targetFnType;
+    let fnResult = fn_ty.getResult();
+    let fn_ty = if fnResult.hasSelfType() {
+        //println!("fn type before {}", fn_ty);
+        let (args, result) = fn_ty.splitFnType().unwrap();
+        let result = result.changeSelfType(args[0].clone());
+        let fn_ty = Type::Function(args, Box::new(result));
+        //println!("fn type after {}", fn_ty);
+        fn_ty
+    } else {
+        fn_ty
+    };
+    let arg_types: Vec<_> = info
+        .args
+        .iter()
+        .map(|arg| {
+            //println!("arg {}", arg);
+            let ty = arg.getType();
+            ty.clone().apply(&sub)
+        })
+        .collect();
+    //println!("sub {}", sub);
+    let result = dest.getType().clone().apply(sub);
+    let context_ty = Type::Function(arg_types, Box::new(result));
+    (fn_ty, context_ty)
 }
 
 pub fn processInstructionKind(

@@ -314,30 +314,31 @@ impl CallInfo {
 
 impl Display for CallInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(ctx) = &self.context {
-            write!(
-                f,
-                "call_info({}, [{}], {})",
-                self.name,
-                self.args
-                    .iter()
-                    .map(|arg| arg.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                ctx.contextSyntaxBlockId
-            )
+        let contextStr = if let Some(context) = &self.context {
+            format!(", context: {}", context.contextSyntaxBlockId)
         } else {
-            write!(
-                f,
-                "call_info({}, [{}])",
-                self.name,
-                self.args
+            "".to_string()
+        };
+        let implsStr = if !self.implementations.is_empty() {
+            format!(
+                ", implementations: [{}]",
+                self.implementations
                     .iter()
-                    .map(|arg| arg.to_string())
+                    .map(|i| i.to_string())
                     .collect::<Vec<_>>()
                     .join(", ")
             )
-        }
+        } else {
+            "".to_string()
+        };
+        write!(
+            f,
+            "function_call({}, [{}]{}{})",
+            self.name,
+            self.args.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(", "),
+            contextStr,
+            implsStr
+        )
     }
 }
 

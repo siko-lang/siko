@@ -10,7 +10,7 @@ use crate::siko::{
 pub enum Key {
     Struct(QualifiedName, Vec<Type>),
     Enum(QualifiedName, Vec<Type>),
-    Function(QualifiedName, Vec<Type>, HandlerResolution),
+    Function(QualifiedName, Vec<Type>, HandlerResolution, Vec<QualifiedName>),
     AutoDropFn(QualifiedName, Type, HandlerResolution),
 }
 
@@ -23,8 +23,16 @@ impl Display for Key {
             Key::Enum(name, types) => {
                 write!(f, "{}/{}", name, formatTypes(types))
             }
-            Key::Function(name, types, handlerResolution) => {
-                write!(f, "{}/{}/{}", name, formatTypes(types), handlerResolution)
+            Key::Function(name, types, handlerResolution, impls) => {
+                write!(f, "{}/{}/{}", name, formatTypes(types), handlerResolution)?;
+                if !impls.is_empty() {
+                    write!(
+                        f,
+                        ", implementations: [{}]",
+                        impls.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(", ")
+                    )?;
+                }
+                Ok(())
             }
             Key::AutoDropFn(name, ty, handlerResolution) => {
                 write!(f, "{}/{}/{}", name, ty, handlerResolution)

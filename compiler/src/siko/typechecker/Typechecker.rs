@@ -515,6 +515,7 @@ impl<'a> Typechecker<'a> {
                             // println!("found protocol impl for {}", c);
                             // println!("expected fn type {}", expectedFnType);
                             // println!("expected result type {}", expectedResult);
+                            //println!("Found protocol impl for {} adding {}", c, implDef.name);
                             checkResult.implNames.push(implDef.name.clone());
                         }
                     } else {

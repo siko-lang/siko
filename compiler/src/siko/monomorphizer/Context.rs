@@ -8,12 +8,14 @@ use crate::siko::{
     },
     location::Report::{Report, ReportContext},
     monomorphizer::Handler::HandlerResolution,
+    qualifiedname::QualifiedName,
 };
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Context {
     pub args: Vec<Type>,
     pub handlerResolution: HandlerResolution,
+    pub impls: Vec<QualifiedName>,
 }
 
 impl Context {
@@ -21,6 +23,7 @@ impl Context {
         Context {
             args: Vec::new(),
             handlerResolution: HandlerResolution::new(),
+            impls: Vec::new(),
         }
     }
 }
@@ -34,6 +37,10 @@ impl Display for Context {
         }
         if !self.handlerResolution.isEmpty() {
             write!(f, " handlers: {{{}}}", self.handlerResolution)?;
+        }
+        if !self.impls.is_empty() {
+            let impls: Vec<String> = self.impls.iter().map(|i| format!("{}", i)).collect();
+            write!(f, " impls: ({})", impls.join(", "))?;
         }
         Ok(())
     }

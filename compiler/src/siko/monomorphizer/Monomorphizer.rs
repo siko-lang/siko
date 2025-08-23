@@ -90,7 +90,12 @@ impl<'a> Monomorphizer<'a> {
         let main_name = getMainName();
         match self.program.functions.get(&main_name) {
             Some(_) => {
-                self.addKey(Key::Function(main_name, Vec::new(), HandlerResolution::new()));
+                self.addKey(Key::Function(
+                    main_name,
+                    Vec::new(),
+                    HandlerResolution::new(),
+                    Vec::new(),
+                ));
             }
             None => {
                 let slogan = format!(
@@ -128,8 +133,8 @@ impl<'a> Monomorphizer<'a> {
                     //println!("MONO Processing {}", key);
                     self.processed.insert(key.clone());
                     match key.clone() {
-                        Key::Function(name, args, handlerResolution) => {
-                            self.monomorphizeFunction(name, args, handlerResolution);
+                        Key::Function(name, args, handlerResolution, impls) => {
+                            self.monomorphizeFunction(name, args, handlerResolution, impls);
                         }
                         Key::Struct(name, args) => {
                             //println!("Processing structDef {}", key);
@@ -150,7 +155,13 @@ impl<'a> Monomorphizer<'a> {
         }
     }
 
-    fn monomorphizeFunction(&mut self, name: QualifiedName, args: Vec<Type>, handlerResolution: HandlerResolution) {
+    fn monomorphizeFunction(
+        &mut self,
+        name: QualifiedName,
+        args: Vec<Type>,
+        handlerResolution: HandlerResolution,
+        impls: Vec<QualifiedName>,
+    ) {
         //println!("MONO FN: {} {}", name, crate::siko::hir::Type::formatTypes(&args));
         let function = self
             .program
@@ -158,7 +169,6 @@ impl<'a> Monomorphizer<'a> {
             .get(&name)
             .expect("function not found in mono")
             .clone();
-
         //println!("Function: {}", function);
         if let FunctionKind::TraitMemberDecl(_) = function.kind {
             return;
@@ -172,13 +182,13 @@ impl<'a> Monomorphizer<'a> {
         let monoName = if name.isMonomorphized() {
             name.clone()
         } else {
-            self.getMonoName(&name, &args, handlerResolution.clone())
+            self.getMonoName(&name, &args, handlerResolution.clone(), impls.clone())
         };
         let sub = createTypeSubstitutionFrom(params, args);
         let mut monoFn = function.clone();
         monoFn.result = self.processType(monoFn.result.apply(&sub));
         monoFn.params = monoFn.params.process(&sub, self);
-        monoFn.body = processBody(monoFn.body.clone(), &sub, self, handlerResolution);
+        monoFn.body = processBody(monoFn.body.clone(), &sub, self, handlerResolution, &impls);
 
         monoFn.name = monoName.clone();
         //println!("MONO FN: {} => {}", name, monoName);
@@ -195,7 +205,7 @@ impl<'a> Monomorphizer<'a> {
         }
         let r = match ty.clone() {
             Type::Named(name, args) => {
-                let monoName = self.getMonoName(&name, &args, HandlerResolution::new());
+                let monoName = self.getMonoName(&name, &args, HandlerResolution::new(), Vec::new());
                 if self.program.structs.contains_key(&name) {
                     self.addKey(Key::Struct(name, args))
                 } else if self.program.enums.contains_key(&name) {
@@ -228,6 +238,7 @@ impl<'a> Monomorphizer<'a> {
         name: &QualifiedName,
         args: &Vec<Type>,
         handlerResolution: HandlerResolution,
+        impls: Vec<QualifiedName>,
     ) -> QualifiedName {
         if args.is_empty() && handlerResolution.isEmpty() {
             name.clone()
@@ -235,6 +246,7 @@ impl<'a> Monomorphizer<'a> {
             let context = Context {
                 args: args.iter().cloned().collect(),
                 handlerResolution: handlerResolution,
+                impls: impls,
             };
             name.monomorphized(context)
         }
@@ -245,7 +257,7 @@ impl<'a> Monomorphizer<'a> {
         let targetTy = Type::Named(name.clone(), args.clone());
         let c = self.program.structs.get(&name).expect("structDef not found in mono");
         let mut c = instantiateStruct(&mut TypeVarAllocator::new(), c, &targetTy);
-        let name = self.getMonoName(&name, &args, HandlerResolution::new());
+        let name = self.getMonoName(&name, &args, HandlerResolution::new(), Vec::new());
         c.ty = self.processType(c.ty);
         c.fields = c
             .fields
@@ -267,14 +279,14 @@ impl<'a> Monomorphizer<'a> {
         let targetTy = Type::Named(name.clone(), args.clone());
         let mut e = instantiateEnum(&mut TypeVarAllocator::new(), e, &targetTy);
         //println!("Enum ty {}", e.ty);
-        let name = self.getMonoName(&name, &args, HandlerResolution::new());
+        let name = self.getMonoName(&name, &args, HandlerResolution::new(), Vec::new());
         //println!("Sub {}", sub);
         e.variants = e
             .variants
             .iter()
             .cloned()
             .map(|mut v| {
-                v.name = self.getMonoName(&v.name, &args, HandlerResolution::new());
+                v.name = self.getMonoName(&v.name, &args, HandlerResolution::new(), Vec::new());
                 v.items = v.items.into_iter().map(|i| self.processType(i)).collect();
                 v
             })
@@ -286,7 +298,7 @@ impl<'a> Monomorphizer<'a> {
 
     fn monomorphizeAutoDropFn(&mut self, name: QualifiedName, ty: Type, handlerResolution: HandlerResolution) {
         //println!("MONO AUTO DROP: {} {}", name, ty);
-        let monoName = self.getMonoName(&name, &vec![ty.clone()], handlerResolution.clone());
+        let monoName = self.getMonoName(&name, &vec![ty.clone()], handlerResolution.clone(), Vec::new());
 
         let mut bodyBuilder = BodyBuilder::new();
         let mut builder = bodyBuilder.createBlock();
@@ -401,6 +413,6 @@ impl<'a> Monomorphizer<'a> {
         };
 
         self.program.functions.insert(monoName.clone(), dropFn);
-        self.addKey(Key::Function(monoName, Vec::new(), handlerResolution));
+        self.addKey(Key::Function(monoName, Vec::new(), handlerResolution, Vec::new()));
     }
 }

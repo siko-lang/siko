@@ -10,6 +10,7 @@ use crate::siko::{
         Context::HandlerResolutionStore, Handler::HandlerResolution, Instruction::processInstruction,
         Monomorphizer::Monomorphizer,
     },
+    qualifiedname::QualifiedName,
 };
 
 pub fn processBody(
@@ -17,6 +18,7 @@ pub fn processBody(
     sub: &Substitution,
     mono: &mut Monomorphizer,
     handlerResolution: HandlerResolution,
+    impls: &Vec<QualifiedName>,
 ) -> Option<Body> {
     match input {
         Some(body) => {
@@ -29,8 +31,14 @@ pub fn processBody(
             );
             let mut syntaxBlockIterator = SyntaxBlockIterator::new(bodyBuilder.clone());
             syntaxBlockIterator.iterate(|instruction, syntaxBlockId, blockBuilder| {
-                let instruction =
-                    processInstruction(instruction, sub, mono, syntaxBlockId, &mut handlerResolutionStore);
+                let instruction = processInstruction(
+                    instruction,
+                    sub,
+                    mono,
+                    syntaxBlockId,
+                    &mut handlerResolutionStore,
+                    impls,
+                );
                 blockBuilder.replaceInstruction(instruction.kind, instruction.location.clone());
             });
             mono.resolutionStores.push(handlerResolutionStore);
