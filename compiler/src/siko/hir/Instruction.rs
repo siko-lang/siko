@@ -294,11 +294,26 @@ pub struct CallContextInfo {
 }
 
 #[derive(Clone, PartialEq)]
+pub enum ImplementationReference {
+    Direct(QualifiedName),
+    Indirect(u32),
+}
+
+impl Display for ImplementationReference {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ImplementationReference::Direct(name) => write!(f, "{}", name),
+            ImplementationReference::Indirect(index) => write!(f, "impl(#{})", index),
+        }
+    }
+}
+
+#[derive(Clone, PartialEq)]
 pub struct CallInfo {
     pub name: QualifiedName,
     pub args: Vec<Variable>,
     pub context: Option<CallContextInfo>,
-    pub implementations: Vec<QualifiedName>,
+    pub implementations: Vec<ImplementationReference>,
 }
 
 impl CallInfo {

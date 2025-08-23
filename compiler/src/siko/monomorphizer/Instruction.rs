@@ -6,8 +6,8 @@ use crate::siko::{
         Function::FunctionKind,
         InstanceResolver::ResolutionResult,
         Instruction::{
-            CallContextInfo, CallInfo, ImplicitContextIndex, ImplicitContextOperation, ImplicitIndex, Instruction,
-            InstructionKind, SyntaxBlockId, WithContext,
+            CallContextInfo, CallInfo, ImplementationReference, ImplicitContextIndex, ImplicitContextOperation,
+            ImplicitIndex, Instruction, InstructionKind, SyntaxBlockId, WithContext,
         },
         Substitution::Substitution,
         Type::{formatTypes, Type},
@@ -177,14 +177,24 @@ pub fn processInstruction(
                     };
                     (resolution, info)
                 };
-            let fn_name = mono.getMonoName(&name, &ty_args, resolution.clone(), info.implementations.clone());
+            let mut resolvedImpls = Vec::new();
+            for implRef in &info.implementations {
+                match implRef {
+                    ImplementationReference::Direct(name) => {
+                        resolvedImpls.push(name.clone());
+                    }
+                    ImplementationReference::Indirect(index) => {
+                        if let Some(name) = impls.get(*index as usize) {
+                            resolvedImpls.push(name.clone());
+                        } else {
+                            panic!("indirect implementation reference out of bounds");
+                        }
+                    }
+                }
+            }
+            let fn_name = mono.getMonoName(&name, &ty_args, resolution.clone(), resolvedImpls.clone());
             //println!("MONO CALL: {}", fn_name);
-            mono.addKey(Key::Function(
-                name.clone(),
-                ty_args,
-                resolution,
-                info.implementations.clone(),
-            ));
+            mono.addKey(Key::Function(name.clone(), ty_args, resolution, resolvedImpls));
             let mut callInfo = CallInfo::new(fn_name, info.args.clone());
             callInfo.context = callCtx;
             InstructionKind::FunctionCall(dest.clone(), callInfo)

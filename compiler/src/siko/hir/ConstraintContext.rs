@@ -61,6 +61,15 @@ impl ConstraintContext {
         }
         false
     }
+
+    pub fn containsAt(&self, constraint: &Constraint) -> Option<u32> {
+        for (index, c) in self.constraints.iter().enumerate() {
+            if c.name == constraint.name && c.args == constraint.args {
+                return Some(index as u32);
+            }
+        }
+        None
+    }
 }
 
 impl Display for ConstraintContext {

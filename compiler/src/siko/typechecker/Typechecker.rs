@@ -19,7 +19,8 @@ use crate::siko::{
             instantiateEnum, instantiateImplementation, instantiateStruct, instantiateTrait, instantiateTypes,
         },
         Instruction::{
-            CallInfo, FieldId, FieldInfo, ImplicitIndex, Instruction, InstructionKind, Mutability, WithContext,
+            CallInfo, FieldId, FieldInfo, ImplementationReference, ImplicitIndex, Instruction, InstructionKind,
+            Mutability, WithContext,
         },
         Program::Program,
         ProtocolMethodSelector::ProtocolMethodSelector,
@@ -105,7 +106,7 @@ impl Debug for ReceiverChainEntry {
 struct CheckFunctionCallResult {
     pub fnType: Type,
     pub fnName: QualifiedName,
-    pub implNames: Vec<QualifiedName>,
+    pub implRefs: Vec<ImplementationReference>,
 }
 
 pub struct Typechecker<'a> {
@@ -424,7 +425,7 @@ impl<'a> Typechecker<'a> {
         let mut checkResult = CheckFunctionCallResult {
             fnType: expectedFnType.clone(),
             fnName: fnName.clone(),
-            implNames: Vec::new(),
+            implRefs: Vec::new(),
         };
         if useProtocol {
             // println!(
@@ -472,7 +473,7 @@ impl<'a> Typechecker<'a> {
             //println!("applied needed constraints {}", neededConstraints);
 
             for c in &neededConstraints.constraints {
-                if self.knownConstraints.contains(&c) {
+                if let Some(index) = self.knownConstraints.containsAt(&c) {
                     // impl will be provided later during mono
                     //println!("Using known implementation for {}", c);
                     let expectedFnType = expectedFnType.clone().apply(&self.substitution);
@@ -481,6 +482,7 @@ impl<'a> Typechecker<'a> {
                     //println!("expected fn type {}", expectedFnType);
                     checkResult.fnType = expectedFnType.clone();
                     checkResult.fnName = fnName.clone();
+                    checkResult.implRefs.push(ImplementationReference::Indirect(index));
                 } else {
                     // we will select an impl now
                     //println!("Trying to find implementation for {}", c);
@@ -516,7 +518,9 @@ impl<'a> Typechecker<'a> {
                             // println!("expected fn type {}", expectedFnType);
                             // println!("expected result type {}", expectedResult);
                             //println!("Found protocol impl for {} adding {}", c, implDef.name);
-                            checkResult.implNames.push(implDef.name.clone());
+                            checkResult
+                                .implRefs
+                                .push(ImplementationReference::Direct(implDef.name.clone()));
                         }
                     } else {
                         TypecheckerError::NoImplementationFound(c.to_string(), resultVar.location.clone())
@@ -833,7 +837,7 @@ impl<'a> Typechecker<'a> {
                 let checkResult =
                     self.checkFunctionCall(&info.name, &info.args, dest, fnType, &targetFn.constraintContext, false);
                 let mut info = info.clone();
-                info.implementations = checkResult.implNames;
+                info.implementations = checkResult.implRefs;
                 let kind = InstructionKind::FunctionCall(dest.clone(), info);
                 builder.replaceInstruction(kind, instruction.location.clone());
             }
