@@ -16,8 +16,7 @@ use crate::siko::{
         Function::{BlockId, Function, Parameter},
         ImplementationStore::ImplementationStore,
         Instantiation::{
-            instantiateEnum, instantiateImplementation, instantiateStruct, instantiateTrait, instantiateType,
-            instantiateTypes,
+            instantiateEnum, instantiateImplementation, instantiateStruct, instantiateType, instantiateTypes,
         },
         Instruction::{
             CallInfo, FieldId, FieldInfo, ImplementationReference, ImplicitIndex, Instruction, InstructionKind,
@@ -42,6 +41,7 @@ use crate::siko::{
     },
     typechecker::{
         ConstraintChecker::ConstraintChecker,
+        ConstraintExpander::ConstraintExpander,
         ImplementationResolver::{ImplSearchResult, ImplementationResolver},
     },
 };
@@ -164,11 +164,18 @@ impl<'a> Typechecker<'a> {
     pub fn run(&mut self) -> Function {
         //println!("Typechecking function {}", self.f.name);
         self.initialize();
-        self.expandKnownConstraints();
+        self.knownConstraints = self
+            .createConstraintExpander(self.knownConstraints.clone())
+            .expandKnownConstraints();
         //self.dump(self.f);
         self.check();
         //self.dump(self.f);
         self.generate()
+    }
+
+    fn createConstraintExpander(&mut self, constraints: ConstraintContext) -> ConstraintExpander {
+        let expander = ConstraintExpander::new(self.program, self.f, self.allocator.clone(), constraints);
+        expander
     }
 
     fn initializeVar(&mut self, var: &Variable) {
@@ -438,7 +445,10 @@ impl<'a> Typechecker<'a> {
         types.push(fnType.clone());
         let sub = instantiateTypes(&mut self.allocator, &types);
         let expectedFnType = fnType.apply(&sub);
-        let neededConstraints = f.constraintContext.clone().apply(&sub);
+        let neededConstraints = self
+            .createConstraintExpander(f.constraintContext.clone())
+            .expandKnownConstraints();
+        let neededConstraints = neededConstraints.apply(&sub);
         let (expectedArgs, mut expectedResult) = match expectedFnType.clone().splitFnType() {
             Some((fnArgs, fnResult)) => (fnArgs, fnResult),
             None => panic!("Function type {} is not a function type!", expectedFnType),
@@ -1598,37 +1608,6 @@ impl<'a> Typechecker<'a> {
                     instruction.kind = instruction.kind.replaceVar(var, newVar);
                 }
             }
-        }
-    }
-
-    fn expandKnownConstraints(&mut self) {
-        //println!("expandKnownConstraints {}", self.f.name);
-        let mut processed = Vec::new();
-        let start = self.knownConstraints.constraints.clone();
-        for c in &start {
-            self.expandKnownConstraint(c, &mut processed);
-        }
-    }
-
-    fn expandKnownConstraint(&mut self, c: &Constraint, processed: &mut Vec<Constraint>) {
-        if processed.contains(c) {
-            return;
-        }
-        //println!("expandKnownConstraint {}", c);
-        processed.push(c.clone());
-        let traitDef = match self.program.getTrait(&c.name) {
-            Some(traitDef) => traitDef,
-            None => return, // protocol
-        };
-        let traitDef = instantiateTrait(&mut self.allocator, &traitDef);
-        let mut sub = Substitution::new();
-        for (arg, ctxArg) in zip(&traitDef.params, &c.args) {
-            sub.add(arg.clone(), ctxArg.clone());
-        }
-        let traitDef = traitDef.apply(&sub);
-        self.knownConstraints.constraints.push(c.clone());
-        for c in traitDef.constraint.constraints {
-            self.expandKnownConstraint(&c, processed);
         }
     }
 

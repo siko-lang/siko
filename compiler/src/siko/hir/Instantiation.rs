@@ -4,7 +4,7 @@ use crate::siko::hir::{
     Apply::Apply,
     Data::{Enum, Struct},
     Substitution::Substitution,
-    Trait::{Implementation, Instance, Trait},
+    Trait::{Implementation, Instance, Protocol, Trait},
     Type::Type,
     TypeVarAllocator::TypeVarAllocator,
     Unification::unify,
@@ -60,6 +60,11 @@ pub fn instantiateImplementation(allocator: &TypeVarAllocator, i: &Implementatio
 pub fn instantiateTrait(allocator: &mut TypeVarAllocator, t: &Trait) -> Trait {
     let sub = instantiateTypes(allocator, &t.params);
     t.clone().apply(&sub)
+}
+
+pub fn instantiateProtocol(allocator: &mut TypeVarAllocator, p: &Protocol) -> Protocol {
+    let sub = instantiateTypes(allocator, &p.params);
+    p.clone().apply(&sub)
 }
 
 pub fn instantiateTypes(allocator: &mut TypeVarAllocator, types: &Vec<Type>) -> Substitution {
