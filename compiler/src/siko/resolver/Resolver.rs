@@ -464,7 +464,7 @@ impl<'a> Resolver<'a> {
                                     SynParam::Named(_, ty, _) => typeResolver.resolveType(ty),
                                     SynParam::SelfParam => selfType.clone(),
                                     SynParam::MutSelfParam => selfType.clone(),
-                                    SynParam::RefSelfParam => selfType.clone(),
+                                    SynParam::RefSelfParam => IrType::Reference(Box::new(selfType.clone()), None),
                                 };
                                 argTypes.push(ty);
                             }

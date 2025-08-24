@@ -44,40 +44,47 @@ pub extern struct Int {
     }
 }
 
-instance Add[Int, Int] {
+pub impl AddInt Add[Int, Int] {
     type Output = Int
     fn add(self, other: Int) -> Int {
         self.add(other)
     }
 }
 
-instance Sub[Int] {
+pub impl AddIntRef Add[Int, &Int] {
+    type Output = Int
+    fn add(self, other: &Int) -> Int {
+        self.add(other.clone())
+    }
+}
+
+pub impl SubInt Sub[Int, Int] {
     fn sub(self, other: Int) -> Int {
         self.sub(other)
     }
 }
 
-instance Mul[Int] {
+pub impl MulInt Mul[Int, Int] {
     fn mul(self, other: Int) -> Int {
         self.mul(other)
     }
 }
 
-instance Div[Int] {
+pub impl DivInt Div[Int, Int] {
     fn div(self, other: Int) -> Int {
         self.div(other)
     }
 }
 
-instance PartialEq[Int] {
+pub impl PartialEqInt PartialEq[Int] {
     fn eq(&self, other: &Int) -> Bool {
         self.eq(other)
     }
 }
 
-instance Eq[Int]
+pub impl EqInt Eq[Int]
 
-instance PartialOrd[Int] {
+pub impl PartialOrdInt PartialOrd[Int] {
     fn partialCmp(&self, other: &Int) -> Option[Ordering] {
         if self.eq(other) {
             Some(Equal)
@@ -91,7 +98,7 @@ instance PartialOrd[Int] {
     }
 }
 
-instance Ord[Int] {
+pub impl OrdInt Ord[Int] {
     fn cmp(&self, other: &Int) -> Ordering {
         if self.eq(other) {
             Equal
@@ -113,15 +120,16 @@ instance Clone[Int] {
 
 instance Copy[Int]
 
-instance Neg[Int] {
+pub impl NegInt Neg[Int] {
     fn negative(self) -> Int {
         0 - self
     }
 }
 
-instance Show[Int] {
+pub impl ShowInt Show[Int] {
     fn show(&self) -> String {
-        showNum(self)
+        //showNum(self)
+        showInt(self)
     }
 }
 
@@ -147,32 +155,24 @@ trait Mod[T] {
     fn mod(&self, other: &T) -> T
 }
 
-fn showNum[T: Clone[T], Copy[T], PartialEq[T],
-              PartialOrd[T], Neg[T],
-              Mod[T], From[Int, T], Into[T, Int],
-              Div[T], Add[T, T, Output=T]](num: &T) -> String {
-    // FIXME: fix constants
-    let zero: T = from(0);
-    let ten: T = from(10);
-    let offset: T = from(48);
-
+fn showInt(num: &Int) -> String {
     let mut n = num.clone();
-    if n == zero {
+    if n == 0 {
         return "0".toString();
     }
 
     let mut isNegative = False;
 
-    if n < zero {
+    if n < 0 {
         isNegative = True;
         n = -n;
     }
 
     let mut digits: Vec[U8] = Vec.new();
 
-    while n > zero {
-        let base: T = ten.clone();
-        let value: T = n.mod(base) + offset.clone();
+    while n > 0 {
+        let base = 10;
+        let value = n.mod(base) + '0'.toInt();
         let digit: Int = value.into();
         digits.push(digit.toU8());
         n /= base;
@@ -186,6 +186,46 @@ fn showNum[T: Clone[T], Copy[T], PartialEq[T],
 
     String.fromU8(digits)
 }
+
+// fn showNum[T: Clone[T], Copy[T], PartialEq[T],
+//               PartialOrd[T], Neg[T],
+//               Mod[T], From[Int, T], Into[T, Int],
+//               Div[T], Add[T, T, Output=T]](num: &T) -> String {
+//     // FIXME: fix constants
+//     let zero: T = from(0);
+//     let ten: T = from(10);
+//     let offset: T = from(48);
+
+//     let mut n = num.clone();
+//     if n == zero {
+//         return "0".toString();
+//     }
+
+//     let mut isNegative = False;
+
+//     if n < zero {
+//         isNegative = True;
+//         n = -n;
+//     }
+
+//     let mut digits: Vec[U8] = Vec.new();
+
+//     while n > zero {
+//         let base: T = ten.clone();
+//         let value: T = n.mod(base) + offset.clone();
+//         let digit: Int = value.into();
+//         digits.push(digit.toU8());
+//         n /= base;
+//     }
+
+//     if isNegative {
+//         digits.push('-');
+//     }
+
+//     digits.reverse();
+
+//     String.fromU8(digits)
+// }
 
 pub extern struct U8 {
     pub fn add(self, other: U8) -> U8 = extern
@@ -209,40 +249,40 @@ pub extern struct U8 {
     }
 }
 
-instance Add[U8, U8] {
+pub impl AddU8 Add[U8, U8] {
     type Output = U8
     fn add(self, other: U8) -> U8 {
         self.add(other)
     }
 }
 
-instance Sub[U8] {
+pub impl SubU8 Sub[U8] {
     fn sub(self, other: U8) -> U8 {
         self.sub(other)
     }
 }
 
-instance Mul[U8] {
+pub impl MulU8 Mul[U8, U8] {
     fn mul(self, other: U8) -> U8 {
         self.mul(other)
     }
 }
 
-instance Div[U8] {
+pub impl DivU8 Div[U8, U8] {
     fn div(self, other: U8) -> U8 {
         self.div(other)
     }
 }
 
-instance PartialEq[U8] {
+pub impl PartialEqU8 PartialEq[U8] {
     fn eq(&self, other: &U8) -> Bool {
         self.eq(other)
     }
 }
 
-instance Eq[U8]
+pub impl EqU8 Eq[U8]
 
-instance PartialOrd[U8] {
+pub impl PartialOrdU8 PartialOrd[U8] {
     fn partialCmp(&self, other: &U8) -> Option[Ordering] {
         if self.eq(other) {
             Some(Equal)
@@ -256,7 +296,7 @@ instance PartialOrd[U8] {
     }
 }
 
-instance Ord[U8] {
+pub impl OrdU8 Ord[U8] {
     fn cmp(&self, other: &U8) -> Ordering {
         if self.eq(other) {
             Equal
@@ -302,40 +342,40 @@ pub extern struct I8 {
     }
 }
 
-instance Add[I8, I8] {
+pub impl AddI8 Add[I8, I8] {
     type Output = I8
     fn add(self, other: I8) -> I8 {
         self.add(other)
     }
 }
 
-instance Sub[I8] {
+pub impl SubI8 Sub[I8] {
     fn sub(self, other: I8) -> I8 {
         self.sub(other)
     }
 }
 
-instance Mul[I8] {
+pub impl MulI8 Mul[I8, I8] {
     fn mul(self, other: I8) -> I8 {
         self.mul(other)
     }
 }
 
-instance Div[I8] {
+pub impl DivI8 Div[I8, I8] {
     fn div(self, other: I8) -> I8 {
         self.div(other)
     }
 }
 
-instance PartialEq[I8] {
+pub impl PartialEqI8 PartialEq[I8] {
     fn eq(&self, other: &I8) -> Bool {
         self.eq(other)
     }
 }
 
-instance Eq[I8]
+pub impl EqI8 Eq[I8]
 
-instance PartialOrd[I8] {
+pub impl PartialOrdI8 PartialOrd[I8] {
     fn partialCmp(&self, other: &I8) -> Option[Ordering] {
         if self.eq(other) {
             Some(Equal)
@@ -349,7 +389,7 @@ instance PartialOrd[I8] {
     }
 }
 
-instance Ord[I8] {
+pub impl OrdI8 Ord[I8] {
     fn cmp(&self, other: &I8) -> Ordering {
         if self.eq(other) {
             Equal
@@ -393,40 +433,40 @@ pub extern struct I32 {
     }
 }
 
-instance Add[I32, I32] {
+pub impl AddI32 Add[I32, I32] {
     type Output = I32
     fn add(self, other: I32) -> I32 {
         self.add(other)
     }
 }
 
-instance Sub[I32] {
+pub impl SubI32 Sub[I32] {
     fn sub(self, other: I32) -> I32 {
         self.sub(other)
     }
 }
 
-instance Mul[I32] {
+pub impl MulI32 Mul[I32, I32] {
     fn mul(self, other: I32) -> I32 {
         self.mul(other)
     }
 }
 
-instance Div[I32] {
+pub impl DivI32 Div[I32, I32] {
     fn div(self, other: I32) -> I32 {
         self.div(other)
     }
 }
 
-instance PartialEq[I32] {
+pub impl PartialEqI32 PartialEq[I32] {
     fn eq(&self, other: &I32) -> Bool {
         self.eq(other)
     }
 }
 
-instance Eq[I32]
+pub impl EqI32 Eq[I32]
 
-instance PartialOrd[I32] {
+pub impl PartialOrdI32 PartialOrd[I32] {
     fn partialCmp(&self, other: &I32) -> Option[Ordering] {
         if self.eq(other) {
             Some(Equal)
@@ -440,7 +480,7 @@ instance PartialOrd[I32] {
     }
 }
 
-instance Ord[I32] {
+pub impl OrdI32 Ord[I32] {
     fn cmp(&self, other: &I32) -> Ordering {
         if self.eq(other) {
             Equal
@@ -486,47 +526,47 @@ pub extern struct U32 {
     }
 }
 
-instance Add[U32, U32] {
+pub impl AddU32 Add[U32, U32] {
     type Output = U32
     fn add(self, other: U32) -> U32 {
         self.add(other)
     }
 }
 
-instance Add[U32, &U32] {
+pub impl AddU32 Add[U32, &U32] {
     type Output = U32
     fn add(self, other: &U32) -> U32 {
         self.add(other)
     }
 }
 
-instance Sub[U32] {
+pub impl SubU32 Sub[U32] {
     fn sub(self, other: U32) -> U32 {
         self.sub(other)
     }
 }
 
-instance Mul[U32] {
+pub impl MulU32 Mul[U32, U32] {
     fn mul(self, other: U32) -> U32 {
         self.mul(other)
     }
 }
 
-instance Div[U32] {
+pub impl DivU32 Div[U32, U32] {
     fn div(self, other: U32) -> U32 {
         self.div(other)
     }
 }
 
-instance PartialEq[U32] {
+pub impl PartialEqU32 PartialEq[U32] {
     fn eq(&self, other: &U32) -> Bool {
         self.eq(other)
     }
 }
 
-instance Eq[U32]
+pub impl EqU32 Eq[U32]
 
-instance PartialOrd[U32] {
+pub impl PartialOrdU32 PartialOrd[U32] {
     fn partialCmp(&self, other: &U32) -> Option[Ordering] {
         if self.eq(other) {
             Some(Equal)
@@ -540,7 +580,7 @@ instance PartialOrd[U32] {
     }
 }
 
-instance Ord[U32] {
+pub impl OrdU32 Ord[U32] {
     fn cmp(&self, other: &U32) -> Ordering {
         if self.eq(other) {
             Equal
@@ -607,40 +647,40 @@ pub extern struct U64 {
     }
 }
 
-instance Add[U64, U64] {
+pub impl AddU64 Add[U64, U64] {
     type Output = U64
     fn add(self, other: U64) -> U64 {
         self.add(other)
     }
 }
 
-instance Sub[U64] {
+pub impl SubU64 Sub[U64, U64] {
     fn sub(self, other: U64) -> U64 {
         self.sub(other)
     }
 }
 
-instance Mul[U64] {
+pub impl MulU64 Mul[U64, U64] {
     fn mul(self, other: U64) -> U64 {
         self.mul(other)
     }
 }
 
-instance Div[U64] {
+pub impl DivU64 Div[U64, U64] {
     fn div(self, other: U64) -> U64 {
         self.div(other)
     }
 }
 
-instance PartialEq[U64] {
+pub impl PartialEqU64 PartialEq[U64] {
     fn eq(&self, other: &U64) -> Bool {
         self.eq(other)
     }
 }
 
-instance Eq[U64]
+pub impl EqU64 Eq[U64]
 
-instance PartialOrd[U64] {
+pub impl PartialOrdU64 PartialOrd[U64] {
     fn partialCmp(&self, other: &U64) -> Option[Ordering] {
         if self.eq(other) {
             Some(Equal)
@@ -654,7 +694,7 @@ instance PartialOrd[U64] {
     }
 }
 
-instance Ord[U64] {
+pub impl OrdU64 Ord[U64] {
     fn cmp(&self, other: &U64) -> Ordering {
         if self.eq(other) {
             Equal
@@ -676,13 +716,14 @@ instance Clone[U64] {
 
 instance Copy[U64]
 
-instance Show[U64] {
+pub impl ShowU64 Show[U64] {
     fn show(&self) -> String {
-        showNum(self)
+        //showNum(self)
+        showInt(self.toInt())
     }
 }
 
-instance Neg[U64] {
+pub impl NegU64 Neg[U64] {
     fn negative(self) -> U64 {
         self
     }

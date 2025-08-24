@@ -61,7 +61,7 @@ pub struct Slice[T] {
         Slice(self.getPtr(from), newSize)
     }
 
-    pub fn sort[T: Ord[T]](mut self) -> Self {
+    pub fn sort[T: Ord[T], PartialEq[T], PartialOrd[T]](mut self) -> Self {
         if self.len() <= 1 {
             return self;
         }
@@ -70,7 +70,7 @@ pub struct Slice[T] {
         self
     }
 
-    pub fn sort2[T: Ord[T]](mut self) -> Self {
+    pub fn sort2[T: Ord[T], PartialEq[T], PartialOrd[T]](mut self) -> Self {
         if self.len() <= 1 {
             return self;
         }
@@ -79,7 +79,7 @@ pub struct Slice[T] {
         self
     }
 
-    fn quickSort[T: Ord[T]](mut self) -> Self {
+    fn quickSort[T: Ord[T], PartialEq[T], PartialOrd[T]](mut self) -> Self {
         if self.len() <= 1 {
             return self;
         }
@@ -91,10 +91,10 @@ pub struct Slice[T] {
         self
     }
 
-    fn partition[T: Ord[T]](mut self) -> (Self, Int) {
+    fn partition[T: Ord[T], PartialEq[T], PartialOrd[T]](mut self) -> (Self, Int) {
         let lo = 0;
         let hi = self.len() - 1;
-        let pivot = self.getUnchecked(hi);
+        let pivot: T = *(toPtr(self.getUnchecked(hi)));
         let mut i = lo - 1;
         for j in lo..hi {
             if self.getUnchecked(j) <= pivot {
@@ -106,7 +106,7 @@ pub struct Slice[T] {
         (self, i + 1)
     }
 
-    fn quickSort2[T: Ord[T]](mut self) -> Self {
+    fn quickSort2[T: Ord[T], PartialEq[T], PartialOrd[T]](mut self) -> Self {
         if self.len() <= 1 {
             return self;
         }
@@ -114,18 +114,18 @@ pub struct Slice[T] {
         let (lt, gt) = self.partition3();
 
         // Recursively sort < pivot
-        self.subSlice(0, lt).quickSort();
+        self.subSlice(0, lt).quickSort2();
 
         // Recursively sort > pivot
-        self.subSlice(gt + 1, self.len()).quickSort();
+        self.subSlice(gt + 1, self.len()).quickSort2();
 
         self
     }
 
-    fn partition3[T: Ord[T]](mut self) -> (Self, Int, Int) {
+    fn partition3[T: Ord[T], PartialEq[T], PartialOrd[T]](mut self) -> (Self, Int, Int) {
         let lo = 0;
         let hi = self.len() - 1;
-        let pivot = self.getUnchecked(lo); // pick first element as pivot
+        let pivot: T = *(toPtr(self.getUnchecked(lo))); // pick first element as pivot
 
         let mut lt = lo;   // end of < pivot region
         let mut gt = hi;   // start of > pivot region

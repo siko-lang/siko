@@ -287,6 +287,13 @@ impl FunctionKind {
             _ => false,
         }
     }
+
+    pub fn isProtocolCall(&self) -> bool {
+        match self {
+            FunctionKind::ProtocolMemberDecl(_) | FunctionKind::ProtocolMemberDefinition(_) => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

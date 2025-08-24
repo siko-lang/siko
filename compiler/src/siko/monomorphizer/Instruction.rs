@@ -46,6 +46,7 @@ fn findMatchingImpl(
     context_ty: &Type,
     mono: &Monomorphizer,
 ) -> QualifiedName {
+    //println!("Looking for impl of {} for {}", shortName, context_ty);
     for implName in impls {
         //println!("impl {}", implName);
         let implDef = mono
@@ -76,7 +77,10 @@ pub fn processInstruction(
     let mut instruction = input.clone();
     let kind: InstructionKind = match &input.kind {
         InstructionKind::FunctionCall(dest, info) => {
-            //println!("Calling {} in block {}", info.name, syntaxBlockId);
+            // println!(
+            //     "Calling {} in block {} with impls {:?}",
+            //     info.name, syntaxBlockId, impls
+            // );
             let target_fn = match mono.program.getFunction(&info.name) {
                 Some(f) => f,
                 None => {
@@ -132,8 +136,8 @@ pub fn processInstruction(
                     //     "Protocol member call in mono: {} {} {}",
                     //     info.name, fnType, _protocolName
                     // );
-                    let (_, context_ty) = prepareTypes(sub, dest, info, fnType);
-                    // println!("protocol call fn type {}", fn_ty);
+                    let (_fn_ty, context_ty) = prepareTypes(sub, dest, info, fnType);
+                    // println!("protocol call fn type {}", _fn_ty);
                     // println!("protocol call context type {}", context_ty);
                     // println!("all available implementations: {:?}", impls);
                     let implMemberName = findMatchingImpl(impls, target_fn.name.getShortName(), &context_ty, mono);
@@ -187,7 +191,10 @@ pub fn processInstruction(
                         if let Some(name) = impls.get(*index as usize) {
                             resolvedImpls.push(name.clone());
                         } else {
-                            panic!("indirect implementation reference out of bounds");
+                            panic!(
+                                "indirect implementation reference out of bounds {} impls {:?}",
+                                index, impls
+                            );
                         }
                     }
                 }

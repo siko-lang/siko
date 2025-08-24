@@ -18,7 +18,7 @@ pub struct Map[K, V] {
         Map(null())
     }
 
-    pub fn insert[K: Ord[K]](mut self, key: K, value: V) -> (Self, Option[V]) {
+    pub fn insert[K: Ord[K], PartialEq[K], PartialOrd[K]](mut self, key: K, value: V) -> (Self, Option[V]) {
         let (value, new_root) = insertNode(self.root, key, value);
         self.root = new_root;
         if !self.root.isNull() {
@@ -27,7 +27,7 @@ pub struct Map[K, V] {
         (self, value)
     }
 
-    pub fn remove[K: Ord[K]](mut self, key: K) -> (Self, Option[V]) {
+    pub fn remove[K: Ord[K], PartialEq[K], PartialOrd[K]](mut self, key: K) -> (Self, Option[V]) {
         let (value, new_root) = removeNode(self.root, key);
         self.root = new_root;
         if !self.root.isNull() {
@@ -36,7 +36,7 @@ pub struct Map[K, V] {
         (self, value)
     }
 
-    pub fn get[K: Ord[K]](&self, key: K) -> Option[&V] {
+    pub fn get[K: Ord[K], PartialEq[K], PartialOrd[K]](&self, key: K) -> Option[&V] {
         let result = searchNode(self.root, key);
         if result.isNull() {
             None
@@ -175,7 +175,7 @@ fn rebalance[K, V](mut root: *Node[K, V]) -> *Node[K, V] {
     root
 }
 
-fn insertNode[K, V: Ord[K]](mut root: *Node[K, V], key: K, value: V) -> (Option[V], *Node[K, V]) {
+fn insertNode[K, V: Ord[K], PartialEq[K], PartialOrd[K]](mut root: *Node[K, V], key: K, value: V) -> (Option[V], *Node[K, V]) {
     if root.isNull() {
         let n = newNode(key, value);
         return (None, n);
@@ -216,7 +216,7 @@ fn dump_tree[K, V: Show[K], Show[V]](root: *Node[K, V], level: Int) {
     dump_tree(root.right, level + 1);
 }
 
-fn removeNode[K, V: Ord[K]](mut root: *Node[K, V], key: K) -> (Option[V], *Node[K, V]) {
+fn removeNode[K, V: Ord[K], PartialEq[K], PartialOrd[K]](mut root: *Node[K, V], key: K) -> (Option[V], *Node[K, V]) {
     if root.isNull() {
         return (None, root);
     }
@@ -258,7 +258,7 @@ fn removeNode[K, V: Ord[K]](mut root: *Node[K, V], key: K) -> (Option[V], *Node[
     (value, root)
 }
 
-fn searchNode[K, V: Ord[K]](mut root: *Node[K, V], key: K) -> *Node[K, V] {
+fn searchNode[K, V: Ord[K], PartialEq[K], PartialOrd[K]](mut root: *Node[K, V], key: K) -> *Node[K, V] {
     while !root.isNull() {
         if key == root.key {
             return root;

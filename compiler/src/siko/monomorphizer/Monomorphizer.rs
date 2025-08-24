@@ -162,7 +162,12 @@ impl<'a> Monomorphizer<'a> {
         handlerResolution: HandlerResolution,
         impls: Vec<QualifiedName>,
     ) {
-        //println!("MONO FN: {} {}", name, crate::siko::hir::Type::formatTypes(&args));
+        // println!(
+        //     "MONO FN: {} {} {:?}",
+        //     name,
+        //     crate::siko::hir::Type::formatTypes(&args),
+        //     impls
+        // );
         let function = self
             .program
             .functions

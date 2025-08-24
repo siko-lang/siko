@@ -127,13 +127,13 @@ pub struct Vec[T] {
         self
     }
 
-    pub fn sort[T: Ord[T]](mut self) -> Self {
+    pub fn sort[T: Ord[T], PartialEq[T], PartialOrd[T], Show[T]](mut self) -> Self {
         self.slice().sort();
         self
     }
 
-    pub fn sort2[T: Ord[T]](mut self) -> Self {
-        self.slice().sort();
+    pub fn sort2[T: Ord[T], PartialEq[T], PartialOrd[T], Show[T]](mut self) -> Self {
+        self.slice().sort2();
         self
     }
 
@@ -221,7 +221,7 @@ instance[T] Drop[Vec[T]] {
     }
 }
 
-instance[T: Show[T]] Show[Vec[T]] {
+pub impl[T: Show[T]] ShowVec Show[Vec[T]] {
     fn show(&self) -> String {
         let mut result = String.new();
         result.push("[");
@@ -238,7 +238,7 @@ instance[T: Show[T]] Show[Vec[T]] {
     }
 }
 
-instance[T: PartialEq[T]] PartialEq[Vec[T]] {
+pub impl[T: PartialEq[T]] PartialEqVec PartialEq[Vec[T]] {
     fn eq(&self, other: &Vec[T]) -> Bool {
         if self.len() != other.len() {
             return False;

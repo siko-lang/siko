@@ -308,6 +308,12 @@ impl Display for ImplementationReference {
     }
 }
 
+impl Debug for ImplementationReference {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
 #[derive(Clone, PartialEq)]
 pub struct CallInfo {
     pub name: QualifiedName,
