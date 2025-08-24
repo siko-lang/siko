@@ -125,6 +125,7 @@ pub struct Typechecker<'a> {
     queue: VecDeque<BlockId>,
     knownConstraints: ConstraintContext,
     receiverChains: BTreeMap<Variable, ReceiverChainEntry>,
+    implResolver: ImplementationResolver<'a>,
 }
 
 impl<'a> Typechecker<'a> {
@@ -136,6 +137,8 @@ impl<'a> Typechecker<'a> {
         implementationStore: &'a ImplementationStore,
         f: &'a Function,
     ) -> Typechecker<'a> {
+        let allocator = TypeVarAllocator::new();
+        let implResolver = ImplementationResolver::new(allocator.clone(), implementationStore, program);
         Typechecker {
             ctx: ctx,
             program: program,
@@ -143,7 +146,7 @@ impl<'a> Typechecker<'a> {
             traitMethodSelector: traitMethodSelector,
             protocolMethodSelector: protocolMethodSelector,
             implementationStore: implementationStore,
-            allocator: TypeVarAllocator::new(),
+            allocator: allocator,
             substitution: Substitution::new(),
             types: BTreeMap::new(),
             selfType: None,
@@ -153,6 +156,7 @@ impl<'a> Typechecker<'a> {
             queue: VecDeque::new(),
             knownConstraints: f.constraintContext.clone(),
             receiverChains: BTreeMap::new(),
+            implResolver: implResolver,
         }
     }
 
@@ -478,8 +482,6 @@ impl<'a> Typechecker<'a> {
         let neededConstraints = neededConstraints.constraints;
         let mut remaining = neededConstraints.clone();
         let mut tryMore = true;
-        let implResolver =
-            ImplementationResolver::new(self.allocator.clone(), &self.implementationStore, &self.program);
         if neededConstraints.len() > 0 {
             loop {
                 let mut resolvedSomething = false;
@@ -493,8 +495,9 @@ impl<'a> Typechecker<'a> {
                         break;
                     }
                     let current = remaining.remove(0);
-                    if let Some((index, foundConstraint)) =
-                        implResolver.findImplInKnownConstraints(&current, &self.knownConstraints)
+                    if let Some((index, foundConstraint)) = self
+                        .implResolver
+                        .findImplInKnownConstraints(&current, &self.knownConstraints)
                     {
                         // impl will be provided later during mono
                         for (a, b) in zip(&current.associatedTypes, &foundConstraint.associatedTypes) {
@@ -513,7 +516,7 @@ impl<'a> Typechecker<'a> {
                         // we will select an impl now
                         //println!("---------- Trying to find implementation for {}", current);
 
-                        match implResolver.findImplInScope(&current) {
+                        match self.implResolver.findImplInScope(&current) {
                             ImplSearchResult::Found(implDef) => {
                                 resolvedSomething = true;
                                 //println!("Found impl {}", implDef.name);
@@ -1607,12 +1610,7 @@ impl<'a> Typechecker<'a> {
                                             CallInfo::new(getNativePtrCloneName(), vec![source.clone()]),
                                         )
                                     } else {
-                                        let implResolver = ImplementationResolver::new(
-                                            self.allocator.clone(),
-                                            self.implementationStore,
-                                            self.program,
-                                        );
-                                        if implResolver.isCopy(destTy) {
+                                        if self.implResolver.isCopy(destTy) {
                                             InstructionKind::FunctionCall(
                                                 dest.clone(),
                                                 CallInfo::new(getCloneFnName(), vec![source.clone()]),
@@ -1632,25 +1630,22 @@ impl<'a> Typechecker<'a> {
                                     let mut refSource = source.clone();
                                     if !self.tryUnify(*inner.clone(), src.clone()) {
                                         // check implicit conversion is implemented for these types
-                                        if !self.program.instanceResolver.isImplicitConvert(&src, &inner) {
+                                        if self.implResolver.isImplicitConvert(&src, &inner) {
+                                            let mut newVar =
+                                                self.bodyBuilder.createTempValue(instruction.location.clone());
+                                            newVar.ty = Some(*inner.clone());
+                                            self.setType(&newVar, *inner.clone());
+                                            let kind = self.addImplicitConvertCall(&newVar, source);
+                                            builder.addInstruction(kind, instruction.location.clone());
+                                            builder.step();
+                                            refSource = newVar;
+                                        } else {
                                             TypecheckerError::TypeMismatch(
                                                 destTy.to_string(),
                                                 sourceTy.to_string(),
                                                 instruction.location.clone(),
                                             )
                                             .report(self.ctx);
-                                        } else {
-                                            let mut newVar =
-                                                self.bodyBuilder.createTempValue(instruction.location.clone());
-                                            newVar.ty = Some(*inner.clone());
-                                            self.setType(&newVar, *inner.clone());
-                                            let kind = InstructionKind::FunctionCall(
-                                                newVar.clone(),
-                                                CallInfo::new(getImplicitConvertFnName(), vec![source.clone()]),
-                                            );
-                                            builder.addInstruction(kind, instruction.location.clone());
-                                            builder.step();
-                                            refSource = newVar;
                                         }
                                     }
                                     let kind = InstructionKind::Ref(dest.clone(), refSource.clone());
@@ -1658,19 +1653,16 @@ impl<'a> Typechecker<'a> {
                                 }
                                 (t1, t2) => {
                                     if !self.tryUnify(t1.clone(), t2.clone()) {
-                                        if !self.program.instanceResolver.isImplicitConvert(&t2, &t1) {
+                                        if self.implResolver.isImplicitConvert(&t2, &t1) {
+                                            let kind = self.addImplicitConvertCall(dest, source);
+                                            builder.replaceInstruction(kind, instruction.location.clone());
+                                        } else {
                                             TypecheckerError::TypeMismatch(
                                                 destTy.to_string(),
                                                 sourceTy.to_string(),
                                                 instruction.location.clone(),
                                             )
                                             .report(self.ctx);
-                                        } else {
-                                            let kind = InstructionKind::FunctionCall(
-                                                dest.clone(),
-                                                CallInfo::new(getImplicitConvertFnName(), vec![source.clone()]),
-                                            );
-                                            builder.replaceInstruction(kind, instruction.location.clone());
                                         }
                                     } else {
                                         let kind = InstructionKind::Assign(dest.clone(), source.clone());
@@ -1734,5 +1726,16 @@ impl<'a> Typechecker<'a> {
         //self.dump(&result);
         self.verify(&result);
         result
+    }
+
+    fn addImplicitConvertCall(&mut self, dest: &Variable, source: &Variable) -> InstructionKind {
+        let targetFn = self
+            .program
+            .getFunction(&getImplicitConvertFnName())
+            .expect("Implicit convert function not found");
+        let result = self.checkFunctionCall(&targetFn, &vec![source.clone()], dest, false);
+        let info = CallInfo::new(result.fnName, vec![source.clone()]);
+        let kind = InstructionKind::FunctionCall(dest.clone(), info);
+        kind
     }
 }

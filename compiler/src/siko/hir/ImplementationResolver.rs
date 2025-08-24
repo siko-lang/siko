@@ -13,7 +13,10 @@ use crate::siko::{
         TypeVarAllocator::TypeVarAllocator,
         Unification::unify,
     },
-    qualifiedname::{builtins::getCopyName, QualifiedName},
+    qualifiedname::{
+        builtins::{getCopyName, getImplicitConvertName},
+        QualifiedName,
+    },
 };
 
 pub enum ImplSearchResult {
@@ -145,6 +148,17 @@ impl<'a> ImplementationResolver<'a> {
             args: vec![ty.clone()],
             associatedTypes: Vec::new(),
         };
+        self.findImplInScope(&constraint).isFound()
+    }
+
+    pub fn isImplicitConvert(&self, src: &Type, dest: &Type) -> bool {
+        //println!("Checking implicit convert from {} to {}", src, dest);
+        let constraint = Constraint {
+            name: getImplicitConvertName(),
+            args: vec![src.clone(), dest.clone()],
+            associatedTypes: Vec::new(),
+        };
+        // println!("Constraint: {}", constraint);
         self.findImplInScope(&constraint).isFound()
     }
 }
