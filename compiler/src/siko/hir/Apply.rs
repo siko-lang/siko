@@ -129,6 +129,7 @@ impl Apply for Implementation {
         self.types = self.types.apply(sub);
         self.associatedTypes = self.associatedTypes.apply(sub);
         self.members = self.members.apply(sub);
+        self.constraintContext = self.constraintContext.apply(sub);
         self
     }
 }

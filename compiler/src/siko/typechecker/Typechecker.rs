@@ -40,7 +40,10 @@ use crate::siko::{
         },
         QualifiedName,
     },
-    typechecker::ConstraintChecker::ConstraintChecker,
+    typechecker::{
+        ConstraintChecker::ConstraintChecker,
+        ImplementationResolver::{ImplSearchResult, ImplementationResolver},
+    },
 };
 
 use super::Error::TypecheckerError;
@@ -159,6 +162,7 @@ impl<'a> Typechecker<'a> {
     }
 
     pub fn run(&mut self) -> Function {
+        //println!("Typechecking function {}", self.f.name);
         self.initialize();
         self.expandKnownConstraints();
         //self.dump(self.f);
@@ -170,14 +174,14 @@ impl<'a> Typechecker<'a> {
     fn initializeVar(&mut self, var: &Variable) {
         match &var.ty {
             Some(ty) => {
-                self.types.insert(var.name.to_string(), ty.clone());
+                self.setType(var, ty.clone());
             }
             None => {
                 if let Some(ty) = self.bodyBuilder.getTypeInBody(&var) {
-                    self.types.insert(var.name.to_string(), ty.clone());
+                    self.setType(var, ty.clone());
                 } else {
                     let ty = self.allocator.next();
-                    self.types.insert(var.name.to_string(), ty.clone());
+                    self.setType(var, ty.clone());
                 }
             }
         }
@@ -243,7 +247,7 @@ impl<'a> Typechecker<'a> {
                             self.initializeVar(var);
                         }
                         InstructionKind::Return(var, _) => {
-                            self.types.insert(var.name.to_string(), Type::Never(false));
+                            self.setType(var, Type::Never(false));
                         }
                         InstructionKind::Ref(var, _) => {
                             self.initializeVar(var);
@@ -259,7 +263,7 @@ impl<'a> Typechecker<'a> {
                         }
                         InstructionKind::Drop(_, _) => {}
                         InstructionKind::Jump(var, _) => {
-                            self.types.insert(var.name.to_string(), Type::Never(false));
+                            self.setType(var, Type::Never(false));
                         }
                         InstructionKind::Assign(_, _) => {}
                         InstructionKind::FieldAssign(_, _, _) => {}
@@ -278,7 +282,7 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::BlockStart(_) => {}
                         InstructionKind::BlockEnd(_) => {}
                         InstructionKind::With(v, _) => {
-                            self.types.insert(v.name.to_string(), Type::Never(false));
+                            self.setType(v, Type::Never(false));
                         }
                         InstructionKind::ReadImplicit(var, _) => {
                             self.initializeVar(var);
@@ -303,6 +307,10 @@ impl<'a> Typechecker<'a> {
             Some(ty) => ty.clone(),
             None => panic!("No type found for {}!", var),
         }
+    }
+
+    fn setType(&mut self, var: &Variable, ty: Type) {
+        self.types.insert(var.name.to_string(), ty);
     }
 
     fn unify(&mut self, ty1: Type, ty2: Type, location: Location) {
@@ -362,78 +370,13 @@ impl<'a> Typechecker<'a> {
                 }
             }
             let targetTy = target.clone().apply(&self.substitution);
-            self.types.insert(dest.name.to_string(), targetTy);
+            self.setType(dest, targetTy);
         }
-    }
-
-    fn findImplementationForConstraint(
-        &mut self,
-        constraint: &Constraint,
-        location: Location,
-        candidates: &Vec<QualifiedName>,
-    ) -> Option<Implementation> {
-        //println!("Finding implementation for constraint {}", constraint);
-        let mut matchingImpls = Vec::new();
-        for implName in candidates {
-            let implDef = self.program.getImplementation(&implName).expect("Impl not found");
-            let mut implDef = self.instantiateImplementation(&implDef);
-            if constraint.name == implDef.protocolName {
-                if implDef.types.len() != constraint.args.len() {
-                    continue;
-                }
-                //println!("Trying impl {}", implDef.name);
-                let mut allMatch = true;
-                let mut sub = Substitution::new();
-                for (implArg, cArg) in zip(&implDef.types, &constraint.args) {
-                    if !unify(&mut sub, implArg.clone(), cArg.clone(), false).is_ok() {
-                        //println!("  Arg {} does not match {}", implArg, cArg);
-                        allMatch = false;
-                        break;
-                    }
-                }
-                //println!("Applying substitution: {}", sub);
-                implDef = implDef.apply(&sub);
-                if allMatch {
-                    matchingImpls.push(implDef);
-                }
-            }
-        }
-        //println!("Found {} matching impls for {}", matchingImpls.len(), constraint);
-        if matchingImpls.len() > 1 {
-            TypecheckerError::AmbiguousImplementations(
-                constraint.name.toString(),
-                formatTypes(&constraint.args),
-                location,
-            )
-            .report(self.ctx);
-        } else {
-            matchingImpls.pop()
-        }
-    }
-
-    fn findImplInScope(&mut self, constraint: &Constraint, location: Location) -> Option<Implementation> {
-        if let Some(implDef) = self.findImplementationForConstraint(
-            constraint,
-            location.clone(),
-            &self.implementationStore.localImplementations,
-        ) {
-            return Some(implDef);
-        }
-        if let Some(implDef) = self.findImplementationForConstraint(
-            constraint,
-            location,
-            &self.implementationStore.importedImplementations,
-        ) {
-            //println!("Found implementation {} for constraint {}", implDef, constraint.name);
-            return Some(implDef);
-        }
-        None
     }
 
     fn checkFunctionCall(
         &mut self,
         targetFn: &Function,
-        fnType: Type,
         args: &Vec<Variable>,
         resultVar: &Variable,
         isProtocolMethod: bool,
@@ -450,22 +393,20 @@ impl<'a> Typechecker<'a> {
         }
         if useProtocol {
             if targetFn.kind.isProtocolCall() {
-                let checkResult =
-                    self.checkFunctionCall_new(targetFn, fnType, args, resultVar, resultVar.location.clone());
+                let checkResult = self.checkFunctionCall_new(targetFn, args, resultVar, resultVar.location.clone());
                 let f = self
                     .program
                     .getFunction(&checkResult.fnName)
                     .expect("Function not found");
-                let checkResult =
-                    self.checkFunctionCall_new(&f, f.getType(), args, resultVar, resultVar.location.clone());
+                let checkResult = self.checkFunctionCall_new(&f, args, resultVar, resultVar.location.clone());
                 checkResult
             } else {
-                let checkResult =
-                    self.checkFunctionCall_new(targetFn, fnType, args, resultVar, resultVar.location.clone());
+                let checkResult = self.checkFunctionCall_new(targetFn, args, resultVar, resultVar.location.clone());
                 checkResult
             }
         } else {
-            let fnType = self.checkFunctionCall_legacy(args, resultVar, fnType, &targetFn.constraintContext);
+            let fnType =
+                self.checkFunctionCall_legacy(args, resultVar, targetFn.getType(), &targetFn.constraintContext);
             let checkResult = CheckFunctionCallResult {
                 fnType: fnType,
                 fnName: targetFn.name.clone(),
@@ -478,11 +419,12 @@ impl<'a> Typechecker<'a> {
     fn checkFunctionCall_new(
         &mut self,
         f: &Function,
-        fnType: Type,
         args: &Vec<Variable>,
         resultVar: &Variable,
         location: Location,
     ) -> CheckFunctionCallResult {
+        let fnType = f.getType();
+        let fnType = fnType.resolveSelfType();
         let mut checkResult = CheckFunctionCallResult {
             fnType: fnType.clone(),
             fnName: f.name.clone(),
@@ -524,68 +466,122 @@ impl<'a> Typechecker<'a> {
             self.updateConverterDestination(arg, &expectedArg);
         }
         let neededConstraints = neededConstraints.clone().apply(&self.substitution);
-        for c in &neededConstraints.constraints {
-            if let Some(index) = self.knownConstraints.containsAt(&c) {
-                // impl will be provided later during mono
-                //println!("Using known implementation for {}", c);
-                let expectedFnType = expectedFnType.clone().apply(&self.substitution);
-                let expectedResult = expectedResult.clone().apply(&self.substitution);
-                self.unifyVar(resultVar, expectedResult);
-                //println!("expected fn type {}", expectedFnType);
-                checkResult.fnType = expectedFnType.clone();
-                checkResult.fnName = f.name.clone();
-                checkResult.implRefs.push(ImplementationReference::Indirect(index));
-            } else {
-                // we will select an impl now
-                //println!("Trying to find implementation for {}", c);
-                if let Some(implDef) = self.findImplInScope(&c, location.clone()) {
-                    //println!("Found impl {}", implDef.name);
-                    checkResult
-                        .implRefs
-                        .push(ImplementationReference::Direct(implDef.name.clone()));
-                    if implDef.protocolName.add(f.name.getShortName()) == f.name {
-                        let mut found = false;
-                        for m in &implDef.members {
-                            if m.name == f.name.getShortName() {
-                                //Found matching member, apply substitution
-                                // println!("Will call {}", m.fullName);
-                                // println!("Impl member result ty {}", m.memberType);
-                                // println!("Impl member expected ty {}", expectedFnType);
-                                // println!("Unifying {} and {}", expectedFnType, m.memberType);
-                                self.unify(expectedFnType.clone(), m.memberType.clone(), location.clone());
-                                let expectedFnType = expectedFnType.clone().apply(&self.substitution);
-                                let expectedResult = expectedResult.clone().apply(&self.substitution);
-                                self.unifyVar(resultVar, expectedResult);
-                                checkResult.fnType = expectedFnType.clone();
-                                checkResult.fnName = m.fullName.clone();
-                                found = true;
+        //println!("Needed constraints: {}", neededConstraints);
+        let neededConstraints = neededConstraints.constraints;
+        let mut remaining = neededConstraints.clone();
+        let mut tryMore = true;
+        if neededConstraints.len() > 0 {
+            loop {
+                let mut resolvedSomething = false;
+                remaining = remaining.apply(&self.substitution);
+                //println!("Remaining constraints: {:?} {:?}", remaining, neededConstraints);
+                if remaining.is_empty() {
+                    break;
+                }
+                for _ in 0..neededConstraints.len() {
+                    if remaining.is_empty() {
+                        break;
+                    }
+                    let current = remaining.remove(0);
+                    if let Some(index) = self.knownConstraints.containsAt(&current) {
+                        // impl will be provided later during mono
+                        //println!("---------- Using known implementation for {}", current);
+                        let expectedFnType = expectedFnType.clone().apply(&self.substitution);
+                        let expectedResult = expectedResult.clone().apply(&self.substitution);
+                        self.unifyVar(resultVar, expectedResult);
+                        //println!("expected fn type {}", expectedFnType);
+                        checkResult.fnType = expectedFnType.clone();
+                        checkResult.fnName = f.name.clone();
+                        checkResult.implRefs.push(ImplementationReference::Indirect(index));
+                    } else {
+                        // we will select an impl now
+                        //println!("---------- Trying to find implementation for {}", current);
+                        let implResolver = ImplementationResolver::new(
+                            self.allocator.clone(),
+                            &self.implementationStore,
+                            &self.program,
+                        );
+                        match implResolver.findImplInScope(&current) {
+                            ImplSearchResult::Found(implDef) => {
+                                resolvedSomething = true;
+                                //println!("Found impl {}", implDef.name);
+                                for (a, b) in zip(&implDef.associatedTypes, &current.associatedTypes) {
+                                    //println!("Unifying impl assoc {} with constraint assoc {}", a, b);
+                                    self.unify(a.ty.clone(), b.ty.clone(), location.clone());
+                                }
+                                checkResult
+                                    .implRefs
+                                    .push(ImplementationReference::Direct(implDef.name.clone()));
+                                if implDef.protocolName.add(f.name.getShortName()) == f.name {
+                                    let mut found = false;
+                                    for m in &implDef.members {
+                                        if m.name == f.name.getShortName() {
+                                            //Found matching member, apply substitution
+                                            //println!("Will call {}", m.fullName);
+                                            //println!("Impl member result ty {}", m.memberType);
+                                            //println!("Impl member expected ty {}", expectedFnType);
+                                            //println!("Unifying {} and {}", expectedFnType, m.memberType);
+                                            self.unify(expectedFnType.clone(), m.memberType.clone(), location.clone());
+                                            let expectedFnType = expectedFnType.clone().apply(&self.substitution);
+                                            let expectedResult = expectedResult.clone().apply(&self.substitution);
+                                            self.unifyVar(resultVar, expectedResult);
+                                            checkResult.fnType = expectedFnType.clone();
+                                            checkResult.fnName = m.fullName.clone();
+                                            found = true;
+                                        }
+                                    }
+                                    if !found {
+                                        let protoDef = self
+                                            .program
+                                            .getProtocol(&implDef.protocolName)
+                                            .expect("Protocol not found");
+                                        for m in protoDef.members {
+                                            if m.name == f.name.getShortName() {
+                                                //Found matching member, apply substitution
+                                                let memberType =
+                                                    instantiateType(&mut self.allocator, m.memberType.clone());
+                                                self.unify(expectedFnType.clone(), memberType, location.clone());
+                                                let expectedFnType = expectedFnType.clone().apply(&self.substitution);
+                                                let expectedResult = expectedResult.clone().apply(&self.substitution);
+                                                self.unifyVar(resultVar, expectedResult);
+                                                checkResult.fnType = expectedFnType.clone();
+                                                checkResult.fnName = m.fullName.clone();
+                                                found = true;
+                                            }
+                                        }
+                                    }
+                                    if !found {
+                                        panic!("Method {} not found in implementation {}", f.name, implDef.name);
+                                    }
+                                }
                             }
-                        }
-                        if !found {
-                            let protoDef = self
-                                .program
-                                .getProtocol(&implDef.protocolName)
-                                .expect("Protocol not found");
-                            for m in protoDef.members {
-                                if m.name == f.name.getShortName() {
-                                    //Found matching member, apply substitution
-                                    let memberType = instantiateType(&mut self.allocator, m.memberType.clone());
-                                    self.unify(expectedFnType.clone(), memberType, location.clone());
-                                    let expectedFnType = expectedFnType.clone().apply(&self.substitution);
-                                    let expectedResult = expectedResult.clone().apply(&self.substitution);
-                                    self.unifyVar(resultVar, expectedResult);
-                                    checkResult.fnType = expectedFnType.clone();
-                                    checkResult.fnName = m.fullName.clone();
-                                    found = true;
+                            ImplSearchResult::Ambiguous => {
+                                if tryMore {
+                                    //println!("Ambiguous implementations found for {}", current);
+                                    remaining.push(current);
+                                } else {
+                                    TypecheckerError::AmbiguousImplementations(
+                                        current.name.toString(),
+                                        formatTypes(&current.args),
+                                        location.clone(),
+                                    )
+                                    .report(self.ctx);
+                                }
+                            }
+                            ImplSearchResult::NotFound => {
+                                if tryMore {
+                                    //println!("No implementation found for {}", current);
+                                    remaining.push(current);
+                                } else {
+                                    TypecheckerError::NoImplementationFound(current.to_string(), location.clone())
+                                        .report(self.ctx);
                                 }
                             }
                         }
-                        if !found {
-                            panic!("Method {} not found in implementation {}", f.name, implDef.name);
-                        }
                     }
-                } else {
-                    TypecheckerError::NoImplementationFound(c.to_string(), location.clone()).report(self.ctx);
+                }
+                if !resolvedSomething {
+                    tryMore = false;
                 }
             }
         }
@@ -595,7 +591,7 @@ impl<'a> Typechecker<'a> {
         self.unifyVar(resultVar, expectedResult);
         // println!("result impl refs {:?}", checkResult.implRefs);
         // println!("result name {}", checkResult.fnName);
-        assert_eq!(checkResult.implRefs.len(), neededConstraints.constraints.len());
+        assert_eq!(checkResult.implRefs.len(), neededConstraints.len());
         checkResult
     }
 
@@ -629,7 +625,10 @@ impl<'a> Typechecker<'a> {
             fnResult = fnResult.changeSelfType(fnArgs[0].clone());
         }
         //println!("fnResult {}", fnResult);
-        //println!("self.getType(resultVar) {}", self.getType(resultVar));
+        // println!(
+        //     "self.getType(resultVar) {}",
+        //     self.getType(resultVar).apply(&self.substitution)
+        // );
         let fnResult = fnResult.clone().apply(&self.substitution);
         //println!("fnResult {}", fnResult);
         self.unifyVar(resultVar, fnResult.clone());
@@ -697,10 +696,17 @@ impl<'a> Typechecker<'a> {
             }
         }
         // println!("fnResult {}", fnResult);
-        // println!("self.getType(resultVar) {}", self.getType(resultVar));
+        // println!(
+        //     "self.getType(resultVar) {}",
+        //     self.getType(resultVar).apply(&self.substitution)
+        // );
         let fnResult = fnResult.apply(&self.substitution);
         //println!("fnResult {}", fnResult);
         self.unifyVar(resultVar, fnResult);
+        // println!(
+        //     "self.getType(resultVar) {}",
+        //     self.getType(resultVar).apply(&self.substitution)
+        // );
         instantiatedFnType.apply(&self.substitution)
     }
 
@@ -893,7 +899,7 @@ impl<'a> Typechecker<'a> {
                 let Some(targetFn) = self.program.functions.get(&info.name) else {
                     panic!("Function not found {}", info.name);
                 };
-                let checkResult = self.checkFunctionCall(&targetFn, targetFn.getType(), &info.args, dest, false);
+                let checkResult = self.checkFunctionCall(&targetFn, &info.args, dest, false);
                 let mut info = info.clone();
                 info.name = checkResult.fnName;
                 info.implementations = checkResult.implRefs;
@@ -1084,7 +1090,7 @@ impl<'a> Typechecker<'a> {
                 if let Type::Ptr(innerTy) = &receiverType {
                     let mut ptrLoadResultVar = self.bodyBuilder.createTempValue(instruction.location.clone());
                     ptrLoadResultVar.ty = Some(*innerTy.clone());
-                    self.types.insert(ptrLoadResultVar.name.to_string(), *innerTy.clone());
+                    self.setType(&ptrLoadResultVar, *innerTy.clone());
                     builder.addInstruction(
                         InstructionKind::LoadPtr(ptrLoadResultVar.clone(), receiver.clone()),
                         instruction.location.clone(),
@@ -1245,15 +1251,50 @@ impl<'a> Typechecker<'a> {
         let mut extendedArgs = args.clone();
         extendedArgs.insert(0, receiver.clone());
         let targetFn = self.program.functions.get(&name).expect("Function not found");
-        let mut fnType = targetFn.getType();
+        let fnType = targetFn.getType();
         let (origReceiver, chainEntries) = self.resolveReceiverChain(&receiver);
         let mutableCall = self.mutables.get(&origReceiver.name.to_string()) == Some(&Mutability::ExplicitMutable)
             && fnType.getResult().hasSelfType();
         if mutableCall {
-            fnType = fnType.changeMethodResult();
+            match fnType.getResult() {
+                Type::Tuple(_) => {
+                    let destType = self.getType(dest).apply(&self.substitution);
+                    if !destType.isTypeVar() {
+                        //println!("Mutable method call, changing dest type from {}", destType);
+                        let tyvar = self.allocator.next();
+                        let destType = destType.addSelfType(tyvar);
+                        // println!("Mutable method call, changing dest type to {}", destType);
+                        // println!("fnType {}", fnType);
+                        self.setType(dest, destType);
+                    }
+                }
+                _ => {}
+            }
         }
-        let checkResult = self.checkFunctionCall(&targetFn, fnType, &extendedArgs, dest, isProtocolMethod);
-        let fnType = checkResult.fnType;
+        let checkResult = self.checkFunctionCall(&targetFn, &extendedArgs, dest, isProtocolMethod);
+        let mut fnType = checkResult.fnType;
+        //println!("METHOD CALL {} => {}", fnType, receiverType);
+        if mutableCall {
+            fnType = fnType.changeMethodResult();
+            let destType = self.getType(dest).apply(&self.substitution);
+            if let Type::Tuple(args) = destType {
+                let mut args = args.clone();
+                args.remove(0);
+                if args.len() == 1 {
+                    self.setType(dest, args[0].clone());
+                } else {
+                    self.setType(dest, Type::Tuple(args));
+                }
+            } else {
+                self.setType(dest, Type::getUnitType());
+            }
+        }
+        // println!(
+        //     "AFTER METHOD CALL {} => {} type of dest {}",
+        //     fnType,
+        //     receiverType,
+        //     self.getType(dest).apply(&self.substitution)
+        // );
         let name = checkResult.fnName;
         let mut newCallInfo = CallInfo::new(name.clone(), extendedArgs.clone());
         newCallInfo.implementations = checkResult.implRefs;
@@ -1303,7 +1344,7 @@ impl<'a> Typechecker<'a> {
         let mut kinds = Vec::new();
         let mut implicitResult = self.bodyBuilder.createTempValue(location.clone());
         implicitResult.ty = Some(baseType.clone());
-        self.types.insert(implicitResult.name.to_string(), baseType.clone());
+        self.setType(&implicitResult, baseType.clone());
         let kind = InstructionKind::FunctionCall(implicitResult.clone(), callInfo);
         builder.replaceInstruction(kind, location.clone());
         builder.step();
@@ -1325,7 +1366,7 @@ impl<'a> Typechecker<'a> {
                 let selfType = tupleTypes[0].clone();
                 let mut implicitSelf = self.bodyBuilder.createTempValue(location.clone());
                 implicitSelf.ty = Some(selfType.clone());
-                self.types.insert(implicitSelf.name.to_string(), selfType.clone());
+                self.setType(&implicitSelf, selfType.clone());
                 let implicitSelfIndex = InstructionKind::FieldRef(
                     implicitSelf.clone(),
                     implicitResult.clone(),
@@ -1338,7 +1379,7 @@ impl<'a> Typechecker<'a> {
                 let mut resVar = self.bodyBuilder.createTempValue(location.clone());
                 let destTy = self.getType(dest);
                 resVar.ty = Some(destTy.clone());
-                self.types.insert(resVar.name.to_string(), destTy.clone());
+                self.setType(&resVar, destTy.clone());
                 let assign = InstructionKind::Assign(dest.clone(), resVar.clone());
                 let resIndex = InstructionKind::FieldRef(
                     resVar.clone(),
@@ -1359,7 +1400,7 @@ impl<'a> Typechecker<'a> {
                 let selfType = tupleTypes[0].clone();
                 let mut implicitSelf = self.bodyBuilder.createTempValue(location.clone());
                 implicitSelf.ty = Some(selfType.clone());
-                self.types.insert(implicitSelf.name.to_string(), selfType.clone());
+                self.setType(&implicitSelf, selfType.clone());
                 let implicitSelfIndex = InstructionKind::FieldRef(
                     implicitSelf.clone(),
                     implicitResult.clone(),
@@ -1375,7 +1416,7 @@ impl<'a> Typechecker<'a> {
                     let mut resVar = self.bodyBuilder.createTempValue(location.clone());
                     resVar.ty = Some(argType.clone());
                     args.push(resVar.clone());
-                    self.types.insert(resVar.name.to_string(), argType.clone());
+                    self.setType(&resVar, argType.clone());
                     let tupleIndexN = InstructionKind::FieldRef(
                         resVar.clone(),
                         implicitResult.clone(),
@@ -1409,6 +1450,7 @@ impl<'a> Typechecker<'a> {
             //println!("Adding instruction: {}", kind);
             builder.addInstruction(kind, location.clone());
         }
+        // println!("Finished method transformation");
     }
 
     fn check(&mut self) {
@@ -1649,7 +1691,7 @@ impl<'a> Typechecker<'a> {
                                             let mut newVar =
                                                 self.bodyBuilder.createTempValue(instruction.location.clone());
                                             newVar.ty = Some(*inner.clone());
-                                            self.types.insert(newVar.name.to_string(), *inner.clone());
+                                            self.setType(&newVar, *inner.clone());
                                             let kind = InstructionKind::FunctionCall(
                                                 newVar.clone(),
                                                 CallInfo::new(getImplicitConvertFnName(), vec![source.clone()]),

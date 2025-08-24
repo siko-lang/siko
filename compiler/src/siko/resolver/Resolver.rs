@@ -609,6 +609,7 @@ impl<'a> Resolver<'a> {
                             implName,
                             protocolDef.name.clone(),
                             args,
+                            typeParams.clone(),
                             associatedTypes,
                             constraintContext,
                         );

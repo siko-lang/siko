@@ -1,10 +1,11 @@
+use std::fmt::Debug;
 use std::fmt::Display;
 
 use crate::siko::{hir::Type::formatTypes, qualifiedname::QualifiedName};
 
 use super::{Trait::AssociatedType, Type::Type};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Constraint {
     pub name: QualifiedName,
     pub args: Vec<Type>,
@@ -28,6 +29,12 @@ impl Display for Constraint {
             write!(f, " Associated types : {}", assocTypes)?;
         }
         Ok(())
+    }
+}
+
+impl Debug for Constraint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
     }
 }
 

@@ -1,18 +1,23 @@
+use std::{cell::RefCell, rc::Rc};
+
 use crate::siko::hir::Type::{Type, TypeVar};
 
 #[derive(Clone)]
 pub struct TypeVarAllocator {
-    next: u64,
+    next: Rc<RefCell<u64>>,
 }
 
 impl TypeVarAllocator {
     pub fn new() -> TypeVarAllocator {
-        TypeVarAllocator { next: 0 }
+        TypeVarAllocator {
+            next: Rc::new(RefCell::new(0)),
+        }
     }
 
-    pub fn next(&mut self) -> Type {
-        let v = Type::Var(TypeVar::Var(self.next));
-        self.next += 1;
+    pub fn next(&self) -> Type {
+        let mut n = self.next.borrow_mut();
+        let v = Type::Var(TypeVar::Var(*n));
+        *n += 1;
         v
     }
 }

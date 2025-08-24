@@ -249,6 +249,7 @@ pub struct Implementation {
     pub name: QualifiedName,
     pub protocolName: QualifiedName,
     pub types: Vec<Type>,
+    pub typeParams: Vec<Type>,
     pub associatedTypes: Vec<AssociatedType>,
     pub constraintContext: ConstraintContext,
     pub members: Vec<MemberInfo>,
@@ -259,6 +260,7 @@ impl Implementation {
         name: QualifiedName,
         protocolName: QualifiedName,
         types: Vec<Type>,
+        typeParams: Vec<Type>,
         associatedTypes: Vec<AssociatedType>,
         constraintContext: ConstraintContext,
     ) -> Implementation {
@@ -266,6 +268,7 @@ impl Implementation {
             name,
             protocolName: protocolName,
             types: types,
+            typeParams: typeParams,
             associatedTypes: associatedTypes,
             constraintContext: constraintContext,
             members: Vec::new(),

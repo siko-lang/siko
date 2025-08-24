@@ -22,7 +22,7 @@ impl Display for TypeVar {
             TypeVar::Named(name) => {
                 write!(f, "{}", name)
             }
-            TypeVar::Var(v) => write!(f, "#{}", v),
+            TypeVar::Var(v) => write!(f, "?{}", v),
         }
     }
 }
@@ -102,6 +102,17 @@ impl Type {
         vars
     }
 
+    pub fn resolveSelfType(&self) -> Type {
+        match &self {
+            Type::Function(args, result) => {
+                let firstArg = args[0].clone();
+                let result = result.changeSelfType(firstArg);
+                Type::Function(args.clone(), Box::new(result.clone()))
+            }
+            _ => panic!("type is not a function!"),
+        }
+    }
+
     pub fn changeSelfType(&self, selfType: Type) -> Type {
         match &self {
             Type::Tuple(args) => {
@@ -159,8 +170,7 @@ impl Type {
                     Type::Tuple(args[1..].to_vec())
                 }
             }
-            Type::SelfType => Type::Tuple(Vec::new()),
-            _ => panic!("type does not have self!"),
+            _ => Type::Tuple(Vec::new()),
         }
     }
 

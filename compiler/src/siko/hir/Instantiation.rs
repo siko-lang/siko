@@ -42,9 +42,12 @@ pub fn instantiateInstance(allocator: &mut TypeVarAllocator, i: &Instance) -> In
     i.clone().apply(&sub)
 }
 
-pub fn instantiateImplementation(allocator: &mut TypeVarAllocator, i: &Implementation) -> Implementation {
+pub fn instantiateImplementation(allocator: &TypeVarAllocator, i: &Implementation) -> Implementation {
     let mut vars = BTreeSet::new();
     for ty in &i.types {
+        vars = ty.collectVars(vars);
+    }
+    for ty in &i.typeParams {
         vars = ty.collectVars(vars);
     }
     let mut sub = Substitution::new();

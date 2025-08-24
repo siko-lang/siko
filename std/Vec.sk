@@ -170,7 +170,7 @@ instance[T] Drop[VecIterator[T]] {
     }
 }
 
-instance[T] Iterator[VecIterator[T]] {
+pub impl[T] IteratorVecIterator Iterator[VecIterator[T]] {
     type Item = T
 
     fn next(mut self) -> (Self, Option[T]) {
@@ -184,7 +184,7 @@ instance[T] Iterator[VecIterator[T]] {
     }
 }
 
-instance[T] IntoIterator[Vec[T]] {
+pub impl[T] IntoIteratorVec IntoIterator[Vec[T]] {
     type Item = T
     type Iter = VecIterator[T]
 
@@ -198,7 +198,7 @@ struct VecIteratorRef[T] {
     index: Int
 }
 
-instance[T] Iterator[VecIteratorRef[T]] {
+pub impl[T] IteratorVecIteratorRef Iterator[VecIteratorRef[T]] {
     type Item = &T
 
     fn next(mut self) -> (Self, Option[&T]) {
@@ -260,7 +260,7 @@ pub impl[T: PartialEq[T]] PartialEqVec PartialEq[Vec[T]] {
 
 instance[T: Clone[T]] Clone[Vec[T]] {
     fn clone(&self) -> Vec[T] {
-        let mut newVec = Vec.new();
+        let mut newVec: Vec[T] = Vec.new();
         newVec.inner.grow(self.inner.capacity);
         for item in self.iter() {
             newVec.push(item.clone());
