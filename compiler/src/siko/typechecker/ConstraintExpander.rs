@@ -39,6 +39,8 @@ impl<'a> ConstraintExpander<'a> {
         for c in &start {
             self.expandKnownConstraint(c, &mut processed);
         }
+        self.knownConstraints.constraints.sort();
+        self.knownConstraints.constraints.dedup();
         self.knownConstraints
     }
 

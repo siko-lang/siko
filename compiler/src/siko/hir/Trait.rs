@@ -136,7 +136,7 @@ impl fmt::Display for Protocol {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AssociatedType {
     pub name: String,
     pub ty: Type,

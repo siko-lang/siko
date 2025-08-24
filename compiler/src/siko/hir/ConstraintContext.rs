@@ -5,7 +5,7 @@ use crate::siko::{hir::Type::formatTypes, qualifiedname::QualifiedName};
 
 use super::{Trait::AssociatedType, Type::Type};
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Constraint {
     pub name: QualifiedName,
     pub args: Vec<Type>,
