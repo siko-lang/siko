@@ -5,6 +5,7 @@ pub mod ConstraintContext;
 pub mod Data;
 pub mod Function;
 pub mod Graph;
+pub mod ImplementationResolver;
 pub mod ImplementationStore;
 pub mod Implicit;
 pub mod InstanceResolver;

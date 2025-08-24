@@ -11,9 +11,10 @@ use crate::siko::{
         Apply::Apply,
         BlockBuilder::BlockBuilder,
         BodyBuilder::BodyBuilder,
-        ConstraintContext::{Constraint, ConstraintContext},
+        ConstraintContext::ConstraintContext,
         Data::{Enum, Struct},
         Function::{BlockId, Function, Parameter},
+        ImplementationResolver::{ImplSearchResult, ImplementationResolver},
         ImplementationStore::ImplementationStore,
         Instantiation::{
             instantiateEnum, instantiateImplementation, instantiateStruct, instantiateType, instantiateTypes,
@@ -34,16 +35,10 @@ use crate::siko::{
     },
     location::{Location::Location, Report::ReportContext},
     qualifiedname::{
-        builtins::{
-            getCloneFnName, getCopyName, getImplicitConvertFnName, getNativePtrCloneName, getNativePtrIsNullName,
-        },
+        builtins::{getCloneFnName, getImplicitConvertFnName, getNativePtrCloneName, getNativePtrIsNullName},
         QualifiedName,
     },
-    typechecker::{
-        ConstraintChecker::ConstraintChecker,
-        ConstraintExpander::ConstraintExpander,
-        ImplementationResolver::{ImplSearchResult, ImplementationResolver},
-    },
+    typechecker::{ConstraintChecker::ConstraintChecker, ConstraintExpander::ConstraintExpander},
 };
 
 use super::Error::TypecheckerError;
@@ -649,16 +644,11 @@ impl<'a> Typechecker<'a> {
         let fnResult = fnResult.clone().apply(&self.substitution);
         //println!("fnResult {}", fnResult);
         self.unifyVar(resultVar, fnResult.clone());
-        let originalSub = self.substitution.clone();
-        let mut helperSub = Substitution::new();
         loop {
             for (arg, fnArg) in zip(args, &fnArgs) {
                 //println!("arg {} fnArg {}", arg, fnArg);
-                let mut fnArg2 = fnArg.clone().apply(&self.substitution);
+                let fnArg2 = fnArg.clone().apply(&self.substitution);
                 //println!("fnArg2 {}", fnArg2);
-                if !helperSub.empty() {
-                    fnArg2 = fnArg2.apply(&helperSub);
-                }
                 //println!("Convert arg {} => fnArg {}", arg, fnArg2);
                 self.updateConverterDestination(arg, &fnArg2);
             }
@@ -679,35 +669,6 @@ impl<'a> Typechecker<'a> {
                     break;
                 }
                 Err(err) => {
-                    if helperSub.empty() {
-                        let newFnType = instantiatedFnType.clone().apply(&constraintChecker.substitution);
-                        let (newFnArgs, _) = newFnType.splitFnType().expect("Failed to split function type");
-                        for (arg, newFnArg) in zip(fnArgs.clone(), &newFnArgs) {
-                            //println!("arg {} fnArg {}", arg, newFnArg);
-                            if arg.isGeneric() && newFnArg.isReference() {
-                                if let Type::Reference(inner, _) = newFnArg {
-                                    let copyConstraint = Constraint {
-                                        name: getCopyName(),
-                                        args: vec![*inner.clone()],
-                                        associatedTypes: Vec::new(),
-                                    };
-                                    let mut isCopy = false;
-                                    if self.knownConstraints.contains(&copyConstraint) {
-                                        isCopy = true;
-                                    }
-                                    if isCopy || self.program.instanceResolver.isCopy(&inner) {
-                                        //println!("Worth trying to clone {}", inner);
-                                        helperSub.add(arg.clone(), *inner.clone());
-                                    }
-                                }
-                            }
-                        }
-                        if !helperSub.empty() {
-                            //println!("Applying helper substitution: {}", helperSub);
-                            self.substitution = originalSub.clone();
-                            continue;
-                        }
-                    }
                     err.report(self.ctx);
                 }
             }
@@ -1646,7 +1607,12 @@ impl<'a> Typechecker<'a> {
                                             CallInfo::new(getNativePtrCloneName(), vec![source.clone()]),
                                         )
                                     } else {
-                                        if self.program.instanceResolver.isCopy(destTy) {
+                                        let implResolver = ImplementationResolver::new(
+                                            self.allocator.clone(),
+                                            self.implementationStore,
+                                            self.program,
+                                        );
+                                        if implResolver.isCopy(destTy) {
                                             InstructionKind::FunctionCall(
                                                 dest.clone(),
                                                 CallInfo::new(getCloneFnName(), vec![source.clone()]),

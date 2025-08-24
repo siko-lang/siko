@@ -19,9 +19,11 @@ use crate::siko::{
         BodyBuilder::BodyBuilder,
         Function::{BlockId, Function},
         Graph::GraphBuilder,
+        ImplementationResolver::ImplementationResolver,
         Instruction::{CallInfo, InstructionKind},
         Program::Program,
         Type::Type,
+        TypeVarAllocator::TypeVarAllocator,
     },
     location::Report::ReportContext,
     qualifiedname::builtins::getCloneFnName,
@@ -68,6 +70,7 @@ pub struct DropChecker<'a> {
     program: &'a Program,
     visited: BTreeMap<BlockId, BTreeSet<Context>>,
     dropMetadataStore: &'a mut DropMetadataStore,
+    implResolver: ImplementationResolver<'a>,
 }
 
 impl<'a> DropChecker<'a> {
@@ -77,6 +80,10 @@ impl<'a> DropChecker<'a> {
         program: &'a Program,
         dropMetadataStore: &'a mut DropMetadataStore,
     ) -> DropChecker<'a> {
+        let implStore = program
+            .implementationStores
+            .get(&f.name.module())
+            .expect("No impl store for module");
         DropChecker {
             ctx: ctx,
             bodyBuilder: BodyBuilder::cloneFunction(f),
@@ -84,6 +91,7 @@ impl<'a> DropChecker<'a> {
             program: program,
             visited: BTreeMap::new(),
             dropMetadataStore,
+            implResolver: ImplementationResolver::new(TypeVarAllocator::new(), implStore, program),
         }
     }
 
@@ -264,7 +272,7 @@ impl<'a> DropChecker<'a> {
         if path.isRootOnly() {
             let ty = path.root.getType();
             assert!(!ty.isReference(), "path root should not be a reference for a move!",);
-            self.program.instanceResolver.isCopy(&ty)
+            self.implResolver.isCopy(ty)
         } else {
             let resultVar = instruction.kind.getResultVar().expect("no result var");
             let resulTy = resultVar.getType();
@@ -272,7 +280,7 @@ impl<'a> DropChecker<'a> {
                 !resulTy.isReference(),
                 "result type should not be a reference for a move!",
             );
-            self.program.instanceResolver.isCopy(&resulTy)
+            self.implResolver.isCopy(resulTy)
         }
     }
 }

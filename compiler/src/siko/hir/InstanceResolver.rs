@@ -2,10 +2,7 @@ use std::{cmp::Ordering, collections::BTreeMap};
 
 use crate::siko::{
     hir::{Instantiation::instantiateInstance, Trait::CompareSpecificity},
-    qualifiedname::{
-        builtins::{getCopyName, getImplicitConvertName},
-        QualifiedName,
-    },
+    qualifiedname::{builtins::getImplicitConvertName, QualifiedName},
 };
 
 use super::{
@@ -137,18 +134,6 @@ impl InstanceResolver {
         } else {
             None
         }
-    }
-
-    pub fn isCopy(&self, ty: &Type) -> bool {
-        if let Some(instances) = self.lookupInstances(&getCopyName()) {
-            let mut allocator = TypeVarAllocator::new();
-            let result = instances.find(&mut allocator, &vec![ty.clone()]);
-            if let ResolutionResult::Winner(_) = result {
-                // println!("Copy found for {}", ty);
-                return true;
-            }
-        }
-        false
     }
 
     pub fn isImplicitConvert(&self, ty1: &Type, ty2: &Type) -> bool {

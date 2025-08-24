@@ -9,10 +9,11 @@ use crate::siko::{
         Program::Program,
         Substitution::Substitution,
         Trait::Implementation,
+        Type::Type,
         TypeVarAllocator::TypeVarAllocator,
         Unification::unify,
     },
-    qualifiedname::QualifiedName,
+    qualifiedname::{builtins::getCopyName, QualifiedName},
 };
 
 pub enum ImplSearchResult {
@@ -136,5 +137,14 @@ impl<'a> ImplementationResolver<'a> {
             }
         }
         None
+    }
+
+    pub fn isCopy(&self, ty: &Type) -> bool {
+        let constraint = Constraint {
+            name: getCopyName(),
+            args: vec![ty.clone()],
+            associatedTypes: Vec::new(),
+        };
+        self.findImplInScope(&constraint).isFound()
     }
 }
