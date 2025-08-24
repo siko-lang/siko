@@ -2,9 +2,15 @@ use std::iter::zip;
 
 use crate::siko::{
     hir::{
-        Apply::Apply, ConstraintContext::Constraint, ImplementationStore::ImplementationStore,
-        Instantiation::instantiateImplementation, Program::Program, Substitution::Substitution, Trait::Implementation,
-        TypeVarAllocator::TypeVarAllocator, Unification::unify,
+        Apply::Apply,
+        ConstraintContext::{Constraint, ConstraintContext},
+        ImplementationStore::ImplementationStore,
+        Instantiation::instantiateImplementation,
+        Program::Program,
+        Substitution::Substitution,
+        Trait::Implementation,
+        TypeVarAllocator::TypeVarAllocator,
+        Unification::unify,
     },
     qualifiedname::QualifiedName,
 };
@@ -105,5 +111,30 @@ impl<'a> ImplementationResolver<'a> {
             return ImplSearchResult::Found(implDef);
         }
         self.findImplementationForConstraint(constraint, &self.implementationStore.importedImplementations)
+    }
+
+    pub fn findImplInKnownConstraints(
+        &self,
+        constraint: &Constraint,
+        knownConstraints: &ConstraintContext,
+    ) -> Option<(u32, Constraint)> {
+        for (index, known) in knownConstraints.constraints.iter().enumerate() {
+            if constraint.name == known.name && constraint.args.len() == known.args.len() {
+                let mut sub = Substitution::new();
+                let mut allMatch = true;
+                for (arg, karg) in zip(&constraint.args, &known.args) {
+                    if unify(&mut sub, arg.clone(), karg.clone(), false).is_err() {
+                        allMatch = false;
+                        break;
+                    }
+                }
+                if allMatch {
+                    let mut foundConstraint = known.clone();
+                    foundConstraint = foundConstraint.apply(&sub);
+                    return Some((index as u32, foundConstraint));
+                }
+            }
+        }
+        None
     }
 }

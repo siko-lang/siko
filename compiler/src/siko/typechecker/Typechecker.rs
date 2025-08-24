@@ -441,6 +441,8 @@ impl<'a> Typechecker<'a> {
         //     "Checking protocol (method?) call: {} {} {} {}",
         //     f.name, fnType, f.constraintContext, self.knownConstraints
         // );
+        // let destType = self.getType(resultVar).apply(&self.substitution);
+        // println!("Dest type: {}", destType);
         let mut types = f.constraintContext.typeParameters.clone();
         types.push(fnType.clone());
         let sub = instantiateTypes(&mut self.allocator, &types);
@@ -475,11 +477,14 @@ impl<'a> Typechecker<'a> {
             let expectedArg = expectedArg.clone().apply(&self.substitution);
             self.updateConverterDestination(arg, &expectedArg);
         }
+        self.unifyVar(resultVar, expectedResult.clone());
         let neededConstraints = neededConstraints.clone().apply(&self.substitution);
         //println!("Needed constraints: {}", neededConstraints);
         let neededConstraints = neededConstraints.constraints;
         let mut remaining = neededConstraints.clone();
         let mut tryMore = true;
+        let implResolver =
+            ImplementationResolver::new(self.allocator.clone(), &self.implementationStore, &self.program);
         if neededConstraints.len() > 0 {
             loop {
                 let mut resolvedSomething = false;
@@ -493,8 +498,14 @@ impl<'a> Typechecker<'a> {
                         break;
                     }
                     let current = remaining.remove(0);
-                    if let Some(index) = self.knownConstraints.containsAt(&current) {
+                    if let Some((index, foundConstraint)) =
+                        implResolver.findImplInKnownConstraints(&current, &self.knownConstraints)
+                    {
                         // impl will be provided later during mono
+                        for (a, b) in zip(&current.associatedTypes, &foundConstraint.associatedTypes) {
+                            //println!("Unifying impl assoc {} with constraint assoc {}", a, b);
+                            self.unify(a.ty.clone(), b.ty.clone(), location.clone());
+                        }
                         //println!("---------- Using known implementation for {}", current);
                         let expectedFnType = expectedFnType.clone().apply(&self.substitution);
                         let expectedResult = expectedResult.clone().apply(&self.substitution);
@@ -506,11 +517,7 @@ impl<'a> Typechecker<'a> {
                     } else {
                         // we will select an impl now
                         //println!("---------- Trying to find implementation for {}", current);
-                        let implResolver = ImplementationResolver::new(
-                            self.allocator.clone(),
-                            &self.implementationStore,
-                            &self.program,
-                        );
+
                         match implResolver.findImplInScope(&current) {
                             ImplSearchResult::Found(implDef) => {
                                 resolvedSomething = true;
