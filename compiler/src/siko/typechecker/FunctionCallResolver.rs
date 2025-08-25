@@ -53,11 +53,6 @@ impl<'a> FunctionCallResolver<'a> {
         }
     }
 
-    fn createConstraintExpander(&mut self, constraints: ConstraintContext) -> ConstraintExpander {
-        let expander = ConstraintExpander::new(self.program, self.allocator.clone(), constraints);
-        expander
-    }
-
     pub fn resolve(
         &mut self,
         f: &Function,
@@ -84,9 +79,9 @@ impl<'a> FunctionCallResolver<'a> {
         let sub = instantiateTypes(&mut self.allocator, &types);
         let expectedFnType = fnType.apply(&sub);
         //println!("Instantiated fn type: {}", expectedFnType);
-        let neededConstraints = self
-            .createConstraintExpander(f.constraintContext.clone())
-            .expandKnownConstraints();
+        let neededConstraints =
+            ConstraintExpander::new(self.program, self.allocator.clone(), f.constraintContext.clone())
+                .expandKnownConstraints();
         let neededConstraints = neededConstraints.apply(&sub);
         //println!("Needed constraints: {}", neededConstraints);
         let (expectedArgs, mut expectedResult) = match expectedFnType.clone().splitFnType() {
@@ -114,7 +109,7 @@ impl<'a> FunctionCallResolver<'a> {
         }
         for (arg, expectedArg) in zip(args, &expectedArgs) {
             let expectedArg = self.unifier.apply(expectedArg.clone());
-            self.updateConverterDestination(arg, &expectedArg);
+            self.unifier.updateConverterDestination(arg, &expectedArg);
         }
         self.unifier.unifyVar(resultVar, expectedResult.clone());
         let neededConstraints = self.unifier.apply(neededConstraints.clone());
@@ -255,26 +250,5 @@ impl<'a> FunctionCallResolver<'a> {
         //println!("result name {}", checkResult.fnName);
         assert_eq!(checkResult.implRefs.len(), neededConstraints.len());
         checkResult
-    }
-
-    fn updateConverterDestination(&mut self, dest: &Variable, target: &Type) {
-        let destTy = self.unifier.apply(dest.getType());
-        let targetTy = self.unifier.apply(target.clone());
-        //println!("Updating converter destination: {} -> {}", destTy, targetTy);
-        if !self.unifier.tryUnify(destTy.clone(), targetTy.clone()) {
-            match (destTy, targetTy.clone()) {
-                (ty1, Type::Reference(ty2, _)) => {
-                    self.unifier.tryUnify(ty1, *ty2.clone());
-                }
-                (Type::Reference(ty1, _), ty2) => {
-                    self.unifier.tryUnify(*ty1.clone(), ty2);
-                }
-                (ty1, ty2) => {
-                    self.unifier.tryUnify(ty1, ty2);
-                }
-            }
-            let targetTy = self.unifier.apply(target.clone());
-            dest.setType(targetTy);
-        }
     }
 }

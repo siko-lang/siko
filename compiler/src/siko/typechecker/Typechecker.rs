@@ -323,27 +323,6 @@ impl<'a> Typechecker<'a> {
         instantiateImplementation(&mut self.allocator, impl_def)
     }
 
-    fn updateConverterDestination(&mut self, dest: &Variable, target: &Type) {
-        let destTy = self.unifier.apply(dest.getType());
-        let targetTy = self.unifier.apply(target.clone());
-        //println!("Updating converter destination: {} -> {}", destTy, targetTy);
-        if !self.unifier.tryUnify(destTy.clone(), targetTy.clone()) {
-            match (destTy, targetTy.clone()) {
-                (ty1, Type::Reference(ty2, _)) => {
-                    self.unifier.tryUnify(ty1, *ty2.clone());
-                }
-                (Type::Reference(ty1, _), ty2) => {
-                    self.unifier.tryUnify(*ty1.clone(), ty2);
-                }
-                (ty1, ty2) => {
-                    self.unifier.tryUnify(ty1, ty2);
-                }
-            }
-            let targetTy = self.unifier.apply(target.clone());
-            self.setType(dest, targetTy);
-        }
-    }
-
     fn checkFunctionCall(
         &mut self,
         targetFn: &Function,
@@ -452,7 +431,7 @@ impl<'a> Typechecker<'a> {
                 let fnArg2 = self.unifier.apply(fnArg.clone());
                 //println!("fnArg2 {}", fnArg2);
                 //println!("Convert arg {} => fnArg {}", arg, fnArg2);
-                self.updateConverterDestination(arg, &fnArg2);
+                self.unifier.updateConverterDestination(arg, &fnArg2);
             }
             let constraints = self.unifier.apply(constraintContext.clone());
 
@@ -736,7 +715,7 @@ impl<'a> Typechecker<'a> {
                 if let Some(selfType) = self.selfType.clone() {
                     result = result.changeSelfType(selfType);
                 }
-                self.updateConverterDestination(arg, &result);
+                self.unifier.updateConverterDestination(arg, &result);
             }
             InstructionKind::Ref(dest, arg) => {
                 let arg_type = arg.getType();
