@@ -275,7 +275,7 @@ impl<'a> DropChecker<'a> {
         if path.isRootOnly() {
             let ty = path.root.getType();
             assert!(!ty.isReference(), "path root should not be a reference for a move!",);
-            self.implResolver.isCopy(ty)
+            self.implResolver.isCopy(&ty)
         } else {
             let resultVar = instruction.kind.getResultVar().expect("no result var");
             let resulTy = resultVar.getType();
@@ -283,7 +283,7 @@ impl<'a> DropChecker<'a> {
                 !resulTy.isReference(),
                 "result type should not be a reference for a move!",
             );
-            self.implResolver.isCopy(resulTy)
+            self.implResolver.isCopy(&resulTy)
         }
     }
 }

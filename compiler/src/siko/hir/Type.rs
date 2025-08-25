@@ -48,17 +48,17 @@ impl Type {
         }
     }
 
-    pub fn unpackRef(&self) -> &Type {
+    pub fn unpackRef(self) -> Type {
         match self {
             Type::Reference(ty, _) => ty.unpackRef(),
-            ty => ty,
+            ty => ty.clone(),
         }
     }
 
-    pub fn unpackPtr(&self) -> &Type {
+    pub fn unpackPtr(self) -> Type {
         match self {
-            Type::Ptr(ty) => ty,
-            ty => ty,
+            Type::Ptr(ty) => *ty,
+            ty => ty.clone(),
         }
     }
 

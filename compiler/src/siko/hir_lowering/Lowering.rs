@@ -93,7 +93,7 @@ impl<'a> Builder<'a> {
                         convertFunctionName(&info.name)
                     };
                     let args = info.args.iter().map(|var| self.buildVariable(var)).collect();
-                    if dest.getType().isNever() || (f.kind.isExternC() && *dest.getType() == getUnitTypeName()) {
+                    if dest.getType().isNever() || (f.kind.isExternC() && dest.getType() == getUnitTypeName()) {
                         block.instructions.push(Instruction::Call(None, fnName, args));
                     } else {
                         let dest = self.buildVariable(dest);
@@ -216,7 +216,7 @@ impl<'a> Builder<'a> {
                             .instructions
                             .push(Instruction::GetFieldRef(destVar, currentReceiver, index));
                         currentReceiver = tmpVariable;
-                        receiverTy = field.ty.as_ref().expect("no type for field ref");
+                        receiverTy = field.ty.clone().expect("no type for field ref");
                     }
                 }
                 HirInstructionKind::FieldAssign(dest, root, fields) => {
@@ -227,7 +227,7 @@ impl<'a> Builder<'a> {
                         let c = self.program.structs.get(&structName).expect("structDef not found");
                         let (_, index) = c.getField(&field.name.name());
                         indices.push(index);
-                        ty = field.ty.as_ref().expect("field without ty!");
+                        ty = field.ty.clone().expect("field without ty!");
                     }
                     let root = self.buildVariable(root);
                     let dest = self.buildVariable(dest);
@@ -255,12 +255,12 @@ impl<'a> Builder<'a> {
                     block.instructions.push(Instruction::Declare(dest.clone()));
                     for (index, field) in fields.iter().enumerate() {
                         if let HirType::Ptr(inner) = receiverTy {
-                            receiverTy = inner;
+                            receiverTy = *inner;
                         }
                         let structName = receiverTy.getName().expect("no name for field ref root");
                         let c = self.program.structs.get(&structName).expect("structDef not found");
                         let (_, findex) = c.getField(&field.name.name());
-                        receiverTy = field.ty.as_ref().expect("no type for field ref");
+                        receiverTy = field.ty.clone().expect("no type for field ref");
 
                         let tmpVariable = MirVariable {
                             name: format!("{}_{}_{}", root.name, index, field.name),

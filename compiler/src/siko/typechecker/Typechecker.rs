@@ -563,10 +563,11 @@ impl<'a> Typechecker<'a> {
     }
 
     fn lookupMethod(&mut self, receiverType: Type, methodName: &String, location: Location) -> (QualifiedName, bool) {
-        match receiverType.unpackRef() {
+        let baseType = receiverType.clone().unpackRef();
+        match baseType.clone() {
             Type::Named(name, _) => {
                 if let Some(structDef) = self.program.structs.get(&name) {
-                    let structDef = self.instantiateStruct(structDef, receiverType.unpackRef());
+                    let structDef = self.instantiateStruct(structDef, &baseType);
                     for m in &structDef.methods {
                         if m.name == *methodName {
                             //println!("Added {} {}", dest, m.fullName);
@@ -575,7 +576,7 @@ impl<'a> Typechecker<'a> {
                     }
                     return self.lookupTraitMethod(receiverType, methodName, location);
                 } else if let Some(enumDef) = self.program.enums.get(&name) {
-                    let enumDef = self.instantiateEnum(enumDef, receiverType.unpackRef());
+                    let enumDef = self.instantiateEnum(enumDef, &baseType);
                     for m in &enumDef.methods {
                         if m.name == *methodName {
                             return (m.fullName.clone(), false);
@@ -640,7 +641,7 @@ impl<'a> Typechecker<'a> {
             },
             FieldId::Indexed(index) => {
                 let receiverType = receiverType.apply(&self.substitution);
-                match receiverType.unpackRef() {
+                match receiverType.clone().unpackRef() {
                     Type::Tuple(types) => {
                         if *index as usize >= types.len() {
                             TypecheckerError::FieldNotFound(
@@ -670,10 +671,11 @@ impl<'a> Typechecker<'a> {
 
     fn readField(&mut self, receiverType: Type, fieldName: String, location: Location) -> Type {
         let receiverType = receiverType.apply(&self.substitution);
-        match receiverType.unpackRef() {
+        let baseType = receiverType.clone().unpackRef();
+        match baseType.clone() {
             Type::Named(name, _) => {
                 if let Some(structDef) = self.program.structs.get(&name) {
-                    let structDef = self.instantiateStruct(structDef, receiverType.unpackRef());
+                    let structDef = self.instantiateStruct(structDef, &baseType);
                     for f in &structDef.fields {
                         if f.name == *fieldName {
                             let mut result = f.ty.clone();
@@ -867,10 +869,11 @@ impl<'a> Typechecker<'a> {
                 let rootTy = self.getType(root);
                 let rootTy = rootTy.apply(&self.substitution);
                 let isRef = rootTy.isReference();
-                match rootTy.unpackRef().getName() {
+                let baseTy = rootTy.clone().unpackRef();
+                match baseTy.getName() {
                     Some(name) => {
                         let e = self.program.enums.get(&name).expect("not an enum in transform!");
-                        let e = self.instantiateEnum(e, &rootTy.unpackRef());
+                        let e = self.instantiateEnum(e, &baseTy);
                         let v = &e.variants[*index as usize];
                         let destType = if isRef {
                             Type::Reference(Box::new(Type::Tuple(v.items.clone())), None)
@@ -936,7 +939,7 @@ impl<'a> Typechecker<'a> {
                     FieldId::Indexed(index) => {
                         receiverType = receiverType.apply(&self.substitution);
                         let isRef = receiverType.isReference();
-                        match receiverType.unpackRef() {
+                        match receiverType.clone().unpackRef() {
                             Type::Tuple(t) => {
                                 if index as usize >= t.len() {
                                     TypecheckerError::FieldNotFound(

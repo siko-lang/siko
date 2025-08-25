@@ -55,7 +55,7 @@ impl<'a> TypeVerifier<'a> {
         if let Some(existing_type) = self.variableTypes.get(&var.name()) {
             assert_eq!(
                 existing_type,
-                varType,
+                &varType,
                 "Variable {} has inconsistent types: was {:?}, now {:?} in function {}",
                 var.name(),
                 existing_type,
@@ -136,7 +136,7 @@ impl<'a> TypeVerifier<'a> {
                 fnType = instantiateType(&mut self.allocator, fnType);
                 //println!("After substitution: {}", fnType);
                 self.unify(&fnType, &Type::Function(argTypes, Box::new(destType.clone())));
-                self.unify(destType, &fnType.getResult());
+                self.unify(&destType, &fnType.getResult());
                 // println!(
                 //     "Function call {}: expected type {:?}, got {:?}",
                 //     fname,
@@ -151,15 +151,15 @@ impl<'a> TypeVerifier<'a> {
                 unreachable!("Bind found in instruction verification");
             }
             InstructionKind::Assign(dest, src) => {
-                self.unify(src.getType(), dest.getType());
+                self.unify(&src.getType(), &dest.getType());
             }
             InstructionKind::Ref(dest, src) => {
                 let ty = Type::Reference(Box::new(src.getType().clone()), None);
-                self.unify(&ty, dest.getType());
+                self.unify(&ty, &dest.getType());
             }
             InstructionKind::PtrOf(dest, src) => {
                 let ty = Type::Ptr(Box::new(src.getType().clone()));
-                self.unify(&ty, dest.getType());
+                self.unify(&ty, &dest.getType());
             }
             InstructionKind::FieldRef(dest, src, fields) => {
                 //println!("FieldRef: {} src {}", dest, src.getType());
@@ -168,7 +168,7 @@ impl<'a> TypeVerifier<'a> {
                     rootType = self.checkFieldInfo(rootType, f);
                 }
                 self.unify(
-                    dest.getType(),
+                    &dest.getType(),
                     &fields.last().expect("msg").ty.clone().expect("field type not found"),
                 );
             }
@@ -176,7 +176,7 @@ impl<'a> TypeVerifier<'a> {
                 //println!("Tuple create: {:?} dest {}", items, dest.getType());
                 let items = items.iter().map(|item| item.getType().clone()).collect::<Vec<_>>();
                 let ty = Type::Tuple(items);
-                self.unify(&ty, dest.getType());
+                self.unify(&ty, &dest.getType());
             }
             InstructionKind::Transform(dest, src, index) => {
                 let mut srcTy = src.getType().clone();
@@ -196,10 +196,10 @@ impl<'a> TypeVerifier<'a> {
                 if isRef {
                     ty1 = Type::Reference(Box::new(ty1), None);
                 }
-                self.unify(&ty1, dest.getType());
+                self.unify(&ty1, &dest.getType());
             }
             InstructionKind::Return(_, var) => {
-                self.unify(var.getType(), &self.function.result);
+                self.unify(&var.getType(), &self.function.result);
             }
             InstructionKind::DynamicFunctionCall(_, _, _) => {
                 unimplemented!("Dynamic function calls are not yet supported in type verification");
@@ -236,7 +236,7 @@ impl<'a> TypeVerifier<'a> {
                 for f in fields {
                     rootType = self.checkFieldInfo(rootType, f);
                 }
-                self.unify(&rootType, rhs.getType());
+                self.unify(&rootType, &rhs.getType());
                 self.checkVariable(root);
                 self.checkVariable(rhs);
             }
@@ -281,13 +281,13 @@ impl<'a> TypeVerifier<'a> {
                 self.checkVariable(dest);
                 self.checkVariable(src);
                 let ty = Type::Ptr(Box::new(dest.getType().clone()));
-                self.unify(&ty, src.getType());
+                self.unify(&ty, &src.getType());
             }
             InstructionKind::StorePtr(dest, src) => {
                 self.checkVariable(dest);
                 self.checkVariable(src);
                 let ty = Type::Ptr(Box::new(src.getType().clone()));
-                self.unify(&ty, dest.getType());
+                self.unify(&ty, &dest.getType());
             }
         }
     }

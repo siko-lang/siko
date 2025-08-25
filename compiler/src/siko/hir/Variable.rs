@@ -1,5 +1,7 @@
+use std::cell::RefCell;
 use std::fmt::Debug;
 use std::fmt::Display;
+use std::rc::Rc;
 
 use crate::siko::backend::drop::Path::Path;
 use crate::siko::location::Location::Location;
@@ -72,54 +74,79 @@ impl Debug for VariableName {
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Variable {
+pub struct VariableInfo {
     name: VariableName,
     location: Location,
     ty: Option<Type>,
 }
 
+impl VariableInfo {
+    pub fn new(name: VariableName, location: Location, ty: Option<Type>) -> VariableInfo {
+        VariableInfo { name, location, ty }
+    }
+
+    pub fn getType(&self) -> Type {
+        match &self.ty {
+            Some(ty) => ty.clone(),
+            None => panic!("No type found for var {}", self.name),
+        }
+    }
+
+    pub fn setType(&mut self, ty: Type) {
+        self.ty = Some(ty);
+    }
+}
+
+impl Debug for VariableInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {:?}", self.name, self.ty)
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Variable {
+    info: Rc<RefCell<VariableInfo>>,
+}
+
 impl Variable {
     pub fn new(name: VariableName, location: Location) -> Variable {
         Variable {
-            name,
-            location,
-            ty: None,
+            info: Rc::new(RefCell::new(VariableInfo::new(name, location, None))),
         }
     }
 
     pub fn newWithType(name: VariableName, location: Location, ty: Type) -> Variable {
         Variable {
-            name,
-            location,
-            ty: Some(ty),
+            info: Rc::new(RefCell::new(VariableInfo::new(name, location, Some(ty)))),
         }
     }
 
     pub fn cloneInto(&self, name: VariableName) -> Variable {
         Variable {
-            name,
-            location: self.location.clone(),
-            ty: self.ty.clone(),
+            info: Rc::new(RefCell::new(VariableInfo::new(
+                name,
+                self.location(),
+                self.getTypeOpt(),
+            ))),
         }
     }
 
     pub fn withLocation(&self, location: Location) -> Variable {
         Variable {
-            name: self.name.clone(),
-            location,
-            ty: self.ty.clone(),
+            info: Rc::new(RefCell::new(VariableInfo::new(
+                self.name(),
+                location,
+                self.getTypeOpt(),
+            ))),
         }
     }
 
-    pub fn getType(&self) -> &Type {
-        match &self.ty {
-            Some(ty) => ty,
-            None => panic!("No type found for var {}", self.name),
-        }
+    pub fn getType(&self) -> Type {
+        self.info.borrow().getType()
     }
 
-    pub fn getTypeOpt(&self) -> Option<&Type> {
-        self.ty.as_ref()
+    pub fn getTypeOpt(&self) -> Option<Type> {
+        self.info.borrow().ty.clone()
     }
 
     pub fn replace(&self, from: &Variable, to: Variable) -> Variable {
@@ -131,48 +158,51 @@ impl Variable {
     }
 
     pub fn isTemp(&self) -> bool {
-        self.name.isTemp()
+        self.name().isTemp()
     }
 
     pub fn isDropFlag(&self) -> bool {
-        self.name.isDropFlag()
+        self.name().isDropFlag()
     }
 
     pub fn isArg(&self) -> bool {
-        self.name.isArg()
+        self.name().isArg()
     }
 
     pub fn getDropFlag(&self) -> Variable {
-        Variable {
-            name: self.name.getDropFlag(),
-            location: self.location.clone(),
+        let info = VariableInfo {
+            name: self.name().getDropFlag(),
+            location: self.location(),
             ty: Some(Type::getBoolType()),
+        };
+        Variable {
+            info: Rc::new(RefCell::new(info)),
         }
     }
 
     pub fn toPath(&self) -> Path {
-        Path::new(self.clone(), self.location.clone())
+        Path::new(self.clone(), self.location())
     }
 
     pub fn setType(&mut self, ty: Type) {
-        self.ty = Some(ty);
+        self.info.borrow_mut().setType(ty);
     }
 
     pub fn location(&self) -> Location {
-        self.location.clone()
+        self.info.borrow().location.clone()
     }
 
     pub fn name(&self) -> VariableName {
-        self.name.clone()
+        self.info.borrow().name.clone()
     }
 }
 
 impl Display for Variable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(ty) = &self.ty {
-            write!(f, "${}: {}", self.name, ty)
+        if let Some(ty) = &self.getTypeOpt() {
+            write!(f, "${}: {}", self.name(), ty)
         } else {
-            write!(f, "${}", self.name)
+            write!(f, "${}", self.name())
         }
     }
 }

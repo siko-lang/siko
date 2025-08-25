@@ -22,7 +22,13 @@ fn fieldNameForIndex(index: usize) -> String {
 }
 
 fn getTuple(ty: &Type) -> QualifiedName {
-    QualifiedName::Module("siko".to_string()).add(format!("Tuple_{}", ty))
+    let sikoModuleName = "siko";
+    if let Type::Named(name, _) = ty {
+        if name.module().toString() == sikoModuleName && name.getShortName().starts_with("Tuple_") {
+            return name.clone();
+        }
+    }
+    QualifiedName::Module(sikoModuleName.to_string()).add(format!("Tuple_{}", ty))
 }
 
 pub fn getUnitTypeName() -> Type {
@@ -183,10 +189,10 @@ impl RemoveTuples for CallInfo {
 impl RemoveTuples for InstructionKind {
     fn removeTuples(&self, ctx: &mut Context) -> InstructionKind {
         match self {
-            InstructionKind::Tuple(dest, args) => InstructionKind::FunctionCall(
-                dest.removeTuples(ctx),
-                CallInfo::new(getTuple(&dest.getType()), args.removeTuples(ctx)),
-            ),
+            InstructionKind::Tuple(dest, args) => {
+                let tupleName = getTuple(&dest.getType());
+                InstructionKind::FunctionCall(dest.removeTuples(ctx), CallInfo::new(tupleName, args.removeTuples(ctx)))
+            }
             InstructionKind::Converter(dest, source) => {
                 InstructionKind::Converter(dest.removeTuples(ctx), source.removeTuples(ctx))
             }

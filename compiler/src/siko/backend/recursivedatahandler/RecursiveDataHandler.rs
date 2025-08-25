@@ -60,10 +60,10 @@ fn processFunction(function: &Function, program: &Program) -> Function {
                                 //println!("Calling {}.{} => {}", f.name, index, formatTypes(&variant.items));
                                 for (arg, ty) in info.args.iter().zip(&variant.items) {
                                     let argType = arg.getType();
-                                    if argType == ty {
+                                    if argType == *ty {
                                         continue;
                                     }
-                                    if ty.isBoxed(argType) {
+                                    if ty.isBoxed(&argType) {
                                         //println!("Boxing argument: {} of type {}", arg, argType);
                                         let boxedVar = bodyBuilder
                                             .createTempValueWithType(instruction.location.clone(), ty.clone());
@@ -85,11 +85,11 @@ fn processFunction(function: &Function, program: &Program) -> Function {
                         let sourceType = source.getType().unpackRef();
                         let enumName = sourceType.getName().expect("not named type");
                         let e = program.getEnum(&enumName).expect("enum not found");
-                        let e = instantiateEnum(&mut allocator, &e, sourceType);
+                        let e = instantiateEnum(&mut allocator, &e, &sourceType);
                         let variant = &e.variants[*index as usize];
                         let variantType = Type::Tuple(variant.items.clone());
                         let destType = dest.getType().unpackRef();
-                        if *destType != variantType {
+                        if destType != variantType {
                             //println!("Transforming {} from {} to {}", dest, sourceType, variantType);
                             let mut newDest = dest.clone();
                             if source.getType().isReference() {
