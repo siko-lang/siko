@@ -58,7 +58,8 @@ impl UsageInfo {
 
 fn varToUsage(var: &Variable) -> Usage {
     let ty = var.getType();
-    //println!("Using variable: {} {}", var.name.visibleName(), ty);
+    //println!("Using variable: {} {}", var.name().visibleName(), ty);
+    assert!(var.isUsage());
     if ty.isReference() || ty.isPtr() {
         Usage {
             path: var.toPath(),

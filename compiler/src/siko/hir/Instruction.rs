@@ -410,7 +410,65 @@ impl Debug for InstructionKind {
     }
 }
 
+fn useVars(vars: Vec<Variable>) -> Vec<Variable> {
+    vars.iter().map(|v| v.useVar()).collect()
+}
+
 impl InstructionKind {
+    pub fn setVariableKinds(&self) -> InstructionKind {
+        match self {
+            InstructionKind::FunctionCall(dest, info) => {
+                let mut info = info.clone();
+                info.args = useVars(info.args);
+                InstructionKind::FunctionCall(dest.clone(), info)
+            }
+            InstructionKind::Converter(v1, v2) => InstructionKind::Converter(v1.clone(), v2.useVar()),
+            InstructionKind::MethodCall(dest, receiver, name, args) => {
+                InstructionKind::MethodCall(dest.clone(), receiver.useVar(), name.clone(), useVars(args.clone()))
+            }
+            InstructionKind::DynamicFunctionCall(_, _, _) => {
+                unimplemented!("DynamicFunctionCall is not yet implemented")
+            }
+            InstructionKind::FieldRef(dest, receiver, infos) => {
+                InstructionKind::FieldRef(dest.clone(), receiver.useVar(), infos.clone())
+            }
+            InstructionKind::Bind(dest, src, mutability) => {
+                InstructionKind::Bind(dest.clone(), src.useVar(), mutability.clone())
+            }
+            InstructionKind::Tuple(dest, args) => InstructionKind::Tuple(dest.clone(), useVars(args.clone())),
+            InstructionKind::StringLiteral(v, lit) => InstructionKind::StringLiteral(v.clone(), lit.clone()),
+            InstructionKind::IntegerLiteral(v, lit) => InstructionKind::IntegerLiteral(v.clone(), lit.clone()),
+            InstructionKind::CharLiteral(v, lit) => InstructionKind::CharLiteral(v.clone(), lit.clone()),
+            InstructionKind::Return(v, arg) => InstructionKind::Return(v.clone(), arg.useVar()),
+            InstructionKind::Ref(dest, arg) => InstructionKind::Ref(dest.clone(), arg.useVar()),
+            InstructionKind::PtrOf(dest, arg) => InstructionKind::PtrOf(dest.clone(), arg.useVar()),
+            InstructionKind::DropPath(p) => InstructionKind::DropPath(p.clone()),
+            InstructionKind::DropMetadata(kind) => InstructionKind::DropMetadata(kind.clone()),
+            InstructionKind::Drop(dest, arg) => InstructionKind::Drop(dest.clone(), arg.useVar()),
+            InstructionKind::Jump(v, blockId) => InstructionKind::Jump(v.clone(), blockId.clone()),
+            InstructionKind::Assign(dest, src) => InstructionKind::Assign(dest.clone(), src.useVar()),
+            InstructionKind::FieldAssign(dest, rhs, infos) => {
+                InstructionKind::FieldAssign(dest.clone(), rhs.useVar(), infos.clone())
+            }
+            InstructionKind::AddressOfField(dest, rhs, infos) => {
+                InstructionKind::AddressOfField(dest.clone(), rhs.useVar(), infos.clone())
+            }
+            InstructionKind::DeclareVar(v, mutability) => InstructionKind::DeclareVar(v.clone(), mutability.clone()),
+            InstructionKind::Transform(dest, arg, index) => {
+                InstructionKind::Transform(dest.clone(), arg.useVar(), index.clone())
+            }
+            InstructionKind::EnumSwitch(arg, cases) => InstructionKind::EnumSwitch(arg.useVar(), cases.clone()),
+            InstructionKind::IntegerSwitch(arg, cases) => InstructionKind::IntegerSwitch(arg.useVar(), cases.clone()),
+            InstructionKind::BlockStart(id) => InstructionKind::BlockStart(id.clone()),
+            InstructionKind::BlockEnd(id) => InstructionKind::BlockEnd(id.clone()),
+            InstructionKind::With(v, info) => InstructionKind::With(v.clone(), info.clone()),
+            InstructionKind::ReadImplicit(v, index) => InstructionKind::ReadImplicit(v.clone(), index.clone()),
+            InstructionKind::WriteImplicit(index, v) => InstructionKind::WriteImplicit(index.clone(), v.useVar()),
+            InstructionKind::LoadPtr(dest, src) => InstructionKind::LoadPtr(dest.clone(), src.useVar()),
+            InstructionKind::StorePtr(dest, src) => InstructionKind::StorePtr(dest.clone(), src.useVar()),
+        }
+    }
+
     pub fn getResultVar(&self) -> Option<Variable> {
         match self {
             InstructionKind::FunctionCall(v, _) => Some(v.clone()),

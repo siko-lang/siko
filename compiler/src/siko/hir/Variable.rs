@@ -104,25 +104,50 @@ impl Debug for VariableInfo {
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum VariableKind {
+    Definition,
+    Usage,
+}
+
+impl Display for VariableKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VariableKind::Definition => write!(f, "d"),
+            VariableKind::Usage => write!(f, "u"),
+        }
+    }
+}
+
+impl Debug for VariableKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+#[derive(Clone, Eq)]
 pub struct Variable {
+    kind: VariableKind,
     info: Rc<RefCell<VariableInfo>>,
 }
 
 impl Variable {
     pub fn new(name: VariableName, location: Location) -> Variable {
         Variable {
+            kind: VariableKind::Definition,
             info: Rc::new(RefCell::new(VariableInfo::new(name, location, None))),
         }
     }
 
     pub fn newWithType(name: VariableName, location: Location, ty: Type) -> Variable {
         Variable {
+            kind: VariableKind::Definition,
             info: Rc::new(RefCell::new(VariableInfo::new(name, location, Some(ty)))),
         }
     }
 
     pub fn cloneInto(&self, name: VariableName) -> Variable {
         Variable {
+            kind: self.kind.clone(),
             info: Rc::new(RefCell::new(VariableInfo::new(
                 name,
                 self.location(),
@@ -133,6 +158,7 @@ impl Variable {
 
     pub fn withLocation(&self, location: Location) -> Variable {
         Variable {
+            kind: self.kind.clone(),
             info: Rc::new(RefCell::new(VariableInfo::new(
                 self.name(),
                 location,
@@ -176,8 +202,13 @@ impl Variable {
             ty: Some(Type::getBoolType()),
         };
         Variable {
+            kind: VariableKind::Definition,
             info: Rc::new(RefCell::new(info)),
         }
+    }
+
+    pub fn isUsage(&self) -> bool {
+        self.kind == VariableKind::Usage
     }
 
     pub fn toPath(&self) -> Path {
@@ -195,14 +226,21 @@ impl Variable {
     pub fn name(&self) -> VariableName {
         self.info.borrow().name.clone()
     }
+
+    pub fn useVar(&self) -> Variable {
+        Variable {
+            kind: VariableKind::Usage,
+            info: self.info.clone(),
+        }
+    }
 }
 
 impl Display for Variable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(ty) = &self.getTypeOpt() {
-            write!(f, "${}: {}", self.name(), ty)
+            write!(f, "${}/{}: {}", self.name(), self.kind, ty)
         } else {
-            write!(f, "${}", self.name())
+            write!(f, "${}/{}", self.name(), self.kind)
         }
     }
 }
@@ -210,5 +248,23 @@ impl Display for Variable {
 impl std::fmt::Debug for Variable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self)
+    }
+}
+
+impl PartialEq for Variable {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.info, &other.info)
+    }
+}
+
+impl PartialOrd for Variable {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Rc::as_ptr(&self.info).partial_cmp(&Rc::as_ptr(&other.info))
+    }
+}
+
+impl Ord for Variable {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        Rc::as_ptr(&self.info).cmp(&Rc::as_ptr(&other.info))
     }
 }

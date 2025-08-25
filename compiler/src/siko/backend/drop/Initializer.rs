@@ -44,17 +44,11 @@ impl<'a> Initializer<'a> {
         if var.hasTrivialDrop() || var.isArg() {
             return;
         }
-        if !explicit
-            && self
-                .declarationStore
-                .explicitDeclarations
-                .contains(&var.name())
-        {
+        if !explicit && self.declarationStore.explicitDeclarations.contains(&var.name()) {
             return;
         }
         self.declarationStore.declare(var.clone(), syntaxBlock.clone());
-        self.dropMetadataStore
-            .addVariable(var.name(), var.getType().clone());
+        self.dropMetadataStore.addVariable(var.name(), var.getType().clone());
         let kind = MetadataKind::DeclarationList(var.name());
         builder.addInstruction(InstructionKind::DropMetadata(kind), var.location().clone());
         builder.step();
@@ -102,6 +96,7 @@ impl<'a> Initializer<'a> {
             return self.function.clone();
         }
         //println!("Drop initializer processing function: {}", self.function.name);
+        //println!("function {}", self.function);
 
         // let graph = GraphBuilder::new(self.function).withPostfix("drop").build();
         // graph.printDot();

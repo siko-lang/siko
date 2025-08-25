@@ -75,7 +75,7 @@ impl Block {
     pub fn add(&mut self, kind: InstructionKind, location: Location, implicit: bool) {
         self.instructions.push(Instruction {
             implicit: implicit,
-            kind: kind,
+            kind: kind.setVariableKinds(),
             location: location,
         });
     }
@@ -85,7 +85,7 @@ impl Block {
             index,
             Instruction {
                 implicit: implicit,
-                kind: kind,
+                kind: kind.setVariableKinds(),
                 location: location,
             },
         );
@@ -95,7 +95,7 @@ impl Block {
         let isImplicit = self.instructions[index].implicit || implicit;
         self.instructions[index] = Instruction {
             implicit: isImplicit,
-            kind: kind,
+            kind: kind.setVariableKinds(),
             location: location,
         };
     }
