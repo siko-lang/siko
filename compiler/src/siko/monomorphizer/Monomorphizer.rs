@@ -40,7 +40,7 @@ use crate::siko::{
 impl Monomorphize for Variable {
     fn process(&self, sub: &Substitution, mono: &mut Monomorphizer) -> Self {
         let name = self.name().clone();
-        let mut v = self.cloneInto(name);
+        let v = self.cloneInto(name);
         v.setType(v.getType().process(sub, mono));
         v
     }

@@ -91,7 +91,7 @@ fn processFunction(function: &Function, program: &Program) -> Function {
                         let destType = dest.getType().unpackRef();
                         if destType != variantType {
                             //println!("Transforming {} from {} to {}", dest, sourceType, variantType);
-                            let mut newDest = dest.clone();
+                            let newDest = dest.clone();
                             if source.getType().isReference() {
                                 newDest.setType(variantType.asRef());
                             } else {
@@ -117,7 +117,7 @@ fn processFunction(function: &Function, program: &Program) -> Function {
                             //     dest, source, variantTypes, index
                             // );
                             let isRef = source.getType().isReference();
-                            let mut newSource = source.clone();
+                            let newSource = source.clone();
                             if isRef {
                                 newSource.setType(variantTypes.asRef());
                             } else {

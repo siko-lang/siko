@@ -119,7 +119,6 @@ pub struct Typechecker<'a> {
     implementationStore: &'a ImplementationStore,
     allocator: TypeVarAllocator,
     substitution: Substitution,
-    types: BTreeMap<String, Type>,
     selfType: Option<Type>,
     mutables: BTreeMap<String, Mutability>,
     bodyBuilder: BodyBuilder,
@@ -150,7 +149,6 @@ impl<'a> Typechecker<'a> {
             implementationStore: implementationStore,
             allocator: allocator,
             substitution: Substitution::new(),
-            types: BTreeMap::new(),
             selfType: None,
             mutables: BTreeMap::new(),
             bodyBuilder: BodyBuilder::cloneFunction(f),
@@ -180,6 +178,7 @@ impl<'a> Typechecker<'a> {
     }
 
     fn initializeVar(&mut self, var: &Variable) {
+        //println!("Initializing var {}", var);
         match var.getTypeOpt() {
             Some(ty) => {
                 self.setType(var, ty.clone());
@@ -199,15 +198,13 @@ impl<'a> Typechecker<'a> {
         //println!("Initializing {}", self.f.name);
         for param in &self.f.params {
             match &param {
-                Parameter::Named(name, ty, mutable) => {
-                    self.types.insert(format!("{}", name), ty.clone());
+                Parameter::Named(name, _, mutable) => {
                     if *mutable {
                         self.mutables.insert(name.clone(), Mutability::ExplicitMutable);
                     }
                 }
                 Parameter::SelfParam(mutable, ty) => {
                     let name = format!("self");
-                    self.types.insert(name.clone(), ty.clone());
                     self.selfType = Some(ty.clone());
                     if *mutable {
                         self.mutables.insert(name, Mutability::ExplicitMutable);
@@ -312,14 +309,13 @@ impl<'a> Typechecker<'a> {
     }
 
     fn getType(&self, var: &Variable) -> Type {
-        match self.types.get(&var.name().to_string()) {
-            Some(ty) => ty.clone(),
-            None => panic!("No type found for {}!", var),
-        }
+        //println!("Getting type of var {}", var);
+        var.getType()
     }
 
     fn setType(&mut self, var: &Variable, ty: Type) {
-        self.types.insert(var.name().to_string(), ty);
+        //println!("Setting type of var {} to {}", var, ty);
+        var.setType(ty);
     }
 
     fn unify(&mut self, ty1: Type, ty2: Type, location: Location) {
@@ -830,10 +826,6 @@ impl<'a> Typechecker<'a> {
                     let addressOfVar = self
                         .bodyBuilder
                         .createTempValueWithType(instruction.location.clone(), receiverType.clone().asPtr());
-                    self.types.insert(
-                        addressOfVar.name().to_string(),
-                        Type::Ptr(Box::new(receiverType.clone())),
-                    );
                     let kind = InstructionKind::AddressOfField(addressOfVar.clone(), receiver.clone(), newFields);
                     builder.addInstruction(kind, instruction.location.clone());
                     builder.step();
@@ -1426,7 +1418,7 @@ impl<'a> Typechecker<'a> {
                 for var in vars {
                     let ty = self.getType(&var);
                     let ty = ty.apply(&self.substitution);
-                    let mut newVar = var.clone();
+                    let newVar = var.clone();
                     newVar.setType(ty);
                     instruction.kind = instruction.kind.replaceVar(var, newVar);
                 }

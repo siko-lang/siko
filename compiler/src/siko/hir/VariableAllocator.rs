@@ -28,7 +28,7 @@ impl VariableAllocator {
     }
 
     pub fn allocateWithType(&self, location: Location, ty: super::Type::Type) -> Variable {
-        let mut var = self.allocate(location);
+        let var = self.allocate(location);
         var.setType(ty);
         var
     }

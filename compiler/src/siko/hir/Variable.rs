@@ -76,13 +76,12 @@ impl Debug for VariableName {
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct VariableInfo {
     name: VariableName,
-    location: Location,
     ty: Option<Type>,
 }
 
 impl VariableInfo {
-    pub fn new(name: VariableName, location: Location, ty: Option<Type>) -> VariableInfo {
-        VariableInfo { name, location, ty }
+    pub fn new(name: VariableName, ty: Option<Type>) -> VariableInfo {
+        VariableInfo { name, ty }
     }
 
     pub fn getType(&self) -> Type {
@@ -128,42 +127,39 @@ impl Debug for VariableKind {
 pub struct Variable {
     kind: VariableKind,
     info: Rc<RefCell<VariableInfo>>,
+    location: Location,
 }
 
 impl Variable {
     pub fn new(name: VariableName, location: Location) -> Variable {
         Variable {
             kind: VariableKind::Definition,
-            info: Rc::new(RefCell::new(VariableInfo::new(name, location, None))),
+            info: Rc::new(RefCell::new(VariableInfo::new(name, None))),
+            location,
         }
     }
 
     pub fn newWithType(name: VariableName, location: Location, ty: Type) -> Variable {
         Variable {
             kind: VariableKind::Definition,
-            info: Rc::new(RefCell::new(VariableInfo::new(name, location, Some(ty)))),
+            info: Rc::new(RefCell::new(VariableInfo::new(name, Some(ty)))),
+            location,
         }
     }
 
     pub fn cloneInto(&self, name: VariableName) -> Variable {
         Variable {
             kind: self.kind.clone(),
-            info: Rc::new(RefCell::new(VariableInfo::new(
-                name,
-                self.location(),
-                self.getTypeOpt(),
-            ))),
+            info: Rc::new(RefCell::new(VariableInfo::new(name, self.getTypeOpt()))),
+            location: self.location(),
         }
     }
 
     pub fn withLocation(&self, location: Location) -> Variable {
         Variable {
             kind: self.kind.clone(),
-            info: Rc::new(RefCell::new(VariableInfo::new(
-                self.name(),
-                location,
-                self.getTypeOpt(),
-            ))),
+            info: self.info.clone(),
+            location,
         }
     }
 
@@ -198,12 +194,12 @@ impl Variable {
     pub fn getDropFlag(&self) -> Variable {
         let info = VariableInfo {
             name: self.name().getDropFlag(),
-            location: self.location(),
             ty: Some(Type::getBoolType()),
         };
         Variable {
             kind: VariableKind::Definition,
             info: Rc::new(RefCell::new(info)),
+            location: self.location(),
         }
     }
 
@@ -215,12 +211,12 @@ impl Variable {
         Path::new(self.clone(), self.location())
     }
 
-    pub fn setType(&mut self, ty: Type) {
+    pub fn setType(&self, ty: Type) {
         self.info.borrow_mut().setType(ty);
     }
 
     pub fn location(&self) -> Location {
-        self.info.borrow().location.clone()
+        self.location.clone()
     }
 
     pub fn name(&self) -> VariableName {
@@ -231,6 +227,7 @@ impl Variable {
         Variable {
             kind: VariableKind::Usage,
             info: self.info.clone(),
+            location: self.location.clone(),
         }
     }
 }
@@ -240,7 +237,7 @@ impl Display for Variable {
         if let Some(ty) = &self.getTypeOpt() {
             write!(f, "${}/{}: {}", self.name(), self.kind, ty)
         } else {
-            write!(f, "${}/{}", self.name(), self.kind)
+            write!(f, "${}/{} {:?}", self.name(), self.kind, Rc::as_ptr(&self.info))
         }
     }
 }
