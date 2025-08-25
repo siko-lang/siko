@@ -14,6 +14,7 @@ use crate::siko::{
         ConstraintContext::ConstraintContext,
         Data::{Enum, Struct},
         Function::{BlockId, Function, Parameter},
+        FunctionCallResolver::FunctionCallResolver,
         ImplementationResolver::ImplementationResolver,
         ImplementationStore::ImplementationStore,
         Instantiation::{instantiateEnum, instantiateImplementation, instantiateStruct, instantiateTypes},
@@ -27,6 +28,7 @@ use crate::siko::{
         TraitMethodSelector::TraitMethodSelector,
         Type::{Type, TypeVar},
         TypeVarAllocator::TypeVarAllocator,
+        Unifier::Unifier,
         Variable::Variable,
     },
     location::{Location::Location, Report::ReportContext},
@@ -34,10 +36,7 @@ use crate::siko::{
         builtins::{getCloneFnName, getImplicitConvertFnName, getNativePtrCloneName, getNativePtrIsNullName},
         QualifiedName,
     },
-    typechecker::{
-        ConstraintChecker::ConstraintChecker, ConstraintExpander::ConstraintExpander,
-        FunctionCallResolver::FunctionCallResolver, Unifier::Unifier,
-    },
+    typechecker::{ConstraintChecker::ConstraintChecker, ConstraintExpander::ConstraintExpander},
 };
 
 use super::Error::TypecheckerError;
@@ -120,6 +119,7 @@ pub struct Typechecker<'a> {
     receiverChains: BTreeMap<Variable, ReceiverChainEntry>,
     implResolver: ImplementationResolver<'a>,
     unifier: Unifier<'a>,
+    fnCallResolver: FunctionCallResolver<'a>,
 }
 
 impl<'a> Typechecker<'a> {
@@ -133,10 +133,22 @@ impl<'a> Typechecker<'a> {
     ) -> Typechecker<'a> {
         let allocator = TypeVarAllocator::new();
         let implResolver = ImplementationResolver::new(allocator.clone(), implementationStore, program);
+        let expander = ConstraintExpander::new(program, allocator.clone(), f.constraintContext.clone());
+        let knownConstraints = expander.expandKnownConstraints();
+        let unifier = Unifier::new(ctx);
+        let fnCallResolver = FunctionCallResolver::new(
+            program,
+            allocator.clone(),
+            ctx,
+            implementationStore,
+            knownConstraints.clone(),
+            unifier.clone(),
+        );
         Typechecker {
             ctx: ctx,
             program: program,
             f: f,
+            fnCallResolver,
             traitMethodSelector: traitMethodSelector,
             protocolMethodSelector: protocolMethodSelector,
             implementationStore: implementationStore,
@@ -149,25 +161,17 @@ impl<'a> Typechecker<'a> {
             knownConstraints: f.constraintContext.clone(),
             receiverChains: BTreeMap::new(),
             implResolver: implResolver,
-            unifier: Unifier::new(ctx),
+            unifier: unifier,
         }
     }
 
     pub fn run(&mut self) -> Function {
         //println!("Typechecking function {}", self.f.name);
         self.initialize();
-        self.knownConstraints = self
-            .createConstraintExpander(self.knownConstraints.clone())
-            .expandKnownConstraints();
         //self.dump(self.f);
         self.check();
         //self.dump(self.f);
         self.generate()
-    }
-
-    fn createConstraintExpander(&mut self, constraints: ConstraintContext) -> ConstraintExpander {
-        let expander = ConstraintExpander::new(self.program, self.allocator.clone(), constraints);
-        expander
     }
 
     fn initializeVar(&mut self, var: &Variable) {
@@ -372,15 +376,7 @@ impl<'a> Typechecker<'a> {
         resultVar: &Variable,
         location: Location,
     ) -> CheckFunctionCallResult {
-        let result = FunctionCallResolver::new(
-            self.program,
-            self.allocator.clone(),
-            self.ctx,
-            self.implementationStore,
-            self.knownConstraints.clone(),
-            self.unifier.clone(),
-        )
-        .resolve(f, args, resultVar, location);
+        let result = self.fnCallResolver.resolve(f, args, resultVar, location);
         CheckFunctionCallResult {
             fnType: result.fnType,
             fnName: result.fnName,

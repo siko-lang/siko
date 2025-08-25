@@ -12,11 +12,12 @@ use crate::siko::{
         Program::Program,
         Type::{formatTypes, Type},
         TypeVarAllocator::TypeVarAllocator,
+        Unifier::Unifier,
         Variable::Variable,
     },
     location::{Location::Location, Report::ReportContext},
     qualifiedname::QualifiedName,
-    typechecker::{ConstraintExpander::ConstraintExpander, Error::TypecheckerError, Unifier::Unifier},
+    typechecker::{ConstraintExpander::ConstraintExpander, Error::TypecheckerError},
 };
 
 pub struct CheckFunctionCallResult {
