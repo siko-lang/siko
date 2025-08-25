@@ -177,10 +177,10 @@ impl<'a> DropChecker<'a> {
                     if let InstructionKind::FieldRef(dest, receiver, fields) = instruction.kind {
                         let implicitCloneVar = self
                             .bodyBuilder
-                            .createTempValueWithType(dest.location.clone(), dest.getType().asRef());
+                            .createTempValueWithType(dest.location().clone(), dest.getType().asRef());
                         let implicitCloneVarRef = self
                             .bodyBuilder
-                            .createTempValueWithType(dest.location.clone(), receiver.getType().asRef());
+                            .createTempValueWithType(dest.location().clone(), receiver.getType().asRef());
                         let implicitClone = InstructionKind::FunctionCall(
                             dest.clone(),
                             CallInfo::new(getCloneFnName(), vec![implicitCloneVar.clone()]),
@@ -188,11 +188,11 @@ impl<'a> DropChecker<'a> {
                         let implicitCloneRef = InstructionKind::Ref(implicitCloneVarRef.clone(), receiver.clone());
                         let updatedKind =
                             InstructionKind::FieldRef(implicitCloneVar.clone(), implicitCloneVarRef.clone(), fields);
-                        builder.addInstruction(implicitCloneRef, dest.location.clone());
+                        builder.addInstruction(implicitCloneRef, dest.location().clone());
                         builder.step();
-                        builder.replaceInstruction(updatedKind, dest.location.clone());
+                        builder.replaceInstruction(updatedKind, dest.location().clone());
                         builder.step();
-                        builder.addInstruction(implicitClone, dest.location.clone());
+                        builder.addInstruction(implicitClone, dest.location().clone());
                         builder.step();
                     } else {
                         let mut vars = instruction.kind.collectVariables();
@@ -213,21 +213,21 @@ impl<'a> DropChecker<'a> {
                         let input = vars[0].clone();
                         let implicitCloneVar = self
                             .bodyBuilder
-                            .createTempValueWithType(input.location.clone(), input.getType().clone());
+                            .createTempValueWithType(input.location().clone(), input.getType().clone());
                         let implicitCloneVarRef = self
                             .bodyBuilder
-                            .createTempValueWithType(input.location.clone(), input.getType().asRef());
+                            .createTempValueWithType(input.location().clone(), input.getType().asRef());
                         let implicitClone = InstructionKind::FunctionCall(
                             implicitCloneVar.clone(),
                             CallInfo::new(getCloneFnName(), vec![implicitCloneVarRef.clone()]),
                         );
                         let implicitCloneRef = InstructionKind::Ref(implicitCloneVarRef.clone(), input.clone());
                         let updatedKind = instruction.kind.replaceVar(input.clone(), implicitCloneVar);
-                        builder.addInstruction(implicitCloneRef, input.location.clone());
+                        builder.addInstruction(implicitCloneRef, input.location().clone());
                         builder.step();
-                        builder.addInstruction(implicitClone, input.location.clone());
+                        builder.addInstruction(implicitClone, input.location().clone());
                         builder.step();
-                        builder.replaceInstruction(updatedKind, input.location.clone());
+                        builder.replaceInstruction(updatedKind, input.location().clone());
                         builder.step();
                     }
                     instructions.retain(|&x| x != index);

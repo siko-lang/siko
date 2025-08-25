@@ -32,8 +32,8 @@ impl<'a> Environment<'a> {
     }
 
     pub fn addArg(&mut self, arg: Variable, mutable: bool) {
-        let name = arg.name.to_string();
-        self.values.insert(arg.name.to_string(), arg);
+        let name = arg.name().to_string();
+        self.values.insert(arg.name().to_string(), arg);
         if mutable {
             self.mutables.insert(name);
         }

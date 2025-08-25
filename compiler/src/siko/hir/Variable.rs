@@ -73,8 +73,8 @@ impl Debug for VariableName {
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Variable {
-    pub name: VariableName,
-    pub location: Location,
+    name: VariableName,
+    location: Location,
     ty: Option<Type>,
 }
 
@@ -92,6 +92,22 @@ impl Variable {
             name,
             location,
             ty: Some(ty),
+        }
+    }
+
+    pub fn cloneInto(&self, name: VariableName) -> Variable {
+        Variable {
+            name,
+            location: self.location.clone(),
+            ty: self.ty.clone(),
+        }
+    }
+
+    pub fn withLocation(&self, location: Location) -> Variable {
+        Variable {
+            name: self.name.clone(),
+            location,
+            ty: self.ty.clone(),
         }
     }
 
@@ -140,6 +156,14 @@ impl Variable {
 
     pub fn setType(&mut self, ty: Type) {
         self.ty = Some(ty);
+    }
+
+    pub fn location(&self) -> Location {
+        self.location.clone()
+    }
+
+    pub fn name(&self) -> VariableName {
+        self.name.clone()
     }
 }
 

@@ -92,7 +92,7 @@ impl<'a> FunctionCallResolver<'a> {
     }
 
     fn unifyVar(&mut self, var: &Variable, ty: Type) {
-        self.unify(self.getType(var), ty, var.location.clone());
+        self.unify(self.getType(var), ty, var.location().clone());
     }
 
     fn createConstraintExpander(&mut self, constraints: ConstraintContext) -> ConstraintExpander {
@@ -145,7 +145,7 @@ impl<'a> FunctionCallResolver<'a> {
                 let ty = self.getType(arg).apply(&self.substitution);
                 //println!("Arg type: {}", ty);
                 if !ty.isSpecified(false) {
-                    TypecheckerError::TypeAnnotationNeeded(arg.location.clone()).report(self.ctx);
+                    TypecheckerError::TypeAnnotationNeeded(arg.location().clone()).report(self.ctx);
                 }
                 argTypes.push(ty);
             }

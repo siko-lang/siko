@@ -122,8 +122,7 @@ impl<'a> ExprResolver<'a> {
                     let value = env.resolve(&name.toString());
                     match value {
                         Some(value) => {
-                            let mut value = value;
-                            value.location = location.clone();
+                            let value = value.withLocation(receiver.location.clone());
                             fields.reverse();
                             self.bodyBuilder
                                 .current()
@@ -138,10 +137,7 @@ impl<'a> ExprResolver<'a> {
                 SimpleExpr::SelfValue => {
                     let selfStr = format!("self");
                     let value = match env.resolve(&selfStr) {
-                        Some(mut var) => {
-                            var.location = receiver.location.clone();
-                            var
-                        }
+                        Some(var) => var.withLocation(receiver.location.clone()),
                         None => {
                             ResolverError::UnknownValue(selfStr.clone(), receiver.location.clone()).report(self.ctx);
                         }
@@ -305,10 +301,7 @@ impl<'a> ExprResolver<'a> {
         //println!("Resolving expression: {:?}", expr);
         match &expr.expr {
             SimpleExpr::Value(name) => match env.resolve(&name.name()) {
-                Some(mut var) => {
-                    var.location = expr.location.clone();
-                    var
-                }
+                Some(var) => var.withLocation(expr.location.clone()),
                 None => {
                     if let Some(irName) = self.moduleResolver.tryResolverName(name) {
                         if self.implicits.contains_key(&irName) {
@@ -325,10 +318,7 @@ impl<'a> ExprResolver<'a> {
             SimpleExpr::SelfValue => {
                 let selfStr = format!("self");
                 match env.resolve(&selfStr) {
-                    Some(mut var) => {
-                        var.location = expr.location.clone();
-                        var
-                    }
+                    Some(var) => var.withLocation(expr.location.clone()),
                     None => {
                         ResolverError::UnknownValue(selfStr.clone(), expr.location.clone()).report(self.ctx);
                     }
@@ -664,8 +654,8 @@ impl<'a> ExprResolver<'a> {
                     if self.implicits.get(&resolvedName).is_some() {
                         let handlerName = env.resolve(&contextHandler.handler.name());
                         match handlerName {
-                            Some(mut name) => {
-                                name.location = contextHandler.handler.location();
+                            Some(name) => {
+                                let name = name.withLocation(contextHandler.handler.location().clone());
                                 handlers.push(HirWithContext::Implicit(HirImplicitHandler {
                                     implicit: resolvedName.clone(),
                                     var: name,
@@ -812,7 +802,7 @@ impl<'a> ExprResolver<'a> {
                 name.clone(),
                 value.1.clone(),
                 env.isMutable(value.0),
-                value.1.location.clone(),
+                value.1.location().clone(),
             );
             localEnv.addValue(value.0.clone(), name);
         }

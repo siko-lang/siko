@@ -9,7 +9,7 @@ use crate::siko::{
 };
 
 pub fn buildFieldPath(root: &Variable, fields: &Vec<FieldInfo>) -> Path {
-    let mut path = Path::new(root.clone(), root.location.clone());
+    let mut path = Path::new(root.clone(), root.location().clone());
     for field in fields {
         match &field.name {
             FieldId::Named(name) => {

@@ -237,9 +237,10 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::Bind(var, _, mutable) => {
                             self.initializeVar(var);
                             if *mutable {
-                                self.mutables.insert(var.name.to_string(), Mutability::ExplicitMutable);
+                                self.mutables
+                                    .insert(var.name().to_string(), Mutability::ExplicitMutable);
                             } else {
-                                self.mutables.insert(var.name.to_string(), Mutability::Immutable);
+                                self.mutables.insert(var.name().to_string(), Mutability::Immutable);
                             }
                         }
                         InstructionKind::Tuple(var, _) => {
@@ -280,7 +281,7 @@ impl<'a> Typechecker<'a> {
                         }
                         InstructionKind::DeclareVar(var, mutability) => {
                             self.initializeVar(var);
-                            self.mutables.insert(var.name.to_string(), mutability.clone());
+                            self.mutables.insert(var.name().to_string(), mutability.clone());
                         }
                         InstructionKind::Transform(var, _, _) => {
                             self.initializeVar(var);
@@ -311,14 +312,14 @@ impl<'a> Typechecker<'a> {
     }
 
     fn getType(&self, var: &Variable) -> Type {
-        match self.types.get(&var.name.to_string()) {
+        match self.types.get(&var.name().to_string()) {
             Some(ty) => ty.clone(),
             None => panic!("No type found for {}!", var),
         }
     }
 
     fn setType(&mut self, var: &Variable, ty: Type) {
-        self.types.insert(var.name.to_string(), ty);
+        self.types.insert(var.name().to_string(), ty);
     }
 
     fn unify(&mut self, ty1: Type, ty2: Type, location: Location) {
@@ -342,11 +343,11 @@ impl<'a> Typechecker<'a> {
     }
 
     fn unifyVar(&mut self, var: &Variable, ty: Type) {
-        self.unify(self.getType(var), ty, var.location.clone());
+        self.unify(self.getType(var), ty, var.location().clone());
     }
 
     fn unifyVars(&mut self, var1: &Variable, var2: &Variable) {
-        self.unify(self.getType(var1), self.getType(var2), var1.location.clone());
+        self.unify(self.getType(var1), self.getType(var2), var1.location().clone());
     }
 
     fn instantiateEnum(&mut self, e: &Enum, ty: &Type) -> Enum {
@@ -401,15 +402,15 @@ impl<'a> Typechecker<'a> {
         }
         if useProtocol {
             if targetFn.kind.isProtocolCall() {
-                let checkResult = self.checkFunctionCall_new(targetFn, args, resultVar, resultVar.location.clone());
+                let checkResult = self.checkFunctionCall_new(targetFn, args, resultVar, resultVar.location().clone());
                 let f = self
                     .program
                     .getFunction(&checkResult.fnName)
                     .expect("Function not found");
-                let checkResult = self.checkFunctionCall_new(&f, args, resultVar, resultVar.location.clone());
+                let checkResult = self.checkFunctionCall_new(&f, args, resultVar, resultVar.location().clone());
                 checkResult
             } else {
-                let checkResult = self.checkFunctionCall_new(targetFn, args, resultVar, resultVar.location.clone());
+                let checkResult = self.checkFunctionCall_new(targetFn, args, resultVar, resultVar.location().clone());
                 checkResult
             }
         } else {
@@ -472,7 +473,7 @@ impl<'a> Typechecker<'a> {
             None => panic!("Function type {} is not a function type!", instantiatedFnType),
         };
         if args.len() != fnArgs.len() {
-            TypecheckerError::ArgCountMismatch(fnArgs.len() as u32, args.len() as u32, resultVar.location.clone())
+            TypecheckerError::ArgCountMismatch(fnArgs.len() as u32, args.len() as u32, resultVar.location().clone())
                 .report(self.ctx);
         }
         if fnArgs.len() > 0 {
@@ -504,7 +505,7 @@ impl<'a> Typechecker<'a> {
                 &self.substitution,
             );
 
-            match constraintChecker.checkConstraint(&constraints, resultVar.location.clone()) {
+            match constraintChecker.checkConstraint(&constraints, resultVar.location().clone()) {
                 Ok(()) => {
                     self.allocator = constraintChecker.allocator;
                     self.substitution = constraintChecker.substitution;
@@ -795,13 +796,13 @@ impl<'a> Typechecker<'a> {
                 self.queue.push_back(*id);
             }
             InstructionKind::Assign(name, rhs) => {
-                if self.mutables.get(&name.name.to_string()) == Some(&Mutability::Immutable) {
+                if self.mutables.get(&name.name().to_string()) == Some(&Mutability::Immutable) {
                     TypecheckerError::ImmutableAssign(instruction.location.clone()).report(self.ctx);
                 }
                 self.unifyVars(name, rhs);
             }
             InstructionKind::FieldAssign(receiver, rhs, fields) => {
-                if self.mutables.get(&receiver.name.to_string()) == Some(&Mutability::Immutable) {
+                if self.mutables.get(&receiver.name().to_string()) == Some(&Mutability::Immutable) {
                     TypecheckerError::ImmutableAssign(instruction.location.clone()).report(self.ctx);
                 }
                 let receiverType = self.getType(receiver);
@@ -827,8 +828,10 @@ impl<'a> Typechecker<'a> {
                     let addressOfVar = self
                         .bodyBuilder
                         .createTempValueWithType(instruction.location.clone(), receiverType.clone().asPtr());
-                    self.types
-                        .insert(addressOfVar.name.to_string(), Type::Ptr(Box::new(receiverType.clone())));
+                    self.types.insert(
+                        addressOfVar.name().to_string(),
+                        Type::Ptr(Box::new(receiverType.clone())),
+                    );
                     let kind = InstructionKind::AddressOfField(addressOfVar.clone(), receiver.clone(), newFields);
                     builder.addInstruction(kind, instruction.location.clone());
                     builder.step();
@@ -982,11 +985,11 @@ impl<'a> Typechecker<'a> {
                             let implicit = self.program.getImplicit(&handler.implicit).expect("Implicit not found");
                             if implicit.mutable {
                                 let mut mutable = false;
-                                if let Some(m) = self.mutables.get(&handler.var.name.to_string()) {
+                                if let Some(m) = self.mutables.get(&handler.var.name().to_string()) {
                                     mutable = *m == Mutability::ExplicitMutable;
                                 }
                                 if !mutable {
-                                    TypecheckerError::ImmutableImplicitHandler(handler.var.location.clone())
+                                    TypecheckerError::ImmutableImplicitHandler(handler.var.location().clone())
                                         .report(self.ctx);
                                 }
                             }
@@ -1075,7 +1078,7 @@ impl<'a> Typechecker<'a> {
         let targetFn = self.program.functions.get(&name).expect("Function not found");
         let fnType = targetFn.getType();
         let (origReceiver, chainEntries) = self.resolveReceiverChain(&receiver);
-        let mutableCall = self.mutables.get(&origReceiver.name.to_string()) == Some(&Mutability::ExplicitMutable)
+        let mutableCall = self.mutables.get(&origReceiver.name().to_string()) == Some(&Mutability::ExplicitMutable)
             && fnType.getResult().hasSelfType();
         if mutableCall {
             match fnType.getResult() {
@@ -1320,10 +1323,10 @@ impl<'a> Typechecker<'a> {
                             if !publicVars.is_superset(&vars) {
                                 self.dump(f);
                                 println!("MISSING: {} {}", instruction, ty);
-                                TypecheckerError::TypeAnnotationNeeded(v.location.clone()).report(self.ctx);
+                                TypecheckerError::TypeAnnotationNeeded(v.location().clone()).report(self.ctx);
                             }
                         } else {
-                            TypecheckerError::TypeAnnotationNeeded(v.location.clone()).report(self.ctx);
+                            TypecheckerError::TypeAnnotationNeeded(v.location().clone()).report(self.ctx);
                         }
                     }
                 }

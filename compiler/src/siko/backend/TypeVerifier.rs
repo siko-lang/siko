@@ -52,14 +52,18 @@ impl<'a> TypeVerifier<'a> {
 
     fn checkVariable(&mut self, var: &Variable) {
         let varType = var.getType();
-        if let Some(existing_type) = self.variableTypes.get(&var.name) {
+        if let Some(existing_type) = self.variableTypes.get(&var.name()) {
             assert_eq!(
-                existing_type, varType,
+                existing_type,
+                varType,
                 "Variable {} has inconsistent types: was {:?}, now {:?} in function {}",
-                var.name, existing_type, varType, self.function.name
+                var.name(),
+                existing_type,
+                varType,
+                self.function.name
             );
         } else {
-            self.variableTypes.insert(var.name.clone(), varType.clone());
+            self.variableTypes.insert(var.name(), varType.clone());
         }
     }
 

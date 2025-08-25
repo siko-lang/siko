@@ -38,17 +38,17 @@ impl<'a> UnusedVariableEliminator<'a> {
                 for i in block.instructions.iter() {
                     let mut allVars = i.kind.collectVariables();
                     if let Some(v) = i.kind.getResultVar() {
-                        self.useCount.entry(v.name.clone()).or_insert(0);
+                        self.useCount.entry(v.name()).or_insert(0);
                         allVars.retain(|var| var != &v);
                         if let InstructionKind::StorePtr(v1, v2) = &i.kind {
-                            let c = self.useCount.entry(v1.name.clone()).or_insert(0);
+                            let c = self.useCount.entry(v1.name()).or_insert(0);
                             *c += 1;
-                            let c = self.useCount.entry(v2.name.clone()).or_insert(0);
+                            let c = self.useCount.entry(v2.name()).or_insert(0);
                             *c += 1;
                         }
                     }
                     for v in allVars {
-                        let count = self.useCount.entry(v.name.clone()).or_insert(0);
+                        let count = self.useCount.entry(v.name()).or_insert(0);
                         *count += 1;
                     }
                 }
@@ -81,7 +81,7 @@ impl<'a> UnusedVariableEliminator<'a> {
                 if let Some(i) = builder.getInstruction() {
                     if let Some(v) = i.kind.getResultVar() {
                         if v.isTemp() {
-                            if let Some(count) = self.useCount.get(&v.name) {
+                            if let Some(count) = self.useCount.get(&v.name()) {
                                 if *count == 0 && self.canBeEliminated(&i.kind) {
                                     //println!("Removing unused variable: {} from {}", v.name, i);
                                     removed = true;

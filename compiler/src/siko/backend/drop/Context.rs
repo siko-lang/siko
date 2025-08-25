@@ -27,14 +27,14 @@ impl Context {
     pub fn addAssign(&mut self, path: Path) {
         //println!("Adding assign path: {}", path);
         self.usages
-            .entry(path.root.name.clone())
+            .entry(path.root.name())
             .or_insert_with(EventSeries::new)
             .push(Event::Assign(path));
     }
 
     pub fn addUsage(&mut self, usage: Usage) {
         self.usages
-            .entry(usage.path.root.name.clone())
+            .entry(usage.path.root.name())
             .or_insert_with(EventSeries::new)
             .push(Event::Usage(usage));
     }
@@ -44,12 +44,12 @@ impl Context {
         //println!("Using variable: {} {}", var.value.visibleName(), ty);
         if ty.isReference() || ty.isPtr() {
             self.addUsage(Usage {
-                path: Path::new(var.clone(), var.location.clone()).setInstructionRef(instructionRef),
+                path: Path::new(var.clone(), var.location().clone()).setInstructionRef(instructionRef),
                 kind: UsageKind::Ref,
             });
         } else {
             self.addUsage(Usage {
-                path: Path::new(var.clone(), var.location.clone()).setInstructionRef(instructionRef),
+                path: Path::new(var.clone(), var.location().clone()).setInstructionRef(instructionRef),
                 kind: UsageKind::Move,
             });
         }

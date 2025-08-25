@@ -50,12 +50,12 @@ impl<'a> Finalizer<'a> {
         for dropFlag in &self.declaredDropFlags {
             builder.addInstruction(
                 InstructionKind::DeclareVar(dropFlag.clone(), Mutability::Mutable),
-                dropFlag.location.clone(),
+                dropFlag.location().clone(),
             );
             builder.step();
             builder.addInstruction(
                 InstructionKind::FunctionCall(dropFlag.clone(), CallInfo::new(getFalseName(), vec![])),
-                dropFlag.location.clone(),
+                dropFlag.location().clone(),
             );
             builder.step();
         }
@@ -111,7 +111,7 @@ impl<'a> Finalizer<'a> {
                                     for var in droppedValues {
                                         // println!("Generating drops for value {}", var);
                                         let rootPath = var.toPath().toSimplePath();
-                                        let pathList = self.dropMetadataStore.getPathList(&var.name);
+                                        let pathList = self.dropMetadataStore.getPathList(&var.name());
                                         if let Some(pathList) = pathList {
                                             for current in pathList.paths() {
                                                 if current.contains(&rootPath) {
@@ -136,7 +136,7 @@ impl<'a> Finalizer<'a> {
                                 if let Some(assignPath) = usageInfo.assign {
                                     // we are assigning to assignPath, need to enable dropflag for it and all other subpaths
                                     let root = assignPath.root.clone();
-                                    if let Some(pathList) = self.dropMetadataStore.getPathList(&root.name) {
+                                    if let Some(pathList) = self.dropMetadataStore.getPathList(&root.name()) {
                                         // println!("--------------------------");
                                         for path in pathList.paths() {
                                             if path.contains(&assignPath.toSimplePath()) {
@@ -147,7 +147,7 @@ impl<'a> Finalizer<'a> {
                                                 let generateDrop = if assignPath.isRootOnly() {
                                                     // if this is an implicit variable then the first assignment is the only assignment
                                                     // and we dont need to generate drop
-                                                    self.declarationStore.explicitDeclarations.contains(&root.name)
+                                                    self.declarationStore.explicitDeclarations.contains(&root.name())
                                                 } else {
                                                     true
                                                 };
@@ -302,7 +302,7 @@ impl<'a> Finalizer<'a> {
     }
 
     fn disablePath(&mut self, rootPath: &Path, builder: &mut BlockBuilder) {
-        let pathList = self.dropMetadataStore.getPathList(&rootPath.root.name);
+        let pathList = self.dropMetadataStore.getPathList(&rootPath.root.name());
         if let Some(pathList) = pathList {
             // println!("--------------------------");
             for path in pathList.paths() {
@@ -323,14 +323,14 @@ impl<'a> Finalizer<'a> {
 
 fn addDropPath(builder: &mut BlockBuilder, current: &SimplePath, var: &Variable) {
     let dropFlag = current.getDropFlag();
-    let mut path = Path::new(var.clone(), var.location.clone());
+    let mut path = Path::new(var.clone(), var.location().clone());
     path.items = current.items.clone();
     let drop = InstructionKind::DropPath(path);
-    builder.addInstruction(drop, var.location.clone());
+    builder.addInstruction(drop, var.location().clone());
     builder.step();
     builder.addInstruction(
         InstructionKind::FunctionCall(dropFlag, CallInfo::new(getFalseName(), vec![])),
-        var.location.clone(),
+        var.location().clone(),
     );
     builder.step();
 }

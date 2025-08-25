@@ -82,20 +82,20 @@ impl<'a> CompileTimeEvaluator<'a> {
                 //println!("Processing instruction: {}", instruction);
                 match instruction.kind {
                     InstructionKind::DeclareVar(var, _) => {
-                        newEnv.set(var.name.clone(), Value::Unknown);
+                        newEnv.set(var.name(), Value::Unknown);
                     }
                     InstructionKind::Assign(var, value) => {
-                        let val = newEnv.get(&value.name);
-                        newEnv.set(var.name.clone(), val.clone());
+                        let val = newEnv.get(&value.name());
+                        newEnv.set(var.name(), val.clone());
                     }
                     InstructionKind::FunctionCall(dest, info) => {
                         if info.name == getTrueName() {
-                            newEnv.set(dest.name.clone(), Value::Bool(true));
+                            newEnv.set(dest.name(), Value::Bool(true));
                         } else if info.name == getFalseName() {
-                            newEnv.set(dest.name.clone(), Value::Bool(false));
+                            newEnv.set(dest.name(), Value::Bool(false));
                         }
                     }
-                    InstructionKind::EnumSwitch(var, cases) => match newEnv.get(&var.name) {
+                    InstructionKind::EnumSwitch(var, cases) => match newEnv.get(&var.name()) {
                         Value::Bool(true) => {
                             //println!("Enum switch to true branch");
                             let targetBranch = cases[1].branch;
@@ -148,7 +148,7 @@ impl<'a> CompileTimeEvaluator<'a> {
                     InstructionKind::Return(_, _) => {}
                     k => {
                         if let Some(result) = k.getResultVar() {
-                            newEnv.set(result.name.clone(), Value::Unknown);
+                            newEnv.set(result.name(), Value::Unknown);
                         }
                     }
                 }
