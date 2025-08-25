@@ -24,12 +24,13 @@ impl VariableAllocator {
             *nextId += 1;
             id
         };
-        let id = Variable {
-            name: VariableName::Tmp(id),
-            ty: None,
-            location: location,
-        };
-        id
+        Variable::new(VariableName::Tmp(id), location)
+    }
+
+    pub fn allocateWithType(&self, location: Location, ty: super::Type::Type) -> Variable {
+        let mut var = self.allocate(location);
+        var.setType(ty);
+        var
     }
 }
 

@@ -120,15 +120,16 @@ impl Builder {
 
     pub fn createLocalValue(&mut self, name: &str, location: Location) -> Variable {
         let valueId = self.getNextId();
-        Variable {
-            name: VariableName::Local(name.to_string(), valueId),
-            location: location,
-            ty: None,
-        }
+        let v = Variable::new(VariableName::Local(name.to_string(), valueId), location);
+        v
     }
 
     pub fn createTempValue(&mut self, location: Location) -> Variable {
         self.body.varAllocator.allocate(location)
+    }
+
+    pub fn createTempValueWithType(&mut self, location: Location, ty: Type) -> Variable {
+        self.body.varAllocator.allocateWithType(location, ty)
     }
 
     pub fn getLastInstruction(&self, block_id: BlockId) -> Option<Instruction> {
@@ -266,6 +267,11 @@ impl BodyBuilder {
     pub fn createTempValue(&mut self, location: Location) -> Variable {
         let mut bodyBuilder = self.bodyBuilder.borrow_mut();
         bodyBuilder.createTempValue(location)
+    }
+
+    pub fn createTempValueWithType(&mut self, location: Location, ty: Type) -> Variable {
+        let mut bodyBuilder = self.bodyBuilder.borrow_mut();
+        bodyBuilder.createTempValueWithType(location, ty)
     }
 
     pub fn getInstruction(&self, id: BlockId, index: usize) -> Option<Instruction> {

@@ -78,21 +78,18 @@ impl<'a> FunctionResolver<'a> {
         for (_, param) in f.params.iter().enumerate() {
             let irParam = match param {
                 Parameter::Named(id, ty, mutable) => {
-                    let var = Variable {
-                        name: VariableName::Arg(id.toString()),
-                        location: id.location(),
-                        ty: Some(typeResolver.resolveType(ty)),
-                    };
+                    let var = Variable::newWithType(
+                        VariableName::Arg(id.toString()),
+                        id.location(),
+                        typeResolver.resolveType(ty),
+                    );
                     env.addArg(var, *mutable);
                     IrParameter::Named(id.toString(), typeResolver.resolveType(ty), *mutable)
                 }
                 Parameter::SelfParam => match &self.owner {
                     Some(owner) => {
-                        let var = Variable {
-                            name: VariableName::Arg(format!("self")),
-                            location: f.name.location(),
-                            ty: Some(owner.clone()),
-                        };
+                        let var =
+                            Variable::newWithType(VariableName::Arg(format!("self")), f.name.location(), owner.clone());
                         env.addArg(var, false);
                         IrParameter::SelfParam(false, owner.clone())
                     }
@@ -100,11 +97,8 @@ impl<'a> FunctionResolver<'a> {
                 },
                 Parameter::MutSelfParam => match &self.owner {
                     Some(owner) => {
-                        let var = Variable {
-                            name: VariableName::Arg(format!("self")),
-                            location: f.name.location(),
-                            ty: Some(owner.clone()),
-                        };
+                        let var =
+                            Variable::newWithType(VariableName::Arg(format!("self")), f.name.location(), owner.clone());
                         env.addArg(var, true);
                         IrParameter::SelfParam(true, owner.clone())
                     }
@@ -112,11 +106,8 @@ impl<'a> FunctionResolver<'a> {
                 },
                 Parameter::RefSelfParam => match &self.owner {
                     Some(owner) => {
-                        let var = Variable {
-                            name: VariableName::Arg(format!("self")),
-                            location: f.name.location(),
-                            ty: Some(IrType::Reference(Box::new(owner.clone()), None)),
-                        };
+                        let var =
+                            Variable::newWithType(VariableName::Arg(format!("self")), f.name.location(), owner.asRef());
                         env.addArg(var, false);
                         IrParameter::SelfParam(false, IrType::Reference(Box::new(owner.clone()), None))
                     }

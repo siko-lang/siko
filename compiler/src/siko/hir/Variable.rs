@@ -75,15 +75,35 @@ impl Debug for VariableName {
 pub struct Variable {
     pub name: VariableName,
     pub location: Location,
-    pub ty: Option<Type>,
+    ty: Option<Type>,
 }
 
 impl Variable {
+    pub fn new(name: VariableName, location: Location) -> Variable {
+        Variable {
+            name,
+            location,
+            ty: None,
+        }
+    }
+
+    pub fn newWithType(name: VariableName, location: Location, ty: Type) -> Variable {
+        Variable {
+            name,
+            location,
+            ty: Some(ty),
+        }
+    }
+
     pub fn getType(&self) -> &Type {
         match &self.ty {
             Some(ty) => ty,
             None => panic!("No type found for var {}", self.name),
         }
+    }
+
+    pub fn getTypeOpt(&self) -> Option<&Type> {
+        self.ty.as_ref()
     }
 
     pub fn replace(&self, from: &Variable, to: Variable) -> Variable {
@@ -116,6 +136,10 @@ impl Variable {
 
     pub fn toPath(&self) -> Path {
         Path::new(self.clone(), self.location.clone())
+    }
+
+    pub fn setType(&mut self, ty: Type) {
+        self.ty = Some(ty);
     }
 }
 

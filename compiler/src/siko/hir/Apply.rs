@@ -147,7 +147,7 @@ impl Apply for Protocol {
 impl Apply for Variable {
     fn apply(mut self, sub: &Substitution) -> Self {
         //println!("Applying for {}", self.value);
-        self.ty = self.ty.apply(sub);
+        self.setType(self.getType().clone().apply(sub));
         self
     }
 }

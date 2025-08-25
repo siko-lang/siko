@@ -189,11 +189,11 @@ impl SimplePath {
     }
 
     pub fn getDropFlag(&self) -> Variable {
-        Variable {
-            name: VariableName::DropFlag(self.to_string()),
-            location: Location::empty(), // Assuming a default location, adjust as needed
-            ty: Some(Type::getBoolType()),
-        }
+        Variable::newWithType(
+            VariableName::DropFlag(self.to_string()),
+            Location::empty(), // Assuming a default location, adjust as needed
+            Type::getBoolType(),
+        )
     }
 
     pub fn getRootPath(&self) -> SimplePath {

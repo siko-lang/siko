@@ -56,13 +56,12 @@ impl<'a, 'b> ImplicitContextBuilder<'a, 'b> {
                 //println!("Non main user function, patching context {}", function.name);
                 let contextTypes = context.handlerResolution.getContextTypes(self.mono);
                 let implicitContextArgName = format!("siko_implicit_context");
-                let argVar = Variable {
-                    name: VariableName::Arg(implicitContextArgName.clone()),
-                    location: Location::empty(),
-                    ty: Some(Type::Tuple(contextTypes.clone())),
-                };
-                let mut contextVar = bodyBuilder.createTempValue(Location::empty());
-                contextVar.ty = argVar.ty.clone();
+                let argVar = Variable::newWithType(
+                    VariableName::Arg(implicitContextArgName.clone()),
+                    Location::empty(),
+                    Type::Tuple(contextTypes.clone()),
+                );
+                let contextVar = bodyBuilder.createTempValueWithType(Location::empty(), argVar.getType().clone());
                 builder.addDeclare(contextVar.clone(), Location::empty());
                 builder.step();
                 builder.addAssign(contextVar.clone(), argVar, Location::empty());
@@ -73,8 +72,7 @@ impl<'a, 'b> ImplicitContextBuilder<'a, 'b> {
             }
         }
         if addInitialContext {
-            let mut contextVar = bodyBuilder.createTempValue(Location::empty());
-            contextVar.ty = Some(Type::Tuple(vec![]));
+            let contextVar = bodyBuilder.createTempValueWithType(Location::empty(), Type::getUnitType());
             builder.addDeclare(contextVar.clone(), Location::empty());
             builder.step();
             builder.addInstruction(
@@ -91,8 +89,10 @@ impl<'a, 'b> ImplicitContextBuilder<'a, 'b> {
                 if let Some(instruction) = builder.getInstruction() {
                     match instruction.kind {
                         InstructionKind::With(_, info) => {
-                            let mut contextVar = bodyBuilder.createTempValue(instruction.location.clone());
-                            contextVar.ty = Some(Type::Tuple(info.contextTypes.clone()));
+                            let contextVar = bodyBuilder.createTempValueWithType(
+                                instruction.location.clone(),
+                                Type::Tuple(info.contextTypes.clone()),
+                            );
                             // println!(
                             //     "Pushing context variable {} to context map with {}",
                             //     contextVar, info.syntaxBlockId
@@ -129,9 +129,9 @@ impl<'a, 'b> ImplicitContextBuilder<'a, 'b> {
                                         let prevContext = contextVarMap
                                             .get(&info.parentSyntaxBlockId)
                                             .expect("Parent context not found");
-                                        let mut fieldRefVar = bodyBuilder.createTempValue(instruction.location.clone());
                                         let fieldTy = info.contextTypes[index.0].clone();
-                                        fieldRefVar.ty = Some(fieldTy.clone());
+                                        let fieldRefVar = bodyBuilder
+                                            .createTempValueWithType(instruction.location.clone(), fieldTy.clone());
                                         let fieldInfo = FieldInfo {
                                             name: FieldId::Indexed(index.0 as u32),
                                             location: instruction.location.clone(),
@@ -148,10 +148,11 @@ impl<'a, 'b> ImplicitContextBuilder<'a, 'b> {
                                     }
                                     ImplicitContextOperation::Add(_, var) => {
                                         // println!("Adding context variable {} at index {}", var, index);
-                                        let mut ptrVar = bodyBuilder.createTempValue(instruction.location.clone());
-                                        let ptrTy = Type::Ptr(Box::new(var.getType().clone()));
-                                        ptrVar.ty = Some(ptrTy.clone());
-                                        contextTypes.push(ptrTy);
+                                        let ptrVar = bodyBuilder.createTempValueWithType(
+                                            instruction.location.clone(),
+                                            var.getType().asPtr(),
+                                        );
+                                        contextTypes.push(ptrVar.getType().clone());
                                         builder.addInstruction(
                                             InstructionKind::PtrOf(ptrVar.clone(), var),
                                             instruction.location.clone(),
@@ -178,9 +179,9 @@ impl<'a, 'b> ImplicitContextBuilder<'a, 'b> {
                                 } else {
                                     panic!("Context variable not found for id in implicit context builder {}", id);
                                 };
-                                let mut fieldRefVar = bodyBuilder.createTempValue(instruction.location.clone());
+                                let fieldRefVar = bodyBuilder
+                                    .createTempValueWithType(instruction.location.clone(), dest.getType().asPtr());
                                 let fieldTy = dest.getType().clone();
-                                fieldRefVar.ty = Some(Type::Ptr(Box::new(fieldTy.clone())));
                                 let fieldInfo = FieldInfo {
                                     name: FieldId::Indexed(index.0 as u32),
                                     location: instruction.location.clone(),
@@ -203,9 +204,9 @@ impl<'a, 'b> ImplicitContextBuilder<'a, 'b> {
                                 } else {
                                     panic!("Context variable not found for id in implicit context builder {}", id);
                                 };
-                                let mut fieldRefVar = bodyBuilder.createTempValue(instruction.location.clone());
+                                let fieldRefVar = bodyBuilder
+                                    .createTempValueWithType(instruction.location.clone(), src.getType().asPtr());
                                 let fieldTy = src.getType().clone();
-                                fieldRefVar.ty = Some(Type::Ptr(Box::new(fieldTy.clone())));
                                 let fieldInfo = FieldInfo {
                                     name: FieldId::Indexed(index.0 as u32),
                                     location: instruction.location.clone(),

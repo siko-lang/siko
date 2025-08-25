@@ -22,7 +22,6 @@ use crate::siko::{
         ImplementationResolver::ImplementationResolver,
         Instruction::{CallInfo, InstructionKind},
         Program::Program,
-        Type::Type,
         TypeVarAllocator::TypeVarAllocator,
     },
     location::Report::ReportContext,
@@ -176,10 +175,12 @@ impl<'a> DropChecker<'a> {
                         .getInstruction()
                         .expect(&format!("No instruction at index {}", index));
                     if let InstructionKind::FieldRef(dest, receiver, fields) = instruction.kind {
-                        let mut implicitCloneVar = self.bodyBuilder.createTempValue(dest.location.clone());
-                        implicitCloneVar.ty = dest.ty.clone().map(|t| Type::Reference(Box::new(t), None));
-                        let mut implicitCloneVarRef = self.bodyBuilder.createTempValue(dest.location.clone());
-                        implicitCloneVarRef.ty = receiver.ty.clone().map(|t| Type::Reference(Box::new(t), None));
+                        let implicitCloneVar = self
+                            .bodyBuilder
+                            .createTempValueWithType(dest.location.clone(), dest.getType().asRef());
+                        let implicitCloneVarRef = self
+                            .bodyBuilder
+                            .createTempValueWithType(dest.location.clone(), receiver.getType().asRef());
                         let implicitClone = InstructionKind::FunctionCall(
                             dest.clone(),
                             CallInfo::new(getCloneFnName(), vec![implicitCloneVar.clone()]),
@@ -210,10 +211,12 @@ impl<'a> DropChecker<'a> {
                             }
                         }
                         let input = vars[0].clone();
-                        let mut implicitCloneVar = self.bodyBuilder.createTempValue(input.location.clone());
-                        implicitCloneVar.ty = input.ty.clone();
-                        let mut implicitCloneVarRef = self.bodyBuilder.createTempValue(input.location.clone());
-                        implicitCloneVarRef.ty = input.ty.clone().map(|t| Type::Reference(Box::new(t), None));
+                        let implicitCloneVar = self
+                            .bodyBuilder
+                            .createTempValueWithType(input.location.clone(), input.getType().clone());
+                        let implicitCloneVarRef = self
+                            .bodyBuilder
+                            .createTempValueWithType(input.location.clone(), input.getType().asRef());
                         let implicitClone = InstructionKind::FunctionCall(
                             implicitCloneVar.clone(),
                             CallInfo::new(getCloneFnName(), vec![implicitCloneVarRef.clone()]),

@@ -65,8 +65,8 @@ fn processFunction(function: &Function, program: &Program) -> Function {
                                     }
                                     if ty.isBoxed(argType) {
                                         //println!("Boxing argument: {} of type {}", arg, argType);
-                                        let mut boxedVar = bodyBuilder.createTempValue(instruction.location.clone());
-                                        boxedVar.ty = Some(ty.clone());
+                                        let boxedVar = bodyBuilder
+                                            .createTempValueWithType(instruction.location.clone(), ty.clone());
                                         let boxCall = InstructionKind::FunctionCall(
                                             boxedVar.clone(),
                                             CallInfo::new(getBoxNewFnName(), vec![arg.clone()]),
@@ -93,9 +93,9 @@ fn processFunction(function: &Function, program: &Program) -> Function {
                             //println!("Transforming {} from {} to {}", dest, sourceType, variantType);
                             let mut newDest = dest.clone();
                             if source.getType().isReference() {
-                                newDest.ty = Some(Type::Reference(Box::new(variantType.clone()), None));
+                                newDest.setType(variantType.asRef());
                             } else {
-                                newDest.ty = Some(variantType.clone());
+                                newDest.setType(variantType.clone());
                             }
                             let newKind = InstructionKind::Transform(newDest, source.clone(), *index);
                             builder.replaceInstruction(newKind, instruction.location.clone());
@@ -119,16 +119,15 @@ fn processFunction(function: &Function, program: &Program) -> Function {
                             let isRef = source.getType().isReference();
                             let mut newSource = source.clone();
                             if isRef {
-                                newSource.ty = Some(Type::Reference(Box::new(variantTypes.clone()), None));
+                                newSource.setType(variantTypes.asRef());
                             } else {
-                                newSource.ty = Some(variantTypes.clone());
+                                newSource.setType(variantTypes.clone());
                             }
-                            let fieldTy = variantTypes.getTupleTypes()[*index as usize].clone();
-                            let mut newDest = bodyBuilder.createTempValue(instruction.location.clone());
-                            newDest.ty = Some(fieldTy);
+                            let mut fieldTy = variantTypes.getTupleTypes()[*index as usize].clone();
                             if isRef {
-                                newDest.ty = newDest.ty.map(|t| Type::Reference(Box::new(t), None));
+                                fieldTy = fieldTy.asRef();
                             }
+                            let newDest = bodyBuilder.createTempValueWithType(instruction.location.clone(), fieldTy);
                             let newKind = InstructionKind::FieldRef(newDest.clone(), newSource, fields.clone());
                             builder.replaceInstruction(newKind, instruction.location.clone());
                             let releaseCall = if isRef {

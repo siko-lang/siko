@@ -155,7 +155,9 @@ impl BlockBuilder {
     }
 
     pub fn addReturn(&mut self, value: Variable, location: Location) -> Variable {
-        let result = self.bodyBuilder.createTempValue(location.clone());
+        let result = self
+            .bodyBuilder
+            .createTempValueWithType(location.clone(), Type::getNeverType());
         self.addInstruction(InstructionKind::Return(result.clone(), value), location);
         result
     }
@@ -197,8 +199,7 @@ impl BlockBuilder {
         location: Location,
         ty: Type,
     ) -> Variable {
-        let mut result = self.bodyBuilder.createTempValue(location.clone());
-        result.ty = Some(ty);
+        let result = self.bodyBuilder.createTempValueWithType(location.clone(), ty);
         self.addInstruction(
             InstructionKind::FunctionCall(result.clone(), CallInfo::new(functionName, args)),
             location,
@@ -261,8 +262,7 @@ impl BlockBuilder {
         location: Location,
         ty: Type,
     ) -> Variable {
-        let mut result = self.bodyBuilder.createTempValue(location.clone());
-        result.ty = Some(ty);
+        let result = self.bodyBuilder.createTempValueWithType(location.clone(), ty);
         self.addInstruction(
             InstructionKind::FieldRef(result.clone(), receiver, fields),
             location.clone(),
@@ -295,8 +295,9 @@ impl BlockBuilder {
     }
 
     pub fn addUnit(&mut self, location: Location) -> Variable {
-        let mut result = self.bodyBuilder.createTempValue(location.clone());
-        result.ty = Some(Type::getUnitType());
+        let result = self
+            .bodyBuilder
+            .createTempValueWithType(location.clone(), Type::getUnitType());
         self.addInstruction(InstructionKind::Tuple(result.clone(), Vec::new()), location.clone());
         result
     }
@@ -308,7 +309,9 @@ impl BlockBuilder {
     }
 
     pub fn addJump(&mut self, target: BlockId, location: Location) -> Variable {
-        let result = self.bodyBuilder.createTempValue(location.clone());
+        let result = self
+            .bodyBuilder
+            .createTempValueWithType(location.clone(), Type::getNeverType());
         self.addInstruction(InstructionKind::Jump(result.clone(), target), location.clone());
         result
     }
@@ -340,8 +343,7 @@ impl BlockBuilder {
     }
 
     pub fn addTypedTransform(&mut self, value: Variable, index: u32, location: Location, ty: Type) -> Variable {
-        let mut result = self.bodyBuilder.createTempValue(location.clone());
-        result.ty = Some(ty);
+        let result = self.bodyBuilder.createTempValueWithType(location.clone(), ty);
         self.addInstruction(
             InstructionKind::Transform(result.clone(), value, index),
             location.clone(),

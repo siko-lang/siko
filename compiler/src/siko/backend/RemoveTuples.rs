@@ -124,7 +124,7 @@ impl RemoveTuples for Instruction {
 impl RemoveTuples for Variable {
     fn removeTuples(&self, ctx: &mut Context) -> Self {
         let mut result = self.clone();
-        result.ty = result.ty.removeTuples(ctx);
+        result.setType(result.getType().removeTuples(ctx));
         result
     }
 }

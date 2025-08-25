@@ -72,11 +72,7 @@ struct PathListInner {
 
 impl PathListInner {
     pub fn expand(&mut self, program: &Program) {
-        let var = Variable {
-            name: self.name.clone(),
-            location: Location::empty(),
-            ty: Some(self.ty.clone()),
-        };
+        let var = Variable::newWithType(self.name.clone(), Location::empty(), self.ty.clone());
         let rootPath = var.toPath().toSimplePath();
         self.expandPath(program, &rootPath, &self.ty.clone());
     }

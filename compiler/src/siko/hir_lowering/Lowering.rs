@@ -221,7 +221,7 @@ impl<'a> Builder<'a> {
                 }
                 HirInstructionKind::FieldAssign(dest, root, fields) => {
                     let mut indices = Vec::new();
-                    let mut ty = dest.ty.as_ref().expect("no type");
+                    let mut ty = dest.getType();
                     for field in fields {
                         let structName = ty.getName().expect("no name for field ref root");
                         let c = self.program.structs.get(&structName).expect("structDef not found");

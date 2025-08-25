@@ -4,6 +4,7 @@ use crate::siko::hir::{
     BodyBuilder::BodyBuilder,
     Function::Function,
     Instruction::InstructionKind,
+    Type::Type,
     Variable::{Variable, VariableName},
 };
 
@@ -153,7 +154,8 @@ impl<'a> VarSimplifier<'a> {
                         if removedDropFlags.contains(&var.name) {
                             //println!("Removing drop flag switch {}", var);
                             let c = cases[0].branch;
-                            let jumpVar = bodyBuilder.createTempValue(instruction.location.clone());
+                            let jumpVar =
+                                bodyBuilder.createTempValueWithType(instruction.location.clone(), Type::getNeverType());
                             builder.replaceInstruction(InstructionKind::Jump(jumpVar, c), instruction.location.clone());
                             continue;
                         }

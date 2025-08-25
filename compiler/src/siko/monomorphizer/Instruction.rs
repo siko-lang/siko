@@ -207,14 +207,14 @@ pub fn processInstruction(
             InstructionKind::FunctionCall(dest.clone(), callInfo)
         }
         InstructionKind::Ref(dest, src) => {
-            if dest.ty.as_ref().unwrap().isReference() && src.ty.as_ref().unwrap().isReference() {
+            if dest.getType().isReference() && src.getType().isReference() {
                 InstructionKind::Assign(dest.clone(), src.clone())
             } else {
                 InstructionKind::Ref(dest.clone(), src.clone())
             }
         }
         InstructionKind::Drop(dropRes, dropVar) => {
-            let ty = dropVar.ty.clone().apply(sub).unwrap();
+            let ty = dropVar.getType().clone().apply(sub);
             let (handlerResolution, contextSyntaxBlockId) = handlerResolutionStore.get(syntaxBlockId);
             let monoName = mono.getMonoName(
                 &getAutoDropFnName(),

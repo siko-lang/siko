@@ -320,6 +320,14 @@ impl Type {
         }
     }
 
+    pub fn asRef(&self) -> Type {
+        Type::Reference(Box::new(self.clone()), None)
+    }
+
+    pub fn asPtr(&self) -> Type {
+        Type::Ptr(Box::new(self.clone()))
+    }
+
     pub fn getBoxedType(&self) -> Type {
         Type::Named(getBoxTypeName(), vec![self.clone()])
     }
@@ -346,6 +354,10 @@ impl Type {
 
     pub fn getUnitType() -> Type {
         Type::Tuple(Vec::new())
+    }
+
+    pub fn getNeverType() -> Type {
+        Type::Never(false)
     }
 }
 

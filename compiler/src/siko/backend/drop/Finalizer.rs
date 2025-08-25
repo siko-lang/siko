@@ -237,12 +237,12 @@ impl<'a> Finalizer<'a> {
                             let dropVar = if path.isRootOnly() {
                                 path.root.clone()
                             } else {
-                                let mut dropVar = self.bodyBuilder.createTempValue(instruction.location.clone());
                                 let mut fields = Vec::new();
+                                let mut dropVarTy = None;
                                 for segment in &path.items {
                                     let fieldInfo = match segment {
                                         PathSegment::Named(name, ty) => {
-                                            dropVar.ty = Some(ty.clone());
+                                            dropVarTy = Some(ty.clone());
                                             FieldInfo {
                                                 name: FieldId::Named(name.clone()),
                                                 location: instruction.location.clone(),
@@ -250,7 +250,7 @@ impl<'a> Finalizer<'a> {
                                             }
                                         }
                                         PathSegment::Indexed(index, ty) => {
-                                            dropVar.ty = Some(ty.clone());
+                                            dropVarTy = Some(ty.clone());
                                             FieldInfo {
                                                 name: FieldId::Indexed(*index),
                                                 location: instruction.location.clone(),
@@ -260,12 +260,16 @@ impl<'a> Finalizer<'a> {
                                     };
                                     fields.push(fieldInfo);
                                 }
+                                let dropVar = self
+                                    .bodyBuilder
+                                    .createTempValueWithType(instruction.location.clone(), dropVarTy.unwrap());
                                 let fieldAcess = InstructionKind::FieldRef(dropVar.clone(), path.root.clone(), fields);
                                 dropBlock.addInstruction(fieldAcess, instruction.location.clone());
                                 dropVar
                             };
-                            let mut dropRes = self.bodyBuilder.createTempValue(instruction.location.clone());
-                            dropRes.ty = Some(Type::getUnitType());
+                            let dropRes = self
+                                .bodyBuilder
+                                .createTempValueWithType(instruction.location.clone(), Type::getUnitType());
                             let dropInstruction = InstructionKind::Drop(dropRes, dropVar);
                             dropBlock.addInstruction(dropInstruction, instruction.location.clone());
                             // when dropping a path we need to disable the drop flag for all sub-paths

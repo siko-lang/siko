@@ -44,9 +44,6 @@ impl HasTrivialDrop for Type {
 
 impl HasTrivialDrop for Variable {
     fn hasTrivialDrop(&self) -> bool {
-        self.ty
-            .as_ref()
-            .expect("Variable type should be present")
-            .hasTrivialDrop()
+        self.getType().hasTrivialDrop()
     }
 }
