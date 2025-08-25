@@ -10,15 +10,13 @@ use crate::siko::{
         Instantiation::{instantiateType, instantiateTypes},
         Instruction::ImplementationReference,
         Program::Program,
-        Substitution::Substitution,
         Type::{formatTypes, Type},
         TypeVarAllocator::TypeVarAllocator,
-        Unification::unify,
         Variable::Variable,
     },
     location::{Location::Location, Report::ReportContext},
     qualifiedname::QualifiedName,
-    typechecker::{ConstraintExpander::ConstraintExpander, Error::TypecheckerError},
+    typechecker::{ConstraintExpander::ConstraintExpander, Error::TypecheckerError, Unifier::Unifier},
 };
 
 pub struct CheckFunctionCallResult {
@@ -32,7 +30,7 @@ pub struct FunctionCallResolver<'a> {
     allocator: TypeVarAllocator,
     ctx: &'a ReportContext,
     implStore: &'a ImplementationStore,
-    substitution: Substitution,
+    unifier: Unifier<'a>,
     knownConstraints: ConstraintContext,
 }
 
@@ -43,7 +41,7 @@ impl<'a> FunctionCallResolver<'a> {
         ctx: &'a ReportContext,
         implStore: &'a ImplementationStore,
         knownConstraints: ConstraintContext,
-        substitution: Substitution,
+        unifier: Unifier<'a>,
     ) -> FunctionCallResolver<'a> {
         FunctionCallResolver {
             program,
@@ -51,32 +49,8 @@ impl<'a> FunctionCallResolver<'a> {
             ctx,
             implStore,
             knownConstraints,
-            substitution,
+            unifier,
         }
-    }
-
-    fn unify(&mut self, ty1: Type, ty2: Type, location: Location) {
-        //println!("UNIFY {} {}", ty1, ty2);
-        if let Err(_) = unify(&mut self.substitution, ty1.clone(), ty2.clone(), false) {
-            reportTypeMismatch(
-                self.ctx,
-                ty1.apply(&self.substitution),
-                ty2.apply(&self.substitution),
-                location,
-            );
-        }
-    }
-
-    fn tryUnify(&mut self, ty1: Type, ty2: Type) -> bool {
-        //println!("UNIFY {} {}", ty1, ty2);
-        if let Err(_) = unify(&mut self.substitution, ty1.clone(), ty2.clone(), false) {
-            return false;
-        }
-        true
-    }
-
-    fn unifyVar(&mut self, var: &Variable, ty: Type) {
-        self.unify(var.getType(), ty, var.location().clone());
     }
 
     fn createConstraintExpander(&mut self, constraints: ConstraintContext) -> ConstraintExpander {
@@ -90,7 +64,7 @@ impl<'a> FunctionCallResolver<'a> {
         args: &Vec<Variable>,
         resultVar: &Variable,
         location: Location,
-    ) -> (CheckFunctionCallResult, Substitution) {
+    ) -> CheckFunctionCallResult {
         let implResolver = ImplementationResolver::new(self.allocator.clone(), self.implStore, self.program);
         let fnType = f.getType();
         let fnType = fnType.resolveSelfType();
@@ -126,7 +100,7 @@ impl<'a> FunctionCallResolver<'a> {
         {
             let mut argTypes = Vec::new();
             for arg in args {
-                let ty = arg.getType().apply(&self.substitution);
+                let ty = self.unifier.apply(arg.getType());
                 //println!("Arg type: {}", ty);
                 if !ty.isSpecified(false) {
                     TypecheckerError::TypeAnnotationNeeded(arg.location().clone()).report(self.ctx);
@@ -139,11 +113,11 @@ impl<'a> FunctionCallResolver<'a> {
             expectedResult = expectedResult.changeSelfType(expectedArgs[0].clone());
         }
         for (arg, expectedArg) in zip(args, &expectedArgs) {
-            let expectedArg = expectedArg.clone().apply(&self.substitution);
+            let expectedArg = self.unifier.apply(expectedArg.clone());
             self.updateConverterDestination(arg, &expectedArg);
         }
-        self.unifyVar(resultVar, expectedResult.clone());
-        let neededConstraints = neededConstraints.clone().apply(&self.substitution);
+        self.unifier.unifyVar(resultVar, expectedResult.clone());
+        let neededConstraints = self.unifier.apply(neededConstraints.clone());
         //println!("Needed constraints: {}", neededConstraints);
         let neededConstraints = neededConstraints.constraints;
         let mut remaining = neededConstraints.clone();
@@ -151,7 +125,7 @@ impl<'a> FunctionCallResolver<'a> {
         if neededConstraints.len() > 0 {
             loop {
                 let mut resolvedSomething = false;
-                remaining = remaining.apply(&self.substitution);
+                remaining = self.unifier.apply(remaining);
                 //println!("Remaining constraints: {:?} {:?}", remaining, neededConstraints);
                 if remaining.is_empty() {
                     break;
@@ -167,12 +141,12 @@ impl<'a> FunctionCallResolver<'a> {
                         // impl will be provided later during mono
                         for (a, b) in zip(&current.associatedTypes, &foundConstraint.associatedTypes) {
                             //println!("Unifying impl assoc {} with constraint assoc {}", a, b);
-                            self.unify(a.ty.clone(), b.ty.clone(), location.clone());
+                            self.unifier.unify(a.ty.clone(), b.ty.clone(), location.clone());
                         }
                         //println!("---------- Using known implementation for {}", current);
-                        let expectedFnType = expectedFnType.clone().apply(&self.substitution);
-                        let expectedResult = expectedResult.clone().apply(&self.substitution);
-                        self.unifyVar(resultVar, expectedResult);
+                        let expectedFnType = self.unifier.apply(expectedFnType.clone());
+                        let expectedResult = self.unifier.apply(expectedResult.clone());
+                        self.unifier.unifyVar(resultVar, expectedResult);
                         //println!("expected fn type {}", expectedFnType);
                         checkResult.fnType = expectedFnType.clone();
                         checkResult.fnName = f.name.clone();
@@ -187,7 +161,7 @@ impl<'a> FunctionCallResolver<'a> {
                                 //println!("Found impl {}", implDef.name);
                                 for (a, b) in zip(&implDef.associatedTypes, &current.associatedTypes) {
                                     //println!("Unifying impl assoc {} with constraint assoc {}", a, b);
-                                    self.unify(a.ty.clone(), b.ty.clone(), location.clone());
+                                    self.unifier.unify(a.ty.clone(), b.ty.clone(), location.clone());
                                 }
                                 checkResult
                                     .implRefs
@@ -201,10 +175,14 @@ impl<'a> FunctionCallResolver<'a> {
                                             //println!("Impl member result ty {}", m.memberType);
                                             //println!("Impl member expected ty {}", expectedFnType);
                                             //println!("Unifying {} and {}", expectedFnType, m.memberType);
-                                            self.unify(expectedFnType.clone(), m.memberType.clone(), location.clone());
-                                            let expectedFnType = expectedFnType.clone().apply(&self.substitution);
-                                            let expectedResult = expectedResult.clone().apply(&self.substitution);
-                                            self.unifyVar(resultVar, expectedResult);
+                                            self.unifier.unify(
+                                                expectedFnType.clone(),
+                                                m.memberType.clone(),
+                                                location.clone(),
+                                            );
+                                            let expectedFnType = self.unifier.apply(expectedFnType.clone());
+                                            let expectedResult = self.unifier.apply(expectedResult.clone());
+                                            self.unifier.unifyVar(resultVar, expectedResult);
                                             checkResult.fnType = expectedFnType.clone();
                                             checkResult.fnName = m.fullName.clone();
                                             found = true;
@@ -220,10 +198,14 @@ impl<'a> FunctionCallResolver<'a> {
                                                 //Found matching member, apply substitution
                                                 let memberType =
                                                     instantiateType(&mut self.allocator, m.memberType.clone());
-                                                self.unify(expectedFnType.clone(), memberType, location.clone());
-                                                let expectedFnType = expectedFnType.clone().apply(&self.substitution);
-                                                let expectedResult = expectedResult.clone().apply(&self.substitution);
-                                                self.unifyVar(resultVar, expectedResult);
+                                                self.unifier.unify(
+                                                    expectedFnType.clone(),
+                                                    memberType,
+                                                    location.clone(),
+                                                );
+                                                let expectedFnType = self.unifier.apply(expectedFnType.clone());
+                                                let expectedResult = self.unifier.apply(expectedResult.clone());
+                                                self.unifier.unifyVar(resultVar, expectedResult);
                                                 checkResult.fnType = expectedFnType.clone();
                                                 checkResult.fnName = m.fullName.clone();
                                                 found = true;
@@ -265,38 +247,34 @@ impl<'a> FunctionCallResolver<'a> {
                 }
             }
         }
-        let expectedFnType = expectedFnType.apply(&self.substitution);
-        let expectedResult = expectedResult.apply(&self.substitution);
+        let expectedFnType = self.unifier.apply(expectedFnType);
+        let expectedResult = self.unifier.apply(expectedResult);
         checkResult.fnType = expectedFnType.clone();
-        self.unifyVar(resultVar, expectedResult);
+        self.unifier.unifyVar(resultVar, expectedResult);
         //println!("result impl refs {:?}", checkResult.implRefs);
         //println!("result name {}", checkResult.fnName);
         assert_eq!(checkResult.implRefs.len(), neededConstraints.len());
-        (checkResult, self.substitution.clone())
+        checkResult
     }
 
     fn updateConverterDestination(&mut self, dest: &Variable, target: &Type) {
-        let destTy = dest.getType().apply(&self.substitution);
-        let targetTy = target.clone().apply(&self.substitution);
+        let destTy = self.unifier.apply(dest.getType());
+        let targetTy = self.unifier.apply(target.clone());
         //println!("Updating converter destination: {} -> {}", destTy, targetTy);
-        if !self.tryUnify(destTy.clone(), targetTy.clone()) {
+        if !self.unifier.tryUnify(destTy.clone(), targetTy.clone()) {
             match (destTy, targetTy.clone()) {
                 (ty1, Type::Reference(ty2, _)) => {
-                    self.tryUnify(ty1, *ty2.clone());
+                    self.unifier.tryUnify(ty1, *ty2.clone());
                 }
                 (Type::Reference(ty1, _), ty2) => {
-                    self.tryUnify(*ty1.clone(), ty2);
+                    self.unifier.tryUnify(*ty1.clone(), ty2);
                 }
                 (ty1, ty2) => {
-                    self.tryUnify(ty1, ty2);
+                    self.unifier.tryUnify(ty1, ty2);
                 }
             }
-            let targetTy = target.clone().apply(&self.substitution);
+            let targetTy = self.unifier.apply(target.clone());
             dest.setType(targetTy);
         }
     }
-}
-
-pub fn reportTypeMismatch(ctx: &ReportContext, ty1: Type, ty2: Type, location: Location) {
-    TypecheckerError::TypeMismatch(format!("{}", ty1), format!("{}", ty2), location).report(ctx)
 }
