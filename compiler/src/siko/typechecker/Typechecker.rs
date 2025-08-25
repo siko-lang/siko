@@ -33,7 +33,7 @@ use crate::siko::{
     },
     location::{Location::Location, Report::ReportContext},
     qualifiedname::{
-        builtins::{getCloneFnName, getImplicitConvertFnName, getNativePtrCloneName, getNativePtrIsNullName},
+        builtins::{getImplicitConvertFnName, getNativePtrCloneName, getNativePtrIsNullName},
         QualifiedName,
     },
     typechecker::{ConstraintChecker::ConstraintChecker, ConstraintExpander::ConstraintExpander},
@@ -1379,10 +1379,11 @@ impl<'a> Typechecker<'a> {
                                         )
                                     } else {
                                         if self.implResolver.isCopy(destTy) {
-                                            InstructionKind::FunctionCall(
-                                                dest.clone(),
-                                                CallInfo::new(getCloneFnName(), vec![source.clone()]),
-                                            )
+                                            let (fnName, implRefs) =
+                                                self.fnCallResolver.resolveCloneCall(source.clone(), dest.clone());
+                                            let mut info = CallInfo::new(fnName, vec![source.clone()]);
+                                            info.implementations.extend(implRefs);
+                                            InstructionKind::FunctionCall(dest.clone(), info)
                                         } else {
                                             TypecheckerError::TypeMismatch(
                                                 sourceTy.to_string(),

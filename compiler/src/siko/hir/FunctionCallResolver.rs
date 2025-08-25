@@ -16,7 +16,7 @@ use crate::siko::{
         Variable::Variable,
     },
     location::{Location::Location, Report::ReportContext},
-    qualifiedname::QualifiedName,
+    qualifiedname::{builtins::getCloneFnName, QualifiedName},
     typechecker::{ConstraintExpander::ConstraintExpander, Error::TypecheckerError},
 };
 
@@ -251,5 +251,23 @@ impl<'a> FunctionCallResolver<'a> {
         //println!("result name {}", checkResult.fnName);
         assert_eq!(checkResult.implRefs.len(), neededConstraints.len());
         checkResult
+    }
+
+    pub fn resolveCloneCall(
+        &mut self,
+        arg: Variable,
+        resultVar: Variable,
+    ) -> (QualifiedName, Vec<ImplementationReference>) {
+        let cloneFn = self
+            .program
+            .getFunction(&getCloneFnName())
+            .expect("Clone function not found");
+        let result = self.resolve(&cloneFn, &vec![arg.clone()], &resultVar, arg.location().clone());
+        let implFn = self
+            .program
+            .getFunction(&result.fnName)
+            .expect("Implementation of clone function not found");
+        let result = self.resolve(&implFn, &vec![arg.clone()], &resultVar, arg.location().clone());
+        (result.fnName, result.implRefs)
     }
 }
