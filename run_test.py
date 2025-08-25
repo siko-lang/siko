@@ -7,6 +7,7 @@ import time
 
 # ANSI color codes
 GREEN = '\033[92m'
+YELLOW = '\033[93m'
 RED = '\033[91m'
 RESET = '\033[0m'
 
@@ -15,6 +16,9 @@ def red(text):
 
 def green(text):
     return f"{GREEN}{text}{RESET}"
+
+def yellow(text):
+    return f"{YELLOW}{text}{RESET}"
 
 success = 0
 failure = 0
@@ -146,7 +150,7 @@ def processResult(r, name, is_success_test=False):
         compilation_time_ms = compilation_time * 1000
         execution_time_ms = execution_time * 1000
         if result == "skip":
-            print(" - SKIPPED (%.1fms)" % total_runtime_ms, flush=True)
+            print(" - %s (%.1fms)" % (yellow("SKIPPED"), total_runtime_ms), flush=True)
             skipped += 1
             return
         if result:
