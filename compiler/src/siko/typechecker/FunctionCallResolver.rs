@@ -21,11 +21,6 @@ use crate::siko::{
     typechecker::{ConstraintExpander::ConstraintExpander, Error::TypecheckerError},
 };
 
-pub trait VariableTypeHandler {
-    fn getType(&self, var: &Variable) -> Type;
-    fn setType(&mut self, var: &Variable, ty: Type);
-}
-
 pub struct CheckFunctionCallResult {
     pub fnType: Type,
     pub fnName: QualifiedName,
@@ -39,7 +34,6 @@ pub struct FunctionCallResolver<'a> {
     implStore: &'a ImplementationStore,
     substitution: Substitution,
     knownConstraints: ConstraintContext,
-    varTypeHandler: &'a mut dyn VariableTypeHandler,
 }
 
 impl<'a> FunctionCallResolver<'a> {
@@ -50,7 +44,6 @@ impl<'a> FunctionCallResolver<'a> {
         implStore: &'a ImplementationStore,
         knownConstraints: ConstraintContext,
         substitution: Substitution,
-        varTypeHandler: &'a mut dyn VariableTypeHandler,
     ) -> FunctionCallResolver<'a> {
         FunctionCallResolver {
             program,
@@ -59,16 +52,7 @@ impl<'a> FunctionCallResolver<'a> {
             implStore,
             knownConstraints,
             substitution,
-            varTypeHandler,
         }
-    }
-
-    fn getType(&self, var: &Variable) -> Type {
-        self.varTypeHandler.getType(var)
-    }
-
-    fn setType(&mut self, var: &Variable, ty: Type) {
-        self.varTypeHandler.setType(var, ty);
     }
 
     fn unify(&mut self, ty1: Type, ty2: Type, location: Location) {
@@ -92,7 +76,7 @@ impl<'a> FunctionCallResolver<'a> {
     }
 
     fn unifyVar(&mut self, var: &Variable, ty: Type) {
-        self.unify(self.getType(var), ty, var.location().clone());
+        self.unify(var.getType(), ty, var.location().clone());
     }
 
     fn createConstraintExpander(&mut self, constraints: ConstraintContext) -> ConstraintExpander {
@@ -142,7 +126,7 @@ impl<'a> FunctionCallResolver<'a> {
         {
             let mut argTypes = Vec::new();
             for arg in args {
-                let ty = self.getType(arg).apply(&self.substitution);
+                let ty = arg.getType().apply(&self.substitution);
                 //println!("Arg type: {}", ty);
                 if !ty.isSpecified(false) {
                     TypecheckerError::TypeAnnotationNeeded(arg.location().clone()).report(self.ctx);
@@ -292,7 +276,7 @@ impl<'a> FunctionCallResolver<'a> {
     }
 
     fn updateConverterDestination(&mut self, dest: &Variable, target: &Type) {
-        let destTy = self.getType(dest).apply(&self.substitution);
+        let destTy = dest.getType().apply(&self.substitution);
         let targetTy = target.clone().apply(&self.substitution);
         //println!("Updating converter destination: {} -> {}", destTy, targetTy);
         if !self.tryUnify(destTy.clone(), targetTy.clone()) {
@@ -308,7 +292,7 @@ impl<'a> FunctionCallResolver<'a> {
                 }
             }
             let targetTy = target.clone().apply(&self.substitution);
-            self.setType(dest, targetTy);
+            dest.setType(targetTy);
         }
     }
 }
