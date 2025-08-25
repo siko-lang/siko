@@ -3,7 +3,6 @@ use std::iter::zip;
 use crate::siko::hir::{
     Apply::Apply,
     ConstraintContext::{Constraint, ConstraintContext},
-    Function::Function,
     Instantiation::{instantiateProtocol, instantiateTrait},
     Program::Program,
     Substitution::Substitution,
@@ -12,21 +11,14 @@ use crate::siko::hir::{
 
 pub struct ConstraintExpander<'a> {
     pub program: &'a Program,
-    pub f: &'a Function,
     pub allocator: TypeVarAllocator,
     pub knownConstraints: ConstraintContext,
 }
 
 impl<'a> ConstraintExpander<'a> {
-    pub fn new(
-        program: &'a Program,
-        f: &'a Function,
-        allocator: TypeVarAllocator,
-        knownConstraints: ConstraintContext,
-    ) -> Self {
+    pub fn new(program: &'a Program, allocator: TypeVarAllocator, knownConstraints: ConstraintContext) -> Self {
         ConstraintExpander {
             program,
-            f,
             allocator,
             knownConstraints,
         }
