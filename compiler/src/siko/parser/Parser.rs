@@ -114,6 +114,12 @@ impl<'a> Parser<'a> {
         ));
     }
 
+    pub fn reportError3(&mut self, msg: &str, location: Location) -> ! {
+        let line = location.span.start.line + 1;
+        let offset = location.span.start.offset + 1;
+        error(format!("{} at {}:{}:{}", msg, self.fileName, line, offset));
+    }
+
     pub fn step(&mut self) {
         self.index += 1;
     }

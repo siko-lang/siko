@@ -16,6 +16,7 @@ use crate::siko::{
     syntax::{
         Function::Parameter as SynParam,
         Module::{Import, Module, ModuleItem},
+        Trait::Implementation,
         Type::{Constraint, ConstraintArgument, TypeParameterDeclaration},
     },
     util::error,
@@ -573,9 +574,10 @@ impl<'a> Resolver<'a> {
             for item in &mut m.items {
                 match item {
                     ModuleItem::Implementation(i) => {
-                        let implName = moduleResolver.resolveName(&i.name);
                         let typeParams = getTypeParams(&i.typeParams);
                         let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
+                        let protocolName = moduleResolver.resolveName(&i.protocolName);
+                        let qn = buildImplementationName(moduleResolver, i, protocolName, &typeResolver);
                         let constraintContext =
                             createConstraintContext(&i.typeParams, &typeResolver, &self.program, &self.ctx);
                         let protocolDef = moduleResolver.lookupProtocol(&i.protocolName, &self.program);
@@ -606,9 +608,9 @@ impl<'a> Resolver<'a> {
                         }
                         let selfType = args[0].clone();
                         let mut irImpl = IrImplementation::new(
-                            implName,
+                            qn.clone(),
                             protocolDef.name.clone(),
-                            args,
+                            args.clone(),
                             typeParams.clone(),
                             associatedTypes,
                             constraintContext,
@@ -636,6 +638,11 @@ impl<'a> Resolver<'a> {
                         }
                         //println!("IrImpl {}", irImpl);
                         self.program.implementations.insert(irImpl.name.clone(), irImpl);
+                        if i.name.is_none() {
+                            self.program
+                                .canonicalImplStore
+                                .insert(args, qn, i.location.clone(), self.ctx);
+                        }
                     }
                     _ => {}
                 }
@@ -917,10 +924,11 @@ impl<'a> Resolver<'a> {
                         }
                     }
                     ModuleItem::Implementation(i) => {
-                        let qn = &QualifiedName::Module(moduleResolver.name.clone()).add(i.name.toString());
-                        let irImpl = &self.program.getImplementation(qn).expect("Implementation not found");
                         let typeParams = getTypeParams(&i.typeParams);
                         let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
+                        let protocolName = moduleResolver.resolveName(&i.protocolName);
+                        let qn = buildImplementationName(moduleResolver, i, protocolName, &typeResolver);
+                        let irImpl = &self.program.getImplementation(&qn).expect("Implementation not found");
                         let protocolDef = self.program.getProtocol(&irImpl.protocolName).unwrap();
                         let mut allProtocolMembers = BTreeSet::new();
                         let mut neededProtocolMembers = BTreeSet::new();
@@ -969,7 +977,7 @@ impl<'a> Resolver<'a> {
                             ResolverError::MissingProtocolMembers(
                                 neededProtocolMembers.into_iter().collect(),
                                 irImpl.protocolName.toString(),
-                                i.name.location(),
+                                i.protocolName.location(),
                             )
                             .report(self.ctx);
                         }
@@ -1124,15 +1132,17 @@ impl<'a> Resolver<'a> {
                         if !implDef.public {
                             continue;
                         }
-                        let implName = moduleName.add(implDef.name.toString());
-                        let localImplName = localModuleName.add(implDef.name.toString());
-                        importedNames.add(&localImplName, &implName);
-                        for fnDef in &implDef.methods {
-                            let methodName = implName.add(fnDef.name.to_string());
-                            let localMethodName = localImplName.add(fnDef.name.to_string());
-                            importedNames.add(&localMethodName, &methodName);
+                        if let Some(name) = &implDef.name {
+                            let implName = moduleName.add(name.toString());
+                            let localImplName = localModuleName.add(name.toString());
+                            importedNames.add(&localImplName, &implName);
+                            for fnDef in &implDef.methods {
+                                let methodName = implName.add(fnDef.name.to_string());
+                                let localMethodName = localImplName.add(fnDef.name.to_string());
+                                importedNames.add(&localMethodName, &methodName);
+                            }
+                            importedImplementations.push(implName);
                         }
-                        importedImplementations.push(implName);
                     }
                     ModuleItem::Effect(effectDef) => {
                         if !effectDef.public {
@@ -1246,16 +1256,18 @@ impl<'a> Resolver<'a> {
                         if !implDef.public {
                             continue;
                         }
-                        let implName = moduleName.add(implDef.name.toString());
-                        importedNames.add(&implDef.name, &implName);
-                        importedNames.add(&implName, &implName);
-                        for fnDef in &implDef.methods {
-                            let methodName = implName.add(fnDef.name.to_string());
-                            importedNames.add(&fnDef.name, &methodName);
-                            importedNames.add(&format!("{}.{}", implDef.name, fnDef.name), &methodName);
-                            importedNames.add(&methodName, &methodName);
+                        if let Some(name) = &implDef.name {
+                            let implName = moduleName.add(name.toString());
+                            importedNames.add(&name, &implName);
+                            importedNames.add(&implName, &implName);
+                            for fnDef in &implDef.methods {
+                                let methodName = implName.add(fnDef.name.to_string());
+                                importedNames.add(&fnDef.name, &methodName);
+                                importedNames.add(&format!("{}.{}", name, fnDef.name), &methodName);
+                                importedNames.add(&methodName, &methodName);
+                            }
+                            importedImplementations.push(implName);
                         }
-                        importedImplementations.push(implName);
                     }
                     ModuleItem::Effect(effectDef) => {
                         if !effectDef.public {
@@ -1412,10 +1424,12 @@ impl<'a> Resolver<'a> {
                 }
                 ModuleItem::Instance(_) => {}
                 ModuleItem::Implementation(i) => {
-                    let implName = moduleName.add(i.name.toString());
-                    localNames.add(&i.name, &implName);
-                    localNames.add(&implName, &implName);
-                    implementations.push(implName);
+                    if let Some(name) = &i.name {
+                        let implName = moduleName.add(name.toString());
+                        localNames.add(&name, &implName);
+                        localNames.add(&implName, &implName);
+                        implementations.push(implName);
+                    }
                 }
                 ModuleItem::Effect(e) => {
                     let effectName = moduleName.add(e.name.toString());
@@ -1461,4 +1475,20 @@ impl<'a> Resolver<'a> {
             }
         }
     }
+}
+
+fn buildImplementationName(
+    moduleResolver: &ModuleResolver<'_>,
+    i: &Implementation,
+    protocolName: QualifiedName,
+    typeResolver: &TypeResolver<'_>,
+) -> QualifiedName {
+    let qn = match &i.name {
+        Some(n) => QualifiedName::Module(moduleResolver.name.clone()).add(n.toString()),
+        None => QualifiedName::Module(moduleResolver.name.clone()).canonical(
+            protocolName,
+            i.types.iter().map(|ty| typeResolver.resolveType(ty)).collect(),
+        ),
+    };
+    qn
 }

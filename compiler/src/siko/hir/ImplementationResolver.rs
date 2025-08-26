@@ -114,7 +114,24 @@ impl<'a> ImplementationResolver<'a> {
         {
             return ImplSearchResult::Found(implDef);
         }
-        self.findImplementationForConstraint(constraint, &self.implementationStore.importedImplementations)
+        if let ImplSearchResult::Found(implDef) =
+            self.findImplementationForConstraint(constraint, &self.implementationStore.importedImplementations)
+        {
+            return ImplSearchResult::Found(implDef);
+        }
+        let mut canonTypes = Vec::new();
+        for arg in &constraint.args {
+            if let Some(canon) = self.canonicalizeType(arg.clone()) {
+                canonTypes.push(canon);
+            } else {
+                return ImplSearchResult::NotFound;
+            }
+        }
+        if let Some(implName) = self.program.canonicalImplStore.get(&canonTypes) {
+            //println!("Found canonical impl {} for {}", implName, formatTypes(&canonTypes));
+            return self.findImplementationForConstraint(constraint, &vec![implName.clone()]);
+        }
+        ImplSearchResult::NotFound
     }
 
     pub fn findImplInKnownConstraints(
@@ -160,5 +177,18 @@ impl<'a> ImplementationResolver<'a> {
         };
         // println!("Constraint: {}", constraint);
         self.findImplInScope(&constraint).isFound()
+    }
+
+    fn canonicalizeType(&self, ty: Type) -> Option<Type> {
+        match ty {
+            Type::Named(name, args) => {
+                let mut newArgs = Vec::new();
+                for _ in args {
+                    newArgs.push(self.allocator.next());
+                }
+                Some(Type::Named(name, newArgs))
+            }
+            _ => None,
+        }
     }
 }

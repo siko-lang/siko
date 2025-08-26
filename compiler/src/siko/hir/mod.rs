@@ -1,6 +1,7 @@
 pub mod Apply;
 pub mod BlockBuilder;
 pub mod BodyBuilder;
+pub mod CanonicalImplementationStore;
 pub mod ConstraintContext;
 pub mod Data;
 pub mod Function;

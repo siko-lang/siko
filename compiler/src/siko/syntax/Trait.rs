@@ -76,7 +76,7 @@ pub struct Instance {
 #[derive(Debug, PartialEq, Eq)]
 pub struct Implementation {
     pub public: bool,
-    pub name: Identifier,
+    pub name: Option<Identifier>,
     pub typeParams: Option<TypeParameterDeclaration>,
     pub protocolName: Identifier,
     pub types: Vec<Type>,

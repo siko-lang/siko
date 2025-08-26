@@ -5,6 +5,7 @@ use std::{
 
 use crate::siko::{
     hir::{
+        CanonicalImplementationStore::CanonicalImplementationStore,
         ImplementationStore::ImplementationStore,
         Implicit::Implicit,
         ProtocolMethodSelector::ProtocolMethodSelector,
@@ -35,6 +36,7 @@ pub struct Program {
     pub protocols: BTreeMap<QualifiedName, Protocol>,
     pub implementations: BTreeMap<QualifiedName, Implementation>,
     pub implementationStores: BTreeMap<QualifiedName, ImplementationStore>,
+    pub canonicalImplStore: CanonicalImplementationStore,
 }
 
 impl Program {
@@ -52,6 +54,7 @@ impl Program {
             protocols: BTreeMap::new(),
             implementations: BTreeMap::new(),
             implementationStores: BTreeMap::new(),
+            canonicalImplStore: CanonicalImplementationStore::new(),
         }
     }
 

@@ -1,5 +1,7 @@
-use crate::siko::syntax::Trait::{
-    AssociatedType, AssociatedTypeDeclaration, Implementation, Instance, Protocol, Trait,
+use crate::siko::syntax::{
+    Identifier::Identifier,
+    Trait::{AssociatedType, AssociatedTypeDeclaration, Implementation, Instance, Protocol, Trait},
+    Type::Type,
 };
 
 use super::{
@@ -182,21 +184,33 @@ impl<'a> TraitParser for Parser<'a> {
         } else {
             None
         };
-        let name = self.parseTypeIdentifier();
-        let protocolName = self.parseQualifiedName();
-        let mut types = Vec::new();
-        self.expect(TokenKind::LeftBracket(BracketKind::Square));
-        while !self.check(TokenKind::RightBracket(BracketKind::Square)) {
-            let ty = self.parseType();
-            types.push(ty);
-            if self.check(TokenKind::Misc(MiscKind::Comma)) {
-                self.expect(TokenKind::Misc(MiscKind::Comma));
-                continue;
+        let nameLoc = self.currentLocation();
+        let name = self.parseType();
+        let defLoc = self.currentLocation();
+        let (name, protocolName, types) = if !self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
+            // name is impl name
+            let name = if let Some((name, args)) = getNameAndArgs(name) {
+                if args.is_empty() {
+                    name
+                } else {
+                    self.reportError3("expected impl name", nameLoc)
+                }
             } else {
-                break;
+                self.reportError3("expected impl name", nameLoc)
+            };
+            let def = self.parseType();
+            if let Some((protocolName, types)) = getNameAndArgs(def) {
+                (Some(name), protocolName, types)
+            } else {
+                self.reportError3("expected protocol name and args", defLoc)
             }
-        }
-        self.expect(TokenKind::RightBracket(BracketKind::Square));
+        } else {
+            if let Some((protocolName, types)) = getNameAndArgs(name) {
+                (None, protocolName, types)
+            } else {
+                self.reportError3("expected protocol name and args", defLoc);
+            }
+        };
         let mut methods = Vec::new();
         let mut associatedTypes = Vec::new();
         if self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
@@ -226,5 +240,13 @@ impl<'a> TraitParser for Parser<'a> {
             methods,
             location,
         }
+    }
+}
+
+fn getNameAndArgs(ty: Type) -> Option<(Identifier, Vec<Type>)> {
+    if let Type::Named(id, args) = ty {
+        Some((id, args))
+    } else {
+        None
     }
 }

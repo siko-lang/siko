@@ -1,7 +1,10 @@
 use core::panic;
 use std::fmt::{Debug, Display};
 
-use crate::siko::monomorphizer::Context::Context;
+use crate::siko::{
+    hir::Type::{formatTypes, Type},
+    monomorphizer::Context::Context,
+};
 pub mod builtins;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -10,11 +13,16 @@ pub enum QualifiedName {
     Instance(Box<QualifiedName>, u64),
     Item(Box<QualifiedName>, String),
     Monomorphized(Box<QualifiedName>, Context),
+    Canonical(Box<QualifiedName>, Box<QualifiedName>, Vec<Type>),
 }
 
 impl QualifiedName {
     pub fn add(&self, item: String) -> QualifiedName {
         QualifiedName::Item(Box::new(self.clone()), item)
+    }
+
+    pub fn canonical(&self, protocolName: QualifiedName, types: Vec<Type>) -> QualifiedName {
+        QualifiedName::Canonical(Box::new(self.clone()), Box::new(protocolName), types)
     }
 
     pub fn module(&self) -> QualifiedName {
@@ -23,6 +31,7 @@ impl QualifiedName {
             QualifiedName::Instance(p, _) => p.module(),
             QualifiedName::Item(p, _) => p.module(),
             QualifiedName::Monomorphized(p, _) => p.module(),
+            QualifiedName::Canonical(p, _, _) => p.module(),
         }
     }
 
@@ -32,6 +41,7 @@ impl QualifiedName {
             QualifiedName::Instance(p, _) => *p.clone(),
             QualifiedName::Item(p, _) => *p.clone(),
             QualifiedName::Monomorphized(p, _) => *p.clone(),
+            QualifiedName::Canonical(p, _, _) => *p.clone(),
         }
     }
 
@@ -70,6 +80,9 @@ impl QualifiedName {
             }
             QualifiedName::Item(_, name) => name.clone(),
             QualifiedName::Monomorphized(p, _) => p.getShortName(),
+            QualifiedName::Canonical(_, _, _) => {
+                panic!("Canonical names are not supported")
+            }
         }
     }
 
@@ -96,6 +109,9 @@ impl Display for QualifiedName {
             QualifiedName::Item(p, i) => write!(f, "{}.{}", p, i),
             QualifiedName::Monomorphized(p, context) => {
                 write!(f, "{}#{}", p, context)
+            }
+            QualifiedName::Canonical(p, protocol, types) => {
+                write!(f, "{}/{}[{}]", p, protocol, formatTypes(types))
             }
         }
     }
