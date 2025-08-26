@@ -105,6 +105,9 @@ impl Type {
     pub fn resolveSelfType(&self) -> Type {
         match &self {
             Type::Function(args, result) => {
+                if args.is_empty() {
+                    return self.clone();
+                }
                 let firstArg = args[0].clone();
                 let result = result.changeSelfType(firstArg);
                 Type::Function(args.clone(), Box::new(result.clone()))

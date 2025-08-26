@@ -98,9 +98,9 @@ impl<'a> FunctionCallResolver<'a> {
             for arg in args {
                 let ty = self.unifier.apply(arg.getType());
                 //println!("Arg type: {}", ty);
-                if !ty.isSpecified(false) {
-                    TypecheckerError::TypeAnnotationNeeded(arg.location().clone()).report(self.ctx);
-                }
+                // if !ty.isSpecified(false) {
+                //     TypecheckerError::TypeAnnotationNeeded(arg.location().clone()).report(self.ctx);
+                // }
                 argTypes.push(ty);
             }
             //println!("Expected args: {:?}, got args: {:?}", expectedArgs, argTypes);
