@@ -577,7 +577,7 @@ impl<'a> Resolver<'a> {
                         let typeParams = getTypeParams(&i.typeParams);
                         let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
                         let protocolName = moduleResolver.resolveName(&i.protocolName);
-                        let qn = buildImplementationName(moduleResolver, i, protocolName, &typeResolver);
+                        let qn = buildImplementationName(moduleResolver, i, protocolName.clone(), &typeResolver);
                         let constraintContext =
                             createConstraintContext(&i.typeParams, &typeResolver, &self.program, &self.ctx);
                         let protocolDef = moduleResolver.lookupProtocol(&i.protocolName, &self.program);
@@ -639,9 +639,13 @@ impl<'a> Resolver<'a> {
                         //println!("IrImpl {}", irImpl);
                         self.program.implementations.insert(irImpl.name.clone(), irImpl);
                         if i.name.is_none() {
-                            self.program
-                                .canonicalImplStore
-                                .insert(args, qn, i.location.clone(), self.ctx);
+                            self.program.canonicalImplStore.insert(
+                                protocolName,
+                                args,
+                                qn,
+                                i.location.clone(),
+                                self.ctx,
+                            );
                         }
                     }
                     _ => {}

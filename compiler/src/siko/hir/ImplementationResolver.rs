@@ -14,7 +14,7 @@ use crate::siko::{
         Unification::unify,
     },
     qualifiedname::{
-        builtins::{getCopyName, getImplicitConvertName},
+        builtins::{getCopyName, getDropName, getImplicitConvertName},
         QualifiedName,
     },
 };
@@ -127,7 +127,7 @@ impl<'a> ImplementationResolver<'a> {
                 return ImplSearchResult::NotFound;
             }
         }
-        if let Some(implName) = self.program.canonicalImplStore.get(&canonTypes) {
+        if let Some(implName) = self.program.canonicalImplStore.get(&constraint.name, &canonTypes) {
             //println!("Found canonical impl {} for {}", implName, formatTypes(&canonTypes));
             return self.findImplementationForConstraint(constraint, &vec![implName.clone()]);
         }
@@ -162,6 +162,15 @@ impl<'a> ImplementationResolver<'a> {
     pub fn isCopy(&self, ty: &Type) -> bool {
         let constraint = Constraint {
             name: getCopyName(),
+            args: vec![ty.clone()],
+            associatedTypes: Vec::new(),
+        };
+        self.findImplInScope(&constraint).isFound()
+    }
+
+    pub fn isDrop(&self, ty: &Type) -> bool {
+        let constraint = Constraint {
+            name: getDropName(),
             args: vec![ty.clone()],
             associatedTypes: Vec::new(),
         };

@@ -20,4 +20,11 @@ impl TypeVarAllocator {
         *n += 1;
         v
     }
+
+    pub fn nextNamed(&self) -> Type {
+        let mut n = self.next.borrow_mut();
+        let v = Type::Var(TypeVar::Named(format!("T{}", *n)));
+        *n += 1;
+        v
+    }
 }

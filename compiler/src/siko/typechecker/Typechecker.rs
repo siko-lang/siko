@@ -1502,7 +1502,9 @@ impl<'a> Typechecker<'a> {
             .program
             .getFunction(&getImplicitConvertFnName())
             .expect("Implicit convert function not found");
-        let result = self.checkFunctionCall(&targetFn, &vec![source.clone()], dest, false);
+        let result = self
+            .fnCallResolver
+            .resolve(&targetFn, &vec![source.clone()], dest, dest.location());
         let info = CallInfo::new(result.fnName, vec![source.clone()]);
         let kind = InstructionKind::FunctionCall(dest.clone(), info);
         kind

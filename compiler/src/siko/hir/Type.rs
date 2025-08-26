@@ -1,7 +1,7 @@
 use std::{collections::BTreeSet, fmt::Display, vec};
 
 use crate::siko::{
-    hir::OwnershipVar::OwnershipVar,
+    hir::{Apply::Apply, OwnershipVar::OwnershipVar, Substitution::Substitution, TypeVarAllocator::TypeVarAllocator},
     qualifiedname::{
         builtins::{
             getBoolTypeName, getBoxTypeName, getIntTypeName, getStringLiteralTypeName, getStringTypeName, getU8TypeName,
@@ -95,6 +95,41 @@ impl Type {
             }
             Type::Ptr(ty) => {
                 vars = ty.collectVars(vars);
+            }
+            Type::SelfType => {}
+            Type::Never(_) => {}
+        }
+        vars
+    }
+
+    pub fn collectVarsStable(&self, mut vars: Vec<TypeVar>) -> Vec<TypeVar> {
+        match &self {
+            Type::Named(_, args) => {
+                for arg in args {
+                    vars = arg.collectVarsStable(vars);
+                }
+            }
+            Type::Tuple(args) => {
+                for arg in args {
+                    vars = arg.collectVarsStable(vars);
+                }
+            }
+            Type::Function(args, result) => {
+                for arg in args {
+                    vars = arg.collectVarsStable(vars);
+                }
+                vars = result.collectVarsStable(vars);
+            }
+            Type::Var(v) => {
+                if !vars.contains(v) {
+                    vars.push(v.clone());
+                }
+            }
+            Type::Reference(ty, _) => {
+                vars = ty.collectVarsStable(vars);
+            }
+            Type::Ptr(ty) => {
+                vars = ty.collectVarsStable(vars);
             }
             Type::SelfType => {}
             Type::Never(_) => {}
@@ -400,4 +435,17 @@ impl Display for Type {
 pub fn formatTypes(types: &Vec<Type>) -> String {
     let types: Vec<String> = types.iter().map(|t| format!("{}", t)).collect();
     format!("({})", types.join(", "))
+}
+
+pub fn normalizeTypes(types: &Vec<Type>) -> Vec<Type> {
+    let allocator = TypeVarAllocator::new();
+    let mut vars = Vec::new();
+    for ty in types {
+        vars = ty.collectVarsStable(vars);
+    }
+    let mut sub = Substitution::new();
+    for var in &vars {
+        sub.add(Type::Var(var.clone()), allocator.nextNamed());
+    }
+    types.iter().map(|ty| ty.clone().apply(&sub)).collect()
 }

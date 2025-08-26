@@ -1,7 +1,7 @@
 use std::collections::{btree_map::Entry, BTreeMap};
 
 use crate::siko::{
-    hir::Type::Type,
+    hir::Type::{normalizeTypes, Type},
     location::{
         Location::Location,
         Report::{Entry as ReportEntry, Report, ReportContext},
@@ -41,13 +41,14 @@ struct CanonicalInstanceInfo {
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct TypeSet {
+struct Key {
+    name: QualifiedName,
     types: Vec<Type>,
 }
 
 #[derive(Clone)]
 pub struct CanonicalImplementationStore {
-    implementations: BTreeMap<TypeSet, CanonicalInstanceInfo>,
+    implementations: BTreeMap<Key, CanonicalInstanceInfo>,
 }
 
 impl CanonicalImplementationStore {
@@ -57,19 +58,22 @@ impl CanonicalImplementationStore {
         }
     }
 
-    pub fn insert(&mut self, types: Vec<Type>, implementation: QualifiedName, location: Location, ctx: &ReportContext) {
+    pub fn insert(
+        &mut self,
+        name: QualifiedName,
+        types: Vec<Type>,
+        implementation: QualifiedName,
+        location: Location,
+        ctx: &ReportContext,
+    ) {
         for ty in &types {
             if !isCanonicalType(ty) {
                 let error = CanonicalImplStoreError::NotCanonicalType(format!("{}", ty), location);
                 error.report(ctx);
             }
         }
-        // println!(
-        //     "Registering canonical instance: {} for {}",
-        //     implementation,
-        //     formatTypes(&types)
-        // );
-        let set = TypeSet { types };
+        let types = normalizeTypes(&types);
+        let set = Key { name, types };
         match self.implementations.entry(set) {
             Entry::Vacant(e) => {
                 e.insert(CanonicalInstanceInfo {
@@ -89,8 +93,12 @@ impl CanonicalImplementationStore {
         }
     }
 
-    pub fn get(&self, types: &Vec<Type>) -> Option<&QualifiedName> {
-        let set = TypeSet { types: types.clone() };
+    pub fn get(&self, name: &QualifiedName, types: &Vec<Type>) -> Option<&QualifiedName> {
+        let types = normalizeTypes(types);
+        let set = Key {
+            name: name.clone(),
+            types: types.clone(),
+        };
         self.implementations.get(&set).map(|info| &info.name)
     }
 }

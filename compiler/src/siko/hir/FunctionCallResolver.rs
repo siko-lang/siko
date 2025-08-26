@@ -16,7 +16,10 @@ use crate::siko::{
         Variable::Variable,
     },
     location::{Location::Location, Report::ReportContext},
-    qualifiedname::{builtins::getCloneFnName, QualifiedName},
+    qualifiedname::{
+        builtins::{getCloneFnName, getDropFnName},
+        QualifiedName,
+    },
     typechecker::{ConstraintExpander::ConstraintExpander, Error::TypecheckerError},
 };
 
@@ -267,6 +270,24 @@ impl<'a> FunctionCallResolver<'a> {
             .program
             .getFunction(&result.fnName)
             .expect("Implementation of clone function not found");
+        let result = self.resolve(&implFn, &vec![arg.clone()], &resultVar, arg.location().clone());
+        (result.fnName, result.implRefs)
+    }
+
+    pub fn resolveDropCall(
+        &mut self,
+        arg: Variable,
+        resultVar: Variable,
+    ) -> (QualifiedName, Vec<ImplementationReference>) {
+        let dropFn = self
+            .program
+            .getFunction(&getDropFnName())
+            .expect("Drop function not found");
+        let result = self.resolve(&dropFn, &vec![arg.clone()], &resultVar, arg.location().clone());
+        let implFn = self
+            .program
+            .getFunction(&result.fnName)
+            .expect("Implementation of drop function not found");
         let result = self.resolve(&implFn, &vec![arg.clone()], &resultVar, arg.location().clone());
         (result.fnName, result.implRefs)
     }

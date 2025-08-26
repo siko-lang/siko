@@ -10,13 +10,16 @@ use crate::siko::{
         BodyBuilder::BodyBuilder,
         ConstraintContext::ConstraintContext,
         Function::{Function, FunctionKind, Parameter},
-        InstanceResolver::ResolutionResult,
+        FunctionCallResolver::FunctionCallResolver,
+        ImplementationResolver::ImplementationResolver,
+        ImplementationStore::ImplementationStore,
         Instantiation::{instantiateEnum, instantiateStruct},
-        Instruction::{EnumCase, FieldId, FieldInfo, InstructionKind},
+        Instruction::{CallInfo, EnumCase, FieldId, FieldInfo, InstructionKind},
         Program::Program,
         Substitution::{createTypeSubstitutionFrom, Substitution},
         Type::Type,
         TypeVarAllocator::TypeVarAllocator,
+        Unifier::Unifier,
         Variable::{Variable, VariableName},
     },
     location::{
@@ -31,10 +34,7 @@ use crate::siko::{
         Queue::Key,
         Utils::Monomorphize,
     },
-    qualifiedname::{
-        builtins::{getDropFnName, getDropName, getMainName},
-        QualifiedName,
-    },
+    qualifiedname::{builtins::getMainName, QualifiedName},
 };
 
 impl Monomorphize for Variable {
@@ -318,16 +318,28 @@ impl<'a> Monomorphizer<'a> {
 
         let mut hasInstance = false;
 
-        if let Some(instances) = self.program.instanceResolver.lookupInstances(&&getDropName()) {
-            let mut allocator = TypeVarAllocator::new();
-            let result = instances.find(&mut allocator, &vec![ty.clone()]);
-            if let ResolutionResult::Winner(_) = result {
-                //println!("Drop found for {}", ty);
-                hasInstance = true;
-                let dropRes =
-                    builder.addTypedFunctionCall(getDropFnName(), vec![selfVar.clone()], location.clone(), ty.clone());
-                builder.addAssign(dropVar.clone(), dropRes, location.clone());
-            }
+        let allocator = TypeVarAllocator::new();
+        let implStore = ImplementationStore::new();
+        let implResolver = ImplementationResolver::new(allocator.clone(), &implStore, &self.program);
+
+        if implResolver.isDrop(&ty) {
+            hasInstance = true;
+            let unifier = Unifier::new(&self.ctx);
+            let mut fnCallResolver = FunctionCallResolver::new(
+                &self.program,
+                allocator.clone(),
+                self.ctx,
+                &implStore,
+                ConstraintContext::new(),
+                unifier.clone(),
+            );
+            let dropRes = bodyBuilder.createTempValueWithType(location.clone(), selfVar.getType());
+            let (fnName, impls) = fnCallResolver.resolveDropCall(selfVar.clone(), dropRes.clone());
+            let mut info = CallInfo::new(fnName.clone(), vec![selfVar.clone()]);
+            info.implementations = impls;
+            let kind = InstructionKind::FunctionCall(dropRes.clone(), info);
+            builder.addInstruction(kind, location.clone());
+            builder.addAssign(dropVar.clone(), dropRes, location.clone());
         }
 
         if !hasInstance {
