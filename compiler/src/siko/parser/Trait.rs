@@ -20,7 +20,7 @@ pub trait TraitParser {
 
 impl<'a> TraitParser for Parser<'a> {
     fn parseProtocol(&mut self, public: bool) -> Protocol {
-        self.expect(TokenKind::Keyword(KeywordKind::Protocol));
+        self.expect(TokenKind::Keyword(KeywordKind::Trait));
         let typeParams = if self.check(TokenKind::LeftBracket(BracketKind::Square)) {
             Some(self.parseTypeParameterDeclaration())
         } else {
@@ -84,7 +84,7 @@ impl<'a> TraitParser for Parser<'a> {
 
     fn parseImplementation(&mut self, public: bool) -> Implementation {
         let location = self.currentLocation();
-        self.expect(TokenKind::Keyword(KeywordKind::Impl));
+        self.expect(TokenKind::Keyword(KeywordKind::Instance));
         let typeParams = if self.check(TokenKind::LeftBracket(BracketKind::Square)) {
             Some(self.parseTypeParameterDeclaration())
         } else {

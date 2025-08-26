@@ -151,7 +151,7 @@ struct VecIterator[T] {
     index: Int
 }
 
-impl[T] Drop[VecIterator[T]] {
+instance[T] Drop[VecIterator[T]] {
     fn drop(mut self) -> Self {
         if self.inner.capacity == 0 {
             return self
@@ -170,7 +170,7 @@ impl[T] Drop[VecIterator[T]] {
     }
 }
 
-pub impl[T] IteratorVecIterator Iterator[VecIterator[T]] {
+pub instance[T] IteratorVecIterator Iterator[VecIterator[T]] {
     type Item = T
 
     fn next(mut self) -> (Self, Option[T]) {
@@ -184,7 +184,7 @@ pub impl[T] IteratorVecIterator Iterator[VecIterator[T]] {
     }
 }
 
-pub impl[T] IntoIteratorVec IntoIterator[Vec[T]] {
+pub instance[T] IntoIteratorVec IntoIterator[Vec[T]] {
     type Item = T
     type Iter = VecIterator[T]
 
@@ -198,7 +198,7 @@ struct VecIteratorRef[T] {
     index: Int
 }
 
-pub impl[T] IteratorVecIteratorRef Iterator[VecIteratorRef[T]] {
+pub instance[T] IteratorVecIteratorRef Iterator[VecIteratorRef[T]] {
     type Item = &T
 
     fn next(mut self) -> (Self, Option[&T]) {
@@ -211,7 +211,7 @@ pub impl[T] IteratorVecIteratorRef Iterator[VecIteratorRef[T]] {
     }
 }
 
-impl[T] Drop[Vec[T]] {
+instance[T] Drop[Vec[T]] {
     fn drop(mut self) -> Self {
         {
             let iter = VecIterator(self.inner, 0);
@@ -221,7 +221,7 @@ impl[T] Drop[Vec[T]] {
     }
 }
 
-pub impl[T: Show[T]] ShowVec Show[Vec[T]] {
+pub instance[T: Show[T]] ShowVec Show[Vec[T]] {
     fn show(&self) -> String {
         let mut result = String.new();
         result.push("[");
@@ -238,7 +238,7 @@ pub impl[T: Show[T]] ShowVec Show[Vec[T]] {
     }
 }
 
-pub impl[T: PartialEq[T]] PartialEqVec PartialEq[Vec[T]] {
+pub instance[T: PartialEq[T]] PartialEqVec PartialEq[Vec[T]] {
     fn eq(&self, other: &Vec[T]) -> Bool {
         if self.len() != other.len() {
             return False;
@@ -258,7 +258,7 @@ pub impl[T: PartialEq[T]] PartialEqVec PartialEq[Vec[T]] {
     }
 }
 
-pub impl[T: Clone[T]] VecClone Clone[Vec[T]] {
+pub instance[T: Clone[T]] VecClone Clone[Vec[T]] {
     fn clone(&self) -> Vec[T] {
         let mut newVec: Vec[T] = Vec.new();
         newVec.inner.grow(self.inner.capacity);
