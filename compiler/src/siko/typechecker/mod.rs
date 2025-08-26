@@ -1,4 +1,3 @@
-pub mod ConstraintChecker;
 pub mod ConstraintExpander;
 pub mod Error;
 pub mod Typechecker;

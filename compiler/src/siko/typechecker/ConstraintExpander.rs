@@ -1,9 +1,10 @@
+use core::panic;
 use std::iter::zip;
 
 use crate::siko::hir::{
     Apply::Apply,
     ConstraintContext::{Constraint, ConstraintContext},
-    Instantiation::{instantiateProtocol, instantiateTrait},
+    Instantiation::instantiateProtocol,
     Program::Program,
     Substitution::Substitution,
     TypeVarAllocator::TypeVarAllocator,
@@ -42,21 +43,8 @@ impl<'a> ConstraintExpander<'a> {
         }
         //println!("expandKnownConstraint {}", c);
         processed.push(c.clone());
-        match self.program.getTrait(&c.name) {
-            Some(traitDef) => {
-                let traitDef = instantiateTrait(&mut self.allocator, &traitDef);
-                let mut sub = Substitution::new();
-                for (arg, ctxArg) in zip(&traitDef.params, &c.args) {
-                    sub.add(arg.clone(), ctxArg.clone());
-                }
-                let traitDef = traitDef.apply(&sub);
-                self.knownConstraints.constraints.push(c.clone());
-                for c in traitDef.constraint.constraints {
-                    self.expandKnownConstraint(&c, processed);
-                }
-            }
-            None => {
-                let protoDef = self.program.getProtocol(&c.name).expect("Protocol not found");
+        match self.program.getProtocol(&c.name) {
+            Some(protoDef) => {
                 let protoDef = instantiateProtocol(&mut self.allocator, &protoDef);
                 let mut sub = Substitution::new();
                 for (arg, ctxArg) in zip(&protoDef.params, &c.args) {
@@ -67,6 +55,9 @@ impl<'a> ConstraintExpander<'a> {
                 for c in protoDef.constraint.constraints {
                     self.expandKnownConstraint(&c, processed);
                 }
+            }
+            None => {
+                panic!("Protocol not found");
             }
         };
     }

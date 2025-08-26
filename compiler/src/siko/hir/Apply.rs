@@ -9,7 +9,7 @@ use super::{
     Data::{Enum, Field, Struct, Variant},
     Instruction::{FieldInfo, InstructionKind},
     Substitution::Substitution,
-    Trait::{AssociatedType, Instance, MemberInfo, Trait},
+    Trait::{AssociatedType, MemberInfo},
     Variable::Variable,
 };
 
@@ -87,16 +87,6 @@ impl Apply for Struct {
     }
 }
 
-impl Apply for Trait {
-    fn apply(mut self, sub: &Substitution) -> Self {
-        //println!("Applying for {}", self.value);
-        self.params = self.params.apply(sub);
-        self.constraint = self.constraint.apply(sub);
-        self.members = self.members.apply(sub);
-        self
-    }
-}
-
 impl Apply for AssociatedType {
     fn apply(mut self, sub: &Substitution) -> Self {
         //println!("Applying for {}", self.value);
@@ -109,16 +99,6 @@ impl Apply for MemberInfo {
     fn apply(mut self, sub: &Substitution) -> Self {
         //println!("Applying for {}", self.value);
         self.memberType = self.memberType.apply(sub);
-        self
-    }
-}
-
-impl Apply for Instance {
-    fn apply(mut self, sub: &Substitution) -> Self {
-        //println!("Applying for {}", self.value);
-        self.types = self.types.apply(sub);
-        self.associatedTypes = self.associatedTypes.apply(sub);
-        self.members = self.members.apply(sub);
         self
     }
 }

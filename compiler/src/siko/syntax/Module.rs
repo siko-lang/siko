@@ -6,9 +6,6 @@ use crate::siko::syntax::Implicit::Implicit;
 use crate::siko::syntax::Trait::Implementation;
 use crate::siko::syntax::Trait::Protocol;
 
-use super::Trait::Instance;
-use super::Trait::Trait;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Derive {
     pub name: Identifier,
@@ -20,8 +17,6 @@ pub enum ModuleItem {
     Enum(Enum),
     Function(Function),
     Import(Import),
-    Trait(Trait),
-    Instance(Instance),
     Effect(Effect),
     Implicit(Implicit),
     Protocol(Protocol),

@@ -3,12 +3,10 @@ use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     fmt::Debug,
     fmt::Display,
-    iter::zip,
 };
 
 use crate::siko::{
     hir::{
-        Apply::Apply,
         BlockBuilder::BlockBuilder,
         BodyBuilder::BodyBuilder,
         ConstraintContext::ConstraintContext,
@@ -17,7 +15,7 @@ use crate::siko::{
         FunctionCallResolver::FunctionCallResolver,
         ImplementationResolver::ImplementationResolver,
         ImplementationStore::ImplementationStore,
-        Instantiation::{instantiateEnum, instantiateImplementation, instantiateStruct, instantiateTypes},
+        Instantiation::{instantiateEnum, instantiateImplementation, instantiateStruct},
         Instruction::{
             CallInfo, FieldId, FieldInfo, ImplementationReference, ImplicitIndex, Instruction, InstructionKind,
             Mutability, WithContext,
@@ -25,7 +23,6 @@ use crate::siko::{
         Program::Program,
         ProtocolMethodSelector::ProtocolMethodSelector,
         Trait::Implementation,
-        TraitMethodSelector::TraitMethodSelector,
         Type::{Type, TypeVar},
         TypeVarAllocator::TypeVarAllocator,
         Unifier::Unifier,
@@ -36,7 +33,7 @@ use crate::siko::{
         builtins::{getImplicitConvertFnName, getNativePtrCloneName, getNativePtrIsNullName},
         QualifiedName,
     },
-    typechecker::{ConstraintChecker::ConstraintChecker, ConstraintExpander::ConstraintExpander},
+    typechecker::ConstraintExpander::ConstraintExpander,
 };
 
 use super::Error::TypecheckerError;
@@ -45,10 +42,6 @@ pub fn typecheck(ctx: &ReportContext, mut program: Program) -> Program {
     let mut result = BTreeMap::new();
     for (_, f) in &program.functions {
         let moduleName = f.name.module();
-        let traitMethodSelector = &program
-            .traitMethodSelectors
-            .get(&moduleName)
-            .expect("Trait method selector not found");
         let protocolMethodSelector = &program
             .protocolMethodSelectors
             .get(&moduleName)
@@ -57,14 +50,7 @@ pub fn typecheck(ctx: &ReportContext, mut program: Program) -> Program {
             .implementationStores
             .get(&moduleName)
             .expect("Implementation store not found");
-        let mut typechecker = Typechecker::new(
-            ctx,
-            &program,
-            &traitMethodSelector,
-            &protocolMethodSelector,
-            implementationStore,
-            f,
-        );
+        let mut typechecker = Typechecker::new(ctx, &program, &protocolMethodSelector, implementationStore, f);
         let typedFn = typechecker.run();
         //typedFn.dump();
         result.insert(typedFn.name.clone(), typedFn);
@@ -106,7 +92,6 @@ pub struct Typechecker<'a> {
     ctx: &'a ReportContext,
     program: &'a Program,
     f: &'a Function,
-    traitMethodSelector: &'a TraitMethodSelector,
     protocolMethodSelector: &'a ProtocolMethodSelector,
     implementationStore: &'a ImplementationStore,
     allocator: TypeVarAllocator,
@@ -126,7 +111,6 @@ impl<'a> Typechecker<'a> {
     pub fn new(
         ctx: &'a ReportContext,
         program: &'a Program,
-        traitMethodSelector: &'a TraitMethodSelector,
         protocolMethodSelector: &'a ProtocolMethodSelector,
         implementationStore: &'a ImplementationStore,
         f: &'a Function,
@@ -149,7 +133,6 @@ impl<'a> Typechecker<'a> {
             program: program,
             f: f,
             fnCallResolver,
-            traitMethodSelector: traitMethodSelector,
             protocolMethodSelector: protocolMethodSelector,
             implementationStore: implementationStore,
             allocator: allocator,
@@ -322,39 +305,21 @@ impl<'a> Typechecker<'a> {
         targetFn: &Function,
         args: &Vec<Variable>,
         resultVar: &Variable,
-        isProtocolMethod: bool,
     ) -> CheckFunctionCallResult {
         // println!(
         //     "Checking function call: {} {} {} args {:?}, result {}",
         //     targetFn.name, fnType, targetFn.constraintContext, args, resultVar
         // );
-        let mut useProtocol = isProtocolMethod;
-        for c in &targetFn.constraintContext.constraints {
-            if self.program.isProtocol(&c.name) {
-                useProtocol = true;
-            }
-        }
-        if useProtocol {
-            if targetFn.kind.isProtocolCall() {
-                let checkResult = self.checkFunctionCall_new(targetFn, args, resultVar, resultVar.location().clone());
-                let f = self
-                    .program
-                    .getFunction(&checkResult.fnName)
-                    .expect("Function not found");
-                let checkResult = self.checkFunctionCall_new(&f, args, resultVar, resultVar.location().clone());
-                checkResult
-            } else {
-                let checkResult = self.checkFunctionCall_new(targetFn, args, resultVar, resultVar.location().clone());
-                checkResult
-            }
+        if targetFn.kind.isProtocolCall() {
+            let checkResult = self.checkFunctionCall_new(targetFn, args, resultVar, resultVar.location().clone());
+            let f = self
+                .program
+                .getFunction(&checkResult.fnName)
+                .expect("Function not found");
+            let checkResult = self.checkFunctionCall_new(&f, args, resultVar, resultVar.location().clone());
+            checkResult
         } else {
-            let fnType =
-                self.checkFunctionCall_legacy(args, resultVar, targetFn.getType(), &targetFn.constraintContext);
-            let checkResult = CheckFunctionCallResult {
-                fnType: fnType,
-                fnName: targetFn.name.clone(),
-                implRefs: Vec::new(),
-            };
+            let checkResult = self.checkFunctionCall_new(targetFn, args, resultVar, resultVar.location().clone());
             checkResult
         }
     }
@@ -374,119 +339,18 @@ impl<'a> Typechecker<'a> {
         }
     }
 
-    fn checkFunctionCall_legacy(
-        &mut self,
-        args: &Vec<Variable>,
-        resultVar: &Variable,
-        fnType: Type,
-        neededConstraints: &ConstraintContext,
-    ) -> Type {
-        // println!(
-        //     "checkFunctionCall(legacy): {} {} {}",
-        //     fnType, neededConstraints, self.knownConstraints
-        // );
-        let mut types = neededConstraints.typeParameters.clone();
-        types.push(fnType.clone());
-        let sub = instantiateTypes(&mut self.allocator, &types);
-        let instantiatedFnType = fnType.apply(&sub);
-        //println!("inst {}", instantiatedFnType);
-        let constraintContext = neededConstraints.clone().apply(&sub);
-        //println!("applied constraintContext {}", constraintContext);
-        let (fnArgs, mut fnResult) = match instantiatedFnType.clone().splitFnType() {
-            Some((fnArgs, fnResult)) => (fnArgs, fnResult),
-            None => panic!("Function type {} is not a function type!", instantiatedFnType),
-        };
-        if args.len() != fnArgs.len() {
-            TypecheckerError::ArgCountMismatch(fnArgs.len() as u32, args.len() as u32, resultVar.location().clone())
-                .report(self.ctx);
-        }
-        if fnArgs.len() > 0 {
-            fnResult = fnResult.changeSelfType(fnArgs[0].clone());
-        }
-        //println!("fnResult {}", fnResult);
-        // println!(
-        //     "resultVar.getType() {}",
-        //     resultVar.getType().apply(&self.substitution)
-        // );
-        let fnResult = self.unifier.apply(fnResult.clone());
-        //println!("fnResult {}", fnResult);
-        self.unifier.unifyVar(resultVar, fnResult.clone());
-        loop {
-            for (arg, fnArg) in zip(args, &fnArgs) {
-                //println!("arg {} fnArg {}", arg, fnArg);
-                let fnArg2 = self.unifier.apply(fnArg.clone());
-                //println!("fnArg2 {}", fnArg2);
-                //println!("Convert arg {} => fnArg {}", arg, fnArg2);
-                self.unifier.updateConverterDestination(arg, &fnArg2);
-            }
-            let constraints = self.unifier.apply(constraintContext.clone());
-
-            let mut constraintChecker = ConstraintChecker::new(
-                &self.allocator,
-                self.ctx,
-                self.program,
-                &self.knownConstraints,
-                &self.unifier.substitution.borrow(),
-            );
-
-            match constraintChecker.checkConstraint(&constraints, resultVar.location().clone()) {
-                Ok(()) => {
-                    self.allocator = constraintChecker.allocator;
-                    *self.unifier.substitution.borrow_mut() = constraintChecker.substitution;
-                    break;
-                }
-                Err(err) => {
-                    err.report(self.ctx);
-                }
-            }
-        }
-        // println!("fnResult {}", fnResult);
-        // println!(
-        //     "resultVar.getType() {}",
-        //     resultVar.getType().apply(&self.substitution)
-        // );
-        let fnResult = self.unifier.apply(fnResult);
-        //println!("fnResult {}", fnResult);
-        self.unifier.unifyVar(resultVar, fnResult);
-        // println!(
-        //     "resultVar.getType() {}",
-        //     resultVar.getType().apply(&self.substitution)
-        // );
-        self.unifier.apply(instantiatedFnType)
-    }
-
-    fn lookupTraitMethod(
-        &mut self,
-        receiverType: Type,
-        methodName: &String,
-        location: Location,
-    ) -> (QualifiedName, bool) {
-        if let Some(selections) = self.traitMethodSelector.get(methodName) {
-            if selections.len() > 1 {
-                TypecheckerError::MethodAmbiguous(methodName.clone(), location.clone()).report(self.ctx);
-            }
-            return (selections[0].method.clone(), false);
-        }
-        return self.lookupProtocolMethod(receiverType, methodName, location);
-    }
-
-    fn lookupProtocolMethod(
-        &mut self,
-        receiverType: Type,
-        methodName: &String,
-        location: Location,
-    ) -> (QualifiedName, bool) {
+    fn lookupProtocolMethod(&mut self, receiverType: Type, methodName: &String, location: Location) -> QualifiedName {
         if let Some(selections) = self.protocolMethodSelector.get(methodName) {
             if selections.len() > 1 {
                 TypecheckerError::MethodAmbiguous(methodName.clone(), location.clone()).report(self.ctx);
             }
-            return (selections[0].method.clone(), true);
+            return selections[0].method.clone();
         }
         TypecheckerError::MethodNotFound(methodName.clone(), receiverType.to_string(), location.clone())
             .report(self.ctx);
     }
 
-    fn lookupMethod(&mut self, receiverType: Type, methodName: &String, location: Location) -> (QualifiedName, bool) {
+    fn lookupMethod(&mut self, receiverType: Type, methodName: &String, location: Location) -> QualifiedName {
         let baseType = receiverType.clone().unpackRef();
         match baseType.clone() {
             Type::Named(name, _) => {
@@ -495,30 +359,30 @@ impl<'a> Typechecker<'a> {
                     for m in &structDef.methods {
                         if m.name == *methodName {
                             //println!("Added {} {}", dest, m.fullName);
-                            return (m.fullName.clone(), false);
+                            return m.fullName.clone();
                         }
                     }
-                    return self.lookupTraitMethod(receiverType, methodName, location);
+                    return self.lookupProtocolMethod(receiverType, methodName, location);
                 } else if let Some(enumDef) = self.program.enums.get(&name) {
                     let enumDef = self.instantiateEnum(enumDef, &baseType);
                     for m in &enumDef.methods {
                         if m.name == *methodName {
-                            return (m.fullName.clone(), false);
+                            return m.fullName.clone();
                         }
                     }
-                    return self.lookupTraitMethod(receiverType, methodName, location);
+                    return self.lookupProtocolMethod(receiverType, methodName, location);
                 } else {
                     TypecheckerError::MethodNotFound(methodName.clone(), receiverType.to_string(), location.clone())
                         .report(self.ctx);
                 }
             }
             Type::Var(TypeVar::Named(_)) => {
-                return self.lookupTraitMethod(receiverType, methodName, location);
+                return self.lookupProtocolMethod(receiverType, methodName, location);
             }
             Type::Ptr(_) => {
                 if methodName == "isNull" {
                     // TODO: make this nicer, somehow??
-                    return (getNativePtrIsNullName(), false);
+                    return getNativePtrIsNullName();
                 } else {
                     TypecheckerError::MethodNotFound(methodName.clone(), receiverType.to_string(), location.clone())
                         .report(self.ctx);
@@ -646,7 +510,7 @@ impl<'a> Typechecker<'a> {
                 let Some(targetFn) = self.program.functions.get(&info.name) else {
                     panic!("Function not found {}", info.name);
                 };
-                let checkResult = self.checkFunctionCall(&targetFn, &info.args, dest, false);
+                let checkResult = self.checkFunctionCall(&targetFn, &info.args, dest);
                 let mut info = info.clone();
                 info.name = checkResult.fnName;
                 info.implementations = checkResult.implRefs;
@@ -995,8 +859,7 @@ impl<'a> Typechecker<'a> {
         let receiverType = receiver.getType();
         let receiverType = self.unifier.apply(receiverType);
         //println!("MethodCall {} {} {} {}", dest, receiver, methodName, receiverType);
-        let (name, isProtocolMethod) =
-            self.lookupMethod(receiverType.clone(), methodName, instruction.location.clone());
+        let name = self.lookupMethod(receiverType.clone(), methodName, instruction.location.clone());
         let mut extendedArgs = args.clone();
         extendedArgs.insert(0, receiver.clone());
         let targetFn = self.program.functions.get(&name).expect("Function not found");
@@ -1020,7 +883,7 @@ impl<'a> Typechecker<'a> {
                 _ => {}
             }
         }
-        let checkResult = self.checkFunctionCall(&targetFn, &extendedArgs, dest, isProtocolMethod);
+        let checkResult = self.checkFunctionCall(&targetFn, &extendedArgs, dest);
         let mut fnType = checkResult.fnType;
         //println!("METHOD CALL {} => {}", fnType, receiverType);
         if mutableCall {

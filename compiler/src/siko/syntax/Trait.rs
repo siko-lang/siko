@@ -9,16 +9,6 @@ use super::{
 };
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Trait {
-    pub name: Identifier,
-    pub params: Vec<Identifier>,
-    pub typeParams: Option<TypeParameterDeclaration>,
-    pub associatedTypes: Vec<AssociatedTypeDeclaration>,
-    pub methods: Vec<Function>,
-    pub public: bool,
-}
-
-#[derive(Debug, PartialEq, Eq)]
 pub struct Protocol {
     pub name: Identifier,
     pub params: Vec<Identifier>,
@@ -60,17 +50,6 @@ impl fmt::Display for AssociatedType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "type {} = {}", self.name, self.ty)
     }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct Instance {
-    pub id: u64,
-    pub typeParams: Option<TypeParameterDeclaration>,
-    pub traitName: Identifier,
-    pub types: Vec<Type>,
-    pub associatedTypes: Vec<AssociatedType>,
-    pub methods: Vec<Function>,
-    pub location: Location,
 }
 
 #[derive(Debug, PartialEq, Eq)]

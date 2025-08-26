@@ -81,8 +81,6 @@ impl<'a> ModuleParser for Parser<'a> {
                 TokenKind::Keyword(KeywordKind::Enum) => ModuleItem::Enum(self.parseEnum(derives, public)),
                 TokenKind::Keyword(KeywordKind::Fn) => ModuleItem::Function(self.parseFunction(public)),
                 TokenKind::Keyword(KeywordKind::Import) => ModuleItem::Import(self.parseImport()),
-                TokenKind::Keyword(KeywordKind::Trait) => ModuleItem::Trait(self.parseTrait(public)),
-                TokenKind::Keyword(KeywordKind::Instance) => ModuleItem::Instance(self.parseInstance()),
                 TokenKind::Keyword(KeywordKind::Effect) => ModuleItem::Effect(self.parseEffect(public)),
                 TokenKind::Keyword(KeywordKind::Implicit) => ModuleItem::Implicit(self.parseImplicit(public)),
                 TokenKind::Keyword(KeywordKind::Protocol) => ModuleItem::Protocol(self.parseProtocol(public)),

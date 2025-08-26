@@ -4,14 +4,12 @@ use crate::siko::{
     hir::{
         Apply::Apply,
         Function::FunctionKind,
-        InstanceResolver::ResolutionResult,
         Instruction::{
             CallContextInfo, CallInfo, ImplementationReference, ImplicitContextIndex, ImplicitContextOperation,
             ImplicitIndex, Instruction, InstructionKind, SyntaxBlockId, WithContext,
         },
         Substitution::Substitution,
-        Type::{formatTypes, Type},
-        TypeVarAllocator::TypeVarAllocator,
+        Type::Type,
         Variable::Variable,
     },
     location::Report::Report,
@@ -22,10 +20,7 @@ use crate::siko::{
         Queue::Key,
         Utils::{createTypeSubstitution, Monomorphize},
     },
-    qualifiedname::{
-        builtins::{getAutoDropFnName, getDropFnName, getDropName},
-        QualifiedName,
-    },
+    qualifiedname::{builtins::getAutoDropFnName, QualifiedName},
 };
 
 impl Monomorphize for CallInfo {
@@ -153,12 +148,10 @@ pub fn processInstruction(
                 }
             };
             //println!("Target function: {} {}", target_fn, contextSyntaxBlockId);
-            let (fn_ty, context_ty) = prepareTypes(sub, dest, info, target_fn.getType());
+            let (_, context_ty) = prepareTypes(sub, dest, info, target_fn.getType());
             // println!("fn type {}", fn_ty);
             // println!("context type {}", context_ty);
-            let sub = createTypeSubstitution(context_ty.clone(), fn_ty.clone());
-            //println!("target ctx {}", target_fn.constraintContext);
-            let name = getFunctionName(target_fn.kind.clone(), target_fn.name.clone(), mono, &sub);
+            let name = target_fn.name.clone();
             let target_fn = mono.program.functions.get(&name).expect("function not found in mono");
             //println!("real {} {}", target_fn.getType(), target_fn.constraintContext);
             let sub = createTypeSubstitution(context_ty.clone(), target_fn.getType().clone());
@@ -453,64 +446,5 @@ pub fn processInstructionKind(
         InstructionKind::StorePtr(dest, src) => {
             InstructionKind::StorePtr(dest.process(sub, mono), src.process(sub, mono))
         }
-    }
-}
-
-fn getFunctionName(
-    kind: FunctionKind,
-    name: QualifiedName,
-    mono: &mut Monomorphizer,
-    sub: &Substitution,
-) -> QualifiedName {
-    if let Some(traitName) = kind.isTraitCall() {
-        //println!("Trait call in mono!");
-        let traitDef = mono.program.getTrait(&traitName).unwrap();
-        //println!("trait {}", traitDef);
-        let mut allocator = TypeVarAllocator::new();
-        let traitDef = traitDef.apply(&sub);
-        //println!("trait ii {}", traitDef);
-        if let Some(instances) = mono.program.instanceResolver.lookupInstances(&traitName) {
-            let resolutionResult = instances.find(&mut allocator, &traitDef.params);
-            match resolutionResult {
-                ResolutionResult::Winner(instance) => {
-                    //println!("instance  {}", instance);
-                    for m in &instance.members {
-                        let base = m.fullName.getTraitMemberName();
-                        if base == name {
-                            return m.fullName.clone();
-                        }
-                    }
-                    let traitDef = mono.program.getTrait(&traitName).expect("trait not found in mono");
-                    for m in &traitDef.members {
-                        if m.fullName == name {
-                            return m.fullName.clone();
-                        }
-                    }
-                    panic!("instance member not found!")
-                }
-                ResolutionResult::Ambiguous(_) => {
-                    panic!("Ambiguous instances in mono!");
-                }
-                ResolutionResult::NoInstanceFound => {
-                    if traitName == getDropName() {
-                        return getDropFnName();
-                    } else {
-                        panic!(
-                            "instance not found in mono for {} {}!",
-                            traitName,
-                            formatTypes(&traitDef.params)
-                        );
-                    }
-                }
-            }
-        } else {
-            if traitName == getDropName() {
-                return getDropFnName();
-            } else {
-                panic!("instances not found in mono for {}!", traitName);
-            }
-        }
-    } else {
-        name.clone()
     }
 }

@@ -17,9 +17,6 @@ use crate::siko::{
 use super::{
     Data::{Enum, Struct},
     Function::Function,
-    InstanceResolver::InstanceResolver,
-    Trait::Trait,
-    TraitMethodSelector::TraitMethodSelector,
 };
 
 #[derive(Clone)]
@@ -27,10 +24,7 @@ pub struct Program {
     pub functions: BTreeMap<QualifiedName, Function>,
     pub structs: BTreeMap<QualifiedName, Struct>,
     pub enums: BTreeMap<QualifiedName, Enum>,
-    pub traits: BTreeMap<QualifiedName, Trait>,
-    pub traitMethodSelectors: BTreeMap<QualifiedName, TraitMethodSelector>,
     pub protocolMethodSelectors: BTreeMap<QualifiedName, ProtocolMethodSelector>,
-    pub instanceResolver: InstanceResolver,
     pub implicits: BTreeMap<QualifiedName, Implicit>,
     pub variants: BTreeSet<QualifiedName>,
     pub protocols: BTreeMap<QualifiedName, Protocol>,
@@ -45,10 +39,7 @@ impl Program {
             functions: BTreeMap::new(),
             structs: BTreeMap::new(),
             enums: BTreeMap::new(),
-            traits: BTreeMap::new(),
-            traitMethodSelectors: BTreeMap::new(),
             protocolMethodSelectors: BTreeMap::new(),
-            instanceResolver: InstanceResolver::new(),
             implicits: BTreeMap::new(),
             variants: BTreeSet::new(),
             protocols: BTreeMap::new(),
@@ -68,10 +59,6 @@ impl Program {
 
     pub fn getStruct(&self, qn: &QualifiedName) -> Option<Struct> {
         self.structs.get(qn).cloned()
-    }
-
-    pub fn getTrait(&self, qn: &QualifiedName) -> Option<Trait> {
-        self.traits.get(qn).cloned()
     }
 
     pub fn getImplicit(&self, qn: &QualifiedName) -> Option<Implicit> {
