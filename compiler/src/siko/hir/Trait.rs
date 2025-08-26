@@ -19,7 +19,7 @@ impl fmt::Display for MemberInfo {
 }
 
 #[derive(Debug, Clone)]
-pub struct Protocol {
+pub struct Trait {
     pub name: QualifiedName,
     pub params: Vec<Type>,
     pub associatedTypes: Vec<String>,
@@ -27,14 +27,14 @@ pub struct Protocol {
     pub constraint: ConstraintContext,
 }
 
-impl Protocol {
+impl Trait {
     pub fn new(
         name: QualifiedName,
         params: Vec<Type>,
         associatedTypes: Vec<String>,
         constraint: ConstraintContext,
-    ) -> Protocol {
-        Protocol {
+    ) -> Trait {
+        Trait {
             name: name,
             params: params,
             associatedTypes: associatedTypes,
@@ -44,7 +44,7 @@ impl Protocol {
     }
 }
 
-impl fmt::Display for Protocol {
+impl fmt::Display for Trait {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let associated_types_str = if !self.associatedTypes.is_empty() {
             let types = self.associatedTypes.join(", ");
@@ -90,9 +90,9 @@ impl fmt::Display for AssociatedType {
 }
 
 #[derive(Debug, Clone)]
-pub struct Implementation {
+pub struct Instance {
     pub name: QualifiedName,
-    pub protocolName: QualifiedName,
+    pub traitName: QualifiedName,
     pub types: Vec<Type>,
     pub typeParams: Vec<Type>,
     pub associatedTypes: Vec<AssociatedType>,
@@ -100,18 +100,18 @@ pub struct Implementation {
     pub members: Vec<MemberInfo>,
 }
 
-impl Implementation {
+impl Instance {
     pub fn new(
         name: QualifiedName,
-        protocolName: QualifiedName,
+        traitName: QualifiedName,
         types: Vec<Type>,
         typeParams: Vec<Type>,
         associatedTypes: Vec<AssociatedType>,
         constraintContext: ConstraintContext,
-    ) -> Implementation {
-        Implementation {
+    ) -> Instance {
+        Instance {
             name,
-            protocolName: protocolName,
+            traitName: traitName,
             types: types,
             typeParams: typeParams,
             associatedTypes: associatedTypes,
@@ -121,7 +121,7 @@ impl Implementation {
     }
 }
 
-impl fmt::Display for Implementation {
+impl fmt::Display for Instance {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let methods = self
             .members
@@ -137,9 +137,9 @@ impl fmt::Display for Implementation {
             .join(",\n    ");
         write!(
             f,
-            "implementation #{} of {} [{}] {} {{\n    {}\n    {}\n}}",
+            "instance #{} of {} [{}] {} {{\n    {}\n    {}\n}}",
             self.name,
-            self.protocolName,
+            self.traitName,
             formatTypes(&self.types),
             self.constraintContext,
             associatedTypes,

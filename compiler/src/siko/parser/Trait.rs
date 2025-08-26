@@ -1,6 +1,6 @@
 use crate::siko::syntax::{
     Identifier::Identifier,
-    Trait::{AssociatedType, AssociatedTypeDeclaration, Implementation, Protocol},
+    Trait::{AssociatedType, AssociatedTypeDeclaration, Instance, Trait},
     Type::Type,
 };
 
@@ -12,14 +12,14 @@ use super::{
 };
 
 pub trait TraitParser {
-    fn parseProtocol(&mut self, public: bool) -> Protocol;
+    fn parseTrait(&mut self, public: bool) -> Trait;
     fn parseAssociatedTypeDeclaration(&mut self) -> AssociatedTypeDeclaration;
     fn parseAssociatedType(&mut self) -> AssociatedType;
-    fn parseImplementation(&mut self, public: bool) -> Implementation;
+    fn parseInstance(&mut self, public: bool) -> Instance;
 }
 
 impl<'a> TraitParser for Parser<'a> {
-    fn parseProtocol(&mut self, public: bool) -> Protocol {
+    fn parseTrait(&mut self, public: bool) -> Trait {
         self.expect(TokenKind::Keyword(KeywordKind::Trait));
         let typeParams = if self.check(TokenKind::LeftBracket(BracketKind::Square)) {
             Some(self.parseTypeParameterDeclaration())
@@ -45,11 +45,11 @@ impl<'a> TraitParser for Parser<'a> {
                     associatedTypes.push(associatedType);
                     continue;
                 }
-                self.reportError2("expected protocol member or associated type", self.peek());
+                self.reportError2("expected trait member or associated type", self.peek());
             }
             self.expect(TokenKind::RightBracket(BracketKind::Curly));
         }
-        Protocol {
+        Trait {
             name: name,
             params: params,
             typeParams: typeParams,
@@ -82,7 +82,7 @@ impl<'a> TraitParser for Parser<'a> {
         AssociatedType { name: name, ty: ty }
     }
 
-    fn parseImplementation(&mut self, public: bool) -> Implementation {
+    fn parseInstance(&mut self, public: bool) -> Instance {
         let location = self.currentLocation();
         self.expect(TokenKind::Keyword(KeywordKind::Instance));
         let typeParams = if self.check(TokenKind::LeftBracket(BracketKind::Square)) {
@@ -93,7 +93,7 @@ impl<'a> TraitParser for Parser<'a> {
         let nameLoc = self.currentLocation();
         let name = self.parseType();
         let defLoc = self.currentLocation();
-        let (name, protocolName, types) = if !self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
+        let (name, traitName, types) = if !self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
             // name is impl name
             let name = if let Some((name, args)) = getNameAndArgs(name) {
                 if args.is_empty() {
@@ -105,16 +105,16 @@ impl<'a> TraitParser for Parser<'a> {
                 self.reportError3("expected impl name", nameLoc)
             };
             let def = self.parseType();
-            if let Some((protocolName, types)) = getNameAndArgs(def) {
-                (Some(name), protocolName, types)
+            if let Some((traitName, types)) = getNameAndArgs(def) {
+                (Some(name), traitName, types)
             } else {
-                self.reportError3("expected protocol name and args", defLoc)
+                self.reportError3("expected trait name and args", defLoc)
             }
         } else {
-            if let Some((protocolName, types)) = getNameAndArgs(name) {
-                (None, protocolName, types)
+            if let Some((traitName, types)) = getNameAndArgs(name) {
+                (None, traitName, types)
             } else {
-                self.reportError3("expected protocol name and args", defLoc);
+                self.reportError3("expected trait name and args", defLoc);
             }
         };
         let mut methods = Vec::new();
@@ -132,15 +132,15 @@ impl<'a> TraitParser for Parser<'a> {
                     associatedTypes.push(associatedType);
                     continue;
                 }
-                self.reportError2("expected protocol member or associated type", self.peek());
+                self.reportError2("expected trait member or associated type", self.peek());
             }
             self.expect(TokenKind::RightBracket(BracketKind::Curly));
         }
-        Implementation {
+        Instance {
             public,
             name,
             typeParams,
-            protocolName,
+            traitName,
             types,
             associatedTypes,
             methods,

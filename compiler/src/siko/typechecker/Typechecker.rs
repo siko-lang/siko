@@ -13,16 +13,16 @@ use crate::siko::{
         Data::{Enum, Struct},
         Function::{BlockId, Function, Parameter},
         FunctionCallResolver::FunctionCallResolver,
-        ImplementationResolver::ImplementationResolver,
-        ImplementationStore::ImplementationStore,
-        Instantiation::{instantiateEnum, instantiateImplementation, instantiateStruct},
+        InstanceResolver::InstanceResolver,
+        InstanceStore::InstanceStore,
+        Instantiation::{instantiateEnum, instantiateInstance, instantiateStruct},
         Instruction::{
-            CallInfo, FieldId, FieldInfo, ImplementationReference, ImplicitIndex, Instruction, InstructionKind,
-            Mutability, WithContext,
+            CallInfo, FieldId, FieldInfo, ImplicitIndex, InstanceReference, Instruction, InstructionKind, Mutability,
+            WithContext,
         },
         Program::Program,
-        ProtocolMethodSelector::ProtocolMethodSelector,
-        Trait::Implementation,
+        Trait::Instance,
+        TraitMethodSelector::TraitMethodSelector,
         Type::{Type, TypeVar},
         TypeVarAllocator::TypeVarAllocator,
         Unifier::Unifier,
@@ -42,15 +42,15 @@ pub fn typecheck(ctx: &ReportContext, mut program: Program) -> Program {
     let mut result = BTreeMap::new();
     for (_, f) in &program.functions {
         let moduleName = f.name.module();
-        let protocolMethodSelector = &program
-            .protocolMethodSelectors
+        let traitMethodselector = &program
+            .traitMethodselectors
             .get(&moduleName)
-            .expect("Protocol method selector not found");
-        let implementationStore = &program
-            .implementationStores
+            .expect("Trait method selector not found");
+        let instanceStore = &program
+            .instanceStores
             .get(&moduleName)
-            .expect("Implementation store not found");
-        let mut typechecker = Typechecker::new(ctx, &program, &protocolMethodSelector, implementationStore, f);
+            .expect("Instance store not found");
+        let mut typechecker = Typechecker::new(ctx, &program, &traitMethodselector, instanceStore, f);
         let typedFn = typechecker.run();
         //typedFn.dump();
         result.insert(typedFn.name.clone(), typedFn);
@@ -85,15 +85,15 @@ impl Debug for ReceiverChainEntry {
 struct CheckFunctionCallResult {
     pub fnType: Type,
     pub fnName: QualifiedName,
-    pub implRefs: Vec<ImplementationReference>,
+    pub instanceRefs: Vec<InstanceReference>,
 }
 
 pub struct Typechecker<'a> {
     ctx: &'a ReportContext,
     program: &'a Program,
     f: &'a Function,
-    protocolMethodSelector: &'a ProtocolMethodSelector,
-    implementationStore: &'a ImplementationStore,
+    traitMethodselector: &'a TraitMethodSelector,
+    instanceStore: &'a InstanceStore,
     allocator: TypeVarAllocator,
     selfType: Option<Type>,
     mutables: BTreeMap<String, Mutability>,
@@ -102,7 +102,7 @@ pub struct Typechecker<'a> {
     queue: VecDeque<BlockId>,
     knownConstraints: ConstraintContext,
     receiverChains: BTreeMap<Variable, ReceiverChainEntry>,
-    implResolver: ImplementationResolver<'a>,
+    implResolver: InstanceResolver<'a>,
     unifier: Unifier<'a>,
     fnCallResolver: FunctionCallResolver<'a>,
 }
@@ -111,12 +111,12 @@ impl<'a> Typechecker<'a> {
     pub fn new(
         ctx: &'a ReportContext,
         program: &'a Program,
-        protocolMethodSelector: &'a ProtocolMethodSelector,
-        implementationStore: &'a ImplementationStore,
+        traitMethodselector: &'a TraitMethodSelector,
+        instanceStore: &'a InstanceStore,
         f: &'a Function,
     ) -> Typechecker<'a> {
         let allocator = TypeVarAllocator::new();
-        let implResolver = ImplementationResolver::new(allocator.clone(), implementationStore, program);
+        let implResolver = InstanceResolver::new(allocator.clone(), instanceStore, program);
         let expander = ConstraintExpander::new(program, allocator.clone(), f.constraintContext.clone());
         let knownConstraints = expander.expandKnownConstraints();
         let unifier = Unifier::new(ctx);
@@ -124,7 +124,7 @@ impl<'a> Typechecker<'a> {
             program,
             allocator.clone(),
             ctx,
-            implementationStore,
+            instanceStore,
             knownConstraints.clone(),
             unifier.clone(),
         );
@@ -133,8 +133,8 @@ impl<'a> Typechecker<'a> {
             program: program,
             f: f,
             fnCallResolver,
-            protocolMethodSelector: protocolMethodSelector,
-            implementationStore: implementationStore,
+            traitMethodselector: traitMethodselector,
+            instanceStore: instanceStore,
             allocator: allocator,
             selfType: None,
             mutables: BTreeMap::new(),
@@ -296,8 +296,8 @@ impl<'a> Typechecker<'a> {
         instantiateStruct(&mut self.allocator, c, ty)
     }
 
-    fn instantiateImplementation(&mut self, impl_def: &Implementation) -> Implementation {
-        instantiateImplementation(&mut self.allocator, impl_def)
+    fn instantiateInstance(&mut self, impl_def: &Instance) -> Instance {
+        instantiateInstance(&mut self.allocator, impl_def)
     }
 
     fn checkFunctionCall(
@@ -310,7 +310,7 @@ impl<'a> Typechecker<'a> {
         //     "Checking function call: {} {} {} args {:?}, result {}",
         //     targetFn.name, fnType, targetFn.constraintContext, args, resultVar
         // );
-        if targetFn.kind.isProtocolCall() {
+        if targetFn.kind.isTraitCall() {
             let checkResult = self.checkFunctionCall_new(targetFn, args, resultVar, resultVar.location().clone());
             let f = self
                 .program
@@ -335,12 +335,12 @@ impl<'a> Typechecker<'a> {
         CheckFunctionCallResult {
             fnType: result.fnType,
             fnName: result.fnName,
-            implRefs: result.implRefs,
+            instanceRefs: result.instanceRefs,
         }
     }
 
-    fn lookupProtocolMethod(&mut self, receiverType: Type, methodName: &String, location: Location) -> QualifiedName {
-        if let Some(selections) = self.protocolMethodSelector.get(methodName) {
+    fn lookupTraitMethod(&mut self, receiverType: Type, methodName: &String, location: Location) -> QualifiedName {
+        if let Some(selections) = self.traitMethodselector.get(methodName) {
             if selections.len() > 1 {
                 TypecheckerError::MethodAmbiguous(methodName.clone(), location.clone()).report(self.ctx);
             }
@@ -362,7 +362,7 @@ impl<'a> Typechecker<'a> {
                             return m.fullName.clone();
                         }
                     }
-                    return self.lookupProtocolMethod(receiverType, methodName, location);
+                    return self.lookupTraitMethod(receiverType, methodName, location);
                 } else if let Some(enumDef) = self.program.enums.get(&name) {
                     let enumDef = self.instantiateEnum(enumDef, &baseType);
                     for m in &enumDef.methods {
@@ -370,14 +370,14 @@ impl<'a> Typechecker<'a> {
                             return m.fullName.clone();
                         }
                     }
-                    return self.lookupProtocolMethod(receiverType, methodName, location);
+                    return self.lookupTraitMethod(receiverType, methodName, location);
                 } else {
                     TypecheckerError::MethodNotFound(methodName.clone(), receiverType.to_string(), location.clone())
                         .report(self.ctx);
                 }
             }
             Type::Var(TypeVar::Named(_)) => {
-                return self.lookupProtocolMethod(receiverType, methodName, location);
+                return self.lookupTraitMethod(receiverType, methodName, location);
             }
             Type::Ptr(_) => {
                 if methodName == "isNull" {
@@ -513,7 +513,7 @@ impl<'a> Typechecker<'a> {
                 let checkResult = self.checkFunctionCall(&targetFn, &info.args, dest);
                 let mut info = info.clone();
                 info.name = checkResult.fnName;
-                info.implementations = checkResult.implRefs;
+                info.instanceRefs = checkResult.instanceRefs;
                 let kind = InstructionKind::FunctionCall(dest.clone(), info);
                 builder.replaceInstruction(kind, instruction.location.clone());
             }
@@ -909,7 +909,7 @@ impl<'a> Typechecker<'a> {
         // );
         let name = checkResult.fnName;
         let mut newCallInfo = CallInfo::new(name.clone(), extendedArgs.clone());
-        newCallInfo.implementations = checkResult.implRefs;
+        newCallInfo.instanceRefs = checkResult.instanceRefs;
         builder.replaceInstruction(
             InstructionKind::FunctionCall(dest.clone(), newCallInfo.clone()),
             instruction.location.clone(),
@@ -1242,10 +1242,10 @@ impl<'a> Typechecker<'a> {
                                         )
                                     } else {
                                         if self.implResolver.isCopy(destTy) {
-                                            let (fnName, implRefs) =
+                                            let (fnName, instanceRefs) =
                                                 self.fnCallResolver.resolveCloneCall(source.clone(), dest.clone());
                                             let mut info = CallInfo::new(fnName, vec![source.clone()]);
-                                            info.implementations.extend(implRefs);
+                                            info.instanceRefs.extend(instanceRefs);
                                             InstructionKind::FunctionCall(dest.clone(), info)
                                         } else {
                                             TypecheckerError::TypeMismatch(

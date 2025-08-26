@@ -11,8 +11,8 @@ use crate::siko::{
         ConstraintContext::ConstraintContext,
         Function::{Function, FunctionKind, Parameter},
         FunctionCallResolver::FunctionCallResolver,
-        ImplementationResolver::ImplementationResolver,
-        ImplementationStore::ImplementationStore,
+        InstanceResolver::InstanceResolver,
+        InstanceStore::InstanceStore,
         Instantiation::{instantiateEnum, instantiateStruct},
         Instruction::{CallInfo, EnumCase, FieldId, FieldInfo, InstructionKind},
         Program::Program,
@@ -319,8 +319,8 @@ impl<'a> Monomorphizer<'a> {
         let mut hasInstance = false;
 
         let allocator = TypeVarAllocator::new();
-        let implStore = ImplementationStore::new();
-        let implResolver = ImplementationResolver::new(allocator.clone(), &implStore, &self.program);
+        let implStore = InstanceStore::new();
+        let implResolver = InstanceResolver::new(allocator.clone(), &implStore, &self.program);
 
         if implResolver.isDrop(&ty) {
             hasInstance = true;
@@ -336,7 +336,7 @@ impl<'a> Monomorphizer<'a> {
             let dropRes = bodyBuilder.createTempValueWithType(location.clone(), selfVar.getType());
             let (fnName, impls) = fnCallResolver.resolveDropCall(selfVar.clone(), dropRes.clone());
             let mut info = CallInfo::new(fnName.clone(), vec![selfVar.clone()]);
-            info.implementations = impls;
+            info.instanceRefs = impls;
             let kind = InstructionKind::FunctionCall(dropRes.clone(), info);
             builder.addInstruction(kind, location.clone());
             builder.addAssign(dropVar.clone(), dropRes, location.clone());

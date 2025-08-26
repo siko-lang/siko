@@ -47,14 +47,14 @@ struct Key {
 }
 
 #[derive(Clone)]
-pub struct CanonicalImplementationStore {
-    implementations: BTreeMap<Key, CanonicalInstanceInfo>,
+pub struct CanonicalInstanceStore {
+    instances: BTreeMap<Key, CanonicalInstanceInfo>,
 }
 
-impl CanonicalImplementationStore {
+impl CanonicalInstanceStore {
     pub fn new() -> Self {
-        CanonicalImplementationStore {
-            implementations: BTreeMap::new(),
+        CanonicalInstanceStore {
+            instances: BTreeMap::new(),
         }
     }
 
@@ -62,7 +62,7 @@ impl CanonicalImplementationStore {
         &mut self,
         name: QualifiedName,
         types: Vec<Type>,
-        implementation: QualifiedName,
+        instanceName: QualifiedName,
         location: Location,
         ctx: &ReportContext,
     ) {
@@ -74,10 +74,10 @@ impl CanonicalImplementationStore {
         }
         let types = normalizeTypes(&types);
         let set = Key { name, types };
-        match self.implementations.entry(set) {
+        match self.instances.entry(set) {
             Entry::Vacant(e) => {
                 e.insert(CanonicalInstanceInfo {
-                    name: implementation,
+                    name: instanceName,
                     location,
                 });
             }
@@ -99,7 +99,7 @@ impl CanonicalImplementationStore {
             name: name.clone(),
             types: types.clone(),
         };
-        self.implementations.get(&set).map(|info| &info.name)
+        self.instances.get(&set).map(|info| &info.name)
     }
 }
 

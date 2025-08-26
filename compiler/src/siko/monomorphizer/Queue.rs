@@ -28,7 +28,7 @@ impl Display for Key {
                 if !impls.is_empty() {
                     write!(
                         f,
-                        ", implementations: [{}]",
+                        ", instances: [{}]",
                         impls.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(", ")
                     )?;
                 }

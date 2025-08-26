@@ -335,7 +335,6 @@ impl<'a> Builder<'a> {
             FunctionKind::StructCtor => MirFunctionKind::StructCtor,
             FunctionKind::UserDefined
             | FunctionKind::TraitMemberDefinition(_)
-            | FunctionKind::ProtocolMemberDefinition(_)
             | FunctionKind::EffectMemberDefinition(_) => {
                 let mut blocks = Vec::new();
                 if let Some(body) = self.function.body.clone() {
@@ -371,9 +370,6 @@ impl<'a> Builder<'a> {
             }
             FunctionKind::EffectMemberDecl(_) => {
                 unreachable!("EffectMemberDecl in MIR Lowering")
-            }
-            FunctionKind::ProtocolMemberDecl(_) => {
-                unreachable!("ProtocolMemberDecl in MIR Lowering")
             }
         };
         let fnName = if self.function.kind.isCtor() || self.function.kind.isExternC() {

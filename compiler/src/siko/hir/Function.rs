@@ -226,8 +226,6 @@ pub enum FunctionKind {
     TraitMemberDefinition(QualifiedName),
     EffectMemberDecl(QualifiedName),
     EffectMemberDefinition(QualifiedName),
-    ProtocolMemberDecl(QualifiedName),
-    ProtocolMemberDefinition(QualifiedName),
 }
 
 impl Display for FunctionKind {
@@ -249,24 +247,11 @@ impl Display for FunctionKind {
             FunctionKind::EffectMemberDefinition(qn) => {
                 write!(f, "EffectMemberDefinition({})", qn)
             }
-            FunctionKind::ProtocolMemberDecl(qn) => {
-                write!(f, "ProtocolMemberDecl({})", qn)
-            }
-            FunctionKind::ProtocolMemberDefinition(qn) => {
-                write!(f, "ProtocolMemberDefinition({})", qn)
-            }
         }
     }
 }
 
 impl FunctionKind {
-    pub fn isTraitCall(&self) -> Option<QualifiedName> {
-        match self {
-            FunctionKind::TraitMemberDecl(qn) | FunctionKind::TraitMemberDefinition(qn) => Some(qn.clone()),
-            _ => None,
-        }
-    }
-
     pub fn isExternC(&self) -> bool {
         match self {
             FunctionKind::Extern(kind) => *kind == ExternKind::C,
@@ -288,9 +273,9 @@ impl FunctionKind {
         }
     }
 
-    pub fn isProtocolCall(&self) -> bool {
+    pub fn isTraitCall(&self) -> bool {
         match self {
-            FunctionKind::ProtocolMemberDecl(_) | FunctionKind::ProtocolMemberDefinition(_) => true,
+            FunctionKind::TraitMemberDecl(_) | FunctionKind::TraitMemberDefinition(_) => true,
             _ => false,
         }
     }

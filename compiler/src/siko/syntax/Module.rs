@@ -3,8 +3,8 @@ use crate::siko::syntax::Effect::Effect;
 use crate::siko::syntax::Function::*;
 use crate::siko::syntax::Identifier::*;
 use crate::siko::syntax::Implicit::Implicit;
-use crate::siko::syntax::Trait::Implementation;
-use crate::siko::syntax::Trait::Protocol;
+use crate::siko::syntax::Trait::Instance;
+use crate::siko::syntax::Trait::Trait;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Derive {
@@ -19,8 +19,8 @@ pub enum ModuleItem {
     Import(Import),
     Effect(Effect),
     Implicit(Implicit),
-    Protocol(Protocol),
-    Implementation(Implementation),
+    Trait(Trait),
+    Instance(Instance),
 }
 
 #[derive(Debug, PartialEq, Eq)]

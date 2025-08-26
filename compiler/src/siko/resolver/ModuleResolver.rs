@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use crate::siko::hir::Program::Program;
-use crate::siko::hir::Trait::Protocol;
+use crate::siko::hir::Trait::Trait;
 use crate::siko::location::Report::ReportContext;
 use crate::siko::qualifiedname::QualifiedName;
 use crate::siko::resolver::Error::ResolverError;
@@ -26,12 +26,12 @@ pub struct ModuleResolver<'a> {
 }
 
 impl<'a> ModuleResolver<'a> {
-    pub fn lookupProtocol(&self, name: &Identifier, program: &Program) -> Protocol {
+    pub fn lookupTrait(&self, name: &Identifier, program: &Program) -> Trait {
         let qn = &self.resolveName(name);
-        if let Some(protocolDef) = program.getProtocol(qn) {
-            protocolDef
+        if let Some(traitDef) = program.getTrait(qn) {
+            traitDef
         } else {
-            ResolverError::ProtocolNotFound(name.toString(), name.location()).report(self.ctx);
+            ResolverError::TraitNotFound(name.toString(), name.location()).report(self.ctx);
         }
     }
 

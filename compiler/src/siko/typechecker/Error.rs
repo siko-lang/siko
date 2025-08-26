@@ -87,7 +87,7 @@ impl TypecheckerError {
                 r.print();
             }
             TypecheckerError::NoImplementationFound(name, l) => {
-                let slogan = format!("No implementation found for: {}", ctx.yellow(name));
+                let slogan = format!("Instance for {} not found", ctx.yellow(name));
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }

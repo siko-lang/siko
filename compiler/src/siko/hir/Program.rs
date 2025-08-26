@@ -5,11 +5,11 @@ use std::{
 
 use crate::siko::{
     hir::{
-        CanonicalImplementationStore::CanonicalImplementationStore,
-        ImplementationStore::ImplementationStore,
+        CanonicalInstanceStore::CanonicalInstanceStore,
         Implicit::Implicit,
-        ProtocolMethodSelector::ProtocolMethodSelector,
-        Trait::{Implementation, Protocol},
+        InstanceStore::InstanceStore,
+        Trait::{Instance, Trait},
+        TraitMethodSelector::TraitMethodSelector,
     },
     qualifiedname::QualifiedName,
 };
@@ -24,13 +24,13 @@ pub struct Program {
     pub functions: BTreeMap<QualifiedName, Function>,
     pub structs: BTreeMap<QualifiedName, Struct>,
     pub enums: BTreeMap<QualifiedName, Enum>,
-    pub protocolMethodSelectors: BTreeMap<QualifiedName, ProtocolMethodSelector>,
+    pub traitMethodselectors: BTreeMap<QualifiedName, TraitMethodSelector>,
     pub implicits: BTreeMap<QualifiedName, Implicit>,
     pub variants: BTreeSet<QualifiedName>,
-    pub protocols: BTreeMap<QualifiedName, Protocol>,
-    pub implementations: BTreeMap<QualifiedName, Implementation>,
-    pub implementationStores: BTreeMap<QualifiedName, ImplementationStore>,
-    pub canonicalImplStore: CanonicalImplementationStore,
+    pub traits: BTreeMap<QualifiedName, Trait>,
+    pub instances: BTreeMap<QualifiedName, Instance>,
+    pub instanceStores: BTreeMap<QualifiedName, InstanceStore>,
+    pub canonicalImplStore: CanonicalInstanceStore,
 }
 
 impl Program {
@@ -39,13 +39,13 @@ impl Program {
             functions: BTreeMap::new(),
             structs: BTreeMap::new(),
             enums: BTreeMap::new(),
-            protocolMethodSelectors: BTreeMap::new(),
+            traitMethodselectors: BTreeMap::new(),
             implicits: BTreeMap::new(),
             variants: BTreeSet::new(),
-            protocols: BTreeMap::new(),
-            implementations: BTreeMap::new(),
-            implementationStores: BTreeMap::new(),
-            canonicalImplStore: CanonicalImplementationStore::new(),
+            traits: BTreeMap::new(),
+            instances: BTreeMap::new(),
+            instanceStores: BTreeMap::new(),
+            canonicalImplStore: CanonicalInstanceStore::new(),
         }
     }
 
@@ -65,12 +65,12 @@ impl Program {
         self.implicits.get(qn).cloned()
     }
 
-    pub fn getProtocol(&self, qn: &QualifiedName) -> Option<Protocol> {
-        self.protocols.get(qn).cloned()
+    pub fn getTrait(&self, qn: &QualifiedName) -> Option<Trait> {
+        self.traits.get(qn).cloned()
     }
 
-    pub fn getImplementation(&self, qn: &QualifiedName) -> Option<Implementation> {
-        self.implementations.get(qn).cloned()
+    pub fn getInstance(&self, qn: &QualifiedName) -> Option<Instance> {
+        self.instances.get(qn).cloned()
     }
 
     pub fn isStruct(&self, qn: &QualifiedName) -> bool {
@@ -85,12 +85,12 @@ impl Program {
         self.variants.contains(qn)
     }
 
-    pub fn isProtocol(&self, qn: &QualifiedName) -> bool {
-        self.protocols.contains_key(qn)
+    pub fn isTrait(&self, qn: &QualifiedName) -> bool {
+        self.traits.contains_key(qn)
     }
 
-    pub fn isImplementation(&self, qn: &QualifiedName) -> bool {
-        self.implementations.contains_key(qn)
+    pub fn isInstance(&self, qn: &QualifiedName) -> bool {
+        self.instances.contains_key(qn)
     }
 
     pub fn dumpToFile(&self, folderName: &str) -> std::io::Result<()> {

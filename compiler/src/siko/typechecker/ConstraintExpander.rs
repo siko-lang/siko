@@ -4,7 +4,7 @@ use std::iter::zip;
 use crate::siko::hir::{
     Apply::Apply,
     ConstraintContext::{Constraint, ConstraintContext},
-    Instantiation::instantiateProtocol,
+    Instantiation::instantiateTrait,
     Program::Program,
     Substitution::Substitution,
     TypeVarAllocator::TypeVarAllocator,
@@ -43,21 +43,21 @@ impl<'a> ConstraintExpander<'a> {
         }
         //println!("expandKnownConstraint {}", c);
         processed.push(c.clone());
-        match self.program.getProtocol(&c.name) {
-            Some(protoDef) => {
-                let protoDef = instantiateProtocol(&mut self.allocator, &protoDef);
+        match self.program.getTrait(&c.name) {
+            Some(traitDef) => {
+                let traitDef = instantiateTrait(&mut self.allocator, &traitDef);
                 let mut sub = Substitution::new();
-                for (arg, ctxArg) in zip(&protoDef.params, &c.args) {
+                for (arg, ctxArg) in zip(&traitDef.params, &c.args) {
                     sub.add(arg.clone(), ctxArg.clone());
                 }
-                let protoDef = protoDef.apply(&sub);
+                let traitDef = traitDef.apply(&sub);
                 self.knownConstraints.constraints.push(c.clone());
-                for c in protoDef.constraint.constraints {
+                for c in traitDef.constraint.constraints {
                     self.expandKnownConstraint(&c, processed);
                 }
             }
             None => {
-                panic!("Protocol not found");
+                panic!("Trait not found");
             }
         };
     }

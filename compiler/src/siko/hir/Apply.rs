@@ -1,6 +1,6 @@
 use crate::siko::hir::{
     Instruction::{CallInfo, ImplicitHandler, WithContext, WithInfo},
-    Trait::{Implementation, Protocol},
+    Trait::{Instance, Trait},
     Type::Type,
 };
 
@@ -103,7 +103,7 @@ impl Apply for MemberInfo {
     }
 }
 
-impl Apply for Implementation {
+impl Apply for Instance {
     fn apply(mut self, sub: &Substitution) -> Self {
         //println!("Applying for {}", self.value);
         self.types = self.types.apply(sub);
@@ -114,7 +114,7 @@ impl Apply for Implementation {
     }
 }
 
-impl Apply for Protocol {
+impl Apply for Trait {
     fn apply(mut self, sub: &Substitution) -> Self {
         //println!("Applying for {}", self.value);
         self.params = self.params.apply(sub);

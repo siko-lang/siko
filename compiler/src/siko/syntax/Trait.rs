@@ -9,7 +9,7 @@ use super::{
 };
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Protocol {
+pub struct Trait {
     pub name: Identifier,
     pub params: Vec<Identifier>,
     pub typeParams: Option<TypeParameterDeclaration>,
@@ -53,11 +53,11 @@ impl fmt::Display for AssociatedType {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Implementation {
+pub struct Instance {
     pub public: bool,
     pub name: Option<Identifier>,
     pub typeParams: Option<TypeParameterDeclaration>,
-    pub protocolName: Identifier,
+    pub traitName: Identifier,
     pub types: Vec<Type>,
     pub associatedTypes: Vec<AssociatedType>,
     pub methods: Vec<Function>,

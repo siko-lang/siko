@@ -5,10 +5,10 @@ use crate::siko::{
         Apply::Apply,
         ConstraintContext::ConstraintContext,
         Function::Function,
-        ImplementationResolver::{ImplSearchResult, ImplementationResolver},
-        ImplementationStore::ImplementationStore,
+        InstanceResolver::{InstanceResolver, InstanceSearchResult},
+        InstanceStore::InstanceStore,
         Instantiation::{instantiateType, instantiateTypes},
-        Instruction::ImplementationReference,
+        Instruction::InstanceReference,
         Program::Program,
         Type::{formatTypes, Type},
         TypeVarAllocator::TypeVarAllocator,
@@ -26,14 +26,14 @@ use crate::siko::{
 pub struct CheckFunctionCallResult {
     pub fnType: Type,
     pub fnName: QualifiedName,
-    pub implRefs: Vec<ImplementationReference>,
+    pub instanceRefs: Vec<InstanceReference>,
 }
 
 pub struct FunctionCallResolver<'a> {
     program: &'a Program,
     allocator: TypeVarAllocator,
     ctx: &'a ReportContext,
-    implStore: &'a ImplementationStore,
+    implStore: &'a InstanceStore,
     unifier: Unifier<'a>,
     knownConstraints: ConstraintContext,
 }
@@ -43,7 +43,7 @@ impl<'a> FunctionCallResolver<'a> {
         program: &'a Program,
         allocator: TypeVarAllocator,
         ctx: &'a ReportContext,
-        implStore: &'a ImplementationStore,
+        implStore: &'a InstanceStore,
         knownConstraints: ConstraintContext,
         unifier: Unifier<'a>,
     ) -> FunctionCallResolver<'a> {
@@ -64,16 +64,16 @@ impl<'a> FunctionCallResolver<'a> {
         resultVar: &Variable,
         location: Location,
     ) -> CheckFunctionCallResult {
-        let implResolver = ImplementationResolver::new(self.allocator.clone(), self.implStore, self.program);
+        let implResolver = InstanceResolver::new(self.allocator.clone(), self.implStore, self.program);
         let fnType = f.getType();
         let fnType = fnType.resolveSelfType();
         let mut checkResult = CheckFunctionCallResult {
             fnType: fnType.clone(),
             fnName: f.name.clone(),
-            implRefs: Vec::new(),
+            instanceRefs: Vec::new(),
         };
         // println!(
-        //     "Checking protocol (method?) call: {} {} {} {}",
+        //     "Checking trait (method?) call: {} {} {} {}",
         //     f.name, fnType, f.constraintContext, self.knownConstraints
         // );
         //let destType = self.getType(resultVar).apply(&self.substitution);
@@ -142,32 +142,32 @@ impl<'a> FunctionCallResolver<'a> {
                             //println!("Unifying impl assoc {} with constraint assoc {}", a, b);
                             self.unifier.unify(a.ty.clone(), b.ty.clone(), location.clone());
                         }
-                        //println!("---------- Using known implementation for {}", current);
+                        //println!("---------- Using known instance for {}", current);
                         let expectedFnType = self.unifier.apply(expectedFnType.clone());
                         let expectedResult = self.unifier.apply(expectedResult.clone());
                         self.unifier.unifyVar(resultVar, expectedResult);
                         //println!("expected fn type {}", expectedFnType);
                         checkResult.fnType = expectedFnType.clone();
                         checkResult.fnName = f.name.clone();
-                        checkResult.implRefs.push(ImplementationReference::Indirect(index));
+                        checkResult.instanceRefs.push(InstanceReference::Indirect(index));
                     } else {
-                        // we will select an impl now
-                        //println!("---------- Trying to find implementation for {}", current);
+                        // we will select an instance now
+                        //println!("---------- Trying to find instance for {}", current);
 
-                        match implResolver.findImplInScope(&current) {
-                            ImplSearchResult::Found(implDef) => {
+                        match implResolver.findInstanceInScope(&current) {
+                            InstanceSearchResult::Found(instanceDef) => {
                                 resolvedSomething = true;
-                                //println!("Found impl {}", implDef.name);
-                                for (a, b) in zip(&implDef.associatedTypes, &current.associatedTypes) {
+                                //println!("Found impl {}", instanceDef.name);
+                                for (a, b) in zip(&instanceDef.associatedTypes, &current.associatedTypes) {
                                     //println!("Unifying impl assoc {} with constraint assoc {}", a, b);
                                     self.unifier.unify(a.ty.clone(), b.ty.clone(), location.clone());
                                 }
                                 checkResult
-                                    .implRefs
-                                    .push(ImplementationReference::Direct(implDef.name.clone()));
-                                if implDef.protocolName.add(f.name.getShortName()) == f.name {
+                                    .instanceRefs
+                                    .push(InstanceReference::Direct(instanceDef.name.clone()));
+                                if instanceDef.traitName.add(f.name.getShortName()) == f.name {
                                     let mut found = false;
-                                    for m in &implDef.members {
+                                    for m in &instanceDef.members {
                                         if m.name == f.name.getShortName() {
                                             //Found matching member, apply substitution
                                             //println!("Will call {}", m.fullName);
@@ -188,11 +188,9 @@ impl<'a> FunctionCallResolver<'a> {
                                         }
                                     }
                                     if !found {
-                                        let protoDef = self
-                                            .program
-                                            .getProtocol(&implDef.protocolName)
-                                            .expect("Protocol not found");
-                                        for m in protoDef.members {
+                                        let traitDef =
+                                            self.program.getTrait(&instanceDef.traitName).expect("Trait not found");
+                                        for m in traitDef.members {
                                             if m.name == f.name.getShortName() {
                                                 //Found matching member, apply substitution
                                                 let memberType =
@@ -212,11 +210,11 @@ impl<'a> FunctionCallResolver<'a> {
                                         }
                                     }
                                     if !found {
-                                        panic!("Method {} not found in implementation {}", f.name, implDef.name);
+                                        panic!("Method {} not found in instance {}", f.name, instanceDef.name);
                                     }
                                 }
                             }
-                            ImplSearchResult::Ambiguous => {
+                            InstanceSearchResult::Ambiguous => {
                                 if tryMore {
                                     //println!("Ambiguous implementations found for {}", current);
                                     remaining.push(current);
@@ -229,9 +227,9 @@ impl<'a> FunctionCallResolver<'a> {
                                     .report(self.ctx);
                                 }
                             }
-                            ImplSearchResult::NotFound => {
+                            InstanceSearchResult::NotFound => {
                                 if tryMore {
-                                    //println!("No implementation found for {}", current);
+                                    //println!("No instance found for {}", current);
                                     remaining.push(current);
                                 } else {
                                     TypecheckerError::NoImplementationFound(current.to_string(), location.clone())
@@ -250,17 +248,13 @@ impl<'a> FunctionCallResolver<'a> {
         let expectedResult = self.unifier.apply(expectedResult);
         checkResult.fnType = expectedFnType.clone();
         self.unifier.unifyVar(resultVar, expectedResult);
-        //println!("result impl refs {:?}", checkResult.implRefs);
+        //println!("result impl refs {:?}", checkResult.instanceRefs);
         //println!("result name {}", checkResult.fnName);
-        assert_eq!(checkResult.implRefs.len(), neededConstraints.len());
+        assert_eq!(checkResult.instanceRefs.len(), neededConstraints.len());
         checkResult
     }
 
-    pub fn resolveCloneCall(
-        &mut self,
-        arg: Variable,
-        resultVar: Variable,
-    ) -> (QualifiedName, Vec<ImplementationReference>) {
+    pub fn resolveCloneCall(&mut self, arg: Variable, resultVar: Variable) -> (QualifiedName, Vec<InstanceReference>) {
         let cloneFn = self
             .program
             .getFunction(&getCloneFnName())
@@ -269,16 +263,12 @@ impl<'a> FunctionCallResolver<'a> {
         let implFn = self
             .program
             .getFunction(&result.fnName)
-            .expect("Implementation of clone function not found");
+            .expect("Instance of clone function not found");
         let result = self.resolve(&implFn, &vec![arg.clone()], &resultVar, arg.location().clone());
-        (result.fnName, result.implRefs)
+        (result.fnName, result.instanceRefs)
     }
 
-    pub fn resolveDropCall(
-        &mut self,
-        arg: Variable,
-        resultVar: Variable,
-    ) -> (QualifiedName, Vec<ImplementationReference>) {
+    pub fn resolveDropCall(&mut self, arg: Variable, resultVar: Variable) -> (QualifiedName, Vec<InstanceReference>) {
         let dropFn = self
             .program
             .getFunction(&getDropFnName())
@@ -287,8 +277,8 @@ impl<'a> FunctionCallResolver<'a> {
         let implFn = self
             .program
             .getFunction(&result.fnName)
-            .expect("Implementation of drop function not found");
+            .expect("Instance of drop function not found");
         let result = self.resolve(&implFn, &vec![arg.clone()], &resultVar, arg.location().clone());
-        (result.fnName, result.implRefs)
+        (result.fnName, result.instanceRefs)
     }
 }

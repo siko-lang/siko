@@ -4,11 +4,11 @@ use crate::siko::{
     hir::{
         Apply::Apply,
         ConstraintContext::{Constraint, ConstraintContext},
-        ImplementationStore::ImplementationStore,
-        Instantiation::instantiateImplementation,
+        InstanceStore::InstanceStore,
+        Instantiation::instantiateInstance,
         Program::Program,
         Substitution::Substitution,
-        Trait::Implementation,
+        Trait::Instance,
         Type::Type,
         TypeVarAllocator::TypeVarAllocator,
         Unification::unify,
@@ -19,57 +19,53 @@ use crate::siko::{
     },
 };
 
-pub enum ImplSearchResult {
-    Found(Implementation),
+pub enum InstanceSearchResult {
+    Found(Instance),
     Ambiguous,
     NotFound,
 }
-impl ImplSearchResult {
+impl InstanceSearchResult {
     fn isFound(&self) -> bool {
         match self {
-            ImplSearchResult::Found(_) => true,
+            InstanceSearchResult::Found(_) => true,
             _ => false,
         }
     }
 }
 
-pub struct ImplementationResolver<'a> {
+pub struct InstanceResolver<'a> {
     allocator: TypeVarAllocator,
-    implementationStore: &'a ImplementationStore,
+    instanceStore: &'a InstanceStore,
     program: &'a Program,
 }
 
-impl<'a> ImplementationResolver<'a> {
-    pub fn new(
-        allocator: TypeVarAllocator,
-        implementationStore: &'a ImplementationStore,
-        program: &'a Program,
-    ) -> Self {
-        ImplementationResolver {
+impl<'a> InstanceResolver<'a> {
+    pub fn new(allocator: TypeVarAllocator, instanceStore: &'a InstanceStore, program: &'a Program) -> Self {
+        InstanceResolver {
             allocator,
-            implementationStore,
+            instanceStore: instanceStore,
             program,
         }
     }
 
-    fn findImplementationForConstraint(
+    fn findInstanceForConstraint(
         &self,
         constraint: &Constraint,
         candidates: &Vec<QualifiedName>,
-    ) -> ImplSearchResult {
-        //println!("Finding implementation for constraint {}", constraint);
+    ) -> InstanceSearchResult {
+        //println!("Finding instance for constraint {}", constraint);
         let mut matchingImpls = Vec::new();
         for implName in candidates {
-            let implDef = self.program.getImplementation(&implName).expect("Impl not found");
-            if constraint.name == implDef.protocolName {
-                if implDef.types.len() != constraint.args.len() {
+            let instanceDef = self.program.getInstance(&implName).expect("Impl not found");
+            if constraint.name == instanceDef.traitName {
+                if instanceDef.types.len() != constraint.args.len() {
                     continue;
                 }
-                let mut implDef = instantiateImplementation(&self.allocator, &implDef);
-                //println!("Trying impl {}", implDef);
+                let mut instanceDef = instantiateInstance(&self.allocator, &instanceDef);
+                //println!("Trying impl {}", instanceDef);
                 let mut allMatch = true;
                 let mut sub = Substitution::new();
-                for (implArg, cArg) in zip(&implDef.types, &constraint.args) {
+                for (implArg, cArg) in zip(&instanceDef.types, &constraint.args) {
                     //println!("  Unifying impl arg {} with constraint arg {}", implArg, cArg);
                     if !unify(&mut sub, implArg.clone(), cArg.clone(), false).is_ok() {
                         //println!("  Arg {} does not match {}", implArg, cArg);
@@ -79,18 +75,18 @@ impl<'a> ImplementationResolver<'a> {
                 }
                 if allMatch {
                     //println!("Applying substitution: {}", sub);
-                    implDef = implDef.apply(&sub);
-                    //println!("Impl after applying substitution: {}", implDef);
+                    instanceDef = instanceDef.apply(&sub);
+                    //println!("Impl after applying substitution: {}", instanceDef);
                     let mut allSubConstraintsMatch = true;
-                    for c in &implDef.constraintContext.constraints {
+                    for c in &instanceDef.constraintContext.constraints {
                         //println!("  checking sub constraint: {}", c);
-                        if !self.findImplInScope(c).isFound() {
+                        if !self.findInstanceInScope(c).isFound() {
                             allSubConstraintsMatch = false;
                             break;
                         }
                     }
                     if allSubConstraintsMatch {
-                        matchingImpls.push(implDef);
+                        matchingImpls.push(instanceDef);
                     } else {
                         //println!("  sub constraints do not match");
                     }
@@ -99,39 +95,39 @@ impl<'a> ImplementationResolver<'a> {
         }
         //println!("Found {} matching impls for {}", matchingImpls.len(), constraint);
         if matchingImpls.len() > 1 {
-            ImplSearchResult::Ambiguous
+            InstanceSearchResult::Ambiguous
         } else {
             match matchingImpls.pop() {
-                Some(implDef) => ImplSearchResult::Found(implDef),
-                None => ImplSearchResult::NotFound,
+                Some(instanceDef) => InstanceSearchResult::Found(instanceDef),
+                None => InstanceSearchResult::NotFound,
             }
         }
     }
 
-    pub fn findImplInScope(&self, constraint: &Constraint) -> ImplSearchResult {
-        if let ImplSearchResult::Found(implDef) =
-            self.findImplementationForConstraint(constraint, &self.implementationStore.localImplementations)
+    pub fn findInstanceInScope(&self, constraint: &Constraint) -> InstanceSearchResult {
+        if let InstanceSearchResult::Found(instanceDef) =
+            self.findInstanceForConstraint(constraint, &self.instanceStore.localInstances)
         {
-            return ImplSearchResult::Found(implDef);
+            return InstanceSearchResult::Found(instanceDef);
         }
-        if let ImplSearchResult::Found(implDef) =
-            self.findImplementationForConstraint(constraint, &self.implementationStore.importedImplementations)
+        if let InstanceSearchResult::Found(instanceDef) =
+            self.findInstanceForConstraint(constraint, &self.instanceStore.importedInstances)
         {
-            return ImplSearchResult::Found(implDef);
+            return InstanceSearchResult::Found(instanceDef);
         }
         let mut canonTypes = Vec::new();
         for arg in &constraint.args {
             if let Some(canon) = self.canonicalizeType(arg.clone()) {
                 canonTypes.push(canon);
             } else {
-                return ImplSearchResult::NotFound;
+                return InstanceSearchResult::NotFound;
             }
         }
         if let Some(implName) = self.program.canonicalImplStore.get(&constraint.name, &canonTypes) {
             //println!("Found canonical impl {} for {}", implName, formatTypes(&canonTypes));
-            return self.findImplementationForConstraint(constraint, &vec![implName.clone()]);
+            return self.findInstanceForConstraint(constraint, &vec![implName.clone()]);
         }
-        ImplSearchResult::NotFound
+        InstanceSearchResult::NotFound
     }
 
     pub fn findImplInKnownConstraints(
@@ -165,7 +161,7 @@ impl<'a> ImplementationResolver<'a> {
             args: vec![ty.clone()],
             associatedTypes: Vec::new(),
         };
-        self.findImplInScope(&constraint).isFound()
+        self.findInstanceInScope(&constraint).isFound()
     }
 
     pub fn isDrop(&self, ty: &Type) -> bool {
@@ -174,7 +170,7 @@ impl<'a> ImplementationResolver<'a> {
             args: vec![ty.clone()],
             associatedTypes: Vec::new(),
         };
-        self.findImplInScope(&constraint).isFound()
+        self.findInstanceInScope(&constraint).isFound()
     }
 
     pub fn isImplicitConvert(&self, src: &Type, dest: &Type) -> bool {
@@ -185,7 +181,7 @@ impl<'a> ImplementationResolver<'a> {
             associatedTypes: Vec::new(),
         };
         // println!("Constraint: {}", constraint);
-        self.findImplInScope(&constraint).isFound()
+        self.findInstanceInScope(&constraint).isFound()
     }
 
     fn canonicalizeType(&self, ty: Type) -> Option<Type> {

@@ -294,21 +294,21 @@ pub struct CallContextInfo {
 }
 
 #[derive(Clone, PartialEq)]
-pub enum ImplementationReference {
+pub enum InstanceReference {
     Direct(QualifiedName),
     Indirect(u32),
 }
 
-impl Display for ImplementationReference {
+impl Display for InstanceReference {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ImplementationReference::Direct(name) => write!(f, "{}", name),
-            ImplementationReference::Indirect(index) => write!(f, "impl(#{})", index),
+            InstanceReference::Direct(name) => write!(f, "{}", name),
+            InstanceReference::Indirect(index) => write!(f, "impl(#{})", index),
         }
     }
 }
 
-impl Debug for ImplementationReference {
+impl Debug for InstanceReference {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self)
     }
@@ -319,7 +319,7 @@ pub struct CallInfo {
     pub name: QualifiedName,
     pub args: Vec<Variable>,
     pub context: Option<CallContextInfo>,
-    pub implementations: Vec<ImplementationReference>,
+    pub instanceRefs: Vec<InstanceReference>,
 }
 
 impl CallInfo {
@@ -328,7 +328,7 @@ impl CallInfo {
             name,
             args,
             context: None,
-            implementations: Vec::new(),
+            instanceRefs: Vec::new(),
         }
     }
 }
@@ -340,10 +340,10 @@ impl Display for CallInfo {
         } else {
             "".to_string()
         };
-        let implsStr = if !self.implementations.is_empty() {
+        let instanceStr = if !self.instanceRefs.is_empty() {
             format!(
-                ", implementations: [{}]",
-                self.implementations
+                ", instances: [{}]",
+                self.instanceRefs
                     .iter()
                     .map(|i| i.to_string())
                     .collect::<Vec<_>>()
@@ -358,7 +358,7 @@ impl Display for CallInfo {
             self.name,
             self.args.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(", "),
             contextStr,
-            implsStr
+            instanceStr
         )
     }
 }

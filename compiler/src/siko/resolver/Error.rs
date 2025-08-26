@@ -15,15 +15,12 @@ pub enum ResolverError {
     ContinueOutsideLoop(Location),
     AssociatedTypeNotFound(String, String, Location),
     TraitNotFound(String, Location),
-    ProtocolNotFound(String, Location),
-    InvalidInstanceMember(String, String, Location),
-    MissingInstanceMembers(Vec<String>, String, Location),
     InvalidAssignment(Location),
     InvalidArgCount(String, i64, i64, Location),
     DynamicFunctionCallNotSupported(Location),
     ImmutableImplicit(String, Location),
-    InvalidImplementationMember(String, String, Location),
-    MissingProtocolMembers(Vec<String>, String, Location),
+    InvalidInstanceMember(String, String, Location),
+    MissingTraitMembers(Vec<String>, String, Location),
 }
 
 impl ResolverError {
@@ -89,11 +86,6 @@ impl ResolverError {
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }
-            ResolverError::ProtocolNotFound(protocolName, l) => {
-                let slogan = format!("Protocol {} not found", ctx.yellow(protocolName));
-                let r = Report::new(ctx, slogan, Some(l.clone()));
-                r.print();
-            }
             ResolverError::InvalidInstanceMember(name, traitName, l) => {
                 let slogan = format!(
                     "Member {} not found in trait {}",
@@ -103,31 +95,12 @@ impl ResolverError {
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }
-            ResolverError::InvalidImplementationMember(name, protocolName, l) => {
-                let slogan = format!(
-                    "Member {} not found in protocol {}",
-                    ctx.yellow(name),
-                    ctx.yellow(protocolName)
-                );
-                let r = Report::new(ctx, slogan, Some(l.clone()));
-                r.print();
-            }
-            ResolverError::MissingInstanceMembers(names, traitName, l) => {
+            ResolverError::MissingTraitMembers(names, traitName, l) => {
                 let names: Vec<_> = names.iter().map(|p| ctx.yellow(p)).collect();
                 let slogan = format!(
-                    "Missing instance member(s): {} for trait {}",
+                    "Missing trait member(s): {} for trait {}",
                     names.join(", "),
                     ctx.yellow(traitName)
-                );
-                let r = Report::new(ctx, slogan, Some(l.clone()));
-                r.print();
-            }
-            ResolverError::MissingProtocolMembers(names, protocolName, l) => {
-                let names: Vec<_> = names.iter().map(|p| ctx.yellow(p)).collect();
-                let slogan = format!(
-                    "Missing protocol member(s): {} for protocol {}",
-                    names.join(", "),
-                    ctx.yellow(protocolName)
                 );
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();

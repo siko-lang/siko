@@ -5,7 +5,7 @@ use crate::siko::{
         Apply::Apply,
         Function::FunctionKind,
         Instruction::{
-            CallContextInfo, CallInfo, ImplementationReference, ImplicitContextIndex, ImplicitContextOperation,
+            CallContextInfo, CallInfo, InstanceReference, ImplicitContextIndex, ImplicitContextOperation,
             ImplicitIndex, Instruction, InstructionKind, SyntaxBlockId, WithContext,
         },
         Substitution::Substitution,
@@ -30,7 +30,7 @@ impl Monomorphize for CallInfo {
             name: self.name.clone(),
             args,
             context: self.context.clone(),
-            implementations: self.implementations.clone(),
+            instanceRefs: self.instanceRefs.clone(),
         }
     }
 }
@@ -44,13 +44,10 @@ fn findMatchingImpl(
     //println!("Looking for impl of {} for {}", shortName, context_ty);
     for implName in impls {
         //println!("impl {}", implName);
-        let implDef = mono
-            .program
-            .getImplementation(implName)
-            .expect("implementation not found in mono");
-        for m in &implDef.members {
+        let instanceDef = mono.program.getInstance(implName).expect("instance not found in mono");
+        for m in &instanceDef.members {
             // println!("members {}", m.name);
-            // println!("protocol call member type {}", m.memberType);
+            // println!("trait call member type {}", m.memberType);
             // println!("looking for {}/{}", shortName, context_ty);
             if m.name == shortName && m.memberType == *context_ty {
                 return m.fullName.clone();
@@ -124,16 +121,16 @@ pub fn processInstruction(
                     };
                     (f, handlerResolution.clone(), contextSyntaxBlockId)
                 }
-                FunctionKind::ProtocolMemberDecl(_protocolName) => {
+                FunctionKind::TraitMemberDecl(_traitName) => {
                     let (handlerResolution, contextSyntaxBlockId) = handlerResolutionStore.get(syntaxBlockId);
                     let fnType = target_fn.getType();
                     // println!(
-                    //     "Protocol member call in mono: {} {} {}",
-                    //     info.name, fnType, _protocolName
+                    //     "Trait member call in mono: {} {} {}",
+                    //     info.name, fnType, _traitName
                     // );
                     let (_fn_ty, context_ty) = prepareTypes(sub, dest, info, fnType);
-                    // println!("protocol call fn type {}", _fn_ty);
-                    // println!("protocol call context type {}", context_ty);
+                    // println!("trait call fn type {}", _fn_ty);
+                    // println!("trait call context type {}", context_ty);
                     // println!("all available implementations: {:?}", impls);
                     let implMemberName = findMatchingImpl(impls, target_fn.name.getShortName(), &context_ty, mono);
                     let targetFn = mono
@@ -175,19 +172,16 @@ pub fn processInstruction(
                     (resolution, info)
                 };
             let mut resolvedImpls = Vec::new();
-            for implRef in &info.implementations {
-                match implRef {
-                    ImplementationReference::Direct(name) => {
+            for instanceRef in &info.instanceRefs {
+                match instanceRef {
+                    InstanceReference::Direct(name) => {
                         resolvedImpls.push(name.clone());
                     }
-                    ImplementationReference::Indirect(index) => {
+                    InstanceReference::Indirect(index) => {
                         if let Some(name) = impls.get(*index as usize) {
                             resolvedImpls.push(name.clone());
                         } else {
-                            panic!(
-                                "indirect implementation reference out of bounds {} impls {:?}",
-                                index, impls
-                            );
+                            panic!("indirect instance reference out of bounds {} impls {:?}", index, impls);
                         }
                     }
                 }

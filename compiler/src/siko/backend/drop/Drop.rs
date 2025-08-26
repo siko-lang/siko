@@ -20,7 +20,7 @@ use crate::siko::{
         Function::{BlockId, Function},
         FunctionCallResolver::FunctionCallResolver,
         Graph::GraphBuilder,
-        ImplementationResolver::ImplementationResolver,
+        InstanceResolver::InstanceResolver,
         Instruction::{CallInfo, InstructionKind},
         Program::Program,
         TypeVarAllocator::TypeVarAllocator,
@@ -71,7 +71,7 @@ pub struct DropChecker<'a> {
     program: &'a Program,
     visited: BTreeMap<BlockId, BTreeSet<Context>>,
     dropMetadataStore: &'a mut DropMetadataStore,
-    implResolver: ImplementationResolver<'a>,
+    implResolver: InstanceResolver<'a>,
     fnCallResolver: FunctionCallResolver<'a>,
 }
 
@@ -82,12 +82,12 @@ impl<'a> DropChecker<'a> {
         program: &'a Program,
         dropMetadataStore: &'a mut DropMetadataStore,
     ) -> DropChecker<'a> {
-        let implementationStore = program
-            .implementationStores
+        let instanceStore = program
+            .instanceStores
             .get(&f.name.module())
             .expect("No impl store for module");
         let allocator = TypeVarAllocator::new();
-        let implResolver = ImplementationResolver::new(allocator.clone(), implementationStore, program);
+        let implResolver = InstanceResolver::new(allocator.clone(), instanceStore, program);
         let expander = ConstraintExpander::new(program, allocator.clone(), f.constraintContext.clone());
         let knownConstraints = expander.expandKnownConstraints();
         let unifier = Unifier::new(ctx);
@@ -95,7 +95,7 @@ impl<'a> DropChecker<'a> {
             program,
             allocator.clone(),
             ctx,
-            implementationStore,
+            instanceStore,
             knownConstraints.clone(),
             unifier.clone(),
         );
@@ -198,11 +198,11 @@ impl<'a> DropChecker<'a> {
                         let implicitCloneVarRef = self
                             .bodyBuilder
                             .createTempValueWithType(dest.location().clone(), receiver.getType().asRef());
-                        let (fnName, implRefs) = self
+                        let (fnName, instanceRefs) = self
                             .fnCallResolver
                             .resolveCloneCall(implicitCloneVar.clone(), dest.clone());
                         let mut info = CallInfo::new(fnName, vec![implicitCloneVar.clone()]);
-                        info.implementations.extend(implRefs);
+                        info.instanceRefs.extend(instanceRefs);
                         let implicitClone = InstructionKind::FunctionCall(dest.clone(), info);
                         let implicitCloneRef = InstructionKind::Ref(implicitCloneVarRef.clone(), receiver.clone());
                         let updatedKind =
@@ -236,11 +236,11 @@ impl<'a> DropChecker<'a> {
                         let implicitCloneVarRef = self
                             .bodyBuilder
                             .createTempValueWithType(input.location().clone(), input.getType().asRef());
-                        let (fnName, implRefs) = self
+                        let (fnName, instanceRefs) = self
                             .fnCallResolver
                             .resolveCloneCall(implicitCloneVarRef.clone(), implicitCloneVar.clone());
                         let mut info = CallInfo::new(fnName, vec![implicitCloneVarRef.clone()]);
-                        info.implementations.extend(implRefs);
+                        info.instanceRefs.extend(instanceRefs);
                         let implicitClone = InstructionKind::FunctionCall(implicitCloneVar.clone(), info);
                         let implicitCloneRef = InstructionKind::Ref(implicitCloneVarRef.clone(), input.clone());
                         let updatedKind = instruction.kind.replaceVar(input.clone(), implicitCloneVar);

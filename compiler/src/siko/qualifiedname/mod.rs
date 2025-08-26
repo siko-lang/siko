@@ -21,8 +21,8 @@ impl QualifiedName {
         QualifiedName::Item(Box::new(self.clone()), item)
     }
 
-    pub fn canonical(&self, protocolName: QualifiedName, types: Vec<Type>) -> QualifiedName {
-        QualifiedName::Canonical(Box::new(self.clone()), Box::new(protocolName), types)
+    pub fn canonical(&self, traitName: QualifiedName, types: Vec<Type>) -> QualifiedName {
+        QualifiedName::Canonical(Box::new(self.clone()), Box::new(traitName), types)
     }
 
     pub fn module(&self) -> QualifiedName {
@@ -110,8 +110,8 @@ impl Display for QualifiedName {
             QualifiedName::Monomorphized(p, context) => {
                 write!(f, "{}#{}", p, context)
             }
-            QualifiedName::Canonical(p, protocol, types) => {
-                write!(f, "{}/{}[{}]", p, protocol, formatTypes(types))
+            QualifiedName::Canonical(p, t, types) => {
+                write!(f, "{}/{}[{}]", p, t, formatTypes(types))
             }
         }
     }
