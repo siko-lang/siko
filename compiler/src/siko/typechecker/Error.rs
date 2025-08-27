@@ -13,7 +13,7 @@ pub enum TypecheckerError {
     ImmutableImplicitHandler(Location),
     NotAPtr(String, Location),
     NoImplementationFound(String, Location),
-    AmbiguousImplementations(String, String, Location),
+    AmbiguousImplementations(String, String, Vec<String>, Location),
 }
 
 impl TypecheckerError {
@@ -91,11 +91,12 @@ impl TypecheckerError {
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }
-            TypecheckerError::AmbiguousImplementations(name, args, location) => {
+            TypecheckerError::AmbiguousImplementations(name, args, instances, location) => {
                 let slogan = format!(
-                    "Ambiguous implementations for {} with args: {}",
+                    "Ambiguous implementations for {} with args: {}, instances: {}",
                     ctx.yellow(name),
-                    ctx.yellow(args)
+                    ctx.yellow(args),
+                    ctx.yellow(&instances.join(", "))
                 );
                 let r = Report::new(ctx, slogan, Some(location.clone()));
                 r.print();

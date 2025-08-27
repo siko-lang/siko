@@ -214,14 +214,16 @@ impl<'a> FunctionCallResolver<'a> {
                                     }
                                 }
                             }
-                            InstanceSearchResult::Ambiguous => {
+                            InstanceSearchResult::Ambiguous(names) => {
                                 if tryMore {
                                     //println!("Ambiguous implementations found for {}", current);
                                     remaining.push(current);
                                 } else {
+                                    let instances = names.iter().map(|n| n.toString()).collect();
                                     TypecheckerError::AmbiguousImplementations(
                                         current.name.toString(),
                                         formatTypes(&current.args),
+                                        instances,
                                         location.clone(),
                                     )
                                     .report(self.ctx);

@@ -21,7 +21,7 @@ use crate::siko::{
 
 pub enum InstanceSearchResult {
     Found(Instance),
-    Ambiguous,
+    Ambiguous(Vec<QualifiedName>),
     NotFound,
 }
 impl InstanceSearchResult {
@@ -95,7 +95,8 @@ impl<'a> InstanceResolver<'a> {
         }
         //println!("Found {} matching impls for {}", matchingImpls.len(), constraint);
         if matchingImpls.len() > 1 {
-            InstanceSearchResult::Ambiguous
+            let names = matchingImpls.iter().map(|i| i.name.clone()).collect();
+            InstanceSearchResult::Ambiguous(names)
         } else {
             match matchingImpls.pop() {
                 Some(instanceDef) => InstanceSearchResult::Found(instanceDef),
@@ -105,15 +106,15 @@ impl<'a> InstanceResolver<'a> {
     }
 
     pub fn findInstanceInScope(&self, constraint: &Constraint) -> InstanceSearchResult {
-        if let InstanceSearchResult::Found(instanceDef) =
-            self.findInstanceForConstraint(constraint, &self.instanceStore.localInstances)
-        {
-            return InstanceSearchResult::Found(instanceDef);
+        match self.findInstanceForConstraint(constraint, &self.instanceStore.localInstances) {
+            InstanceSearchResult::Found(instanceDef) => return InstanceSearchResult::Found(instanceDef),
+            InstanceSearchResult::Ambiguous(names) => return InstanceSearchResult::Ambiguous(names),
+            InstanceSearchResult::NotFound => {}
         }
-        if let InstanceSearchResult::Found(instanceDef) =
-            self.findInstanceForConstraint(constraint, &self.instanceStore.importedInstances)
-        {
-            return InstanceSearchResult::Found(instanceDef);
+        match self.findInstanceForConstraint(constraint, &self.instanceStore.importedInstances) {
+            InstanceSearchResult::Found(instanceDef) => return InstanceSearchResult::Found(instanceDef),
+            InstanceSearchResult::Ambiguous(names) => return InstanceSearchResult::Ambiguous(names),
+            InstanceSearchResult::NotFound => {}
         }
         let mut canonTypes = Vec::new();
         for arg in &constraint.args {
