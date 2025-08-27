@@ -1,11 +1,13 @@
 pub mod Data;
 pub mod Effect;
 pub mod Expr;
+pub mod Format;
 pub mod Function;
 pub mod Identifier;
 pub mod Implicit;
 pub mod Module;
 pub mod Pattern;
 pub mod Statement;
+pub mod SyntaxFormat;
 pub mod Trait;
 pub mod Type;

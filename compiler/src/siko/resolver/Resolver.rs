@@ -13,6 +13,7 @@ use crate::siko::{
     qualifiedname::QualifiedName,
     resolver::FunctionResolver::FunctionResolver,
     syntax::{
+        Format::format_any,
         Function::Parameter as SynParam,
         Module::{Import, Module, ModuleItem},
         Trait::Instance,
@@ -820,6 +821,7 @@ impl<'a> Resolver<'a> {
             for item in &sourceModule.items {
                 match item {
                     ModuleItem::Struct(structDef) => {
+                        //format_any(structDef);
                         if !structDef.public {
                             continue;
                         }
@@ -837,6 +839,7 @@ impl<'a> Resolver<'a> {
                         }
                     }
                     ModuleItem::Enum(enumDef) => {
+                        //format_any(enumDef);
                         if !enumDef.public {
                             continue;
                         }
@@ -861,6 +864,7 @@ impl<'a> Resolver<'a> {
                         }
                     }
                     ModuleItem::Function(fnDef) => {
+                        //format_any(fnDef);
                         if !fnDef.public {
                             continue;
                         }
@@ -870,6 +874,7 @@ impl<'a> Resolver<'a> {
                     }
                     ModuleItem::Import(_) => {}
                     ModuleItem::Trait(traitDef) => {
+                        //format_any(traitDef);
                         if !traitDef.public {
                             continue;
                         }
@@ -884,6 +889,7 @@ impl<'a> Resolver<'a> {
                         }
                     }
                     ModuleItem::Instance(instanceDef) => {
+                        //format_any(instanceDef);
                         if !instanceDef.public {
                             continue;
                         }
