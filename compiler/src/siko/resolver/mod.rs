@@ -5,4 +5,5 @@ pub mod FunctionResolver;
 pub mod ModuleResolver;
 pub mod Resolver;
 pub mod TypeResolver;
+pub mod autoderive;
 pub mod matchcompiler;

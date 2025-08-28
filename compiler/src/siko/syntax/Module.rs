@@ -11,7 +11,7 @@ pub struct Derive {
     pub name: Identifier,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ModuleItem {
     Struct(Struct),
     Enum(Enum),
@@ -23,7 +23,7 @@ pub enum ModuleItem {
     Instance(Instance),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Import {
     pub moduleName: Identifier,
     pub alias: Option<Identifier>,

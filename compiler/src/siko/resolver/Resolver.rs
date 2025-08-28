@@ -11,9 +11,8 @@ use crate::siko::{
     },
     location::Report::ReportContext,
     qualifiedname::QualifiedName,
-    resolver::FunctionResolver::FunctionResolver,
+    resolver::{autoderive::AutoDerive, FunctionResolver::FunctionResolver},
     syntax::{
-        Format::format_any,
         Function::Parameter as SynParam,
         Module::{Import, Module, ModuleItem},
         Trait::Instance,
@@ -161,6 +160,7 @@ impl<'a> Resolver<'a> {
     }
 
     pub fn addModule(&mut self, m: Module) {
+        let m = AutoDerive::processModule(&m);
         self.modules.insert(m.name.toString(), m);
     }
 

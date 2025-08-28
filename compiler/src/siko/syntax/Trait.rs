@@ -8,7 +8,7 @@ use super::{
     Type::{Constraint, Type, TypeParameterDeclaration},
 };
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Trait {
     pub name: Identifier,
     pub params: Vec<Identifier>,
@@ -18,7 +18,7 @@ pub struct Trait {
     pub public: bool,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct AssociatedTypeDeclaration {
     pub name: Identifier,
     pub constraints: Vec<Constraint>,
@@ -40,7 +40,7 @@ impl fmt::Display for AssociatedTypeDeclaration {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct AssociatedType {
     pub name: Identifier,
     pub ty: Type,
@@ -52,7 +52,7 @@ impl fmt::Display for AssociatedType {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Instance {
     pub public: bool,
     pub name: Option<Identifier>,
