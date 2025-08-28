@@ -5,8 +5,8 @@ use crate::siko::{
         Apply::Apply,
         Function::FunctionKind,
         Instruction::{
-            CallContextInfo, CallInfo, InstanceReference, ImplicitContextIndex, ImplicitContextOperation,
-            ImplicitIndex, Instruction, InstructionKind, SyntaxBlockId, WithContext,
+            CallContextInfo, CallInfo, ImplicitContextIndex, ImplicitContextOperation, ImplicitIndex,
+            InstanceReference, Instruction, InstructionKind, SyntaxBlockId, WithContext,
         },
         Substitution::Substitution,
         Type::Type,
@@ -42,9 +42,12 @@ fn findMatchingImpl(
     mono: &Monomorphizer,
 ) -> QualifiedName {
     //println!("Looking for impl of {} for {}", shortName, context_ty);
-    for implName in impls {
-        //println!("impl {}", implName);
-        let instanceDef = mono.program.getInstance(implName).expect("instance not found in mono");
+    for instanceName in impls {
+        //println!("impl {}", instanceName);
+        let instanceDef = mono
+            .program
+            .getInstance(instanceName)
+            .expect("instance not found in mono");
         for m in &instanceDef.members {
             // println!("members {}", m.name);
             // println!("trait call member type {}", m.memberType);

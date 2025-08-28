@@ -55,8 +55,8 @@ impl<'a> InstanceResolver<'a> {
     ) -> InstanceSearchResult {
         //println!("Finding instance for constraint {}", constraint);
         let mut matchingImpls = Vec::new();
-        for implName in candidates {
-            let instanceDef = self.program.getInstance(&implName).expect("Impl not found");
+        for instanceName in candidates {
+            let instanceDef = self.program.getInstance(&instanceName).expect("Impl not found");
             if constraint.name == instanceDef.traitName {
                 if instanceDef.types.len() != constraint.args.len() {
                     continue;
@@ -124,9 +124,9 @@ impl<'a> InstanceResolver<'a> {
                 return InstanceSearchResult::NotFound;
             }
         }
-        if let Some(implName) = self.program.canonicalImplStore.get(&constraint.name, &canonTypes) {
-            //println!("Found canonical impl {} for {}", implName, formatTypes(&canonTypes));
-            return self.findInstanceForConstraint(constraint, &vec![implName.clone()]);
+        if let Some(instanceName) = self.program.canonicalImplStore.get(&constraint.name, &canonTypes) {
+            //println!("Found canonical impl {} for {}", instanceName, formatTypes(&canonTypes));
+            return self.findInstanceForConstraint(constraint, &vec![instanceName.clone()]);
         }
         InstanceSearchResult::NotFound
     }

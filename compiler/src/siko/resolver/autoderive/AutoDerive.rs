@@ -1,5 +1,8 @@
 use crate::siko::{
-    resolver::autoderive::PartialEq::derivePartialEqForEnum,
+    resolver::autoderive::{
+        Discriminator::deriveDiscriminatorForEnum, Eq::deriveEqForEnum, Ord::deriveOrdForEnum,
+        PartialEq::derivePartialEqForEnum, PartialOrd::derivePartialOrdForEnum,
+    },
     syntax::Module::{Module, ModuleItem},
 };
 
@@ -12,6 +15,7 @@ pub fn processModule(module: &Module) -> Module {
                 //println!("Found struct: {}", structDef.name);
             }
             ModuleItem::Enum(enumDef) => {
+                let mut discriminatorNeeded = false;
                 for derive in &enumDef.derives {
                     //println!("  Derive: {} enum {}", derive.name, enumDef.name);
                     match derive.name.name().as_ref() {
@@ -19,10 +23,33 @@ pub fn processModule(module: &Module) -> Module {
                             let i = derivePartialEqForEnum(enumDef);
                             instances.push(i);
                         }
+                        "Eq" => {
+                            let i = deriveEqForEnum(enumDef);
+                            instances.push(i);
+                        }
+                        "PartialOrd" => {
+                            let i = derivePartialOrdForEnum(enumDef);
+                            instances.push(i);
+                            discriminatorNeeded = true;
+                        }
+                        "Ord" => {
+                            let i = deriveOrdForEnum(enumDef);
+                            instances.push(i);
+                            discriminatorNeeded = true;
+                        }
+                        "Discriminator" => {
+                            let i = deriveDiscriminatorForEnum(enumDef);
+                            instances.push(i);
+                            discriminatorNeeded = false;
+                        }
                         _ => {
                             //
                         }
                     }
+                }
+                if discriminatorNeeded {
+                    let i = deriveDiscriminatorForEnum(enumDef);
+                    instances.push(i);
                 }
             }
             _ => {}

@@ -12,13 +12,12 @@ use crate::siko::{
         ConstraintContext::ConstraintContext,
         Data::{Enum, Struct},
         Function::{BlockId, Function, Parameter},
-        FunctionCallResolver::FunctionCallResolver,
+        FunctionCallResolver::{CheckFunctionCallResult, FunctionCallResolver},
         InstanceResolver::InstanceResolver,
         InstanceStore::InstanceStore,
         Instantiation::{instantiateEnum, instantiateInstance, instantiateStruct},
         Instruction::{
-            CallInfo, FieldId, FieldInfo, ImplicitIndex, InstanceReference, Instruction, InstructionKind, Mutability,
-            WithContext,
+            CallInfo, FieldId, FieldInfo, ImplicitIndex, Instruction, InstructionKind, Mutability, WithContext,
         },
         Program::Program,
         Trait::Instance,
@@ -80,12 +79,6 @@ impl Debug for ReceiverChainEntry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self)
     }
-}
-
-struct CheckFunctionCallResult {
-    pub fnType: Type,
-    pub fnName: QualifiedName,
-    pub instanceRefs: Vec<InstanceReference>,
 }
 
 pub struct Typechecker<'a> {
@@ -311,31 +304,22 @@ impl<'a> Typechecker<'a> {
         //     targetFn.name, fnType, targetFn.constraintContext, args, resultVar
         // );
         if targetFn.kind.isTraitCall() {
-            let checkResult = self.checkFunctionCall_new(targetFn, args, resultVar, resultVar.location().clone());
+            let checkResult = self
+                .fnCallResolver
+                .resolve(targetFn, args, resultVar, resultVar.location().clone());
             let f = self
                 .program
                 .getFunction(&checkResult.fnName)
                 .expect("Function not found");
-            let checkResult = self.checkFunctionCall_new(&f, args, resultVar, resultVar.location().clone());
+            let checkResult = self
+                .fnCallResolver
+                .resolve(&f, args, resultVar, resultVar.location().clone());
             checkResult
         } else {
-            let checkResult = self.checkFunctionCall_new(targetFn, args, resultVar, resultVar.location().clone());
+            let checkResult = self
+                .fnCallResolver
+                .resolve(targetFn, args, resultVar, resultVar.location().clone());
             checkResult
-        }
-    }
-
-    fn checkFunctionCall_new(
-        &mut self,
-        f: &Function,
-        args: &Vec<Variable>,
-        resultVar: &Variable,
-        location: Location,
-    ) -> CheckFunctionCallResult {
-        let result = self.fnCallResolver.resolve(f, args, resultVar, location);
-        CheckFunctionCallResult {
-            fnType: result.fnType,
-            fnName: result.fnName,
-            instanceRefs: result.instanceRefs,
         }
     }
 

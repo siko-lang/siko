@@ -1,3 +1,5 @@
+use std::vec;
+
 use crate::siko::{
     location::Location::Location,
     syntax::{
@@ -12,20 +14,23 @@ use crate::siko::{
     },
 };
 
-pub fn derivePartialEqForEnum(enumDef: &Enum) -> Instance {
-    let traitName = Identifier::new("Std.Cmp.PartialEq".to_string(), enumDef.name.location());
-    let instanceName = Identifier::new(format!("PartialEq_{}", enumDef.name.name()), enumDef.name.location());
+pub fn derivePartialOrdForEnum(enumDef: &Enum) -> Instance {
+    let traitName = Identifier::new("Std.Cmp.PartialOrd".to_string(), enumDef.name.location());
+    let instanceName = Identifier::new(format!("PartialOrd_{}", enumDef.name.name()), enumDef.name.location());
     let typeArgs = match enumDef.typeParams {
         Some(ref tp) => tp.params.iter().map(|p| Type::Named(p.clone(), Vec::new())).collect(),
         None => Vec::new(),
     };
     let mut constraints = Vec::new();
+
+    // Add PartialOrd constraints for type parameters only
     for arg in typeArgs.iter() {
         constraints.push(Constraint {
             name: traitName.clone(),
             args: vec![ConstraintArgument::Type(arg.clone())],
         });
     }
+
     let typeParams = if typeArgs.is_empty() {
         None
     } else {
@@ -36,7 +41,7 @@ pub fn derivePartialEqForEnum(enumDef: &Enum) -> Instance {
         Some(decl)
     };
     let enumTy = Type::Named(enumDef.name.clone(), typeArgs);
-    let eqFn = getPartialEqFn(enumDef, &enumTy);
+    let partialCmpFn = getPartialCmpFn(enumDef, &enumTy);
     let types = vec![enumTy];
     let instance = Instance {
         public: true,
@@ -45,24 +50,28 @@ pub fn derivePartialEqForEnum(enumDef: &Enum) -> Instance {
         traitName: traitName,
         types: types,
         associatedTypes: Vec::new(),
-        methods: vec![eqFn],
+        methods: vec![partialCmpFn],
         location: enumDef.name.location(),
     };
     //crate::siko::syntax::Format::format_any(&instance);
     instance
 }
 
-fn getPartialEqFn(enumDef: &Enum, enumTy: &Type) -> Function {
-    let boolTy = Type::Named(
-        Identifier::new("Bool.Bool".to_string(), enumDef.name.location()),
-        Vec::new(),
+fn getPartialCmpFn(enumDef: &Enum, enumTy: &Type) -> Function {
+    let optionOrderingTy = Type::Named(
+        Identifier::new("Option.Option".to_string(), enumDef.name.location()),
+        vec![Type::Named(
+            Identifier::new("Ordering.Ordering".to_string(), enumDef.name.location()),
+            Vec::new(),
+        )],
     );
-    let fnName = Identifier::new("eq".to_string(), enumDef.name.location());
+    let fnName = Identifier::new("partialCmp".to_string(), enumDef.name.location());
     let mut params = Vec::new();
     params.push(Parameter::RefSelfParam);
     let otherName = Identifier::new("other".to_string(), enumDef.name.location());
     let selfRefType = Type::Reference(Box::new(enumTy.clone()));
     params.push(Parameter::Named(otherName, selfRefType, false));
+
     let otherRef = Expr {
         expr: SimpleExpr::Value(Identifier::new("other".to_string(), enumDef.name.location())),
         location: enumDef.name.location(),
@@ -75,7 +84,10 @@ fn getPartialEqFn(enumDef: &Enum, enumTy: &Type) -> Function {
         expr: SimpleExpr::Tuple(vec![selfRef, otherRef]),
         location: enumDef.name.location(),
     };
+
     let mut cases = Vec::new();
+
+    // Generate cases for same variant comparisons (field-by-field comparison)
     for variant in &enumDef.variants {
         let mut itemsABinds = Vec::new();
         let mut itemsBBinds = Vec::new();
@@ -119,26 +131,65 @@ fn getPartialEqFn(enumDef: &Enum, enumTy: &Type) -> Function {
             location: enumDef.name.location(),
         };
         let branchBody = if variant.items.is_empty() {
-            withName("Bool.Bool.True", enumDef.name.location())
+            withSome(withName("Ordering.Ordering.Equal", enumDef.name.location()))
         } else {
-            generateMatches(itemsARefs, itemsBRefs, enumDef.name.location())
+            generateFieldComparison(itemsARefs, itemsBRefs, enumDef.name.location())
         };
         cases.push(Branch {
             pattern: tuplePattern,
             body: withBlock(branchBody),
         });
     }
+
+    // Add wildcard case for different variants - use discriminator comparison
+    let discriminatorComparison = Expr {
+        expr: SimpleExpr::Call(
+            Box::new(withName("Std.Cmp.PartialOrd.partialCmp", enumDef.name.location())),
+            vec![
+                Expr {
+                    expr: SimpleExpr::Call(
+                        Box::new(withName(
+                            "Std.Ops.Basic.Discriminator.discriminator",
+                            enumDef.name.location(),
+                        )),
+                        vec![Expr {
+                            expr: SimpleExpr::SelfValue,
+                            location: enumDef.name.location(),
+                        }],
+                    ),
+                    location: enumDef.name.location(),
+                },
+                Expr {
+                    expr: SimpleExpr::Call(
+                        Box::new(withName(
+                            "Std.Ops.Basic.Discriminator.discriminator",
+                            enumDef.name.location(),
+                        )),
+                        vec![Expr {
+                            expr: SimpleExpr::Value(Identifier::new("other".to_string(), enumDef.name.location())),
+                            location: enumDef.name.location(),
+                        }],
+                    ),
+                    location: enumDef.name.location(),
+                },
+            ],
+        ),
+        location: enumDef.name.location(),
+    };
+
     cases.push(Branch {
         pattern: Pattern {
             pattern: SimplePattern::Wildcard,
             location: enumDef.name.location(),
         },
-        body: withBlock(withName("Bool.Bool.False", enumDef.name.location())),
+        body: withBlock(discriminatorComparison),
     });
+
     let matchExpr = Expr {
         expr: SimpleExpr::Match(Box::new(tupleExpr), cases),
         location: enumDef.name.location(),
     };
+
     let body = Block {
         statements: vec![Statement {
             kind: StatementKind::Expr(matchExpr),
@@ -151,49 +202,63 @@ fn getPartialEqFn(enumDef: &Enum, enumTy: &Type) -> Function {
         name: fnName,
         params: params,
         typeParams: None,
-        result: boolTy,
+        result: optionOrderingTy,
         body: Some(body),
         externKind: None,
     }
 }
-
-fn generateMatches(itemARefs: Vec<Expr>, itemBRefs: Vec<Expr>, location: Location) -> Expr {
+fn generateFieldComparison(itemARefs: Vec<Expr>, itemBRefs: Vec<Expr>, location: Location) -> Expr {
     if itemARefs.is_empty() {
-        return withName("Bool.Bool.True", location.clone());
+        return withSome(withName("Ordering.Ordering.Equal", location.clone()));
     }
     let firstA = itemARefs[0].clone();
     let firstB = itemBRefs[0].clone();
-    let eqCall = Expr {
+    let cmpCall = Expr {
         expr: SimpleExpr::Call(
-            Box::new(withName("Std.Cmp.PartialEq.eq", location.clone())),
+            Box::new(withName("Std.Cmp.PartialOrd.partialCmp", location.clone())),
             vec![firstA, firstB],
         ),
         location: location.clone(),
     };
     if itemARefs.len() == 1 {
-        return eqCall;
+        return cmpCall;
     }
     let restA = itemARefs[1..].to_vec();
     let restB = itemBRefs[1..].to_vec();
-    let restMatch = generateMatches(restA, restB, location.clone());
+    let restComparison = generateFieldComparison(restA, restB, location.clone());
+
+    let equalPattern = Pattern {
+        pattern: SimplePattern::Named(
+            Identifier::new("Option.Option.Some".to_string(), location.clone()),
+            vec![Pattern {
+                pattern: SimplePattern::Named(
+                    Identifier::new("Ordering.Ordering.Equal".to_string(), location.clone()),
+                    vec![],
+                ),
+                location: location.clone(),
+            }],
+        ),
+        location: location.clone(),
+    };
+
     let cases = vec![
         Branch {
-            pattern: Pattern {
-                pattern: SimplePattern::Named(Identifier::new("Bool.Bool.True".to_string(), location.clone()), vec![]),
-                location: location.clone(),
-            },
-            body: withBlock(restMatch),
+            pattern: equalPattern,
+            body: withBlock(restComparison),
         },
         Branch {
             pattern: Pattern {
-                pattern: SimplePattern::Wildcard,
+                pattern: SimplePattern::Bind(Identifier::new("result".to_string(), location.clone()), false),
                 location: location.clone(),
             },
-            body: withName("Bool.Bool.False", location.clone()),
+            body: withBlock(Expr {
+                expr: SimpleExpr::Value(Identifier::new("result".to_string(), location.clone())),
+                location: location.clone(),
+            }),
         },
     ];
     Expr {
-        expr: SimpleExpr::Match(Box::new(eqCall), cases),
+        expr: SimpleExpr::Match(Box::new(cmpCall), cases),
         location: location.clone(),
     }
 }
@@ -215,6 +280,14 @@ fn withBlock(e: Expr) -> Expr {
 fn withName(n: &str, location: Location) -> Expr {
     Expr {
         expr: SimpleExpr::Name(Identifier::new(n.to_string(), location.clone())),
+        location: location.clone(),
+    }
+}
+
+fn withSome(inner: Expr) -> Expr {
+    let location = inner.location.clone();
+    Expr {
+        expr: SimpleExpr::Call(Box::new(withName("Option.Option.Some", location.clone())), vec![inner]),
         location: location.clone(),
     }
 }

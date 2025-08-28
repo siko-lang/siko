@@ -512,14 +512,14 @@ impl<'a> Resolver<'a> {
                             self.program.functions.insert(irFunction.name.clone(), irFunction);
                         }
                     }
-                    ModuleItem::Trait(syntaxProtoDef) => {
-                        let name = moduleResolver.resolveName(&syntaxProtoDef.name);
+                    ModuleItem::Trait(syntaxTraitDef) => {
+                        let name = moduleResolver.resolveName(&syntaxTraitDef.name);
                         let traitDef = self.program.getTrait(&name).unwrap();
                         let owner = traitDef.params.first().expect("first trait param not found");
-                        let typeParams = getTypeParams(&syntaxProtoDef.typeParams);
+                        let typeParams = getTypeParams(&syntaxTraitDef.typeParams);
                         let mut typeResolver = TypeResolver::new(moduleResolver, &typeParams);
                         let mut constraintContext = createConstraintContext(
-                            &syntaxProtoDef.typeParams,
+                            &syntaxTraitDef.typeParams,
                             &typeResolver,
                             &self.program,
                             &self.ctx,
@@ -531,7 +531,7 @@ impl<'a> Resolver<'a> {
                         for associatedType in &traitDef.associatedTypes {
                             typeResolver.addTypeParams(IrType::Var(TypeVar::Named(associatedType.clone())));
                         }
-                        for method in &syntaxProtoDef.methods {
+                        for method in &syntaxTraitDef.methods {
                             //println!("Processing trait method {}", method.name);
                             let mut constraintContext = addTypeParams(
                                 constraintContext.clone(),
@@ -541,7 +541,7 @@ impl<'a> Resolver<'a> {
                                 &self.ctx,
                             );
                             let mut associatedTypes = Vec::new();
-                            for assocTy in &syntaxProtoDef.associatedTypes {
+                            for assocTy in &syntaxTraitDef.associatedTypes {
                                 let ty = IrType::Var(TypeVar::Named(assocTy.name.toString()));
                                 associatedTypes.push(AssociatedType {
                                     name: assocTy.name.toString(),
@@ -780,15 +780,15 @@ impl<'a> Resolver<'a> {
                             continue;
                         }
                         if let Some(name) = &instanceDef.name {
-                            let implName = moduleName.add(name.toString());
+                            let instanceName = moduleName.add(name.toString());
                             let localImplName = localModuleName.add(name.toString());
-                            importedNames.add(&localImplName, &implName);
+                            importedNames.add(&localImplName, &instanceName);
                             for fnDef in &instanceDef.methods {
-                                let methodName = implName.add(fnDef.name.to_string());
+                                let methodName = instanceName.add(fnDef.name.to_string());
                                 let localMethodName = localImplName.add(fnDef.name.to_string());
                                 importedNames.add(&localMethodName, &methodName);
                             }
-                            importedInstances.push(implName);
+                            importedInstances.push(instanceName);
                         }
                     }
                     ModuleItem::Effect(effectDef) => {
@@ -894,16 +894,16 @@ impl<'a> Resolver<'a> {
                             continue;
                         }
                         if let Some(name) = &instanceDef.name {
-                            let implName = moduleName.add(name.toString());
-                            importedNames.add(&name, &implName);
-                            importedNames.add(&implName, &implName);
+                            let instanceName = moduleName.add(name.toString());
+                            importedNames.add(&name, &instanceName);
+                            importedNames.add(&instanceName, &instanceName);
                             for fnDef in &instanceDef.methods {
-                                let methodName = implName.add(fnDef.name.to_string());
+                                let methodName = instanceName.add(fnDef.name.to_string());
                                 importedNames.add(&fnDef.name, &methodName);
                                 importedNames.add(&format!("{}.{}", name, fnDef.name), &methodName);
                                 importedNames.add(&methodName, &methodName);
                             }
-                            importedInstances.push(implName);
+                            importedInstances.push(instanceName);
                         }
                     }
                     ModuleItem::Effect(effectDef) => {
@@ -1050,10 +1050,10 @@ impl<'a> Resolver<'a> {
                 }
                 ModuleItem::Instance(i) => {
                     if let Some(name) = &i.name {
-                        let implName = moduleName.add(name.toString());
-                        localNames.add(&name, &implName);
-                        localNames.add(&implName, &implName);
-                        instances.push(implName);
+                        let instanceName = moduleName.add(name.toString());
+                        localNames.add(&name, &instanceName);
+                        localNames.add(&instanceName, &instanceName);
+                        instances.push(instanceName);
                     }
                 }
                 ModuleItem::Effect(e) => {
