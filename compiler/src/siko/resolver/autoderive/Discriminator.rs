@@ -1,5 +1,5 @@
 use crate::siko::{
-    location::Location::Location,
+    resolver::autoderive::Util::withBlock,
     syntax::{
         Data::Enum,
         Expr::{Branch, Expr, SimpleExpr},
@@ -103,26 +103,5 @@ fn getDiscriminatorFn(enumDef: &Enum) -> Function {
         result: intTy,
         body: Some(body),
         externKind: None,
-    }
-}
-
-fn withBlock(e: Expr) -> Expr {
-    let location = e.location.clone();
-    Expr {
-        expr: SimpleExpr::Block(Block {
-            statements: vec![Statement {
-                kind: StatementKind::Expr(e),
-                hasSemicolon: false,
-            }],
-            location: location.clone(),
-        }),
-        location: location.clone(),
-    }
-}
-
-fn withName(n: &str, location: Location) -> Expr {
-    Expr {
-        expr: SimpleExpr::Name(Identifier::new(n.to_string(), location.clone())),
-        location: location.clone(),
     }
 }

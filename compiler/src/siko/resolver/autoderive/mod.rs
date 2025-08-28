@@ -1,6 +1,9 @@
 pub mod AutoDerive;
+pub mod Clone;
+pub mod Copy;
 pub mod Discriminator;
 pub mod Eq;
 pub mod Ord;
 pub mod PartialEq;
 pub mod PartialOrd;
+pub mod Util;

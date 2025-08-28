@@ -1,7 +1,8 @@
 use crate::siko::{
     resolver::autoderive::{
-        Discriminator::deriveDiscriminatorForEnum, Eq::deriveEqForEnum, Ord::deriveOrdForEnum,
-        PartialEq::derivePartialEqForEnum, PartialOrd::derivePartialOrdForEnum,
+        Clone::deriveCloneForEnum, Copy::deriveCopyForEnum, Discriminator::deriveDiscriminatorForEnum,
+        Eq::deriveEqForEnum, Ord::deriveOrdForEnum, PartialEq::derivePartialEqForEnum,
+        PartialOrd::derivePartialOrdForEnum,
     },
     syntax::Module::{Module, ModuleItem},
 };
@@ -25,6 +26,14 @@ pub fn processModule(module: &Module) -> Module {
                         }
                         "Eq" => {
                             let i = deriveEqForEnum(enumDef);
+                            instances.push(i);
+                        }
+                        "Clone" => {
+                            let i = deriveCloneForEnum(enumDef);
+                            instances.push(i);
+                        }
+                        "Copy" => {
+                            let i = deriveCopyForEnum(enumDef);
                             instances.push(i);
                         }
                         "PartialOrd" => {

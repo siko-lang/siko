@@ -1,5 +1,5 @@
 use crate::siko::{
-    location::Location::Location,
+    resolver::autoderive::Util::{generateMatches, withBlock, withName},
     syntax::{
         Data::Enum,
         Expr::{Branch, Expr, SimpleExpr},
@@ -154,67 +154,5 @@ fn getPartialEqFn(enumDef: &Enum, enumTy: &Type) -> Function {
         result: boolTy,
         body: Some(body),
         externKind: None,
-    }
-}
-
-fn generateMatches(itemARefs: Vec<Expr>, itemBRefs: Vec<Expr>, location: Location) -> Expr {
-    if itemARefs.is_empty() {
-        return withName("Bool.Bool.True", location.clone());
-    }
-    let firstA = itemARefs[0].clone();
-    let firstB = itemBRefs[0].clone();
-    let eqCall = Expr {
-        expr: SimpleExpr::Call(
-            Box::new(withName("Std.Cmp.PartialEq.eq", location.clone())),
-            vec![firstA, firstB],
-        ),
-        location: location.clone(),
-    };
-    if itemARefs.len() == 1 {
-        return eqCall;
-    }
-    let restA = itemARefs[1..].to_vec();
-    let restB = itemBRefs[1..].to_vec();
-    let restMatch = generateMatches(restA, restB, location.clone());
-    let cases = vec![
-        Branch {
-            pattern: Pattern {
-                pattern: SimplePattern::Named(Identifier::new("Bool.Bool.True".to_string(), location.clone()), vec![]),
-                location: location.clone(),
-            },
-            body: withBlock(restMatch),
-        },
-        Branch {
-            pattern: Pattern {
-                pattern: SimplePattern::Wildcard,
-                location: location.clone(),
-            },
-            body: withName("Bool.Bool.False", location.clone()),
-        },
-    ];
-    Expr {
-        expr: SimpleExpr::Match(Box::new(eqCall), cases),
-        location: location.clone(),
-    }
-}
-
-fn withBlock(e: Expr) -> Expr {
-    let location = e.location.clone();
-    Expr {
-        expr: SimpleExpr::Block(Block {
-            statements: vec![Statement {
-                kind: StatementKind::Expr(e),
-                hasSemicolon: false,
-            }],
-            location: location.clone(),
-        }),
-        location: location.clone(),
-    }
-}
-
-fn withName(n: &str, location: Location) -> Expr {
-    Expr {
-        expr: SimpleExpr::Name(Identifier::new(n.to_string(), location.clone())),
-        location: location.clone(),
     }
 }

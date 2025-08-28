@@ -1,7 +1,7 @@
 use std::vec;
 
 use crate::siko::{
-    location::Location::Location,
+    resolver::autoderive::Util::{generatePartialOrdFieldComparison, withBlock, withName, withSome},
     syntax::{
         Data::Enum,
         Expr::{Branch, Expr, SimpleExpr},
@@ -133,7 +133,7 @@ fn getPartialCmpFn(enumDef: &Enum, enumTy: &Type) -> Function {
         let branchBody = if variant.items.is_empty() {
             withSome(withName("Ordering.Ordering.Equal", enumDef.name.location()))
         } else {
-            generateFieldComparison(itemsARefs, itemsBRefs, enumDef.name.location())
+            generatePartialOrdFieldComparison(itemsARefs, itemsBRefs, enumDef.name.location())
         };
         cases.push(Branch {
             pattern: tuplePattern,
@@ -205,89 +205,5 @@ fn getPartialCmpFn(enumDef: &Enum, enumTy: &Type) -> Function {
         result: optionOrderingTy,
         body: Some(body),
         externKind: None,
-    }
-}
-fn generateFieldComparison(itemARefs: Vec<Expr>, itemBRefs: Vec<Expr>, location: Location) -> Expr {
-    if itemARefs.is_empty() {
-        return withSome(withName("Ordering.Ordering.Equal", location.clone()));
-    }
-    let firstA = itemARefs[0].clone();
-    let firstB = itemBRefs[0].clone();
-    let cmpCall = Expr {
-        expr: SimpleExpr::Call(
-            Box::new(withName("Std.Cmp.PartialOrd.partialCmp", location.clone())),
-            vec![firstA, firstB],
-        ),
-        location: location.clone(),
-    };
-    if itemARefs.len() == 1 {
-        return cmpCall;
-    }
-    let restA = itemARefs[1..].to_vec();
-    let restB = itemBRefs[1..].to_vec();
-    let restComparison = generateFieldComparison(restA, restB, location.clone());
-
-    let equalPattern = Pattern {
-        pattern: SimplePattern::Named(
-            Identifier::new("Option.Option.Some".to_string(), location.clone()),
-            vec![Pattern {
-                pattern: SimplePattern::Named(
-                    Identifier::new("Ordering.Ordering.Equal".to_string(), location.clone()),
-                    vec![],
-                ),
-                location: location.clone(),
-            }],
-        ),
-        location: location.clone(),
-    };
-
-    let cases = vec![
-        Branch {
-            pattern: equalPattern,
-            body: withBlock(restComparison),
-        },
-        Branch {
-            pattern: Pattern {
-                pattern: SimplePattern::Bind(Identifier::new("result".to_string(), location.clone()), false),
-                location: location.clone(),
-            },
-            body: withBlock(Expr {
-                expr: SimpleExpr::Value(Identifier::new("result".to_string(), location.clone())),
-                location: location.clone(),
-            }),
-        },
-    ];
-    Expr {
-        expr: SimpleExpr::Match(Box::new(cmpCall), cases),
-        location: location.clone(),
-    }
-}
-
-fn withBlock(e: Expr) -> Expr {
-    let location = e.location.clone();
-    Expr {
-        expr: SimpleExpr::Block(Block {
-            statements: vec![Statement {
-                kind: StatementKind::Expr(e),
-                hasSemicolon: false,
-            }],
-            location: location.clone(),
-        }),
-        location: location.clone(),
-    }
-}
-
-fn withName(n: &str, location: Location) -> Expr {
-    Expr {
-        expr: SimpleExpr::Name(Identifier::new(n.to_string(), location.clone())),
-        location: location.clone(),
-    }
-}
-
-fn withSome(inner: Expr) -> Expr {
-    let location = inner.location.clone();
-    Expr {
-        expr: SimpleExpr::Call(Box::new(withName("Option.Option.Some", location.clone())), vec![inner]),
-        location: location.clone(),
     }
 }
