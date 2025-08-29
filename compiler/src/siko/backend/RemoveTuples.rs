@@ -103,7 +103,6 @@ impl RemoveTuples for Body {
         let blocks = self.blocks.removeTuples(ctx);
         Body {
             blocks: blocks,
-            varTypes: BTreeMap::new(),
             varAllocator: self.varAllocator.clone(),
         }
     }

@@ -227,7 +227,7 @@ impl<'a> ExprResolver<'a> {
                     let rhs = self.resolveExpr(rhs, &mut env);
                     if let Some(ty) = ty {
                         let ty = self.typeResolver.resolveType(ty);
-                        self.bodyBuilder.setTypeInBody(rhs.clone(), ty);
+                        rhs.setType(ty);
                     }
                     self.resolvePattern(pat, &mut env, rhs);
                 }

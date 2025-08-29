@@ -157,12 +157,8 @@ impl<'a> Typechecker<'a> {
                 var.setType(ty.clone());
             }
             None => {
-                if let Some(ty) = self.bodyBuilder.getTypeInBody(&var) {
-                    var.setType(ty.clone());
-                } else {
-                    let ty = self.allocator.next();
-                    var.setType(ty.clone());
-                }
+                let ty = self.allocator.next();
+                var.setType(ty.clone());
             }
         }
     }

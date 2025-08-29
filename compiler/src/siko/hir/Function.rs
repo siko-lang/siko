@@ -9,8 +9,6 @@ use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
 
 use super::Instruction::Instruction;
 use super::Instruction::InstructionKind;
-use super::Variable::Variable;
-use super::Variable::VariableName;
 use super::{ConstraintContext::ConstraintContext, Type::Type};
 
 #[derive(Debug, Clone)]
@@ -126,7 +124,6 @@ impl Display for Block {
 #[derive(Debug, Clone)]
 pub struct Body {
     pub blocks: BTreeMap<BlockId, Block>,
-    pub varTypes: BTreeMap<VariableName, Type>,
     pub varAllocator: VariableAllocator,
 }
 
@@ -134,7 +131,6 @@ impl Body {
     pub fn new() -> Body {
         Body {
             blocks: BTreeMap::new(),
-            varTypes: BTreeMap::new(),
             varAllocator: VariableAllocator::new(),
         }
     }
@@ -145,14 +141,6 @@ impl Body {
 
     pub fn getBlockById(&self, id: BlockId) -> &Block {
         &self.blocks.get(&id).expect("Block not found")
-    }
-
-    pub fn setType(&mut self, var: Variable, ty: Type) {
-        self.varTypes.insert(var.name(), ty);
-    }
-
-    pub fn getType(&self, var: &Variable) -> Option<Type> {
-        self.varTypes.get(&var.name()).cloned()
     }
 
     pub fn dump(&self) {
