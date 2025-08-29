@@ -37,14 +37,21 @@ pub struct InstanceResolver<'a> {
     allocator: TypeVarAllocator,
     instanceStore: &'a InstanceStore,
     program: &'a Program,
+    knownConstraints: ConstraintContext,
 }
 
 impl<'a> InstanceResolver<'a> {
-    pub fn new(allocator: TypeVarAllocator, instanceStore: &'a InstanceStore, program: &'a Program) -> Self {
+    pub fn new(
+        allocator: TypeVarAllocator,
+        instanceStore: &'a InstanceStore,
+        program: &'a Program,
+        knownConstraints: ConstraintContext,
+    ) -> Self {
         InstanceResolver {
             allocator,
             instanceStore: instanceStore,
             program,
+            knownConstraints,
         }
     }
 
@@ -81,7 +88,12 @@ impl<'a> InstanceResolver<'a> {
                     let mut allSubConstraintsMatch = true;
                     for c in &instanceDef.constraintContext.constraints {
                         //println!("  checking sub constraint: {}", c);
+                        if self.findImplInKnownConstraints(c, &self.knownConstraints).is_some() {
+                            //println!("  Found in known constraints");
+                            continue;
+                        }
                         if !self.findInstanceInScopeInner(c, level + 1).isFound() {
+                            //println!("  No instance found for sub constraint {}", c);
                             allSubConstraintsMatch = false;
                             break;
                         }
@@ -107,11 +119,17 @@ impl<'a> InstanceResolver<'a> {
     }
 
     pub fn findInstanceInScope(&self, constraint: &Constraint) -> InstanceSearchResult {
+        // println!("Finding instance in scope for constraint {}", constraint);
+        // for instance in &self.instanceStore.localInstances {
+        //     println!("Local instance: {}", instance);
+        // }
+        // for instance in &self.instanceStore.importedInstances {
+        //     println!("Imported instance: {}", instance);
+        // }
         self.findInstanceInScopeInner(constraint, 0)
     }
 
     pub fn findInstanceInScopeInner(&self, constraint: &Constraint, level: u32) -> InstanceSearchResult {
-        //println!("Finding instance for constraint {} at level {}", constraint, level);
         if level > 10 {
             // Prevent infinite recursion
             panic!("Instance resolution exceeded maximum recursion depth");

@@ -109,9 +109,9 @@ impl<'a> Typechecker<'a> {
         f: &'a Function,
     ) -> Typechecker<'a> {
         let allocator = TypeVarAllocator::new();
-        let implResolver = InstanceResolver::new(allocator.clone(), instanceStore, program);
         let expander = ConstraintExpander::new(program, allocator.clone(), f.constraintContext.clone());
         let knownConstraints = expander.expandKnownConstraints();
+        let implResolver = InstanceResolver::new(allocator.clone(), instanceStore, program, knownConstraints.clone());
         let unifier = Unifier::new(ctx);
         let fnCallResolver = FunctionCallResolver::new(
             program,
@@ -143,6 +143,7 @@ impl<'a> Typechecker<'a> {
 
     pub fn run(&mut self) -> Function {
         //println!("Typechecking function {}", self.f.name);
+        //println!(" {} ", self.f);
         self.initialize();
         //self.dump(self.f);
         self.check();
@@ -569,11 +570,11 @@ impl<'a> Typechecker<'a> {
             InstructionKind::Jump(_, id) => {
                 self.queue.push_back(*id);
             }
-            InstructionKind::Assign(name, rhs) => {
-                if self.mutables.get(&name.name().to_string()) == Some(&Mutability::Immutable) {
+            InstructionKind::Assign(dest, src) => {
+                if self.mutables.get(&dest.name().to_string()) == Some(&Mutability::Immutable) {
                     TypecheckerError::ImmutableAssign(instruction.location.clone()).report(self.ctx);
                 }
-                self.unifier.unifyVars(name, rhs);
+                self.unifier.unifyVars(dest, src);
             }
             InstructionKind::FieldAssign(receiver, rhs, fields) => {
                 if self.mutables.get(&receiver.name().to_string()) == Some(&Mutability::Immutable) {
@@ -1203,7 +1204,7 @@ impl<'a> Typechecker<'a> {
                         if let InstructionKind::Converter(dest, source) = &instruction.kind {
                             let destTy = self.unifier.apply(dest.getType());
                             let sourceTy = self.unifier.apply(source.getType());
-                            // println!("Processing converter {} : {} -> {}", instruction, sourceTy, destTy);
+                            //println!("Processing converter {} : {} -> {}", instruction, sourceTy, destTy);
                             match (&destTy, &sourceTy) {
                                 (Type::Reference(inner, _), Type::Reference(src, _)) => {
                                     self.unifier

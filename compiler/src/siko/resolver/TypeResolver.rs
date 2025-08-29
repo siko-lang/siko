@@ -1,12 +1,15 @@
 use super::ModuleResolver::ModuleResolver;
 use crate::siko::hir::Type::{Type as IrType, TypeVar};
 use crate::siko::qualifiedname::QualifiedName;
+use crate::siko::resolver::Util::SubstitutionChain;
 use crate::siko::syntax::Type::{Type, TypeParameterDeclaration};
 use std::collections::BTreeSet;
 
+#[derive(Clone)]
 pub struct TypeResolver<'a> {
     pub moduleResolver: &'a ModuleResolver<'a>,
     typeParameters: BTreeSet<IrType>,
+    subChain: Option<&'a SubstitutionChain>,
 }
 
 impl<'a> TypeResolver<'a> {
@@ -14,11 +17,18 @@ impl<'a> TypeResolver<'a> {
         let mut r = TypeResolver {
             moduleResolver: moduleResolver,
             typeParameters: BTreeSet::new(),
+            subChain: None,
         };
         for param in typeParameters {
             r.addTypeParams(param.clone());
         }
         r
+    }
+
+    pub fn withSubChain(&self, subChain: &'a SubstitutionChain) -> Self {
+        let mut new = self.clone();
+        new.subChain = Some(subChain);
+        new
     }
 
     pub fn addTypeParams(&mut self, typeParam: IrType) {
@@ -29,6 +39,12 @@ impl<'a> TypeResolver<'a> {
         match ty {
             Type::Named(name, args) => {
                 let var = IrType::Var(TypeVar::Named(name.toString()));
+                if let Some(subChain) = self.subChain {
+                    let var2 = subChain.apply(var.clone());
+                    if var != var2 {
+                        return var2;
+                    }
+                }
                 if self.typeParameters.contains(&var) {
                     var
                 } else {

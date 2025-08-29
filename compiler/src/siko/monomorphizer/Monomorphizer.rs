@@ -320,7 +320,8 @@ impl<'a> Monomorphizer<'a> {
 
         let allocator = TypeVarAllocator::new();
         let implStore = InstanceStore::new();
-        let implResolver = InstanceResolver::new(allocator.clone(), &implStore, &self.program);
+        let implResolver =
+            InstanceResolver::new(allocator.clone(), &implStore, &self.program, ConstraintContext::new());
 
         if implResolver.isDrop(&ty) {
             hasInstance = true;

@@ -64,7 +64,12 @@ impl<'a> FunctionCallResolver<'a> {
         resultVar: &Variable,
         location: Location,
     ) -> CheckFunctionCallResult {
-        let implResolver = InstanceResolver::new(self.allocator.clone(), self.implStore, self.program);
+        let implResolver = InstanceResolver::new(
+            self.allocator.clone(),
+            self.implStore,
+            self.program,
+            self.knownConstraints.clone(),
+        );
         let fnType = f.getType();
         let fnType = fnType.resolveSelfType();
         let mut checkResult = CheckFunctionCallResult {
@@ -125,7 +130,7 @@ impl<'a> FunctionCallResolver<'a> {
             loop {
                 let mut resolvedSomething = false;
                 remaining = self.unifier.apply(remaining);
-                //println!("Remaining constraints: {:?} {:?}", remaining, neededConstraints);
+                //println!("Remaining constraints: {:?}", remaining);
                 if remaining.is_empty() {
                     break;
                 }
@@ -231,7 +236,6 @@ impl<'a> FunctionCallResolver<'a> {
                             }
                             InstanceSearchResult::NotFound => {
                                 if tryMore {
-                                    //println!("No instance found for {}", current);
                                     remaining.push(current);
                                 } else {
                                     TypecheckerError::NoImplementationFound(current.to_string(), location.clone())

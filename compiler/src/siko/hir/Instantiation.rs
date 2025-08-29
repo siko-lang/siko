@@ -50,6 +50,11 @@ pub fn instantiateTrait(allocator: &TypeVarAllocator, t: &Trait) -> Trait {
     t.clone().apply(&sub)
 }
 
+pub fn instantiateTraitWithSub(allocator: &TypeVarAllocator, t: &Trait) -> (Trait, Substitution) {
+    let sub = instantiateTypes(allocator, &t.params);
+    (t.clone().apply(&sub), sub)
+}
+
 pub fn instantiateTypes(allocator: &TypeVarAllocator, types: &Vec<Type>) -> Substitution {
     let mut vars = BTreeSet::new();
     for ty in types {

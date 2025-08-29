@@ -8,6 +8,7 @@ pub enum ResolverError {
     NotAConstructor(String, Location),
     NotStructConstructor(String, Location),
     UnknownName(String, Location),
+    UnknownTypeName(String, Location),
     Ambiguous(String, Location),
     RedundantPattern(Location),
     MissingPattern(Vec<String>, Location),
@@ -48,6 +49,11 @@ impl ResolverError {
             }
             ResolverError::UnknownName(v, l) => {
                 let slogan = format!("Unknown name {}", ctx.yellow(v));
+                let r = Report::new(ctx, slogan, Some(l.clone()));
+                r.print();
+            }
+            ResolverError::UnknownTypeName(v, l) => {
+                let slogan = format!("Unknown type name {}", ctx.yellow(v));
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }

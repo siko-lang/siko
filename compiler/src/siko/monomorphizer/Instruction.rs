@@ -10,6 +10,7 @@ use crate::siko::{
         },
         Substitution::Substitution,
         Type::Type,
+        Utils::createResolvers,
         Variable::Variable,
     },
     location::Report::Report,
@@ -35,31 +36,6 @@ impl Monomorphize for CallInfo {
     }
 }
 
-fn findMatchingImpl(
-    impls: &Vec<QualifiedName>,
-    shortName: String,
-    context_ty: &Type,
-    mono: &Monomorphizer,
-) -> QualifiedName {
-    //println!("Looking for impl of {} for {}", shortName, context_ty);
-    for instanceName in impls {
-        //println!("impl {}", instanceName);
-        let instanceDef = mono
-            .program
-            .getInstance(instanceName)
-            .expect("instance not found in mono");
-        for m in &instanceDef.members {
-            // println!("members {}", m.name);
-            // println!("trait call member type {}", m.memberType);
-            // println!("looking for {}/{}", shortName, context_ty);
-            if m.name == shortName && m.memberType == *context_ty {
-                return m.fullName.clone();
-            }
-        }
-    }
-    panic!("No matching impl found");
-}
-
 pub fn processInstruction(
     input: &Instruction,
     sub: &Substitution,
@@ -72,6 +48,7 @@ pub fn processInstruction(
     let mut instruction = input.clone();
     let kind: InstructionKind = match &input.kind {
         InstructionKind::FunctionCall(dest, info) => {
+            let mut info = info.clone();
             // println!(
             //     "Calling {} in block {} with impls {:?}",
             //     info.name, syntaxBlockId, impls
@@ -124,22 +101,69 @@ pub fn processInstruction(
                     };
                     (f, handlerResolution.clone(), contextSyntaxBlockId)
                 }
-                FunctionKind::TraitMemberDecl(_traitName) => {
+                FunctionKind::TraitMemberDecl(_) | FunctionKind::TraitMemberDefinition(_) => {
                     let (handlerResolution, contextSyntaxBlockId) = handlerResolutionStore.get(syntaxBlockId);
-                    let fnType = target_fn.getType();
-                    // println!(
-                    //     "Trait member call in mono: {} {} {}",
-                    //     info.name, fnType, _traitName
+                    let (_, mut fnCallResolver) = createResolvers(&target_fn, mono.ctx, &mono.program);
+                    // let fnType = target_fn.getType();
+                    // // println!(
+                    // //     "Trait member call in mono: {} {} {}",
+                    // //     info.name, fnType, _traitName
+                    // // );
+                    // let (_fn_ty, context_ty) = prepareTypes(sub, dest, info, fnType);
+                    // // println!("trait call fn type {}", _fn_ty);
+                    // // println!("trait call context type {}", context_ty);
+                    // // println!("all available implementations: {:?}", impls);
+                    // println!("Substitution: {} ", sub);
+                    // let traitDef = mono.program.getTrait(&traitName).expect("trait not found in mono");
+                    // let allocator = TypeVarAllocator::new();
+                    // let traitDef = instantiateTrait(&allocator, &traitDef);
+                    // let mut unifier = Unifier::new(mono.ctx);
+                    // for m in &traitDef.members {
+                    //     if m.fullName == target_fn.name {
+                    //         println!("Trait member type: {}", m.memberType);
+                    //         unifier.unify(m.memberType.clone(), context_ty.clone(), instruction.location.clone());
+                    //     }
+                    // }
+                    // let traitDef = unifier.apply(traitDef);
+                    // println!("Instantiated trait: {}", traitDef);
+                    // // let instanceStore = mono
+                    // //     .program
+                    // //     .instanceStores
+                    // //     .get(&target_fn.name.module())
+                    // //     .expect("instance store not found");
+                    // // let instanceResolver =
+                    // //     InstanceResolver::new(allocator, instanceStore, &mono.program, ConstraintContext::new());
+                    // let implMemberName = findMatchingImpl(
+                    //     &allocator,
+                    //     &mut unifier,
+                    //     impls,
+                    //     target_fn.name.getShortName(),
+                    //     &context_ty,
+                    //     mono,
+                    //     traitName,
+                    //     traitDef.params.clone(),
+                    //     instruction.location.clone(),
                     // );
-                    let (_fn_ty, context_ty) = prepareTypes(sub, dest, info, fnType);
-                    // println!("trait call fn type {}", _fn_ty);
-                    // println!("trait call context type {}", context_ty);
-                    // println!("all available implementations: {:?}", impls);
-                    let implMemberName = findMatchingImpl(impls, target_fn.name.getShortName(), &context_ty, mono);
+                    let mut args = Vec::new();
+                    for arg in &info.args {
+                        //println!("arg {}", arg);
+                        args.push(arg.clone().apply(&sub));
+                    }
+                    let dest = dest.clone().apply(&sub);
+                    //println!("Trait member call in mono! {}", target_fn.name);
+                    let checkresult = fnCallResolver.resolve(&target_fn, &args, &dest, instruction.location.clone());
+                    //println!("Resolved to {}", checkresult.fnName);
+                    let targetfn = mono
+                        .program
+                        .getFunction(&checkresult.fnName)
+                        .expect("function not found in mono");
+                    let checkresult = fnCallResolver.resolve(&targetfn, &args, &dest, instruction.location.clone());
+                    //println!("Resolved to {}", checkresult.fnName);
                     let targetFn = mono
                         .program
-                        .getFunction(&implMemberName)
+                        .getFunction(&checkresult.fnName)
                         .expect("function not found in mono");
+                    info.instanceRefs = checkresult.instanceRefs;
                     (targetFn, handlerResolution.clone(), contextSyntaxBlockId)
                 }
                 _ => {
@@ -148,7 +172,7 @@ pub fn processInstruction(
                 }
             };
             //println!("Target function: {} {}", target_fn, contextSyntaxBlockId);
-            let (_, context_ty) = prepareTypes(sub, dest, info, target_fn.getType());
+            let (_, context_ty) = prepareTypes(sub, dest, &info, target_fn.getType());
             // println!("fn type {}", fn_ty);
             // println!("context type {}", context_ty);
             let name = target_fn.name.clone();

@@ -237,7 +237,7 @@ impl Display for Variable {
         if let Some(ty) = &self.getTypeOpt() {
             write!(f, "${}/{}: {}", self.name(), self.kind, ty)
         } else {
-            write!(f, "${}/{} {:?}", self.name(), self.kind, Rc::as_ptr(&self.info))
+            write!(f, "${}/{}", self.name(), self.kind)
         }
     }
 }

@@ -10,11 +10,16 @@ pub struct MemberInfo {
     pub fullName: QualifiedName,
     pub default: bool,
     pub memberType: Type,
+    pub constraint: ConstraintContext,
 }
 
 impl fmt::Display for MemberInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "fn {} => ({}) / {}", self.name, self.fullName, self.memberType)
+        write!(
+            f,
+            "fn {} => ({}) / {} / {}",
+            self.name, self.fullName, self.memberType, self.constraint
+        )
     }
 }
 

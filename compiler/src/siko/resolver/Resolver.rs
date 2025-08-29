@@ -4,16 +4,19 @@ use crate::siko::{
         Data::MethodInfo as DataMethodInfo,
         Function::{FunctionKind, Parameter},
         InstanceStore::InstanceStore,
+        Instantiation::instantiateTraitWithSub,
         Program::Program,
         Trait::{AssociatedType, MemberInfo},
         TraitMethodSelector::{TraitMethodSelection, TraitMethodSelector},
         Type::TypeVar,
+        TypeVarAllocator::TypeVarAllocator,
+        Unifier::Unifier,
     },
     location::Report::ReportContext,
     qualifiedname::QualifiedName,
-    resolver::{autoderive::AutoDerive, FunctionResolver::FunctionResolver},
+    resolver::{autoderive::AutoDerive, FunctionResolver::FunctionResolver, Util::SubstitutionChain},
     syntax::{
-        Function::Parameter as SynParam,
+        Function::{Function, Parameter as SynParam},
         Module::{Import, Module, ModuleItem},
         Trait::Instance,
         Type::{Constraint, ConstraintArgument, TypeParameterDeclaration},
@@ -24,6 +27,7 @@ use crate::siko::{
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Display,
+    iter::zip,
 };
 
 use super::{Error::ResolverError, ModuleResolver::ModuleResolver};
@@ -145,6 +149,9 @@ pub struct Resolver<'a> {
     program: Program,
     emptyVariants: BTreeSet<QualifiedName>,
     variants: BTreeMap<QualifiedName, QualifiedName>,
+    defaultTraitMethods: BTreeMap<QualifiedName, Function>,
+    instanceMethods: BTreeMap<QualifiedName, Function>,
+    instanceSubChains: BTreeMap<QualifiedName, SubstitutionChain>,
 }
 
 impl<'a> Resolver<'a> {
@@ -156,6 +163,9 @@ impl<'a> Resolver<'a> {
             program: Program::new(),
             emptyVariants: BTreeSet::new(),
             variants: BTreeMap::new(),
+            defaultTraitMethods: BTreeMap::new(),
+            instanceMethods: BTreeMap::new(),
+            instanceSubChains: BTreeMap::new(),
         }
     }
 
@@ -307,6 +317,7 @@ impl<'a> Resolver<'a> {
     }
 
     fn processTraits(&mut self) {
+        //println!("Processing traits");
         for (_, m) in &mut self.modules {
             let moduleResolver = self.resolvers.get(&m.name.name()).unwrap();
             for item in &mut m.items {
@@ -345,12 +356,18 @@ impl<'a> Resolver<'a> {
                             let result = typeResolver
                                 .resolveType(&method.result)
                                 .changeSelfType(selfType.clone());
+                            let fullName = QualifiedName::Item(Box::new(irTrait.name.clone()), method.name.toString());
+                            let isDefault = method.body.is_some();
                             irTrait.members.push(MemberInfo {
                                 name: method.name.toString(),
-                                fullName: QualifiedName::Item(Box::new(irTrait.name.clone()), method.name.toString()),
-                                default: method.body.is_some(),
+                                fullName: fullName.clone(),
+                                default: isDefault,
                                 memberType: IrType::Function(argTypes, Box::new(result)),
-                            })
+                                constraint: ConstraintContext::new(),
+                            });
+                            if isDefault {
+                                self.defaultTraitMethods.insert(fullName, method.clone());
+                            }
                         }
                         //println!("Trait {}", irTrait);
                         self.program.traits.insert(irTrait.name.clone(), irTrait);
@@ -362,6 +379,7 @@ impl<'a> Resolver<'a> {
     }
 
     fn processInstances(&mut self) {
+        //println!("Processing instances");
         for (_, m) in &mut self.modules {
             let moduleResolver = self.resolvers.get(&m.name.name()).unwrap();
             for item in &mut m.items {
@@ -408,7 +426,40 @@ impl<'a> Resolver<'a> {
                             associatedTypes,
                             constraintContext,
                         );
+                        let allocator = TypeVarAllocator::new();
+                        let (instantiatedTrait, sub) = instantiateTraitWithSub(&allocator, &traitDef);
+                        let mut subChain = SubstitutionChain::new();
+                        subChain.add(sub);
+                        let mut allTraitMembers = BTreeSet::new();
+                        let mut neededTraitMembers = BTreeSet::new();
+                        let mut usedDefaults = BTreeMap::new();
+                        for method in &instantiatedTrait.members {
+                            allTraitMembers.insert(method.name.clone());
+                            if method.default {
+                                usedDefaults.insert(method.name.clone(), method.clone());
+                            } else {
+                                neededTraitMembers.insert(method.name.clone());
+                            }
+                        }
+                        let mut unifier = Unifier::new(self.ctx);
+                        for (t1, t2) in zip(instantiatedTrait.params.clone(), irInstance.types.clone()) {
+                            unifier.unify(t1, t2, i.location.clone());
+                        }
+                        subChain.add(unifier.substitution.borrow().clone());
+                        self.instanceSubChains.insert(irInstance.name.clone(), subChain);
+                        let mut implementedMembers = BTreeSet::new();
                         for method in &i.methods {
+                            implementedMembers.insert(method.name.clone());
+                            if !allTraitMembers.contains(&method.name.name()) {
+                                ResolverError::InvalidInstanceMember(
+                                    method.name.name(),
+                                    irInstance.traitName.toString(),
+                                    method.name.location(),
+                                )
+                                .report(self.ctx);
+                            }
+                            neededTraitMembers.remove(&method.name.name());
+                            usedDefaults.remove(&method.name.name());
                             let mut argTypes = Vec::new();
                             for param in &method.params {
                                 let ty = match param {
@@ -422,15 +473,57 @@ impl<'a> Resolver<'a> {
                             let result = typeResolver
                                 .resolveType(&method.result)
                                 .changeSelfType(selfType.clone());
+                            let constraintContext = addTypeParams(
+                                irInstance.constraintContext.clone(),
+                                &method.typeParams,
+                                &typeResolver,
+                                &self.program,
+                                &self.ctx,
+                            );
+                            let fullName =
+                                QualifiedName::Item(Box::new(irInstance.name.clone()), method.name.toString());
                             irInstance.members.push(MemberInfo {
                                 name: method.name.toString(),
-                                fullName: QualifiedName::Item(
-                                    Box::new(irInstance.name.clone()),
-                                    method.name.toString(),
-                                ),
+                                fullName: fullName.clone(),
                                 default: false,
                                 memberType: IrType::Function(argTypes, Box::new(result)),
+                                constraint: constraintContext,
                             });
+                            self.instanceMethods.insert(fullName, method.clone());
+                        }
+                        for (name, method) in usedDefaults {
+                            //println!("Using default method {}", method);
+                            let memberType = unifier.apply(method.memberType);
+                            //println!("Resolved member type: {}", memberType);
+                            let constraintContext = addTypeParams(
+                                irInstance.constraintContext.clone(),
+                                &None,
+                                &typeResolver,
+                                &self.program,
+                                &self.ctx,
+                            );
+                            let fullName = QualifiedName::Item(Box::new(irInstance.name.clone()), name.clone());
+                            irInstance.members.push(MemberInfo {
+                                name: name.clone(),
+                                fullName: fullName.clone(),
+                                default: true,
+                                memberType: memberType,
+                                constraint: constraintContext,
+                            });
+                            let methodFn = self
+                                .defaultTraitMethods
+                                .get(&method.fullName)
+                                .expect("default method not found")
+                                .clone();
+                            self.instanceMethods.insert(fullName, methodFn);
+                        }
+                        if !neededTraitMembers.is_empty() {
+                            ResolverError::MissingTraitMembers(
+                                neededTraitMembers.into_iter().collect(),
+                                irInstance.traitName.toString(),
+                                i.traitName.location(),
+                            )
+                            .report(self.ctx);
                         }
                         //println!("IrImpl {}", irInstance);
                         self.program.instances.insert(irInstance.name.clone(), irInstance);
@@ -447,6 +540,7 @@ impl<'a> Resolver<'a> {
     }
 
     fn processFunctions(&mut self) {
+        //println!("Processing functions");
         for (_, m) in &self.modules {
             let moduleResolver = self.resolvers.get(&m.name.name()).unwrap();
             let mut traitMethodselector = TraitMethodSelector::new();
@@ -589,61 +683,40 @@ impl<'a> Resolver<'a> {
                         let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
                         let traitName = moduleResolver.resolveName(&i.traitName);
                         let qn = buildInstanceName(moduleResolver, i, traitName, &typeResolver);
+                        let defaultSubstitutionChain = self
+                            .instanceSubChains
+                            .get(&qn)
+                            .expect("instance substitution chain not found");
+                        let defaultfnTypeResolver = typeResolver.withSubChain(&defaultSubstitutionChain);
                         let irInstance = &self.program.getInstance(&qn).expect("Instance not found");
-                        let traitDef = self.program.getTrait(&irInstance.traitName).unwrap();
-                        let mut allTraitMembers = BTreeSet::new();
-                        let mut neededTraitMembers = BTreeSet::new();
-                        for method in &traitDef.members {
-                            allTraitMembers.insert(method.name.clone());
-                            if !method.default {
-                                neededTraitMembers.insert(method.name.clone());
-                            }
-                        }
-                        let mut implementedMembers = BTreeSet::new();
-                        for method in &i.methods {
-                            implementedMembers.insert(method.name.clone());
-                            if !allTraitMembers.contains(&method.name.name()) {
-                                ResolverError::InvalidInstanceMember(
-                                    method.name.name(),
-                                    irInstance.traitName.toString(),
-                                    method.name.location(),
-                                )
-                                .report(self.ctx);
-                            }
-                            neededTraitMembers.remove(&method.name.name());
-                            //println!("Processing instance method {}", method.name);
-                            let constraintContext = addTypeParams(
-                                irInstance.constraintContext.clone(),
-                                &method.typeParams,
-                                &typeResolver,
-                                &self.program,
-                                &self.ctx,
-                            );
+                        for method in &irInstance.members {
+                            //println!("Processing instance method {} ({})", method.name, method.fullName);
                             let functionResolver = FunctionResolver::new(
                                 moduleResolver,
-                                constraintContext,
+                                method.constraint.clone(),
                                 Some(irInstance.types[0].clone()),
                             );
+                            let typeResolver = if method.default {
+                                &defaultfnTypeResolver
+                            } else {
+                                &typeResolver
+                            };
+                            let methodFn = self
+                                .instanceMethods
+                                .get(&method.fullName)
+                                .expect("instance method not found");
                             let irFunction = functionResolver.resolve(
                                 self.ctx,
-                                method,
+                                methodFn,
                                 &self.emptyVariants,
                                 &self.program.structs,
                                 &self.variants,
                                 &self.program.enums,
                                 &self.program.implicits,
-                                qn.add(method.name.toString()),
+                                qn.add(method.name.clone()),
                                 &typeResolver,
                             );
                             self.program.functions.insert(irFunction.name.clone(), irFunction);
-                        }
-                        if !neededTraitMembers.is_empty() {
-                            ResolverError::MissingTraitMembers(
-                                neededTraitMembers.into_iter().collect(),
-                                irInstance.traitName.toString(),
-                                i.traitName.location(),
-                            )
-                            .report(self.ctx);
                         }
                     }
                     ModuleItem::Function(f) => {
@@ -783,11 +856,6 @@ impl<'a> Resolver<'a> {
                             let instanceName = moduleName.add(name.toString());
                             let localImplName = localModuleName.add(name.toString());
                             importedNames.add(&localImplName, &instanceName);
-                            for fnDef in &instanceDef.methods {
-                                let methodName = instanceName.add(fnDef.name.to_string());
-                                let localMethodName = localImplName.add(fnDef.name.to_string());
-                                importedNames.add(&localMethodName, &methodName);
-                            }
                             importedInstances.push(instanceName);
                         }
                     }
@@ -897,12 +965,6 @@ impl<'a> Resolver<'a> {
                             let instanceName = moduleName.add(name.toString());
                             importedNames.add(&name, &instanceName);
                             importedNames.add(&instanceName, &instanceName);
-                            for fnDef in &instanceDef.methods {
-                                let methodName = instanceName.add(fnDef.name.to_string());
-                                importedNames.add(&fnDef.name, &methodName);
-                                importedNames.add(&format!("{}.{}", name, fnDef.name), &methodName);
-                                importedNames.add(&methodName, &methodName);
-                            }
                             importedInstances.push(instanceName);
                         }
                     }

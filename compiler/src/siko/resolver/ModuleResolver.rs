@@ -71,7 +71,7 @@ impl<'a> ModuleResolver<'a> {
                 return typeNames.first().unwrap().clone();
             }
         }
-        ResolverError::UnknownName(name.toString(), name.location()).report(self.ctx);
+        ResolverError::UnknownTypeName(name.toString(), name.location()).report(self.ctx);
     }
 
     pub fn tryResolverName(&self, name: &Identifier) -> Option<QualifiedName> {
