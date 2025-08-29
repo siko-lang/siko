@@ -1,20 +1,29 @@
 module Main {
 
-struct Foo {
-
+struct Foo[T] {
+    genericField: T,
 }
 
 trait Bar[T] {
     fn bar(&self) -> ()
 
     fn defaultbar(&self) -> () {
-
+        self.bar()
     }
 }
 
-instance FooBar Bar[Foo] {
+instance[T: Bar[T]] FooBar Bar[Foo[T]] {
     fn bar(&self) -> () {
+        self.genericField.bar();
+    }
+}
 
+struct Other {
+
+}
+
+instance OtherBar Bar[Other] {
+    fn bar(&self) -> () {
     }
 }
 
@@ -23,7 +32,7 @@ fn generic[T: Bar[T]](t: T) {
 }
 
 fn main() {
-    let f = Foo();
+    let f = Foo(Other());
     f.bar();
     f.defaultbar();
     generic(f);

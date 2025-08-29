@@ -32,6 +32,12 @@ impl Substitution {
             None => old,
         }
     }
+
+    pub fn merge(&mut self, other: &Substitution) {
+        for (key, value) in &other.substitutions {
+            self.add(key.clone(), value.clone());
+        }
+    }
 }
 
 impl Display for Substitution {

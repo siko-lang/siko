@@ -52,6 +52,7 @@ impl<'a> InstanceResolver<'a> {
         &self,
         constraint: &Constraint,
         candidates: &Vec<QualifiedName>,
+        level: u32,
     ) -> InstanceSearchResult {
         //println!("Finding instance for constraint {}", constraint);
         let mut matchingImpls = Vec::new();
@@ -80,7 +81,7 @@ impl<'a> InstanceResolver<'a> {
                     let mut allSubConstraintsMatch = true;
                     for c in &instanceDef.constraintContext.constraints {
                         //println!("  checking sub constraint: {}", c);
-                        if !self.findInstanceInScope(c).isFound() {
+                        if !self.findInstanceInScopeInner(c, level + 1).isFound() {
                             allSubConstraintsMatch = false;
                             break;
                         }
@@ -106,12 +107,21 @@ impl<'a> InstanceResolver<'a> {
     }
 
     pub fn findInstanceInScope(&self, constraint: &Constraint) -> InstanceSearchResult {
-        match self.findInstanceForConstraint(constraint, &self.instanceStore.localInstances) {
+        self.findInstanceInScopeInner(constraint, 0)
+    }
+
+    pub fn findInstanceInScopeInner(&self, constraint: &Constraint, level: u32) -> InstanceSearchResult {
+        //println!("Finding instance for constraint {} at level {}", constraint, level);
+        if level > 10 {
+            // Prevent infinite recursion
+            panic!("Instance resolution exceeded maximum recursion depth");
+        }
+        match self.findInstanceForConstraint(constraint, &self.instanceStore.localInstances, level) {
             InstanceSearchResult::Found(instanceDef) => return InstanceSearchResult::Found(instanceDef),
             InstanceSearchResult::Ambiguous(names) => return InstanceSearchResult::Ambiguous(names),
             InstanceSearchResult::NotFound => {}
         }
-        match self.findInstanceForConstraint(constraint, &self.instanceStore.importedInstances) {
+        match self.findInstanceForConstraint(constraint, &self.instanceStore.importedInstances, level) {
             InstanceSearchResult::Found(instanceDef) => return InstanceSearchResult::Found(instanceDef),
             InstanceSearchResult::Ambiguous(names) => return InstanceSearchResult::Ambiguous(names),
             InstanceSearchResult::NotFound => {}
@@ -126,7 +136,7 @@ impl<'a> InstanceResolver<'a> {
         }
         if let Some(instanceName) = self.program.canonicalImplStore.get(&constraint.name, &canonTypes) {
             //println!("Found canonical impl {} for {}", instanceName, formatTypes(&canonTypes));
-            return self.findInstanceForConstraint(constraint, &vec![instanceName.clone()]);
+            return self.findInstanceForConstraint(constraint, &vec![instanceName.clone()], level);
         }
         InstanceSearchResult::NotFound
     }

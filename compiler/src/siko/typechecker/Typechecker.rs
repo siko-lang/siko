@@ -301,7 +301,11 @@ impl<'a> Typechecker<'a> {
     ) -> CheckFunctionCallResult {
         // println!(
         //     "Checking function call: {} {} {} args {:?}, result {}",
-        //     targetFn.name, fnType, targetFn.constraintContext, args, resultVar
+        //     targetFn.name,
+        //     targetFn.getType(),
+        //     targetFn.constraintContext,
+        //     args,
+        //     resultVar
         // );
         if targetFn.kind.isTraitCall() {
             let checkResult = self
