@@ -1,8 +1,12 @@
 use crate::siko::{
     resolver::autoderive::{
-        Clone::deriveCloneForEnum, Copy::deriveCopyForEnum, Discriminator::deriveDiscriminatorForEnum,
-        Eq::deriveEqForEnum, Ord::deriveOrdForEnum, PartialEq::derivePartialEqForEnum,
-        PartialOrd::derivePartialOrdForEnum,
+        Clone::{deriveCloneForEnum, deriveCloneForStruct},
+        Copy::{deriveCopyForEnum, deriveCopyForStruct},
+        Discriminator::{deriveDiscriminatorForEnum, deriveDiscriminatorForStruct},
+        Eq::{deriveEqForEnum, deriveEqForStruct},
+        Ord::{deriveOrdForEnum, deriveOrdForStruct},
+        PartialEq::{derivePartialEqForEnum, derivePartialEqForStruct},
+        PartialOrd::{derivePartialOrdForEnum, derivePartialOrdForStruct},
     },
     syntax::Module::{Module, ModuleItem},
 };
@@ -12,8 +16,43 @@ pub fn processModule(module: &Module) -> Module {
     let mut instances = Vec::new();
     for item in &module.items {
         match item {
-            ModuleItem::Struct(_) => {
-                //println!("Found struct: {}", structDef.name);
+            ModuleItem::Struct(structDef) => {
+                for derive in &structDef.derives {
+                    //println!("  Derive: {} struct {}", derive.name, structDef.name);
+                    match derive.name.name().as_ref() {
+                        "Clone" => {
+                            let i = deriveCloneForStruct(structDef);
+                            instances.push(i);
+                        }
+                        "Copy" => {
+                            let i = deriveCopyForStruct(structDef);
+                            instances.push(i);
+                        }
+                        "Eq" => {
+                            let i = deriveEqForStruct(structDef);
+                            instances.push(i);
+                        }
+                        "PartialEq" => {
+                            let i = derivePartialEqForStruct(structDef);
+                            instances.push(i);
+                        }
+                        "PartialOrd" => {
+                            let i = derivePartialOrdForStruct(structDef);
+                            instances.push(i);
+                        }
+                        "Ord" => {
+                            let i = deriveOrdForStruct(structDef);
+                            instances.push(i);
+                        }
+                        "Discriminator" => {
+                            let i = deriveDiscriminatorForStruct(structDef);
+                            instances.push(i);
+                        }
+                        _ => {
+                            //
+                        }
+                    }
+                }
             }
             ModuleItem::Enum(enumDef) => {
                 let mut discriminatorNeeded = false;

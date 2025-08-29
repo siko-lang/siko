@@ -1,7 +1,7 @@
 use crate::siko::{
     resolver::autoderive::Util::withBlock,
     syntax::{
-        Data::Enum,
+        Data::{Enum, Struct},
         Expr::{Branch, Expr, SimpleExpr},
         Function::{Function, Parameter},
         Identifier::Identifier,
@@ -32,7 +32,7 @@ pub fn deriveDiscriminatorForEnum(enumDef: &Enum) -> Instance {
         Some(decl)
     };
     let enumTy = Type::Named(enumDef.name.clone(), typeArgs);
-    let eqFn = getDiscriminatorFn(enumDef);
+    let eqFn = getDiscriminatorFnForEnum(enumDef);
     let types = vec![enumTy];
     let instance = Instance {
         public: true,
@@ -48,7 +48,7 @@ pub fn deriveDiscriminatorForEnum(enumDef: &Enum) -> Instance {
     instance
 }
 
-fn getDiscriminatorFn(enumDef: &Enum) -> Function {
+fn getDiscriminatorFnForEnum(enumDef: &Enum) -> Function {
     let intTy = Type::Named(
         Identifier::new("Int.Int".to_string(), enumDef.name.location()),
         Vec::new(),
@@ -95,6 +95,76 @@ fn getDiscriminatorFn(enumDef: &Enum) -> Function {
         }],
         location: enumDef.name.location(),
     };
+    Function {
+        public: true,
+        name: fnName,
+        params: params,
+        typeParams: None,
+        result: intTy,
+        body: Some(body),
+        externKind: None,
+    }
+}
+
+pub fn deriveDiscriminatorForStruct(structDef: &Struct) -> Instance {
+    let traitName = Identifier::new("Std.Ops.Basic.Discriminator".to_string(), structDef.name.location());
+    let instanceName = Identifier::new(
+        format!("Discriminator_{}", structDef.name.name()),
+        structDef.name.location(),
+    );
+    let typeArgs = match structDef.typeParams {
+        Some(ref tp) => tp.params.iter().map(|p| Type::Named(p.clone(), Vec::new())).collect(),
+        None => Vec::new(),
+    };
+    let typeParams = if typeArgs.is_empty() {
+        None
+    } else {
+        let decl = TypeParameterDeclaration {
+            params: structDef.typeParams.as_ref().unwrap().params.clone(),
+            constraints: Vec::new(),
+        };
+        Some(decl)
+    };
+    let structTy = Type::Named(structDef.name.clone(), typeArgs);
+    let discriminatorFn = getDiscriminatorFnForStruct(structDef);
+    let types = vec![structTy];
+    let instance = Instance {
+        public: true,
+        name: Some(instanceName),
+        typeParams: typeParams,
+        traitName: traitName,
+        types: types,
+        associatedTypes: Vec::new(),
+        methods: vec![discriminatorFn],
+        location: structDef.name.location(),
+    };
+    //crate::siko::syntax::Format::format_any(&instance);
+    instance
+}
+
+fn getDiscriminatorFnForStruct(structDef: &Struct) -> Function {
+    let intTy = Type::Named(
+        Identifier::new("Int.Int".to_string(), structDef.name.location()),
+        Vec::new(),
+    );
+    let fnName = Identifier::new("discriminator".to_string(), structDef.name.location());
+    let mut params = Vec::new();
+    params.push(Parameter::RefSelfParam);
+
+    // Structs always return 0 as their discriminator
+    let zeroLiteral = Expr {
+        expr: SimpleExpr::IntegerLiteral("0".to_string()),
+        location: structDef.name.location(),
+    };
+
+    let body = Block {
+        statements: vec![Statement {
+            kind: StatementKind::Expr(zeroLiteral),
+            hasSemicolon: false,
+        }],
+        location: structDef.name.location(),
+    };
+
     Function {
         public: true,
         name: fnName,

@@ -3,7 +3,7 @@ use std::vec;
 use crate::siko::{
     resolver::autoderive::Util::{generatePartialOrdFieldComparison, withBlock, withName, withSome},
     syntax::{
-        Data::Enum,
+        Data::{Enum, Struct},
         Expr::{Branch, Expr, SimpleExpr},
         Function::{Function, Parameter},
         Identifier::Identifier,
@@ -197,6 +197,129 @@ fn getPartialCmpFn(enumDef: &Enum, enumTy: &Type) -> Function {
         }],
         location: enumDef.name.location(),
     };
+    Function {
+        public: true,
+        name: fnName,
+        params: params,
+        typeParams: None,
+        result: optionOrderingTy,
+        body: Some(body),
+        externKind: None,
+    }
+}
+
+pub fn derivePartialOrdForStruct(structDef: &Struct) -> Instance {
+    let traitName = Identifier::new("Std.Cmp.PartialOrd".to_string(), structDef.name.location());
+    let instanceName = Identifier::new(
+        format!("PartialOrd_{}", structDef.name.name()),
+        structDef.name.location(),
+    );
+    let typeArgs = match structDef.typeParams {
+        Some(ref tp) => tp.params.iter().map(|p| Type::Named(p.clone(), Vec::new())).collect(),
+        None => Vec::new(),
+    };
+    let mut constraints = Vec::new();
+
+    // Add PartialOrd constraints for type parameters only
+    for arg in typeArgs.iter() {
+        constraints.push(Constraint {
+            name: traitName.clone(),
+            args: vec![ConstraintArgument::Type(arg.clone())],
+        });
+    }
+
+    let typeParams = if typeArgs.is_empty() {
+        None
+    } else {
+        let decl = TypeParameterDeclaration {
+            params: structDef.typeParams.as_ref().unwrap().params.clone(),
+            constraints: constraints,
+        };
+        Some(decl)
+    };
+    let structTy = Type::Named(structDef.name.clone(), typeArgs);
+    let partialCmpFn = getPartialCmpFnForStruct(structDef, &structTy);
+    let types = vec![structTy];
+    let instance = Instance {
+        public: true,
+        name: Some(instanceName),
+        typeParams: typeParams,
+        traitName: traitName,
+        types: types,
+        associatedTypes: Vec::new(),
+        methods: vec![partialCmpFn],
+        location: structDef.name.location(),
+    };
+    //crate::siko::syntax::Format::format_any(&instance);
+    instance
+}
+
+fn getPartialCmpFnForStruct(structDef: &Struct, structTy: &Type) -> Function {
+    let optionOrderingTy = Type::Named(
+        Identifier::new("Option.Option".to_string(), structDef.name.location()),
+        vec![Type::Named(
+            Identifier::new("Ordering.Ordering".to_string(), structDef.name.location()),
+            Vec::new(),
+        )],
+    );
+    let fnName = Identifier::new("partialCmp".to_string(), structDef.name.location());
+    let mut params = Vec::new();
+    params.push(Parameter::RefSelfParam);
+    let otherName = Identifier::new("other".to_string(), structDef.name.location());
+    let selfRefType = Type::Reference(Box::new(structTy.clone()));
+    params.push(Parameter::Named(otherName, selfRefType, false));
+
+    let body = if structDef.fields.is_empty() {
+        // Empty struct is always equal to another empty struct
+        let equalExpr = withSome(withName("Ordering.Ordering.Equal", structDef.name.location()));
+        Block {
+            statements: vec![Statement {
+                kind: StatementKind::Expr(equalExpr),
+                hasSemicolon: false,
+            }],
+            location: structDef.name.location(),
+        }
+    } else {
+        // Compare all fields for ordering
+        let mut fieldRefs = Vec::new();
+        let mut otherFieldRefs = Vec::new();
+
+        for field in &structDef.fields {
+            let selfFieldAccess = Expr {
+                expr: SimpleExpr::FieldAccess(
+                    Box::new(Expr {
+                        expr: SimpleExpr::SelfValue,
+                        location: structDef.name.location(),
+                    }),
+                    field.name.clone(),
+                ),
+                location: structDef.name.location(),
+            };
+            fieldRefs.push(selfFieldAccess);
+
+            let otherFieldAccess = Expr {
+                expr: SimpleExpr::FieldAccess(
+                    Box::new(Expr {
+                        expr: SimpleExpr::Value(Identifier::new("other".to_string(), structDef.name.location())),
+                        location: structDef.name.location(),
+                    }),
+                    field.name.clone(),
+                ),
+                location: structDef.name.location(),
+            };
+            otherFieldRefs.push(otherFieldAccess);
+        }
+
+        let comparison = generatePartialOrdFieldComparison(fieldRefs, otherFieldRefs, structDef.name.location());
+        Block {
+            statements: vec![Statement {
+                kind: StatementKind::Expr(comparison),
+                hasSemicolon: false,
+            }],
+            location: structDef.name.location(),
+        }
+    };
+
     Function {
         public: true,
         name: fnName,
