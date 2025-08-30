@@ -5,41 +5,41 @@ import Slice
 
 struct InnerVec[T] {
     items: *T,
-    size: Int,
-    capacity: Int
+    size: U64,
+    capacity: U64
 
     fn new() -> InnerVec[T] {
-        InnerVec(null(), 0, 0)
+        InnerVec(null(), 0.toU64(), 0.toU64())
     }
 
     fn push(mut self, item: T) -> Self {
         if self.size == self.capacity {
-            if self.capacity == 0 {
-                self.grow(8);
+            if self.capacity == 0.toU64() {
+                self.grow(8.toU64());
             } else {
-                self.grow(self.capacity * 2);
+                self.grow(self.capacity * 2.toU64());
             }
         }
         let ptr = offset(self.items, self.size);
         *ptr = item;
-        self.size += 1;
+        self.size += 1.toU64();
         self
     }
 
-    fn get(&self, index: Int) -> &T {
+    fn get(&self, index: U64) -> &T {
         if self.size <= index {
             panic("OutOfBounds");
         }
         self.getUnchecked(index)
     }
 
-    fn getUnchecked(&self, index: Int) -> &T {
+    fn getUnchecked(&self, index: U64) -> &T {
         let ptr = offset(self.items, index);
         toRef(ptr)
     }
 
-    pub fn remove(mut self, index: Int) -> Self {
-        if index < 0 or index >= self.size {
+    pub fn remove(mut self, index: U64) -> Self {
+        if index < 0.toU64() or index >= self.size {
             panic("OutOfBounds");
         }
         let ptr = offset(self.items, index);
@@ -47,17 +47,17 @@ struct InnerVec[T] {
             let item = *ptr; // drop the item at the index
         }
         // shift the items to the left using memmove
-        let nextPtr = offset(self.items, index + 1);
+        let nextPtr = offset(self.items, (index + 1.toU64()));
         let destPtr = offset(self.items, index);
-        memmove(destPtr, nextPtr, (self.size - index - 1));
-        self.size -= 1;
+        memmove(destPtr, nextPtr, (self.size - index - 1.toU64()));
+        self.size -= 1.toU64();
         self
     }
 
-    fn grow(mut self, capacity: Int) -> Self {
+    fn grow(mut self, capacity: U64) -> Self {
         self.capacity = capacity;
         let newItems: *T = allocateArray(self.capacity);
-        if self.size > 0 {
+        if self.size > 0.toU64() {
             memcpy(newItems, self.items, self.size);
         }
         deallocate(self.items);
@@ -75,7 +75,7 @@ pub struct Vec[T] {
 
     pub fn withCapacity(capacity: Int) -> Vec[T] {
         let mut vec = Vec.new();
-        vec.inner.grow(capacity);
+        vec.inner.grow(capacity.toU64());
         vec
     }
 
@@ -85,32 +85,32 @@ pub struct Vec[T] {
     }
 
     pub fn get(&self, index: Int) -> &T {
-        self.inner.get(index)
+        self.inner.get(index.toU64())
     }
 
     pub fn getUnchecked(&self, index: Int) -> &T {
-        self.inner.getUnchecked(index)
+        self.inner.getUnchecked(index.toU64())
     }
 
     pub fn remove(mut self, index: Int) -> Self {
-        self.inner.remove(index);
+        self.inner.remove(index.toU64());
         self
     }
 
     pub fn iter(&self) -> VecIteratorRef[T] {
-        VecIteratorRef(&self, 0)
+        VecIteratorRef(&self, 0.toU64())
     }
 
     pub fn intoIter(self) -> VecIterator[T] {
-        VecIterator(self.inner, 0)
+        VecIterator(self.inner, 0.toU64())
     }
 
     pub fn len(&self) -> Int {
-        self.inner.size
+        self.inner.size.toInt()
     }
 
     pub fn empty(&self) -> Bool {
-        self.inner.size == 0
+        self.inner.size == 0.toU64()
     }
 
     pub fn slice(&self) -> Slice[T] {
@@ -118,7 +118,7 @@ pub struct Vec[T] {
     }
 
     pub fn swap(self, i: Int, j: Int) -> Self {
-        self.slice().swap(i, j);
+        self.slice().swap(i.toU64(), j.toU64());
         self
     }
 
@@ -148,12 +148,12 @@ pub struct Vec[T] {
 
 struct VecIterator[T] {
     inner: InnerVec[T],
-    index: Int
+    index: U64
 }
 
 instance[T] Drop[VecIterator[T]] {
     fn drop(mut self) -> Self {
-        if self.inner.capacity == 0 {
+        if self.inner.capacity == 0.toU64() {
             return self
         }
         loop {
@@ -161,7 +161,7 @@ instance[T] Drop[VecIterator[T]] {
                 break;
             }
             let ptr = offset(self.inner.items, self.index);
-            self.index = self.index + 1;
+            self.index = self.index + 1.toU64();
             let item = *ptr;
         }
         deallocate(self.inner.items);
@@ -178,7 +178,7 @@ pub instance[T] IteratorVecIterator Iterator[VecIterator[T]] {
             return (self, None)
         }
         let ptr = offset(self.inner.items, self.index);
-        self.index = self.index + 1;
+        self.index = self.index + 1.toU64();
         let item = *ptr;
         (self, Some(item))
     }
@@ -195,7 +195,7 @@ pub instance[T] IntoIteratorVec IntoIterator[Vec[T]] {
 
 struct VecIteratorRef[T] {
     vec: &Vec[T]
-    index: Int
+    index: U64
 }
 
 pub instance[T] IteratorVecIteratorRef Iterator[VecIteratorRef[T]] {
@@ -205,8 +205,8 @@ pub instance[T] IteratorVecIteratorRef Iterator[VecIteratorRef[T]] {
         if self.index >= self.vec.inner.size {
             return (self, None)
         }
-        let item = self.vec.getUnchecked(self.index);
-        self.index = self.index + 1;
+        let item = self.vec.inner.getUnchecked(self.index);
+        self.index = self.index + 1.toU64();
         (self, Some(item))
     }
 }
@@ -214,7 +214,7 @@ pub instance[T] IteratorVecIteratorRef Iterator[VecIteratorRef[T]] {
 instance[T] Drop[Vec[T]] {
     fn drop(mut self) -> Self {
         {
-            let iter = VecIterator(self.inner, 0);
+            let iter = VecIterator(self.inner, 0.toU64());
             self.inner = InnerVec.new();
         }
         self

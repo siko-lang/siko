@@ -1,0 +1,32 @@
+module Array {
+
+import NativePtr
+import Slice
+
+pub extern struct Array[T, Size] {
+    pub fn uninitialized() -> Array[T, Size] = extern
+
+    pub fn len(&self) -> Int = extern
+
+    pub fn base(&self) -> *T = extern
+
+    pub fn sizeInBytes(&self) -> U64 {
+        let p: *T = null();
+        self.len().toU64() * sizeOf(p)
+    }
+
+    pub fn slice(&self) -> Slice[T] {
+        Slice.new(self.base(), self.len().toU64())
+    }
+
+    pub fn fill[T: Clone[T]](&self, value: T) {
+        let base = self.base();
+        let size = sizeOf(base);
+        for i in 0..self.len() {
+            let p = NativePtr.offset(base, i.toU64() * size);
+            *p = value.clone();
+        }
+    }
+}
+
+}

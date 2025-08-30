@@ -75,10 +75,17 @@ impl Program {
                 ty: Type::Int32,
             };
             let itemSize = u.alignment * 8;
+            let itemTy = match itemSize / 8 {
+                1 => Type::Int8,
+                2 => Type::Int16,
+                4 => Type::Int32,
+                8 => Type::Int64,
+                _ => panic!("unsupported alignment {}", itemSize),
+            };
             //println!("payloadsize {}", u.payloadSize);
             let payload = Field {
                 name: format!("payload"),
-                ty: Type::Array(u.payloadSize * 8 / itemSize, itemSize),
+                ty: Type::Array(Box::new(itemTy), u.payloadSize * 8 / itemSize),
             };
             let s = Struct {
                 name: n.clone(),
@@ -160,20 +167,7 @@ impl Program {
                 let mut offset = 0;
                 let mut totalAlignment = 4;
                 for f in &item.fields {
-                    let size = match &f.ty {
-                        Type::Void => 0,
-                        Type::UInt8 => 1,
-                        Type::UInt32 => 4,
-                        Type::UInt64 => 8,
-                        Type::Int8 => 1,
-                        Type::Int16 => 2,
-                        Type::Int32 => 4,
-                        Type::Int64 => 8,
-                        Type::Struct(n) => self.getStruct(n).size,
-                        Type::Union(n) => self.getUnion(n).size,
-                        Type::Ptr(_) => 8,
-                        Type::Array(s, itemSize) => *s * *itemSize,
-                    };
+                    let size = self.getTypesize(&f.ty);
                     let alignment = match &f.ty {
                         Type::Void => 1,
                         Type::UInt8 => 1,
@@ -207,20 +201,7 @@ impl Program {
                 let mut totalAlignment = 4;
                 let mut maxSize = 0;
                 for v in &item.variants {
-                    let size = match &v.ty {
-                        Type::Void => 0,
-                        Type::UInt8 => 1,
-                        Type::UInt32 => 4,
-                        Type::UInt64 => 8,
-                        Type::Int8 => 1,
-                        Type::Int16 => 2,
-                        Type::Int32 => 4,
-                        Type::Int64 => 8,
-                        Type::Struct(n) => self.getStruct(n).size,
-                        Type::Union(n) => self.getUnion(n).size,
-                        Type::Ptr(_) => 8,
-                        Type::Array(s, itemSize) => *s * *itemSize,
-                    };
+                    let size = self.getTypesize(&v.ty);
                     let alignment = match &v.ty {
                         Type::Void => 0,
                         Type::UInt8 => 1,
@@ -248,6 +229,23 @@ impl Program {
                 //println!("Union {} size: {}, alignment {}", item.name, item.size, item.alignment);
                 self.unions.insert(item.name.clone(), item);
             }
+        }
+    }
+
+    fn getTypesize(&self, ty: &Type) -> u32 {
+        match ty {
+            Type::Void => 0,
+            Type::UInt8 => 1,
+            Type::UInt32 => 4,
+            Type::UInt64 => 8,
+            Type::Int8 => 1,
+            Type::Int16 => 2,
+            Type::Int32 => 4,
+            Type::Int64 => 8,
+            Type::Struct(n) => self.getStruct(n).size,
+            Type::Union(n) => self.getUnion(n).size,
+            Type::Ptr(_) => 8,
+            Type::Array(item, size) => self.getTypesize(item) * *size,
         }
     }
 }

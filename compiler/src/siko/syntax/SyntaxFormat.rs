@@ -372,6 +372,7 @@ impl Format for Type {
             }
             Type::SelfType => vec![Token::Chunk("Self".to_string())],
             Type::Never => vec![Token::Chunk("!".to_string())],
+            Type::NumericConstant(value) => vec![Token::Chunk(format!("{}", value))],
         }
     }
 }

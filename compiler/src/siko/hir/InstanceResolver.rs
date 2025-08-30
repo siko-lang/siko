@@ -119,7 +119,7 @@ impl<'a> InstanceResolver<'a> {
     }
 
     pub fn findInstanceInScope(&self, constraint: &Constraint) -> InstanceSearchResult {
-        // println!("Finding instance in scope for constraint {}", constraint);
+        //println!("Finding instance in scope for constraint {}", constraint);
         // for instance in &self.instanceStore.localInstances {
         //     println!("Local instance: {}", instance);
         // }
@@ -130,6 +130,15 @@ impl<'a> InstanceResolver<'a> {
     }
 
     pub fn findInstanceInScopeInner(&self, constraint: &Constraint, level: u32) -> InstanceSearchResult {
+        for arg in constraint.args.iter() {
+            if arg.isGeneric() {
+                return InstanceSearchResult::NotFound;
+            }
+        }
+        // println!(
+        //     "Finding instance in scope for constraint {} at level {}",
+        //     constraint, level
+        // );
         if level > 10 {
             // Prevent infinite recursion
             panic!("Instance resolution exceeded maximum recursion depth");

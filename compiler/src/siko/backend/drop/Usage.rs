@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use crate::siko::{
-    backend::drop::{Path::Path, Util::buildFieldPath},
+    backend::drop::{Path::Path, ReferenceStore::ReferenceStore, Util::buildFieldPath},
     hir::{Instruction::InstructionKind, Variable::Variable},
 };
 
@@ -56,6 +56,18 @@ impl UsageInfo {
     }
 }
 
+impl Display for UsageInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let usages: Vec<String> = self.usages.iter().map(|u| format!("{}", u)).collect();
+        let assign = if let Some(assign) = &self.assign {
+            format!("assign: {}", assign)
+        } else {
+            "no assign".to_string()
+        };
+        write!(f, "usages: [{}], {}", usages.join(", "), assign)
+    }
+}
+
 fn varToUsage(var: &Variable) -> Usage {
     let ty = var.getType();
     //println!("Using variable: {} {}", var.name().visibleName(), ty);
@@ -73,7 +85,7 @@ fn varToUsage(var: &Variable) -> Usage {
     }
 }
 
-pub fn getUsageInfo(kind: InstructionKind) -> UsageInfo {
+pub fn getUsageInfo(kind: InstructionKind, referenceStore: &ReferenceStore) -> UsageInfo {
     match kind {
         InstructionKind::DeclareVar(_, _) => UsageInfo::empty(),
         InstructionKind::BlockStart(_) => UsageInfo::empty(),
@@ -87,7 +99,7 @@ pub fn getUsageInfo(kind: InstructionKind) -> UsageInfo {
         InstructionKind::FieldRef(dest, receiver, names) => {
             let destTy = dest.getType();
             let path = buildFieldPath(&receiver, &names);
-            let kind = if destTy.isReference() || destTy.isPtr() {
+            let kind = if destTy.isReference() || destTy.isPtr() || referenceStore.isReference(&dest.name()) {
                 UsageKind::Ref
             } else {
                 UsageKind::Move

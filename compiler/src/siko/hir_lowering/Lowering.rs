@@ -29,8 +29,8 @@ use crate::siko::{
     },
     qualifiedname::{
         builtins::{
-            getBoolTypeName, getFalseName, getI32TypeName, getI8TypeName, getIntTypeName, getTrueName, getU64TypeName,
-            getU8TypeName,
+            getArrayTypeName, getBoolTypeName, getFalseName, getI32TypeName, getI8TypeName, getIntTypeName,
+            getTrueName, getU64TypeName, getU8TypeName,
         },
         QualifiedName,
     },
@@ -453,19 +453,38 @@ pub fn lowerType(ty: &HirType, program: &HirProgram) -> MirType {
         HirType::Ptr(ty) => MirType::Ptr(Box::new(lowerType(ty, program))),
         HirType::SelfType => todo!(),
         HirType::Never(_) => MirType::Void,
+        HirType::NumericConstant(_) => unreachable!("NumericConstant ty lowering in MIR"),
     }
 }
 
 pub fn lowerStruct(c: &HirStruct, program: &HirProgram) -> Struct {
-    //println!("Lowering structDef {}", c.name);
-    let mut fields = Vec::new();
-    for f in &c.fields {
-        let mirField = MirField {
-            name: f.name.clone(),
-            ty: lowerType(&f.ty, program),
+    let (base, ctx) = c.name.getUnmonomorphized();
+    let fields = if base == getArrayTypeName() {
+        let ctx = ctx.expect("Array type without context");
+        let itemTy = ctx.args[0].clone();
+        let itemTy = lowerType(&itemTy, program);
+        let len = match &ctx.args[1] {
+            HirType::NumericConstant(v) => v,
+            _ => panic!("Array length is not a numeric constant"),
         };
-        fields.push(mirField);
-    }
+        let len = (&len).parse().expect("Array length is not a valid number");
+        let mirField = MirField {
+            name: format!("field0"),
+            ty: MirType::Array(Box::new(itemTy), len),
+        };
+        vec![mirField]
+    } else {
+        let mut fields = Vec::new();
+        for f in &c.fields {
+            let mirField = MirField {
+                name: f.name.clone(),
+                ty: lowerType(&f.ty, program),
+            };
+            fields.push(mirField);
+        }
+        fields
+    };
+    //println!("Lowering structDef {}", c.name);
     Struct {
         name: convertName(&c.name),
         fields: fields,

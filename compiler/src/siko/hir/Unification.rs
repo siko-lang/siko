@@ -79,6 +79,13 @@ pub fn unify(sub: &mut Substitution, ty1: Type, ty2: Type, allowNamed: bool) -> 
             }
             return unify(sub, *res1, *res2, allowNamed);
         }
+        (Type::NumericConstant(v1), Type::NumericConstant(v2)) => {
+            if v1 == v2 {
+                Ok(())
+            } else {
+                Err(Error {})
+            }
+        }
         _ => return Err(Error {}),
     }
 }

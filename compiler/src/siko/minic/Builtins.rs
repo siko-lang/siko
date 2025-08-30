@@ -3,21 +3,54 @@ use std::{
     io::{self, Write},
 };
 
-use crate::siko::qualifiedname::{
-    builtins::{
-        getIntAddName, getIntDivName, getIntEqName, getIntLessThanName, getIntModName, getIntMulName, getIntSubName,
-        getIntToI32Name, getIntToU32Name, getIntToU64Name, getIntToU8Name, getNativePtrCastName,
-        getNativePtrSizeOfName, getNativePtrTransmuteName, getStdBasicUtilAbortName, IntKind,
+use crate::siko::{
+    minic::{Program::Program, Type::Type},
+    qualifiedname::{
+        builtins::{
+            getArrayBaseName, getArrayLenName, getArrayUninitializedName, getIntAddName, getIntDivName, getIntEqName,
+            getIntLessThanName, getIntModName, getIntMulName, getIntSubName, getIntToI32Name, getIntToU32Name,
+            getIntToU64Name, getIntToU8Name, getNativePtrCastName, getNativePtrSizeOfName, getNativePtrTransmuteName,
+            getStdBasicUtilAbortName, IntKind,
+        },
+        QualifiedName,
     },
-    QualifiedName,
 };
 
 use super::{Function::Function, Generator::getTypeName};
 
-pub fn dumpBuiltinFunction(f: &Function, args: &Vec<String>, buf: &mut File) -> io::Result<bool> {
-    if f.name
-        .starts_with(&getNativePtrSizeOfName().toString().replace(".", "_"))
-    {
+pub fn dumpBuiltinFunction(f: &Function, args: &Vec<String>, buf: &mut File, program: &Program) -> io::Result<bool> {
+    if isFn(f, &getArrayUninitializedName()) {
+        writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+        writeln!(buf, "    {} val;", getTypeName(&f.result))?;
+        writeln!(buf, "    return val;")?;
+        writeln!(buf, "}}\n")?;
+        return Ok(true);
+    }
+
+    if isFn(f, &getArrayLenName()) {
+        let arg = f.args.get(0).expect("Array.len without param");
+        let s = match &arg.ty.getBase() {
+            Type::Struct(s) => program.getStruct(s),
+            ty => panic!("Array.len param is not a struct: {}", getTypeName(ty)),
+        };
+        let len = match s.fields[0].ty {
+            Type::Array(_, len) => len,
+            _ => panic!("Array.len param field is not array"),
+        };
+        writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+        writeln!(buf, "    return {};", len)?;
+        writeln!(buf, "}}\n")?;
+        return Ok(true);
+    }
+
+    if isFn(f, &getArrayBaseName()) {
+        writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+        writeln!(buf, "    return self->field0;")?;
+        writeln!(buf, "}}\n")?;
+        return Ok(true);
+    }
+
+    if isFn(f, &getNativePtrSizeOfName()) {
         writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
         writeln!(buf, "    return sizeof(*addr);")?;
         writeln!(buf, "}}\n")?;
@@ -80,37 +113,35 @@ pub fn dumpBuiltinFunction(f: &Function, args: &Vec<String>, buf: &mut File) -> 
         return Ok(true);
     }
 
-    if f.name.starts_with(&getIntToU8Name().toString().replace(".", "_")) {
+    if isFn(f, &getIntToU8Name()) {
         writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
         writeln!(buf, "    return (uint8_t)*self;")?;
         writeln!(buf, "}}\n")?;
         return Ok(true);
     }
 
-    if f.name.starts_with(&getIntToU32Name().toString().replace(".", "_")) {
+    if isFn(f, &getIntToU32Name()) {
         writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
         writeln!(buf, "    return (uint32_t)*self;")?;
         writeln!(buf, "}}\n")?;
         return Ok(true);
     }
 
-    if f.name.starts_with(&getIntToU64Name().toString().replace(".", "_")) {
+    if isFn(f, &getIntToU64Name()) {
         writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
         writeln!(buf, "    return (uint64_t)*self;")?;
         writeln!(buf, "}}\n")?;
         return Ok(true);
     }
 
-    if f.name.starts_with(&getIntToI32Name().toString().replace(".", "_")) {
+    if isFn(f, &getIntToI32Name()) {
         writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
         writeln!(buf, "    return (int32_t)*self;")?;
         writeln!(buf, "}}\n")?;
         return Ok(true);
     }
 
-    if f.name
-        .starts_with(&getStdBasicUtilAbortName().toString().replace(".", "_"))
-    {
+    if isFn(f, &getStdBasicUtilAbortName()) {
         writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
         writeln!(buf, "    abort();")?;
         writeln!(buf, "}}\n")?;

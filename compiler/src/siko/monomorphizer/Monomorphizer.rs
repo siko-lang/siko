@@ -34,7 +34,10 @@ use crate::siko::{
         Queue::Key,
         Utils::Monomorphize,
     },
-    qualifiedname::{builtins::getMainName, QualifiedName},
+    qualifiedname::{
+        builtins::{getArrayTypeName, getMainName},
+        QualifiedName,
+    },
 };
 
 impl Monomorphize for Variable {
@@ -211,6 +214,15 @@ impl<'a> Monomorphizer<'a> {
         }
         let r = match ty.clone() {
             Type::Named(name, args) => {
+                let args = if name == getArrayTypeName() {
+                    let mut newArgs = Vec::new();
+                    for arg in args {
+                        newArgs.push(self.processType(arg));
+                    }
+                    newArgs
+                } else {
+                    args
+                };
                 let monoName = self.getMonoName(&name, &args, HandlerResolution::new(), Vec::new());
                 if self.program.structs.contains_key(&name) {
                     self.addKey(Key::Struct(name, args))
@@ -234,6 +246,7 @@ impl<'a> Monomorphizer<'a> {
             Type::Ptr(ty) => Type::Ptr(Box::new(self.processType(*ty))),
             Type::SelfType => Type::SelfType,
             Type::Never(v) => Type::Never(v),
+            Type::NumericConstant(value) => Type::NumericConstant(value),
         };
         self.processed_type.insert(ty, r.clone());
         r
@@ -298,6 +311,7 @@ impl<'a> Monomorphizer<'a> {
             })
             .collect();
         e.methods.clear();
+        e.ty = self.processType(targetTy);
         e.name = name.clone();
         self.monomorphizedProgram.enums.insert(name, e);
     }

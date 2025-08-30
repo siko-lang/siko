@@ -74,6 +74,7 @@ impl<'a> TypeResolver<'a> {
             Type::Ptr(ty) => IrType::Ptr(Box::new(self.resolveType(ty))),
             Type::SelfType => IrType::SelfType,
             Type::Never => IrType::Never(true),
+            Type::NumericConstant(value) => IrType::NumericConstant(value.clone()),
         }
     }
 

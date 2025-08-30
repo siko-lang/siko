@@ -81,8 +81,8 @@ impl<'a> FunctionCallResolver<'a> {
         //     "Checking trait (method?) call: {} {} {} {}",
         //     f.name, fnType, f.constraintContext, self.knownConstraints
         // );
-        //let destType = self.getType(resultVar).apply(&self.substitution);
-        //println!("Dest type: {}", destType);
+        // let destType = self.unifier.apply(resultVar.getType());
+        // println!("Dest type: {}", destType);
         let mut types = f.constraintContext.typeParameters.clone();
         types.push(fnType.clone());
         let sub = instantiateTypes(&mut self.allocator, &types);

@@ -1,51 +1,68 @@
 module Range {
 
-pub struct Range {
-    start: Int,
-    end: Int
+pub struct Range[T] {
+    start: T,
+    end: T
 
-    pub fn range(start: Int, end: Int) -> Range {
+    pub fn range[T](start: T, end: T) -> Range[T] {
         Range(start, end)
     }
 
-    pub fn contains(&self, value: Int) -> Bool {
+    pub fn contains[T: Ord[T]](&self, value: T) -> Bool {
         value >= self.start and value < self.end
     }
 
-    pub fn intoIterator(self) -> RangeIterator {
+    pub fn intoIterator[T: Clone[T]](self) -> RangeIterator[T] {
         RangeIterator.new(self)
     }
 }
 
-pub struct RangeIterator {
-    range: Range,
-    current: Int,
+pub struct RangeIterator[T] {
+    range: Range[T],
+    current: T,
 
-    pub fn new(range: Range) -> RangeIterator {
-        RangeIterator(range, range.start)
+    pub fn new[T: Clone[T]](range: Range[T]) -> RangeIterator[T] {
+        RangeIterator(range, range.start.clone())
     }
 }
 
-pub instance IntoIteratorRange IntoIterator[Range] {
-    type Item = Int
-    type Iter = RangeIterator
+pub instance[T: Clone[T]] IntoIteratorRange IntoIterator[Range[T]] {
+    type Item = T
+    type Iter = RangeIterator[T]
 
-    fn intoIterator(self) -> RangeIterator {
+    fn intoIterator(self) -> RangeIterator[T] {
         RangeIterator.new(self)
     }
 }
 
-pub instance IteratorRangeIterator Iterator[RangeIterator] {
-    type Item = Int
+pub instance[T: Ord[T], Step[T]] IteratorRangeIterator Iterator[RangeIterator[T]] {
+    type Item = T
 
-    fn next(mut self) -> (Self, Option[Int]) {
+    fn next(mut self) -> (Self, Option[T]) {
         if self.current < self.range.end {
-            let nextValue = self.current;
-            self.current = self.current + 1;
-            (self, Some(nextValue))
+            let nextValue = self.current.step();
+            let current = self.current;
+            self.current = nextValue;
+            (self, Some(current))
         } else {
             (self, None)
         }
+    }
+}
+
+pub trait Step[T] {
+    fn step(&self) -> T
+}
+
+pub instance Step[Int] {
+    fn step(&self) -> Int {
+        self.clone() + 1
+    }
+}
+
+pub instance Step[U64] {
+    fn step(&self) -> U64 {
+        self.clone() + 1.toU64()
     }
 }
 

@@ -14,6 +14,7 @@ use crate::siko::{
         Finalizer::Finalizer,
         Initializer::Initializer,
         Path::Path,
+        ReferenceStore::ReferenceStore,
     },
     hir::{
         BodyBuilder::BodyBuilder,
@@ -35,13 +36,20 @@ pub fn checkDrops(ctx: &ReportContext, program: Program) -> Program {
     for (name, f) in &program.functions {
         let mut dropMetadataStore = DropMetadataStore::new();
         let mut declarationStore = DeclarationStore::new();
-        let mut initializer = Initializer::new(f, &program, &mut dropMetadataStore, &mut declarationStore);
+        let mut referenceStore = ReferenceStore::new();
+        let mut initializer = Initializer::new(
+            f,
+            &program,
+            &mut dropMetadataStore,
+            &mut declarationStore,
+            &mut referenceStore,
+        );
         let f = initializer.process();
         //declarationStore.dump();
-        let mut checker = DropChecker::new(&f, ctx, &program, &mut dropMetadataStore);
+        let mut checker = DropChecker::new(&f, ctx, &program, &mut dropMetadataStore, &referenceStore);
         //println!("Checking drops for {}", name);
         let f = checker.process();
-        let mut finalizer = Finalizer::new(&f, &program, &mut dropMetadataStore, &declarationStore);
+        let mut finalizer = Finalizer::new(&f, &program, &mut dropMetadataStore, &declarationStore, &referenceStore);
         let f = finalizer.process();
         if false {
             let graph = GraphBuilder::new(&f).withPostfix("dropcheck").build();
@@ -73,6 +81,7 @@ pub struct DropChecker<'a> {
     dropMetadataStore: &'a mut DropMetadataStore,
     implResolver: InstanceResolver<'a>,
     fnCallResolver: FunctionCallResolver<'a>,
+    referenceStore: &'a ReferenceStore,
 }
 
 impl<'a> DropChecker<'a> {
@@ -81,6 +90,7 @@ impl<'a> DropChecker<'a> {
         ctx: &'a ReportContext,
         program: &'a Program,
         dropMetadataStore: &'a mut DropMetadataStore,
+        referenceStore: &'a ReferenceStore,
     ) -> DropChecker<'a> {
         let (implResolver, fnCallResolver) = createResolvers(f, ctx, program);
         DropChecker {
@@ -92,6 +102,7 @@ impl<'a> DropChecker<'a> {
             dropMetadataStore,
             implResolver,
             fnCallResolver,
+            referenceStore,
         }
     }
 
@@ -121,7 +132,7 @@ impl<'a> DropChecker<'a> {
             //println!("Adding case {} to visited", case);
             //println!("Processed {} cases", visited.len());
             let builder = self.bodyBuilder.iterator(case.blockId);
-            let mut blockProcessor = BlockProcessor::new(self.dropMetadataStore);
+            let mut blockProcessor = BlockProcessor::new(self.dropMetadataStore, self.referenceStore);
             let (context, jumpTargets) = blockProcessor.process(builder, case.context);
             let collisions = context.validate();
             allCollisions.extend(collisions);

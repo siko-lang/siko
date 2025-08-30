@@ -35,7 +35,7 @@ pub fn getTypeName(ty: &Type) -> String {
         Type::Int64 => "int64_t".to_string(),
         Type::Struct(n) => format!("struct {}", getStructName(n)),
         Type::Ptr(i) => format!("{}*", getTypeName(i)),
-        Type::Array(_, itemSize) => format!("int{}_t", itemSize),
+        Type::Array(ty, size) => format!("{}[{}]", getTypeName(ty), size),
     }
 }
 
@@ -67,14 +67,8 @@ impl MiniCGenerator {
         let name = getStructName(&s.name);
         writeln!(buf, "struct {} {{", name)?;
         for (index, field) in s.fields.iter().enumerate() {
-            if field.ty.isArray() {
-                writeln!(
-                    buf,
-                    "  {} field{}[{}];",
-                    getTypeName(&field.ty),
-                    index,
-                    field.ty.getArraySize()
-                )?;
+            if let Type::Array(ty, size) = &field.ty {
+                writeln!(buf, "  {} field{}[{}];", getTypeName(&ty), index, size)?;
             } else {
                 writeln!(buf, "  {} field{};", getTypeName(&field.ty), index)?;
             }
@@ -235,7 +229,7 @@ impl MiniCGenerator {
             }
         }
 
-        if dumpBuiltinFunction(f, &args, buf)? {
+        if dumpBuiltinFunction(f, &args, buf, &self.program)? {
             return Ok(());
         }
 

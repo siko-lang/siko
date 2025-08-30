@@ -11,6 +11,7 @@ use crate::siko::hir::{
 };
 
 pub fn instantiateEnum(allocator: &TypeVarAllocator, e: &Enum, ty: &Type) -> Enum {
+    //println!("Instantiating enum {} {} to type {}", e.name, e.ty, ty);
     let sub = instantiateTypes(allocator, &vec![e.ty.clone()]);
     let mut e = e.clone();
     e = e.apply(&sub);

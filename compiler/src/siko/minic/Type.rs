@@ -10,7 +10,7 @@ pub enum Type {
     Int64,
     Struct(String),
     Ptr(Box<Type>),
-    Array(u32, u32),
+    Array(Box<Type>, u32),
 }
 
 impl Type {
@@ -44,7 +44,7 @@ impl Type {
 
     pub fn getArraySize(&self) -> u32 {
         match self {
-            Type::Array(s, _) => *s,
+            Type::Array(_, s) => *s,
             _ => unreachable!(),
         }
     }

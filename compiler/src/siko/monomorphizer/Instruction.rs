@@ -113,44 +113,23 @@ pub fn processInstruction(
                     // // println!("trait call fn type {}", _fn_ty);
                     // // println!("trait call context type {}", context_ty);
                     // // println!("all available implementations: {:?}", impls);
-                    // println!("Substitution: {} ", sub);
-                    // let traitDef = mono.program.getTrait(&traitName).expect("trait not found in mono");
-                    // let allocator = TypeVarAllocator::new();
-                    // let traitDef = instantiateTrait(&allocator, &traitDef);
-                    // let mut unifier = Unifier::new(mono.ctx);
-                    // for m in &traitDef.members {
-                    //     if m.fullName == target_fn.name {
-                    //         println!("Trait member type: {}", m.memberType);
-                    //         unifier.unify(m.memberType.clone(), context_ty.clone(), instruction.location.clone());
-                    //     }
-                    // }
-                    // let traitDef = unifier.apply(traitDef);
-                    // println!("Instantiated trait: {}", traitDef);
-                    // // let instanceStore = mono
-                    // //     .program
-                    // //     .instanceStores
-                    // //     .get(&target_fn.name.module())
-                    // //     .expect("instance store not found");
-                    // // let instanceResolver =
-                    // //     InstanceResolver::new(allocator, instanceStore, &mono.program, ConstraintContext::new());
-                    // let implMemberName = findMatchingImpl(
-                    //     &allocator,
-                    //     &mut unifier,
-                    //     impls,
-                    //     target_fn.name.getShortName(),
-                    //     &context_ty,
-                    //     mono,
-                    //     traitName,
-                    //     traitDef.params.clone(),
-                    //     instruction.location.clone(),
-                    // );
+                    //println!("Substitution: {} ", sub);
                     let mut args = Vec::new();
                     for arg in &info.args {
                         //println!("arg {}", arg);
                         args.push(arg.clone().apply(&sub));
                     }
                     let dest = dest.clone().apply(&sub);
-                    //println!("Trait member call in mono! {}", target_fn.name);
+                    // {
+                    //     println!("Trait member call in mono! {}", target_fn.name);
+                    //     let mut argTypes = Vec::new();
+                    //     for arg in &args {
+                    //         let argType = arg.getType().clone().apply(&sub);
+                    //         argTypes.push(argType);
+                    //     }
+                    //     println!("Args: {}", crate::siko::hir::Type::formatTypes(&argTypes));
+                    //     println!("Dest: {}", dest);
+                    // }
                     let checkresult = fnCallResolver.resolve(&target_fn, &args, &dest, instruction.location.clone());
                     //println!("Resolved to {}", checkresult.fnName);
                     let targetfn = mono

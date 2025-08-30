@@ -13,7 +13,7 @@ pub enum Type {
     Struct(String),
     Union(String),
     Ptr(Box<Type>),
-    Array(u32, u32),
+    Array(Box<Type>, u32),
 }
 
 impl Type {
@@ -79,7 +79,7 @@ impl fmt::Display for Type {
             Type::Struct(name) => write!(f, "struct {}", name),
             Type::Union(name) => write!(f, "union {}", name),
             Type::Ptr(inner) => write!(f, "*{}", inner),
-            Type::Array(size, itemSize) => write!(f, "i{}[{}]", itemSize, size),
+            Type::Array(ty, len) => write!(f, "{}[{}]", ty, len),
         }
     }
 }

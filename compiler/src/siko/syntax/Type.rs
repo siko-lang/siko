@@ -11,6 +11,7 @@ pub enum Type {
     Ptr(Box<Type>),
     SelfType,
     Never,
+    NumericConstant(String),
 }
 
 impl fmt::Display for Type {
@@ -44,6 +45,7 @@ impl fmt::Display for Type {
             Type::Ptr(inner) => write!(f, "*{}", inner),
             Type::SelfType => write!(f, "Self"),
             Type::Never => write!(f, "!"),
+            Type::NumericConstant(value) => write!(f, "{}", value),
         }
     }
 }

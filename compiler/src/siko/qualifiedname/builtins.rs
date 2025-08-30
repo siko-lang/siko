@@ -2,6 +2,22 @@ use std::fmt;
 
 use crate::siko::qualifiedname::{build, QualifiedName};
 
+pub fn getArrayTypeName() -> QualifiedName {
+    build("Array", "Array")
+}
+
+pub fn getArrayUninitializedName() -> QualifiedName {
+    build("Array", "Array").add("uninitialized".to_string())
+}
+
+pub fn getArrayLenName() -> QualifiedName {
+    build("Array", "Array").add("len".to_string())
+}
+
+pub fn getArrayBaseName() -> QualifiedName {
+    build("Array", "Array").add("base".to_string())
+}
+
 pub fn getMainName() -> QualifiedName {
     build("Main", "main")
 }

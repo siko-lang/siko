@@ -38,6 +38,7 @@ impl Apply for Type {
             Type::Ptr(arg) => Type::Ptr(Box::new(arg.apply(sub))),
             Type::SelfType => Type::SelfType,
             Type::Never(v) => Type::Never(v),
+            Type::NumericConstant(value) => Type::NumericConstant(value),
         }
     }
 }
@@ -127,8 +128,9 @@ impl Apply for Trait {
 impl Apply for Variable {
     fn apply(self, sub: &Substitution) -> Self {
         //println!("Applying for {}", self.value);
-        self.setType(self.getType().clone().apply(sub));
-        self
+        let newVar = self.cloneNew();
+        newVar.setType(self.getType().clone().apply(sub));
+        newVar
     }
 }
 

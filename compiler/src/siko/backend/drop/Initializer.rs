@@ -2,6 +2,7 @@ use crate::siko::{
     backend::drop::{
         DeclarationStore::DeclarationStore,
         DropMetadataStore::{DropMetadataStore, MetadataKind},
+        ReferenceStore::ReferenceStore,
         Usage::getUsageInfo,
         Util::HasTrivialDrop,
     },
@@ -22,6 +23,7 @@ pub struct Initializer<'a> {
     program: &'a Program,
     dropMetadataStore: &'a mut DropMetadataStore,
     declarationStore: &'a mut DeclarationStore,
+    referenceStore: &'a mut ReferenceStore,
 }
 
 impl<'a> Initializer<'a> {
@@ -30,6 +32,7 @@ impl<'a> Initializer<'a> {
         program: &'a Program,
         dropMetadataStore: &'a mut DropMetadataStore,
         declarationStore: &'a mut DeclarationStore,
+        referenceStore: &'a mut ReferenceStore,
     ) -> Initializer<'a> {
         Initializer {
             bodyBuilder: BodyBuilder::cloneFunction(f),
@@ -37,6 +40,7 @@ impl<'a> Initializer<'a> {
             program: program,
             dropMetadataStore,
             declarationStore,
+            referenceStore,
         }
     }
 
@@ -70,6 +74,22 @@ impl<'a> Initializer<'a> {
         }
     }
 
+    fn collectRefs(&mut self) {
+        for blockId in self.bodyBuilder.getAllBlockIds() {
+            let mut builder = self.bodyBuilder.iterator(blockId);
+            loop {
+                if let Some(instruction) = builder.getInstruction() {
+                    if let InstructionKind::Ref(_, src) = &instruction.kind {
+                        self.referenceStore.addReference(src.name());
+                    }
+                    builder.step();
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
     fn buildDeclarationStore(&mut self) {
         let mut syntaxBlockIterator = SyntaxBlockIterator::new(self.bodyBuilder.clone());
 
@@ -79,7 +99,7 @@ impl<'a> Initializer<'a> {
                     self.declareVar(var, &syntaxBlock, builder, true);
                 }
                 kind => {
-                    let usageInfo = getUsageInfo(kind.clone());
+                    let usageInfo = getUsageInfo(kind.clone(), &mut self.referenceStore);
                     if let Some(assignPath) = usageInfo.assign {
                         if assignPath.isRootOnly() {
                             // println!("Declaring variable for assignPath: {}", assignPath);
@@ -102,6 +122,8 @@ impl<'a> Initializer<'a> {
         // graph.printDot();
 
         self.collectExplicitDeclarations();
+
+        self.collectRefs();
 
         self.buildDeclarationStore();
 

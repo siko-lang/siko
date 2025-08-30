@@ -14,13 +14,13 @@ pub fn isNull[T](addr: *T) -> Bool {
     toU64(addr) == 0.toU64()
 }
 
-pub fn allocateArray[T](count: Int) -> *T {
+pub fn allocateArray[T](count: U64) -> *T {
     let p: *T = null();
-    Libc.malloc(count.toU64() * sizeOf(p))
+    Libc.malloc(count * sizeOf(p))
 }
 
 pub fn allocate[T]() -> *T {
-    allocateArray(1)
+    allocateArray(1.toU64())
 }
 
 pub fn deallocate[T](addr: *T) {
@@ -33,21 +33,22 @@ pub fn transmute[T, U](v: T) -> U = extern
 
 pub fn cast[T, U](addr: *T) -> *U = extern
 
-pub fn memcpy[T](dest: *T, src: *T, count: Int) {
-    Libc.memcpy(dest, src, count.toU64() * sizeOf(src));
+pub fn memcpy[T](dest: *T, src: *T, count: U64) {
+    Libc.memcpy(dest, src, count * sizeOf(src));
 }
 
-pub fn memmove[T](dest: *T, src: *T, count: Int) {
-    Libc.memmove(dest, src, count.toU64() * sizeOf(src));
+pub fn memmove[T](dest: *T, src: *T, count: U64) {
+    Libc.memmove(dest, src, count * sizeOf(src));
 }
 
-pub fn memcmp[T](dest: *T, src: *T, count: Int) -> Int {
-    Libc.memcmp(dest, src, count.toU64() * sizeOf(src)).toInt()
+pub fn memcmp[T](dest: *T, src: *T, count: U64) -> Int {
+    Libc.memcmp(dest, src, count * sizeOf(src)).toInt()
 }
 
-pub fn offset[T](base: *T, count: Int) -> *T {
+pub fn offset[T](base: *T, count: U64) -> *T {
     let size = sizeOf(base);
-    transmute(toU64(base) + (count.toU64() * size))
+    let v: U64 = toU64(base) + (count * size);
+    transmute(v)
 }
 
 pub fn toRef[T](addr: *T) -> &T {

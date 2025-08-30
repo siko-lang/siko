@@ -446,7 +446,7 @@ impl<'a> MinicBuilder<'a> {
             Type::Struct(n) => LType::Struct(n.clone()),
             Type::Union(n) => LType::Struct(n.clone()),
             Type::Ptr(t) => LType::Ptr(Box::new(self.lowerType(t))),
-            Type::Array(s, itemSize) => LType::Array(*s, *itemSize),
+            Type::Array(itemTy, size) => LType::Array(Box::new(self.lowerType(itemTy)), *size),
         }
     }
 }

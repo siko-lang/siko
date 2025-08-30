@@ -6,20 +6,20 @@ import Std.Ops
 
 pub struct String {
     value: *U8,
-    size: Int,
-    capacity: Int,
+    size: U64,
+    capacity: U64,
 
     pub fn new() -> String {
-        String(null(), 0, 0)
+        String(null(), 0.toU64(), 0.toU64())
     }
 
     pub fn withCapacity(capacity: Int) -> String {
-        let value = allocateArray(capacity);
-        String(value, 0, capacity)
+        let value = allocateArray(capacity.toU64());
+        String(value, 0.toU64(), capacity.toU64())
     }
 
     pub fn len(&self) -> Int {
-        self.size
+        self.size.toInt()
     }
 
     pub fn eq(&self, other: &String) -> Bool {
@@ -31,7 +31,7 @@ pub struct String {
     }
 
     pub fn clone(&self) -> String {
-        if self.capacity == 0 {
+        if self.capacity == 0.toU64() {
             return String(self.value, self.size, self.capacity);
         } else {
             let newValue = allocateArray(self.capacity);
@@ -45,11 +45,11 @@ pub struct String {
     }
 
     pub fn pushChar(self, c: U8) -> Self {
-        let newCapacity = self.size + 1;
+        let newCapacity = self.size + 1.toU64();
         let newValue = allocateArray(newCapacity);
         memcpy(newValue, self.value, self.size);
         *offset(newValue, self.size) = c;
-        if self.capacity > 0 {
+        if self.capacity > 0.toU64() {
             NativePtr.deallocate(self.value);
         }
         String(newValue, newCapacity, newCapacity)
@@ -65,7 +65,7 @@ pub struct String {
     }
 
     pub fn fromU8(value: Vec[U8]) -> String {
-        let capacity = value.len();
+        let capacity = value.len().toU64();
         let newValue = allocateArray(capacity);
         memcpy(newValue, value.asPtr(), capacity);
         String(newValue, capacity, capacity)
@@ -74,11 +74,11 @@ pub struct String {
 
 pub instance Drop[String] {
     fn drop(mut self) -> Self {
-        if self.capacity > 0 {
+        if self.capacity > 0.toU64() {
             NativePtr.deallocate(self.value);
         }
-        self.capacity = 0;
-        self.size = 0;
+        self.capacity = 0.toU64();
+        self.size = 0.toU64();
         self.value = null();
         self
     }
@@ -105,7 +105,7 @@ pub instance AddStringRef Add[String, &String] {
         let newValue = allocateArray(newCapacity);
         memcpy(newValue, self.value, self.size);
         memcpy(offset(newValue, self.size), other.value, other.size);
-        if self.capacity > 0 {
+        if self.capacity > 0.toU64() {
             NativePtr.deallocate(self.value);
         }
         String(newValue, newCapacity, newCapacity)
@@ -132,14 +132,14 @@ pub instance ShowString Show[String] {
 
 pub struct StringLiteral {
     value: *U8,
-    size: Int,
+    size: U64,
 
-    pub fn new(value: *U8, size: Int) -> StringLiteral {
+    pub fn new(value: *U8, size: U64) -> StringLiteral {
         StringLiteral(value, size)
     }
 
     pub fn len(&self) -> Int {
-        self.size
+        self.size.toInt()
     }
 
      pub fn slice(&self) -> Slice[U8] {
@@ -151,7 +151,7 @@ pub struct StringLiteral {
     }
 
     pub fn toString(&self) -> String {
-        String(self.value, self.size, 0)
+        String(self.value, self.size, 0.toU64())
     }
 }
 

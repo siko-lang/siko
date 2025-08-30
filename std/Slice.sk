@@ -4,26 +4,26 @@ import NativePtr
 
 pub struct Slice[T] {
     pub items: *T,
-    pub size: Int,
+    pub size: U64,
 
-    pub fn new(items: *T, size: Int) -> Slice[T] {
+    pub fn new(items: *T, size: U64) -> Slice[T] {
         Slice(items, size)
     }
 
-    pub fn len(&self) -> Int {
+    pub fn len(&self) -> U64 {
         self.size
     }
 
     pub fn isEmpty(&self) -> Bool {
-        self.size == 0
+        self.size == 0.toU64()
     }
 
-    fn getUnchecked(&self, index: Int) -> &T {
+    fn getUnchecked(&self, index: U64) -> &T {
         let ptr = offset(self.items, index);
         toRef(ptr)
     }
 
-    fn getPtr(&self, index: Int) -> *T {
+    fn getPtr(&self, index: U64) -> *T {
         offset(self.items, index)
     }
 
@@ -32,7 +32,7 @@ pub struct Slice[T] {
     }
 
     fn contains[T: PartialEq[T]](&self, item: &T) -> Bool {
-        for i in 0..self.size {
+        for i in 0.toU64()..self.size {
             if self.getUnchecked(i) == item {
                 return True;
             }
@@ -40,7 +40,7 @@ pub struct Slice[T] {
         False
     }
 
-    pub fn swap(self, i: Int, j: Int) -> Self {
+    pub fn swap(self, i: U64, j: U64) -> Self {
         if i == j {
             return self;
         }
@@ -53,8 +53,8 @@ pub struct Slice[T] {
         self
     }
 
-    fn subSlice(&self, from: Int, to: Int) -> Slice[T] {
-        if from < 0 or to > self.size or from > to {
+    fn subSlice(&self, from: U64, to: U64) -> Slice[T] {
+        if from < 0.toU64() or to > self.size or from > to {
             panic("Invalid slice range ${from}-${to} must be between 0 and ${self.size}");
         }
         let newSize = to - from;
@@ -62,7 +62,7 @@ pub struct Slice[T] {
     }
 
     pub fn sort[T: Ord[T]](mut self) -> Self {
-        if self.len() <= 1 {
+        if self.len() <= 1.toU64() {
             return self;
         }
 
@@ -71,7 +71,7 @@ pub struct Slice[T] {
     }
 
     pub fn sort2[T: Ord[T]](mut self) -> Self {
-        if self.len() <= 1 {
+        if self.len() <= 1.toU64() {
             return self;
         }
 
@@ -80,12 +80,12 @@ pub struct Slice[T] {
     }
 
     fn quickSort[T: Ord[T]](mut self) -> Self {
-        if self.len() <= 1 {
+        if self.len() <= 1.toU64() {
             return self;
         }
         let p = self.partition();
-        let left = self.subSlice(0, p);
-        let right = self.subSlice(p + 1, self.len());
+        let left = self.subSlice(0.toU64(), p.toU64());
+        let right = self.subSlice((p + 1).toU64(), self.len());
         left.quickSort();
         right.quickSort();
         self
@@ -93,51 +93,51 @@ pub struct Slice[T] {
 
     fn partition[T: Ord[T]](mut self) -> (Self, Int) {
         let lo = 0;
-        let hi = self.len() - 1;
-        let pivot: T = *(toPtr(self.getUnchecked(hi)));
+        let hi = self.len().toInt() - 1;
+        let pivot: T = *(toPtr(self.getUnchecked(hi.toU64()))); // pick last element as pivot
         let mut i = lo - 1;
         for j in lo..hi {
-            if self.getUnchecked(j) <= pivot {
+            if self.getUnchecked(j.toU64()) <= pivot {
                 i += 1;
-                self.swap(i, j);
+                self.swap(i.toU64(), j.toU64());
             }
         }
-        self.swap(i + 1, hi);
+        self.swap((i + 1).toU64(), hi.toU64());
         (self, i + 1)
     }
 
     fn quickSort2[T: Ord[T]](mut self) -> Self {
-        if self.len() <= 1 {
+        if self.len().toInt() <= 1 {
             return self;
         }
 
         let (lt, gt) = self.partition3();
 
         // Recursively sort < pivot
-        self.subSlice(0, lt).quickSort2();
+        self.subSlice(0.toU64(), lt.toU64()).quickSort2();
 
         // Recursively sort > pivot
-        self.subSlice(gt + 1, self.len()).quickSort2();
+        self.subSlice((gt + 1).toU64(), self.len()).quickSort2();
 
         self
     }
 
     fn partition3[T: Ord[T]](mut self) -> (Self, Int, Int) {
         let lo = 0;
-        let hi = self.len() - 1;
-        let pivot: T = *(toPtr(self.getUnchecked(lo))); // pick first element as pivot
+        let hi = self.len().toInt() - 1;
+        let pivot: T = *(toPtr(self.getUnchecked(lo.toU64()))); // pick first element as pivot
 
         let mut lt = lo;   // end of < pivot region
         let mut gt = hi;   // start of > pivot region
         let mut i  = lo;   // current element
 
         while i <= gt {
-            if self.getUnchecked(i) < pivot {
-                self.swap(lt, i);
+            if self.getUnchecked(i.toU64()) < pivot {
+                self.swap(lt.toU64(), i.toU64());
                 lt += 1;
                 i += 1;
-            } else if self.getUnchecked(i) > pivot {
-                self.swap(i, gt);
+            } else if self.getUnchecked(i.toU64()) > pivot {
+                self.swap(i.toU64(), gt.toU64());
                 gt -= 1;
                 // dont increment i, need to examine swapped element
             } else {
@@ -149,12 +149,15 @@ pub struct Slice[T] {
     }
 
     pub fn reverse(mut self) -> Self {
-        let mut i = 0;
-        let mut j = self.len() - 1;
+        let mut i = 0.toU64();
+        if self.len() < 2.toU64() {
+            return self;
+        }
+        let mut j = self.len() - 1.toU64();
         while i < j {
             self.swap(i, j);
-            i += 1;
-            j -= 1;
+            i += 1.toU64();
+            j -= 1.toU64();
         }
         self
     }

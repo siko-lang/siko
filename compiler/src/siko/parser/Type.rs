@@ -88,6 +88,10 @@ impl<'a> TypeParser for Parser<'a> {
                 self.expect(TokenKind::Misc(MiscKind::ExclamationMark));
                 Type::Never
             }
+            TokenKind::IntegerLiteral => {
+                let literal = self.parseIntegerLiteral();
+                Type::NumericConstant(literal)
+            }
             kind => self.reportError2("<type>", kind),
         }
     }

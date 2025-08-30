@@ -37,6 +37,7 @@ pub enum Type {
     Ptr(Box<Type>),
     SelfType,
     Never(bool), // true = explicit never i.e. !
+    NumericConstant(String),
 }
 
 impl Type {
@@ -98,6 +99,7 @@ impl Type {
             }
             Type::SelfType => {}
             Type::Never(_) => {}
+            Type::NumericConstant(_) => {}
         }
         vars
     }
@@ -133,6 +135,7 @@ impl Type {
             }
             Type::SelfType => {}
             Type::Never(_) => {}
+            Type::NumericConstant(_) => {}
         }
         vars
     }
@@ -307,6 +310,9 @@ impl Type {
             Type::Never(_) => {
                 return true;
             }
+            Type::NumericConstant(_) => {
+                return true;
+            }
         }
     }
 
@@ -428,6 +434,7 @@ impl Display for Type {
             }
             Type::SelfType => write!(f, "Self"),
             Type::Never(_) => write!(f, "!"),
+            Type::NumericConstant(value) => write!(f, "{}", value),
         }
     }
 }

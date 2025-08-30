@@ -155,6 +155,14 @@ impl Variable {
         }
     }
 
+    pub fn cloneNew(&self) -> Variable {
+        Variable {
+            kind: self.kind.clone(),
+            info: Rc::new(RefCell::new(VariableInfo::new(self.name(), self.getTypeOpt()))),
+            location: self.location(),
+        }
+    }
+
     pub fn withLocation(&self, location: Location) -> Variable {
         Variable {
             kind: self.kind.clone(),
