@@ -2,13 +2,11 @@ use std::fmt::Debug;
 use std::fmt::Display;
 use std::vec;
 
+use crate::siko::hir::Block::BlockId;
 use crate::siko::hir::BlockBuilder::InstructionRef;
 use crate::siko::hir::Type::Type;
 use crate::siko::hir::Variable::VariableName;
-use crate::siko::{
-    hir::{Function::BlockId, Variable::Variable},
-    location::Location::Location,
-};
+use crate::siko::{hir::Variable::Variable, location::Location::Location};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PathSegment {

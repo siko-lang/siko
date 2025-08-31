@@ -2,8 +2,9 @@ use std::collections::BTreeMap;
 
 use crate::siko::{
     hir::{
+        Block::BlockId,
         BodyBuilder::BodyBuilder,
-        Function::{BlockId, Function, Parameter},
+        Function::{Function, Parameter},
         Instruction::{
             CallInfo, FieldId, FieldInfo, ImplicitContextOperation, ImplicitIndex, InstructionKind, SyntaxBlockId,
             SyntaxBlockIdSegment,

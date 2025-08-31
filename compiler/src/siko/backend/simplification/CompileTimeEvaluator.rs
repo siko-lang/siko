@@ -2,11 +2,8 @@ use std::collections::BTreeMap;
 
 use crate::siko::{
     hir::{
-        BlockBuilder::BlockBuilder,
-        BodyBuilder::BodyBuilder,
-        Function::{BlockId, Function},
-        Instruction::InstructionKind,
-        Variable::VariableName,
+        Block::BlockId, BlockBuilder::BlockBuilder, BodyBuilder::BodyBuilder, Function::Function,
+        Instruction::InstructionKind, Variable::VariableName,
     },
     qualifiedname::builtins::{getFalseName, getTrueName},
 };

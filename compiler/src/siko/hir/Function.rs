@@ -1,14 +1,12 @@
-use std::collections::BTreeMap;
-use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::fmt::Display;
 use std::io::Write;
 
-use crate::siko::hir::VariableAllocator::VariableAllocator;
-use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
+use crate::siko::hir::Block::Block;
+use crate::siko::hir::Block::BlockId;
+use crate::siko::hir::Body::Body;
+use crate::siko::qualifiedname::QualifiedName;
 
-use super::Instruction::Instruction;
-use super::Instruction::InstructionKind;
 use super::{ConstraintContext::ConstraintContext, Type::Type};
 
 #[derive(Debug, Clone)]
@@ -30,171 +28,6 @@ impl Parameter {
             Parameter::Named(_, ty, _) => ty.clone(),
             Parameter::SelfParam(_, ty) => ty.clone(),
         }
-    }
-}
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
-pub struct BlockId {
-    pub id: u32,
-}
-
-impl BlockId {
-    pub fn first() -> BlockId {
-        BlockId { id: 0 }
-    }
-}
-
-impl Display for BlockId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "#{}", self.id)
-    }
-}
-
-impl Debug for BlockId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "#{}", self.id)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Block {
-    pub id: BlockId,
-    pub instructions: Vec<Instruction>,
-}
-
-impl Block {
-    pub fn new(id: BlockId) -> Block {
-        Block {
-            id: id,
-            instructions: Vec::new(),
-        }
-    }
-
-    pub fn add(&mut self, kind: InstructionKind, location: Location, implicit: bool) {
-        self.instructions.push(Instruction {
-            implicit: implicit,
-            kind: kind.setVariableKinds(),
-            location: location,
-        });
-    }
-
-    pub fn insert(&mut self, index: usize, kind: InstructionKind, location: Location, implicit: bool) {
-        self.instructions.insert(
-            index,
-            Instruction {
-                implicit: implicit,
-                kind: kind.setVariableKinds(),
-                location: location,
-            },
-        );
-    }
-
-    pub fn replace(&mut self, index: usize, kind: InstructionKind, location: Location, implicit: bool) {
-        let isImplicit = self.instructions[index].implicit || implicit;
-        self.instructions[index] = Instruction {
-            implicit: isImplicit,
-            kind: kind.setVariableKinds(),
-            location: location,
-        };
-    }
-
-    pub fn remove(&mut self, index: usize) {
-        self.instructions.remove(index);
-    }
-
-    pub fn dump(&self) {
-        println!("  Block {}:", self.id);
-        for (index, instruction) in self.instructions.iter().enumerate() {
-            print!("{}: ", index);
-            instruction.dump();
-        }
-    }
-}
-
-impl Display for Block {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "Block {}:", self.id)?;
-        for (index, instruction) in self.instructions.iter().enumerate() {
-            writeln!(f, "    {:3}: {}", index, instruction)?;
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Body {
-    pub blocks: BTreeMap<BlockId, Block>,
-    pub varAllocator: VariableAllocator,
-}
-
-impl Body {
-    pub fn new() -> Body {
-        Body {
-            blocks: BTreeMap::new(),
-            varAllocator: VariableAllocator::new(),
-        }
-    }
-
-    pub fn addBlock(&mut self, block: Block) {
-        self.blocks.insert(block.id, block);
-    }
-
-    pub fn getBlockById(&self, id: BlockId) -> &Block {
-        &self.blocks.get(&id).expect("Block not found")
-    }
-
-    pub fn dump(&self) {
-        for (_, block) in &self.blocks {
-            block.dump();
-        }
-    }
-
-    pub fn getInstruction(&self, blockId: BlockId, index: usize) -> Option<Instruction> {
-        if let Some(block) = self.blocks.get(&blockId) {
-            if let Some(instruction) = block.instructions.get(index) {
-                return Some(instruction.clone());
-            }
-        }
-        None
-    }
-
-    pub fn getAllBlockIds(&self) -> VecDeque<BlockId> {
-        let mut ids = VecDeque::new();
-        for (id, _) in &self.blocks {
-            ids.push_back(*id);
-        }
-        ids
-    }
-
-    pub fn cutBlock(&mut self, blockId: BlockId, index: usize, newBlockId: BlockId) {
-        let block = self.blocks.get_mut(&blockId).expect("Block not found");
-        let otherInstructions = block.instructions.split_off(index);
-        let newBlock = self.blocks.get_mut(&newBlockId).expect("New block not found");
-        newBlock.instructions = otherInstructions;
-    }
-
-    pub fn getBlockSize(&self, blockId: BlockId) -> usize {
-        self.blocks.get(&blockId).expect("Block not found").instructions.len()
-    }
-
-    pub fn removeBlock(&mut self, block_id: BlockId) {
-        self.blocks.remove(&block_id);
-    }
-
-    pub fn mergeBlocks(&mut self, sourceBlockId: BlockId, targetBlockId: BlockId) {
-        let mut targetBlock = self.blocks.remove(&targetBlockId).expect("Target block not found");
-        let sourceBlock = self.blocks.get_mut(&sourceBlockId).expect("Source block not found");
-        sourceBlock.instructions.pop();
-        sourceBlock.instructions.append(&mut targetBlock.instructions);
-    }
-}
-
-impl Display for Body {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for (_, block) in &self.blocks {
-            write!(f, "{}", block)?;
-        }
-        Ok(())
     }
 }
 

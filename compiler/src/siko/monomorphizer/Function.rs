@@ -1,7 +1,7 @@
 use crate::siko::{
     hir::{
+        Body::Body,
         BodyBuilder::BodyBuilder,
-        Function::Body,
         Instruction::{SyntaxBlockId, SyntaxBlockIdSegment},
         Substitution::Substitution,
         SyntaxBlockIterator::SyntaxBlockIterator,
@@ -22,7 +22,7 @@ pub fn processBody(
 ) -> Option<Body> {
     match input {
         Some(body) => {
-            let bodyBuilder = BodyBuilder::withBody(body);
+            let bodyBuilder = BodyBuilder::withBody(body.copy());
             let mut handlerResolutionStore = HandlerResolutionStore::new();
             handlerResolutionStore.insert(SyntaxBlockId::new(), handlerResolution.clone());
             handlerResolutionStore.insert(

@@ -1,5 +1,6 @@
-use super::Function::{BlockId, Body, Function};
+use super::Function::Function;
 use super::Instruction::InstructionKind;
+use crate::siko::hir::{Block::BlockId, Body::Body};
 use crate::siko::util::Dot::Graph;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -67,8 +68,10 @@ fn buildGraph(body: &Body, graph: &mut Graph, filter: InstructionFilter) {
 
     // Create nodes for each block
     for (block_id, block) in &body.blocks {
-        let title = format!("Block {}", block.id);
-        let instructions: Vec<String> = block
+        let title = format!("Block {}", block.getId());
+        let inner = block.getInner();
+        let instructions: Vec<String> = inner
+            .borrow()
             .instructions
             .iter()
             .enumerate()
@@ -87,7 +90,8 @@ fn buildGraph(body: &Body, graph: &mut Graph, filter: InstructionFilter) {
 
     // Analyze instructions to find edges between blocks
     for (block_id, block) in &body.blocks {
-        for instruction in &block.instructions {
+        let inner = block.getInner();
+        for instruction in &inner.borrow().instructions {
             match &instruction.kind {
                 InstructionKind::Jump(_, target_block) => {
                     edges.push((*block_id, *target_block, Some("jump".to_string())));
@@ -130,7 +134,8 @@ fn addSequentialEdges(body: &Body, edges: &mut Vec<(BlockId, BlockId, Option<Str
 
     // Mark blocks that have explicit exits (jumps, switches, returns)
     for (block_id, block) in &body.blocks {
-        for instruction in &block.instructions {
+        let inner = block.getInner();
+        for instruction in &inner.borrow().instructions {
             match &instruction.kind {
                 InstructionKind::Jump(_, _)
                 | InstructionKind::EnumSwitch(_, _)

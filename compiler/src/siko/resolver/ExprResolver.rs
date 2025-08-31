@@ -1,10 +1,11 @@
 use core::panic;
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::siko::hir::Block::BlockId;
 use crate::siko::hir::BlockBuilder::BlockBuilder;
+use crate::siko::hir::Body::Body;
 use crate::siko::hir::BodyBuilder::BodyBuilder;
 use crate::siko::hir::Data::{Enum, Struct};
-use crate::siko::hir::Function::BlockId;
 use crate::siko::hir::Implicit::Implicit;
 use crate::siko::hir::Instruction::{
     EffectHandler as HirEffectHandler, FieldId, FieldInfo, ImplicitHandler as HirImplicitHandler, ImplicitIndex,
@@ -19,8 +20,8 @@ use crate::siko::resolver::matchcompiler::Compiler::MatchCompiler;
 use crate::siko::syntax::Expr::{BinaryOp, Expr, SimpleExpr, UnaryOp};
 use crate::siko::syntax::Identifier::Identifier;
 use crate::siko::syntax::Pattern::{Pattern, SimplePattern};
+use crate::siko::syntax::Statement::Block;
 use crate::siko::syntax::Statement::StatementKind;
-use crate::siko::{hir::Function::Body, syntax::Statement::Block};
 
 use super::Environment::Environment;
 use super::Error::ResolverError;

@@ -1,5 +1,7 @@
 pub mod Apply;
+pub mod Block;
 pub mod BlockBuilder;
+pub mod Body;
 pub mod BodyBuilder;
 pub mod CanonicalInstanceStore;
 pub mod ConstraintContext;

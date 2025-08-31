@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::fmt::Display;
 use std::rc::Rc;
@@ -123,6 +124,34 @@ impl Debug for VariableKind {
     }
 }
 
+pub struct CopyMap {
+    map: BTreeMap<*const RefCell<VariableInfo>, Variable>,
+}
+
+impl CopyMap {
+    pub fn new() -> CopyMap {
+        CopyMap { map: BTreeMap::new() }
+    }
+
+    fn get(&self, var: &Variable) -> Option<Variable> {
+        self.map.get(&Rc::as_ptr(&var.info)).cloned()
+    }
+
+    fn insert(&mut self, from: &Variable, to: Variable) {
+        self.map.insert(Rc::as_ptr(&from.info), to);
+    }
+
+    pub fn copy(&mut self, var: &Variable) -> Variable {
+        if let Some(v) = self.get(var) {
+            v
+        } else {
+            let v = var.cloneNew();
+            self.insert(var, v.clone());
+            v
+        }
+    }
+}
+
 #[derive(Clone, Eq)]
 pub struct Variable {
     kind: VariableKind,
@@ -169,6 +198,10 @@ impl Variable {
             info: self.info.clone(),
             location,
         }
+    }
+
+    pub fn copy(&self, map: &mut CopyMap) -> Variable {
+        map.copy(self)
     }
 
     pub fn getType(&self) -> Type {

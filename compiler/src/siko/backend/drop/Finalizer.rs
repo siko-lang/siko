@@ -9,9 +9,10 @@ use crate::siko::{
         Usage::getUsageInfo,
     },
     hir::{
+        Block::BlockId,
         BlockBuilder::BlockBuilder,
         BodyBuilder::BodyBuilder,
-        Function::{BlockId, Function},
+        Function::Function,
         Instruction::{CallInfo, EnumCase, FieldId, FieldInfo, InstructionKind, Mutability},
         Program::Program,
         Type::Type,

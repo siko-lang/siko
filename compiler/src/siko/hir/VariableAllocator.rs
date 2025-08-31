@@ -17,6 +17,12 @@ impl VariableAllocator {
         }
     }
 
+    pub fn copy(&self) -> Self {
+        VariableAllocator {
+            nextId: Rc::new(RefCell::new(*self.nextId.borrow())),
+        }
+    }
+
     pub fn allocate(&self, location: Location) -> Variable {
         let id = {
             let mut nextId = self.nextId.borrow_mut();

@@ -5,7 +5,7 @@ use crate::siko::{
         Context::Context, DropMetadataStore::DropMetadataStore, Path::Path, ReferenceStore::ReferenceStore,
         Usage::getUsageInfo,
     },
-    hir::{BlockBuilder::BlockBuilder, Function::BlockId, Instruction::InstructionKind, Variable::Variable},
+    hir::{Block::BlockId, BlockBuilder::BlockBuilder, Instruction::InstructionKind, Variable::Variable},
 };
 
 pub struct BlockProcessor<'a> {

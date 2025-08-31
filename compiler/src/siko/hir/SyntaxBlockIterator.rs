@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use crate::siko::hir::{
+    Block::BlockId,
     BlockBuilder::BlockBuilder,
     BodyBuilder::BodyBuilder,
-    Function::BlockId,
     Instruction::{Instruction, InstructionKind, SyntaxBlockId},
 };
 

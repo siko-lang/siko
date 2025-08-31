@@ -35,7 +35,8 @@ impl<'a> UnusedVariableEliminator<'a> {
 
         if let Some(body) = &self.function.body {
             for (_, block) in body.blocks.iter() {
-                for i in block.instructions.iter() {
+                let inner = block.getInner();
+                for i in inner.borrow().instructions.iter() {
                     let mut allVars = i.kind.collectVariables();
                     if let Some(v) = i.kind.getResultVar() {
                         self.useCount.entry(v.name()).or_insert(0);

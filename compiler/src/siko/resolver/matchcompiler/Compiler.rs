@@ -1,4 +1,4 @@
-use crate::siko::hir::Function::BlockId;
+use crate::siko::hir::Block::BlockId;
 use crate::siko::hir::Instruction::{EnumCase, FieldId, FieldInfo, InstructionKind, IntegerCase};
 use crate::siko::hir::Variable::Variable;
 use crate::siko::location::Location::Location;

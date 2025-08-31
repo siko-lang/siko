@@ -2,6 +2,7 @@ use core::panic;
 use std::fmt::Debug;
 use std::fmt::Display;
 
+use crate::siko::hir::Block::BlockId;
 use crate::siko::hir::Instruction::CallInfo;
 use crate::siko::{
     hir::Instruction::{Mutability, SyntaxBlockId},
@@ -11,7 +12,6 @@ use crate::siko::{
 
 use super::{
     BodyBuilder::BodyBuilder,
-    Function::BlockId,
     Instruction::{FieldInfo, Instruction, InstructionKind},
     Type::Type,
     Variable::Variable,

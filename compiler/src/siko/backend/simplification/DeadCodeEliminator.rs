@@ -1,10 +1,6 @@
 use std::collections::BTreeSet;
 
-use crate::siko::hir::{
-    BodyBuilder::BodyBuilder,
-    Function::{BlockId, Function},
-    Instruction::InstructionKind,
-};
+use crate::siko::hir::{Block::BlockId, BodyBuilder::BodyBuilder, Function::Function, Instruction::InstructionKind};
 
 pub fn eliminateDeadCode(f: &Function) -> Option<Function> {
     let mut eliminator = DeadCodeEliminator::new(f);
@@ -44,7 +40,8 @@ impl<'a> DeadCodeEliminator<'a> {
 
         if let Some(body) = &self.function.body {
             for (blockId, block) in body.blocks.iter() {
-                for (index, _i) in block.instructions.iter().enumerate() {
+                let inner = block.getInner();
+                for (index, _i) in inner.borrow().instructions.iter().enumerate() {
                     let id = InstructionId {
                         block: *blockId,
                         id: index,
@@ -99,7 +96,8 @@ impl<'a> DeadCodeEliminator<'a> {
     fn processBlock(&mut self, blockId: BlockId) {
         //println!("Processing block: {}", blockId);
         let block = self.function.getBlockById(blockId);
-        for (index, instruction) in block.instructions.iter().enumerate() {
+        let inner = block.getInner();
+        for (index, instruction) in inner.borrow().instructions.iter().enumerate() {
             let id = InstructionId {
                 block: blockId,
                 id: index,

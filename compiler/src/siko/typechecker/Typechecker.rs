@@ -1,4 +1,3 @@
-use core::panic;
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     fmt::Debug,
@@ -7,11 +6,12 @@ use std::{
 
 use crate::siko::{
     hir::{
+        Block::BlockId,
         BlockBuilder::BlockBuilder,
         BodyBuilder::BodyBuilder,
         ConstraintContext::ConstraintContext,
         Data::{Enum, Struct},
-        Function::{BlockId, Function, Parameter},
+        Function::{Function, Parameter},
         FunctionCallResolver::{CheckFunctionCallResult, FunctionCallResolver},
         InstanceResolver::InstanceResolver,
         InstanceStore::InstanceStore,
@@ -184,7 +184,7 @@ impl<'a> Typechecker<'a> {
         }
         if let Some(body) = &self.f.body {
             for (_, block) in &body.blocks {
-                for instruction in &block.instructions {
+                for instruction in &block.getInstructions() {
                     match &instruction.kind {
                         InstructionKind::FunctionCall(dest, _) => {
                             self.initializeVar(dest);
@@ -1087,7 +1087,7 @@ impl<'a> Typechecker<'a> {
             let fnType = f.getType();
             let publicVars = fnType.collectVars(BTreeSet::new());
             for (_, block) in &body.blocks {
-                for instruction in &block.instructions {
+                for instruction in &block.getInstructions() {
                     let vars = instruction.kind.collectVariables();
                     for v in vars {
                         if let Some(ty) = v.getTypeOpt() {
@@ -1110,8 +1110,8 @@ impl<'a> Typechecker<'a> {
         println!("Dumping {}", f.name);
         if let Some(body) = &f.body {
             for (_, block) in &body.blocks {
-                println!("{}:", block.id);
-                for instruction in &block.instructions {
+                println!("{}:", block.getId());
+                for instruction in &block.getInstructions() {
                     match instruction.kind.getResultVar() {
                         Some(v) => match v.getTypeOpt() {
                             Some(ty) => {
@@ -1178,9 +1178,9 @@ impl<'a> Typechecker<'a> {
 
     fn addTypes(&mut self, f: &mut Function) {
         let body = &mut f.body.as_mut().unwrap();
-
         for (_, block) in &mut body.blocks {
-            for instruction in &mut block.instructions {
+            let inner = block.getInner();
+            for instruction in &mut inner.borrow_mut().instructions {
                 let vars = instruction.kind.collectVariables();
                 for var in vars {
                     let ty = var.getType();

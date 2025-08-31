@@ -10,8 +10,9 @@ fn base64(s: &str) -> String {
 use crate::siko::{
     backend::RemoveTuples::getUnitTypeName,
     hir::{
+        Block::{Block, BlockId},
         Data::{Enum as HirEnum, Struct as HirStruct},
-        Function::{Block, BlockId, ExternKind, Function as HirFunction, FunctionKind},
+        Function::{ExternKind, Function as HirFunction, FunctionKind},
         Instruction::InstructionKind as HirInstructionKind,
         Program::Program as HirProgram,
         Type::Type as HirType,
@@ -60,14 +61,15 @@ impl<'a> Builder<'a> {
     }
 
     fn lowerBlock(&mut self, hirBlock: &Block) -> Option<MirBlock> {
-        if hirBlock.instructions.is_empty() {
+        if hirBlock.isEmpty() {
             return None;
         }
         let mut block = MirBlock {
-            id: self.getBlockName(hirBlock.id),
+            id: self.getBlockName(hirBlock.getId()),
             instructions: Vec::new(),
         };
-        for instruction in &hirBlock.instructions {
+        let inner = hirBlock.getInner();
+        for instruction in &inner.borrow().instructions {
             match &instruction.kind {
                 HirInstructionKind::FunctionCall(dest, info) => {
                     let f = self.program.getFunction(&info.name).expect("Function not found");

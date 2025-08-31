@@ -1,11 +1,7 @@
 use std::collections::BTreeSet;
 
 use crate::siko::{
-    hir::{
-        Function::{BlockId, Function},
-        Instruction::InstructionKind,
-        Program::Program,
-    },
+    hir::{Block::BlockId, Function::Function, Instruction::InstructionKind, Program::Program},
     location::Report::{Report, ReportContext},
 };
 
@@ -44,7 +40,8 @@ impl<'a> DeadCodeEliminator<'a> {
         }
         if let Some(body) = &self.function.body {
             for (blockIndex, (_, block)) in body.blocks.iter().enumerate() {
-                for (index, instruction) in block.instructions.iter().enumerate() {
+                let inner = block.getInner();
+                for (index, instruction) in inner.borrow().instructions.iter().enumerate() {
                     if !self.visited.contains(&InstructionId {
                         block: blockIndex,
                         id: index,
@@ -62,7 +59,9 @@ impl<'a> DeadCodeEliminator<'a> {
         let mut result = self.function.clone();
         if let Some(body) = &mut result.body {
             for (blockIndex, (_, block)) in body.blocks.iter_mut().enumerate() {
-                let instructions: Vec<_> = block
+                let inner = block.getInner();
+                let mut b = inner.borrow_mut();
+                let instructions: Vec<_> = b
                     .instructions
                     .iter()
                     .cloned()
@@ -75,7 +74,7 @@ impl<'a> DeadCodeEliminator<'a> {
                     })
                     .map(|(_, i)| i.clone())
                     .collect();
-                block.instructions = instructions;
+                b.instructions = instructions;
             }
         }
         result
@@ -83,7 +82,8 @@ impl<'a> DeadCodeEliminator<'a> {
 
     fn processBlock(&mut self, blockId: BlockId) {
         let block = self.function.getBlockById(blockId);
-        for (index, instruction) in block.instructions.iter().enumerate() {
+        let inner = block.getInner();
+        for (index, instruction) in inner.borrow().instructions.iter().enumerate() {
             let added = self.visited.insert(InstructionId {
                 block: blockId.id as usize,
                 id: index,

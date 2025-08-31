@@ -17,8 +17,9 @@ use crate::siko::{
         ReferenceStore::ReferenceStore,
     },
     hir::{
+        Block::BlockId,
         BodyBuilder::BodyBuilder,
-        Function::{BlockId, Function},
+        Function::Function,
         FunctionCallResolver::FunctionCallResolver,
         Graph::GraphBuilder,
         InstanceResolver::InstanceResolver,
@@ -287,7 +288,7 @@ impl<'a> DropChecker<'a> {
 
     fn canBeImplicitClone(&self, path: &Path) -> bool {
         let block = self.function.getBlockById(path.instructionRef.blockId);
-        let instruction = block.instructions[path.instructionRef.instructionId as usize].clone();
+        let instruction = block.getInstruction(path.instructionRef.instructionId as usize);
         if path.isRootOnly() {
             let ty = path.root.getType();
             assert!(!ty.isReference(), "path root should not be a reference for a move!",);

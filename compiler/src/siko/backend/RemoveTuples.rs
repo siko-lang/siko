@@ -3,9 +3,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::siko::{
     hir::{
+        Block::Block,
+        Body::Body,
         ConstraintContext::ConstraintContext,
         Data::{Enum, Field, Struct, Variant},
-        Function::{Block, Body, Function, FunctionKind, Parameter},
+        Function::{Function, FunctionKind, Parameter},
         Instruction::{
             CallInfo, FieldId, FieldInfo, ImplicitHandler, Instruction, InstructionKind, WithContext, WithInfo,
         },
@@ -110,11 +112,8 @@ impl RemoveTuples for Body {
 
 impl RemoveTuples for Block {
     fn removeTuples(&self, ctx: &mut Context) -> Self {
-        let instructions = self.instructions.removeTuples(ctx);
-        Block {
-            id: self.id,
-            instructions: instructions,
-        }
+        let instructions = self.getInstructions().removeTuples(ctx);
+        Block::newWith(self.getId(), instructions)
     }
 }
 

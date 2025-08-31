@@ -43,7 +43,8 @@ impl<'a> TypeVerifier<'a> {
         //println!("Function: {}", self.function);
         if let Some(body) = &self.function.body {
             for (_, block) in &body.blocks {
-                for instruction in &block.instructions {
+                let inner = block.getInner();
+                for instruction in &inner.borrow().instructions {
                     self.verifyInstruction(instruction);
                 }
             }

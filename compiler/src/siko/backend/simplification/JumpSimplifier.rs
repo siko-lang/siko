@@ -1,10 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::siko::hir::{
-    BodyBuilder::BodyBuilder,
-    Function::{BlockId, Function},
-    Instruction::InstructionKind,
-};
+use crate::siko::hir::{Block::BlockId, BodyBuilder::BodyBuilder, Function::Function, Instruction::InstructionKind};
 
 pub fn simplifyFunction(f: &Function) -> Option<Function> {
     let mut simplifier = JumpSimplifier::new(&f);

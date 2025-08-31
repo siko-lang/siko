@@ -1,10 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::siko::hir::{
-    BodyBuilder::BodyBuilder,
-    Function::{BlockId, Function},
-    Instruction::InstructionKind,
-};
+use crate::siko::hir::{Block::BlockId, BodyBuilder::BodyBuilder, Function::Function, Instruction::InstructionKind};
 
 pub fn simplifyFunction(f: &Function) -> Option<Function> {
     let mut merger = BlockMerger::new(f);
@@ -42,7 +38,9 @@ impl<'a> BlockMerger<'a> {
     fn countJumps(&mut self) {
         if let Some(body) = &self.function.body {
             for (_, block) in body.blocks.iter() {
-                if let Some(lastInstruction) = block.instructions.last() {
+                let inner = block.getInner();
+                let b = inner.borrow();
+                if let Some(lastInstruction) = b.instructions.last() {
                     match &lastInstruction.kind {
                         InstructionKind::Jump(_, targetId) => {
                             *self.jumpCounts.entry(*targetId).or_insert(0) += 1;

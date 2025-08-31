@@ -1,10 +1,16 @@
 use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
-use crate::siko::location::Location::Location;
+use crate::siko::{
+    hir::{
+        Block::{Block, BlockId},
+        Body::Body,
+    },
+    location::Location::Location,
+};
 
 use super::{
     BlockBuilder::{BlockBuilder, Mode},
-    Function::{Block, BlockId, Body, Function},
+    Function::Function,
     Instruction::{Instruction, InstructionKind},
     Type::Type,
     Variable::{Variable, VariableName},
@@ -64,10 +70,7 @@ impl Builder {
 
     pub fn getInstruction(&self, id: BlockId, index: usize) -> Option<Instruction> {
         let irBlock = self.body.getBlockById(id);
-        match irBlock.instructions.get(index) {
-            Some(instruction) => Some(instruction.clone()),
-            None => None,
-        }
+        irBlock.getInstructionOpt(index)
     }
 
     pub fn addInstruction(&mut self, id: BlockId, instruction: InstructionKind, location: Location, implicit: bool) {
@@ -126,7 +129,9 @@ impl Builder {
 
     pub fn getLastInstruction(&self, block_id: BlockId) -> Option<Instruction> {
         let block = self.body.getBlockById(block_id);
-        block.instructions.last().cloned()
+        let inner = block.getInner();
+        let last_instruction = inner.borrow().instructions.last().cloned();
+        last_instruction
     }
 
     pub fn isValid(&self, blockId: BlockId) -> bool {
