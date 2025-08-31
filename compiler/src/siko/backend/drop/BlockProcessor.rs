@@ -10,12 +10,12 @@ use crate::siko::{
 
 pub struct BlockProcessor<'a> {
     receiverPaths: BTreeMap<Variable, Path>,
-    dropMetadataStore: &'a mut DropMetadataStore,
+    dropMetadataStore: &'a DropMetadataStore,
     referenceStore: &'a ReferenceStore,
 }
 
 impl<'a> BlockProcessor<'a> {
-    pub fn new(dropMetadataStore: &'a mut DropMetadataStore, referenceStore: &'a ReferenceStore) -> BlockProcessor<'a> {
+    pub fn new(dropMetadataStore: &'a DropMetadataStore, referenceStore: &'a ReferenceStore) -> BlockProcessor<'a> {
         BlockProcessor {
             receiverPaths: BTreeMap::new(),
             dropMetadataStore,

@@ -67,22 +67,6 @@ impl EventSeries {
     }
 
     pub fn prune(&self, limit: usize) -> EventSeries {
-        fn usage_overwritten(event: &Event, assignPath: &Path) -> bool {
-            match event {
-                Event::Usage(usage) => {
-                    // println!(
-                    //     "Checking usage: {} against assign path: {} {}",
-                    //     usage.path,
-                    //     assignPath,
-                    //     usage.path.contains(assignPath)
-                    // );
-                    usage.path.contains(assignPath)
-                }
-                Event::Assign(path) => path.contains(assignPath),
-                _ => false,
-            }
-        }
-
         let mut pruned: EventSeries = self.clone();
         //println!("Prune events (original): {:?}", pruned.events);
         let mut index = limit;
@@ -90,14 +74,14 @@ impl EventSeries {
             match pruned.events[index].clone() {
                 Event::Assign(path) => {
                     for i in 0..index {
-                        if usage_overwritten(&pruned.events[i], &path) {
+                        if doesAssignInvalidateEvent(&pruned.events[i], &path) {
                             pruned.events[i] = Event::Noop;
                         }
                     }
                 }
                 Event::Usage(usage) if usage.isMove() => {
                     for i in 0..index {
-                        if usage_overwritten(&pruned.events[i], &usage.path) {
+                        if doesAssignInvalidateEvent(&pruned.events[i], &usage.path) {
                             pruned.events[i] = Event::Noop;
                         }
                     }
@@ -119,38 +103,32 @@ impl EventSeries {
         pruned
     }
 
-    pub fn prune_internal(&self, limit: usize) -> EventSeries {
-        fn usage_overwritten(event: &Event, assignPath: &Path) -> bool {
-            match event {
-                Event::Usage(usage) => {
-                    // println!(
-                    //     "Checking usage: {} against assign path: {} {}",
-                    //     usage.path,
-                    //     assignPath,
-                    //     usage.path.contains(assignPath)
-                    // );
-                    usage.path.contains(assignPath)
-                }
-                Event::Assign(path) => path.contains(assignPath),
-                _ => false,
-            }
-        }
-
+    pub fn prune_internal(&self, limit: usize, baseEvents: &mut Vec<Event>) -> EventSeries {
         let mut pruned: EventSeries = self.clone();
         //println!("Prune events (original): {:?}", pruned.events);
-        let mut index = limit;
-        while index > 0 {
+        let mut count = limit + 1;
+        while count > 0 {
+            let index = count - 1;
             match pruned.events[index].clone() {
                 Event::Assign(path) => {
                     for i in 0..index {
-                        if usage_overwritten(&pruned.events[i], &path) {
+                        if doesAssignInvalidateEvent(&pruned.events[i], &path) {
                             pruned.events[i] = Event::Noop;
                         }
                     }
+                    baseEvents.retain(|e| {
+                        if doesAssignInvalidateEvent(e, &path) {
+                            //println!("Removing base event: {} because it is invalidated by {}", e, path);
+                            false
+                        } else {
+                            //println!("Keeping base event: {}", e);
+                            true
+                        }
+                    });
                 }
                 _ => {}
             }
-            index -= 1;
+            count -= 1;
         }
         //println!("Pruned events: {:?}", pruned.events);
         pruned
@@ -164,54 +142,9 @@ impl EventSeries {
         compressed
     }
 
-    pub fn validate(&self) -> Vec<Collision> {
-        //println!("Validating event series: {:?}", self.events);
-        let mut collisions = Vec::new();
-        for (index, event) in self.events.iter().enumerate() {
-            if let Event::Usage(usage) = event {
-                let series = self.prune_internal(index);
-                //println!("- Validating event series: {:?}", series.events);
-                for prev in series.events.iter().take(index) {
-                    if let Event::Usage(prevUsage) = prev {
-                        if prevUsage.path.sharesPrefixWith(&usage.path) && prevUsage.kind == UsageKind::Move {
-                            // println!(
-                            //     "Collision detected: {} with previous usage: {}",
-                            //     usage.path, prevUsage.path
-                            // );
-                            collisions.push(Collision {
-                                path: usage.path.clone(),
-                                prev: prevUsage.path.clone(),
-                            });
-                        }
-                    }
-                }
-            }
-            if let Event::Assign(path) = event {
-                if path.isRootOnly() {
-                    continue; // Skip root-only paths
-                }
-                //println!("- Validating event series: {:?}", self.events);
-                let series = self.prune_internal(index);
-                for prev in series.events.iter().take(index) {
-                    if let Event::Usage(prevUsage) = prev {
-                        if path.same(&prevUsage.path) {
-                            continue;
-                        }
-                        if path.contains(&prevUsage.path) && prevUsage.kind == UsageKind::Move {
-                            // println!(
-                            //     "Collision detected: {} with previous usage: {} - assign",
-                            //     path, prevUsage.path
-                            // );
-                            collisions.push(Collision {
-                                path: path.clone(),
-                                prev: prevUsage.path.clone(),
-                            });
-                        }
-                    }
-                }
-            }
-        }
-        collisions
+    pub fn validate(&self, baseEvents: &Vec<Event>, trace: bool) -> (Vec<Collision>, Vec<Event>) {
+        let validator = Validator::new(self);
+        validator.validate(baseEvents, trace)
     }
 }
 
@@ -228,7 +161,124 @@ impl Display for EventSeries {
     }
 }
 
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Collision {
     pub path: Path,
     pub prev: Path,
+}
+
+impl Display for Collision {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} <=> {}", self.path, self.prev)
+    }
+}
+
+impl Debug for Collision {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+struct Validator<'a> {
+    series: &'a EventSeries,
+    collisions: Vec<Collision>,
+}
+impl<'a> Validator<'a> {
+    pub fn new(series: &'a EventSeries) -> Validator<'a> {
+        Validator {
+            series,
+            collisions: Vec::new(),
+        }
+    }
+
+    pub fn validate(mut self, baseEvents: &Vec<Event>, trace: bool) -> (Vec<Collision>, Vec<Event>) {
+        if trace {
+            println!("Validating event series: {:?}", self.series.events);
+        }
+        let mut baseEvents = baseEvents.clone();
+        if trace {
+            println!("Before validation: {:?}", baseEvents);
+        }
+        for (index, event) in self.series.events.iter().enumerate() {
+            if trace {
+                println!("Validating event: {} at index {}", event, index);
+            }
+            if let Event::Usage(usage) = event {
+                let series = self.series.prune_internal(index, &mut baseEvents);
+                for baseEvent in &baseEvents {
+                    self.validateUsage(baseEvent, usage);
+                }
+                //println!("- Validating event series: {:?}", series.events);
+                for prev in series.events.iter().take(index) {
+                    self.validateUsage(prev, usage);
+                }
+            }
+            if let Event::Assign(path) = event {
+                //println!("- Validating event series: {:?}", self.events);
+                let series = self.series.prune_internal(index, &mut baseEvents);
+                for baseEvent in &baseEvents {
+                    self.validateAssign(baseEvent, path);
+                }
+                if path.isRootOnly() {
+                    continue; // Skip root-only paths
+                }
+                for prev in series.events.iter().take(index) {
+                    self.validateAssign(prev, path);
+                }
+            }
+        }
+        if trace {
+            println!("After validation: {:?}", baseEvents);
+        }
+        (self.collisions, baseEvents)
+    }
+
+    fn validateAssign(&mut self, prev: &Event, path: &Path) {
+        if let Event::Usage(prevUsage) = prev {
+            if path.same(&prevUsage.path) {
+                return;
+            }
+            if path.contains(&prevUsage.path) && prevUsage.kind == UsageKind::Move {
+                // println!(
+                //     "Collision detected: {} with previous usage: {} - assign",
+                //     path, prevUsage.path
+                // );
+                self.collisions.push(Collision {
+                    path: path.clone(),
+                    prev: prevUsage.path.clone(),
+                });
+            }
+        }
+    }
+
+    fn validateUsage(&mut self, prev: &Event, usage: &Usage) {
+        if let Event::Usage(prevUsage) = prev {
+            if prevUsage.path.sharesPrefixWith(&usage.path) && prevUsage.kind == UsageKind::Move {
+                // println!(
+                //     "Collision detected: {} with previous usage: {}",
+                //     usage.path, prevUsage.path
+                // );
+                self.collisions.push(Collision {
+                    path: usage.path.clone(),
+                    prev: prevUsage.path.clone(),
+                });
+            }
+        }
+    }
+}
+
+fn doesAssignInvalidateEvent(event: &Event, assignPath: &Path) -> bool {
+    match event {
+        Event::Usage(usage) => {
+            // println!(
+            //     "Checking usage: {} against assign path: {} {}",
+            //     usage.path,
+            //     assignPath,
+            //     usage.path.contains(assignPath)
+            // );
+            usage.path.contains(assignPath)
+        }
+        Event::Assign(path) => path.contains(assignPath),
+        _ => false,
+    }
 }

@@ -1,4 +1,5 @@
 pub mod BlockProcessor;
+pub mod CollisionChecker;
 pub mod Context;
 pub mod DeclarationStore;
 pub mod Drop;

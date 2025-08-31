@@ -131,10 +131,16 @@ impl Path {
 impl Display for Path {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.items.is_empty() {
-            write!(f, "{}", self.root.name().visibleName())
+            write!(f, "{}/{}", self.root.name().visibleName(), self.instructionRef)
         } else {
             let items = self.items.iter().map(|i| i.to_string()).collect::<Vec<_>>();
-            write!(f, "{}.{}", self.root.name().visibleName(), items.join("."))
+            write!(
+                f,
+                "{}.{}/{}",
+                self.root.name().visibleName(),
+                items.join("."),
+                self.instructionRef
+            )
         }
     }
 }

@@ -14,12 +14,14 @@ use crate::siko::{
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Context {
+    pub baseEvents: BTreeMap<VariableName, Vec<Event>>,
     pub usages: BTreeMap<VariableName, EventSeries>,
 }
 
 impl Context {
     pub fn new() -> Context {
         Context {
+            baseEvents: BTreeMap::new(),
             usages: BTreeMap::new(),
         }
     }
@@ -55,15 +57,21 @@ impl Context {
         }
     }
 
-    pub fn validate(&self) -> Vec<Collision> {
+    pub fn validate(&self) -> (Vec<Collision>, BTreeMap<VariableName, Vec<Event>>) {
+        //println!("Validating context");
         let mut collisions = Vec::new();
-
-        for (_, usages) in &self.usages {
-            //println!("Validating usages for variable: {} {} usage(s)", var_name, usages.len());
-            collisions.extend(usages.validate());
+        let mut baseEvents = self.baseEvents.clone();
+        for (name, usages) in &self.usages {
+            //println!("Validating usages for variable: {} {} usage(s)", name, usages.len());
+            let origBaseEvents = self.baseEvents.get(name).cloned().unwrap_or_else(Vec::new);
+            //let trace = name.to_string() == "tmp4";
+            let trace = false;
+            let (cs, updatedBaseEvents) = usages.validate(&origBaseEvents, trace);
+            collisions.extend(cs);
+            baseEvents.insert(name.clone(), updatedBaseEvents);
         }
 
-        collisions
+        (collisions, baseEvents)
     }
 
     pub fn compress(&self) -> Context {

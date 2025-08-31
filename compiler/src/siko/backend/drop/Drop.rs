@@ -5,7 +5,7 @@ use std::{
 
 use crate::siko::{
     backend::drop::{
-        BlockProcessor::BlockProcessor,
+        CollisionChecker::CollisionChecker,
         Context::Context,
         DeclarationStore::DeclarationStore,
         DropMetadataStore::DropMetadataStore,
@@ -118,34 +118,14 @@ impl<'a> DropChecker<'a> {
         // graph = graph.withPostfix("dropcheck");
         // graph.build().printDot();
 
-        let mut visited = BTreeSet::new();
-        let mut queue = Vec::new();
-        queue.push(Case {
-            blockId: BlockId::first(),
-            context: Context::new(),
-        });
-        let mut allCollisions = Vec::new();
-        loop {
-            let Some(case) = queue.pop() else { break };
-            if !visited.insert(case.clone()) {
-                continue;
-            }
-            //println!("Adding case {} to visited", case);
-            //println!("Processed {} cases", visited.len());
-            let builder = self.bodyBuilder.iterator(case.blockId);
-            let mut blockProcessor = BlockProcessor::new(self.dropMetadataStore, self.referenceStore);
-            let (context, jumpTargets) = blockProcessor.process(builder, case.context);
-            let collisions = context.validate();
-            allCollisions.extend(collisions);
-            let jumpContext = context.compress();
-            for jumpTarget in jumpTargets {
-                queue.push(Case {
-                    blockId: jumpTarget,
-                    context: jumpContext.clone(),
-                });
-            }
-        }
+        let mut collisionChecker = CollisionChecker::new(
+            self.bodyBuilder.clone(),
+            self.dropMetadataStore,
+            self.referenceStore,
+            self.function,
+        );
 
+        let allCollisions = collisionChecker.process();
         let (allCollisions, implicitClones) = self.processImplicitClones(allCollisions);
         // println!(
         //     "Found {} collisions and {} implicit clones in function {}",
