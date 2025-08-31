@@ -83,6 +83,10 @@ impl BlockBuilder {
         }
     }
 
+    pub fn getInstructionAt(&self, index: usize) -> Option<Instruction> {
+        self.bodyBuilder.getInstruction(self.blockId, index)
+    }
+
     pub fn getInstructionRef(&self) -> InstructionRef {
         InstructionRef {
             blockId: self.blockId,
@@ -148,6 +152,10 @@ impl BlockBuilder {
                 self.bodyBuilder.removeInstruction(self.blockId, index);
             }
         }
+    }
+
+    pub fn removeInstructionAt(&mut self, index: usize) {
+        self.bodyBuilder.removeInstruction(self.blockId, index);
     }
 
     pub fn addAssign(&mut self, target: Variable, source: Variable, location: Location) {

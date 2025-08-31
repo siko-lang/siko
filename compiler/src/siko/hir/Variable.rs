@@ -47,6 +47,13 @@ impl VariableName {
         }
     }
 
+    pub fn isUserDefined(&self) -> bool {
+        match self {
+            VariableName::Local(_, _) | VariableName::Arg(_) => true,
+            _ => false,
+        }
+    }
+
     pub fn getDropFlag(&self) -> VariableName {
         VariableName::DropFlag(self.to_string())
     }
@@ -230,6 +237,10 @@ impl Variable {
 
     pub fn isArg(&self) -> bool {
         self.name().isArg()
+    }
+
+    pub fn isUserDefined(&self) -> bool {
+        self.name().isUserDefined()
     }
 
     pub fn getDropFlag(&self) -> Variable {

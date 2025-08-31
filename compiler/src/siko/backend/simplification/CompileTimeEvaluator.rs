@@ -71,7 +71,7 @@ impl<'a> CompileTimeEvaluator<'a> {
             .expect("Environment for block should exist")
     }
 
-    pub fn evaluateBlock(&mut self, builder: &mut BlockBuilder, modify: bool) {
+    fn evaluateBlock(&mut self, builder: &mut BlockBuilder, modify: bool) {
         //println!("Evaluating block: {}", builder.getBlockId());
         let mut newEnv = self.getEnvForBlock(builder.getBlockId()).clone();
         loop {

@@ -61,6 +61,17 @@ enum OptimizationLevel {
     O3,
 }
 
+fn runCommand(command: &str, args: &[&str]) {
+    let status = Command::new(command)
+        .args(args)
+        .status()
+        .expect("Failed to execute command");
+    if !status.success() {
+        eprintln!("Command {:?} failed with status: {}", command, status);
+        std::process::exit(1);
+    }
+}
+
 fn main() {
     let ctx = ReportContext {};
     let fileManager = FileManager::new();
@@ -169,20 +180,13 @@ fn main() {
             link_args.push("-O3");
         }
     }
-    Command::new("clang")
-        .args(&compile_args)
-        .status()
-        .expect("Failed to execute clang");
-    Command::new("clang")
-        .args(&link_args)
-        .status()
-        .expect("Failed to execute clang");
+
+    runCommand("clang", &compile_args);
+    runCommand("clang", &link_args);
     if phase == BuildPhase::Run {
         // remove the c source and object
         fs::remove_file(c_output_path).expect("Failed to remove C source file");
         fs::remove_file(object_path).expect("Failed to remove object file");
-        Command::new(&bin_output_path)
-            .status()
-            .expect("Failed to execute binary");
+        runCommand(&bin_output_path, &[]);
     }
 }

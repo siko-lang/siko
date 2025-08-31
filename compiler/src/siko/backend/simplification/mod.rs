@@ -3,5 +3,7 @@ pub mod CompileTimeEvaluator;
 pub mod DeadCodeEliminator;
 pub mod JumpSimplifier;
 pub mod Simplifier;
+pub mod UnusedAssignmentEliminator;
 pub mod UnusedVariableEliminator;
+pub mod Utils;
 pub mod VarSimplifier;

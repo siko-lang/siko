@@ -1,8 +1,11 @@
 use std::collections::BTreeMap;
 
-use crate::siko::hir::{
-    BodyBuilder::BodyBuilder, Function::Function, Instruction::InstructionKind, Program::Program,
-    Variable::VariableName,
+use crate::siko::{
+    backend::simplification::Utils,
+    hir::{
+        BodyBuilder::BodyBuilder, Function::Function, Instruction::InstructionKind, Program::Program,
+        Variable::VariableName,
+    },
 };
 
 pub fn eliminateUnusedVariable(f: &Function, program: &Program) -> Option<Function> {
@@ -83,7 +86,7 @@ impl<'a> UnusedVariableEliminator<'a> {
                     if let Some(v) = i.kind.getResultVar() {
                         if v.isTemp() {
                             if let Some(count) = self.useCount.get(&v.name()) {
-                                if *count == 0 && self.canBeEliminated(&i.kind) {
+                                if *count == 0 && Utils::canBeEliminated(self.program, &i.kind) {
                                     //println!("Removing unused variable: {} from {}", v.name, i);
                                     removed = true;
                                     builder.removeInstruction();
@@ -109,23 +112,5 @@ impl<'a> UnusedVariableEliminator<'a> {
         let mut f = self.function.clone();
         f.body = Some(bodyBuilder.build());
         Some(f)
-    }
-
-    fn canBeEliminated(&self, i: &InstructionKind) -> bool {
-        match i {
-            InstructionKind::DeclareVar(_, _) => true,
-            InstructionKind::FieldRef(_, _, _) => true,
-            InstructionKind::Assign(_, _) => true,
-            InstructionKind::FunctionCall(_, info) => {
-                let f = match self.program.getFunction(&info.name) {
-                    Some(f) => f,
-                    None => {
-                        panic!("Function not found: {}", info.name);
-                    }
-                };
-                f.isPure()
-            }
-            _ => false,
-        }
     }
 }
