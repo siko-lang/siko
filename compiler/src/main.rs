@@ -16,6 +16,7 @@ use std::{env::args, fs, path::Path, process::Command};
 use crate::siko::{
     backend::{Backend, TypeVerifier::verifyTypes},
     typechecker::Typechecker::typecheck,
+    util::Runner::Runner,
 };
 
 fn collectFiles(input: &Path) -> Vec<String> {
@@ -75,7 +76,7 @@ fn runCommand(command: &str, args: &[&str]) {
 fn main() {
     let ctx = ReportContext {};
     let fileManager = FileManager::new();
-    let mut resolver = Resolver::new(&ctx);
+
     let mut outputFile = "siko_main".to_string();
     let mut inputFiles = Vec::new();
     let mut args: Vec<String> = args().collect();
@@ -85,6 +86,7 @@ fn main() {
     }
     let mut sanitized = false;
     let phase;
+    let mut pass_details = false;
     let mut optimization = OptimizationLevel::None;
     match args[1].as_str() {
         "run" => {
@@ -122,6 +124,9 @@ fn main() {
             "--sanitize" => {
                 sanitized = true;
             }
+            "--pass-details" => {
+                pass_details = true;
+            }
             _ => {
                 inputFiles.push(args[i].clone());
             }
@@ -129,37 +134,49 @@ fn main() {
         i += 1;
     }
 
-    let mut allFiles = Vec::new();
-    for inputFile in inputFiles {
-        let files = collectFiles(Path::new(&inputFile));
-        allFiles.extend(files);
-    }
-    for f in allFiles {
-        let fileId = fileManager.add(f.clone());
-        let mut parser = Parser::new(&ctx, fileId, f.to_string());
-        parser.parse();
-        let modules = parser.modules();
-        for m in modules {
-            resolver.addModule(m);
+    let mut runner = Runner::new(pass_details);
+    let mut resolver = stage!(runner, "Parsing", {
+        let mut resolver = Resolver::new(&ctx);
+        let mut allFiles = Vec::new();
+        for inputFile in inputFiles {
+            let files = collectFiles(Path::new(&inputFile));
+            allFiles.extend(files);
         }
-    }
-    resolver.process();
-    let program = resolver.ir();
+        for f in allFiles {
+            let fileId = fileManager.add(f.clone());
+            let mut parser = Parser::new(&ctx, fileId, f.to_string());
+            parser.parse();
+            let modules = parser.modules();
+            for m in modules {
+                resolver.addModule(m);
+            }
+        }
+        resolver
+    });
+    let program = stage!(runner, "Resolving names", {
+        resolver.process();
+        resolver.ir()
+    });
     //println!("after resolver\n{}", program);
-    let program = typecheck(&ctx, program);
-    verifyTypes(&program);
-    //println!("after typchk\n{}", program);
-    let program = Backend::process(&ctx, program);
+    let program = stage!(runner, "Type checking", { typecheck(&ctx, program) });
+    let program = stage!(runner, "Verifying types", {
+        verifyTypes(&program);
+        program
+    });
+    //println!("after typechecker\n{}", program);
+    let program = Backend::process(&ctx, &mut runner, program);
     //println!("after backend\n{}", program);
-    let mut mir_program = lowerProgram(&program);
+    let mut mir_program = stage!(runner, "Lowering to MIR", { lowerProgram(&program) });
     //println!("mir\n{}", mir_program);
-    mir_program.process();
-    let c_program = mir_program.toMiniC();
+    stage!(runner, "Processing MIR", { mir_program.process() });
+    let c_program = stage!(runner, "Converting MIR to MiniC", { mir_program.toMiniC() });
     let c_output_path = format!("{}.c", outputFile);
     let object_path = format!("{}.o", outputFile);
     let bin_output_path = format!("./{}", outputFile);
     let mut generator = MiniCGenerator::new(c_output_path.clone(), c_program);
-    generator.dump().expect("c generator failed");
+    stage!(runner, "Generating C code", {
+        generator.dump().expect("c generator failed")
+    });
     if phase == BuildPhase::BuildSource {
         // Only build the project
         return;
@@ -189,4 +206,5 @@ fn main() {
         fs::remove_file(object_path).expect("Failed to remove object file");
         runCommand(&bin_output_path, &[]);
     }
+    runner.report();
 }

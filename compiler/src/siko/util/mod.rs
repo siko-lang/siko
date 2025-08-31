@@ -8,4 +8,5 @@ pub fn error(msg: String) -> ! {
 pub mod DependencyProcessor;
 pub mod Dot;
 pub mod Instantiator;
+pub mod Runner;
 pub mod SCC;
