@@ -21,9 +21,9 @@ use crate::siko::{
     mir::{
         Data::{Field as MirField, Struct, Union, Variant as MirVariant},
         Function::{
-            Block as MirBlock, EnumCase as MirEnumCase, ExternKind as MirExternKind, Function as MirFunction,
-            FunctionKind as MirFunctionKind, Instruction, IntegerCase as MirIntegerCase, Param as MirParam,
-            Variable as MirVariable,
+            Block as MirBlock, EnumCase as MirEnumCase, ExternInfo, ExternKind as MirExternKind,
+            Function as MirFunction, FunctionKind as MirFunctionKind, Instruction, IntegerCase as MirIntegerCase,
+            Param as MirParam, Variable as MirVariable,
         },
         Program::Program as MirProgram,
         Type::Type as MirType,
@@ -95,7 +95,10 @@ impl<'a> Builder<'a> {
                         convertFunctionName(&info.name)
                     };
                     let args = info.args.iter().map(|var| self.buildVariable(var)).collect();
-                    if dest.getType().isNever() || (f.kind.isExternC() && dest.getType() == getUnitTypeName()) {
+                    if dest.getType().isNever()
+                        || dest.getType().isVoid()
+                        || (f.kind.isExternC() && dest.getType() == getUnitTypeName())
+                    {
                         block.instructions.push(Instruction::Call(None, fnName, args));
                     } else {
                         let dest = self.buildVariable(dest);
@@ -357,11 +360,14 @@ impl<'a> Builder<'a> {
                 }
                 MirFunctionKind::VariantCtor(i)
             }
-            FunctionKind::Extern(kind) => {
-                let mirKind = match kind {
-                    ExternKind::C => {
-                        let name = self.function.name.getShortName();
-                        MirExternKind::C(name)
+            FunctionKind::Extern(ref kind) => {
+                let mirKind = match &kind {
+                    ExternKind::C(header) => {
+                        let info = ExternInfo {
+                            name: self.function.name.getShortName(),
+                            headerName: header.clone(),
+                        };
+                        MirExternKind::C(info)
                     }
                     ExternKind::Builtin => MirExternKind::Builtin,
                 };
@@ -456,6 +462,8 @@ pub fn lowerType(ty: &HirType, program: &HirProgram) -> MirType {
         HirType::SelfType => todo!(),
         HirType::Never(_) => MirType::Void,
         HirType::NumericConstant(_) => unreachable!("NumericConstant ty lowering in MIR"),
+        HirType::Void => MirType::Void,
+        HirType::VoidPtr => MirType::VoidPtr,
     }
 }
 

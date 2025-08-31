@@ -86,6 +86,10 @@ pub fn unify(sub: &mut Substitution, ty1: Type, ty2: Type, allowNamed: bool) -> 
                 Err(Error {})
             }
         }
+        (Type::Void, Type::Void) => Ok(()),
+        (Type::VoidPtr, Type::VoidPtr) => Ok(()),
+        (Type::VoidPtr, Type::Ptr(_)) => Ok(()),
+        (Type::Ptr(_), Type::VoidPtr) => Ok(()),
         _ => return Err(Error {}),
     }
 }

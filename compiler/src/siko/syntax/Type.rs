@@ -12,6 +12,8 @@ pub enum Type {
     SelfType,
     Never,
     NumericConstant(String),
+    Void,
+    VoidPtr,
 }
 
 impl fmt::Display for Type {
@@ -46,6 +48,8 @@ impl fmt::Display for Type {
             Type::SelfType => write!(f, "Self"),
             Type::Never => write!(f, "!"),
             Type::NumericConstant(value) => write!(f, "{}", value),
+            Type::Void => write!(f, "void"),
+            Type::VoidPtr => write!(f, "void*"),
         }
     }
 }

@@ -5,18 +5,34 @@ pub struct Param {
     pub ty: Type,
 }
 
+pub struct CExternInfo {
+    pub name: String,
+    pub headerName: Option<String>,
+}
+
+pub enum ExternKind {
+    C(CExternInfo),
+    Builtin,
+}
+
 pub struct Function {
     pub name: String,
     pub fullName: String,
     pub args: Vec<Param>,
     pub result: Type,
     pub blocks: Vec<Block>,
-    pub isBuiltin: bool,
+    pub externKind: Option<ExternKind>,
 }
 
 impl Function {
-    pub fn isExtern(&self) -> bool {
-        !self.isBuiltin && self.blocks.is_empty()
+    pub fn isExternC(&self) -> bool {
+        self.externKind
+            .as_ref()
+            .map(|kind| match kind {
+                ExternKind::C(_) => true,
+                ExternKind::Builtin => false,
+            })
+            .unwrap_or(false)
     }
 }
 

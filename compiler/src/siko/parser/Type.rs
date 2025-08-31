@@ -92,6 +92,15 @@ impl<'a> TypeParser for Parser<'a> {
                 let literal = self.parseIntegerLiteral();
                 Type::NumericConstant(literal)
             }
+            TokenKind::Keyword(KeywordKind::Void) => {
+                self.expect(TokenKind::Keyword(KeywordKind::Void));
+                if self.check(TokenKind::Op(OperatorKind::Mul)) {
+                    self.expect(TokenKind::Op(OperatorKind::Mul));
+                    Type::VoidPtr
+                } else {
+                    Type::Void
+                }
+            }
             kind => self.reportError2("<type>", kind),
         }
     }

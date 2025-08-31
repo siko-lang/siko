@@ -15,7 +15,7 @@ pub enum Parameter {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FunctionExternKind {
     Builtin,
-    C,
+    C(Option<String>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

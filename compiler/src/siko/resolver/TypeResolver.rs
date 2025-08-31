@@ -75,6 +75,8 @@ impl<'a> TypeResolver<'a> {
             Type::SelfType => IrType::SelfType,
             Type::Never => IrType::Never(true),
             Type::NumericConstant(value) => IrType::NumericConstant(value.clone()),
+            Type::Void => IrType::Void,
+            Type::VoidPtr => IrType::VoidPtr,
         }
     }
 

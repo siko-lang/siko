@@ -14,8 +14,13 @@ impl fmt::Display for Param {
     }
 }
 
+pub struct ExternInfo {
+    pub name: String,
+    pub headerName: Option<String>,
+}
+
 pub enum ExternKind {
-    C(String),
+    C(ExternInfo),
     Builtin,
 }
 

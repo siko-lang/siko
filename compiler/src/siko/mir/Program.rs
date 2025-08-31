@@ -169,6 +169,7 @@ impl Program {
                 for f in &item.fields {
                     let size = self.getTypesize(&f.ty);
                     let alignment = match &f.ty {
+                        Type::VoidPtr => 8,
                         Type::Void => 1,
                         Type::UInt8 => 1,
                         Type::UInt32 => 4,
@@ -204,6 +205,7 @@ impl Program {
                     let size = self.getTypesize(&v.ty);
                     let alignment = match &v.ty {
                         Type::Void => 0,
+                        Type::VoidPtr => 8,
                         Type::UInt8 => 1,
                         Type::UInt32 => 4,
                         Type::UInt64 => 8,
@@ -234,6 +236,7 @@ impl Program {
 
     fn getTypesize(&self, ty: &Type) -> u32 {
         match ty {
+            Type::VoidPtr => 8,
             Type::Void => 0,
             Type::UInt8 => 1,
             Type::UInt32 => 4,

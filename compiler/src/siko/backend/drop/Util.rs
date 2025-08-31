@@ -37,7 +37,14 @@ impl HasTrivialDrop for Type {
     fn hasTrivialDrop(&self) -> bool {
         match self {
             Type::Named(name, _) => getIntTypeName() == *name || getBoolTypeName() == *name, // TODO: make this more generic
-            _ => self.isNever() || self.isPtr() || self.isReference() || self.isUnit(),
+            _ => {
+                self.isNever()
+                    || self.isPtr()
+                    || self.isReference()
+                    || self.isUnit()
+                    || self.isVoid()
+                    || self.isVoidPtr()
+            }
         }
     }
 }

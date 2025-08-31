@@ -9,6 +9,8 @@ use super::{
 };
 
 use crate::siko::minic::Function::Branch as LBranch;
+use crate::siko::minic::Function::CExternInfo;
+use crate::siko::minic::Function::ExternKind as LExternKind;
 use crate::siko::minic::Function::Function as LFunction;
 use crate::siko::minic::Function::Instruction as LInstruction;
 use crate::siko::minic::Function::Param as LParam;
@@ -107,8 +109,8 @@ impl<'a> MinicBuilder<'a> {
                 }
                 Instruction::Call(dest, name, args) => {
                     let f = self.program.functions.get(name).expect("Function not found");
-                    let name = if let FunctionKind::Extern(ExternKind::C(name)) = &f.kind {
-                        name.clone()
+                    let name = if let FunctionKind::Extern(ExternKind::C(info)) = &f.kind {
+                        info.name.clone()
                     } else {
                         name.clone()
                     };
@@ -298,7 +300,7 @@ impl<'a> MinicBuilder<'a> {
                     args: args,
                     result: resultTy,
                     blocks: minicBlocks,
-                    isBuiltin: false,
+                    externKind: None,
                 }
             }
             FunctionKind::StructCtor => {
@@ -338,7 +340,7 @@ impl<'a> MinicBuilder<'a> {
                     args: args,
                     result: resultTy,
                     blocks: vec![block],
-                    isBuiltin: false,
+                    externKind: None,
                 }
             }
             FunctionKind::VariantCtor(index) => {
@@ -391,12 +393,12 @@ impl<'a> MinicBuilder<'a> {
                     args: args,
                     result: resultTy,
                     blocks: vec![block],
-                    isBuiltin: false,
+                    externKind: None,
                 }
             }
             FunctionKind::Extern(kind) => {
-                let name = if let ExternKind::C(name) = kind {
-                    name.clone()
+                let name = if let ExternKind::C(info) = kind {
+                    info.name.clone()
                 } else {
                     f.name.clone()
                 };
@@ -406,9 +408,15 @@ impl<'a> MinicBuilder<'a> {
                     args: args,
                     result: resultTy,
                     blocks: Vec::new(),
-                    isBuiltin: match kind {
-                        ExternKind::C(_) => false,
-                        ExternKind::Builtin => true,
+                    externKind: match kind {
+                        ExternKind::C(info) => {
+                            let cInfo = CExternInfo {
+                                name: info.name.clone(),
+                                headerName: info.headerName.clone(),
+                            };
+                            Some(LExternKind::C(cInfo))
+                        }
+                        ExternKind::Builtin => Some(LExternKind::Builtin),
                     },
                 }
             }
@@ -436,6 +444,7 @@ impl<'a> MinicBuilder<'a> {
     fn lowerType(&self, ty: &Type) -> LType {
         match ty {
             Type::Void => LType::Void,
+            Type::VoidPtr => LType::VoidPtr,
             Type::UInt8 => LType::UInt8,
             Type::UInt32 => LType::UInt32,
             Type::UInt64 => LType::UInt64,

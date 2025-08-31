@@ -373,6 +373,8 @@ impl Format for Type {
             Type::SelfType => vec![Token::Chunk("Self".to_string())],
             Type::Never => vec![Token::Chunk("!".to_string())],
             Type::NumericConstant(value) => vec![Token::Chunk(format!("{}", value))],
+            Type::Void => vec![Token::Chunk("void".to_string())],
+            Type::VoidPtr => vec![Token::Chunk("void*".to_string())],
         }
     }
 }
@@ -474,7 +476,10 @@ impl Format for Function {
             }
             (None, Some(extern_kind)) => match extern_kind {
                 FunctionExternKind::Builtin => result.push(Token::Chunk(" = extern".to_string())),
-                FunctionExternKind::C => result.push(Token::Chunk(" = extern \"C\"".to_string())),
+                FunctionExternKind::C(Some(header)) => {
+                    result.push(Token::Chunk(format!(" = extern \"C\" (\"{}\")", header)))
+                }
+                FunctionExternKind::C(None) => result.push(Token::Chunk(" = extern \"C\"".to_string())),
             },
             (None, None) => {
                 // Function signature only

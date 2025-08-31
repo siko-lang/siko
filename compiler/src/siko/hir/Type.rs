@@ -38,6 +38,8 @@ pub enum Type {
     SelfType,
     Never(bool), // true = explicit never i.e. !
     NumericConstant(String),
+    Void,
+    VoidPtr,
 }
 
 impl Type {
@@ -100,6 +102,8 @@ impl Type {
             Type::SelfType => {}
             Type::Never(_) => {}
             Type::NumericConstant(_) => {}
+            Type::Void => {}
+            Type::VoidPtr => {}
         }
         vars
     }
@@ -136,6 +140,8 @@ impl Type {
             Type::SelfType => {}
             Type::Never(_) => {}
             Type::NumericConstant(_) => {}
+            Type::Void => {}
+            Type::VoidPtr => {}
         }
         vars
     }
@@ -313,6 +319,12 @@ impl Type {
             Type::NumericConstant(_) => {
                 return true;
             }
+            Type::Void => {
+                return true;
+            }
+            Type::VoidPtr => {
+                return true;
+            }
         }
     }
 
@@ -326,6 +338,20 @@ impl Type {
     pub fn isUnit(&self) -> bool {
         match &self {
             Type::Tuple(args) => args.is_empty(),
+            _ => false,
+        }
+    }
+
+    pub fn isVoid(&self) -> bool {
+        match &self {
+            Type::Void => true,
+            _ => false,
+        }
+    }
+
+    pub fn isVoidPtr(&self) -> bool {
+        match &self {
+            Type::VoidPtr => true,
             _ => false,
         }
     }
@@ -435,6 +461,8 @@ impl Display for Type {
             Type::SelfType => write!(f, "Self"),
             Type::Never(_) => write!(f, "!"),
             Type::NumericConstant(value) => write!(f, "{}", value),
+            Type::Void => write!(f, "void"),
+            Type::VoidPtr => write!(f, "void*"),
         }
     }
 }

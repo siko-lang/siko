@@ -4,7 +4,10 @@ use std::{
     io::{self, Write},
 };
 
-use crate::siko::{minic::Function::Value, util::DependencyProcessor::processDependencies};
+use crate::siko::{
+    minic::Function::{ExternKind, Value},
+    util::DependencyProcessor::processDependencies,
+};
 
 use super::{
     Builtins::dumpBuiltinFunction,
@@ -26,6 +29,7 @@ pub fn getStructName(name: &String) -> String {
 pub fn getTypeName(ty: &Type) -> String {
     match &ty {
         Type::Void => "void".to_string(),
+        Type::VoidPtr => "void*".to_string(),
         Type::UInt8 => "uint8_t".to_string(),
         Type::UInt32 => "uint32_t".to_string(),
         Type::UInt64 => "uint64_t".to_string(),
@@ -50,6 +54,7 @@ impl MiniCGenerator {
     fn getAlignment(&self, ty: &Type) -> u32 {
         match &ty {
             Type::Void => 0,
+            Type::VoidPtr => 8,
             Type::UInt8 => 1,
             Type::UInt32 => 4,
             Type::UInt64 => 8,
@@ -277,11 +282,23 @@ impl MiniCGenerator {
     pub fn dump(&mut self) -> io::Result<()> {
         let mut output = File::create(&self.fileName).expect("Failed to open llvm output");
 
-        writeln!(output, "#include <stdlib.h>")?;
+        let mut headers = BTreeSet::new();
+        for f in &self.program.functions {
+            match &f.externKind {
+                Some(ExternKind::C(info)) => {
+                    if let Some(header) = &info.headerName {
+                        headers.insert(header.clone());
+                    }
+                }
+                _ => continue,
+            }
+        }
+
         writeln!(output, "#include <stdint.h>")?;
-        writeln!(output, "#include <string.h>")?;
-        writeln!(output, "#include <stdio.h>")?;
-        writeln!(output, "#include <unistd.h>")?;
+        for header in &headers {
+            writeln!(output, "#include <{}>", header)?;
+        }
+
         writeln!(output, "")?;
 
         for s in &self.program.strings {
@@ -323,14 +340,14 @@ impl MiniCGenerator {
         }
 
         for f in &self.program.functions {
-            if f.isExtern() {
+            if f.isExternC() {
                 continue;
             }
             self.dumpFunctionDeclaration(f, &mut output)?;
         }
 
         for f in &self.program.functions {
-            if f.isExtern() {
+            if f.isExternC() {
                 continue;
             }
             self.dumpFunction(f, &mut output)?;

@@ -142,7 +142,7 @@ impl<'a> FunctionResolver<'a> {
             body,
             self.constraintContext.clone(),
             match f.externKind {
-                Some(FunctionExternKind::C) => FunctionKind::Extern(ExternKind::C),
+                Some(FunctionExternKind::C(ref header)) => FunctionKind::Extern(ExternKind::C(header.clone())),
                 Some(FunctionExternKind::Builtin) => FunctionKind::Extern(ExternKind::Builtin),
                 None => FunctionKind::UserDefined,
             },

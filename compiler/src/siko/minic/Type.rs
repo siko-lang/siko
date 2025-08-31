@@ -1,6 +1,7 @@
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Type {
     Void,
+    VoidPtr,
     UInt8,
     UInt32,
     UInt64,

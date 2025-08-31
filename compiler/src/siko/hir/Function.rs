@@ -31,9 +31,9 @@ impl Parameter {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExternKind {
-    C,
+    C(Option<String>),
     Builtin,
 }
 
@@ -75,7 +75,7 @@ impl Display for FunctionKind {
 impl FunctionKind {
     pub fn isExternC(&self) -> bool {
         match self {
-            FunctionKind::Extern(kind) => *kind == ExternKind::C,
+            FunctionKind::Extern(ExternKind::C(_)) => true,
             _ => false,
         }
     }

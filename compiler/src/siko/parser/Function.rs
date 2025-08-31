@@ -74,7 +74,18 @@ impl<'a> FunctionParser for Parser<'a> {
             if self.check(TokenKind::StringLiteral) {
                 let stringLiteral = self.parseStringLiteral();
                 if stringLiteral == "C" {
-                    (Some(FunctionExternKind::C), None)
+                    if self.check(TokenKind::LeftBracket(BracketKind::Paren)) {
+                        self.expect(TokenKind::LeftBracket(BracketKind::Paren));
+                        let header = if self.check(TokenKind::StringLiteral) {
+                            Some(self.parseStringLiteral())
+                        } else {
+                            None
+                        };
+                        self.expect(TokenKind::RightBracket(BracketKind::Paren));
+                        (Some(FunctionExternKind::C(header)), None)
+                    } else {
+                        (Some(FunctionExternKind::C(None)), None)
+                    }
                 } else {
                     error(format!("Unknown extern kind: {}", stringLiteral));
                 }

@@ -247,6 +247,8 @@ impl<'a> Monomorphizer<'a> {
             Type::SelfType => Type::SelfType,
             Type::Never(v) => Type::Never(v),
             Type::NumericConstant(value) => Type::NumericConstant(value),
+            Type::Void => Type::Void,
+            Type::VoidPtr => Type::VoidPtr,
         };
         self.processed_type.insert(ty, r.clone());
         r

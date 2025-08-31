@@ -3,6 +3,7 @@ use std::fmt;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Void,
+    VoidPtr,
     UInt8,
     UInt32,
     UInt64,
@@ -17,23 +18,6 @@ pub enum Type {
 }
 
 impl Type {
-    pub fn isSimple(&self) -> bool {
-        match self {
-            Type::Void => true,
-            Type::UInt8 => true,
-            Type::UInt32 => true,
-            Type::UInt64 => true,
-            Type::Int8 => true,
-            Type::Int16 => true,
-            Type::Int32 => true,
-            Type::Int64 => true,
-            Type::Struct(_) => false,
-            Type::Union(_) => false,
-            Type::Ptr(_) => false,
-            Type::Array(_, _) => false,
-        }
-    }
-
     pub fn isPtr(&self) -> bool {
         match self {
             Type::Ptr(_) => true,
@@ -69,6 +53,7 @@ impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Type::Void => write!(f, "void"),
+            Type::VoidPtr => write!(f, "void*"),
             Type::UInt8 => write!(f, "u8"),
             Type::UInt32 => write!(f, "u32"),
             Type::UInt64 => write!(f, "u64"),
