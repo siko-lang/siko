@@ -117,7 +117,7 @@ impl Display for QualifiedName {
             QualifiedName::Canonical(p, t, types) => {
                 write!(f, "{}/{}[{}]", p, t, formatTypes(types))
             }
-            QualifiedName::Lambda(p, index) => write!(f, "{}.lambda{}", p, index),
+            QualifiedName::Lambda(p, index) => write!(f, "{}.lambda/{}", p, index),
         }
     }
 }

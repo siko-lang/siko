@@ -375,21 +375,28 @@ impl Display for CallInfo {
 
 #[derive(Clone, PartialEq)]
 pub struct ClosureCreateInfo {
-    pub params: Vec<Variable>,
+    pub closureParams: Vec<Variable>,
     pub body: BlockId,
     pub name: QualifiedName,
+    pub fnArgCount: u32,
 }
 
 impl ClosureCreateInfo {
-    pub fn new(params: Vec<Variable>, body: BlockId, name: QualifiedName) -> Self {
-        ClosureCreateInfo { params, body, name }
+    pub fn new(params: Vec<Variable>, body: BlockId, name: QualifiedName, fnArgCount: u32) -> Self {
+        ClosureCreateInfo {
+            closureParams: params,
+            body,
+            name,
+            fnArgCount,
+        }
     }
 
     pub fn copy(&self, map: &mut CopyMap) -> ClosureCreateInfo {
         ClosureCreateInfo {
-            params: self.params.iter().map(|p| p.copy(map)).collect(),
+            closureParams: self.closureParams.iter().map(|p| p.copy(map)).collect(),
             body: self.body,
             name: self.name.clone(),
+            fnArgCount: self.fnArgCount,
         }
     }
 }
@@ -398,10 +405,15 @@ impl Display for ClosureCreateInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "create_closure({}, {}, {})",
+            "create_closure({}, {}, {}, [{}])",
             self.name,
             self.body,
-            self.params.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(", ")
+            self.fnArgCount,
+            self.closureParams
+                .iter()
+                .map(|p| p.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
         )
     }
 }
@@ -525,8 +537,8 @@ impl InstructionKind {
             InstructionKind::MethodCall(dest, receiver, name, args) => {
                 InstructionKind::MethodCall(dest.clone(), receiver.useVar(), name.clone(), useVars(args.clone()))
             }
-            InstructionKind::DynamicFunctionCall(_, _, _) => {
-                unimplemented!("DynamicFunctionCall is not yet implemented")
+            InstructionKind::DynamicFunctionCall(dest, closure, args) => {
+                InstructionKind::DynamicFunctionCall(dest.clone(), closure.useVar(), useVars(args.clone()))
             }
             InstructionKind::FieldRef(dest, receiver, infos) => {
                 InstructionKind::FieldRef(dest.clone(), receiver.useVar(), infos.clone())
@@ -567,7 +579,7 @@ impl InstructionKind {
             InstructionKind::StorePtr(dest, src) => InstructionKind::StorePtr(dest.clone(), src.useVar()),
             InstructionKind::CreateClosure(v, info) => {
                 let mut info = info.clone();
-                info.params = info.params.iter().map(|p| p.useVar()).collect();
+                info.closureParams = info.closureParams.iter().map(|p| p.useVar()).collect();
                 InstructionKind::CreateClosure(v.clone(), info)
             }
         }
@@ -744,7 +756,11 @@ impl InstructionKind {
             }
             InstructionKind::CreateClosure(var, info) => {
                 let mut info = info.clone();
-                info.params = info.params.iter().map(|p| p.replace(&from, to.clone())).collect();
+                info.closureParams = info
+                    .closureParams
+                    .iter()
+                    .map(|p| p.replace(&from, to.clone()))
+                    .collect();
                 InstructionKind::CreateClosure(var.replace(&from, to.clone()), info)
             }
         }
@@ -837,7 +853,7 @@ impl InstructionKind {
             InstructionKind::StorePtr(dest, src) => vec![dest.clone(), src.clone()],
             InstructionKind::CreateClosure(var, info) => {
                 let mut vars = vec![var.clone()];
-                vars.extend(info.params.clone());
+                vars.extend(info.closureParams.clone());
                 vars
             }
         }
@@ -855,7 +871,7 @@ impl InstructionKind {
                 format!("{} = methodcall({}.{}({:?}))", dest, receiver, name, args)
             }
             InstructionKind::DynamicFunctionCall(dest, callable, args) => {
-                format!("{} = DYN_CALL({}, {:?})", dest, callable, args)
+                format!("{} = dynamic_call({}, {:?})", dest, callable, args)
             }
             InstructionKind::FieldRef(dest, v, fields) => format!(
                 "{} = ({}){}",

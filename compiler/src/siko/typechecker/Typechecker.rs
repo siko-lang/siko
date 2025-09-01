@@ -25,7 +25,7 @@ use crate::siko::{
         Type::{Type, TypeVar},
         TypeVarAllocator::TypeVarAllocator,
         Unifier::Unifier,
-        Variable::Variable,
+        Variable::{Variable, VariableName},
     },
     location::{Location::Location, Report::ReportContext},
     qualifiedname::{
@@ -81,6 +81,26 @@ impl Debug for ReceiverChainEntry {
     }
 }
 
+struct ClosureTypeInfo {
+    argTypes: Vec<Type>,
+    envTypes: Vec<Type>,
+    resultType: Option<Type>,
+    envVars: Vec<Variable>,
+    argVars: Vec<Variable>,
+}
+
+impl ClosureTypeInfo {
+    fn new() -> ClosureTypeInfo {
+        ClosureTypeInfo {
+            argTypes: Vec::new(),
+            envTypes: Vec::new(),
+            resultType: None,
+            envVars: Vec::new(),
+            argVars: Vec::new(),
+        }
+    }
+}
+
 pub struct Typechecker<'a> {
     ctx: &'a ReportContext,
     program: &'a Program,
@@ -98,6 +118,7 @@ pub struct Typechecker<'a> {
     implResolver: InstanceResolver<'a>,
     unifier: Unifier<'a>,
     fnCallResolver: FunctionCallResolver<'a>,
+    closureTypes: BTreeMap<BlockId, ClosureTypeInfo>,
 }
 
 impl<'a> Typechecker<'a> {
@@ -138,6 +159,7 @@ impl<'a> Typechecker<'a> {
             receiverChains: BTreeMap::new(),
             implResolver: implResolver,
             unifier: unifier,
+            closureTypes: BTreeMap::new(),
         }
     }
 
@@ -161,6 +183,19 @@ impl<'a> Typechecker<'a> {
                 let ty = self.allocator.next();
                 var.setType(ty.clone());
             }
+        }
+        match var.name() {
+            VariableName::LambdaArg(blockId, index) => {
+                let closureTypeInfo = self.closureTypes.entry(blockId).or_insert_with(ClosureTypeInfo::new);
+                assert_eq!(closureTypeInfo.argVars.len(), index as usize);
+                closureTypeInfo.argVars.push(var.clone());
+            }
+            VariableName::ClosureArg(blockId, index) => {
+                let closureTypeInfo = self.closureTypes.entry(blockId).or_insert_with(ClosureTypeInfo::new);
+                assert_eq!(closureTypeInfo.envVars.len(), index as usize);
+                closureTypeInfo.envVars.push(var.clone());
+            }
+            _ => {}
         }
     }
 
@@ -201,8 +236,9 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::FieldRef(var, _, _) => {
                             self.initializeVar(var);
                         }
-                        InstructionKind::Bind(var, _, mutable) => {
+                        InstructionKind::Bind(var, rhs, mutable) => {
                             self.initializeVar(var);
+                            self.initializeVar(rhs); // workaround to initialize lambda args, those just appear out of the blue
                             if *mutable {
                                 self.mutables
                                     .insert(var.name().to_string(), Mutability::ExplicitMutable);
@@ -275,6 +311,24 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::CreateClosure(var, _) => {
                             self.initializeVar(var);
                         }
+                    }
+                }
+            }
+            for (_, block) in &body.blocks {
+                for instruction in &block.getInstructions() {
+                    match &instruction.kind {
+                        InstructionKind::CreateClosure(_, info) => {
+                            let closureTypeInfo =
+                                self.closureTypes.entry(info.body).or_insert_with(ClosureTypeInfo::new);
+                            let mut argTypes = Vec::new();
+                            for _ in 0..info.fnArgCount {
+                                argTypes.push(self.allocator.next());
+                            }
+                            closureTypeInfo.argTypes = argTypes;
+                            closureTypeInfo.envTypes = info.closureParams.iter().map(|p| p.getType()).collect();
+                            closureTypeInfo.resultType = Some(self.allocator.next());
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -526,8 +580,11 @@ impl<'a> Typechecker<'a> {
             InstructionKind::MethodCall(dest, receiver, methodName, args) => {
                 self.handleMethodCall(&instruction, builder, dest, receiver, methodName, args);
             }
-            InstructionKind::DynamicFunctionCall(_, _, _) => {
-                unimplemented!("Dynamic function call not yet implemented")
+            InstructionKind::DynamicFunctionCall(dest, closure, args) => {
+                let argTypes = args.iter().map(|arg| arg.getType()).collect::<Vec<_>>();
+                let destType = dest.getType();
+                let closureType = Type::Function(argTypes, Box::new(destType));
+                self.unifier.unifyVar(closure, closureType);
             }
             InstructionKind::Bind(name, rhs, _) => {
                 self.unifier.unifyVars(name, rhs);
@@ -809,23 +866,25 @@ impl<'a> Typechecker<'a> {
                     TypecheckerError::NotAPtr(destType.to_string(), instruction.location.clone()).report(self.ctx);
                 }
             }
-            InstructionKind::CreateClosure(_, _) => {
-                // let func = self
-                //     .program
-                //     .getFunction(&info.function)
-                //     .expect("Function not found in CreateClosure");
-                // let funcType = func.getType();
-                // let mut closureType = funcType.clone();
-                // if !info.captured.is_empty() {
-                //     let mut capturedTypes = Vec::new();
-                //     for c in &info.captured {
-                //         capturedTypes.push(c.getType());
-                //     }
-                //     closureType = Type::Closure(Box::new(closureType), capturedTypes);
-                // } else {
-                //     closureType = Type::Function(Box::new(closureType));
-                // }
-                // self.unifier.unifyVar(var, closureType);
+            InstructionKind::CreateClosure(dest, info) => {
+                let closureTypeInfo = self.closureTypes.get(&info.body).expect("Closure type info not found");
+                let fnType = Type::Function(
+                    closureTypeInfo.argTypes.clone(),
+                    Box::new(
+                        closureTypeInfo
+                            .resultType
+                            .clone()
+                            .expect("closure result type not found"),
+                    ),
+                );
+                for (index, envVar) in closureTypeInfo.envVars.iter().enumerate() {
+                    self.unifier.unifyVar(envVar, closureTypeInfo.envTypes[index].clone());
+                }
+                for (index, argVar) in closureTypeInfo.argVars.iter().enumerate() {
+                    self.unifier.unifyVar(argVar, closureTypeInfo.argTypes[index].clone());
+                }
+                self.unifier.unifyVar(dest, fnType);
+                self.queue.push_back(info.body);
             }
         }
     }

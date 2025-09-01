@@ -18,7 +18,6 @@ pub enum ResolverError {
     TraitNotFound(String, Location),
     InvalidAssignment(Location),
     InvalidArgCount(String, i64, i64, Location),
-    DynamicFunctionCallNotSupported(Location),
     ImmutableImplicit(String, Location),
     InvalidInstanceMember(String, String, Location),
     MissingTraitMembers(Vec<String>, String, Location),
@@ -128,11 +127,6 @@ impl ResolverError {
                     ctx.yellow(&expected.to_string()),
                     ctx.yellow(&actual.to_string())
                 );
-                let r = Report::new(ctx, slogan, Some(l.clone()));
-                r.print();
-            }
-            ResolverError::DynamicFunctionCallNotSupported(l) => {
-                let slogan = format!("Dynamic function calls are not supported");
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }

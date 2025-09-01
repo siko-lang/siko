@@ -194,7 +194,7 @@ impl Apply for CallInfo {
 
 impl Apply for ClosureCreateInfo {
     fn apply(mut self, sub: &Substitution) -> Self {
-        self.params = self.params.apply(sub);
+        self.closureParams = self.closureParams.apply(sub);
         self
     }
 }

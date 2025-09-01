@@ -370,11 +370,10 @@ impl<'a> ExprResolver<'a> {
                             .addFunctionCall(irName, irArgs, expr.location.clone());
                     }
                     SimpleExpr::Value(name) => {
-                        if let Some(_name) = env.resolve(&name.name()) {
-                            // self.bodyBuilder
-                            //     .current()
-                            //     .addDynamicFunctionCall(name, irArgs, expr.location.clone())
-                            ResolverError::DynamicFunctionCallNotSupported(expr.location.clone()).report(self.ctx);
+                        if let Some(name) = env.resolve(&name.name()) {
+                            self.bodyBuilder
+                                .current()
+                                .addDynamicFunctionCall(name, irArgs, expr.location.clone())
                         } else {
                             let irName = self.moduleResolver.resolveName(name);
                             self.bodyBuilder
@@ -383,11 +382,10 @@ impl<'a> ExprResolver<'a> {
                         }
                     }
                     _ => {
-                        let _callableId = self.resolveExpr(&callable, env);
-                        // self.bodyBuilder
-                        //     .current()
-                        //     .addDynamicFunctionCall(callableId, irArgs, expr.location.clone())
-                        ResolverError::DynamicFunctionCallNotSupported(expr.location.clone()).report(self.ctx);
+                        let callableId = self.resolveExpr(&callable, env);
+                        self.bodyBuilder
+                            .current()
+                            .addDynamicFunctionCall(callableId, irArgs, expr.location.clone())
                     }
                 }
             }
@@ -731,7 +729,7 @@ impl<'a> ExprResolver<'a> {
                 lambdaBodyBuilder.current();
                 for (index, p) in params.iter().enumerate() {
                     let pVar = Variable::new(
-                        VariableName::LambdaArg(currentLambdaIndex, index as u32),
+                        VariableName::LambdaArg(lambdaBodyBuilder.getBlockId(), index as u32),
                         p.location.clone(),
                     );
                     self.resolvePattern(p, &mut lambdaEnv, pVar);
@@ -747,7 +745,7 @@ impl<'a> ExprResolver<'a> {
                 let lambdaBodyBuilder = self.bodyBuilder.iterator(lambdaBodyBuilder.getBlockId());
                 for (index, closureArg) in closureArgs.iter().enumerate() {
                     let pVar = Variable::new(
-                        VariableName::ClosureArg(currentLambdaIndex, index as u32),
+                        VariableName::ClosureArg(lambdaBodyBuilder.getBlockId(), index as u32),
                         closureArg.location(),
                     );
                     lambdaBodyBuilder.implicit().addBind(
@@ -758,7 +756,12 @@ impl<'a> ExprResolver<'a> {
                     );
                 }
                 let dest = self.bodyBuilder.createTempValue(expr.location.clone());
-                let info = ClosureCreateInfo::new(closureArgs, lambdaBodyBuilder.getBlockId(), lambdaName);
+                let info = ClosureCreateInfo::new(
+                    closureArgs,
+                    lambdaBodyBuilder.getBlockId(),
+                    lambdaName,
+                    params.len() as u32,
+                );
                 let kind = InstructionKind::CreateClosure(dest.clone(), info);
                 self.bodyBuilder.current().addInstruction(kind, expr.location.clone());
                 dest

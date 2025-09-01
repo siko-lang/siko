@@ -287,7 +287,7 @@ impl RemoveTuples for InstructionKind {
 impl RemoveTuples for ClosureCreateInfo {
     fn removeTuples(&self, ctx: &mut Context) -> Self {
         let mut info = self.clone();
-        info.params = info.params.removeTuples(ctx);
+        info.closureParams = info.closureParams.removeTuples(ctx);
         info
     }
 }

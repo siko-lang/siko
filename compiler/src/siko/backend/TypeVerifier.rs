@@ -203,7 +203,7 @@ impl<'a> TypeVerifier<'a> {
                 self.unify(&var.getType(), &self.function.result);
             }
             InstructionKind::DynamicFunctionCall(_, _, _) => {
-                unimplemented!("Dynamic function calls are not yet supported in type verification");
+                //TODO: Implement dynamic function call verification
             }
             InstructionKind::DeclareVar(name, _) => {
                 self.checkVariable(name);

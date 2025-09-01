@@ -5,6 +5,7 @@ use std::fmt::Display;
 use std::rc::Rc;
 
 use crate::siko::backend::drop::Path::Path;
+use crate::siko::hir::Block::BlockId;
 use crate::siko::location::Location::Location;
 
 use super::Type::Type;
@@ -14,8 +15,8 @@ pub enum VariableName {
     Tmp(u32),
     Local(String, u32),
     Arg(String),
-    ClosureArg(u32, u32),
-    LambdaArg(u32, u32),
+    ClosureArg(BlockId, u32),
+    LambdaArg(BlockId, u32),
     DropFlag(String),
 }
 
