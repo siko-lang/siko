@@ -1,24 +1,62 @@
-use std::collections::{BTreeMap, BTreeSet};
-
-use crate::siko::hir::{
-    Instruction::{SyntaxBlockId, SyntaxBlockIdSegment},
-    Variable::Variable,
+use std::{
+    cell::RefCell,
+    collections::{BTreeMap, BTreeSet},
+    rc::Rc,
 };
+
+use crate::siko::{
+    hir::{
+        Instruction::{SyntaxBlockId, SyntaxBlockIdSegment},
+        Variable::Variable,
+        VariableAllocator::VariableAllocator,
+    },
+    location::Location::Location,
+};
+
+pub struct CaptureInfo {
+    varAllocator: VariableAllocator,
+    captures: Rc<RefCell<BTreeMap<Variable, Variable>>>,
+}
+
+impl CaptureInfo {
+    pub fn new(varAllocator: VariableAllocator) -> CaptureInfo {
+        CaptureInfo {
+            varAllocator,
+            captures: Rc::new(RefCell::new(BTreeMap::new())),
+        }
+    }
+
+    pub fn resolveCapture(&self, var: Variable) -> Variable {
+        let mut captures = self.captures.borrow_mut();
+        let entry = captures
+            .entry(var.clone())
+            .or_insert_with(|| self.varAllocator.allocate(Location::empty()));
+        return entry.clone();
+    }
+
+    pub fn get(&self) -> BTreeMap<Variable, Variable> {
+        self.captures.borrow().clone()
+    }
+}
 
 pub struct Environment<'a> {
     values: BTreeMap<String, Variable>,
     parent: Option<&'a Environment<'a>>,
     mutables: BTreeSet<String>,
     syntaxBlockId: SyntaxBlockId,
+    captures: CaptureInfo,
+    lambdaLevel: u32,
 }
 
 impl<'a> Environment<'a> {
-    pub fn new() -> Environment<'a> {
+    pub fn new(varAllocator: VariableAllocator) -> Environment<'a> {
         Environment {
             values: BTreeMap::new(),
             parent: None,
             mutables: BTreeSet::new(),
             syntaxBlockId: SyntaxBlockId::new(),
+            captures: CaptureInfo::new(varAllocator),
+            lambdaLevel: 0,
         }
     }
 
@@ -28,6 +66,19 @@ impl<'a> Environment<'a> {
             parent: Some(parent),
             mutables: BTreeSet::new(),
             syntaxBlockId: parent.syntaxBlockId.add(syntaxBlockIdItem),
+            captures: CaptureInfo::new(parent.captures.varAllocator.clone()),
+            lambdaLevel: parent.lambdaLevel,
+        }
+    }
+
+    pub fn lambdaEnv(parent: &'a Environment<'a>, syntaxBlockIdItem: SyntaxBlockIdSegment) -> Environment<'a> {
+        Environment {
+            values: BTreeMap::new(),
+            parent: Some(parent),
+            mutables: BTreeSet::new(),
+            syntaxBlockId: parent.syntaxBlockId.add(syntaxBlockIdItem),
+            captures: CaptureInfo::new(parent.captures.varAllocator.clone()),
+            lambdaLevel: parent.lambdaLevel + 1,
         }
     }
 
@@ -49,6 +100,12 @@ impl<'a> Environment<'a> {
             Some(v) => Some(v.clone()),
             None => {
                 if let Some(parent) = self.parent {
+                    if parent.lambdaLevel < self.lambdaLevel {
+                        if let Some(v) = parent.resolve(value) {
+                            let v = self.captures.resolveCapture(v.clone());
+                            return Some(v);
+                        }
+                    }
                     return parent.resolve(value);
                 } else {
                     None
@@ -80,5 +137,9 @@ impl<'a> Environment<'a> {
         } else {
             println!("No parent environment.");
         }
+    }
+
+    pub fn captures(&self) -> BTreeMap<Variable, Variable> {
+        self.captures.get()
     }
 }

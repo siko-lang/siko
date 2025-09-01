@@ -79,6 +79,7 @@ pub enum SimpleExpr {
     Ref(Box<Expr>),
     List(Vec<Expr>),
     With(Box<With>),
+    Lambda(Vec<Pattern>, Box<Expr>),
 }
 
 impl SimpleExpr {

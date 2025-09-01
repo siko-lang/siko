@@ -374,6 +374,39 @@ impl Display for CallInfo {
 }
 
 #[derive(Clone, PartialEq)]
+pub struct ClosureCreateInfo {
+    pub params: Vec<Variable>,
+    pub body: BlockId,
+    pub name: QualifiedName,
+}
+
+impl ClosureCreateInfo {
+    pub fn new(params: Vec<Variable>, body: BlockId, name: QualifiedName) -> Self {
+        ClosureCreateInfo { params, body, name }
+    }
+
+    pub fn copy(&self, map: &mut CopyMap) -> ClosureCreateInfo {
+        ClosureCreateInfo {
+            params: self.params.iter().map(|p| p.copy(map)).collect(),
+            body: self.body,
+            name: self.name.clone(),
+        }
+    }
+}
+
+impl Display for ClosureCreateInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "create_closure({}, {}, {})",
+            self.name,
+            self.body,
+            self.params.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(", ")
+        )
+    }
+}
+
+#[derive(Clone, PartialEq)]
 pub enum InstructionKind {
     FunctionCall(Variable, CallInfo),
     Converter(Variable, Variable),
@@ -406,6 +439,7 @@ pub enum InstructionKind {
     WriteImplicit(ImplicitIndex, Variable),
     LoadPtr(Variable, Variable),
     StorePtr(Variable, Variable),
+    CreateClosure(Variable, ClosureCreateInfo),
 }
 
 impl Display for InstructionKind {
@@ -476,6 +510,7 @@ impl InstructionKind {
             InstructionKind::StorePtr(variable, variable1) => {
                 InstructionKind::StorePtr(variable.copy(map), variable1.copy(map))
             }
+            InstructionKind::CreateClosure(v, info) => InstructionKind::CreateClosure(v.copy(map), info.copy(map)),
         }
     }
 
@@ -530,6 +565,11 @@ impl InstructionKind {
             InstructionKind::WriteImplicit(index, v) => InstructionKind::WriteImplicit(index.clone(), v.useVar()),
             InstructionKind::LoadPtr(dest, src) => InstructionKind::LoadPtr(dest.clone(), src.useVar()),
             InstructionKind::StorePtr(dest, src) => InstructionKind::StorePtr(dest.clone(), src.useVar()),
+            InstructionKind::CreateClosure(v, info) => {
+                let mut info = info.clone();
+                info.params = info.params.iter().map(|p| p.useVar()).collect();
+                InstructionKind::CreateClosure(v.clone(), info)
+            }
         }
     }
 
@@ -566,6 +606,7 @@ impl InstructionKind {
             InstructionKind::WriteImplicit(_, _) => None,
             InstructionKind::LoadPtr(v, _) => Some(v.clone()),
             InstructionKind::StorePtr(v, _) => Some(v.clone()),
+            InstructionKind::CreateClosure(v, _) => Some(v.clone()),
         }
     }
 
@@ -701,6 +742,11 @@ impl InstructionKind {
             InstructionKind::StorePtr(var, target) => {
                 InstructionKind::StorePtr(var.replace(&from, to.clone()), target.replace(&from, to))
             }
+            InstructionKind::CreateClosure(var, info) => {
+                let mut info = info.clone();
+                info.params = info.params.iter().map(|p| p.replace(&from, to.clone())).collect();
+                InstructionKind::CreateClosure(var.replace(&from, to.clone()), info)
+            }
         }
     }
 
@@ -789,6 +835,11 @@ impl InstructionKind {
             InstructionKind::WriteImplicit(_, var) => vec![var.clone()],
             InstructionKind::LoadPtr(dest, src) => vec![dest.clone(), src.clone()],
             InstructionKind::StorePtr(dest, src) => vec![dest.clone(), src.clone()],
+            InstructionKind::CreateClosure(var, info) => {
+                let mut vars = vec![var.clone()];
+                vars.extend(info.params.clone());
+                vars
+            }
         }
     }
 
@@ -887,6 +938,9 @@ impl InstructionKind {
             }
             InstructionKind::StorePtr(dest, src) => {
                 format!("store_ptr({}, {})", dest, src)
+            }
+            InstructionKind::CreateClosure(var, info) => {
+                format!("create_closure({}, {})", var, info)
             }
         }
     }

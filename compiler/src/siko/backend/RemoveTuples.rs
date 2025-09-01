@@ -9,7 +9,8 @@ use crate::siko::{
         Data::{Enum, Field, Struct, Variant},
         Function::{Function, FunctionKind, Parameter},
         Instruction::{
-            CallInfo, FieldId, FieldInfo, ImplicitHandler, Instruction, InstructionKind, WithContext, WithInfo,
+            CallInfo, ClosureCreateInfo, FieldId, FieldInfo, ImplicitHandler, Instruction, InstructionKind,
+            WithContext, WithInfo,
         },
         Program::Program,
         Type::Type,
@@ -276,7 +277,18 @@ impl RemoveTuples for InstructionKind {
             InstructionKind::StorePtr(dest, src) => {
                 InstructionKind::StorePtr(dest.removeTuples(ctx), src.removeTuples(ctx))
             }
+            InstructionKind::CreateClosure(v, info) => {
+                InstructionKind::CreateClosure(v.removeTuples(ctx), info.removeTuples(ctx))
+            }
         }
+    }
+}
+
+impl RemoveTuples for ClosureCreateInfo {
+    fn removeTuples(&self, ctx: &mut Context) -> Self {
+        let mut info = self.clone();
+        info.params = info.params.removeTuples(ctx);
+        info
     }
 }
 

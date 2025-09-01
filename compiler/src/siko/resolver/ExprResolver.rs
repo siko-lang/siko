@@ -8,10 +8,10 @@ use crate::siko::hir::BodyBuilder::BodyBuilder;
 use crate::siko::hir::Data::{Enum, Struct};
 use crate::siko::hir::Implicit::Implicit;
 use crate::siko::hir::Instruction::{
-    EffectHandler as HirEffectHandler, FieldId, FieldInfo, ImplicitHandler as HirImplicitHandler, ImplicitIndex,
-    InstructionKind, SyntaxBlockId, SyntaxBlockIdSegment, WithContext as HirWithContext, WithInfo,
+    ClosureCreateInfo, EffectHandler as HirEffectHandler, FieldId, FieldInfo, ImplicitHandler as HirImplicitHandler,
+    ImplicitIndex, InstructionKind, SyntaxBlockId, SyntaxBlockIdSegment, WithContext as HirWithContext, WithInfo,
 };
-use crate::siko::hir::Variable::Variable;
+use crate::siko::hir::Variable::{Variable, VariableName};
 use crate::siko::location::Location::Location;
 use crate::siko::location::Report::ReportContext;
 use crate::siko::qualifiedname::builtins::{getVecNewName, getVecPushName};
@@ -66,10 +66,14 @@ pub struct ExprResolver<'a> {
     loopInfos: Vec<LoopInfo>,
     syntaxBlockIds: BTreeMap<BlockId, SyntaxBlockId>,
     resultVar: Option<Variable>,
+    lambdaIndex: u32,
+    name: &'a QualifiedName,
 }
 
 impl<'a> ExprResolver<'a> {
     pub fn new(
+        name: &'a QualifiedName,
+        bodyBuilder: BodyBuilder,
         ctx: &'a ReportContext,
         moduleResolver: &'a ModuleResolver,
         typeResolver: &'a TypeResolver<'a>,
@@ -80,8 +84,9 @@ impl<'a> ExprResolver<'a> {
         implicits: &'a BTreeMap<QualifiedName, Implicit>,
     ) -> ExprResolver<'a> {
         ExprResolver {
+            name,
             ctx: ctx,
-            bodyBuilder: BodyBuilder::new(),
+            bodyBuilder,
             syntaxBlockId: 0,
             moduleResolver: moduleResolver,
             typeResolver: typeResolver,
@@ -93,6 +98,7 @@ impl<'a> ExprResolver<'a> {
             loopInfos: Vec::new(),
             syntaxBlockIds: BTreeMap::new(),
             resultVar: None,
+            lambdaIndex: 0,
         }
     }
 
@@ -708,6 +714,54 @@ impl<'a> ExprResolver<'a> {
                     .block(parentBlockId)
                     .addInstruction(kind, expr.location.clone());
                 withResultVar
+            }
+            SimpleExpr::Lambda(params, body) => {
+                let currentLambdaIndex = self.lambdaIndex;
+                self.lambdaIndex += 1;
+                let lambdaVar = self.bodyBuilder.createTempValue(expr.location.clone());
+                let targetBlock = self.bodyBuilder.getTargetBlockId();
+                let mut savedLoopInfos = Vec::new();
+                std::mem::swap(&mut savedLoopInfos, &mut self.loopInfos);
+                self.bodyBuilder
+                    .current()
+                    .addDeclare(lambdaVar.clone(), expr.location.clone());
+                let lambdaName = QualifiedName::Lambda(Box::new(self.name.clone()), currentLambdaIndex);
+                let mut lambdaEnv = Environment::lambdaEnv(env, self.createSyntaxBlockIdSegment());
+                let mut lambdaBodyBuilder = self.createBlock(&lambdaEnv);
+                lambdaBodyBuilder.current();
+                for (index, p) in params.iter().enumerate() {
+                    let pVar = Variable::new(
+                        VariableName::LambdaArg(currentLambdaIndex, index as u32),
+                        p.location.clone(),
+                    );
+                    self.resolvePattern(p, &mut lambdaEnv, pVar);
+                }
+                match &body.expr {
+                    SimpleExpr::Block(block) => self.resolveBlock(block, &lambdaEnv, lambdaVar.clone()),
+                    _ => panic!("lambda body is not a block!"),
+                };
+                self.loopInfos = savedLoopInfos;
+                self.bodyBuilder.setTargetBlockId(targetBlock);
+                let captures = lambdaEnv.captures();
+                let closureArgs: Vec<_> = captures.keys().cloned().collect();
+                let lambdaBodyBuilder = self.bodyBuilder.iterator(lambdaBodyBuilder.getBlockId());
+                for (index, closureArg) in closureArgs.iter().enumerate() {
+                    let pVar = Variable::new(
+                        VariableName::ClosureArg(currentLambdaIndex, index as u32),
+                        closureArg.location(),
+                    );
+                    lambdaBodyBuilder.implicit().addBind(
+                        captures.get(closureArg).unwrap().clone(),
+                        pVar.clone(),
+                        false,
+                        expr.location.clone(),
+                    );
+                }
+                let dest = self.bodyBuilder.createTempValue(expr.location.clone());
+                let info = ClosureCreateInfo::new(closureArgs, lambdaBodyBuilder.getBlockId(), lambdaName);
+                let kind = InstructionKind::CreateClosure(dest.clone(), info);
+                self.bodyBuilder.current().addInstruction(kind, expr.location.clone());
+                dest
             }
         }
     }

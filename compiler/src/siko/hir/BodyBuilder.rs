@@ -4,6 +4,7 @@ use crate::siko::{
     hir::{
         Block::{Block, BlockId},
         Body::Body,
+        VariableAllocator::VariableAllocator,
     },
     location::Location::Location,
 };
@@ -177,6 +178,11 @@ impl BodyBuilder {
         let mut bodyBuilder = self.bodyBuilder.borrow_mut();
         let blockId = bodyBuilder.createBlock();
         BlockBuilder::new(blockId, self.clone(), Mode::Append)
+    }
+
+    pub fn getVariableAllocator(&self) -> VariableAllocator {
+        let bodyBuilder = self.bodyBuilder.borrow();
+        bodyBuilder.body.varAllocator.clone()
     }
 
     pub fn current(&mut self) -> BlockBuilder {

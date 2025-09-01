@@ -190,6 +190,13 @@ impl Format for SimpleExpr {
                 }
             }
             SimpleExpr::With(with) => with.format(),
+            SimpleExpr::Lambda(params, body) => {
+                let mut result = vec![Token::Chunk("\\".to_string())];
+                result.extend(format_list(params, Token::Chunk(", ".to_string())));
+                result.push(Token::Chunk(" -> ".to_string()));
+                result.extend(body.format());
+                result
+            }
         }
     }
 }

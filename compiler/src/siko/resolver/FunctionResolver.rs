@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::siko::hir::BodyBuilder::BodyBuilder;
 use crate::siko::hir::ConstraintContext::ConstraintContext;
 use crate::siko::hir::Data::{Enum, Struct};
 use crate::siko::hir::Function::{ExternKind, Function as IrFunction, FunctionKind, Parameter as IrParameter};
@@ -74,7 +75,8 @@ impl<'a> FunctionResolver<'a> {
         //println!("Resolving function: {}", name);
 
         let mut params = Vec::new();
-        let mut env = Environment::new();
+        let bodyBuilder = BodyBuilder::new();
+        let mut env = Environment::new(bodyBuilder.getVariableAllocator());
         for (_, param) in f.params.iter().enumerate() {
             let irParam = match param {
                 Parameter::Named(id, ty, mutable) => {
@@ -121,6 +123,8 @@ impl<'a> FunctionResolver<'a> {
 
         let body = if let Some(body) = &f.body {
             let mut exprResolver = ExprResolver::new(
+                &name,
+                bodyBuilder,
                 ctx,
                 self.moduleResolver,
                 &typeResolver,

@@ -446,5 +446,9 @@ pub fn processInstructionKind(
         InstructionKind::StorePtr(dest, src) => {
             InstructionKind::StorePtr(dest.process(sub, mono), src.process(sub, mono))
         }
+        InstructionKind::CreateClosure(var, info) => {
+            InstructionKind::CreateClosure(var.process(sub, mono), info.clone())
+            // TODO
+        }
     }
 }

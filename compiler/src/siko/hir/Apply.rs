@@ -1,5 +1,5 @@
 use crate::siko::hir::{
-    Instruction::{CallInfo, ImplicitHandler, WithContext, WithInfo},
+    Instruction::{CallInfo, ClosureCreateInfo, ImplicitHandler, WithContext, WithInfo},
     Trait::{Instance, Trait},
     Type::Type,
 };
@@ -192,6 +192,13 @@ impl Apply for CallInfo {
     }
 }
 
+impl Apply for ClosureCreateInfo {
+    fn apply(mut self, sub: &Substitution) -> Self {
+        self.params = self.params.apply(sub);
+        self
+    }
+}
+
 impl Apply for InstructionKind {
     fn apply(self, sub: &Substitution) -> Self {
         match self {
@@ -246,6 +253,9 @@ impl Apply for InstructionKind {
             InstructionKind::WriteImplicit(index, var) => InstructionKind::WriteImplicit(index.clone(), var.apply(sub)),
             InstructionKind::LoadPtr(dest, src) => InstructionKind::LoadPtr(dest.apply(sub), src.apply(sub)),
             InstructionKind::StorePtr(dest, src) => InstructionKind::StorePtr(dest.apply(sub), src.apply(sub)),
+            InstructionKind::CreateClosure(var, info) => {
+                InstructionKind::CreateClosure(var.apply(sub), info.apply(sub))
+            }
         }
     }
 }

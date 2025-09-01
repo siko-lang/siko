@@ -320,6 +320,9 @@ impl<'a> Builder<'a> {
                     let src = self.buildVariable(src);
                     block.instructions.push(Instruction::StorePtr(dest, src));
                 }
+                HirInstructionKind::CreateClosure(_, _) => {
+                    panic!("CreateClosure instruction found in Lowering, this should not happen");
+                }
             }
         }
         Some(block)

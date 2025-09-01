@@ -14,6 +14,8 @@ pub enum VariableName {
     Tmp(u32),
     Local(String, u32),
     Arg(String),
+    ClosureArg(u32, u32),
+    LambdaArg(u32, u32),
     DropFlag(String),
 }
 
@@ -23,6 +25,8 @@ impl VariableName {
             VariableName::Tmp(i) => format!("tmp{}", i),
             VariableName::Local(n, _) => n.clone(),
             VariableName::Arg(n) => format!("arg_{}", n),
+            VariableName::ClosureArg(lambdaIndex, argIndex) => format!("closure_arg_{}_{}", lambdaIndex, argIndex),
+            VariableName::LambdaArg(lambdaIndex, argIndex) => format!("lambda_arg_{}_{}", lambdaIndex, argIndex),
             VariableName::DropFlag(n) => format!("drop_flag_{}", n),
         }
     }
@@ -49,7 +53,7 @@ impl VariableName {
 
     pub fn isUserDefined(&self) -> bool {
         match self {
-            VariableName::Local(_, _) | VariableName::Arg(_) => true,
+            VariableName::Local(_, _) | VariableName::Arg(_) | VariableName::LambdaArg(_, _) => true,
             _ => false,
         }
     }
@@ -65,6 +69,8 @@ impl Display for VariableName {
             VariableName::Tmp(i) => write!(f, "tmp{}", i),
             VariableName::Local(n, i) => write!(f, "{}_{}", n, i),
             VariableName::Arg(n) => write!(f, "{}", n),
+            VariableName::ClosureArg(lambdaIndex, argIndex) => write!(f, "closure_arg_{}_{}", lambdaIndex, argIndex),
+            VariableName::LambdaArg(lambdaIndex, argIndex) => write!(f, "lambda_arg_{}_{}", lambdaIndex, argIndex),
             VariableName::DropFlag(n) => write!(f, "drop_flag_{}", n),
         }
     }
@@ -76,6 +82,8 @@ impl Debug for VariableName {
             VariableName::Tmp(i) => write!(f, "tmp{}", i),
             VariableName::Local(n, i) => write!(f, "{}_{}", n, i),
             VariableName::Arg(n) => write!(f, "{}", n),
+            VariableName::ClosureArg(lambdaIndex, argIndex) => write!(f, "closure_arg_{}_{}", lambdaIndex, argIndex),
+            VariableName::LambdaArg(lambdaIndex, argIndex) => write!(f, "lambda_arg_{}_{}", lambdaIndex, argIndex),
             VariableName::DropFlag(n) => write!(f, "drop_flag_{}", n),
         }
     }

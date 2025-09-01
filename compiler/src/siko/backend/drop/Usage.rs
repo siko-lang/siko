@@ -169,5 +169,6 @@ pub fn getUsageInfo(kind: InstructionKind, referenceStore: &ReferenceStore) -> U
         InstructionKind::WriteImplicit(_, var) => UsageInfo::with(vec![varToUsage(&var)], None),
         InstructionKind::LoadPtr(dest, _) => UsageInfo::with(vec![], Some(dest.toPath())),
         InstructionKind::StorePtr(dest, src) => UsageInfo::with(vec![varToUsage(&src)], Some(dest.toPath())),
+        InstructionKind::CreateClosure(var, _) => UsageInfo::with(Vec::new(), Some(var.toPath())),
     }
 }

@@ -862,6 +862,33 @@ impl<'a> ExprParser for Parser<'a> {
                 self.expect(TokenKind::RightBracket(BracketKind::Square));
                 self.buildExpr(SimpleExpr::List(args), start)
             }
+            TokenKind::Misc(MiscKind::Backslash) => {
+                self.expect(TokenKind::Misc(MiscKind::Backslash));
+                let mut params = Vec::new();
+                loop {
+                    let param = self.parsePattern();
+                    params.push(param);
+                    if self.check(TokenKind::Arrow(ArrowKind::Right)) {
+                        break;
+                    } else {
+                        self.expect(TokenKind::Misc(MiscKind::Comma));
+                    }
+                }
+                self.expect(TokenKind::Arrow(ArrowKind::Right));
+                let body = self.parseExpr();
+                let block = SimpleExpr::Block(Block {
+                    statements: vec![Statement {
+                        kind: StatementKind::Expr(body),
+                        hasSemicolon: false,
+                    }],
+                    location: self.currentLocation(),
+                });
+                let block = Expr {
+                    expr: block,
+                    location: self.currentLocation(),
+                };
+                self.buildExpr(SimpleExpr::Lambda(params, Box::new(block)), start)
+            }
             kind => self.reportError2("<expr>", kind),
         }
     }

@@ -272,6 +272,9 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::StorePtr(dest, _) => {
                             self.initializeVar(dest);
                         }
+                        InstructionKind::CreateClosure(var, _) => {
+                            self.initializeVar(var);
+                        }
                     }
                 }
             }
@@ -805,6 +808,24 @@ impl<'a> Typechecker<'a> {
                 } else {
                     TypecheckerError::NotAPtr(destType.to_string(), instruction.location.clone()).report(self.ctx);
                 }
+            }
+            InstructionKind::CreateClosure(_, _) => {
+                // let func = self
+                //     .program
+                //     .getFunction(&info.function)
+                //     .expect("Function not found in CreateClosure");
+                // let funcType = func.getType();
+                // let mut closureType = funcType.clone();
+                // if !info.captured.is_empty() {
+                //     let mut capturedTypes = Vec::new();
+                //     for c in &info.captured {
+                //         capturedTypes.push(c.getType());
+                //     }
+                //     closureType = Type::Closure(Box::new(closureType), capturedTypes);
+                // } else {
+                //     closureType = Type::Function(Box::new(closureType));
+                // }
+                // self.unifier.unifyVar(var, closureType);
             }
         }
     }

@@ -14,6 +14,7 @@ pub enum QualifiedName {
     Item(Box<QualifiedName>, String),
     Monomorphized(Box<QualifiedName>, Context),
     Canonical(Box<QualifiedName>, Box<QualifiedName>, Vec<Type>),
+    Lambda(Box<QualifiedName>, u32),
 }
 
 impl QualifiedName {
@@ -32,6 +33,7 @@ impl QualifiedName {
             QualifiedName::Item(p, _) => p.module(),
             QualifiedName::Monomorphized(p, _) => p.module(),
             QualifiedName::Canonical(p, _, _) => p.module(),
+            QualifiedName::Lambda(p, _) => p.module(),
         }
     }
 
@@ -42,6 +44,7 @@ impl QualifiedName {
             QualifiedName::Item(p, _) => *p.clone(),
             QualifiedName::Monomorphized(p, _) => *p.clone(),
             QualifiedName::Canonical(p, _, _) => *p.clone(),
+            QualifiedName::Lambda(p, _) => *p.clone(),
         }
     }
 
@@ -83,6 +86,7 @@ impl QualifiedName {
             QualifiedName::Canonical(_, _, _) => {
                 panic!("Canonical names are not supported")
             }
+            QualifiedName::Lambda(_, _) => panic!("Lambda names are not supported"),
         }
     }
 
@@ -113,6 +117,7 @@ impl Display for QualifiedName {
             QualifiedName::Canonical(p, t, types) => {
                 write!(f, "{}/{}[{}]", p, t, formatTypes(types))
             }
+            QualifiedName::Lambda(p, index) => write!(f, "{}.lambda{}", p, index),
         }
     }
 }

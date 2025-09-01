@@ -290,6 +290,10 @@ impl<'a> TypeVerifier<'a> {
                 let ty = Type::Ptr(Box::new(src.getType().clone()));
                 self.unify(&ty, &dest.getType());
             }
+            InstructionKind::CreateClosure(var, _) => {
+                self.checkVariable(var);
+                // TODO: Check closure info
+            }
         }
     }
 

@@ -149,6 +149,7 @@ impl<'a> DeadCodeEliminator<'a> {
                 InstructionKind::WriteImplicit(_, _) => {}
                 InstructionKind::LoadPtr(_, _) => {}
                 InstructionKind::StorePtr(_, _) => {}
+                InstructionKind::CreateClosure(_, _) => {}
             }
         }
     }
