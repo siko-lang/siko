@@ -170,6 +170,14 @@ impl BlockBuilder {
         result
     }
 
+    pub fn addClosureReturn(&mut self, blockId: BlockId, value: Variable, location: Location) -> Variable {
+        let result = self
+            .bodyBuilder
+            .createTempValueWithType(location.clone(), Type::getNeverType());
+        self.addInstruction(InstructionKind::ClosureReturn(blockId, result.clone(), value), location);
+        result
+    }
+
     pub fn addRef(&mut self, arg: Variable, location: Location) -> Variable {
         let value = self.bodyBuilder.createTempValue(location.clone());
         self.addInstruction(InstructionKind::Ref(value.clone(), arg), location.clone());

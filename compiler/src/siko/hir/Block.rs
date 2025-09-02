@@ -115,12 +115,24 @@ impl BlockInner {
         self.instructions.clone()
     }
 
+    pub fn getLastInstruction(&self) -> Instruction {
+        self.instructions.last().cloned().expect("No instructions in block")
+    }
+
     pub fn getId(&self) -> BlockId {
         self.id
     }
 
+    pub fn setId(&mut self, id: BlockId) {
+        self.id = id;
+    }
+
     pub fn isEmpty(&self) -> bool {
         self.instructions.is_empty()
+    }
+
+    pub fn size(&self) -> usize {
+        self.instructions.len()
     }
 }
 
@@ -190,8 +202,16 @@ impl Block {
         self.inner.borrow().getInstructions()
     }
 
+    pub fn getLastInstruction(&self) -> Instruction {
+        self.inner.borrow().getLastInstruction()
+    }
+
     pub fn getId(&self) -> BlockId {
         self.inner.borrow().getId()
+    }
+
+    pub fn setId(&self, id: BlockId) {
+        self.inner.borrow_mut().setId(id);
     }
 
     pub fn getInner(&self) -> Rc<RefCell<BlockInner>> {
@@ -200,6 +220,10 @@ impl Block {
 
     pub fn isEmpty(&self) -> bool {
         self.inner.borrow().isEmpty()
+    }
+
+    pub fn size(&self) -> usize {
+        self.inner.borrow().size()
     }
 }
 

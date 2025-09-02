@@ -294,6 +294,9 @@ impl<'a> TypeVerifier<'a> {
                 self.checkVariable(var);
                 // TODO: Check closure info
             }
+            InstructionKind::ClosureReturn(_, _, _) => {
+                panic!("ClosureReturn found in TypeVerifier, this should not happen");
+            }
         }
     }
 

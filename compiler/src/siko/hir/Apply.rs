@@ -256,6 +256,9 @@ impl Apply for InstructionKind {
             InstructionKind::CreateClosure(var, info) => {
                 InstructionKind::CreateClosure(var.apply(sub), info.apply(sub))
             }
+            InstructionKind::ClosureReturn(blockId, v, v2) => {
+                InstructionKind::ClosureReturn(blockId, v.apply(sub), v2.apply(sub))
+            }
         }
     }
 }

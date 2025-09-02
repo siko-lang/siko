@@ -32,7 +32,7 @@ use crate::siko::{
         builtins::{getImplicitConvertFnName, getNativePtrCloneName, getNativePtrIsNullName},
         QualifiedName,
     },
-    typechecker::ConstraintExpander::ConstraintExpander,
+    typechecker::{ClosureSeparator::ClosureSeparator, ConstraintExpander::ConstraintExpander},
 };
 
 use super::Error::TypecheckerError;
@@ -50,9 +50,11 @@ pub fn typecheck(ctx: &ReportContext, mut program: Program) -> Program {
             .get(&moduleName)
             .expect("Instance store not found");
         let mut typechecker = Typechecker::new(ctx, &program, &traitMethodselector, instanceStore, f);
-        let typedFn = typechecker.run();
+        let typedFns = typechecker.run();
         //typedFn.dump();
-        result.insert(typedFn.name.clone(), typedFn);
+        for typedFn in typedFns {
+            result.insert(typedFn.name.clone(), typedFn);
+        }
     }
     program.functions = result;
     program
@@ -81,17 +83,19 @@ impl Debug for ReceiverChainEntry {
     }
 }
 
-struct ClosureTypeInfo {
-    argTypes: Vec<Type>,
-    envTypes: Vec<Type>,
-    resultType: Option<Type>,
-    envVars: Vec<Variable>,
-    argVars: Vec<Variable>,
+pub struct ClosureTypeInfo {
+    pub name: Option<QualifiedName>,
+    pub argTypes: Vec<Type>,
+    pub envTypes: Vec<Type>,
+    pub resultType: Option<Type>,
+    pub envVars: Vec<Variable>,
+    pub argVars: Vec<Variable>,
 }
 
 impl ClosureTypeInfo {
     fn new() -> ClosureTypeInfo {
         ClosureTypeInfo {
+            name: None,
             argTypes: Vec::new(),
             envTypes: Vec::new(),
             resultType: None,
@@ -163,7 +167,7 @@ impl<'a> Typechecker<'a> {
         }
     }
 
-    pub fn run(&mut self) -> Function {
+    pub fn run(&mut self) -> Vec<Function> {
         // println!("Typechecking function {}", self.f.name);
         // println!(" {} ", self.f);
         self.initialize();
@@ -311,6 +315,9 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::CreateClosure(var, _) => {
                             self.initializeVar(var);
                         }
+                        InstructionKind::ClosureReturn(_, var, _) => {
+                            self.initializeVar(var);
+                        }
                     }
                 }
             }
@@ -320,6 +327,7 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::CreateClosure(_, info) => {
                             let closureTypeInfo =
                                 self.closureTypes.entry(info.body).or_insert_with(ClosureTypeInfo::new);
+                            closureTypeInfo.name = Some(info.name.clone());
                             let mut argTypes = Vec::new();
                             for _ in 0..info.fnArgCount {
                                 argTypes.push(self.allocator.next());
@@ -889,6 +897,16 @@ impl<'a> Typechecker<'a> {
                 self.unifier.unifyVar(dest, fnType);
                 self.queue.push_back(info.body);
             }
+            InstructionKind::ClosureReturn(blockId, _, var) => {
+                let closureTypeInfo = self.closureTypes.get(&blockId).expect("Closure type info not found");
+                self.unifier.unifyVar(
+                    var,
+                    closureTypeInfo
+                        .resultType
+                        .clone()
+                        .expect("closure result type not found"),
+                );
+            }
         }
     }
 
@@ -1406,10 +1424,10 @@ impl<'a> Typechecker<'a> {
         }
     }
 
-    pub fn generate(&mut self) -> Function {
+    pub fn generate(&mut self) -> Vec<Function> {
         //println!("Generating {}", self.f.name);
         if self.f.body.is_none() {
-            return self.f.clone();
+            return vec![self.f.clone()];
         }
 
         self.processConverters();
@@ -1425,7 +1443,17 @@ impl<'a> Typechecker<'a> {
         self.addTypes(&mut result);
         //self.dump(&result);
         self.verify(&result);
-        result
+
+        let mut functions = Vec::new();
+
+        for (blockId, closure) in self.closureTypes.iter() {
+            let mut separator = ClosureSeparator::new(&mut result, *blockId, closure);
+            let closureFn = separator.process();
+            functions.push(closureFn);
+        }
+
+        functions.push(result);
+        functions
     }
 
     fn addImplicitConvertCall(&mut self, dest: &Variable, source: &Variable) -> InstructionKind {

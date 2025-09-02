@@ -72,7 +72,10 @@ impl<'a> Builder<'a> {
         for instruction in &inner.borrow().instructions {
             match &instruction.kind {
                 HirInstructionKind::FunctionCall(dest, info) => {
-                    let f = self.program.getFunction(&info.name).expect("Function not found");
+                    let f = match self.program.getFunction(&info.name) {
+                        Some(f) => f,
+                        None => panic!("Function not found {}", info.name),
+                    };
                     if info.name == getTrueName() {
                         let dest = self.buildVariable(dest);
                         block.instructions.push(Instruction::Declare(dest.clone()));
@@ -323,6 +326,9 @@ impl<'a> Builder<'a> {
                 HirInstructionKind::CreateClosure(_, _) => {
                     panic!("CreateClosure instruction found in Lowering, this should not happen");
                 }
+                HirInstructionKind::ClosureReturn(_, _, _) => {
+                    panic!("ClosureReturn instruction found in Lowering, this should not happen");
+                }
             }
         }
         Some(block)
@@ -458,7 +464,7 @@ pub fn lowerType(ty: &HirType, program: &HirProgram) -> MirType {
             }
         }
         HirType::Tuple(_) => unreachable!("Tuple in MIR"),
-        HirType::Function(_, _) => todo!(),
+        HirType::Function(_, _) => unreachable!("Function type in MIR"),
         HirType::Var(_) => unreachable!("Type variable in MIR"),
         HirType::Reference(ty, _) => MirType::Ptr(Box::new(lowerType(ty, program))),
         HirType::Ptr(ty) => MirType::Ptr(Box::new(lowerType(ty, program))),

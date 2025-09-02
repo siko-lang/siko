@@ -291,6 +291,10 @@ impl Variable {
             location: self.location.clone(),
         }
     }
+
+    pub fn info(&self) -> Rc<RefCell<VariableInfo>> {
+        self.info.clone()
+    }
 }
 
 impl Display for Variable {

@@ -15,6 +15,10 @@ pub enum QualifiedName {
     Monomorphized(Box<QualifiedName>, Context),
     Canonical(Box<QualifiedName>, Box<QualifiedName>, Vec<Type>),
     Lambda(Box<QualifiedName>, u32),
+    Closure(Vec<Type>, Box<Type>),
+    ClosureInstance(Box<QualifiedName>, u32),
+    ClosureEnvStruct(Box<QualifiedName>),
+    ClosureCallHandler(Box<QualifiedName>),
 }
 
 impl QualifiedName {
@@ -34,6 +38,10 @@ impl QualifiedName {
             QualifiedName::Monomorphized(p, _) => p.module(),
             QualifiedName::Canonical(p, _, _) => p.module(),
             QualifiedName::Lambda(p, _) => p.module(),
+            QualifiedName::Closure(_, _) => panic!("Closure names are not supported"),
+            QualifiedName::ClosureInstance(_, _) => panic!("ClosureInstance names are not supported"),
+            QualifiedName::ClosureEnvStruct(_) => panic!("ClosureStruct names are not supported"),
+            QualifiedName::ClosureCallHandler(_) => panic!("ClosureCallHandler names are not supported"),
         }
     }
 
@@ -45,6 +53,10 @@ impl QualifiedName {
             QualifiedName::Monomorphized(p, _) => *p.clone(),
             QualifiedName::Canonical(p, _, _) => *p.clone(),
             QualifiedName::Lambda(p, _) => *p.clone(),
+            QualifiedName::Closure(_, _) => panic!("Closure names are not supported"),
+            QualifiedName::ClosureInstance(_, _) => panic!("ClosureInstance names are not supported"),
+            QualifiedName::ClosureEnvStruct(_) => panic!("ClosureStruct names are not supported"),
+            QualifiedName::ClosureCallHandler(_) => panic!("ClosureCallHandler names are not supported"),
         }
     }
 
@@ -87,6 +99,10 @@ impl QualifiedName {
                 panic!("Canonical names are not supported")
             }
             QualifiedName::Lambda(_, _) => panic!("Lambda names are not supported"),
+            QualifiedName::Closure(_, _) => panic!("Closure names are not supported"),
+            QualifiedName::ClosureInstance(_, _) => panic!("ClosureInstance names are not supported"),
+            QualifiedName::ClosureEnvStruct(_) => panic!("ClosureStruct names are not supported"),
+            QualifiedName::ClosureCallHandler(_) => panic!("ClosureCallHandler names are not supported"),
         }
     }
 
@@ -118,6 +134,12 @@ impl Display for QualifiedName {
                 write!(f, "{}/{}[{}]", p, t, formatTypes(types))
             }
             QualifiedName::Lambda(p, index) => write!(f, "{}.lambda/{}", p, index),
+            QualifiedName::Closure(params, result) => {
+                write!(f, "closure({} -> {})", formatTypes(params), result)
+            }
+            QualifiedName::ClosureInstance(p, index) => write!(f, "{}.closure_instance/{}", p, index),
+            QualifiedName::ClosureEnvStruct(p) => write!(f, "{}.closure_env", p),
+            QualifiedName::ClosureCallHandler(p) => write!(f, "{}.closure_call_handler", p),
         }
     }
 }

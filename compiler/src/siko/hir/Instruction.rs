@@ -452,6 +452,7 @@ pub enum InstructionKind {
     LoadPtr(Variable, Variable),
     StorePtr(Variable, Variable),
     CreateClosure(Variable, ClosureCreateInfo),
+    ClosureReturn(BlockId, Variable, Variable),
 }
 
 impl Display for InstructionKind {
@@ -523,6 +524,9 @@ impl InstructionKind {
                 InstructionKind::StorePtr(variable.copy(map), variable1.copy(map))
             }
             InstructionKind::CreateClosure(v, info) => InstructionKind::CreateClosure(v.copy(map), info.copy(map)),
+            InstructionKind::ClosureReturn(block_id, variable, return_value) => {
+                InstructionKind::ClosureReturn(block_id.clone(), variable.copy(map), return_value.copy(map))
+            }
         }
     }
 
@@ -582,6 +586,9 @@ impl InstructionKind {
                 info.closureParams = info.closureParams.iter().map(|p| p.useVar()).collect();
                 InstructionKind::CreateClosure(v.clone(), info)
             }
+            InstructionKind::ClosureReturn(block_id, variable, return_value) => {
+                InstructionKind::ClosureReturn(block_id.clone(), variable.clone(), return_value.useVar())
+            }
         }
     }
 
@@ -619,6 +626,7 @@ impl InstructionKind {
             InstructionKind::LoadPtr(v, _) => Some(v.clone()),
             InstructionKind::StorePtr(v, _) => Some(v.clone()),
             InstructionKind::CreateClosure(v, _) => Some(v.clone()),
+            InstructionKind::ClosureReturn(_, v, _) => Some(v.clone()),
         }
     }
 
@@ -763,6 +771,9 @@ impl InstructionKind {
                     .collect();
                 InstructionKind::CreateClosure(var.replace(&from, to.clone()), info)
             }
+            InstructionKind::ClosureReturn(block_id, variable, return_value) => {
+                InstructionKind::ClosureReturn(block_id.clone(), variable.clone(), return_value.clone())
+            }
         }
     }
 
@@ -855,6 +866,9 @@ impl InstructionKind {
                 let mut vars = vec![var.clone()];
                 vars.extend(info.closureParams.clone());
                 vars
+            }
+            InstructionKind::ClosureReturn(_, variable, return_value) => {
+                vec![variable.clone(), return_value.clone()]
             }
         }
     }
@@ -957,6 +971,9 @@ impl InstructionKind {
             }
             InstructionKind::CreateClosure(var, info) => {
                 format!("create_closure({}, {})", var, info)
+            }
+            InstructionKind::ClosureReturn(blockId, variable, return_value) => {
+                format!("closure_return({}, {}, {})", blockId, variable, return_value)
             }
         }
     }

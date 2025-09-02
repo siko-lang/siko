@@ -136,8 +136,10 @@ pub fn getUsageInfo(kind: InstructionKind, referenceStore: &ReferenceStore) -> U
         InstructionKind::MethodCall(_, _, _, _) => {
             panic!("Method call instruction found in block processor");
         }
-        InstructionKind::DynamicFunctionCall(_, _, _) => {
-            panic!("Dynamic function call found in block processor");
+        InstructionKind::DynamicFunctionCall(dest, closure, args) => {
+            let mut usages = vec![varToUsage(&closure)];
+            usages.extend(args.iter().map(|arg| varToUsage(arg)));
+            UsageInfo::with(usages, Some(dest.toPath()))
         }
         InstructionKind::Bind(_, _, _) => {
             panic!("Bind instruction found in block processor");
@@ -170,5 +172,8 @@ pub fn getUsageInfo(kind: InstructionKind, referenceStore: &ReferenceStore) -> U
         InstructionKind::LoadPtr(dest, _) => UsageInfo::with(vec![], Some(dest.toPath())),
         InstructionKind::StorePtr(dest, src) => UsageInfo::with(vec![varToUsage(&src)], Some(dest.toPath())),
         InstructionKind::CreateClosure(var, _) => UsageInfo::with(Vec::new(), Some(var.toPath())),
+        InstructionKind::ClosureReturn(_, _, _) => {
+            panic!("ClosureReturn found in drop checker, this should not happen")
+        }
     }
 }

@@ -450,5 +450,8 @@ pub fn processInstructionKind(
             InstructionKind::CreateClosure(var.process(sub, mono), info.clone())
             // TODO
         }
+        InstructionKind::ClosureReturn(_, _, _) => {
+            panic!("ClosureReturn found in Monomorphizer, this should not happen");
+        }
     }
 }

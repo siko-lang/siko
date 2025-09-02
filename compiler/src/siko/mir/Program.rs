@@ -65,7 +65,10 @@ impl Program {
     }
 
     pub fn getUnion(&self, n: &String) -> Union {
-        self.unions.get(n).cloned().expect("union not found")
+        match self.unions.get(n) {
+            Some(u) => u.clone(),
+            None => panic!("union {} not found", n),
+        }
     }
 
     fn convertUnions(&mut self) {

@@ -280,6 +280,9 @@ impl RemoveTuples for InstructionKind {
             InstructionKind::CreateClosure(v, info) => {
                 InstructionKind::CreateClosure(v.removeTuples(ctx), info.removeTuples(ctx))
             }
+            InstructionKind::ClosureReturn(_, _, _) => {
+                panic!("ClosureReturn found in RemoveTuples, this should not happen");
+            }
         }
     }
 }

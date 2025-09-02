@@ -738,6 +738,11 @@ impl<'a> ExprResolver<'a> {
                     SimpleExpr::Block(block) => self.resolveBlock(block, &lambdaEnv, lambdaVar.clone()),
                     _ => panic!("lambda body is not a block!"),
                 };
+                self.bodyBuilder.current().implicit().addClosureReturn(
+                    lambdaBodyBuilder.getBlockId(),
+                    lambdaVar.clone(),
+                    expr.location.clone(),
+                );
                 self.loopInfos = savedLoopInfos;
                 self.bodyBuilder.setTargetBlockId(targetBlock);
                 let captures = lambdaEnv.captures();

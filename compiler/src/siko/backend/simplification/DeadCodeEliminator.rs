@@ -166,6 +166,9 @@ impl<'a> DeadCodeEliminator<'a> {
                 InstructionKind::LoadPtr(_, _) => {}
                 InstructionKind::StorePtr(_, _) => {}
                 InstructionKind::CreateClosure(_, _) => {}
+                InstructionKind::ClosureReturn(_, _, _) => {
+                    panic!("ClosureReturn found in drop checker, this should not happen");
+                }
             }
         }
     }
