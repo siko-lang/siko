@@ -164,8 +164,8 @@ impl<'a> Typechecker<'a> {
     }
 
     pub fn run(&mut self) -> Function {
-        //println!("Typechecking function {}", self.f.name);
-        //println!(" {} ", self.f);
+        // println!("Typechecking function {}", self.f.name);
+        // println!(" {} ", self.f);
         self.initialize();
         //self.dump(self.f);
         self.check();
@@ -568,14 +568,17 @@ impl<'a> Typechecker<'a> {
                         field: None,
                     },
                 );
-                // println!("Converter {} {} {}", dest, source, instruction.location);
-                // println!(
-                //     "Converter {} {} {}",
-                //     dest,
-                //     dest.getType().apply(&self.substitution),
-                //     source.getType().apply(&self.substitution)
-                // );
-                self.unifier.unifyVars(dest, source);
+                let srcTy = self.unifier.apply(source.getType());
+                let destTy = self.unifier.apply(dest.getType());
+                match (srcTy, destTy) {
+                    (Type::Var(TypeVar::Var(_)), Type::Var(TypeVar::Var(_))) => {}
+                    (_, Type::Var(TypeVar::Var(_))) => {
+                        dest.setType(source.getType());
+                    }
+                    _ => {
+                        self.unifier.unifyVars(dest, source);
+                    }
+                }
             }
             InstructionKind::MethodCall(dest, receiver, methodName, args) => {
                 self.handleMethodCall(&instruction, builder, dest, receiver, methodName, args);
