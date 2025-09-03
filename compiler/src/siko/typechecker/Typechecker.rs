@@ -22,7 +22,7 @@ use crate::siko::{
         Program::Program,
         Trait::Instance,
         TraitMethodSelector::TraitMethodSelector,
-        Type::{Type, TypeVar},
+        Type::{formatTypes, Type, TypeVar},
         TypeVarAllocator::TypeVarAllocator,
         Unifier::Unifier,
         Variable::{Variable, VariableName},
@@ -105,6 +105,37 @@ impl ClosureTypeInfo {
     }
 }
 
+impl Display for ClosureTypeInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "ClosureTypeInfo(name: {}, argTypes: {}, envTypes: {}, resultType: {}, envVars: {}, argVars: {})",
+            if let Some(name) = &self.name {
+                name.toString()
+            } else {
+                "??".to_string()
+            },
+            formatTypes(&self.argTypes),
+            formatTypes(&self.envTypes),
+            if let Some(resultType) = &self.resultType {
+                resultType.to_string()
+            } else {
+                "??".to_string()
+            },
+            self.envVars
+                .iter()
+                .map(|v| v.to_string())
+                .collect::<Vec<_>>()
+                .join(", "),
+            self.argVars
+                .iter()
+                .map(|v| v.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    }
+}
+
 pub struct Typechecker<'a> {
     ctx: &'a ReportContext,
     program: &'a Program,
@@ -168,8 +199,8 @@ impl<'a> Typechecker<'a> {
     }
 
     pub fn run(&mut self) -> Vec<Function> {
-        // println!("Typechecking function {}", self.f.name);
-        // println!(" {} ", self.f);
+        //println!("Typechecking function {}", self.f.name);
+        //println!(" {} ", self.f);
         self.initialize();
         //self.dump(self.f);
         self.check();
@@ -195,7 +226,9 @@ impl<'a> Typechecker<'a> {
                 closureTypeInfo.argVars.push(var.clone());
             }
             VariableName::ClosureArg(blockId, index) => {
+                //println!("Initializing closure arg {} in block {} {}", var.name(), blockId, index);
                 let closureTypeInfo = self.closureTypes.entry(blockId).or_insert_with(ClosureTypeInfo::new);
+                //println!("Current closure types: {}", closureTypeInfo);
                 assert_eq!(closureTypeInfo.envVars.len(), index as usize);
                 closureTypeInfo.envVars.push(var.clone());
             }

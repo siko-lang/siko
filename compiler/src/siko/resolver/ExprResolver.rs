@@ -747,7 +747,7 @@ impl<'a> ExprResolver<'a> {
                 self.bodyBuilder.setTargetBlockId(targetBlock);
                 let captures = lambdaEnv.captures();
                 let closureArgs: Vec<_> = captures.keys().cloned().collect();
-                let lambdaBodyBuilder = self.bodyBuilder.iterator(lambdaBodyBuilder.getBlockId());
+                let mut lambdaBodyBuilder = self.bodyBuilder.iterator(lambdaBodyBuilder.getBlockId());
                 for (index, closureArg) in closureArgs.iter().enumerate() {
                     let pVar = Variable::new(
                         VariableName::ClosureArg(lambdaBodyBuilder.getBlockId(), index as u32),
@@ -759,6 +759,7 @@ impl<'a> ExprResolver<'a> {
                         false,
                         expr.location.clone(),
                     );
+                    lambdaBodyBuilder.step();
                 }
                 let dest = self.bodyBuilder.createTempValue(expr.location.clone());
                 let info = ClosureCreateInfo::new(
