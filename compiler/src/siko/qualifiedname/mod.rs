@@ -30,16 +30,6 @@ impl QualifiedName {
         QualifiedName::Canonical(Box::new(self.clone()), Box::new(traitName), types)
     }
 
-    pub fn isClosureFunction(&self) -> bool {
-        match &self {
-            QualifiedName::Closure(_, _) => true,
-            QualifiedName::ClosureInstance(_, _) => true,
-            QualifiedName::ClosureInstanceEnvStruct(_) => true,
-            QualifiedName::ClosureCallHandler(_) => true,
-            _ => false,
-        }
-    }
-
     pub fn module(&self) -> QualifiedName {
         match &self {
             QualifiedName::Module(_) => self.clone(),

@@ -14,7 +14,7 @@ use crate::siko::{
         Function::{Function, Parameter},
         FunctionCallResolver::{CheckFunctionCallResult, FunctionCallResolver},
         InstanceResolver::InstanceResolver,
-        InstanceStore::InstanceStorePtr,
+        InstanceStore::InstanceStore,
         Instantiation::{instantiateEnum, instantiateInstance, instantiateStruct},
         Instruction::{
             CallInfo, FieldId, FieldInfo, ImplicitIndex, Instruction, InstructionKind, Mutability, WithContext,
@@ -45,11 +45,10 @@ pub fn typecheck(ctx: &ReportContext, mut program: Program) -> Program {
             .traitMethodselectors
             .get(&moduleName)
             .expect("Trait method selector not found");
-        let instanceStore = program
+        let instanceStore = &program
             .instanceStores
             .get(&moduleName)
-            .expect("Instance store not found")
-            .clone();
+            .expect("Instance store not found");
         let mut typechecker = Typechecker::new(ctx, &program, &traitMethodselector, instanceStore, f);
         let typedFns = typechecker.run();
         //typedFn.dump();
@@ -142,7 +141,7 @@ pub struct Typechecker<'a> {
     program: &'a Program,
     f: &'a Function,
     traitMethodselector: &'a TraitMethodSelector,
-    instanceStore: InstanceStorePtr,
+    instanceStore: &'a InstanceStore,
     allocator: TypeVarAllocator,
     selfType: Option<Type>,
     mutables: BTreeMap<String, Mutability>,
@@ -162,24 +161,19 @@ impl<'a> Typechecker<'a> {
         ctx: &'a ReportContext,
         program: &'a Program,
         traitMethodselector: &'a TraitMethodSelector,
-        instanceStore: InstanceStorePtr,
+        instanceStore: &'a InstanceStore,
         f: &'a Function,
     ) -> Typechecker<'a> {
         let allocator = TypeVarAllocator::new();
         let expander = ConstraintExpander::new(program, allocator.clone(), f.constraintContext.clone());
         let knownConstraints = expander.expandKnownConstraints();
-        let implResolver = InstanceResolver::new(
-            allocator.clone(),
-            instanceStore.clone(),
-            program,
-            knownConstraints.clone(),
-        );
+        let implResolver = InstanceResolver::new(allocator.clone(), instanceStore, program, knownConstraints.clone());
         let unifier = Unifier::new(ctx);
         let fnCallResolver = FunctionCallResolver::new(
             program,
             allocator.clone(),
             ctx,
-            instanceStore.clone(),
+            instanceStore,
             knownConstraints.clone(),
             unifier.clone(),
         );

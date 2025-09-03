@@ -29,8 +29,6 @@ pub fn process(ctx: &ReportContext, runner: &mut Runner, program: Program) -> Pr
         FieldRefMerger::mergeFieldRefs(program)
     });
     //println!("after field ref merge\n{}", program);
-    let program = ClosureLowering::process(program);
-    //println!("after closure lowering\n{}", program);
     let program = stage!(runner, "Checking drops", { checkDrops(&ctx, program) });
     //println!("after dropcheck\n{}", program);
     // program
@@ -43,5 +41,7 @@ pub fn process(ctx: &ReportContext, runner: &mut Runner, program: Program) -> Pr
     //println!("after remove tuples\n{}", program);
     let program = stage!(runner, "Simplifying", { Simplifier::simplify(program) });
     //println!("after simplification\n{}", program);
+    let program = ClosureLowering::process(program);
+    //println!("after closure lowering\n{}", program);
     program
 }

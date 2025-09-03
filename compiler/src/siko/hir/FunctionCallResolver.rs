@@ -6,7 +6,7 @@ use crate::siko::{
         ConstraintContext::ConstraintContext,
         Function::Function,
         InstanceResolver::{InstanceResolver, InstanceSearchResult},
-        InstanceStore::InstanceStorePtr,
+        InstanceStore::InstanceStore,
         Instantiation::{instantiateType, instantiateTypes},
         Instruction::InstanceReference,
         Program::Program,
@@ -33,7 +33,7 @@ pub struct FunctionCallResolver<'a> {
     program: &'a Program,
     allocator: TypeVarAllocator,
     ctx: &'a ReportContext,
-    implStore: InstanceStorePtr,
+    implStore: &'a InstanceStore,
     unifier: Unifier<'a>,
     knownConstraints: ConstraintContext,
 }
@@ -43,7 +43,7 @@ impl<'a> FunctionCallResolver<'a> {
         program: &'a Program,
         allocator: TypeVarAllocator,
         ctx: &'a ReportContext,
-        implStore: InstanceStorePtr,
+        implStore: &'a InstanceStore,
         knownConstraints: ConstraintContext,
         unifier: Unifier<'a>,
     ) -> FunctionCallResolver<'a> {
@@ -66,7 +66,7 @@ impl<'a> FunctionCallResolver<'a> {
     ) -> CheckFunctionCallResult {
         let implResolver = InstanceResolver::new(
             self.allocator.clone(),
-            self.implStore.clone(),
+            self.implStore,
             self.program,
             self.knownConstraints.clone(),
         );

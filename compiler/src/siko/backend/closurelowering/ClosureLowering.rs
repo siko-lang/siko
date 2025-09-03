@@ -11,10 +11,7 @@ use crate::siko::hir::Data::Struct;
 use crate::siko::hir::Function::Parameter;
 use crate::siko::hir::Instruction::CallInfo;
 use crate::siko::hir::Instruction::FieldInfo;
-use crate::siko::hir::Instruction::ImplicitContextOperation;
 use crate::siko::hir::Instruction::InstructionKind;
-use crate::siko::hir::Instruction::WithContext;
-use crate::siko::hir::Instruction::WithInfo;
 use crate::siko::hir::Type::formatTypes;
 use crate::siko::hir::Variable::Variable;
 use crate::siko::hir::{Data::Enum, Program::Program, Type::Type};
@@ -245,9 +242,8 @@ impl ClosureLowering for InstructionKind {
                 lhs.lower(closureStore);
                 rhs.lower(closureStore);
             }
-            InstructionKind::Tuple(dest, args) => {
-                dest.lower(closureStore);
-                args.lower(closureStore);
+            InstructionKind::Tuple(_, _) => {
+                panic!("Tuple instruction found in closure lowering");
             }
             InstructionKind::StringLiteral(v, _) => {
                 v.lower(closureStore);
@@ -311,15 +307,14 @@ impl ClosureLowering for InstructionKind {
             }
             InstructionKind::BlockStart(_) => {}
             InstructionKind::BlockEnd(_) => {}
-            InstructionKind::With(v, info) => {
-                v.lower(closureStore);
-                info.lower(closureStore);
+            InstructionKind::With(_, _) => {
+                panic!("With instruction found in closure lowering");
             }
-            InstructionKind::ReadImplicit(v, _) => {
-                v.lower(closureStore);
+            InstructionKind::ReadImplicit(_, _) => {
+                panic!("ReadImplicit instruction found in closure lowering");
             }
-            InstructionKind::WriteImplicit(_, v) => {
-                v.lower(closureStore);
+            InstructionKind::WriteImplicit(_, _) => {
+                panic!("WriteImplicit instruction found in closure lowering");
             }
             InstructionKind::LoadPtr(v, v2) => {
                 v.lower(closureStore);
@@ -388,39 +383,6 @@ impl ClosureLowering for Parameter {
             Parameter::Named(_, ref mut ty, _) | Parameter::SelfParam(_, ref mut ty) => {
                 ty.lower(closureStore);
             }
-        }
-    }
-}
-
-impl ClosureLowering for WithInfo {
-    fn lower(&mut self, closureStore: &mut ClosureStore) {
-        self.contexts.lower(closureStore);
-        self.operations.lower(closureStore);
-        self.contextTypes.lower(closureStore);
-    }
-}
-
-impl ClosureLowering for WithContext {
-    fn lower(&mut self, closureStore: &mut ClosureStore) {
-        match self {
-            WithContext::EffectHandler(_) => {}
-            WithContext::Implicit(h) => {
-                h.var.lower(closureStore);
-            }
-        }
-    }
-}
-
-impl ClosureLowering for ImplicitContextOperation {
-    fn lower(&mut self, closureStore: &mut ClosureStore) {
-        match self {
-            ImplicitContextOperation::Add(_, v) => {
-                v.lower(closureStore);
-            }
-            ImplicitContextOperation::Overwrite(_, v) => {
-                v.lower(closureStore);
-            }
-            ImplicitContextOperation::Copy(_) => {}
         }
     }
 }
