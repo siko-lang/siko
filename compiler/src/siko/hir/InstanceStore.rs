@@ -1,3 +1,5 @@
+use std::{cell::RefCell, rc::Rc};
+
 use crate::siko::qualifiedname::QualifiedName;
 
 #[derive(Clone, Debug)]
@@ -11,6 +13,19 @@ impl InstanceStore {
         InstanceStore {
             localInstances: Vec::new(),
             importedInstances: Vec::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct InstanceStorePtr {
+    pub store: Rc<RefCell<InstanceStore>>,
+}
+
+impl InstanceStorePtr {
+    pub fn new() -> InstanceStorePtr {
+        InstanceStorePtr {
+            store: Rc::new(RefCell::new(InstanceStore::new())),
         }
     }
 }

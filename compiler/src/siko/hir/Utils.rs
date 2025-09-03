@@ -1,7 +1,7 @@
 use crate::siko::{
     hir::{
         Function::Function, FunctionCallResolver::FunctionCallResolver, InstanceResolver::InstanceResolver,
-        Program::Program, TypeVarAllocator::TypeVarAllocator, Unifier::Unifier,
+        InstanceStore::InstanceStorePtr, Program::Program, TypeVarAllocator::TypeVarAllocator, Unifier::Unifier,
     },
     location::Report::ReportContext,
     typechecker::ConstraintExpander::ConstraintExpander,
@@ -12,14 +12,24 @@ pub fn createResolvers<'a>(
     ctx: &'a ReportContext,
     program: &'a Program,
 ) -> (InstanceResolver<'a>, FunctionCallResolver<'a>) {
-    let instanceStore = program
-        .instanceStores
-        .get(&f.name.module())
-        .expect("No impl store for module");
+    let instanceStore = if f.name.isClosureFunction() {
+        InstanceStorePtr::new()
+    } else {
+        program
+            .instanceStores
+            .get(&f.name.module())
+            .expect("No impl store for module")
+            .clone()
+    };
     let allocator = TypeVarAllocator::new();
     let expander = ConstraintExpander::new(program, allocator.clone(), f.constraintContext.clone());
     let knownConstraints = expander.expandKnownConstraints();
-    let implResolver = InstanceResolver::new(allocator.clone(), instanceStore, program, knownConstraints.clone());
+    let implResolver = InstanceResolver::new(
+        allocator.clone(),
+        instanceStore.clone(),
+        program,
+        knownConstraints.clone(),
+    );
     let unifier = Unifier::new(ctx);
     let fnCallResolver = FunctionCallResolver::new(
         program,

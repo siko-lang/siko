@@ -4,7 +4,7 @@ use crate::siko::{
     hir::{
         Apply::Apply,
         ConstraintContext::{Constraint, ConstraintContext},
-        InstanceStore::InstanceStore,
+        InstanceStore::InstanceStorePtr,
         Instantiation::instantiateInstance,
         Program::Program,
         Substitution::Substitution,
@@ -35,7 +35,7 @@ impl InstanceSearchResult {
 
 pub struct InstanceResolver<'a> {
     allocator: TypeVarAllocator,
-    instanceStore: &'a InstanceStore,
+    instanceStore: InstanceStorePtr,
     program: &'a Program,
     knownConstraints: ConstraintContext,
 }
@@ -43,7 +43,7 @@ pub struct InstanceResolver<'a> {
 impl<'a> InstanceResolver<'a> {
     pub fn new(
         allocator: TypeVarAllocator,
-        instanceStore: &'a InstanceStore,
+        instanceStore: InstanceStorePtr,
         program: &'a Program,
         knownConstraints: ConstraintContext,
     ) -> Self {
@@ -143,12 +143,13 @@ impl<'a> InstanceResolver<'a> {
             // Prevent infinite recursion
             panic!("Instance resolution exceeded maximum recursion depth");
         }
-        match self.findInstanceForConstraint(constraint, &self.instanceStore.localInstances, level) {
+        let instanceStore = self.instanceStore.store.borrow();
+        match self.findInstanceForConstraint(constraint, &instanceStore.localInstances, level) {
             InstanceSearchResult::Found(instanceDef) => return InstanceSearchResult::Found(instanceDef),
             InstanceSearchResult::Ambiguous(names) => return InstanceSearchResult::Ambiguous(names),
             InstanceSearchResult::NotFound => {}
         }
-        match self.findInstanceForConstraint(constraint, &self.instanceStore.importedInstances, level) {
+        match self.findInstanceForConstraint(constraint, &instanceStore.importedInstances, level) {
             InstanceSearchResult::Found(instanceDef) => return InstanceSearchResult::Found(instanceDef),
             InstanceSearchResult::Ambiguous(names) => return InstanceSearchResult::Ambiguous(names),
             InstanceSearchResult::NotFound => {}

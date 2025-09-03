@@ -12,7 +12,7 @@ use crate::siko::{
         Function::{Function, FunctionKind, Parameter},
         FunctionCallResolver::FunctionCallResolver,
         InstanceResolver::InstanceResolver,
-        InstanceStore::InstanceStore,
+        InstanceStore::InstanceStorePtr,
         Instantiation::{instantiateEnum, instantiateStruct},
         Instruction::{CallInfo, EnumCase, FieldId, FieldInfo, InstructionKind},
         Program::Program,
@@ -335,9 +335,13 @@ impl<'a> Monomorphizer<'a> {
         let mut hasInstance = false;
 
         let allocator = TypeVarAllocator::new();
-        let implStore = InstanceStore::new();
-        let implResolver =
-            InstanceResolver::new(allocator.clone(), &implStore, &self.program, ConstraintContext::new());
+        let implStore = InstanceStorePtr::new();
+        let implResolver = InstanceResolver::new(
+            allocator.clone(),
+            implStore.clone(),
+            &self.program,
+            ConstraintContext::new(),
+        );
 
         if implResolver.isDrop(&ty) {
             hasInstance = true;
@@ -346,7 +350,7 @@ impl<'a> Monomorphizer<'a> {
                 &self.program,
                 allocator.clone(),
                 self.ctx,
-                &implStore,
+                implStore,
                 ConstraintContext::new(),
                 unifier.clone(),
             );

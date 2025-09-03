@@ -3,7 +3,7 @@ use crate::siko::{
         ConstraintContext::{Constraint as IrConstraint, ConstraintContext},
         Data::MethodInfo as DataMethodInfo,
         Function::{FunctionKind, Parameter},
-        InstanceStore::InstanceStore,
+        InstanceStore::InstanceStorePtr,
         Instantiation::instantiateTraitWithSub,
         Program::Program,
         Trait::{AssociatedType, MemberInfo},
@@ -1029,8 +1029,9 @@ impl<'a> Resolver<'a> {
                 .program
                 .instanceStores
                 .entry(QualifiedName::Module(moduleResolver.name.clone()))
-                .or_insert_with(InstanceStore::new);
-            instanceStore.importedInstances = importedInstances;
+                .or_insert_with(InstanceStorePtr::new);
+            let mut store = instanceStore.store.borrow_mut();
+            store.importedInstances = importedInstances;
         }
     }
 
@@ -1046,12 +1047,19 @@ impl<'a> Resolver<'a> {
                 importedModules: Vec::new(),
                 variants,
             };
+            let instanceStore = InstanceStorePtr::new();
+            {
+                let mut store = instanceStore.store.borrow_mut();
+                store.localInstances = instances.clone();
+                store.importedInstances = Vec::new();
+            }
             self.program.instanceStores.insert(
                 QualifiedName::Module(m.name.toString()),
-                InstanceStore {
-                    localInstances: instances.clone(),
-                    importedInstances: Vec::new(),
-                },
+                // InstanceStorePtr {
+                //     localInstances: instances.clone(),
+                //     importedInstances: Vec::new(),
+                // },
+                instanceStore,
             );
             self.resolvers.insert(m.name.toString(), moduleResolver);
         }

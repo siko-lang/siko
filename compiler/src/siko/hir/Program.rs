@@ -7,7 +7,7 @@ use crate::siko::{
     hir::{
         CanonicalInstanceStore::CanonicalInstanceStore,
         Implicit::Implicit,
-        InstanceStore::InstanceStore,
+        InstanceStore::InstanceStorePtr,
         Trait::{Instance, Trait},
         TraitMethodSelector::TraitMethodSelector,
     },
@@ -29,7 +29,7 @@ pub struct Program {
     pub variants: BTreeSet<QualifiedName>,
     pub traits: BTreeMap<QualifiedName, Trait>,
     pub instances: BTreeMap<QualifiedName, Instance>,
-    pub instanceStores: BTreeMap<QualifiedName, InstanceStore>,
+    pub instanceStores: BTreeMap<QualifiedName, InstanceStorePtr>,
     pub canonicalImplStore: CanonicalInstanceStore,
 }
 
