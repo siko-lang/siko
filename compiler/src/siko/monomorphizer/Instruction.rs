@@ -447,8 +447,20 @@ pub fn processInstructionKind(
             InstructionKind::StorePtr(dest.process(sub, mono), src.process(sub, mono))
         }
         InstructionKind::CreateClosure(var, info) => {
-            InstructionKind::CreateClosure(var.process(sub, mono), info.clone())
-            // TODO
+            let (handlerResolution, _) = handlerResolutionStore.get(syntaxBlockId);
+            let resolvedImpls = Vec::new();
+            let ty_args = Vec::new();
+            let fn_name = mono.getMonoName(&info.name, &ty_args, handlerResolution.clone(), resolvedImpls.clone());
+            //println!("MONO CALL: {}", fn_name);
+            mono.addKey(Key::Function(
+                info.name.clone(),
+                ty_args,
+                handlerResolution.clone(),
+                resolvedImpls,
+            ));
+            let mut info = info.clone();
+            info.name = fn_name;
+            InstructionKind::CreateClosure(var.process(sub, mono), info)
         }
         InstructionKind::ClosureReturn(_, _, _) => {
             panic!("ClosureReturn found in Monomorphizer, this should not happen");

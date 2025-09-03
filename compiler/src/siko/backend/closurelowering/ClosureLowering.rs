@@ -105,7 +105,7 @@ impl ClosureStore {
             //println!("Lowered function: {}", f);
         }
         for (key, c) in &self.closures {
-            println!("Generating closure {}", key);
+            //println!("Generating closure {}", key);
             let closure = c.info.borrow();
             let mut generator = ClosureGenerator::new(&mut program, key, &*closure);
             generator.generateClosure();
@@ -336,7 +336,7 @@ impl ClosureLowering for InstructionKind {
                     .expect("create closure result is not fn type");
                 let closureInstanceName = closureStore.getClosureInstanceName(args, resTy, closureInstance);
                 dest.lower(closureStore);
-                println!("closure params {:?} ", info.closureParams);
+                //println!("closure params {:?} ", info.closureParams);
                 let callInfo = CallInfo {
                     name: closureInstanceName,
                     args: info.closureParams.clone(),

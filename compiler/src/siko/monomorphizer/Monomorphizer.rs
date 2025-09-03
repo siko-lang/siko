@@ -274,7 +274,7 @@ impl<'a> Monomorphizer<'a> {
     }
 
     fn monomorphizeStruct(&mut self, name: QualifiedName, args: Vec<Type>) {
-        //println!("MONO Struct: {} {}", name, formatTypes(&args));
+        //println!("MONO Struct: {} {}", name, crate::siko::hir::Type::formatTypes(&args));
         let targetTy = Type::Named(name.clone(), args.clone());
         let c = self.program.structs.get(&name).expect("structDef not found in mono");
         let mut c = instantiateStruct(&mut TypeVarAllocator::new(), c, &targetTy);
@@ -295,7 +295,7 @@ impl<'a> Monomorphizer<'a> {
     }
 
     fn monomorphizeEnum(&mut self, name: QualifiedName, args: Vec<Type>) {
-        //println!("MONO ENUM: {} {}", name, formatTypes(&args));
+        //println!("MONO ENUM: {} {}", name, crate::siko::hir::Type::formatTypes(&args));
         let e = self.program.enums.get(&name).expect("enum not found in mono");
         let targetTy = Type::Named(name.clone(), args.clone());
         let mut e = instantiateEnum(&mut TypeVarAllocator::new(), e, &targetTy);

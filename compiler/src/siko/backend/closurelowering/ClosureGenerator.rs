@@ -196,7 +196,7 @@ impl ClosureGenerator<'_> {
             constraintContext: ConstraintContext::new(),
             kind: FunctionKind::UserDefined,
         };
-        println!("handler fn {}", handlerFn);
+        //println!("handler fn {}", handlerFn);
         self.program.functions.insert(handlerFn.name.clone(), handlerFn);
     }
 }

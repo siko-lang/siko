@@ -3,38 +3,67 @@ use crate::siko::{
         Block::BlockId,
         Body::Body,
         ConstraintContext::ConstraintContext,
-        Function::{Function, FunctionKind},
+        Function::{Function, FunctionKind, Parameter},
         Instruction::InstructionKind,
+        Unifier::Unifier,
         Variable::VariableName,
     },
     typechecker::Typechecker::ClosureTypeInfo,
 };
 
-fn getArgName(index: u32) -> VariableName {
-    VariableName::Arg(format!("arg{}", index))
+fn getArgName(index: u32) -> String {
+    format!("arg{}", index)
 }
 
-pub struct ClosureSeparator<'a> {
+pub struct ClosureSeparator<'a, 'b> {
     function: &'a mut Function,
     closureEntry: BlockId,
     closureTypeInfo: &'a ClosureTypeInfo,
     closureBody: Body,
+    unifier: &'a mut Unifier<'b>,
 }
 
-impl<'a> ClosureSeparator<'a> {
-    pub fn new(function: &'a mut Function, closureEntry: BlockId, closureTypeInfo: &'a ClosureTypeInfo) -> Self {
+impl<'a, 'b: 'a> ClosureSeparator<'a, 'b> {
+    pub fn new(
+        function: &'a mut Function,
+        closureEntry: BlockId,
+        closureTypeInfo: &'a ClosureTypeInfo,
+        unifier: &'a mut Unifier<'b>,
+    ) -> Self {
         ClosureSeparator {
             function,
             closureEntry,
             closureTypeInfo,
             closureBody: Body::new(),
+            unifier,
         }
     }
 
     pub fn process(&mut self) -> Function {
         self.processBlock(self.closureEntry);
-        let params = Vec::new();
+        let mut params = Vec::new();
+        let mut argIndex = 0;
+        for arg in &self.closureTypeInfo.envTypes {
+            let arg_name = getArgName(argIndex);
+            let arg = self.unifier.apply(arg.clone());
+            let param = Parameter::Named(arg_name, arg, false);
+            params.push(param);
+            argIndex += 1;
+        }
+        for arg in &self.closureTypeInfo.argTypes {
+            let arg_name = getArgName(argIndex);
+            let arg = self.unifier.apply(arg.clone());
+            let param = Parameter::Named(arg_name, arg, false);
+            params.push(param);
+            argIndex += 1;
+        }
         let constraintContext = ConstraintContext::new();
+        let resultTy = self
+            .closureTypeInfo
+            .resultType
+            .clone()
+            .expect("Closure must have result type");
+        let resultTy = self.unifier.apply(resultTy);
         let closureFn = Function::new(
             self.closureTypeInfo
                 .name
@@ -42,10 +71,7 @@ impl<'a> ClosureSeparator<'a> {
                 .expect("Closure must have name")
                 .clone(),
             params,
-            self.closureTypeInfo
-                .resultType
-                .clone()
-                .expect("Closure must have result type"),
+            resultTy,
             Some(self.closureBody.clone()),
             constraintContext,
             FunctionKind::UserDefined,
@@ -62,7 +88,7 @@ impl<'a> ClosureSeparator<'a> {
                 InstructionKind::Assign(lhs, rhs) => match rhs.name() {
                     VariableName::ClosureArg(_, index) => {
                         let arg_name = getArgName(index);
-                        let rhs = rhs.cloneInto(arg_name);
+                        let rhs = rhs.cloneInto(VariableName::Arg(arg_name));
                         block.replace(
                             instructionIndex,
                             InstructionKind::Assign(lhs, rhs),
@@ -72,7 +98,7 @@ impl<'a> ClosureSeparator<'a> {
                     }
                     VariableName::LambdaArg(_, index) => {
                         let arg_name = getArgName(self.closureTypeInfo.envTypes.len() as u32 + index);
-                        let rhs = rhs.cloneInto(arg_name);
+                        let rhs = rhs.cloneInto(VariableName::Arg(arg_name));
                         block.replace(
                             instructionIndex,
                             InstructionKind::Assign(lhs, rhs),

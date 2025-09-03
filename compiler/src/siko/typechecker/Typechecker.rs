@@ -1447,7 +1447,7 @@ impl<'a> Typechecker<'a> {
         let mut functions = Vec::new();
 
         for (blockId, closure) in self.closureTypes.iter() {
-            let mut separator = ClosureSeparator::new(&mut result, *blockId, closure);
+            let mut separator = ClosureSeparator::new(&mut result, *blockId, closure, &mut self.unifier);
             let closureFn = separator.process();
             functions.push(closureFn);
         }
