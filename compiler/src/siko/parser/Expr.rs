@@ -866,6 +866,9 @@ impl<'a> ExprParser for Parser<'a> {
                 self.expect(TokenKind::Misc(MiscKind::Backslash));
                 let mut params = Vec::new();
                 loop {
+                    if self.check(TokenKind::Arrow(ArrowKind::Right)) {
+                        break;
+                    }
                     let param = self.parsePattern();
                     params.push(param);
                     if self.check(TokenKind::Arrow(ArrowKind::Right)) {
