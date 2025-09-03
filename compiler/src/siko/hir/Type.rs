@@ -1,7 +1,7 @@
 use std::{collections::BTreeSet, fmt::Display, vec};
 
 use crate::siko::{
-    hir::{Apply::Apply, OwnershipVar::OwnershipVar, Substitution::Substitution, TypeVarAllocator::TypeVarAllocator},
+    hir::{Apply::Apply, Substitution::Substitution, TypeVarAllocator::TypeVarAllocator},
     qualifiedname::{
         builtins::{
             getBoolTypeName, getBoxTypeName, getIntTypeName, getStringLiteralTypeName, getStringTypeName, getU8TypeName,
@@ -33,7 +33,7 @@ pub enum Type {
     Tuple(Vec<Type>),
     Function(Vec<Type>, Box<Type>),
     Var(TypeVar),
-    Reference(Box<Type>, Option<OwnershipVar>),
+    Reference(Box<Type>),
     Ptr(Box<Type>),
     SelfType,
     Never(bool), // true = explicit never i.e. !
@@ -46,14 +46,14 @@ impl Type {
     pub fn getName(&self) -> Option<QualifiedName> {
         match &self {
             Type::Named(n, _) => Some(n.clone()),
-            Type::Reference(ty, _) => ty.getName(),
+            Type::Reference(ty) => ty.getName(),
             _ => None,
         }
     }
 
     pub fn unpackRef(self) -> Type {
         match self {
-            Type::Reference(ty, _) => ty.unpackRef(),
+            Type::Reference(ty) => ty.unpackRef(),
             ty => ty.clone(),
         }
     }
@@ -93,7 +93,7 @@ impl Type {
             Type::Var(v) => {
                 vars.insert(v.clone());
             }
-            Type::Reference(ty, _) => {
+            Type::Reference(ty) => {
                 vars = ty.collectVars(vars);
             }
             Type::Ptr(ty) => {
@@ -131,7 +131,7 @@ impl Type {
                     vars.push(v.clone());
                 }
             }
-            Type::Reference(ty, _) => {
+            Type::Reference(ty) => {
                 vars = ty.collectVarsStable(vars);
             }
             Type::Ptr(ty) => {
@@ -304,7 +304,7 @@ impl Type {
             Type::Var(TypeVar::Var(_)) => {
                 return false;
             }
-            Type::Reference(ty, _) => {
+            Type::Reference(ty) => {
                 return ty.isSpecified(fully);
             }
             Type::Ptr(ty) => {
@@ -330,7 +330,7 @@ impl Type {
 
     pub fn isReference(&self) -> bool {
         match &self {
-            Type::Reference(_, _) => true,
+            Type::Reference(_) => true,
             _ => false,
         }
     }
@@ -379,11 +379,11 @@ impl Type {
 
     pub fn makeSingleRef(self) -> Type {
         match self {
-            Type::Reference(inner, lifetime) => {
+            Type::Reference(inner) => {
                 if inner.isReference() {
                     inner.makeSingleRef()
                 } else {
-                    Type::Reference(inner, lifetime)
+                    Type::Reference(inner)
                 }
             }
             ty => ty,
@@ -391,7 +391,7 @@ impl Type {
     }
 
     pub fn asRef(&self) -> Type {
-        Type::Reference(Box::new(self.clone()), None)
+        Type::Reference(Box::new(self.clone()))
     }
 
     pub fn asPtr(&self) -> Type {
@@ -451,10 +451,7 @@ impl Display for Type {
                 write!(f, "fn({}) -> {}", args.join(", "), result)
             }
             Type::Var(v) => write!(f, "{}", v),
-            Type::Reference(ty, l) => match l {
-                Some(l) => write!(f, "&{} {}", l, ty),
-                None => write!(f, "&{}", ty),
-            },
+            Type::Reference(ty) => write!(f, "&{}", ty),
             Type::Ptr(ty) => {
                 write!(f, "*{}", ty)
             }

@@ -57,11 +57,11 @@ impl<'a> Unifier<'a> {
         //println!("Updating converter destination: {} -> {}", destTy, targetTy);
         if !self.tryUnify(destTy.clone(), targetTy.clone()) {
             match (destTy, targetTy.clone()) {
-                (ty1, Type::Reference(ty2, _)) => {
-                    self.tryUnify(ty1, *ty2.clone());
+                (ty1, Type::Reference(ty2)) => {
+                    self.tryUnify(ty1, *ty2);
                 }
-                (Type::Reference(ty1, _), ty2) => {
-                    self.tryUnify(*ty1.clone(), ty2);
+                (Type::Reference(ty1), ty2) => {
+                    self.tryUnify(*ty1, ty2);
                 }
                 (ty1, ty2) => {
                     self.tryUnify(ty1, ty2);

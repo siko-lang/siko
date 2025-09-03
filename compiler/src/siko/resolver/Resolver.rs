@@ -349,7 +349,7 @@ impl<'a> Resolver<'a> {
                                     SynParam::Named(_, ty, _) => typeResolver.resolveType(ty),
                                     SynParam::SelfParam => selfType.clone(),
                                     SynParam::MutSelfParam => selfType.clone(),
-                                    SynParam::RefSelfParam => IrType::Reference(Box::new(selfType.clone()), None),
+                                    SynParam::RefSelfParam => selfType.asRef(),
                                 };
                                 argTypes.push(ty);
                             }
@@ -466,7 +466,7 @@ impl<'a> Resolver<'a> {
                                     SynParam::Named(_, ty, _) => typeResolver.resolveType(ty),
                                     SynParam::SelfParam => selfType.clone(),
                                     SynParam::MutSelfParam => selfType.clone(),
-                                    SynParam::RefSelfParam => IrType::Reference(Box::new(selfType.clone()), None),
+                                    SynParam::RefSelfParam => selfType.asRef(),
                                 };
                                 argTypes.push(ty);
                             }

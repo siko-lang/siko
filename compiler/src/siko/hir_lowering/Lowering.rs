@@ -466,7 +466,7 @@ pub fn lowerType(ty: &HirType, program: &HirProgram) -> MirType {
         HirType::Tuple(_) => unreachable!("Tuple in MIR"),
         HirType::Function(_, _) => unreachable!("Function type in MIR"),
         HirType::Var(_) => unreachable!("Type variable in MIR"),
-        HirType::Reference(ty, _) => MirType::Ptr(Box::new(lowerType(ty, program))),
+        HirType::Reference(ty) => MirType::Ptr(Box::new(lowerType(ty, program))),
         HirType::Ptr(ty) => MirType::Ptr(Box::new(lowerType(ty, program))),
         HirType::SelfType => todo!(),
         HirType::Never(_) => MirType::Void,

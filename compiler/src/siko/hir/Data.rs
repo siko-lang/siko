@@ -1,10 +1,6 @@
 use std::fmt;
 
-use crate::siko::{
-    hir::{OwnershipVar::OwnershipVarInfo, Type::formatTypes},
-    location::Location::Location,
-    qualifiedname::QualifiedName,
-};
+use crate::siko::{hir::Type::formatTypes, location::Location::Location, qualifiedname::QualifiedName};
 
 use super::Type::Type;
 
@@ -27,7 +23,6 @@ pub struct Struct {
     pub ty: Type,
     pub fields: Vec<Field>,
     pub methods: Vec<MethodInfo>,
-    pub ownership_info: Option<OwnershipVarInfo>,
 }
 
 impl Struct {
@@ -38,7 +33,6 @@ impl Struct {
             fields: Vec::new(),
             methods: Vec::new(),
             location: location,
-            ownership_info: None,
         }
     }
 
@@ -67,7 +61,6 @@ pub struct Enum {
     pub ty: Type,
     pub variants: Vec<Variant>,
     pub methods: Vec<MethodInfo>,
-    pub ownership_info: Option<OwnershipVarInfo>,
 }
 
 impl Enum {
@@ -78,7 +71,6 @@ impl Enum {
             location: location,
             variants: Vec::new(),
             methods: Vec::new(),
-            ownership_info: None,
         }
     }
 
@@ -106,11 +98,7 @@ impl fmt::Display for MethodInfo {
 
 impl fmt::Display for Struct {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(ownership_info) = &self.ownership_info {
-            writeln!(f, "structDef {}{} {{", self.name, ownership_info)?;
-        } else {
-            writeln!(f, "structDef {} {{", self.name)?;
-        }
+        writeln!(f, "structDef {} {{", self.name)?;
         //writeln!(f, "    type: {},", self.ty)?;
         for field in &self.fields {
             writeln!(f, "    {},", field)?;
@@ -129,11 +117,7 @@ impl fmt::Display for Variant {
 
 impl fmt::Display for Enum {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(ownership_info) = &self.ownership_info {
-            writeln!(f, "enum {} {} {{", self.name, ownership_info)?;
-        } else {
-            writeln!(f, "enum {} {{", self.name)?;
-        }
+        writeln!(f, "enum {} {{", self.name)?;
         for variant in &self.variants {
             writeln!(f, "    {},", variant)?;
         }

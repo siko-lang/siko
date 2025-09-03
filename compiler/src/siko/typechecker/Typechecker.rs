@@ -481,7 +481,7 @@ impl<'a> Typechecker<'a> {
     fn checkField(&mut self, mut receiverType: Type, fieldId: &FieldId, location: Location) -> Type {
         let origType = receiverType.clone();
         receiverType = self.unifier.apply(receiverType);
-        if let Type::Reference(_, _) = &receiverType {
+        if let Type::Reference(_) = &receiverType {
             TypecheckerError::FieldNotFound(fieldId.to_string(), origType.to_string(), location.clone())
                 .report(self.ctx);
         }
@@ -523,7 +523,7 @@ impl<'a> Typechecker<'a> {
                             .report(self.ctx);
                         }
                         if receiverType.isReference() {
-                            return Type::Reference(Box::new(types[*index as usize].clone()), None);
+                            return types[*index as usize].asRef();
                         }
                         return types[*index as usize].clone();
                     }
@@ -551,7 +551,7 @@ impl<'a> Typechecker<'a> {
                         if f.name == *fieldName {
                             let mut result = f.ty.clone();
                             if receiverType.isReference() {
-                                result = Type::Reference(Box::new(f.ty.clone()), None);
+                                result = f.ty.asRef();
                             }
                             return result;
                         }
@@ -658,11 +658,11 @@ impl<'a> Typechecker<'a> {
             }
             InstructionKind::Ref(dest, arg) => {
                 let arg_type = arg.getType();
-                self.unifier.unifyVar(dest, Type::Reference(Box::new(arg_type), None));
+                self.unifier.unifyVar(dest, arg_type.asRef());
             }
             InstructionKind::PtrOf(dest, arg) => {
                 let arg_type = arg.getType();
-                self.unifier.unifyVar(dest, Type::Ptr(Box::new(arg_type)));
+                self.unifier.unifyVar(dest, arg_type.asPtr());
             }
             InstructionKind::DropPath(_) => {
                 unreachable!("drop list placeholder in typechecker!")
@@ -732,7 +732,7 @@ impl<'a> Typechecker<'a> {
                     newFields.push(newField);
                     receiverType = fieldTy;
                 }
-                receiverType = Type::Reference(Box::new(receiverType), None);
+                receiverType = receiverType.asRef();
                 let newKind = InstructionKind::AddressOfField(dest.clone(), receiver.clone(), newFields);
                 builder.replaceInstruction(newKind, instruction.location.clone());
                 self.unifier.unifyVar(dest, receiverType);
@@ -749,7 +749,7 @@ impl<'a> Typechecker<'a> {
                         let e = self.instantiateEnum(e, &baseTy);
                         let v = &e.variants[*index as usize];
                         let destType = if isRef {
-                            Type::Reference(Box::new(Type::Tuple(v.items.clone())), None)
+                            Type::Tuple(v.items.clone()).asRef()
                         } else {
                             Type::Tuple(v.items.clone())
                         };
@@ -784,7 +784,7 @@ impl<'a> Typechecker<'a> {
                     },
                 );
                 receiverType = self.unifier.apply(receiverType);
-                if let Type::Reference(innerTy, _) = &receiverType {
+                if let Type::Reference(innerTy) = &receiverType {
                     receiverType = *innerTy.clone();
                 }
                 if let Type::Ptr(innerTy) = &receiverType {
@@ -823,7 +823,7 @@ impl<'a> Typechecker<'a> {
                                     .report(self.ctx);
                                 }
                                 let fieldType = if isRef {
-                                    Type::Reference(Box::new(t[index as usize].clone()), None)
+                                    t[index as usize].asRef()
                                 } else {
                                     t[index as usize].clone()
                                 };
@@ -1340,7 +1340,7 @@ impl<'a> Typechecker<'a> {
                             let sourceTy = self.unifier.apply(source.getType());
                             //println!("Processing converter {} : {} -> {}", instruction, sourceTy, destTy);
                             match (&destTy, &sourceTy) {
-                                (Type::Reference(inner, _), Type::Reference(src, _)) => {
+                                (Type::Reference(inner), Type::Reference(src)) => {
                                     self.unifier
                                         .unify(*inner.clone(), *src.clone(), instruction.location.clone());
                                     builder.addDeclare(dest.clone(), instruction.location.clone());
@@ -1348,7 +1348,7 @@ impl<'a> Typechecker<'a> {
                                     let kind = InstructionKind::Assign(dest.clone(), source.clone());
                                     builder.replaceInstruction(kind, instruction.location.clone());
                                 }
-                                (destTy, Type::Reference(sourceInner, _)) => {
+                                (destTy, Type::Reference(sourceInner)) => {
                                     self.unifier.unify(
                                         destTy.clone(),
                                         *sourceInner.clone(),
@@ -1377,7 +1377,7 @@ impl<'a> Typechecker<'a> {
                                     };
                                     builder.replaceInstruction(kind, instruction.location.clone());
                                 }
-                                (Type::Reference(inner, _), src) => {
+                                (Type::Reference(inner), src) => {
                                     let mut refSource = source.clone();
                                     if !self.unifier.tryUnify(*inner.clone(), src.clone()) {
                                         // check implicit conversion is implemented for these types

@@ -45,7 +45,6 @@ impl ClosureGenerator<'_> {
             variants,
             location: location.clone(),
             methods: Vec::new(),
-            ownership_info: None,
         };
         self.program.enums.insert(enumDef.name.clone(), enumDef);
         enumTy
@@ -72,7 +71,6 @@ impl ClosureGenerator<'_> {
             location: location.clone(),
             ty: structTy.clone(),
             methods: Vec::new(),
-            ownership_info: None,
         };
         self.program.structs.insert(variantStruct.name.clone(), variantStruct);
         let mut structCtorParams = Vec::new();

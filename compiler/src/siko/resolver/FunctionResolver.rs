@@ -111,7 +111,7 @@ impl<'a> FunctionResolver<'a> {
                         let var =
                             Variable::newWithType(VariableName::Arg(format!("self")), f.name.location(), owner.asRef());
                         env.addArg(var, false);
-                        IrParameter::SelfParam(false, IrType::Reference(Box::new(owner.clone()), None))
+                        IrParameter::SelfParam(false, owner.asRef())
                     }
                     None => error(format!("No owner for self type!")),
                 },

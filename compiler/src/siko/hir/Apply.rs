@@ -34,7 +34,7 @@ impl Apply for Type {
                 Type::Function(newArgs, Box::new(newFnResult))
             }
             Type::Var(v) => sub.get(Type::Var(v)),
-            Type::Reference(arg, l) => Type::Reference(Box::new(arg.apply(sub)), l.clone()),
+            Type::Reference(arg) => arg.apply(sub).asRef(),
             Type::Ptr(arg) => Type::Ptr(Box::new(arg.apply(sub))),
             Type::SelfType => Type::SelfType,
             Type::Never(v) => Type::Never(v),

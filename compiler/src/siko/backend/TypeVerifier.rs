@@ -70,7 +70,7 @@ impl<'a> TypeVerifier<'a> {
 
     fn checkFieldInfo(&mut self, mut rootType: Type, fieldInfo: &FieldInfo) -> Type {
         let mut isRef = false;
-        if let Type::Reference(inner, _) = rootType {
+        if let Type::Reference(inner) = rootType {
             isRef = true;
             // If the root type is a reference, we need to follow it
             rootType = *inner.clone();
@@ -86,7 +86,7 @@ impl<'a> TypeVerifier<'a> {
                 let (f, _) = structDef.getField(&name);
                 let mut targetType = f.ty.clone();
                 if isRef {
-                    targetType = Type::Reference(Box::new(targetType), None);
+                    targetType = targetType.asRef();
                 }
                 self.unify(
                     &targetType,
@@ -100,7 +100,7 @@ impl<'a> TypeVerifier<'a> {
                     .cloned()
                     .expect("Field info index should be valid");
                 if isRef {
-                    targetType = Type::Reference(Box::new(targetType), None);
+                    targetType = targetType.asRef();
                 }
                 self.unify(
                     &targetType,
@@ -155,7 +155,7 @@ impl<'a> TypeVerifier<'a> {
                 self.unify(&src.getType(), &dest.getType());
             }
             InstructionKind::Ref(dest, src) => {
-                let ty = Type::Reference(Box::new(src.getType().clone()), None);
+                let ty = src.getType().asRef();
                 self.unify(&ty, &dest.getType());
             }
             InstructionKind::PtrOf(dest, src) => {
@@ -186,7 +186,7 @@ impl<'a> TypeVerifier<'a> {
                 //println!("Enum definition: {}", enumDef);
                 //println!("srcType: {}", srcTy);
                 let mut isRef = false;
-                if let Type::Reference(inner, _) = srcTy {
+                if let Type::Reference(inner) = srcTy {
                     srcTy = *inner.clone();
                     isRef = true;
                 }
@@ -195,7 +195,7 @@ impl<'a> TypeVerifier<'a> {
                 let mut ty1 = Type::Tuple(variant.items.clone());
                 //println!("Transform type: {}", ty1);
                 if isRef {
-                    ty1 = Type::Reference(Box::new(ty1), None);
+                    ty1 = ty1.asRef();
                 }
                 self.unify(&ty1, &dest.getType());
             }

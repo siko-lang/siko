@@ -64,7 +64,7 @@ impl RemoveTuples for Type {
                 ctx.tuples.insert(self.clone());
                 Type::Named(getTuple(self), Vec::new())
             }
-            Type::Reference(ty, ownership) => Type::Reference(Box::new(ty.removeTuples(ctx)), ownership.clone()),
+            Type::Reference(ty) => ty.removeTuples(ctx).asRef(),
             Type::Ptr(ty) => Type::Ptr(Box::new(ty.removeTuples(ctx))),
             Type::Function(args, r) => {
                 let args = args.removeTuples(ctx);
@@ -377,7 +377,6 @@ pub fn removeTuples(program: &Program) -> Program {
                 ty: Type::Named(name.clone(), Vec::new()),
                 fields: fields,
                 methods: Vec::new(),
-                ownership_info: None,
             };
             let unitFn = Function {
                 name: name.clone(),
