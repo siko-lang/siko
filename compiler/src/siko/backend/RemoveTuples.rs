@@ -66,6 +66,11 @@ impl RemoveTuples for Type {
             }
             Type::Reference(ty, ownership) => Type::Reference(Box::new(ty.removeTuples(ctx)), ownership.clone()),
             Type::Ptr(ty) => Type::Ptr(Box::new(ty.removeTuples(ctx))),
+            Type::Function(args, r) => {
+                let args = args.removeTuples(ctx);
+                let r = r.removeTuples(ctx);
+                Type::Function(args, Box::new(r))
+            }
             ty => ty.clone(),
         }
     }

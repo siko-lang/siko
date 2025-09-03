@@ -449,7 +449,18 @@ pub fn processInstructionKind(
         InstructionKind::CreateClosure(var, info) => {
             let (handlerResolution, _) = handlerResolutionStore.get(syntaxBlockId);
             let resolvedImpls = Vec::new();
-            let ty_args = Vec::new();
+            let targetFn = mono
+                .program
+                .getFunction(&info.name)
+                .expect("closure function not found in mono");
+            let closureTy = var.getType();
+            let closureTy = closureTy.apply(sub);
+            let targetTy = targetFn.getType();
+            let fnSub = createTypeSubstitution(closureTy.clone(), targetTy.clone());
+            // println!("Closure function type: {}", targetTy);
+            // println!("Closure var type: {}", closureTy);
+            // println!("Sub {}", fnSub);
+            let ty_args = targetFn.constraintContext.typeParameters.apply(&fnSub);
             let fn_name = mono.getMonoName(&info.name, &ty_args, handlerResolution.clone(), resolvedImpls.clone());
             //println!("MONO CALL: {}", fn_name);
             mono.addKey(Key::Function(

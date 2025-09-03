@@ -92,12 +92,16 @@ impl ClosureStore {
 
     fn lower(&mut self, mut program: Program) -> Program {
         for (_, e) in &mut program.enums {
+            //println!("Lowering enum: {}", e.name);
             e.lower(self);
         }
         for (_, s) in &mut program.structs {
+            //println!("Lowering struct: {}", s.name);
             s.lower(self);
         }
         for (_, f) in &mut program.functions {
+            //println!("Lowering function: {}", f.name);
+            //println!("Lowering function: {}", f);
             f.params.lower(self);
             if let Some(body) = &mut f.body {
                 body.lower(self);
@@ -114,6 +118,7 @@ impl ClosureStore {
     }
 
     fn getClosureInfo(&mut self, args: Vec<Type>, result: Type) -> ClosureInfoPtr {
+        assert!(!result.isUnit());
         let entry = self.closures.entry(ClosureKey {
             args: args.clone(),
             result: result.clone(),
@@ -128,6 +133,7 @@ impl ClosureStore {
     }
 
     fn getClosureName(&mut self, args: Vec<Type>, result: Type) -> QualifiedName {
+        assert!(!result.isUnit());
         let ptr = self.getClosureInfo(args, result);
         let info = ptr.info.borrow();
         info.name.clone()

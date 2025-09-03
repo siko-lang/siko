@@ -5,6 +5,7 @@ use crate::siko::{
         ConstraintContext::ConstraintContext,
         Function::{Function, FunctionKind, Parameter},
         Instruction::InstructionKind,
+        Type::{Type, TypeVar},
         Unifier::Unifier,
         Variable::VariableName,
     },
@@ -21,6 +22,7 @@ pub struct ClosureSeparator<'a, 'b> {
     closureTypeInfo: &'a ClosureTypeInfo,
     closureBody: Body,
     unifier: &'a mut Unifier<'b>,
+    typeVars: Vec<TypeVar>,
 }
 
 impl<'a, 'b: 'a> ClosureSeparator<'a, 'b> {
@@ -36,6 +38,7 @@ impl<'a, 'b: 'a> ClosureSeparator<'a, 'b> {
             closureTypeInfo,
             closureBody: Body::new(),
             unifier,
+            typeVars: Vec::new(),
         }
     }
 
@@ -57,13 +60,21 @@ impl<'a, 'b: 'a> ClosureSeparator<'a, 'b> {
             params.push(param);
             argIndex += 1;
         }
-        let constraintContext = ConstraintContext::new();
+        let mut constraintContext = ConstraintContext::new();
+        for tyVar in self.typeVars.drain(..) {
+            let tyVar = Type::Var(tyVar);
+            if !constraintContext.typeParameters.contains(&tyVar) {
+                constraintContext.addTypeParam(tyVar);
+            }
+        }
         let resultTy = self
             .closureTypeInfo
             .resultType
             .clone()
             .expect("Closure must have result type");
         let resultTy = self.unifier.apply(resultTy);
+        // println!("Closure result type: {}", resultTy);
+        // println!("Constraint context: {}", constraintContext);
         let closureFn = Function::new(
             self.closureTypeInfo
                 .name
@@ -84,6 +95,14 @@ impl<'a, 'b: 'a> ClosureSeparator<'a, 'b> {
         let mut block = self.function.getBlockById(blockId).clone();
         for instructionIndex in 0..block.size() {
             let instr = block.getInstruction(instructionIndex);
+            let allVars = instr.kind.collectVariables();
+            let mut typeVars = Vec::new();
+            for var in allVars {
+                let var = self.unifier.apply(var);
+                let ty = var.getType();
+                typeVars = ty.collectVarsStable(typeVars);
+            }
+            self.typeVars.append(&mut typeVars);
             match instr.kind {
                 InstructionKind::Assign(lhs, rhs) => match rhs.name() {
                     VariableName::ClosureArg(_, index) => {
