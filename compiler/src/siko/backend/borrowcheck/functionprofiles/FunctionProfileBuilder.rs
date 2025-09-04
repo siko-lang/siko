@@ -1,7 +1,10 @@
-use std::{collections::BTreeMap, fmt::Display};
+use std::collections::BTreeMap;
 
 use crate::siko::{
-    backend::borrowcheck::DataGroups::{DataGroups, EnumDef, ExtendedType, FieldDef, StructDef, VariantDef},
+    backend::borrowcheck::{
+        functionprofiles::FunctionProfile::{FunctionProfile, Link},
+        DataGroups::{DataGroups, EnumDef, ExtendedType, StructDef},
+    },
     hir::{
         Apply::Apply,
         Block::Block,
@@ -9,34 +12,13 @@ use crate::siko::{
         Instantiation::instantiateTypes,
         Instruction::{FieldId, FieldInfo, InstructionKind},
         Program::Program,
-        Substitution::Substitution,
         Type::Type,
         TypeVarAllocator::TypeVarAllocator,
         Unifier::Unifier,
         Variable::{Variable, VariableName},
     },
     location::Location::Location,
-    qualifiedname::QualifiedName,
 };
-
-#[derive(Clone)]
-pub struct FunctionProfile {
-    pub name: QualifiedName,
-    pub args: Vec<ExtendedType>,
-    pub result: ExtendedType,
-}
-
-impl Display for FunctionProfile {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let args = self
-            .args
-            .iter()
-            .map(|a| format!("{}", a))
-            .collect::<Vec<String>>()
-            .join(", ");
-        write!(f, "{}({}) -> {}", self.name, args, self.result)
-    }
-}
 
 pub struct FunctionProfileBuilder<'a> {
     f: &'a Function,
@@ -46,6 +28,7 @@ pub struct FunctionProfileBuilder<'a> {
     unifier: Unifier,
     varTypes: BTreeMap<VariableName, ExtendedType>,
     profile: FunctionProfile,
+    paramNameMap: BTreeMap<String, usize>,
 }
 
 impl<'a> FunctionProfileBuilder<'a> {
@@ -61,7 +44,9 @@ impl<'a> FunctionProfileBuilder<'a> {
                 name: f.name.clone(),
                 args: Vec::new(),
                 result: ExtendedType::new(Type::getUnitType()),
+                links: Vec::new(),
             },
+            paramNameMap: BTreeMap::new(),
         }
     }
 
@@ -114,15 +99,18 @@ impl<'a> FunctionProfileBuilder<'a> {
 
     pub fn process(&mut self) {
         //println!("Building function profile for: {}", self.f.name);
+        //println!("Function: {}", self.f);
         self.profile = FunctionProfile {
             name: self.f.name.clone(),
             args: Vec::new(),
             result: self.extendType(&self.f.result),
+            links: Vec::new(),
         };
-        for p in &self.f.params {
+        for (index, p) in self.f.params.iter().enumerate() {
             let ty = p.getType();
             let extTy = self.extendType(&ty);
             self.profile.args.push(extTy);
+            self.paramNameMap.insert(p.getName().clone(), index);
         }
         //println!("Function profile: {}", profile);
         let body = match &self.f.body {
@@ -148,8 +136,31 @@ impl<'a> FunctionProfileBuilder<'a> {
                         self.profile = self.unifier.apply(profile);
                         //println!("Struct ctor profile: {}", self.profile);
                     }
+                    FunctionKind::VariantCtor(index) => {
+                        let profile = self.profile.clone();
+                        let enumName = self.f.result.getName().expect("Variant ctor must have enum type");
+                        let enumDef = self.dataGroups.getEnum(&enumName);
+                        let instantiatedDef = self.instantiateEnumDef(enumDef);
+                        let variant = &instantiatedDef.variants[index as usize];
+                        // println!(
+                        //     "Unifying enum variant: {} with arg type: {}",
+                        //     variant.ty, profile.args[0]
+                        // );
+                        let mut variantTy = variant.ty.clone();
+                        if !profile.args.is_empty() {
+                            // Variant without argument
+                            if variantTy.vars.len() < profile.args[0].vars.len() {
+                                variantTy.vars.insert(0, self.allocator.next());
+                            }
+                            self.unifyExtendedTypes(&variantTy, &profile.args[0]);
+                        }
+                        self.unifyExtendedTypes(&instantiatedDef.ty, &profile.result);
+                        self.profile = self.unifier.apply(profile);
+                        //println!("Variant ctor profile: {}", self.profile);
+                    }
+                    FunctionKind::Extern(_) => {}
                     _ => {
-                        //println!("Function has no body, skipping body processing");
+                        unreachable!("Function without body in borrow checker: {}", self.f.name);
                     }
                 }
                 return;
@@ -158,6 +169,11 @@ impl<'a> FunctionProfileBuilder<'a> {
         for (_, b) in &body.blocks {
             self.processBlock(b);
         }
+        self.profile = self.unifier.apply(self.profile.clone());
+        self.profile.normalize();
+        //println!("Normalized function profile: {}", self.profile);
+        self.profile.processLinks();
+        //println!("Function profile: {}", self.profile);
     }
 
     pub fn processBlock(&mut self, block: &Block) {
@@ -166,15 +182,27 @@ impl<'a> FunctionProfileBuilder<'a> {
         for instr in &b.instructions {
             let vars = instr.kind.collectVariables();
             for var in vars {
-                if self.varTypes.contains_key(&var.name()) {
+                let name = var.name();
+                if self.varTypes.contains_key(&name) {
+                    continue;
+                }
+                if let VariableName::Arg(argName) = &name {
+                    let paramIndex = self
+                        .paramNameMap
+                        .get(argName)
+                        .cloned()
+                        .expect(&format!("Argument variable not found in param map: {}", argName));
+                    let extTy = self.profile.args[paramIndex as usize].clone();
+                    self.varTypes.insert(name, extTy);
                     continue;
                 }
                 let extTy = self.extendType(&var.getType());
-                self.varTypes.insert(var.name(), extTy);
+                //println!("Variable type: {} {}", var.name(), extTy);
+                self.varTypes.insert(name, extTy);
             }
             //println!("Processing instruction: {}", instr);
             match &instr.kind {
-                InstructionKind::FunctionCall(dest, info) => {}
+                InstructionKind::FunctionCall(_dest, _info) => {}
                 InstructionKind::Converter(_, _) => panic!("Converter in borrow checker"),
                 InstructionKind::MethodCall(_, _, _, _) => {
                     panic!("MethodCall in borrow checker")
@@ -215,9 +243,20 @@ impl<'a> FunctionProfileBuilder<'a> {
                 InstructionKind::Drop(_, _) => panic!("Drop in borrow checker"),
                 InstructionKind::Jump(_, _) => {}
                 InstructionKind::Assign(dest, src) => {
-                    let srcType = self.getVarType(src);
-                    let destType = self.getVarType(dest);
-                    self.unifyExtendedTypes(&srcType, &destType);
+                    let mut destTy = self.getVarType(dest);
+                    let mut srcTy = self.getVarType(src);
+                    assert_eq!(destTy.ty.isReference(), srcTy.ty.isReference());
+                    if destTy.ty.isReference() {
+                        let to = destTy.base();
+                        let from = srcTy.base();
+                        //println!("Link created: {} -> {}", from, to);
+                        self.profile.links.push(Link::new(from, to));
+                        self.unifyExtendedTypes(&destTy, &srcTy);
+                    } else {
+                        let srcType = self.getVarType(src);
+                        let destType = self.getVarType(dest);
+                        self.unifyExtendedTypes(&srcType, &destType);
+                    }
                 }
                 InstructionKind::FieldAssign(root, value, infos) => {
                     let valueType = self.getVarType(value);
@@ -277,10 +316,11 @@ impl<'a> FunctionProfileBuilder<'a> {
         }
     }
 
-    fn resolveFieldInfos(&self, root: &Variable, infos: &Vec<FieldInfo>) -> ExtendedType {
+    fn resolveFieldInfos(&mut self, root: &Variable, infos: &Vec<FieldInfo>) -> ExtendedType {
         let mut currenTy = self.getVarType(root);
         for info in infos {
             let refVar = if currenTy.ty.isReference() {
+                //println!("Reference in field access: {}", currenTy);
                 Some(currenTy.vars[0].clone())
             } else {
                 None
@@ -297,11 +337,19 @@ impl<'a> FunctionProfileBuilder<'a> {
                     //println!("resolveFieldInfos root type: {} {}", currenTy, name);
                     let mut structDef = self.dataGroups.getStruct(&structName).clone();
                     structDef = self.instantiateStructDef(&structDef);
+                    if structDef.ty.vars.len() < currenTy.vars.len() {
+                        structDef.ty.vars.insert(0, self.allocator.next());
+                    }
+                    self.unifyExtendedTypes(&structDef.ty, &currenTy);
+                    structDef = self.unifier.apply(structDef);
+                    //println!("Instantiated struct def: {}", structDef);
                     let field = structDef.getField(&name);
                     currenTy = field.ty.clone();
                     if let Some(refVar) = refVar {
-                        currenTy.ty = currenTy.ty.asRef();
-                        currenTy.vars.insert(0, refVar);
+                        if !currenTy.ty.isReference() {
+                            currenTy.ty = currenTy.ty.asRef();
+                            currenTy.vars.insert(0, refVar);
+                        }
                     }
                 }
                 _ => {
@@ -310,71 +358,5 @@ impl<'a> FunctionProfileBuilder<'a> {
             }
         }
         currenTy
-    }
-}
-
-impl Apply for ExtendedType {
-    fn apply(self, sub: &Substitution) -> Self {
-        let newVars = self.vars.clone().apply(sub);
-        ExtendedType {
-            ty: self.ty.clone(),
-            vars: newVars,
-        }
-    }
-}
-
-impl Apply for FieldDef {
-    fn apply(self, sub: &Substitution) -> Self {
-        FieldDef {
-            name: self.name.clone(),
-            ty: self.ty.clone().apply(sub),
-            inGroup: self.inGroup,
-        }
-    }
-}
-
-impl Apply for StructDef {
-    fn apply(self, sub: &Substitution) -> Self {
-        let newTy = self.ty.clone().apply(sub);
-        let newFields = self.fields.clone().apply(sub);
-        StructDef {
-            name: self.name.clone(),
-            ty: newTy,
-            fields: newFields,
-        }
-    }
-}
-
-impl Apply for VariantDef {
-    fn apply(self, sub: &Substitution) -> Self {
-        VariantDef {
-            name: self.name.clone(),
-            ty: self.ty.clone().apply(sub),
-            inGroup: self.inGroup,
-        }
-    }
-}
-
-impl Apply for EnumDef {
-    fn apply(self, sub: &Substitution) -> Self {
-        let newTy = self.ty.clone().apply(sub);
-        let newVariants = self.variants.clone().apply(sub);
-        EnumDef {
-            name: self.name.clone(),
-            ty: newTy,
-            variants: newVariants,
-        }
-    }
-}
-
-impl Apply for FunctionProfile {
-    fn apply(self, sub: &Substitution) -> Self {
-        let newArgs = self.args.clone().apply(sub);
-        let newResult = self.result.clone().apply(sub);
-        FunctionProfile {
-            name: self.name.clone(),
-            args: newArgs,
-            result: newResult,
-        }
     }
 }

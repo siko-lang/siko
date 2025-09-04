@@ -21,8 +21,8 @@ impl ExtendedType {
         ExtendedType { ty, vars: Vec::new() }
     }
 
-    pub fn base(&mut self) {
-        self.vars.remove(0);
+    pub fn base(&mut self) -> Type {
+        self.vars.remove(0)
     }
 }
 

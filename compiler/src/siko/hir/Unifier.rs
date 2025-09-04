@@ -13,6 +13,7 @@ pub trait UnificationErrorHandler {
 pub struct Unifier {
     handler: Rc<dyn UnificationErrorHandler>,
     pub substitution: Rc<RefCell<Substitution>>,
+    pub verbose: bool,
 }
 
 impl Unifier {
@@ -20,6 +21,7 @@ impl Unifier {
         Unifier {
             handler: Rc::new(DefaultUnificationErrorHandler::new(ctx.clone())),
             substitution: Rc::new(RefCell::new(Substitution::new())),
+            verbose: false,
         }
     }
 
@@ -27,6 +29,7 @@ impl Unifier {
         Unifier {
             handler: Rc::new(InternalUnificationErrorHandler {}),
             substitution: Rc::new(RefCell::new(Substitution::new())),
+            verbose: false,
         }
     }
 
@@ -36,7 +39,9 @@ impl Unifier {
     }
 
     pub fn unify(&mut self, ty1: Type, ty2: Type, location: Location) {
-        //println!("UNIFY {} {}", ty1, ty2);
+        if self.verbose {
+            println!("Unifying {} and {}", ty1, ty2);
+        }
         let mut sub = self.substitution.borrow_mut();
         if let Err(_) = unify(&mut sub, ty1.clone(), ty2.clone(), false) {
             let ty = ty1.apply(&sub);

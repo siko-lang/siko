@@ -470,6 +470,11 @@ pub fn formatTypes(types: &Vec<Type>) -> String {
 }
 
 pub fn normalizeTypes(types: &Vec<Type>) -> Vec<Type> {
+    let (types, _) = normalizeTypesWithSub(types);
+    types
+}
+
+pub fn normalizeTypesWithSub(types: &Vec<Type>) -> (Vec<Type>, Substitution) {
     let allocator = TypeVarAllocator::new();
     let mut vars = Vec::new();
     for ty in types {
@@ -479,5 +484,5 @@ pub fn normalizeTypes(types: &Vec<Type>) -> Vec<Type> {
     for var in &vars {
         sub.add(Type::Var(var.clone()), allocator.nextNamed());
     }
-    types.iter().map(|ty| ty.clone().apply(&sub)).collect()
+    (types.iter().map(|ty| ty.clone().apply(&sub)).collect(), sub)
 }

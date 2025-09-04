@@ -155,8 +155,7 @@ impl ClosureGenerator<'_> {
             caseBlock.addInstruction(transform, location.clone());
             let mut envVars = Vec::new();
             for (i, ty) in instance.envTypes.iter().enumerate() {
-                let varName = format!("env{}", i);
-                let envVar = Variable::newWithType(VariableName::Arg(varName), location.clone(), ty.clone());
+                let envVar = bodyBuilder.createTempValueWithType(location.clone(), ty.clone());
                 let fieldInfo = FieldInfo {
                     name: FieldId::Named(getStructFieldName(i as u32)),
                     location: location.clone(),

@@ -1,6 +1,7 @@
 use crate::siko::{
     backend::borrowcheck::{
-        DataGroups::DataGroups, FunctionGroups::FunctionGroupBuilder, FunctionProfiles::FunctionProfileBuilder,
+        functionprofiles::FunctionProfileBuilder::FunctionProfileBuilder, DataGroups::DataGroups,
+        FunctionGroups::FunctionGroupBuilder,
     },
     hir::Program::Program,
 };
