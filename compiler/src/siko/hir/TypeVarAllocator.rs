@@ -27,4 +27,22 @@ impl TypeVarAllocator {
         *n += 1;
         v
     }
+
+    pub fn useType(&self, ty: &Type) {
+        match ty {
+            Type::Var(TypeVar::Var(var)) => {
+                let mut n = self.next.borrow_mut();
+                if *var >= *n {
+                    *n = *var + 1;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    pub fn useTypes(&self, types: &Vec<Type>) {
+        for ty in types {
+            self.useType(ty);
+        }
+    }
 }

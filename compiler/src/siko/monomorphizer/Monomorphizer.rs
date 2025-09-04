@@ -5,6 +5,7 @@ use std::{
 };
 
 use crate::siko::{
+    backend::drop::Util::HasTrivialDrop,
     hir::{
         Apply::Apply,
         BodyBuilder::BodyBuilder,
@@ -341,7 +342,7 @@ impl<'a> Monomorphizer<'a> {
 
         if implResolver.isDrop(&ty) {
             hasInstance = true;
-            let unifier = Unifier::new(&self.ctx);
+            let unifier = Unifier::withContext(&self.ctx);
             let mut fnCallResolver = FunctionCallResolver::new(
                 &self.program,
                 allocator.clone(),
@@ -412,6 +413,9 @@ impl<'a> Monomorphizer<'a> {
             }
             Type::Tuple(args) => {
                 for (index, arg) in args.iter().enumerate() {
+                    if arg.hasTrivialDrop() {
+                        continue;
+                    }
                     let fields = vec![FieldInfo {
                         name: FieldId::Indexed(index as u32),
                         ty: Some(arg.clone()),

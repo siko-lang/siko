@@ -1,10 +1,36 @@
 use std::{collections::BTreeMap, fmt::Display};
 
 use crate::siko::{
-    hir::{Program::Program, Type::Type, TypeVarAllocator::TypeVarAllocator},
+    hir::{
+        Program::Program,
+        Type::{formatTypes, Type},
+        TypeVarAllocator::TypeVarAllocator,
+    },
     qualifiedname::QualifiedName,
     util::DependencyProcessor::{processDependencies, DependencyGroup},
 };
+
+#[derive(Debug, Clone)]
+pub struct ExtendedType {
+    pub ty: Type,
+    pub vars: Vec<Type>,
+}
+
+impl ExtendedType {
+    pub fn new(ty: Type) -> Self {
+        ExtendedType { ty, vars: Vec::new() }
+    }
+
+    pub fn base(&mut self) {
+        self.vars.remove(0);
+    }
+}
+
+impl Display for ExtendedType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}{}", self.ty, formatTypes(&self.vars))
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum DataDef {
@@ -23,29 +49,35 @@ impl Display for DataDef {
 
 #[derive(Debug, Clone)]
 pub struct FieldDef {
-    name: String,
-    ty: Type,
-    vars: Vec<Type>,
-    inGroup: bool,
+    pub name: String,
+    pub ty: ExtendedType,
+    pub inGroup: bool,
 }
 
 impl Display for FieldDef {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "{}:{}[{}]",
-            self.name,
-            self.ty,
-            self.vars.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(", ")
-        )
+        write!(f, "{}:{}", self.name, self.ty,)
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct StructDef {
-    name: QualifiedName,
-    vars: Vec<Type>,
-    fields: Vec<FieldDef>,
+    pub name: QualifiedName,
+    pub ty: ExtendedType,
+    pub fields: Vec<FieldDef>,
+}
+
+impl StructDef {
+    pub fn getField(&self, name: &str) -> &FieldDef {
+        //println!("Looking for field {} in struct {}", name, self.name);
+        for field in self.fields.iter() {
+            //println!("Checking field: {}", field.name);
+            if field.name == name {
+                return field;
+            }
+        }
+        panic!("Field not found");
+    }
 }
 
 impl Display for StructDef {
@@ -54,7 +86,7 @@ impl Display for StructDef {
             f,
             "struct {}[{}]:{}",
             self.name,
-            self.vars.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(", "),
+            self.ty,
             self.fields
                 .iter()
                 .map(|v| format!("\n   {}", v))
@@ -66,27 +98,22 @@ impl Display for StructDef {
 
 #[derive(Debug, Clone)]
 pub struct VariantDef {
-    name: String,
-    vars: Vec<Type>,
-    inGroup: bool,
+    pub name: String,
+    pub ty: ExtendedType,
+    pub inGroup: bool,
 }
 
 impl Display for VariantDef {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "{}: [{}]",
-            self.name,
-            self.vars.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(", ")
-        )
+        write!(f, "{}:{}", self.name, self.ty)
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct EnumDef {
-    name: QualifiedName,
-    vars: Vec<Type>,
-    variants: Vec<VariantDef>,
+    pub name: QualifiedName,
+    pub ty: ExtendedType,
+    pub variants: Vec<VariantDef>,
 }
 
 impl Display for EnumDef {
@@ -95,7 +122,7 @@ impl Display for EnumDef {
             f,
             "enum {}[{}]:{}",
             self.name,
-            self.vars.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(", "),
+            self.ty,
             self.variants
                 .iter()
                 .map(|v| format!("\n   {}", v))
@@ -108,7 +135,7 @@ impl Display for EnumDef {
 pub struct DataGroups<'a> {
     program: &'a Program,
     refGroups: BTreeMap<QualifiedName, Vec<Type>>,
-    dataDefs: BTreeMap<QualifiedName, DataDef>,
+    pub dataDefs: BTreeMap<QualifiedName, DataDef>,
 }
 
 impl<'a> DataGroups<'a> {
@@ -160,19 +187,18 @@ impl<'a> DataGroups<'a> {
             if let Some(s) = self.program.getStruct(item) {
                 let mut structDef = StructDef {
                     name: s.name.clone(),
-                    vars: Vec::new(),
+                    ty: ExtendedType::new(s.ty.clone()),
                     fields: Vec::new(),
                 };
                 for field in s.fields.iter() {
                     let mut fieldDef = FieldDef {
                         name: field.name.clone(),
-                        ty: field.ty.clone(),
-                        vars: Vec::new(),
+                        ty: ExtendedType::new(field.ty.clone()),
                         inGroup: false,
                     };
                     if Type::isReference(&field.ty) {
                         let refVar = allocator.next();
-                        fieldDef.vars.push(refVar.clone());
+                        fieldDef.ty.vars.push(refVar.clone());
                         groupVars.push(refVar);
                     }
                     if let Some(name) = getNameFromType(&field.ty) {
@@ -183,7 +209,7 @@ impl<'a> DataGroups<'a> {
                             let refGroups = self.refGroups.get(&name).expect("Dependency not found");
                             for _ in refGroups.iter() {
                                 let v = allocator.next();
-                                fieldDef.vars.push(v.clone());
+                                fieldDef.ty.vars.push(v.clone());
                                 groupVars.push(v);
                             }
                         }
@@ -195,32 +221,32 @@ impl<'a> DataGroups<'a> {
             if let Some(e) = self.program.getEnum(item) {
                 let mut enumDef = EnumDef {
                     name: e.name.clone(),
-                    vars: Vec::new(),
+                    ty: ExtendedType::new(e.ty.clone()),
                     variants: Vec::new(),
                 };
                 for variant in e.variants.iter() {
+                    assert_eq!(variant.items.len(), 1);
+                    let itemTy = variant.items[0].clone();
                     let mut variantDef = VariantDef {
                         name: variant.name.toString(),
-                        vars: Vec::new(),
+                        ty: ExtendedType::new(itemTy.clone()),
                         inGroup: false,
                     };
-                    for field in variant.items.iter() {
-                        if Type::isReference(field) {
-                            let refVar = allocator.next();
-                            variantDef.vars.push(refVar.clone());
-                            groupVars.push(refVar);
-                        }
-                        if let Some(name) = getNameFromType(field) {
-                            //println!("Found name from type: {}", name);
-                            if group.items.contains(&name) {
-                                variantDef.inGroup = true;
-                            } else {
-                                let refGroups = self.refGroups.get(&name).expect("Dependency not found");
-                                for _ in refGroups.iter() {
-                                    let v = allocator.next();
-                                    variantDef.vars.push(v.clone());
-                                    groupVars.push(v);
-                                }
+                    if Type::isReference(&itemTy) {
+                        let refVar = allocator.next();
+                        variantDef.ty.vars.push(refVar.clone());
+                        groupVars.push(refVar);
+                    }
+                    if let Some(name) = getNameFromType(&itemTy) {
+                        //println!("Found name from type: {}", name);
+                        if group.items.contains(&name) {
+                            variantDef.inGroup = true;
+                        } else {
+                            let refGroups = self.refGroups.get(&name).expect("Dependency not found");
+                            for _ in refGroups.iter() {
+                                let v = allocator.next();
+                                variantDef.ty.vars.push(v.clone());
+                                groupVars.push(v);
                             }
                         }
                     }
@@ -230,18 +256,18 @@ impl<'a> DataGroups<'a> {
             }
         }
         for s in structs.iter_mut() {
-            s.vars = groupVars.clone();
+            s.ty.vars = groupVars.clone();
             for f in s.fields.iter_mut() {
                 if f.inGroup {
-                    f.vars = groupVars.clone();
+                    f.ty.vars = groupVars.clone();
                 }
             }
         }
         for e in enums.iter_mut() {
-            e.vars = groupVars.clone();
+            e.ty.vars = groupVars.clone();
             for v in e.variants.iter_mut() {
                 if v.inGroup {
-                    v.vars = groupVars.clone();
+                    v.ty.vars = groupVars.clone();
                 }
             }
         }
@@ -255,6 +281,43 @@ impl<'a> DataGroups<'a> {
         }
         for item in group.items.iter() {
             self.refGroups.insert(item.clone(), groupVars.clone());
+        }
+    }
+
+    pub fn extendType(&self, ty: &Type) -> ExtendedType {
+        let mut extTy = ExtendedType::new(ty.clone());
+        let allocator = TypeVarAllocator::new();
+        if let Some(name) = getNameFromType(ty) {
+            let def = self.dataDefs.get(&name).expect("Data definition not found");
+            match def {
+                DataDef::Struct(s) => {
+                    allocator.useTypes(&s.ty.vars);
+                    extTy.vars.extend(s.ty.vars.clone());
+                }
+                DataDef::Enum(e) => {
+                    allocator.useTypes(&e.ty.vars);
+                    extTy.vars.extend(e.ty.vars.clone());
+                }
+            }
+        }
+        if Type::isReference(ty) {
+            let refVar = allocator.next();
+            extTy.vars.insert(0, refVar);
+        }
+        extTy
+    }
+
+    pub fn getStruct(&self, name: &QualifiedName) -> &StructDef {
+        match self.dataDefs.get(name) {
+            Some(DataDef::Struct(s)) => s,
+            _ => panic!("Struct not found"),
+        }
+    }
+
+    pub fn getEnum(&self, name: &QualifiedName) -> &EnumDef {
+        match self.dataDefs.get(name) {
+            Some(DataDef::Enum(e)) => e,
+            _ => panic!("Enum not found"),
         }
     }
 }

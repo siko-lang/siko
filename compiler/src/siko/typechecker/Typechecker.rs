@@ -151,7 +151,7 @@ pub struct Typechecker<'a> {
     knownConstraints: ConstraintContext,
     receiverChains: BTreeMap<Variable, ReceiverChainEntry>,
     implResolver: InstanceResolver<'a>,
-    unifier: Unifier<'a>,
+    unifier: Unifier,
     fnCallResolver: FunctionCallResolver<'a>,
     closureTypes: BTreeMap<BlockId, ClosureTypeInfo>,
 }
@@ -168,7 +168,7 @@ impl<'a> Typechecker<'a> {
         let expander = ConstraintExpander::new(program, allocator.clone(), f.constraintContext.clone());
         let knownConstraints = expander.expandKnownConstraints();
         let implResolver = InstanceResolver::new(allocator.clone(), instanceStore, program, knownConstraints.clone());
-        let unifier = Unifier::new(ctx);
+        let unifier = Unifier::withContext(ctx);
         let fnCallResolver = FunctionCallResolver::new(
             program,
             allocator.clone(),

@@ -5,16 +5,27 @@ use crate::siko::{
     location::{Location::Location, Report::Report, Report::ReportContext},
 };
 
+pub trait UnificationErrorHandler {
+    fn handleError(&self, error: UnifierError);
+}
+
 #[derive(Clone)]
-pub struct Unifier<'a> {
-    ctx: &'a ReportContext,
+pub struct Unifier {
+    handler: Rc<dyn UnificationErrorHandler>,
     pub substitution: Rc<RefCell<Substitution>>,
 }
 
-impl<'a> Unifier<'a> {
-    pub fn new(ctx: &'a ReportContext) -> Unifier<'a> {
+impl Unifier {
+    pub fn withContext(ctx: &ReportContext) -> Unifier {
         Unifier {
-            ctx,
+            handler: Rc::new(DefaultUnificationErrorHandler::new(ctx.clone())),
+            substitution: Rc::new(RefCell::new(Substitution::new())),
+        }
+    }
+
+    pub fn new() -> Unifier {
+        Unifier {
+            handler: Rc::new(InternalUnificationErrorHandler {}),
             substitution: Rc::new(RefCell::new(Substitution::new())),
         }
     }
@@ -30,7 +41,11 @@ impl<'a> Unifier<'a> {
         if let Err(_) = unify(&mut sub, ty1.clone(), ty2.clone(), false) {
             let ty = ty1.apply(&sub);
             let ty2 = ty2.apply(&sub);
-            UnifierError::TypeMismatch(format!("{}", ty), format!("{}", ty2), location).report(self.ctx)
+            self.handler.handleError(UnifierError::TypeMismatch(
+                format!("{}", ty),
+                format!("{}", ty2),
+                location,
+            ));
         }
     }
 
@@ -87,5 +102,33 @@ impl UnifierError {
             }
         }
         std::process::exit(1);
+    }
+}
+
+pub struct DefaultUnificationErrorHandler {
+    ctx: ReportContext,
+}
+
+impl DefaultUnificationErrorHandler {
+    pub fn new(ctx: ReportContext) -> Self {
+        DefaultUnificationErrorHandler { ctx }
+    }
+}
+
+impl UnificationErrorHandler for DefaultUnificationErrorHandler {
+    fn handleError(&self, error: UnifierError) {
+        error.report(&self.ctx);
+    }
+}
+
+pub struct InternalUnificationErrorHandler {}
+
+impl UnificationErrorHandler for InternalUnificationErrorHandler {
+    fn handleError(&self, error: UnifierError) {
+        match error {
+            UnifierError::TypeMismatch(ty1, ty2, location) => {
+                panic!("Type mismatch: {} vs {} at {}", ty1, ty2, location);
+            }
+        }
     }
 }

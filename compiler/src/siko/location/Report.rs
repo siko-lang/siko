@@ -4,7 +4,7 @@ use std::{
     io::{stdout, IsTerminal},
 };
 
-#[derive(PartialEq, PartialOrd, Eq, Ord)]
+#[derive(PartialEq, PartialOrd, Eq, Ord, Clone)]
 pub struct ReportContext {}
 
 impl Debug for ReportContext {

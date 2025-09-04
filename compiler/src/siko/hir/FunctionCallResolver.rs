@@ -34,7 +34,7 @@ pub struct FunctionCallResolver<'a> {
     allocator: TypeVarAllocator,
     ctx: &'a ReportContext,
     implStore: &'a InstanceStore,
-    unifier: Unifier<'a>,
+    unifier: Unifier,
     knownConstraints: ConstraintContext,
 }
 
@@ -45,7 +45,7 @@ impl<'a> FunctionCallResolver<'a> {
         ctx: &'a ReportContext,
         implStore: &'a InstanceStore,
         knownConstraints: ConstraintContext,
-        unifier: Unifier<'a>,
+        unifier: Unifier,
     ) -> FunctionCallResolver<'a> {
         FunctionCallResolver {
             program,

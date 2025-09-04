@@ -441,7 +441,7 @@ impl<'a> Resolver<'a> {
                                 neededTraitMembers.insert(method.name.clone());
                             }
                         }
-                        let mut unifier = Unifier::new(self.ctx);
+                        let mut unifier = Unifier::withContext(&self.ctx);
                         for (t1, t2) in zip(instantiatedTrait.params.clone(), irInstance.types.clone()) {
                             unifier.unify(t1, t2, i.location.clone());
                         }

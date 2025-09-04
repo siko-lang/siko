@@ -16,21 +16,21 @@ fn getArgName(index: u32) -> String {
     format!("arg{}", index)
 }
 
-pub struct ClosureSeparator<'a, 'b> {
+pub struct ClosureSeparator<'a> {
     function: &'a mut Function,
     closureEntry: BlockId,
     closureTypeInfo: &'a ClosureTypeInfo,
     closureBody: Body,
-    unifier: &'a mut Unifier<'b>,
+    unifier: &'a mut Unifier,
     typeVars: Vec<TypeVar>,
 }
 
-impl<'a, 'b: 'a> ClosureSeparator<'a, 'b> {
+impl<'a> ClosureSeparator<'a> {
     pub fn new(
         function: &'a mut Function,
         closureEntry: BlockId,
         closureTypeInfo: &'a ClosureTypeInfo,
-        unifier: &'a mut Unifier<'b>,
+        unifier: &'a mut Unifier,
     ) -> Self {
         ClosureSeparator {
             function,
