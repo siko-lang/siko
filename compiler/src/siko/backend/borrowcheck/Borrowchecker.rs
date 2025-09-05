@@ -1,6 +1,9 @@
 use crate::siko::{
     backend::borrowcheck::{
-        functionprofiles::FunctionProfileBuilder::FunctionProfileBuilder, DataGroups::DataGroups,
+        functionprofiles::{
+            FunctionProfileBuilder::FunctionProfileBuilder, FunctionProfileStore::FunctionProfileStore,
+        },
+        DataGroups::DataGroups,
         FunctionGroups::FunctionGroupBuilder,
     },
     hir::Program::Program,
@@ -20,12 +23,28 @@ impl<'a> BorrowChecker<'a> {
         dataGroups.process();
         let functionGroupBuilder = FunctionGroupBuilder::new(self.program);
         let functionGroups = functionGroupBuilder.process();
+        let mut profileStore = FunctionProfileStore::new();
         for group in functionGroups {
             //println!("Function group: {:?}", group);
-            for item in group.items {
-                let f = self.program.getFunction(&item).unwrap();
-                let mut profileBuilder = FunctionProfileBuilder::new(&f, self.program, &dataGroups);
-                profileBuilder.process();
+            loop {
+                let mut profileUpdated = false;
+                for item in &group.items {
+                    let f = self.program.getFunction(&item).unwrap();
+                    let mut profileBuilder = FunctionProfileBuilder::new(
+                        &f,
+                        self.program,
+                        &dataGroups,
+                        &mut profileStore,
+                        group.items.clone(),
+                    );
+                    let updated = profileBuilder.process();
+                    if updated {
+                        profileUpdated = true;
+                    }
+                }
+                if !profileUpdated || group.items.len() == 1 {
+                    break;
+                }
             }
         }
     }

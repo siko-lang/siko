@@ -12,7 +12,7 @@ use crate::siko::{
     qualifiedname::QualifiedName,
 };
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, PartialOrd, Ord, Eq)]
 pub struct Link {
     pub from: Type,
     pub to: Type,
@@ -36,7 +36,7 @@ impl Debug for Link {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, PartialOrd, Ord, Eq)]
 pub struct FunctionProfile {
     pub name: QualifiedName,
     pub args: Vec<ExtendedType>,

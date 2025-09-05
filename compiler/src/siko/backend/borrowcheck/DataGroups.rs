@@ -10,7 +10,7 @@ use crate::siko::{
     util::DependencyProcessor::{processDependencies, DependencyGroup},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Ord, Eq)]
 pub struct ExtendedType {
     pub ty: Type,
     pub vars: Vec<Type>,

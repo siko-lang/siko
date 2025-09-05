@@ -2,7 +2,10 @@ use std::collections::BTreeMap;
 
 use crate::siko::{
     backend::borrowcheck::{
-        functionprofiles::FunctionProfile::{FunctionProfile, Link},
+        functionprofiles::{
+            FunctionProfile::{FunctionProfile, Link},
+            FunctionProfileStore::FunctionProfileStore,
+        },
         DataGroups::{DataGroups, EnumDef, ExtendedType, StructDef},
     },
     hir::{
@@ -18,6 +21,7 @@ use crate::siko::{
         Variable::{Variable, VariableName},
     },
     location::Location::Location,
+    qualifiedname::QualifiedName,
 };
 
 pub struct FunctionProfileBuilder<'a> {
@@ -29,10 +33,18 @@ pub struct FunctionProfileBuilder<'a> {
     varTypes: BTreeMap<VariableName, ExtendedType>,
     profile: FunctionProfile,
     paramNameMap: BTreeMap<String, usize>,
+    profileStore: &'a mut FunctionProfileStore,
+    functionGroup: Vec<QualifiedName>,
 }
 
 impl<'a> FunctionProfileBuilder<'a> {
-    pub fn new(f: &'a Function, program: &'a Program, dataGroups: &'a DataGroups<'a>) -> Self {
+    pub fn new(
+        f: &'a Function,
+        program: &'a Program,
+        dataGroups: &'a DataGroups<'a>,
+        profileStore: &'a mut FunctionProfileStore,
+        functionGroup: Vec<QualifiedName>,
+    ) -> Self {
         FunctionProfileBuilder {
             f,
             program,
@@ -47,6 +59,8 @@ impl<'a> FunctionProfileBuilder<'a> {
                 links: Vec::new(),
             },
             paramNameMap: BTreeMap::new(),
+            profileStore,
+            functionGroup,
         }
     }
 
@@ -54,7 +68,7 @@ impl<'a> FunctionProfileBuilder<'a> {
         let mut extTy = self.dataGroups.extendType(ty);
         self.allocator.useTypes(&extTy.vars);
         let sub = instantiateTypes(&self.allocator, &extTy.vars);
-        extTy.vars = extTy.vars.clone().apply(&sub);
+        extTy = extTy.apply(&sub);
         extTy
     }
 
@@ -62,10 +76,7 @@ impl<'a> FunctionProfileBuilder<'a> {
         let mut newDef = def.clone();
         self.allocator.useTypes(&newDef.ty.vars);
         let sub = instantiateTypes(&self.allocator, &newDef.ty.vars);
-        newDef.ty.vars = newDef.ty.vars.clone().apply(&sub);
-        for f in newDef.fields.iter_mut() {
-            f.ty.vars = f.ty.vars.clone().apply(&sub);
-        }
+        newDef = newDef.apply(&sub);
         newDef
     }
 
@@ -75,11 +86,18 @@ impl<'a> FunctionProfileBuilder<'a> {
             self.allocator.useType(v);
         }
         let sub = instantiateTypes(&self.allocator, &newDef.ty.vars);
-        newDef.ty.vars = newDef.ty.vars.clone().apply(&sub);
-        for v in newDef.variants.iter_mut() {
-            v.ty.vars = v.ty.vars.clone().apply(&sub);
-        }
+        newDef = newDef.apply(&sub);
         newDef
+    }
+
+    fn instantiateFunctionProfile(&self, profile: &FunctionProfile) -> FunctionProfile {
+        let mut newProfile = profile.clone();
+        for v in newProfile.collectVars() {
+            self.allocator.useType(&v);
+        }
+        let sub = instantiateTypes(&self.allocator, &newProfile.collectVars());
+        newProfile = newProfile.apply(&sub);
+        newProfile
     }
 
     fn unifyExtendedTypes(&mut self, a: &ExtendedType, b: &ExtendedType) {
@@ -97,7 +115,7 @@ impl<'a> FunctionProfileBuilder<'a> {
             .clone()
     }
 
-    pub fn process(&mut self) {
+    pub fn process(&mut self) -> bool {
         //println!("Building function profile for: {}", self.f.name);
         //println!("Function: {}", self.f);
         self.profile = FunctionProfile {
@@ -113,8 +131,13 @@ impl<'a> FunctionProfileBuilder<'a> {
             self.paramNameMap.insert(p.getName().clone(), index);
         }
         //println!("Function profile: {}", profile);
-        let body = match &self.f.body {
-            Some(body) => body,
+        match &self.f.body {
+            Some(body) => {
+                for (_, b) in &body.blocks {
+                    self.processBlock(b);
+                }
+                self.profile = self.unifier.apply(self.profile.clone());
+            }
             None => {
                 match self.f.kind {
                     FunctionKind::StructCtor => {
@@ -163,17 +186,14 @@ impl<'a> FunctionProfileBuilder<'a> {
                         unreachable!("Function without body in borrow checker: {}", self.f.name);
                     }
                 }
-                return;
             }
         };
-        for (_, b) in &body.blocks {
-            self.processBlock(b);
-        }
-        self.profile = self.unifier.apply(self.profile.clone());
         self.profile.normalize();
         //println!("Normalized function profile: {}", self.profile);
         self.profile.processLinks();
         //println!("Function profile: {}", self.profile);
+        let updated = self.profileStore.addProfile(self.profile.clone());
+        updated
     }
 
     pub fn processBlock(&mut self, block: &Block) {
@@ -202,7 +222,32 @@ impl<'a> FunctionProfileBuilder<'a> {
             }
             //println!("Processing instruction: {}", instr);
             match &instr.kind {
-                InstructionKind::FunctionCall(_dest, _info) => {}
+                InstructionKind::FunctionCall(dest, info) => {
+                    match self.profileStore.getProfile(&info.name) {
+                        Some(calleeProfile) => {
+                            let calleeProfile = self.instantiateFunctionProfile(calleeProfile);
+                            //println!("Function call to known function: {}", info.name);
+                            let destType = self.getVarType(dest);
+                            self.unifyExtendedTypes(&destType, &calleeProfile.result);
+                            for (index, arg) in info.args.iter().enumerate() {
+                                let argType = self.getVarType(arg);
+                                let mut calleeArgType = calleeProfile.args[index].clone();
+                                if argType.vars.len() > calleeArgType.vars.len() {
+                                    calleeArgType.vars.insert(0, self.allocator.next());
+                                }
+                                self.unifyExtendedTypes(&argType, &calleeArgType);
+                            }
+                            for link in &calleeProfile.links {
+                                self.profile.links.push(link.clone());
+                            }
+                        }
+                        None => {
+                            if !self.functionGroup.contains(&info.name) {
+                                panic!("Missing function profile for function call: {}", info.name);
+                            }
+                        }
+                    }
+                }
                 InstructionKind::Converter(_, _) => panic!("Converter in borrow checker"),
                 InstructionKind::MethodCall(_, _, _, _) => {
                     panic!("MethodCall in borrow checker")
