@@ -191,13 +191,13 @@ impl Compiler {
             resolver.process();
             resolver.ir()
         });
-        //println!("after resolver\n{}", program);
+        println!("after resolver\n{}", program);
         let program = stage!(runner, "Type checking", { typecheck(&ctx, program) });
         let program = stage!(runner, "Verifying types", {
             verifyTypes(&program);
             program
         });
-        //println!("after typechecker\n{}", program);
+        println!("after typechecker\n{}", program);
         let program = Backend::process(&ctx, &mut runner, program);
         //println!("after backend\n{}", program);
         let mut mir_program = stage!(runner, "Lowering to MIR", { lowerProgram(&program) });

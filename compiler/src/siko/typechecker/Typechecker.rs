@@ -1442,6 +1442,7 @@ impl<'a> Typechecker<'a> {
                 match builder.getInstruction() {
                     Some(instruction) => {
                         if let InstructionKind::Bind(dest, src, _) = &instruction.kind {
+                            //println!("Adding declare for {}", dest);
                             builder.addDeclare(dest.clone(), instruction.location.clone());
                             let kind = InstructionKind::Assign(dest.clone(), src.clone());
                             builder.step();

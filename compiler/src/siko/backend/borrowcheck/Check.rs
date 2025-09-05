@@ -3,19 +3,20 @@ use crate::siko::{
         functionprofiles::{
             FunctionProfileBuilder::FunctionProfileBuilder, FunctionProfileStore::FunctionProfileStore,
         },
+        BorrowChecker::BorrowChecker,
         DataGroups::DataGroups,
         FunctionGroups::FunctionGroupBuilder,
     },
     hir::Program::Program,
 };
 
-pub struct BorrowChecker<'a> {
+pub struct Check<'a> {
     program: &'a Program,
 }
 
-impl<'a> BorrowChecker<'a> {
+impl<'a> Check<'a> {
     pub fn new(program: &'a Program) -> Self {
-        BorrowChecker { program }
+        Check { program }
     }
 
     pub fn process(&mut self) {
@@ -46,6 +47,11 @@ impl<'a> BorrowChecker<'a> {
                     break;
                 }
             }
+        }
+        for (_, f) in &self.program.functions {
+            let mut checker = BorrowChecker::new(f, self.program, &dataGroups, &mut profileStore, vec![f.name.clone()]);
+            checker.process();
+            //println!("Function profile for {}: {:?}", f.name, profile);
         }
     }
 }

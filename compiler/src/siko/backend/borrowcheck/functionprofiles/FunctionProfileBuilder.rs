@@ -25,16 +25,16 @@ use crate::siko::{
 };
 
 pub struct FunctionProfileBuilder<'a> {
-    f: &'a Function,
-    program: &'a Program,
-    dataGroups: &'a DataGroups<'a>,
-    allocator: TypeVarAllocator,
-    unifier: Unifier,
-    varTypes: BTreeMap<VariableName, ExtendedType>,
-    profile: FunctionProfile,
-    paramNameMap: BTreeMap<String, usize>,
-    profileStore: &'a mut FunctionProfileStore,
-    functionGroup: Vec<QualifiedName>,
+    pub f: &'a Function,
+    pub program: &'a Program,
+    pub dataGroups: &'a DataGroups<'a>,
+    pub allocator: TypeVarAllocator,
+    pub unifier: Unifier,
+    pub varTypes: BTreeMap<VariableName, ExtendedType>,
+    pub profile: FunctionProfile,
+    pub paramNameMap: BTreeMap<String, usize>,
+    pub profileStore: &'a mut FunctionProfileStore,
+    pub functionGroup: Vec<QualifiedName>,
 }
 
 impl<'a> FunctionProfileBuilder<'a> {

@@ -1,7 +1,7 @@
 use crate::{
     siko::{
         backend::{
-            borrowcheck::Borrowchecker::BorrowChecker, closurelowering::ClosureLowering, drop::Drop::checkDrops,
+            borrowcheck::Check::Check, closurelowering::ClosureLowering, drop::Drop::checkDrops,
             recursivedatahandler::RecursiveDataHandler, simplification::Simplifier,
             DeadCodeEliminator::eliminateDeadCode, FieldRefMerger, RemoveTuples::removeTuples,
         },
@@ -42,6 +42,6 @@ pub fn process(ctx: &ReportContext, runner: &mut Runner, program: Program) -> Pr
     //println!("after simplification\n{}", program);
     let program = ClosureLowering::process(program);
     //println!("after closure lowering\n{}", program);
-    BorrowChecker::new(&program).process();
+    Check::new(&program).process();
     program
 }
