@@ -1,4 +1,4 @@
-use crate::siko::syntax::Effect::Effect;
+use crate::siko::{parser::Module::ModuleParser, syntax::Effect::Effect};
 
 use super::{
     Function::FunctionParser,
@@ -18,8 +18,9 @@ impl<'a> EffectParser for Parser<'a> {
         if self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
             self.expect(TokenKind::LeftBracket(BracketKind::Curly));
             while !self.check(TokenKind::RightBracket(BracketKind::Curly)) {
+                let (attributes, _) = self.parseAttributes();
                 if self.check(TokenKind::Keyword(KeywordKind::Fn)) {
-                    let function = self.parseFunction(true);
+                    let function = self.parseFunction(attributes, true);
                     methods.push(function);
                     continue;
                 }

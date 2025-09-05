@@ -8,6 +8,7 @@ use crate::siko::{
     location::Location::{Location, Span},
     parser::{Data::DataParser, Effect::EffectParser, Function::FunctionParser, Implicit::ImplicitParser},
     syntax::{
+        Function::Attributes,
         Identifier::Identifier,
         Module::{Derive, Import, Module, ModuleItem},
     },
@@ -15,6 +16,7 @@ use crate::siko::{
 pub trait ModuleParser {
     fn parseImport(&mut self) -> Import;
     fn parseModule(&mut self) -> Module;
+    fn parseAttributes(&mut self) -> (Attributes, Vec<Derive>);
     fn parseDerives(&mut self) -> Vec<Derive>;
 }
 
@@ -36,8 +38,27 @@ impl<'a> ModuleParser for Parser<'a> {
         }
     }
 
+    fn parseAttributes(&mut self) -> (Attributes, Vec<Derive>) {
+        let mut attributes = Attributes::new();
+        let mut derives = Vec::new();
+        while self.check(TokenKind::Misc(MiscKind::At)) {
+            self.expect(TokenKind::Misc(MiscKind::At));
+            if self.check(TokenKind::VarIdentifier) {
+                let name = self.parseVarIdentifier();
+                match name.name().as_str() {
+                    "test" => attributes.testEntry = true,
+                    _ => self.reportError3(&format!("Unknown attribute: {}", name), name.location()),
+                }
+            } else if self.check(TokenKind::Keyword(KeywordKind::Derive)) {
+                derives = self.parseDerives();
+            } else {
+                self.reportError2("expected attribute", self.peek());
+            }
+        }
+        (attributes, derives)
+    }
+
     fn parseDerives(&mut self) -> Vec<Derive> {
-        self.expect(TokenKind::Misc(MiscKind::At));
         let mut derives = Vec::new();
         self.expect(TokenKind::Keyword(KeywordKind::Derive));
         self.expect(TokenKind::LeftBracket(BracketKind::Paren));
@@ -60,11 +81,7 @@ impl<'a> ModuleParser for Parser<'a> {
         self.expect(TokenKind::LeftBracket(BracketKind::Curly));
         let mut items = Vec::new();
         while !self.check(TokenKind::RightBracket(BracketKind::Curly)) {
-            let derives = if self.check(TokenKind::Misc(MiscKind::At)) {
-                self.parseDerives()
-            } else {
-                Vec::new()
-            };
+            let (attributes, derives) = self.parseAttributes();
             let mut public = false;
             if self.check(TokenKind::Keyword(KeywordKind::Pub)) {
                 self.expect(TokenKind::Keyword(KeywordKind::Pub));
@@ -79,7 +96,7 @@ impl<'a> ModuleParser for Parser<'a> {
                 }
                 TokenKind::Keyword(KeywordKind::Struct) => ModuleItem::Struct(self.parseStruct(derives, public)),
                 TokenKind::Keyword(KeywordKind::Enum) => ModuleItem::Enum(self.parseEnum(derives, public)),
-                TokenKind::Keyword(KeywordKind::Fn) => ModuleItem::Function(self.parseFunction(public)),
+                TokenKind::Keyword(KeywordKind::Fn) => ModuleItem::Function(self.parseFunction(attributes, public)),
                 TokenKind::Keyword(KeywordKind::Import) => ModuleItem::Import(self.parseImport()),
                 TokenKind::Keyword(KeywordKind::Effect) => ModuleItem::Effect(self.parseEffect(public)),
                 TokenKind::Keyword(KeywordKind::Implicit) => ModuleItem::Implicit(self.parseImplicit(public)),

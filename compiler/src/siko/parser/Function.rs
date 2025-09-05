@@ -1,6 +1,6 @@
 use crate::siko::{
     syntax::{
-        Function::{Function, FunctionExternKind, Parameter},
+        Function::{Attributes, Function, FunctionExternKind, Parameter},
         Type::Type,
     },
     util::error,
@@ -14,11 +14,11 @@ use super::{
 };
 
 pub trait FunctionParser {
-    fn parseFunction(&mut self, public: bool) -> Function;
+    fn parseFunction(&mut self, attributes: Attributes, public: bool) -> Function;
 }
 
 impl<'a> FunctionParser for Parser<'a> {
-    fn parseFunction(&mut self, public: bool) -> Function {
+    fn parseFunction(&mut self, attributes: Attributes, public: bool) -> Function {
         self.expect(TokenKind::Keyword(KeywordKind::Fn));
         let name = self.parseVarIdentifier();
         let typeParams = if self.check(TokenKind::LeftBracket(BracketKind::Square)) {
@@ -109,6 +109,7 @@ impl<'a> FunctionParser for Parser<'a> {
             body: body,
             externKind,
             public,
+            attributes,
         }
     }
 }

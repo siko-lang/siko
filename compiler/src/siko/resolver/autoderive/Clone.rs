@@ -5,7 +5,7 @@ use crate::siko::{
     syntax::{
         Data::{Enum, Struct},
         Expr::{Branch, Expr, SimpleExpr},
-        Function::{Function, Parameter},
+        Function::{Attributes, Function, Parameter},
         Identifier::Identifier,
         Pattern::{Pattern, SimplePattern},
         Statement::{Block, Statement, StatementKind},
@@ -149,6 +149,7 @@ fn getCloneFnForEnum(enumDef: &Enum, enumTy: &Type) -> Function {
         result: enumTy.clone(),
         body: Some(body),
         externKind: None,
+        attributes: Attributes::new(),
     }
 }
 
@@ -255,5 +256,6 @@ fn getCloneFnForStruct(structDef: &Struct, structTy: &Type) -> Function {
         result: structTy.clone(),
         body: Some(body),
         externKind: None,
+        attributes: Attributes::new(),
     }
 }

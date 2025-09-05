@@ -5,7 +5,7 @@ use crate::siko::{
     syntax::{
         Data::{Enum, Struct},
         Expr::{Branch, Expr, SimpleExpr},
-        Function::{Function, Parameter},
+        Function::{Attributes, Function, Parameter},
         Identifier::Identifier,
         Pattern::{Pattern, SimplePattern},
         Statement::{Block, Statement, StatementKind},
@@ -205,6 +205,7 @@ fn getPartialCmpFn(enumDef: &Enum, enumTy: &Type) -> Function {
         result: optionOrderingTy,
         body: Some(body),
         externKind: None,
+        attributes: Attributes::new(),
     }
 }
 
@@ -328,5 +329,6 @@ fn getPartialCmpFnForStruct(structDef: &Struct, structTy: &Type) -> Function {
         result: optionOrderingTy,
         body: Some(body),
         externKind: None,
+        attributes: Attributes::new(),
     }
 }

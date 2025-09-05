@@ -7,7 +7,7 @@ use crate::siko::{
         Body::Body,
         ConstraintContext::ConstraintContext,
         Data::{Enum, Field, Struct, Variant},
-        Function::{Function, FunctionKind, Parameter},
+        Function::{Attributes, Function, FunctionKind, Parameter},
         Instruction::{
             CallInfo, ClosureCreateInfo, FieldId, FieldInfo, ImplicitHandler, Instruction, InstructionKind,
             WithContext, WithInfo,
@@ -385,6 +385,7 @@ pub fn removeTuples(program: &Program) -> Program {
                 body: None,
                 constraintContext: ConstraintContext::new(),
                 kind: FunctionKind::StructCtor,
+                attributes: Attributes::new(),
             };
             result.structs.insert(name.clone(), tupleStruct);
             result.functions.insert(name.clone(), unitFn);

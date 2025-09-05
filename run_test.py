@@ -36,7 +36,7 @@ def runUnderValgrind(program, args):
         return False
     return True
 
-def compileSiko(currentDir, files, extras):
+def compileSiko(currentDir, files, extras, isUnitTest):
     bin_output_path = os.path.join(currentDir, "main.bin")
     sanitize = []
     global in_workflow
@@ -44,9 +44,16 @@ def compileSiko(currentDir, files, extras):
         sanitize = []
     else:
         sanitize = ["--sanitize"]
-    args = ["./siko", "build"] + sanitize + ["-o", bin_output_path] + extras + files
+    if isUnitTest:
+        args = ["./siko", "test"]
+    else:
+        args = ["./siko", "build"]
+    args = args + sanitize + ["-o", bin_output_path] + extras + files
     start_time = time.time()
-    r = subprocess.run(args)
+    if isUnitTest:
+        r = subprocess.run(args, stdout=subprocess.DEVNULL)
+    else:
+        r = subprocess.run(args)
     end_time = time.time()
     compilation_time = end_time - start_time
     if r.returncode != 0:
@@ -80,8 +87,10 @@ def test_success(root, entry, extras, explicit):
     if os.path.exists(skipPath) and not explicit:
         end_time = time.time()
         return ("skip", end_time - start_time, 0, 0)
+    unitTestPath = os.path.join(currentDir, "TEST")
+    isUnitTest = os.path.exists(unitTestPath)
     inputPath = os.path.join(currentDir, "main.sk")
-    binary, compilation_time = compileSiko(currentDir, [inputPath], extras)
+    binary, compilation_time = compileSiko(currentDir, [inputPath], extras, isUnitTest)
     if binary is None:
         end_time = time.time()
         return (False, end_time - start_time, compilation_time, 0)

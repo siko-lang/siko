@@ -10,7 +10,7 @@ use crate::siko::{
         Apply::Apply,
         BodyBuilder::BodyBuilder,
         ConstraintContext::ConstraintContext,
-        Function::{Function, FunctionKind, Parameter},
+        Function::{Attributes, Function, FunctionKind, Parameter},
         FunctionCallResolver::FunctionCallResolver,
         InstanceResolver::InstanceResolver,
         InstanceStore::InstanceStore,
@@ -39,6 +39,7 @@ use crate::siko::{
         builtins::{getArrayTypeName, getMainName},
         QualifiedName,
     },
+    util::Config::Config,
 };
 
 impl Monomorphize for Variable {
@@ -68,6 +69,7 @@ impl Monomorphize for FieldInfo {
 }
 
 pub struct Monomorphizer<'a> {
+    pub config: Config,
     pub ctx: &'a ReportContext,
     pub program: Program,
     pub monomorphizedProgram: Program,
@@ -78,10 +80,11 @@ pub struct Monomorphizer<'a> {
 }
 
 impl<'a> Monomorphizer<'a> {
-    pub fn new(ctx: &'a ReportContext, program: Program) -> Monomorphizer<'a> {
+    pub fn new(config: Config, ctx: &'a ReportContext, program: Program) -> Monomorphizer<'a> {
         Monomorphizer {
-            ctx: ctx,
-            program: program,
+            config,
+            ctx,
+            program,
             monomorphizedProgram: Program::new(),
             queue: VecDeque::new(),
             processed: BTreeSet::new(),
@@ -90,8 +93,38 @@ impl<'a> Monomorphizer<'a> {
         }
     }
 
-    pub fn run(mut self) -> Program {
-        self.monomorphizedProgram.implicits = self.program.implicits.clone();
+    fn addEntryPoints(&mut self) {
+        if self.config.testOnly {
+            let mut testEntryFns = Vec::new();
+            for (name, f) in &self.program.functions {
+                if f.attributes.testEntry {
+                    testEntryFns.push(name.clone());
+                }
+            }
+            let mut bodyBuilder = BodyBuilder::new();
+            let mut mainBlock = bodyBuilder.createBlock();
+            for entry in testEntryFns {
+                let callRes = bodyBuilder.createTempValueWithType(Location::empty(), Type::getUnitType());
+                let info = CallInfo::new(entry.clone(), Vec::new());
+                let kind = InstructionKind::FunctionCall(callRes.clone(), info);
+                mainBlock.addInstruction(kind, Location::empty());
+            }
+            let unit = mainBlock.addUnit(Location::empty());
+            mainBlock.addReturn(unit, Location::empty());
+            let testRunnerMain = Function {
+                name: getMainName(),
+                params: Vec::new(),
+                result: Type::getUnitType(),
+                body: Some(bodyBuilder.build()),
+                constraintContext: ConstraintContext::new(),
+                kind: FunctionKind::UserDefined,
+                attributes: Attributes::new(),
+            };
+            //println!("handler fn {}", handlerFn);
+            self.program
+                .functions
+                .insert(testRunnerMain.name.clone(), testRunnerMain);
+        }
         let main_name = getMainName();
         match self.program.functions.get(&main_name) {
             Some(_) => {
@@ -111,6 +144,11 @@ impl<'a> Monomorphizer<'a> {
                 r.print();
             }
         }
+    }
+
+    pub fn run(mut self) -> Program {
+        self.monomorphizedProgram.implicits = self.program.implicits.clone();
+        self.addEntryPoints();
         self.processQueue();
         for resolutionStore in &self.resolutionStores {
             resolutionStore.checkUnused(self.ctx);
@@ -440,6 +478,7 @@ impl<'a> Monomorphizer<'a> {
             body: Some(bodyBuilder.build()),
             constraintContext: ConstraintContext::new(),
             kind: FunctionKind::UserDefined,
+            attributes: Attributes::new(),
         };
 
         self.program.functions.insert(monoName.clone(), dropFn);

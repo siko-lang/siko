@@ -1,7 +1,10 @@
-use crate::siko::syntax::{
-    Identifier::Identifier,
-    Trait::{AssociatedType, AssociatedTypeDeclaration, Instance, Trait},
-    Type::Type,
+use crate::siko::{
+    parser::Module::ModuleParser,
+    syntax::{
+        Identifier::Identifier,
+        Trait::{AssociatedType, AssociatedTypeDeclaration, Instance, Trait},
+        Type::Type,
+    },
 };
 
 use super::{
@@ -35,8 +38,9 @@ impl<'a> TraitParser for Parser<'a> {
         if self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
             self.expect(TokenKind::LeftBracket(BracketKind::Curly));
             while !self.check(TokenKind::RightBracket(BracketKind::Curly)) {
+                let (attributes, _) = self.parseAttributes();
                 if self.check(TokenKind::Keyword(KeywordKind::Fn)) {
-                    let function = self.parseFunction(true);
+                    let function = self.parseFunction(attributes, true);
                     methods.push(function);
                     continue;
                 }
@@ -122,8 +126,9 @@ impl<'a> TraitParser for Parser<'a> {
         if self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
             self.expect(TokenKind::LeftBracket(BracketKind::Curly));
             while !self.check(TokenKind::RightBracket(BracketKind::Curly)) {
+                let (attributes, _) = self.parseAttributes();
                 if self.check(TokenKind::Keyword(KeywordKind::Fn)) {
-                    let function = self.parseFunction(true);
+                    let function = self.parseFunction(attributes, true);
                     methods.push(function);
                     continue;
                 }

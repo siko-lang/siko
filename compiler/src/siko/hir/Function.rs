@@ -10,6 +10,17 @@ use crate::siko::qualifiedname::QualifiedName;
 use super::{ConstraintContext::ConstraintContext, Type::Type};
 
 #[derive(Debug, Clone)]
+pub struct Attributes {
+    pub testEntry: bool,
+}
+
+impl Attributes {
+    pub fn new() -> Attributes {
+        Attributes { testEntry: false }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum Parameter {
     Named(String, Type, bool), // mutable
     SelfParam(bool, Type),     // mutable
@@ -110,6 +121,7 @@ pub struct Function {
     pub body: Option<Body>,
     pub constraintContext: ConstraintContext,
     pub kind: FunctionKind,
+    pub attributes: Attributes,
 }
 
 impl Function {
@@ -120,6 +132,7 @@ impl Function {
         body: Option<Body>,
         constraintContext: ConstraintContext,
         kind: FunctionKind,
+        attributes: Attributes,
     ) -> Function {
         Function {
             name: name,
@@ -128,6 +141,7 @@ impl Function {
             body: body,
             constraintContext: constraintContext,
             kind: kind,
+            attributes: attributes,
         }
     }
 

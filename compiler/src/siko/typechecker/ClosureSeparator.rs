@@ -3,7 +3,7 @@ use crate::siko::{
         Block::BlockId,
         Body::Body,
         ConstraintContext::ConstraintContext,
-        Function::{Function, FunctionKind, Parameter},
+        Function::{Attributes, Function, FunctionKind, Parameter},
         Instruction::InstructionKind,
         Type::{Type, TypeVar},
         Unifier::Unifier,
@@ -86,6 +86,7 @@ impl<'a> ClosureSeparator<'a> {
             Some(self.closureBody.clone()),
             constraintContext,
             FunctionKind::UserDefined,
+            Attributes::new(),
         );
         // println!("Closure function created: {}", closureFn);
         closureFn

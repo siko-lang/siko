@@ -3,7 +3,7 @@ use crate::siko::{
     syntax::{
         Data::{Enum, Struct},
         Expr::{Branch, Expr, SimpleExpr},
-        Function::{Function, Parameter},
+        Function::{Attributes, Function, Parameter},
         Identifier::Identifier,
         Pattern::{Pattern, SimplePattern},
         Statement::{Block, Statement, StatementKind},
@@ -103,6 +103,7 @@ fn getDiscriminatorFnForEnum(enumDef: &Enum) -> Function {
         result: intTy,
         body: Some(body),
         externKind: None,
+        attributes: Attributes::new(),
     }
 }
 
@@ -173,5 +174,6 @@ fn getDiscriminatorFnForStruct(structDef: &Struct) -> Function {
         result: intTy,
         body: Some(body),
         externKind: None,
+        attributes: Attributes::new(),
     }
 }

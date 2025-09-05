@@ -4,7 +4,7 @@ use crate::siko::{
         BodyBuilder::BodyBuilder,
         ConstraintContext::ConstraintContext,
         Data::{Enum, Field, Struct, Variant},
-        Function::{Function, FunctionKind, Parameter},
+        Function::{Attributes, Function, FunctionKind, Parameter},
         Instruction::{CallInfo, EnumCase, FieldId, FieldInfo, InstructionKind},
         Program::Program,
         Type::Type,
@@ -85,6 +85,7 @@ impl ClosureGenerator<'_> {
             body: None,
             constraintContext: ConstraintContext::new(),
             kind: FunctionKind::StructCtor,
+            attributes: Attributes::new(),
         };
         self.program.functions.insert(structCtorFn.name.clone(), structCtorFn);
         structTy
@@ -115,6 +116,7 @@ impl ClosureGenerator<'_> {
             body: None,
             constraintContext: ConstraintContext::new(),
             kind: FunctionKind::VariantCtor(variantIndex as i64),
+            attributes: Attributes::new(),
         };
         self.program.functions.insert(variantCtorFn.name.clone(), variantCtorFn);
         variant
@@ -193,6 +195,7 @@ impl ClosureGenerator<'_> {
             body: Some(body),
             constraintContext: ConstraintContext::new(),
             kind: FunctionKind::UserDefined,
+            attributes: Attributes::new(),
         };
         //println!("handler fn {}", handlerFn);
         self.program.functions.insert(handlerFn.name.clone(), handlerFn);

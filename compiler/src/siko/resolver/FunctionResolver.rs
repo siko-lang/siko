@@ -3,14 +3,16 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::siko::hir::BodyBuilder::BodyBuilder;
 use crate::siko::hir::ConstraintContext::ConstraintContext;
 use crate::siko::hir::Data::{Enum, Struct};
-use crate::siko::hir::Function::{ExternKind, Function as IrFunction, FunctionKind, Parameter as IrParameter};
+use crate::siko::hir::Function::{
+    Attributes as IrAttributes, ExternKind, Function as IrFunction, FunctionKind, Parameter as IrParameter,
+};
 use crate::siko::hir::Implicit::Implicit;
 use crate::siko::hir::Type::{Type as IrType, TypeVar};
 use crate::siko::hir::Variable::Variable;
 use crate::siko::hir::Variable::VariableName;
 use crate::siko::location::Report::ReportContext;
 use crate::siko::qualifiedname::QualifiedName;
-use crate::siko::syntax::Function::{Function, FunctionExternKind, Parameter};
+use crate::siko::syntax::Function::{Attributes, Function, FunctionExternKind, Parameter};
 use crate::siko::syntax::Identifier::Identifier;
 use crate::siko::syntax::Type::TypeParameterDeclaration;
 use crate::siko::util::error;
@@ -150,7 +152,16 @@ impl<'a> FunctionResolver<'a> {
                 Some(FunctionExternKind::Builtin) => FunctionKind::Extern(ExternKind::Builtin),
                 None => FunctionKind::UserDefined,
             },
+            convertFunctionAttributes(&f.attributes),
         );
         irFunction
     }
+}
+
+pub fn convertFunctionAttributes(attributes: &Attributes) -> IrAttributes {
+    let mut hirAttributes = IrAttributes::new();
+    if attributes.testEntry {
+        hirAttributes.testEntry = true;
+    }
+    hirAttributes
 }

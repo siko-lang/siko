@@ -2,7 +2,7 @@ use crate::siko::{
     hir::{
         ConstraintContext::{Constraint as IrConstraint, ConstraintContext},
         Data::MethodInfo as DataMethodInfo,
-        Function::{FunctionKind, Parameter},
+        Function::{Attributes, FunctionKind, Parameter},
         InstanceStore::InstanceStore,
         Instantiation::instantiateTraitWithSub,
         Program::Program,
@@ -255,6 +255,7 @@ impl<'a> Resolver<'a> {
                             None,
                             constraintContext,
                             FunctionKind::StructCtor,
+                            Attributes::new(),
                         );
                         self.program.functions.insert(ctor.name.clone(), ctor);
                         for method in &c.methods {
@@ -296,6 +297,7 @@ impl<'a> Resolver<'a> {
                                 None,
                                 constraintContext.clone(),
                                 FunctionKind::VariantCtor(index as i64),
+                                Attributes::new(),
                             );
                             self.program.functions.insert(ctor.name.clone(), ctor);
                             self.variants.insert(variant.name.clone(), irEnum.name.clone());
