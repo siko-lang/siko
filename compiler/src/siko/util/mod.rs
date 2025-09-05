@@ -5,6 +5,7 @@ pub fn error(msg: String) -> ! {
     exit(1);
 }
 
+pub mod Config;
 pub mod DependencyProcessor;
 pub mod Dot;
 pub mod Instantiator;

@@ -3,6 +3,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::siko::util::Config::Config;
+
 pub struct StageResult<T> {
     pub name: String,
     pub elapsed: Duration,
@@ -10,15 +12,15 @@ pub struct StageResult<T> {
 }
 
 pub struct Runner {
-    verbose: bool,
+    pub config: Config,
     order: Vec<String>,
     stages: BTreeMap<String, Duration>,
 }
 
 impl Runner {
-    pub fn new(verbose: bool) -> Self {
+    pub fn new(config: Config) -> Self {
         Runner {
-            verbose,
+            config,
             order: Vec::new(),
             stages: BTreeMap::new(),
         }
@@ -28,7 +30,7 @@ impl Runner {
     where
         F: FnOnce() -> T,
     {
-        if self.verbose {
+        if self.config.passDetails {
             print!("{name}...\n");
         }
         let start = Instant::now();
@@ -40,7 +42,7 @@ impl Runner {
         let value = f();
 
         let elapsed = start.elapsed();
-        if self.verbose {
+        if self.config.passDetails {
             println!("Done (took {elapsed:?})");
         }
 
@@ -51,7 +53,7 @@ impl Runner {
     }
 
     pub fn report(&self) {
-        if !self.verbose {
+        if !self.config.passDetails {
             return;
         }
         if self.stages.is_empty() {
