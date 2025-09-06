@@ -152,6 +152,8 @@ pub struct MatchCompiler2<'a, 'b> {
     nextVar: i32,
     nodes: BTreeMap<DecisionPath, Node>,
     parentEnv: &'a Environment<'a>,
+    jumpBlocks: BTreeMap<String, Expr>,
+    branchBlocks: BTreeMap<i64, String>,
 }
 
 impl<'a, 'b> MatchCompiler2<'a, 'b> {
@@ -175,6 +177,8 @@ impl<'a, 'b> MatchCompiler2<'a, 'b> {
             missingPatterns: BTreeSet::new(),
             nodes: BTreeMap::new(),
             parentEnv: parentEnv,
+            jumpBlocks: BTreeMap::new(),
+            branchBlocks: BTreeMap::new(),
         }
     }
 
@@ -426,7 +430,10 @@ impl<'a, 'b> MatchCompiler2<'a, 'b> {
         let ctx = CompileContext::new().add(node.getDataPath(), root);
         let _matchExpr = self.compileNode(&node, &ctx);
         // println!("------------------------");
-        //crate::siko::syntax::Format::format_any(&_matchExpr);
+        // crate::siko::syntax::Format::format_any(&_matchExpr);
+        // for (_, body) in &self.jumpBlocks {
+        //     crate::siko::syntax::Format::format_any(body);
+        // }
         // println!("-----------------------");
         let value = self
             .resolver
@@ -497,6 +504,15 @@ impl<'a, 'b> MatchCompiler2<'a, 'b> {
                 } else {
                     unreachable!()
                 };
+                if self.branchBlocks.contains_key(&index) {
+                    let jumpId = self.branchBlocks.get(&index).unwrap().clone();
+                    let jumpExpr = SimpleExpr::Jump(jumpId.clone());
+                    return Expr {
+                        expr: jumpExpr,
+                        location: self.bodyLocation.clone(),
+                    };
+                }
+
                 let branch = &self.branches[index as usize];
                 let mut block = Block {
                     statements: Vec::new(),
@@ -522,9 +538,23 @@ impl<'a, 'b> MatchCompiler2<'a, 'b> {
                     kind: StatementKind::Expr(branch.body.clone()),
                     hasSemicolon: false,
                 });
-                let branchId = SimpleExpr::Block(block);
+                let blockExpr = SimpleExpr::Block(block);
+                let blockExpr = Expr {
+                    expr: blockExpr,
+                    location: self.bodyLocation.clone(),
+                };
+                let jumpBlockId = self.resolver.getNextJumpBlockId();
+                self.jumpBlocks.insert(
+                    jumpBlockId.clone(),
+                    Expr {
+                        expr: SimpleExpr::JumpBlock(jumpBlockId.clone(), Box::new(blockExpr)),
+                        location: self.bodyLocation.clone(),
+                    },
+                );
+                self.branchBlocks.insert(index, jumpBlockId.clone());
+                let jumpExpr = SimpleExpr::Jump(jumpBlockId.clone());
                 Expr {
-                    expr: branchId,
+                    expr: jumpExpr,
                     location: self.bodyLocation.clone(),
                 }
             }
@@ -541,7 +571,7 @@ impl<'a, 'b> MatchCompiler2<'a, 'b> {
     ) -> Expr {
         let enumDef = self.resolver.enums.get(enumName).expect("enum not found");
         let matchExpr = Expr {
-            expr: SimpleExpr::Match(
+            expr: SimpleExpr::EnumMatch(
                 Box::new(Expr {
                     expr: SimpleExpr::Value(root.clone()),
                     location: self.bodyLocation.clone(),
@@ -736,7 +766,7 @@ impl<'a, 'b> MatchCompiler2<'a, 'b> {
 
     fn compileIntegerSwitch(&mut self, ctx: &CompileContext, switch: &Switch, root: &Identifier) -> Expr {
         let matchExpr = Expr {
-            expr: SimpleExpr::Match(
+            expr: SimpleExpr::IntegerMatch(
                 Box::new(Expr {
                     expr: SimpleExpr::Value(root.clone()),
                     location: self.bodyLocation.clone(),

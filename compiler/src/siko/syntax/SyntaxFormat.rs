@@ -137,6 +137,18 @@ impl Format for SimpleExpr {
                 result.extend(format_block(branches));
                 result
             }
+            SimpleExpr::EnumMatch(expr, branches) => {
+                let mut result = vec![Token::Chunk("enummatch ".to_string())];
+                result.extend(expr.format());
+                result.extend(format_block(branches));
+                result
+            }
+            SimpleExpr::IntegerMatch(expr, branches) => {
+                let mut result = vec![Token::Chunk("integermatch ".to_string())];
+                result.extend(expr.format());
+                result.extend(format_block(branches));
+                result
+            }
             SimpleExpr::Block(block) => block.format(),
             SimpleExpr::Tuple(exprs) => {
                 let mut result = vec![Token::Chunk("(".to_string())];
@@ -197,6 +209,12 @@ impl Format for SimpleExpr {
                 result.extend(body.format());
                 result
             }
+            SimpleExpr::JumpBlock(label, expr) => {
+                let mut result = vec![Token::Chunk(format!("{}:", label))];
+                result.extend(expr.format());
+                result
+            }
+            SimpleExpr::Jump(label) => vec![Token::Chunk(format!("jump {}", label))],
         }
     }
 }

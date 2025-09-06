@@ -69,6 +69,7 @@ pub struct ExprResolver<'a> {
     resultVar: Option<Variable>,
     lambdaIndex: u32,
     name: &'a QualifiedName,
+    jumpBlockId: u32,
 }
 
 impl<'a> ExprResolver<'a> {
@@ -100,6 +101,7 @@ impl<'a> ExprResolver<'a> {
             syntaxBlockIds: BTreeMap::new(),
             resultVar: None,
             lambdaIndex: 0,
+            jumpBlockId: 0,
         }
     }
 
@@ -107,6 +109,12 @@ impl<'a> ExprResolver<'a> {
         let blockId = self.syntaxBlockId;
         self.syntaxBlockId += 1;
         SyntaxBlockIdSegment { value: blockId }
+    }
+
+    pub fn getNextJumpBlockId(&mut self) -> String {
+        let id = self.jumpBlockId;
+        self.jumpBlockId += 1;
+        format!("block_{}", id)
     }
 
     fn processFieldAssign<'e, 'f>(
@@ -522,6 +530,18 @@ impl<'a> ExprResolver<'a> {
                     env,
                 );
                 matchResolver.compile()
+            }
+            SimpleExpr::EnumMatch(_, _) => {
+                unimplemented!("EnumMatch not yet implemented");
+            }
+            SimpleExpr::IntegerMatch(_, _) => {
+                unimplemented!("IntegerMatch not yet implemented");
+            }
+            SimpleExpr::JumpBlock(_, _) => {
+                unimplemented!("JumpBlock not yet implemented");
+            }
+            SimpleExpr::Jump(_) => {
+                unimplemented!("Jump not yet implemented");
             }
             SimpleExpr::Block(block) => {
                 let blockValue = self.bodyBuilder.createTempValue(expr.location.clone());
