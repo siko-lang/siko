@@ -42,6 +42,6 @@ pub fn process(ctx: &ReportContext, runner: &mut Runner, program: Program) -> Pr
     //println!("after simplification\n{}", program);
     let program = ClosureLowering::process(program);
     //println!("after closure lowering\n{}", program);
-    Check::new(&program).process();
+    Check::new(&program).process(ctx);
     program
 }

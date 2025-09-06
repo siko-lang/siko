@@ -115,6 +115,11 @@ impl<'a> FunctionProfileBuilder<'a> {
             .clone()
     }
 
+    pub fn getFinalVarType(&self, var: &Variable) -> ExtendedType {
+        let varType = self.getVarType(var);
+        self.unifier.apply(varType)
+    }
+
     pub fn process(&mut self) -> bool {
         //println!("Building function profile for: {}", self.f.name);
         //println!("Function: {}", self.f);

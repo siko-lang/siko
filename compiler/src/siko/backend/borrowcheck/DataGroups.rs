@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fmt::Display};
+use std::{collections::BTreeMap, fmt::Debug, fmt::Display};
 
 use crate::siko::{
     hir::{
@@ -10,7 +10,7 @@ use crate::siko::{
     util::DependencyProcessor::{processDependencies, DependencyGroup},
 };
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Ord, Eq)]
+#[derive(Clone, PartialEq, PartialOrd, Ord, Eq)]
 pub struct ExtendedType {
     pub ty: Type,
     pub vars: Vec<Type>,
@@ -29,6 +29,12 @@ impl ExtendedType {
 impl Display for ExtendedType {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}{}", self.ty, formatTypes(&self.vars))
+    }
+}
+
+impl Debug for ExtendedType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self)
     }
 }
 

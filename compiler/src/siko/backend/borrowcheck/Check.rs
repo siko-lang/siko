@@ -8,6 +8,7 @@ use crate::siko::{
         FunctionGroups::FunctionGroupBuilder,
     },
     hir::Program::Program,
+    location::Report::ReportContext,
 };
 
 pub struct Check<'a> {
@@ -19,7 +20,7 @@ impl<'a> Check<'a> {
         Check { program }
     }
 
-    pub fn process(&mut self) {
+    pub fn process(&mut self, ctx: &'a ReportContext) {
         let mut dataGroups = DataGroups::new(self.program);
         dataGroups.process();
         let functionGroupBuilder = FunctionGroupBuilder::new(self.program);
@@ -49,7 +50,14 @@ impl<'a> Check<'a> {
             }
         }
         for (_, f) in &self.program.functions {
-            let mut checker = BorrowChecker::new(f, self.program, &dataGroups, &mut profileStore, vec![f.name.clone()]);
+            let mut checker = BorrowChecker::new(
+                ctx,
+                f,
+                self.program,
+                &dataGroups,
+                &mut profileStore,
+                vec![f.name.clone()],
+            );
             checker.process();
             //println!("Function profile for {}: {:?}", f.name, profile);
         }
