@@ -17,7 +17,6 @@ use crate::siko::location::Report::ReportContext;
 use crate::siko::qualifiedname::builtins::{getVecNewName, getVecPushName};
 use crate::siko::qualifiedname::QualifiedName;
 use crate::siko::resolver::matchcompiler::Compiler::MatchCompiler;
-use crate::siko::resolver::matchcompiler::Compiler2::MatchCompiler2;
 use crate::siko::syntax::Expr::{BinaryOp, Expr, SimpleExpr, UnaryOp};
 use crate::siko::syntax::Identifier::Identifier;
 use crate::siko::syntax::Pattern::{Pattern, SimplePattern};
@@ -512,15 +511,6 @@ impl<'a> ExprResolver<'a> {
             }
             SimpleExpr::Match(body, branches) => {
                 let bodyId = self.resolveExpr(body, env);
-                let mut new = MatchCompiler2::new(
-                    self,
-                    bodyId.clone(),
-                    expr.location.clone(),
-                    body.location.clone(),
-                    branches.clone(),
-                    env,
-                );
-                new.compile();
                 let mut matchResolver = MatchCompiler::new(
                     self,
                     bodyId,
@@ -530,18 +520,6 @@ impl<'a> ExprResolver<'a> {
                     env,
                 );
                 matchResolver.compile()
-            }
-            SimpleExpr::EnumMatch(_, _) => {
-                unimplemented!("EnumMatch not yet implemented");
-            }
-            SimpleExpr::IntegerMatch(_, _) => {
-                unimplemented!("IntegerMatch not yet implemented");
-            }
-            SimpleExpr::JumpBlock(_, _) => {
-                unimplemented!("JumpBlock not yet implemented");
-            }
-            SimpleExpr::Jump(_) => {
-                unimplemented!("Jump not yet implemented");
             }
             SimpleExpr::Block(block) => {
                 let blockValue = self.bodyBuilder.createTempValue(expr.location.clone());

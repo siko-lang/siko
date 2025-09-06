@@ -80,10 +80,6 @@ pub enum SimpleExpr {
     List(Vec<Expr>),
     With(Box<With>),
     Lambda(Vec<Pattern>, Box<Expr>),
-    EnumMatch(Box<Expr>, Vec<Branch>),    // compiler internal use only
-    IntegerMatch(Box<Expr>, Vec<Branch>), // compiler internal use only
-    Jump(String),                         // compiler internal use only
-    JumpBlock(String, Box<Expr>),         // compiler internal use only
 }
 
 impl SimpleExpr {
@@ -99,13 +95,6 @@ impl SimpleExpr {
             SimpleExpr::Match(expr, branches) => {
                 expr.doesNotReturn() || branches.iter().all(|branch| branch.body.doesNotReturn())
             }
-            SimpleExpr::EnumMatch(expr, branches) => {
-                expr.doesNotReturn() || branches.iter().all(|branch| branch.body.doesNotReturn())
-            }
-            SimpleExpr::IntegerMatch(expr, branches) => {
-                expr.doesNotReturn() || branches.iter().all(|branch| branch.body.doesNotReturn())
-            }
-            SimpleExpr::JumpBlock(_, expr) => expr.doesNotReturn(),
             SimpleExpr::Block(block) => block.doesNotReturn(),
             SimpleExpr::Tuple(exprs) => exprs.iter().any(|expr| expr.doesNotReturn()),
             SimpleExpr::Ref(expr) => expr.doesNotReturn(),
