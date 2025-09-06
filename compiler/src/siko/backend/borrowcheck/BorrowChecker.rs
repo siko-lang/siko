@@ -113,13 +113,13 @@ impl<'a> BorrowChecker<'a> {
                     }
                     env.revivePath(&Path { root: dest.name() });
                 }
-                InstructionKind::FieldAssign(dest, src, field) => {
+                InstructionKind::FieldAssign(_, src, _) => {
                     if src.getType().isNamed() {
                         // this is a struct or enum and it is being moved, mark its paths as dead
                         env.markPathDead(Path { root: src.name() });
                     }
                 }
-                InstructionKind::FieldRef(dest, src, field) => {
+                InstructionKind::FieldRef(dest, _, _) => {
                     env.revivePath(&Path { root: dest.name() });
                 }
                 _ => {
