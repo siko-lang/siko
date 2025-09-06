@@ -17,6 +17,7 @@ use crate::siko::location::Report::ReportContext;
 use crate::siko::qualifiedname::builtins::{getVecNewName, getVecPushName};
 use crate::siko::qualifiedname::QualifiedName;
 use crate::siko::resolver::matchcompiler::Compiler::MatchCompiler;
+use crate::siko::resolver::matchcompiler::Compiler2::MatchCompiler2;
 use crate::siko::syntax::Expr::{BinaryOp, Expr, SimpleExpr, UnaryOp};
 use crate::siko::syntax::Identifier::Identifier;
 use crate::siko::syntax::Pattern::{Pattern, SimplePattern};
@@ -503,6 +504,15 @@ impl<'a> ExprResolver<'a> {
             }
             SimpleExpr::Match(body, branches) => {
                 let bodyId = self.resolveExpr(body, env);
+                let mut new = MatchCompiler2::new(
+                    self,
+                    bodyId.clone(),
+                    expr.location.clone(),
+                    body.location.clone(),
+                    branches.clone(),
+                    env,
+                );
+                new.compile();
                 let mut matchResolver = MatchCompiler::new(
                     self,
                     bodyId,
