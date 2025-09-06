@@ -403,7 +403,17 @@ impl<'a> ExprParser for Parser<'a> {
         self.expect(TokenKind::LeftBracket(BracketKind::Curly));
         let mut branches = Vec::new();
         while !self.check(TokenKind::RightBracket(BracketKind::Curly)) {
-            let pattern = self.parsePattern();
+            let patternStart = self.currentSpan();
+            let mut pattern = self.parsePattern();
+            if self.check(TokenKind::Keyword(KeywordKind::If)) {
+                self.expect(TokenKind::Keyword(KeywordKind::If));
+                let guardExpr = self.parseExpr();
+                let location = Location::new(self.fileId.clone(), patternStart.merge(self.currentSpan()));
+                pattern = Pattern {
+                    pattern: SimplePattern::Guarded(Box::new(pattern), Box::new(guardExpr)),
+                    location: location.clone(),
+                };
+            }
             self.expect(TokenKind::Arrow(ArrowKind::Right));
             let body = if self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
                 let block = self.parseBlock();

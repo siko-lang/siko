@@ -1,16 +1,22 @@
 use std::fmt;
 
-use crate::siko::location::Location::Location;
+use crate::siko::{location::Location::Location, syntax::Expr::Expr};
 
 use super::Identifier::Identifier;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pattern {
     pub pattern: SimplePattern,
     pub location: Location,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+impl Pattern {
+    pub fn isGuarded(&self) -> bool {
+        self.pattern.isGuarded()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SimplePattern {
     Named(Identifier, Vec<Pattern>),
     Bind(Identifier, bool), // mutable
@@ -18,6 +24,16 @@ pub enum SimplePattern {
     StringLiteral(String),
     IntegerLiteral(String),
     Wildcard,
+    Guarded(Box<Pattern>, Box<Expr>),
+}
+
+impl SimplePattern {
+    pub fn isGuarded(&self) -> bool {
+        match self {
+            SimplePattern::Guarded(_, _) => true,
+            _ => false,
+        }
+    }
 }
 
 impl fmt::Display for Pattern {
@@ -67,6 +83,7 @@ impl fmt::Display for SimplePattern {
             SimplePattern::StringLiteral(value) => write!(f, "\"{}\"", value),
             SimplePattern::IntegerLiteral(value) => write!(f, "{}", value),
             SimplePattern::Wildcard => write!(f, "_"),
+            SimplePattern::Guarded(pattern, expr) => write!(f, "{} if {:?}", pattern, expr),
         }
     }
 }

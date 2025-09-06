@@ -39,9 +39,10 @@ pub struct Switch {
 }
 
 #[derive(Clone, Debug)]
-pub struct End {
+pub struct Leaf {
     pub decisionPath: DecisionPath,
-    pub matches: Vec<Match>,
+    pub guardedMatches: Vec<Match>,
+    pub finalMatch: Option<Match>,
 }
 
 #[derive(Clone, Debug)]
@@ -53,7 +54,7 @@ pub struct Wildcard {
 pub enum Node {
     Tuple(Tuple),
     Switch(Switch),
-    End(End),
+    Leaf(Leaf),
     Wildcard(Wildcard),
 }
 
@@ -62,7 +63,7 @@ impl Node {
         match self {
             Node::Tuple(tuple) => tuple.dataPath.getParent(),
             Node::Switch(switch) => switch.dataPath.clone(),
-            Node::End(_) => unreachable!(),
+            Node::Leaf(_) => unreachable!(),
             Node::Wildcard(_) => unreachable!(),
         }
     }
@@ -78,18 +79,22 @@ impl Node {
             Node::Wildcard(w) => {
                 w.next.add(compiler, matches);
             }
-            Node::End(end) => {
+            Node::Leaf(leaf) => {
                 let mut localMatch: Option<Match> = None;
                 for m in matches {
-                    let matchResult = matchDecisions(end.decisionPath.clone(), m.decisionPath.clone());
+                    let matchResult = matchDecisions(leaf.decisionPath.clone(), m.decisionPath.clone());
                     if matchResult {
+                        if m.kind.isGuarded() {
+                            leaf.guardedMatches.push(m.clone());
+                            continue;
+                        }
                         //println!("MATCH end {} //// {}", end.decisionPath, m.decisionPath);
                         match &localMatch {
                             Some(local) => match (&local.kind, &m.kind) {
-                                (MatchKind::Alternative, MatchKind::UserDefined(_)) => {
+                                (MatchKind::Alternative, MatchKind::UserDefined(_, _)) => {
                                     localMatch = Some(m.clone());
                                 }
-                                (MatchKind::UserDefined(i1), MatchKind::UserDefined(i2)) => {
+                                (MatchKind::UserDefined(i1, _), MatchKind::UserDefined(i2, _)) => {
                                     if *i2 < *i1 {
                                         localMatch = Some(m.clone());
                                     }
@@ -105,17 +110,30 @@ impl Node {
                 if let Some(m) = &localMatch {
                     match &m.kind {
                         MatchKind::Alternative => {
-                            compiler.missingPatterns.insert(m.pattern.clone());
+                            compiler.missingPatterns.insert(m.pattern.to_string());
                         }
-                        MatchKind::UserDefined(index) => {
+                        MatchKind::UserDefined(index, guarded) => {
+                            assert_eq!(*guarded, false);
                             compiler.usedPatterns.insert(*index);
+                            let mut filteredGuardedMatches = Vec::new();
+                            // Keep only guarded matches with index < index
+                            // This ensures that we only keep guardedmatches that are checked before this one
+                            for guardedMatch in &leaf.guardedMatches {
+                                if let MatchKind::UserDefined(guardedIndex, _) = guardedMatch.kind {
+                                    if guardedIndex < *index {
+                                        compiler.usedPatterns.insert(guardedIndex);
+                                        filteredGuardedMatches.push(guardedMatch.clone());
+                                    }
+                                }
+                            }
+                            leaf.guardedMatches = filteredGuardedMatches;
                         }
                     }
                     //println!("M {}", m.decisionPath);
                     //println!("FINAL MATCH {} for {}, bindings: {}", end.decisionPath, m.kind, m.bindings);
-                    end.matches.push(localMatch.unwrap());
+                    leaf.finalMatch = Some(localMatch.unwrap());
                 } else {
-                    panic!("Empty end node in decision tree");
+                    panic!("Empty leaf node in decision tree");
                 }
             }
         }
@@ -155,15 +173,24 @@ impl fmt::Display for Bindings {
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum MatchKind {
-    UserDefined(i64),
+    UserDefined(i64, bool), // guarded
     Alternative,
+}
+
+impl MatchKind {
+    pub fn isGuarded(&self) -> bool {
+        match self {
+            MatchKind::UserDefined(_, guarded) => *guarded,
+            MatchKind::Alternative => false,
+        }
+    }
 }
 
 impl fmt::Display for MatchKind {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            MatchKind::UserDefined(value) => {
-                write!(f, "UserDefined({})", value)
+            MatchKind::UserDefined(value, guarded) => {
+                write!(f, "UserDefined({}, guarded:{})", value, guarded)
             }
             MatchKind::Alternative => write!(f, "Alternative"),
         }

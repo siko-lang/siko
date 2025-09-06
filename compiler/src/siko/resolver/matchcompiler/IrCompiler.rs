@@ -13,7 +13,7 @@ use crate::siko::{
         matchcompiler::{
             Context::CompileContext,
             DataPath::DataPath,
-            Tree::{Case, End, MatchKind, Node, Switch, SwitchKind, Tuple},
+            Tree::{Case, Leaf, MatchKind, Node, Switch, SwitchKind, Tuple},
         },
         Environment::Environment,
         ExprResolver::ExprResolver,
@@ -35,14 +35,27 @@ pub struct IrCompiler<'a, 'b> {
 impl<'a, 'b> IrCompiler<'a, 'b> {
     pub fn new(
         bodyId: Variable,
-        matchValue: Variable,
         branches: Vec<Branch>,
         resolver: &'a mut ExprResolver<'b>,
         parentEnv: &'a Environment<'a>,
         bodyLocation: Location,
         matchLocation: Location,
-        contBlockId: BlockId,
     ) -> Self {
+        let matchValue = resolver.bodyBuilder.createTempValue(matchLocation.clone());
+        let mut returns = false;
+        for b in &branches {
+            if !b.body.doesNotReturn() {
+                returns = true;
+            }
+        }
+        let mut contBlockId = BlockId::first();
+        if returns {
+            resolver
+                .bodyBuilder
+                .current()
+                .addDeclare(matchValue.clone(), matchLocation.clone());
+            contBlockId = resolver.createBlock(parentEnv).getBlockId();
+        }
         IrCompiler {
             bodyId,
             matchValue,
@@ -91,7 +104,7 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
         match node {
             Node::Tuple(tuple) => self.compileTuple(ctx, tuple),
             Node::Switch(switch) => self.compileSwitch(ctx, switch),
-            Node::End(end) => self.compileLeaf(ctx, end),
+            Node::Leaf(end) => self.compileLeaf(ctx, end),
             Node::Wildcard(w) => self.compileNode(&w.next, ctx),
         }
     }
@@ -298,9 +311,9 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
         }
     }
 
-    fn compileLeaf(&mut self, ctx: &CompileContext, end: &End) -> BlockId {
-        let m = end.matches.last().expect("no match");
-        let index = if let MatchKind::UserDefined(index) = &m.kind {
+    fn compileLeaf(&mut self, ctx: &CompileContext, end: &Leaf) -> BlockId {
+        let m = end.finalMatch.as_ref().expect("no match");
+        let index = if let MatchKind::UserDefined(index, _) = &m.kind {
             index.clone()
         } else {
             unreachable!()

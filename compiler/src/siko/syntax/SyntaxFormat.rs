@@ -272,6 +272,12 @@ impl Format for SimplePattern {
             }
             SimplePattern::IntegerLiteral(i) => vec![Token::Chunk(i.clone())],
             SimplePattern::Wildcard => vec![Token::Chunk("_".to_string())],
+            SimplePattern::Guarded(pattern, expr) => {
+                let mut result = pattern.format();
+                result.push(Token::Chunk(" if ".to_string()));
+                result.extend(expr.format());
+                result
+            }
         }
     }
 }

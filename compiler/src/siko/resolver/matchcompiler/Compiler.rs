@@ -1,10 +1,9 @@
-use crate::siko::hir::Block::BlockId;
 use crate::siko::hir::Variable::Variable;
 use crate::siko::location::Location::Location;
 use crate::siko::resolver::matchcompiler::DataPath::{DataPath, DataType, DecisionPath};
 use crate::siko::resolver::matchcompiler::IrCompiler::IrCompiler;
 use crate::siko::resolver::matchcompiler::Tree::{
-    Bindings, Case, End, Match, MatchKind, Node, Switch, SwitchKind, Tuple, Wildcard,
+    Bindings, Case, Leaf, Match, MatchKind, Node, Switch, SwitchKind, Tuple, Wildcard,
 };
 use crate::siko::resolver::Environment::Environment;
 use crate::siko::resolver::Error::ResolverError;
@@ -20,7 +19,7 @@ pub struct MatchCompiler<'a, 'b> {
     branches: Vec<Branch>,
     errors: Vec<ResolverError>,
     pub usedPatterns: BTreeSet<i64>,
-    pub missingPatterns: BTreeSet<Pattern>,
+    pub missingPatterns: BTreeSet<String>,
     irCompiler: IrCompiler<'a, 'b>,
 }
 
@@ -33,30 +32,13 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         branches: Vec<Branch>,
         parentEnv: &'a Environment<'a>,
     ) -> MatchCompiler<'a, 'b> {
-        let matchValue = resolver.bodyBuilder.createTempValue(matchLocation.clone());
-        let mut returns = false;
-        for b in &branches {
-            if !b.body.doesNotReturn() {
-                returns = true;
-            }
-        }
-        let mut contBlockId = BlockId::first();
-        if returns {
-            resolver
-                .bodyBuilder
-                .current()
-                .addDeclare(matchValue.clone(), matchLocation.clone());
-            contBlockId = resolver.createBlock(parentEnv).getBlockId();
-        }
         let irCompiler = IrCompiler::new(
             bodyId,
-            matchValue.clone(),
             branches.clone(),
             resolver,
             parentEnv,
             bodyLocation.clone(),
             matchLocation.clone(),
-            contBlockId,
         );
         MatchCompiler {
             bodyLocation: bodyLocation,
@@ -66,6 +48,11 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
             missingPatterns: BTreeSet::new(),
             irCompiler: irCompiler,
         }
+    }
+
+    pub fn compile(&mut self) -> Variable {
+        let node = self.processAndVerifyPatterns();
+        self.irCompiler.compileIr(node)
     }
 
     fn resolve(&self, pattern: &Pattern) -> Pattern {
@@ -90,6 +77,13 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
             SimplePattern::StringLiteral(_) => pattern.clone(),
             SimplePattern::IntegerLiteral(_) => pattern.clone(),
             SimplePattern::Wildcard => pattern.clone(),
+            SimplePattern::Guarded(pat, expr) => {
+                let resolvedPat = self.resolve(pat);
+                Pattern {
+                    pattern: SimplePattern::Guarded(Box::new(resolvedPat), expr.clone()),
+                    location: Location::empty(),
+                }
+            }
         }
     }
 
@@ -161,6 +155,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                 vec![wildcardPattern]
             }
             SimplePattern::Wildcard => Vec::new(),
+            SimplePattern::Guarded(pat, _) => self.generateChoices(pat),
         }
     }
 
@@ -215,10 +210,11 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                 bindings,
             ),
             SimplePattern::Wildcard => (decision.add(DataPath::Wildcard(Box::new(parentData.clone()))), bindings),
+            SimplePattern::Guarded(pat, _) => self.generateDecisions(pat, parentData, decision, bindings),
         }
     }
 
-    pub fn compile(&mut self) -> Variable {
+    fn processAndVerifyPatterns(&mut self) -> Node {
         let mut matches = Vec::new();
         for (index, branch) in self.branches.clone().iter().enumerate() {
             let branchPattern = self.resolve(&branch.pattern);
@@ -227,7 +223,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
             //println!("{} Pattern {}\n decision: {}", index, branch.pattern, decision);
             let choices = self.generateChoices(&branchPattern);
             matches.push(Match {
-                kind: MatchKind::UserDefined(index as i64),
+                kind: MatchKind::UserDefined(index as i64, branchPattern.isGuarded()),
                 pattern: branchPattern,
                 decisionPath: decision,
                 bindings: bindings,
@@ -311,8 +307,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         if !self.errors.is_empty() {
             std::process::exit(1);
         }
-
-        self.irCompiler.compileIr(node)
+        node
     }
 
     fn buildNode(
@@ -324,11 +319,12 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
     ) -> Node {
         //println!("buildNode: {:?} | {}", pendingPaths, currentDecision);
         if pendingPaths.is_empty() {
-            let end = End {
+            let end = Leaf {
                 decisionPath: currentDecision.clone(),
-                matches: Vec::new(),
+                finalMatch: None,
+                guardedMatches: Vec::new(),
             };
-            return Node::End(end);
+            return Node::Leaf(end);
         }
         let currentPath = pendingPaths.remove(0);
         if let Some(ty) = dataTypes.get(&currentPath) {

@@ -846,6 +846,7 @@ impl<'a> ExprResolver<'a> {
             SimplePattern::StringLiteral(_) => todo!(),
             SimplePattern::IntegerLiteral(_) => todo!(),
             SimplePattern::Wildcard => {}
+            SimplePattern::Guarded(_, _) => todo!(),
         }
     }
 
