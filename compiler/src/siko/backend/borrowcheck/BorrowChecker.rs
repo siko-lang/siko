@@ -1,24 +1,23 @@
-use std::{
-    cell::RefCell,
-    collections::{BTreeMap, BTreeSet},
-    fmt::Display,
-    rc::Rc,
-};
+use std::{cell::RefCell, collections::BTreeMap, fmt::Display, rc::Rc};
 
 use crate::siko::{
     backend::borrowcheck::{
         functionprofiles::{
             FunctionProfileBuilder::FunctionProfileBuilder, FunctionProfileStore::FunctionProfileStore,
         },
-        DataGroups::DataGroups,
+        DataGroups::{DataGroups, ExtendedType},
     },
     hir::{
-        Block::BlockId, Function::Function, Instruction::InstructionKind, Program::Program, Type::Type,
-        Variable::VariableName,
+        Block::BlockId,
+        Function::Function,
+        Instruction::InstructionKind,
+        Program::Program,
+        Type::Type,
+        Variable::{Variable, VariableName},
     },
     location::{
         Location::Location,
-        Report::{Report, ReportContext},
+        Report::{Entry, Report, ReportContext},
     },
     qualifiedname::QualifiedName,
 };
@@ -34,8 +33,12 @@ impl Display for Path {
     }
 }
 
+struct BorrowInfo {
+    pub location: Location,
+}
+
 struct BorrowSet {
-    paths: BTreeSet<Path>,
+    paths: BTreeMap<Path, BorrowInfo>,
 }
 
 pub struct BorrowChecker<'a> {
@@ -43,6 +46,7 @@ pub struct BorrowChecker<'a> {
     borrows: BTreeMap<Type, BorrowSet>,
     profileBuilder: FunctionProfileBuilder<'a>,
     blockEnvs: BTreeMap<BlockId, Environment>,
+    links: BTreeMap<Type, Type>,
 }
 
 impl<'a> BorrowChecker<'a> {
@@ -59,6 +63,7 @@ impl<'a> BorrowChecker<'a> {
             borrows: BTreeMap::new(),
             profileBuilder: FunctionProfileBuilder::new(f, program, dataGroups, profileStore, functionGroup),
             blockEnvs: BTreeMap::new(),
+            links: BTreeMap::new(),
         }
     }
 
@@ -68,13 +73,18 @@ impl<'a> BorrowChecker<'a> {
         }
         //println!("Borrow checking function: {}", self.profileBuilder.f.name);
         //println!("Function profile {}", self.profileBuilder.f);
-        self.profileBuilder.process();
+        self.profileBuilder.process(false);
+        //println!("{:?}", self.profileBuilder.profile.links);
+        // TODO: handle links
+        // for link in &self.profileBuilder.profile.links {
+        //     self.links.insert(link.from.clone(), link.to.clone());
+        // }
         self.processBlock(BlockId::first());
     }
 
     fn getEnvForBlock(&mut self, blockId: BlockId) -> Environment {
         let env = self.blockEnvs.entry(blockId).or_insert_with(|| Environment {
-            deadPaths: Rc::new(RefCell::new(Vec::new())),
+            deadPaths: Rc::new(RefCell::new(BTreeMap::new())),
         });
         env.clone()
     }
@@ -98,29 +108,17 @@ impl<'a> BorrowChecker<'a> {
                     let destType = self.profileBuilder.getFinalVarType(dest);
                     //println!("    Ref: {} -> {}", _argType, destType);
                     let refTyVar = destType.vars.first().expect("ref type must have a var");
-                    let borrows = self
-                        .borrows
-                        .entry(refTyVar.clone())
-                        .or_insert_with(|| BorrowSet { paths: BTreeSet::new() });
-                    let path = Path { root: arg.name() };
-                    //println!("    {} borrows: {}", refTyVar, path);
-                    borrows.paths.insert(path);
+                    self.borrowPath(varToPath(arg), refTyVar, arg.location().clone());
                 }
                 InstructionKind::Assign(dest, src) => {
-                    if src.getType().isNamed() {
-                        // this is a struct or enum and it is being moved, mark its paths as dead
-                        env.markPathDead(Path { root: src.name() });
-                    }
-                    env.revivePath(&Path { root: dest.name() });
+                    self.checkVar(&env, &src);
+                    env.revivePath(&varToPath(&dest));
                 }
                 InstructionKind::FieldAssign(_, src, _) => {
-                    if src.getType().isNamed() {
-                        // this is a struct or enum and it is being moved, mark its paths as dead
-                        env.markPathDead(Path { root: src.name() });
-                    }
+                    self.checkVar(&env, &src);
                 }
                 InstructionKind::FieldRef(dest, _, _) => {
-                    env.revivePath(&Path { root: dest.name() });
+                    env.revivePath(&varToPath(&dest));
                 }
                 _ => {
                     let mut usedVars = i.kind.collectVariables();
@@ -128,17 +126,20 @@ impl<'a> BorrowChecker<'a> {
                         usedVars.retain(|x| *x != v);
                     }
                     for usedVar in usedVars {
-                        let varType = self.profileBuilder.getFinalVarType(&usedVar);
-                        if varType.ty.isNamed() {
-                            // this is a struct or enum and it is being moved, mark its paths as dead
-                            env.markPathDead(Path { root: usedVar.name() });
-                        }
+                        let varType = self.checkVar(&env, &usedVar);
                         for tyVar in &varType.vars {
                             if let Some(borrows) = self.borrows.get(tyVar) {
-                                for path in &borrows.paths {
+                                for (path, info) in &borrows.paths {
                                     if env.isPathDead(&path) {
-                                        BorrowCheckerError::UseAfterMove(path.to_string(), usedVar.location())
-                                            .report(self.ctx);
+                                        let deathInfo =
+                                            env.getDeathInfo(&path).expect("dead path must have death info");
+                                        BorrowCheckerError::UseAfterMove(
+                                            path.to_string(),
+                                            usedVar.location(),
+                                            deathInfo.location,
+                                            info.location.clone(),
+                                        )
+                                        .report(self.ctx);
                                     }
                                 }
                             }
@@ -148,43 +149,110 @@ impl<'a> BorrowChecker<'a> {
             }
         }
     }
+
+    fn borrowPath(&mut self, path: Path, refTyVar: &Type, location: Location) {
+        self.borrowInner(path.clone(), refTyVar, location.clone());
+        let mut affected = Vec::new();
+        let mut current = vec![refTyVar.clone()];
+        loop {
+            let copy = current.clone();
+            current.clear();
+            for (from, to) in &self.links {
+                if copy.contains(from) && !affected.contains(to) {
+                    affected.push(to.clone());
+                    current.push(to.clone());
+                }
+            }
+            if current.is_empty() {
+                break;
+            }
+        }
+        for tyVar in affected {
+            self.borrowInner(path.clone(), &tyVar, location.clone());
+        }
+    }
+
+    fn borrowInner(&mut self, path: Path, refTyVar: &Type, location: Location) {
+        let borrows = self
+            .borrows
+            .entry(refTyVar.clone())
+            .or_insert_with(|| BorrowSet { paths: BTreeMap::new() });
+        //println!("    {} borrows: {}", refTyVar, path);
+        borrows.paths.insert(path, BorrowInfo { location });
+    }
+
+    fn checkVar(&self, env: &Environment, usedVar: &Variable) -> ExtendedType {
+        let varType = self.profileBuilder.getFinalVarType(&usedVar);
+        if varType.ty.isNamed() {
+            // this is a struct or enum and it is being moved, mark its paths as dead
+            //println!("    Moving var: {} of type {} {}", usedVar, varType, usedVar.location());
+            env.markPathDead(varToPath(&usedVar), usedVar.location().clone());
+        }
+        varType
+    }
+}
+
+fn varToPath(v: &Variable) -> Path {
+    Path { root: v.name() }
+}
+
+#[derive(Clone)]
+pub struct DeathInfo {
+    pub location: Location,
 }
 
 #[derive(Clone)]
 struct Environment {
-    deadPaths: Rc<RefCell<Vec<Path>>>,
+    deadPaths: Rc<RefCell<BTreeMap<Path, DeathInfo>>>,
 }
 
 impl Environment {
-    fn markPathDead(&self, path: Path) {
+    fn markPathDead(&self, path: Path, location: Location) {
         //println!("    Marking path dead: {}", path);
-        self.deadPaths.borrow_mut().push(path);
+        self.deadPaths.borrow_mut().insert(path, DeathInfo { location });
     }
 
     fn revivePath(&self, path: &Path) {
         //println!("    Reviving path: {}", path);
-        self.deadPaths.borrow_mut().retain(|p| p != path);
+        self.deadPaths.borrow_mut().remove(path);
     }
 
     fn isPathDead(&self, path: &Path) -> bool {
-        self.deadPaths.borrow().iter().any(|p| p == path)
+        self.deadPaths.borrow().contains_key(path)
+    }
+
+    fn getDeathInfo(&self, path: &Path) -> Option<DeathInfo> {
+        self.deadPaths.borrow().get(path).cloned()
     }
 }
 
 enum BorrowCheckerError {
-    UseAfterMove(String, Location),
+    UseAfterMove(String, Location, Location, Location),
 }
 
 impl BorrowCheckerError {
     pub fn report(&self, ctx: &ReportContext) -> ! {
         match &self {
-            BorrowCheckerError::UseAfterMove(path, l) => {
+            BorrowCheckerError::UseAfterMove(path, useLocation, moveLocation, borrowLocation) => {
                 let slogan = format!(
                     "Trying to use borrow of {} but {} is already moved at this point",
                     ctx.yellow(&path.to_string()),
                     ctx.yellow(&path.to_string())
                 );
-                let r = Report::new(ctx, slogan, Some(l.clone()));
+                let mut entries = Vec::new();
+                entries.push(Entry::new(
+                    Some("NOTE: Value used here".to_string()),
+                    useLocation.clone(),
+                ));
+                entries.push(Entry::new(
+                    Some("NOTE: Value moved here".to_string()),
+                    moveLocation.clone(),
+                ));
+                entries.push(Entry::new(
+                    Some("NOTE: Value borrowed here".to_string()),
+                    borrowLocation.clone(),
+                ));
+                let r = Report::build(ctx, slogan, entries);
                 r.print();
             }
         }

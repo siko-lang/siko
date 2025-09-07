@@ -120,7 +120,7 @@ impl<'a> FunctionProfileBuilder<'a> {
         self.unifier.apply(varType)
     }
 
-    pub fn process(&mut self) -> bool {
+    pub fn process(&mut self, normalize: bool) -> bool {
         //println!("Building function profile for: {}", self.f.name);
         //println!("Function: {}", self.f);
         self.profile = FunctionProfile {
@@ -193,9 +193,11 @@ impl<'a> FunctionProfileBuilder<'a> {
                 }
             }
         };
-        self.profile.normalize();
-        //println!("Normalized function profile: {}", self.profile);
-        self.profile.processLinks();
+        if normalize {
+            self.profile.normalize();
+            //println!("Normalized function profile: {}", self.profile);
+            self.profile.processLinks();
+        }
         //println!("Function profile: {}", self.profile);
         let updated = self.profileStore.addProfile(self.profile.clone());
         updated

@@ -158,7 +158,9 @@ impl CopyMap {
     }
 
     pub fn copy(&mut self, var: &Variable) -> Variable {
-        if let Some(v) = self.get(var) {
+        if let Some(mut v) = self.get(var) {
+            v.kind = var.kind.clone();
+            v.location = var.location.clone();
             v
         } else {
             let v = var.cloneNew();
@@ -300,7 +302,7 @@ impl Variable {
 impl Display for Variable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(ty) = &self.getTypeOpt() {
-            write!(f, "${}/{}: {}", self.name(), self.kind, ty)
+            write!(f, "${}/{}: {}/{}", self.name(), self.kind, ty, self.location())
         } else {
             write!(f, "${}/{}", self.name(), self.kind)
         }

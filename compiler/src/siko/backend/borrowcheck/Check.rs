@@ -39,7 +39,7 @@ impl<'a> Check<'a> {
                         &mut profileStore,
                         group.items.clone(),
                     );
-                    let updated = profileBuilder.process();
+                    let updated = profileBuilder.process(true);
                     if updated {
                         profileUpdated = true;
                     }
