@@ -186,10 +186,11 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                 }
             }
             SimplePattern::Bind(name, _) => {
-                bindings
-                    .bindings
-                    .insert(decision.add(parentData.clone()), name.toString());
-                (decision.add(DataPath::Wildcard(Box::new(parentData.clone()))), bindings)
+                let path = parentData.asBindingPath();
+                let bindPath = decision.add(parentData.clone());
+                //println!("Binding {} to {}", name, bindPath);
+                bindings.bindings.insert(bindPath, name.toString());
+                (decision.add(path), bindings)
             }
             SimplePattern::Tuple(args) => {
                 let mut decision = decision.clone();
@@ -324,6 +325,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                 finalMatch: None,
                 guardedMatches: Vec::new(),
             };
+            //println!("Creating leaf for {}", currentDecision.last());
             return Node::Leaf(end);
         }
         let currentPath = pendingPaths.remove(0);
@@ -356,6 +358,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                         let node = self.buildNode(pendings, &currentDecision, dataTypes, allMatches);
                         cases.insert(Case::Variant(variant.name.clone()), node);
                     }
+                    //println!("Enum switch on {}", currentPath.asBindingPath());
                     let switch = Switch {
                         dataPath: currentPath.clone(),
                         kind: SwitchKind::Enum(enumName.clone()),
@@ -456,9 +459,12 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                 DataType::Wildcard => {
                     let path = DataPath::Wildcard(Box::new(currentPath.clone()));
                     pendingPaths.insert(0, path.clone());
-                    let currentDecision = &currentDecision.add(path);
+                    let currentDecision = &currentDecision.add(path.clone());
                     let node = self.buildNode(pendingPaths, currentDecision, dataTypes, allMatches);
-                    Node::Wildcard(Wildcard { next: Box::new(node) })
+                    Node::Wildcard(Wildcard {
+                        path: currentPath,
+                        next: Box::new(node),
+                    })
                 }
             }
         } else {

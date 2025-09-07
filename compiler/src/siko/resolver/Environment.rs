@@ -13,6 +13,8 @@ use crate::siko::{
     location::Location::Location,
 };
 
+#[derive(Clone, Debug)]
+
 pub struct CaptureInfo {
     varAllocator: VariableAllocator,
     captures: Rc<RefCell<BTreeMap<Variable, Variable>>>,
@@ -39,6 +41,7 @@ impl CaptureInfo {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct Environment<'a> {
     values: BTreeMap<String, Variable>,
     parent: Option<&'a Environment<'a>>,

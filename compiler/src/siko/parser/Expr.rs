@@ -26,6 +26,7 @@ pub trait ExprParser {
     fn parseLoop(&mut self) -> Expr;
     fn parseWhile(&mut self) -> Expr;
     fn parseMatch(&mut self) -> Expr;
+    fn parseMatchIf(&mut self) -> Expr;
     fn parseWith(&mut self) -> Expr;
     fn parseFieldAccessOrCall(&mut self) -> Expr;
     fn parseBinaryOp(&mut self, index: usize) -> Expr;
@@ -396,9 +397,91 @@ impl<'a> ExprParser for Parser<'a> {
         )
     }
 
+    fn parseMatchIf(&mut self) -> Expr {
+        let start = self.currentSpan();
+        self.expect(TokenKind::Keyword(KeywordKind::If));
+        let (body, bodyGiven) = if self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
+            (self.buildExpr(SimpleExpr::Tuple(Vec::new()), start), false)
+        } else {
+            (self.parseExpr(), true)
+        };
+        self.expect(TokenKind::LeftBracket(BracketKind::Curly));
+        let mut branches = Vec::new();
+        while !self.check(TokenKind::RightBracket(BracketKind::Curly)) {
+            let pattern = if self.check(TokenKind::Misc(MiscKind::Wildcard)) {
+                self.expect(TokenKind::Misc(MiscKind::Wildcard));
+                let pattern = Pattern {
+                    pattern: SimplePattern::Wildcard,
+                    location: self.currentLocation(),
+                };
+                pattern
+            } else {
+                let guardExpr = self.parseExpr();
+                let pattern = if bodyGiven {
+                    let identifier = Identifier::new("value".to_string(), self.currentLocation());
+                    let extendedGuardExpr = SimpleExpr::BinaryOp(
+                        BinaryOp::Equal,
+                        Box::new(guardExpr),
+                        Box::new(Expr {
+                            expr: SimpleExpr::Value(identifier.clone()),
+                            location: self.currentLocation(),
+                        }),
+                    );
+                    let guardExpr = Expr {
+                        expr: extendedGuardExpr,
+                        location: self.currentLocation(),
+                    };
+                    Pattern {
+                        pattern: SimplePattern::Guarded(
+                            Box::new(Pattern {
+                                pattern: SimplePattern::Bind(identifier, true),
+                                location: self.currentLocation(),
+                            }),
+                            Box::new(guardExpr),
+                        ),
+                        location: self.currentLocation(),
+                    }
+                } else {
+                    Pattern {
+                        pattern: SimplePattern::Guarded(
+                            Box::new(Pattern {
+                                pattern: SimplePattern::Bind(
+                                    Identifier::new("value".to_string(), self.currentLocation()),
+                                    false,
+                                ),
+                                location: self.currentLocation(),
+                            }),
+                            Box::new(guardExpr),
+                        ),
+                        location: self.currentLocation(),
+                    }
+                };
+                pattern
+            };
+            self.expect(TokenKind::Arrow(ArrowKind::Right));
+            let body = if self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
+                let block = self.parseBlock();
+                let expr = self.buildExpr(SimpleExpr::Block(block), start.clone());
+                expr
+            } else {
+                let expr = self.parseExpr();
+                if self.check(TokenKind::Misc(MiscKind::Comma)) {
+                    self.expect(TokenKind::Misc(MiscKind::Comma));
+                }
+                expr
+            };
+            branches.push(Branch { pattern, body });
+        }
+        self.expect(TokenKind::RightBracket(BracketKind::Curly));
+        self.buildExpr(SimpleExpr::Match(Box::new(body), branches), start.clone())
+    }
+
     fn parseMatch(&mut self) -> Expr {
         let start = self.currentSpan();
         self.expect(TokenKind::Keyword(KeywordKind::Match));
+        if self.check(TokenKind::Keyword(KeywordKind::If)) {
+            return self.parseMatchIf();
+        }
         let body = self.parseExpr();
         self.expect(TokenKind::LeftBracket(BracketKind::Curly));
         let mut branches = Vec::new();

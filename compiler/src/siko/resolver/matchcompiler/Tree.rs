@@ -47,6 +47,7 @@ pub struct Leaf {
 
 #[derive(Clone, Debug)]
 pub struct Wildcard {
+    pub path: DataPath,
     pub next: Box<Node>,
 }
 
@@ -63,8 +64,8 @@ impl Node {
         match self {
             Node::Tuple(tuple) => tuple.dataPath.getParent(),
             Node::Switch(switch) => switch.dataPath.clone(),
-            Node::Leaf(_) => unreachable!(),
-            Node::Wildcard(_) => unreachable!(),
+            Node::Leaf(l) => l.decisionPath.last().clone(),
+            Node::Wildcard(wildcard) => wildcard.path.clone(),
         }
     }
 

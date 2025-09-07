@@ -515,6 +515,7 @@ impl<'a> ExprResolver<'a> {
                     .addFunctionCall(name, vec![rhsId], expr.location.clone())
             }
             SimpleExpr::Match(body, branches) => {
+                //crate::siko::syntax::Format::format_any(expr);
                 let bodyId = self.resolveExpr(body, env);
                 let mut matchResolver = MatchCompiler::new(
                     self,

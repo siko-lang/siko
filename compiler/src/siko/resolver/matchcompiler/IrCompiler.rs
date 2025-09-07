@@ -69,7 +69,10 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
     }
 
     pub fn compileIr(&mut self, node: Node) -> Variable {
-        let ctx = CompileContext::new().add(node.getDataPath(), self.bodyId.clone());
+        let mut ctx = CompileContext::new();
+        let dataPath = node.getDataPath();
+        //println!("adding ctx for data path {}", dataPath);
+        ctx = ctx.add(dataPath, self.bodyId.clone());
         let mut startBlockBuilder = self.resolver.bodyBuilder.current();
 
         let firstBlockId = self.compileNode(&node, &ctx);
@@ -320,7 +323,7 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
         };
         let branch = &self.branches[index as usize];
         let syntaxBlockId = self.resolver.createSyntaxBlockIdSegment();
-        let mut env = Environment::child(self.parentEnv, syntaxBlockId);
+        let mut env = Environment::child(self.parentEnv, syntaxBlockId.clone());
         let mut envBlockbuilder = self.resolver.createBlock(&env);
         //println!("Compile branch {} to block {}", index, builder.getBlockId());
         envBlockbuilder.current();
@@ -329,7 +332,8 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
             .current()
             .addBlockStart(env.getSyntaxBlockId(), self.bodyLocation.clone());
         for (path, name) in &m.bindings.bindings {
-            let bindValue = ctx.get(path.decisions.last().unwrap());
+            //println!("Creating binding for {} at {}", name, path.last());
+            let bindValue = ctx.get(path.last());
             let new = self
                 .resolver
                 .bodyBuilder
@@ -343,10 +347,25 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
         let mut leafBodyBuilder = self.resolver.createBlock(&env);
         if !leaf.guardedMatches.is_empty() {
             let mut guardBlocks = Vec::new();
-            for _ in leaf.guardedMatches.iter() {
+            for m in leaf.guardedMatches.iter() {
+                let mut guardEnv = Environment::child(self.parentEnv, syntaxBlockId.clone());
+                for (path, name) in &m.bindings.bindings {
+                    let bindValue = ctx.get(path.last());
+                    let new = self
+                        .resolver
+                        .bodyBuilder
+                        .createLocalValue(&name, self.bodyLocation.clone());
+                    self.resolver.bodyBuilder.current().addBind(
+                        new.clone(),
+                        bindValue,
+                        false,
+                        self.bodyLocation.clone(),
+                    );
+                    guardEnv.addValue(name.clone(), new);
+                }
                 let guardTestBlock = self.resolver.createBlock(&env);
                 let guardBodyBlock = self.resolver.createBlock(&env);
-                guardBlocks.push((guardTestBlock, guardBodyBlock));
+                guardBlocks.push((guardTestBlock, guardBodyBlock, guardEnv));
             }
             for (guardIndex, guard) in leaf.guardedMatches.iter().enumerate() {
                 let guardPatternIndex = if let MatchKind::UserDefined(guardPatternIndex, _) = &guard.kind {
@@ -362,7 +381,8 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
                 };
                 let mut guardTestBlock = guardBlocks[guardIndex].0.clone();
                 guardTestBlock.current();
-                let guardValue = self.resolver.resolveExpr(&guardExpr, &mut env);
+                let mut guardEnv = guardBlocks[guardIndex].2.clone();
+                let guardValue = self.resolver.resolveExpr(&guardExpr, &mut guardEnv);
                 let mut guardBodyBlockBuilder = guardBlocks[guardIndex].1.clone();
                 guardBodyBlockBuilder.current();
                 let guardBranchValue = self.resolver.resolveExpr(&guardedBranch.body, &mut env);

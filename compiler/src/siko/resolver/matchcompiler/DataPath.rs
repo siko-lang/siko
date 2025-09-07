@@ -29,6 +29,14 @@ impl DataPath {
         }
     }
 
+    pub fn isRoot(&self) -> bool {
+        matches!(self, DataPath::Root)
+    }
+
+    pub fn asBindingPath(&self) -> DataPath {
+        DataPath::Wildcard(Box::new(self.clone()))
+    }
+
     pub fn getParent(&self) -> DataPath {
         match self {
             DataPath::Root => DataPath::Root,
@@ -111,6 +119,10 @@ impl DecisionPath {
         let mut d = self.clone();
         d.decisions.push(path);
         d
+    }
+
+    pub fn last(&self) -> &DataPath {
+        self.decisions.last().unwrap()
     }
 }
 
