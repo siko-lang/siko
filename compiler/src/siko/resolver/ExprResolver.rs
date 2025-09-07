@@ -209,7 +209,12 @@ impl<'a> ExprResolver<'a> {
         builder.implicit().addJump(toBlock, location)
     }
 
-    fn resolveBlock<'e>(&mut self, block: &Block, env: &'e Environment<'e>, resultValue: Variable) -> SyntaxBlockId {
+    pub fn resolveBlock<'e>(
+        &mut self,
+        block: &Block,
+        env: &'e Environment<'e>,
+        resultValue: Variable,
+    ) -> SyntaxBlockId {
         let syntaxBlockIdItem = self.createSyntaxBlockIdSegment();
         let mut env = Environment::child(env, syntaxBlockIdItem);
         // println!(

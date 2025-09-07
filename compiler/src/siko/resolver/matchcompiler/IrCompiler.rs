@@ -18,7 +18,7 @@ use crate::siko::{
         Environment::Environment,
         ExprResolver::ExprResolver,
     },
-    syntax::Expr::Branch,
+    syntax::{Expr::Branch, Pattern::SimplePattern},
 };
 
 pub struct IrCompiler<'a, 'b> {
@@ -311,8 +311,8 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
         }
     }
 
-    fn compileLeaf(&mut self, ctx: &CompileContext, end: &Leaf) -> BlockId {
-        let m = end.finalMatch.as_ref().expect("no match");
+    fn compileLeaf(&mut self, ctx: &CompileContext, leaf: &Leaf) -> BlockId {
+        let m = leaf.finalMatch.as_ref().expect("no match");
         let index = if let MatchKind::UserDefined(index, _) = &m.kind {
             index.clone()
         } else {
@@ -321,9 +321,9 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
         let branch = &self.branches[index as usize];
         let syntaxBlockId = self.resolver.createSyntaxBlockIdSegment();
         let mut env = Environment::child(self.parentEnv, syntaxBlockId);
-        let mut builder = self.resolver.createBlock(&env);
+        let mut envBlockbuilder = self.resolver.createBlock(&env);
         //println!("Compile branch {} to block {}", index, builder.getBlockId());
-        builder.current();
+        envBlockbuilder.current();
         self.resolver
             .bodyBuilder
             .current()
@@ -340,6 +340,69 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
                 .addBind(new.clone(), bindValue, false, self.bodyLocation.clone());
             env.addValue(name.clone(), new);
         }
+        let mut leafBodyBuilder = self.resolver.createBlock(&env);
+        if !leaf.guardedMatches.is_empty() {
+            let mut guardBlocks = Vec::new();
+            for _ in leaf.guardedMatches.iter() {
+                let guardTestBlock = self.resolver.createBlock(&env);
+                let guardBodyBlock = self.resolver.createBlock(&env);
+                guardBlocks.push((guardTestBlock, guardBodyBlock));
+            }
+            for (guardIndex, guard) in leaf.guardedMatches.iter().enumerate() {
+                let guardPatternIndex = if let MatchKind::UserDefined(guardPatternIndex, _) = &guard.kind {
+                    guardPatternIndex.clone()
+                } else {
+                    unreachable!()
+                };
+                let guardedBranch = &self.branches[guardPatternIndex as usize];
+                let guardExpr = if let SimplePattern::Guarded(_, guardExpr) = &guardedBranch.pattern.pattern {
+                    guardExpr
+                } else {
+                    unreachable!()
+                };
+                let mut guardTestBlock = guardBlocks[guardIndex].0.clone();
+                guardTestBlock.current();
+                let guardValue = self.resolver.resolveExpr(&guardExpr, &mut env);
+                let mut guardBodyBlockBuilder = guardBlocks[guardIndex].1.clone();
+                guardBodyBlockBuilder.current();
+                let guardBranchValue = self.resolver.resolveExpr(&guardedBranch.body, &mut env);
+                if !guardedBranch.body.doesNotReturn() {
+                    let mut builder = self.resolver.bodyBuilder.current().implicit();
+                    builder.addAssign(self.matchValue.clone(), guardBranchValue, self.matchLocation.clone());
+                    self.resolver.addJumpToBuilder(
+                        self.contBlockId,
+                        self.bodyLocation.clone(),
+                        env.getSyntaxBlockId(),
+                        &mut builder,
+                    );
+                }
+                let mut guardCases = Vec::new();
+                if guardIndex + 1 == leaf.guardedMatches.len() {
+                    // last guard -> jump to leaf body
+                    guardCases.push(EnumCase {
+                        index: 0,
+                        branch: leafBodyBuilder.getBlockId(),
+                    });
+                } else {
+                    // jump to next guard test
+                    guardCases.push(EnumCase {
+                        index: 0,
+                        branch: guardBlocks[guardIndex + 1].0.getBlockId(),
+                    });
+                }
+                guardCases.push(EnumCase {
+                    index: 1,
+                    branch: guardBodyBlockBuilder.getBlockId(),
+                });
+                let enumSwitchKind = InstructionKind::EnumSwitch(guardValue, guardCases);
+                guardTestBlock.addInstruction(enumSwitchKind, self.bodyLocation.clone());
+            }
+            // jump to first guard test
+            envBlockbuilder.addJump(guardBlocks[0].0.getBlockId(), self.bodyLocation.clone());
+        } else {
+            envBlockbuilder.addJump(leafBodyBuilder.getBlockId(), self.bodyLocation.clone());
+        }
+        leafBodyBuilder.current();
         let exprValue = self.resolver.resolveExpr(&branch.body, &mut env);
         if !branch.body.doesNotReturn() {
             let mut builder = self.resolver.bodyBuilder.current().implicit();
@@ -351,6 +414,6 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
                 &mut builder,
             );
         }
-        builder.getBlockId()
+        envBlockbuilder.getBlockId()
     }
 }
