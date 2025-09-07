@@ -419,6 +419,23 @@ impl Display for ClosureCreateInfo {
 }
 
 #[derive(Clone, PartialEq)]
+pub struct TransformInfo {
+    pub variantIndex: u32,
+}
+
+impl Display for TransformInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "transform({})", self.variantIndex)
+    }
+}
+
+impl Debug for TransformInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+#[derive(Clone, PartialEq)]
 pub enum InstructionKind {
     FunctionCall(Variable, CallInfo),
     Converter(Variable, Variable),
@@ -441,7 +458,7 @@ pub enum InstructionKind {
     FieldAssign(Variable, Variable, Vec<FieldInfo>),
     AddressOfField(Variable, Variable, Vec<FieldInfo>),
     DeclareVar(Variable, Mutability),
-    Transform(Variable, Variable, u32),
+    Transform(Variable, Variable, TransformInfo),
     EnumSwitch(Variable, Vec<EnumCase>),
     IntegerSwitch(Variable, Vec<IntegerCase>),
     BlockStart(SyntaxBlockId),
@@ -503,7 +520,7 @@ impl InstructionKind {
                 InstructionKind::AddressOfField(d.copy(map), r.copy(map), i.clone())
             }
             InstructionKind::DeclareVar(v, m) => InstructionKind::DeclareVar(v.copy(map), m.clone()),
-            InstructionKind::Transform(d, a, i) => InstructionKind::Transform(d.copy(map), a.copy(map), *i),
+            InstructionKind::Transform(d, a, i) => InstructionKind::Transform(d.copy(map), a.copy(map), i.clone()),
             InstructionKind::IntegerSwitch(v, c) => InstructionKind::IntegerSwitch(v.copy(map), c.clone()),
             InstructionKind::With(v, info) => InstructionKind::With(v.copy(map), info.clone()),
             InstructionKind::EnumSwitch(variable, enum_cases) => {
@@ -723,10 +740,10 @@ impl InstructionKind {
                 let new_var = var.replace(&from, to);
                 InstructionKind::DeclareVar(new_var, mutability.clone())
             }
-            InstructionKind::Transform(var, arg, index) => {
+            InstructionKind::Transform(var, arg, info) => {
                 let new_var = var.replace(&from, to.clone());
                 let new_arg = arg.replace(&from, to);
-                InstructionKind::Transform(new_var, new_arg, *index)
+                InstructionKind::Transform(new_var, new_arg, info.clone())
             }
             InstructionKind::EnumSwitch(root, cases) => {
                 let new_root = root.replace(&from, to);
@@ -941,8 +958,8 @@ impl InstructionKind {
             InstructionKind::DeclareVar(v, mutability) => {
                 format!("declare({}, {:?})", v, mutability)
             }
-            InstructionKind::Transform(dest, arg, index) => {
-                format!("{} = transform({}, {})", dest, arg, index)
+            InstructionKind::Transform(dest, arg, info) => {
+                format!("{} = transform({}, {:?})", dest, arg, info)
             }
             InstructionKind::EnumSwitch(root, cases) => {
                 format!("enumswitch({}, {:?})", root, cases)

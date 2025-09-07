@@ -738,7 +738,7 @@ impl<'a> Typechecker<'a> {
                 self.unifier.unifyVar(dest, receiverType);
             }
             InstructionKind::DeclareVar(_, _) => {}
-            InstructionKind::Transform(dest, root, index) => {
+            InstructionKind::Transform(dest, root, info) => {
                 let rootTy = root.getType();
                 let rootTy = self.unifier.apply(rootTy);
                 let isRef = rootTy.isReference();
@@ -747,7 +747,7 @@ impl<'a> Typechecker<'a> {
                     Some(name) => {
                         let e = self.program.enums.get(&name).expect("not an enum in transform!");
                         let e = self.instantiateEnum(e, &baseTy);
-                        let v = &e.variants[*index as usize];
+                        let v = &e.variants[info.variantIndex as usize];
                         let destType = if isRef {
                             Type::Tuple(v.items.clone()).asRef()
                         } else {

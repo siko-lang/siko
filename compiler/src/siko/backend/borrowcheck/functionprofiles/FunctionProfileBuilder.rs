@@ -315,13 +315,13 @@ impl<'a> FunctionProfileBuilder<'a> {
                     self.unifyExtendedTypes(&currenTy, &valueType);
                 }
                 InstructionKind::DeclareVar(_, _) => {}
-                InstructionKind::Transform(dest, root, index) => {
+                InstructionKind::Transform(dest, root, info) => {
                     let destType = self.getVarType(dest);
                     let rootTy = root.getType();
                     let name = rootTy.getName().expect("Transform root must have name");
                     let enumDef = self.dataGroups.getEnum(&name);
                     let enumDef = self.instantiateEnumDef(enumDef);
-                    let v = &enumDef.variants[*index as usize];
+                    let v = &enumDef.variants[info.variantIndex as usize];
                     let mut variantTy = v.ty.clone();
                     if rootTy.isReference() {
                         variantTy.vars.push(self.allocator.next());

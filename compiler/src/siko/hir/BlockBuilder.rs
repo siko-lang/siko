@@ -4,6 +4,7 @@ use std::fmt::Display;
 
 use crate::siko::hir::Block::BlockId;
 use crate::siko::hir::Instruction::CallInfo;
+use crate::siko::hir::Instruction::TransformInfo;
 use crate::siko::{
     hir::Instruction::{Mutability, SyntaxBlockId},
     location::Location::Location,
@@ -352,7 +353,7 @@ impl BlockBuilder {
     pub fn addTransform(&mut self, value: Variable, index: u32, location: Location) -> Variable {
         let result = self.bodyBuilder.createTempValue(location.clone());
         self.addInstruction(
-            InstructionKind::Transform(result.clone(), value, index),
+            InstructionKind::Transform(result.clone(), value, TransformInfo { variantIndex: index }),
             location.clone(),
         );
         result
@@ -361,7 +362,7 @@ impl BlockBuilder {
     pub fn addTypedTransform(&mut self, value: Variable, index: u32, location: Location, ty: Type) -> Variable {
         let result = self.bodyBuilder.createTempValueWithType(location.clone(), ty);
         self.addInstruction(
-            InstructionKind::Transform(result.clone(), value, index),
+            InstructionKind::Transform(result.clone(), value, TransformInfo { variantIndex: index }),
             location.clone(),
         );
         result

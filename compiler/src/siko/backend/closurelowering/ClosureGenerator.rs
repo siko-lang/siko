@@ -5,7 +5,7 @@ use crate::siko::{
         ConstraintContext::ConstraintContext,
         Data::{Enum, Field, Struct, Variant},
         Function::{Attributes, Function, FunctionKind, Parameter},
-        Instruction::{CallInfo, EnumCase, FieldId, FieldInfo, InstructionKind},
+        Instruction::{CallInfo, EnumCase, FieldId, FieldInfo, InstructionKind, TransformInfo},
         Program::Program,
         Type::Type,
         Variable::{Variable, VariableName},
@@ -153,7 +153,13 @@ impl ClosureGenerator<'_> {
                 Vec::new(),
             );
             let closureEnvVar = bodyBuilder.createTempValueWithType(location.clone(), structTy);
-            let transform = InstructionKind::Transform(closureEnvVar.clone(), closureArg.clone(), variantIndex as u32);
+            let transform = InstructionKind::Transform(
+                closureEnvVar.clone(),
+                closureArg.clone(),
+                TransformInfo {
+                    variantIndex: variantIndex as u32,
+                },
+            );
             caseBlock.addInstruction(transform, location.clone());
             let mut envVars = Vec::new();
             for (i, ty) in instance.envTypes.iter().enumerate() {

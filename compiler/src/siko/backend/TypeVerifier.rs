@@ -179,7 +179,7 @@ impl<'a> TypeVerifier<'a> {
                 let ty = Type::Tuple(items);
                 self.unify(&ty, &dest.getType());
             }
-            InstructionKind::Transform(dest, src, index) => {
+            InstructionKind::Transform(dest, src, info) => {
                 let mut srcTy = src.getType().clone();
                 let name = srcTy.getName().expect("Transform source type should have a name");
                 let enumDef = self.program.getEnum(&name).expect("Enum should exist");
@@ -191,7 +191,10 @@ impl<'a> TypeVerifier<'a> {
                     isRef = true;
                 }
                 let enumDef = instantiateEnum(&mut self.allocator, &enumDef, &srcTy);
-                let variant = enumDef.variants.get(*index as usize).expect("Variant should exist");
+                let variant = enumDef
+                    .variants
+                    .get(info.variantIndex as usize)
+                    .expect("Variant should exist");
                 let mut ty1 = Type::Tuple(variant.items.clone());
                 //println!("Transform type: {}", ty1);
                 if isRef {

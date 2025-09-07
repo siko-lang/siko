@@ -193,13 +193,15 @@ impl<'a> Builder<'a> {
                     }
                     block.instructions.push(Instruction::IntegerSwitch(root, mirCases));
                 }
-                HirInstructionKind::Transform(dest, root, index) => {
+                HirInstructionKind::Transform(dest, root, info) => {
                     if root.getType().getName().unwrap() == getBoolTypeName() {
                         block.instructions.push(Instruction::Declare(self.buildVariable(dest)));
                     } else {
                         let dest = self.buildVariable(dest);
                         let root = self.buildVariable(root);
-                        block.instructions.push(Instruction::Transform(dest, root, *index));
+                        block
+                            .instructions
+                            .push(Instruction::Transform(dest, root, info.variantIndex));
                     }
                 }
                 HirInstructionKind::FieldRef(dest, root, fields) => {

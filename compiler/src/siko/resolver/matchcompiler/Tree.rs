@@ -68,6 +68,13 @@ impl Node {
         }
     }
 
+    pub fn isLeaf(&self) -> bool {
+        match self {
+            Node::Leaf(_) => true,
+            _ => false,
+        }
+    }
+
     pub fn add(&mut self, compiler: &mut MatchCompiler, matches: &Vec<Match>) {
         match self {
             Node::Tuple(tuple) => tuple.next.add(compiler, matches),

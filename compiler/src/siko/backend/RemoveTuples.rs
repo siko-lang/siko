@@ -200,8 +200,8 @@ impl RemoveTuples for InstructionKind {
             InstructionKind::Converter(dest, source) => {
                 InstructionKind::Converter(dest.removeTuples(ctx), source.removeTuples(ctx))
             }
-            InstructionKind::Transform(dest, root, index) => {
-                InstructionKind::Transform(dest.removeTuples(ctx), root.removeTuples(ctx), *index)
+            InstructionKind::Transform(dest, root, info) => {
+                InstructionKind::Transform(dest.removeTuples(ctx), root.removeTuples(ctx), info.clone())
             }
             InstructionKind::FunctionCall(dest, info) => {
                 InstructionKind::FunctionCall(dest.removeTuples(ctx), info.removeTuples(ctx))

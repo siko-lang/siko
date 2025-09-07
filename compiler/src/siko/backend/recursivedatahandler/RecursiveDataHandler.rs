@@ -81,12 +81,12 @@ fn processFunction(function: &Function, program: &Program) -> Function {
                             _ => {}
                         }
                     }
-                    InstructionKind::Transform(dest, source, index) => {
+                    InstructionKind::Transform(dest, source, info) => {
                         let sourceType = source.getType().unpackRef();
                         let enumName = sourceType.getName().expect("not named type");
                         let e = program.getEnum(&enumName).expect("enum not found");
                         let e = instantiateEnum(&mut allocator, &e, &sourceType);
-                        let variant = &e.variants[*index as usize];
+                        let variant = &e.variants[info.variantIndex as usize];
                         let variantType = Type::Tuple(variant.items.clone());
                         let destType = dest.getType().unpackRef();
                         if destType != variantType {
@@ -97,7 +97,7 @@ fn processFunction(function: &Function, program: &Program) -> Function {
                             } else {
                                 newDest.setType(variantType.clone());
                             }
-                            let newKind = InstructionKind::Transform(newDest, source.clone(), *index);
+                            let newKind = InstructionKind::Transform(newDest, source.clone(), info.clone());
                             builder.replaceInstruction(newKind, instruction.location.clone());
                             transformVars.insert(dest.clone(), variantType);
                         }
