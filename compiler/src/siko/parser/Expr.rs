@@ -414,35 +414,54 @@ impl<'a> ExprParser for Parser<'a> {
                     pattern: SimplePattern::Wildcard,
                     location: self.currentLocation(),
                 };
+                self.expect(TokenKind::Arrow(ArrowKind::Right));
                 pattern
             } else {
                 let guardExpr = self.parseExpr();
                 let pattern = if bodyGiven {
-                    let identifier = Identifier::new("value".to_string(), self.currentLocation());
-                    let extendedGuardExpr = SimpleExpr::BinaryOp(
-                        BinaryOp::Equal,
-                        Box::new(guardExpr),
-                        Box::new(Expr {
-                            expr: SimpleExpr::Value(identifier.clone()),
-                            location: self.currentLocation(),
-                        }),
-                    );
+                    let loc = self.currentLocation();
+                    let identifier = Identifier::new("value".to_string(), loc.clone());
+                    let extendedGuardExpr = if self.check(TokenKind::Arrow(ArrowKind::Right)) {
+                        let extendedGuardExpr = SimpleExpr::MethodCall(
+                            Box::new(guardExpr),
+                            Identifier::new("contains".to_string(), loc.clone()),
+                            vec![Expr {
+                                expr: SimpleExpr::Value(identifier.clone()),
+                                location: loc.clone(),
+                            }],
+                        );
+                        self.expect(TokenKind::Arrow(ArrowKind::Right));
+                        extendedGuardExpr
+                    } else {
+                        self.expect(TokenKind::Arrow(ArrowKind::DoubleRight));
+                        let extendedGuardExpr = SimpleExpr::BinaryOp(
+                            BinaryOp::Equal,
+                            Box::new(guardExpr),
+                            Box::new(Expr {
+                                expr: SimpleExpr::Value(identifier.clone()),
+                                location: loc.clone(),
+                            }),
+                        );
+                        extendedGuardExpr
+                    };
                     let guardExpr = Expr {
                         expr: extendedGuardExpr,
-                        location: self.currentLocation(),
+                        location: loc.clone(),
                     };
-                    Pattern {
+                    let pattern = Pattern {
                         pattern: SimplePattern::Guarded(
                             Box::new(Pattern {
                                 pattern: SimplePattern::Bind(identifier, true),
-                                location: self.currentLocation(),
+                                location: loc.clone(),
                             }),
                             Box::new(guardExpr),
                         ),
-                        location: self.currentLocation(),
-                    }
+                        location: loc.clone(),
+                    };
+
+                    pattern
                 } else {
-                    Pattern {
+                    let pattern = Pattern {
                         pattern: SimplePattern::Guarded(
                             Box::new(Pattern {
                                 pattern: SimplePattern::Bind(
@@ -454,11 +473,12 @@ impl<'a> ExprParser for Parser<'a> {
                             Box::new(guardExpr),
                         ),
                         location: self.currentLocation(),
-                    }
+                    };
+                    self.expect(TokenKind::Arrow(ArrowKind::Right));
+                    pattern
                 };
                 pattern
             };
-            self.expect(TokenKind::Arrow(ArrowKind::Right));
             let body = if self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
                 let block = self.parseBlock();
                 let expr = self.buildExpr(SimpleExpr::Block(block), start.clone());
@@ -690,6 +710,35 @@ impl<'a> ExprParser for Parser<'a> {
             );
         }
         loop {
+            if self.check(TokenKind::Keyword(KeywordKind::In)) {
+                self.expect(TokenKind::Keyword(KeywordKind::In));
+                let item = left;
+                let container = self.parseExpr();
+                let containsCall = Expr {
+                    expr: SimpleExpr::MethodCall(
+                        Box::new(container),
+                        Identifier::new("contains".to_string(), self.currentLocation()),
+                        vec![item],
+                    ),
+                    location: self.currentLocation(),
+                };
+                return self.buildExpr(containsCall.expr, start);
+            }
+            if self.check(TokenKind::Keyword(KeywordKind::Not)) {
+                self.expect(TokenKind::Keyword(KeywordKind::Not));
+                self.expect(TokenKind::Keyword(KeywordKind::In));
+                let item = left;
+                let container = self.parseExpr();
+                let containsCall = Expr {
+                    expr: SimpleExpr::MethodCall(
+                        Box::new(container),
+                        Identifier::new("notContains".to_string(), self.currentLocation()),
+                        vec![item],
+                    ),
+                    location: self.currentLocation(),
+                };
+                return self.buildExpr(containsCall.expr, start);
+            }
             let ops = &self.opTable[index];
             let mut matchingOp = None;
             for op in ops {

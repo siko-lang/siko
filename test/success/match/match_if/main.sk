@@ -2,12 +2,24 @@ module Main {
 
 fn main() {
     let v = match if {
-        ('a'..'c').contains('b') -> 1,
+        ('a'..'c').contains('b') -> 1, // no body given, whole expression is the guard
         _ -> 2,
     };
     assert(v == 1);
     let v = match if 'b' {
-        'b' -> 1,
+        'b' => 1, // double arrow means equality check
+        _ -> 2,
+    };
+    let someStr = "foo";
+    let other = "foo";
+    let v = match if someStr {
+        "notFoo" => 1,
+        other => 2, // equality check against other variable
+        _ -> 3,
+    };
+    assert(v == 2);
+    let v = match if 'b' {
+        'a'..'c' -> 1, // single arrow means contains check
         _ -> 2,
     };
     assert(v == 1);

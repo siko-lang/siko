@@ -66,6 +66,7 @@ pub enum KeywordKind {
     Type,
     Pub,
     Void,
+    Not,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -256,6 +257,7 @@ impl Display for TokenKind {
             TokenKind::Keyword(KeywordKind::With) => write!(f, "with"),
             TokenKind::Keyword(KeywordKind::Then) => write!(f, "then"),
             TokenKind::Keyword(KeywordKind::Void) => write!(f, "void"),
+            TokenKind::Keyword(KeywordKind::Not) => write!(f, "not"),
             TokenKind::Arrow(ArrowKind::DoubleLeft) => write!(f, "<="),
             TokenKind::Arrow(ArrowKind::DoubleRight) => write!(f, "=>"),
             TokenKind::Arrow(ArrowKind::Left) => write!(f, "<-"),

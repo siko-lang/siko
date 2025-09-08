@@ -1,5 +1,7 @@
 module Range {
 
+import Std.Ops
+
 pub struct Range[T] {
     start: T,
     end: T
@@ -8,7 +10,7 @@ pub struct Range[T] {
         Range(start, end)
     }
 
-    pub fn contains[T: Ord[T]](&self, value: T) -> Bool {
+    pub fn contains[T: Ord[T]](&self, value: &T) -> Bool {
         value >= self.start and value < self.end
     }
 
@@ -63,6 +65,12 @@ pub instance Step[Int] {
 pub instance Step[U64] {
     fn step(&self) -> U64 {
         self.clone() + 1.toU64()
+    }
+}
+
+pub instance[T: Ord[T]] RangeContain Contain[Range[T], T] {
+    fn contains(&self, item: &T) -> Bool {
+        self.contains(item)
     }
 }
 

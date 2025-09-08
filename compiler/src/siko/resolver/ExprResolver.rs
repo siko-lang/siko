@@ -500,7 +500,7 @@ impl<'a> ExprResolver<'a> {
             SimpleExpr::UnaryOp(op, rhs) => {
                 let rhsId = self.resolveExpr(rhs, env);
                 let name = match op {
-                    UnaryOp::Not => createOpName("Not", "not"),
+                    UnaryOp::Not => createOpName("Not", "opNot"),
                     UnaryOp::Neg => createOpName("Neg", "negative"),
                     UnaryOp::Deref => {
                         let resVar = self.bodyBuilder.createTempValue(expr.location.clone());
