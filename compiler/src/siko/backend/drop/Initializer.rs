@@ -1,10 +1,7 @@
 use crate::siko::{
     backend::drop::{
-        DeclarationStore::DeclarationStore,
-        DropMetadataStore::{DropMetadataStore, MetadataKind},
-        ReferenceStore::ReferenceStore,
-        Usage::getUsageInfo,
-        Util::HasTrivialDrop,
+        DeclarationStore::DeclarationStore, DropMetadataStore::DropMetadataStore, ReferenceStore::ReferenceStore,
+        Usage::getUsageInfo, Util::HasTrivialDrop,
     },
     hir::{
         BlockBuilder::BlockBuilder,
@@ -53,8 +50,7 @@ impl<'a> Initializer<'a> {
         }
         self.declarationStore.declare(var.clone(), syntaxBlock.clone());
         self.dropMetadataStore.addVariable(var.name(), var.getType().clone());
-        let kind = MetadataKind::DeclarationList(var.name());
-        builder.addInstruction(InstructionKind::DropMetadata(kind), var.location().clone());
+        builder.addInstruction(InstructionKind::DropMetadata(var.name()), var.location().clone());
         builder.step();
     }
 

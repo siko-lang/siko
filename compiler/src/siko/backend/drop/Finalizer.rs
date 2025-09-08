@@ -3,7 +3,7 @@ use std::collections::{BTreeSet, VecDeque};
 use crate::siko::{
     backend::drop::{
         DeclarationStore::DeclarationStore,
-        DropMetadataStore::{DropMetadataStore, MetadataKind},
+        DropMetadataStore::DropMetadataStore,
         Path::{Path, PathSegment, SimplePath},
         ReferenceStore::ReferenceStore,
         Usage::getUsageInfo,
@@ -73,7 +73,7 @@ impl<'a> Finalizer<'a> {
 
         self.dropMetadataStore.expandPathLists(self.program);
 
-        // println!("Drop initializer processing function: {}", self.function.name);
+        //println!("Drop finalizer processing function: {}", self.function.name);
         // println!("{}\n", self.function);
 
         let allBlocksIds = self.bodyBuilder.getAllBlockIds();
@@ -87,25 +87,21 @@ impl<'a> Finalizer<'a> {
                             InstructionKind::DropPath(_) => {
                                 panic!("drop path found in first pass of finalizer")
                             }
-                            InstructionKind::DropMetadata(kind) => {
-                                match kind {
-                                    MetadataKind::DeclarationList(name) => {
-                                        if let Some(declarationList) = self.dropMetadataStore.getPathList(name) {
-                                            //println!("Processing DeclarationList: {}", name);
-                                            for path in declarationList.paths() {
-                                                //println!("Creating dropflag for path: {}", path);
-                                                let dropFlag = path.getDropFlag();
-                                                self.declaredDropFlags.insert(dropFlag.clone());
-                                                builder.addInstruction(
-                                                    InstructionKind::FunctionCall(
-                                                        dropFlag,
-                                                        CallInfo::new(getFalseName(), vec![]),
-                                                    ),
-                                                    instruction.location.clone(),
-                                                );
-                                                builder.step();
-                                            }
-                                        }
+                            InstructionKind::DropMetadata(name) => {
+                                if let Some(declarationList) = self.dropMetadataStore.getPathList(name) {
+                                    //println!("Processing DeclarationList: {}", name);
+                                    for path in declarationList.paths() {
+                                        //println!("Creating dropflag for path: {}", path);
+                                        let dropFlag = path.getDropFlag();
+                                        self.declaredDropFlags.insert(dropFlag.clone());
+                                        builder.addInstruction(
+                                            InstructionKind::FunctionCall(
+                                                dropFlag,
+                                                CallInfo::new(getFalseName(), vec![]),
+                                            ),
+                                            instruction.location.clone(),
+                                        );
+                                        builder.step();
                                     }
                                 }
                                 builder.removeInstruction();
@@ -113,7 +109,9 @@ impl<'a> Finalizer<'a> {
                             InstructionKind::BlockEnd(id) => {
                                 //println!("block end: {}", id);
                                 if let Some(droppedValues) = self.declarationStore.getDeclarations(&id) {
-                                    for var in droppedValues {
+                                    //println!(" {} drops {:?}", id, droppedValues);
+                                    for var in droppedValues.iter().rev() {
+                                        //println!("Generating drops for value {} in blockend", var);
                                         // println!("Generating drops for value {}", var);
                                         let rootPath = var.toPath().toSimplePath();
                                         let pathList = self.dropMetadataStore.getPathList(&var.name());

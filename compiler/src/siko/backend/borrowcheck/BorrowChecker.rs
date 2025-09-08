@@ -47,6 +47,7 @@ pub struct BorrowChecker<'a> {
     profileBuilder: FunctionProfileBuilder<'a>,
     blockEnvs: BTreeMap<BlockId, Environment>,
     links: BTreeMap<Type, Type>,
+    traceEnabled: bool,
 }
 
 impl<'a> BorrowChecker<'a> {
@@ -64,6 +65,7 @@ impl<'a> BorrowChecker<'a> {
             profileBuilder: FunctionProfileBuilder::new(f, program, dataGroups, profileStore, functionGroup),
             blockEnvs: BTreeMap::new(),
             links: BTreeMap::new(),
+            traceEnabled: false,
         }
     }
 
@@ -71,14 +73,18 @@ impl<'a> BorrowChecker<'a> {
         if self.profileBuilder.f.body.is_none() {
             return;
         }
-        //println!("Borrow checking function: {}", self.profileBuilder.f.name);
-        //println!("Function profile {}", self.profileBuilder.f);
+        if self.traceEnabled {
+            println!("Borrow checking function: {}", self.profileBuilder.f.name);
+            println!("Function profile {}", self.profileBuilder.f);
+        }
         self.profileBuilder.process(false);
-        //println!("{:?}", self.profileBuilder.profile.links);
-        // TODO: handle links
-        // for link in &self.profileBuilder.profile.links {
-        //     self.links.insert(link.from.clone(), link.to.clone());
-        // }
+        if self.traceEnabled {
+            println!("{:?}", self.profileBuilder.profile.links);
+            // TODO: handle links
+        }
+        for link in &self.profileBuilder.profile.links {
+            self.links.insert(link.from.clone(), link.to.clone());
+        }
         self.processBlock(BlockId::first());
     }
 
@@ -101,12 +107,16 @@ impl<'a> BorrowChecker<'a> {
                 let varType = self.profileBuilder.getFinalVarType(&v);
                 varTypes.push((v.name(), varType));
             }
-            //println!("   Instr: {} {:?}", i, varTypes);
+            if self.traceEnabled {
+                println!("   Instr: {} {:?}", i, varTypes);
+            }
             match &i.kind {
                 InstructionKind::Ref(dest, arg) => {
                     let _argType = self.profileBuilder.getFinalVarType(arg);
                     let destType = self.profileBuilder.getFinalVarType(dest);
-                    //println!("    Ref: {} -> {}", _argType, destType);
+                    if self.traceEnabled {
+                        println!("    Ref: {} -> {}", _argType, destType);
+                    }
                     let refTyVar = destType.vars.first().expect("ref type must have a var");
                     self.borrowPath(varToPath(arg), refTyVar, arg.location().clone());
                 }
@@ -177,7 +187,9 @@ impl<'a> BorrowChecker<'a> {
             .borrows
             .entry(refTyVar.clone())
             .or_insert_with(|| BorrowSet { paths: BTreeMap::new() });
-        //println!("    {} borrows: {}", refTyVar, path);
+        if self.traceEnabled {
+            println!("    {} borrows: {}", refTyVar, path);
+        }
         borrows.paths.insert(path, BorrowInfo { location });
     }
 
@@ -185,7 +197,9 @@ impl<'a> BorrowChecker<'a> {
         let varType = self.profileBuilder.getFinalVarType(&usedVar);
         if varType.ty.isNamed() {
             // this is a struct or enum and it is being moved, mark its paths as dead
-            //println!("    Moving var: {} of type {} {}", usedVar, varType, usedVar.location());
+            if self.traceEnabled {
+                println!("    Moving named var: {} of type {}", usedVar, varType);
+            }
             env.markPathDead(varToPath(&usedVar), usedVar.location().clone());
         }
         varType

@@ -1,7 +1,6 @@
 use std::{
     cell::RefCell,
     collections::{BTreeMap, BTreeSet},
-    fmt::Display,
     rc::Rc,
 };
 
@@ -45,21 +44,6 @@ impl DropList {
         match &self.kind {
             Kind::VariableAssign(path) => path.clone(),
             Kind::FieldAssign(path) => path.clone(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum MetadataKind {
-    DeclarationList(VariableName),
-}
-
-impl Display for MetadataKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            MetadataKind::DeclarationList(name) => {
-                write!(f, "DeclarationList({})", name)
-            }
         }
     }
 }

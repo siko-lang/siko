@@ -1,11 +1,11 @@
 use std::fmt::Debug;
 use std::fmt::Display;
 
-use crate::siko::backend::drop::DropMetadataStore::MetadataKind;
 use crate::siko::backend::drop::Path::Path;
 use crate::siko::hir::Block::BlockId;
 use crate::siko::hir::Type::formatTypes;
 use crate::siko::hir::Variable::CopyMap;
+use crate::siko::hir::Variable::VariableName;
 use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
 
 use super::Type::Type;
@@ -451,7 +451,7 @@ pub enum InstructionKind {
     Ref(Variable, Variable),
     PtrOf(Variable, Variable),
     DropPath(Path),
-    DropMetadata(MetadataKind),
+    DropMetadata(VariableName),
     Drop(Variable, Variable),
     Jump(Variable, BlockId),
     Assign(Variable, Variable),

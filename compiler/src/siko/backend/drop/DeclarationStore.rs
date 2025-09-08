@@ -9,7 +9,7 @@ pub struct DeclarationStore {
     vars: BTreeMap<VariableName, Variable>,
     pub explicitDeclarations: BTreeSet<VariableName>,
     declarations: BTreeMap<VariableName, SyntaxBlockId>,
-    blockDeclarations: BTreeMap<SyntaxBlockId, BTreeSet<VariableName>>,
+    blockDeclarations: BTreeMap<SyntaxBlockId, Vec<VariableName>>,
 }
 
 impl DeclarationStore {
@@ -29,12 +29,12 @@ impl DeclarationStore {
         self.declarations.insert(var.name(), syntaxBlockId.clone());
         self.blockDeclarations
             .entry(syntaxBlockId)
-            .or_insert_with(BTreeSet::new)
-            .insert(var.name());
+            .or_insert_with(Vec::new)
+            .push(var.name());
         self.vars.insert(var.name(), var);
     }
 
-    pub fn getDeclarations(&self, syntaxBlockId: &SyntaxBlockId) -> Option<BTreeSet<Variable>> {
+    pub fn getDeclarations(&self, syntaxBlockId: &SyntaxBlockId) -> Option<Vec<Variable>> {
         self.blockDeclarations
             .get(syntaxBlockId)
             .map(|names| names.iter().filter_map(|name| self.vars.get(name).cloned()).collect())
