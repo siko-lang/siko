@@ -238,7 +238,20 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse(&mut self) {
-        let content = std::fs::read_to_string(&self.fileName).unwrap();
+        let content = match std::fs::read_to_string(&self.fileName) {
+            Ok(c) => c,
+            Err(e) => match e.kind() {
+                std::io::ErrorKind::NotFound => {
+                    error(format!("File not found: {}", self.fileName));
+                }
+                std::io::ErrorKind::PermissionDenied => {
+                    error(format!("Permission denied to read file: {}", self.fileName));
+                }
+                _ => {
+                    error(format!("Could not read file {}: {}", self.fileName, e));
+                }
+            },
+        };
         let mut lexer = Lexer::new(content.chars().collect(), self.fileId.clone(), Position::new());
         let (tokens, errors) = lexer.lex(true);
         //println!("Tokens {:?}", tokens);

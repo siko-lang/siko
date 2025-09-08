@@ -17,6 +17,11 @@ use crate::{
     stage,
 };
 
+fn fatalError(message: &str) -> ! {
+    eprintln!("Fatal error: {}", message);
+    std::process::exit(1);
+}
+
 pub struct Compiler {
     config: Config,
 }
@@ -29,7 +34,21 @@ impl Compiler {
     fn collectFiles(&self, input: &Path) -> Vec<String> {
         let mut allFiles = Vec::new();
         if input.is_dir() {
-            for entry in fs::read_dir(input).expect("Failed to read directory") {
+            let read_dir = match fs::read_dir(input) {
+                Ok(rd) => rd,
+                Err(err) => match err.kind() {
+                    std::io::ErrorKind::NotFound => {
+                        fatalError(&format!("directory {} not found", input.display()));
+                    }
+                    std::io::ErrorKind::PermissionDenied => {
+                        fatalError(&format!("Permission denied to read directory {}", input.display()));
+                    }
+                    _ => {
+                        fatalError(&format!("Failed to read directory {}: {}", input.display(), err));
+                    }
+                },
+            };
+            for entry in read_dir {
                 let entry = entry.expect("Failed to read entry");
                 let path = entry.path();
 
