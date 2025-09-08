@@ -123,6 +123,30 @@ impl Debug for VariableInfo {
 pub enum VariableKind {
     Definition,
     Usage,
+    Drop,
+}
+
+impl VariableKind {
+    pub fn isDefinition(&self) -> bool {
+        match self {
+            VariableKind::Definition => true,
+            _ => false,
+        }
+    }
+
+    pub fn isUsage(&self) -> bool {
+        match self {
+            VariableKind::Usage => true,
+            _ => false,
+        }
+    }
+
+    pub fn isDrop(&self) -> bool {
+        match self {
+            VariableKind::Drop => true,
+            _ => false,
+        }
+    }
 }
 
 impl Display for VariableKind {
@@ -130,6 +154,7 @@ impl Display for VariableKind {
         match self {
             VariableKind::Definition => write!(f, "d"),
             VariableKind::Usage => write!(f, "u"),
+            VariableKind::Drop => write!(f, "drop"),
         }
     }
 }
@@ -288,7 +313,18 @@ impl Variable {
 
     pub fn useVar(&self) -> Variable {
         Variable {
-            kind: VariableKind::Usage,
+            kind: match self.kind.clone() {
+                VariableKind::Definition => VariableKind::Usage,
+                kind => kind,
+            },
+            info: self.info.clone(),
+            location: self.location.clone(),
+        }
+    }
+
+    pub fn useVarAsDrop(&self) -> Variable {
+        Variable {
+            kind: VariableKind::Drop,
             info: self.info.clone(),
             location: self.location.clone(),
         }
@@ -296,6 +332,10 @@ impl Variable {
 
     pub fn info(&self) -> Rc<RefCell<VariableInfo>> {
         self.info.clone()
+    }
+
+    pub fn kind(&self) -> VariableKind {
+        self.kind.clone()
     }
 }
 

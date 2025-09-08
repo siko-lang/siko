@@ -143,13 +143,22 @@ impl<'a> BorrowChecker<'a> {
                                     if env.isPathDead(&path) {
                                         let deathInfo =
                                             env.getDeathInfo(&path).expect("dead path must have death info");
-                                        BorrowCheckerError::UseAfterMove(
-                                            path.to_string(),
-                                            usedVar.location(),
-                                            deathInfo.location,
-                                            info.location.clone(),
-                                        )
-                                        .report(self.ctx);
+                                        if deathInfo.isDrop {
+                                            BorrowCheckerError::UseAfterDrop(
+                                                path.to_string(),
+                                                usedVar.location(),
+                                                info.location.clone(),
+                                            )
+                                            .report(self.ctx);
+                                        } else {
+                                            BorrowCheckerError::UseAfterMove(
+                                                path.to_string(),
+                                                usedVar.location(),
+                                                deathInfo.location,
+                                                info.location.clone(),
+                                            )
+                                            .report(self.ctx);
+                                        }
                                     }
                                 }
                             }
@@ -200,7 +209,7 @@ impl<'a> BorrowChecker<'a> {
             if self.traceEnabled {
                 println!("    Moving named var: {} of type {}", usedVar, varType);
             }
-            env.markPathDead(varToPath(&usedVar), usedVar.location().clone());
+            env.markPathDead(varToPath(&usedVar), usedVar.location().clone(), usedVar.kind().isDrop());
         }
         varType
     }
@@ -213,6 +222,7 @@ fn varToPath(v: &Variable) -> Path {
 #[derive(Clone)]
 pub struct DeathInfo {
     pub location: Location,
+    pub isDrop: bool,
 }
 
 #[derive(Clone)]
@@ -221,9 +231,9 @@ struct Environment {
 }
 
 impl Environment {
-    fn markPathDead(&self, path: Path, location: Location) {
+    fn markPathDead(&self, path: Path, location: Location, isDrop: bool) {
         //println!("    Marking path dead: {}", path);
-        self.deadPaths.borrow_mut().insert(path, DeathInfo { location });
+        self.deadPaths.borrow_mut().insert(path, DeathInfo { location, isDrop });
     }
 
     fn revivePath(&self, path: &Path) {
@@ -242,6 +252,7 @@ impl Environment {
 
 enum BorrowCheckerError {
     UseAfterMove(String, Location, Location, Location),
+    UseAfterDrop(String, Location, Location),
 }
 
 impl BorrowCheckerError {
@@ -261,6 +272,24 @@ impl BorrowCheckerError {
                 entries.push(Entry::new(
                     Some("NOTE: Value moved here".to_string()),
                     moveLocation.clone(),
+                ));
+                entries.push(Entry::new(
+                    Some("NOTE: Value borrowed here".to_string()),
+                    borrowLocation.clone(),
+                ));
+                let r = Report::build(ctx, slogan, entries);
+                r.print();
+            }
+            BorrowCheckerError::UseAfterDrop(path, useLocation, borrowLocation) => {
+                let slogan = format!(
+                    "Trying to use borrow of {} but {} is already dropped at this point",
+                    ctx.yellow(&path.to_string()),
+                    ctx.yellow(&path.to_string())
+                );
+                let mut entries = Vec::new();
+                entries.push(Entry::new(
+                    Some("NOTE: Value used here".to_string()),
+                    useLocation.clone(),
                 ));
                 entries.push(Entry::new(
                     Some("NOTE: Value borrowed here".to_string()),

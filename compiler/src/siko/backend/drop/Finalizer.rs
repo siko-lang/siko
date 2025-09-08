@@ -266,14 +266,15 @@ impl<'a> Finalizer<'a> {
                                 let dropVar = self
                                     .bodyBuilder
                                     .createTempValueWithType(instruction.location.clone(), dropVarTy.unwrap());
-                                let fieldAcess = InstructionKind::FieldRef(dropVar.clone(), path.root.clone(), fields);
+                                let fieldAcess =
+                                    InstructionKind::FieldRef(dropVar.useVarAsDrop(), path.root.clone(), fields);
                                 dropBlock.addInstruction(fieldAcess, instruction.location.clone());
                                 dropVar
                             };
                             let dropRes = self
                                 .bodyBuilder
                                 .createTempValueWithType(instruction.location.clone(), Type::getUnitType());
-                            let dropInstruction = InstructionKind::Drop(dropRes, dropVar);
+                            let dropInstruction = InstructionKind::Drop(dropRes, dropVar.useVarAsDrop());
                             dropBlock.addInstruction(dropInstruction, instruction.location.clone());
                             // when dropping a path we need to disable the drop flag for all sub-paths
                             self.disablePath(&path, &mut dropBlock.iterator());
