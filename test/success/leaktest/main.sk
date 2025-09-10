@@ -1,0 +1,56 @@
+module LeakTestAllocator {
+
+import Allocator
+import NativePtr
+import Libc
+
+pub implicit mut allocCount: U64
+pub implicit mut deallocCount: U64
+
+pub fn leakTestAllocate(size: U64) -> void* {
+    println("Allocating ${size} bytes");
+    let mut c = allocCount;
+    c += 1.toU64();
+    allocCount = c;
+    Libc.malloc(size)
+}
+
+pub fn leakTestDeallocate(ptr: void*) {
+    println("Deallocating");
+    let mut c = deallocCount;
+    c += 1.toU64();
+    deallocCount = c;
+    Libc.free(ptr);
+}
+
+}
+
+module Main {
+
+import Allocator
+import NativePtr
+import LeakTestAllocator
+
+fn main() {
+    let mut allocCount: U64 = 0.toU64();
+    let mut deallocCount: U64 = 0.toU64();
+    with LeakTestAllocator.allocCount = allocCount,
+         LeakTestAllocator.deallocCount = deallocCount,
+         Allocator.allocate = LeakTestAllocator.leakTestAllocate,
+         Allocator.deallocate = LeakTestAllocator.leakTestDeallocate, {
+        let p: *Int = NativePtr.allocate();
+        NativePtr.deallocate(p);
+    }
+    assert(allocCount == 1.toU64());
+    assert(deallocCount == 1.toU64());
+    // with LeakTestAllocator.allocCount = allocCount,
+    //      LeakTestAllocator.deallocCount = deallocCount {
+    //     with Allocator.allocate = LeakTestAllocator.leakTestAllocate,
+    //         Allocator.deallocate = LeakTestAllocator.leakTestDeallocate {
+    //         let p: *Int = NativePtr.allocate();
+    //         NativePtr.deallocate(p);
+    //     }
+    // }
+}
+
+}

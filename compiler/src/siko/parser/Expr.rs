@@ -542,7 +542,7 @@ impl<'a> ExprParser for Parser<'a> {
         while !self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
             let method = self.parseQualifiedVarName();
             self.expect(TokenKind::Misc(MiscKind::Equal));
-            let handler = self.parseVarIdentifier();
+            let handler = self.parseQualifiedVarName();
             contexts.push(ContextHandler { name: method, handler });
             if self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
                 break;

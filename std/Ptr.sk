@@ -1,6 +1,7 @@
 module NativePtr {
 
 import Libc
+import Allocator
 
 pub fn eq[T](a: *T, b: *T) -> Bool {
     toU64(a) == toU64(b)
@@ -16,7 +17,7 @@ pub fn isNull[T](addr: *T) -> Bool {
 
 pub fn allocateArray[T](count: U64) -> *T {
     let p: *T = null();
-    Libc.malloc(count * sizeOf(p))
+    Allocator.allocate(count * sizeOf(p))
 }
 
 pub fn allocate[T]() -> *T {
@@ -24,7 +25,7 @@ pub fn allocate[T]() -> *T {
 }
 
 pub fn deallocate[T](addr: *T) {
-    Libc.free(addr);
+    Allocator.deallocate(addr);
 }
 
 pub fn sizeOf[T](addr: *T) -> U64 = extern

@@ -11,19 +11,41 @@ use crate::siko::{
     qualifiedname::QualifiedName,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug)]
 pub struct EffectHandler {
     pub name: QualifiedName,
     pub used: Rc<RefCell<bool>>,
     pub location: Location,
+    pub resolution: HandlerResolution,
+}
+
+impl PartialEq for EffectHandler {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
+}
+
+impl Eq for EffectHandler {}
+
+impl PartialOrd for EffectHandler {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for EffectHandler {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.name.cmp(&other.name)
+    }
 }
 
 impl EffectHandler {
-    pub fn new(name: QualifiedName, location: Location) -> Self {
+    pub fn new(name: QualifiedName, location: Location, resolution: HandlerResolution) -> Self {
         EffectHandler {
             name,
             used: Rc::new(RefCell::new(false)),
             location,
+            resolution,
         }
     }
 
@@ -83,8 +105,14 @@ impl HandlerResolution {
         self.implicits.is_empty()
     }
 
-    pub fn addEffectHandler(&mut self, effect: QualifiedName, resolution: QualifiedName, location: Location) {
-        let mut handler = EffectHandler::new(resolution, location);
+    pub fn addEffectHandler(
+        &mut self,
+        effect: QualifiedName,
+        resolvedName: QualifiedName,
+        location: Location,
+        resolution: HandlerResolution,
+    ) {
+        let mut handler = EffectHandler::new(resolvedName, location, resolution);
         if let Some(prev) = self.handlers.get(&effect) {
             // The handler shadows the prev handler so we clone its used flag
             // if this new handler is used, prev will be marked as used as well

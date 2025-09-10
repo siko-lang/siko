@@ -47,8 +47,8 @@ impl<'a, 'b> ImplicitContextBuilder<'a, 'b> {
 
         let mut function = function.clone();
 
-        // println!("Processing implicit context for function: {}", function.name);
-        // println!("Processing implicit context for function: {}", function);
+        //println!("Processing implicit context for function: {}", function.name);
+        //println!("Processing implicit context for function: {}", function);
         let mut builder = bodyBuilder.iterator(BlockId::first());
         let mut addInitialContext = true;
         if let (_, Some(context)) = function.name.getUnmonomorphized() {
@@ -94,10 +94,10 @@ impl<'a, 'b> ImplicitContextBuilder<'a, 'b> {
                                 instruction.location.clone(),
                                 Type::Tuple(info.contextTypes.clone()),
                             );
-                            // println!(
-                            //     "Pushing context variable {} to context map with {}",
-                            //     contextVar, info.syntaxBlockId
-                            // );
+                            //println!(
+                            //    "Pushing context variable {} to context map with {}",
+                            //    contextVar, info.syntaxBlockId
+                            //);
                             contextVarMap.insert(info.syntaxBlockId.clone(), contextVar.clone());
                         }
                         _ => {}
@@ -236,6 +236,10 @@ impl<'a, 'b> ImplicitContextBuilder<'a, 'b> {
                                 };
                                 let mut args = info.args.clone();
                                 args.insert(0, contextVar);
+                                //println!(
+                                //    "Patching function call '{}' to include implicit context, new args: {:?} in syntax block {}",
+                                //    info.name, args, ctx.contextSyntaxBlockId
+                                //);
                                 let kind =
                                     InstructionKind::FunctionCall(dest.clone(), CallInfo::new(info.name.clone(), args));
                                 builder.replaceInstruction(kind, instruction.location.clone());

@@ -1,5 +1,3 @@
-use core::panic;
-
 use crate::siko::{
     hir::{
         Apply::Apply,
@@ -91,15 +89,17 @@ pub fn processInstruction(
                 FunctionKind::EffectMemberDefinition(_) => {
                     let (handlerResolution, contextSyntaxBlockId) = handlerResolutionStore.get(syntaxBlockId);
                     let resolvedName = handlerResolution.getEffectHandler(&info.name);
-                    let f = if let Some(handler) = resolvedName {
+                    let (f, handlerResolution) = if let Some(handler) = resolvedName {
                         handler.markUsed();
-                        mono.program
+                        let name = mono
+                            .program
                             .getFunction(&handler.name)
-                            .expect("effect resolved function not found in mono")
+                            .expect("effect resolved function not found in mono");
+                        (name, handler.resolution.clone())
                     } else {
-                        target_fn
+                        (target_fn, handlerResolution.clone())
                     };
-                    (f, handlerResolution.clone(), contextSyntaxBlockId)
+                    (f, handlerResolution, contextSyntaxBlockId)
                 }
                 FunctionKind::TraitMemberDecl(_) | FunctionKind::TraitMemberDefinition(_) => {
                     let (handlerResolution, contextSyntaxBlockId) = handlerResolutionStore.get(syntaxBlockId);
@@ -403,6 +403,7 @@ pub fn processInstructionKind(
                             handler.method.clone(),
                             handler.handler.clone(),
                             handler.location.clone(),
+                            handlerResolution.clone(),
                         );
                     }
                     WithContext::Implicit(h) => {
