@@ -1,14 +1,14 @@
 compiler/target/release/siko: $(shell find compiler/src/ -type f)
-	@cd compiler && cargo build --release
+	@cargo build --release
 
 simple: compiler/target/release/siko
 	@./siko test.sk
 
 fmt:
-	@cd compiler && cargo fmt
+	@cargo fmt
 
 clean:
-	@cd compiler && cargo clean
+	@cargo clean
 
 teststd: compiler/target/release/siko
 	@./siko run test.sk std/*
