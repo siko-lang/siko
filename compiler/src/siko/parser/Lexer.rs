@@ -59,10 +59,6 @@ impl Lexer {
         }
     }
 
-    fn isDone(self) -> bool {
-        self.index >= self.content.len()
-    }
-
     fn peek(&self) -> Option<char> {
         if self.index < self.content.len() {
             Some(self.content[self.index])
