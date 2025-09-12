@@ -167,6 +167,12 @@ impl HandlerResolution {
         }
         contextTypes
     }
+
+    pub fn merge(&mut self, other: &HandlerResolution) {
+        for (k, v) in &other.implicits {
+            self.implicits.insert(k.clone(), v.clone());
+        }
+    }
 }
 
 impl Display for HandlerResolution {

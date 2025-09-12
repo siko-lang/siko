@@ -35,22 +35,15 @@ fn main() {
     let mut allocCount: U64 = 0.toU64();
     let mut deallocCount: U64 = 0.toU64();
     with LeakTestAllocator.allocCount = allocCount,
-         LeakTestAllocator.deallocCount = deallocCount,
-         Allocator.allocate = LeakTestAllocator.leakTestAllocate,
-         Allocator.deallocate = LeakTestAllocator.leakTestDeallocate, {
-        let p: *Int = NativePtr.allocate();
-        NativePtr.deallocate(p);
+         LeakTestAllocator.deallocCount = deallocCount {
+        with Allocator.allocate = LeakTestAllocator.leakTestAllocate,
+            Allocator.deallocate = LeakTestAllocator.leakTestDeallocate {
+            let p: *Int = NativePtr.allocate();
+            NativePtr.deallocate(p);
+        }
     }
     assert(allocCount == 1.toU64());
     assert(deallocCount == 1.toU64());
-    // with LeakTestAllocator.allocCount = allocCount,
-    //      LeakTestAllocator.deallocCount = deallocCount {
-    //     with Allocator.allocate = LeakTestAllocator.leakTestAllocate,
-    //         Allocator.deallocate = LeakTestAllocator.leakTestDeallocate {
-    //         let p: *Int = NativePtr.allocate();
-    //         NativePtr.deallocate(p);
-    //     }
-    // }
 }
 
 }

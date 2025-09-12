@@ -87,17 +87,19 @@ pub fn processInstruction(
                     (f, handlerResolution.clone(), contextSyntaxBlockId)
                 }
                 FunctionKind::EffectMemberDefinition(_) => {
-                    let (handlerResolution, contextSyntaxBlockId) = handlerResolutionStore.get(syntaxBlockId);
-                    let resolvedName = handlerResolution.getEffectHandler(&info.name);
+                    let (originalHandleResolution, contextSyntaxBlockId) = handlerResolutionStore.get(syntaxBlockId);
+                    let resolvedName = originalHandleResolution.getEffectHandler(&info.name);
                     let (f, handlerResolution) = if let Some(handler) = resolvedName {
                         handler.markUsed();
                         let name = mono
                             .program
                             .getFunction(&handler.name)
                             .expect("effect resolved function not found in mono");
-                        (name, handler.resolution.clone())
+                        let mut resolution = handler.resolution.clone();
+                        resolution.merge(&originalHandleResolution);
+                        (name, resolution)
                     } else {
-                        (target_fn, handlerResolution.clone())
+                        (target_fn, originalHandleResolution.clone())
                     };
                     (f, handlerResolution, contextSyntaxBlockId)
                 }
@@ -389,8 +391,8 @@ pub fn processInstructionKind(
         InstructionKind::With(v, mut info) => {
             let (handlerResolution, parentSyntaxBlockId) = handlerResolutionStore.get(syntaxBlockId);
             info.parentSyntaxBlockId = parentSyntaxBlockId;
+            let originalHandlerResolution = handlerResolution.clone();
             let mut handlerResolution = handlerResolution.clone();
-            let mut addedImplicit = false;
             let mut operations = Vec::new();
             let originalContextTypes = handlerResolution.getContextTypes(mono);
             for (index, _) in originalContextTypes.iter().enumerate() {
@@ -403,11 +405,10 @@ pub fn processInstructionKind(
                             handler.method.clone(),
                             handler.handler.clone(),
                             handler.location.clone(),
-                            handlerResolution.clone(),
+                            originalHandlerResolution.clone(),
                         );
                     }
                     WithContext::Implicit(h) => {
-                        addedImplicit = true;
                         let op =
                             handlerResolution.addImplicitHandler(h.implicit.clone(), h.location.clone(), h.var.clone());
                         match op {
@@ -424,14 +425,12 @@ pub fn processInstructionKind(
                     }
                 }
             }
-            if addedImplicit {
-                let contextTypes = handlerResolution.getContextTypes(mono);
-                // println!("Context types: {}", formatTypes(&contextTypes));
-                // println!("Context type: {}", ty);
-                // println!("Context operations: {:?}", operations);
-                info.contextTypes = contextTypes;
-                info.operations = operations;
-            }
+            let contextTypes = handlerResolution.getContextTypes(mono);
+            // println!("Context types: {}", formatTypes(&contextTypes));
+            // println!("Context type: {}", ty);
+            // println!("Context operations: {:?}", operations);
+            info.contextTypes = contextTypes;
+            info.operations = operations;
             handlerResolutionStore.insert(info.syntaxBlockId.clone(), handlerResolution);
             InstructionKind::With(v, info)
         }
