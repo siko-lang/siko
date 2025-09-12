@@ -142,6 +142,7 @@ impl<'a> Monomorphizer<'a> {
                 );
                 let r = Report::new(self.ctx, slogan, None);
                 r.print();
+                std::process::exit(1);
             }
         }
     }

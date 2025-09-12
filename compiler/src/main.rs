@@ -2,6 +2,7 @@
 #![allow(dead_code)]
 
 mod Compiler;
+mod PackageFinder;
 mod siko;
 
 fn main() {

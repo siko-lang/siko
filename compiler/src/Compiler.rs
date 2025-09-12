@@ -1,4 +1,4 @@
-use std::{env::args, fs, path::Path, process::Command};
+use std::{env::args, fs, process::Command};
 
 use crate::{
     siko::{
@@ -15,6 +15,7 @@ use crate::{
         },
     },
     stage,
+    PackageFinder::PackageFinder,
 };
 
 fn fatalError(message: &str) -> ! {
@@ -31,41 +32,6 @@ impl Compiler {
         Compiler { config: Config::new() }
     }
 
-    fn collectFiles(&self, input: &Path) -> Vec<String> {
-        let mut allFiles = Vec::new();
-        if input.is_dir() {
-            let read_dir = match fs::read_dir(input) {
-                Ok(rd) => rd,
-                Err(err) => match err.kind() {
-                    std::io::ErrorKind::NotFound => {
-                        fatalError(&format!("directory {} not found", input.display()));
-                    }
-                    std::io::ErrorKind::PermissionDenied => {
-                        fatalError(&format!("Permission denied to read directory {}", input.display()));
-                    }
-                    _ => {
-                        fatalError(&format!("Failed to read directory {}: {}", input.display(), err));
-                    }
-                },
-            };
-            for entry in read_dir {
-                let entry = entry.expect("Failed to read entry");
-                let path = entry.path();
-
-                if path.is_dir() {
-                    allFiles.extend(self.collectFiles(&path));
-                } else if let Some(extension) = path.extension() {
-                    if extension == "sk" {
-                        allFiles.push(format!("{}", path.display()));
-                    }
-                }
-            }
-        } else {
-            allFiles.push(format!("{}", input.display()));
-        }
-        allFiles
-    }
-
     fn parse<'a>(
         &self,
         runner: &mut Runner,
@@ -75,18 +41,18 @@ impl Compiler {
     ) -> Resolver<'a> {
         let resolver = stage!(runner, "Parsing", {
             let mut resolver = Resolver::new(&ctx);
-            let mut allFiles = Vec::new();
-            for inputFile in &config.inputFiles {
-                let files = self.collectFiles(Path::new(&inputFile));
-                allFiles.extend(files);
-            }
-            for f in allFiles {
-                let fileId = fileManager.add(f.clone());
-                let mut parser = Parser::new(&ctx, fileId, f.to_string());
-                parser.parse();
-                let modules = parser.modules();
-                for m in modules {
-                    resolver.addModule(m);
+            let mut packageFinder = PackageFinder::new();
+            packageFinder.processPaths(config.inputFiles.clone());
+
+            for package in packageFinder.packages {
+                for f in package.files {
+                    let fileId = fileManager.add(f.clone());
+                    let mut parser = Parser::new(&ctx, fileId, f.to_string());
+                    parser.parse();
+                    let modules = parser.modules();
+                    for m in modules {
+                        resolver.addModule(m);
+                    }
                 }
             }
             resolver

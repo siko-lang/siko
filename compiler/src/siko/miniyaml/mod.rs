@@ -1,10 +1,28 @@
-#![allow(non_snake_case)]
-
 #[derive(Debug)]
 pub enum YamlValue {
     String(String),
     List(Vec<YamlValue>),
-    Map(Vec<(String, YamlValue)>),
+    Object(Object),
+}
+
+#[derive(Debug)]
+pub struct Object {
+    pub values: Vec<(String, YamlValue)>,
+}
+
+impl Object {
+    pub fn new() -> Self {
+        Self { values: Vec::new() }
+    }
+
+    pub fn get(&self, key: &str) -> Option<&YamlValue> {
+        for (k, v) in &self.values {
+            if k == key {
+                return Some(v);
+            }
+        }
+        None
+    }
 }
 
 impl YamlValue {
@@ -24,8 +42,8 @@ impl YamlValue {
                     item.prettyPrint(indent + 3, false);
                 }
             }
-            YamlValue::Map(m) => {
-                for (index, (k, v)) in m.iter().enumerate() {
+            YamlValue::Object(o) => {
+                for (index, (k, v)) in o.values.iter().enumerate() {
                     if index == 0 && !emptyLine {
                         print!("{}:", k);
                     } else {
@@ -98,7 +116,7 @@ enum LineParseResult {
 }
 
 impl Parser {
-    pub fn new(input: &String) -> Parser {
+    pub fn new(input: &str) -> Parser {
         let mut lines = Vec::new();
         for line in input.lines() {
             if line.is_empty() {
@@ -136,7 +154,7 @@ impl Parser {
     }
 
     pub fn parseValue(&mut self, indent: usize) -> Result<YamlValue, Error> {
-        let mut map = Vec::new();
+        let mut object = Object::new();
         let mut list = Vec::new();
         while let Some(line) = self.getCurrentLine() {
             let currentIdent = getIdentSize(&line);
@@ -148,10 +166,10 @@ impl Parser {
                 LineParseResult::ValueName(name) => {
                     self.stepLine();
                     let value = self.parseValue(currentIdent + 1)?;
-                    map.push((name, value));
+                    object.values.push((name, value));
                 }
                 LineParseResult::Value(name, value) => {
-                    map.push((name, value));
+                    object.values.push((name, value));
                     self.stepLine();
                 }
                 LineParseResult::ListItem => {
@@ -165,14 +183,14 @@ impl Parser {
                 }
             }
         }
-        if !list.is_empty() && !map.is_empty() {
+        if !list.is_empty() && !object.values.is_empty() {
             self.errors.push(Error::InconsistentValue);
             return Err(Error::InconsistentValue);
         }
         if !list.is_empty() {
             Ok(YamlValue::List(list))
         } else {
-            Ok(YamlValue::Map(map))
+            Ok(YamlValue::Object(object))
         }
     }
 
