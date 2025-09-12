@@ -1,6 +1,7 @@
 pub mod backend;
 pub mod hir;
 pub mod hir_lowering;
+pub mod interpreter;
 pub mod location;
 pub mod minic;
 pub mod mir;
