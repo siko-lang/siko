@@ -542,8 +542,18 @@ impl<'a> ExprParser for Parser<'a> {
         while !self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
             let method = self.parseQualifiedVarName();
             self.expect(TokenKind::Misc(MiscKind::Equal));
+            let optional = if self.check(TokenKind::Keyword(KeywordKind::Try)) {
+                self.expect(TokenKind::Keyword(KeywordKind::Try));
+                true
+            } else {
+                false
+            };
             let handler = self.parseQualifiedVarName();
-            contexts.push(ContextHandler { name: method, handler });
+            contexts.push(ContextHandler {
+                name: method,
+                handler,
+                optional,
+            });
             if self.check(TokenKind::LeftBracket(BracketKind::Curly)) {
                 break;
             } else {

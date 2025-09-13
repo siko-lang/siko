@@ -1,6 +1,8 @@
 module TestRunner {
 
 import Terminal
+import Allocator
+import TestAllocator
 
 pub effect Testable {
     fn execute()
@@ -8,7 +10,17 @@ pub effect Testable {
 
 pub fn run(name: StringLiteral, index: Int) {
     print("${index}. Running ${yellow(name)} ...");
-    execute();
+
+    let mut allocCount: U64 = 0.toU64();
+    let mut deallocCount: U64 = 0.toU64();
+    with TestAllocator.allocCount = allocCount,
+         TestAllocator.deallocCount = deallocCount {
+        with Allocator.allocate = try TestAllocator.leakTestAllocate,
+            Allocator.deallocate = try TestAllocator.leakTestDeallocate {
+            execute();
+        }
+    }
+    assert(allocCount == deallocCount);
     println(" ${green("done")}");
 }
 

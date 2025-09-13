@@ -695,6 +695,7 @@ impl<'a> ExprResolver<'a> {
                             method: resolvedName,
                             handler: handlerName,
                             location: contextHandler.handler.location(),
+                            optional: contextHandler.optional,
                         }));
                     }
                 }

@@ -1,0 +1,20 @@
+module TestAllocator {
+
+import Allocator
+import NativePtr
+import Libc
+
+pub implicit mut allocCount: U64
+pub implicit mut deallocCount: U64
+
+pub fn leakTestAllocate(size: U64) -> void* {
+    allocCount += 1.toU64();
+    Libc.malloc(size)
+}
+
+pub fn leakTestDeallocate(ptr: void*) {
+    deallocCount += 1.toU64();
+    Libc.free(ptr);
+}
+
+}

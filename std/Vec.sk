@@ -60,7 +60,9 @@ struct InnerVec[T] {
         if self.size > 0.toU64() {
             memcpy(newItems, self.items, self.size);
         }
-        deallocate(self.items);
+        if !self.items.isNull() {
+            deallocate(self.items);
+        }
         self.items = newItems;
         self
     }
@@ -267,6 +269,13 @@ pub instance[T: Clone[T]] VecClone Clone[Vec[T]] {
         }
         newVec
     }
+}
+
+@test
+fn simpleVecExample()  {
+    let mut vec = Vec.new();
+    vec.push(1);
+    assert(vec.len() == 1);
 }
 
 }

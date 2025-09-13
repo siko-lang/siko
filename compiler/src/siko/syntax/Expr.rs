@@ -35,6 +35,7 @@ pub struct Branch {
 pub struct ContextHandler {
     pub name: Identifier,
     pub handler: Identifier,
+    pub optional: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

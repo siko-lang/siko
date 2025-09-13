@@ -17,6 +17,7 @@ pub struct EffectHandler {
     pub used: Rc<RefCell<bool>>,
     pub location: Location,
     pub resolution: HandlerResolution,
+    pub optional: bool,
 }
 
 impl PartialEq for EffectHandler {
@@ -40,12 +41,13 @@ impl Ord for EffectHandler {
 }
 
 impl EffectHandler {
-    pub fn new(name: QualifiedName, location: Location, resolution: HandlerResolution) -> Self {
+    pub fn new(name: QualifiedName, location: Location, resolution: HandlerResolution, optional: bool) -> Self {
         EffectHandler {
             name,
             used: Rc::new(RefCell::new(false)),
             location,
             resolution,
+            optional,
         }
     }
 
@@ -111,8 +113,9 @@ impl HandlerResolution {
         resolvedName: QualifiedName,
         location: Location,
         resolution: HandlerResolution,
+        optional: bool,
     ) {
-        let mut handler = EffectHandler::new(resolvedName, location, resolution);
+        let mut handler = EffectHandler::new(resolvedName, location, resolution, optional);
         if let Some(prev) = self.handlers.get(&effect) {
             // The handler shadows the prev handler so we clone its used flag
             // if this new handler is used, prev will be marked as used as well

@@ -406,6 +406,7 @@ pub fn processInstructionKind(
                             handler.handler.clone(),
                             handler.location.clone(),
                             originalHandlerResolution.clone(),
+                            handler.optional,
                         );
                     }
                     WithContext::Implicit(h) => {

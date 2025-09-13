@@ -1029,6 +1029,7 @@ pub struct EffectHandler {
     pub method: QualifiedName,
     pub handler: QualifiedName,
     pub location: Location,
+    pub optional: bool,
 }
 
 impl Display for EffectHandler {

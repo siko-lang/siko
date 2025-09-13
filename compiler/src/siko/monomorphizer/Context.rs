@@ -82,7 +82,7 @@ impl HandlerResolutionStore {
     pub fn checkUnused(&self, ctx: &ReportContext) {
         for (_, resolution) in &self.resolutions {
             for (name, handler) in &resolution.handlers {
-                if !handler.isUsed() {
+                if !handler.isUsed() && !handler.optional {
                     let slogan = format!(
                         "Unused effect handler {} for {}",
                         format!("{}", ctx.yellow(&handler.name.toString())),

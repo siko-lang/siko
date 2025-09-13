@@ -149,6 +149,7 @@ impl<'a> Monomorphizer<'a> {
                 method: testRunnerExecute.clone(),
                 handler: entry.clone(),
                 location: Location::empty(),
+                optional: false,
             };
             let context = WithContext::EffectHandler(handler);
             let withInfo = WithInfo {
