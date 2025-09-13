@@ -19,6 +19,9 @@ c: compiler/target/release/siko
 test: compiler/target/release/siko
 	@./run_test.py
 
+stdtest: compiler/target/release/siko
+	@./siko test ./std
+
 testworkflow: compiler/target/release/siko
 	sudo apt install -y valgrind
 	@./run_test.py --workflow
