@@ -227,6 +227,9 @@ impl<'a> FunctionExecutor<'a> {
                 InstructionKind::ClosureReturn(_, _, _) => {
                     panic!("ClosureReturn instruction not supported in interpreter")
                 }
+                InstructionKind::IntegerOp(_, _, _, _) => {
+                    unimplemented!("IntegerOp instruction not supported in interpreter")
+                }
             }
         }
     }

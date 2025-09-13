@@ -14,6 +14,7 @@ use crate::siko::{
         Data::{Enum as HirEnum, Struct as HirStruct},
         Function::{ExternKind, Function as HirFunction, FunctionKind},
         Instruction::InstructionKind as HirInstructionKind,
+        Instruction::IntegerOp as HirIntegerOp,
         Program::Program as HirProgram,
         Type::Type as HirType,
         Variable::Variable,
@@ -23,7 +24,7 @@ use crate::siko::{
         Function::{
             Block as MirBlock, EnumCase as MirEnumCase, ExternInfo, ExternKind as MirExternKind,
             Function as MirFunction, FunctionKind as MirFunctionKind, Instruction, IntegerCase as MirIntegerCase,
-            Param as MirParam, Variable as MirVariable,
+            IntegerOp, Param as MirParam, Variable as MirVariable,
         },
         Program::Program as MirProgram,
         Type::Type as MirType,
@@ -330,6 +331,24 @@ impl<'a> Builder<'a> {
                 }
                 HirInstructionKind::ClosureReturn(_, _, _) => {
                     panic!("ClosureReturn instruction found in Lowering, this should not happen");
+                }
+                HirInstructionKind::IntegerOp(dest, left, right, op) => {
+                    let dest = self.buildVariable(dest);
+                    let left = self.buildVariable(left);
+                    let right = self.buildVariable(right);
+                    let mirOp = match op {
+                        HirIntegerOp::Add => IntegerOp::Add,
+                        HirIntegerOp::Sub => IntegerOp::Sub,
+                        HirIntegerOp::Mul => IntegerOp::Mul,
+                        HirIntegerOp::Div => IntegerOp::Div,
+                        HirIntegerOp::Mod => IntegerOp::Mod,
+                        HirIntegerOp::Eq => IntegerOp::Eq,
+                        HirIntegerOp::LessThan => IntegerOp::LessThan,
+                    };
+                    block.instructions.push(Instruction::Declare(dest.clone()));
+                    block
+                        .instructions
+                        .push(Instruction::IntegerOp(dest, left, right, mirOp));
                 }
             }
         }

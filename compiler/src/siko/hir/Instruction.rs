@@ -436,6 +436,17 @@ impl Debug for TransformInfo {
 }
 
 #[derive(Clone, PartialEq)]
+pub enum IntegerOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Eq,
+    LessThan,
+}
+
+#[derive(Clone, PartialEq)]
 pub enum InstructionKind {
     FunctionCall(Variable, CallInfo),
     Converter(Variable, Variable),
@@ -470,6 +481,7 @@ pub enum InstructionKind {
     StorePtr(Variable, Variable),
     CreateClosure(Variable, ClosureCreateInfo),
     ClosureReturn(BlockId, Variable, Variable),
+    IntegerOp(Variable, Variable, Variable, IntegerOp),
 }
 
 impl Display for InstructionKind {
@@ -544,6 +556,9 @@ impl InstructionKind {
             InstructionKind::ClosureReturn(block_id, variable, return_value) => {
                 InstructionKind::ClosureReturn(block_id.clone(), variable.copy(map), return_value.copy(map))
             }
+            InstructionKind::IntegerOp(dest, v1, v2, op) => {
+                InstructionKind::IntegerOp(dest.copy(map), v1.copy(map), v2.copy(map), op.clone())
+            }
         }
     }
 
@@ -606,6 +621,9 @@ impl InstructionKind {
             InstructionKind::ClosureReturn(block_id, variable, return_value) => {
                 InstructionKind::ClosureReturn(block_id.clone(), variable.clone(), return_value.useVar())
             }
+            InstructionKind::IntegerOp(dest, v1, v2, op) => {
+                InstructionKind::IntegerOp(dest.clone(), v1.useVar(), v2.useVar(), op.clone())
+            }
         }
     }
 
@@ -644,6 +662,7 @@ impl InstructionKind {
             InstructionKind::StorePtr(v, _) => Some(v.clone()),
             InstructionKind::CreateClosure(v, _) => Some(v.clone()),
             InstructionKind::ClosureReturn(_, v, _) => Some(v.clone()),
+            InstructionKind::IntegerOp(v, _, _, _) => Some(v.clone()),
         }
     }
 
@@ -791,6 +810,12 @@ impl InstructionKind {
             InstructionKind::ClosureReturn(block_id, variable, return_value) => {
                 InstructionKind::ClosureReturn(block_id.clone(), variable.clone(), return_value.clone())
             }
+            InstructionKind::IntegerOp(var, v1, v2, op) => {
+                let new_var = var.replace(&from, to.clone());
+                let new_v1 = v1.replace(&from, to.clone());
+                let new_v2 = v2.replace(&from, to);
+                InstructionKind::IntegerOp(new_var, new_v1, new_v2, op.clone())
+            }
         }
     }
 
@@ -886,6 +911,9 @@ impl InstructionKind {
             }
             InstructionKind::ClosureReturn(_, variable, return_value) => {
                 vec![variable.clone(), return_value.clone()]
+            }
+            InstructionKind::IntegerOp(var, v1, v2, _) => {
+                vec![var.clone(), v1.clone(), v2.clone()]
             }
         }
     }
@@ -991,6 +1019,18 @@ impl InstructionKind {
             }
             InstructionKind::ClosureReturn(blockId, variable, return_value) => {
                 format!("closure_return({}, {}, {})", blockId, variable, return_value)
+            }
+            InstructionKind::IntegerOp(dest, v1, v2, op) => {
+                let op_str = match op {
+                    IntegerOp::Add => "+",
+                    IntegerOp::Sub => "-",
+                    IntegerOp::Mul => "*",
+                    IntegerOp::Div => "/",
+                    IntegerOp::Mod => "%",
+                    IntegerOp::Eq => "==",
+                    IntegerOp::LessThan => "<",
+                };
+                format!("{} = ({} {} {})", dest, v1, op_str, v2)
             }
         }
     }

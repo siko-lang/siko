@@ -477,5 +477,11 @@ pub fn processInstructionKind(
         InstructionKind::ClosureReturn(_, _, _) => {
             panic!("ClosureReturn found in Monomorphizer, this should not happen");
         }
+        InstructionKind::IntegerOp(dest, v1, v2, op) => InstructionKind::IntegerOp(
+            dest.process(sub, mono),
+            v1.process(sub, mono),
+            v2.process(sub, mono),
+            op,
+        ),
     }
 }

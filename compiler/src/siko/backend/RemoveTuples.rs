@@ -288,6 +288,12 @@ impl RemoveTuples for InstructionKind {
             InstructionKind::ClosureReturn(_, _, _) => {
                 panic!("ClosureReturn found in RemoveTuples, this should not happen");
             }
+            InstructionKind::IntegerOp(dest, left, right, op) => InstructionKind::IntegerOp(
+                dest.removeTuples(ctx),
+                left.removeTuples(ctx),
+                right.removeTuples(ctx),
+                op.clone(),
+            ),
         }
     }
 }

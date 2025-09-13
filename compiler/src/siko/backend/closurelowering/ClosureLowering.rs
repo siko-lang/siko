@@ -355,6 +355,7 @@ impl ClosureLowering for InstructionKind {
             InstructionKind::ClosureReturn(_, _, _) => {
                 panic!("ClosureReturn instruction found in closure lowering");
             }
+            InstructionKind::IntegerOp(_, _, _, _) => {}
         }
     }
 }

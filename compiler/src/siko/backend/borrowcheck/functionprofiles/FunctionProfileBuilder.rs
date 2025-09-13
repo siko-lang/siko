@@ -364,6 +364,7 @@ impl<'a> FunctionProfileBuilder<'a> {
                     //println!("AddressOfField: {} {}", currenTy, destType);
                     self.unifyExtendedTypes(&currenTy, &destType);
                 }
+                InstructionKind::IntegerOp(_, _, _, _) => {}
             }
         }
     }

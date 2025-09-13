@@ -7,10 +7,9 @@ use crate::siko::{
     minic::{Program::Program, Type::Type},
     qualifiedname::{
         builtins::{
-            getArrayBaseName, getArrayLenName, getArrayUninitializedName, getIntAddName, getIntDivName, getIntEqName,
-            getIntLessThanName, getIntModName, getIntMulName, getIntSubName, getIntToI32Name, getIntToU32Name,
+            getArrayBaseName, getArrayLenName, getArrayUninitializedName, getIntToI32Name, getIntToU32Name,
             getIntToU64Name, getIntToU8Name, getNativePtrCastName, getNativePtrSizeOfName, getNativePtrTransmuteName,
-            getStdBasicUtilAbortName, IntKind,
+            getStdBasicUtilAbortName,
         },
         QualifiedName,
     },
@@ -55,48 +54,6 @@ pub fn dumpBuiltinFunction(f: &Function, args: &Vec<String>, buf: &mut File, pro
         writeln!(buf, "    return sizeof(*addr);")?;
         writeln!(buf, "}}\n")?;
         return Ok(true);
-    }
-
-    for kind in [IntKind::Int, IntKind::I32, IntKind::U8, IntKind::U32, IntKind::U64] {
-        if isFn(f, &getIntAddName(kind)) {
-            addInt(f, args, buf)?;
-        }
-    }
-
-    for kind in [IntKind::Int, IntKind::I32, IntKind::U8, IntKind::U32, IntKind::U64] {
-        if isFn(f, &getIntSubName(kind)) {
-            subInt(f, args, buf)?;
-        }
-    }
-
-    for kind in [IntKind::Int, IntKind::I32, IntKind::U8, IntKind::U32, IntKind::U64] {
-        if isFn(f, &getIntMulName(kind)) {
-            mulInt(f, args, buf)?;
-        }
-    }
-
-    for kind in [IntKind::Int, IntKind::I32, IntKind::U8, IntKind::U32, IntKind::U64] {
-        if isFn(f, &getIntDivName(kind)) {
-            divInt(f, args, buf)?;
-        }
-    }
-
-    for kind in [IntKind::Int, IntKind::I32, IntKind::U8, IntKind::U32, IntKind::U64] {
-        if isFn(f, &getIntModName(kind)) {
-            modInt(f, args, buf)?;
-        }
-    }
-
-    for kind in [IntKind::Int, IntKind::I32, IntKind::U8, IntKind::U32, IntKind::U64] {
-        if isFn(f, &getIntEqName(kind)) {
-            eqInt(f, args, buf)?;
-        }
-    }
-
-    for kind in [IntKind::Int, IntKind::I32, IntKind::U8, IntKind::U32, IntKind::U64] {
-        if isFn(f, &getIntLessThanName(kind)) {
-            lessThanInt(f, args, buf)?;
-        }
     }
 
     if isFn(f, &getNativePtrCastName()) {

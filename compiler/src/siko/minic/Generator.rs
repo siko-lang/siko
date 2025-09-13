@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::siko::{
-    minic::Function::{ExternKind, Value},
+    minic::Function::{ExternKind, IntegerOp, Value},
     util::DependencyProcessor::processDependencies,
 };
 
@@ -174,6 +174,22 @@ impl MiniCGenerator {
                     format!("{} = &{}.field{};", dest.name, src.name, index)
                 }
             }
+            Instruction::IntegerOp(dest, left, right, op) => {
+                let (opStr, isPtr) = match op {
+                    IntegerOp::Add => ("+", false),
+                    IntegerOp::Sub => ("-", false),
+                    IntegerOp::Mul => ("*", false),
+                    IntegerOp::Div => ("/", false),
+                    IntegerOp::Mod => ("%", false),
+                    IntegerOp::Eq => ("==", true),
+                    IntegerOp::LessThan => ("<", true),
+                };
+                if isPtr {
+                    format!("{} = *{} {} *{};", dest.name, left.name, opStr, right.name)
+                } else {
+                    format!("{} = {} {} {};", dest.name, left.name, opStr, right.name)
+                }
+            }
         };
         Some(s)
     }
@@ -229,6 +245,11 @@ impl MiniCGenerator {
                     Instruction::AddressOfField(dest, src, _) => {
                         localVars.insert(dest.clone());
                         localVars.insert(src.clone());
+                    }
+                    Instruction::IntegerOp(dest, left, right, _) => {
+                        localVars.insert(dest.clone());
+                        localVars.insert(left.clone());
+                        localVars.insert(right.clone());
                     }
                 }
             }

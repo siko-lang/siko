@@ -48,7 +48,7 @@ def runUnderValgrind(program, args):
         return False
     return True
 
-def compileSiko(currentDir, files, extras, isUnitTest):
+def compileSiko(currentDir, files, extras):
     bin_output_path = os.path.join(currentDir, "main.bin")
     sanitize = []
     global in_workflow
@@ -56,16 +56,11 @@ def compileSiko(currentDir, files, extras, isUnitTest):
         sanitize = []
     else:
         sanitize = ["--sanitize"]
-    if isUnitTest:
-        args = ["./siko", "test"]
-    else:
-        args = ["./siko", "build"]
+
+    args = ["./siko", "build"]
     args = args + sanitize + ["-o", bin_output_path] + extras + files
     start_time = time.time()
-    if isUnitTest:
-        r = subprocess.run(args, stdout=subprocess.DEVNULL)
-    else:
-        r = subprocess.run(args)
+    r = subprocess.run(args)
     end_time = time.time()
     compilation_time = end_time - start_time
     if r.returncode != 0:
@@ -107,10 +102,8 @@ def test_success(root, entry, extras, explicit, parallel=False):
         end_time = time.time()
         result = TestResult(entry, "skip", (end_time - start_time, 0, 0), True, '\n'.join(output_buffer))
         return result
-    unitTestPath = os.path.join(currentDir, "TEST")
-    isUnitTest = os.path.exists(unitTestPath)
     inputPath = os.path.join(currentDir, "main.sk")
-    binary, compilation_time = compileSiko(currentDir, [inputPath], extras, isUnitTest)
+    binary, compilation_time = compileSiko(currentDir, [inputPath], extras)
     if binary is None:
         end_time = time.time()
         result = TestResult(entry, False, (end_time - start_time, compilation_time, 0), True, '\n'.join(output_buffer))
@@ -302,6 +295,7 @@ def run_tests_parallel(test_func, base_path, tests, extras):
                 processResult(result)
             except Exception as exc:
                 print(f'Test generated an exception: {exc}')
+                sys.exit(1)
 
 print("Success tests:")
 success_tests = collect_tests(successes_path)

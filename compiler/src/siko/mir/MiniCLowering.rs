@@ -8,11 +8,11 @@ use super::{
     Type::Type,
 };
 
-use crate::siko::minic::Function::Branch as LBranch;
 use crate::siko::minic::Function::CExternInfo;
 use crate::siko::minic::Function::ExternKind as LExternKind;
 use crate::siko::minic::Function::Function as LFunction;
 use crate::siko::minic::Function::Instruction as LInstruction;
+use crate::siko::minic::Function::IntegerOp as LIntegerOp;
 use crate::siko::minic::Function::Param as LParam;
 use crate::siko::minic::Function::Value as LValue;
 use crate::siko::minic::Function::Variable as LVariable;
@@ -21,6 +21,7 @@ use crate::siko::minic::Program::Program as LProgram;
 use crate::siko::minic::Type::Type as LType;
 use crate::siko::minic::{Constant::StringConstant, Data::Field as LField};
 use crate::siko::{minic::Data::Struct as LStruct, mir::Function::ExternKind};
+use crate::siko::{minic::Function::Branch as LBranch, mir::Function::IntegerOp};
 
 pub struct MinicBuilder<'a> {
     program: &'a Program,
@@ -269,6 +270,23 @@ impl<'a> MinicBuilder<'a> {
                 }
                 Instruction::StorePtr(dest, src) => {
                     let minicInstruction = LInstruction::StorePtr(self.lowerVar(dest), self.lowerVar(src));
+                    minicBlock.instructions.push(minicInstruction);
+                }
+                Instruction::IntegerOp(dest, left, right, op) => {
+                    let minicInstruction = LInstruction::IntegerOp(
+                        self.lowerVar(dest),
+                        self.lowerVar(left),
+                        self.lowerVar(right),
+                        match op {
+                            IntegerOp::Add => LIntegerOp::Add,
+                            IntegerOp::Sub => LIntegerOp::Sub,
+                            IntegerOp::Mul => LIntegerOp::Mul,
+                            IntegerOp::Div => LIntegerOp::Div,
+                            IntegerOp::Mod => LIntegerOp::Mod,
+                            IntegerOp::Eq => LIntegerOp::Eq,
+                            IntegerOp::LessThan => LIntegerOp::LessThan,
+                        },
+                    );
                     minicBlock.instructions.push(minicInstruction);
                 }
             };

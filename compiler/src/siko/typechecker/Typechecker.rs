@@ -17,7 +17,8 @@ use crate::siko::{
         InstanceStore::InstanceStore,
         Instantiation::{instantiateEnum, instantiateInstance, instantiateStruct},
         Instruction::{
-            CallInfo, FieldId, FieldInfo, ImplicitIndex, Instruction, InstructionKind, Mutability, WithContext,
+            CallInfo, FieldId, FieldInfo, ImplicitIndex, Instruction, InstructionKind, IntegerOp, Mutability,
+            WithContext,
         },
         Program::Program,
         Trait::Instance,
@@ -29,7 +30,10 @@ use crate::siko::{
     },
     location::{Location::Location, Report::ReportContext},
     qualifiedname::{
-        builtins::{getImplicitConvertFnName, getNativePtrCloneName, getNativePtrIsNullName},
+        builtins::{
+            getImplicitConvertFnName, getIntAddName, getIntDivName, getIntEqName, getIntLessThanName, getIntModName,
+            getIntMulName, getIntSubName, getNativePtrCloneName, getNativePtrIsNullName, IntKind,
+        },
         QualifiedName,
     },
     typechecker::{ClosureSeparator::ClosureSeparator, ConstraintExpander::ConstraintExpander},
@@ -154,6 +158,7 @@ pub struct Typechecker<'a> {
     unifier: Unifier,
     fnCallResolver: FunctionCallResolver<'a>,
     closureTypes: BTreeMap<BlockId, ClosureTypeInfo>,
+    integerOps: BTreeMap<QualifiedName, IntegerOp>,
 }
 
 impl<'a> Typechecker<'a> {
@@ -177,6 +182,26 @@ impl<'a> Typechecker<'a> {
             knownConstraints.clone(),
             unifier.clone(),
         );
+        let mut integerOps = BTreeMap::new();
+        for kind in [
+            IntKind::Int,
+            IntKind::U8,
+            IntKind::U16,
+            IntKind::U32,
+            IntKind::U64,
+            IntKind::I8,
+            IntKind::I16,
+            IntKind::I32,
+            IntKind::I64,
+        ] {
+            integerOps.insert(getIntAddName(kind), IntegerOp::Add);
+            integerOps.insert(getIntSubName(kind), IntegerOp::Sub);
+            integerOps.insert(getIntMulName(kind), IntegerOp::Mul);
+            integerOps.insert(getIntDivName(kind), IntegerOp::Div);
+            integerOps.insert(getIntModName(kind), IntegerOp::Mod);
+            integerOps.insert(getIntEqName(kind), IntegerOp::Eq);
+            integerOps.insert(getIntLessThanName(kind), IntegerOp::LessThan);
+        }
         Typechecker {
             ctx: ctx,
             program: program,
@@ -195,6 +220,7 @@ impl<'a> Typechecker<'a> {
             implResolver: implResolver,
             unifier: unifier,
             closureTypes: BTreeMap::new(),
+            integerOps,
         }
     }
 
@@ -349,6 +375,9 @@ impl<'a> Typechecker<'a> {
                             self.initializeVar(var);
                         }
                         InstructionKind::ClosureReturn(_, var, _) => {
+                            self.initializeVar(var);
+                        }
+                        InstructionKind::IntegerOp(var, _, _, _) => {
                             self.initializeVar(var);
                         }
                     }
@@ -597,8 +626,7 @@ impl<'a> Typechecker<'a> {
                 let mut info = info.clone();
                 info.name = checkResult.fnName;
                 info.instanceRefs = checkResult.instanceRefs;
-                let kind = InstructionKind::FunctionCall(dest.clone(), info);
-                builder.replaceInstruction(kind, instruction.location.clone());
+                self.postProcessFunctionCall(builder, dest, info, instruction.location.clone());
             }
             InstructionKind::Converter(dest, source) => {
                 self.receiverChains.insert(
@@ -940,6 +968,17 @@ impl<'a> Typechecker<'a> {
                         .expect("closure result type not found"),
                 );
             }
+            InstructionKind::IntegerOp(dest, left, right, op) => {
+                self.unifier.unifyVars(left, right);
+                match op {
+                    IntegerOp::Add | IntegerOp::Sub | IntegerOp::Mul | IntegerOp::Div | IntegerOp::Mod => {
+                        self.unifier.unifyVar(dest, Type::getIntType());
+                    }
+                    IntegerOp::Eq | IntegerOp::LessThan => {
+                        self.unifier.unifyVar(dest, Type::getBoolType());
+                    }
+                }
+            }
         }
     }
 
@@ -1029,10 +1068,7 @@ impl<'a> Typechecker<'a> {
         let name = checkResult.fnName;
         let mut newCallInfo = CallInfo::new(name.clone(), extendedArgs.clone());
         newCallInfo.instanceRefs = checkResult.instanceRefs;
-        builder.replaceInstruction(
-            InstructionKind::FunctionCall(dest.clone(), newCallInfo.clone()),
-            instruction.location.clone(),
-        );
+        self.postProcessFunctionCall(builder, dest, newCallInfo.clone(), instruction.location.clone());
         if mutableCall {
             let result = fnType.getResult();
             let (baseType, selfLessType) = if targetFn.getType().getResult().isTuple() {
@@ -1501,5 +1537,15 @@ impl<'a> Typechecker<'a> {
         let info = CallInfo::new(result.fnName, vec![source.clone()]);
         let kind = InstructionKind::FunctionCall(dest.clone(), info);
         kind
+    }
+
+    fn postProcessFunctionCall(&self, builder: &mut BlockBuilder, dest: &Variable, info: CallInfo, location: Location) {
+        if let Some(op) = self.integerOps.get(&info.name) {
+            let kind = InstructionKind::IntegerOp(dest.clone(), info.args[0].clone(), info.args[1].clone(), op.clone());
+            builder.replaceInstruction(kind, location.clone());
+            return;
+        }
+        let kind = InstructionKind::FunctionCall(dest.clone(), info);
+        builder.replaceInstruction(kind, location.clone());
     }
 }

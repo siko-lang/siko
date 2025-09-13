@@ -63,6 +63,16 @@ pub enum GetMode {
     Ref,
 }
 
+pub enum IntegerOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Eq,
+    LessThan,
+}
+
 pub enum Instruction {
     Declare(Variable),
     StoreLiteral(Variable, Value),
@@ -78,4 +88,5 @@ pub enum Instruction {
     Bitcast(Variable, Variable),
     Switch(Variable, String, Vec<Branch>),
     AddressOfField(Variable, Variable, i32),
+    IntegerOp(Variable, Variable, Variable, IntegerOp),
 }

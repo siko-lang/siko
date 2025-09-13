@@ -90,12 +90,17 @@ pub fn getCloneFnName() -> QualifiedName {
     build("Std.Ops.Basic", "Clone").add(format!("clone"))
 }
 
+#[derive(Clone, Copy)]
 pub enum IntKind {
     Int,
     U8,
+    U16,
     U32,
     U64,
+    I8,
+    I16,
     I32,
+    I64,
 }
 
 impl fmt::Display for IntKind {
@@ -103,9 +108,13 @@ impl fmt::Display for IntKind {
         match self {
             IntKind::Int => write!(f, "Int"),
             IntKind::U8 => write!(f, "U8"),
+            IntKind::U16 => write!(f, "U16"),
             IntKind::U32 => write!(f, "U32"),
             IntKind::U64 => write!(f, "U64"),
+            IntKind::I8 => write!(f, "I8"),
+            IntKind::I16 => write!(f, "I16"),
             IntKind::I32 => write!(f, "I32"),
+            IntKind::I64 => write!(f, "I64"),
         }
     }
 }

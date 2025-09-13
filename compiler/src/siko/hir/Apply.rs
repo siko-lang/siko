@@ -259,6 +259,9 @@ impl Apply for InstructionKind {
             InstructionKind::ClosureReturn(blockId, v, v2) => {
                 InstructionKind::ClosureReturn(blockId, v.apply(sub), v2.apply(sub))
             }
+            InstructionKind::IntegerOp(dest, left, right, op) => {
+                InstructionKind::IntegerOp(dest.apply(sub), left.apply(sub), right.apply(sub), op.clone())
+            }
         }
     }
 }

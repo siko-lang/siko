@@ -164,6 +164,17 @@ impl std::fmt::Debug for IntegerCase {
     }
 }
 
+#[derive(Clone, PartialEq)]
+pub enum IntegerOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Eq,
+    LessThan,
+}
+
 pub enum Instruction {
     Declare(Variable),
     GetFieldRef(Variable, Variable, i32),
@@ -181,6 +192,7 @@ pub enum Instruction {
     AddressOfField(Variable, Variable, i32),
     LoadPtr(Variable, Variable),
     StorePtr(Variable, Variable),
+    IntegerOp(Variable, Variable, Variable, IntegerOp),
 }
 
 impl fmt::Display for Instruction {
@@ -239,6 +251,18 @@ impl fmt::Display for Instruction {
             }
             Instruction::StorePtr(dest, src) => {
                 write!(f, "StorePtr({}, {})", dest, src)
+            }
+            Instruction::IntegerOp(dest, left, right, op) => {
+                let op_str = match op {
+                    IntegerOp::Add => "+",
+                    IntegerOp::Sub => "-",
+                    IntegerOp::Mul => "*",
+                    IntegerOp::Div => "/",
+                    IntegerOp::Mod => "%",
+                    IntegerOp::Eq => "==",
+                    IntegerOp::LessThan => "<",
+                };
+                write!(f, "IntegerOp({}, {} {} {})", dest, left, op_str, right)
             }
         }
     }

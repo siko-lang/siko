@@ -175,5 +175,8 @@ pub fn getUsageInfo(kind: InstructionKind, referenceStore: &ReferenceStore) -> U
         InstructionKind::ClosureReturn(_, _, _) => {
             panic!("ClosureReturn found in drop checker, this should not happen")
         }
+        InstructionKind::IntegerOp(dest, left, right, _) => {
+            UsageInfo::with(vec![varToUsage(&left), varToUsage(&right)], Some(dest.toPath()))
+        }
     }
 }

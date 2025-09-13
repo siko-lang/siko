@@ -300,6 +300,12 @@ impl<'a> TypeVerifier<'a> {
             InstructionKind::ClosureReturn(_, _, _) => {
                 panic!("ClosureReturn found in TypeVerifier, this should not happen");
             }
+            InstructionKind::IntegerOp(dest, left, right, _) => {
+                self.checkVariable(dest);
+                self.checkVariable(left);
+                self.checkVariable(right);
+                self.unify(&left.getType(), &right.getType());
+            }
         }
     }
 
