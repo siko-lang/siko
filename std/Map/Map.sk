@@ -282,6 +282,9 @@ fn freeNode[K, V](node: *Node[K, V]) {
     if node.isNull() {
         return;
     }
+    {
+        let n = *node; // drop the node
+    }
     deallocate(node);
 }
 
@@ -352,6 +355,22 @@ pub instance[K, V] IntoIteratorMap IntoIterator[Map[K, V]] {
     fn intoIterator(self) -> MapIterator[K, V] {
         self.iter()
     }
+}
+
+@test
+fn testSimpleMapExample() {
+    let mut map = Map.new();
+    let old = map.insert(1, "${1}");
+    assert(old.isNone());
+}
+
+@test
+fn testSimpleMapRemove() {
+    let mut map = Map.new();
+    let old = map.insert(1, "one".toString());
+    assert(old.isNone());
+    let old = map.remove(1);
+    assert(old == Some("one".toString()));
 }
 
 }

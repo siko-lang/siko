@@ -42,7 +42,7 @@ impl<'a> Initializer<'a> {
     }
 
     fn declareVar(&mut self, var: &Variable, syntaxBlock: &SyntaxBlockId, builder: &mut BlockBuilder, explicit: bool) {
-        if var.hasTrivialDrop() || var.isArg() {
+        if var.hasTrivialDrop() || var.isArg() || var.isNoDrop() {
             return;
         }
         if !explicit && self.declarationStore.explicitDeclarations.contains(&var.name()) {

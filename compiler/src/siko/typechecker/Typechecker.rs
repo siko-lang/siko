@@ -1,7 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
-    fmt::Debug,
-    fmt::Display,
+    fmt::{Debug, Display},
 };
 
 use crate::siko::{
@@ -819,6 +818,7 @@ impl<'a> Typechecker<'a> {
                     let ptrLoadResultVar = self
                         .bodyBuilder
                         .createTempValueWithType(instruction.location.clone(), *innerTy.clone());
+                    ptrLoadResultVar.setNoDrop();
                     ptrLoadResultVar.setType(*innerTy.clone());
                     builder.addInstruction(
                         InstructionKind::LoadPtr(ptrLoadResultVar.clone(), receiver.clone()),

@@ -1,7 +1,7 @@
 use std::{cell::RefCell, fmt::Debug, fmt::Display, rc::Rc};
 
 use crate::siko::{
-    hir::Variable::{Variable, VariableName},
+    hir::Variable::{TempInfo, Variable, VariableName},
     location::Location::Location,
 };
 
@@ -30,7 +30,7 @@ impl VariableAllocator {
             *nextId += 1;
             id
         };
-        Variable::new(VariableName::Tmp(id), location)
+        Variable::new(VariableName::Tmp(TempInfo { id, noDrop: false }), location)
     }
 
     pub fn allocateWithType(&self, location: Location, ty: super::Type::Type) -> Variable {

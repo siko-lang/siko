@@ -11,8 +11,14 @@ use crate::siko::location::Location::Location;
 use super::Type::Type;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct TempInfo {
+    pub id: u32,
+    pub noDrop: bool,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum VariableName {
-    Tmp(u32),
+    Tmp(TempInfo),
     Local(String, u32),
     Arg(String),
     ClosureArg(BlockId, u32),
@@ -23,7 +29,7 @@ pub enum VariableName {
 impl VariableName {
     pub fn visibleName(&self) -> String {
         match self {
-            VariableName::Tmp(i) => format!("tmp{}", i),
+            VariableName::Tmp(info) => format!("tmp{}", info.id),
             VariableName::Local(n, _) => n.clone(),
             VariableName::Arg(n) => format!("arg_{}", n),
             VariableName::ClosureArg(lambdaIndex, argIndex) => format!("closure_arg_{}_{}", lambdaIndex, argIndex),
@@ -31,6 +37,7 @@ impl VariableName {
             VariableName::DropFlag(n) => format!("drop_flag_{}", n),
         }
     }
+
     pub fn isTemp(&self) -> bool {
         match self {
             VariableName::Tmp(_) => true,
@@ -62,12 +69,19 @@ impl VariableName {
     pub fn getDropFlag(&self) -> VariableName {
         VariableName::DropFlag(self.to_string())
     }
+
+    pub fn setNoDrop(&mut self) {
+        match self {
+            VariableName::Tmp(info) => *info = TempInfo { noDrop: true, ..*info },
+            _ => panic!("Can only set noDrop on temp variables"),
+        }
+    }
 }
 
 impl Display for VariableName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            VariableName::Tmp(i) => write!(f, "tmp{}", i),
+            VariableName::Tmp(info) => write!(f, "tmp{}", info.id),
             VariableName::Local(n, i) => write!(f, "{}_{}", n, i),
             VariableName::Arg(n) => write!(f, "{}", n),
             VariableName::ClosureArg(lambdaIndex, argIndex) => write!(f, "closure_arg_{}_{}", lambdaIndex, argIndex),
@@ -80,7 +94,7 @@ impl Display for VariableName {
 impl Debug for VariableName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            VariableName::Tmp(i) => write!(f, "tmp{}", i),
+            VariableName::Tmp(info) => write!(f, "tmp{}", info.id),
             VariableName::Local(n, i) => write!(f, "{}_{}", n, i),
             VariableName::Arg(n) => write!(f, "{}", n),
             VariableName::ClosureArg(lambdaIndex, argIndex) => write!(f, "closure_arg_{}_{}", lambdaIndex, argIndex),
@@ -110,6 +124,10 @@ impl VariableInfo {
 
     pub fn setType(&mut self, ty: Type) {
         self.ty = Some(ty);
+    }
+
+    pub fn setNoDrop(&mut self) {
+        self.name.setNoDrop();
     }
 }
 
@@ -336,6 +354,17 @@ impl Variable {
 
     pub fn kind(&self) -> VariableKind {
         self.kind.clone()
+    }
+
+    pub fn setNoDrop(&self) {
+        self.info.borrow_mut().setNoDrop();
+    }
+
+    pub fn isNoDrop(&self) -> bool {
+        match &self.name() {
+            VariableName::Tmp(info) => info.noDrop,
+            _ => false,
+        }
     }
 }
 
