@@ -1,0 +1,104 @@
+module U8 {
+
+import NativePtr
+import Convert
+import Std.Ops
+
+pub extern struct U8 {
+    pub fn add(self, other: U8) -> U8 = extern
+
+    pub fn sub(self, other: U8) -> U8 = extern
+
+    pub fn mul(self, other: U8) -> U8 = extern
+
+    pub fn div(self, other: U8) -> U8 = extern
+
+    pub fn eq(&self, other: &U8) -> Bool = extern
+
+    pub fn lessThan(&self, other: &U8) -> Bool = extern
+
+    pub fn clone(&self) -> U8 {
+        *toPtr(self)
+    }
+
+    pub fn toInt(&self) -> Int {
+        transmute(self.clone())
+    }
+}
+
+pub instance AddU8 Add[U8, U8] {
+    type Output = U8
+    fn add(self, other: U8) -> U8 {
+        self.add(other)
+    }
+}
+
+pub instance SubU8 Sub[U8] {
+    fn sub(self, other: U8) -> U8 {
+        self.sub(other)
+    }
+}
+
+pub instance MulU8 Mul[U8, U8] {
+    fn mul(self, other: U8) -> U8 {
+        self.mul(other)
+    }
+}
+
+pub instance DivU8 Div[U8, U8] {
+    fn div(self, other: U8) -> U8 {
+        self.div(other)
+    }
+}
+
+pub instance PartialEqU8 PartialEq[U8] {
+    fn eq(&self, other: &U8) -> Bool {
+        self.eq(other)
+    }
+}
+
+pub instance EqU8 Eq[U8]
+
+pub instance PartialOrdU8 PartialOrd[U8] {
+    fn partialCmp(&self, other: &U8) -> Option[Ordering] {
+        if self.eq(other) {
+            Some(Equal)
+        } else {
+            if self.lessThan(other) {
+                Some(Less)
+            } else {
+                Some(Greater)
+            }
+        }
+    }
+}
+
+pub instance OrdU8 Ord[U8] {
+    fn cmp(&self, other: &U8) -> Ordering {
+        if self.eq(other) {
+            Equal
+        } else {
+            if self.lessThan(other) {
+                Less
+            } else {
+                Greater
+            }
+        }
+    }
+}
+
+pub instance CloneU8 Clone[U8] {
+    fn clone(&self) -> U8 {
+        self.clone()
+    }
+}
+
+pub instance CopyU8 Copy[U8]
+
+pub instance IntoU8Int Into[U8, Int] {
+    fn into(self) -> Int {
+        self.toInt()
+    }
+}
+
+}

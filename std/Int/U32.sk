@@ -1,0 +1,101 @@
+module U32 {
+
+import Convert
+import NativePtr
+import Std.Ops
+
+pub extern struct U32 {
+    pub fn add(self, other: U32) -> U32 = extern
+
+    pub fn sub(self, other: U32) -> U32 = extern
+
+    pub fn mul(self, other: U32) -> U32 = extern
+
+    pub fn div(self, other: U32) -> U32 = extern
+
+    pub fn eq(&self, other: &U32) -> Bool = extern
+
+    pub fn lessThan(&self, other: &U32) -> Bool = extern
+
+    pub fn clone(&self) -> U32 {
+        *toPtr(self)
+    }
+}
+
+pub instance AddU32 Add[U32, U32] {
+    type Output = U32
+    fn add(self, other: U32) -> U32 {
+        self.add(other)
+    }
+}
+
+pub instance AddU32 Add[U32, &U32] {
+    type Output = U32
+    fn add(self, other: &U32) -> U32 {
+        self.add(other)
+    }
+}
+
+pub instance SubU32 Sub[U32] {
+    fn sub(self, other: U32) -> U32 {
+        self.sub(other)
+    }
+}
+
+pub instance MulU32 Mul[U32, U32] {
+    fn mul(self, other: U32) -> U32 {
+        self.mul(other)
+    }
+}
+
+pub instance DivU32 Div[U32, U32] {
+    fn div(self, other: U32) -> U32 {
+        self.div(other)
+    }
+}
+
+pub instance PartialEqU32 PartialEq[U32] {
+    fn eq(&self, other: &U32) -> Bool {
+        self.eq(other)
+    }
+}
+
+pub instance EqU32 Eq[U32]
+
+pub instance PartialOrdU32 PartialOrd[U32] {
+    fn partialCmp(&self, other: &U32) -> Option[Ordering] {
+        if self.eq(other) {
+            Some(Equal)
+        } else {
+            if self.lessThan(other) {
+                Some(Less)
+            } else {
+                Some(Greater)
+            }
+        }
+    }
+}
+
+pub instance OrdU32 Ord[U32] {
+    fn cmp(&self, other: &U32) -> Ordering {
+        if self.eq(other) {
+            Equal
+        } else {
+            if self.lessThan(other) {
+                Less
+            } else {
+                Greater
+            }
+        }
+    }
+}
+
+pub instance CloneU32 Clone[U32] {
+    fn clone(&self) -> U32 {
+        self.clone()
+    }
+}
+
+pub instance CopyU32 Copy[U32]
+
+}

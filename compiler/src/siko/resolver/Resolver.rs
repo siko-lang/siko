@@ -858,7 +858,9 @@ impl<'a> Resolver<'a> {
                             let instanceName = moduleName.add(name.toString());
                             let localImplName = localModuleName.add(name.toString());
                             importedNames.add(&localImplName, &instanceName);
-                            importedInstances.push(instanceName);
+                            if !importedInstances.contains(&instanceName) {
+                                importedInstances.push(instanceName);
+                            }
                         }
                     }
                     ModuleItem::Effect(effectDef) => {
@@ -967,7 +969,9 @@ impl<'a> Resolver<'a> {
                             let instanceName = moduleName.add(name.toString());
                             importedNames.add(&name, &instanceName);
                             importedNames.add(&instanceName, &instanceName);
-                            importedInstances.push(instanceName);
+                            if !importedInstances.contains(&instanceName) {
+                                importedInstances.push(instanceName);
+                            }
                         }
                     }
                     ModuleItem::Effect(effectDef) => {

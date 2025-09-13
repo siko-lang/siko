@@ -1,0 +1,105 @@
+module I32 {
+
+import Convert
+import NativePtr
+import Std.Ops
+
+pub extern struct I32 {
+    pub fn add(self, other: I32) -> I32 = extern
+
+    pub fn sub(self, other: I32) -> I32 = extern
+
+    pub fn mul(self, other: I32) -> I32 = extern
+
+    pub fn div(self, other: I32) -> I32 = extern
+
+    pub fn eq(&self, other: &I32) -> Bool = extern
+
+    pub fn lessThan(&self, other: &I32) -> Bool = extern
+
+    pub fn clone(&self) -> I32 {
+        *toPtr(self)
+    }
+
+     pub fn toInt(&self) -> Int {
+        transmute(self.clone())
+    }
+}
+
+pub instance AddI32 Add[I32, I32] {
+    type Output = I32
+    fn add(self, other: I32) -> I32 {
+        self.add(other)
+    }
+}
+
+pub instance AddI32 Add[I32, &I32] {
+    type Output = I32
+    fn add(self, other: &I32) -> I32 {
+        self.add(other)
+    }
+}
+
+pub instance SubI32 Sub[I32] {
+    fn sub(self, other: I32) -> I32 {
+        self.sub(other)
+    }
+}
+
+pub instance MulI32 Mul[I32, I32] {
+    fn mul(self, other: I32) -> I32 {
+        self.mul(other)
+    }
+}
+
+pub instance DivI32 Div[I32, I32] {
+    fn div(self, other: I32) -> I32 {
+        self.div(other)
+    }
+}
+
+pub instance PartialEqI32 PartialEq[I32] {
+    fn eq(&self, other: &I32) -> Bool {
+        self.eq(other)
+    }
+}
+
+pub instance EqI32 Eq[I32]
+
+pub instance PartialOrdI32 PartialOrd[I32] {
+    fn partialCmp(&self, other: &I32) -> Option[Ordering] {
+        if self.eq(other) {
+            Some(Equal)
+        } else {
+            if self.lessThan(other) {
+                Some(Less)
+            } else {
+                Some(Greater)
+            }
+        }
+    }
+}
+
+pub instance OrdI32 Ord[I32] {
+    fn cmp(&self, other: &I32) -> Ordering {
+        if self.eq(other) {
+            Equal
+        } else {
+            if self.lessThan(other) {
+                Less
+            } else {
+                Greater
+            }
+        }
+    }
+}
+
+pub instance CloneI32 Clone[I32] {
+    fn clone(&self) -> I32 {
+        self.clone()
+    }
+}
+
+pub instance CopyI32 Copy[I32]
+
+}

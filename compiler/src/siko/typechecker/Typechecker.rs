@@ -1328,7 +1328,7 @@ impl<'a> Typechecker<'a> {
     }
 
     fn processConverters(&mut self) {
-        // println!("processConverters {}", self.f.name);
+        //println!("processConverters {}", self.f.name);
         let allblocksIds = self.bodyBuilder.getAllBlockIds();
         for blockId in allblocksIds {
             let mut builder = self.bodyBuilder.iterator(blockId);

@@ -99,6 +99,7 @@ impl<'a> InstanceResolver<'a> {
                         }
                     }
                     if allSubConstraintsMatch {
+                        //println!("  matching impl found: {}", instanceDef);
                         matchingImpls.push(instanceDef);
                     } else {
                         //println!("  sub constraints do not match");
@@ -119,7 +120,7 @@ impl<'a> InstanceResolver<'a> {
     }
 
     pub fn findInstanceInScope(&self, constraint: &Constraint) -> InstanceSearchResult {
-        //println!("Finding instance in scope for constraint {}", constraint);
+        // println!("Finding instance in scope for constraint {}", constraint);
         // for instance in &self.instanceStore.localInstances {
         //     println!("Local instance: {}", instance);
         // }

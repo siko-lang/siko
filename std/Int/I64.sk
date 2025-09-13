@@ -1,0 +1,159 @@
+module I64 {
+
+import Convert
+import NativePtr
+import Std.Ops
+
+pub extern struct I64 {
+    pub fn add(self, other: I64) -> I64 = extern
+
+    pub fn sub(self, other: I64) -> I64 = extern
+
+    pub fn mul(self, other: I64) -> I64 = extern
+
+    pub fn div(self, other: I64) -> I64 = extern
+
+    pub fn mod(self, other: I64) -> I64 = extern
+
+    pub fn eq(&self, other: &I64) -> Bool = extern
+
+    pub fn toInt(&self) -> Int {
+        transmute(self.clone())
+    }
+
+    pub fn lessThan(&self, other: &I64) -> Bool = extern
+
+    pub fn clone(&self) -> I64 {
+        *toPtr(self)
+    }
+
+    pub fn toHex(&self) -> String {
+        let digits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'];
+        let mut hex = String.new();
+        let mut n = self.clone();
+        let zero = 0.toI64();
+        let sixteen = 16.toI64();
+
+        if n == zero {
+            return "0x0";
+        }
+
+        while n > zero {
+            let rem = n.mod(sixteen);
+            hex.pushChar(digits.get(rem.toInt()));
+            n /= sixteen.clone();
+        }
+        hex += "x0";
+        hex.reverse();
+        hex
+    }
+}
+
+pub instance AddI64 Add[I64, I64] {
+    type Output = I64
+    fn add(self, other: I64) -> I64 {
+        self.add(other)
+    }
+}
+
+pub instance AddI64Ref Add[I64, &I64] {
+    type Output = I64
+    fn add(self, other: &I64) -> I64 {
+        self.add(other.clone())
+    }
+}
+
+pub instance SubI64 Sub[I64, I64] {
+    fn sub(self, other: I64) -> I64 {
+        self.sub(other)
+    }
+}
+
+pub instance MulI64 Mul[I64, I64] {
+    fn mul(self, other: I64) -> I64 {
+        self.mul(other)
+    }
+}
+
+pub instance DivI64 Div[I64, I64] {
+    fn div(self, other: I64) -> I64 {
+        self.div(other)
+    }
+}
+
+pub instance PartialEqI64 PartialEq[I64] {
+    fn eq(&self, other: &I64) -> Bool {
+        self.eq(other)
+    }
+}
+
+pub instance EqI64 Eq[I64]
+
+pub instance PartialOrdI64 PartialOrd[I64] {
+    fn partialCmp(&self, other: &I64) -> Option[Ordering] {
+        if self.eq(other) {
+            Some(Equal)
+        } else {
+            if self.lessThan(other) {
+                Some(Less)
+            } else {
+                Some(Greater)
+            }
+        }
+    }
+}
+
+pub instance OrdI64 Ord[I64] {
+    fn cmp(&self, other: &I64) -> Ordering {
+        if self.eq(other) {
+            Equal
+        } else {
+            if self.lessThan(other) {
+                Less
+            } else {
+                Greater
+            }
+        }
+    }
+}
+
+pub instance CloneI64 Clone[I64] {
+    fn clone(&self) -> I64 {
+        self.clone()
+    }
+}
+
+pub instance CopyI64 Copy[I64]
+
+pub instance ShowI64 Show[I64] {
+    fn show(&self) -> String {
+        //showNum(self)
+        showInt(self.toInt())
+    }
+}
+
+pub instance NegI64 Neg[I64] {
+    fn negative(self) -> I64 {
+        self
+    }
+}
+
+pub instance ModI64 Mod[I64] {
+    fn mod(&self, other: &I64) -> I64 {
+        self.mod(other)
+    }
+}
+
+pub instance FromIntI64 From[Int, I64] {
+    fn from(v: Int) -> I64 {
+        v.toI64()
+    }
+}
+
+pub instance IntoI64Int Into[I64, Int] {
+    fn into(self) -> Int {
+        self.toInt()
+    }
+}
+
+}

@@ -31,19 +31,19 @@ pub fn getIntTypeName() -> QualifiedName {
 }
 
 pub fn getU8TypeName() -> QualifiedName {
-    build("Int", "U8")
+    build("U8", "U8")
 }
 
 pub fn getI8TypeName() -> QualifiedName {
-    build("Int", "I8")
+    build("I8", "I8")
 }
 
 pub fn getU64TypeName() -> QualifiedName {
-    build("Int", "U64")
+    build("U64", "U64")
 }
 
 pub fn getI32TypeName() -> QualifiedName {
-    build("Int", "I32")
+    build("I32", "I32")
 }
 
 pub fn getStringTypeName() -> QualifiedName {
@@ -127,31 +127,31 @@ pub fn getIntToI32Name() -> QualifiedName {
 }
 
 pub fn getIntAddName(kind: IntKind) -> QualifiedName {
-    build("Int", &kind.to_string()).add(format!("add"))
+    build(&kind.to_string(), &kind.to_string()).add(format!("add"))
 }
 
 pub fn getIntSubName(kind: IntKind) -> QualifiedName {
-    build("Int", &kind.to_string()).add(format!("sub"))
+    build(&kind.to_string(), &kind.to_string()).add(format!("sub"))
 }
 
 pub fn getIntMulName(kind: IntKind) -> QualifiedName {
-    build("Int", &kind.to_string()).add(format!("mul"))
+    build(&kind.to_string(), &kind.to_string()).add(format!("mul"))
 }
 
 pub fn getIntDivName(kind: IntKind) -> QualifiedName {
-    build("Int", &kind.to_string()).add(format!("div"))
+    build(&kind.to_string(), &kind.to_string()).add(format!("div"))
 }
 
 pub fn getIntModName(kind: IntKind) -> QualifiedName {
-    build("Int", &kind.to_string()).add(format!("mod"))
+    build(&kind.to_string(), &kind.to_string()).add(format!("mod"))
 }
 
 pub fn getIntEqName(kind: IntKind) -> QualifiedName {
-    build("Int", &kind.to_string()).add(format!("eq"))
+    build(&kind.to_string(), &kind.to_string()).add(format!("eq"))
 }
 
 pub fn getIntLessThanName(kind: IntKind) -> QualifiedName {
-    build("Int", &kind.to_string()).add(format!("lessThan"))
+    build(&kind.to_string(), &kind.to_string()).add(format!("lessThan"))
 }
 
 pub fn getDropFnName() -> QualifiedName {
