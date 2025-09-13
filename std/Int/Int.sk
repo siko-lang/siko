@@ -15,6 +15,10 @@ pub extern struct Int {
 
     pub fn mod(self, other: Int) -> Int = extern
 
+    pub fn eq(&self, other: &Int) -> Bool = extern
+
+    pub fn lessThan(&self, other: &Int) -> Bool = extern
+
     pub fn toU8(&self) -> U8 {
         transmute(self.clone())
     }
@@ -38,10 +42,6 @@ pub extern struct Int {
     pub fn toI32(&self) -> I32 {
         transmute(self.clone())
     }
-
-    pub fn eq(&self, other: &Int) -> Bool = extern
-
-    pub fn lessThan(&self, other: &Int) -> Bool = extern
 
     pub fn clone(&self) -> Int {
         *toPtr(self)
@@ -132,8 +132,7 @@ pub instance NegInt Neg[Int] {
 
 pub instance ShowInt Show[Int] {
     fn show(&self) -> String {
-        //showNum(self)
-        showInt(self)
+        showNum(self)
     }
 }
 
@@ -159,24 +158,32 @@ pub trait Mod[T] {
     fn mod(&self, other: &T) -> T
 }
 
-pub fn showInt(num: &Int) -> String {
+pub fn showNum[T: Clone[T], Copy[T], PartialEq[T],
+              PartialOrd[T], Neg[T],
+              Mod[T], From[Int, T], Into[T, Int],
+              Div[T, T], Add[T, T, Output=T]](num: &T) -> String {
+    // FIXME: fix constants
+    let zero: T = from(0);
+    let ten: T = from(10);
+    let offset: T = from(48);
+
     let mut n = num.clone();
-    if n == 0 {
+    if n == zero {
         return "0".toString();
     }
 
     let mut isNegative = False;
 
-    if n < 0 {
+    if n < zero {
         isNegative = True;
         n = -n;
     }
 
     let mut digits: Vec[U8] = Vec.new();
 
-    while n > 0 {
-        let base = 10;
-        let value = n.mod(base) + '0'.toInt();
+    while n > zero {
+        let base: T = ten.clone();
+        let value: T = n.mod(base) + offset.clone();
         let digit: Int = value.into();
         digits.push(digit.toU8());
         n /= base;
@@ -191,44 +198,22 @@ pub fn showInt(num: &Int) -> String {
     String.fromU8(digits)
 }
 
-// fn showNum[T: Clone[T], Copy[T], PartialEq[T],
-//               PartialOrd[T], Neg[T],
-//               Mod[T], From[Int, T], Into[T, Int],
-//               Div[T], Add[T, T, Output=T]](num: &T) -> String {
-//     // FIXME: fix constants
-//     let zero: T = from(0);
-//     let ten: T = from(10);
-//     let offset: T = from(48);
+@test
+fn testAdd() {
+    let a: Int = 10;
+    let b: Int = 20;
+    let c = a + b;
+    assert(c == 30);
+}
 
-//     let mut n = num.clone();
-//     if n == zero {
-//         return "0".toString();
-//     }
 
-//     let mut isNegative = False;
+@test
+fn testSub() {
+    let a: Int = 10;
+    let b: Int = 20;
+    let c = b - a;
+    assert(c == 10);
+}
 
-//     if n < zero {
-//         isNegative = True;
-//         n = -n;
-//     }
-
-//     let mut digits: Vec[U8] = Vec.new();
-
-//     while n > zero {
-//         let base: T = ten.clone();
-//         let value: T = n.mod(base) + offset.clone();
-//         let digit: Int = value.into();
-//         digits.push(digit.toU8());
-//         n /= base;
-//     }
-
-//     if isNegative {
-//         digits.push('-');
-//     }
-
-//     digits.reverse();
-
-//     String.fromU8(digits)
-// }
 
 }

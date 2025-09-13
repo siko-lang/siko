@@ -437,6 +437,10 @@ impl Lexer {
                                 self.step();
                                 self.addToken(Token::Op(OperatorKind::LessThanOrEqual))
                             }
+                            Some('-') => {
+                                self.step();
+                                self.addToken(Token::Arrow(ArrowKind::Left))
+                            }
                             _ => self.addToken(Token::Op(OperatorKind::LessThan)),
                         }
                     }

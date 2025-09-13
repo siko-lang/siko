@@ -1,0 +1,37 @@
+module Main {
+
+pub effect Baz {
+    fn baz()
+}
+
+pub effect Bar {
+    fn bar()
+}
+
+fn foo() {
+    println("Hello from foo");
+    baz();
+}
+
+fn foo2() {
+    println("Hello from foo2");
+}
+
+fn foo3() {
+    println("Hello from foo3");
+}
+
+fn main() {
+    with baz = foo2 {
+        with bar = foo { // the effect context of foo is captured here so baz = foo2
+            bar(); // calls foo and it calls foo2
+        }
+    }
+    with bar = foo { // the effect context of foo is captured here but baz is still unbound
+        with baz = foo3 {
+            bar(); // calls foo and it calls foo3
+        }
+    }
+}
+
+}

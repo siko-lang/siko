@@ -15,7 +15,10 @@ use crate::siko::{
         InstanceResolver::InstanceResolver,
         InstanceStore::InstanceStore,
         Instantiation::{instantiateEnum, instantiateStruct},
-        Instruction::{CallInfo, EnumCase, FieldId, FieldInfo, InstructionKind},
+        Instruction::{
+            CallInfo, EffectHandler, EnumCase, FieldId, FieldInfo, InstructionKind, SyntaxBlockId,
+            SyntaxBlockIdSegment, WithContext, WithInfo,
+        },
         Program::Program,
         Substitution::{createTypeSubstitutionFrom, Substitution},
         Type::Type,
@@ -95,32 +98,8 @@ impl<'a> Monomorphizer<'a> {
 
     fn addEntryPoints(&mut self) {
         if self.config.testOnly {
-            let mut testEntryFns = Vec::new();
-            for (name, f) in &self.program.functions {
-                if f.attributes.testEntry {
-                    testEntryFns.push(name.clone());
-                }
-            }
-            let mut bodyBuilder = BodyBuilder::new();
-            let mut mainBlock = bodyBuilder.createBlock();
-            for entry in testEntryFns {
-                let callRes = bodyBuilder.createTempValueWithType(Location::empty(), Type::getUnitType());
-                let info = CallInfo::new(entry.clone(), Vec::new());
-                let kind = InstructionKind::FunctionCall(callRes.clone(), info);
-                mainBlock.addInstruction(kind, Location::empty());
-            }
-            let unit = mainBlock.addUnit(Location::empty());
-            mainBlock.addReturn(unit, Location::empty());
-            let testRunnerMain = Function {
-                name: getMainName(),
-                params: Vec::new(),
-                result: Type::getUnitType(),
-                body: Some(bodyBuilder.build()),
-                constraintContext: ConstraintContext::new(),
-                kind: FunctionKind::UserDefined,
-                attributes: Attributes::new(),
-            };
-            //println!("handler fn {}", handlerFn);
+            let testRunnerMain = self.buildTestRunnerMain();
+
             self.program
                 .functions
                 .insert(testRunnerMain.name.clone(), testRunnerMain);
@@ -145,6 +124,72 @@ impl<'a> Monomorphizer<'a> {
                 std::process::exit(1);
             }
         }
+    }
+
+    fn buildTestRunnerMain(&mut self) -> Function {
+        let mut testEntryFns = Vec::new();
+        for (name, f) in &self.program.functions {
+            if f.attributes.testEntry {
+                testEntryFns.push(name.clone());
+            }
+        }
+        let mut bodyBuilder = BodyBuilder::new();
+        let mainBlock = bodyBuilder.createBlock();
+        let parentSyntaxBlock = SyntaxBlockId::new();
+        let mut prevBlock = mainBlock.clone();
+        for (i, entry) in testEntryFns.iter().enumerate() {
+            let mut entryBlock = bodyBuilder.createBlock();
+            let syntaxBlockId = parentSyntaxBlock.add(SyntaxBlockIdSegment { value: i as u32 });
+            entryBlock.addBlockStart(syntaxBlockId.clone(), Location::empty());
+            let withRes = bodyBuilder.createTempValueWithType(Location::empty(), Type::Never(false));
+            let testRunnerExecute = QualifiedName::Module("TestRunner".to_string())
+                .add("Testable".to_string())
+                .add("execute".to_string());
+            let handler = EffectHandler {
+                method: testRunnerExecute.clone(),
+                handler: entry.clone(),
+                location: Location::empty(),
+            };
+            let context = WithContext::EffectHandler(handler);
+            let withInfo = WithInfo {
+                contexts: vec![context],
+                blockId: entryBlock.getBlockId(),
+                parentSyntaxBlockId: parentSyntaxBlock.clone(),
+                syntaxBlockId: syntaxBlockId.clone(),
+                operations: Vec::new(),
+                contextTypes: Vec::new(),
+            };
+            let with = InstructionKind::With(withRes, withInfo);
+            prevBlock.addInstruction(with, Location::empty());
+            let testRunnerRun = QualifiedName::Module("TestRunner".to_string()).add("run".to_string());
+            let nameLiteralVar = bodyBuilder.createTempValueWithType(Location::empty(), Type::getStringLiteralType());
+            let stringLiteral = InstructionKind::StringLiteral(nameLiteralVar.clone(), format!("{}", entry.toString()));
+            let indexLiteralVar = bodyBuilder.createTempValueWithType(Location::empty(), Type::getIntType());
+            let indexLiteral = InstructionKind::IntegerLiteral(indexLiteralVar.clone(), format!("{}", (i + 1) as u32));
+            entryBlock.addInstruction(indexLiteral, Location::empty());
+            let info = CallInfo::new(testRunnerRun.clone(), vec![nameLiteralVar, indexLiteralVar]);
+            let callRes = bodyBuilder.createTempValueWithType(Location::empty(), Type::getUnitType());
+            let executeCallKind = InstructionKind::FunctionCall(callRes.clone(), info);
+            entryBlock.addInstruction(stringLiteral, Location::empty());
+            entryBlock.addInstruction(executeCallKind, Location::empty());
+            entryBlock.addBlockEnd(syntaxBlockId, Location::empty());
+            prevBlock = entryBlock;
+        }
+        let mut endBlock = bodyBuilder.createBlock();
+        prevBlock.addJump(endBlock.getBlockId(), Location::empty());
+        let unit = endBlock.addUnit(Location::empty());
+        endBlock.addReturn(unit, Location::empty());
+        let testRunnerMain = Function {
+            name: getMainName(),
+            params: Vec::new(),
+            result: Type::getUnitType(),
+            body: Some(bodyBuilder.build()),
+            constraintContext: ConstraintContext::new(),
+            kind: FunctionKind::UserDefined,
+            attributes: Attributes::new(),
+        };
+        //println!("handler fn {}", testRunnerMain);
+        testRunnerMain
     }
 
     pub fn run(mut self) -> Program {
