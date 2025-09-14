@@ -1,4 +1,5 @@
-use std::collections::{BTreeSet, VecDeque};
+use core::panic;
+use std::collections::{BTreeMap, VecDeque};
 
 use crate::siko::{
     backend::drop::{
@@ -27,7 +28,7 @@ pub struct Finalizer<'a> {
     program: &'a Program,
     dropMetadataStore: &'a mut DropMetadataStore,
     declarationStore: &'a DeclarationStore,
-    declaredDropFlags: BTreeSet<Variable>,
+    declaredDropFlags: BTreeMap<SimplePath, Variable>,
     referenceStore: &'a ReferenceStore,
 }
 
@@ -45,14 +46,14 @@ impl<'a> Finalizer<'a> {
             program: program,
             dropMetadataStore,
             declarationStore,
-            declaredDropFlags: BTreeSet::new(),
+            declaredDropFlags: BTreeMap::new(),
             referenceStore,
         }
     }
 
     fn declareDropFlags(&mut self) {
         let mut builder = self.bodyBuilder.iterator(BlockId::first());
-        for dropFlag in &self.declaredDropFlags {
+        for (_, dropFlag) in &self.declaredDropFlags {
             builder.addInstruction(
                 InstructionKind::DeclareVar(dropFlag.clone(), Mutability::Mutable),
                 dropFlag.location().clone(),
@@ -66,6 +67,17 @@ impl<'a> Finalizer<'a> {
         }
     }
 
+    fn getDropFlagForPath(&mut self, path: &SimplePath) -> Variable {
+        match self.declaredDropFlags.get(path) {
+            Some(v) => v.clone(),
+            None => {
+                let v = path.getDropFlag();
+                self.declaredDropFlags.insert(path.clone(), v.clone());
+                v
+            }
+        }
+    }
+
     pub fn process(&mut self) -> Function {
         if self.function.body.is_none() {
             return self.function.clone();
@@ -73,7 +85,7 @@ impl<'a> Finalizer<'a> {
 
         self.dropMetadataStore.expandPathLists(self.program);
 
-        //println!("Drop finalizer processing function: {}", self.function.name);
+        // println!("Drop finalizer processing function: {}", self.function.name);
         // println!("{}\n", self.function);
 
         let allBlocksIds = self.bodyBuilder.getAllBlockIds();
@@ -93,7 +105,7 @@ impl<'a> Finalizer<'a> {
                                     for path in declarationList.paths() {
                                         //println!("Creating dropflag for path: {}", path);
                                         let dropFlag = path.getDropFlag();
-                                        self.declaredDropFlags.insert(dropFlag.clone());
+                                        self.declaredDropFlags.insert(path, dropFlag.clone());
                                         builder.addInstruction(
                                             InstructionKind::FunctionCall(
                                                 dropFlag,
@@ -119,7 +131,7 @@ impl<'a> Finalizer<'a> {
                                             for current in pathList.paths() {
                                                 if current.contains(&rootPath) {
                                                     //println!("Adding drop path for {}", current);
-                                                    addDropPath(&mut builder, &current, &var);
+                                                    self.addDropPath(&mut builder, &current, &var);
                                                 }
                                             }
                                         }
@@ -156,9 +168,9 @@ impl<'a> Finalizer<'a> {
                                                 };
                                                 if generateDrop {
                                                     // println!("Adding drop path for {}", path);
-                                                    addDropPath(&mut builder, &path, &root);
+                                                    self.addDropPath(&mut builder, &path, &root);
                                                 }
-                                                let dropFlag = path.getDropFlag();
+                                                let dropFlag = self.getDropFlagForPath(&path);
                                                 builder.addInstruction(
                                                     InstructionKind::FunctionCall(
                                                         dropFlag,
@@ -227,8 +239,9 @@ impl<'a> Finalizer<'a> {
                                     branch: dropBlock.getBlockId(),
                                 },
                             ];
+                            let dropFlag = self.getDropFlagForPath(&dropVar.toPath().toSimplePath());
                             builder.replaceInstruction(
-                                InstructionKind::EnumSwitch(dropVar.getDropFlag(), cases),
+                                InstructionKind::EnumSwitch(dropFlag, cases),
                                 instruction.location.clone(),
                             );
                             queue.push_back(newBlockId);
@@ -290,7 +303,7 @@ impl<'a> Finalizer<'a> {
                                 },
                             ];
                             builder.replaceInstruction(
-                                InstructionKind::EnumSwitch(path.toSimplePath().getDropFlag(), cases),
+                                InstructionKind::EnumSwitch(self.getDropFlagForPath(&path.toSimplePath()), cases),
                                 instruction.location.clone(),
                             );
                             queue.push_back(newBlockId);
@@ -312,7 +325,7 @@ impl<'a> Finalizer<'a> {
             for path in pathList.paths() {
                 if path.sharesPrefixWith(&rootPath.toSimplePath()) {
                     // println!("Disabling dropflag for path: {} because {} is moved", path, rootPath);
-                    let dropFlag = path.getDropFlag();
+                    let dropFlag = self.getDropFlagForPath(&path);
                     builder.addInstruction(
                         InstructionKind::FunctionCall(dropFlag, CallInfo::new(getFalseName(), vec![])),
                         rootPath.location.clone(),
@@ -323,18 +336,18 @@ impl<'a> Finalizer<'a> {
             // println!("---------------------");
         }
     }
-}
 
-fn addDropPath(builder: &mut BlockBuilder, current: &SimplePath, var: &Variable) {
-    let dropFlag = current.getDropFlag();
-    let mut path = Path::new(var.clone(), var.location().clone());
-    path.items = current.items.clone();
-    let drop = InstructionKind::DropPath(path);
-    builder.addInstruction(drop, var.location().clone());
-    builder.step();
-    builder.addInstruction(
-        InstructionKind::FunctionCall(dropFlag, CallInfo::new(getFalseName(), vec![])),
-        var.location().clone(),
-    );
-    builder.step();
+    fn addDropPath(&mut self, builder: &mut BlockBuilder, current: &SimplePath, var: &Variable) {
+        let dropFlag = self.getDropFlagForPath(current);
+        let mut path = Path::new(var.clone(), var.location().clone());
+        path.items = current.items.clone();
+        let drop = InstructionKind::DropPath(path);
+        builder.addInstruction(drop, var.location().clone());
+        builder.step();
+        builder.addInstruction(
+            InstructionKind::FunctionCall(dropFlag, CallInfo::new(getFalseName(), vec![])),
+            var.location().clone(),
+        );
+        builder.step();
+    }
 }

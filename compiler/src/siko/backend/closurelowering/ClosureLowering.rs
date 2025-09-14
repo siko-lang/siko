@@ -100,8 +100,8 @@ impl ClosureStore {
             s.lower(self);
         }
         for (_, f) in &mut program.functions {
-            //println!("Lowering function: {}", f.name);
-            //println!("Lowering function: {}", f);
+            // println!("Lowering function: {}", f.name);
+            // println!("Lowering function: {}", f);
             f.params.lower(self);
             if let Some(body) = &mut f.body {
                 body.lower(self);

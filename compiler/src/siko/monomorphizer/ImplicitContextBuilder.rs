@@ -47,8 +47,8 @@ impl<'a, 'b> ImplicitContextBuilder<'a, 'b> {
 
         let mut function = function.clone();
 
-        //println!("Processing implicit context for function: {}", function.name);
-        //println!("Processing implicit context for function: {}", function);
+        // println!("Processing implicit context for function: {}", function.name);
+        // println!("Processing implicit context for function: {}", function);
         let mut builder = bodyBuilder.iterator(BlockId::first());
         let mut addInitialContext = true;
         if let (_, Some(context)) = function.name.getUnmonomorphized() {
@@ -244,6 +244,14 @@ impl<'a, 'b> ImplicitContextBuilder<'a, 'b> {
                                     InstructionKind::FunctionCall(dest.clone(), CallInfo::new(info.name.clone(), args));
                                 builder.replaceInstruction(kind, instruction.location.clone());
                             }
+                        }
+                        InstructionKind::BlockEnd(_) => {
+                            builder.removeInstruction();
+                            continue;
+                        }
+                        InstructionKind::BlockStart(_) => {
+                            builder.removeInstruction();
+                            continue;
                         }
                         _ => {}
                     }

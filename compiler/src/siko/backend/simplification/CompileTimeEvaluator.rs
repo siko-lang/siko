@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use crate::siko::{
     hir::{
         Block::BlockId, BlockBuilder::BlockBuilder, BodyBuilder::BodyBuilder, Function::Function,
-        Instruction::InstructionKind, Variable::VariableName,
+        Instruction::InstructionKind, Type::Type, Variable::VariableName,
     },
     qualifiedname::builtins::{getFalseName, getTrueName},
 };
@@ -117,7 +117,9 @@ impl<'a> CompileTimeEvaluator<'a> {
                                 self.queue.push(targetBranch);
                             }
                             if modify {
-                                let jumpVar = builder.getBodyBuilder().createTempValue(instruction.location.clone());
+                                let jumpVar = builder
+                                    .getBodyBuilder()
+                                    .createTempValueWithType(instruction.location.clone(), Type::Never(false));
                                 let kind = InstructionKind::Jump(jumpVar, targetBranch);
                                 builder.replaceInstruction(kind, instruction.location.clone());
                                 self.modified = true;
