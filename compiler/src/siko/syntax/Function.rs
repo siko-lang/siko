@@ -20,12 +20,16 @@ pub enum FunctionExternKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Attributes {
+    pub inline: bool,
     pub testEntry: bool,
 }
 
 impl Attributes {
     pub fn new() -> Self {
-        Attributes { testEntry: false }
+        Attributes {
+            inline: false,
+            testEntry: false,
+        }
     }
 }
 

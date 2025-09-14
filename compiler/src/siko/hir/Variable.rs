@@ -6,6 +6,7 @@ use std::rc::Rc;
 
 use crate::siko::backend::drop::Path::Path;
 use crate::siko::hir::Block::BlockId;
+use crate::siko::hir::VariableAllocator::VariableAllocator;
 use crate::siko::location::Location::Location;
 
 use super::Type::Type;
@@ -183,33 +184,87 @@ impl Debug for VariableKind {
     }
 }
 
-pub struct CopyMap {
+pub trait VariableCopier {
+    fn copy(&mut self, var: &Variable) -> Variable;
+}
+
+pub struct IdentityCopier {
     map: BTreeMap<*const RefCell<VariableInfo>, Variable>,
 }
 
-impl CopyMap {
-    pub fn new() -> CopyMap {
-        CopyMap { map: BTreeMap::new() }
+impl IdentityCopier {
+    pub fn new() -> IdentityCopier {
+        IdentityCopier { map: BTreeMap::new() }
     }
-
     fn get(&self, var: &Variable) -> Option<Variable> {
+        //println!("Getting var: {:?}", Rc::as_ptr(&var.info));
         self.map.get(&Rc::as_ptr(&var.info)).cloned()
     }
 
     fn insert(&mut self, from: &Variable, to: Variable) {
+        //println!("Mapping var: {:?} => {}", Rc::as_ptr(&from.info), to);
         self.map.insert(Rc::as_ptr(&from.info), to);
     }
 
     pub fn copy(&mut self, var: &Variable) -> Variable {
+        //println!("Copying var: {}", var);
         if let Some(mut v) = self.get(var) {
             v.kind = var.kind.clone();
             v.location = var.location.clone();
             v
         } else {
             let v = var.cloneNew();
+            //println!("  copied to: {}", v);
             self.insert(var, v.clone());
             v
         }
+    }
+}
+
+impl VariableCopier for IdentityCopier {
+    fn copy(&mut self, var: &Variable) -> Variable {
+        self.copy(var)
+    }
+}
+
+pub struct VariableInlineCopier {
+    allocator: VariableAllocator,
+    map: BTreeMap<VariableName, Variable>,
+}
+
+impl VariableInlineCopier {
+    pub fn new(allocator: VariableAllocator, args: BTreeMap<String, Variable>) -> VariableInlineCopier {
+        let mut varMap = BTreeMap::new();
+        for (name, arg) in args {
+            varMap.insert(VariableName::Arg(name), arg);
+        }
+        VariableInlineCopier { allocator, map: varMap }
+    }
+}
+
+impl VariableCopier for VariableInlineCopier {
+    fn copy(&mut self, var: &Variable) -> Variable {
+        if let Some(v) = self.map.get(&var.name()) {
+            return v.clone();
+        }
+        let newName = self.allocator.allocateNewInlineName(var.name());
+        let v = var.cloneInto(newName);
+        self.map.insert(var.name(), v.clone());
+        v
+    }
+}
+
+pub struct CopyHandler<'a> {
+    copier: &'a mut dyn VariableCopier,
+}
+
+impl<'a> CopyHandler<'a> {
+    pub fn new(copier: &'a mut dyn VariableCopier) -> CopyHandler<'a> {
+        CopyHandler { copier }
+    }
+
+    pub fn copy(&mut self, var: &Variable) -> Variable {
+        self.copier.copy(var)
     }
 }
 
@@ -261,7 +316,7 @@ impl Variable {
         }
     }
 
-    pub fn copy(&self, map: &mut CopyMap) -> Variable {
+    pub fn copy(&self, map: &mut CopyHandler) -> Variable {
         map.copy(self)
     }
 
@@ -371,7 +426,7 @@ impl Variable {
 impl Display for Variable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(ty) = &self.getTypeOpt() {
-            write!(f, "${}/{}: {}", self.name(), self.kind, ty)
+            write!(f, "${}/{}: {} {:?}", self.name(), self.kind, ty, Rc::as_ptr(&self.info))
         } else {
             write!(f, "${}/{}", self.name(), self.kind)
         }

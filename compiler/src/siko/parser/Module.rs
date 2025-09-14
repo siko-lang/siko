@@ -47,6 +47,7 @@ impl<'a> ModuleParser for Parser<'a> {
                 let name = self.parseVarIdentifier();
                 match name.name().as_str() {
                     "test" => attributes.testEntry = true,
+                    "inline" => attributes.inline = true,
                     _ => self.reportError3(&format!("Unknown attribute: {}", name), name.location()),
                 }
             } else if self.check(TokenKind::Keyword(KeywordKind::Derive)) {

@@ -33,6 +33,23 @@ impl VariableAllocator {
         Variable::new(VariableName::Tmp(TempInfo { id, noDrop: false }), location)
     }
 
+    pub fn allocateNewInlineName(&self, name: VariableName) -> VariableName {
+        let id = {
+            let mut nextId = self.nextId.borrow_mut();
+            let id = *nextId;
+            *nextId += 1;
+            id
+        };
+        match name {
+            VariableName::Tmp(info) => VariableName::Tmp(TempInfo {
+                id,
+                noDrop: info.noDrop,
+            }),
+            VariableName::Local(name, _) => VariableName::Local(name, id),
+            _ => VariableName::Tmp(TempInfo { id, noDrop: false }),
+        }
+    }
+
     pub fn allocateWithType(&self, location: Location, ty: super::Type::Type) -> Variable {
         let var = self.allocate(location);
         var.setType(ty);

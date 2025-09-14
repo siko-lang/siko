@@ -5,6 +5,7 @@ use crate::siko::{
         Instruction::{SyntaxBlockId, SyntaxBlockIdSegment},
         Substitution::Substitution,
         SyntaxBlockIterator::SyntaxBlockIterator,
+        Variable::IdentityCopier,
     },
     monomorphizer::{
         Context::HandlerResolutionStore, Handler::HandlerResolution, Instruction::processInstruction,
@@ -22,7 +23,8 @@ pub fn processBody(
 ) -> Option<Body> {
     match input {
         Some(body) => {
-            let bodyBuilder = BodyBuilder::withBody(body.copy());
+            let mut copier = IdentityCopier::new();
+            let bodyBuilder = BodyBuilder::withBody(body.copy(&mut copier));
             let mut handlerResolutionStore = HandlerResolutionStore::new();
             handlerResolutionStore.insert(SyntaxBlockId::new(), handlerResolution.clone());
             handlerResolutionStore.insert(

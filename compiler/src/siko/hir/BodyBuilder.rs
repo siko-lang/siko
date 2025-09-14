@@ -39,20 +39,30 @@ impl Builder {
             Some(ref body) => body.clone(),
             None => Body::new(),
         };
-        let blockCount = body.blocks.len();
+        let mut nextBlockId = 0;
+        for blockId in body.blocks.keys() {
+            if blockId.id >= nextBlockId {
+                nextBlockId = blockId.id + 1;
+            }
+        }
         Builder {
             body: body,
-            nextBlockId: blockCount as u32,
+            nextBlockId: nextBlockId,
             targetBlockId: BlockId::first(),
             nextId: 0,
         }
     }
 
     fn createBlock(&mut self) -> BlockId {
-        let blockId = BlockId { id: self.nextBlockId };
-        self.nextBlockId += 1;
+        let blockId = self.allocateBlockId();
         let irBlock = Block::new(blockId);
         self.body.addBlock(irBlock);
+        blockId
+    }
+
+    fn allocateBlockId(&mut self) -> BlockId {
+        let blockId = BlockId { id: self.nextBlockId };
+        self.nextBlockId += 1;
         blockId
     }
 
@@ -272,10 +282,10 @@ impl BodyBuilder {
         bodyBuilder.getInstruction(id, index)
     }
 
-    pub fn cutBlock(&self, blockId: BlockId, index: usize) -> BlockId {
+    pub fn splitBlock(&self, blockId: BlockId, index: usize) -> BlockId {
         let mut bodyBuilder = self.bodyBuilder.borrow_mut();
         let newBlock = bodyBuilder.createBlock();
-        bodyBuilder.body.cutBlock(blockId, index, newBlock);
+        bodyBuilder.body.splitBlock(blockId, index, newBlock);
         newBlock
     }
 
@@ -302,5 +312,10 @@ impl BodyBuilder {
     pub fn isValid(&self, blockId: BlockId) -> bool {
         let bodyBuilder = self.bodyBuilder.borrow();
         bodyBuilder.isValid(blockId)
+    }
+
+    pub fn allocateBlockId(&self) -> BlockId {
+        let mut bodyBuilder = self.bodyBuilder.borrow_mut();
+        bodyBuilder.allocateBlockId()
     }
 }

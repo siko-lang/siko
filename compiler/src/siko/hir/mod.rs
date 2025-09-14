@@ -8,6 +8,7 @@ pub mod ConstraintContext;
 pub mod Data;
 pub mod Function;
 pub mod FunctionCallResolver;
+pub mod FunctionGroupBuilder;
 pub mod Graph;
 pub mod Implicit;
 pub mod InstanceResolver;

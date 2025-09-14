@@ -11,12 +11,16 @@ use super::{ConstraintContext::ConstraintContext, Type::Type};
 
 #[derive(Debug, Clone)]
 pub struct Attributes {
+    pub inline: bool,
     pub testEntry: bool,
 }
 
 impl Attributes {
     pub fn new() -> Attributes {
-        Attributes { testEntry: false }
+        Attributes {
+            inline: false,
+            testEntry: false,
+        }
     }
 }
 
@@ -197,6 +201,10 @@ impl Function {
             std::io::Error::new(std::io::ErrorKind::Other, "Failed to write function name")
         })?;
         Ok(())
+    }
+
+    pub fn isInline(&self) -> bool {
+        self.attributes.inline
     }
 }
 

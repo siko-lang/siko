@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use crate::siko::hir::Instruction::Instruction;
 use crate::siko::hir::Instruction::InstructionKind;
-use crate::siko::hir::Variable::CopyMap;
+use crate::siko::hir::Variable::CopyHandler;
 use crate::siko::location::Location::Location;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
@@ -49,7 +49,7 @@ impl BlockInner {
         BlockInner { id, instructions }
     }
 
-    pub fn copy(&self, map: &mut CopyMap) -> BlockInner {
+    pub fn copy(&self, map: &mut CopyHandler) -> BlockInner {
         let mut instructions = Vec::new();
         for instr in &self.instructions {
             instructions.push(instr.copy(map));
@@ -158,7 +158,7 @@ impl Block {
         }
     }
 
-    pub fn copy(&self, map: &mut CopyMap) -> Block {
+    pub fn copy(&self, map: &mut CopyHandler) -> Block {
         Block {
             inner: Rc::new(RefCell::new(self.inner.borrow().copy(map))),
         }

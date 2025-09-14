@@ -5,9 +5,8 @@ use crate::siko::{
         },
         BorrowChecker::BorrowChecker,
         DataGroups::DataGroups,
-        FunctionGroups::FunctionGroupBuilder,
     },
-    hir::Program::Program,
+    hir::{FunctionGroupBuilder::FunctionGroupBuilder, Program::Program},
     location::Report::ReportContext,
 };
 

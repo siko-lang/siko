@@ -225,7 +225,7 @@ impl<'a> Finalizer<'a> {
                     // Process the instruction
                     match &instruction.kind {
                         InstructionKind::Drop(_, dropVar) => {
-                            let newBlockId = builder.cutBlock(1);
+                            let newBlockId = builder.splitBlock(1);
                             let mut dropBlock = self.bodyBuilder.createBlock();
                             dropBlock.addInstruction(instruction.kind.clone(), instruction.location.clone());
                             dropBlock.addJump(newBlockId, instruction.location.clone());
@@ -248,7 +248,7 @@ impl<'a> Finalizer<'a> {
                             return;
                         }
                         InstructionKind::DropPath(path) => {
-                            let newBlockId = builder.cutBlock(1);
+                            let newBlockId = builder.splitBlock(1);
                             let mut dropBlock = self.bodyBuilder.createBlock();
                             let dropVar = if path.isRootOnly() {
                                 path.root.clone()

@@ -163,5 +163,8 @@ pub fn convertFunctionAttributes(attributes: &Attributes) -> IrAttributes {
     if attributes.testEntry {
         hirAttributes.testEntry = true;
     }
+    if attributes.inline {
+        hirAttributes.inline = true;
+    }
     hirAttributes
 }

@@ -380,10 +380,10 @@ impl BlockBuilder {
         self.blockId
     }
 
-    pub fn cutBlock(&self, offset: usize) -> BlockId {
+    pub fn splitBlock(&self, offset: usize) -> BlockId {
         match self.mode {
             Mode::Append => panic!("Cannot cut block in append mode"),
-            Mode::Iterator(index) => self.bodyBuilder.cutBlock(self.blockId, index + offset),
+            Mode::Iterator(index) => self.bodyBuilder.splitBlock(self.blockId, index + offset),
         }
     }
 

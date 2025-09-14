@@ -1,6 +1,7 @@
 pub mod BlockMerger;
 pub mod CompileTimeEvaluator;
 pub mod DeadCodeEliminator;
+pub mod Inliner;
 pub mod JumpSimplifier;
 pub mod Simplifier;
 pub mod UnusedAssignmentEliminator;

@@ -4,7 +4,7 @@ use std::fmt::Display;
 use crate::siko::backend::drop::Path::Path;
 use crate::siko::hir::Block::BlockId;
 use crate::siko::hir::Type::formatTypes;
-use crate::siko::hir::Variable::CopyMap;
+use crate::siko::hir::Variable::CopyHandler;
 use crate::siko::hir::Variable::VariableName;
 use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
 
@@ -333,7 +333,7 @@ impl CallInfo {
         }
     }
 
-    pub fn copy(&self, map: &mut CopyMap) -> CallInfo {
+    pub fn copy(&self, map: &mut CopyHandler) -> CallInfo {
         CallInfo {
             name: self.name.clone(),
             args: self.args.iter().map(|a| a.copy(map)).collect(),
@@ -391,7 +391,7 @@ impl ClosureCreateInfo {
         }
     }
 
-    pub fn copy(&self, map: &mut CopyMap) -> ClosureCreateInfo {
+    pub fn copy(&self, map: &mut CopyHandler) -> ClosureCreateInfo {
         ClosureCreateInfo {
             closureParams: self.closureParams.iter().map(|p| p.copy(map)).collect(),
             body: self.body,
@@ -501,7 +501,7 @@ fn useVars(vars: Vec<Variable>) -> Vec<Variable> {
 }
 
 impl InstructionKind {
-    pub fn copy(&self, map: &mut CopyMap) -> InstructionKind {
+    pub fn copy(&self, map: &mut CopyHandler) -> InstructionKind {
         match self {
             InstructionKind::FunctionCall(v, info) => InstructionKind::FunctionCall(v.copy(map), info.copy(map)),
             InstructionKind::Converter(v1, v2) => InstructionKind::Converter(v1.copy(map), v2.copy(map)),
@@ -524,7 +524,7 @@ impl InstructionKind {
             InstructionKind::PtrOf(v, a) => InstructionKind::PtrOf(v.copy(map), a.copy(map)),
             InstructionKind::DropPath(p) => InstructionKind::DropPath(p.clone()),
             InstructionKind::DropMetadata(k) => InstructionKind::DropMetadata(k.clone()),
-            InstructionKind::Drop(v, a) => InstructionKind::Drop(v.clone(), a.clone()),
+            InstructionKind::Drop(v, a) => InstructionKind::Drop(v.copy(map), a.copy(map)),
             InstructionKind::Jump(v, b) => InstructionKind::Jump(v.copy(map), b.clone()),
             InstructionKind::Assign(d, s) => InstructionKind::Assign(d.copy(map), s.copy(map)),
             InstructionKind::FieldAssign(d, r, i) => InstructionKind::FieldAssign(d.copy(map), r.copy(map), i.clone()),
@@ -1048,7 +1048,7 @@ impl Instruction {
         println!("    {}", self);
     }
 
-    pub fn copy(&self, map: &mut CopyMap) -> Instruction {
+    pub fn copy(&self, map: &mut CopyHandler) -> Instruction {
         Instruction {
             implicit: self.implicit,
             kind: self.kind.copy(map),

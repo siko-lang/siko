@@ -6,7 +6,7 @@ use std::{
 use crate::siko::hir::{
     Block::{Block, BlockId},
     Instruction::Instruction,
-    Variable::CopyMap,
+    Variable::{CopyHandler, VariableCopier},
     VariableAllocator::VariableAllocator,
 };
 
@@ -24,8 +24,8 @@ impl Body {
         }
     }
 
-    pub fn copy(&self) -> Body {
-        let mut copyMap = CopyMap::new();
+    pub fn copy(&self, copier: &mut dyn VariableCopier) -> Body {
+        let mut copyMap = CopyHandler::new(copier);
         let mut blocks = BTreeMap::new();
         for (id, block) in &self.blocks {
             blocks.insert(*id, block.copy(&mut copyMap));
@@ -65,7 +65,7 @@ impl Body {
         ids
     }
 
-    pub fn cutBlock(&mut self, blockId: BlockId, index: usize, newBlockId: BlockId) {
+    pub fn splitBlock(&mut self, blockId: BlockId, index: usize, newBlockId: BlockId) {
         let block = self.blocks.get_mut(&blockId).expect("Block not found");
         let inner = block.getInner();
         let otherInstructions = inner.borrow_mut().instructions.split_off(index);
