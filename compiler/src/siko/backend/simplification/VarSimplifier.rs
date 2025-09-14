@@ -17,8 +17,8 @@ pub struct VarSimplifier<'a> {
     function: &'a Function,
     useCounts: BTreeMap<VariableName, usize>,
     assignCounts: BTreeMap<VariableName, usize>,
-    assignments: BTreeMap<VariableName, VariableName>,
-    simplifiedVars: BTreeMap<VariableName, VariableName>,
+    assignments: BTreeMap<VariableName, Variable>,
+    simplifiedVars: BTreeMap<VariableName, Variable>,
 }
 
 impl<'a> VarSimplifier<'a> {
@@ -32,16 +32,14 @@ impl<'a> VarSimplifier<'a> {
         }
     }
 
-    fn replace(&mut self, old: VariableName) -> Option<VariableName> {
-        let mut current = old.clone();
-        while let Some(new) = self.simplifiedVars.get(&current) {
-            current = new.clone();
+    fn replace(&mut self, old: VariableName) -> Option<Variable> {
+        let mut currentName = old.clone();
+        let mut current = None;
+        while let Some(new) = self.simplifiedVars.get(&currentName) {
+            current = Some(new.clone());
+            currentName = new.name();
         }
-        if current != old {
-            Some(current)
-        } else {
-            None
-        }
+        return current;
     }
 
     fn addAssign(&mut self, var: Variable) {
@@ -81,7 +79,7 @@ impl<'a> VarSimplifier<'a> {
                     }
                     match instruction.kind {
                         InstructionKind::Assign(dest, src) => {
-                            self.assignments.insert(src.name(), dest.name());
+                            self.assignments.insert(src.name(), dest.clone());
                         }
                         _ => {}
                     }
@@ -95,7 +93,7 @@ impl<'a> VarSimplifier<'a> {
         for (src, useCount) in &self.useCounts {
             if useCount == &1 {
                 if let Some(dest) = self.assignments.get(src) {
-                    if self.assignCounts.get(dest) == Some(&1) {
+                    if self.assignCounts.get(&dest.name()) == Some(&1) {
                         if src.isArg() || dest.isArg() {
                             continue;
                         }
@@ -165,8 +163,7 @@ impl<'a> VarSimplifier<'a> {
                     for var in &allVars {
                         if let Some(dest) = self.replace(var.name()) {
                             //println!("Replacing {} with {}", var.value, dest);
-                            let simplifiedVar = var.cloneInto(dest);
-                            kind = kind.replaceVar(var.clone(), simplifiedVar.clone());
+                            kind = kind.replaceVar(var.clone(), dest.useVar());
                         }
                     }
                     if let InstructionKind::Assign(dest, src) = &kind {
