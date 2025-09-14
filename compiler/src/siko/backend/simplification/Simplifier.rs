@@ -7,20 +7,32 @@ use crate::siko::{
     qualifiedname::QualifiedName,
 };
 
-pub fn simplify(mut program: Program) -> Program {
+pub struct Config {
+    pub enableInliner: bool,
+}
+
+pub fn simplify(mut program: Program, config: Config) -> Program {
     let functionGroupBuilder = FunctionGroupBuilder::new(&program);
     let functionGroups = functionGroupBuilder.process();
-    let mut inliner = Inliner::new();
+    let mut inliner = Inliner::new(config.enableInliner);
     for group in functionGroups {
+        //println!("Simplifying function group: {:?}", group.items);
         for fnName in &group.items {
             let mut simplifiedFunc = program.functions.get(&fnName).unwrap().clone();
             simplifiedFunc = simplifyFunction(&program, simplifiedFunc, &group.items, &mut inliner);
             program.functions.insert(fnName.clone(), simplifiedFunc);
         }
     }
-    program
-        .functions
-        .retain(|name, f| !f.isInline() || inliner.savedInlineFn.contains(name));
+    if config.enableInliner {
+        // Remove inline functions that were inlined
+        program.functions.retain(|name, f| {
+            let keep = !f.isInline() || inliner.savedInlineFn.contains(name);
+            if !keep {
+                //println!("Removing inlined function: {}", name);
+            }
+            keep
+        });
+    }
     program
 }
 
@@ -69,8 +81,10 @@ pub fn simplifyFunction(
             simplifiedFunc = f;
             simplified = true;
         }
-
-        simplifiedFunc = inliner.process(&simplifiedFunc, program, groupItems);
+        if let Some(f) = inliner.process(&simplifiedFunc, program, groupItems) {
+            simplifiedFunc = f;
+            simplified = true;
+        }
     }
     simplifiedFunc
 }

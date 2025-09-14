@@ -1,9 +1,14 @@
 use crate::{
     siko::{
         backend::{
-            borrowcheck::Check::Check, closurelowering::ClosureLowering, drop::Drop::checkDrops,
-            recursivedatahandler::RecursiveDataHandler, simplification::Simplifier,
-            DeadCodeEliminator::eliminateDeadCode, FieldRefMerger, RemoveTuples::removeTuples,
+            borrowcheck::Check::Check,
+            closurelowering::ClosureLowering,
+            drop::Drop::checkDrops,
+            recursivedatahandler::RecursiveDataHandler,
+            simplification::Simplifier::{self, Config},
+            DeadCodeEliminator::eliminateDeadCode,
+            FieldRefMerger,
+            RemoveTuples::removeTuples,
         },
         hir::Program::Program,
         location::Report::ReportContext,
@@ -38,10 +43,15 @@ pub fn process(ctx: &ReportContext, runner: &mut Runner, program: Program) -> Pr
     //verifyTypes(&program);
     let program = stage!(runner, "Removing tuples", { removeTuples(&program) });
     //println!("after remove tuples\n{}", program);
-    let program = stage!(runner, "Simplifying", { Simplifier::simplify(program) });
+    let program = stage!(runner, "Simplifying", {
+        Simplifier::simplify(program, Config { enableInliner: false })
+    });
     //println!("after simplification\n{}", program);
     let program = ClosureLowering::process(program);
     //println!("after closure lowering\n{}", program);
     Check::new(&program).process(ctx);
+    let program = stage!(runner, "Simplifying2", {
+        Simplifier::simplify(program, Config { enableInliner: true })
+    });
     program
 }

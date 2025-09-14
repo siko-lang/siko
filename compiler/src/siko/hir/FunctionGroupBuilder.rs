@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::siko::{
     hir::{Body::Body, Instruction::InstructionKind, Program::Program},
-    qualifiedname::QualifiedName,
+    qualifiedname::{builtins::getMainName, QualifiedName},
     util::DependencyProcessor::{processDependencies, DependencyGroup},
 };
 
@@ -26,6 +26,13 @@ impl<'a> FunctionGroupBuilder<'a> {
             }
         }
         let groups = processDependencies(&allDeps);
+        // let mut groupMap = BTreeMap::new();
+        // for group in &groups {
+        //     for item in &group.items {
+        //         groupMap.insert(item.clone(), group);
+        //     }
+        // }
+        // self.printFullCallGraph(&allDeps, &groupMap, self.program);
         groups
     }
 
@@ -37,6 +44,9 @@ impl<'a> FunctionGroupBuilder<'a> {
             for instr in &b.instructions {
                 match &instr.kind {
                     InstructionKind::FunctionCall(_, info) => {
+                        if deps.contains(&info.name) {
+                            continue;
+                        }
                         deps.push(info.name.clone());
                     }
                     _ => {}
@@ -44,5 +54,40 @@ impl<'a> FunctionGroupBuilder<'a> {
             }
         }
         deps
+    }
+
+    fn printFullCallGraph(
+        &self,
+        allDeps: &BTreeMap<QualifiedName, Vec<QualifiedName>>,
+        groupMap: &BTreeMap<QualifiedName, &DependencyGroup<QualifiedName>>,
+        program: &Program,
+    ) {
+        let main = getMainName();
+        self.printEntry(main, allDeps, 0, groupMap, program);
+    }
+
+    fn printEntry(
+        &self,
+        entry: QualifiedName,
+        allDeps: &BTreeMap<QualifiedName, Vec<QualifiedName>>,
+        depth: usize,
+        groupMap: &BTreeMap<QualifiedName, &DependencyGroup<QualifiedName>>,
+        program: &Program,
+    ) {
+        if let Some(deps) = allDeps.get(&entry) {
+            for _ in 0..depth {
+                print!("  ");
+            }
+            let f = program.functions.get(&entry).expect("Function not found");
+            println!("{}{}", entry, if f.attributes.inline { " - inline" } else { "" });
+            let group = groupMap.get(&entry).expect("Group not found");
+            for dep in deps {
+                if group.items.contains(dep) {
+                    // Don't print calls within the same group
+                    continue;
+                }
+                self.printEntry(dep.clone(), allDeps, depth + 1, groupMap, program);
+            }
+        }
     }
 }

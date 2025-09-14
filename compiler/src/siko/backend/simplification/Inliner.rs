@@ -15,22 +15,55 @@ use crate::siko::{
 
 pub struct Inliner {
     pub savedInlineFn: BTreeSet<QualifiedName>,
+    enabled: bool,
 }
 
 impl Inliner {
-    pub fn new() -> Self {
+    pub fn new(enabled: bool) -> Self {
         Inliner {
             savedInlineFn: BTreeSet::new(),
+            enabled,
         }
     }
 
-    pub fn process(&mut self, function: &Function, program: &Program, groupItems: &Vec<QualifiedName>) -> Function {
-        if function.body.is_none() {
-            return function.clone();
+    pub fn process(
+        &mut self,
+        function: &Function,
+        program: &Program,
+        groupItems: &Vec<QualifiedName>,
+    ) -> Option<Function> {
+        if function.body.is_none() || !self.enabled {
+            return None;
         }
         //println!("Processing function: {}", function.name);
         //println!("{}", function);
         let mut bodyBuilder = BodyBuilder::cloneFunction(function);
+        let mut inlined = false;
+        loop {
+            if !self.inlineCalls(program, groupItems, &mut bodyBuilder) {
+                break;
+            }
+            inlined = true;
+        }
+        if !inlined {
+            return None;
+        }
+        //println!("Inlined function body:");
+        let body = bodyBuilder.build();
+        let f = Function {
+            body: Some(body),
+            ..function.clone()
+        };
+        //println!("{}", f);
+        Some(f)
+    }
+
+    fn inlineCalls(
+        &mut self,
+        program: &Program,
+        groupItems: &Vec<QualifiedName>,
+        bodyBuilder: &mut BodyBuilder,
+    ) -> bool {
         let blockIds = bodyBuilder.getAllBlockIds();
         for blockId in blockIds {
             let mut builder = bodyBuilder.iterator(blockId);
@@ -46,7 +79,7 @@ impl Inliner {
                                     builder.step();
                                     continue;
                                 }
-                                //println!("Inlining function: {} {}", info.name, callee.name);
+                                //println!("Inlining function: {}", info.name);
                                 //println!("Callee {}", callee);
                                 let afterCallBlockId = builder.splitBlock(1);
                                 let calleeBody = match &callee.body {
@@ -138,6 +171,9 @@ impl Inliner {
                                         }
                                     }
                                 }
+                                return true;
+                            } else {
+                                //println!("Not inlining function: {} (not inline)", info.name);
                             }
                         }
                         _ => {}
@@ -148,13 +184,6 @@ impl Inliner {
                 }
             }
         }
-        //println!("Inlined function body:");
-        let body = bodyBuilder.build();
-        let f = Function {
-            body: Some(body),
-            ..function.clone()
-        };
-        //println!("{}", f);
-        f
+        false
     }
 }

@@ -518,6 +518,8 @@ impl<'a> Monomorphizer<'a> {
         let unitValue = builder.addUnit(location.clone());
         builder.addReturn(unitValue, location);
 
+        let mut attributes = Attributes::new();
+        attributes.inline = true;
         let dropFn = Function {
             name: monoName.clone(),
             params: vec![Parameter::Named("self".to_string(), ty.clone(), false)],
@@ -525,7 +527,7 @@ impl<'a> Monomorphizer<'a> {
             body: Some(bodyBuilder.build()),
             constraintContext: ConstraintContext::new(),
             kind: FunctionKind::UserDefined,
-            attributes: Attributes::new(),
+            attributes: attributes,
         };
 
         self.program.functions.insert(monoName.clone(), dropFn);
