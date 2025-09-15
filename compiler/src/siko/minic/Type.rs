@@ -29,6 +29,13 @@ impl Type {
         }
     }
 
+    pub fn isVoidPtr(&self) -> bool {
+        match self {
+            Type::VoidPtr => true,
+            _ => false,
+        }
+    }
+
     pub fn getBase(&self) -> Type {
         match self {
             Type::Ptr(p) => *p.clone(),

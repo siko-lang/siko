@@ -14,14 +14,16 @@ use crate::siko::{
 };
 
 pub struct Inliner {
-    pub savedInlineFn: BTreeSet<QualifiedName>,
+    pub wasInlined: BTreeSet<QualifiedName>,
+    pub wasNotInlined: BTreeSet<QualifiedName>,
     enabled: bool,
 }
 
 impl Inliner {
     pub fn new(enabled: bool) -> Self {
         Inliner {
-            savedInlineFn: BTreeSet::new(),
+            wasInlined: BTreeSet::new(),
+            wasNotInlined: BTreeSet::new(),
             enabled,
         }
     }
@@ -35,8 +37,8 @@ impl Inliner {
         if function.body.is_none() || !self.enabled {
             return None;
         }
-        //println!("Processing function: {}", function.name);
-        //println!("{}", function);
+        // println!("Processing function: {}", function.name);
+        // println!("{}", function);
         let mut bodyBuilder = BodyBuilder::cloneFunction(function);
         let mut inlined = false;
         loop {
@@ -72,13 +74,14 @@ impl Inliner {
                     match &instruction.kind {
                         InstructionKind::FunctionCall(dest, info) => {
                             let callee = program.functions.get(&info.name).expect("Function not found");
-                            if callee.isInline() {
+                            if callee.canbeInlined() {
                                 if groupItems.contains(&info.name) {
                                     // Don't inline functions in the same group
-                                    self.savedInlineFn.insert(info.name.clone());
+                                    self.wasNotInlined.insert(info.name.clone());
                                     builder.step();
                                     continue;
                                 }
+                                self.wasInlined.insert(info.name.clone());
                                 //println!("Inlining function: {}", info.name);
                                 //println!("Callee {}", callee);
                                 let afterCallBlockId = builder.splitBlock(1);

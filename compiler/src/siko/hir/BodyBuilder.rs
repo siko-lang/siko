@@ -210,6 +210,10 @@ impl BodyBuilder {
 
     pub fn build(&self) -> Body {
         let bodyBuilder = self.bodyBuilder.borrow();
+        // sanity check - first block exists
+        if !bodyBuilder.body.blocks.contains_key(&BlockId::first()) {
+            panic!("BodyBuilder.build: first block not found");
+        }
         bodyBuilder.body.clone()
     }
 

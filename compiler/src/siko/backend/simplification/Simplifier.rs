@@ -25,8 +25,8 @@ pub fn simplify(mut program: Program, config: Config) -> Program {
     }
     if config.enableInliner {
         // Remove inline functions that were inlined
-        program.functions.retain(|name, f| {
-            let keep = !f.isInline() || inliner.savedInlineFn.contains(name);
+        program.functions.retain(|name, _| {
+            let keep = !inliner.wasInlined.contains(name) || inliner.wasNotInlined.contains(name);
             if !keep {
                 //println!("Removing inlined function: {}", name);
             }
@@ -42,46 +42,85 @@ pub fn simplifyFunction(
     groupItems: &Vec<QualifiedName>,
     inliner: &mut Inliner,
 ) -> Function {
+    let trace = false;
     let mut simplified = true;
     while simplified {
         simplified = false;
         //println!("Running simplification passes for function: {}", name);
         if let Some(f) = VarSimplifier::simplifyFunction(&simplifiedFunc) {
             //println!("VarSimplifier made changes to function: {}", name);
+            if trace {
+                println!("VarSimplifier made changes to function: {}", simplifiedFunc.name);
+                println!("{}", f);
+            }
             simplifiedFunc = f;
             simplified = true;
         }
         if let Some(f) = JumpSimplifier::simplifyFunction(&simplifiedFunc) {
             //println!("JumpSimplifier made changes to function: {}", name);
+            if trace {
+                println!("JumpSimplifier made changes to function: {}", simplifiedFunc.name);
+                println!("{}", f);
+            }
             simplifiedFunc = f;
             simplified = true;
         }
         if let Some(f) = BlockMerger::simplifyFunction(&simplifiedFunc) {
             //println!("BlockMerger made changes to function: {}", name);
+            if trace {
+                println!("BlockMerger made changes to function: {}", simplifiedFunc.name);
+                println!("{}", f);
+            }
             simplifiedFunc = f;
             simplified = true;
         }
         if let Some(f) = CompileTimeEvaluator::simplifyFunction(&simplifiedFunc) {
             //println!("CompileTimeEvaluator made changes to function: {}", name);
+            if trace {
+                println!("CompileTimeEvaluator made changes to function: {}", simplifiedFunc.name);
+                println!("{}", f);
+            }
             simplifiedFunc = f;
             simplified = true;
         }
         if let Some(f) = DeadCodeEliminator::eliminateDeadCode(&simplifiedFunc) {
             //println!("DeadCodeEliminator made changes to function: {}", name);
+            if trace {
+                println!("DeadCodeEliminator made changes to function: {}", simplifiedFunc.name);
+                println!("{}", f);
+            }
             simplifiedFunc = f;
             simplified = true;
         }
         if let Some(f) = UnusedVariableEliminator::eliminateUnusedVariable(&simplifiedFunc, program) {
             //println!("UnusedVariableEliminator made changes to function: {}", name);
+            if trace {
+                println!(
+                    "UnusedVariableEliminator made changes to function: {}",
+                    simplifiedFunc.name
+                );
+                println!("{}", f);
+            }
             simplifiedFunc = f;
             simplified = true;
         }
         if let Some(f) = UnusedAssignmentEliminator::simplifyFunction(&simplifiedFunc, program) {
             //println!("UnusedAssignmentEliminator made changes to function: {}", name);
+            if trace {
+                println!(
+                    "UnusedAssignmentEliminator made changes to function: {}",
+                    simplifiedFunc.name
+                );
+                println!("{}", f);
+            }
             simplifiedFunc = f;
             simplified = true;
         }
         if let Some(f) = inliner.process(&simplifiedFunc, program, groupItems) {
+            if trace {
+                println!("Inliner made changes to function: {}", simplifiedFunc.name);
+                println!("{}", f);
+            }
             simplifiedFunc = f;
             simplified = true;
         }

@@ -1,10 +1,9 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use crate::siko::hir::{
     BodyBuilder::BodyBuilder,
     Function::Function,
     Instruction::InstructionKind,
-    Type::Type,
     Variable::{Variable, VariableName},
 };
 
@@ -116,14 +115,9 @@ impl<'a> VarSimplifier<'a> {
             return None; // No variables to simplify
         }
 
-        let mut removedDropFlags = BTreeSet::new();
-
         // for (src, dest) in &self.simplifiedVars {
         //     println!("Replacing {} with {}", src, dest);
         // }
-        for (src, _) in &self.simplifiedVars {
-            removedDropFlags.insert(src.getDropFlag());
-        }
 
         for blockId in &allBlockIds {
             let mut builder = bodyBuilder.iterator(*blockId);
@@ -135,34 +129,12 @@ impl<'a> VarSimplifier<'a> {
                             builder.removeInstruction();
                             continue;
                         }
-                        if removedDropFlags.contains(&var.name()) {
-                            //println!("Removing drop flag declaration for variable {}", var);
-                            builder.removeInstruction();
-                            continue;
-                        }
-                    }
-                    if let InstructionKind::FunctionCall(dest, _) = &instruction.kind {
-                        if removedDropFlags.contains(&dest.name()) {
-                            //println!("Removing drop flag call for variable {}", dest);
-                            builder.removeInstruction();
-                            continue;
-                        }
-                    }
-                    if let InstructionKind::EnumSwitch(var, cases) = &instruction.kind {
-                        if removedDropFlags.contains(&var.name()) {
-                            //println!("Removing drop flag switch {}", var);
-                            let c = cases[0].branch;
-                            let jumpVar =
-                                bodyBuilder.createTempValueWithType(instruction.location.clone(), Type::getNeverType());
-                            builder.replaceInstruction(InstructionKind::Jump(jumpVar, c), instruction.location.clone());
-                            continue;
-                        }
                     }
                     let allVars = instruction.kind.collectVariables();
                     let mut kind = instruction.kind.clone();
                     for var in &allVars {
                         if let Some(dest) = self.replace(var.name()) {
-                            //println!("Replacing {} with {}", var.value, dest);
+                            //println!("Replacing {} with {}", var.name(), dest);
                             kind = kind.replaceVar(var.clone(), dest.useVar());
                         }
                     }

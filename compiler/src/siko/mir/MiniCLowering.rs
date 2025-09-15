@@ -132,7 +132,7 @@ impl<'a> MinicBuilder<'a> {
                     minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::Memcpy(src, dest) => {
-                    if src.ty.isPtr() && !dest.ty.isPtr() {
+                    if src.ty.isPtr() && !dest.ty.isPtr() && !dest.ty.isVoidPtr() {
                         panic!("MIR: memcpy from pointer to non-pointer {} -> {}", src, dest);
                     }
                     if dest.ty.isPtr() && !src.ty.isPtr() {
@@ -295,6 +295,7 @@ impl<'a> MinicBuilder<'a> {
     }
 
     fn lowerFunction(&mut self, f: &Function) -> LFunction {
+        //println!("Lowering function: {}", f.name);
         let args: Vec<_> = f.args.iter().map(|p| self.lowerParam(p)).collect();
         let resultTy = self.lowerType(&f.result);
         match &f.kind {

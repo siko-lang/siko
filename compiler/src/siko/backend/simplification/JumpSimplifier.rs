@@ -45,7 +45,7 @@ impl<'a> JumpSimplifier<'a> {
         let allBlockIds = bodyBuilder.getAllBlockIds();
         for blockId in &allBlockIds {
             let builder = bodyBuilder.iterator(*blockId);
-            if builder.getBlockSize() == 1 {
+            if builder.getBlockSize() == 1 && blockId != &BlockId::first() {
                 if let Some(instruction) = builder.getInstruction() {
                     if let InstructionKind::Jump(_, target) = &instruction.kind {
                         self.jumps.insert(*blockId, *target);

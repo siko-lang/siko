@@ -132,7 +132,9 @@ impl MiniCGenerator {
                 format!("goto {};", label)
             }
             Instruction::Memcpy(src, dest) => {
-                assert_eq!(src.ty, dest.ty);
+                if !src.ty.isPtr() || !dest.ty.isVoidPtr() {
+                    assert_eq!(src.ty, dest.ty);
+                }
                 format!("{} = {};", dest.name, src.name)
             }
             Instruction::Reference(dest, src) => {

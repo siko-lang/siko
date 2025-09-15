@@ -203,8 +203,18 @@ impl Function {
         Ok(())
     }
 
-    pub fn isInline(&self) -> bool {
-        self.attributes.inline
+    pub fn canbeInlined(&self) -> bool {
+        let instructionCount: usize = match &self.body {
+            Some(body) => body
+                .getAllBlockIds()
+                .iter()
+                .map(|id| self.getBlockById(*id).getInner().borrow().instructions.len())
+                .sum(),
+            None => {
+                return false;
+            }
+        };
+        self.attributes.inline || instructionCount <= 50
     }
 }
 

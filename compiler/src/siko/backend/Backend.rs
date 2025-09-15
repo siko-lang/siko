@@ -53,5 +53,6 @@ pub fn process(ctx: &ReportContext, runner: &mut Runner, program: Program) -> Pr
     let program = stage!(runner, "Simplifying2", {
         Simplifier::simplify(program, Config { enableInliner: true })
     });
+    //println!("Final program:\n{}", program);
     program
 }
