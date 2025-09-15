@@ -4,13 +4,13 @@ import NativePtr
 import Libc
 
 pub fn printStr(v: &String) {
-    let fmt = "%.*s".slice().asPtr();
-    Libc.printf(NativePtr.transmute(fmt), NativePtr.transmute(v.len()), v.slice().asPtr());
+    Libc.write(1.toI32(), v.slice().asPtr(), v.slice().len());
 }
 
 pub fn printlnStr(v: &String) {
-    let fmt = "%.*s\\n".slice().asPtr();
-    Libc.printf(NativePtr.transmute(fmt), NativePtr.transmute(v.len()), v.slice().asPtr());
+    Libc.write(1.toI32(), v.slice().asPtr(), v.slice().len());
+    Libc.write(1.toI32(), "\\n".slice().asPtr(), 1.toU64());
+    Libc.fsync(1.toI32());
 }
 
 pub fn assert(v: Bool) {

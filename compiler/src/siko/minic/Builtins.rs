@@ -7,9 +7,8 @@ use crate::siko::{
     minic::{Program::Program, Type::Type},
     qualifiedname::{
         builtins::{
-            getArrayBaseName, getArrayLenName, getArrayUninitializedName, getIntToI32Name, getIntToU32Name,
-            getIntToU64Name, getIntToU8Name, getNativePtrCastName, getNativePtrSizeOfName, getNativePtrTransmuteName,
-            getStdBasicUtilAbortName,
+            getArrayBaseName, getArrayLenName, getArrayUninitializedName, getNativePtrCastName, getNativePtrSizeOfName,
+            getNativePtrTransmuteName,
         },
         QualifiedName,
     },
@@ -70,41 +69,6 @@ pub fn dumpBuiltinFunction(f: &Function, args: &Vec<String>, buf: &mut File, pro
         return Ok(true);
     }
 
-    if isFn(f, &getIntToU8Name()) {
-        writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-        writeln!(buf, "    return (uint8_t)*self;")?;
-        writeln!(buf, "}}\n")?;
-        return Ok(true);
-    }
-
-    if isFn(f, &getIntToU32Name()) {
-        writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-        writeln!(buf, "    return (uint32_t)*self;")?;
-        writeln!(buf, "}}\n")?;
-        return Ok(true);
-    }
-
-    if isFn(f, &getIntToU64Name()) {
-        writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-        writeln!(buf, "    return (uint64_t)*self;")?;
-        writeln!(buf, "}}\n")?;
-        return Ok(true);
-    }
-
-    if isFn(f, &getIntToI32Name()) {
-        writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-        writeln!(buf, "    return (int32_t)*self;")?;
-        writeln!(buf, "}}\n")?;
-        return Ok(true);
-    }
-
-    if isFn(f, &getStdBasicUtilAbortName()) {
-        writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-        writeln!(buf, "    abort();")?;
-        writeln!(buf, "}}\n")?;
-        return Ok(true);
-    }
-
     Ok(false)
 }
 
@@ -113,60 +77,4 @@ fn isFn(f: &Function, qn: &QualifiedName) -> bool {
         return true;
     }
     false
-}
-
-fn addInt(f: &Function, args: &Vec<String>, buf: &mut File) -> Result<(), io::Error> {
-    writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-    writeln!(buf, "    return self + other;")?;
-    writeln!(buf, "}}\n")?;
-    Ok(())
-}
-
-fn subInt(f: &Function, args: &Vec<String>, buf: &mut File) -> Result<(), io::Error> {
-    writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-    writeln!(buf, "    return self - other;")?;
-    writeln!(buf, "}}\n")?;
-    Ok(())
-}
-
-fn mulInt(f: &Function, args: &Vec<String>, buf: &mut File) -> Result<(), io::Error> {
-    writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-    writeln!(buf, "    return self * other;")?;
-    writeln!(buf, "}}\n")?;
-    Ok(())
-}
-
-fn divInt(f: &Function, args: &Vec<String>, buf: &mut File) -> Result<(), io::Error> {
-    writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-    writeln!(buf, "    return self / other;")?;
-    writeln!(buf, "}}\n")?;
-    Ok(())
-}
-
-fn modInt(f: &Function, args: &Vec<String>, buf: &mut File) -> Result<(), io::Error> {
-    writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-    writeln!(buf, "    return self % other;")?;
-    writeln!(buf, "}}\n")?;
-    Ok(())
-}
-
-fn eqInt(f: &Function, args: &Vec<String>, buf: &mut File) -> Result<(), io::Error> {
-    writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-    writeln!(buf, "    return *self == *other;")?;
-    writeln!(buf, "}}\n")?;
-    Ok(())
-}
-
-fn lessThanInt(f: &Function, args: &Vec<String>, buf: &mut File) -> Result<(), io::Error> {
-    writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-    writeln!(buf, "    return *self < *other;")?;
-    writeln!(buf, "}}\n")?;
-    Ok(())
-}
-
-fn cloneInt(f: &Function, args: &Vec<String>, buf: &mut File) -> Result<(), io::Error> {
-    writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
-    writeln!(buf, "    return *self;")?;
-    writeln!(buf, "}}\n")?;
-    Ok(())
 }
