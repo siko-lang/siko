@@ -23,9 +23,9 @@ impl<'a> Check<'a> {
         let mut dataGroups = DataGroups::new(self.program);
         dataGroups.process();
         let functionGroupBuilder = FunctionGroupBuilder::new(self.program);
-        let functionGroups = functionGroupBuilder.process();
+        let functionGroupInfo = functionGroupBuilder.process();
         let mut profileStore = FunctionProfileStore::new();
-        for group in functionGroups {
+        for group in functionGroupInfo.groups {
             //println!("Function group: {:?}", group);
             loop {
                 let mut profileUpdated = false;

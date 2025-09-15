@@ -5,6 +5,7 @@ use std::{
 
 use super::SCC::{self, Graph};
 
+#[derive(Clone)]
 pub struct DependencyGroup<T> {
     pub items: Vec<T>,
 }

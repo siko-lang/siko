@@ -5,6 +5,7 @@ use crate::siko::{
         Block::BlockId,
         BodyBuilder::BodyBuilder,
         Function::Function,
+        FunctionGroupBuilder::FunctionGroupInfo,
         Instruction::{EnumCase, InstructionKind, IntegerCase},
         Program::Program,
         Type::Type,
@@ -13,18 +14,20 @@ use crate::siko::{
     qualifiedname::QualifiedName,
 };
 
-pub struct Inliner {
+pub struct Inliner<'a> {
     pub wasInlined: BTreeSet<QualifiedName>,
     pub wasNotInlined: BTreeSet<QualifiedName>,
+    functionGroupInfo: &'a FunctionGroupInfo,
     enabled: bool,
 }
 
-impl Inliner {
-    pub fn new(enabled: bool) -> Self {
+impl<'a> Inliner<'a> {
+    pub fn new(enabled: bool, functionGroupInfo: &'a FunctionGroupInfo) -> Self {
         Inliner {
             wasInlined: BTreeSet::new(),
             wasNotInlined: BTreeSet::new(),
             enabled,
+            functionGroupInfo,
         }
     }
 
@@ -74,7 +77,7 @@ impl Inliner {
                     match &instruction.kind {
                         InstructionKind::FunctionCall(dest, info) => {
                             let callee = program.functions.get(&info.name).expect("Function not found");
-                            if callee.canbeInlined() {
+                            if callee.canbeInlined() && !self.functionGroupInfo.isRecursive(&info.name) {
                                 if groupItems.contains(&info.name) {
                                     // Don't inline functions in the same group
                                     self.wasNotInlined.insert(info.name.clone());

@@ -14,6 +14,7 @@ pub fn canBeEliminated(program: &Program, i: &InstructionKind) -> bool {
             };
             f.isPure()
         }
+        InstructionKind::Transform(_, _, _) => true,
         _ => false,
     }
 }

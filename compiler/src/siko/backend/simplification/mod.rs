@@ -4,6 +4,7 @@ pub mod DeadCodeEliminator;
 pub mod Inliner;
 pub mod JumpSimplifier;
 pub mod Simplifier;
+pub mod SwitchSimplifier;
 pub mod UnusedAssignmentEliminator;
 pub mod UnusedVariableEliminator;
 pub mod Utils;

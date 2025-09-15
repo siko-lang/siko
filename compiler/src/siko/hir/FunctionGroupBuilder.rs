@@ -1,10 +1,26 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::siko::{
     hir::{Body::Body, Instruction::InstructionKind, Program::Program},
     qualifiedname::{builtins::getMainName, QualifiedName},
     util::DependencyProcessor::{processDependencies, DependencyGroup},
 };
+
+pub struct FunctionGroupInfo {
+    pub groups: Vec<DependencyGroup<QualifiedName>>,
+    pub groupMap: BTreeMap<QualifiedName, DependencyGroup<QualifiedName>>,
+    pub isDirectlyRecursive: BTreeSet<QualifiedName>,
+}
+
+impl FunctionGroupInfo {
+    pub fn isRecursive(&self, name: &QualifiedName) -> bool {
+        if let Some(group) = self.groupMap.get(name) {
+            group.items.len() > 1 || self.isDirectlyRecursive.contains(name)
+        } else {
+            false
+        }
+    }
+}
 
 pub struct FunctionGroupBuilder<'a> {
     program: &'a Program,
@@ -15,25 +31,33 @@ impl<'a> FunctionGroupBuilder<'a> {
         FunctionGroupBuilder { program }
     }
 
-    pub fn process(&self) -> Vec<DependencyGroup<QualifiedName>> {
+    pub fn process(&self) -> FunctionGroupInfo {
         let mut allDeps: BTreeMap<QualifiedName, Vec<QualifiedName>> = BTreeMap::new();
+        let mut isDirectlyRecursive: BTreeSet<QualifiedName> = BTreeSet::new();
         for (_, f) in &self.program.functions {
             if let Some(body) = &f.body {
                 let deps = self.processFunction(body);
+                if deps.contains(&f.name) {
+                    isDirectlyRecursive.insert(f.name.clone());
+                }
                 allDeps.insert(f.name.clone(), deps);
             } else {
                 allDeps.insert(f.name.clone(), Vec::new());
             }
         }
         let groups = processDependencies(&allDeps);
-        // let mut groupMap = BTreeMap::new();
-        // for group in &groups {
-        //     for item in &group.items {
-        //         groupMap.insert(item.clone(), group);
-        //     }
-        // }
+        let mut groupMap = BTreeMap::new();
+        for group in &groups {
+            for item in &group.items {
+                groupMap.insert(item.clone(), group.clone());
+            }
+        }
         // self.printFullCallGraph(&allDeps, &groupMap, self.program);
-        groups
+        FunctionGroupInfo {
+            groups,
+            groupMap,
+            isDirectlyRecursive: isDirectlyRecursive,
+        }
     }
 
     fn processFunction(&self, body: &Body) -> Vec<QualifiedName> {
