@@ -42,7 +42,10 @@ impl Compiler {
         let resolver = stage!(runner, "Parsing", {
             let mut resolver = Resolver::new(&ctx);
             let mut packageFinder = PackageFinder::new();
-            packageFinder.processPaths(config.inputFiles.clone());
+            packageFinder.processPaths(config.inputFiles.clone(), true);
+            packageFinder.processPaths(config.externalFiles.clone(), false);
+
+            //packageFinder.dump();
 
             for package in packageFinder.packages {
                 for f in package.files {
@@ -61,6 +64,24 @@ impl Compiler {
     }
 
     fn parseConfig(&mut self) -> bool {
+        let parentDir = std::env::current_exe()
+            .expect("Failed to get current exe path")
+            .parent()
+            .expect("Failed to get parent dir")
+            .to_path_buf();
+        let mut stdLibPath = parentDir.join("std");
+        match std::env::var("SIKO_STD_PATH") {
+            Ok(val) => {
+                stdLibPath = val.into();
+            }
+            Err(_) => {}
+        }
+        if !stdLibPath.exists() {
+            fatalError(&format!(
+                "ERROR: standard library path {} does not exist",
+                stdLibPath.display()
+            ));
+        }
         let mut args: Vec<String> = args().collect();
         if args.len() < 2 {
             usage();
@@ -90,6 +111,8 @@ impl Compiler {
             }
         }
         let mut i = 1;
+        let mut external_mode = false;
+        let mut nostd = false;
         while i < args.len() {
             match args[i].as_str() {
                 "-o" => {
@@ -110,11 +133,24 @@ impl Compiler {
                 "--pass-details" => {
                     self.config.passDetails = true;
                 }
+                "--external" => {
+                    external_mode = true;
+                }
+                "--nostd" => {
+                    nostd = true;
+                }
                 _ => {
-                    self.config.inputFiles.push(args[i].clone());
+                    if external_mode {
+                        self.config.externalFiles.push(args[i].clone());
+                    } else {
+                        self.config.inputFiles.push(args[i].clone());
+                    }
                 }
             }
             i += 1;
+        }
+        if !nostd {
+            self.config.externalFiles.push(format!("{}", stdLibPath.display()));
         }
         true
     }

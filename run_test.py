@@ -48,7 +48,7 @@ def runUnderValgrind(program, args):
         return False
     return True
 
-def compileSiko(currentDir, files, extras):
+def compileSiko(currentDir, files):
     bin_output_path = os.path.join(currentDir, "main.bin")
     sanitize = []
     global in_workflow
@@ -58,7 +58,7 @@ def compileSiko(currentDir, files, extras):
         sanitize = ["--sanitize"]
 
     args = ["./siko", "build"]
-    args = args + sanitize + ["-o", bin_output_path] + extras + files
+    args = args + sanitize + ["-o", bin_output_path] + files
     start_time = time.time()
     r = subprocess.run(args)
     end_time = time.time()
@@ -86,7 +86,7 @@ def compare_output(output_txt_path, current_output):
             f.write(current_output)
         return True
 
-def test_success(root, entry, extras, explicit, parallel=False):
+def test_success(root, entry, explicit, parallel=False):
     output_buffer = []
     def capture_print(*args, **kwargs):
         if parallel:
@@ -103,7 +103,7 @@ def test_success(root, entry, extras, explicit, parallel=False):
         result = TestResult(entry, "skip", (end_time - start_time, 0, 0), True, '\n'.join(output_buffer))
         return result
     inputPath = os.path.join(currentDir, "main.sk")
-    binary, compilation_time = compileSiko(currentDir, [inputPath], extras)
+    binary, compilation_time = compileSiko(currentDir, [inputPath])
     if binary is None:
         end_time = time.time()
         result = TestResult(entry, False, (end_time - start_time, compilation_time, 0), True, '\n'.join(output_buffer))
@@ -137,7 +137,7 @@ def test_success(root, entry, extras, explicit, parallel=False):
     result = TestResult(entry, result_bool, (end_time - start_time, compilation_time, execution_time), True, '\n'.join(output_buffer))
     return result
 
-def test_fail(root, entry, extras, parallel=False):
+def test_fail(root, entry, parallel=False):
     output_buffer = []
     def capture_print(*args, **kwargs):
         if parallel:
@@ -154,7 +154,7 @@ def test_fail(root, entry, extras, parallel=False):
         result = TestResult(entry, "skip", (end_time - start_time,), False, '\n'.join(output_buffer))
         return result
     input_path = os.path.join(root, entry, "main.sk")
-    args = ["./siko", "build", input_path] + extras
+    args = ["./siko", "build", input_path]
     r = subprocess.run(args, capture_output=True)
     if r.returncode == 0:
         end_time = time.time()
@@ -253,19 +253,19 @@ def is_explicit_test(entry, filters):
     """Check if a test was explicitly requested (exact match)."""
     return entry in filters if filters else False
 
-def run_tests_sequential(test_func, base_path, tests, extras):
+def run_tests_sequential(test_func, base_path, tests):
     """Run tests sequentially"""
     for test_path in tests:
         entry = os.path.relpath(test_path, base_path)
         if not should_run_test(entry, filters):
             continue
         if test_func == test_success:
-            result = test_func(base_path, entry, extras, is_explicit_test(entry, filters), parallel=False)
+            result = test_func(base_path, entry, is_explicit_test(entry, filters), parallel=False)
         else:
-            result = test_func(base_path, entry, extras, parallel=False)
+            result = test_func(base_path, entry, parallel=False)
         processResult(result)
 
-def run_tests_parallel(test_func, base_path, tests, extras):
+def run_tests_parallel(test_func, base_path, tests):
     """Run tests in parallel"""
     test_args = []
     for test_path in tests:
@@ -273,9 +273,9 @@ def run_tests_parallel(test_func, base_path, tests, extras):
         if not should_run_test(entry, filters):
             continue
         if test_func == test_success:
-            test_args.append((base_path, entry, extras, is_explicit_test(entry, filters), True))
+            test_args.append((base_path, entry, is_explicit_test(entry, filters), True))
         else:
-            test_args.append((base_path, entry, extras, True))
+            test_args.append((base_path, entry, True))
 
     def run_single_test(args):
         if test_func == test_success:
@@ -301,17 +301,17 @@ print("Success tests:")
 success_tests = collect_tests(successes_path)
 
 if use_parallel:
-    run_tests_parallel(test_success, successes_path, success_tests, ["std"])
+    run_tests_parallel(test_success, successes_path, success_tests)
 else:
-    run_tests_sequential(test_success, successes_path, success_tests, ["std"])
+    run_tests_sequential(test_success, successes_path, success_tests)
 
 print("Error tests:")
 failed_tests = collect_tests(errors_path)
 
 if use_parallel:
-    run_tests_parallel(test_fail, errors_path, failed_tests, ["std"])
+    run_tests_parallel(test_fail, errors_path, failed_tests)
 else:
-    run_tests_sequential(test_fail, errors_path, failed_tests, ["std"])
+    run_tests_sequential(test_fail, errors_path, failed_tests)
 
 percent = 0
 if (success+failure) != 0:

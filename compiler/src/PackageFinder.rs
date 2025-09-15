@@ -3,6 +3,7 @@ use crate::siko::{package::Package::PackageInfo, util};
 pub struct Package {
     pub info: Option<PackageInfo>,
     pub files: Vec<String>,
+    pub local: bool,
 }
 
 impl Package {
@@ -10,10 +11,11 @@ impl Package {
         Package {
             info: None,
             files: Vec::new(),
+            local: true,
         }
     }
 
-    pub fn addPath(&mut self, p: &std::path::Path) -> Vec<Package> {
+    pub fn addPath(&mut self, p: &std::path::Path, local: bool) -> Vec<Package> {
         let inputPath = p;
         let mut subPackages = Vec::new();
         if inputPath.is_file() {
@@ -44,12 +46,13 @@ impl Package {
                 let mut newPackage = Package {
                     info: Some(info),
                     files: Vec::new(),
+                    local: local,
                 };
                 for entry in std::fs::read_dir(inputPath).unwrap() {
                     let entry = entry.unwrap();
                     let path = entry.path();
                     if path.is_dir() {
-                        let foundPackages = newPackage.addPath(&path);
+                        let foundPackages = newPackage.addPath(&path, local);
                         subPackages.extend(foundPackages);
                     } else if let Some(extension) = path.extension() {
                         if extension == "sk" {
@@ -63,7 +66,7 @@ impl Package {
                     let entry = entry.unwrap();
                     let path = entry.path();
                     if path.is_dir() {
-                        let foundPackages = self.addPath(&path);
+                        let foundPackages = self.addPath(&path, local);
                         subPackages.extend(foundPackages);
                     } else if let Some(extension) = path.extension() {
                         if extension == "sk" {
@@ -86,20 +89,28 @@ impl PackageFinder {
         PackageFinder { packages: Vec::new() }
     }
 
-    pub fn processPaths(&mut self, p: Vec<String>) {
+    pub fn processPaths(&mut self, p: Vec<String>, local: bool) {
         let mut rootPackage = Package::new();
         for path in p {
-            self.packages.extend(rootPackage.addPath(&std::path::Path::new(&path)));
+            self.packages
+                .extend(rootPackage.addPath(&std::path::Path::new(&path), local));
         }
-        self.packages.push(rootPackage);
+        if local {
+            self.packages.push(rootPackage);
+        }
     }
 
     pub fn dump(&self) {
         for p in &self.packages {
             if let Some(info) = &p.info {
-                println!("Package: {} {}", info.name, info.version);
+                println!(
+                    "Package: {} {}{}",
+                    info.name,
+                    info.version,
+                    if p.local { " (local)" } else { " (external)" }
+                );
             } else {
-                println!("Package: <root>");
+                println!("Package: <root> (local)");
             }
             for f in &p.files {
                 println!("  File: {}", f);

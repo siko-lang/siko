@@ -19,6 +19,7 @@ pub struct Config {
     pub buildPhase: BuildPhase,
     pub sanitized: bool,
     pub inputFiles: Vec<String>,
+    pub externalFiles: Vec<String>,
     pub outputFile: String,
 }
 
@@ -31,6 +32,7 @@ impl Config {
             buildPhase: BuildPhase::Run,
             sanitized: false,
             inputFiles: Vec::new(),
+            externalFiles: Vec::new(),
             outputFile: format!("siko_main"),
         }
     }
