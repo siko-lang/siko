@@ -1,14 +1,14 @@
+use std::collections::BTreeMap;
+
 use crate::siko::{
     hir::{
         Block::BlockId,
+        BlockBuilder::BlockBuilder,
         Instruction::{EnumCase, FieldId, FieldInfo, InstructionKind, IntegerCase},
         Variable::Variable,
     },
     location::Location::Location,
-    qualifiedname::{
-        builtins::{getCloneFnName, getStringEqName},
-        QualifiedName,
-    },
+    qualifiedname::{builtins::getCloneFnName, QualifiedName},
     resolver::{
         matchcompiler::{
             Context::CompileContext,
@@ -72,9 +72,10 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
         let mut ctx = CompileContext::new();
         let dataPath = node.getDataPath();
         //println!("adding ctx for data path {}", dataPath);
-        ctx = ctx.add(dataPath, self.bodyId.clone());
-        let mut startBlockBuilder = self.resolver.bodyBuilder.current();
 
+        let mut startBlockBuilder = self.resolver.bodyBuilder.current();
+        let rootRef = startBlockBuilder.addRef(self.bodyId.useVar(), self.bodyLocation.clone());
+        ctx = ctx.add(dataPath, rootRef);
         let firstBlockId = self.compileNode(&node, &ctx);
         self.resolver.addJumpToBuilder(
             firstBlockId,
@@ -107,7 +108,7 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
         match node {
             Node::Tuple(tuple) => self.compileTuple(ctx, tuple),
             Node::Switch(switch) => self.compileSwitch(ctx, switch),
-            Node::Leaf(end) => self.compileLeaf(ctx, end),
+            Node::Leaf(end) => self.compileLeaf(end),
             Node::Wildcard(w) => self.compileNode(&w.next, ctx),
         }
     }
@@ -283,11 +284,8 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
                     let value = builder
                         .implicit()
                         .addStringLiteral(v.clone(), self.bodyLocation.clone());
-                    let eqValue = builder.addFunctionCall(
-                        getStringEqName(),
-                        vec![root.clone(), value],
-                        self.bodyLocation.clone(),
-                    );
+                    let eqValue =
+                        builder.addMethodCall("eq".to_string(), root.clone(), vec![value], self.bodyLocation.clone());
                     let mut cases = Vec::new();
                     if blocks.is_empty() {
                         cases.push(EnumCase {
@@ -314,7 +312,7 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
         }
     }
 
-    fn compileLeaf(&mut self, ctx: &CompileContext, leaf: &Leaf) -> BlockId {
+    fn compileLeaf(&mut self, leaf: &Leaf) -> BlockId {
         let m = leaf.finalMatch.as_ref().expect("no match");
         let index = if let MatchKind::UserDefined(index, _) = &m.kind {
             index.clone()
@@ -331,9 +329,16 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
             .bodyBuilder
             .current()
             .addBlockStart(env.getSyntaxBlockId(), self.bodyLocation.clone());
+        let mut accessorMap = BTreeMap::new();
         for (path, name) in &m.bindings.bindings {
             //println!("Creating binding for {} at {}", name, path.last());
-            let bindValue = ctx.get(path.last());
+            let accessor = generateAccessor(
+                self.resolver,
+                envBlockbuilder.clone(),
+                path.last(),
+                &self.bodyId,
+                &mut accessorMap,
+            );
             let new = self
                 .resolver
                 .bodyBuilder
@@ -341,7 +346,7 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
             self.resolver
                 .bodyBuilder
                 .current()
-                .addBind(new.clone(), bindValue, false, self.bodyLocation.clone());
+                .addBind(new.clone(), accessor, false, self.bodyLocation.clone());
             env.addValue(name.clone(), new);
         }
         let mut leafBodyBuilder = self.resolver.createBlock(&env);
@@ -349,15 +354,22 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
             let mut guardBlocks = Vec::new();
             for m in leaf.guardedMatches.iter() {
                 let mut guardEnv = Environment::child(self.parentEnv, syntaxBlockId.clone());
+                let mut accessorMap = BTreeMap::new();
                 for (path, name) in &m.bindings.bindings {
-                    let bindValue = ctx.get(path.last());
+                    let accessor = generateAccessor(
+                        self.resolver,
+                        envBlockbuilder.clone(),
+                        path.last(),
+                        &self.bodyId,
+                        &mut accessorMap,
+                    );
                     let new = self
                         .resolver
                         .bodyBuilder
                         .createLocalValue(&name, self.bodyLocation.clone());
                     self.resolver.bodyBuilder.current().addBind(
                         new.clone(),
-                        bindValue,
+                        accessor,
                         false,
                         self.bodyLocation.clone(),
                     );
@@ -436,4 +448,47 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
         }
         envBlockbuilder.getBlockId()
     }
+}
+
+fn generateAccessor(
+    resolver: &mut ExprResolver,
+    mut builder: BlockBuilder,
+    path: &DataPath,
+    root: &Variable,
+    accessorMap: &mut BTreeMap<DataPath, Variable>,
+) -> Variable {
+    if path.isRoot() {
+        return root.clone();
+    }
+    if let Some(v) = accessorMap.get(path) {
+        return v.clone();
+    }
+    let parentPathVar = generateAccessor(resolver, builder.clone(), &path.getParent(), root, accessorMap);
+    let var = match path {
+        DataPath::TupleIndex(_, index) => {
+            let fields = vec![FieldInfo {
+                name: FieldId::Indexed(*index as u32),
+                ty: None,
+                location: root.location(),
+            }];
+            builder.addFieldRef(parentPathVar, fields, root.location())
+        }
+        DataPath::ItemIndex(_, index) => {
+            let fields = vec![FieldInfo {
+                name: FieldId::Indexed(*index as u32),
+                ty: None,
+                location: root.location(),
+            }];
+            builder.addFieldRef(parentPathVar, fields, root.location())
+        }
+        DataPath::Variant(_, variantName, enumName) => {
+            let enumDef = resolver.enums.get(enumName).expect("enum not found");
+            let (_, index) = enumDef.getVariant(variantName);
+            builder.addTransform(parentPathVar, index, root.location())
+        }
+        DataPath::Tuple(_, _) => parentPathVar,
+        p => unreachable!("unexpected data path {:?}", p),
+    };
+    accessorMap.insert(path.clone(), var.clone());
+    var
 }
