@@ -48,6 +48,7 @@ impl<'a> ModuleParser for Parser<'a> {
                 match name.name().as_str() {
                     "test" => attributes.testEntry = true,
                     "inline" => attributes.inline = true,
+                    "builtin" => attributes.builtin = true,
                     _ => self.reportError3(&format!("Unknown attribute: {}", name), name.location()),
                 }
             } else if self.check(TokenKind::Keyword(KeywordKind::Derive)) {
@@ -89,14 +90,10 @@ impl<'a> ModuleParser for Parser<'a> {
                 public = true;
             }
             let item = match self.peek() {
-                TokenKind::Keyword(KeywordKind::Extern) => {
-                    self.expect(TokenKind::Keyword(KeywordKind::Extern));
-                    let mut c = self.parseStruct(derives, public);
-                    c.isExtern = true;
-                    ModuleItem::Struct(c)
+                TokenKind::Keyword(KeywordKind::Struct) => {
+                    ModuleItem::Struct(self.parseStruct(derives, public, attributes))
                 }
-                TokenKind::Keyword(KeywordKind::Struct) => ModuleItem::Struct(self.parseStruct(derives, public)),
-                TokenKind::Keyword(KeywordKind::Enum) => ModuleItem::Enum(self.parseEnum(derives, public)),
+                TokenKind::Keyword(KeywordKind::Enum) => ModuleItem::Enum(self.parseEnum(derives, public, attributes)),
                 TokenKind::Keyword(KeywordKind::Fn) => ModuleItem::Function(self.parseFunction(attributes, public)),
                 TokenKind::Keyword(KeywordKind::Import) => ModuleItem::Import(self.parseImport()),
                 TokenKind::Keyword(KeywordKind::Effect) => ModuleItem::Effect(self.parseEffect(public)),

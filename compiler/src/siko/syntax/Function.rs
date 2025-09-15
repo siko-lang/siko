@@ -22,6 +22,7 @@ pub enum FunctionExternKind {
 pub struct Attributes {
     pub inline: bool,
     pub testEntry: bool,
+    pub builtin: bool,
 }
 
 impl Attributes {
@@ -29,6 +30,7 @@ impl Attributes {
         Attributes {
             inline: false,
             testEntry: false,
+            builtin: false,
         }
     }
 }

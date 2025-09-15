@@ -2,6 +2,7 @@ use crate::siko::{
     parser::Module::ModuleParser,
     syntax::{
         Data::{Enum, Field, Struct, Variant},
+        Function::Attributes,
         Module::Derive,
     },
 };
@@ -14,14 +15,14 @@ use super::{
 };
 
 pub trait DataParser {
-    fn parseStruct(&mut self, derives: Vec<Derive>, public: bool) -> Struct;
-    fn parseEnum(&mut self, derives: Vec<Derive>, public: bool) -> Enum;
+    fn parseStruct(&mut self, derives: Vec<Derive>, public: bool, attributes: Attributes) -> Struct;
+    fn parseEnum(&mut self, derives: Vec<Derive>, public: bool, attributes: Attributes) -> Enum;
     fn parseVariant(&mut self) -> Variant;
     fn parseField(&mut self, public: bool) -> Field;
 }
 
 impl<'a> DataParser for Parser<'a> {
-    fn parseStruct(&mut self, derives: Vec<Derive>, public: bool) -> Struct {
+    fn parseStruct(&mut self, derives: Vec<Derive>, public: bool, attributes: Attributes) -> Struct {
         self.expect(TokenKind::Keyword(KeywordKind::Struct));
         let name = self.parseTypeIdentifier();
         let typeParams = if self.check(TokenKind::LeftBracket(BracketKind::Square)) {
@@ -58,7 +59,7 @@ impl<'a> DataParser for Parser<'a> {
         Struct {
             name,
             typeParams: typeParams,
-            isExtern: false,
+            isExtern: attributes.builtin,
             fields: fields,
             methods: methods,
             derives,
@@ -66,7 +67,7 @@ impl<'a> DataParser for Parser<'a> {
         }
     }
 
-    fn parseEnum(&mut self, derives: Vec<Derive>, public: bool) -> Enum {
+    fn parseEnum(&mut self, derives: Vec<Derive>, public: bool, _: Attributes) -> Enum {
         self.expect(TokenKind::Keyword(KeywordKind::Enum));
         let name = self.parseTypeIdentifier();
         let typeParams = if self.check(TokenKind::LeftBracket(BracketKind::Square)) {
