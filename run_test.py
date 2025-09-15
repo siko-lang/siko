@@ -155,7 +155,9 @@ def test_fail(root, entry, parallel=False):
         return result
     input_path = os.path.join(root, entry, "main.sk")
     args = ["./siko", "build", input_path]
-    r = subprocess.run(args, capture_output=True)
+    envs = os.environ.copy()
+    envs["SIKO_STD_PATH"] = "./std"
+    r = subprocess.run(args, capture_output=True, env=envs)
     if r.returncode == 0:
         end_time = time.time()
         result = TestResult(entry, False, (end_time - start_time,), False, '\n'.join(output_buffer))
