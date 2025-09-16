@@ -356,7 +356,7 @@ impl<'a> Resolver<'a> {
                                 argTypes.push(ty);
                             }
                             let result = typeResolver
-                                .resolveType(&method.result)
+                                .resolveType(&method.result.assertSingleReturn())
                                 .changeSelfType(selfType.clone());
                             let fullName = QualifiedName::Item(Box::new(irTrait.name.clone()), method.name.toString());
                             let isDefault = method.body.is_some();
@@ -473,7 +473,7 @@ impl<'a> Resolver<'a> {
                                 argTypes.push(ty);
                             }
                             let result = typeResolver
-                                .resolveType(&method.result)
+                                .resolveType(&method.result.assertSingleReturn())
                                 .changeSelfType(selfType.clone());
                             let constraintContext = addTypeParams(
                                 irInstance.constraintContext.clone(),

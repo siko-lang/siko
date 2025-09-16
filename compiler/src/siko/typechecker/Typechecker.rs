@@ -379,6 +379,12 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::IntegerOp(var, _, _, _) => {
                             self.initializeVar(var);
                         }
+                        InstructionKind::Yield(v, _) => {
+                            self.initializeVar(v);
+                        }
+                        InstructionKind::CreateGenerator(v, _) => {
+                            self.initializeVar(v);
+                        }
                     }
                 }
             }
@@ -979,6 +985,24 @@ impl<'a> Typechecker<'a> {
                     }
                 }
             }
+            InstructionKind::Yield(_, _) => {
+                // let vType = v.getType();
+                // let aType = a.getType();
+                // let vType = self.unifier.apply(vType);
+                // match vType {
+                //     Type::Var(TypeVar::Var(_)) => {
+                //         let ty = Type::Generator(Box::new(aType));
+                //         self.unifier.unifyVar(v, ty);
+                //     }
+                //     Type::Generator(inner) => {
+                //         self.unifier.unifyVar(a, *inner);
+                //     }
+                //     _ => {
+                //         TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(self.ctx);
+                //     }
+                // }
+            }
+            InstructionKind::CreateGenerator(_, _) => {}
         }
     }
 

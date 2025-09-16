@@ -483,5 +483,9 @@ pub fn processInstructionKind(
             v2.process(sub, mono),
             op,
         ),
+        InstructionKind::Yield(v, a) => InstructionKind::Yield(v.process(sub, mono), a.process(sub, mono)),
+        InstructionKind::CreateGenerator(v, a) => {
+            InstructionKind::CreateGenerator(v.process(sub, mono), a.process(sub, mono))
+        }
     }
 }

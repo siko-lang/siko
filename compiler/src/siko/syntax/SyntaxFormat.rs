@@ -1,4 +1,4 @@
-use crate::siko::syntax::Format::format_block_2_items;
+use crate::siko::syntax::{Format::format_block_2_items, Function::ResultKind};
 
 use super::{
     Data::{Enum, Field, Struct, Variant},
@@ -195,6 +195,16 @@ impl Format for SimpleExpr {
                 result.extend(format_list(params, Token::Chunk(", ".to_string())));
                 result.push(Token::Chunk(" -> ".to_string()));
                 result.extend(body.format());
+                result
+            }
+            SimpleExpr::Yield(expr) => {
+                let mut result = vec![Token::Chunk("yield ".to_string())];
+                result.extend(expr.format());
+                result
+            }
+            SimpleExpr::CreateGenerator(expr) => {
+                let mut result = vec![Token::Chunk("gen ".to_string())];
+                result.extend(expr.format());
                 result
             }
         }
@@ -469,9 +479,18 @@ impl Format for Function {
         result.push(Token::Chunk("(".to_string()));
         result.extend(format_list(&self.params, Token::Chunk(", ".to_string())));
         result.push(Token::Chunk(")".to_string()));
-
-        result.push(Token::Chunk(" -> ".to_string()));
-        result.extend(self.result.format());
+        match &self.result {
+            ResultKind::SingleReturn(ty) => {
+                result.push(Token::Chunk(" -> ".to_string()));
+                result.extend(ty.format());
+            }
+            ResultKind::Generator(yieldTy, retTy) => {
+                result.push(Token::Chunk(":".to_string()));
+                result.extend(yieldTy.format());
+                result.push(Token::Chunk(" -> ".to_string()));
+                result.extend(retTy.format());
+            }
+        }
 
         match (&self.body, &self.externKind) {
             (Some(body), None) => {

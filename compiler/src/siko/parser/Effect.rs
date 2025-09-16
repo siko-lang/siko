@@ -20,7 +20,7 @@ impl<'a> EffectParser for Parser<'a> {
             while !self.check(TokenKind::RightBracket(BracketKind::Curly)) {
                 let (attributes, _) = self.parseAttributes();
                 if self.check(TokenKind::Keyword(KeywordKind::Fn)) {
-                    let function = self.parseFunction(attributes, true);
+                    let function = self.parseFunction(attributes, true, false);
                     methods.push(function);
                     continue;
                 }

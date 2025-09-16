@@ -230,6 +230,12 @@ impl<'a> FunctionExecutor<'a> {
                 InstructionKind::IntegerOp(_, _, _, _) => {
                     unimplemented!("IntegerOp instruction not supported in interpreter")
                 }
+                InstructionKind::Yield(_, _) => {
+                    unimplemented!("Yield instruction not supported in interpreter")
+                }
+                InstructionKind::CreateGenerator(_, _) => {
+                    unimplemented!("CreateGenerator instruction not supported in interpreter")
+                }
             }
         }
     }

@@ -294,6 +294,10 @@ impl RemoveTuples for InstructionKind {
                 right.removeTuples(ctx),
                 op.clone(),
             ),
+            InstructionKind::Yield(v, a) => InstructionKind::Yield(v.removeTuples(ctx), a.removeTuples(ctx)),
+            InstructionKind::CreateGenerator(v, a) => {
+                InstructionKind::CreateGenerator(v.removeTuples(ctx), a.removeTuples(ctx))
+            }
         }
     }
 }

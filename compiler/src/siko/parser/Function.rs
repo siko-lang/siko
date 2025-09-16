@@ -1,6 +1,6 @@
 use crate::siko::{
     syntax::{
-        Function::{Attributes, Function, FunctionExternKind, Parameter},
+        Function::{Attributes, Function, FunctionExternKind, Parameter, ResultKind},
         Type::Type,
     },
     util::error,
@@ -14,11 +14,11 @@ use super::{
 };
 
 pub trait FunctionParser {
-    fn parseFunction(&mut self, attributes: Attributes, public: bool) -> Function;
+    fn parseFunction(&mut self, attributes: Attributes, public: bool, allowGenerator: bool) -> Function;
 }
 
 impl<'a> FunctionParser for Parser<'a> {
-    fn parseFunction(&mut self, attributes: Attributes, public: bool) -> Function {
+    fn parseFunction(&mut self, attributes: Attributes, public: bool, allowGenerator: bool) -> Function {
         self.expect(TokenKind::Keyword(KeywordKind::Fn));
         let name = self.parseVarIdentifier();
         let typeParams = if self.check(TokenKind::LeftBracket(BracketKind::Square)) {
@@ -61,13 +61,20 @@ impl<'a> FunctionParser for Parser<'a> {
             self.expect(TokenKind::Misc(MiscKind::Comma));
         }
         self.expect(TokenKind::RightBracket(BracketKind::Paren));
-        let result = if self.check(TokenKind::Arrow(ArrowKind::Right)) {
+        let result = if self.check(TokenKind::Misc(MiscKind::Colon)) && allowGenerator {
+            self.expect(TokenKind::Misc(MiscKind::Colon));
+            let yieldTy = self.parseType();
             self.expect(TokenKind::Arrow(ArrowKind::Right));
-            self.parseType()
+            let returnTy = self.parseType();
+            ResultKind::Generator(yieldTy, returnTy)
         } else {
-            Type::Tuple(Vec::new())
+            if self.check(TokenKind::Arrow(ArrowKind::Right)) {
+                self.expect(TokenKind::Arrow(ArrowKind::Right));
+                ResultKind::SingleReturn(self.parseType())
+            } else {
+                ResultKind::SingleReturn(Type::Tuple(Vec::new()))
+            }
         };
-
         let (externKind, body) = if self.check(TokenKind::Misc(MiscKind::Equal)) {
             self.expect(TokenKind::Misc(MiscKind::Equal));
             self.expect(TokenKind::Keyword(KeywordKind::Extern));

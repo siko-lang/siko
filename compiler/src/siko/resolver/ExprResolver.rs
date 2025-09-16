@@ -787,6 +787,23 @@ impl<'a> ExprResolver<'a> {
                 self.bodyBuilder.current().addInstruction(kind, expr.location.clone());
                 dest
             }
+            SimpleExpr::Yield(arg) => {
+                let argId = self.resolveExpr(arg, env);
+                let yieldVar = self.bodyBuilder.createTempValue(expr.location.clone());
+                self.bodyBuilder
+                    .current()
+                    .addInstruction(InstructionKind::Yield(yieldVar.clone(), argId), expr.location.clone());
+                yieldVar
+            }
+            SimpleExpr::CreateGenerator(arg) => {
+                let argId = self.resolveExpr(arg, env);
+                let genVar = self.bodyBuilder.createTempValue(expr.location.clone());
+                self.bodyBuilder.current().addInstruction(
+                    InstructionKind::CreateGenerator(genVar.clone(), argId),
+                    expr.location.clone(),
+                );
+                genVar
+            }
         }
     }
 

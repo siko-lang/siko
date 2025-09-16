@@ -350,6 +350,12 @@ impl<'a> Builder<'a> {
                         .instructions
                         .push(Instruction::IntegerOp(dest, left, right, mirOp));
                 }
+                HirInstructionKind::Yield(_, _) => {
+                    unreachable!("Yield in MIR Lowering");
+                }
+                HirInstructionKind::CreateGenerator(_, _) => {
+                    unreachable!("CreateGenerator in MIR Lowering");
+                }
             }
         }
         Some(block)
@@ -494,6 +500,9 @@ pub fn lowerType(ty: &HirType, program: &HirProgram) -> MirType {
         HirType::NumericConstant(_) => unreachable!("NumericConstant ty lowering in MIR"),
         HirType::Void => MirType::Void,
         HirType::VoidPtr => MirType::VoidPtr,
+        HirType::Generator(_, _) => {
+            unreachable!("Generator type in MIR")
+        }
     }
 }
 

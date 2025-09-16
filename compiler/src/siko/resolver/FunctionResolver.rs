@@ -12,7 +12,7 @@ use crate::siko::hir::Variable::Variable;
 use crate::siko::hir::Variable::VariableName;
 use crate::siko::location::Report::ReportContext;
 use crate::siko::qualifiedname::QualifiedName;
-use crate::siko::syntax::Function::{Attributes, Function, FunctionExternKind, Parameter};
+use crate::siko::syntax::Function::{Attributes, Function, FunctionExternKind, Parameter, ResultKind};
 use crate::siko::syntax::Identifier::Identifier;
 use crate::siko::syntax::Type::TypeParameterDeclaration;
 use crate::siko::util::error;
@@ -121,7 +121,15 @@ impl<'a> FunctionResolver<'a> {
 
             params.push(irParam);
         }
-        let result = typeResolver.resolveType(&f.result);
+        let result = match &f.result {
+            ResultKind::SingleReturn(ty) => typeResolver.resolveType(&ty),
+            ResultKind::Generator(yieldTy, retTy) => {
+                let yieldIrTy = typeResolver.resolveType(&yieldTy);
+                let retIrTy = typeResolver.resolveType(&retTy);
+                IrType::Generator(Box::new(yieldIrTy), Box::new(retIrTy))
+            }
+        };
+        //println!("Function params: {:?}", params);
 
         let body = if let Some(body) = &f.body {
             let mut exprResolver = ExprResolver::new(

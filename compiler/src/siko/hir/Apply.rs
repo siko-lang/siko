@@ -41,6 +41,11 @@ impl Apply for Type {
             Type::NumericConstant(value) => Type::NumericConstant(value),
             Type::Void => Type::Void,
             Type::VoidPtr => Type::VoidPtr,
+            Type::Generator(yieldTy, retTy) => {
+                let newYieldTy = yieldTy.apply(sub);
+                let newRetTy = retTy.apply(sub);
+                Type::Generator(Box::new(newYieldTy), Box::new(newRetTy))
+            }
         }
     }
 }
@@ -262,6 +267,8 @@ impl Apply for InstructionKind {
             InstructionKind::IntegerOp(dest, left, right, op) => {
                 InstructionKind::IntegerOp(dest.apply(sub), left.apply(sub), right.apply(sub), op.clone())
             }
+            InstructionKind::Yield(v, a) => InstructionKind::Yield(v.apply(sub), a.apply(sub)),
+            InstructionKind::CreateGenerator(v, a) => InstructionKind::CreateGenerator(v.apply(sub), a.apply(sub)),
         }
     }
 }

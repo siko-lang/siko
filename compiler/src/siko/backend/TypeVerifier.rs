@@ -306,6 +306,14 @@ impl<'a> TypeVerifier<'a> {
                 self.checkVariable(right);
                 self.unify(&left.getType(), &right.getType());
             }
+            InstructionKind::Yield(v, a) => {
+                self.checkVariable(v);
+                self.checkVariable(a);
+            }
+            InstructionKind::CreateGenerator(v, a) => {
+                self.checkVariable(v);
+                self.checkVariable(a);
+            }
         }
     }
 

@@ -40,7 +40,7 @@ impl<'a> TraitParser for Parser<'a> {
             while !self.check(TokenKind::RightBracket(BracketKind::Curly)) {
                 let (attributes, _) = self.parseAttributes();
                 if self.check(TokenKind::Keyword(KeywordKind::Fn)) {
-                    let function = self.parseFunction(attributes, true);
+                    let function = self.parseFunction(attributes, true, false);
                     methods.push(function);
                     continue;
                 }
@@ -128,7 +128,7 @@ impl<'a> TraitParser for Parser<'a> {
             while !self.check(TokenKind::RightBracket(BracketKind::Curly)) {
                 let (attributes, _) = self.parseAttributes();
                 if self.check(TokenKind::Keyword(KeywordKind::Fn)) {
-                    let function = self.parseFunction(attributes, true);
+                    let function = self.parseFunction(attributes, true, false);
                     methods.push(function);
                     continue;
                 }

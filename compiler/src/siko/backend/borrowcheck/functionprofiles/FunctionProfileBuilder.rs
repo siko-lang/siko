@@ -365,6 +365,12 @@ impl<'a> FunctionProfileBuilder<'a> {
                     self.unifyExtendedTypes(&currenTy, &destType);
                 }
                 InstructionKind::IntegerOp(_, _, _, _) => {}
+                InstructionKind::Yield(_, _) => {
+                    unreachable!("Yield in borrow checker");
+                }
+                InstructionKind::CreateGenerator(_, _) => {
+                    unreachable!("CreateGenerator in borrow checker");
+                }
             }
         }
     }

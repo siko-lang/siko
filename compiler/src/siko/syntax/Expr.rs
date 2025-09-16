@@ -81,6 +81,8 @@ pub enum SimpleExpr {
     List(Vec<Expr>),
     With(Box<With>),
     Lambda(Vec<Pattern>, Box<Expr>),
+    Yield(Box<Expr>),
+    CreateGenerator(Box<Expr>),
 }
 
 impl SimpleExpr {
@@ -100,6 +102,7 @@ impl SimpleExpr {
             SimpleExpr::Tuple(exprs) => exprs.iter().any(|expr| expr.doesNotReturn()),
             SimpleExpr::Ref(expr) => expr.doesNotReturn(),
             SimpleExpr::List(exprs) => exprs.iter().any(|expr| expr.doesNotReturn()),
+            SimpleExpr::Yield(expr) => expr.doesNotReturn(),
             _ => false,
         }
     }

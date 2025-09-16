@@ -356,6 +356,14 @@ impl ClosureLowering for InstructionKind {
                 panic!("ClosureReturn instruction found in closure lowering");
             }
             InstructionKind::IntegerOp(_, _, _, _) => {}
+            InstructionKind::Yield(v, a) => {
+                v.lower(closureStore);
+                a.lower(closureStore);
+            }
+            InstructionKind::CreateGenerator(v, a) => {
+                v.lower(closureStore);
+                a.lower(closureStore);
+            }
         }
     }
 }

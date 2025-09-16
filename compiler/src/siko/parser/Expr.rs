@@ -968,6 +968,16 @@ impl<'a> ExprParser for Parser<'a> {
             TokenKind::Keyword(KeywordKind::While) => self.parseWhile(),
             TokenKind::Keyword(KeywordKind::Match) => self.parseMatch(),
             TokenKind::Keyword(KeywordKind::With) => self.parseWith(),
+            TokenKind::Keyword(KeywordKind::Yield) => {
+                self.expect(TokenKind::Keyword(KeywordKind::Yield));
+                let arg = self.parseExpr();
+                self.buildExpr(SimpleExpr::Yield(Box::new(arg)), start)
+            }
+            TokenKind::Keyword(KeywordKind::Gen) => {
+                self.expect(TokenKind::Keyword(KeywordKind::Gen));
+                let arg = self.parseExpr();
+                self.buildExpr(SimpleExpr::CreateGenerator(Box::new(arg)), start)
+            }
             TokenKind::LeftBracket(BracketKind::Curly) => {
                 let block = self.parseBlock();
                 self.buildExpr(SimpleExpr::Block(block), start)

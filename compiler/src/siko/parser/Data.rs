@@ -42,7 +42,7 @@ impl<'a> DataParser for Parser<'a> {
             }
             match self.peek() {
                 TokenKind::Keyword(KeywordKind::Fn) => {
-                    let method = self.parseFunction(attributes, public);
+                    let method = self.parseFunction(attributes, public, false);
                     methods.push(method);
                 }
                 TokenKind::VarIdentifier => {
@@ -87,7 +87,7 @@ impl<'a> DataParser for Parser<'a> {
             }
             match self.peek() {
                 TokenKind::Keyword(KeywordKind::Fn) => {
-                    let method = self.parseFunction(attributes, public);
+                    let method = self.parseFunction(attributes, public, false);
                     methods.push(method);
                 }
                 TokenKind::TypeIdentifier => {

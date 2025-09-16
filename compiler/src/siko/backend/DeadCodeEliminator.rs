@@ -154,6 +154,8 @@ impl<'a> DeadCodeEliminator<'a> {
                     panic!("ClosureReturn found in drop checker, this should not happen");
                 }
                 InstructionKind::IntegerOp(_, _, _, _) => {}
+                InstructionKind::Yield(_, _) => {}
+                InstructionKind::CreateGenerator(_, _) => {}
             }
         }
     }

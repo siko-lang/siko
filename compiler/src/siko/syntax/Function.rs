@@ -36,11 +36,28 @@ impl Attributes {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResultKind {
+    SingleReturn(Type),
+    Generator(Type, Type),
+}
+
+impl ResultKind {
+    pub fn assertSingleReturn(&self) -> &Type {
+        match self {
+            ResultKind::SingleReturn(ty) => ty,
+            ResultKind::Generator(_, _) => {
+                panic!("Expected single return type, found generator type.")
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Function {
     pub name: Identifier,
     pub typeParams: Option<TypeParameterDeclaration>,
     pub params: Vec<Parameter>,
-    pub result: Type,
+    pub result: ResultKind,
     pub body: Option<Block>,
     pub externKind: Option<FunctionExternKind>,
     pub public: bool,
