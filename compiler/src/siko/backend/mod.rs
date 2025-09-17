@@ -2,6 +2,7 @@ pub mod Backend;
 pub mod DeadCodeEliminator;
 pub mod FieldRefMerger;
 pub mod RemoveTuples;
+pub mod SafetyChecker;
 pub mod TypeVerifier;
 pub mod borrowcheck;
 pub mod closurelowering;

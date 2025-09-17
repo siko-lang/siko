@@ -3,16 +3,19 @@ module Std.Basic.Util {
 import NativePtr
 import Libc
 
+@safe
 pub fn printStr(v: &String) {
     Libc.write(1.toI32(), v.slice().asPtr(), v.slice().len());
 }
 
+@safe
 pub fn printlnStr(v: &String) {
     Libc.write(1.toI32(), v.slice().asPtr(), v.slice().len());
     Libc.write(1.toI32(), "\\n".slice().asPtr(), 1.toU64());
     Libc.fsync(1.toI32());
 }
 
+@safe
 pub fn assert(v: Bool) {
     if v {
     } else {
@@ -29,12 +32,14 @@ pub fn println(msg: &String) {
     printlnStr(msg);
 }
 
+@safe
 pub fn panic(msg: String) -> ! {
     printStr("PANIC");
     printStr(msg);
     abort();
 }
 
+@safe
 pub fn readChar() -> Result[U8, ()] {
     let buf: U8 = 0.toU8();
     let bytesRead = Libc.read(0.toI32(), NativePtr.toPtr(&buf), 1.toU64());

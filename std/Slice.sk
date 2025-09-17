@@ -18,19 +18,23 @@ pub struct Slice[T] {
         self.size == 0.toU64()
     }
 
+    @unsafe
     fn getUnchecked(&self, index: U64) -> &T {
         let ptr = offset(self.items, index);
         toRef(ptr)
     }
 
+    @unsafe
     fn getPtr(&self, index: U64) -> *T {
         offset(self.items, index)
     }
 
+    @unsafe
     fn asPtr(&self) -> *T {
         self.items
     }
 
+    @unsafe
     fn contains[T: PartialEq[T]](&self, item: &T) -> Bool {
         for i in 0.toU64()..self.size {
             if self.getUnchecked(i) == item {
@@ -40,6 +44,7 @@ pub struct Slice[T] {
         False
     }
 
+    @unsafe
     pub fn swap(self, i: U64, j: U64) -> Self {
         if i == j {
             return self;
@@ -53,6 +58,7 @@ pub struct Slice[T] {
         self
     }
 
+    @unsafe
     fn subSlice(&self, from: U64, to: U64) -> Slice[T] {
         if from < 0.toU64() or to > self.size or from > to {
             panic("Invalid slice range ${from}-${to} must be between 0 and ${self.size}");
@@ -61,6 +67,7 @@ pub struct Slice[T] {
         Slice(self.getPtr(from), newSize)
     }
 
+    @unsafe
     pub fn sort[T: Ord[T]](mut self) -> Self {
         if self.len() <= 1.toU64() {
             return self;
@@ -70,6 +77,7 @@ pub struct Slice[T] {
         self
     }
 
+    @unsafe
     pub fn sort2[T: Ord[T]](mut self) -> Self {
         if self.len() <= 1.toU64() {
             return self;
@@ -79,6 +87,7 @@ pub struct Slice[T] {
         self
     }
 
+    @unsafe
     fn quickSort[T: Ord[T]](mut self) -> Self {
         if self.len() <= 1.toU64() {
             return self;
@@ -91,6 +100,7 @@ pub struct Slice[T] {
         self
     }
 
+    @unsafe
     fn partition[T: Ord[T]](mut self) -> (Self, Int) {
         let lo = 0;
         let hi = self.len().toInt() - 1;
@@ -106,6 +116,7 @@ pub struct Slice[T] {
         (self, i + 1)
     }
 
+    @unsafe
     fn quickSort2[T: Ord[T]](mut self) -> Self {
         if self.len().toInt() <= 1 {
             return self;
@@ -122,6 +133,7 @@ pub struct Slice[T] {
         self
     }
 
+    @unsafe
     fn partition3[T: Ord[T]](mut self) -> (Self, Int, Int) {
         let lo = 0;
         let hi = self.len().toInt() - 1;
@@ -148,6 +160,7 @@ pub struct Slice[T] {
         (self, lt, gt) // indices of first == pivot and last == pivot
     }
 
+    @unsafe
     pub fn reverse(mut self) -> Self {
         let mut i = 0.toU64();
         if self.len() < 2.toU64() {

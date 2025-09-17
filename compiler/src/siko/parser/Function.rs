@@ -1,6 +1,7 @@
 use crate::siko::{
     syntax::{
-        Function::{Attributes, Function, FunctionExternKind, Parameter, ResultKind},
+        Attributes::Attributes,
+        Function::{Function, FunctionExternKind, Parameter, ResultKind},
         Type::Type,
     },
     util::error,

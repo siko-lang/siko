@@ -1,8 +1,8 @@
 use crate::siko::{
-    parser::Module::ModuleParser,
+    parser::Attributes::AttributeParser,
     syntax::{
+        Attributes::Attributes,
         Data::{Enum, Field, Struct, Variant},
-        Function::Attributes,
         Module::Derive,
     },
 };
@@ -34,7 +34,7 @@ impl<'a> DataParser for Parser<'a> {
         let mut fields = Vec::new();
         let mut methods = Vec::new();
         while !self.check(TokenKind::RightBracket(BracketKind::Curly)) {
-            let (attributes, _) = self.parseAttributes();
+            let (fnAttributes, _) = self.parseAttributes();
             let mut public = false;
             if self.check(TokenKind::Keyword(KeywordKind::Pub)) {
                 self.expect(TokenKind::Keyword(KeywordKind::Pub));
@@ -42,7 +42,7 @@ impl<'a> DataParser for Parser<'a> {
             }
             match self.peek() {
                 TokenKind::Keyword(KeywordKind::Fn) => {
-                    let method = self.parseFunction(attributes, public, false);
+                    let method = self.parseFunction(fnAttributes, public, false);
                     methods.push(method);
                 }
                 TokenKind::VarIdentifier => {
@@ -79,7 +79,7 @@ impl<'a> DataParser for Parser<'a> {
         let mut methods = Vec::new();
         self.expect(TokenKind::LeftBracket(BracketKind::Curly));
         while !self.check(TokenKind::RightBracket(BracketKind::Curly)) {
-            let (attributes, _) = self.parseAttributes();
+            let (fnAttributes, _) = self.parseAttributes();
             let mut public = false;
             if self.check(TokenKind::Keyword(KeywordKind::Pub)) {
                 self.expect(TokenKind::Keyword(KeywordKind::Pub));
@@ -87,7 +87,7 @@ impl<'a> DataParser for Parser<'a> {
             }
             match self.peek() {
                 TokenKind::Keyword(KeywordKind::Fn) => {
-                    let method = self.parseFunction(attributes, public, false);
+                    let method = self.parseFunction(fnAttributes, public, false);
                     methods.push(method);
                 }
                 TokenKind::TypeIdentifier => {

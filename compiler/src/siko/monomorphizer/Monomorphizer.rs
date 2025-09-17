@@ -186,7 +186,7 @@ impl<'a> Monomorphizer<'a> {
             result: Type::getUnitType(),
             body: Some(bodyBuilder.build()),
             constraintContext: ConstraintContext::new(),
-            kind: FunctionKind::UserDefined,
+            kind: FunctionKind::UserDefined(Location::empty()),
             attributes: Attributes::new(),
         };
         //println!("handler fn {}", testRunnerMain);
@@ -531,7 +531,7 @@ impl<'a> Monomorphizer<'a> {
             result: Type::getUnitType(),
             body: Some(bodyBuilder.build()),
             constraintContext: ConstraintContext::new(),
-            kind: FunctionKind::UserDefined,
+            kind: FunctionKind::UserDefined(Location::empty()),
             attributes: attributes,
         };
 

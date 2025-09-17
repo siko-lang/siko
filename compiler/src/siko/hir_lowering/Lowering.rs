@@ -374,7 +374,7 @@ impl<'a> Builder<'a> {
 
         let kind = match self.function.kind {
             FunctionKind::StructCtor => MirFunctionKind::StructCtor,
-            FunctionKind::UserDefined
+            FunctionKind::UserDefined(_)
             | FunctionKind::TraitMemberDefinition(_)
             | FunctionKind::EffectMemberDefinition(_) => {
                 let mut blocks = Vec::new();

@@ -200,7 +200,7 @@ impl ClosureGenerator<'_> {
             result: self.key.result.clone(),
             body: Some(body),
             constraintContext: ConstraintContext::new(),
-            kind: FunctionKind::UserDefined,
+            kind: FunctionKind::UserDefined(location.clone()),
             attributes: Attributes::new(),
         };
         //println!("handler fn {}", handlerFn);

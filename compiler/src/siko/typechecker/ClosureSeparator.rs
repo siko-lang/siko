@@ -85,7 +85,7 @@ impl<'a> ClosureSeparator<'a> {
             resultTy,
             Some(self.closureBody.clone()),
             constraintContext,
-            FunctionKind::UserDefined,
+            FunctionKind::UserDefined(self.function.kind.getLocation()),
             Attributes::new(),
         );
         // println!("Closure function created: {}", closureFn);

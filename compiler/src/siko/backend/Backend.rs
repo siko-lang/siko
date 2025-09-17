@@ -9,6 +9,7 @@ use crate::{
             DeadCodeEliminator::eliminateDeadCode,
             FieldRefMerger,
             RemoveTuples::removeTuples,
+            SafetyChecker::SafetyChecker,
         },
         hir::Program::Program,
         location::Report::ReportContext,
@@ -19,6 +20,8 @@ use crate::{
 };
 
 pub fn process(ctx: &ReportContext, runner: &mut Runner, program: Program) -> Program {
+    let safetyChecker = SafetyChecker::new(&program);
+    safetyChecker.check(ctx);
     let program = stage!(runner, "Eliminating dead code", { eliminateDeadCode(&ctx, program) });
     //println!("after dce\n{}", program);
     let program = stage!(runner, "Handling recursive data", {

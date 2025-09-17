@@ -3,27 +3,33 @@ module NativePtr {
 import Libc
 import Allocator
 
+@unsafe
 pub fn eq[T](a: *T, b: *T) -> Bool {
     toU64(a) == toU64(b)
 }
 
+@unsafe
 pub fn null[T]() -> *T {
     transmute(0)
 }
 
+@unsafe
 pub fn isNull[T](addr: *T) -> Bool {
     toU64(addr) == 0.toU64()
 }
 
+@unsafe
 pub fn allocateArray[T](count: U64) -> *T {
     let p: *T = null();
     Allocator.allocate(count * sizeOf(p))
 }
 
+@unsafe
 pub fn allocate[T]() -> *T {
     allocateArray(1.toU64())
 }
 
+@unsafe
 pub fn deallocate[T](addr: *T) {
     Allocator.deallocate(addr);
 }
@@ -34,66 +40,82 @@ pub fn transmute[T, U](v: T) -> U = extern
 
 pub fn cast[T, U](addr: *T) -> *U = extern
 
+@unsafe
 pub fn memcpy[T](dest: *T, src: *T, count: U64) {
     Libc.memcpy(dest, src, count * sizeOf(src));
 }
 
+@unsafe
 pub fn memmove[T](dest: *T, src: *T, count: U64) {
     Libc.memmove(dest, src, count * sizeOf(src));
 }
 
+@unsafe
 pub fn memcmp[T](dest: *T, src: *T, count: U64) -> Int {
     Libc.memcmp(dest, src, count * sizeOf(src)).toInt()
 }
 
+@unsafe
 pub fn offset[T](base: *T, count: U64) -> *T {
     let size = sizeOf(base);
     let v: U64 = toU64(base) + (count * size);
     transmute(v)
 }
 
+@unsafe
 pub fn toRef[T](addr: *T) -> &T {
     let v: &T = transmute(addr);
     v
 }
 
+@unsafe
 pub fn toPtr[T](addr: &T) -> *T {
     let v: *T = transmute(addr);
     v
 }
 
+@unsafe
 pub fn clone[T](addr: &*T) -> *T {
     *toPtr(addr)
 }
 
+@unsafe
 pub fn toU64[T](addr: &*T) -> U64 {
     transmute(clone(addr))
 }
 
+@unsafe
 pub fn show[T](addr: &*T) -> String {
     let value = toU64(addr);
     value.toHex()
 }
 
 pub instance[T] ShowPtr Show[*T] {
+    @unsafe
     fn show(addr: &*T) -> String {
         show(addr)
     }
+
+    @unsafe
     fn toString(addr: &*T) -> String {
         show(addr)
     }
 }
 
 pub instance[T] PartialEqPtr PartialEq[*T] {
+    @unsafe
     fn eq(a: &*T, b: &*T) -> Bool {
         NativePtr.eq(a, b)
     }
+
+    @unsafe
     fn ne(a: &*T, b: &*T) -> Bool {
         !NativePtr.eq(a, b)
     }
 }
 
 pub instance[T] PtrClone Clone[*T] {
+    @unsafe
     fn clone(addr: &*T) -> *T {
         NativePtr.clone(addr)
     }

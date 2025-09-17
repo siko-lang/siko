@@ -1,4 +1,4 @@
-use crate::siko::{parser::Module::ModuleParser, syntax::Effect::Effect};
+use crate::siko::{parser::Attributes::AttributeParser, syntax::Effect::Effect};
 
 use super::{
     Function::FunctionParser,

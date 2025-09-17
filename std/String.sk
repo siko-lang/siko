@@ -9,10 +9,12 @@ pub struct String {
     size: U64,
     capacity: U64,
 
+    @safe
     pub fn new() -> String {
         String(null(), 0.toU64(), 0.toU64())
     }
 
+    @safe
     pub fn withCapacity(capacity: Int) -> String {
         let value = allocateArray(capacity.toU64());
         String(value, 0.toU64(), capacity.toU64())
@@ -22,6 +24,7 @@ pub struct String {
         self.size.toInt()
     }
 
+    @safe
     pub fn eq(&self, other: &String) -> Bool {
         if self.size != other.size {
             return False;
@@ -30,6 +33,7 @@ pub struct String {
         result == 0
     }
 
+    @safe
     pub fn clone(&self) -> String {
         if self.capacity == 0.toU64() {
             return String(self.value, self.size, self.capacity);
@@ -44,6 +48,7 @@ pub struct String {
         self + other
     }
 
+    @safe
     pub fn pushChar(self, c: U8) -> Self {
         let newCapacity = self.size + 1.toU64();
         let newValue = allocateArray(newCapacity);
@@ -55,15 +60,18 @@ pub struct String {
         String(newValue, newCapacity, newCapacity)
     }
 
+    @safe
     pub fn reverse(mut self) -> Self {
         self.slice().reverse();
         self
     }
 
+    @unsafe
     pub fn slice(&self) -> Slice[U8] {
         Slice.new(self.value, self.size)
     }
 
+    @safe
     pub fn fromU8(value: Vec[U8]) -> String {
         let capacity = value.len().toU64();
         let newValue = allocateArray(capacity);
@@ -73,6 +81,7 @@ pub struct String {
 }
 
 pub instance Drop[String] {
+    @unsafe
     fn drop(mut self) -> Self {
         if self.capacity > 0.toU64() {
             NativePtr.deallocate(self.value);
@@ -100,6 +109,8 @@ pub instance AddStringLiteral Add[String, StringLiteral] {
 
 pub instance AddStringRef Add[String, &String] {
     type Output = String
+
+    @safe
     fn add(self, other: &String) -> String {
         let newCapacity = self.size + other.size;
         let newValue = allocateArray(newCapacity);
@@ -142,14 +153,17 @@ pub struct StringLiteral {
         self.size.toInt()
     }
 
-     pub fn slice(&self) -> Slice[U8] {
+    @unsafe
+    pub fn slice(&self) -> Slice[U8] {
         Slice.new(self.value, self.size)
     }
 
+    @safe
     pub fn clone(&self) -> StringLiteral {
         StringLiteral(self.value, self.size)
     }
 
+    @safe
     pub fn toString(&self) -> String {
         String(self.value, self.size, 0.toU64())
     }

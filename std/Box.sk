@@ -5,17 +5,20 @@ import NativePtr
 pub struct Box[T] {
     value: *T,
 
+    @safe
     pub fn new(value: T) -> Box[T] {
         let p: *T = allocate();
         *p = value;
         Box(p)
     }
 
+    @safe
     pub fn get(&self) -> &T {
         let ptr = offset(self.value, 0.toU64());
         toRef(ptr)
     }
 
+    @safe
     pub fn release(mut self) -> T {
         let value = *self.value;
         deallocate(self.value);
@@ -25,6 +28,7 @@ pub struct Box[T] {
 }
 
 instance[T] Drop[Box[T]] {
+    @unsafe
     fn drop(self) -> Self {
         if isNull(self.value) {
             return self;

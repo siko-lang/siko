@@ -30,7 +30,7 @@ impl<'a> Interpreter<'a> {
                 }
 
                 match &func.kind {
-                    FunctionKind::UserDefined => {
+                    FunctionKind::UserDefined(_) => {
                         if let Some(ret) = &func.body {
                             let mut executor = FunctionExecutor::new(ret, frame, self);
                             return executor.execute();

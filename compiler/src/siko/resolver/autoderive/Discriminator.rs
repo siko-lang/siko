@@ -1,9 +1,10 @@
 use crate::siko::{
     resolver::autoderive::Util::withBlock,
     syntax::{
+        Attributes::Attributes,
         Data::{Enum, Struct},
         Expr::{Branch, Expr, SimpleExpr},
-        Function::{Attributes, Function, Parameter, ResultKind},
+        Function::{Function, Parameter, ResultKind},
         Identifier::Identifier,
         Pattern::{Pattern, SimplePattern},
         Statement::{Block, Statement, StatementKind},

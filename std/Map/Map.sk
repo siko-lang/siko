@@ -14,10 +14,12 @@ struct Node[K, V] {
 pub struct Map[K, V] {
     root: *Node[K, V],
 
+    @safe
     pub fn new() -> Map[K, V] {
         Map(null())
     }
 
+    @safe
     pub fn insert[K: Ord[K]](mut self, key: K, value: V) -> (Self, Option[V]) {
         let (value, new_root) = insertNode(self.root, key, value);
         self.root = new_root;
@@ -27,6 +29,7 @@ pub struct Map[K, V] {
         (self, value)
     }
 
+    @safe
     pub fn remove[K: Ord[K]](mut self, key: K) -> (Self, Option[V]) {
         let (value, new_root) = removeNode(self.root, key);
         self.root = new_root;
@@ -36,6 +39,7 @@ pub struct Map[K, V] {
         (self, value)
     }
 
+    @safe
     pub fn get[K: Ord[K]](&self, key: K) -> Option[&V] {
         let result = searchNode(self.root, key);
         if result.isNull() {
@@ -45,12 +49,14 @@ pub struct Map[K, V] {
         }
     }
 
+    @safe
     pub fn clear(mut self) -> Self {
         free_nodes(self.root);
         self.root = null();
         self
     }
 
+    @safe
     pub fn empty(&self) -> Bool {
         self.root.isNull()
     }
@@ -66,6 +72,7 @@ instance[K, V] Drop[Map[K, V]] {
     }
 }
 
+@unsafe
 fn height[K, V](n: *Node[K, V]) -> Int {
     if n.isNull() {
         0
@@ -74,12 +81,14 @@ fn height[K, V](n: *Node[K, V]) -> Int {
     }
 }
 
+@unsafe
 fn updateHeight[K, V](mut n: *Node[K, V]) {
     if !n.isNull() {
         n.height = 1 + max(height(n.left), height(n.right));
     }
 }
 
+@unsafe
 fn balanceFactor[K, V](n: *Node[K, V]) -> Int {
     if n.isNull() {
         0
@@ -88,6 +97,7 @@ fn balanceFactor[K, V](n: *Node[K, V]) -> Int {
     }
 }
 
+@unsafe
 fn minValueNode[K, V](mut current: *Node[K, V]) -> *Node[K, V] {
     if current.isNull() {
         return current;
@@ -98,6 +108,7 @@ fn minValueNode[K, V](mut current: *Node[K, V]) -> *Node[K, V] {
     current
 }
 
+@unsafe
 fn rotateRight[K, V](mut z: *Node[K, V]) -> *Node[K, V] {
     let mut y = z.left;
     let mut t3 = y.right;
@@ -117,6 +128,7 @@ fn rotateRight[K, V](mut z: *Node[K, V]) -> *Node[K, V] {
     y
 }
 
+@unsafe
 fn rotateLeft[K, V](mut z: *Node[K, V]) -> *Node[K, V] {
     let mut y = z.right;
     let mut t2 = y.left;
@@ -136,6 +148,7 @@ fn rotateLeft[K, V](mut z: *Node[K, V]) -> *Node[K, V] {
     y
 }
 
+@unsafe
 fn updateLeft[K, V](mut root: *Node[K, V], mut left: *Node[K, V]) {
     root.left = left;
     if !left.isNull() {
@@ -143,6 +156,7 @@ fn updateLeft[K, V](mut root: *Node[K, V], mut left: *Node[K, V]) {
     }
 }
 
+@unsafe
 fn updateRight[K, V](mut root: *Node[K, V], mut right: *Node[K, V]) {
     root.right = right;
     if !right.isNull() {
@@ -150,6 +164,7 @@ fn updateRight[K, V](mut root: *Node[K, V], mut right: *Node[K, V]) {
     }
 }
 
+@unsafe
 fn rebalance[K, V](mut root: *Node[K, V]) -> *Node[K, V] {
     updateHeight(root);
     let bf = balanceFactor(root);
@@ -175,6 +190,7 @@ fn rebalance[K, V](mut root: *Node[K, V]) -> *Node[K, V] {
     root
 }
 
+@unsafe
 fn insertNode[K, V: Ord[K]](mut root: *Node[K, V], key: K, value: V) -> (Option[V], *Node[K, V]) {
     if root.isNull() {
         let n = newNode(key, value);
@@ -196,6 +212,7 @@ fn insertNode[K, V: Ord[K]](mut root: *Node[K, V], key: K, value: V) -> (Option[
     }
 }
 
+@unsafe
 fn dump_tree[K, V: Show[K], Show[V]](root: *Node[K, V], level: Int) {
     loop index = 0 {
         if index >= level {
@@ -216,6 +233,7 @@ fn dump_tree[K, V: Show[K], Show[V]](root: *Node[K, V], level: Int) {
     dump_tree(root.right, level + 1);
 }
 
+@unsafe
 fn removeNode[K, V: Ord[K]](mut root: *Node[K, V], key: K) -> (Option[V], *Node[K, V]) {
     if root.isNull() {
         return (None, root);
@@ -258,6 +276,7 @@ fn removeNode[K, V: Ord[K]](mut root: *Node[K, V], key: K) -> (Option[V], *Node[
     (value, root)
 }
 
+@unsafe
 fn searchNode[K, V: Ord[K]](mut root: *Node[K, V], key: K) -> *Node[K, V] {
     while !root.isNull() {
         if key == root.key {
@@ -271,6 +290,7 @@ fn searchNode[K, V: Ord[K]](mut root: *Node[K, V], key: K) -> *Node[K, V] {
     null()
 }
 
+@unsafe
 fn newNode[K, V](key: K, value: V) -> *Node[K, V] {
     let node = Node(key, value, 1, null(), null(), null());
     let p = allocate();
@@ -278,6 +298,7 @@ fn newNode[K, V](key: K, value: V) -> *Node[K, V] {
     p
 }
 
+@unsafe
 fn freeNode[K, V](node: *Node[K, V]) {
     if node.isNull() {
         return;
@@ -288,6 +309,7 @@ fn freeNode[K, V](node: *Node[K, V]) {
     deallocate(node);
 }
 
+@unsafe
 fn free_nodes[K, V](root: *Node[K, V]) {
     if root.isNull() {
         return;
@@ -299,6 +321,7 @@ fn free_nodes[K, V](root: *Node[K, V]) {
     freeNode(root);
 }
 
+@unsafe
 fn inorder[K, V: Show[V]](root: *Node[K, V]) {
     if root.isNull() {
         return;
@@ -313,11 +336,13 @@ pub struct MapIterator[K, V] {
     current: *Node[K, V],
     prev: *Node[K, V]
 
+    @safe
     pub fn new(m: &Map[K, V]) -> MapIterator[K, V] {
         let current = minValueNode(m.root);
         MapIterator(m, current, null())
     }
 
+    @unsafe
     fn successor(mut n: *Node[K, V]) -> *Node[K, V] {
         if n.isNull() {
             return null();
@@ -337,6 +362,7 @@ pub struct MapIterator[K, V] {
 pub instance[K, V] IteratorMapIterator Iterator[MapIterator[K, V]] {
     type Item = (&K, &V)
 
+    @safe
     fn next(mut self) -> (Self, Option[(&K, &V)]) {
         if self.current.isNull() {
             return (self, None)

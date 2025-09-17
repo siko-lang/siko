@@ -5,6 +5,8 @@ use std::io::Write;
 use crate::siko::hir::Block::Block;
 use crate::siko::hir::Block::BlockId;
 use crate::siko::hir::Body::Body;
+use crate::siko::hir::Safety::Safety;
+use crate::siko::location::Location::Location;
 use crate::siko::qualifiedname::QualifiedName;
 
 use super::{ConstraintContext::ConstraintContext, Type::Type};
@@ -13,6 +15,7 @@ use super::{ConstraintContext::ConstraintContext, Type::Type};
 pub struct Attributes {
     pub inline: bool,
     pub testEntry: bool,
+    pub safety: Safety,
 }
 
 impl Attributes {
@@ -20,6 +23,7 @@ impl Attributes {
         Attributes {
             inline: false,
             testEntry: false,
+            safety: Safety::Regular,
         }
     }
 }
@@ -54,7 +58,7 @@ pub enum ExternKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FunctionKind {
-    UserDefined,
+    UserDefined(Location),
     VariantCtor(i64),
     StructCtor,
     Extern(ExternKind),
@@ -67,7 +71,7 @@ pub enum FunctionKind {
 impl Display for FunctionKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FunctionKind::UserDefined => write!(f, "UserDefined"),
+            FunctionKind::UserDefined(_) => write!(f, "UserDefined"),
             FunctionKind::VariantCtor(id) => write!(f, "VariantCtor({})", id),
             FunctionKind::StructCtor => write!(f, "StructCtor"),
             FunctionKind::Extern(kind) => write!(f, "Extern({:?})", kind),
@@ -115,6 +119,20 @@ impl FunctionKind {
             _ => false,
         }
     }
+
+    pub fn getLocation(&self) -> Location {
+        match self {
+            FunctionKind::UserDefined(loc) => loc.clone(),
+            _ => panic!("getLocation: not a user defined function"),
+        }
+    }
+
+    pub fn isExtern(&self) -> bool {
+        match self {
+            FunctionKind::Extern(_) => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -154,6 +172,18 @@ impl Function {
             FunctionKind::VariantCtor(_) | FunctionKind::StructCtor => true,
             _ => false,
         }
+    }
+
+    pub fn isSafe(&self) -> bool {
+        self.attributes.safety == Safety::Safe
+    }
+
+    pub fn isRegular(&self) -> bool {
+        self.attributes.safety == Safety::Regular
+    }
+
+    pub fn isUnsafe(&self) -> bool {
+        self.attributes.safety == Safety::Unsafe
     }
 
     pub fn getBlockById(&self, id: BlockId) -> &Block {

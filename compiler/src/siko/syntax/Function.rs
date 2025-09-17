@@ -1,3 +1,5 @@
+use crate::siko::syntax::Attributes::Attributes;
+
 use super::{
     Identifier::Identifier,
     Statement::Block,
@@ -16,23 +18,6 @@ pub enum Parameter {
 pub enum FunctionExternKind {
     Builtin,
     C(Option<String>),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Attributes {
-    pub inline: bool,
-    pub testEntry: bool,
-    pub builtin: bool,
-}
-
-impl Attributes {
-    pub fn new() -> Self {
-        Attributes {
-            inline: false,
-            testEntry: false,
-            builtin: false,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

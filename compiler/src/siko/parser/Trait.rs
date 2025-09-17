@@ -1,5 +1,5 @@
 use crate::siko::{
-    parser::Module::ModuleParser,
+    parser::Attributes::AttributeParser,
     syntax::{
         Identifier::Identifier,
         Trait::{AssociatedType, AssociatedTypeDeclaration, Instance, Trait},

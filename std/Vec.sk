@@ -8,10 +8,12 @@ struct InnerVec[T] {
     size: U64,
     capacity: U64
 
+    @unsafe
     fn new() -> InnerVec[T] {
         InnerVec(null(), 0.toU64(), 0.toU64())
     }
 
+    @safe
     fn push(mut self, item: T) -> Self {
         if self.size == self.capacity {
             if self.capacity == 0.toU64() {
@@ -26,6 +28,7 @@ struct InnerVec[T] {
         self
     }
 
+    @unsafe
     fn get(&self, index: U64) -> &T {
         if self.size <= index {
             panic("OutOfBounds");
@@ -33,11 +36,13 @@ struct InnerVec[T] {
         self.getUnchecked(index)
     }
 
+    @unsafe
     fn getUnchecked(&self, index: U64) -> &T {
         let ptr = offset(self.items, index);
         toRef(ptr)
     }
 
+    @unsafe
     pub fn remove(mut self, index: U64) -> Self {
         if index < 0.toU64() or index >= self.size {
             panic("OutOfBounds");
@@ -54,6 +59,7 @@ struct InnerVec[T] {
         self
     }
 
+    @unsafe
     fn grow(mut self, capacity: U64) -> Self {
         self.capacity = capacity;
         let newItems: *T = allocateArray(self.capacity);
@@ -71,10 +77,12 @@ struct InnerVec[T] {
 pub struct Vec[T] {
     inner: InnerVec[T]
 
+    @safe
     pub fn new() -> Vec[T] {
         Vec(InnerVec.new())
     }
 
+    @safe
     pub fn withCapacity(capacity: Int) -> Vec[T] {
         let mut vec = Vec.new();
         vec.inner.grow(capacity.toU64());
@@ -86,14 +94,18 @@ pub struct Vec[T] {
         self
     }
 
+    @safe
     pub fn get(&self, index: Int) -> &T {
         self.inner.get(index.toU64())
     }
 
+
+    @safe
     pub fn getUnchecked(&self, index: Int) -> &T {
         self.inner.getUnchecked(index.toU64())
     }
 
+    @safe
     pub fn remove(mut self, index: Int) -> Self {
         self.inner.remove(index.toU64());
         self
@@ -115,34 +127,41 @@ pub struct Vec[T] {
         self.inner.size == 0.toU64()
     }
 
+    @unsafe
     pub fn slice(&self) -> Slice[T] {
         Slice.new(self.inner.items, self.inner.size)
     }
 
+    @safe
     pub fn swap(self, i: Int, j: Int) -> Self {
         self.slice().swap(i.toU64(), j.toU64());
         self
     }
 
+    @safe
     pub fn reverse(self) -> Self {
         self.slice().reverse();
         self
     }
 
+    @safe
     pub fn sort[T: Ord[T]](mut self) -> Self {
         self.slice().sort();
         self
     }
 
+    @safe
     pub fn sort2[T: Ord[T]](mut self) -> Self {
         self.slice().sort2();
         self
     }
 
+    @safe
     pub fn contains[T: PartialEq[T]](&self, item: &T) -> Bool {
         self.slice().contains(item)
     }
 
+    @unsafe
     pub fn asPtr(&self) -> *T {
         self.inner.items
     }
@@ -154,6 +173,7 @@ struct VecIterator[T] {
 }
 
 instance[T] Drop[VecIterator[T]] {
+    @unsafe
     fn drop(mut self) -> Self {
         if self.inner.capacity == 0.toU64() {
             return self
@@ -175,6 +195,7 @@ instance[T] Drop[VecIterator[T]] {
 pub instance[T] IteratorVecIterator Iterator[VecIterator[T]] {
     type Item = T
 
+    @safe
     fn next(mut self) -> (Self, Option[T]) {
         if self.index >= self.inner.size {
             return (self, None)
@@ -203,6 +224,7 @@ struct VecIteratorRef[T] {
 pub instance[T] IteratorVecIteratorRef Iterator[VecIteratorRef[T]] {
     type Item = &T
 
+    @safe
     fn next(mut self) -> (Self, Option[&T]) {
         if self.index >= self.vec.inner.size {
             return (self, None)
@@ -214,6 +236,7 @@ pub instance[T] IteratorVecIteratorRef Iterator[VecIteratorRef[T]] {
 }
 
 instance[T] Drop[Vec[T]] {
+    @unsafe
     fn drop(mut self) -> Self {
         {
             let iter = VecIterator(self.inner, 0.toU64());
@@ -261,6 +284,7 @@ pub instance[T: PartialEq[T]] PartialEqVec PartialEq[Vec[T]] {
 }
 
 pub instance[T: Clone[T]] VecClone Clone[Vec[T]] {
+    @safe
     fn clone(&self) -> Vec[T] {
         let mut newVec: Vec[T] = Vec.new();
         newVec.inner.grow(self.inner.capacity);
