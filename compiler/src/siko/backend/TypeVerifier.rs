@@ -203,7 +203,7 @@ impl<'a> TypeVerifier<'a> {
                 self.unify(&ty1, &dest.getType());
             }
             InstructionKind::Return(_, var) => {
-                self.unify(&var.getType(), &self.function.result);
+                self.unify(&var.getType(), &self.function.result.getReturnType());
             }
             InstructionKind::DynamicFunctionCall(_, _, _) => {
                 //TODO: Implement dynamic function call verification
@@ -310,7 +310,7 @@ impl<'a> TypeVerifier<'a> {
                 self.checkVariable(v);
                 self.checkVariable(a);
             }
-            InstructionKind::CreateGenerator(v, a) => {
+            InstructionKind::SpawnCoroutine(v, a) => {
                 self.checkVariable(v);
                 self.checkVariable(a);
             }

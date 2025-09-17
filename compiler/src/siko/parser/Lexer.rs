@@ -179,7 +179,7 @@ impl Lexer {
                     "not" => Token::Keyword(KeywordKind::Not),
                     "try" => Token::Keyword(KeywordKind::Try),
                     "yield" => Token::Keyword(KeywordKind::Yield),
-                    "gen" => Token::Keyword(KeywordKind::Gen),
+                    "co" => Token::Keyword(KeywordKind::Co),
                     "_" => Token::Misc(MiscKind::Wildcard),
                     _ => Token::VarIdentifier(self.current.clone()),
                 };

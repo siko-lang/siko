@@ -795,11 +795,11 @@ impl<'a> ExprResolver<'a> {
                     .addInstruction(InstructionKind::Yield(yieldVar.clone(), argId), expr.location.clone());
                 yieldVar
             }
-            SimpleExpr::CreateGenerator(arg) => {
+            SimpleExpr::SpawnCoroutine(arg) => {
                 let argId = self.resolveExpr(arg, env);
                 let genVar = self.bodyBuilder.createTempValue(expr.location.clone());
                 self.bodyBuilder.current().addInstruction(
-                    InstructionKind::CreateGenerator(genVar.clone(), argId),
+                    InstructionKind::SpawnCoroutine(genVar.clone(), argId),
                     expr.location.clone(),
                 );
                 genVar

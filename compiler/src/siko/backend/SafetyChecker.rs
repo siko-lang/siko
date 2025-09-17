@@ -122,7 +122,7 @@ impl SafetyChecker<'_> {
             InstructionKind::ClosureReturn(_, _, _) => true,
             InstructionKind::IntegerOp(_, _, _, _) => true,
             InstructionKind::Yield(_, _) => true,
-            InstructionKind::CreateGenerator(_, _) => true,
+            InstructionKind::SpawnCoroutine(_, _) => true,
         }
     }
 }

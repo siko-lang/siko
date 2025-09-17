@@ -7,7 +7,7 @@ use crate::siko::{
         Body::Body,
         ConstraintContext::ConstraintContext,
         Data::{Enum, Field, Struct, Variant},
-        Function::{Attributes, Function, FunctionKind, Parameter},
+        Function::{Attributes, Function, FunctionKind, Parameter, ResultKind},
         Instruction::{
             CallInfo, ClosureCreateInfo, FieldId, FieldInfo, ImplicitHandler, Instruction, InstructionKind,
             WithContext, WithInfo,
@@ -295,8 +295,8 @@ impl RemoveTuples for InstructionKind {
                 op.clone(),
             ),
             InstructionKind::Yield(v, a) => InstructionKind::Yield(v.removeTuples(ctx), a.removeTuples(ctx)),
-            InstructionKind::CreateGenerator(v, a) => {
-                InstructionKind::CreateGenerator(v.removeTuples(ctx), a.removeTuples(ctx))
+            InstructionKind::SpawnCoroutine(v, a) => {
+                InstructionKind::SpawnCoroutine(v.removeTuples(ctx), a.removeTuples(ctx))
             }
         }
     }
@@ -307,6 +307,15 @@ impl RemoveTuples for ClosureCreateInfo {
         let mut info = self.clone();
         info.closureParams = info.closureParams.removeTuples(ctx);
         info
+    }
+}
+
+impl RemoveTuples for ResultKind {
+    fn removeTuples(&self, ctx: &mut Context) -> Self {
+        match self {
+            ResultKind::SingleReturn(ty) => ResultKind::SingleReturn(ty.removeTuples(ctx)),
+            ResultKind::Coroutine(types) => ResultKind::Coroutine(types.removeTuples(ctx)),
+        }
     }
 }
 
@@ -391,7 +400,7 @@ pub fn removeTuples(program: &Program) -> Program {
             let unitFn = Function {
                 name: name.clone(),
                 params: params,
-                result: Type::Named(name.clone(), Vec::new()),
+                result: ResultKind::SingleReturn(Type::Named(name.clone(), Vec::new())),
                 body: None,
                 constraintContext: ConstraintContext::new(),
                 kind: FunctionKind::StructCtor,

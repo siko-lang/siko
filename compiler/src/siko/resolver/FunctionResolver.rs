@@ -5,6 +5,7 @@ use crate::siko::hir::ConstraintContext::ConstraintContext;
 use crate::siko::hir::Data::{Enum, Struct};
 use crate::siko::hir::Function::{
     Attributes as IrAttributes, ExternKind, Function as IrFunction, FunctionKind, Parameter as IrParameter,
+    ResultKind as IrResultKind,
 };
 use crate::siko::hir::Implicit::Implicit;
 use crate::siko::hir::Safety::Safety as IrSafety;
@@ -124,12 +125,8 @@ impl<'a> FunctionResolver<'a> {
             params.push(irParam);
         }
         let result = match &f.result {
-            ResultKind::SingleReturn(ty) => typeResolver.resolveType(&ty),
-            ResultKind::Generator(yieldTy, retTy) => {
-                let yieldIrTy = typeResolver.resolveType(&yieldTy);
-                let retIrTy = typeResolver.resolveType(&retTy);
-                IrType::Generator(Box::new(yieldIrTy), Box::new(retIrTy))
-            }
+            ResultKind::SingleReturn(ty) => IrResultKind::SingleReturn(typeResolver.resolveType(&ty)),
+            ResultKind::Coroutine(coroutineTy) => IrResultKind::Coroutine(typeResolver.resolveType(&coroutineTy)),
         };
         //println!("Function params: {:?}", params);
 

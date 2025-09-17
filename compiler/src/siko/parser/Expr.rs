@@ -973,10 +973,10 @@ impl<'a> ExprParser for Parser<'a> {
                 let arg = self.parseExpr();
                 self.buildExpr(SimpleExpr::Yield(Box::new(arg)), start)
             }
-            TokenKind::Keyword(KeywordKind::Gen) => {
-                self.expect(TokenKind::Keyword(KeywordKind::Gen));
+            TokenKind::Keyword(KeywordKind::Co) => {
+                self.expect(TokenKind::Keyword(KeywordKind::Co));
                 let arg = self.parseExpr();
-                self.buildExpr(SimpleExpr::CreateGenerator(Box::new(arg)), start)
+                self.buildExpr(SimpleExpr::SpawnCoroutine(Box::new(arg)), start)
             }
             TokenKind::LeftBracket(BracketKind::Curly) => {
                 let block = self.parseBlock();

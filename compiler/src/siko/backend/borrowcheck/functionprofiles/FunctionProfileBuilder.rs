@@ -126,7 +126,7 @@ impl<'a> FunctionProfileBuilder<'a> {
         self.profile = FunctionProfile {
             name: self.f.name.clone(),
             args: Vec::new(),
-            result: self.extendType(&self.f.result),
+            result: self.extendType(&self.f.result.getReturnType()),
             links: Vec::new(),
         };
         for (index, p) in self.f.params.iter().enumerate() {
@@ -166,7 +166,12 @@ impl<'a> FunctionProfileBuilder<'a> {
                     }
                     FunctionKind::VariantCtor(index) => {
                         let profile = self.profile.clone();
-                        let enumName = self.f.result.getName().expect("Variant ctor must have enum type");
+                        let enumName = self
+                            .f
+                            .result
+                            .getReturnType()
+                            .getName()
+                            .expect("Variant ctor must have enum type");
                         let enumDef = self.dataGroups.getEnum(&enumName);
                         let instantiatedDef = self.instantiateEnumDef(enumDef);
                         let variant = &instantiatedDef.variants[index as usize];
@@ -368,7 +373,7 @@ impl<'a> FunctionProfileBuilder<'a> {
                 InstructionKind::Yield(_, _) => {
                     unreachable!("Yield in borrow checker");
                 }
-                InstructionKind::CreateGenerator(_, _) => {
+                InstructionKind::SpawnCoroutine(_, _) => {
                     unreachable!("CreateGenerator in borrow checker");
                 }
             }

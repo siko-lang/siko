@@ -483,7 +483,7 @@ pub enum InstructionKind {
     ClosureReturn(BlockId, Variable, Variable),
     IntegerOp(Variable, Variable, Variable, IntegerOp),
     Yield(Variable, Variable),
-    CreateGenerator(Variable, Variable),
+    SpawnCoroutine(Variable, Variable),
 }
 
 impl Display for InstructionKind {
@@ -562,7 +562,7 @@ impl InstructionKind {
                 InstructionKind::IntegerOp(dest.copy(map), v1.copy(map), v2.copy(map), op.clone())
             }
             InstructionKind::Yield(v, a) => InstructionKind::Yield(v.copy(map), a.copy(map)),
-            InstructionKind::CreateGenerator(v, a) => InstructionKind::CreateGenerator(v.copy(map), a.copy(map)),
+            InstructionKind::SpawnCoroutine(v, a) => InstructionKind::SpawnCoroutine(v.copy(map), a.copy(map)),
         }
     }
 
@@ -629,7 +629,7 @@ impl InstructionKind {
                 InstructionKind::IntegerOp(dest.clone(), v1.useVar(), v2.useVar(), op.clone())
             }
             InstructionKind::Yield(v, a) => InstructionKind::Yield(v.clone(), a.useVar()),
-            InstructionKind::CreateGenerator(v, a) => InstructionKind::CreateGenerator(v.clone(), a.useVar()),
+            InstructionKind::SpawnCoroutine(v, a) => InstructionKind::SpawnCoroutine(v.clone(), a.useVar()),
         }
     }
 
@@ -670,7 +670,7 @@ impl InstructionKind {
             InstructionKind::ClosureReturn(_, v, _) => Some(v.clone()),
             InstructionKind::IntegerOp(v, _, _, _) => Some(v.clone()),
             InstructionKind::Yield(v, _) => Some(v.clone()),
-            InstructionKind::CreateGenerator(v, _) => Some(v.clone()),
+            InstructionKind::SpawnCoroutine(v, _) => Some(v.clone()),
         }
     }
 
@@ -829,10 +829,10 @@ impl InstructionKind {
                 let new_a = a.replace(&from, to);
                 InstructionKind::Yield(new_v, new_a)
             }
-            InstructionKind::CreateGenerator(v, a) => {
+            InstructionKind::SpawnCoroutine(v, a) => {
                 let new_v = v.replace(&from, to.clone());
                 let new_a = a.replace(&from, to);
-                InstructionKind::CreateGenerator(new_v, new_a)
+                InstructionKind::SpawnCoroutine(new_v, new_a)
             }
         }
     }
@@ -934,7 +934,7 @@ impl InstructionKind {
                 vec![var.clone(), v1.clone(), v2.clone()]
             }
             InstructionKind::Yield(v, a) => vec![v.clone(), a.clone()],
-            InstructionKind::CreateGenerator(v, a) => vec![v.clone(), a.clone()],
+            InstructionKind::SpawnCoroutine(v, a) => vec![v.clone(), a.clone()],
         }
     }
 
@@ -1055,8 +1055,8 @@ impl InstructionKind {
             InstructionKind::Yield(v, a) => {
                 format!("{} = yield({})", v, a)
             }
-            InstructionKind::CreateGenerator(v, a) => {
-                format!("{} = create_generator({})", v, a)
+            InstructionKind::SpawnCoroutine(v, a) => {
+                format!("{} = spawn_coroutine({})", v, a)
             }
         }
     }

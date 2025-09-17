@@ -82,7 +82,7 @@ pub enum SimpleExpr {
     With(Box<With>),
     Lambda(Vec<Pattern>, Box<Expr>),
     Yield(Box<Expr>),
-    CreateGenerator(Box<Expr>),
+    SpawnCoroutine(Box<Expr>),
 }
 
 impl SimpleExpr {

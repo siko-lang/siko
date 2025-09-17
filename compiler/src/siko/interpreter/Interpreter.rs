@@ -233,7 +233,7 @@ impl<'a> FunctionExecutor<'a> {
                 InstructionKind::Yield(_, _) => {
                     unimplemented!("Yield instruction not supported in interpreter")
                 }
-                InstructionKind::CreateGenerator(_, _) => {
+                InstructionKind::SpawnCoroutine(_, _) => {
                     unimplemented!("CreateGenerator instruction not supported in interpreter")
                 }
             }

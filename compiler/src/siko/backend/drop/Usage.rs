@@ -179,6 +179,6 @@ pub fn getUsageInfo(kind: InstructionKind, referenceStore: &ReferenceStore) -> U
             UsageInfo::with(vec![varToUsage(&left), varToUsage(&right)], Some(dest.toPath()))
         }
         InstructionKind::Yield(dest, arg) => UsageInfo::with(vec![varToUsage(&arg)], Some(dest.toPath())),
-        InstructionKind::CreateGenerator(dest, arg) => UsageInfo::with(vec![varToUsage(&arg)], Some(dest.toPath())),
+        InstructionKind::SpawnCoroutine(dest, arg) => UsageInfo::with(vec![varToUsage(&arg)], Some(dest.toPath())),
     }
 }

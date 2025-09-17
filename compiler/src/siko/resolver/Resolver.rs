@@ -2,7 +2,7 @@ use crate::siko::{
     hir::{
         ConstraintContext::{Constraint as IrConstraint, ConstraintContext},
         Data::MethodInfo as DataMethodInfo,
-        Function::{Attributes, FunctionKind, Parameter},
+        Function::{Attributes, FunctionKind, Parameter, ResultKind as IrResultKind},
         InstanceStore::InstanceStore,
         Instantiation::instantiateTraitWithSub,
         Program::Program,
@@ -251,7 +251,7 @@ impl<'a> Resolver<'a> {
                         let ctor = IrFunction::new(
                             irStruct.name.clone(),
                             ctorParams,
-                            irType,
+                            IrResultKind::SingleReturn(irType),
                             None,
                             constraintContext,
                             FunctionKind::StructCtor,
@@ -293,7 +293,7 @@ impl<'a> Resolver<'a> {
                             let ctor = IrFunction::new(
                                 variant.name.clone(),
                                 ctorParams,
-                                irType.clone(),
+                                IrResultKind::SingleReturn(irType.clone()),
                                 None,
                                 constraintContext.clone(),
                                 FunctionKind::VariantCtor(index as i64),

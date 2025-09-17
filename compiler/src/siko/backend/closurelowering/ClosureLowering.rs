@@ -360,7 +360,7 @@ impl ClosureLowering for InstructionKind {
                 v.lower(closureStore);
                 a.lower(closureStore);
             }
-            InstructionKind::CreateGenerator(v, a) => {
+            InstructionKind::SpawnCoroutine(v, a) => {
                 v.lower(closureStore);
                 a.lower(closureStore);
             }

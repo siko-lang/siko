@@ -341,6 +341,6 @@ fn getNameFromType(ty: &Type) -> Option<QualifiedName> {
         Type::NumericConstant(_) => None,
         Type::Void => None,
         Type::VoidPtr => None,
-        Type::Generator(_, _) => panic!("Generator type in borrowcheck"),
+        Type::Coroutine(_, _, _) => panic!("Coroutine type in borrowcheck"),
     }
 }

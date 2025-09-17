@@ -40,7 +40,7 @@ pub enum Type {
     NumericConstant(String),
     Void,
     VoidPtr,
-    Generator(Box<Type>, Box<Type>),
+    Coroutine(Box<Type>, Box<Type>, Box<Type>),
 }
 
 impl Type {
@@ -69,6 +69,13 @@ impl Type {
     pub fn splitFnType(self) -> Option<(Vec<Type>, Type)> {
         match self {
             Type::Function(args, result) => Some((args, *result)),
+            _ => None,
+        }
+    }
+
+    pub fn unpackCoroutine(self) -> Option<(Type, Type, Type)> {
+        match self {
+            Type::Coroutine(yieldTy, resumeTy, retTy) => Some((*yieldTy, *resumeTy, *retTy)),
             _ => None,
         }
     }
@@ -105,9 +112,10 @@ impl Type {
             Type::NumericConstant(_) => {}
             Type::Void => {}
             Type::VoidPtr => {}
-            Type::Generator(ty1, ty2) => {
-                vars = ty1.collectVars(vars);
-                vars = ty2.collectVars(vars);
+            Type::Coroutine(yieldTy, resumeTy, retTy) => {
+                vars = yieldTy.collectVars(vars);
+                vars = resumeTy.collectVars(vars);
+                vars = retTy.collectVars(vars);
             }
         }
         vars
@@ -147,9 +155,10 @@ impl Type {
             Type::NumericConstant(_) => {}
             Type::Void => {}
             Type::VoidPtr => {}
-            Type::Generator(ty1, ty2) => {
-                vars = ty1.collectVarsStable(vars);
-                vars = ty2.collectVarsStable(vars);
+            Type::Coroutine(yieldTy, resumeTy, retTy) => {
+                vars = yieldTy.collectVarsStable(vars);
+                vars = resumeTy.collectVarsStable(vars);
+                vars = retTy.collectVarsStable(vars);
             }
         }
         vars
@@ -334,8 +343,8 @@ impl Type {
             Type::VoidPtr => {
                 return true;
             }
-            Type::Generator(ty1, ty2) => {
-                return ty1.isSpecified(fully) && ty2.isSpecified(fully);
+            Type::Coroutine(yieldTy, resumeTy, retTy) => {
+                return yieldTy.isSpecified(fully) && resumeTy.isSpecified(fully) && retTy.isSpecified(fully);
             }
         }
     }
@@ -472,7 +481,7 @@ impl Display for Type {
             Type::NumericConstant(value) => write!(f, "{}", value),
             Type::Void => write!(f, "void"),
             Type::VoidPtr => write!(f, "void*"),
-            Type::Generator(yieldTy, retTy) => write!(f, "gen {} -> {}", yieldTy, retTy),
+            Type::Coroutine(yieldTy, resumeTy, retTy) => write!(f, "co({}, {}) -> {}", yieldTy, resumeTy, retTy),
         }
     }
 }

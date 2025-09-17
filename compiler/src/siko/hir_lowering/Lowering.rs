@@ -353,7 +353,7 @@ impl<'a> Builder<'a> {
                 HirInstructionKind::Yield(_, _) => {
                     unreachable!("Yield in MIR Lowering");
                 }
-                HirInstructionKind::CreateGenerator(_, _) => {
+                HirInstructionKind::SpawnCoroutine(_, _) => {
                     unreachable!("CreateGenerator in MIR Lowering");
                 }
             }
@@ -425,7 +425,7 @@ impl<'a> Builder<'a> {
             name: fnName,
             fullName: self.function.name.to_string(),
             args: args,
-            result: lowerType(&self.function.result, &self.program),
+            result: lowerType(&self.function.result.getReturnType(), &self.program),
             kind: kind,
         };
         Some(mirFunction)
@@ -500,8 +500,8 @@ pub fn lowerType(ty: &HirType, program: &HirProgram) -> MirType {
         HirType::NumericConstant(_) => unreachable!("NumericConstant ty lowering in MIR"),
         HirType::Void => MirType::Void,
         HirType::VoidPtr => MirType::VoidPtr,
-        HirType::Generator(_, _) => {
-            unreachable!("Generator type in MIR")
+        HirType::Coroutine(_, _, _) => {
+            unreachable!("Coroutine type in MIR")
         }
     }
 }

@@ -23,15 +23,15 @@ pub enum FunctionExternKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResultKind {
     SingleReturn(Type),
-    Generator(Type, Type),
+    Coroutine(Type),
 }
 
 impl ResultKind {
     pub fn assertSingleReturn(&self) -> &Type {
         match self {
             ResultKind::SingleReturn(ty) => ty,
-            ResultKind::Generator(_, _) => {
-                panic!("Expected single return type, found generator type.")
+            ResultKind::Coroutine(_) => {
+                panic!("Expected single return type, found coroutine type.")
             }
         }
     }

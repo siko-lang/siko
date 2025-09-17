@@ -10,7 +10,7 @@ use crate::siko::{
         BodyBuilder::BodyBuilder,
         ConstraintContext::ConstraintContext,
         Data::{Enum, Struct},
-        Function::{Function, Parameter},
+        Function::{Function, Parameter, ResultKind},
         FunctionCallResolver::{CheckFunctionCallResult, FunctionCallResolver},
         InstanceResolver::InstanceResolver,
         InstanceStore::InstanceStore,
@@ -382,7 +382,7 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::Yield(v, _) => {
                             self.initializeVar(v);
                         }
-                        InstructionKind::CreateGenerator(v, _) => {
+                        InstructionKind::SpawnCoroutine(v, _) => {
                             self.initializeVar(v);
                         }
                     }
@@ -683,7 +683,7 @@ impl<'a> Typechecker<'a> {
                 self.unifier.unifyVar(dest, Type::getU8Type());
             }
             InstructionKind::Return(_, arg) => {
-                let mut result = self.f.result.clone();
+                let mut result = self.f.result.getReturnType();
                 if let Some(selfType) = self.selfType.clone() {
                     result = result.changeSelfType(selfType);
                 }
@@ -985,24 +985,16 @@ impl<'a> Typechecker<'a> {
                     }
                 }
             }
-            InstructionKind::Yield(_, _) => {
-                // let vType = v.getType();
-                // let aType = a.getType();
-                // let vType = self.unifier.apply(vType);
-                // match vType {
-                //     Type::Var(TypeVar::Var(_)) => {
-                //         let ty = Type::Generator(Box::new(aType));
-                //         self.unifier.unifyVar(v, ty);
-                //     }
-                //     Type::Generator(inner) => {
-                //         self.unifier.unifyVar(a, *inner);
-                //     }
-                //     _ => {
-                //         TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(self.ctx);
-                //     }
-                // }
+            InstructionKind::Yield(resumeValue, yieldedValue) => {
+                if let Some((yieldType, resumeType, _)) = self.f.getType().getResult().unpackCoroutine() {
+                    self.unifier.unifyVar(yieldedValue, yieldType);
+                    self.unifier.unifyVar(resumeValue, resumeType);
+                } else {
+                    TypecheckerError::YieldOutsideCoroutine(self.f.name.toString(), instruction.location.clone())
+                        .report(self.ctx);
+                }
             }
-            InstructionKind::CreateGenerator(_, _) => {}
+            InstructionKind::SpawnCoroutine(_, _) => {}
         }
     }
 
@@ -1528,25 +1520,28 @@ impl<'a> Typechecker<'a> {
         self.addFieldTypes();
         self.removeBinds();
 
-        let mut result = self.f.clone();
-        result.body = Some(self.bodyBuilder.build());
+        let mut resultFn = self.f.clone();
+        resultFn.body = Some(self.bodyBuilder.build());
         if let Some(selfType) = self.selfType.clone() {
-            result.result = result.result.changeSelfType(selfType);
+            resultFn.result = match resultFn.result {
+                ResultKind::SingleReturn(ty) => ResultKind::SingleReturn(ty.changeSelfType(selfType)),
+                ResultKind::Coroutine(ty) => ResultKind::Coroutine(ty),
+            }
         }
 
-        self.addTypes(&mut result);
+        self.addTypes(&mut resultFn);
         //self.dump(&result);
-        self.verify(&result);
+        self.verify(&resultFn);
 
         let mut functions = Vec::new();
 
         for (blockId, closure) in self.closureTypes.iter() {
-            let mut separator = ClosureSeparator::new(&mut result, *blockId, closure, &mut self.unifier);
+            let mut separator = ClosureSeparator::new(&mut resultFn, *blockId, closure, &mut self.unifier);
             let closureFn = separator.process();
             functions.push(closureFn);
         }
 
-        functions.push(result);
+        functions.push(resultFn);
         functions
     }
 

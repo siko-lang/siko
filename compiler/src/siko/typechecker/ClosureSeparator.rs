@@ -3,7 +3,7 @@ use crate::siko::{
         Block::BlockId,
         Body::Body,
         ConstraintContext::ConstraintContext,
-        Function::{Attributes, Function, FunctionKind, Parameter},
+        Function::{Attributes, Function, FunctionKind, Parameter, ResultKind},
         Instruction::InstructionKind,
         Type::{Type, TypeVar},
         Unifier::Unifier,
@@ -82,7 +82,7 @@ impl<'a> ClosureSeparator<'a> {
                 .expect("Closure must have name")
                 .clone(),
             params,
-            resultTy,
+            ResultKind::SingleReturn(resultTy),
             Some(self.closureBody.clone()),
             constraintContext,
             FunctionKind::UserDefined(self.function.kind.getLocation()),

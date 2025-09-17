@@ -14,6 +14,7 @@ pub enum TypecheckerError {
     NotAPtr(String, Location),
     NoImplementationFound(String, Location),
     AmbiguousImplementations(String, String, Vec<String>, Location),
+    YieldOutsideCoroutine(String, Location),
 }
 
 impl TypecheckerError {
@@ -99,6 +100,11 @@ impl TypecheckerError {
                     ctx.yellow(&instances.join(", "))
                 );
                 let r = Report::new(ctx, slogan, Some(location.clone()));
+                r.print();
+            }
+            TypecheckerError::YieldOutsideCoroutine(fnName, l) => {
+                let slogan = format!("Yield outside coroutine in function: {}", ctx.yellow(fnName));
+                let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }
         }

@@ -202,8 +202,8 @@ impl Format for SimpleExpr {
                 result.extend(expr.format());
                 result
             }
-            SimpleExpr::CreateGenerator(expr) => {
-                let mut result = vec![Token::Chunk("gen ".to_string())];
+            SimpleExpr::SpawnCoroutine(expr) => {
+                let mut result = vec![Token::Chunk("co ".to_string())];
                 result.extend(expr.format());
                 result
             }
@@ -398,6 +398,15 @@ impl Format for Type {
             Type::NumericConstant(value) => vec![Token::Chunk(format!("{}", value))],
             Type::Void => vec![Token::Chunk("void".to_string())],
             Type::VoidPtr => vec![Token::Chunk("void*".to_string())],
+            Type::Coroutine(yieldTy, resumeTy, retTy) => {
+                let mut result = vec![Token::Chunk("co(".to_string())];
+                result.extend(yieldTy.format());
+                result.push(Token::Chunk(", ".to_string()));
+                result.extend(resumeTy.format());
+                result.push(Token::Chunk(") -> ".to_string()));
+                result.extend(retTy.format());
+                result
+            }
         }
     }
 }
@@ -484,11 +493,9 @@ impl Format for Function {
                 result.push(Token::Chunk(" -> ".to_string()));
                 result.extend(ty.format());
             }
-            ResultKind::Generator(yieldTy, retTy) => {
-                result.push(Token::Chunk(":".to_string()));
-                result.extend(yieldTy.format());
-                result.push(Token::Chunk(" -> ".to_string()));
-                result.extend(retTy.format());
+            ResultKind::Coroutine(coroutineTy) => {
+                result.push(Token::Chunk(": ".to_string()));
+                result.extend(coroutineTy.format());
             }
         }
 

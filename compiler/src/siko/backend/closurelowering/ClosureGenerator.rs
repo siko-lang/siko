@@ -4,7 +4,7 @@ use crate::siko::{
         BodyBuilder::BodyBuilder,
         ConstraintContext::ConstraintContext,
         Data::{Enum, Field, Struct, Variant},
-        Function::{Attributes, Function, FunctionKind, Parameter},
+        Function::{Attributes, Function, FunctionKind, Parameter, ResultKind},
         Instruction::{CallInfo, EnumCase, FieldId, FieldInfo, InstructionKind, TransformInfo},
         Program::Program,
         Type::Type,
@@ -81,7 +81,7 @@ impl ClosureGenerator<'_> {
         let structCtorFn = Function {
             name: structName.clone(),
             params: structCtorParams,
-            result: Type::Named(structName, Vec::new()),
+            result: ResultKind::SingleReturn(Type::Named(structName, Vec::new())),
             body: None,
             constraintContext: ConstraintContext::new(),
             kind: FunctionKind::StructCtor,
@@ -112,7 +112,7 @@ impl ClosureGenerator<'_> {
         let variantCtorFn = Function {
             name: closureInstanceName.clone(),
             params: variantCtorParams,
-            result: enumTy.clone(),
+            result: ResultKind::SingleReturn(enumTy.clone()),
             body: None,
             constraintContext: ConstraintContext::new(),
             kind: FunctionKind::VariantCtor(variantIndex as i64),
@@ -197,7 +197,7 @@ impl ClosureGenerator<'_> {
         let handlerFn = Function {
             name: QualifiedName::ClosureCallHandler(Box::new(self.closure.name.clone())),
             params: handlerParams,
-            result: self.key.result.clone(),
+            result: ResultKind::SingleReturn(self.key.result.clone()),
             body: Some(body),
             constraintContext: ConstraintContext::new(),
             kind: FunctionKind::UserDefined(location.clone()),

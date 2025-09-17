@@ -136,10 +136,32 @@ impl FunctionKind {
 }
 
 #[derive(Debug, Clone)]
+pub enum ResultKind {
+    SingleReturn(Type),
+    Coroutine(Type),
+}
+
+impl ResultKind {
+    pub fn isCoroutine(&self) -> bool {
+        match self {
+            ResultKind::Coroutine(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn getReturnType(&self) -> Type {
+        match self {
+            ResultKind::SingleReturn(ty) => ty.clone(),
+            ResultKind::Coroutine(ty) => ty.clone().unpackCoroutine().expect("getReturnType: not a coroutine").2,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Function {
     pub name: QualifiedName,
     pub params: Vec<Parameter>,
-    pub result: Type,
+    pub result: ResultKind,
     pub body: Option<Body>,
     pub constraintContext: ConstraintContext,
     pub kind: FunctionKind,
@@ -150,7 +172,7 @@ impl Function {
     pub fn new(
         name: QualifiedName,
         params: Vec<Parameter>,
-        result: Type,
+        result: ResultKind,
         body: Option<Body>,
         constraintContext: ConstraintContext,
         kind: FunctionKind,
@@ -210,7 +232,11 @@ impl Function {
                 Parameter::SelfParam(_, ty) => args.push(ty.clone()),
             }
         }
-        Type::Function(args, Box::new(self.result.clone()))
+        let ty = match &self.result {
+            ResultKind::SingleReturn(ty) => ty.clone(),
+            ResultKind::Coroutine(ty) => ty.clone(),
+        };
+        Type::Function(args, Box::new(ty))
     }
 
     pub fn dump(&self) {

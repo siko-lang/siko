@@ -10,7 +10,7 @@ use crate::siko::{
         Apply::Apply,
         BodyBuilder::BodyBuilder,
         ConstraintContext::ConstraintContext,
-        Function::{Attributes, Function, FunctionKind, Parameter},
+        Function::{Attributes, Function, FunctionKind, Parameter, ResultKind},
         FunctionCallResolver::FunctionCallResolver,
         InstanceResolver::InstanceResolver,
         InstanceStore::InstanceStore,
@@ -183,7 +183,7 @@ impl<'a> Monomorphizer<'a> {
         let testRunnerMain = Function {
             name: getMainName(),
             params: Vec::new(),
-            result: Type::getUnitType(),
+            result: ResultKind::SingleReturn(Type::getUnitType()),
             body: Some(bodyBuilder.build()),
             constraintContext: ConstraintContext::new(),
             kind: FunctionKind::UserDefined(Location::empty()),
@@ -281,7 +281,7 @@ impl<'a> Monomorphizer<'a> {
         };
         let sub = createTypeSubstitutionFrom(params, args);
         let mut monoFn = function.clone();
-        monoFn.result = self.processType(monoFn.result.apply(&sub));
+        monoFn.result = ResultKind::SingleReturn(self.processType(monoFn.result.getReturnType().apply(&sub)));
         monoFn.params = monoFn.params.process(&sub, self);
         monoFn.body = processBody(monoFn.body.clone(), &sub, self, handlerResolution, &impls);
 
@@ -335,10 +335,11 @@ impl<'a> Monomorphizer<'a> {
             Type::NumericConstant(value) => Type::NumericConstant(value),
             Type::Void => Type::Void,
             Type::VoidPtr => Type::VoidPtr,
-            Type::Generator(yieldTy, retTy) => {
+            Type::Coroutine(yieldTy, resumeTy, retTy) => {
                 let yieldTy = self.processType(*yieldTy);
+                let resumeTy = self.processType(*resumeTy);
                 let retTy = self.processType(*retTy);
-                Type::Generator(Box::new(yieldTy), Box::new(retTy))
+                Type::Coroutine(Box::new(yieldTy), Box::new(resumeTy), Box::new(retTy))
             }
         };
         self.processed_type.insert(ty, r.clone());
@@ -528,7 +529,7 @@ impl<'a> Monomorphizer<'a> {
         let dropFn = Function {
             name: monoName.clone(),
             params: vec![Parameter::Named("self".to_string(), ty.clone(), false)],
-            result: Type::getUnitType(),
+            result: ResultKind::SingleReturn(Type::getUnitType()),
             body: Some(bodyBuilder.build()),
             constraintContext: ConstraintContext::new(),
             kind: FunctionKind::UserDefined(Location::empty()),
