@@ -310,10 +310,6 @@ impl<'a> TypeVerifier<'a> {
                 self.checkVariable(v);
                 self.checkVariable(a);
             }
-            InstructionKind::SpawnCoroutine(v, a) => {
-                self.checkVariable(v);
-                self.checkVariable(a);
-            }
         }
     }
 

@@ -484,8 +484,5 @@ pub fn processInstructionKind(
             op,
         ),
         InstructionKind::Yield(v, a) => InstructionKind::Yield(v.process(sub, mono), a.process(sub, mono)),
-        InstructionKind::SpawnCoroutine(v, a) => {
-            InstructionKind::SpawnCoroutine(v.process(sub, mono), a.process(sub, mono))
-        }
     }
 }

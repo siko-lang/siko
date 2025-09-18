@@ -21,6 +21,7 @@ pub enum ResolverError {
     ImmutableImplicit(String, Location),
     InvalidInstanceMember(String, String, Location),
     MissingTraitMembers(Vec<String>, String, Location),
+    InvalidCoroutineBody(Location),
 }
 
 impl ResolverError {
@@ -132,6 +133,11 @@ impl ResolverError {
             }
             ResolverError::ImmutableImplicit(name, location) => {
                 let slogan = format!("Cannot modify immutable implicit variable {}", ctx.yellow(name));
+                let r = Report::new(ctx, slogan, Some(location.clone()));
+                r.print();
+            }
+            ResolverError::InvalidCoroutineBody(location) => {
+                let slogan = format!("Coroutine body must be a function call");
                 let r = Report::new(ctx, slogan, Some(location.clone()));
                 r.print();
             }

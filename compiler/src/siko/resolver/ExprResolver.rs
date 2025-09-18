@@ -796,12 +796,12 @@ impl<'a> ExprResolver<'a> {
                 yieldVar
             }
             SimpleExpr::SpawnCoroutine(arg) => {
-                let argId = self.resolveExpr(arg, env);
+                //let argId = self.resolveExpr(arg, env);
                 let genVar = self.bodyBuilder.createTempValue(expr.location.clone());
-                self.bodyBuilder.current().addInstruction(
-                    InstructionKind::SpawnCoroutine(genVar.clone(), argId),
-                    expr.location.clone(),
-                );
+                match arg.expr {
+                    SimpleExpr::Call(_, _) => {}
+                    _ => ResolverError::InvalidCoroutineBody(arg.location.clone()).report(self.ctx),
+                }
                 genVar
             }
         }

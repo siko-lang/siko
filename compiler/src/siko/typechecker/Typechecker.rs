@@ -382,9 +382,6 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::Yield(v, _) => {
                             self.initializeVar(v);
                         }
-                        InstructionKind::SpawnCoroutine(v, _) => {
-                            self.initializeVar(v);
-                        }
                     }
                 }
             }
@@ -994,7 +991,6 @@ impl<'a> Typechecker<'a> {
                         .report(self.ctx);
                 }
             }
-            InstructionKind::SpawnCoroutine(_, _) => {}
         }
     }
 

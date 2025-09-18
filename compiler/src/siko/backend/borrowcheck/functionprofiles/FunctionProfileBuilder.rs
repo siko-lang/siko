@@ -373,9 +373,6 @@ impl<'a> FunctionProfileBuilder<'a> {
                 InstructionKind::Yield(_, _) => {
                     unreachable!("Yield in borrow checker");
                 }
-                InstructionKind::SpawnCoroutine(_, _) => {
-                    unreachable!("CreateGenerator in borrow checker");
-                }
             }
         }
     }

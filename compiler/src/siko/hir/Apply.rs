@@ -269,7 +269,6 @@ impl Apply for InstructionKind {
                 InstructionKind::IntegerOp(dest.apply(sub), left.apply(sub), right.apply(sub), op.clone())
             }
             InstructionKind::Yield(v, a) => InstructionKind::Yield(v.apply(sub), a.apply(sub)),
-            InstructionKind::SpawnCoroutine(v, a) => InstructionKind::SpawnCoroutine(v.apply(sub), a.apply(sub)),
         }
     }
 }

@@ -295,9 +295,6 @@ impl RemoveTuples for InstructionKind {
                 op.clone(),
             ),
             InstructionKind::Yield(v, a) => InstructionKind::Yield(v.removeTuples(ctx), a.removeTuples(ctx)),
-            InstructionKind::SpawnCoroutine(v, a) => {
-                InstructionKind::SpawnCoroutine(v.removeTuples(ctx), a.removeTuples(ctx))
-            }
         }
     }
 }

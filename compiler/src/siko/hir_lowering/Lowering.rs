@@ -353,9 +353,6 @@ impl<'a> Builder<'a> {
                 HirInstructionKind::Yield(_, _) => {
                     unreachable!("Yield in MIR Lowering");
                 }
-                HirInstructionKind::SpawnCoroutine(_, _) => {
-                    unreachable!("CreateGenerator in MIR Lowering");
-                }
             }
         }
         Some(block)
