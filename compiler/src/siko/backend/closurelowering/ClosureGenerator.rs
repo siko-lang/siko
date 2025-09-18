@@ -180,6 +180,7 @@ impl ClosureGenerator<'_> {
                 context: None,
                 instanceRefs: Vec::new(),
                 args: handlerArgs,
+                coroutineSpawn: false,
             };
             let callResult = bodyBuilder.createTempValueWithType(location.clone(), self.key.result.clone());
             let fnCall = InstructionKind::FunctionCall(callResult.clone(), callInfo);

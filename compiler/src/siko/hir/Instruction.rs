@@ -321,6 +321,7 @@ pub struct CallInfo {
     pub args: Vec<Variable>,
     pub context: Option<CallContextInfo>,
     pub instanceRefs: Vec<InstanceReference>,
+    pub coroutineSpawn: bool,
 }
 
 impl CallInfo {
@@ -330,6 +331,7 @@ impl CallInfo {
             args,
             context: None,
             instanceRefs: Vec::new(),
+            coroutineSpawn: false,
         }
     }
 
@@ -339,6 +341,7 @@ impl CallInfo {
             args: self.args.iter().map(|a| a.copy(map)).collect(),
             context: self.context.clone(),
             instanceRefs: self.instanceRefs.clone(),
+            coroutineSpawn: self.coroutineSpawn,
         }
     }
 }
@@ -364,11 +367,12 @@ impl Display for CallInfo {
         };
         write!(
             f,
-            "function_call({}, [{}]{}{})",
+            "function_call({}, [{}]{}{}, co: {})",
             self.name,
             self.args.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(", "),
             contextStr,
-            instanceStr
+            instanceStr,
+            self.coroutineSpawn
         )
     }
 }

@@ -191,6 +191,25 @@ impl BlockBuilder {
         args: Vec<Variable>,
         location: Location,
     ) -> Variable {
+        self.addFunctionCallInner(functionName, args, location, false)
+    }
+
+    pub fn addCoroutineFunctionCall(
+        &mut self,
+        functionName: QualifiedName,
+        args: Vec<Variable>,
+        location: Location,
+    ) -> Variable {
+        self.addFunctionCallInner(functionName, args, location, true)
+    }
+
+    pub fn addFunctionCallInner(
+        &mut self,
+        functionName: QualifiedName,
+        args: Vec<Variable>,
+        location: Location,
+        coroutineSpawn: bool,
+    ) -> Variable {
         // for each arg create a temp value and a converter instruction
         let mut tempArgs = Vec::new();
         for arg in &args {
@@ -202,10 +221,9 @@ impl BlockBuilder {
             tempArgs.push(tempValue);
         }
         let result = self.bodyBuilder.createTempValue(location.clone());
-        self.addInstruction(
-            InstructionKind::FunctionCall(result.clone(), CallInfo::new(functionName, tempArgs)),
-            location,
-        );
+        let mut info = CallInfo::new(functionName.clone(), tempArgs.clone());
+        info.coroutineSpawn = coroutineSpawn;
+        self.addInstruction(InstructionKind::FunctionCall(result.clone(), info), location);
         result
     }
 

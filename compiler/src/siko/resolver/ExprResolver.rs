@@ -365,43 +365,7 @@ impl<'a> ExprResolver<'a> {
                     .current()
                     .addFieldRef(receiver, fieldInfos, expr.location.clone())
             }
-            SimpleExpr::Call(callable, args) => {
-                let mut irArgs = Vec::new();
-                for arg in args {
-                    let argId = self.resolveExpr(arg, env);
-                    irArgs.push(argId)
-                }
-                match &callable.expr {
-                    SimpleExpr::Name(name) => {
-                        let irName = self.moduleResolver.resolveName(name);
-                        if self.enums.get(&irName).is_some() {
-                            ResolverError::NotAConstructor(name.name(), name.location()).report(self.ctx);
-                        }
-                        return self
-                            .bodyBuilder
-                            .current()
-                            .addFunctionCall(irName, irArgs, expr.location.clone());
-                    }
-                    SimpleExpr::Value(name) => {
-                        if let Some(name) = env.resolve(&name.name()) {
-                            self.bodyBuilder
-                                .current()
-                                .addDynamicFunctionCall(name, irArgs, expr.location.clone())
-                        } else {
-                            let irName = self.moduleResolver.resolveName(name);
-                            self.bodyBuilder
-                                .current()
-                                .addFunctionCall(irName, irArgs, expr.location.clone())
-                        }
-                    }
-                    _ => {
-                        let callableId = self.resolveExpr(&callable, env);
-                        self.bodyBuilder
-                            .current()
-                            .addDynamicFunctionCall(callableId, irArgs, expr.location.clone())
-                    }
-                }
-            }
+            SimpleExpr::Call(callable, args) => self.resolveCall(expr, env, callable, args, false),
             SimpleExpr::MethodCall(receiver, name, args) => {
                 let receiver = self.resolveExpr(&receiver, env);
                 let mut irArgs = Vec::new();
@@ -795,14 +759,68 @@ impl<'a> ExprResolver<'a> {
                     .addInstruction(InstructionKind::Yield(yieldVar.clone(), argId), expr.location.clone());
                 yieldVar
             }
-            SimpleExpr::SpawnCoroutine(arg) => {
-                //let argId = self.resolveExpr(arg, env);
-                let genVar = self.bodyBuilder.createTempValue(expr.location.clone());
-                match arg.expr {
-                    SimpleExpr::Call(_, _) => {}
-                    _ => ResolverError::InvalidCoroutineBody(arg.location.clone()).report(self.ctx),
+            SimpleExpr::SpawnCoroutine(arg) => match &arg.expr {
+                SimpleExpr::Call(callable, args) => {
+                    return self.resolveCall(expr, env, callable, args, true);
                 }
-                genVar
+                _ => ResolverError::InvalidCoroutineBody(arg.location.clone()).report(self.ctx),
+            },
+        }
+    }
+
+    fn resolveCall(
+        &mut self,
+        expr: &Expr,
+        env: &mut Environment<'_>,
+        callable: &Box<Expr>,
+        args: &Vec<Expr>,
+        coroutineSpawn: bool,
+    ) -> Variable {
+        let mut irArgs = Vec::new();
+        for arg in args {
+            let argId = self.resolveExpr(arg, env);
+            irArgs.push(argId)
+        }
+        if coroutineSpawn {
+            match &callable.expr {
+                SimpleExpr::Value(name) => {
+                    let irName = self.moduleResolver.resolveName(name);
+                    return self
+                        .bodyBuilder
+                        .current()
+                        .addCoroutineFunctionCall(irName, irArgs, expr.location.clone());
+                }
+                _ => ResolverError::InvalidCoroutineBody(callable.location.clone()).report(self.ctx),
+            }
+        }
+        match &callable.expr {
+            SimpleExpr::Name(name) => {
+                let irName = self.moduleResolver.resolveName(name);
+                if self.enums.get(&irName).is_some() {
+                    ResolverError::NotAConstructor(name.name(), name.location()).report(self.ctx);
+                }
+                return self
+                    .bodyBuilder
+                    .current()
+                    .addFunctionCall(irName, irArgs, expr.location.clone());
+            }
+            SimpleExpr::Value(name) => {
+                if let Some(name) = env.resolve(&name.name()) {
+                    self.bodyBuilder
+                        .current()
+                        .addDynamicFunctionCall(name, irArgs, expr.location.clone())
+                } else {
+                    let irName = self.moduleResolver.resolveName(name);
+                    self.bodyBuilder
+                        .current()
+                        .addFunctionCall(irName, irArgs, expr.location.clone())
+                }
+            }
+            _ => {
+                let callableId = self.resolveExpr(&callable, env);
+                self.bodyBuilder
+                    .current()
+                    .addDynamicFunctionCall(callableId, irArgs, expr.location.clone())
             }
         }
     }

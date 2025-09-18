@@ -235,6 +235,7 @@ impl ClosureLowering for InstructionKind {
                     args: callArgs,
                     context: None,
                     instanceRefs: Vec::new(),
+                    coroutineSpawn: false,
                 };
                 let kind = InstructionKind::FunctionCall(dest.clone(), callInfo);
                 *self = kind;
@@ -348,6 +349,7 @@ impl ClosureLowering for InstructionKind {
                     args: info.closureParams.clone(),
                     context: None,
                     instanceRefs: Vec::new(),
+                    coroutineSpawn: false,
                 };
                 let kind = InstructionKind::FunctionCall(dest.clone(), callInfo);
                 *self = kind;

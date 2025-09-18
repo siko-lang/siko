@@ -30,6 +30,7 @@ impl Monomorphize for CallInfo {
             args,
             context: self.context.clone(),
             instanceRefs: self.instanceRefs.clone(),
+            coroutineSpawn: self.coroutineSpawn,
         }
     }
 }
