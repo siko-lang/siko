@@ -1,16 +1,23 @@
 use crate::siko::{
-    backend::{coroutinelowering::CoroutineLowering::CoroutineInfo, BuilderUtils::EnumBuilder, RemoveTuples::getTuple},
+    backend::{
+        coroutinelowering::CoroutineLowering::CoroutineInfo,
+        BuilderUtils::{getStructFieldName, EnumBuilder},
+        RemoveTuples::getTuple,
+    },
     hir::{
         BodyBuilder::BodyBuilder,
         ConstraintContext::ConstraintContext,
         Function::{Attributes, Function, FunctionKind, Parameter, ResultKind},
-        Instruction::{CallInfo, EnumCase, InstructionKind},
+        Instruction::{CallInfo, EnumCase, FieldId, FieldInfo, InstructionKind, TransformInfo},
         Program::Program,
         Type::Type,
         Variable::{Variable, VariableName},
     },
     location::Location::Location,
-    qualifiedname::builtins::{getCoroutineCoResumeName, getCoroutineCoResumeResultName},
+    qualifiedname::{
+        builtins::{getCoroutineCoResumeName, getCoroutineCoResumeResultName},
+        QualifiedName,
+    },
 };
 
 pub struct CoroutineGenerator<'a> {
@@ -34,17 +41,9 @@ impl<'a> CoroutineGenerator<'a> {
 
         let mut params = Vec::new();
         params.push(Parameter::Named("coro".to_string(), coroutineTy.clone(), false));
-        params.push(Parameter::Named(
-            "resumedValue".to_string(),
-            self.coroutineInfo.key.resumedTy.clone(),
-            false,
-        ));
-
         let mut bodyBuilder = BodyBuilder::new();
         let mut mainBuilder = bodyBuilder.createBlock();
         let coroutineArg = bodyBuilder.createTempValueWithType(location.clone(), coroutineTy.clone());
-        let resumedArg =
-            bodyBuilder.createTempValueWithType(location.clone(), self.coroutineInfo.key.resumedTy.clone());
         let coroutineAssign = InstructionKind::Assign(
             coroutineArg.clone(),
             Variable::newWithType(
@@ -54,22 +53,32 @@ impl<'a> CoroutineGenerator<'a> {
             ),
         );
         mainBuilder.addInstruction(coroutineAssign, location.clone());
-        let resumeAssign = InstructionKind::Assign(
-            resumedArg.clone(),
-            Variable::newWithType(
-                VariableName::Arg("resumedValue".to_string()),
-                location.clone(),
-                self.coroutineInfo.key.resumedTy.clone(),
-            ),
-        );
-        mainBuilder.addInstruction(resumeAssign, location.clone());
         let mut cases = Vec::new();
-        for (variantIndex, instance) in self.coroutineInfo.instances.values().enumerate() {
+        for (variantIndex, (name, instance)) in self.coroutineInfo.instances.iter().enumerate() {
             let mut caseBuilder = bodyBuilder.createBlock();
+            let structTy = Type::Named(QualifiedName::VariantStruct(Box::new(name.clone())), Vec::new());
+            let transformVar = bodyBuilder.createTempValueWithType(location.clone(), structTy.clone());
+            let transform = InstructionKind::Transform(
+                transformVar.clone(),
+                coroutineArg.clone(),
+                TransformInfo {
+                    variantIndex: variantIndex as u32,
+                },
+            );
+            caseBuilder.addInstruction(transform, location.clone());
+            let fieldInfo = FieldInfo {
+                name: FieldId::Named(getStructFieldName(0)),
+                location: location.clone(),
+                ty: Some(instance.stateMachineEnumTy.clone()),
+            };
+            let fieldRefVar =
+                bodyBuilder.createTempValueWithType(location.clone(), instance.stateMachineEnumTy.clone());
+            let fieldRef = InstructionKind::FieldRef(fieldRefVar.clone(), transformVar.clone(), vec![fieldInfo]);
+            caseBuilder.addInstruction(fieldRef, location.clone());
             let resumeResult = bodyBuilder.createTempValueWithType(location.clone(), resultTy.clone());
             let callInfo = CallInfo {
                 name: instance.resumeFnName.clone(),
-                args: vec![coroutineArg.useVar(), resumedArg.useVar()],
+                args: vec![fieldRefVar.useVar()],
                 context: None,
                 instanceRefs: Vec::new(),
                 coroutineSpawn: false,
@@ -102,11 +111,13 @@ impl<'a> CoroutineGenerator<'a> {
     }
 
     pub fn generateEnumForCoroutine(&mut self, location: &Location) -> Type {
-        let mut builder = EnumBuilder::new(self.coroutineInfo.getCoroutineName(), self.program, location.clone());
+        let enumName = self.coroutineInfo.getCoroutineName();
+        let mut builder = EnumBuilder::new(enumName.clone(), self.program, location.clone());
         for (variantIndex, (name, instance)) in self.coroutineInfo.instances.iter().enumerate() {
             let fieldTypes = vec![instance.stateMachineEnumTy.clone()];
             builder.generateVariant(name, &fieldTypes, variantIndex);
         }
+        println!("Generating coroutine enum: {}", enumName);
         builder.generateEnum(location);
         builder.getEnumType()
     }

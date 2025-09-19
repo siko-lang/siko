@@ -90,9 +90,8 @@ pub fn unify(sub: &mut Substitution, ty1: Type, ty2: Type, allowNamed: bool) -> 
         (Type::VoidPtr, Type::VoidPtr) => Ok(()),
         (Type::VoidPtr, Type::Ptr(_)) => Ok(()),
         (Type::Ptr(_), Type::VoidPtr) => Ok(()),
-        (Type::Coroutine(yieldTy1, resumeTy1, retTy1), Type::Coroutine(yieldTy2, resumeTy2, retTy2)) => {
+        (Type::Coroutine(yieldTy1, retTy1), Type::Coroutine(yieldTy2, retTy2)) => {
             unify(sub, *yieldTy1, *yieldTy2, allowNamed)?;
-            unify(sub, *resumeTy1, *resumeTy2, allowNamed)?;
             unify(sub, *retTy1, *retTy2, allowNamed)
         }
         _ => return Err(Error {}),

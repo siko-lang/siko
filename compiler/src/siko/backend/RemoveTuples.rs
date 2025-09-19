@@ -71,11 +71,10 @@ impl RemoveTuples for Type {
                 let r = r.removeTuples(ctx);
                 Type::Function(args, Box::new(r))
             }
-            Type::Coroutine(yielded, resumed, return_) => {
+            Type::Coroutine(yielded, return_) => {
                 let yielded = yielded.removeTuples(ctx);
-                let resumed = resumed.removeTuples(ctx);
                 let return_ = return_.removeTuples(ctx);
-                Type::Coroutine(Box::new(yielded), Box::new(resumed), Box::new(return_))
+                Type::Coroutine(Box::new(yielded), Box::new(return_))
             }
             ty => ty.clone(),
         }

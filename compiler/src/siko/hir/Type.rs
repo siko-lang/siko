@@ -40,7 +40,7 @@ pub enum Type {
     NumericConstant(String),
     Void,
     VoidPtr,
-    Coroutine(Box<Type>, Box<Type>, Box<Type>),
+    Coroutine(Box<Type>, Box<Type>),
 }
 
 impl Type {
@@ -73,9 +73,9 @@ impl Type {
         }
     }
 
-    pub fn unpackCoroutine(self) -> Option<(Type, Type, Type)> {
+    pub fn unpackCoroutine(self) -> Option<(Type, Type)> {
         match self {
-            Type::Coroutine(yieldTy, resumeTy, retTy) => Some((*yieldTy, *resumeTy, *retTy)),
+            Type::Coroutine(yieldTy, retTy) => Some((*yieldTy, *retTy)),
             _ => None,
         }
     }
@@ -112,9 +112,8 @@ impl Type {
             Type::NumericConstant(_) => {}
             Type::Void => {}
             Type::VoidPtr => {}
-            Type::Coroutine(yieldTy, resumeTy, retTy) => {
+            Type::Coroutine(yieldTy, retTy) => {
                 vars = yieldTy.collectVars(vars);
-                vars = resumeTy.collectVars(vars);
                 vars = retTy.collectVars(vars);
             }
         }
@@ -155,9 +154,8 @@ impl Type {
             Type::NumericConstant(_) => {}
             Type::Void => {}
             Type::VoidPtr => {}
-            Type::Coroutine(yieldTy, resumeTy, retTy) => {
+            Type::Coroutine(yieldTy, retTy) => {
                 vars = yieldTy.collectVarsStable(vars);
-                vars = resumeTy.collectVarsStable(vars);
                 vars = retTy.collectVarsStable(vars);
             }
         }
@@ -343,8 +341,8 @@ impl Type {
             Type::VoidPtr => {
                 return true;
             }
-            Type::Coroutine(yieldTy, resumeTy, retTy) => {
-                return yieldTy.isSpecified(fully) && resumeTy.isSpecified(fully) && retTy.isSpecified(fully);
+            Type::Coroutine(yieldTy, retTy) => {
+                return yieldTy.isSpecified(fully) && retTy.isSpecified(fully);
             }
         }
     }
@@ -481,7 +479,7 @@ impl Display for Type {
             Type::NumericConstant(value) => write!(f, "{}", value),
             Type::Void => write!(f, "void"),
             Type::VoidPtr => write!(f, "void*"),
-            Type::Coroutine(yieldTy, resumeTy, retTy) => write!(f, "co({}, {}) -> {}", yieldTy, resumeTy, retTy),
+            Type::Coroutine(yieldTy, retTy) => write!(f, "co({}) -> {}", yieldTy, retTy),
         }
     }
 }

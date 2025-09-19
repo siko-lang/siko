@@ -11,17 +11,12 @@ use crate::siko::{
 #[derive(Clone, PartialEq, Eq, Ord, PartialOrd)]
 pub struct CoroutineKey {
     pub yieldedTy: Type,
-    pub resumedTy: Type,
     pub returnTy: Type,
 }
 
 impl Display for CoroutineKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "coroutineKey({}, {}, {})",
-            self.yieldedTy, self.resumedTy, self.returnTy
-        )
+        write!(f, "coroutineKey({}, {})", self.yieldedTy, self.returnTy)
     }
 }
 
@@ -51,11 +46,7 @@ impl CoroutineInfo {
     }
 
     pub fn getCoroutineName(&self) -> QualifiedName {
-        QualifiedName::Coroutine(
-            self.key.yieldedTy.clone().into(),
-            self.key.resumedTy.clone().into(),
-            self.key.returnTy.clone().into(),
-        )
+        QualifiedName::Coroutine(self.key.yieldedTy.clone().into(), self.key.returnTy.clone().into())
     }
 
     pub fn getCoroutineType(&self) -> Type {
@@ -65,7 +56,6 @@ impl CoroutineInfo {
     pub fn getContext(&self) -> Context {
         let mut ctx = Context::new();
         ctx.args.push(self.key.yieldedTy.clone());
-        ctx.args.push(self.key.resumedTy.clone());
         ctx.args.push(self.key.returnTy.clone());
         ctx
     }
@@ -98,8 +88,7 @@ impl<'a> CoroutineStore<'a> {
                     let key = coroutineInstanceInfo.name.getCoroutineKey();
                     let coroutineKey = CoroutineKey {
                         yieldedTy: key.0,
-                        resumedTy: key.1,
-                        returnTy: key.2,
+                        returnTy: key.1,
                     };
                     let coroutineInfo = self
                         .coroutines

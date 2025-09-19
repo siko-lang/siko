@@ -367,11 +367,10 @@ impl<'a> Monomorphizer<'a> {
             Type::NumericConstant(value) => Type::NumericConstant(value),
             Type::Void => Type::Void,
             Type::VoidPtr => Type::VoidPtr,
-            Type::Coroutine(yieldTy, resumeTy, retTy) => {
+            Type::Coroutine(yieldTy, retTy) => {
                 let yieldTy = self.processType(*yieldTy);
-                let resumeTy = self.processType(*resumeTy);
                 let retTy = self.processType(*retTy);
-                Type::Coroutine(Box::new(yieldTy), Box::new(resumeTy), Box::new(retTy))
+                Type::Coroutine(Box::new(yieldTy), Box::new(retTy))
             }
         };
         self.processed_type.insert(ty, r.clone());

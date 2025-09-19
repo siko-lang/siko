@@ -497,7 +497,7 @@ pub fn lowerType(ty: &HirType, program: &HirProgram) -> MirType {
         HirType::NumericConstant(_) => unreachable!("NumericConstant ty lowering in MIR"),
         HirType::Void => MirType::Void,
         HirType::VoidPtr => MirType::VoidPtr,
-        HirType::Coroutine(_, _, _) => {
+        HirType::Coroutine(_, _) => {
             unreachable!("Coroutine type in MIR")
         }
     }

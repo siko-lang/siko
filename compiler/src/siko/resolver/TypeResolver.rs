@@ -77,11 +77,9 @@ impl<'a> TypeResolver<'a> {
             Type::NumericConstant(value) => IrType::NumericConstant(value.clone()),
             Type::Void => IrType::Void,
             Type::VoidPtr => IrType::VoidPtr,
-            Type::Coroutine(yieldTy, resumeTy, retTy) => IrType::Coroutine(
-                Box::new(self.resolveType(yieldTy)),
-                Box::new(self.resolveType(resumeTy)),
-                Box::new(self.resolveType(retTy)),
-            ),
+            Type::Coroutine(yieldTy, retTy) => {
+                IrType::Coroutine(Box::new(self.resolveType(yieldTy)), Box::new(self.resolveType(retTy)))
+            }
         }
     }
 

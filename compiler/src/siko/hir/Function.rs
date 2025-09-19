@@ -152,9 +152,8 @@ impl ResultKind {
     pub fn getCoroutineName(&self) -> QualifiedName {
         match self {
             ResultKind::Coroutine(ty) => {
-                let (yielded, resumed, returnTy) =
-                    ty.clone().unpackCoroutine().expect("getCoroutineName: not a coroutine");
-                QualifiedName::Coroutine(Box::new(yielded), Box::new(resumed), Box::new(returnTy))
+                let (yielded, returnTy) = ty.clone().unpackCoroutine().expect("getCoroutineName: not a coroutine");
+                QualifiedName::Coroutine(Box::new(yielded), Box::new(returnTy))
             }
             _ => panic!("getCoroutineName: not a coroutine"),
         }
@@ -163,7 +162,7 @@ impl ResultKind {
     pub fn getReturnType(&self) -> Type {
         match self {
             ResultKind::SingleReturn(ty) => ty.clone(),
-            ResultKind::Coroutine(ty) => ty.clone().unpackCoroutine().expect("getReturnType: not a coroutine").2,
+            ResultKind::Coroutine(ty) => ty.clone().unpackCoroutine().expect("getReturnType: not a coroutine").1,
         }
     }
 }

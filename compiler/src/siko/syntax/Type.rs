@@ -14,7 +14,7 @@ pub enum Type {
     NumericConstant(String),
     Void,
     VoidPtr,
-    Coroutine(Box<Type>, Box<Type>, Box<Type>), //  Yield type, Resume type, Return type
+    Coroutine(Box<Type>, Box<Type>), //  Yield type, Return type
 }
 
 impl fmt::Display for Type {
@@ -51,8 +51,8 @@ impl fmt::Display for Type {
             Type::NumericConstant(value) => write!(f, "{}", value),
             Type::Void => write!(f, "void"),
             Type::VoidPtr => write!(f, "void*"),
-            Type::Coroutine(yieldTy, resumeTy, retTy) => {
-                write!(f, "co({}, {}) -> {}", yieldTy, resumeTy, retTy)
+            Type::Coroutine(yieldTy, retTy) => {
+                write!(f, "co({}) -> {}", yieldTy, retTy)
             }
         }
     }

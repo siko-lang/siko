@@ -983,9 +983,9 @@ impl<'a> Typechecker<'a> {
                 }
             }
             InstructionKind::Yield(resumeValue, yieldedValue) => {
-                if let Some((yieldType, resumeType, _)) = self.f.getType().getResult().unpackCoroutine() {
+                if let Some((yieldType, _)) = self.f.getType().getResult().unpackCoroutine() {
                     self.unifier.unifyVar(yieldedValue, yieldType);
-                    self.unifier.unifyVar(resumeValue, resumeType);
+                    self.unifier.unifyVar(resumeValue, Type::getUnitType());
                 } else {
                     TypecheckerError::YieldOutsideCoroutine(self.f.name.toString(), instruction.location.clone())
                         .report(self.ctx);

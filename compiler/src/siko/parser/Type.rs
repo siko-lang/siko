@@ -105,12 +105,10 @@ impl<'a> TypeParser for Parser<'a> {
                 self.expect(TokenKind::Keyword(KeywordKind::Co));
                 self.expect(TokenKind::LeftBracket(BracketKind::Paren));
                 let yieldTy = self.parseType();
-                self.expect(TokenKind::Misc(MiscKind::Comma));
-                let resumeTy = self.parseType();
                 self.expect(TokenKind::RightBracket(BracketKind::Paren));
                 self.expect(TokenKind::Arrow(ArrowKind::Right));
                 let resultTy = self.parseType();
-                Type::Coroutine(Box::new(yieldTy), Box::new(resumeTy), Box::new(resultTy))
+                Type::Coroutine(Box::new(yieldTy), Box::new(resultTy))
             }
             kind => self.reportError2("<type>", kind),
         }

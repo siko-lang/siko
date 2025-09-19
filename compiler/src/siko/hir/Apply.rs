@@ -41,11 +41,10 @@ impl Apply for Type {
             Type::NumericConstant(value) => Type::NumericConstant(value),
             Type::Void => Type::Void,
             Type::VoidPtr => Type::VoidPtr,
-            Type::Coroutine(yieldTy, resumeTy, retTy) => {
+            Type::Coroutine(yieldTy, retTy) => {
                 let newYieldTy = yieldTy.apply(sub);
-                let newResumeTy = resumeTy.apply(sub);
                 let newRetTy = retTy.apply(sub);
-                Type::Coroutine(Box::new(newYieldTy), Box::new(newResumeTy), Box::new(newRetTy))
+                Type::Coroutine(Box::new(newYieldTy), Box::new(newRetTy))
             }
         }
     }

@@ -68,17 +68,21 @@ impl<'a> CoroutineTransformer<'a> {
                 entry.blockId, entry.variables
             );
         }
-        let enumTy = self.generateCoroutineStateMachineEnum(f.kind.getLocation());
-        self.generateInstanceResumeFunction(&enumTy, &f.kind.getLocation());
+        let stateMachineEnumTy = self.generateCoroutineStateMachineEnum(f.kind.getLocation());
+        self.generateInstanceResumeFunction(&stateMachineEnumTy, &f.kind.getLocation());
         let coroutineInstanceInfo = CoroutineInstanceInfo {
             name: QualifiedName::CoroutineInstance(
                 Box::new(coroutineName),
                 Box::new(QualifiedName::CoroutineStateMachineEnum(Box::new(f.name.clone()))),
             ),
-            resumeFnName: QualifiedName::CoroutineStateMachineResume(Box::new(f.name.clone())),
-            stateMachineEnumTy: enumTy,
+            resumeFnName: self.getCoroutineStateMachineResumeFunctionName(),
+            stateMachineEnumTy,
         };
         (f, coroutineInstanceInfo)
+    }
+
+    fn getCoroutineStateMachineResumeFunctionName(&self) -> QualifiedName {
+        QualifiedName::CoroutineStateMachineResume(Box::new(self.f.name.clone()))
     }
 
     pub fn processBlock(&mut self, blockId: BlockId, bodyBuilder: &mut BodyBuilder) {
@@ -110,10 +114,24 @@ impl<'a> CoroutineTransformer<'a> {
     }
 
     fn generateCoroutineStateMachineEnum(&mut self, location: Location) -> Type {
-        let mut enumBuilder = EnumBuilder::new(self.f.name.clone(), self.program, location.clone());
-        for (variantIndex, entry) in self.entryPoints.clone().iter().enumerate() {
+        let enumName = QualifiedName::CoroutineStateMachineEnum(Box::new(self.f.name.clone()));
+        let mut enumBuilder = EnumBuilder::new(enumName, self.program, location.clone());
+        for (variantIndex, _) in self.entryPoints.clone().iter().enumerate() {
             let variantName =
                 QualifiedName::CoroutineStateMachineVariant(Box::new(self.f.name.clone()), variantIndex as u32);
+            let fieldTypes: Vec<Type> = Vec::new();
+            enumBuilder.generateVariant(&variantName, &fieldTypes, variantIndex);
+        }
+        enumBuilder.generateEnum(&location);
+        enumBuilder.getEnumType()
+    }
+
+    fn generateCoroutineEntryPointEnum(&mut self, location: Location) -> Type {
+        let enumName = QualifiedName::CoroutineEntryPointEnum(Box::new(self.f.name.clone()));
+        let mut enumBuilder = EnumBuilder::new(enumName, self.program, location.clone());
+        for (variantIndex, entry) in self.entryPoints.clone().iter().enumerate() {
+            let variantName =
+                QualifiedName::CoroutineEntryPointVariant(Box::new(self.f.name.clone()), variantIndex as u32);
             let fieldTypes: Vec<Type> = entry.variables.iter().map(|v| v.getType()).collect();
             enumBuilder.generateVariant(&variantName, &fieldTypes, variantIndex);
         }
@@ -122,17 +140,21 @@ impl<'a> CoroutineTransformer<'a> {
     }
 
     fn generateInstanceResumeFunction(&mut self, enumTy: &Type, location: &Location) {
-        let resumeFnName = QualifiedName::CoroutineStateMachineResume(Box::new(self.f.name.clone()));
+        let resumeFnName = self.getCoroutineStateMachineResumeFunctionName();
         let mut params = Vec::new();
-        params.push(Parameter::Named("self".to_string(), enumTy.clone(), false));
+        params.push(Parameter::Named("stateMachine".to_string(), enumTy.clone(), false));
         let mut bodyBuilder = BodyBuilder::new();
         let mut mainBuilder = bodyBuilder.createBlock();
-        let coroutineArg = bodyBuilder.createTempValueWithType(location.clone(), enumTy.clone());
-        let assign = InstructionKind::Assign(
-            coroutineArg.clone(),
-            Variable::newWithType(VariableName::Arg("self".to_string()), location.clone(), enumTy.clone()),
+        let stateMachineArg = bodyBuilder.createTempValueWithType(location.clone(), enumTy.clone());
+        let stateMachineAssign = InstructionKind::Assign(
+            stateMachineArg.clone(),
+            Variable::newWithType(
+                VariableName::Arg("stateMachine".to_string()),
+                location.clone(),
+                enumTy.clone(),
+            ),
         );
-        mainBuilder.addInstruction(assign, location.clone());
+        mainBuilder.addInstruction(stateMachineAssign, location.clone());
         let resumeFn = Function {
             name: resumeFnName.clone(),
             params,
@@ -142,7 +164,7 @@ impl<'a> CoroutineTransformer<'a> {
             kind: FunctionKind::UserDefined(location.clone()),
             attributes: Attributes::new(),
         };
-        println!("Generated resume function: {}", resumeFn);
+        //println!("Generated resume function: {}", resumeFn);
         self.program.functions.insert(resumeFn.name.clone(), resumeFn.clone());
     }
 }
