@@ -1,9 +1,11 @@
 use crate::siko::{
-    backend::closurelowering::ClosureLowering::{ClosureInfo, ClosureInstanceInfo, ClosureKey},
+    backend::{
+        closurelowering::ClosureLowering::{ClosureInfo, ClosureKey},
+        BuilderUtils::{getStructFieldName, EnumBuilder},
+    },
     hir::{
         BodyBuilder::BodyBuilder,
         ConstraintContext::ConstraintContext,
-        Data::{Enum, Field, Struct, Variant},
         Function::{Attributes, Function, FunctionKind, Parameter, ResultKind},
         Instruction::{CallInfo, EnumCase, FieldId, FieldInfo, InstructionKind, TransformInfo},
         Program::Program,
@@ -32,94 +34,12 @@ impl ClosureGenerator<'_> {
     }
 
     fn generateEnum(&mut self, location: Location) -> Type {
-        let mut variants = Vec::new();
-        let enumName = self.closure.name.clone();
-        let enumTy = Type::Named(enumName.clone(), Vec::new());
+        let mut enumBuilder = EnumBuilder::new(self.closure.name.clone(), self.program, location.clone());
         for (variantIndex, (instance, name)) in self.closure.instances.iter().enumerate() {
-            let variant = self.generateVariant(instance, name, variantIndex, &enumTy, &location);
-            variants.push(variant);
+            enumBuilder.generateVariant(name, &instance.envTypes, variantIndex);
         }
-        let enumDef = Enum {
-            name: enumName.clone(),
-            ty: enumTy.clone(),
-            variants,
-            location: location.clone(),
-            methods: Vec::new(),
-        };
-        self.program.enums.insert(enumDef.name.clone(), enumDef);
-        enumTy
-    }
-
-    fn generateVariantStruct(
-        &mut self,
-        closureInstanceInfo: &ClosureInstanceInfo,
-        closureInstanceName: &QualifiedName,
-        location: &Location,
-    ) -> Type {
-        let mut fields = Vec::new();
-        for ty in &closureInstanceInfo.envTypes {
-            fields.push(Field {
-                name: getStructFieldName(fields.len() as u32),
-                ty: ty.clone(),
-            });
-        }
-        let structName = QualifiedName::ClosureInstanceEnvStruct(Box::new(closureInstanceName.clone()));
-        let structTy = Type::Named(structName.clone(), Vec::new());
-        let variantStruct = Struct {
-            name: structName.clone(),
-            fields: fields,
-            location: location.clone(),
-            ty: structTy.clone(),
-            methods: Vec::new(),
-        };
-        self.program.structs.insert(variantStruct.name.clone(), variantStruct);
-        let mut structCtorParams = Vec::new();
-        for (i, ty) in closureInstanceInfo.envTypes.iter().enumerate() {
-            let argName = getStructFieldName(i as u32);
-            structCtorParams.push(Parameter::Named(argName, ty.clone(), false));
-        }
-        let structCtorFn = Function {
-            name: structName.clone(),
-            params: structCtorParams,
-            result: ResultKind::SingleReturn(Type::Named(structName, Vec::new())),
-            body: None,
-            constraintContext: ConstraintContext::new(),
-            kind: FunctionKind::StructCtor,
-            attributes: Attributes::new(),
-        };
-        self.program.functions.insert(structCtorFn.name.clone(), structCtorFn);
-        structTy
-    }
-
-    fn generateVariant(
-        &mut self,
-        closureInstanceInfo: &ClosureInstanceInfo,
-        closureInstanceName: &QualifiedName,
-        variantIndex: usize,
-        enumTy: &Type,
-        location: &Location,
-    ) -> Variant {
-        let structTy = self.generateVariantStruct(closureInstanceInfo, closureInstanceName, location);
-        let variant = Variant {
-            name: closureInstanceName.clone(),
-            items: vec![structTy],
-        };
-        let mut variantCtorParams = Vec::new();
-        for (i, ty) in closureInstanceInfo.envTypes.iter().enumerate() {
-            let argName = getStructFieldName(i as u32);
-            variantCtorParams.push(Parameter::Named(argName, ty.clone(), false));
-        }
-        let variantCtorFn = Function {
-            name: closureInstanceName.clone(),
-            params: variantCtorParams,
-            result: ResultKind::SingleReturn(enumTy.clone()),
-            body: None,
-            constraintContext: ConstraintContext::new(),
-            kind: FunctionKind::VariantCtor(variantIndex as i64),
-            attributes: Attributes::new(),
-        };
-        self.program.functions.insert(variantCtorFn.name.clone(), variantCtorFn);
-        variant
+        enumBuilder.generateEnum(&location);
+        enumBuilder.getEnumType()
     }
 
     fn generateClosureCallHandlerFunction(&mut self, enumTy: &Type, location: Location) {
@@ -148,10 +68,7 @@ impl ClosureGenerator<'_> {
         for (variantIndex, (instance, name)) in self.closure.instances.iter().enumerate() {
             let mut handlerArgs = Vec::new();
             let mut caseBlock = bodyBuilder.createBlock();
-            let structTy = Type::Named(
-                QualifiedName::ClosureInstanceEnvStruct(Box::new(name.clone())),
-                Vec::new(),
-            );
+            let structTy = Type::Named(QualifiedName::VariantStruct(Box::new(name.clone())), Vec::new());
             let closureEnvVar = bodyBuilder.createTempValueWithType(location.clone(), structTy);
             let transform = InstructionKind::Transform(
                 closureEnvVar.clone(),
@@ -207,8 +124,4 @@ impl ClosureGenerator<'_> {
         //println!("handler fn {}", handlerFn);
         self.program.functions.insert(handlerFn.name.clone(), handlerFn);
     }
-}
-
-fn getStructFieldName(index: u32) -> String {
-    format!("f{}", index)
 }

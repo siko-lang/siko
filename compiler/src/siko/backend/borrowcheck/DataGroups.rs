@@ -294,7 +294,10 @@ impl<'a> DataGroups<'a> {
         let mut extTy = ExtendedType::new(ty.clone());
         let allocator = TypeVarAllocator::new();
         if let Some(name) = getNameFromType(ty) {
-            let def = self.dataDefs.get(&name).expect("Data definition not found");
+            let def = self
+                .dataDefs
+                .get(&name)
+                .expect(&format!("Data definition not found {}", name));
             match def {
                 DataDef::Struct(s) => {
                     allocator.useTypes(&s.ty.vars);

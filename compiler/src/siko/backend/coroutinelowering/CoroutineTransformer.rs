@@ -1,10 +1,9 @@
 use crate::siko::{
-    backend::coroutinelowering::CoroutineLowering::CoroutineInstanceInfo,
+    backend::{coroutinelowering::CoroutineLowering::CoroutineInstanceInfo, BuilderUtils::EnumBuilder},
     hir::{
         Block::BlockId,
         BodyBuilder::BodyBuilder,
         ConstraintContext::ConstraintContext,
-        Data::{Enum, Field, Struct, Variant},
         Function::{Attributes, Function, FunctionKind, Parameter, ResultKind},
         Instruction::InstructionKind,
         Program::Program,
@@ -69,7 +68,7 @@ impl<'a> CoroutineTransformer<'a> {
                 entry.blockId, entry.variables
             );
         }
-        let enumTy = self.generateCoroutineEnum(f.kind.getLocation());
+        let enumTy = self.generateCoroutineStateMachineEnum(f.kind.getLocation());
         self.generateInstanceResumeFunction(&enumTy, &f.kind.getLocation());
         let coroutineInstanceInfo = CoroutineInstanceInfo {
             name: QualifiedName::CoroutineInstance(
@@ -77,6 +76,7 @@ impl<'a> CoroutineTransformer<'a> {
                 Box::new(QualifiedName::CoroutineStateMachineEnum(Box::new(f.name.clone()))),
             ),
             resumeFnName: QualifiedName::CoroutineStateMachineResume(Box::new(f.name.clone())),
+            stateMachineEnumTy: enumTy,
         };
         (f, coroutineInstanceInfo)
     }
@@ -109,24 +109,16 @@ impl<'a> CoroutineTransformer<'a> {
         }
     }
 
-    fn generateCoroutineEnum(&mut self, location: Location) -> Type {
-        let mut variants = Vec::new();
-        let enumName = QualifiedName::CoroutineStateMachineEnum(Box::new(self.f.name.clone()));
-        let enumTy = Type::Named(enumName.clone(), Vec::new());
+    fn generateCoroutineStateMachineEnum(&mut self, location: Location) -> Type {
+        let mut enumBuilder = EnumBuilder::new(self.f.name.clone(), self.program, location.clone());
         for (variantIndex, entry) in self.entryPoints.clone().iter().enumerate() {
-            let variant = self.generateVariant(variantIndex, entry, &enumTy, &location);
-            variants.push(variant);
+            let variantName =
+                QualifiedName::CoroutineStateMachineVariant(Box::new(self.f.name.clone()), variantIndex as u32);
+            let fieldTypes: Vec<Type> = entry.variables.iter().map(|v| v.getType()).collect();
+            enumBuilder.generateVariant(&variantName, &fieldTypes, variantIndex);
         }
-        let enumDef = Enum {
-            name: enumName.clone(),
-            ty: enumTy.clone(),
-            variants,
-            location: location.clone(),
-            methods: Vec::new(),
-        };
-        println!("Generated coroutine enum: {}", enumDef);
-        self.program.enums.insert(enumDef.name.clone(), enumDef);
-        enumTy
+        enumBuilder.generateEnum(&location);
+        enumBuilder.getEnumType()
     }
 
     fn generateInstanceResumeFunction(&mut self, enumTy: &Type, location: &Location) {
@@ -153,77 +145,4 @@ impl<'a> CoroutineTransformer<'a> {
         println!("Generated resume function: {}", resumeFn);
         self.program.functions.insert(resumeFn.name.clone(), resumeFn.clone());
     }
-
-    fn generateVariant(
-        &mut self,
-        variantIndex: usize,
-        entry: &EntryPoint,
-        enumTy: &Type,
-        location: &Location,
-    ) -> Variant {
-        let variantName =
-            QualifiedName::CoroutineStateMachineEntryPoint(Box::new(self.f.name.clone()), variantIndex as u32);
-        let structTy = self.generateVariantStruct(entry, variantName.clone(), location);
-        let variant = Variant {
-            name: variantName.clone(),
-            items: vec![structTy],
-        };
-        let mut variantCtorParams = Vec::new();
-        for (i, var) in entry.variables.iter().enumerate() {
-            let argName = getStructFieldName(i as u32);
-            variantCtorParams.push(Parameter::Named(argName, var.getType(), false));
-        }
-        let variantCtorFn = Function {
-            name: variantName.clone(),
-            params: variantCtorParams,
-            result: ResultKind::SingleReturn(enumTy.clone()),
-            body: None,
-            constraintContext: ConstraintContext::new(),
-            kind: FunctionKind::VariantCtor(variantIndex as i64),
-            attributes: Attributes::new(),
-        };
-        self.program.functions.insert(variantCtorFn.name.clone(), variantCtorFn);
-        variant
-    }
-
-    fn generateVariantStruct(&mut self, entry: &EntryPoint, variantName: QualifiedName, location: &Location) -> Type {
-        let mut fields = Vec::new();
-        for var in &entry.variables {
-            fields.push(Field {
-                name: getStructFieldName(fields.len() as u32),
-                ty: var.getType(),
-            });
-        }
-        let structName = QualifiedName::CoroutineStateMachineEntryStruct(Box::new(variantName));
-        let structTy = Type::Named(structName.clone(), Vec::new());
-        let variantStruct = Struct {
-            name: structName.clone(),
-            fields: fields,
-            location: location.clone(),
-            ty: structTy.clone(),
-            methods: Vec::new(),
-        };
-        println!("Generated variant struct: {}", variantStruct);
-        self.program.structs.insert(variantStruct.name.clone(), variantStruct);
-        let mut structCtorParams = Vec::new();
-        for (i, var) in entry.variables.iter().enumerate() {
-            let argName = getStructFieldName(i as u32);
-            structCtorParams.push(Parameter::Named(argName, var.getType(), false));
-        }
-        let structCtorFn = Function {
-            name: structName.clone(),
-            params: structCtorParams,
-            result: ResultKind::SingleReturn(Type::Named(structName, Vec::new())),
-            body: None,
-            constraintContext: ConstraintContext::new(),
-            kind: FunctionKind::StructCtor,
-            attributes: Attributes::new(),
-        };
-        self.program.functions.insert(structCtorFn.name.clone(), structCtorFn);
-        structTy
-    }
-}
-
-fn getStructFieldName(index: u32) -> String {
-    format!("f{}", index)
 }

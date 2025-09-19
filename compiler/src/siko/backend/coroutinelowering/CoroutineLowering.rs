@@ -1,23 +1,11 @@
 use std::{collections::BTreeMap, fmt::Debug, fmt::Display};
 
 use crate::siko::{
-    backend::{coroutinelowering::CoroutineTransformer::CoroutineTransformer, RemoveTuples::getTuple},
-    hir::{
-        BodyBuilder::BodyBuilder,
-        ConstraintContext::ConstraintContext,
-        Function::{Attributes, Function, FunctionKind, Parameter, ResultKind},
-        FunctionGroupBuilder::FunctionGroupBuilder,
-        Instruction::{CallInfo, EnumCase, InstructionKind},
-        Program::Program,
-        Type::Type,
-        Variable::{Variable, VariableName},
-    },
+    backend::coroutinelowering::{CoroutineGenerator::CoroutineGenerator, CoroutineTransformer::CoroutineTransformer},
+    hir::{Function::Function, FunctionGroupBuilder::FunctionGroupBuilder, Program::Program, Type::Type},
     location::Location::Location,
     monomorphizer::Context::Context,
-    qualifiedname::{
-        builtins::{getCoroutineCoResumeName, getCoroutineCoResumeResultName},
-        QualifiedName,
-    },
+    qualifiedname::QualifiedName,
 };
 
 #[derive(Clone, PartialEq, Eq, Ord, PartialOrd)]
@@ -46,6 +34,7 @@ impl Debug for CoroutineKey {
 pub struct CoroutineInstanceInfo {
     pub name: QualifiedName,
     pub resumeFnName: QualifiedName,
+    pub stateMachineEnumTy: Type,
 }
 
 pub struct CoroutineInfo {
@@ -60,30 +49,52 @@ impl CoroutineInfo {
             instances: BTreeMap::new(),
         }
     }
+
+    pub fn getCoroutineName(&self) -> QualifiedName {
+        QualifiedName::Coroutine(
+            self.key.yieldedTy.clone().into(),
+            self.key.resumedTy.clone().into(),
+            self.key.returnTy.clone().into(),
+        )
+    }
+
+    pub fn getCoroutineType(&self) -> Type {
+        Type::Named(self.getCoroutineName().monomorphized(self.getContext()), vec![])
+    }
+
+    pub fn getContext(&self) -> Context {
+        let mut ctx = Context::new();
+        ctx.args.push(self.key.yieldedTy.clone());
+        ctx.args.push(self.key.resumedTy.clone());
+        ctx.args.push(self.key.returnTy.clone());
+        ctx
+    }
 }
 
-pub struct CoroutineStore {
+pub struct CoroutineStore<'a> {
     pub coroutines: BTreeMap<CoroutineKey, CoroutineInfo>,
+    pub program: &'a mut Program,
 }
 
-impl CoroutineStore {
-    pub fn new() -> Self {
+impl<'a> CoroutineStore<'a> {
+    pub fn new(program: &'a mut Program) -> Self {
         Self {
             coroutines: BTreeMap::new(),
+            program,
         }
     }
 
-    pub fn process(&mut self, mut program: Program) -> Program {
-        let functionGroupBuilder = FunctionGroupBuilder::new(&program);
+    pub fn process(mut self) {
+        let functionGroupBuilder = FunctionGroupBuilder::new(self.program);
         let functionGroupInfo = functionGroupBuilder.process();
         for group in &functionGroupInfo.groups {
             //println!("CoroutineStore: processing function group: {:?}", group.items);
             for fnName in &group.items {
-                let func = program.functions.get(&fnName).unwrap().clone();
+                let func = self.program.functions.get(&fnName).unwrap().clone();
                 if self.isCoroutineFunction(&func) {
-                    let mut transformer = CoroutineTransformer::new(&func, &mut program);
+                    let mut transformer = CoroutineTransformer::new(&func, self.program);
                     let (f, coroutineInstanceInfo) = transformer.transform();
-                    program.functions.insert(f.name.clone(), f);
+                    self.program.functions.insert(f.name.clone(), f);
                     let key = coroutineInstanceInfo.name.getCoroutineKey();
                     let coroutineKey = CoroutineKey {
                         yieldedTy: key.0,
@@ -101,97 +112,14 @@ impl CoroutineStore {
             }
         }
         for (_, coroutine) in &self.coroutines {
-            let f = self.generateResumeFunctionForCoroutine(coroutine);
-            program.functions.insert(f.name.clone(), f);
+            let mut generator = CoroutineGenerator::new(coroutine, self.program);
+            generator.generateEnumForCoroutine(&Location::empty());
+            let f = generator.generateResumeFunctionForCoroutine();
+            self.program.functions.insert(f.name.clone(), f);
         }
-        program
     }
 
     fn isCoroutineFunction(&mut self, f: &Function) -> bool {
         f.result.isCoroutine()
-    }
-
-    fn generateResumeFunctionForCoroutine(&self, coroutine: &CoroutineInfo) -> Function {
-        let mut ctx = Context::new();
-        ctx.args.push(coroutine.key.yieldedTy.clone());
-        ctx.args.push(coroutine.key.resumedTy.clone());
-        ctx.args.push(coroutine.key.returnTy.clone());
-        let resumeName = getCoroutineCoResumeName().monomorphized(ctx.clone());
-        let location = Location::empty();
-        let coroutineTy = Type::Named(
-            QualifiedName::Coroutine(
-                coroutine.key.yieldedTy.clone().into(),
-                coroutine.key.resumedTy.clone().into(),
-                coroutine.key.returnTy.clone().into(),
-            ),
-            vec![],
-        );
-        let resultTy = Type::Named(getCoroutineCoResumeResultName().monomorphized(ctx), vec![]);
-        let tupleStructName = getTuple(&Type::Tuple(vec![coroutineTy.clone(), resultTy.clone()]));
-        let finalResumeTupleTy = Type::Named(tupleStructName, vec![]);
-
-        let mut params = Vec::new();
-        params.push(Parameter::Named("coro".to_string(), coroutineTy.clone(), false));
-        params.push(Parameter::Named(
-            "resumedValue".to_string(),
-            coroutine.key.resumedTy.clone(),
-            false,
-        ));
-
-        let mut bodyBuilder = BodyBuilder::new();
-        let mut mainBuilder = bodyBuilder.createBlock();
-        let coroutineArg = bodyBuilder.createTempValueWithType(location.clone(), coroutineTy.clone());
-        let resumedArg = bodyBuilder.createTempValueWithType(location.clone(), coroutine.key.resumedTy.clone());
-        let coroutineAssign = InstructionKind::Assign(
-            coroutineArg.clone(),
-            Variable::newWithType(
-                VariableName::Arg("coro".to_string()),
-                location.clone(),
-                coroutineTy.clone(),
-            ),
-        );
-        mainBuilder.addInstruction(coroutineAssign, location.clone());
-        let resumeAssign = InstructionKind::Assign(
-            resumedArg.clone(),
-            Variable::newWithType(
-                VariableName::Arg("resumedValue".to_string()),
-                location.clone(),
-                coroutine.key.resumedTy.clone(),
-            ),
-        );
-        mainBuilder.addInstruction(resumeAssign, location.clone());
-        let mut cases = Vec::new();
-        for (variantIndex, instance) in coroutine.instances.values().enumerate() {
-            let mut caseBuilder = bodyBuilder.createBlock();
-            let resumeResult = bodyBuilder.createTempValueWithType(location.clone(), resultTy.clone());
-            let callInfo = CallInfo {
-                name: instance.resumeFnName.clone(),
-                args: vec![coroutineArg.useVar(), resumedArg.useVar()],
-                context: None,
-                instanceRefs: Vec::new(),
-                coroutineSpawn: false,
-            };
-            let resumeCall = InstructionKind::FunctionCall(resumeResult.clone(), callInfo);
-            caseBuilder.addInstruction(resumeCall, location.clone());
-            caseBuilder.addReturn(resumeResult, location.clone());
-            cases.push(EnumCase {
-                index: variantIndex as u32,
-                branch: caseBuilder.getBlockId(),
-            });
-        }
-        let enumSwitch = InstructionKind::EnumSwitch(coroutineArg, cases);
-        mainBuilder.addInstruction(enumSwitch, location.clone());
-
-        let f = Function {
-            name: resumeName,
-            params,
-            result: ResultKind::SingleReturn(finalResumeTupleTy),
-            body: Some(bodyBuilder.build()),
-            kind: FunctionKind::UserDefined(location.clone()),
-            constraintContext: ConstraintContext::new(),
-            attributes: Attributes::new(),
-        };
-        println!("Generated resume function for coroutine {}\n{}", coroutine.key, f);
-        f
     }
 }

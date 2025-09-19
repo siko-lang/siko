@@ -21,9 +21,10 @@ pub enum QualifiedName {
     ClosureCallHandler(Box<QualifiedName>),
     Coroutine(Box<Type>, Box<Type>, Box<Type>), // yielded, resumed, return
     CoroutineInstance(Box<QualifiedName>, Box<QualifiedName>), // coroutine name, state machine name
+    VariantStruct(Box<QualifiedName>),          // variant name
     CoroutineStateMachineEnum(Box<QualifiedName>), // yielding function name
-    CoroutineStateMachineEntryPoint(Box<QualifiedName>, u32), // yielding function name, entry index
-    CoroutineStateMachineEntryStruct(Box<QualifiedName>), // entry point name
+    CoroutineStateMachineVariant(Box<QualifiedName>, u32), // yielding function name, entry index
+    CoroutineStateMachineVariantStruct(Box<QualifiedName>), // entry point name
     CoroutineStateMachineResume(Box<QualifiedName>), // state machine name
 }
 
@@ -50,11 +51,12 @@ impl QualifiedName {
             QualifiedName::ClosureCallHandler(_) => panic!("ClosureCallHandler names are not supported"),
             QualifiedName::Coroutine(_, _, _) => panic!("Coroutine names are not supported"),
             QualifiedName::CoroutineInstance(_, _) => panic!("CoroutineInstance names are not supported"),
+            QualifiedName::VariantStruct(_) => panic!("VariantStruct names are not supported"),
             QualifiedName::CoroutineStateMachineEnum(_) => panic!("CoroutineStateMachine names are not supported"),
-            QualifiedName::CoroutineStateMachineEntryPoint(_, _) => {
+            QualifiedName::CoroutineStateMachineVariant(_, _) => {
                 panic!("CoroutineStateMachineEntry names are not supported")
             }
-            QualifiedName::CoroutineStateMachineEntryStruct(_) => {
+            QualifiedName::CoroutineStateMachineVariantStruct(_) => {
                 panic!("CoroutineStateMachineEntryStruct names are not supported")
             }
             QualifiedName::CoroutineStateMachineResume(_) => {
@@ -77,11 +79,12 @@ impl QualifiedName {
             QualifiedName::ClosureCallHandler(_) => panic!("ClosureCallHandler names are not supported"),
             QualifiedName::Coroutine(_, _, _) => panic!("Coroutine names are not supported"),
             QualifiedName::CoroutineInstance(_, _) => panic!("CoroutineInstance names are not supported"),
+            QualifiedName::VariantStruct(_) => panic!("VariantStruct names are not supported"),
             QualifiedName::CoroutineStateMachineEnum(_) => panic!("CoroutineStateMachine names are not supported"),
-            QualifiedName::CoroutineStateMachineEntryPoint(_, _) => {
+            QualifiedName::CoroutineStateMachineVariant(_, _) => {
                 panic!("CoroutineStateMachineEntry names are not supported")
             }
-            QualifiedName::CoroutineStateMachineEntryStruct(_) => {
+            QualifiedName::CoroutineStateMachineVariantStruct(_) => {
                 panic!("CoroutineStateMachineEntryStruct names are not supported")
             }
             QualifiedName::CoroutineStateMachineResume(_) => {
@@ -135,11 +138,12 @@ impl QualifiedName {
             QualifiedName::ClosureCallHandler(_) => panic!("ClosureCallHandler names are not supported"),
             QualifiedName::Coroutine(_, _, _) => panic!("Coroutine names are not supported"),
             QualifiedName::CoroutineInstance(_, _) => panic!("CoroutineInstance names are not supported"),
+            QualifiedName::VariantStruct(_) => panic!("VariantStruct names are not supported"),
             QualifiedName::CoroutineStateMachineEnum(_) => panic!("CoroutineStateMachine names are not supported"),
-            QualifiedName::CoroutineStateMachineEntryPoint(_, _) => {
+            QualifiedName::CoroutineStateMachineVariant(_, _) => {
                 panic!("CoroutineStateMachineEntry names are not supported")
             }
-            QualifiedName::CoroutineStateMachineEntryStruct(_) => {
+            QualifiedName::CoroutineStateMachineVariantStruct(_) => {
                 panic!("CoroutineStateMachineEntryStruct names are not supported")
             }
             QualifiedName::CoroutineStateMachineResume(_) => {
@@ -198,9 +202,10 @@ impl Display for QualifiedName {
             QualifiedName::CoroutineInstance(coroutineName, stateMachineName) => {
                 write!(f, "{}.instance/{}", coroutineName, stateMachineName)
             }
+            QualifiedName::VariantStruct(p) => write!(f, "{}.variant_struct", p),
             QualifiedName::CoroutineStateMachineEnum(p) => write!(f, "{}.coroutine_state_machine", p),
-            QualifiedName::CoroutineStateMachineEntryPoint(p, index) => write!(f, "{}.coroutine_entry/{}", p, index),
-            QualifiedName::CoroutineStateMachineEntryStruct(p) => write!(f, "{}.coroutine_entry_struct", p),
+            QualifiedName::CoroutineStateMachineVariant(p, index) => write!(f, "{}.coroutine_entry/{}", p, index),
+            QualifiedName::CoroutineStateMachineVariantStruct(p) => write!(f, "{}.coroutine_entry_struct", p),
             QualifiedName::CoroutineStateMachineResume(p) => write!(f, "{}.coroutine_resume", p),
         }
     }

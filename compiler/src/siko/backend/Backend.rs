@@ -54,8 +54,10 @@ pub fn process(ctx: &ReportContext, runner: &mut Runner, program: Program) -> Pr
     let program = ClosureLowering::process(program);
     //println!("after closure lowering\n{}", program);
     let program = stage!(runner, "Coroutine lowering", {
-        let mut coroutineStore = coroutinelowering::CoroutineLowering::CoroutineStore::new();
-        coroutineStore.process(program)
+        let mut program = program;
+        let coroutineStore = coroutinelowering::CoroutineLowering::CoroutineStore::new(&mut program);
+        coroutineStore.process();
+        program
     });
     //println!("after coroutine lowering\n{}", program);
     Check::new(&program).process(ctx);
