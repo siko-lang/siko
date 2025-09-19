@@ -3,6 +3,7 @@ use crate::{
         backend::{
             borrowcheck::Check::Check,
             closurelowering::ClosureLowering,
+            coroutinelowering,
             drop::Drop::checkDrops,
             recursivedatahandler::RecursiveDataHandler,
             simplification::Simplifier::{self, Config},
@@ -52,6 +53,11 @@ pub fn process(ctx: &ReportContext, runner: &mut Runner, program: Program) -> Pr
     //println!("after simplification\n{}", program);
     let program = ClosureLowering::process(program);
     //println!("after closure lowering\n{}", program);
+    let program = stage!(runner, "Coroutine lowering", {
+        let mut coroutineStore = coroutinelowering::CoroutineLowering::CoroutineStore::new();
+        coroutineStore.process(program)
+    });
+    //println!("after coroutine lowering\n{}", program);
     Check::new(&program).process(ctx);
     let program = stage!(runner, "Simplifying2", {
         Simplifier::simplify(program, Config { enableInliner: true })

@@ -6,6 +6,7 @@ pub mod SafetyChecker;
 pub mod TypeVerifier;
 pub mod borrowcheck;
 pub mod closurelowering;
+pub mod coroutinelowering;
 pub mod drop;
 pub mod recursivedatahandler;
 pub mod simplification;

@@ -1,13 +1,23 @@
 module Main {
 
-fn simple(): co(Int, ()) -> Int {
+import Coroutine
+
+fn simple(arg: Int): co(Int, ()) -> Int {
     yield 5;
-    return 6;
+    yield 7;
+    return 7;
+}
+
+fn simple2(arg: Int): co(Int, ()) -> Int {
+    yield 5;
+    yield 7;
+    return 7;
 }
 
 fn main() {
-    let co1 : co(Int, ()) -> Int = co simple();
-    let co2 = co simple();
+    let co1 : co(Int, ()) -> Int = co simple(3);
+    let co2 = co simple2(4);
+    let (co1, res1) = resume(co1, ());
 }
 
 }

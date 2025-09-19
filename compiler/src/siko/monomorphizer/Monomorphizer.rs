@@ -7,7 +7,6 @@ use std::{
 use crate::siko::{
     backend::drop::Util::HasTrivialDrop,
     hir::{
-        Apply::Apply,
         BodyBuilder::BodyBuilder,
         ConstraintContext::ConstraintContext,
         Function::{Attributes, Function, FunctionKind, Parameter, ResultKind},
@@ -39,7 +38,7 @@ use crate::siko::{
         Utils::Monomorphize,
     },
     qualifiedname::{
-        builtins::{getArrayTypeName, getMainName},
+        builtins::{getArrayTypeName, getCoroutineCoResumeName, getMainName},
         QualifiedName,
     },
     util::Config::Config,
@@ -68,6 +67,15 @@ impl Monomorphize for FieldInfo {
         let mut result = self.clone();
         result.ty = result.ty.process(sub, mono);
         result
+    }
+}
+
+impl Monomorphize for ResultKind {
+    fn process(&self, sub: &Substitution, mono: &mut Monomorphizer) -> Self {
+        match self {
+            ResultKind::SingleReturn(ty) => ResultKind::SingleReturn(ty.process(sub, mono)),
+            ResultKind::Coroutine(ty) => ResultKind::Coroutine(ty.process(sub, mono)),
+        }
     }
 }
 
@@ -281,13 +289,37 @@ impl<'a> Monomorphizer<'a> {
         };
         let sub = createTypeSubstitutionFrom(params, args);
         let mut monoFn = function.clone();
-        monoFn.result = ResultKind::SingleReturn(self.processType(monoFn.result.getReturnType().apply(&sub)));
+        monoFn.result = monoFn.result.process(&sub, self);
         monoFn.params = monoFn.params.process(&sub, self);
         monoFn.body = processBody(monoFn.body.clone(), &sub, self, handlerResolution, &impls);
 
         monoFn.name = monoName.clone();
         //println!("MONO FN: {} => {}", name, monoName);
         self.monomorphizedProgram.functions.insert(monoName, monoFn);
+        if name == getCoroutineCoResumeName() {
+            let ty = function.result.getReturnType();
+            match ty {
+                Type::Tuple(args) => match &args[1] {
+                    Type::Named(name, args) => {
+                        let enumDef = self
+                            .program
+                            .getEnum(name)
+                            .expect("coroutine resume's second return type not found");
+                        let args: Vec<_> = args.process(&sub, self);
+                        for v in enumDef.variants {
+                            self.addKey(Key::Function(
+                                v.name.clone(),
+                                args.clone(),
+                                HandlerResolution::new(),
+                                Vec::new(),
+                            ));
+                        }
+                    }
+                    _ => panic!("coroutine resume's second return type must be Coroutine.Result"),
+                },
+                _ => panic!("coroutine resume must return a tuple"),
+            }
+        }
     }
 
     pub fn processType(&mut self, ty: Type) -> Type {

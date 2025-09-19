@@ -149,10 +149,30 @@ impl ResultKind {
         }
     }
 
+    pub fn getCoroutineName(&self) -> QualifiedName {
+        match self {
+            ResultKind::Coroutine(ty) => {
+                let (yielded, resumed, returnTy) =
+                    ty.clone().unpackCoroutine().expect("getCoroutineName: not a coroutine");
+                QualifiedName::Coroutine(Box::new(yielded), Box::new(resumed), Box::new(returnTy))
+            }
+            _ => panic!("getCoroutineName: not a coroutine"),
+        }
+    }
+
     pub fn getReturnType(&self) -> Type {
         match self {
             ResultKind::SingleReturn(ty) => ty.clone(),
             ResultKind::Coroutine(ty) => ty.clone().unpackCoroutine().expect("getReturnType: not a coroutine").2,
+        }
+    }
+}
+
+impl Display for ResultKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ResultKind::SingleReturn(ty) => write!(f, "single {}", ty),
+            ResultKind::Coroutine(ty) => write!(f, "coroutine {}", ty),
         }
     }
 }

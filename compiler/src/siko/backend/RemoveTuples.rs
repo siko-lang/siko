@@ -24,7 +24,7 @@ fn fieldNameForIndex(index: usize) -> String {
     format!("f{}", index)
 }
 
-fn getTuple(ty: &Type) -> QualifiedName {
+pub fn getTuple(ty: &Type) -> QualifiedName {
     let sikoModuleName = "siko";
     if let Type::Named(name, _) = ty {
         if name.module().toString() == sikoModuleName && name.getShortName().starts_with("Tuple_") {
@@ -70,6 +70,12 @@ impl RemoveTuples for Type {
                 let args = args.removeTuples(ctx);
                 let r = r.removeTuples(ctx);
                 Type::Function(args, Box::new(r))
+            }
+            Type::Coroutine(yielded, resumed, return_) => {
+                let yielded = yielded.removeTuples(ctx);
+                let resumed = resumed.removeTuples(ctx);
+                let return_ = return_.removeTuples(ctx);
+                Type::Coroutine(Box::new(yielded), Box::new(resumed), Box::new(return_))
             }
             ty => ty.clone(),
         }

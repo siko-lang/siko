@@ -119,22 +119,6 @@ impl fmt::Display for IntKind {
     }
 }
 
-pub fn getIntToU8Name() -> QualifiedName {
-    build("Int", "Int").add(format!("toU8"))
-}
-
-pub fn getIntToU32Name() -> QualifiedName {
-    build("Int", "Int").add(format!("toU32"))
-}
-
-pub fn getIntToU64Name() -> QualifiedName {
-    build("Int", "Int").add(format!("toU64"))
-}
-
-pub fn getIntToI32Name() -> QualifiedName {
-    build("Int", "Int").add(format!("toI32"))
-}
-
 pub fn getIntAddName(kind: IntKind) -> QualifiedName {
     build(&kind.to_string(), &kind.to_string()).add(format!("add"))
 }
@@ -217,4 +201,12 @@ pub fn getBoxGetFnName() -> QualifiedName {
 
 pub fn getRangeCtorName() -> QualifiedName {
     build("Range", "Range").add("range".to_string())
+}
+
+pub fn getCoroutineCoResumeName() -> QualifiedName {
+    build("Coroutine", "coResume")
+}
+
+pub fn getCoroutineCoResumeResultName() -> QualifiedName {
+    build("Coroutine", "Result")
 }
