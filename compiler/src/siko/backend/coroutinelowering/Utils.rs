@@ -1,5 +1,4 @@
 use crate::siko::{
-    backend::RemoveTuples::getTuple,
     hir::Type::Type,
     monomorphizer::Context::Context,
     qualifiedname::{builtins::getCoroutineCoResumeResultName, QualifiedName},
@@ -37,9 +36,7 @@ pub fn getResumeResultType(ty: &Type) -> Type {
 pub fn getResumeTupleType(ty: &Type) -> Type {
     let coroutineTy = getLoweredCoroutineType(ty);
     let resultTy = getResumeResultType(ty);
-    let tupleStructName = getTuple(&Type::Tuple(vec![coroutineTy.clone(), resultTy.clone()]));
-    let finalResumeTupleTy = Type::Named(tupleStructName, vec![]);
-    finalResumeTupleTy
+    Type::Tuple(vec![coroutineTy.clone(), resultTy.clone()])
 }
 
 pub fn getStateMachineEnumName(fName: &QualifiedName) -> QualifiedName {

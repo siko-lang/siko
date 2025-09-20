@@ -24,7 +24,7 @@ fn fieldNameForIndex(index: usize) -> String {
     format!("f{}", index)
 }
 
-pub fn getTuple(ty: &Type) -> QualifiedName {
+fn getTuple(ty: &Type) -> QualifiedName {
     let sikoModuleName = "siko";
     if let Type::Named(name, _) = ty {
         if name.module().toString() == sikoModuleName && name.getShortName().starts_with("Tuple_") {

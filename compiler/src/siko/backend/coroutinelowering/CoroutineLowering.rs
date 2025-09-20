@@ -43,6 +43,7 @@ pub struct CoroutineInstanceInfo {
     pub name: QualifiedName,
     pub resumeFnName: QualifiedName,
     pub stateMachineEnumTy: Type,
+    pub resumeTupleTy: Type,
 }
 
 pub struct CoroutineInfo {
@@ -187,8 +188,9 @@ impl CoroutineLowering for InstructionKind {
                 lhs.lower();
                 rhs.lower();
             }
-            InstructionKind::Tuple(_, _) => {
-                panic!("Tuple instruction found in closure lowering");
+            InstructionKind::Tuple(dest, args) => {
+                dest.lower();
+                args.lower();
             }
             InstructionKind::StringLiteral(v, _) => {
                 v.lower();
@@ -288,6 +290,11 @@ impl CoroutineLowering for Type {
     fn lower(&mut self) {
         match self {
             Type::Coroutine(_, _) => *self = getLoweredCoroutineType(self),
+            Type::Tuple(items) => {
+                for item in items {
+                    item.lower();
+                }
+            }
             _ => {}
         }
     }

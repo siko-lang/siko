@@ -1,7 +1,7 @@
 use crate::siko::{
     backend::{
         closurelowering::ClosureLowering::{ClosureInfo, ClosureKey},
-        BuilderUtils::{getStructFieldName, EnumBuilder},
+        BuilderUtils::EnumBuilder,
     },
     hir::{
         BodyBuilder::BodyBuilder,
@@ -65,11 +65,11 @@ impl ClosureGenerator<'_> {
         }
         let closureArg = args[0].clone();
         let mut cases = Vec::new();
-        for (variantIndex, (instance, name)) in self.closure.instances.iter().enumerate() {
+        for (variantIndex, (instance, _)) in self.closure.instances.iter().enumerate() {
             let mut handlerArgs = Vec::new();
             let mut caseBlock = bodyBuilder.createBlock();
-            let structTy = Type::Named(QualifiedName::VariantStruct(Box::new(name.clone())), Vec::new());
-            let closureEnvVar = bodyBuilder.createTempValueWithType(location.clone(), structTy);
+            let tupleTy = Type::Tuple(instance.envTypes.clone());
+            let closureEnvVar = bodyBuilder.createTempValueWithType(location.clone(), tupleTy);
             let transform = InstructionKind::Transform(
                 closureEnvVar.clone(),
                 closureArg.clone(),
@@ -82,7 +82,7 @@ impl ClosureGenerator<'_> {
             for (i, ty) in instance.envTypes.iter().enumerate() {
                 let envVar = bodyBuilder.createTempValueWithType(location.clone(), ty.clone());
                 let fieldInfo = FieldInfo {
-                    name: FieldId::Named(getStructFieldName(i as u32)),
+                    name: FieldId::Indexed(i as u32),
                     location: location.clone(),
                     ty: Some(ty.clone()),
                 };

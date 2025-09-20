@@ -7,7 +7,7 @@ use crate::siko::{
                 getResumeTupleType,
             },
         },
-        BuilderUtils::{getStructFieldName, EnumBuilder, StructBuilder},
+        BuilderUtils::{getStructFieldName, EnumBuilder},
     },
     hir::{
         BodyBuilder::BodyBuilder,
@@ -39,11 +39,6 @@ impl<'a> CoroutineGenerator<'a> {
         let coroutineTy = getLoweredCoroutineType(&self.coroutineInfo.getCoroutineType());
         let resultTy = getResumeResultType(&self.coroutineInfo.getCoroutineType());
         let finalResumeTupleTy = getResumeTupleType(&self.coroutineInfo.getCoroutineType());
-        let mut structBuilder = StructBuilder::new(self.program, location.clone());
-        structBuilder.generateStruct(
-            &vec![coroutineTy.clone(), resultTy.clone()],
-            &finalResumeTupleTy.getName().expect("Failed to get name"),
-        );
         let mut params = Vec::new();
         params.push(Parameter::Named("coro".to_string(), coroutineTy.clone(), false));
         let mut bodyBuilder = BodyBuilder::new();
@@ -61,8 +56,8 @@ impl<'a> CoroutineGenerator<'a> {
         let mut cases = Vec::new();
         for (variantIndex, (name, instance)) in self.coroutineInfo.instances.iter().enumerate() {
             let mut caseBuilder = bodyBuilder.createBlock();
-            let structTy = Type::Named(name.clone(), Vec::new());
-            let transformVar = bodyBuilder.createTempValueWithType(location.clone(), structTy.clone());
+            let transformVar = bodyBuilder
+                .createTempValueWithType(location.clone(), Type::Tuple(vec![instance.stateMachineEnumTy.clone()]));
             let transform = InstructionKind::Transform(
                 transformVar.clone(),
                 coroutineArg.clone(),
@@ -80,7 +75,7 @@ impl<'a> CoroutineGenerator<'a> {
                 bodyBuilder.createTempValueWithType(location.clone(), instance.stateMachineEnumTy.clone());
             let fieldRef = InstructionKind::FieldRef(fieldRefVar.clone(), transformVar.clone(), vec![fieldInfo]);
             caseBuilder.addInstruction(fieldRef, location.clone());
-            let resumeResult = bodyBuilder.createTempValueWithType(location.clone(), resultTy.clone());
+            let resumeResult = bodyBuilder.createTempValueWithType(location.clone(), instance.resumeTupleTy.clone());
             let callInfo = CallInfo {
                 name: instance.resumeFnName.clone(),
                 args: vec![fieldRefVar.useVar()],
@@ -90,7 +85,50 @@ impl<'a> CoroutineGenerator<'a> {
             };
             let resumeCall = InstructionKind::FunctionCall(resumeResult.clone(), callInfo);
             caseBuilder.addInstruction(resumeCall, location.clone());
-            caseBuilder.addReturn(resumeResult, location.clone());
+            let stateMachineFieldRefVar =
+                bodyBuilder.createTempValueWithType(location.clone(), instance.stateMachineEnumTy.clone());
+            let stateMachineFieldInfo = FieldInfo {
+                name: FieldId::Named(getStructFieldName(0)),
+                location: location.clone(),
+                ty: Some(instance.stateMachineEnumTy.clone()),
+            };
+            let stateMachineFieldRef = InstructionKind::FieldRef(
+                stateMachineFieldRefVar.clone(),
+                resumeResult.useVar(),
+                vec![stateMachineFieldInfo],
+            );
+            caseBuilder.addInstruction(stateMachineFieldRef, location.clone());
+            let coroutineResultFieldRefVar = bodyBuilder.createTempValueWithType(location.clone(), resultTy.clone());
+            let coroutineResultFieldInfo = FieldInfo {
+                name: FieldId::Named(getStructFieldName(1)),
+                location: location.clone(),
+                ty: Some(resultTy.clone()),
+            };
+            let coroutineResultFieldRef = InstructionKind::FieldRef(
+                coroutineResultFieldRefVar.clone(),
+                resumeResult.useVar(),
+                vec![coroutineResultFieldInfo],
+            );
+            caseBuilder.addInstruction(coroutineResultFieldRef, location.clone());
+            let wrapperStateMachineVar = bodyBuilder.createTempValueWithType(location.clone(), coroutineTy.clone());
+            let wrapperStateMachineConstruct = InstructionKind::FunctionCall(
+                wrapperStateMachineVar.clone(),
+                CallInfo {
+                    name: name.clone(),
+                    args: vec![stateMachineFieldRefVar.useVar()],
+                    context: None,
+                    instanceRefs: Vec::new(),
+                    coroutineSpawn: false,
+                },
+            );
+            caseBuilder.addInstruction(wrapperStateMachineConstruct, location.clone());
+            let finalTupleVar = bodyBuilder.createTempValueWithType(location.clone(), finalResumeTupleTy.clone());
+            let finalTupleConstruct = InstructionKind::Tuple(
+                finalTupleVar.clone(),
+                vec![wrapperStateMachineVar.useVar(), coroutineResultFieldRefVar.useVar()],
+            );
+            caseBuilder.addInstruction(finalTupleConstruct, location.clone());
+            caseBuilder.addReturn(finalTupleVar, location.clone());
             cases.push(EnumCase {
                 index: variantIndex as u32,
                 branch: caseBuilder.getBlockId(),

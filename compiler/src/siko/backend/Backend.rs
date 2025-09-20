@@ -45,7 +45,7 @@ pub fn process(ctx: &ReportContext, runner: &mut Runner, program: Program) -> Pr
     });
     //println!("after mono\n{}", program);
     //verifyTypes(&program);
-    let program = stage!(runner, "Removing tuples", { removeTuples(&program) });
+
     //println!("after remove tuples\n{}", program);
     let program = stage!(runner, "Simplifying", {
         Simplifier::simplify(program, Config { enableInliner: false })
@@ -60,6 +60,7 @@ pub fn process(ctx: &ReportContext, runner: &mut Runner, program: Program) -> Pr
         program
     });
     //println!("after coroutine lowering\n{}", program);
+    let program = stage!(runner, "Removing tuples", { removeTuples(&program) });
     Check::new(&program).process(ctx);
     let program = stage!(runner, "Simplifying2", {
         Simplifier::simplify(program, Config { enableInliner: true })

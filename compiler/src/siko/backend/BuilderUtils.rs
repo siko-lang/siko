@@ -32,10 +32,9 @@ impl<'a> EnumBuilder<'a> {
     }
 
     pub fn generateVariant(&mut self, variantName: &QualifiedName, fieldTypes: &Vec<Type>, variantIndex: usize) {
-        let structTy = self.generateVariantStruct(fieldTypes, variantName);
         let variant = Variant {
             name: variantName.clone(),
-            items: vec![structTy],
+            items: fieldTypes.clone(),
         };
         let mut variantCtorParams = Vec::new();
         for (i, fieldTy) in fieldTypes.iter().enumerate() {
@@ -53,11 +52,6 @@ impl<'a> EnumBuilder<'a> {
         };
         self.program.functions.insert(variantCtorFn.name.clone(), variantCtorFn);
         self.variants.push(variant);
-    }
-
-    fn generateVariantStruct(&mut self, fieldTypes: &Vec<Type>, variantName: &QualifiedName) -> Type {
-        let mut builder = StructBuilder::new(self.program, self.location.clone());
-        builder.generateStruct(fieldTypes, &QualifiedName::VariantStruct(Box::new(variantName.clone())))
     }
 
     pub fn generateEnum(&mut self, location: &Location) {

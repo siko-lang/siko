@@ -4,8 +4,7 @@ use crate::siko::{
             CoroutineLowering::CoroutineInstanceInfo,
             Utils::{getLoweredCoroutineName, getMonomorphizedContext, getResumeResultType, getStateMachineEnumName},
         },
-        BuilderUtils::{EnumBuilder, StructBuilder},
-        RemoveTuples::getTuple,
+        BuilderUtils::EnumBuilder,
     },
     hir::{
         Block::BlockId,
@@ -44,7 +43,6 @@ pub struct CoroutineTransformer<'a> {
     coroutineTy: Type,
     ctx: Context,
     resumeResultTy: Type,
-    resumeResultTupleName: QualifiedName,
     resumeResultTupleTy: Type,
 }
 
@@ -56,10 +54,6 @@ impl<'a> CoroutineTransformer<'a> {
         let ctx = getMonomorphizedContext(&coroutineTy);
         let resumeResultTy = getResumeResultType(&coroutineTy);
         let resumeResultTupleTy = Type::Tuple(vec![enumTy.clone(), resumeResultTy.clone()]);
-        let resumeResultTupleName = getTuple(&resumeResultTupleTy);
-        let resumeResultTupleTy = Type::Named(resumeResultTupleName.clone(), vec![]);
-        let mut structBuilder = StructBuilder::new(program, f.kind.getLocation().clone());
-        structBuilder.generateStruct(&vec![enumTy.clone(), resumeResultTy.clone()], &resumeResultTupleName);
         CoroutineTransformer {
             f,
             queue: Vec::new(),
@@ -70,7 +64,6 @@ impl<'a> CoroutineTransformer<'a> {
             coroutineTy,
             ctx,
             resumeResultTy,
-            resumeResultTupleName,
             resumeResultTupleTy,
         }
     }
@@ -149,6 +142,7 @@ impl<'a> CoroutineTransformer<'a> {
             ),
             resumeFnName: self.f.name.clone(),
             stateMachineEnumTy: self.enumTy.clone(),
+            resumeTupleTy: self.resumeResultTupleTy.clone(),
         };
         (f, coroutineInstanceInfo)
     }
@@ -252,14 +246,7 @@ impl<'a> CoroutineTransformer<'a> {
         builder.addInstruction(variantCtorCall, location.clone());
         builder.step();
         let tupleVar = bodyBuilder.createTempValueWithType(location.clone(), self.resumeResultTupleTy.clone());
-        let tupleCallInfo = CallInfo {
-            name: self.resumeResultTupleName.clone(),
-            args: vec![variantVar.useVar(), resultVar.useVar()],
-            context: None,
-            instanceRefs: Vec::new(),
-            coroutineSpawn: false,
-        };
-        let tupleCtorCall = InstructionKind::FunctionCall(tupleVar.clone(), tupleCallInfo);
+        let tupleCtorCall = InstructionKind::Tuple(tupleVar.clone(), vec![variantVar.useVar(), resultVar.useVar()]);
         builder.addInstruction(tupleCtorCall, location.clone());
         builder.step();
         builder.addReturn(tupleVar, location.clone());
@@ -296,14 +283,7 @@ impl<'a> CoroutineTransformer<'a> {
         builder.addInstruction(variantCtorCall, location.clone());
         builder.step();
         let tupleVar = bodyBuilder.createTempValueWithType(location.clone(), self.resumeResultTupleTy.clone());
-        let tupleCallInfo = CallInfo {
-            name: self.resumeResultTupleName.clone(),
-            args: vec![variantVar.useVar(), resultVar.useVar()],
-            context: None,
-            instanceRefs: Vec::new(),
-            coroutineSpawn: false,
-        };
-        let tupleCtorCall = InstructionKind::FunctionCall(tupleVar.clone(), tupleCallInfo);
+        let tupleCtorCall = InstructionKind::Tuple(tupleVar.clone(), vec![variantVar.useVar(), resultVar.useVar()]);
         builder.addInstruction(tupleCtorCall, location.clone());
         builder.step();
         builder.addReturn(tupleVar, location.clone());

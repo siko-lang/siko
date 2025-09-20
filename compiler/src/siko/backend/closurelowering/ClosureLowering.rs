@@ -118,7 +118,6 @@ impl ClosureStore {
     }
 
     fn getClosureInfo(&mut self, args: Vec<Type>, result: Type) -> ClosureInfoPtr {
-        assert!(!result.isUnit());
         let entry = self.closures.entry(ClosureKey {
             args: args.clone(),
             result: result.clone(),
@@ -133,7 +132,6 @@ impl ClosureStore {
     }
 
     fn getClosureName(&mut self, args: Vec<Type>, result: Type) -> QualifiedName {
-        assert!(!result.isUnit());
         let ptr = self.getClosureInfo(args, result);
         let info = ptr.info.borrow();
         info.name.clone()
@@ -249,8 +247,9 @@ impl ClosureLowering for InstructionKind {
                 lhs.lower(closureStore);
                 rhs.lower(closureStore);
             }
-            InstructionKind::Tuple(_, _) => {
-                panic!("Tuple instruction found in closure lowering");
+            InstructionKind::Tuple(dest, args) => {
+                dest.lower(closureStore);
+                args.lower(closureStore);
             }
             InstructionKind::StringLiteral(v, _) => {
                 v.lower(closureStore);

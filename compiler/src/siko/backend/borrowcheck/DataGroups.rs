@@ -319,14 +319,14 @@ impl<'a> DataGroups<'a> {
     pub fn getStruct(&self, name: &QualifiedName) -> &StructDef {
         match self.dataDefs.get(name) {
             Some(DataDef::Struct(s)) => s,
-            _ => panic!("Struct not found"),
+            _ => panic!("Struct not found {}", name),
         }
     }
 
     pub fn getEnum(&self, name: &QualifiedName) -> &EnumDef {
         match self.dataDefs.get(name) {
             Some(DataDef::Enum(e)) => e,
-            _ => panic!("Enum not found"),
+            _ => panic!("Enum not found {}", name),
         }
     }
 }
