@@ -2,13 +2,14 @@ use crate::siko::{
     backend::{
         coroutinelowering::{
             CoroutineLowering::CoroutineInstanceInfo,
-            Utils::{getLoweredCoroutineName, getResumeResultType},
+            Utils::{getLoweredCoroutineName, getMonomorphizedContext, getResumeResultType},
         },
         BuilderUtils::EnumBuilder,
         RemoveTuples::getTuple,
     },
     hir::{
         Block::BlockId,
+        BlockBuilder::BlockBuilder,
         BodyBuilder::BodyBuilder,
         Function::{Function, Parameter, ResultKind},
         Instruction::{CallInfo, EnumCase, InstructionKind},
@@ -17,7 +18,14 @@ use crate::siko::{
         Variable::{Variable, VariableName},
     },
     location::Location::Location,
-    qualifiedname::QualifiedName,
+    monomorphizer::Context::Context,
+    qualifiedname::{
+        builtins::{
+            getCoroutineCoResumeResultCompletedName, getCoroutineCoResumeResultReturnedName,
+            getCoroutineCoResumeResultYieldedName,
+        },
+        QualifiedName,
+    },
 };
 
 #[derive(Clone)]
@@ -34,6 +42,7 @@ pub struct CoroutineTransformer<'a> {
     enumName: QualifiedName,
     enumTy: Type,
     coroutineTy: Type,
+    ctx: Context,
     resumeResultTy: Type,
     resumeResultTupleName: QualifiedName,
     resumeResultTupleTy: Type,
@@ -44,6 +53,7 @@ impl<'a> CoroutineTransformer<'a> {
         let enumName = QualifiedName::CoroutineStateMachineEnum(Box::new(f.name.clone()));
         let enumTy = Type::Named(enumName.clone(), vec![]);
         let coroutineTy = f.result.getCoroutineType();
+        let ctx = getMonomorphizedContext(&coroutineTy);
         let resumeResultTy = getResumeResultType(&coroutineTy);
         let resumeResultTupleTy = Type::Tuple(vec![enumTy.clone(), resumeResultTy.clone()]);
         let resumeResultTupleName = getTuple(&resumeResultTupleTy);
@@ -56,6 +66,7 @@ impl<'a> CoroutineTransformer<'a> {
             enumName,
             enumTy,
             coroutineTy,
+            ctx,
             resumeResultTy,
             resumeResultTupleName,
             resumeResultTupleTy,
@@ -63,7 +74,7 @@ impl<'a> CoroutineTransformer<'a> {
     }
 
     pub fn transform(&mut self) -> (Function, CoroutineInstanceInfo) {
-        println!("Before transformation: {}", self.f);
+        //println!("Before transformation: {}", self.f);
         let coroutineName = getLoweredCoroutineName(&self.coroutineTy);
         let mut bodyBuilder = BodyBuilder::cloneFunction(self.f);
         let mut mainEntryPoint = EntryPoint {
@@ -79,17 +90,18 @@ impl<'a> CoroutineTransformer<'a> {
             mainEntryPoint.variables.push(var);
         }
         self.entryPoints.push(mainEntryPoint);
+        let yieldCount = self.getYieldCount(&mut bodyBuilder);
         let allBlockIds = bodyBuilder.getAllBlockIds();
         self.queue.extend(allBlockIds);
         while let Some(blockId) = self.queue.pop() {
-            self.processBlock(blockId, &mut bodyBuilder);
+            self.processBlock(blockId, &mut bodyBuilder, yieldCount);
         }
-        for entry in &self.entryPoints {
-            println!(
-                "Entry point at block {} for variables {:?}",
-                entry.blockId, entry.variables
-            );
-        }
+        // for entry in &self.entryPoints {
+        //     println!(
+        //         "Entry point at block {} for variables {:?}",
+        //         entry.blockId, entry.variables
+        //     );
+        // }
         self.generateCoroutineStateMachineEnum(self.f.kind.getLocation());
         let coroVar = Variable::newWithType(
             VariableName::Arg("coro".to_string()),
@@ -107,13 +119,26 @@ impl<'a> CoroutineTransformer<'a> {
             };
             cases.push(enumCase);
         }
+        let completedBlockBuilder = bodyBuilder.createBlock();
+        let mut completedBlockBuilder = bodyBuilder.iterator(completedBlockBuilder.getBlockId());
+        self.generateCompletedReturn(
+            &mut bodyBuilder,
+            &mut completedBlockBuilder,
+            self.f.kind.getLocation(),
+            self.entryPoints.len(),
+        );
+        let enumCase = EnumCase {
+            index: self.entryPoints.len() as u32,
+            branch: completedBlockBuilder.getBlockId(),
+        };
+        cases.push(enumCase);
         let enumSwitch = InstructionKind::EnumSwitch(coroVar.useVar(), cases);
         mainBlockBuilder.addInstruction(enumSwitch, self.f.kind.getLocation());
         let mut f = self.f.clone();
         f.params = vec![Parameter::Named("coro".to_string(), self.enumTy.clone(), false)];
         f.result = ResultKind::SingleReturn(self.resumeResultTupleTy.clone());
         f.body = Some(bodyBuilder.build());
-        println!("after transformation: {}", f);
+        // println!("after transformation: {}", f);
 
         let coroutineInstanceInfo = CoroutineInstanceInfo {
             name: QualifiedName::CoroutineInstance(
@@ -126,16 +151,34 @@ impl<'a> CoroutineTransformer<'a> {
         (f, coroutineInstanceInfo)
     }
 
-    pub fn processBlock(&mut self, blockId: BlockId, bodyBuilder: &mut BodyBuilder) {
-        println!("Processing block: {:?}", blockId);
+    fn getYieldCount(&self, bodyBuilder: &mut BodyBuilder) -> usize {
+        let mut count = 0;
+        let allBlockIds = bodyBuilder.getAllBlockIds();
+        for blockId in allBlockIds {
+            let mut builder = bodyBuilder.iterator(blockId);
+            loop {
+                if let Some(instr) = builder.getInstruction() {
+                    if let InstructionKind::Yield(_, _) = &instr.kind {
+                        count += 1;
+                    }
+                    builder.step();
+                } else {
+                    break;
+                }
+            }
+        }
+        count
+    }
+
+    fn processBlock(&mut self, blockId: BlockId, bodyBuilder: &mut BodyBuilder, yieldCount: usize) {
+        //println!("Processing block: {:?}", blockId);
         let mut builder = bodyBuilder.iterator(blockId);
         loop {
             if let Some(instr) = builder.getInstruction() {
                 match &instr.kind {
                     InstructionKind::Yield(_, value) => {
-                        let retVar = bodyBuilder.createTempValueWithType(instr.location.clone(), Type::getNeverType());
                         let newBlock = builder.splitBlock(0);
-                        println!("Split at yield, created new block: {:?}", newBlock);
+                        //println!("Split at yield, created new block: {:?}", newBlock);
                         self.entryPoints.push(EntryPoint {
                             blockId: newBlock,
                             variables: vec![],
@@ -143,33 +186,41 @@ impl<'a> CoroutineTransformer<'a> {
                         let mut newBuilder = bodyBuilder.iterator(newBlock);
                         newBuilder.removeInstruction();
                         self.queue.push(newBlock);
-                        let variantVar =
-                            bodyBuilder.createTempValueWithType(instr.location.clone(), self.enumTy.clone());
-                        let variantName = getVariantName(&self.f.name, self.entryPoints.len() - 1);
-                        let callInfo = CallInfo {
-                            name: variantName,
-                            args: Vec::new(),
-                            context: None,
-                            instanceRefs: Vec::new(),
-                            coroutineSpawn: false,
-                        };
-                        let variantCtorCall = InstructionKind::FunctionCall(variantVar.clone(), callInfo);
-                        builder.addInstruction(variantCtorCall, instr.location.clone());
-                        builder.step();
-                        let tupleVar = bodyBuilder
-                            .createTempValueWithType(instr.location.clone(), self.resumeResultTupleTy.clone());
-                        let tupleCallInfo = CallInfo {
-                            name: self.resumeResultTupleName.clone(),
-                            args: vec![variantVar.useVar(), retVar.useVar()],
-                            context: None,
-                            instanceRefs: Vec::new(),
-                            coroutineSpawn: false,
-                        };
-                        let tupleCtorCall = InstructionKind::FunctionCall(tupleVar.clone(), tupleCallInfo);
-                        builder.addInstruction(tupleCtorCall, instr.location.clone());
-                        builder.step();
-                        builder
-                            .addInstruction(InstructionKind::Return(tupleVar, value.clone()), instr.location.clone());
+                        let resultCtorName = getCoroutineCoResumeResultYieldedName().monomorphized(self.ctx.clone());
+                        self.generateReturn(
+                            bodyBuilder,
+                            &mut builder,
+                            value,
+                            instr.location.clone(),
+                            self.entryPoints.len() - 1,
+                            resultCtorName,
+                        );
+                    }
+                    InstructionKind::Return(_, value) => {
+                        builder.removeInstruction();
+                        let resultCtorName = getCoroutineCoResumeResultReturnedName().monomorphized(self.ctx.clone());
+                        self.generateReturn(
+                            bodyBuilder,
+                            &mut builder,
+                            value,
+                            instr.location.clone(),
+                            yieldCount + 1,
+                            resultCtorName,
+                        );
+                    }
+                    InstructionKind::FunctionCall(dest, info) => {
+                        if info.coroutineSpawn {
+                            let coroutineName = getLoweredCoroutineName(&dest.getType());
+                            let variantName = QualifiedName::CoroutineInstance(
+                                Box::new(coroutineName),
+                                Box::new(QualifiedName::CoroutineStateMachineEnum(Box::new(info.name.clone()))),
+                            );
+                            let mut info = info.clone();
+                            info.name = variantName;
+                            info.coroutineSpawn = false;
+                            let newCall = InstructionKind::FunctionCall(dest.clone(), info);
+                            builder.replaceInstruction(newCall, instr.location.clone());
+                        }
                     }
                     _ => {}
                 };
@@ -180,6 +231,96 @@ impl<'a> CoroutineTransformer<'a> {
         }
     }
 
+    fn generateReturn(
+        &mut self,
+        bodyBuilder: &mut BodyBuilder,
+        builder: &mut BlockBuilder,
+        value: &Variable,
+        location: Location,
+        variantIndex: usize,
+        resultCtorName: QualifiedName,
+    ) {
+        let resultVar = bodyBuilder.createTempValueWithType(location.clone(), self.resumeResultTy.clone());
+        let callInfo = CallInfo {
+            name: resultCtorName,
+            args: vec![value.useVar()],
+            context: None,
+            instanceRefs: Vec::new(),
+            coroutineSpawn: false,
+        };
+        let resultCtorCall = InstructionKind::FunctionCall(resultVar.clone(), callInfo);
+        builder.addInstruction(resultCtorCall, location.clone());
+        builder.step();
+        let variantVar = bodyBuilder.createTempValueWithType(location.clone(), self.enumTy.clone());
+        let variantName = getVariantName(&self.f.name, variantIndex);
+        let callInfo = CallInfo {
+            name: variantName,
+            args: Vec::new(),
+            context: None,
+            instanceRefs: Vec::new(),
+            coroutineSpawn: false,
+        };
+        let variantCtorCall = InstructionKind::FunctionCall(variantVar.clone(), callInfo);
+        builder.addInstruction(variantCtorCall, location.clone());
+        builder.step();
+        let tupleVar = bodyBuilder.createTempValueWithType(location.clone(), self.resumeResultTupleTy.clone());
+        let tupleCallInfo = CallInfo {
+            name: self.resumeResultTupleName.clone(),
+            args: vec![variantVar.useVar(), resultVar.useVar()],
+            context: None,
+            instanceRefs: Vec::new(),
+            coroutineSpawn: false,
+        };
+        let tupleCtorCall = InstructionKind::FunctionCall(tupleVar.clone(), tupleCallInfo);
+        builder.addInstruction(tupleCtorCall, location.clone());
+        builder.step();
+        builder.addReturn(tupleVar, location.clone());
+    }
+
+    fn generateCompletedReturn(
+        &mut self,
+        bodyBuilder: &mut BodyBuilder,
+        builder: &mut BlockBuilder,
+        location: Location,
+        variantIndex: usize,
+    ) {
+        let resultVar = bodyBuilder.createTempValueWithType(location.clone(), self.resumeResultTy.clone());
+        let callInfo = CallInfo {
+            name: getCoroutineCoResumeResultCompletedName().monomorphized(self.ctx.clone()),
+            args: vec![],
+            context: None,
+            instanceRefs: Vec::new(),
+            coroutineSpawn: false,
+        };
+        let resultCtorCall = InstructionKind::FunctionCall(resultVar.clone(), callInfo);
+        builder.addInstruction(resultCtorCall, location.clone());
+        builder.step();
+        let variantVar = bodyBuilder.createTempValueWithType(location.clone(), self.enumTy.clone());
+        let variantName = getVariantName(&self.f.name, variantIndex);
+        let callInfo = CallInfo {
+            name: variantName,
+            args: Vec::new(),
+            context: None,
+            instanceRefs: Vec::new(),
+            coroutineSpawn: false,
+        };
+        let variantCtorCall = InstructionKind::FunctionCall(variantVar.clone(), callInfo);
+        builder.addInstruction(variantCtorCall, location.clone());
+        builder.step();
+        let tupleVar = bodyBuilder.createTempValueWithType(location.clone(), self.resumeResultTupleTy.clone());
+        let tupleCallInfo = CallInfo {
+            name: self.resumeResultTupleName.clone(),
+            args: vec![variantVar.useVar(), resultVar.useVar()],
+            context: None,
+            instanceRefs: Vec::new(),
+            coroutineSpawn: false,
+        };
+        let tupleCtorCall = InstructionKind::FunctionCall(tupleVar.clone(), tupleCallInfo);
+        builder.addInstruction(tupleCtorCall, location.clone());
+        builder.step();
+        builder.addReturn(tupleVar, location.clone());
+    }
+
     fn generateCoroutineStateMachineEnum(&mut self, location: Location) {
         let mut enumBuilder = EnumBuilder::new(self.enumName.clone(), self.program, location.clone());
         for (variantIndex, entryPoint) in self.entryPoints.clone().iter().enumerate() {
@@ -187,6 +328,8 @@ impl<'a> CoroutineTransformer<'a> {
             let fieldTypes = entryPoint.variables.iter().map(|v| v.getType()).collect();
             enumBuilder.generateVariant(&variantName, &fieldTypes, variantIndex);
         }
+        let variantName = getVariantName(&self.f.name, self.entryPoints.len());
+        enumBuilder.generateVariant(&variantName, &Vec::new(), self.entryPoints.len());
         enumBuilder.generateEnum(&location);
     }
 }

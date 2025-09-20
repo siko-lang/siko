@@ -210,3 +210,15 @@ pub fn getCoroutineCoResumeName() -> QualifiedName {
 pub fn getCoroutineCoResumeResultName() -> QualifiedName {
     build("Coroutine", "Result")
 }
+
+pub fn getCoroutineCoResumeResultYieldedName() -> QualifiedName {
+    build("Coroutine", "Result").add("Yielded".to_string())
+}
+
+pub fn getCoroutineCoResumeResultReturnedName() -> QualifiedName {
+    build("Coroutine", "Result").add("Returned".to_string())
+}
+
+pub fn getCoroutineCoResumeResultCompletedName() -> QualifiedName {
+    build("Coroutine", "Result").add("Completed".to_string())
+}

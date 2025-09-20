@@ -14,8 +14,7 @@ pub fn getLoweredCoroutineName(ty: &Type) -> QualifiedName {
 }
 
 pub fn getLoweredCoroutineType(ty: &Type) -> Type {
-    let ctx = getMonomorphizedContext(ty);
-    Type::Named(getLoweredCoroutineName(ty).monomorphized(ctx), vec![])
+    Type::Named(getLoweredCoroutineName(ty), Vec::new())
 }
 
 pub fn getMonomorphizedContext(ty: &Type) -> Context {
