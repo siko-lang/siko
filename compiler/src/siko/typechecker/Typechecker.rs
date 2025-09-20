@@ -493,6 +493,9 @@ impl<'a> Typechecker<'a> {
             Type::Var(TypeVar::Named(_)) => {
                 return self.lookupTraitMethod(receiverType, methodName, location);
             }
+            Type::Coroutine(_, _) => {
+                return self.lookupTraitMethod(receiverType, methodName, location);
+            }
             Type::Ptr(_) => {
                 if methodName == "isNull" {
                     // TODO: make this nicer, somehow??

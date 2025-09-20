@@ -177,10 +177,15 @@ impl<'a> ExprParser for Parser<'a> {
         let location = Location::new(self.fileId.clone(), start.merge(end));
         let mut statements = Vec::new();
         let source = self.buildExpr(
-            SimpleExpr::MethodCall(
-                Box::new(source),
-                Identifier::new("intoIterator".to_string(), location.clone()),
-                vec![],
+            SimpleExpr::Call(
+                Box::new(Expr {
+                    expr: SimpleExpr::Value(Identifier::new(
+                        "IntoIterator.intoIterator".to_string(),
+                        location.clone(),
+                    )),
+                    location: location.clone(),
+                }),
+                vec![source],
             ),
             start.clone(),
         );

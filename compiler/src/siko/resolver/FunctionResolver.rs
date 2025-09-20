@@ -129,7 +129,7 @@ impl<'a> FunctionResolver<'a> {
             ResultKind::Coroutine(coroutineTy) => IrResultKind::Coroutine(typeResolver.resolveType(&coroutineTy)),
         };
         //println!("Function params: {:?}", params);
-
+        //crate::siko::syntax::Format::format_any(f);
         let body = if let Some(body) = &f.body {
             let mut exprResolver = ExprResolver::new(
                 &name,
