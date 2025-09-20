@@ -4,7 +4,6 @@ use crate::siko::{
     backend::coroutinelowering::{CoroutineGenerator::CoroutineGenerator, CoroutineTransformer::CoroutineTransformer},
     hir::{Function::Function, FunctionGroupBuilder::FunctionGroupBuilder, Program::Program, Type::Type},
     location::Location::Location,
-    monomorphizer::Context::Context,
     qualifiedname::QualifiedName,
 };
 
@@ -45,19 +44,11 @@ impl CoroutineInfo {
         }
     }
 
-    pub fn getCoroutineName(&self) -> QualifiedName {
-        QualifiedName::Coroutine(self.key.yieldedTy.clone().into(), self.key.returnTy.clone().into())
-    }
-
     pub fn getCoroutineType(&self) -> Type {
-        Type::Named(self.getCoroutineName().monomorphized(self.getContext()), vec![])
-    }
-
-    pub fn getContext(&self) -> Context {
-        let mut ctx = Context::new();
-        ctx.args.push(self.key.yieldedTy.clone());
-        ctx.args.push(self.key.returnTy.clone());
-        ctx
+        Type::Coroutine(
+            Box::new(self.key.yieldedTy.clone()),
+            Box::new(self.key.returnTy.clone()),
+        )
     }
 }
 

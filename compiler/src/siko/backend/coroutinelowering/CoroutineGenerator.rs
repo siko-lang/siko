@@ -1,8 +1,13 @@
 use crate::siko::{
     backend::{
-        coroutinelowering::CoroutineLowering::CoroutineInfo,
+        coroutinelowering::{
+            CoroutineLowering::CoroutineInfo,
+            Utils::{
+                getLoweredCoroutineName, getLoweredCoroutineType, getMonomorphizedContext, getResumeResultType,
+                getResumeTupleType,
+            },
+        },
         BuilderUtils::{getStructFieldName, EnumBuilder},
-        RemoveTuples::getTuple,
     },
     hir::{
         BodyBuilder::BodyBuilder,
@@ -14,10 +19,7 @@ use crate::siko::{
         Variable::{Variable, VariableName},
     },
     location::Location::Location,
-    qualifiedname::{
-        builtins::{getCoroutineCoResumeName, getCoroutineCoResumeResultName},
-        QualifiedName,
-    },
+    qualifiedname::{builtins::getCoroutineCoResumeName, QualifiedName},
 };
 
 pub struct CoroutineGenerator<'a> {
@@ -31,13 +33,12 @@ impl<'a> CoroutineGenerator<'a> {
     }
 
     pub fn generateResumeFunctionForCoroutine(&self) -> Function {
-        let ctx = self.coroutineInfo.getContext();
+        let ctx = getMonomorphizedContext(&self.coroutineInfo.getCoroutineType());
         let resumeName = getCoroutineCoResumeName().monomorphized(ctx.clone());
         let location = Location::empty();
-        let coroutineTy = self.coroutineInfo.getCoroutineType();
-        let resultTy = Type::Named(getCoroutineCoResumeResultName().monomorphized(ctx), vec![]);
-        let tupleStructName = getTuple(&Type::Tuple(vec![coroutineTy.clone(), resultTy.clone()]));
-        let finalResumeTupleTy = Type::Named(tupleStructName, vec![]);
+        let coroutineTy = getLoweredCoroutineType(&self.coroutineInfo.getCoroutineType());
+        let resultTy = getResumeResultType(&self.coroutineInfo.getCoroutineType());
+        let finalResumeTupleTy = getResumeTupleType(&self.coroutineInfo.getCoroutineType());
 
         let mut params = Vec::new();
         params.push(Parameter::Named("coro".to_string(), coroutineTy.clone(), false));
@@ -103,21 +104,21 @@ impl<'a> CoroutineGenerator<'a> {
             constraintContext: ConstraintContext::new(),
             attributes: Attributes::new(),
         };
-        println!(
-            "Generated resume function for coroutine {}\n{}",
-            self.coroutineInfo.key, f
-        );
+        // println!(
+        //     "Generated resume function for coroutine {}\n{}",
+        //     self.coroutineInfo.key, f
+        // );
         f
     }
 
     pub fn generateEnumForCoroutine(&mut self, location: &Location) -> Type {
-        let enumName = self.coroutineInfo.getCoroutineName();
+        let enumName = getLoweredCoroutineName(&self.coroutineInfo.getCoroutineType());
         let mut builder = EnumBuilder::new(enumName.clone(), self.program, location.clone());
         for (variantIndex, (name, instance)) in self.coroutineInfo.instances.iter().enumerate() {
             let fieldTypes = vec![instance.stateMachineEnumTy.clone()];
             builder.generateVariant(name, &fieldTypes, variantIndex);
         }
-        println!("Generating coroutine enum: {}", enumName);
+        //println!("Generating coroutine enum: {}", enumName);
         builder.generateEnum(location);
         builder.getEnumType()
     }

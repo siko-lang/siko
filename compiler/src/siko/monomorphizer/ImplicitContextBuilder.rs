@@ -253,6 +253,10 @@ impl<'a, 'b> ImplicitContextBuilder<'a, 'b> {
                             builder.removeInstruction();
                             continue;
                         }
+                        InstructionKind::DeclareVar(_, _) => {
+                            builder.removeInstruction();
+                            continue;
+                        }
                         _ => {}
                     }
                     builder.step();

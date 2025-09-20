@@ -25,8 +25,6 @@ pub enum QualifiedName {
     CoroutineStateMachineEnum(Box<QualifiedName>),             // yielding function name
     CoroutineStateMachineVariant(Box<QualifiedName>, u32),     // yielding function name, entry index
     CoroutineStateMachineResume(Box<QualifiedName>),           // yielding function name
-    CoroutineEntryPointEnum(Box<QualifiedName>),               // yielding function name
-    CoroutineEntryPointVariant(Box<QualifiedName>, u32),       // yielding function name, entry
 }
 
 impl QualifiedName {
@@ -60,12 +58,6 @@ impl QualifiedName {
             QualifiedName::CoroutineStateMachineResume(_) => {
                 panic!("CoroutineStateMachineResume names are not supported")
             }
-            QualifiedName::CoroutineEntryPointEnum(_) => {
-                panic!("CoroutineEntryPointEnum names are not supported")
-            }
-            QualifiedName::CoroutineEntryPointVariant(_, _) => {
-                panic!("CoroutineEntryPointVariant names are not supported")
-            }
         }
     }
 
@@ -90,12 +82,6 @@ impl QualifiedName {
             }
             QualifiedName::CoroutineStateMachineResume(_) => {
                 panic!("CoroutineStateMachineResume names are not supported")
-            }
-            QualifiedName::CoroutineEntryPointEnum(_) => {
-                panic!("CoroutineEntryPointEnum names are not supported")
-            }
-            QualifiedName::CoroutineEntryPointVariant(_, _) => {
-                panic!("CoroutineEntryPointVariant names are not supported")
             }
         }
     }
@@ -153,12 +139,6 @@ impl QualifiedName {
             QualifiedName::CoroutineStateMachineResume(_) => {
                 panic!("CoroutineStateMachineResume names are not supported")
             }
-            QualifiedName::CoroutineEntryPointEnum(_) => {
-                panic!("CoroutineEntryPointEnum names are not supported")
-            }
-            QualifiedName::CoroutineEntryPointVariant(_, _) => {
-                panic!("CoroutineEntryPointVariant names are not supported")
-            }
         }
     }
 
@@ -214,8 +194,6 @@ impl Display for QualifiedName {
             QualifiedName::CoroutineStateMachineEnum(p) => write!(f, "{}.coroutine_state_machine", p),
             QualifiedName::CoroutineStateMachineVariant(p, index) => write!(f, "{}.coroutine_entry/{}", p, index),
             QualifiedName::CoroutineStateMachineResume(p) => write!(f, "{}.coroutine_resume", p),
-            QualifiedName::CoroutineEntryPointEnum(p) => write!(f, "{}.coroutine_entry_point", p),
-            QualifiedName::CoroutineEntryPointVariant(p, index) => write!(f, "{}.coroutine_entry_point/{}", p, index),
         }
     }
 }

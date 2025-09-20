@@ -149,13 +149,10 @@ impl ResultKind {
         }
     }
 
-    pub fn getCoroutineName(&self) -> QualifiedName {
+    pub fn getCoroutineType(&self) -> Type {
         match self {
-            ResultKind::Coroutine(ty) => {
-                let (yielded, returnTy) = ty.clone().unpackCoroutine().expect("getCoroutineName: not a coroutine");
-                QualifiedName::Coroutine(Box::new(yielded), Box::new(returnTy))
-            }
-            _ => panic!("getCoroutineName: not a coroutine"),
+            ResultKind::Coroutine(ty) => ty.clone(),
+            _ => panic!("getCoroutineType: not a coroutine"),
         }
     }
 
