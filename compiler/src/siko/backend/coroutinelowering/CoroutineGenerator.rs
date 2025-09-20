@@ -7,7 +7,7 @@ use crate::siko::{
                 getResumeTupleType,
             },
         },
-        BuilderUtils::{getStructFieldName, EnumBuilder},
+        BuilderUtils::{getStructFieldName, EnumBuilder, StructBuilder},
     },
     hir::{
         BodyBuilder::BodyBuilder,
@@ -19,7 +19,7 @@ use crate::siko::{
         Variable::{Variable, VariableName},
     },
     location::Location::Location,
-    qualifiedname::{builtins::getCoroutineCoResumeName, QualifiedName},
+    qualifiedname::builtins::getCoroutineCoResumeName,
 };
 
 pub struct CoroutineGenerator<'a> {
@@ -32,14 +32,18 @@ impl<'a> CoroutineGenerator<'a> {
         Self { coroutineInfo, program }
     }
 
-    pub fn generateResumeFunctionForCoroutine(&self) -> Function {
+    pub fn generateResumeFunctionForCoroutine(&mut self) -> Function {
         let ctx = getMonomorphizedContext(&self.coroutineInfo.getCoroutineType());
         let resumeName = getCoroutineCoResumeName().monomorphized(ctx.clone());
         let location = Location::empty();
         let coroutineTy = getLoweredCoroutineType(&self.coroutineInfo.getCoroutineType());
         let resultTy = getResumeResultType(&self.coroutineInfo.getCoroutineType());
         let finalResumeTupleTy = getResumeTupleType(&self.coroutineInfo.getCoroutineType());
-
+        let mut structBuilder = StructBuilder::new(self.program, location.clone());
+        structBuilder.generateStruct(
+            &vec![coroutineTy.clone(), resultTy.clone()],
+            &finalResumeTupleTy.getName().expect("Failed to get name"),
+        );
         let mut params = Vec::new();
         params.push(Parameter::Named("coro".to_string(), coroutineTy.clone(), false));
         let mut bodyBuilder = BodyBuilder::new();
@@ -57,7 +61,7 @@ impl<'a> CoroutineGenerator<'a> {
         let mut cases = Vec::new();
         for (variantIndex, (name, instance)) in self.coroutineInfo.instances.iter().enumerate() {
             let mut caseBuilder = bodyBuilder.createBlock();
-            let structTy = Type::Named(QualifiedName::VariantStruct(Box::new(name.clone())), Vec::new());
+            let structTy = Type::Named(name.clone(), Vec::new());
             let transformVar = bodyBuilder.createTempValueWithType(location.clone(), structTy.clone());
             let transform = InstructionKind::Transform(
                 transformVar.clone(),

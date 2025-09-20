@@ -178,7 +178,9 @@ impl Display for QualifiedName {
             }
             QualifiedName::VariantStruct(p) => write!(f, "{}.variant_struct", p),
             QualifiedName::CoroutineStateMachineEnum(p) => write!(f, "{}.coroutine_state_machine", p),
-            QualifiedName::CoroutineStateMachineVariant(p, index) => write!(f, "{}.coroutine_entry/{}", p, index),
+            QualifiedName::CoroutineStateMachineVariant(p, index) => {
+                write!(f, "{}.coroutine_state_machine_variant/{}", p, index)
+            }
             QualifiedName::CoroutineStateMachineResume(p) => write!(f, "{}.coroutine_resume", p),
         }
     }

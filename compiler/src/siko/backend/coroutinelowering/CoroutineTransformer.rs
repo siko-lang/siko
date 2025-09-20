@@ -2,9 +2,9 @@ use crate::siko::{
     backend::{
         coroutinelowering::{
             CoroutineLowering::CoroutineInstanceInfo,
-            Utils::{getLoweredCoroutineName, getMonomorphizedContext, getResumeResultType},
+            Utils::{getLoweredCoroutineName, getMonomorphizedContext, getResumeResultType, getStateMachineEnumName},
         },
-        BuilderUtils::EnumBuilder,
+        BuilderUtils::{EnumBuilder, StructBuilder},
         RemoveTuples::getTuple,
     },
     hir::{
@@ -50,7 +50,7 @@ pub struct CoroutineTransformer<'a> {
 
 impl<'a> CoroutineTransformer<'a> {
     pub fn new(f: &'a Function, program: &'a mut Program) -> CoroutineTransformer<'a> {
-        let enumName = QualifiedName::CoroutineStateMachineEnum(Box::new(f.name.clone()));
+        let enumName = getStateMachineEnumName(&f.name);
         let enumTy = Type::Named(enumName.clone(), vec![]);
         let coroutineTy = f.result.getCoroutineType();
         let ctx = getMonomorphizedContext(&coroutineTy);
@@ -58,6 +58,8 @@ impl<'a> CoroutineTransformer<'a> {
         let resumeResultTupleTy = Type::Tuple(vec![enumTy.clone(), resumeResultTy.clone()]);
         let resumeResultTupleName = getTuple(&resumeResultTupleTy);
         let resumeResultTupleTy = Type::Named(resumeResultTupleName.clone(), vec![]);
+        let mut structBuilder = StructBuilder::new(program, f.kind.getLocation().clone());
+        structBuilder.generateStruct(&vec![enumTy.clone(), resumeResultTy.clone()], &resumeResultTupleName);
         CoroutineTransformer {
             f,
             queue: Vec::new(),
@@ -207,20 +209,6 @@ impl<'a> CoroutineTransformer<'a> {
                             yieldCount + 1,
                             resultCtorName,
                         );
-                    }
-                    InstructionKind::FunctionCall(dest, info) => {
-                        if info.coroutineSpawn {
-                            let coroutineName = getLoweredCoroutineName(&dest.getType());
-                            let variantName = QualifiedName::CoroutineInstance(
-                                Box::new(coroutineName),
-                                Box::new(QualifiedName::CoroutineStateMachineEnum(Box::new(info.name.clone()))),
-                            );
-                            let mut info = info.clone();
-                            info.name = variantName;
-                            info.coroutineSpawn = false;
-                            let newCall = InstructionKind::FunctionCall(dest.clone(), info);
-                            builder.replaceInstruction(newCall, instr.location.clone());
-                        }
                     }
                     _ => {}
                 };

@@ -3,8 +3,8 @@ use std::{collections::BTreeMap, fmt::Debug, fmt::Display};
 
 use crate::siko::{
     backend::coroutinelowering::{
-        CoroutineGenerator::CoroutineGenerator, CoroutineTransformer::CoroutineTransformer,
-        Utils::getLoweredCoroutineType,
+        CoroutineCreateLowering::lowerCoroutineCreate, CoroutineGenerator::CoroutineGenerator,
+        CoroutineTransformer::CoroutineTransformer, Utils::getLoweredCoroutineType,
     },
     hir::{
         Block::Block,
@@ -86,12 +86,12 @@ impl<'a> CoroutineStore<'a> {
             //println!("CoroutineStore: processing function group: {:?}", group.items);
             for fnName in &group.items {
                 let func = self.program.functions.get(&fnName).unwrap().clone();
+                let func = lowerCoroutineCreate(&func);
                 if self.isCoroutineFunction(&func) {
                     let mut transformer = CoroutineTransformer::new(&func, self.program);
                     let (mut f, coroutineInstanceInfo) = transformer.transform();
                     f.lower();
                     self.program.functions.insert(f.name.clone(), f);
-
                     let key = coroutineInstanceInfo.name.getCoroutineKey();
                     let coroutineKey = CoroutineKey {
                         yieldedTy: key.0,

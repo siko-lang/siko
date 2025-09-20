@@ -199,6 +199,7 @@ pub fn processInstruction(
             mono.addKey(Key::Function(name.clone(), ty_args, resolution, resolvedImpls));
             let mut callInfo = CallInfo::new(fn_name, info.args.clone());
             callInfo.context = callCtx;
+            callInfo.coroutineSpawn = info.coroutineSpawn;
             InstructionKind::FunctionCall(dest.clone(), callInfo)
         }
         InstructionKind::Ref(dest, src) => {

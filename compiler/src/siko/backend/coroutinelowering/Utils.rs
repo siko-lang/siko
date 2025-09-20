@@ -41,3 +41,7 @@ pub fn getResumeTupleType(ty: &Type) -> Type {
     let finalResumeTupleTy = Type::Named(tupleStructName, vec![]);
     finalResumeTupleTy
 }
+
+pub fn getStateMachineEnumName(fName: &QualifiedName) -> QualifiedName {
+    QualifiedName::CoroutineStateMachineEnum(Box::new(fName.clone()))
+}

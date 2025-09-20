@@ -56,41 +56,8 @@ impl<'a> EnumBuilder<'a> {
     }
 
     fn generateVariantStruct(&mut self, fieldTypes: &Vec<Type>, variantName: &QualifiedName) -> Type {
-        let mut fields = Vec::new();
-        for fieldTy in fieldTypes {
-            fields.push(Field {
-                name: getStructFieldName(fields.len() as u32),
-                ty: fieldTy.clone(),
-            });
-        }
-        let structName = QualifiedName::VariantStruct(Box::new(variantName.clone()));
-        let structTy = Type::Named(structName.clone(), Vec::new());
-        let variantStruct = Struct {
-            name: structName.clone(),
-            originalName: format!("{}", variantName),
-            fields: fields,
-            location: self.location.clone(),
-            ty: structTy.clone(),
-            methods: Vec::new(),
-        };
-        //println!("EnumBuilder: variant struct: {}", variantStruct);
-        self.program.structs.insert(variantStruct.name.clone(), variantStruct);
-        let mut structCtorParams = Vec::new();
-        for (i, fieldTy) in fieldTypes.iter().enumerate() {
-            let argName = getStructFieldName(i as u32);
-            structCtorParams.push(Parameter::Named(argName, fieldTy.clone(), false));
-        }
-        let structCtorFn = Function {
-            name: structName.clone(),
-            params: structCtorParams,
-            result: ResultKind::SingleReturn(Type::Named(structName, Vec::new())),
-            body: None,
-            constraintContext: ConstraintContext::new(),
-            kind: FunctionKind::StructCtor,
-            attributes: Attributes::new(),
-        };
-        self.program.functions.insert(structCtorFn.name.clone(), structCtorFn);
-        structTy
+        let mut builder = StructBuilder::new(self.program, self.location.clone());
+        builder.generateStruct(fieldTypes, &QualifiedName::VariantStruct(Box::new(variantName.clone())))
     }
 
     pub fn generateEnum(&mut self, location: &Location) {
@@ -107,5 +74,52 @@ impl<'a> EnumBuilder<'a> {
 
     pub fn getEnumType(&self) -> Type {
         Type::Named(self.enumName.clone(), Vec::new())
+    }
+}
+
+pub struct StructBuilder<'a> {
+    program: &'a mut Program,
+    location: Location,
+}
+
+impl<'a> StructBuilder<'a> {
+    pub fn new(program: &'a mut Program, location: Location) -> StructBuilder<'a> {
+        StructBuilder { program, location }
+    }
+
+    pub fn generateStruct(&mut self, fieldTypes: &Vec<Type>, structName: &QualifiedName) -> Type {
+        let mut fields = Vec::new();
+        for fieldTy in fieldTypes {
+            fields.push(Field {
+                name: getStructFieldName(fields.len() as u32),
+                ty: fieldTy.clone(),
+            });
+        }
+        let structTy = Type::Named(structName.clone(), Vec::new());
+        let structDef = Struct {
+            name: structName.clone(),
+            originalName: format!("{}", structName.clone()),
+            fields: fields,
+            location: self.location.clone(),
+            ty: structTy.clone(),
+            methods: Vec::new(),
+        };
+        self.program.structs.insert(structDef.name.clone(), structDef);
+        let mut structCtorParams = Vec::new();
+        for (i, fieldTy) in fieldTypes.iter().enumerate() {
+            let argName = getStructFieldName(i as u32);
+            structCtorParams.push(Parameter::Named(argName, fieldTy.clone(), false));
+        }
+        let structCtorFn = Function {
+            name: structName.clone(),
+            params: structCtorParams,
+            result: ResultKind::SingleReturn(Type::Named(structName.clone(), Vec::new())),
+            body: None,
+            constraintContext: ConstraintContext::new(),
+            kind: FunctionKind::StructCtor,
+            attributes: Attributes::new(),
+        };
+        self.program.functions.insert(structCtorFn.name.clone(), structCtorFn);
+        structTy
     }
 }
