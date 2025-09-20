@@ -2,7 +2,7 @@ use core::panic;
 use std::fmt::{Debug, Display};
 
 use crate::siko::{
-    hir::Type::{formatTypes, Type},
+    hir::Type::{formatTypes, formatTypesBracket, Type},
     monomorphizer::Context::Context,
 };
 pub mod builtins;
@@ -10,7 +10,6 @@ pub mod builtins;
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum QualifiedName {
     Module(String),
-    Instance(Box<QualifiedName>, u64),
     Item(Box<QualifiedName>, String),
     Monomorphized(Box<QualifiedName>, Context),
     Canonical(Box<QualifiedName>, Box<QualifiedName>, Vec<Type>),
@@ -39,7 +38,6 @@ impl QualifiedName {
     pub fn module(&self) -> QualifiedName {
         match &self {
             QualifiedName::Module(_) => self.clone(),
-            QualifiedName::Instance(p, _) => p.module(),
             QualifiedName::Item(p, _) => p.module(),
             QualifiedName::Monomorphized(p, _) => p.module(),
             QualifiedName::Canonical(p, _, _) => p.module(),
@@ -64,7 +62,6 @@ impl QualifiedName {
     pub fn base(&self) -> QualifiedName {
         match &self {
             QualifiedName::Module(_) => self.clone(),
-            QualifiedName::Instance(p, _) => *p.clone(),
             QualifiedName::Item(p, _) => *p.clone(),
             QualifiedName::Monomorphized(p, _) => *p.clone(),
             QualifiedName::Canonical(p, _, _) => *p.clone(),
@@ -83,13 +80,6 @@ impl QualifiedName {
             QualifiedName::CoroutineStateMachineResume(_) => {
                 panic!("CoroutineStateMachineResume names are not supported")
             }
-        }
-    }
-
-    pub fn getTraitMemberName(&self) -> QualifiedName {
-        match self {
-            QualifiedName::Instance(p, _) => *p.clone(),
-            _ => panic!("getTraitMemberName called on non-instance QualifiedName"),
         }
     }
 
@@ -116,9 +106,6 @@ impl QualifiedName {
     pub fn getShortName(&self) -> String {
         match &self {
             QualifiedName::Module(name) => name.clone(),
-            QualifiedName::Instance(_, _) => {
-                panic!("Instance names are not supported")
-            }
             QualifiedName::Item(_, name) => name.clone(),
             QualifiedName::Monomorphized(p, _) => p.getShortName(),
             QualifiedName::Canonical(_, _, _) => {
@@ -169,13 +156,12 @@ impl Display for QualifiedName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
             QualifiedName::Module(i) => write!(f, "{}", i),
-            QualifiedName::Instance(p, i) => write!(f, "{}/{}", p, i),
             QualifiedName::Item(p, i) => write!(f, "{}.{}", p, i),
             QualifiedName::Monomorphized(p, context) => {
                 write!(f, "{}#{}", p, context)
             }
             QualifiedName::Canonical(p, t, types) => {
-                write!(f, "{}/{}[{}]", p, t, formatTypes(types))
+                write!(f, "{}/{}{}", p, t, formatTypesBracket(types))
             }
             QualifiedName::Lambda(p, index) => write!(f, "{}.lambda/{}", p, index),
             QualifiedName::Closure(params, result) => {

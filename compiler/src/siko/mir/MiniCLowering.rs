@@ -109,7 +109,11 @@ impl<'a> MinicBuilder<'a> {
                     minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::Call(dest, name, args) => {
-                    let f = self.program.functions.get(name).expect("Function not found");
+                    let f = self
+                        .program
+                        .functions
+                        .get(name)
+                        .expect(&format!("Function not found: {}", name));
                     let name = if let FunctionKind::Extern(ExternKind::C(info)) = &f.kind {
                         info.name.clone()
                     } else {
@@ -453,6 +457,7 @@ impl<'a> MinicBuilder<'a> {
         }
         let minicStruct = LStruct {
             name: s.name.clone(),
+            originalName: s.originalName.clone(),
             fields: fields,
             size: s.size,
             alignment: s.alignment,

@@ -3,6 +3,7 @@ use super::Type::Type;
 #[derive(Clone)]
 pub struct Struct {
     pub name: String,
+    pub originalName: String,
     pub fields: Vec<Field>,
     pub size: u32,
     pub alignment: u32,

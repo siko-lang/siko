@@ -19,6 +19,7 @@ pub struct MethodInfo {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Struct {
     pub name: QualifiedName,
+    pub originalName: String,
     pub location: Location,
     pub ty: Type,
     pub fields: Vec<Field>,
@@ -29,6 +30,7 @@ impl Struct {
     pub fn new(name: QualifiedName, ty: Type, location: Location) -> Struct {
         Struct {
             name: name,
+            originalName: String::new(),
             ty: ty,
             fields: Vec::new(),
             methods: Vec::new(),

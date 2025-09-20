@@ -374,7 +374,7 @@ pub fn removeTuples(program: &Program) -> Program {
     result.enums = program.enums.removeTuples(&mut ctx);
     for tuple in ctx.tuples {
         let name = getTuple(&tuple);
-        if let Type::Tuple(args) = tuple {
+        if let Type::Tuple(args) = &tuple {
             let mut fields = Vec::new();
             let mut params = Vec::new();
             for (index, arg) in args.iter().enumerate() {
@@ -394,6 +394,7 @@ pub fn removeTuples(program: &Program) -> Program {
             }
             let tupleStruct = Struct {
                 name: name.clone(),
+                originalName: format!("{}", tuple),
                 location: Location::empty(),
                 ty: Type::Named(name.clone(), Vec::new()),
                 fields: fields,

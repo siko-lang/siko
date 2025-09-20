@@ -4,7 +4,7 @@ use std::{collections::BTreeMap, fmt::Display};
 use crate::siko::{
     hir::{
         Instruction::SyntaxBlockId,
-        Type::{formatTypes, Type},
+        Type::{formatTypesBracket, Type},
     },
     location::Report::{Report, ReportContext},
     monomorphizer::Handler::HandlerResolution,
@@ -33,7 +33,7 @@ impl Display for Context {
         if self.args.is_empty() {
             write!(f, "")?;
         } else {
-            write!(f, "{}", formatTypes(&self.args))?;
+            write!(f, "{}", formatTypesBracket(&self.args))?;
         }
         if !self.handlerResolution.isEmpty() {
             write!(f, " handlers: {{{}}}", self.handlerResolution)?;

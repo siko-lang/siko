@@ -5,6 +5,7 @@ use super::Type::Type;
 #[derive(Clone)]
 pub struct Struct {
     pub name: String,
+    pub originalName: String,
     pub fields: Vec<Field>,
     pub size: u32,
     pub alignment: u32,
@@ -19,6 +20,7 @@ pub struct Field {
 #[derive(Clone)]
 pub struct Union {
     pub name: String,
+    pub originalName: String,
     pub variants: Vec<Variant>,
     pub size: u32,
     pub alignment: u32,
@@ -28,6 +30,7 @@ pub struct Union {
 #[derive(Clone)]
 pub struct Variant {
     pub name: String,
+    pub originalName: String,
     pub ty: Type,
 }
 

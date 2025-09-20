@@ -462,8 +462,12 @@ impl Display for Type {
                 }
             }
             Type::Tuple(args) => {
-                let args: Vec<String> = args.iter().map(|t| format!("{}", t)).collect();
-                write!(f, "({})", args.join(", "))
+                if args.len() == 1 {
+                    write!(f, "({},)", args[0])
+                } else {
+                    let args: Vec<String> = args.iter().map(|t| format!("{}", t)).collect();
+                    write!(f, "({})", args.join(", "))
+                }
             }
             Type::Function(args, result) => {
                 let args: Vec<String> = args.iter().map(|t| format!("{}", t)).collect();
@@ -487,6 +491,11 @@ impl Display for Type {
 pub fn formatTypes(types: &Vec<Type>) -> String {
     let types: Vec<String> = types.iter().map(|t| format!("{}", t)).collect();
     format!("({})", types.join(", "))
+}
+
+pub fn formatTypesBracket(types: &Vec<Type>) -> String {
+    let types: Vec<String> = types.iter().map(|t| format!("{}", t)).collect();
+    format!("[{}]", types.join(", "))
 }
 
 pub fn normalizeTypes(types: &Vec<Type>) -> Vec<Type> {

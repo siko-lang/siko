@@ -92,6 +92,7 @@ impl Program {
             };
             let s = Struct {
                 name: n.clone(),
+                originalName: u.originalName.clone(),
                 fields: vec![tag.clone(), payload],
                 size: u.size,
                 alignment: u.alignment,
@@ -105,6 +106,7 @@ impl Program {
                 };
                 let s = Struct {
                     name: v.name.clone(),
+                    originalName: format!("{}::{}", u.originalName, v.originalName),
                     fields: vec![tag.clone(), payload],
                     size: u.size,
                     alignment: u.alignment,

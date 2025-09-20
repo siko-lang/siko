@@ -70,6 +70,7 @@ impl MiniCGenerator {
 
     fn dumpStruct(&self, s: &Struct, buf: &mut File) -> io::Result<()> {
         let name = getStructName(&s.name);
+        writeln!(buf, "// Original name: {}", s.originalName)?;
         writeln!(buf, "struct {} {{", name)?;
         for (index, field) in s.fields.iter().enumerate() {
             if let Type::Array(ty, size) = &field.ty {

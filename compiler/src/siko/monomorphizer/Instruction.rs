@@ -196,7 +196,6 @@ pub fn processInstruction(
                 }
             }
             let fn_name = mono.getMonoName(&name, &ty_args, resolution.clone(), resolvedImpls.clone());
-            //println!("MONO CALL: {}", fn_name);
             mono.addKey(Key::Function(name.clone(), ty_args, resolution, resolvedImpls));
             let mut callInfo = CallInfo::new(fn_name, info.args.clone());
             callInfo.context = callCtx;

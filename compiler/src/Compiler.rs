@@ -3,7 +3,7 @@ use std::{env::args, fs, process::Command};
 use crate::{
     siko::{
         backend::{Backend, TypeVerifier::verifyTypes},
-        hir_lowering::Lowering::lowerProgram,
+        hir_lowering::Lowering::Lowering,
         location::{FileManager::FileManager, Report::ReportContext},
         minic::Generator::MiniCGenerator,
         parser::Parser::Parser,
@@ -224,7 +224,10 @@ impl Compiler {
         //println!("after typechecker\n{}", program);
         let program = Backend::process(&ctx, &mut runner, program);
         //println!("after backend\n{}", program);
-        let mut mir_program = stage!(runner, "Lowering to MIR", { lowerProgram(&program) });
+        let mut mir_program = stage!(runner, "Lowering to MIR", {
+            let lowering = Lowering::new(program);
+            lowering.lowerProgram()
+        });
         //println!("mir\n{}", mir_program);
         stage!(runner, "Processing MIR", { mir_program.process() });
         let c_program = stage!(runner, "Converting MIR to MiniC", { mir_program.toMiniC() });

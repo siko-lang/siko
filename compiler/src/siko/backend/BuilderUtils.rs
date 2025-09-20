@@ -67,6 +67,7 @@ impl<'a> EnumBuilder<'a> {
         let structTy = Type::Named(structName.clone(), Vec::new());
         let variantStruct = Struct {
             name: structName.clone(),
+            originalName: format!("{}", variantName),
             fields: fields,
             location: self.location.clone(),
             ty: structTy.clone(),
