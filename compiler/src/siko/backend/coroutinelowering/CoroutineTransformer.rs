@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use crate::siko::{
     backend::{
         coroutinelowering::{
@@ -12,7 +14,7 @@ use crate::siko::{
         BodyBuilder::BodyBuilder,
         ConstraintContext::ConstraintContext,
         Function::{Attributes, Function, FunctionKind, Parameter, ResultKind},
-        Instruction::{CallInfo, EnumCase, InstructionKind},
+        Instruction::{CallInfo, EnumCase, FieldId, FieldInfo, InstructionKind, TransformInfo},
         Program::Program,
         Type::Type,
         Variable::{Variable, VariableName},
@@ -45,6 +47,7 @@ pub struct CoroutineTransformer<'a> {
     ctx: Context,
     resumeResultTy: Type,
     resumeResultTupleTy: Type,
+    argReplacements: BTreeMap<VariableName, Variable>,
 }
 
 impl<'a> CoroutineTransformer<'a> {
@@ -66,6 +69,7 @@ impl<'a> CoroutineTransformer<'a> {
             ctx,
             resumeResultTy,
             resumeResultTupleTy,
+            argReplacements: BTreeMap::new(),
         }
     }
 
@@ -78,12 +82,10 @@ impl<'a> CoroutineTransformer<'a> {
             variables: Vec::new(),
         };
         for param in &self.f.params {
-            let var = Variable::newWithType(
-                VariableName::Arg(param.getName()),
-                self.f.kind.getLocation(),
-                param.getType(),
-            );
-            mainEntryPoint.variables.push(var);
+            let newArg = bodyBuilder.createTempValueWithType(self.f.kind.getLocation(), param.getType());
+            self.argReplacements
+                .insert(VariableName::Arg(param.getName()), newArg.useVar());
+            mainEntryPoint.variables.push(newArg);
         }
         self.entryPoints.push(mainEntryPoint);
         let yieldCount = self.getYieldCount(&mut bodyBuilder);
@@ -107,6 +109,9 @@ impl<'a> CoroutineTransformer<'a> {
         let mut mainBlockBuilder = bodyBuilder.iterator(BlockId::first());
         let newMain = mainBlockBuilder.splitBlock(0);
         self.entryPoints[0].blockId = newMain;
+
+        self.addRestoreForArguments(&mut bodyBuilder, &coroVar, newMain);
+
         let mut cases = Vec::new();
         for (variantIndex, entryPoint) in self.entryPoints.clone().iter().enumerate() {
             let enumCase = EnumCase {
@@ -152,6 +157,39 @@ impl<'a> CoroutineTransformer<'a> {
         (f, isCompletedFn, coroutineInstanceInfo)
     }
 
+    fn addRestoreForArguments(&mut self, bodyBuilder: &mut BodyBuilder, coroVar: &Variable, newMain: BlockId) {
+        let location = self.f.kind.getLocation();
+        let mut builder = bodyBuilder.iterator(newMain);
+        if !self.entryPoints[0].variables.is_empty() {
+            let argumentTypes: Vec<Type> = self.entryPoints[0].variables.iter().map(|v| v.getType()).collect();
+            let tupleType = Type::Tuple(argumentTypes);
+            let transformVar = bodyBuilder.createTempValueWithType(location.clone(), tupleType.clone());
+            let transform = InstructionKind::Transform(
+                transformVar.clone(),
+                coroVar.useVar(),
+                TransformInfo { variantIndex: 0 },
+            );
+            builder.addInstruction(transform, location.clone());
+            builder.step();
+
+            for (argIndex, variable) in self.entryPoints[0].variables.iter().enumerate() {
+                let fieldInfo = FieldInfo {
+                    name: FieldId::Indexed(argIndex as u32),
+                    location: location.clone(),
+                    ty: Some(variable.getType()),
+                };
+                let extractedVar = bodyBuilder.createTempValueWithType(location.clone(), variable.getType());
+                let fieldRef = InstructionKind::FieldRef(extractedVar.clone(), transformVar.useVar(), vec![fieldInfo]);
+                builder.addInstruction(fieldRef, location.clone());
+                builder.step();
+
+                let assignInstruction = InstructionKind::Assign(variable.clone(), extractedVar);
+                builder.addInstruction(assignInstruction, location.clone());
+                builder.step();
+            }
+        }
+    }
+
     fn getYieldCount(&self, bodyBuilder: &mut BodyBuilder) -> usize {
         let mut count = 0;
         let allBlockIds = bodyBuilder.getAllBlockIds();
@@ -177,6 +215,12 @@ impl<'a> CoroutineTransformer<'a> {
         loop {
             if let Some(instr) = builder.getInstruction() {
                 match &instr.kind {
+                    InstructionKind::Assign(var, value) => {
+                        if let Some(replacement) = self.argReplacements.get(&value.name()) {
+                            let newAssign = InstructionKind::Assign(var.clone(), replacement.clone());
+                            builder.replaceInstruction(newAssign, instr.location.clone());
+                        }
+                    }
                     InstructionKind::Yield(_, value) => {
                         let newBlock = builder.splitBlock(0);
                         //println!("Split at yield, created new block: {:?}", newBlock);
