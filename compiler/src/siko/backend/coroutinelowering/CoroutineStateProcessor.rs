@@ -7,8 +7,12 @@ use std::{
 
 use crate::siko::{
     hir::{
-        Block::BlockId, BlockBuilder::InstructionRef, BodyBuilder::BodyBuilder, Function::Function,
-        Instruction::InstructionKind, Variable::VariableName,
+        Block::BlockId,
+        BlockBuilder::InstructionRef,
+        BodyBuilder::BodyBuilder,
+        Function::Function,
+        Instruction::InstructionKind,
+        Variable::{Variable, VariableName},
     },
     util::DependencyProcessor::processDependencies,
 };
@@ -28,8 +32,8 @@ impl Display for YieldKey {
 pub struct YieldInfo {
     pub yieldKey: YieldKey,
     pub id: InstructionRef,
-    pub existingVariables: BTreeSet<VariableName>,
-    pub savedVariables: BTreeSet<VariableName>,
+    pub existingVariables: BTreeMap<VariableName, Variable>,
+    pub savedVariables: BTreeSet<Variable>,
 }
 
 impl Display for YieldInfo {
@@ -41,7 +45,7 @@ impl Display for YieldInfo {
             self.id,
             self.existingVariables
                 .iter()
-                .map(|v| v.to_string())
+                .map(|(name, _)| format!("{}", name))
                 .collect::<Vec<_>>()
                 .join(", "),
             self.savedVariables
@@ -167,8 +171,8 @@ impl CoroutineStateProcessor<'_> {
             }
 
             for var in uses {
-                if info.existingVariables.contains(&var) {
-                    info.savedVariables.insert(var.clone());
+                if let Some(v) = info.existingVariables.get(&var) {
+                    info.savedVariables.insert(v.clone());
                 }
             }
         }
@@ -178,6 +182,10 @@ impl CoroutineStateProcessor<'_> {
         // for (_, info) in &self.yieldInfos {
         //     println!("Yield info: {}", info);
         // }
+    }
+
+    pub fn getYieldInfo(&self, key: &YieldKey) -> &YieldInfo {
+        self.yieldInfos.get(key).expect("YieldInfo not found")
     }
 
     fn processJump(&mut self, targetBlock: BlockId, sourceEnv: &Environment) {
@@ -214,21 +222,25 @@ impl CoroutineStateProcessor<'_> {
                         let info = self.yieldInfos.entry(yieldKey.clone()).or_insert(YieldInfo {
                             yieldKey: yieldKey.clone(),
                             id: blockBuilder.getInstructionRef(),
-                            existingVariables: BTreeSet::new(),
+                            existingVariables: BTreeMap::new(),
                             savedVariables: BTreeSet::new(),
                         });
                         // we assume that the yield vars uniquely identify the yield instruction
                         // so asserting that the ids are the same
                         assert_eq!(info.id, blockBuilder.getInstructionRef());
-                        info.existingVariables
-                            .extend(env.existingVariables.borrow().iter().cloned());
-                        env.addVariable(&dest.name());
-                        env.addVariable(&var.name());
+                        info.existingVariables.extend(
+                            env.existingVariables
+                                .borrow()
+                                .iter()
+                                .map(|(name, var)| (name.clone(), var.clone())),
+                        );
+                        env.addVariable(&dest);
+                        env.addVariable(&var);
                     }
                     _ => {
                         let vars = instr.kind.collectVariables();
                         for var in vars {
-                            env.addVariable(&var.name());
+                            env.addVariable(&var);
                         }
                     }
                 }
@@ -242,25 +254,27 @@ impl CoroutineStateProcessor<'_> {
 
 #[derive(Clone)]
 struct Environment {
-    existingVariables: Rc<RefCell<BTreeSet<VariableName>>>,
+    existingVariables: Rc<RefCell<BTreeMap<VariableName, Variable>>>,
 }
 
 impl Environment {
     fn new() -> Self {
         Environment {
-            existingVariables: Rc::new(RefCell::new(BTreeSet::new())),
+            existingVariables: Rc::new(RefCell::new(BTreeMap::new())),
         }
     }
 
-    fn addVariable(&self, var: &VariableName) {
-        self.existingVariables.borrow_mut().insert(var.clone());
+    fn addVariable(&self, var: &Variable) {
+        self.existingVariables
+            .borrow_mut()
+            .insert(var.name().clone(), var.clone());
     }
 
     fn merge(&self, other: &Environment) -> bool {
         let mut self_vars = self.existingVariables.borrow_mut();
         let mut updated = false;
-        for var in other.existingVariables.borrow().iter() {
-            updated |= self_vars.insert(var.clone());
+        for (name, var) in other.existingVariables.borrow().iter() {
+            updated |= self_vars.insert(name.clone(), var.clone()).is_none();
         }
         updated
     }

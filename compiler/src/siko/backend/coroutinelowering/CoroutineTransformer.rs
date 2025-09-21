@@ -4,7 +4,7 @@ use crate::siko::{
     backend::{
         coroutinelowering::{
             CoroutineLowering::CoroutineInstanceInfo,
-            CoroutineStateProcessor::CoroutineStateProcessor,
+            CoroutineStateProcessor::{CoroutineStateProcessor, YieldKey},
             Utils::{getLoweredCoroutineName, getMonomorphizedContext, getResumeResultType, getStateMachineEnumName},
         },
         BuilderUtils::EnumBuilder,
@@ -33,6 +33,7 @@ use crate::siko::{
 
 #[derive(Clone)]
 pub struct EntryPoint {
+    index: usize,
     blockId: BlockId,
     variables: Vec<Variable>,
 }
@@ -79,6 +80,7 @@ impl<'a> CoroutineTransformer<'a> {
         let coroutineName = getLoweredCoroutineName(&self.coroutineTy);
         let mut bodyBuilder = BodyBuilder::cloneFunction(self.f);
         let mut mainEntryPoint = EntryPoint {
+            index: 0,
             blockId: BlockId::first(),
             variables: Vec::new(),
         };
@@ -95,7 +97,7 @@ impl<'a> CoroutineTransformer<'a> {
         let allBlockIds = bodyBuilder.getAllBlockIds();
         self.queue.extend(allBlockIds);
         while let Some(blockId) = self.queue.pop() {
-            self.processBlock(blockId, &mut bodyBuilder, yieldCount);
+            self.processBlock(blockId, &mut bodyBuilder, yieldCount, &stateProcessor);
         }
         // for entry in &self.entryPoints {
         //     println!(
@@ -114,6 +116,10 @@ impl<'a> CoroutineTransformer<'a> {
         self.entryPoints[0].blockId = firstEntryBlockId;
 
         self.addRestoreForArguments(&mut bodyBuilder, &coroVar, firstEntryBlockId);
+
+        for entry in self.entryPoints.clone().iter().skip(1) {
+            self.addRestoreForYieldVariables(&mut bodyBuilder, &coroVar, entry);
+        }
 
         let mut cases = Vec::new();
         for (variantIndex, entryPoint) in self.entryPoints.clone().iter().enumerate() {
@@ -193,6 +199,42 @@ impl<'a> CoroutineTransformer<'a> {
         }
     }
 
+    fn addRestoreForYieldVariables(&mut self, bodyBuilder: &mut BodyBuilder, coroVar: &Variable, entry: &EntryPoint) {
+        let location = self.f.kind.getLocation();
+        let mut builder = bodyBuilder.iterator(entry.blockId);
+
+        if !entry.variables.is_empty() {
+            let variableTypes: Vec<Type> = entry.variables.iter().map(|v| v.getType()).collect();
+            let tupleType = Type::Tuple(variableTypes);
+            let transformVar = bodyBuilder.createTempValueWithType(location.clone(), tupleType.clone());
+            let transform = InstructionKind::Transform(
+                transformVar.clone(),
+                coroVar.useVar(),
+                TransformInfo {
+                    variantIndex: entry.index as u32,
+                },
+            );
+            builder.addInstruction(transform, location.clone());
+            builder.step();
+
+            for (varIndex, variable) in entry.variables.iter().enumerate() {
+                let fieldInfo = FieldInfo {
+                    name: FieldId::Indexed(varIndex as u32),
+                    location: location.clone(),
+                    ty: Some(variable.getType()),
+                };
+                let extractedVar = bodyBuilder.createTempValueWithType(location.clone(), variable.getType());
+                let fieldRef = InstructionKind::FieldRef(extractedVar.clone(), transformVar.useVar(), vec![fieldInfo]);
+                builder.addInstruction(fieldRef, location.clone());
+                builder.step();
+
+                let assignInstruction = InstructionKind::Assign(variable.clone(), extractedVar.useVar());
+                builder.addInstruction(assignInstruction, location.clone());
+                builder.step();
+            }
+        }
+    }
+
     fn getYieldCount(&self, bodyBuilder: &mut BodyBuilder) -> usize {
         let mut count = 0;
         let allBlockIds = bodyBuilder.getAllBlockIds();
@@ -212,7 +254,13 @@ impl<'a> CoroutineTransformer<'a> {
         count
     }
 
-    fn processBlock(&mut self, blockId: BlockId, bodyBuilder: &mut BodyBuilder, yieldCount: usize) {
+    fn processBlock(
+        &mut self,
+        blockId: BlockId,
+        bodyBuilder: &mut BodyBuilder,
+        yieldCount: usize,
+        stateProcessor: &CoroutineStateProcessor,
+    ) {
         //println!("Processing block: {:?}", blockId);
         let mut builder = bodyBuilder.iterator(blockId);
         loop {
@@ -224,12 +272,21 @@ impl<'a> CoroutineTransformer<'a> {
                             builder.replaceInstruction(newAssign, instr.location.clone());
                         }
                     }
-                    InstructionKind::Yield(_, value) => {
+                    InstructionKind::Yield(dest, value) => {
                         let newBlock = builder.splitBlock(0);
                         //println!("Split at yield, created new block: {:?}", newBlock);
+
+                        let yieldKey = YieldKey {
+                            destVar: dest.name().clone(),
+                            resultVar: value.name().clone(),
+                        };
+                        let yieldInfo = stateProcessor.getYieldInfo(&yieldKey);
+                        let yieldVariables: Vec<_> = yieldInfo.savedVariables.iter().cloned().collect();
+
                         self.entryPoints.push(EntryPoint {
+                            index: self.entryPoints.len(),
                             blockId: newBlock,
-                            variables: vec![],
+                            variables: yieldVariables.clone(),
                         });
                         let mut newBuilder = bodyBuilder.iterator(newBlock);
                         newBuilder.removeInstruction();
@@ -242,6 +299,7 @@ impl<'a> CoroutineTransformer<'a> {
                             instr.location.clone(),
                             self.entryPoints.len() - 1,
                             resultCtorName,
+                            yieldVariables,
                         );
                     }
                     InstructionKind::Return(_, value) => {
@@ -254,6 +312,7 @@ impl<'a> CoroutineTransformer<'a> {
                             instr.location.clone(),
                             yieldCount + 1,
                             resultCtorName,
+                            Vec::new(),
                         );
                     }
                     _ => {}
@@ -273,6 +332,7 @@ impl<'a> CoroutineTransformer<'a> {
         location: Location,
         variantIndex: usize,
         resultCtorName: QualifiedName,
+        variables: Vec<Variable>,
     ) {
         let resultVar = bodyBuilder.createTempValueWithType(location.clone(), self.resumeResultTy.clone());
         let callInfo = CallInfo {
@@ -289,7 +349,7 @@ impl<'a> CoroutineTransformer<'a> {
         let variantName = getVariantName(&self.f.name, variantIndex);
         let callInfo = CallInfo {
             name: variantName,
-            args: Vec::new(),
+            args: variables.iter().map(|v| v.useVar()).collect(),
             context: None,
             instanceRefs: Vec::new(),
             coroutineSpawn: false,

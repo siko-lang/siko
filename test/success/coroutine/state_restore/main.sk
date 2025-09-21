@@ -1,0 +1,26 @@
+module Main {
+
+import Coroutine
+
+fn simple(): co(Int) -> Int {
+    let mut first = 5;
+    let second = 10;
+    yield first;
+    first = 2 + second;
+    yield first;
+    return 3;
+}
+
+fn main() {
+    let c : co(Int) -> Int = co simple();
+    let (c, res1) = resume(c);
+    assert(res1.getYielded() == 5);
+    let (c, res2) = resume(c);
+    assert(res2.getYielded() == 12);
+    let (c, res3) = resume(c);
+    assert(res3.getReturned() == 3);
+    let (c, res4) = resume(c);
+    assert(res4.isCompleted());
+}
+
+}
