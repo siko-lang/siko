@@ -4,7 +4,8 @@ use crate::siko::{
     backend::{
         coroutinelowering::{
             CoroutineLowering::CoroutineInstanceInfo,
-            CoroutineStateProcessor::{CoroutineStateProcessor, YieldKey},
+            CoroutineStateProcessor::CoroutineStateProcessor,
+            CoroutineStateProcessor::YieldKey,
             Utils::{getLoweredCoroutineName, getMonomorphizedContext, getResumeResultType, getStateMachineEnumName},
         },
         BuilderUtils::EnumBuilder,
