@@ -109,6 +109,15 @@ impl BlockBuilder {
         }
     }
 
+    pub fn stepTo(&mut self, index: usize) {
+        match self.mode {
+            Mode::Append => panic!("Cannot step in append mode"),
+            Mode::Iterator(_) => {
+                self.mode = Mode::Iterator(index);
+            }
+        }
+    }
+
     pub fn iterator(&self) -> BlockBuilder {
         match self.mode {
             Mode::Append => BlockBuilder {

@@ -4,6 +4,7 @@ use crate::siko::{
     backend::{
         coroutinelowering::{
             CoroutineLowering::CoroutineInstanceInfo,
+            CoroutineStateProcessor::CoroutineStateProcessor,
             Utils::{getLoweredCoroutineName, getMonomorphizedContext, getResumeResultType, getStateMachineEnumName},
         },
         BuilderUtils::EnumBuilder,
@@ -89,6 +90,8 @@ impl<'a> CoroutineTransformer<'a> {
         }
         self.entryPoints.push(mainEntryPoint);
         let yieldCount = self.getYieldCount(&mut bodyBuilder);
+        let mut stateProcessor = CoroutineStateProcessor::new(self.f);
+        stateProcessor.process();
         let allBlockIds = bodyBuilder.getAllBlockIds();
         self.queue.extend(allBlockIds);
         while let Some(blockId) = self.queue.pop() {
@@ -107,10 +110,10 @@ impl<'a> CoroutineTransformer<'a> {
             self.enumTy.clone(),
         );
         let mut mainBlockBuilder = bodyBuilder.iterator(BlockId::first());
-        let newMain = mainBlockBuilder.splitBlock(0);
-        self.entryPoints[0].blockId = newMain;
+        let firstEntryBlockId = mainBlockBuilder.splitBlock(0);
+        self.entryPoints[0].blockId = firstEntryBlockId;
 
-        self.addRestoreForArguments(&mut bodyBuilder, &coroVar, newMain);
+        self.addRestoreForArguments(&mut bodyBuilder, &coroVar, firstEntryBlockId);
 
         let mut cases = Vec::new();
         for (variantIndex, entryPoint) in self.entryPoints.clone().iter().enumerate() {
