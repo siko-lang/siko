@@ -19,7 +19,7 @@ use crate::siko::{
         Variable::{Variable, VariableName},
     },
     location::Location::Location,
-    qualifiedname::builtins::getCoroutineCoResumeName,
+    qualifiedname::builtins::{getBoolTypeName, getCoroutineCoIsCompletedName, getCoroutineCoResumeName},
 };
 
 pub struct CoroutineGenerator<'a> {
@@ -150,6 +150,85 @@ impl<'a> CoroutineGenerator<'a> {
         //     "Generated resume function for coroutine {}\n{}",
         //     self.coroutineInfo.key, f
         // );
+        f
+    }
+
+    pub fn generateIsCompletedFunctionForCoroutine(&mut self) -> Function {
+        let ctx = getMonomorphizedContext(&self.coroutineInfo.getCoroutineType());
+        let isCompletedName = getCoroutineCoIsCompletedName().monomorphized(ctx.clone());
+        let location = Location::empty();
+        let coroutineTy = getLoweredCoroutineType(&self.coroutineInfo.getCoroutineType()).asRef();
+        let boolTy = Type::Named(getBoolTypeName(), vec![]);
+        let mut params = Vec::new();
+        params.push(Parameter::Named("coro".to_string(), coroutineTy.clone(), false));
+        let mut bodyBuilder = BodyBuilder::new();
+        let mut mainBuilder = bodyBuilder.createBlock();
+        let coroutineArg = bodyBuilder.createTempValueWithType(location.clone(), coroutineTy.clone());
+        let coroutineAssign = InstructionKind::Assign(
+            coroutineArg.clone(),
+            Variable::newWithType(
+                VariableName::Arg("coro".to_string()),
+                location.clone(),
+                coroutineTy.clone(),
+            ),
+        );
+        mainBuilder.addInstruction(coroutineAssign, location.clone());
+        let mut cases = Vec::new();
+
+        for (variantIndex, (_, instance)) in self.coroutineInfo.instances.iter().enumerate() {
+            let mut caseBuilder = bodyBuilder.createBlock();
+            let tupleTy = Type::Tuple(vec![instance.stateMachineEnumTy.clone()]).asRef();
+            let transformVar = bodyBuilder.createTempValueWithType(location.clone(), tupleTy);
+            let transform = InstructionKind::Transform(
+                transformVar.clone(),
+                coroutineArg.clone(),
+                TransformInfo {
+                    variantIndex: variantIndex as u32,
+                },
+            );
+            caseBuilder.addInstruction(transform, location.clone());
+            let fieldInfo = FieldInfo {
+                name: FieldId::Named(getStructFieldName(0)),
+                location: location.clone(),
+                ty: Some(instance.stateMachineEnumTy.asRef()),
+            };
+            let fieldRefVar =
+                bodyBuilder.createTempValueWithType(location.clone(), instance.stateMachineEnumTy.asRef());
+            let fieldRef = InstructionKind::FieldRef(fieldRefVar.clone(), transformVar.clone(), vec![fieldInfo]);
+            caseBuilder.addInstruction(fieldRef, location.clone());
+
+            let resultVar = bodyBuilder.createTempValueWithType(location.clone(), boolTy.clone());
+            let isCompletedCall = InstructionKind::FunctionCall(
+                resultVar.clone(),
+                CallInfo {
+                    name: instance.isCompletedFnName.clone(),
+                    args: vec![fieldRefVar.useVar()],
+                    context: None,
+                    instanceRefs: Vec::new(),
+                    coroutineSpawn: false,
+                },
+            );
+            caseBuilder.addInstruction(isCompletedCall, location.clone());
+            caseBuilder.addReturn(resultVar, location.clone());
+
+            cases.push(EnumCase {
+                index: variantIndex as u32,
+                branch: caseBuilder.getBlockId(),
+            });
+        }
+
+        let enumSwitch = InstructionKind::EnumSwitch(coroutineArg, cases);
+        mainBuilder.addInstruction(enumSwitch, location.clone());
+
+        let f = Function {
+            name: isCompletedName,
+            params,
+            result: ResultKind::SingleReturn(boolTy),
+            body: Some(bodyBuilder.build()),
+            kind: FunctionKind::UserDefined(location.clone()),
+            constraintContext: ConstraintContext::new(),
+            attributes: Attributes::new(),
+        };
         f
     }
 

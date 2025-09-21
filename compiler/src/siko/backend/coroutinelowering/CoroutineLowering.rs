@@ -42,6 +42,7 @@ impl Debug for CoroutineKey {
 pub struct CoroutineInstanceInfo {
     pub name: QualifiedName,
     pub resumeFnName: QualifiedName,
+    pub isCompletedFnName: QualifiedName,
     pub stateMachineEnumTy: Type,
     pub resumeTupleTy: Type,
 }
@@ -90,9 +91,10 @@ impl<'a> CoroutineStore<'a> {
                 let func = lowerCoroutineCreate(&func);
                 if self.isCoroutineFunction(&func) {
                     let mut transformer = CoroutineTransformer::new(&func, self.program);
-                    let (mut f, coroutineInstanceInfo) = transformer.transform();
+                    let (mut f, isCompletedFn, coroutineInstanceInfo) = transformer.transform();
                     f.lower();
                     self.program.functions.insert(f.name.clone(), f);
+                    self.program.functions.insert(isCompletedFn.name.clone(), isCompletedFn);
                     let key = coroutineInstanceInfo.name.getCoroutineKey();
                     let coroutineKey = CoroutineKey {
                         yieldedTy: key.0,
@@ -116,8 +118,10 @@ impl<'a> CoroutineStore<'a> {
         for (_, coroutine) in &self.coroutines {
             let mut generator = CoroutineGenerator::new(coroutine, self.program);
             generator.generateEnumForCoroutine(&Location::empty());
-            let f = generator.generateResumeFunctionForCoroutine();
-            self.program.functions.insert(f.name.clone(), f);
+            let resumeFn = generator.generateResumeFunctionForCoroutine();
+            let isCompletedFn = generator.generateIsCompletedFunctionForCoroutine();
+            self.program.functions.insert(resumeFn.name.clone(), resumeFn);
+            self.program.functions.insert(isCompletedFn.name.clone(), isCompletedFn);
         }
         for (_, e) in &mut self.program.enums {
             //println!("Lowering enum: {}", e.name);
@@ -294,6 +298,12 @@ impl CoroutineLowering for Type {
                 for item in items {
                     item.lower();
                 }
+            }
+            Type::Reference(inner) => {
+                inner.lower();
+            }
+            Type::Ptr(inner) => {
+                inner.lower();
             }
             _ => {}
         }

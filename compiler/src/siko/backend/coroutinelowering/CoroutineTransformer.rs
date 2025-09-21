@@ -10,7 +10,8 @@ use crate::siko::{
         Block::BlockId,
         BlockBuilder::BlockBuilder,
         BodyBuilder::BodyBuilder,
-        Function::{Function, Parameter, ResultKind},
+        ConstraintContext::ConstraintContext,
+        Function::{Attributes, Function, FunctionKind, Parameter, ResultKind},
         Instruction::{CallInfo, EnumCase, InstructionKind},
         Program::Program,
         Type::Type,
@@ -20,8 +21,8 @@ use crate::siko::{
     monomorphizer::Context::Context,
     qualifiedname::{
         builtins::{
-            getCoroutineCoResumeResultCompletedName, getCoroutineCoResumeResultReturnedName,
-            getCoroutineCoResumeResultYieldedName,
+            getBoolTypeName, getCoroutineCoResumeResultCompletedName, getCoroutineCoResumeResultReturnedName,
+            getCoroutineCoResumeResultYieldedName, getFalseName, getTrueName,
         },
         QualifiedName,
     },
@@ -68,7 +69,7 @@ impl<'a> CoroutineTransformer<'a> {
         }
     }
 
-    pub fn transform(&mut self) -> (Function, CoroutineInstanceInfo) {
+    pub fn transform(&mut self) -> (Function, Function, CoroutineInstanceInfo) {
         //println!("Before transformation: {}", self.f);
         let coroutineName = getLoweredCoroutineName(&self.coroutineTy);
         let mut bodyBuilder = BodyBuilder::cloneFunction(self.f);
@@ -135,16 +136,20 @@ impl<'a> CoroutineTransformer<'a> {
         f.body = Some(bodyBuilder.build());
         // println!("after transformation: {}", f);
 
+        let isCompletedFn = self.generateIsCompletedFunction();
+
         let coroutineInstanceInfo = CoroutineInstanceInfo {
             name: QualifiedName::CoroutineInstance(
                 Box::new(coroutineName),
                 Box::new(QualifiedName::CoroutineStateMachineEnum(Box::new(f.name.clone()))),
             ),
             resumeFnName: self.f.name.clone(),
+            isCompletedFnName: isCompletedFn.name.clone(),
             stateMachineEnumTy: self.enumTy.clone(),
             resumeTupleTy: self.resumeResultTupleTy.clone(),
         };
-        (f, coroutineInstanceInfo)
+
+        (f, isCompletedFn, coroutineInstanceInfo)
     }
 
     fn getYieldCount(&self, bodyBuilder: &mut BodyBuilder) -> usize {
@@ -299,6 +304,82 @@ impl<'a> CoroutineTransformer<'a> {
         let variantName = getVariantName(&self.f.name, self.entryPoints.len());
         enumBuilder.generateVariant(&variantName, &Vec::new(), self.entryPoints.len());
         enumBuilder.generateEnum(&location);
+    }
+
+    fn generateIsCompletedFunction(&self) -> Function {
+        let location = Location::empty();
+        let boolTy = Type::Named(getBoolTypeName(), vec![]);
+        let isCompletedFnName = QualifiedName::CoroutineStateMachineIsCompleted(Box::new(self.f.name.clone()));
+
+        let mut params = Vec::new();
+        params.push(Parameter::Named("stateMachine".to_string(), self.enumTy.asRef(), false));
+
+        let mut bodyBuilder = BodyBuilder::new();
+        let mut mainBuilder = bodyBuilder.createBlock();
+        let stateMachineArg = bodyBuilder.createTempValueWithType(location.clone(), self.enumTy.asRef());
+        let stateMachineAssign = InstructionKind::Assign(
+            stateMachineArg.clone(),
+            Variable::newWithType(
+                VariableName::Arg("stateMachine".to_string()),
+                location.clone(),
+                self.enumTy.asRef(),
+            ),
+        );
+        mainBuilder.addInstruction(stateMachineAssign, location.clone());
+
+        // The completed state is the last variant (highest index)
+        let completedIndex = self.entryPoints.len() as u32;
+        let mut cases = Vec::new();
+
+        for i in 0..=completedIndex {
+            let mut stateBlock = bodyBuilder.createBlock();
+            let resultVar = bodyBuilder.createTempValueWithType(location.clone(), boolTy.clone());
+
+            if i == completedIndex {
+                let trueCall = InstructionKind::FunctionCall(
+                    resultVar.clone(),
+                    CallInfo {
+                        name: getTrueName(),
+                        args: vec![],
+                        context: None,
+                        instanceRefs: Vec::new(),
+                        coroutineSpawn: false,
+                    },
+                );
+                stateBlock.addInstruction(trueCall, location.clone());
+            } else {
+                let falseCall = InstructionKind::FunctionCall(
+                    resultVar.clone(),
+                    CallInfo {
+                        name: getFalseName(),
+                        args: vec![],
+                        context: None,
+                        instanceRefs: Vec::new(),
+                        coroutineSpawn: false,
+                    },
+                );
+                stateBlock.addInstruction(falseCall, location.clone());
+            }
+            stateBlock.addReturn(resultVar, location.clone());
+
+            cases.push(EnumCase {
+                index: i,
+                branch: stateBlock.getBlockId(),
+            });
+        }
+
+        let enumSwitch = InstructionKind::EnumSwitch(stateMachineArg, cases);
+        mainBuilder.addInstruction(enumSwitch, location.clone());
+
+        Function {
+            name: isCompletedFnName,
+            params,
+            result: ResultKind::SingleReturn(boolTy),
+            body: Some(bodyBuilder.build()),
+            kind: FunctionKind::UserDefined(location.clone()),
+            constraintContext: ConstraintContext::new(),
+            attributes: Attributes::new(),
+        }
     }
 }
 

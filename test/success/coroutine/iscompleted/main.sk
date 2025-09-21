@@ -1,0 +1,35 @@
+module Main {
+
+import Coroutine
+
+fn simple(): co(Int) -> Int {
+    println("Before first yield");
+    yield 1;
+    println("Before second yield");
+    yield 2;
+    println("Before return");
+    return 3;
+}
+
+fn main() {
+    let co1 : co(Int) -> Int = co simple();
+    assert(!Coroutine.isCompleted(&co1));
+    println("Before first resume");
+    let (co1, res1) = resume(co1);
+    assert(!Coroutine.isCompleted(&co1));
+    assert(res1.getYielded() == 1);
+    println("Before second resume");
+    let (co1, res2) = resume(co1);
+    assert(!Coroutine.isCompleted(&co1));
+    assert(res2.getYielded() == 2);
+    println("Before third resume");
+    let (co1, res3) = resume(co1);
+    assert(Coroutine.isCompleted(&co1));
+    assert(res3.getReturned() == 3);
+    println("Before fourth resume");
+    let (co1, res4) = resume(co1);
+    assert(Coroutine.isCompleted(&co1));
+    assert(res4.isCompleted());
+}
+
+}

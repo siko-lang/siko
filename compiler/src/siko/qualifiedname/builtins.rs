@@ -222,3 +222,7 @@ pub fn getCoroutineCoResumeResultReturnedName() -> QualifiedName {
 pub fn getCoroutineCoResumeResultCompletedName() -> QualifiedName {
     build("Coroutine", "Result").add("Completed".to_string())
 }
+
+pub fn getCoroutineCoIsCompletedName() -> QualifiedName {
+    build("Coroutine", "coIsCompleted")
+}

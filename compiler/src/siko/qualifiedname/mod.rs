@@ -23,6 +23,7 @@ pub enum QualifiedName {
     CoroutineStateMachineEnum(Box<QualifiedName>),             // yielding function name
     CoroutineStateMachineVariant(Box<QualifiedName>, u32),     // yielding function name, entry index
     CoroutineStateMachineResume(Box<QualifiedName>),           // yielding function name
+    CoroutineStateMachineIsCompleted(Box<QualifiedName>),      // yielding function name
 }
 
 impl QualifiedName {
@@ -54,6 +55,9 @@ impl QualifiedName {
             QualifiedName::CoroutineStateMachineResume(_) => {
                 panic!("CoroutineStateMachineResume names are not supported")
             }
+            QualifiedName::CoroutineStateMachineIsCompleted(_) => {
+                panic!("CoroutineStateMachineIsCompleted names are not supported")
+            }
         }
     }
 
@@ -76,6 +80,9 @@ impl QualifiedName {
             }
             QualifiedName::CoroutineStateMachineResume(_) => {
                 panic!("CoroutineStateMachineResume names are not supported")
+            }
+            QualifiedName::CoroutineStateMachineIsCompleted(_) => {
+                panic!("CoroutineStateMachineIsCompleted names are not supported")
             }
         }
     }
@@ -121,6 +128,9 @@ impl QualifiedName {
             }
             QualifiedName::CoroutineStateMachineResume(_) => {
                 panic!("CoroutineStateMachineResume names are not supported")
+            }
+            QualifiedName::CoroutineStateMachineIsCompleted(_) => {
+                panic!("CoroutineStateMachineIsCompleted names are not supported")
             }
         }
     }
@@ -177,6 +187,7 @@ impl Display for QualifiedName {
                 write!(f, "{}.coroutine_state_machine_variant/{}", p, index)
             }
             QualifiedName::CoroutineStateMachineResume(p) => write!(f, "{}.coroutine_resume", p),
+            QualifiedName::CoroutineStateMachineIsCompleted(p) => write!(f, "{}.coroutine_is_completed", p),
         }
     }
 }

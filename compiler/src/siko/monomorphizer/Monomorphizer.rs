@@ -38,7 +38,7 @@ use crate::siko::{
         Utils::Monomorphize,
     },
     qualifiedname::{
-        builtins::{getArrayTypeName, getCoroutineCoResumeName, getMainName},
+        builtins::{getArrayTypeName, getCoroutineCoIsCompletedName, getCoroutineCoResumeName, getMainName},
         QualifiedName,
     },
     util::Config::Config,
@@ -297,6 +297,9 @@ impl<'a> Monomorphizer<'a> {
         //println!("MONO FN: {} => {}", name, monoName);
         self.monomorphizedProgram.functions.insert(monoName, monoFn);
         if name == getCoroutineCoResumeName() {
+            // this code makes sure all variants of Coroutine.Result are monomorphized
+            // because they will be called by generated code in coroutine lowering
+            // so we need to ensure they exist in the monomorphized program
             let ty = function.result.getReturnType();
             match ty {
                 Type::Tuple(args) => match &args[1] {
@@ -318,6 +321,30 @@ impl<'a> Monomorphizer<'a> {
                     _ => panic!("coroutine resume's second return type must be Coroutine.Result"),
                 },
                 _ => panic!("coroutine resume must return a tuple"),
+            }
+        }
+        if name == getCoroutineCoIsCompletedName() {
+            // this code makes sure all variants of Bool are monomorphized
+            // because they will be called by generated code in coroutine lowering
+            // so we need to ensure they exist in the monomorphized program
+            let ty = function.result.getReturnType();
+            match ty {
+                Type::Named(name, args) => {
+                    let enumDef = self
+                        .program
+                        .getEnum(&name)
+                        .expect("coroutine isCompleted return type not found");
+                    let args: Vec<_> = args.process(&sub, self);
+                    for v in enumDef.variants {
+                        self.addKey(Key::Function(
+                            v.name.clone(),
+                            args.clone(),
+                            HandlerResolution::new(),
+                            Vec::new(),
+                        ));
+                    }
+                }
+                _ => panic!("coroutine isCompleted must return an enum"),
             }
         }
     }
