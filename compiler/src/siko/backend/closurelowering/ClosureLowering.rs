@@ -166,6 +166,21 @@ impl ClosureLowering for Type {
                 let name = closureStore.getClosureName(paramTypes, *ret.clone());
                 *self = Type::Named(name, Vec::new());
             }
+            Type::Tuple(types) => {
+                for ty in types {
+                    ty.lower(closureStore);
+                }
+            }
+            Type::Reference(ty) => {
+                ty.lower(closureStore);
+            }
+            Type::Ptr(ty) => {
+                ty.lower(closureStore);
+            }
+            Type::Coroutine(yieldTy, returnTy) => {
+                yieldTy.lower(closureStore);
+                returnTy.lower(closureStore);
+            }
             _ => {}
         }
     }
