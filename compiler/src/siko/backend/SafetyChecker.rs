@@ -11,8 +11,8 @@ pub struct SafetyChecker<'a> {
     program: &'a Program,
 }
 
-impl SafetyChecker<'_> {
-    pub fn new(program: &Program) -> SafetyChecker {
+impl<'a> SafetyChecker<'a> {
+    pub fn new(program: &'a Program) -> SafetyChecker<'a> {
         SafetyChecker { program }
     }
 

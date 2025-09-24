@@ -84,8 +84,8 @@ pub struct CoroutineStateProcessor<'a> {
     yieldInfos: YieldInfoStore,
 }
 
-impl CoroutineStateProcessor<'_> {
-    pub fn new(f: &Function) -> CoroutineStateProcessor {
+impl<'a> CoroutineStateProcessor<'a> {
+    pub fn new(f: &'a Function) -> CoroutineStateProcessor<'a> {
         CoroutineStateProcessor {
             f,
             bodyBuilder: BodyBuilder::cloneFunction(f),
