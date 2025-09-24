@@ -17,7 +17,7 @@ use crate::siko::{
         Variable::Variable,
     },
     location::Location::Location,
-    qualifiedname::QualifiedName,
+    qualifiedname::{buildModule, QualifiedName},
 };
 
 fn fieldNameForIndex(index: usize) -> String {
@@ -31,7 +31,7 @@ fn getTuple(ty: &Type) -> QualifiedName {
             return name.clone();
         }
     }
-    QualifiedName::Module(sikoModuleName.to_string()).add(format!("Tuple_{}", ty))
+    buildModule(sikoModuleName).add(format!("Tuple_{}", ty))
 }
 
 pub fn getUnitTypeName() -> Type {

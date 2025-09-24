@@ -15,7 +15,7 @@ use crate::siko::hir::Variable::{Variable, VariableName};
 use crate::siko::location::Location::Location;
 use crate::siko::location::Report::ReportContext;
 use crate::siko::qualifiedname::builtins::{getVecNewName, getVecPushName};
-use crate::siko::qualifiedname::QualifiedName;
+use crate::siko::qualifiedname::{build, QualifiedName};
 use crate::siko::resolver::matchcompiler::Compiler::MatchCompiler;
 use crate::siko::syntax::Expr::{BinaryOp, Expr, SimpleExpr, UnaryOp};
 use crate::siko::syntax::Identifier::Identifier;
@@ -31,19 +31,11 @@ use super::ModuleResolver::ModuleResolver;
 use super::TypeResolver::TypeResolver;
 
 fn createOpName(traitName: &str, method: &str) -> QualifiedName {
-    let stdOps = Box::new(QualifiedName::Module("Std.Ops".to_string()));
-    QualifiedName::Item(
-        Box::new(QualifiedName::Item(stdOps.clone(), traitName.to_string())),
-        method.to_string(),
-    )
+    build("Std.Ops", traitName).add(method.to_string())
 }
 
 fn createCmpOpName(traitName: &str, method: &str) -> QualifiedName {
-    let stdOps = Box::new(QualifiedName::Module("Std.Cmp".to_string()));
-    QualifiedName::Item(
-        Box::new(QualifiedName::Item(stdOps.clone(), traitName.to_string())),
-        method.to_string(),
-    )
+    build("Std.Cmp", traitName).add(method.to_string())
 }
 
 #[derive(Debug, Clone)]

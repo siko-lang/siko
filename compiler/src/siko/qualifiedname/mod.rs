@@ -1,5 +1,8 @@
 use core::panic;
-use std::fmt::{Debug, Display};
+use std::{
+    fmt::{Debug, Display},
+    rc::Rc,
+};
 
 use crate::siko::{
     hir::Type::{formatTypes, formatTypesBracket, Type},
@@ -9,8 +12,8 @@ pub mod builtins;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum QualifiedName {
-    Module(String),
-    Item(Box<QualifiedName>, String),
+    Module(Rc<String>),
+    Item(Rc<QualifiedName>, Rc<String>),
     Monomorphized(Box<QualifiedName>, Context),
     Canonical(Box<QualifiedName>, Box<QualifiedName>, Vec<Type>),
     Lambda(Box<QualifiedName>, u32),
@@ -28,7 +31,7 @@ pub enum QualifiedName {
 
 impl QualifiedName {
     pub fn add(&self, item: String) -> QualifiedName {
-        QualifiedName::Item(Box::new(self.clone()), item)
+        QualifiedName::Item(Rc::new(self.clone()), Rc::new(item))
     }
 
     pub fn canonical(&self, traitName: QualifiedName, types: Vec<Type>) -> QualifiedName {
@@ -64,7 +67,7 @@ impl QualifiedName {
     pub fn base(&self) -> QualifiedName {
         match &self {
             QualifiedName::Module(_) => self.clone(),
-            QualifiedName::Item(p, _) => *p.clone(),
+            QualifiedName::Item(p, _) => (**p).clone(),
             QualifiedName::Monomorphized(p, _) => *p.clone(),
             QualifiedName::Canonical(p, _, _) => *p.clone(),
             QualifiedName::Lambda(p, _) => *p.clone(),
@@ -109,8 +112,8 @@ impl QualifiedName {
 
     pub fn getShortName(&self) -> String {
         match &self {
-            QualifiedName::Module(name) => name.clone(),
-            QualifiedName::Item(_, name) => name.clone(),
+            QualifiedName::Module(name) => name.as_ref().clone(),
+            QualifiedName::Item(_, name) => name.as_ref().clone(),
             QualifiedName::Monomorphized(p, _) => p.getShortName(),
             QualifiedName::Canonical(_, _, _) => {
                 panic!("Canonical names are not supported")
@@ -199,5 +202,12 @@ impl Debug for QualifiedName {
 }
 
 pub fn build(m: &str, name: &str) -> QualifiedName {
-    QualifiedName::Item(Box::new(QualifiedName::Module(m.to_string())), name.to_string())
+    QualifiedName::Item(
+        Rc::new(QualifiedName::Module(Rc::new(m.to_string()))),
+        Rc::new(name.to_string()),
+    )
+}
+
+pub fn buildModule(m: &str) -> QualifiedName {
+    QualifiedName::Module(Rc::new(m.to_string()))
 }

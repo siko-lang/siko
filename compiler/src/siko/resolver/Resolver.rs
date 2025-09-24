@@ -13,7 +13,7 @@ use crate::siko::{
         Unifier::Unifier,
     },
     location::Report::ReportContext,
-    qualifiedname::QualifiedName,
+    qualifiedname::{build, buildModule, QualifiedName},
     resolver::{autoderive::AutoDerive, FunctionResolver::FunctionResolver, Util::SubstitutionChain},
     syntax::{
         Function::{Function, Parameter as SynParam},
@@ -194,7 +194,7 @@ impl<'a> Resolver<'a> {
         let mut traitMethodselectors = BTreeMap::new();
 
         for resolver in self.resolvers.values() {
-            let name = QualifiedName::Module(resolver.name.clone());
+            let name = buildModule(&resolver.name);
             let mut selector = self
                 .program
                 .traitMethodselectors
@@ -202,7 +202,7 @@ impl<'a> Resolver<'a> {
                 .expect("trait method selector not found")
                 .clone();
             for importedModule in &resolver.importedModules {
-                let importedModuleName = QualifiedName::Module(importedModule.clone());
+                let importedModuleName = buildModule(&importedModule);
                 if importedModuleName == name {
                     continue;
                 }
@@ -237,7 +237,7 @@ impl<'a> Resolver<'a> {
                     ModuleItem::Struct(c) => {
                         let typeParams = getTypeParams(&c.typeParams);
                         let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
-                        let structName = QualifiedName::Module(moduleResolver.name.clone()).add(c.name.toString());
+                        let structName = build(&moduleResolver.name, &c.name.toString());
                         let constraintContext =
                             createConstraintContext(&c.typeParams, &typeResolver, &self.program, &self.ctx);
                         let irType = typeResolver.createDataType(&structName, &c.typeParams);
@@ -273,7 +273,7 @@ impl<'a> Resolver<'a> {
                     ModuleItem::Enum(e) => {
                         let typeParams = getTypeParams(&e.typeParams);
                         let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
-                        let enumName = QualifiedName::Module(moduleResolver.name.clone()).add(e.name.toString());
+                        let enumName = build(&moduleResolver.name, &e.name.toString());
                         let constraintContext =
                             createConstraintContext(&e.typeParams, &typeResolver, &self.program, &self.ctx);
                         let irType = typeResolver.createDataType(&enumName, &e.typeParams);
@@ -361,7 +361,7 @@ impl<'a> Resolver<'a> {
                             let result = typeResolver
                                 .resolveType(&method.result.assertSingleReturn())
                                 .changeSelfType(selfType.clone());
-                            let fullName = QualifiedName::Item(Box::new(irTrait.name.clone()), method.name.toString());
+                            let fullName = irTrait.name.add(method.name.toString());
                             let isDefault = method.body.is_some();
                             irTrait.members.push(MemberInfo {
                                 name: method.name.toString(),
@@ -485,8 +485,7 @@ impl<'a> Resolver<'a> {
                                 &self.program,
                                 &self.ctx,
                             );
-                            let fullName =
-                                QualifiedName::Item(Box::new(irInstance.name.clone()), method.name.toString());
+                            let fullName = irInstance.name.add(method.name.toString());
                             irInstance.members.push(MemberInfo {
                                 name: method.name.toString(),
                                 fullName: fullName.clone(),
@@ -507,7 +506,7 @@ impl<'a> Resolver<'a> {
                                 &self.program,
                                 &self.ctx,
                             );
-                            let fullName = QualifiedName::Item(Box::new(irInstance.name.clone()), name.clone());
+                            let fullName = irInstance.name.add(name.clone());
                             irInstance.members.push(MemberInfo {
                                 name: name.clone(),
                                 fullName: fullName.clone(),
@@ -670,7 +669,7 @@ impl<'a> Resolver<'a> {
                                 &self.variants,
                                 &self.program.enums,
                                 &self.program.implicits,
-                                QualifiedName::Item(Box::new(name.clone()), method.name.toString()),
+                                name.add(method.name.toString()),
                                 &typeResolver,
                                 self.runner.clone(),
                             );
@@ -744,7 +743,7 @@ impl<'a> Resolver<'a> {
                             &self.variants,
                             &self.program.enums,
                             &self.program.implicits,
-                            QualifiedName::Module(moduleResolver.name.clone()).add(f.name.toString()),
+                            build(&moduleResolver.name, &f.name.to_string()),
                             &typeResolver,
                             self.runner.clone(),
                         );
@@ -756,9 +755,7 @@ impl<'a> Resolver<'a> {
                         for method in &effect.methods {
                             let functionResolver =
                                 FunctionResolver::new(moduleResolver, ConstraintContext::new(), None);
-                            let name = QualifiedName::Module(moduleResolver.name.clone())
-                                .add(effect.name.toString())
-                                .add(method.name.toString());
+                            let name = build(&moduleResolver.name, &effect.name.toString()).add(method.name.toString());
                             let mut irFunction = functionResolver.resolve(
                                 self.ctx,
                                 method,
@@ -784,7 +781,7 @@ impl<'a> Resolver<'a> {
             }
             self.program
                 .traitMethodselectors
-                .insert(QualifiedName::Module(m.name.toString()), traitMethodselector);
+                .insert(buildModule(&m.name.to_string()), traitMethodselector);
         }
     }
 
@@ -796,8 +793,8 @@ impl<'a> Resolver<'a> {
         importedInstances: &mut Vec<QualifiedName>,
     ) {
         if let Some(alias) = &i.alias {
-            let moduleName = QualifiedName::Module(i.moduleName.toString());
-            let localModuleName = QualifiedName::Module(alias.toString());
+            let moduleName = buildModule(&i.moduleName.toString());
+            let localModuleName = buildModule(&alias.to_string());
             for item in &sourceModule.items {
                 match item {
                     ModuleItem::Struct(structDef) => {
@@ -899,7 +896,7 @@ impl<'a> Resolver<'a> {
                 }
             }
         } else {
-            let moduleName = QualifiedName::Module(sourceModule.name.toString());
+            let moduleName = buildModule(&sourceModule.name.to_string());
             for item in &sourceModule.items {
                 match item {
                     ModuleItem::Struct(structDef) => {
@@ -1044,7 +1041,7 @@ impl<'a> Resolver<'a> {
             let instanceStore = self
                 .program
                 .instanceStores
-                .entry(QualifiedName::Module(moduleResolver.name.clone()))
+                .entry(buildModule(&moduleResolver.name))
                 .or_insert_with(InstanceStore::new);
             instanceStore.importedInstances = importedInstances;
         }
@@ -1063,7 +1060,7 @@ impl<'a> Resolver<'a> {
                 variants,
             };
             self.program.instanceStores.insert(
-                QualifiedName::Module(m.name.toString()),
+                buildModule(&m.name.to_string()),
                 InstanceStore {
                     localInstances: instances.clone(),
                     importedInstances: Vec::new(),
@@ -1077,7 +1074,7 @@ impl<'a> Resolver<'a> {
         let mut localNames = Names::new();
         let mut variants = BTreeSet::new();
         let mut instances = Vec::new();
-        let moduleName = QualifiedName::Module(m.name.toString());
+        let moduleName = buildModule(&m.name.to_string());
         for item in &m.items {
             match item {
                 ModuleItem::Struct(c) => {
@@ -1161,7 +1158,7 @@ impl<'a> Resolver<'a> {
             for item in &m.items {
                 match item {
                     ModuleItem::Implicit(i) => {
-                        let name = QualifiedName::Module(moduleResolver.name.clone()).add(i.name.to_string());
+                        let name = buildModule(&moduleResolver.name).add(i.name.to_string());
                         let typeParams = getTypeParams(&None);
                         let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
                         let ty = typeResolver.resolveType(&i.ty);
@@ -1187,8 +1184,8 @@ fn buildInstanceName(
     typeResolver: &TypeResolver<'_>,
 ) -> QualifiedName {
     let qn = match &i.name {
-        Some(n) => QualifiedName::Module(moduleResolver.name.clone()).add(n.toString()),
-        None => QualifiedName::Module(moduleResolver.name.clone()).canonical(
+        Some(n) => buildModule(&moduleResolver.name).add(n.toString()),
+        None => buildModule(&moduleResolver.name).canonical(
             traitName,
             i.types.iter().map(|ty| typeResolver.resolveType(ty)).collect(),
         ),

@@ -13,7 +13,7 @@ use crate::siko::hir::Type::{Type as IrType, TypeVar};
 use crate::siko::hir::Variable::Variable;
 use crate::siko::hir::Variable::VariableName;
 use crate::siko::location::Report::ReportContext;
-use crate::siko::qualifiedname::QualifiedName;
+use crate::siko::qualifiedname::{build, QualifiedName};
 use crate::siko::syntax::Attributes::{Attributes, Safety};
 use crate::siko::syntax::Function::{Function, FunctionExternKind, Parameter, ResultKind};
 use crate::siko::syntax::Identifier::Identifier;
@@ -47,10 +47,7 @@ pub fn createSelfType(
         }
         None => Vec::new(),
     };
-    IrType::Named(
-        QualifiedName::Module(moduleResolver.name.clone()).add(name.toString()),
-        args,
-    )
+    IrType::Named(build(&moduleResolver.name, &name.toString()), args)
 }
 
 impl<'a> FunctionResolver<'a> {

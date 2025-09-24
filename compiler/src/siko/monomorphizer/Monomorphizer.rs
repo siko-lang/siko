@@ -38,6 +38,7 @@ use crate::siko::{
         Utils::Monomorphize,
     },
     qualifiedname::{
+        buildModule,
         builtins::{getArrayTypeName, getCoroutineCoIsCompletedName, getCoroutineCoResumeName, getMainName},
         QualifiedName,
     },
@@ -150,7 +151,7 @@ impl<'a> Monomorphizer<'a> {
             let syntaxBlockId = parentSyntaxBlock.add(SyntaxBlockIdSegment { value: i as u32 });
             entryBlock.addBlockStart(syntaxBlockId.clone(), Location::empty());
             let withRes = bodyBuilder.createTempValueWithType(Location::empty(), Type::Never(false));
-            let testRunnerExecute = QualifiedName::Module("TestRunner".to_string())
+            let testRunnerExecute = buildModule("TestRunner")
                 .add("Testable".to_string())
                 .add("execute".to_string());
             let handler = EffectHandler {
@@ -170,7 +171,7 @@ impl<'a> Monomorphizer<'a> {
             };
             let with = InstructionKind::With(withRes, withInfo);
             prevBlock.addInstruction(with, Location::empty());
-            let testRunnerRun = QualifiedName::Module("TestRunner".to_string()).add("run".to_string());
+            let testRunnerRun = buildModule("TestRunner").add("run".to_string());
             let nameLiteralVar = bodyBuilder.createTempValueWithType(Location::empty(), Type::getStringLiteralType());
             let stringLiteral = InstructionKind::StringLiteral(nameLiteralVar.clone(), format!("{}", entry.toString()));
             let indexLiteralVar = bodyBuilder.createTempValueWithType(Location::empty(), Type::getIntType());
