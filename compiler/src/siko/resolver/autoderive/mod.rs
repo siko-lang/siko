@@ -3,6 +3,7 @@ pub mod Clone;
 pub mod Copy;
 pub mod Discriminator;
 pub mod Eq;
+pub mod FromInt;
 pub mod Ord;
 pub mod PartialEq;
 pub mod PartialOrd;

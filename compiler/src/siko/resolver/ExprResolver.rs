@@ -22,6 +22,8 @@ use crate::siko::syntax::Identifier::Identifier;
 use crate::siko::syntax::Pattern::{Pattern, SimplePattern};
 use crate::siko::syntax::Statement::Block;
 use crate::siko::syntax::Statement::StatementKind;
+use crate::siko::util::Runner::Runner;
+use crate::stage;
 
 use super::Environment::Environment;
 use super::Error::ResolverError;
@@ -69,6 +71,7 @@ pub struct ExprResolver<'a> {
     lambdaIndex: u32,
     name: &'a QualifiedName,
     jumpBlockId: u32,
+    pub runner: Runner,
 }
 
 impl<'a> ExprResolver<'a> {
@@ -83,6 +86,7 @@ impl<'a> ExprResolver<'a> {
         variants: &'a BTreeMap<QualifiedName, QualifiedName>,
         enums: &'a BTreeMap<QualifiedName, Enum>,
         implicits: &'a BTreeMap<QualifiedName, Implicit>,
+        runner: Runner,
     ) -> ExprResolver<'a> {
         ExprResolver {
             name,
@@ -101,6 +105,7 @@ impl<'a> ExprResolver<'a> {
             resultVar: None,
             lambdaIndex: 0,
             jumpBlockId: 0,
+            runner,
         }
     }
 
@@ -481,6 +486,7 @@ impl<'a> ExprResolver<'a> {
             SimpleExpr::Match(body, branches) => {
                 //crate::siko::syntax::Format::format_any(expr);
                 let bodyId = self.resolveExpr(body, env);
+                let runner = self.runner.child("match_compiler");
                 let mut matchResolver = MatchCompiler::new(
                     self,
                     bodyId,
@@ -488,8 +494,10 @@ impl<'a> ExprResolver<'a> {
                     body.location.clone(),
                     branches.clone(),
                     env,
+                    runner.clone(),
                 );
-                matchResolver.compile()
+                let v = stage!(runner, { matchResolver.compile() });
+                v
             }
             SimpleExpr::Block(block) => {
                 let blockValue = self.bodyBuilder.createTempValue(expr.location.clone());

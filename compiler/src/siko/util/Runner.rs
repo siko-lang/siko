@@ -1,5 +1,7 @@
 use std::{
+    cell::RefCell,
     collections::BTreeMap,
+    rc::Rc,
     time::{Duration, Instant},
 };
 
@@ -11,32 +13,56 @@ pub struct StageResult<T> {
     pub value: T,
 }
 
-pub struct Runner {
-    pub config: Config,
+struct Core {
     order: Vec<String>,
     stages: BTreeMap<String, Duration>,
 }
 
+#[derive(Clone)]
+pub struct Runner {
+    name: String,
+    config: Rc<Config>,
+    core: Rc<RefCell<Core>>,
+}
+
 impl Runner {
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: Config, name: String) -> Self {
         Runner {
-            config,
-            order: Vec::new(),
-            stages: BTreeMap::new(),
+            name,
+            config: Rc::new(config),
+            core: Rc::new(RefCell::new(Core {
+                order: Vec::new(),
+                stages: BTreeMap::new(),
+            })),
         }
     }
 
-    pub fn run<T, F>(&mut self, name: &str, f: F) -> T
+    pub fn child(&self, name: &str) -> Runner {
+        Runner {
+            name: format!("{}.{}", self.name, name),
+            config: self.config.clone(),
+            core: self.core.clone(),
+        }
+    }
+
+    pub fn getConfig(&self) -> Config {
+        self.config.as_ref().clone()
+    }
+
+    pub fn run<T, F>(&self, f: F) -> T
     where
         F: FnOnce() -> T,
     {
         if self.config.passDetails {
-            print!("{name}...\n");
+            print!("{}...\n", self.name);
         }
         let start = Instant::now();
+        {
+            let core = &mut self.core.borrow_mut();
 
-        if !self.order.contains(&name.to_string()) {
-            self.order.push(name.to_string());
+            if !core.order.contains(&self.name.to_string()) {
+                core.order.push(self.name.to_string());
+            }
         }
 
         let value = f();
@@ -46,7 +72,8 @@ impl Runner {
             println!("Done (took {elapsed:?})");
         }
 
-        let entry = self.stages.entry(name.to_string()).or_insert(Duration::new(0, 0));
+        let core = &mut self.core.borrow_mut();
+        let entry = core.stages.entry(self.name.to_string()).or_insert(Duration::new(0, 0));
         *entry += elapsed;
 
         value
@@ -56,21 +83,22 @@ impl Runner {
         if !self.config.passDetails {
             return;
         }
-        if self.stages.is_empty() {
+        let core = self.core.borrow();
+        if core.stages.is_empty() {
             println!("No stages recorded.");
             return;
         }
 
         // find max width of stage names
-        let max_name_len = self.stages.iter().map(|(name, _)| name.len()).max().unwrap_or(5);
+        let max_name_len = core.stages.iter().map(|(name, _)| name.len()).max().unwrap_or(5);
 
         // header
         println!("{:<width$} | Time (ms)", "Stage", width = max_name_len);
         println!("{}", "-".repeat(max_name_len + 15));
 
         // rows
-        for name in &self.order {
-            let elapsed = self.stages.get(name).unwrap();
+        for name in &core.order {
+            let elapsed = core.stages.get(name).unwrap();
             let ms = elapsed.as_secs_f64() * 1000.0;
             println!("{:<width$} | {:>9.3} ms", name, ms, width = max_name_len);
         }
@@ -79,10 +107,10 @@ impl Runner {
 
 #[macro_export]
 macro_rules! stage {
-    ($runner:expr, $name:expr, $body:block) => {{
-        $runner.run($name, || $body)
+    ($runner:expr, $body:block) => {{
+        $runner.run(|| $body)
     }};
-    ($runner:expr, $name:expr, $expr:expr) => {{
-        $runner.run($name, || $expr)
+    ($runner:expr, $expr:expr) => {{
+        $runner.run($expr)
     }};
 }

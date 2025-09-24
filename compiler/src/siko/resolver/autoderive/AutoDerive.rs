@@ -4,6 +4,7 @@ use crate::siko::{
         Copy::{deriveCopyForEnum, deriveCopyForStruct},
         Discriminator::{deriveDiscriminatorForEnum, deriveDiscriminatorForStruct},
         Eq::{deriveEqForEnum, deriveEqForStruct},
+        FromInt::deriveFromIntForEnum,
         Ord::{deriveOrdForEnum, deriveOrdForStruct},
         PartialEq::{derivePartialEqForEnum, derivePartialEqForStruct},
         PartialOrd::{derivePartialOrdForEnum, derivePartialOrdForStruct},
@@ -56,6 +57,7 @@ pub fn processModule(module: &Module) -> Module {
             }
             ModuleItem::Enum(enumDef) => {
                 let mut discriminatorNeeded = false;
+                let mut discriminatorPresent = false;
                 for derive in &enumDef.derives {
                     //println!("  Derive: {} enum {}", derive.name, enumDef.name);
                     match derive.name.name().as_ref() {
@@ -88,14 +90,18 @@ pub fn processModule(module: &Module) -> Module {
                         "Discriminator" => {
                             let i = deriveDiscriminatorForEnum(enumDef);
                             instances.push(i);
-                            discriminatorNeeded = false;
+                            discriminatorPresent = true;
+                        }
+                        "FromInt" => {
+                            let i = deriveFromIntForEnum(enumDef);
+                            instances.push(i);
                         }
                         _ => {
                             //
                         }
                     }
                 }
-                if discriminatorNeeded {
+                if discriminatorNeeded && !discriminatorPresent {
                     let i = deriveDiscriminatorForEnum(enumDef);
                     instances.push(i);
                 }

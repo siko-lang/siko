@@ -146,6 +146,87 @@ impl Node {
             }
         }
     }
+
+    pub fn dump(&self, indent: i64) {
+        let indentStr = " ".repeat((indent * 2) as usize);
+        match self {
+            Node::Tuple(tuple) => {
+                println!("{}Tuple(size: {}, path: {})", indentStr, tuple.size, tuple.dataPath);
+                tuple.next.dump(indent + 1);
+            }
+            Node::Switch(switch) => {
+                println!(
+                    "{}Switch(kind: {:?}, path: {})",
+                    indentStr, switch.kind, switch.dataPath
+                );
+                for (case, node) in &switch.cases {
+                    println!("{}  Case: {:?}", indentStr, case);
+                    node.dump(indent + 2);
+                }
+            }
+            Node::Leaf(leaf) => {
+                println!("{}Leaf(path: {})", indentStr, leaf.decisionPath);
+                if let Some(finalMatch) = &leaf.finalMatch {
+                    println!(
+                        "{}  Final Match: {}, bindings: {}",
+                        indentStr, finalMatch.kind, finalMatch.bindings
+                    );
+                } else {
+                    println!("{}  No final match", indentStr);
+                }
+                for guardedMatch in &leaf.guardedMatches {
+                    println!(
+                        "{}  Guarded Match: {}, bindings: {}",
+                        indentStr, guardedMatch.kind, guardedMatch.bindings
+                    );
+                }
+            }
+            Node::Wildcard(wildcard) => {
+                println!("{}Wildcard(path: {})", indentStr, wildcard.path);
+                wildcard.next.dump(indent + 1);
+            }
+        }
+    }
+
+    // Remove spurious wildcard cases for fully-covered enums
+    // This operates on the tree structure and checks each node's own properties
+    pub fn removeSpuriousWildcards(
+        &mut self,
+        enums: &std::collections::BTreeMap<QualifiedName, crate::siko::hir::Data::Enum>,
+    ) {
+        match self {
+            Node::Switch(switch) => {
+                // Check if this is an enum switch with all variants covered
+                if let SwitchKind::Enum(enumName) = &switch.kind {
+                    if let Some(enumDef) = enums.get(enumName) {
+                        let totalVariants = enumDef.variants.len();
+                        let mut variantCount = switch.cases.len();
+                        if switch.cases.contains_key(&Case::Default) {
+                            variantCount -= 1; // Exclude Default from count
+                        }
+                        // If we have all variants, remove the Default (wildcard) case
+                        if variantCount == totalVariants {
+                            switch.cases.remove(&Case::Default);
+                        }
+                    }
+                }
+
+                // Recursively check all child nodes
+                for (_, child) in &mut switch.cases {
+                    child.removeSpuriousWildcards(enums);
+                }
+            }
+            Node::Tuple(tuple) => {
+                tuple.next.removeSpuriousWildcards(enums);
+            }
+            Node::Wildcard(wildcard) => {
+                wildcard.next.removeSpuriousWildcards(enums);
+            }
+            Node::Leaf(_) => {
+                // Leaf nodes don't have children to process
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

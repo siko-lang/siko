@@ -10,14 +10,17 @@ pub struct Constraint {
     pub name: QualifiedName,
     pub args: Vec<Type>,
     pub associatedTypes: Vec<AssociatedType>,
+    pub main: bool,
 }
 
 impl Display for Constraint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        //let m = if self.main { " (m)" } else { "" };
+        let m = "";
         if self.args.is_empty() {
-            write!(f, "{}", self.name)?;
+            write!(f, "{}{}", self.name, m)?;
         } else {
-            write!(f, "{}[{}]", self.name, formatTypes(&self.args))?;
+            write!(f, "{}{}[{}]", self.name, m, formatTypes(&self.args))?;
         }
         if !self.associatedTypes.is_empty() {
             let assocTypes = self

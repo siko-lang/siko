@@ -7,9 +7,11 @@ use crate::siko::{
         Function::Function,
         InstanceResolver::{InstanceResolver, InstanceSearchResult},
         InstanceStore::InstanceStore,
-        Instantiation::{instantiateType, instantiateTypes},
+        Instantiation::{instantiateInstance, instantiateType, instantiateTypes},
         Instruction::InstanceReference,
         Program::Program,
+        Substitution::Substitution,
+        Trait::Instance,
         Type::{formatTypes, Type},
         TypeVarAllocator::TypeVarAllocator,
         Unifier::Unifier,
@@ -36,6 +38,7 @@ pub struct FunctionCallResolver<'a> {
     implStore: &'a InstanceStore,
     unifier: Unifier,
     knownConstraints: ConstraintContext,
+    knownImpls: Vec<QualifiedName>,
 }
 
 impl<'a> FunctionCallResolver<'a> {
@@ -54,7 +57,18 @@ impl<'a> FunctionCallResolver<'a> {
             implStore,
             knownConstraints,
             unifier,
+            knownImpls: Vec::new(),
         }
+    }
+
+    pub fn mergeSubstitution(&mut self, sub: &Substitution) {
+        //println!("Before merging substitution: {}", self.unifier.substitution.borrow());
+        //println!("Merging substitution: {}", sub);
+        self.unifier.substitution.borrow_mut().merge(sub);
+    }
+
+    pub fn setKnownImpls(&mut self, impls: Vec<QualifiedName>) {
+        self.knownImpls = impls;
     }
 
     pub fn resolve(
@@ -81,8 +95,8 @@ impl<'a> FunctionCallResolver<'a> {
         //     "Checking trait (method?) call: {} {} {} {}",
         //     f.name, fnType, f.constraintContext, self.knownConstraints
         // );
-        // let destType = self.unifier.apply(resultVar.getType());
-        // println!("Dest type: {}", destType);
+        //let destType = self.unifier.apply(resultVar.getType());
+        //println!("Dest type: {}", destType);
         let mut types = f.constraintContext.typeParameters.clone();
         types.push(fnType.clone());
         let sub = instantiateTypes(&mut self.allocator, &types);
@@ -123,6 +137,10 @@ impl<'a> FunctionCallResolver<'a> {
         self.unifier.unifyVar(resultVar, expectedResult.clone());
         let neededConstraints = self.unifier.apply(neededConstraints.clone());
         //println!("Needed constraints: {}", neededConstraints);
+        //println!("Known constraints: {}", self.knownConstraints);
+        let knownConstraints = self.unifier.apply(self.knownConstraints.clone());
+        // println!("After applying unifier, known constraints: {}", knownConstraints);
+        // println!("known impls: {:?}", self.knownImpls);
         let neededConstraints = neededConstraints.constraints;
         let mut remaining = neededConstraints.clone();
         let mut tryMore = true;
@@ -140,83 +158,71 @@ impl<'a> FunctionCallResolver<'a> {
                     }
                     let current = remaining.remove(0);
                     if let Some((index, foundConstraint)) =
-                        implResolver.findImplInKnownConstraints(&current, &self.knownConstraints)
+                        implResolver.findImplInKnownConstraints(&current, &knownConstraints)
                     {
-                        // impl will be provided later during mono
+                        resolvedSomething = true;
+                        //println!("---------- Using known instance for {}", current);
                         for (a, b) in zip(&current.associatedTypes, &foundConstraint.associatedTypes) {
                             //println!("Unifying impl assoc {} with constraint assoc {}", a, b);
                             self.unifier.unify(a.ty.clone(), b.ty.clone(), location.clone());
                         }
-                        //println!("---------- Using known instance for {}", current);
-                        let expectedFnType = self.unifier.apply(expectedFnType.clone());
-                        let expectedResult = self.unifier.apply(expectedResult.clone());
-                        self.unifier.unifyVar(resultVar, expectedResult);
-                        //println!("expected fn type {}", expectedFnType);
-                        checkResult.fnType = expectedFnType.clone();
-                        checkResult.fnName = f.name.clone();
-                        checkResult.instanceRefs.push(InstanceReference::Indirect(index));
+                        if current.main {
+                            if !self.knownImpls.is_empty() {
+                                let knownImpl = &self.knownImpls[index as usize];
+                                let instanceDef = self
+                                    .program
+                                    .getInstance(knownImpl)
+                                    .expect("Known impl not found in program");
+                                let instanceDef = instantiateInstance(&self.allocator, &instanceDef);
+                                //println!("Found impl {} for {}", instanceDef.name, current);
+                                assert_eq!(instanceDef.traitName.add(f.name.getShortName()), f.name);
+                                self.findInstanceMember(f, &location, &mut checkResult, &expectedFnType, &instanceDef);
+                                let expectedFnType = self.unifier.apply(expectedFnType.clone());
+                                let expectedResult = self.unifier.apply(expectedResult.clone());
+                                self.unifier.unifyVar(resultVar, expectedResult);
+                                checkResult.fnType = expectedFnType.clone();
+                                //checkResult.fnName = instance.
+                            } else {
+                                //println!("expected fn type {}", expectedFnType);
+                                let expectedFnType = self.unifier.apply(expectedFnType.clone());
+                                let expectedResult = self.unifier.apply(expectedResult.clone());
+                                self.unifier.unifyVar(resultVar, expectedResult);
+                                checkResult.fnType = expectedFnType.clone();
+                                checkResult.fnName = f.name.clone();
+                                checkResult.instanceRefs.push(InstanceReference::Indirect(index));
+                            }
+                        } else {
+                            checkResult.instanceRefs.push(InstanceReference::Indirect(index));
+                        }
                     } else {
                         // we will select an instance now
                         //println!("---------- Trying to find instance for {}", current);
-
                         match implResolver.findInstanceInScope(&current) {
                             InstanceSearchResult::Found(instanceDef) => {
                                 resolvedSomething = true;
-                                //println!("Found impl {}", instanceDef.name);
+                                //println!("Found impl {} for {}", instanceDef.name, current);
                                 for (a, b) in zip(&instanceDef.associatedTypes, &current.associatedTypes) {
                                     //println!("Unifying impl assoc {} with constraint assoc {}", a, b);
                                     self.unifier.unify(a.ty.clone(), b.ty.clone(), location.clone());
                                 }
-                                checkResult
-                                    .instanceRefs
-                                    .push(InstanceReference::Direct(instanceDef.name.clone()));
-                                if instanceDef.traitName.add(f.name.getShortName()) == f.name {
-                                    let mut found = false;
-                                    for m in &instanceDef.members {
-                                        if m.name == f.name.getShortName() {
-                                            //Found matching member, apply substitution
-                                            //println!("Will call {}", m.fullName);
-                                            //println!("Impl member result ty {}", m.memberType);
-                                            //println!("Impl member expected ty {}", expectedFnType);
-                                            //println!("Unifying {} and {}", expectedFnType, m.memberType);
-                                            self.unifier.unify(
-                                                expectedFnType.clone(),
-                                                m.memberType.clone(),
-                                                location.clone(),
-                                            );
-                                            let expectedFnType = self.unifier.apply(expectedFnType.clone());
-                                            let expectedResult = self.unifier.apply(expectedResult.clone());
-                                            self.unifier.unifyVar(resultVar, expectedResult);
-                                            checkResult.fnType = expectedFnType.clone();
-                                            checkResult.fnName = m.fullName.clone();
-                                            found = true;
-                                        }
-                                    }
-                                    if !found {
-                                        let traitDef =
-                                            self.program.getTrait(&instanceDef.traitName).expect("Trait not found");
-                                        for m in traitDef.members {
-                                            if m.name == f.name.getShortName() {
-                                                //Found matching member, apply substitution
-                                                let memberType =
-                                                    instantiateType(&mut self.allocator, m.memberType.clone());
-                                                self.unifier.unify(
-                                                    expectedFnType.clone(),
-                                                    memberType,
-                                                    location.clone(),
-                                                );
-                                                let expectedFnType = self.unifier.apply(expectedFnType.clone());
-                                                let expectedResult = self.unifier.apply(expectedResult.clone());
-                                                self.unifier.unifyVar(resultVar, expectedResult);
-                                                checkResult.fnType = expectedFnType.clone();
-                                                checkResult.fnName = m.fullName.clone();
-                                                found = true;
-                                            }
-                                        }
-                                    }
-                                    if !found {
-                                        panic!("Method {} not found in instance {}", f.name, instanceDef.name);
-                                    }
+                                checkResult.fnType = expectedFnType.clone();
+                                if current.main {
+                                    assert_eq!(instanceDef.traitName.add(f.name.getShortName()), f.name);
+                                    self.findInstanceMember(
+                                        f,
+                                        &location,
+                                        &mut checkResult,
+                                        &expectedFnType,
+                                        &instanceDef,
+                                    );
+                                    let expectedFnType = self.unifier.apply(expectedFnType.clone());
+                                    let expectedResult = self.unifier.apply(expectedResult.clone());
+                                    self.unifier.unifyVar(resultVar, expectedResult);
+                                    checkResult.fnType = expectedFnType.clone();
+                                } else {
+                                    checkResult
+                                        .instanceRefs
+                                        .push(InstanceReference::Direct(instanceDef.name.clone()));
                                 }
                             }
                             InstanceSearchResult::Ambiguous(names) => {
@@ -250,14 +256,53 @@ impl<'a> FunctionCallResolver<'a> {
                 }
             }
         }
-        let expectedFnType = self.unifier.apply(expectedFnType);
-        let expectedResult = self.unifier.apply(expectedResult);
+
         checkResult.fnType = expectedFnType.clone();
         self.unifier.unifyVar(resultVar, expectedResult);
-        //println!("result impl refs {:?}", checkResult.instanceRefs);
-        //println!("result name {}", checkResult.fnName);
-        assert_eq!(checkResult.instanceRefs.len(), neededConstraints.len());
+        // println!("result impl refs {:?}", checkResult.instanceRefs);
+        // println!("result name {}", checkResult.fnName);
+        // println!("needed constraints: {:?}", neededConstraints);
+        //assert_eq!(checkResult.instanceRefs.len(), neededConstraints.len());
         checkResult
+    }
+
+    fn findInstanceMember(
+        &mut self,
+        f: &Function,
+        location: &Location,
+        checkResult: &mut CheckFunctionCallResult,
+        expectedFnType: &Type,
+        instanceDef: &Instance,
+    ) {
+        let mut found = false;
+        for m in &instanceDef.members {
+            if m.name == f.name.getShortName() {
+                //Found matching member, apply substitution
+                // println!("Will call {}", m.fullName);
+                // println!("Impl member result ty {}", m.memberType);
+                // println!("Impl member expected ty {}", expectedFnType);
+                // println!("Unifying {} and {}", expectedFnType, m.memberType);
+                self.unifier
+                    .unify(expectedFnType.clone(), m.memberType.clone(), location.clone());
+                checkResult.fnName = m.fullName.clone();
+                found = true;
+            }
+        }
+        if !found {
+            let traitDef = self.program.getTrait(&instanceDef.traitName).expect("Trait not found");
+            for m in traitDef.members {
+                if m.name == f.name.getShortName() {
+                    //Found matching member, apply substitution
+                    let memberType = instantiateType(&mut self.allocator, m.memberType.clone());
+                    self.unifier.unify(expectedFnType.clone(), memberType, location.clone());
+                    checkResult.fnName = m.fullName.clone();
+                    found = true;
+                }
+            }
+        }
+        if !found {
+            panic!("Method {} not found in instance {}", f.name, instanceDef.name);
+        }
     }
 
     pub fn resolveCloneCall(&mut self, arg: Variable, resultVar: Variable) -> (QualifiedName, Vec<InstanceReference>) {

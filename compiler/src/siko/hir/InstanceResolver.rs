@@ -199,6 +199,7 @@ impl<'a> InstanceResolver<'a> {
             name: getCopyName(),
             args: vec![ty.clone()],
             associatedTypes: Vec::new(),
+            main: false,
         };
         self.findInstanceInScope(&constraint).isFound()
     }
@@ -208,6 +209,7 @@ impl<'a> InstanceResolver<'a> {
             name: getDropName(),
             args: vec![ty.clone()],
             associatedTypes: Vec::new(),
+            main: false,
         };
         self.findInstanceInScope(&constraint).isFound()
     }
@@ -218,6 +220,7 @@ impl<'a> InstanceResolver<'a> {
             name: getImplicitConvertName(),
             args: vec![src.clone(), dest.clone()],
             associatedTypes: Vec::new(),
+            main: false,
         };
         // println!("Constraint: {}", constraint);
         self.findInstanceInScope(&constraint).isFound()

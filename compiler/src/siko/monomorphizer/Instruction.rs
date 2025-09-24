@@ -105,17 +105,29 @@ pub fn processInstruction(
                     (f, handlerResolution, contextSyntaxBlockId)
                 }
                 FunctionKind::TraitMemberDecl(_) | FunctionKind::TraitMemberDefinition(_) => {
+                    // println!("Trait member call in mono: {} {}", info.name, target_fn.getType());
+                    // println!("Current known impls: {:?}", info.instanceRefs);
+                    // println!("Current impls: {:?}", impls);
+                    let mut resolvedImpls = Vec::new();
+                    for instanceRef in &info.instanceRefs {
+                        match instanceRef {
+                            InstanceReference::Direct(name) => {
+                                resolvedImpls.push(name.clone());
+                            }
+                            InstanceReference::Indirect(index) => {
+                                if let Some(name) = impls.get(*index as usize) {
+                                    resolvedImpls.push(name.clone());
+                                } else {
+                                    panic!("indirect instance reference out of bounds {} impls {:?}", index, impls);
+                                }
+                            }
+                        }
+                    }
+                    //println!("Resolved impls: {:?}", resolvedImpls);
                     let (handlerResolution, contextSyntaxBlockId) = handlerResolutionStore.get(syntaxBlockId);
                     let (_, mut fnCallResolver) = createResolvers(&target_fn, mono.ctx, &mono.program);
-                    // let fnType = target_fn.getType();
-                    // // println!(
-                    // //     "Trait member call in mono: {} {} {}",
-                    // //     info.name, fnType, _traitName
-                    // // );
-                    // let (_fn_ty, context_ty) = prepareTypes(sub, dest, info, fnType);
-                    // // println!("trait call fn type {}", _fn_ty);
-                    // // println!("trait call context type {}", context_ty);
-                    // // println!("all available implementations: {:?}", impls);
+                    fnCallResolver.mergeSubstitution(sub);
+                    fnCallResolver.setKnownImpls(resolvedImpls);
                     //println!("Substitution: {} ", sub);
                     let mut args = Vec::new();
                     for arg in &info.args {
@@ -196,6 +208,7 @@ pub fn processInstruction(
                 }
             }
             let fn_name = mono.getMonoName(&name, &ty_args, resolution.clone(), resolvedImpls.clone());
+            //println!("MONO CALL: {}", fn_name);
             mono.addKey(Key::Function(name.clone(), ty_args, resolution, resolvedImpls));
             let mut callInfo = CallInfo::new(fn_name, info.args.clone());
             callInfo.context = callCtx;

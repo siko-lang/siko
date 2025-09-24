@@ -19,6 +19,7 @@ use crate::siko::syntax::Function::{Function, FunctionExternKind, Parameter, Res
 use crate::siko::syntax::Identifier::Identifier;
 use crate::siko::syntax::Type::TypeParameterDeclaration;
 use crate::siko::util::error;
+use crate::siko::util::Runner::Runner;
 
 use super::Environment::Environment;
 use super::ExprResolver::ExprResolver;
@@ -76,6 +77,7 @@ impl<'a> FunctionResolver<'a> {
         implicits: &BTreeMap<QualifiedName, Implicit>,
         name: QualifiedName,
         typeResolver: &TypeResolver,
+        runner: Runner,
     ) -> IrFunction {
         //println!("Resolving function: {}", name);
 
@@ -142,6 +144,7 @@ impl<'a> FunctionResolver<'a> {
                 variants,
                 enums,
                 implicits,
+                runner,
             );
             exprResolver.resolve(body, &env);
             Some(exprResolver.body())

@@ -21,7 +21,7 @@ use crate::siko::{
         Trait::Instance,
         Type::{Constraint, ConstraintArgument, TypeParameterDeclaration},
     },
-    util::error,
+    util::{error, Runner::Runner},
 };
 
 use std::{
@@ -89,6 +89,7 @@ fn addConstraint(
         name: traitDef.name,
         args: args,
         associatedTypes: associatedTypes,
+        main: false,
     };
     context.addConstraint(irConstraint);
     context
@@ -152,10 +153,11 @@ pub struct Resolver<'a> {
     defaultTraitMethods: BTreeMap<QualifiedName, Function>,
     instanceMethods: BTreeMap<QualifiedName, Function>,
     instanceSubChains: BTreeMap<QualifiedName, SubstitutionChain>,
+    runner: Runner,
 }
 
 impl<'a> Resolver<'a> {
-    pub fn new(ctx: &'a ReportContext) -> Resolver<'a> {
+    pub fn new(ctx: &'a ReportContext, runner: Runner) -> Resolver<'a> {
         Resolver {
             ctx: ctx,
             modules: BTreeMap::new(),
@@ -166,6 +168,7 @@ impl<'a> Resolver<'a> {
             defaultTraitMethods: BTreeMap::new(),
             instanceMethods: BTreeMap::new(),
             instanceSubChains: BTreeMap::new(),
+            runner: runner,
         }
     }
 
@@ -574,6 +577,7 @@ impl<'a> Resolver<'a> {
                                 &self.program.implicits,
                                 owner.getName().unwrap().add(method.name.toString()),
                                 &typeResolver,
+                                self.runner.clone(),
                             );
                             self.program.functions.insert(irFunction.name.clone(), irFunction);
                         }
@@ -604,6 +608,7 @@ impl<'a> Resolver<'a> {
                                 &self.program.implicits,
                                 owner.getName().unwrap().add(method.name.toString()),
                                 &typeResolver,
+                                self.runner.clone(),
                             );
                             self.program.functions.insert(irFunction.name.clone(), irFunction);
                         }
@@ -653,6 +658,7 @@ impl<'a> Resolver<'a> {
                                 name: traitDef.name.clone(),
                                 args: traitDef.params.clone(),
                                 associatedTypes: associatedTypes,
+                                main: true,
                             });
                             let functionResolver =
                                 FunctionResolver::new(moduleResolver, constraintContext, Some(owner.clone()));
@@ -666,6 +672,7 @@ impl<'a> Resolver<'a> {
                                 &self.program.implicits,
                                 QualifiedName::Item(Box::new(name.clone()), method.name.toString()),
                                 &typeResolver,
+                                self.runner.clone(),
                             );
                             if method.body.is_none() {
                                 irFunction.kind = FunctionKind::TraitMemberDecl(name.clone());
@@ -717,6 +724,7 @@ impl<'a> Resolver<'a> {
                                 &self.program.implicits,
                                 qn.add(method.name.clone()),
                                 &typeResolver,
+                                self.runner.clone(),
                             );
                             self.program.functions.insert(irFunction.name.clone(), irFunction);
                         }
@@ -738,6 +746,7 @@ impl<'a> Resolver<'a> {
                             &self.program.implicits,
                             QualifiedName::Module(moduleResolver.name.clone()).add(f.name.toString()),
                             &typeResolver,
+                            self.runner.clone(),
                         );
                         self.program.functions.insert(irFunction.name.clone(), irFunction);
                     }
@@ -760,6 +769,7 @@ impl<'a> Resolver<'a> {
                                 &self.program.implicits,
                                 name.clone(),
                                 &typeResolver,
+                                self.runner.clone(),
                             );
                             if irFunction.body.is_none() {
                                 irFunction.kind = FunctionKind::EffectMemberDecl(name.clone());

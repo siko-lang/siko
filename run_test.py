@@ -3,6 +3,7 @@
 import argparse
 import concurrent.futures
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -28,6 +29,14 @@ failure = 0
 skipped = 0
 in_workflow = False
 output_lock = threading.Lock()
+
+def signal_handler(signum, frame):
+    """Handle SIGINT (Ctrl+C) signal - terminate immediately"""
+    print(f"\n{red('Interrupt received! Stopping tests...')}")
+    os._exit(1)
+
+# Set up signal handler for immediate termination
+signal.signal(signal.SIGINT, signal_handler)
 
 class TestResult:
     def __init__(self, name, result, time_data, is_success_test=False, output=""):

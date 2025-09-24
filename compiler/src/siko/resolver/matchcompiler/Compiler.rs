@@ -11,6 +11,8 @@ use crate::siko::resolver::ExprResolver::ExprResolver;
 use crate::siko::syntax::Expr::Branch;
 use crate::siko::syntax::Identifier::Identifier;
 use crate::siko::syntax::Pattern::{Pattern, SimplePattern};
+use crate::siko::util::Runner::Runner;
+use crate::stage;
 use std::collections::{BTreeMap, BTreeSet};
 use std::iter::repeat;
 
@@ -21,6 +23,7 @@ pub struct MatchCompiler<'a, 'b> {
     pub usedPatterns: BTreeSet<i64>,
     pub missingPatterns: BTreeSet<String>,
     irCompiler: IrCompiler<'a, 'b>,
+    runner: Runner,
 }
 
 impl<'a, 'b> MatchCompiler<'a, 'b> {
@@ -31,6 +34,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         bodyLocation: Location,
         branches: Vec<Branch>,
         parentEnv: &'a Environment<'a>,
+        runner: Runner,
     ) -> MatchCompiler<'a, 'b> {
         let irCompiler = IrCompiler::new(
             bodyId,
@@ -47,12 +51,16 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
             usedPatterns: BTreeSet::new(),
             missingPatterns: BTreeSet::new(),
             irCompiler: irCompiler,
+            runner: runner,
         }
     }
 
     pub fn compile(&mut self) -> Variable {
-        let node = self.processAndVerifyPatterns();
-        self.irCompiler.compileIr(node)
+        let runner = self.runner.child("match_processing");
+        let node = stage!(runner, { self.processAndVerifyPatterns() });
+        let runner = self.runner.child("match_ir_compilation");
+        let v = stage!(runner, { self.irCompiler.compileIr(node) });
+        v
     }
 
     fn resolve(&self, pattern: &Pattern) -> Pattern {
@@ -96,21 +104,10 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
             SimplePattern::Named(origId, args) => {
                 let name = self.irCompiler.resolver.moduleResolver.resolveName(&origId);
                 let mut result = Vec::new();
-                if let Some(enumName) = self.irCompiler.resolver.variants.get(&name) {
-                    let e = self.irCompiler.resolver.enums.get(enumName).expect("enum not found");
-                    for variant in &e.variants {
-                        if variant.name == name {
-                            continue;
-                        }
-                        let id = Identifier::new(variant.name.toString(), Location::empty());
-
-                        let args = repeat(wildcardPattern.clone()).take(variant.items.len()).collect();
-                        let pat = Pattern {
-                            pattern: SimplePattern::Named(id, args),
-                            location: Location::empty(),
-                        };
-                        result.push(pat);
-                    }
+                if let Some(_enumName) = self.irCompiler.resolver.variants.get(&name) {
+                    // Instead of generating O(n²) specific variant alternatives,
+                    // generate a single wildcard to represent "any other variant"
+                    result.push(wildcardPattern.clone());
                     for (index, arg) in args.iter().enumerate() {
                         let choices = self.generateChoices(arg);
                         for choice in choices {
@@ -284,8 +281,9 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         pendingPaths.push(DataPath::Root);
 
         let mut node = self.buildNode(pendingPaths, &DecisionPath::new(), &dataTypes, &matches);
+        node.removeSpuriousWildcards(&self.irCompiler.resolver.enums);
+        //node.dump(0);
         node.add(self, &matches);
-
         for (index, branch) in self.branches.clone().iter().enumerate() {
             if !self.usedPatterns.contains(&(index as i64)) {
                 self.errors

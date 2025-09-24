@@ -33,7 +33,7 @@ pub fn deriveDiscriminatorForEnum(enumDef: &Enum) -> Instance {
         Some(decl)
     };
     let enumTy = Type::Named(enumDef.name.clone(), typeArgs);
-    let eqFn = getDiscriminatorFnForEnum(enumDef);
+    let f = getDiscriminatorFnForEnum(enumDef);
     let types = vec![enumTy];
     let instance = Instance {
         public: true,
@@ -42,7 +42,7 @@ pub fn deriveDiscriminatorForEnum(enumDef: &Enum) -> Instance {
         traitName: traitName,
         types: types,
         associatedTypes: Vec::new(),
-        methods: vec![eqFn],
+        methods: vec![f],
         location: enumDef.name.location(),
     };
     //crate::siko::syntax::Format::format_any(&instance);
