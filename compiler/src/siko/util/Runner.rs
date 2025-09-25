@@ -7,15 +7,23 @@ use std::{
 
 use crate::siko::util::Config::Config;
 
-pub struct StageResult<T> {
-    pub name: String,
-    pub elapsed: Duration,
-    pub value: T,
+struct StageData {
+    total: Duration,
+    count: u32,
+}
+
+impl StageData {
+    fn new() -> Self {
+        StageData {
+            total: Duration::new(0, 0),
+            count: 0,
+        }
+    }
 }
 
 struct Core {
     order: Vec<String>,
-    stages: BTreeMap<String, Duration>,
+    stages: BTreeMap<String, StageData>,
 }
 
 #[derive(Clone)]
@@ -53,7 +61,7 @@ impl Runner {
     where
         F: FnOnce() -> T,
     {
-        if self.config.passDetails {
+        if self.config.passDetails > 1 {
             print!("{}...\n", self.name);
         }
         let start = Instant::now();
@@ -68,19 +76,20 @@ impl Runner {
         let value = f();
 
         let elapsed = start.elapsed();
-        if self.config.passDetails {
+        if self.config.passDetails > 1 {
             println!("Done (took {elapsed:?})");
         }
 
         let core = &mut self.core.borrow_mut();
-        let entry = core.stages.entry(self.name.to_string()).or_insert(Duration::new(0, 0));
-        *entry += elapsed;
+        let entry = core.stages.entry(self.name.to_string()).or_insert_with(StageData::new);
+        entry.total += elapsed;
+        entry.count += 1;
 
         value
     }
 
     pub fn report(&self) {
-        if !self.config.passDetails {
+        if self.config.passDetails == 0 {
             return;
         }
         let core = self.core.borrow();
@@ -93,24 +102,27 @@ impl Runner {
         let max_name_len = core.stages.iter().map(|(name, _)| name.len()).max().unwrap_or(5);
 
         // header
-        println!("{:<width$} | Time (ms)", "Stage", width = max_name_len);
-        println!("{}", "-".repeat(max_name_len + 15));
+        let header = format!(
+            "{:<width$} |    Time (ms) | Avg. Time (ms) | Count    ",
+            "Stage",
+            width = max_name_len
+        );
+        println!("{}", header);
+        println!("{}", "-".repeat(header.len()));
 
         // rows
         for name in &core.order {
-            let elapsed = core.stages.get(name).unwrap();
-            let ms = elapsed.as_secs_f64() * 1000.0;
-            println!("{:<width$} | {:>9.3} ms", name, ms, width = max_name_len);
+            let data = core.stages.get(name).unwrap();
+            let ms = data.total.as_secs_f64() * 1000.0;
+            let avg = ms / data.count as f64;
+            println!(
+                "{:<width$} | {:>9.3} ms | {:>11.3} ms | {:>9.3}",
+                name,
+                ms,
+                avg,
+                data.count,
+                width = max_name_len
+            );
         }
     }
-}
-
-#[macro_export]
-macro_rules! stage {
-    ($runner:expr, $body:block) => {{
-        $runner.run(|| $body)
-    }};
-    ($runner:expr, $expr:expr) => {{
-        $runner.run($expr)
-    }};
 }

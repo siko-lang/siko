@@ -23,7 +23,6 @@ use crate::siko::syntax::Pattern::{Pattern, SimplePattern};
 use crate::siko::syntax::Statement::Block;
 use crate::siko::syntax::Statement::StatementKind;
 use crate::siko::util::Runner::Runner;
-use crate::stage;
 
 use super::Environment::Environment;
 use super::Error::ResolverError;
@@ -488,7 +487,7 @@ impl<'a> ExprResolver<'a> {
                     env,
                     runner.clone(),
                 );
-                let v = stage!(runner, { matchResolver.compile() });
+                let v = runner.run(|| matchResolver.compile());
                 v
             }
             SimpleExpr::Block(block) => {

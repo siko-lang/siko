@@ -19,6 +19,8 @@ impl<'a> BlockGroupBuilder<'a> {
     }
 
     pub fn process(&self) -> BlockGroupInfo {
+        // println!("Building block groups for function: {}", self.f.name);
+        // println!("Function: {}", self.f);
         let mut allDeps: BTreeMap<BlockId, Vec<BlockId>> = BTreeMap::new();
         if let Some(body) = &self.f.body {
             for (id, block) in &body.blocks {
@@ -45,6 +47,12 @@ impl<'a> BlockGroupBuilder<'a> {
                                     .or_insert_with(Vec::new)
                                     .push(c.branch.clone());
                             }
+                        }
+                        InstructionKind::With(_, info) => {
+                            allDeps
+                                .entry(id.clone())
+                                .or_insert_with(Vec::new)
+                                .push(info.blockId.clone());
                         }
                         _ => {}
                     }

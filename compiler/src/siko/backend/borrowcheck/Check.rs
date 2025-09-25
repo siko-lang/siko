@@ -8,6 +8,7 @@ use crate::siko::{
     },
     hir::{FunctionGroupBuilder::FunctionGroupBuilder, Program::Program},
     location::Report::ReportContext,
+    util::Runner::Runner,
 };
 
 pub struct Check<'a> {
@@ -19,7 +20,7 @@ impl<'a> Check<'a> {
         Check { program }
     }
 
-    pub fn process(&mut self, ctx: &'a ReportContext) {
+    pub fn process(&mut self, ctx: &'a ReportContext, runner: Runner) {
         let mut dataGroups = DataGroups::new(self.program);
         dataGroups.process();
         let functionGroupBuilder = FunctionGroupBuilder::new(self.program);
@@ -37,6 +38,7 @@ impl<'a> Check<'a> {
                         &dataGroups,
                         &mut profileStore,
                         group.items.clone(),
+                        runner.child("profile_builder"),
                     );
                     let updated = profileBuilder.process(true);
                     if updated {
@@ -56,6 +58,7 @@ impl<'a> Check<'a> {
                 &dataGroups,
                 &mut profileStore,
                 vec![f.name.clone()],
+                runner.child("borrow_checker"),
             );
             checker.process();
             //println!("Function profile for {}: {:?}", f.name, profile);

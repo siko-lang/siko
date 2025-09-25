@@ -14,7 +14,6 @@ use crate::{
             Runner::Runner,
         },
     },
-    stage,
     PackageFinder::PackageFinder,
 };
 
@@ -40,7 +39,7 @@ impl Compiler {
         ctx: &'a ReportContext,
         fileManager: &FileManager,
     ) -> Resolver<'a> {
-        let resolver = stage!(runner.child("parser"), {
+        let resolver = runner.child("parser").run(|| {
             let mut resolver = Resolver::new(&ctx, name_resolution_runner.clone());
             let mut packageFinder = PackageFinder::new();
             packageFinder.processPaths(config.inputFiles.clone(), true);
@@ -132,7 +131,7 @@ impl Compiler {
                     self.config.sanitized = true;
                 }
                 "--pass-details" => {
-                    self.config.passDetails = true;
+                    self.config.passDetails = 1;
                 }
                 "--external" => {
                     external_mode = true;
@@ -164,7 +163,7 @@ impl Compiler {
         bin_output_path: String,
         mut generator: MiniCGenerator,
     ) {
-        stage!(runner.child("c_generator"), {
+        runner.child("c_generator").run(|| {
             generator.dump().expect("c generator failed");
         });
         if self.config.buildPhase == BuildPhase::BuildSource {
@@ -219,26 +218,29 @@ impl Compiler {
             &ctx,
             &fileManager,
         );
-        let program = stage!(name_resolution_runner, {
+        let program = name_resolution_runner.run(|| {
             resolver.process();
             resolver.ir()
         });
         //println!("after resolver\n{}", program);
-        let program = stage!(runner.child("type_checking"), { typecheck(&ctx, program) });
-        let program = stage!(runner.child("type_verification"), {
+        let typecheckerRunner = runner.child("type_checking");
+        let program = typecheckerRunner
+            .clone()
+            .run(|| typecheck(&ctx, program, typecheckerRunner));
+        let program = runner.child("type_verification").run(|| {
             verifyTypes(&program);
             program
         });
         //println!("after typechecker\n{}", program);
         let program = Backend::process(&ctx, &mut runner, program);
         //println!("after backend\n{}", program);
-        let mut mir_program = stage!(runner.child("mir_lowering"), {
+        let mut mir_program = runner.child("mir_lowering").run(|| {
             let lowering = Lowering::new(program);
             lowering.lowerProgram()
         });
         //println!("mir\n{}", mir_program);
-        stage!(runner.child("mir_processing"), { mir_program.process() });
-        let c_program = stage!(runner.child("c_generator"), { mir_program.toMiniC() });
+        runner.child("mir_processing").run(|| mir_program.process());
+        let c_program = runner.child("c_generator").run(|| mir_program.toMiniC());
         let c_output_path = format!("{}.c", self.config.outputFile);
         let object_path = format!("{}.o", self.config.outputFile);
         let bin_output_path = format!("./{}", self.config.outputFile);

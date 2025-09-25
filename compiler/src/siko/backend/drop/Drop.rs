@@ -3,35 +3,32 @@ use std::{
     fmt::Display,
 };
 
-use crate::{
-    siko::{
-        backend::drop::{
-            CollisionChecker::CollisionChecker,
-            Context::Context,
-            DeclarationStore::DeclarationStore,
-            DropMetadataStore::DropMetadataStore,
-            Error::{reportErrors, Error},
-            Event::Collision,
-            Finalizer::Finalizer,
-            Initializer::Initializer,
-            Path::Path,
-            ReferenceStore::ReferenceStore,
-        },
-        hir::{
-            Block::BlockId,
-            BodyBuilder::BodyBuilder,
-            Function::Function,
-            FunctionCallResolver::FunctionCallResolver,
-            Graph::GraphBuilder,
-            InstanceResolver::InstanceResolver,
-            Instruction::{CallInfo, InstructionKind},
-            Program::Program,
-            Utils::createResolvers,
-        },
-        location::Report::ReportContext,
-        util::Runner::Runner,
+use crate::siko::{
+    backend::drop::{
+        CollisionChecker::CollisionChecker,
+        Context::Context,
+        DeclarationStore::DeclarationStore,
+        DropMetadataStore::DropMetadataStore,
+        Error::{reportErrors, Error},
+        Event::Collision,
+        Finalizer::Finalizer,
+        Initializer::Initializer,
+        Path::Path,
+        ReferenceStore::ReferenceStore,
     },
-    stage,
+    hir::{
+        Block::BlockId,
+        BodyBuilder::BodyBuilder,
+        Function::Function,
+        FunctionCallResolver::FunctionCallResolver,
+        Graph::GraphBuilder,
+        InstanceResolver::InstanceResolver,
+        Instruction::{CallInfo, InstructionKind},
+        Program::Program,
+        Utils::createResolvers,
+    },
+    location::Report::ReportContext,
+    util::Runner::Runner,
 };
 
 pub fn checkDrops(ctx: &ReportContext, program: Program, runner: Runner) -> Program {
@@ -48,7 +45,7 @@ pub fn checkDrops(ctx: &ReportContext, program: Program, runner: Runner) -> Prog
             &mut referenceStore,
         );
         let initializerRunner = runner.child("initializer");
-        let f = stage!(initializerRunner, { initializer.process() });
+        let f = initializerRunner.run(|| initializer.process());
         //declarationStore.dump();
         let checkerRunner = runner.child("drop_checker");
         let mut checker = DropChecker::new(
@@ -60,10 +57,10 @@ pub fn checkDrops(ctx: &ReportContext, program: Program, runner: Runner) -> Prog
             checkerRunner.clone(),
         );
         //println!("Checking drops for {}", name);
-        let f = stage!(checkerRunner, { checker.process() });
+        let f = checkerRunner.run(|| checker.process());
         let mut finalizer = Finalizer::new(&f, &program, &mut dropMetadataStore, &declarationStore, &referenceStore);
         let finalizerRunner = runner.child("finalizer");
-        let f = stage!(finalizerRunner, { finalizer.process() });
+        let f = finalizerRunner.run(|| finalizer.process());
         if false {
             let graph = GraphBuilder::new(&f).withPostfix("dropcheck").build();
             graph.printDot();
@@ -107,7 +104,7 @@ impl<'a> DropChecker<'a> {
         referenceStore: &'a ReferenceStore,
         runner: Runner,
     ) -> DropChecker<'a> {
-        let (implResolver, fnCallResolver) = createResolvers(f, ctx, program);
+        let (implResolver, fnCallResolver) = createResolvers(f, ctx, program, runner.child("resolvers"));
         DropChecker {
             ctx: ctx,
             bodyBuilder: BodyBuilder::cloneFunction(f),
@@ -140,7 +137,7 @@ impl<'a> DropChecker<'a> {
             self.function,
         );
         let collisionCheckerRunner = self.runner.child("collision_checker");
-        let allCollisions = stage!(collisionCheckerRunner, { collisionChecker.process() });
+        let allCollisions = collisionCheckerRunner.run(|| collisionChecker.process());
         let (allCollisions, implicitClones) = self.processImplicitClones(allCollisions);
         // println!(
         //     "Found {} collisions and {} implicit clones in function {}",
@@ -160,7 +157,7 @@ impl<'a> DropChecker<'a> {
             reportErrors(self.ctx, errors);
         }
         let applyRunner = self.runner.child("apply_implicit_clones");
-        stage!(applyRunner, { self.applyImplicitClones(implicitClones) });
+        applyRunner.run(|| self.applyImplicitClones(implicitClones));
 
         let mut result = self.function.clone();
         result.body = Some(self.bodyBuilder.build());
@@ -189,9 +186,11 @@ impl<'a> DropChecker<'a> {
                         let implicitCloneVarRef = self
                             .bodyBuilder
                             .createTempValueWithType(dest.location().clone(), receiver.getType().asRef());
-                        let (fnName, instanceRefs) = self
-                            .fnCallResolver
-                            .resolveCloneCall(implicitCloneVar.clone(), dest.clone());
+                        let (fnName, instanceRefs) = self.fnCallResolver.resolveCloneCall(
+                            implicitCloneVar.clone(),
+                            dest.clone(),
+                            self.runner.child("clone_call"),
+                        );
                         let mut info = CallInfo::new(fnName, vec![implicitCloneVar.clone()]);
                         info.instanceRefs.extend(instanceRefs);
                         let implicitClone = InstructionKind::FunctionCall(dest.clone(), info);
@@ -227,9 +226,11 @@ impl<'a> DropChecker<'a> {
                         let implicitCloneVarRef = self
                             .bodyBuilder
                             .createTempValueWithType(input.location().clone(), input.getType().asRef());
-                        let (fnName, instanceRefs) = self
-                            .fnCallResolver
-                            .resolveCloneCall(implicitCloneVarRef.clone(), implicitCloneVar.clone());
+                        let (fnName, instanceRefs) = self.fnCallResolver.resolveCloneCall(
+                            implicitCloneVarRef.clone(),
+                            implicitCloneVar.clone(),
+                            self.runner.child("clone_call"),
+                        );
                         let mut info = CallInfo::new(fnName, vec![implicitCloneVarRef.clone()]);
                         info.instanceRefs.extend(instanceRefs);
                         let implicitClone = InstructionKind::FunctionCall(implicitCloneVar.clone(), info);
@@ -287,7 +288,7 @@ impl<'a> DropChecker<'a> {
         if path.isRootOnly() {
             let ty = path.root.getType();
             assert!(!ty.isReference(), "path root should not be a reference for a move!",);
-            self.implResolver.isCopy(&ty)
+            self.implResolver.isCopy(&ty, self.runner.child("is_copy"))
         } else {
             let resultVar = instruction.kind.getResultVar().expect("no result var");
             let resulTy = resultVar.getType();
@@ -295,7 +296,7 @@ impl<'a> DropChecker<'a> {
                 !resulTy.isReference(),
                 "result type should not be a reference for a move!",
             );
-            self.implResolver.isCopy(&resulTy)
+            self.implResolver.isCopy(&resulTy, self.runner.child("is_copy"))
         }
     }
 }

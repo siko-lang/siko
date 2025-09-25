@@ -20,6 +20,7 @@ use crate::siko::{
         Report::{Entry, Report, ReportContext},
     },
     qualifiedname::QualifiedName,
+    util::Runner::Runner,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -58,11 +59,12 @@ impl<'a> BorrowChecker<'a> {
         dataGroups: &'a DataGroups<'a>,
         profileStore: &'a mut FunctionProfileStore,
         functionGroup: Vec<QualifiedName>,
+        runner: Runner,
     ) -> BorrowChecker<'a> {
         BorrowChecker {
             ctx,
             borrows: BTreeMap::new(),
-            profileBuilder: FunctionProfileBuilder::new(f, program, dataGroups, profileStore, functionGroup),
+            profileBuilder: FunctionProfileBuilder::new(f, program, dataGroups, profileStore, functionGroup, runner),
             blockEnvs: BTreeMap::new(),
             links: BTreeMap::new(),
             traceEnabled: false,

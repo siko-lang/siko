@@ -1,4 +1,4 @@
-use std::iter::zip;
+use std::{collections::BTreeMap, iter::zip, rc::Rc};
 
 use crate::siko::{
     hir::{
@@ -17,6 +17,7 @@ use crate::siko::{
         builtins::{getCopyName, getDropName, getImplicitConvertName},
         QualifiedName,
     },
+    util::Runner::Runner,
 };
 
 pub enum InstanceSearchResult {
@@ -35,9 +36,10 @@ impl InstanceSearchResult {
 
 pub struct InstanceResolver<'a> {
     allocator: TypeVarAllocator,
-    instanceStore: &'a InstanceStore,
     program: &'a Program,
     knownConstraints: ConstraintContext,
+    localInstances: BTreeMap<QualifiedName, Vec<Rc<Instance>>>,
+    importedInstances: BTreeMap<QualifiedName, Vec<Rc<Instance>>>,
 }
 
 impl<'a> InstanceResolver<'a> {
@@ -47,24 +49,44 @@ impl<'a> InstanceResolver<'a> {
         program: &'a Program,
         knownConstraints: ConstraintContext,
     ) -> Self {
+        let mut localInstances = BTreeMap::new();
+        for localInstance in &instanceStore.localInstances {
+            if let Some(instanceDef) = program.getInstance(localInstance) {
+                let entry = localInstances
+                    .entry(instanceDef.traitName.clone())
+                    .or_insert_with(Vec::new);
+                entry.push(instanceDef);
+            }
+        }
+        let mut importedInstances = BTreeMap::new();
+        for importedInstance in &instanceStore.importedInstances {
+            if let Some(instanceDef) = program.getInstance(importedInstance) {
+                let entry = importedInstances
+                    .entry(instanceDef.traitName.clone())
+                    .or_insert_with(Vec::new);
+                entry.push(instanceDef);
+            }
+        }
         InstanceResolver {
             allocator,
-            instanceStore: instanceStore,
             program,
             knownConstraints,
+            localInstances,
+            importedInstances,
         }
     }
 
     fn findInstanceForConstraint(
         &self,
         constraint: &Constraint,
-        candidates: &Vec<QualifiedName>,
+        candidates: &Vec<Rc<Instance>>,
         level: u32,
+        runner: Runner,
     ) -> InstanceSearchResult {
         //println!("Finding instance for constraint {}", constraint);
         let mut matchingImpls = Vec::new();
-        for instanceName in candidates {
-            let instanceDef = self.program.getInstance(&instanceName).expect("Impl not found");
+        for candidate in candidates {
+            let instanceDef = candidate.as_ref();
             if constraint.name == instanceDef.traitName {
                 if instanceDef.types.len() != constraint.args.len() {
                     continue;
@@ -88,11 +110,18 @@ impl<'a> InstanceResolver<'a> {
                     let mut allSubConstraintsMatch = true;
                     for c in &instanceDef.constraintContext.constraints {
                         //println!("  checking sub constraint: {}", c);
-                        if self.findImplInKnownConstraints(c, &self.knownConstraints).is_some() {
+                        if self
+                            .findImplInKnownConstraints(
+                                c,
+                                &self.knownConstraints,
+                                runner.child("find_impl_in_known_constraints"),
+                            )
+                            .is_some()
+                        {
                             //println!("  Found in known constraints");
                             continue;
                         }
-                        if !self.findInstanceInScopeInner(c, level + 1).isFound() {
+                        if !self.findInstanceInScopeInner(c, level + 1, runner.clone()).isFound() {
                             //println!("  No instance found for sub constraint {}", c);
                             allSubConstraintsMatch = false;
                             break;
@@ -119,7 +148,7 @@ impl<'a> InstanceResolver<'a> {
         }
     }
 
-    pub fn findInstanceInScope(&self, constraint: &Constraint) -> InstanceSearchResult {
+    pub fn findInstanceInScope(&self, constraint: &Constraint, runner: Runner) -> InstanceSearchResult {
         // println!("Finding instance in scope for constraint {}", constraint);
         // for instance in &self.instanceStore.localInstances {
         //     println!("Local instance: {}", instance);
@@ -127,10 +156,17 @@ impl<'a> InstanceResolver<'a> {
         // for instance in &self.instanceStore.importedInstances {
         //     println!("Imported instance: {}", instance);
         // }
-        self.findInstanceInScopeInner(constraint, 0)
+        runner
+            .clone()
+            .run(|| self.findInstanceInScopeInner(constraint, 0, runner))
     }
 
-    pub fn findInstanceInScopeInner(&self, constraint: &Constraint, level: u32) -> InstanceSearchResult {
+    pub fn findInstanceInScopeInner(
+        &self,
+        constraint: &Constraint,
+        level: u32,
+        runner: Runner,
+    ) -> InstanceSearchResult {
         for arg in constraint.args.iter() {
             if arg.isGeneric() {
                 return InstanceSearchResult::NotFound;
@@ -144,15 +180,19 @@ impl<'a> InstanceResolver<'a> {
             // Prevent infinite recursion
             panic!("Instance resolution exceeded maximum recursion depth");
         }
-        match self.findInstanceForConstraint(constraint, &self.instanceStore.localInstances, level) {
-            InstanceSearchResult::Found(instanceDef) => return InstanceSearchResult::Found(instanceDef),
-            InstanceSearchResult::Ambiguous(names) => return InstanceSearchResult::Ambiguous(names),
-            InstanceSearchResult::NotFound => {}
+        if let Some(localCandidates) = self.localInstances.get(&constraint.name) {
+            match self.findInstanceForConstraint(constraint, &localCandidates, level, runner.clone()) {
+                InstanceSearchResult::Found(instanceDef) => return InstanceSearchResult::Found(instanceDef),
+                InstanceSearchResult::Ambiguous(names) => return InstanceSearchResult::Ambiguous(names),
+                InstanceSearchResult::NotFound => {}
+            }
         }
-        match self.findInstanceForConstraint(constraint, &self.instanceStore.importedInstances, level) {
-            InstanceSearchResult::Found(instanceDef) => return InstanceSearchResult::Found(instanceDef),
-            InstanceSearchResult::Ambiguous(names) => return InstanceSearchResult::Ambiguous(names),
-            InstanceSearchResult::NotFound => {}
+        if let Some(importedCandidates) = self.importedInstances.get(&constraint.name) {
+            match self.findInstanceForConstraint(constraint, &importedCandidates, level, runner.clone()) {
+                InstanceSearchResult::Found(instanceDef) => return InstanceSearchResult::Found(instanceDef),
+                InstanceSearchResult::Ambiguous(names) => return InstanceSearchResult::Ambiguous(names),
+                InstanceSearchResult::NotFound => {}
+            }
         }
         let mut canonTypes = Vec::new();
         for arg in &constraint.args {
@@ -164,7 +204,11 @@ impl<'a> InstanceResolver<'a> {
         }
         if let Some(instanceName) = self.program.canonicalImplStore.get(&constraint.name, &canonTypes) {
             //println!("Found canonical impl {} for {}", instanceName, formatTypes(&canonTypes));
-            return self.findInstanceForConstraint(constraint, &vec![instanceName.clone()], level);
+            let instanceDef = self
+                .program
+                .getInstance(&instanceName)
+                .expect("Canonical impl not found");
+            return self.findInstanceForConstraint(constraint, &vec![instanceDef], level, runner);
         }
         InstanceSearchResult::NotFound
     }
@@ -173,48 +217,51 @@ impl<'a> InstanceResolver<'a> {
         &self,
         constraint: &Constraint,
         knownConstraints: &ConstraintContext,
+        runner: Runner,
     ) -> Option<(u32, Constraint)> {
-        for (index, known) in knownConstraints.constraints.iter().enumerate() {
-            if constraint.name == known.name && constraint.args.len() == known.args.len() {
-                let mut sub = Substitution::new();
-                let mut allMatch = true;
-                for (arg, karg) in zip(&constraint.args, &known.args) {
-                    if unify(&mut sub, arg.clone(), karg.clone(), false).is_err() {
-                        allMatch = false;
-                        break;
+        runner.run(|| {
+            for (index, known) in knownConstraints.constraints.iter().enumerate() {
+                if constraint.name == known.name && constraint.args.len() == known.args.len() {
+                    let mut sub = Substitution::new();
+                    let mut allMatch = true;
+                    for (arg, karg) in zip(&constraint.args, &known.args) {
+                        if unify(&mut sub, arg.clone(), karg.clone(), false).is_err() {
+                            allMatch = false;
+                            break;
+                        }
+                    }
+                    if allMatch {
+                        let mut foundConstraint = known.clone();
+                        foundConstraint = foundConstraint.apply(&sub);
+                        return Some((index as u32, foundConstraint));
                     }
                 }
-                if allMatch {
-                    let mut foundConstraint = known.clone();
-                    foundConstraint = foundConstraint.apply(&sub);
-                    return Some((index as u32, foundConstraint));
-                }
             }
-        }
-        None
+            None
+        })
     }
 
-    pub fn isCopy(&self, ty: &Type) -> bool {
+    pub fn isCopy(&self, ty: &Type, runner: Runner) -> bool {
         let constraint = Constraint {
             name: getCopyName(),
             args: vec![ty.clone()],
             associatedTypes: Vec::new(),
             main: false,
         };
-        self.findInstanceInScope(&constraint).isFound()
+        self.findInstanceInScope(&constraint, runner).isFound()
     }
 
-    pub fn isDrop(&self, ty: &Type) -> bool {
+    pub fn isDrop(&self, ty: &Type, runner: Runner) -> bool {
         let constraint = Constraint {
             name: getDropName(),
             args: vec![ty.clone()],
             associatedTypes: Vec::new(),
             main: false,
         };
-        self.findInstanceInScope(&constraint).isFound()
+        self.findInstanceInScope(&constraint, runner).isFound()
     }
 
-    pub fn isImplicitConvert(&self, src: &Type, dest: &Type) -> bool {
+    pub fn isImplicitConvert(&self, src: &Type, dest: &Type, runner: Runner) -> bool {
         //println!("Checking implicit convert from {} to {}", src, dest);
         let constraint = Constraint {
             name: getImplicitConvertName(),
@@ -223,7 +270,7 @@ impl<'a> InstanceResolver<'a> {
             main: false,
         };
         // println!("Constraint: {}", constraint);
-        self.findInstanceInScope(&constraint).isFound()
+        self.findInstanceInScope(&constraint, runner).isFound()
     }
 
     fn canonicalizeType(&self, ty: Type) -> Option<Type> {

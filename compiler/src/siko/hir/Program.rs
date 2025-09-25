@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Display,
+    rc::Rc,
 };
 
 use crate::siko::{
@@ -28,7 +29,7 @@ pub struct Program {
     pub implicits: BTreeMap<QualifiedName, Implicit>,
     pub variants: BTreeSet<QualifiedName>,
     pub traits: BTreeMap<QualifiedName, Trait>,
-    pub instances: BTreeMap<QualifiedName, Instance>,
+    pub instances: BTreeMap<QualifiedName, Rc<Instance>>,
     pub instanceStores: BTreeMap<QualifiedName, InstanceStore>,
     pub canonicalImplStore: CanonicalInstanceStore,
 }
@@ -69,7 +70,7 @@ impl Program {
         self.traits.get(qn).cloned()
     }
 
-    pub fn getInstance(&self, qn: &QualifiedName) -> Option<Instance> {
+    pub fn getInstance(&self, qn: &QualifiedName) -> Option<Rc<Instance>> {
         self.instances.get(qn).cloned()
     }
 

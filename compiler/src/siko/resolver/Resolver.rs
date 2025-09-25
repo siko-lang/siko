@@ -28,6 +28,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Display,
     iter::zip,
+    rc::Rc,
 };
 
 use super::{Error::ResolverError, ModuleResolver::ModuleResolver};
@@ -446,7 +447,7 @@ impl<'a> Resolver<'a> {
                                 neededTraitMembers.insert(method.name.clone());
                             }
                         }
-                        let mut unifier = Unifier::withContext(&self.ctx);
+                        let mut unifier = Unifier::withContext(&self.ctx, self.runner.child("unifier"));
                         for (t1, t2) in zip(instantiatedTrait.params.clone(), irInstance.types.clone()) {
                             unifier.unify(t1, t2, i.location.clone());
                         }
@@ -530,7 +531,9 @@ impl<'a> Resolver<'a> {
                             .report(self.ctx);
                         }
                         //println!("IrImpl {}", irInstance);
-                        self.program.instances.insert(irInstance.name.clone(), irInstance);
+                        self.program
+                            .instances
+                            .insert(irInstance.name.clone(), Rc::new(irInstance));
                         if i.name.is_none() {
                             self.program
                                 .canonicalImplStore

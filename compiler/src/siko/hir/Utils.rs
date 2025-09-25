@@ -5,12 +5,14 @@ use crate::siko::{
     },
     location::Report::ReportContext,
     typechecker::ConstraintExpander::ConstraintExpander,
+    util::Runner::Runner,
 };
 
 pub fn createResolvers<'a>(
     f: &'a Function,
     ctx: &'a ReportContext,
     program: &'a Program,
+    runner: Runner,
 ) -> (InstanceResolver<'a>, FunctionCallResolver<'a>) {
     let instanceStore = program
         .instanceStores
@@ -20,7 +22,7 @@ pub fn createResolvers<'a>(
     let expander = ConstraintExpander::new(program, allocator.clone(), f.constraintContext.clone());
     let knownConstraints = expander.expandKnownConstraints();
     let implResolver = InstanceResolver::new(allocator.clone(), instanceStore, program, knownConstraints.clone());
-    let unifier = Unifier::withContext(ctx);
+    let unifier = Unifier::withContext(ctx, runner.child("unifier"));
     let fnCallResolver = FunctionCallResolver::new(
         program,
         allocator.clone(),

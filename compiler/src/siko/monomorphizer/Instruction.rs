@@ -125,7 +125,12 @@ pub fn processInstruction(
                     }
                     //println!("Resolved impls: {:?}", resolvedImpls);
                     let (handlerResolution, contextSyntaxBlockId) = handlerResolutionStore.get(syntaxBlockId);
-                    let (_, mut fnCallResolver) = createResolvers(&target_fn, mono.ctx, &mono.program);
+                    let (_, mut fnCallResolver) = createResolvers(
+                        &target_fn,
+                        mono.ctx,
+                        &mono.program,
+                        mono.runner.child("trait_member_resolver"),
+                    );
                     fnCallResolver.mergeSubstitution(sub);
                     fnCallResolver.setKnownImpls(resolvedImpls);
                     //println!("Substitution: {} ", sub);
@@ -145,13 +150,25 @@ pub fn processInstruction(
                     //     println!("Args: {}", crate::siko::hir::Type::formatTypes(&argTypes));
                     //     println!("Dest: {}", dest);
                     // }
-                    let checkresult = fnCallResolver.resolve(&target_fn, &args, &dest, instruction.location.clone());
+                    let checkresult = fnCallResolver.resolve(
+                        &target_fn,
+                        &args,
+                        &dest,
+                        instruction.location.clone(),
+                        mono.runner.child("trait_member_resolver"),
+                    );
                     //println!("Resolved to {}", checkresult.fnName);
                     let targetfn = mono
                         .program
                         .getFunction(&checkresult.fnName)
                         .expect("function not found in mono");
-                    let checkresult = fnCallResolver.resolve(&targetfn, &args, &dest, instruction.location.clone());
+                    let checkresult = fnCallResolver.resolve(
+                        &targetfn,
+                        &args,
+                        &dest,
+                        instruction.location.clone(),
+                        mono.runner.child("trait_member_resolver"),
+                    );
                     //println!("Resolved to {}", checkresult.fnName);
                     let targetFn = mono
                         .program

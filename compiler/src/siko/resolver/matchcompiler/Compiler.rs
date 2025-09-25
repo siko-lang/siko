@@ -12,7 +12,6 @@ use crate::siko::syntax::Expr::Branch;
 use crate::siko::syntax::Identifier::Identifier;
 use crate::siko::syntax::Pattern::{Pattern, SimplePattern};
 use crate::siko::util::Runner::Runner;
-use crate::stage;
 use std::collections::{BTreeMap, BTreeSet};
 use std::iter::repeat;
 
@@ -57,9 +56,9 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
 
     pub fn compile(&mut self) -> Variable {
         let runner = self.runner.child("match_processing");
-        let node = stage!(runner, { self.processAndVerifyPatterns() });
+        let node = runner.run(|| self.processAndVerifyPatterns());
         let runner = self.runner.child("match_ir_compilation");
-        let v = stage!(runner, { self.irCompiler.compileIr(node) });
+        let v = runner.run(|| self.irCompiler.compileIr(node));
         v
     }
 

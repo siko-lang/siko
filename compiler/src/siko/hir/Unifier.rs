@@ -2,7 +2,11 @@ use std::{cell::RefCell, rc::Rc};
 
 use crate::siko::{
     hir::{Apply::Apply, Substitution::Substitution, Type::Type, Unification::unify, Variable::Variable},
-    location::{Location::Location, Report::Report, Report::ReportContext},
+    location::{
+        Location::Location,
+        Report::{Report, ReportContext},
+    },
+    util::Runner::Runner,
 };
 
 pub trait UnificationErrorHandler {
@@ -14,53 +18,67 @@ pub struct Unifier {
     handler: Rc<dyn UnificationErrorHandler>,
     pub substitution: Rc<RefCell<Substitution>>,
     pub verbose: bool,
+    pub runner: Runner,
+    pub applyRunner: Runner,
 }
 
 impl Unifier {
-    pub fn withContext(ctx: &ReportContext) -> Unifier {
+    pub fn withContext(ctx: &ReportContext, runner: Runner) -> Unifier {
+        let applyRunner = runner.child("apply");
         Unifier {
             handler: Rc::new(DefaultUnificationErrorHandler::new(ctx.clone())),
             substitution: Rc::new(RefCell::new(Substitution::new())),
             verbose: false,
+            runner,
+            applyRunner,
         }
     }
 
-    pub fn new() -> Unifier {
+    pub fn new(runner: Runner) -> Unifier {
+        let applyRunner = runner.child("apply");
         Unifier {
             handler: Rc::new(InternalUnificationErrorHandler {}),
             substitution: Rc::new(RefCell::new(Substitution::new())),
             verbose: false,
+            runner,
+            applyRunner,
         }
     }
 
     pub fn apply<T: Apply>(&self, item: T) -> T {
-        let sub = self.substitution.borrow();
-        item.apply(&sub)
+        self.applyRunner.run(|| {
+            let sub = self.substitution.borrow();
+            item.apply(&sub)
+        })
     }
 
     pub fn unify(&mut self, ty1: Type, ty2: Type, location: Location) {
         if self.verbose {
             println!("Unifying {} and {}", ty1, ty2);
         }
-        let mut sub = self.substitution.borrow_mut();
-        if let Err(_) = unify(&mut sub, ty1.clone(), ty2.clone(), false) {
-            let ty = ty1.apply(&sub);
-            let ty2 = ty2.apply(&sub);
-            self.handler.handleError(UnifierError::TypeMismatch(
-                format!("{}", ty),
-                format!("{}", ty2),
-                location,
-            ));
-        }
+        self.runner.run(|| {
+            let mut sub = self.substitution.borrow_mut();
+            if let Err(_) = unify(&mut sub, ty1.clone(), ty2.clone(), false) {
+                let ty = ty1.apply(&sub);
+                let ty2 = ty2.apply(&sub);
+                self.handler.handleError(UnifierError::TypeMismatch(
+                    format!("{}", ty),
+                    format!("{}", ty2),
+                    location,
+                ));
+            }
+        });
     }
 
     pub fn tryUnify(&mut self, ty1: Type, ty2: Type) -> bool {
         //println!("UNIFY {} {}", ty1, ty2);
-        let mut sub = self.substitution.borrow_mut();
-        if let Err(_) = unify(&mut sub, ty1.clone(), ty2.clone(), false) {
-            return false;
-        }
-        true
+        self.runner.run(|| {
+            let mut sub = self.substitution.borrow_mut();
+            if let Err(_) = unify(&mut sub, ty1.clone(), ty2.clone(), false) {
+                return false;
+            }
+            true
+        })
     }
 
     pub fn unifyVar(&mut self, var: &Variable, ty: Type) {

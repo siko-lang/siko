@@ -1051,6 +1051,46 @@ impl InstructionKind {
             }
         }
     }
+
+    pub fn getShortName(&self) -> &str {
+        match self {
+            InstructionKind::FunctionCall(_, _) => "call",
+            InstructionKind::Converter(_, _) => "convert",
+            InstructionKind::MethodCall(_, _, _, _) => "methodcall",
+            InstructionKind::DynamicFunctionCall(_, _, _) => "dynamic_call",
+            InstructionKind::FieldRef(_, _, _) => "fieldref",
+            InstructionKind::Bind(_, _, _) => "bind",
+            InstructionKind::Tuple(_, _) => "tuple",
+            InstructionKind::StringLiteral(_, _) => "string_literal",
+            InstructionKind::IntegerLiteral(_, _) => "integer_literal",
+            InstructionKind::CharLiteral(_, _) => "char_literal",
+            InstructionKind::Return(_, _) => "return",
+            InstructionKind::Ref(_, _) => "ref",
+            InstructionKind::PtrOf(_, _) => "ptr_of",
+            InstructionKind::DropPath(_) => "drop_path",
+            InstructionKind::DropMetadata(_) => "drop_metadata",
+            InstructionKind::Drop(_, _) => "drop",
+            InstructionKind::Jump(_, _) => "jump",
+            InstructionKind::Assign(_, _) => "assign",
+            InstructionKind::FieldAssign(_, _, _) => "field_assign",
+            InstructionKind::AddressOfField(_, _, _) => "address_of_field",
+            InstructionKind::DeclareVar(_, _) => "declare_var",
+            InstructionKind::Transform(_, _, _) => "transform",
+            InstructionKind::EnumSwitch(_, _) => "enum_switch",
+            InstructionKind::IntegerSwitch(_, _) => "integer_switch",
+            InstructionKind::BlockStart(_) => "block_start",
+            InstructionKind::BlockEnd(_) => "block_end",
+            InstructionKind::With(_, _) => "with",
+            InstructionKind::ReadImplicit(_, _) => "read_implicit",
+            InstructionKind::WriteImplicit(_, _) => "write_implicit",
+            InstructionKind::LoadPtr(_, _) => "load_ptr",
+            InstructionKind::StorePtr(_, _) => "store_ptr",
+            InstructionKind::CreateClosure(_, _) => "create_closure",
+            InstructionKind::ClosureReturn(_, _, _) => "closure_return",
+            InstructionKind::IntegerOp(_, _, _, _) => "integer_op",
+            InstructionKind::Yield(_, _) => "yield",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -42,7 +42,7 @@ use crate::siko::{
         builtins::{getArrayTypeName, getCoroutineCoIsCompletedName, getCoroutineCoResumeName, getMainName},
         QualifiedName,
     },
-    util::Config::Config,
+    util::{Config::Config, Runner::Runner},
 };
 
 impl Monomorphize for Variable {
@@ -89,15 +89,17 @@ pub struct Monomorphizer<'a> {
     processed: BTreeSet<Key>,
     processed_type: BTreeMap<Type, Type>,
     pub resolutionStores: Vec<HandlerResolutionStore>,
+    pub runner: Runner,
 }
 
 impl<'a> Monomorphizer<'a> {
-    pub fn new(config: Config, ctx: &'a ReportContext, program: Program) -> Monomorphizer<'a> {
+    pub fn new(config: Config, ctx: &'a ReportContext, program: Program, runner: Runner) -> Monomorphizer<'a> {
         Monomorphizer {
             config,
             ctx,
             program,
             monomorphizedProgram: Program::new(),
+            runner,
             queue: VecDeque::new(),
             processed: BTreeSet::new(),
             processed_type: BTreeMap::new(),
@@ -245,7 +247,7 @@ impl<'a> Monomorphizer<'a> {
                         }
                         Key::AutoDropFn(name, ty, handlerResolution) => {
                             //println!("Processing auto drop {}", key);
-                            self.monomorphizeAutoDropFn(name, ty, handlerResolution);
+                            self.monomorphizeAutoDropFn(name, ty, handlerResolution, self.runner.child("auto_drop_fn"));
                         }
                     }
                 }
@@ -469,7 +471,13 @@ impl<'a> Monomorphizer<'a> {
         self.monomorphizedProgram.enums.insert(name, e);
     }
 
-    fn monomorphizeAutoDropFn(&mut self, name: QualifiedName, ty: Type, handlerResolution: HandlerResolution) {
+    fn monomorphizeAutoDropFn(
+        &mut self,
+        name: QualifiedName,
+        ty: Type,
+        handlerResolution: HandlerResolution,
+        runner: Runner,
+    ) {
         //println!("MONO AUTO DROP: {} {}", name, ty);
         let monoName = self.getMonoName(&name, &vec![ty.clone()], handlerResolution.clone(), Vec::new());
 
@@ -490,9 +498,9 @@ impl<'a> Monomorphizer<'a> {
         let implResolver =
             InstanceResolver::new(allocator.clone(), &implStore, &self.program, ConstraintContext::new());
 
-        if implResolver.isDrop(&ty) {
+        if implResolver.isDrop(&ty, self.runner.child("is_drop")) {
             hasInstance = true;
-            let unifier = Unifier::withContext(&self.ctx);
+            let unifier = Unifier::withContext(&self.ctx, runner.child("unifier"));
             let mut fnCallResolver = FunctionCallResolver::new(
                 &self.program,
                 allocator.clone(),
@@ -502,7 +510,11 @@ impl<'a> Monomorphizer<'a> {
                 unifier.clone(),
             );
             let dropRes = bodyBuilder.createTempValueWithType(location.clone(), selfVar.getType());
-            let (fnName, impls) = fnCallResolver.resolveDropCall(selfVar.clone(), dropRes.clone());
+            let (fnName, impls) = fnCallResolver.resolveDropCall(
+                selfVar.clone(),
+                dropRes.clone(),
+                runner.child("drop_instance_resolver"),
+            );
             let mut info = CallInfo::new(fnName.clone(), vec![selfVar.clone()]);
             info.instanceRefs = impls;
             let kind = InstructionKind::FunctionCall(dropRes.clone(), info);

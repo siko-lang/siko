@@ -22,6 +22,7 @@ use crate::siko::{
     },
     location::Location::Location,
     qualifiedname::QualifiedName,
+    util::Runner::Runner,
 };
 
 pub struct FunctionProfileBuilder<'a> {
@@ -44,13 +45,14 @@ impl<'a> FunctionProfileBuilder<'a> {
         dataGroups: &'a DataGroups<'a>,
         profileStore: &'a mut FunctionProfileStore,
         functionGroup: Vec<QualifiedName>,
+        runner: Runner,
     ) -> Self {
         FunctionProfileBuilder {
             f,
             program,
             dataGroups,
             allocator: TypeVarAllocator::new(),
-            unifier: Unifier::new(),
+            unifier: Unifier::new(runner.child("unifier")),
             varTypes: BTreeMap::new(),
             profile: FunctionProfile {
                 name: f.name.clone(),

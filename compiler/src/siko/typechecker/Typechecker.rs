@@ -36,11 +36,12 @@ use crate::siko::{
         QualifiedName,
     },
     typechecker::{ClosureSeparator::ClosureSeparator, ConstraintExpander::ConstraintExpander},
+    util::Runner::Runner,
 };
 
 use super::Error::TypecheckerError;
 
-pub fn typecheck(ctx: &ReportContext, mut program: Program) -> Program {
+pub fn typecheck(ctx: &ReportContext, mut program: Program, runner: Runner) -> Program {
     let mut result = BTreeMap::new();
     for (_, f) in &program.functions {
         let moduleName = f.name.module();
@@ -52,7 +53,7 @@ pub fn typecheck(ctx: &ReportContext, mut program: Program) -> Program {
             .instanceStores
             .get(&moduleName)
             .expect("Instance store not found");
-        let mut typechecker = Typechecker::new(ctx, &program, &traitMethodselector, instanceStore, f);
+        let mut typechecker = Typechecker::new(ctx, &program, &traitMethodselector, instanceStore, f, runner.clone());
         let typedFns = typechecker.run();
         //typedFn.dump();
         for typedFn in typedFns {
@@ -158,6 +159,7 @@ pub struct Typechecker<'a> {
     fnCallResolver: FunctionCallResolver<'a>,
     closureTypes: BTreeMap<BlockId, ClosureTypeInfo>,
     integerOps: BTreeMap<QualifiedName, IntegerOp>,
+    runner: Runner,
 }
 
 impl<'a> Typechecker<'a> {
@@ -167,12 +169,13 @@ impl<'a> Typechecker<'a> {
         traitMethodselector: &'a TraitMethodSelector,
         instanceStore: &'a InstanceStore,
         f: &'a Function,
+        runner: Runner,
     ) -> Typechecker<'a> {
         let allocator = TypeVarAllocator::new();
         let expander = ConstraintExpander::new(program, allocator.clone(), f.constraintContext.clone());
         let knownConstraints = expander.expandKnownConstraints();
         let implResolver = InstanceResolver::new(allocator.clone(), instanceStore, program, knownConstraints.clone());
-        let unifier = Unifier::withContext(ctx);
+        let unifier = Unifier::withContext(ctx, runner.child("unifier"));
         let fnCallResolver = FunctionCallResolver::new(
             program,
             allocator.clone(),
@@ -220,17 +223,22 @@ impl<'a> Typechecker<'a> {
             unifier: unifier,
             closureTypes: BTreeMap::new(),
             integerOps,
+            runner,
         }
     }
 
     pub fn run(&mut self) -> Vec<Function> {
         //println!("Typechecking function {}", self.f.name);
         //println!(" {} ", self.f);
-        self.initialize();
+        let initializeRunner = self.runner.child("initialize");
+        initializeRunner.run(|| self.initialize());
         //self.dump(self.f);
-        self.check();
+        let checkRunner = self.runner.child("check");
+        checkRunner.run(|| self.check());
         //self.dump(self.f);
-        self.generate()
+        let generateRunner = self.runner.child("generate");
+        let fs = generateRunner.run(|| self.generate());
+        fs
     }
 
     fn initializeVar(&mut self, var: &Variable) {
@@ -424,6 +432,7 @@ impl<'a> Typechecker<'a> {
         targetFn: &Function,
         args: &Vec<Variable>,
         resultVar: &Variable,
+        runner: Runner,
     ) -> CheckFunctionCallResult {
         // println!(
         //     "Checking function call: {} {} {} args {:?}, result {}",
@@ -434,21 +443,40 @@ impl<'a> Typechecker<'a> {
         //     resultVar
         // );
         if targetFn.kind.isTraitCall() {
-            let checkResult = self
-                .fnCallResolver
-                .resolve(targetFn, args, resultVar, resultVar.location().clone());
-            let f = self
-                .program
-                .getFunction(&checkResult.fnName)
-                .expect("Function not found");
-            let checkResult = self
-                .fnCallResolver
-                .resolve(&f, args, resultVar, resultVar.location().clone());
+            let fnTraitResolverRunner = runner.child("fn_trait_call_resolver");
+            let checkResult = fnTraitResolverRunner.run(|| {
+                let checkResult = self.fnCallResolver.resolve(
+                    targetFn,
+                    args,
+                    resultVar,
+                    resultVar.location().clone(),
+                    fnTraitResolverRunner.clone(),
+                );
+                let f = self
+                    .program
+                    .getFunction(&checkResult.fnName)
+                    .expect("Function not found");
+                let checkResult = self.fnCallResolver.resolve(
+                    &f,
+                    args,
+                    resultVar,
+                    resultVar.location().clone(),
+                    fnTraitResolverRunner.clone(),
+                );
+                checkResult
+            });
             checkResult
         } else {
-            let checkResult = self
-                .fnCallResolver
-                .resolve(targetFn, args, resultVar, resultVar.location().clone());
+            let fnResolverRunner = runner.child("fn_call_resolver");
+            let checkResult = fnResolverRunner.run(|| {
+                self.fnCallResolver.resolve(
+                    targetFn,
+                    args,
+                    resultVar,
+                    resultVar.location().clone(),
+                    fnResolverRunner.clone(),
+                )
+            });
             checkResult
         }
     }
@@ -609,7 +637,12 @@ impl<'a> Typechecker<'a> {
         loop {
             match builder.getInstruction() {
                 Some(instruction) => {
-                    self.checkInstruction(instruction, &mut builder);
+                    let checkInstructionRunner = self
+                        .runner
+                        .child(&format!("check_instruction.{}", instruction.kind.getShortName()));
+                    checkInstructionRunner
+                        .clone()
+                        .run(|| self.checkInstruction(instruction, &mut builder, checkInstructionRunner));
                     builder.step();
                 }
                 None => {
@@ -619,7 +652,7 @@ impl<'a> Typechecker<'a> {
         }
     }
 
-    fn checkInstruction(&mut self, instruction: Instruction, builder: &mut BlockBuilder) {
+    fn checkInstruction(&mut self, instruction: Instruction, builder: &mut BlockBuilder, runner: Runner) {
         //println!("checkInstruction {}", instruction);
         match &instruction.kind {
             InstructionKind::FunctionCall(dest, info) => {
@@ -627,7 +660,7 @@ impl<'a> Typechecker<'a> {
                 let Some(targetFn) = self.program.functions.get(&info.name) else {
                     panic!("Function not found {}", info.name);
                 };
-                let checkResult = self.checkFunctionCall(&targetFn, &info.args, dest);
+                let checkResult = self.checkFunctionCall(&targetFn, &info.args, dest, runner);
                 let mut info = info.clone();
                 info.name = checkResult.fnName;
                 info.instanceRefs = checkResult.instanceRefs;
@@ -655,7 +688,7 @@ impl<'a> Typechecker<'a> {
                 }
             }
             InstructionKind::MethodCall(dest, receiver, methodName, args) => {
-                self.handleMethodCall(&instruction, builder, dest, receiver, methodName, args);
+                self.handleMethodCall(&instruction, builder, dest, receiver, methodName, args, runner);
             }
             InstructionKind::DynamicFunctionCall(dest, closure, args) => {
                 let argTypes = args.iter().map(|arg| arg.getType()).collect::<Vec<_>>();
@@ -1027,6 +1060,7 @@ impl<'a> Typechecker<'a> {
         receiver: &Variable,
         methodName: &String,
         args: &Vec<Variable>,
+        runner: Runner,
     ) {
         let receiver = receiver.clone();
         let receiverType = receiver.getType();
@@ -1056,7 +1090,7 @@ impl<'a> Typechecker<'a> {
                 _ => {}
             }
         }
-        let checkResult = self.checkFunctionCall(&targetFn, &extendedArgs, dest);
+        let checkResult = self.checkFunctionCall(&targetFn, &extendedArgs, dest, runner);
         let mut fnType = checkResult.fnType;
         //println!("METHOD CALL {} => {}", fnType, receiverType);
         if mutableCall {
@@ -1379,6 +1413,7 @@ impl<'a> Typechecker<'a> {
     }
 
     fn processConverters(&mut self) {
+        let processConvertersRunner = self.runner.child("process_converters");
         //println!("processConverters {}", self.f.name);
         let allblocksIds = self.bodyBuilder.getAllBlockIds();
         for blockId in allblocksIds {
@@ -1411,9 +1446,15 @@ impl<'a> Typechecker<'a> {
                                             CallInfo::new(getNativePtrCloneName(), vec![source.clone()]),
                                         )
                                     } else {
-                                        if self.implResolver.isCopy(destTy) {
-                                            let (fnName, instanceRefs) =
-                                                self.fnCallResolver.resolveCloneCall(source.clone(), dest.clone());
+                                        if self
+                                            .implResolver
+                                            .isCopy(destTy, processConvertersRunner.child("is_copy"))
+                                        {
+                                            let (fnName, instanceRefs) = self.fnCallResolver.resolveCloneCall(
+                                                source.clone(),
+                                                dest.clone(),
+                                                processConvertersRunner.clone(),
+                                            );
                                             let mut info = CallInfo::new(fnName, vec![source.clone()]);
                                             info.instanceRefs.extend(instanceRefs);
                                             InstructionKind::FunctionCall(dest.clone(), info)
@@ -1432,7 +1473,11 @@ impl<'a> Typechecker<'a> {
                                     let mut refSource = source.clone();
                                     if !self.unifier.tryUnify(*inner.clone(), src.clone()) {
                                         // check implicit conversion is implemented for these types
-                                        if self.implResolver.isImplicitConvert(&src, &inner) {
+                                        if self.implResolver.isImplicitConvert(
+                                            &src,
+                                            &inner,
+                                            processConvertersRunner.child("is_implicit_convert"),
+                                        ) {
                                             let newVar = self
                                                 .bodyBuilder
                                                 .createTempValueWithType(instruction.location.clone(), *inner.clone());
@@ -1455,7 +1500,11 @@ impl<'a> Typechecker<'a> {
                                 }
                                 (t1, t2) => {
                                     if !self.unifier.tryUnify(t1.clone(), t2.clone()) {
-                                        if self.implResolver.isImplicitConvert(&t2, &t1) {
+                                        if self.implResolver.isImplicitConvert(
+                                            &t2,
+                                            &t1,
+                                            processConvertersRunner.child("is_implicit_convert"),
+                                        ) {
                                             let kind = self.addImplicitConvertCall(dest, source);
                                             builder.replaceInstruction(kind, instruction.location.clone());
                                         } else {
@@ -1545,13 +1594,18 @@ impl<'a> Typechecker<'a> {
     }
 
     fn addImplicitConvertCall(&mut self, dest: &Variable, source: &Variable) -> InstructionKind {
+        let implicitConvertRunner = self.runner.child("implicit_convert");
         let targetFn = self
             .program
             .getFunction(&getImplicitConvertFnName())
             .expect("Implicit convert function not found");
-        let result = self
-            .fnCallResolver
-            .resolve(&targetFn, &vec![source.clone()], dest, dest.location());
+        let result = self.fnCallResolver.resolve(
+            &targetFn,
+            &vec![source.clone()],
+            dest,
+            dest.location(),
+            implicitConvertRunner.clone(),
+        );
         let info = CallInfo::new(result.fnName, vec![source.clone()]);
         let kind = InstructionKind::FunctionCall(dest.clone(), info);
         kind

@@ -14,7 +14,7 @@ pub enum OptimizationLevel {
 #[derive(Debug, Clone)]
 pub struct Config {
     pub testOnly: bool,
-    pub passDetails: bool,
+    pub passDetails: u32,
     pub optimization: OptimizationLevel,
     pub buildPhase: BuildPhase,
     pub sanitized: bool,
@@ -27,7 +27,7 @@ impl Config {
     pub fn new() -> Self {
         Config {
             testOnly: false,
-            passDetails: false,
+            passDetails: 0,
             optimization: OptimizationLevel::None,
             buildPhase: BuildPhase::Run,
             sanitized: false,
