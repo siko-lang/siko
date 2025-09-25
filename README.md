@@ -17,6 +17,10 @@ MIT
 
 [Discord](https://discord.com/invite/Gfd8YDrYVC)
 
+## Website
+
+https://www.siko-lang.org
+
 ## Design Philosophy and Goals
 
 Siko is shaped by years of experience with C++/Go and Rust and a desire to address common frustrations found in modern programming languages. The following principles and ideas guide its ongoing development:
