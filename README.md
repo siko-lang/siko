@@ -39,3 +39,69 @@ Siko is shaped by years of experience with C++/Go and Rust and a desire to addre
 
 - **Immutability by Default**: Most constructs in Siko are immutable by default, with mutability allowed for local variables and in explicitly marked unsafe contexts.
 
+Example code:
+```
+module TeleType {
+
+pub effect TeleType {
+    fn readLine() -> String
+    fn println(input: &String)
+}
+
+pub fn run() {
+    while True {
+        let input = readLine();
+        if input == "exit" {
+            break;
+        }
+        println("You said: " + input);
+    }
+}
+
+}
+
+module Main {
+
+import TeleType as T
+
+implicit mut state: Int
+
+fn mockReadLine() -> String {
+    if state < 3 {
+        state += 1;
+        "mocked: ${state}"
+    } else {
+        "exit".toString()
+    }
+}
+
+fn mockPrintln(input: &String) {
+    let expectedString = "You said: mocked: ${state}";
+    assert(expectedString == input);
+}
+
+fn testTeleType() {
+    let mut state = 0;
+    with T.println = mockPrintln,
+         T.readLine = mockReadLine,
+         state = state {
+        T.run();
+    }
+}
+
+fn realTeleType() {
+    println("Starting teletype");
+    with T.println = println,
+         T.readLine = readLine {
+        T.run();
+    }
+}
+
+fn main() {
+    testTeleType();
+    realTeleType();
+}
+
+}
+```
+For more examples: see the test programs under test/success/
