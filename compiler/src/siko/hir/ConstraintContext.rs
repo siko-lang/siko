@@ -13,6 +13,22 @@ pub struct Constraint {
     pub main: bool,
 }
 
+impl Constraint {
+    pub fn isConcrete(&self) -> bool {
+        for arg in &self.args {
+            if !arg.isConcrete() {
+                return false;
+            }
+        }
+        for at in &self.associatedTypes {
+            if !at.ty.isConcrete() {
+                return false;
+            }
+        }
+        true
+    }
+}
+
 impl Display for Constraint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         //let m = if self.main { " (m)" } else { "" };

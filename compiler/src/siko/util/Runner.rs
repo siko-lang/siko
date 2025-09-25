@@ -7,6 +7,24 @@ use std::{
 
 use crate::siko::util::Config::Config;
 
+pub struct Statistics {
+    pub instanceLookup: u64,
+    pub instanceCacheLookup: u64,
+    pub instanceCacheHit: u64,
+    pub instanceCacheMiss: u64,
+}
+
+impl Statistics {
+    pub fn new() -> Self {
+        Statistics {
+            instanceLookup: 0,
+            instanceCacheLookup: 0,
+            instanceCacheHit: 0,
+            instanceCacheMiss: 0,
+        }
+    }
+}
+
 struct StageData {
     total: Duration,
     count: u32,
@@ -31,6 +49,7 @@ pub struct Runner {
     name: String,
     config: Rc<Config>,
     core: Rc<RefCell<Core>>,
+    pub statistics: Rc<RefCell<Statistics>>,
 }
 
 impl Runner {
@@ -42,6 +61,7 @@ impl Runner {
                 order: Vec::new(),
                 stages: BTreeMap::new(),
             })),
+            statistics: Rc::new(RefCell::new(Statistics::new())),
         }
     }
 
@@ -50,6 +70,7 @@ impl Runner {
             name: format!("{}.{}", self.name, name),
             config: self.config.clone(),
             core: self.core.clone(),
+            statistics: self.statistics.clone(),
         }
     }
 
@@ -124,5 +145,12 @@ impl Runner {
                 width = max_name_len
             );
         }
+
+        println!("Statistics:");
+        let stats = self.statistics.borrow();
+        println!("  Instance lookups: {}", stats.instanceLookup);
+        println!("  Instance cache lookups: {}", stats.instanceCacheLookup);
+        println!("  Instance cache hits: {}", stats.instanceCacheHit);
+        println!("  Instance cache misses: {}", stats.instanceCacheMiss);
     }
 }

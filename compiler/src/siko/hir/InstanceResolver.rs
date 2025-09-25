@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, iter::zip, rc::Rc};
+use std::{cell::RefCell, collections::BTreeMap, iter::zip, rc::Rc};
 
 use crate::siko::{
     hir::{
@@ -40,6 +40,7 @@ pub struct InstanceResolver<'a> {
     knownConstraints: ConstraintContext,
     localInstances: BTreeMap<QualifiedName, Vec<Rc<Instance>>>,
     importedInstances: BTreeMap<QualifiedName, Vec<Rc<Instance>>>,
+    cache: Rc<RefCell<BTreeMap<Constraint, Instance>>>,
 }
 
 impl<'a> InstanceResolver<'a> {
@@ -73,6 +74,7 @@ impl<'a> InstanceResolver<'a> {
             knownConstraints,
             localInstances,
             importedInstances,
+            cache: Rc::new(RefCell::new(BTreeMap::new())),
         }
     }
 
@@ -156,9 +158,40 @@ impl<'a> InstanceResolver<'a> {
         // for instance in &self.instanceStore.importedInstances {
         //     println!("Imported instance: {}", instance);
         // }
-        runner
+        {
+            let mut stats = runner.statistics.borrow_mut();
+            stats.instanceLookup += 1;
+        }
+        if constraint.isConcrete() {
+            {
+                let mut stats = runner.statistics.borrow_mut();
+                stats.instanceCacheLookup += 1;
+            }
+            let cache = &self.cache.borrow();
+            if let Some(cached) = cache.get(constraint) {
+                //println!("Found cached instance for constraint {}", constraint);
+                let instantiate = instantiateInstance(&self.allocator, cached);
+                {
+                    let mut stats = runner.statistics.borrow_mut();
+                    stats.instanceCacheHit += 1;
+                }
+                return InstanceSearchResult::Found(instantiate);
+            } else {
+                let mut stats = runner.statistics.borrow_mut();
+                stats.instanceCacheMiss += 1;
+            }
+        }
+        let r = runner
             .clone()
-            .run(|| self.findInstanceInScopeInner(constraint, 0, runner))
+            .run(|| self.findInstanceInScopeInner(constraint, 0, runner));
+        if let InstanceSearchResult::Found(i) = &r {
+            if constraint.isConcrete() {
+                let normalized = i.normalize();
+                let cache = &mut self.cache.borrow_mut();
+                cache.insert(constraint.clone(), normalized);
+            }
+        }
+        r
     }
 
     pub fn findInstanceInScopeInner(

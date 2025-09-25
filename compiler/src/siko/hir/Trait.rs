@@ -1,6 +1,12 @@
 use std::fmt;
 
-use crate::siko::{hir::Type::formatTypes, qualifiedname::QualifiedName};
+use crate::siko::{
+    hir::{
+        Apply::Apply,
+        Type::{formatTypes, normalizeTypesWithSub},
+    },
+    qualifiedname::QualifiedName,
+};
 
 use super::{ConstraintContext::ConstraintContext, Type::Type};
 
@@ -123,6 +129,22 @@ impl Instance {
             constraintContext: constraintContext,
             members: Vec::new(),
         }
+    }
+
+    pub fn normalize(&self) -> Self {
+        let mut types = Vec::new();
+        for ty in &self.types {
+            types.push(ty.clone());
+        }
+        for ty in &self.typeParams {
+            types.push(ty.clone());
+        }
+        for at in &self.associatedTypes {
+            types.push(at.ty.clone());
+        }
+        let (_, sub) = normalizeTypesWithSub(&types);
+        let normalized = self.clone().apply(&sub);
+        normalized
     }
 }
 
