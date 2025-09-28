@@ -98,7 +98,11 @@ fn buildGraph(body: &Body, graph: &mut Graph, filter: InstructionFilter) {
                 }
                 InstructionKind::EnumSwitch(_, cases) => {
                     for case in cases {
-                        edges.push((*block_id, case.branch, Some(format!("enum_{}", case.index))));
+                        let value = match case.index {
+                            Some(v) => format!("{}", v),
+                            None => "default".to_string(),
+                        };
+                        edges.push((*block_id, case.branch, Some(format!("enum_{}", value))));
                     }
                 }
                 InstructionKind::IntegerSwitch(_, cases) => {

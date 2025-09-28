@@ -140,8 +140,12 @@ impl<'a> Builder<'a> {
                         let dest = self.buildVariable(root);
                         let mut mirCases = Vec::new();
                         for case in cases {
+                            let value = match case.index {
+                                Some(v) => Some(format!("{}", v)),
+                                None => None,
+                            };
                             let mirCase = MirIntegerCase {
-                                value: Some(format!("{}", case.index)),
+                                value,
                                 branch: self.getBlockName(case.branch),
                             };
                             mirCases.push(mirCase);

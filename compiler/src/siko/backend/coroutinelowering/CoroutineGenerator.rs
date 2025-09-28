@@ -130,7 +130,7 @@ impl<'a> CoroutineGenerator<'a> {
             caseBuilder.addInstruction(finalTupleConstruct, location.clone());
             caseBuilder.addReturn(finalTupleVar, location.clone());
             cases.push(EnumCase {
-                index: variantIndex as u32,
+                index: Some(variantIndex as u32),
                 branch: caseBuilder.getBlockId(),
             });
         }
@@ -212,7 +212,7 @@ impl<'a> CoroutineGenerator<'a> {
             caseBuilder.addReturn(resultVar, location.clone());
 
             cases.push(EnumCase {
-                index: variantIndex as u32,
+                index: Some(variantIndex as u32),
                 branch: caseBuilder.getBlockId(),
             });
         }

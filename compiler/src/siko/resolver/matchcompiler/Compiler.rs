@@ -1,6 +1,8 @@
 use crate::siko::hir::Variable::Variable;
 use crate::siko::location::Location::Location;
-use crate::siko::resolver::matchcompiler::DataPath::{DataPath, DataPathSegment, DataType, DecisionPath};
+use crate::siko::resolver::matchcompiler::DataPath::{
+    matchDecisions, DataPath, DataPathSegment, DataType, DecisionPath,
+};
 use crate::siko::resolver::matchcompiler::IrCompiler::IrCompiler;
 use crate::siko::resolver::matchcompiler::Tree::{
     Bindings, Case, Leaf, Match, MatchKind, Node, Switch, SwitchKind, Tuple, Wildcard,
@@ -318,12 +320,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
     ) -> Node {
         //println!("buildNode: {:?} | {}", pendingPaths, currentDecision);
         if pendingPaths.is_empty() {
-            let end = Leaf {
-                decisionPath: currentDecision.clone(),
-                finalMatch: None,
-                guardedMatches: Vec::new(),
-            };
-            //println!("Creating leaf for {}", currentDecision.last());
+            let end = Leaf::new(currentDecision.clone());
             return Node::Leaf(end);
         }
         let currentPath = pendingPaths.remove(0);
@@ -338,8 +335,24 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                         .enums
                         .get(enumName)
                         .expect("enumName not found");
+                    let mut values = BTreeSet::new();
+                    for m in allMatches {
+                        if matchDecisions(&currentDecision.decisions, &m.decisionPath.decisions) {
+                            if m.decisionPath.decisions.len() > currentDecision.decisions.len() {
+                                match &m.decisionPath.decisions[currentDecision.decisions.len()].asRef().last() {
+                                    DataPathSegment::Variant(value, _) => {
+                                        values.insert(value.clone());
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
                     let mut cases = BTreeMap::new();
                     for variant in &e.variants {
+                        if !values.contains(&variant.name) {
+                            continue;
+                        }
                         let casePath =
                             currentPath.push(DataPathSegment::Variant(variant.name.clone(), enumName.clone()));
                         let currentDecision = currentDecision.add(casePath.clone());
@@ -352,6 +365,14 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                         }
                         let node = self.buildNode(pendings, &currentDecision, dataTypes, allMatches);
                         cases.insert(Case::Variant(variant.name.clone()), node);
+                    }
+                    if values.len() < e.variants.len() {
+                        let path = currentPath.push(DataPathSegment::Wildcard);
+                        let mut pendings = pendingPaths.clone();
+                        pendings.insert(0, path.clone());
+                        let currentDecision = &currentDecision.add(path);
+                        let node = self.buildNode(pendings, currentDecision, dataTypes, allMatches);
+                        cases.insert(Case::Default, node);
                     }
                     //println!("Enum switch on {}", currentPath.asBindingPath());
                     let switch = Switch {
@@ -383,7 +404,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     let mut cases = BTreeMap::new();
                     let mut values = BTreeSet::new();
                     for m in allMatches {
-                        if m.decisionPath.decisions.starts_with(&currentDecision.decisions[..]) {
+                        if matchDecisions(&currentDecision.decisions, &m.decisionPath.decisions) {
                             if m.decisionPath.decisions.len() > currentDecision.decisions.len() {
                                 match &m.decisionPath.decisions[currentDecision.decisions.len()].asRef().last() {
                                     DataPathSegment::IntegerLiteral(value) => {
@@ -419,7 +440,7 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     let mut cases = BTreeMap::new();
                     let mut values = BTreeSet::new();
                     for m in allMatches {
-                        if m.decisionPath.decisions.starts_with(&currentDecision.decisions[..]) {
+                        if matchDecisions(&currentDecision.decisions, &m.decisionPath.decisions) {
                             if m.decisionPath.decisions.len() >= currentDecision.decisions.len() + 1 {
                                 match &m.decisionPath.decisions[currentDecision.decisions.len()].asRef().last() {
                                     DataPathSegment::StringLiteral(value) => {

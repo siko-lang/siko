@@ -208,7 +208,15 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
                     caseBlockId = transformBlockId;
                 }
                 let c = EnumCase {
-                    index,
+                    index: Some(index),
+                    branch: caseBlockId,
+                };
+                cases.push(c);
+            }
+            if let Case::Default = case {
+                let caseBlockId = self.compileNode(&node, &ctx);
+                let c = EnumCase {
+                    index: None,
                     branch: caseBlockId,
                 };
                 cases.push(c);
@@ -291,17 +299,17 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
                     let mut cases = Vec::new();
                     if blocks.is_empty() {
                         cases.push(EnumCase {
-                            index: 0,
+                            index: Some(0),
                             branch: defaultBranch,
                         });
                     } else {
                         cases.push(EnumCase {
-                            index: 0,
+                            index: Some(0),
                             branch: blocks[0],
                         });
                     }
                     cases.push(EnumCase {
-                        index: 1,
+                        index: Some(1),
                         branch: self.compileNode(&node, ctx),
                     });
                     builder
@@ -414,18 +422,18 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
                 if guardIndex + 1 == leaf.guardedMatches.len() {
                     // last guard -> jump to leaf body
                     guardCases.push(EnumCase {
-                        index: 0,
+                        index: Some(0),
                         branch: leafBodyBuilder.getBlockId(),
                     });
                 } else {
                     // jump to next guard test
                     guardCases.push(EnumCase {
-                        index: 0,
+                        index: Some(0),
                         branch: guardBlocks[guardIndex + 1].0.getBlockId(),
                     });
                 }
                 guardCases.push(EnumCase {
-                    index: 1,
+                    index: Some(1),
                     branch: guardBodyBlockBuilder.getBlockId(),
                 });
                 let enumSwitchKind = InstructionKind::EnumSwitch(guardValue, guardCases);

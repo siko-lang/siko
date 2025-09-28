@@ -231,11 +231,11 @@ impl<'a> Finalizer<'a> {
                             dropBlock.addJump(newBlockId, instruction.location.clone());
                             let cases = vec![
                                 EnumCase {
-                                    index: 0,
+                                    index: Some(0),
                                     branch: newBlockId,
                                 },
                                 EnumCase {
-                                    index: 1,
+                                    index: Some(1),
                                     branch: dropBlock.getBlockId(),
                                 },
                             ];
@@ -294,11 +294,11 @@ impl<'a> Finalizer<'a> {
                             dropBlock.addJump(newBlockId, instruction.location.clone());
                             let cases = vec![
                                 EnumCase {
-                                    index: 0,
+                                    index: Some(0),
                                     branch: newBlockId,
                                 },
                                 EnumCase {
-                                    index: 1,
+                                    index: Some(1),
                                     branch: dropBlock.getBlockId(),
                                 },
                             ];

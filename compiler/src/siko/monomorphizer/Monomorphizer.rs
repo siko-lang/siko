@@ -552,7 +552,7 @@ impl<'a> Monomorphizer<'a> {
                     for (index, v) in e.variants.iter().enumerate() {
                         let mut caseBuilder = bodyBuilder.createBlock();
                         let case = EnumCase {
-                            index: index as u32,
+                            index: Some(index as u32),
                             branch: caseBuilder.getBlockId(),
                         };
                         let transformType = Type::Tuple(v.items.clone());

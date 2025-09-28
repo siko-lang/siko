@@ -125,7 +125,7 @@ impl<'a> CoroutineTransformer<'a> {
         let mut cases = Vec::new();
         for (variantIndex, entryPoint) in self.entryPoints.clone().iter().enumerate() {
             let enumCase = EnumCase {
-                index: variantIndex as u32,
+                index: Some(variantIndex as u32),
                 branch: entryPoint.blockId,
             };
             cases.push(enumCase);
@@ -139,7 +139,7 @@ impl<'a> CoroutineTransformer<'a> {
             self.entryPoints.len(),
         );
         let enumCase = EnumCase {
-            index: self.entryPoints.len() as u32,
+            index: Some(self.entryPoints.len() as u32),
             branch: completedBlockBuilder.getBlockId(),
         };
         cases.push(enumCase);
@@ -471,7 +471,7 @@ impl<'a> CoroutineTransformer<'a> {
             stateBlock.addReturn(resultVar, location.clone());
 
             cases.push(EnumCase {
-                index: i,
+                index: Some(i),
                 branch: stateBlock.getBlockId(),
             });
         }

@@ -104,7 +104,7 @@ impl ClosureGenerator<'_> {
             caseBlock.addInstruction(fnCall, location.clone());
             caseBlock.addReturn(callResult, location.clone());
             let case = EnumCase {
-                index: variantIndex as u32,
+                index: Some(variantIndex as u32),
                 branch: caseBlock.getBlockId(),
             };
             cases.push(case);

@@ -137,13 +137,20 @@ impl fmt::Display for Variable {
 
 #[derive(Clone, PartialEq)]
 pub struct EnumCase {
-    pub index: u32,
+    pub index: Option<u32>,
     pub branch: String,
 }
 
 impl std::fmt::Debug for EnumCase {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({}, {})", self.index, self.branch)
+        match self.index {
+            Some(v) => {
+                write!(f, "({}, {})", v, self.branch)
+            }
+            None => {
+                write!(f, "(<default>, {})", self.branch)
+            }
+        }
     }
 }
 pub struct IntegerCase {

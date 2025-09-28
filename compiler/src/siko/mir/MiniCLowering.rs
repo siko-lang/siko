@@ -213,17 +213,31 @@ impl<'a> MinicBuilder<'a> {
                     let minicInstruction = LInstruction::GetField(tmpVar.clone(), self.lowerVar(var), 0, GetMode::Noop);
                     minicBlock.instructions.push(minicInstruction);
                     let mut branches = Vec::new();
-                    for (index, case) in cases.iter().enumerate() {
-                        if index == 0 {
-                            continue;
+                    let mut defaultIndex = 0;
+                    for (index, c) in cases.iter().enumerate() {
+                        if c.index.is_none() {
+                            defaultIndex = index;
                         }
-                        let branch = LBranch {
-                            value: LValue::Numeric(format!("{}", case.index), LType::Int32),
-                            block: case.branch.clone(),
-                        };
-                        branches.push(branch);
                     }
-                    let minicInstruction = LInstruction::Switch(tmpVar.clone(), cases[0].branch.clone(), branches);
+                    for (index, case) in cases.iter().enumerate() {
+                        match case.index {
+                            Some(v) => {
+                                if index == defaultIndex {
+                                    continue;
+                                }
+                                let branch = LBranch {
+                                    value: LValue::Numeric(format!("{}", v), LType::Int32),
+                                    block: case.branch.clone(),
+                                };
+                                branches.push(branch);
+                            }
+                            None => {
+                                assert_eq!(index, defaultIndex);
+                            }
+                        }
+                    }
+                    let minicInstruction =
+                        LInstruction::Switch(tmpVar.clone(), cases[defaultIndex].branch.clone(), branches);
                     minicBlock.instructions.push(minicInstruction);
                 }
                 Instruction::IntegerSwitch(var, cases) => {

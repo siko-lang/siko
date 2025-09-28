@@ -55,6 +55,16 @@ pub struct Leaf {
     pub finalMatch: Option<Match>,
 }
 
+impl Leaf {
+    pub fn new(decisionPath: DecisionPath) -> Leaf {
+        Leaf {
+            decisionPath,
+            guardedMatches: Vec::new(),
+            finalMatch: None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Wildcard {
     pub path: DataPath,
@@ -181,16 +191,16 @@ impl Node {
                 //println!("{}Leaf", indentStr);
                 if let Some(finalMatch) = &leaf.finalMatch {
                     println!(
-                        "{}  Final Match: {}, bindings: {}",
-                        indentStr, finalMatch.kind, finalMatch.bindings
+                        "{}  Final Match: {}, bindings: {}, pattern: {}",
+                        indentStr, finalMatch.kind, finalMatch.bindings, finalMatch.pattern
                     );
                 } else {
                     println!("{}  No final match", indentStr);
                 }
                 for guardedMatch in &leaf.guardedMatches {
                     println!(
-                        "{}  Guarded Match: {}, bindings: {}",
-                        indentStr, guardedMatch.kind, guardedMatch.bindings
+                        "{}  Guarded Match: {}, bindings: {}, pattern: {}",
+                        indentStr, guardedMatch.kind, guardedMatch.bindings, guardedMatch.pattern
                     );
                 }
             }
