@@ -1,4 +1,4 @@
-use crate::siko::syntax::{Format::format_block_2_items, Function::ResultKind};
+use crate::siko::syntax::{Expr::FunctionArg, Format::format_block_2_items, Function::ResultKind};
 
 use super::{
     Data::{Enum, Field, Struct, Variant},
@@ -60,6 +60,20 @@ impl Format for UnaryOp {
 impl Format for Expr {
     fn format(&self) -> Vec<Token> {
         self.expr.format()
+    }
+}
+
+impl Format for FunctionArg {
+    fn format(&self) -> Vec<Token> {
+        match self {
+            FunctionArg::Positional(expr) => expr.format(),
+            FunctionArg::Named(name, expr) => {
+                let mut result = name.format();
+                result.push(Token::Chunk(" = ".to_string()));
+                result.extend(expr.format());
+                result
+            }
+        }
     }
 }
 

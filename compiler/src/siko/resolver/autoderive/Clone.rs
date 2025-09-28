@@ -5,7 +5,7 @@ use crate::siko::{
     syntax::{
         Attributes::Attributes,
         Data::{Enum, Struct},
-        Expr::{Branch, Expr, SimpleExpr},
+        Expr::{Branch, Expr, FunctionArg, SimpleExpr},
         Function::{Function, Parameter, ResultKind},
         Identifier::Identifier,
         Pattern::{Pattern, SimplePattern},
@@ -87,14 +87,14 @@ fn getCloneFnForEnum(enumDef: &Enum, enumTy: &Type) -> Function {
             let clonedItem = Expr {
                 expr: SimpleExpr::Call(
                     Box::new(withName("Std.Ops.Basic.Clone.clone", enumDef.name.location())),
-                    vec![Expr {
+                    vec![FunctionArg::Positional(Expr {
                         expr: SimpleExpr::Value(name),
                         location: enumDef.name.location(),
-                    }],
+                    })],
                 ),
                 location: enumDef.name.location(),
             };
-            clonedItems.push(clonedItem);
+            clonedItems.push(FunctionArg::Positional(clonedItem));
         }
 
         let variantName = Identifier::new(variant.name.name(), enumDef.name.location());
@@ -219,11 +219,11 @@ fn getCloneFnForStruct(structDef: &Struct, structTy: &Type) -> Function {
         let clonedField = Expr {
             expr: SimpleExpr::Call(
                 Box::new(withName("Std.Ops.Basic.Clone.clone", structDef.name.location())),
-                vec![fieldAccess],
+                vec![FunctionArg::Positional(fieldAccess)],
             ),
             location: structDef.name.location(),
         };
-        clonedFields.push(clonedField);
+        clonedFields.push(FunctionArg::Positional(clonedField));
     }
 
     // Create the struct constructor call

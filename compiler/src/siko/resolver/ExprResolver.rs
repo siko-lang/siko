@@ -17,7 +17,7 @@ use crate::siko::location::Report::ReportContext;
 use crate::siko::qualifiedname::builtins::{getVecNewName, getVecPushName};
 use crate::siko::qualifiedname::{build, QualifiedName};
 use crate::siko::resolver::matchcompiler::Compiler::MatchCompiler;
-use crate::siko::syntax::Expr::{BinaryOp, Expr, SimpleExpr, UnaryOp};
+use crate::siko::syntax::Expr::{BinaryOp, Expr, FunctionArg, SimpleExpr, UnaryOp};
 use crate::siko::syntax::Identifier::Identifier;
 use crate::siko::syntax::Pattern::{Pattern, SimplePattern};
 use crate::siko::syntax::Statement::Block;
@@ -366,6 +366,10 @@ impl<'a> ExprResolver<'a> {
                 let receiver = self.resolveExpr(&receiver, env);
                 let mut irArgs = Vec::new();
                 for arg in args {
+                    let arg = match arg {
+                        FunctionArg::Positional(arg) => arg,
+                        FunctionArg::Named(_, arg) => arg,
+                    };
                     let argId = self.resolveExpr(arg, env);
                     irArgs.push(argId)
                 }
@@ -777,11 +781,15 @@ impl<'a> ExprResolver<'a> {
         expr: &Expr,
         env: &mut Environment<'_>,
         callable: &Box<Expr>,
-        args: &Vec<Expr>,
+        args: &Vec<FunctionArg>,
         coroutineSpawn: bool,
     ) -> Variable {
         let mut irArgs = Vec::new();
         for arg in args {
+            let arg = match arg {
+                FunctionArg::Positional(arg) => arg,
+                FunctionArg::Named(_, arg) => arg,
+            };
             let argId = self.resolveExpr(arg, env);
             irArgs.push(argId)
         }

@@ -3,7 +3,7 @@ use crate::siko::{
     parser::Token::RangeKind,
     qualifiedname::builtins::{getFalseName, getRangeCtorName, getTrueName},
     syntax::{
-        Expr::{BinaryOp, Branch, ContextHandler, Expr, SimpleExpr, UnaryOp, With},
+        Expr::{BinaryOp, Branch, ContextHandler, Expr, FunctionArg, SimpleExpr, UnaryOp, With},
         Identifier::Identifier,
         Pattern::{Pattern, SimplePattern},
         Statement::{Block, Statement, StatementKind},
@@ -185,7 +185,7 @@ impl<'a> ExprParser for Parser<'a> {
                     )),
                     location: location.clone(),
                 }),
-                vec![source],
+                vec![FunctionArg::Positional(source)],
             ),
             start.clone(),
         );
@@ -430,10 +430,10 @@ impl<'a> ExprParser for Parser<'a> {
                         let extendedGuardExpr = SimpleExpr::MethodCall(
                             Box::new(guardExpr),
                             Identifier::new("contains".to_string(), loc.clone()),
-                            vec![Expr {
+                            vec![FunctionArg::Positional(Expr {
                                 expr: SimpleExpr::Value(identifier.clone()),
                                 location: loc.clone(),
-                            }],
+                            })],
                         );
                         self.expect(TokenKind::Arrow(ArrowKind::Right));
                         extendedGuardExpr
@@ -687,7 +687,18 @@ impl<'a> ExprParser for Parser<'a> {
                 let mut args = Vec::new();
                 while !self.check(TokenKind::RightBracket(BracketKind::Paren)) {
                     let arg = self.parseExpr();
-                    args.push(arg);
+                    if self.check(TokenKind::Misc(MiscKind::Colon)) {
+                        self.expect(TokenKind::Misc(MiscKind::Colon));
+                        let name = if let SimpleExpr::Value(id) = arg.expr {
+                            id
+                        } else {
+                            error("Expected identifier for named argument".to_string());
+                        };
+                        let value = self.parseExpr();
+                        args.push(FunctionArg::Named(name, value));
+                    } else {
+                        args.push(FunctionArg::Positional(arg));
+                    }
                     if self.check(TokenKind::RightBracket(BracketKind::Paren)) {
                         break;
                     } else {
@@ -719,7 +730,7 @@ impl<'a> ExprParser for Parser<'a> {
                         expr: SimpleExpr::Value(Identifier::new(getRangeCtorName().toString(), self.currentLocation())),
                         location: self.currentLocation(),
                     }),
-                    vec![left, end],
+                    vec![FunctionArg::Positional(left), FunctionArg::Positional(end)],
                 ),
                 start,
             );
@@ -733,7 +744,7 @@ impl<'a> ExprParser for Parser<'a> {
                     expr: SimpleExpr::MethodCall(
                         Box::new(container),
                         Identifier::new("contains".to_string(), self.currentLocation()),
-                        vec![item],
+                        vec![FunctionArg::Positional(item)],
                     ),
                     location: self.currentLocation(),
                 };
@@ -748,7 +759,7 @@ impl<'a> ExprParser for Parser<'a> {
                     expr: SimpleExpr::MethodCall(
                         Box::new(container),
                         Identifier::new("notContains".to_string(), self.currentLocation()),
-                        vec![item],
+                        vec![FunctionArg::Positional(item)],
                     ),
                     location: self.currentLocation(),
                 };

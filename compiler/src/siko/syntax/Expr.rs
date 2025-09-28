@@ -62,14 +62,20 @@ impl Expr {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FunctionArg {
+    Positional(Expr),
+    Named(Identifier, Expr),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SimpleExpr {
     Value(Identifier),
     SelfValue,
     Name(Identifier),
     FieldAccess(Box<Expr>, Identifier),
     TupleIndex(Box<Expr>, String),
-    Call(Box<Expr>, Vec<Expr>),
-    MethodCall(Box<Expr>, Identifier, Vec<Expr>),
+    Call(Box<Expr>, Vec<FunctionArg>),
+    MethodCall(Box<Expr>, Identifier, Vec<FunctionArg>),
     Loop(Pattern, Box<Expr>, Box<Expr>),
     BinaryOp(BinaryOp, Box<Expr>, Box<Expr>),
     UnaryOp(UnaryOp, Box<Expr>),
@@ -96,8 +102,20 @@ impl SimpleExpr {
             SimpleExpr::Return(_) | SimpleExpr::Break(_) | SimpleExpr::Continue(_) => true,
             SimpleExpr::FieldAccess(expr, _) => expr.doesNotReturn(),
             SimpleExpr::TupleIndex(expr, _) => expr.doesNotReturn(),
-            SimpleExpr::Call(func, args) => func.doesNotReturn() || args.iter().any(|arg| arg.doesNotReturn()),
-            SimpleExpr::MethodCall(obj, _, args) => obj.doesNotReturn() || args.iter().any(|arg| arg.doesNotReturn()),
+            SimpleExpr::Call(func, args) => {
+                func.doesNotReturn()
+                    || args.iter().any(|arg| match arg {
+                        FunctionArg::Positional(e) => e.doesNotReturn(),
+                        FunctionArg::Named(_, e) => e.doesNotReturn(),
+                    })
+            }
+            SimpleExpr::MethodCall(obj, _, args) => {
+                obj.doesNotReturn()
+                    || args.iter().any(|arg| match arg {
+                        FunctionArg::Positional(e) => e.doesNotReturn(),
+                        FunctionArg::Named(_, e) => e.doesNotReturn(),
+                    })
+            }
             SimpleExpr::BinaryOp(_, left, right) => left.doesNotReturn() || right.doesNotReturn(),
             SimpleExpr::UnaryOp(_, expr) => expr.doesNotReturn(),
             SimpleExpr::Match(expr, branches) => {

@@ -5,7 +5,7 @@ use crate::siko::{
     syntax::{
         Attributes::Attributes,
         Data::{Enum, Struct},
-        Expr::{Branch, Expr, SimpleExpr},
+        Expr::{Branch, Expr, FunctionArg, SimpleExpr},
         Function::{Function, Parameter, ResultKind},
         Identifier::Identifier,
         Pattern::{Pattern, SimplePattern},
@@ -147,32 +147,32 @@ fn getPartialCmpFn(enumDef: &Enum, enumTy: &Type) -> Function {
         expr: SimpleExpr::Call(
             Box::new(withName("Std.Cmp.PartialOrd.partialCmp", enumDef.name.location())),
             vec![
-                Expr {
+                FunctionArg::Positional(Expr {
                     expr: SimpleExpr::Call(
                         Box::new(withName(
                             "Std.Ops.Basic.Discriminator.discriminator",
                             enumDef.name.location(),
                         )),
-                        vec![Expr {
+                        vec![FunctionArg::Positional(Expr {
                             expr: SimpleExpr::SelfValue,
                             location: enumDef.name.location(),
-                        }],
+                        })],
                     ),
                     location: enumDef.name.location(),
-                },
-                Expr {
+                }),
+                FunctionArg::Positional(Expr {
                     expr: SimpleExpr::Call(
                         Box::new(withName(
                             "Std.Ops.Basic.Discriminator.discriminator",
                             enumDef.name.location(),
                         )),
-                        vec![Expr {
+                        vec![FunctionArg::Positional(Expr {
                             expr: SimpleExpr::Value(Identifier::new("other".to_string(), enumDef.name.location())),
                             location: enumDef.name.location(),
-                        }],
+                        })],
                     ),
                     location: enumDef.name.location(),
-                },
+                }),
             ],
         ),
         location: enumDef.name.location(),

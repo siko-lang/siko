@@ -1,7 +1,7 @@
 use crate::siko::{
     location::Location::Location,
     syntax::{
-        Expr::{Branch, Expr, SimpleExpr},
+        Expr::{Branch, Expr, FunctionArg, SimpleExpr},
         Identifier::Identifier,
         Pattern::{Pattern, SimplePattern},
         Statement::{Block, Statement, StatementKind},
@@ -35,7 +35,10 @@ pub fn withName(n: &str, location: Location) -> Expr {
 pub fn withSome(inner: Expr) -> Expr {
     let location = inner.location.clone();
     Expr {
-        expr: SimpleExpr::Call(Box::new(withName("Option.Option.Some", location.clone())), vec![inner]),
+        expr: SimpleExpr::Call(
+            Box::new(withName("Option.Option.Some", location.clone())),
+            vec![FunctionArg::Positional(inner)],
+        ),
         location: location.clone(),
     }
 }
@@ -50,7 +53,7 @@ pub fn generateMatches(itemARefs: Vec<Expr>, itemBRefs: Vec<Expr>, location: Loc
     let eqCall = Expr {
         expr: SimpleExpr::Call(
             Box::new(withName("Std.Cmp.PartialEq.eq", location.clone())),
-            vec![firstA, firstB],
+            vec![FunctionArg::Positional(firstA), FunctionArg::Positional(firstB)],
         ),
         location: location.clone(),
     };
@@ -92,7 +95,7 @@ pub fn generatePartialOrdFieldComparison(itemARefs: Vec<Expr>, itemBRefs: Vec<Ex
     let cmpCall = Expr {
         expr: SimpleExpr::Call(
             Box::new(withName("Std.Cmp.PartialOrd.partialCmp", location.clone())),
-            vec![firstA, firstB],
+            vec![FunctionArg::Positional(firstA), FunctionArg::Positional(firstB)],
         ),
         location: location.clone(),
     };
@@ -149,7 +152,7 @@ pub fn generateOrdFieldComparison(itemARefs: Vec<Expr>, itemBRefs: Vec<Expr>, lo
     let cmpCall = Expr {
         expr: SimpleExpr::Call(
             Box::new(withName("Std.Cmp.Ord.cmp", location.clone())),
-            vec![firstA, firstB],
+            vec![FunctionArg::Positional(firstA), FunctionArg::Positional(firstB)],
         ),
         location: location.clone(),
     };

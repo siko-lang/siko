@@ -3,7 +3,7 @@ use crate::siko::{
     syntax::{
         Attributes::Attributes,
         Data::Enum,
-        Expr::{Branch, Expr, SimpleExpr},
+        Expr::{Branch, Expr, FunctionArg, SimpleExpr},
         Function::{Function, Parameter, ResultKind},
         Identifier::Identifier,
         Pattern::{Pattern, SimplePattern},
@@ -75,7 +75,7 @@ fn getFromIntFnForEnum(enumDef: &Enum, enumTy: &Type) -> Function {
                     expr: SimpleExpr::Name(Identifier::new("Option.Some".to_string(), enumDef.name.location())),
                     location: enumDef.name.location(),
                 }),
-                vec![Expr {
+                vec![FunctionArg::Positional(Expr {
                     expr: SimpleExpr::Call(
                         Box::new(Expr {
                             expr: SimpleExpr::Name(variantName),
@@ -84,7 +84,7 @@ fn getFromIntFnForEnum(enumDef: &Enum, enumTy: &Type) -> Function {
                         Vec::new(),
                     ),
                     location: enumDef.name.location(),
-                }],
+                })],
             ),
             location: enumDef.name.location(),
         };
