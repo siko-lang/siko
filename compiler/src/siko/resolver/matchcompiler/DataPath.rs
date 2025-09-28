@@ -1,82 +1,155 @@
+use crate::siko::qualifiedname::QualifiedName;
 use std::fmt;
 
-use crate::siko::qualifiedname::QualifiedName;
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum DataPathSegment {
+    Root,
+    Tuple(i64),
+    TupleIndex(i64),
+    ItemIndex(i64),
+    Variant(QualifiedName, QualifiedName),
+    IntegerLiteral(String),
+    StringLiteral(String),
+    Struct(QualifiedName),
+    Wildcard,
+}
+
+impl fmt::Display for DataPathSegment {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            DataPathSegment::Root => write!(f, "Root"),
+            DataPathSegment::Tuple(len) => write!(f, "/tuple{}", len),
+            DataPathSegment::TupleIndex(index) => {
+                write!(f, ".t{}", index)
+            }
+            DataPathSegment::ItemIndex(index) => {
+                write!(f, ".i{}", index)
+            }
+            DataPathSegment::Variant(name, _) => write!(f, ".{}", name),
+            DataPathSegment::IntegerLiteral(literal) => {
+                write!(f, "[int:{}]", literal)
+            }
+            DataPathSegment::StringLiteral(literal) => {
+                write!(f, "[str:\"{}\"]", literal)
+            }
+            DataPathSegment::Struct(name) => write!(f, ".{}", name),
+            DataPathSegment::Wildcard => write!(f, "._"),
+        }
+    }
+}
+
+impl fmt::Debug for DataPathSegment {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self)
+    }
+}
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum DataPath {
-    Root,
-    Tuple(Box<DataPath>, i64),
-    TupleIndex(Box<DataPath>, i64),
-    ItemIndex(Box<DataPath>, i64),
-    Variant(Box<DataPath>, QualifiedName, QualifiedName),
-    IntegerLiteral(Box<DataPath>, String),
-    StringLiteral(Box<DataPath>, String),
-    Struct(Box<DataPath>, QualifiedName),
-    Wildcard(Box<DataPath>),
+pub struct DataPath {
+    segments: Vec<DataPathSegment>,
 }
 
 impl DataPath {
-    pub fn isChild(&self, parent: &DataPath) -> bool {
-        let mut selfParent = self.getParent();
-        loop {
-            if &selfParent == parent {
-                return true;
-            }
-            if selfParent == DataPath::Root {
-                return false;
-            }
-            selfParent = selfParent.getParent();
+    pub fn root() -> DataPath {
+        DataPath {
+            segments: vec![DataPathSegment::Root],
         }
     }
 
-    pub fn isRoot(&self) -> bool {
-        matches!(self, DataPath::Root)
-    }
-
-    pub fn asBindingPath(&self) -> DataPath {
-        DataPath::Wildcard(Box::new(self.clone()))
-    }
-
-    pub fn getParent(&self) -> DataPath {
-        match self {
-            DataPath::Root => DataPath::Root,
-            DataPath::Tuple(p, _) => *p.clone(),
-            DataPath::TupleIndex(p, _) => *p.clone(),
-            DataPath::ItemIndex(p, _) => *p.clone(),
-            DataPath::Variant(p, _, _) => *p.clone(),
-            DataPath::IntegerLiteral(p, _) => *p.clone(),
-            DataPath::StringLiteral(p, _) => *p.clone(),
-            DataPath::Struct(p, _) => *p.clone(),
-            DataPath::Wildcard(p) => *p.clone(),
+    pub fn asRef<'a>(&'a self) -> DataPathRef<'a> {
+        DataPathRef {
+            segments: &self.segments,
         }
+    }
+
+    pub fn push(&self, segment: DataPathSegment) -> DataPath {
+        let mut segments = self.segments.clone();
+        segments.push(segment);
+        DataPath { segments }
     }
 }
 
 impl fmt::Display for DataPath {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            DataPath::Root => write!(f, "Root"),
-            DataPath::Tuple(path, len) => write!(f, "{}/tuple{}", path, len),
-            DataPath::TupleIndex(path, index) => {
-                write!(f, "{}.t{}", path, index)
-            }
-            DataPath::ItemIndex(path, index) => {
-                write!(f, "{}.i{}", path, index)
-            }
-            DataPath::Variant(path, name, _) => write!(f, "{}.{}", path, name),
-            DataPath::IntegerLiteral(path, literal) => {
-                write!(f, "{}[int:{}]", path, literal)
-            }
-            DataPath::StringLiteral(path, literal) => {
-                write!(f, "{}[str:\"{}\"]", path, literal)
-            }
-            DataPath::Struct(path, name) => write!(f, "{}.{}", path, name),
-            DataPath::Wildcard(path) => write!(f, "{}._", path),
-        }
+        write!(f, "{}", self.asRef())
     }
 }
 
 impl fmt::Debug for DataPath {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct DataPathRef<'a> {
+    segments: &'a [DataPathSegment],
+}
+
+impl<'a> DataPathRef<'a> {
+    pub fn isChild(&self, parent: &DataPathRef) -> bool {
+        let s1 = self.segments();
+        let s2 = parent.segments();
+        if s1.len() <= s2.len() {
+            return false;
+        }
+        for (a, b) in s1.iter().zip(s2.iter()) {
+            if a != b {
+                return false;
+            }
+        }
+        true
+    }
+
+    pub fn segments(&self) -> &[DataPathSegment] {
+        self.segments
+    }
+
+    pub fn isRoot(&self) -> bool {
+        let s = self.segments();
+        s.len() == 1 && s[0] == DataPathSegment::Root
+    }
+
+    pub fn asBindingPath(&self) -> DataPath {
+        let mut segments = self.segments().to_vec();
+        segments.push(DataPathSegment::Wildcard);
+        DataPath { segments }
+    }
+
+    pub fn owned(&self) -> DataPath {
+        DataPath {
+            segments: self.segments().to_vec(),
+        }
+    }
+
+    pub fn last(&self) -> &DataPathSegment {
+        &self.segments()[self.segments().len() - 1]
+    }
+
+    pub fn getParent(&'a self) -> DataPathRef<'a> {
+        let segments = self.segments();
+        if segments.len() == 1 {
+            return DataPathRef { segments };
+        }
+        DataPathRef {
+            segments: &segments[0..segments.len() - 1],
+        }
+    }
+}
+
+impl fmt::Display for DataPathRef<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let segments = self
+            .segments()
+            .iter()
+            .map(|s| format!("{}", s))
+            .collect::<Vec<String>>()
+            .join("");
+        write!(f, "{}", segments)
+    }
+}
+
+impl fmt::Debug for DataPathRef<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self)
     }
@@ -139,28 +212,29 @@ impl fmt::Display for DecisionPath {
     }
 }
 
-pub fn matchDecisions(mut nodeDecisionPath: DecisionPath, mut matchDecisionPath: DecisionPath) -> bool {
+pub fn matchDecisions(mut nodeDecisionPath: &[DataPath], mut matchDecisionPath: &[DataPath]) -> bool {
     loop {
-        if matchDecisionPath.decisions.is_empty() {
-            return nodeDecisionPath.decisions.is_empty();
+        if matchDecisionPath.is_empty() {
+            return nodeDecisionPath.is_empty();
         }
-        let path = matchDecisionPath.decisions.remove(0);
-        nodeDecisionPath = removePaths(&path, nodeDecisionPath);
+        let path = &matchDecisionPath[0];
+        matchDecisionPath = &matchDecisionPath[1..];
+        nodeDecisionPath = removePaths(&path.asRef(), nodeDecisionPath);
     }
 }
 
-fn removePaths(path: &DataPath, mut nodeDecisionPath: DecisionPath) -> DecisionPath {
+fn removePaths<'a, 'b>(path: &DataPathRef<'b>, mut nodeDecisionPath: &'a [DataPath]) -> &'a [DataPath] {
     loop {
-        if nodeDecisionPath.decisions.is_empty() {
+        if nodeDecisionPath.is_empty() {
             break;
         }
-        let nodePath = &nodeDecisionPath.decisions[0];
-        let remove = match (path, nodePath) {
-            (DataPath::Wildcard(parent), _) => nodePath.isChild(parent),
-            (p1, p2) => p1 == p2,
+        let nodePath = &nodeDecisionPath[0];
+        let remove = match (path.last(), nodePath) {
+            (DataPathSegment::Wildcard, _) => nodePath.asRef().isChild(&path.getParent()),
+            (_, p2) => path == &p2.asRef(),
         };
         if remove {
-            nodeDecisionPath.decisions.remove(0);
+            nodeDecisionPath = &nodeDecisionPath[1..];
         } else {
             break;
         }

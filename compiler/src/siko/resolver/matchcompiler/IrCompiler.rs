@@ -12,7 +12,7 @@ use crate::siko::{
     resolver::{
         matchcompiler::{
             Context::CompileContext,
-            DataPath::DataPath,
+            DataPath::{DataPath, DataPathRef, DataPathSegment},
             Tree::{Case, Leaf, MatchKind, Node, Switch, SwitchKind, Tuple},
         },
         Environment::Environment,
@@ -75,7 +75,7 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
 
         let mut startBlockBuilder = self.resolver.bodyBuilder.current();
         let rootRef = startBlockBuilder.addRef(self.bodyId.useVar(), self.bodyLocation.clone());
-        ctx = ctx.add(dataPath, rootRef);
+        ctx = ctx.add(dataPath.clone(), rootRef);
         let firstBlockId = self.compileNode(&node, &ctx);
         self.resolver.addJumpToBuilder(
             firstBlockId,
@@ -134,7 +134,7 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
     fn compileTuple(&mut self, ctx: &CompileContext, tuple: &Tuple) -> BlockId {
         let mut builder = self.resolver.createBlock(self.parentEnv);
         builder.current();
-        let root = ctx.get(&tuple.dataPath.getParent());
+        let root = ctx.get(&tuple.dataPath.asRef().getParent().owned());
         let mut ctx = ctx.clone();
         for index in 0..tuple.size {
             let value = builder.addFieldRef(
@@ -146,7 +146,7 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
                 }],
                 self.bodyLocation.clone(),
             );
-            ctx = ctx.add(DataPath::TupleIndex(Box::new(tuple.dataPath.clone()), index), value);
+            ctx = ctx.add(tuple.dataPath.push(DataPathSegment::TupleIndex(index)), value);
         }
         let nextId = self.compileNode(&tuple.next, &ctx);
         self.resolver.addJumpToBuilder(
@@ -186,8 +186,10 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
                             }],
                             self.bodyLocation.clone(),
                         );
-                        let path = DataPath::Variant(Box::new(switch.dataPath.clone()), name.clone(), enumName.clone());
-                        let path = DataPath::ItemIndex(Box::new(path), index as i64);
+                        let path = switch
+                            .dataPath
+                            .push(DataPathSegment::Variant(name.clone(), enumName.clone()));
+                        let path = path.push(DataPathSegment::ItemIndex(index as i64));
                         ctx = ctx.add(path, value.clone());
                     }
                     (ctx, Some(builder.getBlockId()))
@@ -335,7 +337,7 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
             let accessor = generateAccessor(
                 self.resolver,
                 envBlockbuilder.clone(),
-                path.last(),
+                path.last().asRef(),
                 &self.bodyId,
                 &mut accessorMap,
             );
@@ -359,7 +361,7 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
                     let accessor = generateAccessor(
                         self.resolver,
                         envBlockbuilder.clone(),
-                        path.last(),
+                        path.last().asRef(),
                         &self.bodyId,
                         &mut accessorMap,
                     );
@@ -453,19 +455,19 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
 fn generateAccessor(
     resolver: &mut ExprResolver,
     mut builder: BlockBuilder,
-    path: &DataPath,
+    path: DataPathRef,
     root: &Variable,
     accessorMap: &mut BTreeMap<DataPath, Variable>,
 ) -> Variable {
     if path.isRoot() {
         return root.clone();
     }
-    if let Some(v) = accessorMap.get(path) {
+    if let Some(v) = accessorMap.get(&path.owned()) {
         return v.clone();
     }
-    let parentPathVar = generateAccessor(resolver, builder.clone(), &path.getParent(), root, accessorMap);
-    let var = match path {
-        DataPath::TupleIndex(_, index) => {
+    let parentPathVar = generateAccessor(resolver, builder.clone(), path.getParent(), root, accessorMap);
+    let var = match path.last() {
+        DataPathSegment::TupleIndex(index) => {
             let fields = vec![FieldInfo {
                 name: FieldId::Indexed(*index as u32),
                 ty: None,
@@ -473,7 +475,7 @@ fn generateAccessor(
             }];
             builder.addFieldRef(parentPathVar, fields, root.location())
         }
-        DataPath::ItemIndex(_, index) => {
+        DataPathSegment::ItemIndex(index) => {
             let fields = vec![FieldInfo {
                 name: FieldId::Indexed(*index as u32),
                 ty: None,
@@ -481,14 +483,14 @@ fn generateAccessor(
             }];
             builder.addFieldRef(parentPathVar, fields, root.location())
         }
-        DataPath::Variant(_, variantName, enumName) => {
+        DataPathSegment::Variant(variantName, enumName) => {
             let enumDef = resolver.enums.get(enumName).expect("enum not found");
             let (_, index) = enumDef.getVariant(variantName);
             builder.addTransform(parentPathVar, index, root.location())
         }
-        DataPath::Tuple(_, _) => parentPathVar,
+        DataPathSegment::Tuple(_) => parentPathVar,
         p => unreachable!("unexpected data path {:?}", p),
     };
-    accessorMap.insert(path.clone(), var.clone());
+    accessorMap.insert(path.owned(), var.clone());
     var
 }

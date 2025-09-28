@@ -7,6 +7,7 @@ use crate::siko::{
         DataPath::{matchDecisions, DataPath, DecisionPath},
     },
     syntax::Pattern::Pattern,
+    util::Runner::Runner,
 };
 
 #[derive(Clone, Debug)]
@@ -29,6 +30,15 @@ pub enum SwitchKind {
     Enum(QualifiedName),
     Integer,
     String,
+}
+
+impl SwitchKind {
+    pub fn isEnum(&self) -> bool {
+        match self {
+            SwitchKind::Enum(_) => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -62,7 +72,7 @@ pub enum Node {
 impl Node {
     pub fn getDataPath(&self) -> DataPath {
         match self {
-            Node::Tuple(tuple) => tuple.dataPath.getParent(),
+            Node::Tuple(tuple) => tuple.dataPath.asRef().getParent().owned(),
             Node::Switch(switch) => switch.dataPath.clone(),
             Node::Leaf(l) => l.decisionPath.last().clone(),
             Node::Wildcard(wildcard) => wildcard.path.clone(),
@@ -76,21 +86,22 @@ impl Node {
         }
     }
 
-    pub fn add(&mut self, compiler: &mut MatchCompiler, matches: &Vec<Match>) {
+    pub fn add(&mut self, compiler: &mut MatchCompiler, matches: &Vec<Match>, runner: &Runner) {
         match self {
-            Node::Tuple(tuple) => tuple.next.add(compiler, matches),
+            Node::Tuple(tuple) => tuple.next.add(compiler, matches, runner),
             Node::Switch(switch) => {
                 for (_, node) in &mut switch.cases {
-                    node.add(compiler, matches);
+                    node.add(compiler, matches, runner);
                 }
             }
             Node::Wildcard(w) => {
-                w.next.add(compiler, matches);
+                w.next.add(compiler, matches, runner);
             }
             Node::Leaf(leaf) => {
                 let mut localMatch: Option<Match> = None;
                 for m in matches {
-                    let matchResult = matchDecisions(leaf.decisionPath.clone(), m.decisionPath.clone());
+                    let matchResult =
+                        runner.run(|| matchDecisions(&leaf.decisionPath.decisions, &m.decisionPath.decisions));
                     if matchResult {
                         if m.kind.isGuarded() {
                             leaf.guardedMatches.push(m.clone());
@@ -155,10 +166,11 @@ impl Node {
                 tuple.next.dump(indent + 1);
             }
             Node::Switch(switch) => {
-                println!(
-                    "{}Switch(kind: {:?}, path: {})",
-                    indentStr, switch.kind, switch.dataPath
-                );
+                // println!(
+                //     "{}Switch(kind: {:?}, path: {})",
+                //     indentStr, switch.kind, switch.dataPath
+                // );
+                println!("{}Switch(kind: {:?})", indentStr, switch.kind);
                 for (case, node) in &switch.cases {
                     println!("{}  Case: {:?}", indentStr, case);
                     node.dump(indent + 2);
@@ -166,6 +178,7 @@ impl Node {
             }
             Node::Leaf(leaf) => {
                 println!("{}Leaf(path: {})", indentStr, leaf.decisionPath);
+                //println!("{}Leaf", indentStr);
                 if let Some(finalMatch) = &leaf.finalMatch {
                     println!(
                         "{}  Final Match: {}, bindings: {}",
@@ -187,46 +200,11 @@ impl Node {
             }
         }
     }
+}
 
-    // Remove spurious wildcard cases for fully-covered enums
-    // This operates on the tree structure and checks each node's own properties
-    pub fn removeSpuriousWildcards(
-        &mut self,
-        enums: &std::collections::BTreeMap<QualifiedName, crate::siko::hir::Data::Enum>,
-    ) {
-        match self {
-            Node::Switch(switch) => {
-                // Check if this is an enum switch with all variants covered
-                if let SwitchKind::Enum(enumName) = &switch.kind {
-                    if let Some(enumDef) = enums.get(enumName) {
-                        let totalVariants = enumDef.variants.len();
-                        let mut variantCount = switch.cases.len();
-                        if switch.cases.contains_key(&Case::Default) {
-                            variantCount -= 1; // Exclude Default from count
-                        }
-                        // If we have all variants, remove the Default (wildcard) case
-                        if variantCount == totalVariants {
-                            switch.cases.remove(&Case::Default);
-                        }
-                    }
-                }
-
-                // Recursively check all child nodes
-                for (_, child) in &mut switch.cases {
-                    child.removeSpuriousWildcards(enums);
-                }
-            }
-            Node::Tuple(tuple) => {
-                tuple.next.removeSpuriousWildcards(enums);
-            }
-            Node::Wildcard(wildcard) => {
-                wildcard.next.removeSpuriousWildcards(enums);
-            }
-            Node::Leaf(_) => {
-                // Leaf nodes don't have children to process
-            }
-        }
-    }
+struct ChildInfo {
+    case: Case,
+    leaf: Leaf,
 }
 
 #[derive(Clone, Debug)]
@@ -237,7 +215,18 @@ pub struct Match {
     pub bindings: Bindings,
 }
 
-#[derive(Clone, Debug)]
+impl Match {
+    pub fn new(kind: MatchKind, pattern: Pattern, decisionPath: DecisionPath, bindings: Bindings) -> Match {
+        Match {
+            kind,
+            pattern,
+            decisionPath,
+            bindings,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Bindings {
     pub bindings: BTreeMap<DecisionPath, String>,
 }
