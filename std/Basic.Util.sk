@@ -1,18 +1,19 @@
 module Std.Basic.Util {
 
 import NativePtr
-import Libc
+import Libc.Unistd as Unistd
+import Libc.StdLib as StdLib
 
 @safe
 pub fn printStr(v: &String) {
-    Libc.write(1.toI32(), v.slice().asPtr(), v.slice().len());
+    Unistd.write(1.toI32(), v.slice().asPtr(), v.slice().len());
 }
 
 @safe
 pub fn printlnStr(v: &String) {
-    Libc.write(1.toI32(), v.slice().asPtr(), v.slice().len());
-    Libc.write(1.toI32(), "\\n".slice().asPtr(), 1.toU64());
-    Libc.fsync(1.toI32());
+    Unistd.write(1.toI32(), v.slice().asPtr(), v.slice().len());
+    Unistd.write(1.toI32(), "\\n".slice().asPtr(), 1.toU64());
+    Unistd.fsync(1.toI32());
 }
 
 @safe
@@ -20,7 +21,7 @@ pub fn assert(v: Bool) {
     if v {
     } else {
         println("Assertion failed");
-        Libc.abort();
+        StdLib.abort();
     }
 }
 
@@ -36,13 +37,13 @@ pub fn println(msg: &String) {
 pub fn panic(msg: String) -> ! {
     printStr("PANIC");
     printStr(msg);
-    abort();
+    StdLib.abort();
 }
 
 @safe
 pub fn readChar() -> Result[U8, ()] {
     let buf: U8 = 0.toU8();
-    let bytesRead = Libc.read(0.toI32(), NativePtr.toPtr(&buf), 1.toU64());
+    let bytesRead = Unistd.read(0.toI32(), NativePtr.toPtr(&buf), 1.toU64());
     if bytesRead <= 0 {
         panic("Failed to read character");
     }
