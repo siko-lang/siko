@@ -59,6 +59,14 @@ pub struct Slice[T] {
     }
 
     @unsafe
+    pub fn copyTo(self, destSlice: Slice[T]) {
+        if destSlice.len() < self.len() {
+            panic("Slice.copyTo: destination slice is smaller than source slice");
+        }
+        NativePtr.memcpy(destSlice.asPtr(), self.asPtr(), self.len());
+    }
+
+    @unsafe
     fn subSlice(&self, from: U64, to: U64) -> Slice[T] {
         if from < 0.toU64() or to > self.size or from > to {
             panic("Invalid slice range ${from}-${to} must be between 0 and ${self.size}");

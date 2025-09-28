@@ -38,6 +38,10 @@ pub fn getI8TypeName() -> QualifiedName {
     build("I8", "I8")
 }
 
+pub fn getU16TypeName() -> QualifiedName {
+    build("U16", "U16")
+}
+
 pub fn getU64TypeName() -> QualifiedName {
     build("U64", "U64")
 }
@@ -145,6 +149,26 @@ pub fn getIntEqName(kind: IntKind) -> QualifiedName {
 
 pub fn getIntLessThanName(kind: IntKind) -> QualifiedName {
     build(&kind.to_string(), &kind.to_string()).add(format!("lessThan"))
+}
+
+pub fn getIntShiftLeftName(kind: IntKind) -> QualifiedName {
+    build(&kind.to_string(), &kind.to_string()).add(format!("shiftLeft"))
+}
+
+pub fn getIntShiftRightName(kind: IntKind) -> QualifiedName {
+    build(&kind.to_string(), &kind.to_string()).add(format!("shiftRight"))
+}
+
+pub fn getIntBitAndName(kind: IntKind) -> QualifiedName {
+    build(&kind.to_string(), &kind.to_string()).add(format!("bitAnd"))
+}
+
+pub fn getIntBitOrName(kind: IntKind) -> QualifiedName {
+    build(&kind.to_string(), &kind.to_string()).add(format!("bitOr"))
+}
+
+pub fn getIntBitXorName(kind: IntKind) -> QualifiedName {
+    build(&kind.to_string(), &kind.to_string()).add(format!("bitXor"))
 }
 
 pub fn getDropFnName() -> QualifiedName {

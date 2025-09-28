@@ -3,6 +3,7 @@ pub enum Type {
     Void,
     VoidPtr,
     UInt8,
+    UInt16,
     UInt32,
     UInt64,
     Int8,

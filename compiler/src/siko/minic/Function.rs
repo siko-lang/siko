@@ -71,6 +71,11 @@ pub enum IntegerOp {
     Mod,
     Eq,
     LessThan,
+    ShiftLeft,
+    ShiftRight,
+    BitAnd,
+    BitOr,
+    BitXor,
 }
 
 pub enum Instruction {

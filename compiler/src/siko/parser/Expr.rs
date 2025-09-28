@@ -778,6 +778,11 @@ impl<'a> ExprParser for Parser<'a> {
                     OperatorKind::GreaterThan => BinaryOp::GreaterThan,
                     OperatorKind::LessThanOrEqual => BinaryOp::LessThanOrEqual,
                     OperatorKind::GreaterThanOrEqual => BinaryOp::GreaterThanOrEqual,
+                    OperatorKind::ShiftLeft => BinaryOp::ShiftLeft,
+                    OperatorKind::ShiftRight => BinaryOp::ShiftRight,
+                    OperatorKind::BitAnd => BinaryOp::BitAnd,
+                    OperatorKind::BitOr => BinaryOp::BitOr,
+                    OperatorKind::BitXor => BinaryOp::BitXor,
                     OperatorKind::AddAssign => {
                         error("AddAssign is not supported in expressions".to_string());
                     }
@@ -1009,8 +1014,8 @@ impl<'a> ExprParser for Parser<'a> {
                     self.buildExpr(SimpleExpr::Tuple(args), start)
                 }
             }
-            TokenKind::Misc(MiscKind::Ampersand) => {
-                self.expect(TokenKind::Misc(MiscKind::Ampersand));
+            TokenKind::Op(OperatorKind::BitAnd) => {
+                self.expect(TokenKind::Op(OperatorKind::BitAnd));
                 let arg = self.parseExpr();
                 self.buildExpr(SimpleExpr::Ref(Box::new(arg)), start)
             }

@@ -452,6 +452,11 @@ impl<'a> ExprResolver<'a> {
                     BinaryOp::GreaterThan => createCmpOpName("PartialOrd", "greaterThan"),
                     BinaryOp::LessThanOrEqual => createCmpOpName("PartialOrd", "lessOrEqual"),
                     BinaryOp::GreaterThanOrEqual => createCmpOpName("PartialOrd", "greaterOrEqual"),
+                    BinaryOp::ShiftLeft => createOpName("ShiftLeft", "shiftLeft"),
+                    BinaryOp::ShiftRight => createOpName("ShiftRight", "shiftRight"),
+                    BinaryOp::BitAnd => createOpName("BitAnd", "bitAnd"),
+                    BinaryOp::BitOr => createOpName("BitOr", "bitOr"),
+                    BinaryOp::BitXor => createOpName("BitXor", "bitXor"),
                 };
                 self.bodyBuilder
                     .current()

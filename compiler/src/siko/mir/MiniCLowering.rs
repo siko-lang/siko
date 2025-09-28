@@ -303,6 +303,11 @@ impl<'a> MinicBuilder<'a> {
                             IntegerOp::Mod => LIntegerOp::Mod,
                             IntegerOp::Eq => LIntegerOp::Eq,
                             IntegerOp::LessThan => LIntegerOp::LessThan,
+                            IntegerOp::ShiftLeft => LIntegerOp::ShiftLeft,
+                            IntegerOp::ShiftRight => LIntegerOp::ShiftRight,
+                            IntegerOp::BitAnd => LIntegerOp::BitAnd,
+                            IntegerOp::BitOr => LIntegerOp::BitOr,
+                            IntegerOp::BitXor => LIntegerOp::BitXor,
                         },
                     );
                     minicBlock.instructions.push(minicInstruction);
@@ -484,6 +489,7 @@ impl<'a> MinicBuilder<'a> {
             Type::Void => LType::Void,
             Type::VoidPtr => LType::VoidPtr,
             Type::UInt8 => LType::UInt8,
+            Type::UInt16 => LType::UInt16,
             Type::UInt32 => LType::UInt32,
             Type::UInt64 => LType::UInt64,
             Type::Int8 => LType::Int8,

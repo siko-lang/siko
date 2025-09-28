@@ -30,6 +30,7 @@ impl<'a> Parser<'a> {
             spans: Vec::new(),
             opTable: vec![
                 vec![OperatorKind::And, OperatorKind::Or],
+                vec![OperatorKind::BitOr, OperatorKind::BitXor, OperatorKind::BitAnd],
                 vec![OperatorKind::Equal, OperatorKind::NotEqual],
                 vec![
                     OperatorKind::LessThan,
@@ -37,6 +38,7 @@ impl<'a> Parser<'a> {
                     OperatorKind::LessThanOrEqual,
                     OperatorKind::GreaterThanOrEqual,
                 ],
+                vec![OperatorKind::ShiftLeft, OperatorKind::ShiftRight],
                 vec![OperatorKind::Add, OperatorKind::Sub],
                 vec![OperatorKind::Mul, OperatorKind::Div],
             ],

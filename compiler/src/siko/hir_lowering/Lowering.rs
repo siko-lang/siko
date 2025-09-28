@@ -11,7 +11,8 @@ use crate::siko::{
         Type::Type as MirType,
     },
     qualifiedname::builtins::{
-        getArrayTypeName, getBoolTypeName, getI32TypeName, getI8TypeName, getIntTypeName, getU64TypeName, getU8TypeName,
+        getArrayTypeName, getBoolTypeName, getI32TypeName, getI8TypeName, getIntTypeName, getU16TypeName,
+        getU64TypeName, getU8TypeName,
     },
 };
 
@@ -42,6 +43,8 @@ impl Lowering {
                         MirType::Int32
                     } else if *name == getU64TypeName() {
                         MirType::UInt64
+                    } else if *name == getU16TypeName() {
+                        MirType::UInt16
                     } else {
                         MirType::Struct(self.nameManager.processName(name))
                     }

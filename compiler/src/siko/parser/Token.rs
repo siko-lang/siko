@@ -28,6 +28,11 @@ pub enum OperatorKind {
     SubAssign,
     MulAssign,
     DivAssign,
+    ShiftLeft,
+    ShiftRight,
+    BitAnd,
+    BitOr,
+    BitXor,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -93,7 +98,6 @@ pub enum MiscKind {
     Colon,
     Semicolon,
     ExclamationMark,
-    Ampersand,
     Pipe,
     Percent,
     Backslash,
@@ -160,7 +164,6 @@ impl Display for Token {
             Token::Arrow(ArrowKind::Right) => write!(f, "->"),
             Token::Range(RangeKind::Exclusive) => write!(f, ".."),
             Token::Range(RangeKind::Inclusive) => write!(f, "..="),
-            Token::Misc(MiscKind::Ampersand) => write!(f, "&"),
             Token::Misc(MiscKind::At) => write!(f, "@"),
             Token::Misc(MiscKind::Backslash) => write!(f, "\\"),
             Token::Misc(MiscKind::Colon) => write!(f, ":"),
@@ -189,6 +192,11 @@ impl Display for Token {
             Token::Op(OperatorKind::SubAssign) => write!(f, "-="),
             Token::Op(OperatorKind::MulAssign) => write!(f, "*="),
             Token::Op(OperatorKind::DivAssign) => write!(f, "/="),
+            Token::Op(OperatorKind::ShiftLeft) => write!(f, "<<"),
+            Token::Op(OperatorKind::ShiftRight) => write!(f, ">>"),
+            Token::Op(OperatorKind::BitAnd) => write!(f, "&"),
+            Token::Op(OperatorKind::BitOr) => write!(f, "|"),
+            Token::Op(OperatorKind::BitXor) => write!(f, "^"),
             Token::EOF => write!(f, "EOF"),
         }
     }
@@ -268,7 +276,6 @@ impl Display for TokenKind {
             TokenKind::Arrow(ArrowKind::Right) => write!(f, "->"),
             TokenKind::Range(RangeKind::Exclusive) => write!(f, ".."),
             TokenKind::Range(RangeKind::Inclusive) => write!(f, "..="),
-            TokenKind::Misc(MiscKind::Ampersand) => write!(f, "&"),
             TokenKind::Misc(MiscKind::At) => write!(f, "@"),
             TokenKind::Misc(MiscKind::Backslash) => write!(f, "\\"),
             TokenKind::Misc(MiscKind::Colon) => write!(f, ":"),
@@ -297,6 +304,11 @@ impl Display for TokenKind {
             TokenKind::Op(OperatorKind::SubAssign) => write!(f, "-="),
             TokenKind::Op(OperatorKind::MulAssign) => write!(f, "*="),
             TokenKind::Op(OperatorKind::DivAssign) => write!(f, "/="),
+            TokenKind::Op(OperatorKind::ShiftLeft) => write!(f, "<<"),
+            TokenKind::Op(OperatorKind::ShiftRight) => write!(f, ">>"),
+            TokenKind::Op(OperatorKind::BitAnd) => write!(f, "&"),
+            TokenKind::Op(OperatorKind::BitOr) => write!(f, "|"),
+            TokenKind::Op(OperatorKind::BitXor) => write!(f, "^"),
             TokenKind::EOF => write!(f, "EOF"),
         }
     }

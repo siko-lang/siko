@@ -1,0 +1,36 @@
+module Libc.Socket {
+
+import Array
+
+@derive(Discriminator, Clone, Copy, PartialEq, Eq)
+pub enum Domain {
+    AF_UNSPEC,
+    AF_UNIX,
+    AF_INET,
+}
+
+@derive(Discriminator, Clone, Copy, PartialEq, Eq)
+pub enum SockType {
+    Unused,
+    SOCK_STREAM,
+    SOCK_DGRAM,
+    SOCK_RAW,
+}
+
+pub struct InAddr {
+    pub s_addr: U32,
+}
+
+pub struct SockaddrIn {
+    pub sin_len: U8,
+    pub sin_family: U8,
+    pub sin_port: U16,
+    pub sin_addr: InAddr,
+    pub sin_zero: Array[U8, 8],
+}
+
+pub fn socket(domain: Int, ty: Int, protocol: Int) -> Int = extern "C" ("sys/socket.h")
+pub fn bind(sockfd: Int, addr: *SockaddrIn, addrlen: U32) -> Int = extern "C" ("sys/socket.h")
+pub fn inet_pton(af: Int, src: *U8, dst: *InAddr) -> Int = extern "C" ("arpa/inet.h")
+
+}

@@ -36,6 +36,11 @@ impl Format for BinaryOp {
             BinaryOp::GreaterThan => ">",
             BinaryOp::LessThanOrEqual => "<=",
             BinaryOp::GreaterThanOrEqual => ">=",
+            BinaryOp::ShiftLeft => "<<",
+            BinaryOp::ShiftRight => ">>",
+            BinaryOp::BitAnd => "&",
+            BinaryOp::BitOr => "|",
+            BinaryOp::BitXor => "^",
         };
         vec![Token::Chunk(format!(" {} ", op_str))]
     }

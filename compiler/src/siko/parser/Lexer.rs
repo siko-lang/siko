@@ -28,8 +28,10 @@ fn getSingleCharToken(c: char) -> Option<Token> {
         ',' => Token::Misc(MiscKind::Comma),
         ';' => Token::Misc(MiscKind::Semicolon),
         '@' => Token::Misc(MiscKind::At),
-        '&' => Token::Misc(MiscKind::Ampersand),
+        '&' => Token::Op(OperatorKind::BitAnd),
         '\\' => Token::Misc(MiscKind::Backslash),
+        '|' => Token::Op(OperatorKind::BitOr),
+        '^' => Token::Op(OperatorKind::BitXor),
         _ => return None,
     };
     Some(token)
@@ -430,6 +432,10 @@ impl Lexer {
                                 self.step();
                                 self.addToken(Token::Op(OperatorKind::GreaterThanOrEqual))
                             }
+                            Some('>') => {
+                                self.step();
+                                self.addToken(Token::Op(OperatorKind::ShiftRight))
+                            }
                             _ => self.addToken(Token::Op(OperatorKind::GreaterThan)),
                         }
                     }
@@ -443,6 +449,10 @@ impl Lexer {
                             Some('-') => {
                                 self.step();
                                 self.addToken(Token::Arrow(ArrowKind::Left))
+                            }
+                            Some('<') => {
+                                self.step();
+                                self.addToken(Token::Op(OperatorKind::ShiftLeft))
                             }
                             _ => self.addToken(Token::Op(OperatorKind::LessThan)),
                         }

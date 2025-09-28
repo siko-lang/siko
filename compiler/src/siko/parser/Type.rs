@@ -74,8 +74,8 @@ impl<'a> TypeParser for Parser<'a> {
                 self.expect(TokenKind::Keyword(KeywordKind::TypeSelf));
                 Type::SelfType
             }
-            TokenKind::Misc(MiscKind::Ampersand) => {
-                self.expect(TokenKind::Misc(MiscKind::Ampersand));
+            TokenKind::Op(OperatorKind::BitAnd) => {
+                self.expect(TokenKind::Op(OperatorKind::BitAnd));
                 let ty = self.parseType();
                 Type::Reference(Box::new(ty))
             }

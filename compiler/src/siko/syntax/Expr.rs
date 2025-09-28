@@ -16,6 +16,11 @@ pub enum BinaryOp {
     GreaterThan,
     LessThanOrEqual,
     GreaterThanOrEqual,
+    ShiftLeft,
+    ShiftRight,
+    BitAnd,
+    BitOr,
+    BitXor,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

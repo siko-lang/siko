@@ -30,8 +30,9 @@ use crate::siko::{
     location::{Location::Location, Report::ReportContext},
     qualifiedname::{
         builtins::{
-            getImplicitConvertFnName, getIntAddName, getIntDivName, getIntEqName, getIntLessThanName, getIntModName,
-            getIntMulName, getIntSubName, getNativePtrCloneName, getNativePtrIsNullName, IntKind,
+            getImplicitConvertFnName, getIntAddName, getIntBitAndName, getIntBitOrName, getIntBitXorName,
+            getIntDivName, getIntEqName, getIntLessThanName, getIntModName, getIntMulName, getIntShiftLeftName,
+            getIntShiftRightName, getIntSubName, getNativePtrCloneName, getNativePtrIsNullName, IntKind,
         },
         QualifiedName,
     },
@@ -203,6 +204,11 @@ impl<'a> Typechecker<'a> {
             integerOps.insert(getIntModName(kind), IntegerOp::Mod);
             integerOps.insert(getIntEqName(kind), IntegerOp::Eq);
             integerOps.insert(getIntLessThanName(kind), IntegerOp::LessThan);
+            integerOps.insert(getIntShiftLeftName(kind), IntegerOp::ShiftLeft);
+            integerOps.insert(getIntShiftRightName(kind), IntegerOp::ShiftRight);
+            integerOps.insert(getIntBitAndName(kind), IntegerOp::BitAnd);
+            integerOps.insert(getIntBitOrName(kind), IntegerOp::BitOr);
+            integerOps.insert(getIntBitXorName(kind), IntegerOp::BitXor);
         }
         Typechecker {
             ctx: ctx,
@@ -1012,6 +1018,12 @@ impl<'a> Typechecker<'a> {
                 match op {
                     IntegerOp::Add | IntegerOp::Sub | IntegerOp::Mul | IntegerOp::Div | IntegerOp::Mod => {
                         self.unifier.unifyVar(dest, Type::getIntType());
+                    }
+                    IntegerOp::ShiftLeft | IntegerOp::ShiftRight => {
+                        self.unifier.unifyVar(dest, left.getType());
+                    }
+                    IntegerOp::BitAnd | IntegerOp::BitOr | IntegerOp::BitXor => {
+                        self.unifier.unifyVar(dest, left.getType());
                     }
                     IntegerOp::Eq | IntegerOp::LessThan => {
                         self.unifier.unifyVar(dest, Type::getBoolType());

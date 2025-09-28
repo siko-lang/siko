@@ -455,6 +455,11 @@ pub enum IntegerOp {
     Mod,
     Eq,
     LessThan,
+    ShiftLeft,
+    ShiftRight,
+    BitAnd,
+    BitOr,
+    BitXor,
 }
 
 #[derive(Clone, PartialEq)]
@@ -1050,6 +1055,11 @@ impl InstructionKind {
                     IntegerOp::Mod => "%",
                     IntegerOp::Eq => "==",
                     IntegerOp::LessThan => "<",
+                    IntegerOp::ShiftLeft => "<<",
+                    IntegerOp::ShiftRight => ">>",
+                    IntegerOp::BitAnd => "&",
+                    IntegerOp::BitOr => "|",
+                    IntegerOp::BitXor => "^",
                 };
                 format!("{} = ({} {} {})", dest, v1, op_str, v2)
             }

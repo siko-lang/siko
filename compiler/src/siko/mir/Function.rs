@@ -180,6 +180,11 @@ pub enum IntegerOp {
     Mod,
     Eq,
     LessThan,
+    ShiftLeft,
+    ShiftRight,
+    BitAnd,
+    BitOr,
+    BitXor,
 }
 
 pub enum Instruction {
@@ -268,6 +273,11 @@ impl fmt::Display for Instruction {
                     IntegerOp::Mod => "%",
                     IntegerOp::Eq => "==",
                     IntegerOp::LessThan => "<",
+                    IntegerOp::ShiftLeft => "<<",
+                    IntegerOp::ShiftRight => ">>",
+                    IntegerOp::BitAnd => "&",
+                    IntegerOp::BitOr => "|",
+                    IntegerOp::BitXor => "^",
                 };
                 write!(f, "IntegerOp({}, {} {} {})", dest, left, op_str, right)
             }

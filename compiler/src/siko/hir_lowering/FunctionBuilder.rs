@@ -341,6 +341,11 @@ impl<'a> Builder<'a> {
                         HirIntegerOp::Mod => IntegerOp::Mod,
                         HirIntegerOp::Eq => IntegerOp::Eq,
                         HirIntegerOp::LessThan => IntegerOp::LessThan,
+                        HirIntegerOp::ShiftLeft => IntegerOp::ShiftLeft,
+                        HirIntegerOp::ShiftRight => IntegerOp::ShiftRight,
+                        HirIntegerOp::BitAnd => IntegerOp::BitAnd,
+                        HirIntegerOp::BitOr => IntegerOp::BitOr,
+                        HirIntegerOp::BitXor => IntegerOp::BitXor,
                     };
                     block.instructions.push(Instruction::Declare(dest.clone()));
                     block

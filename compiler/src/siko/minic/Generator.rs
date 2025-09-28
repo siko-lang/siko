@@ -31,6 +31,7 @@ pub fn getTypeName(ty: &Type) -> String {
         Type::Void => "void".to_string(),
         Type::VoidPtr => "void*".to_string(),
         Type::UInt8 => "uint8_t".to_string(),
+        Type::UInt16 => "uint16_t".to_string(),
         Type::UInt32 => "uint32_t".to_string(),
         Type::UInt64 => "uint64_t".to_string(),
         Type::Int8 => "int8_t".to_string(),
@@ -56,6 +57,7 @@ impl MiniCGenerator {
             Type::Void => 0,
             Type::VoidPtr => 8,
             Type::UInt8 => 1,
+            Type::UInt16 => 2,
             Type::UInt32 => 4,
             Type::UInt64 => 8,
             Type::Int8 => 1,
@@ -186,6 +188,11 @@ impl MiniCGenerator {
                     IntegerOp::Mod => ("%", false),
                     IntegerOp::Eq => ("==", true),
                     IntegerOp::LessThan => ("<", true),
+                    IntegerOp::ShiftLeft => ("<<", false),
+                    IntegerOp::ShiftRight => (">>", false),
+                    IntegerOp::BitAnd => ("&", false),
+                    IntegerOp::BitOr => ("|", false),
+                    IntegerOp::BitXor => ("^", false),
                 };
                 if isPtr {
                     format!("{} = *{} {} *{};", dest.name, left.name, opStr, right.name)

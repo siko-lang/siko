@@ -1,0 +1,43 @@
+module Main {
+
+import Libc.Socket
+import Libc.Errno
+import Convert
+import NativePtr
+import Array
+
+fn htons(value: U16) -> U16 {
+    (value << 8.toU16() & 255.toU16()) | (value >> 8.toU16() & 255.toU16())
+}
+
+@unsafe
+pub fn main() {
+    let sock = Libc.Socket.socket((AF_INET).discriminator(), (SOCK_STREAM).discriminator(), 0);
+    if sock < 0 {
+        let err = getErrno();
+        println("Err ${err.toInt()}");
+        return;
+    }
+    println("Socket created: ${sock}");
+    let sockAddrPtr: *Libc.Socket.SockaddrIn = null();
+    let sinLen = sizeOf(sockAddrPtr);
+    let sinFamily = (AF_INET).discriminator().toU8();
+    let sinPort = htons(8080.toU16());
+    let addrCStr: Array[U8, 16] = Array.uninitialized();
+    let addrStr = "127.0.0.1";
+    addrStr.slice().copyTo(addrCStr.slice());
+    //let sinAddr = inet_pton((AF_INET).discriminator(), addrCStr.slice().asPtr(), &Libc.Socket.InAddr { s_addr: 0 });
+    // let serverAddr = Libc.Socket.SockaddrIn(sinLen, sinFamily, sinPort
+    //     sin_addr: Libc.Socket.InAddr { s_addr: 0x7F000001.toU32().toBigEndian() }, //
+    //     sin_zero: Array.uninitialized().fill(0),
+    // };
+
+    // let server_addr = Libc.Socket.SockaddrIn {
+    //     sin_len: sizeOf(Libc.Socket.SockaddrIn).toU8(),
+    //     sin_family: Libc.Socket.AF_INET.discriminator().toU8(),
+    //     sin_port: 8080.toU16().toBigEndian(),
+    //     sin_addr: Libc.Socket.InAddr { s_addr: 0x7F000001.toU32().toBigEndian() }, //
+    // }
+}
+
+}

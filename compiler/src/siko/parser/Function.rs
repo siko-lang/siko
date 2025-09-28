@@ -1,4 +1,5 @@
 use crate::siko::{
+    parser::Token::OperatorKind,
     syntax::{
         Attributes::Attributes,
         Function::{Function, FunctionExternKind, Parameter, ResultKind},
@@ -30,8 +31,8 @@ impl<'a> FunctionParser for Parser<'a> {
         self.expect(TokenKind::LeftBracket(BracketKind::Paren));
         let mut params = Vec::new();
         while !self.check(TokenKind::RightBracket(BracketKind::Paren)) {
-            let param = if self.check(TokenKind::Misc(MiscKind::Ampersand)) {
-                self.expect(TokenKind::Misc(MiscKind::Ampersand));
+            let param = if self.check(TokenKind::Op(OperatorKind::BitAnd)) {
+                self.expect(TokenKind::Op(OperatorKind::BitAnd));
                 self.expect(TokenKind::Keyword(KeywordKind::ValueSelf));
                 Parameter::RefSelfParam
             } else {
