@@ -21,7 +21,7 @@ use crate::siko::{
         Trait::Instance,
         Type::{Constraint, ConstraintArgument, TypeParameterDeclaration},
     },
-    util::{error, Runner::Runner},
+    util::Runner::Runner,
 };
 
 use std::{
@@ -1033,7 +1033,11 @@ impl<'a> Resolver<'a> {
                             }
                             None => {
                                 if !i.implicitImport {
-                                    error(format!("Imported module not found {}", i.moduleName.toString()));
+                                    ResolverError::ImportedModuleNotFound(
+                                        i.moduleName.toString(),
+                                        i.moduleName.location(),
+                                    )
+                                    .report(self.ctx);
                                 }
                             }
                         };

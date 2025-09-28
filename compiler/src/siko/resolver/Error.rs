@@ -22,6 +22,7 @@ pub enum ResolverError {
     InvalidInstanceMember(String, String, Location),
     MissingTraitMembers(Vec<String>, String, Location),
     InvalidCoroutineBody(Location),
+    ImportedModuleNotFound(String, Location),
 }
 
 impl ResolverError {
@@ -138,6 +139,11 @@ impl ResolverError {
             }
             ResolverError::InvalidCoroutineBody(location) => {
                 let slogan = format!("Coroutine body must be a function call");
+                let r = Report::new(ctx, slogan, Some(location.clone()));
+                r.print();
+            }
+            ResolverError::ImportedModuleNotFound(name, location) => {
+                let slogan = format!("Imported module not found: {}", ctx.yellow(name));
                 let r = Report::new(ctx, slogan, Some(location.clone()));
                 r.print();
             }
