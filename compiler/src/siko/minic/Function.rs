@@ -34,6 +34,16 @@ impl Function {
             })
             .unwrap_or(false)
     }
+
+    pub fn hasHeaderName(&self) -> bool {
+        self.externKind
+            .as_ref()
+            .map(|kind| match kind {
+                ExternKind::C(info) => info.headerName.is_some(),
+                ExternKind::Builtin => false,
+            })
+            .unwrap_or(false)
+    }
 }
 
 pub struct Block {

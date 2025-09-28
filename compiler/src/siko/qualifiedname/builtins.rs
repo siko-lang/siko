@@ -42,6 +42,10 @@ pub fn getU16TypeName() -> QualifiedName {
     build("U16", "U16")
 }
 
+pub fn getU32TypeName() -> QualifiedName {
+    build("U32", "U32")
+}
+
 pub fn getU64TypeName() -> QualifiedName {
     build("U64", "U64")
 }

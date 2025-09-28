@@ -2,18 +2,19 @@ module Main {
 
 import Libc.Socket
 import Libc.Errno
+import Libc.Unistd
 import Convert
 import NativePtr
 import Array
 
 fn htons(value: U16) -> U16 {
-    (value << 8.toU16() & 255.toU16()) | (value >> 8.toU16() & 255.toU16())
+    ((value & 255.toU16()) << 8.toU16()) | ((value >> 8.toU16()) & 255.toU16())
 }
 
 @unsafe
 pub fn main() {
-    let sock = Libc.Socket.socket((AF_INET).discriminator(), (SOCK_STREAM).discriminator(), 0);
-    if sock < 0 {
+    let sock = Libc.Socket.socket((AF_INET).discriminator().toI32(), (SOCK_STREAM).discriminator().toI32(), 0.toI32());
+    if sock < 0.toI32() {
         let err = getErrno();
         println("Err ${err.toInt()}");
         return;
@@ -23,21 +24,58 @@ pub fn main() {
     let sinLen = sizeOf(sockAddrPtr);
     let sinFamily = (AF_INET).discriminator().toU8();
     let sinPort = htons(8080.toU16());
-    let addrCStr: Array[U8, 16] = Array.uninitialized();
+    let addrCStr: Array[U8, 128] = Array.uninitialized();
     let addrStr = "127.0.0.1";
     addrStr.slice().copyTo(addrCStr.slice());
-    //let sinAddr = inet_pton((AF_INET).discriminator(), addrCStr.slice().asPtr(), &Libc.Socket.InAddr { s_addr: 0 });
-    // let serverAddr = Libc.Socket.SockaddrIn(sinLen, sinFamily, sinPort
-    //     sin_addr: Libc.Socket.InAddr { s_addr: 0x7F000001.toU32().toBigEndian() }, //
-    //     sin_zero: Array.uninitialized().fill(0),
-    // };
-
-    // let server_addr = Libc.Socket.SockaddrIn {
-    //     sin_len: sizeOf(Libc.Socket.SockaddrIn).toU8(),
-    //     sin_family: Libc.Socket.AF_INET.discriminator().toU8(),
-    //     sin_port: 8080.toU16().toBigEndian(),
-    //     sin_addr: Libc.Socket.InAddr { s_addr: 0x7F000001.toU32().toBigEndian() }, //
-    // }
+    *addrCStr.slice().getPtr(addrStr.len().toU64()) = 0.toU8();
+    let socketAddrIn = SockaddrIn(
+        sin_len: sinLen.toU8(),
+        sin_family: sinFamily,
+        sin_port: sinPort,
+        sin_addr: Libc.Socket.InAddr(s_addr: 0.toU32()),
+        sin_zero: Array.uninitialized(),
+    );
+    socketAddrIn.sin_zero.fill(0.toU8());
+    let addrPtr: *Libc.Socket.InAddr = NativePtr.toPtr(&socketAddrIn.sin_addr);
+    let res = inet_pton((AF_INET).discriminator().toI32(), addrCStr.slice().asPtr(), addrPtr);
+    if res <= 0.toI32() {
+        let err = getErrno();
+        println("inet_pton failed: ${err.toInt()}");
+        return;
+    }
+    println("sinport ${sinPort}");
+    println("Port ${socketAddrIn.sin_port}");
+    println("Addr ${socketAddrIn.sin_addr.s_addr}");
+    println("Connecting to server...");
+    let res = connect(sock, NativePtr.toPtr(&socketAddrIn), sinLen.toU32());
+    if res < 0.toI32() {
+        let err = getErrno();
+        println("connect failed: ${err.toInt()}");
+        return;
+    }
+    loop {
+        let line = readLine();
+        let msg = line + "\\n";
+        let bytes = msg.slice();
+        let sent = Libc.Unistd.write(sock, bytes.asPtr(), bytes.len());
+        if sent < 0 {
+            let err = getErrno();
+            println("write failed: ${err.toInt()}");
+            break;
+        }
+        let mut buf: Array[U8, 1024] = Array.uninitialized();
+        let received = Libc.Unistd.read(sock, buf.slice().asPtr(), buf.len().toU64());
+        if received < 0 {
+            let err = getErrno();
+            println("read failed: ${err.toInt()}");
+            break;
+        } else if received == 0 {
+            println("Server closed connection");
+            break;
+        }
+        let response = String.fromU8(buf.slice().subSlice(0.toU64(), received.toU64()));
+        print("Received: ${response}");
+    }
 }
 
 }

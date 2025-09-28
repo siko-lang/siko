@@ -371,7 +371,7 @@ impl MiniCGenerator {
         }
 
         for f in &self.program.functions {
-            if f.isExternC() {
+            if f.isExternC() && f.hasHeaderName() {
                 continue;
             }
             self.dumpFunctionDeclaration(f, &mut output)?;
