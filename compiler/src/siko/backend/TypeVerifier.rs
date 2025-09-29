@@ -89,7 +89,7 @@ impl<'a> TypeVerifier<'a> {
                     targetType = targetType.asRef();
                 }
                 self.unify(
-                    &targetType,
+                    &targetType.unpackRef(),
                     &fieldInfo.ty.clone().expect("Field info should have a type"),
                 );
             }

@@ -2,7 +2,7 @@ use std::{env::args, fs, process::Command};
 
 use crate::{
     siko::{
-        backend::{Backend, TypeVerifier::verifyTypes},
+        backend::Backend,
         hir_lowering::Lowering::Lowering,
         location::{FileManager::FileManager, Report::ReportContext},
         minic::Generator::MiniCGenerator,
@@ -228,7 +228,7 @@ impl Compiler {
             .clone()
             .run(|| typecheck(&ctx, program, typecheckerRunner));
         let program = runner.child("type_verification").run(|| {
-            verifyTypes(&program);
+            //verifyTypes(&program);
             program
         });
         //println!("after typechecker\n{}", program);

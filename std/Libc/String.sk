@@ -1,7 +1,24 @@
 module Libc.String {
-    pub fn memcpy(dest: void*, src: void*, n: U64) -> void* = extern "C" ("string.h")
 
-    pub fn memmove(dest: void*, src: void*, n: U64) -> void* = extern "C" ("string.h")
+pub fn memcpy(dest: void*, src: void*, n: U64) -> void* = extern "C" ("string.h")
 
-    pub fn memcmp(s1: void*, s2: void*, n: U64) -> I32 = extern "C" ("string.h")
+pub fn memmove(dest: void*, src: void*, n: U64) -> void* = extern "C" ("string.h")
+
+pub fn memcmp(s1: void*, s2: void*, n: U64) -> I32 = extern "C" ("string.h")
+
+pub struct CString {
+    data: Vec[U8]
+
+    pub fn fromString(s: &String) -> CString {
+        let mut bytes = s.toVecU8();
+        bytes.push(0.toU8());
+        CString(data: bytes)
+    }
+
+    @unsafe
+    pub fn asPtr(&self) -> *U8 {
+        self.data.asPtr()
+    }
+}
+
 }

@@ -549,9 +549,8 @@ impl<'a> Typechecker<'a> {
     fn checkField(&mut self, mut receiverType: Type, fieldId: &FieldId, location: Location) -> Type {
         let origType = receiverType.clone();
         receiverType = self.unifier.apply(receiverType);
-        if let Type::Reference(_) = &receiverType {
-            TypecheckerError::FieldNotFound(fieldId.to_string(), origType.to_string(), location.clone())
-                .report(self.ctx);
+        if let Type::Reference(innerTy) = &receiverType {
+            receiverType = *innerTy.clone();
         }
         if let Type::Ptr(innerTy) = &receiverType {
             receiverType = *innerTy.clone();
@@ -580,7 +579,7 @@ impl<'a> Typechecker<'a> {
             },
             FieldId::Indexed(index) => {
                 let receiverType = self.unifier.apply(receiverType);
-                match receiverType.clone().unpackRef() {
+                match receiverType {
                     Type::Tuple(types) => {
                         if *index as usize >= types.len() {
                             TypecheckerError::FieldNotFound(
@@ -589,9 +588,6 @@ impl<'a> Typechecker<'a> {
                                 location.clone(),
                             )
                             .report(self.ctx);
-                        }
-                        if receiverType.isReference() {
-                            return types[*index as usize].asRef();
                         }
                         return types[*index as usize].clone();
                     }
@@ -1570,41 +1566,6 @@ impl<'a> Typechecker<'a> {
         }
     }
 
-    pub fn generate(&mut self) -> Vec<Function> {
-        //println!("Generating {}", self.f.name);
-        if self.f.body.is_none() {
-            return vec![self.f.clone()];
-        }
-
-        self.processConverters();
-        self.addFieldTypes();
-        self.removeBinds();
-
-        let mut resultFn = self.f.clone();
-        resultFn.body = Some(self.bodyBuilder.build());
-        if let Some(selfType) = self.selfType.clone() {
-            resultFn.result = match resultFn.result {
-                ResultKind::SingleReturn(ty) => ResultKind::SingleReturn(ty.changeSelfType(selfType)),
-                ResultKind::Coroutine(ty) => ResultKind::Coroutine(ty),
-            }
-        }
-
-        self.addTypes(&mut resultFn);
-        //self.dump(&result);
-        self.verify(&resultFn);
-
-        let mut functions = Vec::new();
-
-        for (blockId, closure) in self.closureTypes.iter() {
-            let mut separator = ClosureSeparator::new(&mut resultFn, *blockId, closure, &mut self.unifier);
-            let closureFn = separator.process();
-            functions.push(closureFn);
-        }
-
-        functions.push(resultFn);
-        functions
-    }
-
     fn addImplicitConvertCall(&mut self, dest: &Variable, source: &Variable) -> InstructionKind {
         let implicitConvertRunner = self.runner.child("implicit_convert");
         let targetFn = self
@@ -1631,5 +1592,40 @@ impl<'a> Typechecker<'a> {
         }
         let kind = InstructionKind::FunctionCall(dest.clone(), info);
         builder.replaceInstruction(kind, location.clone());
+    }
+
+    pub fn generate(&mut self) -> Vec<Function> {
+        //println!("Generating {}", self.f.name);
+        if self.f.body.is_none() {
+            return vec![self.f.clone()];
+        }
+
+        self.processConverters();
+        self.addFieldTypes();
+        self.removeBinds();
+
+        let mut resultFn = self.f.clone();
+        resultFn.body = Some(self.bodyBuilder.build());
+        if let Some(selfType) = self.selfType.clone() {
+            resultFn.result = match resultFn.result {
+                ResultKind::SingleReturn(ty) => ResultKind::SingleReturn(ty.changeSelfType(selfType)),
+                ResultKind::Coroutine(ty) => ResultKind::Coroutine(ty),
+            }
+        }
+
+        self.addTypes(&mut resultFn);
+        //self.dump(&resultFn);
+        self.verify(&resultFn);
+
+        let mut functions = Vec::new();
+
+        for (blockId, closure) in self.closureTypes.iter() {
+            let mut separator = ClosureSeparator::new(&mut resultFn, *blockId, closure, &mut self.unifier);
+            let closureFn = separator.process();
+            functions.push(closureFn);
+        }
+
+        functions.push(resultFn);
+        functions
     }
 }

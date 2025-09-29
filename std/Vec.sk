@@ -43,20 +43,18 @@ struct InnerVec[T] {
     }
 
     @unsafe
-    pub fn remove(mut self, index: U64) -> Self {
+    pub fn remove(mut self, index: U64) -> (Self, T) {
         if index < 0.toU64() or index >= self.size {
             panic("OutOfBounds");
         }
         let ptr = offset(self.items, index);
-        {
-            let item = *ptr; // drop the item at the index
-        }
+        let item = *ptr; // drop the item at the index
         // shift the items to the left using memmove
         let nextPtr = offset(self.items, (index + 1.toU64()));
         let destPtr = offset(self.items, index);
         memmove(destPtr, nextPtr, (self.size - index - 1.toU64()));
         self.size -= 1.toU64();
-        self
+        (self, item)
     }
 
     @unsafe
@@ -104,9 +102,9 @@ pub struct Vec[T] {
     }
 
     @safe
-    pub fn remove(mut self, index: Int) -> Self {
-        self.inner.remove(index.toU64());
-        self
+    pub fn remove(mut self, index: Int) -> (Self, T) {
+        let item = self.inner.remove(index.toU64());
+        (self, item)
     }
 
     pub fn iter(&self) -> VecIteratorRef[T] {
