@@ -1,0 +1,92 @@
+module Int.Util {
+
+import Std.Ops
+import Convert
+
+pub trait Mod[T] {
+    fn mod(&self, other: &T) -> T
+}
+
+
+@safe
+pub fn showNum[T: Clone[T], Copy[T], PartialEq[T],
+              PartialOrd[T], Neg[T],
+              Mod[T], From[Int, T], Into[T, Int],
+              Div[T, T], Add[T, T, Output=T]](num: &T) -> String {
+    // FIXME: fix constants
+    let zero: T = from(0);
+    let ten: T = from(10);
+    let offset: T = from(48);
+
+    let mut n = num.clone();
+    if n == zero {
+        return "0".toString();
+    }
+
+    let mut isNegative = False;
+
+    if n < zero {
+        isNegative = True;
+        n = -n;
+    }
+
+    let mut digits: Vec[U8] = Vec.new();
+
+    while n > zero {
+        let base: T = ten.clone();
+        let value: T = n.mod(base) + offset.clone();
+        let digit: Int = value.into();
+        digits.push(digit.toU8());
+        n /= base;
+    }
+
+    if isNegative {
+        digits.push('-');
+    }
+
+    digits.reverse();
+
+    String.fromU8(digits.slice())
+}
+
+@safe
+pub fn parseNum(s: &String) -> Result[Int, String] {
+    let bytes = s.slice();
+    let mut result: Int = 0;
+    let mut negative = False;
+    let mut start = 0.toU64();
+
+    if bytes.len() == 0.toU64() {
+        return Err("Empty string".toString());
+    }
+
+    if bytes.getUnchecked(0.toU64()) == '-' {
+        negative = True;
+        start = 1.toU64();
+    }
+
+    for i in start..bytes.len() {
+        let c = bytes.getUnchecked(i);
+        if c < '0' or c > '9' {
+            return Err("Invalid character in integer literal".toString());
+        }
+        result = result * 10 + (c.clone() - '0').toInt();
+    }
+
+    if negative {
+        result = -result;
+    }
+
+    Ok(result)
+}
+
+@test
+fn parseNumTest() {
+    assert(parseNum(&"123".toString()) == Ok(123));
+    assert(parseNum(&"-123".toString()) == Ok(-123));
+    assert(parseNum(&"0".toString()) == Ok(0));
+    assert(parseNum(&"".toString()) == Err("Empty string".toString()));
+    assert(parseNum(&"12a3".toString()) == Err("Invalid character in integer literal".toString()));
+}
+
+}

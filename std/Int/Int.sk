@@ -3,6 +3,7 @@ module Int {
 import Convert
 import NativePtr
 import Std.Ops
+import Int.Util
 
 @builtin
 pub struct Int {
@@ -165,51 +166,6 @@ pub instance FromIntInt From[Int, Int] {
     fn from(s: Int) -> Int {
         s
     }
-}
-
-pub trait Mod[T] {
-    fn mod(&self, other: &T) -> T
-}
-
-@safe
-pub fn showNum[T: Clone[T], Copy[T], PartialEq[T],
-              PartialOrd[T], Neg[T],
-              Mod[T], From[Int, T], Into[T, Int],
-              Div[T, T], Add[T, T, Output=T]](num: &T) -> String {
-    // FIXME: fix constants
-    let zero: T = from(0);
-    let ten: T = from(10);
-    let offset: T = from(48);
-
-    let mut n = num.clone();
-    if n == zero {
-        return "0".toString();
-    }
-
-    let mut isNegative = False;
-
-    if n < zero {
-        isNegative = True;
-        n = -n;
-    }
-
-    let mut digits: Vec[U8] = Vec.new();
-
-    while n > zero {
-        let base: T = ten.clone();
-        let value: T = n.mod(base) + offset.clone();
-        let digit: Int = value.into();
-        digits.push(digit.toU8());
-        n /= base;
-    }
-
-    if isNegative {
-        digits.push('-');
-    }
-
-    digits.reverse();
-
-    String.fromU8(digits.slice())
 }
 
 @test

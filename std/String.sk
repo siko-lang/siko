@@ -78,6 +78,33 @@ pub struct String {
         memcpy(newValue, value.asPtr(), capacity);
         String(newValue, capacity, capacity)
     }
+
+    @safe
+    pub fn split(&self, delimiter: U8) -> Vec[String] {
+        let mut parts = Vec.new();
+        let mut start = 0.toU64();
+        for i in 0.toU64() .. self.size {
+            if *offset(self.value, i) == delimiter {
+                let partSlice = Slice.new(offset(self.value, start), i - start);
+                parts.push(String.fromU8(partSlice));
+                start = i + 1.toU64();
+            }
+        }
+        if start < self.size {
+            let partSlice = Slice.new(offset(self.value, start), self.size.clone() - start);
+            parts.push(String.fromU8(partSlice));
+        }
+        parts
+    }
+
+    @safe
+    pub fn toVecU8(&self) -> Vec[U8] {
+        let mut vec = Vec.new();
+        for i in 0.toU64() .. self.size {
+            vec.push(*offset(self.value, i));
+        }
+        vec
+    }
 }
 
 pub instance Drop[String] {
@@ -214,6 +241,16 @@ pub instance ShowStringLiteral Show[StringLiteral] {
     fn show(&self) -> String {
         self.toString()
     }
+}
+
+@test
+fn splitStringTest() {
+    let s = "a,b,c".toString();
+    let parts = s.split(',');
+    assert(parts.len() == 3);
+    assert(parts.get(0) == "a".toString());
+    assert(parts.get(1) == "b".toString());
+    assert(parts.get(2) == "c".toString());
 }
 
 }

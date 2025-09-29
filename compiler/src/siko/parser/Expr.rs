@@ -989,6 +989,78 @@ impl<'a> ExprParser for Parser<'a> {
             TokenKind::Keyword(KeywordKind::While) => self.parseWhile(),
             TokenKind::Keyword(KeywordKind::Match) => self.parseMatch(),
             TokenKind::Keyword(KeywordKind::With) => self.parseWith(),
+            TokenKind::Keyword(KeywordKind::Try) => {
+                self.expect(TokenKind::Keyword(KeywordKind::Try));
+                let arg = self.parseExpr();
+                let matchExpr = Expr {
+                    expr: SimpleExpr::Match(
+                        Box::new(arg),
+                        vec![
+                            Branch {
+                                pattern: Pattern {
+                                    pattern: SimplePattern::Named(
+                                        Identifier::new(format!("Result.Result.Ok"), self.currentLocation()),
+                                        vec![Pattern {
+                                            pattern: SimplePattern::Bind(
+                                                Identifier::new("value".to_string(), self.currentLocation()),
+                                                false,
+                                            ),
+                                            location: self.currentLocation(),
+                                        }],
+                                    ),
+                                    location: self.currentLocation(),
+                                },
+                                body: Expr {
+                                    expr: SimpleExpr::Value(Identifier::new(
+                                        "value".to_string(),
+                                        self.currentLocation(),
+                                    )),
+                                    location: self.currentLocation(),
+                                },
+                            },
+                            Branch {
+                                pattern: Pattern {
+                                    pattern: SimplePattern::Named(
+                                        Identifier::new(format!("Result.Result.Err"), self.currentLocation()),
+                                        vec![Pattern {
+                                            pattern: SimplePattern::Bind(
+                                                Identifier::new("err".to_string(), self.currentLocation()),
+                                                false,
+                                            ),
+                                            location: self.currentLocation(),
+                                        }],
+                                    ),
+                                    location: self.currentLocation(),
+                                },
+                                body: Expr {
+                                    expr: SimpleExpr::Return(Some(Box::new(Expr {
+                                        expr: SimpleExpr::Call(
+                                            Box::new(Expr {
+                                                expr: SimpleExpr::Value(Identifier::new(
+                                                    format!("Result.Result.Err"),
+                                                    self.currentLocation(),
+                                                )),
+                                                location: self.currentLocation(),
+                                            }),
+                                            vec![FunctionArg::Positional(Expr {
+                                                expr: SimpleExpr::Value(Identifier::new(
+                                                    "err".to_string(),
+                                                    self.currentLocation(),
+                                                )),
+                                                location: self.currentLocation(),
+                                            })],
+                                        ),
+                                        location: self.currentLocation(),
+                                    }))),
+                                    location: self.currentLocation(),
+                                },
+                            },
+                        ],
+                    ),
+                    location: self.currentLocation(),
+                };
+                self.buildExpr(matchExpr.expr, start)
+            }
             TokenKind::Keyword(KeywordKind::Yield) => {
                 self.expect(TokenKind::Keyword(KeywordKind::Yield));
                 let arg = self.parseExpr();
