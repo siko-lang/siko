@@ -5,13 +5,13 @@ import Libc.Socket
 import Libc.String
 import Libc.Errno
 import Libc.Unistd
-import Int.Util
 import IO.Error
 import IO.Buffer
 import IO.Reader
 import IO.Writer
 import Net.TcpStream
 import NativePtr
+import Net.SocketUtils
 
 pub struct TcpListener {
     sock: FileDescriptor,
@@ -44,60 +44,6 @@ pub struct TcpListener {
             return Err(Error.new(err.toInt()));
         }
         Ok(TcpStream(sock: FileDescriptor.new(clientSock)))
-    }
-
-    fn splitHostPort(addr: &String) -> Result[(Option[String], U16), Error] {
-        let mut parts = addr.split(':');
-        if parts.len() == 1 {
-            let portPart = parts.remove(0);
-            let port = parseNum(portPart).unwrap();
-            return Ok((None, port.toU16()));
-        }
-        let ipPart = parts.remove(0);
-        let portPart = parts.remove(0);
-        let port = parseNum(portPart).unwrap();
-        Ok((Some(ipPart), port.toU16()))
-    }
-
-    @unsafe
-    fn createSocket(domain: Domain, ty: SockType) -> Result[I32, Error] {
-        let sock = Libc.Socket.socket(domain.code(), ty.code(), 0.toI32());
-        if sock < 0.toI32() {
-            let err = getErrno();
-            println("Err ${err.toInt()}");
-            return Err(Error.new(err.toInt()));
-        }
-        Ok(sock)
-    }
-
-    @unsafe
-    fn parseAddress(addr: Option[String], domain: Domain, mut inAddr: *Libc.Socket.InAddr) -> Result[(), Error] {
-        match addr {
-            None -> {
-                // INADDR_ANY
-                inAddr.s_addr = 0.toU32();
-                return Ok(());
-            }
-            Some(addr) -> {
-                let addrCStr = CString.fromString(addr);
-                let res = inet_pton(domain.code(), addrCStr.asPtr(), inAddr);
-                if res <= 0.toI32() {
-                    let err = getErrno();
-                    return Err(Error.new(err.toInt()));
-                }
-            }
-        };
-        Ok(())
-    }
-
-    @unsafe
-    fn bindSocket(sock: I32, sockAddrIn: &Libc.Socket.SockaddrIn) -> Result[(), Error] {
-        let res = Libc.Socket.bind(sock, sockAddrIn.asPtr(), sockAddrIn.len());
-        if res < 0.toI32() {
-            let err = getErrno();
-            return Err(Error.new(err.toInt()));
-        }
-        Ok(())
     }
 }
 
