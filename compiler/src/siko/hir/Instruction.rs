@@ -3,6 +3,7 @@ use std::fmt::Display;
 
 use crate::siko::backend::drop::Path::Path;
 use crate::siko::hir::Block::BlockId;
+use crate::siko::hir::CollectVariables::CollectVariables;
 use crate::siko::hir::Type::formatTypes;
 use crate::siko::hir::Variable::VariableName;
 use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
@@ -556,103 +557,9 @@ impl InstructionKind {
     }
 
     pub fn collectVariables(&self) -> Vec<Variable> {
-        match self {
-            InstructionKind::FunctionCall(var, info) => {
-                let mut vars = vec![var.clone()];
-                vars.extend(info.args.clone());
-                vars
-            }
-            InstructionKind::Converter(var, target) => {
-                vec![var.clone(), target.clone()]
-            }
-            InstructionKind::MethodCall(var, obj, _, args) => {
-                let mut vars = vec![var.clone(), obj.clone()];
-                vars.extend(args.clone());
-                vars
-            }
-            InstructionKind::DynamicFunctionCall(var, func, args) => {
-                let mut vars = vec![var.clone(), func.clone()];
-                vars.extend(args.clone());
-                vars
-            }
-            InstructionKind::FieldRef(var, target, _) => {
-                vec![var.clone(), target.clone()]
-            }
-            InstructionKind::Bind(var, value, _) => {
-                vec![var.clone(), value.clone()]
-            }
-            InstructionKind::Tuple(var, elements) => {
-                let mut vars = vec![var.clone()];
-                vars.extend(elements.clone());
-                vars
-            }
-            InstructionKind::StringLiteral(var, _) => vec![var.clone()],
-            InstructionKind::IntegerLiteral(var, _) => vec![var.clone()],
-            InstructionKind::CharLiteral(var, _) => vec![var.clone()],
-            InstructionKind::Return(var, value) => {
-                vec![var.clone(), value.clone()]
-            }
-            InstructionKind::Ref(var, target) => {
-                vec![var.clone(), target.clone()]
-            }
-            InstructionKind::PtrOf(var, target) => {
-                vec![var.clone(), target.clone()]
-            }
-            InstructionKind::DropPath(_) => vec![],
-            InstructionKind::DropMetadata(_) => vec![],
-            InstructionKind::Drop(_, _) => vec![],
-            InstructionKind::Jump(var, _) => vec![var.clone()],
-            InstructionKind::Assign(var, value) => {
-                vec![var.clone(), value.clone()]
-            }
-            InstructionKind::FieldAssign(var, value, _) => {
-                vec![var.clone(), value.clone()]
-            }
-            InstructionKind::AddressOfField(var, target, _) => {
-                vec![var.clone(), target.clone()]
-            }
-            InstructionKind::DeclareVar(var, _) => vec![var.clone()],
-            InstructionKind::Transform(var, target, _) => {
-                vec![var.clone(), target.clone()]
-            }
-            InstructionKind::EnumSwitch(var, _) => {
-                vec![var.clone()]
-            }
-            InstructionKind::IntegerSwitch(var, _) => {
-                vec![var.clone()]
-            }
-            InstructionKind::BlockStart(_) => Vec::new(),
-            InstructionKind::BlockEnd(_) => Vec::new(),
-            InstructionKind::With(v, info) => {
-                let mut result = Vec::new();
-                for c in &info.contexts {
-                    match c {
-                        WithContext::EffectHandler(_) => {}
-                        WithContext::Implicit(handler) => {
-                            result.push(handler.var.clone());
-                        }
-                    }
-                }
-                result.push(v.clone());
-                result
-            }
-            InstructionKind::ReadImplicit(var, _) => vec![var.clone()],
-            InstructionKind::WriteImplicit(_, var) => vec![var.clone()],
-            InstructionKind::LoadPtr(dest, src) => vec![dest.clone(), src.clone()],
-            InstructionKind::StorePtr(dest, src) => vec![dest.clone(), src.clone()],
-            InstructionKind::CreateClosure(var, info) => {
-                let mut vars = vec![var.clone()];
-                vars.extend(info.closureParams.clone());
-                vars
-            }
-            InstructionKind::ClosureReturn(_, variable, return_value) => {
-                vec![variable.clone(), return_value.clone()]
-            }
-            InstructionKind::IntegerOp(var, v1, v2, _) => {
-                vec![var.clone(), v1.clone(), v2.clone()]
-            }
-            InstructionKind::Yield(v, a) => vec![v.clone(), a.clone()],
-        }
+        let mut vars = Vec::new();
+        CollectVariables::collectVariables(self, &mut vars);
+        vars
     }
 
     pub fn dump(&self) -> String {

@@ -5,6 +5,7 @@ pub mod BlockGroupBuilder;
 pub mod Body;
 pub mod BodyBuilder;
 pub mod CanonicalInstanceStore;
+pub mod CollectVariables;
 pub mod ConstraintContext;
 pub mod Copy;
 pub mod Data;
