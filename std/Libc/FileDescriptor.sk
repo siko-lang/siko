@@ -1,0 +1,46 @@
+module Libc.FileDescriptor {
+
+import Libc.Unistd
+import Libc.Errno
+import IO.Error
+import IO.Buffer
+import IO.Reader
+import IO.Writer
+
+pub struct FileDescriptor {
+    fd: I32,
+
+    pub fn new(fd: I32) -> FileDescriptor {
+        FileDescriptor(fd)
+    }
+
+    pub fn getFd(&self) -> I32 {
+        self.fd
+    }
+}
+
+instance Reader[FileDescriptor] {
+    @safe
+    fn read(&self, buffer: &WriteBuffer) -> Result[Int, Error] {
+        let bytesRead = Libc.Unistd.read(self.fd, buffer.data.asPtr(), buffer.data.len());
+        if bytesRead < 0 {
+            let err = getErrno();
+            return Err(Error.new(err.toInt()));
+        }
+        Ok(bytesRead)
+    }
+}
+
+instance Writer[FileDescriptor] {
+    @safe
+    fn write(&self, buffer: &ReadBuffer) -> Result[Int, Error] {
+        let bytesWritten = Libc.Unistd.write(self.fd, buffer.data.asPtr(), buffer.data.len());
+        if bytesWritten < 0 {
+            let err = getErrno();
+            return Err(Error.new(err.toInt()));
+        }
+        Ok(bytesWritten)
+    }
+}
+
+}

@@ -16,14 +16,14 @@ pub fn main() {
         let line = readLine();
         let msg = line + "\\n";
         let bytes = msg.slice();
-        let sent = Libc.Unistd.write(tcpStream.sock, bytes.asPtr(), bytes.len());
+        let sent = Libc.Unistd.write(tcpStream.sock.getFd(), bytes.asPtr(), bytes.len());
         if sent < 0 {
             let err = getErrno();
             println("write failed: ${err.toInt()}");
             break;
         }
         let mut buf: Array[U8, 1024] = Array.uninitialized();
-        let received = Libc.Unistd.read(tcpStream.sock, buf.slice().asPtr(), buf.len().toU64());
+        let received = Libc.Unistd.read(tcpStream.sock.getFd(), buf.slice().asPtr(), buf.len().toU64());
         if received < 0 {
             let err = getErrno();
             println("read failed: ${err.toInt()}");
