@@ -4,12 +4,12 @@ use crate::siko::{
     hir::{
         Block::BlockId,
         BodyBuilder::BodyBuilder,
+        Copy::VariableInlineCopier,
         Function::Function,
         FunctionGroupBuilder::FunctionGroupInfo,
         Instruction::{EnumCase, InstructionKind, IntegerCase},
         Program::Program,
         Type::Type,
-        Variable::VariableInlineCopier,
     },
     qualifiedname::QualifiedName,
 };

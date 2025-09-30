@@ -785,10 +785,14 @@ impl<'a> ExprResolver<'a> {
         coroutineSpawn: bool,
     ) -> Variable {
         let mut irArgs = Vec::new();
+        let mut namedArgs = BTreeMap::new();
         for arg in args {
             let arg = match arg {
                 FunctionArg::Positional(arg) => arg,
-                FunctionArg::Named(_, arg) => arg,
+                FunctionArg::Named(name, arg) => {
+                    namedArgs.insert(name, arg);
+                    arg
+                }
             };
             let argId = self.resolveExpr(arg, env);
             irArgs.push(argId)

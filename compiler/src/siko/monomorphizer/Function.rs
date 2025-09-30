@@ -2,10 +2,10 @@ use crate::siko::{
     hir::{
         Body::Body,
         BodyBuilder::BodyBuilder,
+        Copy::IdentityCopier,
         Instruction::{SyntaxBlockId, SyntaxBlockIdSegment},
         Substitution::Substitution,
         SyntaxBlockIterator::SyntaxBlockIterator,
-        Variable::IdentityCopier,
     },
     monomorphizer::{
         Context::HandlerResolutionStore, Handler::HandlerResolution, Instruction::processInstruction,

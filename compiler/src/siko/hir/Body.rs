@@ -5,8 +5,8 @@ use std::{
 
 use crate::siko::hir::{
     Block::{Block, BlockId},
+    Copy::{CopyHandler, VariableCopier, VariableCopy},
     Instruction::Instruction,
-    Variable::{CopyHandler, VariableCopier},
     VariableAllocator::VariableAllocator,
 };
 

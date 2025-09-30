@@ -4,7 +4,6 @@ use std::fmt::Display;
 use crate::siko::backend::drop::Path::Path;
 use crate::siko::hir::Block::BlockId;
 use crate::siko::hir::Type::formatTypes;
-use crate::siko::hir::Variable::CopyHandler;
 use crate::siko::hir::Variable::VariableName;
 use crate::siko::{location::Location::Location, qualifiedname::QualifiedName};
 
@@ -323,6 +322,23 @@ impl Debug for InstanceReference {
 }
 
 #[derive(Clone, PartialEq)]
+pub enum Arguments {
+    Resolved(Vec<Variable>),
+}
+
+impl Display for Arguments {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Arguments::Resolved(args) => write!(
+                f,
+                "[{}]",
+                args.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(", ")
+            ),
+        }
+    }
+}
+
+#[derive(Clone, PartialEq)]
 pub struct CallInfo {
     pub name: QualifiedName,
     pub args: Vec<Variable>,
@@ -339,16 +355,6 @@ impl CallInfo {
             context: None,
             instanceRefs: Vec::new(),
             coroutineSpawn: false,
-        }
-    }
-
-    pub fn copy(&self, map: &mut CopyHandler) -> CallInfo {
-        CallInfo {
-            name: self.name.clone(),
-            args: self.args.iter().map(|a| a.copy(map)).collect(),
-            context: self.context.clone(),
-            instanceRefs: self.instanceRefs.clone(),
-            coroutineSpawn: self.coroutineSpawn,
         }
     }
 }
@@ -399,15 +405,6 @@ impl ClosureCreateInfo {
             body,
             name,
             fnArgCount,
-        }
-    }
-
-    pub fn copy(&self, map: &mut CopyHandler) -> ClosureCreateInfo {
-        ClosureCreateInfo {
-            closureParams: self.closureParams.iter().map(|p| p.copy(map)).collect(),
-            body: self.body,
-            name: self.name.clone(),
-            fnArgCount: self.fnArgCount,
         }
     }
 }
@@ -518,68 +515,6 @@ fn useVars(vars: Vec<Variable>) -> Vec<Variable> {
 }
 
 impl InstructionKind {
-    pub fn copy(&self, map: &mut CopyHandler) -> InstructionKind {
-        match self {
-            InstructionKind::FunctionCall(v, info) => InstructionKind::FunctionCall(v.copy(map), info.copy(map)),
-            InstructionKind::Converter(v1, v2) => InstructionKind::Converter(v1.copy(map), v2.copy(map)),
-            InstructionKind::MethodCall(v, r, n, a) => {
-                InstructionKind::MethodCall(v.copy(map), r.copy(map), n.clone(), a.clone())
-            }
-            InstructionKind::DynamicFunctionCall(v, f, a) => {
-                InstructionKind::DynamicFunctionCall(v.copy(map), f.copy(map), a.clone())
-            }
-            InstructionKind::FieldRef(v, r, i) => InstructionKind::FieldRef(v.copy(map), r.copy(map), i.clone()),
-            InstructionKind::Bind(v, s, m) => InstructionKind::Bind(v.copy(map), s.copy(map), *m),
-            InstructionKind::Tuple(v, a) => {
-                InstructionKind::Tuple(v.copy(map), a.iter().map(|x| x.copy(map)).collect())
-            }
-            InstructionKind::StringLiteral(v, l) => InstructionKind::StringLiteral(v.copy(map), l.clone()),
-            InstructionKind::IntegerLiteral(v, l) => InstructionKind::IntegerLiteral(v.copy(map), l.clone()),
-            InstructionKind::CharLiteral(v, l) => InstructionKind::CharLiteral(v.copy(map), l.clone()),
-            InstructionKind::Return(v, a) => InstructionKind::Return(v.copy(map), a.copy(map)),
-            InstructionKind::Ref(v, a) => InstructionKind::Ref(v.copy(map), a.copy(map)),
-            InstructionKind::PtrOf(v, a) => InstructionKind::PtrOf(v.copy(map), a.copy(map)),
-            InstructionKind::DropPath(p) => InstructionKind::DropPath(p.clone()),
-            InstructionKind::DropMetadata(k) => InstructionKind::DropMetadata(k.clone()),
-            InstructionKind::Drop(v, a) => InstructionKind::Drop(v.copy(map), a.copy(map)),
-            InstructionKind::Jump(v, b) => InstructionKind::Jump(v.copy(map), b.clone()),
-            InstructionKind::Assign(d, s) => InstructionKind::Assign(d.copy(map), s.copy(map)),
-            InstructionKind::FieldAssign(d, r, i) => InstructionKind::FieldAssign(d.copy(map), r.copy(map), i.clone()),
-            InstructionKind::AddressOfField(d, r, i) => {
-                InstructionKind::AddressOfField(d.copy(map), r.copy(map), i.clone())
-            }
-            InstructionKind::DeclareVar(v, m) => InstructionKind::DeclareVar(v.copy(map), m.clone()),
-            InstructionKind::Transform(d, a, i) => InstructionKind::Transform(d.copy(map), a.copy(map), i.clone()),
-            InstructionKind::IntegerSwitch(v, c) => InstructionKind::IntegerSwitch(v.copy(map), c.clone()),
-            InstructionKind::With(v, info) => InstructionKind::With(v.copy(map), info.clone()),
-            InstructionKind::EnumSwitch(variable, enum_cases) => {
-                InstructionKind::EnumSwitch(variable.copy(map), enum_cases.clone())
-            }
-            InstructionKind::BlockStart(syntax_block_id) => InstructionKind::BlockStart(syntax_block_id.clone()),
-            InstructionKind::BlockEnd(syntax_block_id) => InstructionKind::BlockEnd(syntax_block_id.clone()),
-            InstructionKind::ReadImplicit(variable, implicit_index) => {
-                InstructionKind::ReadImplicit(variable.copy(map), implicit_index.clone())
-            }
-            InstructionKind::WriteImplicit(implicit_index, variable) => {
-                InstructionKind::WriteImplicit(implicit_index.clone(), variable.copy(map))
-            }
-            InstructionKind::LoadPtr(variable, variable1) => {
-                InstructionKind::LoadPtr(variable.copy(map), variable1.copy(map))
-            }
-            InstructionKind::StorePtr(variable, variable1) => {
-                InstructionKind::StorePtr(variable.copy(map), variable1.copy(map))
-            }
-            InstructionKind::CreateClosure(v, info) => InstructionKind::CreateClosure(v.copy(map), info.copy(map)),
-            InstructionKind::ClosureReturn(block_id, variable, return_value) => {
-                InstructionKind::ClosureReturn(block_id.clone(), variable.copy(map), return_value.copy(map))
-            }
-            InstructionKind::IntegerOp(dest, v1, v2, op) => {
-                InstructionKind::IntegerOp(dest.copy(map), v1.copy(map), v2.copy(map), op.clone())
-            }
-            InstructionKind::Yield(v, a) => InstructionKind::Yield(v.copy(map), a.copy(map)),
-        }
-    }
-
     pub fn setVariableKinds(&self) -> InstructionKind {
         match self {
             InstructionKind::FunctionCall(dest, info) => {
@@ -1120,14 +1055,6 @@ pub struct Instruction {
 impl Instruction {
     pub fn dump(&self) {
         println!("    {}", self);
-    }
-
-    pub fn copy(&self, map: &mut CopyHandler) -> Instruction {
-        Instruction {
-            implicit: self.implicit,
-            kind: self.kind.copy(map),
-            location: self.location.clone(),
-        }
     }
 }
 

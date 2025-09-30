@@ -5,7 +5,6 @@ use std::rc::Rc;
 
 use crate::siko::hir::Instruction::Instruction;
 use crate::siko::hir::Instruction::InstructionKind;
-use crate::siko::hir::Variable::CopyHandler;
 use crate::siko::location::Location::Location;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
@@ -47,17 +46,6 @@ impl BlockInner {
 
     pub fn newWith(id: BlockId, instructions: Vec<Instruction>) -> BlockInner {
         BlockInner { id, instructions }
-    }
-
-    pub fn copy(&self, map: &mut CopyHandler) -> BlockInner {
-        let mut instructions = Vec::new();
-        for instr in &self.instructions {
-            instructions.push(instr.copy(map));
-        }
-        BlockInner {
-            id: self.id,
-            instructions,
-        }
     }
 
     pub fn add(&mut self, kind: InstructionKind, location: Location, implicit: bool) {
@@ -148,19 +136,13 @@ impl Display for BlockInner {
 
 #[derive(Debug, Clone)]
 pub struct Block {
-    inner: Rc<RefCell<BlockInner>>,
+    pub inner: Rc<RefCell<BlockInner>>,
 }
 
 impl Block {
     pub fn new(id: BlockId) -> Block {
         Block {
             inner: Rc::new(RefCell::new(BlockInner::new(id))),
-        }
-    }
-
-    pub fn copy(&self, map: &mut CopyHandler) -> Block {
-        Block {
-            inner: Rc::new(RefCell::new(self.inner.borrow().copy(map))),
         }
     }
 

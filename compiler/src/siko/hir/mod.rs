@@ -6,6 +6,7 @@ pub mod Body;
 pub mod BodyBuilder;
 pub mod CanonicalInstanceStore;
 pub mod ConstraintContext;
+pub mod Copy;
 pub mod Data;
 pub mod Function;
 pub mod FunctionCallResolver;
