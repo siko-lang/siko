@@ -12,7 +12,7 @@ use crate::siko::{
         Data::{Enum, Struct},
         Function::{Function, Parameter, ResultKind},
         FunctionGroupBuilder::FunctionGroupBuilder,
-        Instruction::{FieldInfo, Instruction, InstructionKind},
+        Instruction::{Arguments, FieldInfo, Instruction, InstructionKind},
         Program::Program,
         Type::Type,
         Variable::Variable,
@@ -163,6 +163,16 @@ impl CoroutineLowering for Variable {
         let mut ty = self.getType();
         ty.lower();
         self.setType(ty);
+    }
+}
+
+impl CoroutineLowering for Arguments {
+    fn lower(&mut self) {
+        match self {
+            Arguments::Resolved(vars) => {
+                vars.lower();
+            }
+        }
     }
 }
 

@@ -1,5 +1,5 @@
 use crate::siko::hir::{
-    Instruction::{CallInfo, ClosureCreateInfo, InstructionKind, WithContext, WithInfo},
+    Instruction::{Arguments, CallInfo, ClosureCreateInfo, InstructionKind, WithContext, WithInfo},
     Variable::Variable,
 };
 
@@ -17,6 +17,14 @@ impl<T: CollectVariables> CollectVariables for Vec<T> {
     fn collectVariables(&self, vars: &mut Vec<Variable>) {
         for item in self {
             item.collectVariables(vars);
+        }
+    }
+}
+
+impl CollectVariables for Arguments {
+    fn collectVariables(&self, vars: &mut Vec<Variable>) {
+        match self {
+            Arguments::Resolved(vs) => vs.collectVariables(vars),
         }
     }
 }

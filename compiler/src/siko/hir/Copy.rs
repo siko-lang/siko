@@ -2,7 +2,7 @@ use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 
 use crate::siko::hir::{
     Block::{Block, BlockInner},
-    Instruction::{CallInfo, ClosureCreateInfo, Instruction, InstructionKind},
+    Instruction::{Arguments, CallInfo, ClosureCreateInfo, Instruction, InstructionKind},
     Variable::{Variable, VariableInfo, VariableName},
     VariableAllocator::VariableAllocator,
 };
@@ -101,11 +101,25 @@ impl VariableCopy for Variable {
     }
 }
 
+impl<T: VariableCopy> VariableCopy for Vec<T> {
+    fn copy(&self, map: &mut CopyHandler) -> Vec<T> {
+        self.iter().map(|item| item.copy(map)).collect()
+    }
+}
+
+impl VariableCopy for Arguments {
+    fn copy(&self, map: &mut CopyHandler) -> Arguments {
+        match self {
+            Arguments::Resolved(vars) => Arguments::Resolved(vars.copy(map)),
+        }
+    }
+}
+
 impl VariableCopy for CallInfo {
     fn copy(&self, map: &mut CopyHandler) -> CallInfo {
         CallInfo {
             name: self.name.clone(),
-            args: self.args.iter().map(|a| a.copy(map)).collect(),
+            args: self.args.copy(map),
             context: self.context.clone(),
             instanceRefs: self.instanceRefs.clone(),
             coroutineSpawn: self.coroutineSpawn,
@@ -116,7 +130,7 @@ impl VariableCopy for CallInfo {
 impl VariableCopy for ClosureCreateInfo {
     fn copy(&self, map: &mut CopyHandler) -> ClosureCreateInfo {
         ClosureCreateInfo {
-            closureParams: self.closureParams.iter().map(|p| p.copy(map)).collect(),
+            closureParams: self.closureParams.copy(map),
             body: self.body,
             name: self.name.clone(),
             fnArgCount: self.fnArgCount,
@@ -137,9 +151,7 @@ impl VariableCopy for InstructionKind {
             }
             InstructionKind::FieldRef(v, r, i) => InstructionKind::FieldRef(v.copy(map), r.copy(map), i.clone()),
             InstructionKind::Bind(v, s, m) => InstructionKind::Bind(v.copy(map), s.copy(map), *m),
-            InstructionKind::Tuple(v, a) => {
-                InstructionKind::Tuple(v.copy(map), a.iter().map(|x| x.copy(map)).collect())
-            }
+            InstructionKind::Tuple(v, args) => InstructionKind::Tuple(v.copy(map), args.copy(map)),
             InstructionKind::StringLiteral(v, l) => InstructionKind::StringLiteral(v.copy(map), l.clone()),
             InstructionKind::IntegerLiteral(v, l) => InstructionKind::IntegerLiteral(v.copy(map), l.clone()),
             InstructionKind::CharLiteral(v, l) => InstructionKind::CharLiteral(v.copy(map), l.clone()),
@@ -200,10 +212,7 @@ impl VariableCopy for Instruction {
 
 impl VariableCopy for BlockInner {
     fn copy(&self, map: &mut CopyHandler) -> BlockInner {
-        let mut instructions = Vec::new();
-        for instr in &self.instructions {
-            instructions.push(instr.copy(map));
-        }
+        let instructions = self.instructions.copy(map);
         BlockInner {
             id: self.id,
             instructions,

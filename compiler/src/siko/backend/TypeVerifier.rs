@@ -116,7 +116,12 @@ impl<'a> TypeVerifier<'a> {
         match &instruction.kind {
             InstructionKind::FunctionCall(dest, info) => {
                 //println!("Function call: {} with args {:?}", fname, args);
-                let argTypes = info.args.iter().map(|arg| arg.getType().clone()).collect::<Vec<_>>();
+                let argTypes = info
+                    .args
+                    .getVariables()
+                    .iter()
+                    .map(|arg| arg.getType().clone())
+                    .collect::<Vec<_>>();
                 let f = self.program.getFunction(&info.name).expect("Function not found");
                 let mut fnType = f.getType();
                 //println!("Orig Function type: {}", fnType);

@@ -76,7 +76,12 @@ impl<'a> Builder<'a> {
                     } else {
                         self.lowering.nameManager.processName(&info.name)
                     };
-                    let args = info.args.iter().map(|var| self.buildVariable(var)).collect();
+                    let args = info
+                        .args
+                        .getVariables()
+                        .iter()
+                        .map(|var| self.buildVariable(var))
+                        .collect();
                     if dest.getType().isNever()
                         || dest.getType().isVoid()
                         || (f.kind.isExternC() && dest.getType() == getUnitTypeName())

@@ -3,7 +3,7 @@ use crate::siko::{
         Apply::Apply,
         Function::FunctionKind,
         Instruction::{
-            CallContextInfo, CallInfo, ImplicitContextIndex, ImplicitContextOperation, ImplicitIndex,
+            Arguments, CallContextInfo, CallInfo, ImplicitContextIndex, ImplicitContextOperation, ImplicitIndex,
             InstanceReference, Instruction, InstructionKind, SyntaxBlockId, WithContext,
         },
         Substitution::Substitution,
@@ -21,6 +21,14 @@ use crate::siko::{
     },
     qualifiedname::{builtins::getAutoDropFnName, QualifiedName},
 };
+
+impl Monomorphize for Arguments {
+    fn process(&self, sub: &Substitution, mono: &mut Monomorphizer) -> Self {
+        match self {
+            Arguments::Resolved(vars) => Arguments::Resolved(vars.process(sub, mono)),
+        }
+    }
+}
 
 impl Monomorphize for CallInfo {
     fn process(&self, sub: &Substitution, mono: &mut Monomorphizer) -> Self {
@@ -135,7 +143,7 @@ pub fn processInstruction(
                     fnCallResolver.setKnownImpls(resolvedImpls);
                     //println!("Substitution: {} ", sub);
                     let mut args = Vec::new();
-                    for arg in &info.args {
+                    for arg in info.args.getVariables() {
                         //println!("arg {}", arg);
                         args.push(arg.clone().apply(&sub));
                     }
@@ -227,7 +235,7 @@ pub fn processInstruction(
             let fn_name = mono.getMonoName(&name, &ty_args, resolution.clone(), resolvedImpls.clone());
             //println!("MONO CALL: {}", fn_name);
             mono.addKey(Key::Function(name.clone(), ty_args, resolution, resolvedImpls));
-            let mut callInfo = CallInfo::new(fn_name, info.args.clone());
+            let mut callInfo = CallInfo::new(fn_name, info.args.getVariables().clone());
             callInfo.context = callCtx;
             callInfo.coroutineSpawn = info.coroutineSpawn;
             InstructionKind::FunctionCall(dest.clone(), callInfo)
@@ -329,6 +337,7 @@ fn prepareTypes(sub: &Substitution, dest: &Variable, info: &CallInfo, targetFnTy
     };
     let arg_types: Vec<_> = info
         .args
+        .getVariables()
         .iter()
         .map(|arg| {
             //println!("arg {}", arg);

@@ -1,5 +1,5 @@
 use crate::siko::hir::{
-    Instruction::{CallInfo, ClosureCreateInfo, ImplicitHandler, InstructionKind, WithContext, WithInfo},
+    Instruction::{Arguments, CallInfo, ClosureCreateInfo, ImplicitHandler, InstructionKind, WithContext, WithInfo},
     Variable::Variable,
 };
 
@@ -20,6 +20,14 @@ impl ReplaceVar for Variable {
 impl<T: ReplaceVar> ReplaceVar for Vec<T> {
     fn replaceVar(&self, from: &Variable, to: Variable) -> Vec<T> {
         self.iter().map(|item| item.replaceVar(from, to.clone())).collect()
+    }
+}
+
+impl ReplaceVar for Arguments {
+    fn replaceVar(&self, from: &Variable, to: Variable) -> Arguments {
+        match self {
+            Arguments::Resolved(vars) => Arguments::Resolved(vars.replaceVar(from, to)),
+        }
     }
 }
 

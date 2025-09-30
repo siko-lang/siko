@@ -243,7 +243,7 @@ impl<'a> FunctionProfileBuilder<'a> {
                             //println!("Function call to known function: {}", info.name);
                             let destType = self.getVarType(dest);
                             self.unifyExtendedTypes(&destType, &calleeProfile.result);
-                            for (index, arg) in info.args.iter().enumerate() {
+                            for (index, arg) in info.args.getVariables().iter().enumerate() {
                                 let argType = self.getVarType(arg);
                                 let mut calleeArgType = calleeProfile.args[index].clone();
                                 if argType.vars.len() > calleeArgType.vars.len() {

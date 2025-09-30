@@ -663,7 +663,7 @@ impl<'a> Typechecker<'a> {
                 let Some(targetFn) = self.program.functions.get(&info.name) else {
                     panic!("Function not found {}", info.name);
                 };
-                let checkResult = self.checkFunctionCall(&targetFn, &info.args, dest, runner);
+                let checkResult = self.checkFunctionCall(&targetFn, info.args.getVariables(), dest, runner);
                 let mut info = info.clone();
                 info.name = checkResult.fnName;
                 info.instanceRefs = checkResult.instanceRefs;
@@ -1587,7 +1587,8 @@ impl<'a> Typechecker<'a> {
 
     fn postProcessFunctionCall(&self, builder: &mut BlockBuilder, dest: &Variable, info: CallInfo, location: Location) {
         if let Some(op) = self.integerOps.get(&info.name) {
-            let kind = InstructionKind::IntegerOp(dest.clone(), info.args[0].clone(), info.args[1].clone(), op.clone());
+            let args = info.args.getVariables();
+            let kind = InstructionKind::IntegerOp(dest.clone(), args[0].clone(), args[1].clone(), op.clone());
             builder.replaceInstruction(kind, location.clone());
             return;
         }

@@ -1,5 +1,5 @@
 use crate::siko::hir::{
-    Instruction::{CallInfo, ClosureCreateInfo, ImplicitHandler, WithContext, WithInfo},
+    Instruction::{Arguments, CallInfo, ClosureCreateInfo, ImplicitHandler, WithContext, WithInfo},
     Trait::{Instance, Trait},
     Type::Type,
 };
@@ -187,6 +187,14 @@ impl Apply for WithInfo {
     fn apply(mut self, sub: &Substitution) -> Self {
         self.contexts = self.contexts.apply(sub);
         self
+    }
+}
+
+impl Apply for Arguments {
+    fn apply(self, sub: &Substitution) -> Self {
+        match self {
+            Arguments::Resolved(vars) => Arguments::Resolved(vars.apply(sub)),
+        }
     }
 }
 

@@ -9,6 +9,7 @@ use crate::siko::backend::closurelowering::ClosureGenerator::ClosureGenerator;
 use crate::siko::hir::Body::Body;
 use crate::siko::hir::Data::Struct;
 use crate::siko::hir::Function::Parameter;
+use crate::siko::hir::Instruction::Arguments;
 use crate::siko::hir::Instruction::CallInfo;
 use crate::siko::hir::Instruction::FieldInfo;
 use crate::siko::hir::Instruction::InstructionKind;
@@ -218,6 +219,18 @@ impl ClosureLowering for Body {
     }
 }
 
+impl ClosureLowering for Arguments {
+    fn lower(&mut self, closureStore: &mut ClosureStore) {
+        match self {
+            Arguments::Resolved(vars) => {
+                for v in vars {
+                    v.lower(closureStore);
+                }
+            }
+        }
+    }
+}
+
 impl ClosureLowering for InstructionKind {
     fn lower(&mut self, closureStore: &mut ClosureStore) {
         match self {
@@ -243,13 +256,7 @@ impl ClosureLowering for InstructionKind {
                 let mut callArgs = Vec::new();
                 callArgs.push(closure.clone());
                 callArgs.extend(args.iter().cloned());
-                let callInfo = CallInfo {
-                    name: QualifiedName::ClosureCallHandler(Box::new(closureName)),
-                    args: callArgs,
-                    context: None,
-                    instanceRefs: Vec::new(),
-                    coroutineSpawn: false,
-                };
+                let callInfo = CallInfo::new(QualifiedName::ClosureCallHandler(Box::new(closureName)), callArgs);
                 let kind = InstructionKind::FunctionCall(dest.clone(), callInfo);
                 *self = kind;
             }
@@ -358,13 +365,7 @@ impl ClosureLowering for InstructionKind {
                 let closureInstanceName = closureStore.getClosureInstanceName(args, resTy, closureInstance);
                 dest.lower(closureStore);
                 //println!("closure params {:?} ", info.closureParams);
-                let callInfo = CallInfo {
-                    name: closureInstanceName,
-                    args: info.closureParams.clone(),
-                    context: None,
-                    instanceRefs: Vec::new(),
-                    coroutineSpawn: false,
-                };
+                let callInfo = CallInfo::new(closureInstanceName, info.closureParams.clone());
                 let kind = InstructionKind::FunctionCall(dest.clone(), callInfo);
                 *self = kind;
             }

@@ -327,6 +327,20 @@ pub enum Arguments {
     Resolved(Vec<Variable>),
 }
 
+impl Arguments {
+    pub fn getVariables(&self) -> &Vec<Variable> {
+        match self {
+            Arguments::Resolved(vars) => vars,
+        }
+    }
+
+    pub fn insert(&mut self, index: usize, var: Variable) {
+        match self {
+            Arguments::Resolved(vars) => vars.insert(index, var),
+        }
+    }
+}
+
 impl Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -342,7 +356,7 @@ impl Display for Arguments {
 #[derive(Clone, PartialEq)]
 pub struct CallInfo {
     pub name: QualifiedName,
-    pub args: Vec<Variable>,
+    pub args: Arguments,
     pub context: Option<CallContextInfo>,
     pub instanceRefs: Vec<InstanceReference>,
     pub coroutineSpawn: bool,
@@ -352,7 +366,7 @@ impl CallInfo {
     pub fn new(name: QualifiedName, args: Vec<Variable>) -> Self {
         CallInfo {
             name,
-            args,
+            args: Arguments::Resolved(args),
             context: None,
             instanceRefs: Vec::new(),
             coroutineSpawn: false,
@@ -382,11 +396,7 @@ impl Display for CallInfo {
         write!(
             f,
             "function_call({}, [{}]{}{}, co: {})",
-            self.name,
-            self.args.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(", "),
-            contextStr,
-            instanceStr,
-            self.coroutineSpawn
+            self.name, self.args, contextStr, instanceStr, self.coroutineSpawn
         )
     }
 }

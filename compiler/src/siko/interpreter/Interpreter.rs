@@ -135,6 +135,7 @@ impl<'a> FunctionExecutor<'a> {
                 InstructionKind::FunctionCall(dest, call_info) => {
                     let args: Vec<Value> = call_info
                         .args
+                        .getVariables()
                         .iter()
                         .map(|arg| {
                             self.frame

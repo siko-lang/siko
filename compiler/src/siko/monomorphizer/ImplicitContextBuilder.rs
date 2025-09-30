@@ -234,7 +234,7 @@ impl<'a, 'b> ImplicitContextBuilder<'a, 'b> {
                                     ctx.contextSyntaxBlockId, info.name
                                 );
                                 };
-                                let mut args = info.args.clone();
+                                let mut args = info.args.getVariables().clone();
                                 args.insert(0, contextVar);
                                 //println!(
                                 //    "Patching function call '{}' to include implicit context, new args: {:?} in syntax block {}",

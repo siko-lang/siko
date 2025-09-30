@@ -76,13 +76,7 @@ impl<'a> CoroutineGenerator<'a> {
             let fieldRef = InstructionKind::FieldRef(fieldRefVar.clone(), transformVar.clone(), vec![fieldInfo]);
             caseBuilder.addInstruction(fieldRef, location.clone());
             let resumeResult = bodyBuilder.createTempValueWithType(location.clone(), instance.resumeTupleTy.clone());
-            let callInfo = CallInfo {
-                name: instance.resumeFnName.clone(),
-                args: vec![fieldRefVar.useVar()],
-                context: None,
-                instanceRefs: Vec::new(),
-                coroutineSpawn: false,
-            };
+            let callInfo = CallInfo::new(instance.resumeFnName.clone(), vec![fieldRefVar.useVar()]);
             let resumeCall = InstructionKind::FunctionCall(resumeResult.clone(), callInfo);
             caseBuilder.addInstruction(resumeCall, location.clone());
             let stateMachineFieldRefVar =
@@ -113,13 +107,7 @@ impl<'a> CoroutineGenerator<'a> {
             let wrapperStateMachineVar = bodyBuilder.createTempValueWithType(location.clone(), coroutineTy.clone());
             let wrapperStateMachineConstruct = InstructionKind::FunctionCall(
                 wrapperStateMachineVar.clone(),
-                CallInfo {
-                    name: name.clone(),
-                    args: vec![stateMachineFieldRefVar.useVar()],
-                    context: None,
-                    instanceRefs: Vec::new(),
-                    coroutineSpawn: false,
-                },
+                CallInfo::new(name.clone(), vec![stateMachineFieldRefVar.useVar()]),
             );
             caseBuilder.addInstruction(wrapperStateMachineConstruct, location.clone());
             let finalTupleVar = bodyBuilder.createTempValueWithType(location.clone(), finalResumeTupleTy.clone());
@@ -200,13 +188,7 @@ impl<'a> CoroutineGenerator<'a> {
             let resultVar = bodyBuilder.createTempValueWithType(location.clone(), boolTy.clone());
             let isCompletedCall = InstructionKind::FunctionCall(
                 resultVar.clone(),
-                CallInfo {
-                    name: instance.isCompletedFnName.clone(),
-                    args: vec![fieldRefVar.useVar()],
-                    context: None,
-                    instanceRefs: Vec::new(),
-                    coroutineSpawn: false,
-                },
+                CallInfo::new(instance.isCompletedFnName.clone(), vec![fieldRefVar.useVar()]),
             );
             caseBuilder.addInstruction(isCompletedCall, location.clone());
             caseBuilder.addReturn(resultVar, location.clone());

@@ -336,25 +336,13 @@ impl<'a> CoroutineTransformer<'a> {
         variables: Vec<Variable>,
     ) {
         let resultVar = bodyBuilder.createTempValueWithType(location.clone(), self.resumeResultTy.clone());
-        let callInfo = CallInfo {
-            name: resultCtorName,
-            args: vec![value.useVar()],
-            context: None,
-            instanceRefs: Vec::new(),
-            coroutineSpawn: false,
-        };
+        let callInfo = CallInfo::new(resultCtorName, vec![value.useVar()]);
         let resultCtorCall = InstructionKind::FunctionCall(resultVar.clone(), callInfo);
         builder.addInstruction(resultCtorCall, location.clone());
         builder.step();
         let variantVar = bodyBuilder.createTempValueWithType(location.clone(), self.enumTy.clone());
         let variantName = getVariantName(&self.f.name, variantIndex);
-        let callInfo = CallInfo {
-            name: variantName,
-            args: variables.iter().map(|v| v.useVar()).collect(),
-            context: None,
-            instanceRefs: Vec::new(),
-            coroutineSpawn: false,
-        };
+        let callInfo = CallInfo::new(variantName, variables.iter().map(|v| v.useVar()).collect());
         let variantCtorCall = InstructionKind::FunctionCall(variantVar.clone(), callInfo);
         builder.addInstruction(variantCtorCall, location.clone());
         builder.step();
@@ -373,25 +361,16 @@ impl<'a> CoroutineTransformer<'a> {
         variantIndex: usize,
     ) {
         let resultVar = bodyBuilder.createTempValueWithType(location.clone(), self.resumeResultTy.clone());
-        let callInfo = CallInfo {
-            name: getCoroutineCoResumeResultCompletedName().monomorphized(self.ctx.clone()),
-            args: vec![],
-            context: None,
-            instanceRefs: Vec::new(),
-            coroutineSpawn: false,
-        };
+        let callInfo = CallInfo::new(
+            getCoroutineCoResumeResultCompletedName().monomorphized(self.ctx.clone()),
+            vec![],
+        );
         let resultCtorCall = InstructionKind::FunctionCall(resultVar.clone(), callInfo);
         builder.addInstruction(resultCtorCall, location.clone());
         builder.step();
         let variantVar = bodyBuilder.createTempValueWithType(location.clone(), self.enumTy.clone());
         let variantName = getVariantName(&self.f.name, variantIndex);
-        let callInfo = CallInfo {
-            name: variantName,
-            args: Vec::new(),
-            context: None,
-            instanceRefs: Vec::new(),
-            coroutineSpawn: false,
-        };
+        let callInfo = CallInfo::new(variantName, Vec::new());
         let variantCtorCall = InstructionKind::FunctionCall(variantVar.clone(), callInfo);
         builder.addInstruction(variantCtorCall, location.clone());
         builder.step();
@@ -444,28 +423,10 @@ impl<'a> CoroutineTransformer<'a> {
             let resultVar = bodyBuilder.createTempValueWithType(location.clone(), boolTy.clone());
 
             if i == completedIndex {
-                let trueCall = InstructionKind::FunctionCall(
-                    resultVar.clone(),
-                    CallInfo {
-                        name: getTrueName(),
-                        args: vec![],
-                        context: None,
-                        instanceRefs: Vec::new(),
-                        coroutineSpawn: false,
-                    },
-                );
+                let trueCall = InstructionKind::FunctionCall(resultVar.clone(), CallInfo::new(getTrueName(), vec![]));
                 stateBlock.addInstruction(trueCall, location.clone());
             } else {
-                let falseCall = InstructionKind::FunctionCall(
-                    resultVar.clone(),
-                    CallInfo {
-                        name: getFalseName(),
-                        args: vec![],
-                        context: None,
-                        instanceRefs: Vec::new(),
-                        coroutineSpawn: false,
-                    },
-                );
+                let falseCall = InstructionKind::FunctionCall(resultVar.clone(), CallInfo::new(getFalseName(), vec![]));
                 stateBlock.addInstruction(falseCall, location.clone());
             }
             stateBlock.addReturn(resultVar, location.clone());

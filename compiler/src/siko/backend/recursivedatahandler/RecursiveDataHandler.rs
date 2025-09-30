@@ -59,7 +59,7 @@ fn processFunction(function: &Function, program: &Program) -> Function {
                                 let e = program.getEnum(&enumName).expect("enum not found");
                                 let variant = &e.variants[index as usize];
                                 //println!("Calling {}.{} => {}", f.name, index, formatTypes(&variant.items));
-                                for (arg, ty) in info.args.iter().zip(&variant.items) {
+                                for (arg, ty) in info.args.getVariables().iter().zip(&variant.items) {
                                     let argType = arg.getType();
                                     if argType == *ty {
                                         continue;

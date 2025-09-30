@@ -1,4 +1,7 @@
-use crate::siko::hir::{Instruction::InstructionKind, Variable::Variable};
+use crate::siko::hir::{
+    Instruction::{Arguments, InstructionKind},
+    Variable::Variable,
+};
 
 pub trait UseVar {
     fn useVars(&self) -> Self;
@@ -13,6 +16,14 @@ impl UseVar for Variable {
 impl<T: UseVar> UseVar for Vec<T> {
     fn useVars(&self) -> Self {
         self.iter().map(|x| x.useVars()).collect()
+    }
+}
+
+impl UseVar for Arguments {
+    fn useVars(&self) -> Arguments {
+        match self {
+            Arguments::Resolved(vars) => Arguments::Resolved(vars.useVars()),
+        }
     }
 }
 

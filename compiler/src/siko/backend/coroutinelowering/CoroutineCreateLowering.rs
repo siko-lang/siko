@@ -45,10 +45,7 @@ pub fn lowerCoroutineCreate(f: &Function) -> Function {
                                 Box::new(coroutineName),
                                 Box::new(QualifiedName::CoroutineStateMachineEnum(Box::new(info.name.clone()))),
                             );
-                            let mut info = info.clone();
-                            info.name = variantName;
-                            info.coroutineSpawn = false;
-                            info.args = vec![variantCtorVar.useVar()];
+                            let info = CallInfo::new(variantName, vec![variantCtorVar.useVar()]);
                             let newCall = InstructionKind::FunctionCall(dest.clone(), info);
                             builder.replaceInstruction(newCall, instr.location.clone());
                         }

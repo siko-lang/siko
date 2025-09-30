@@ -97,7 +97,7 @@ impl<'a> Inliner<'a> {
                                 //println!("After call block id: {}", afterCallBlockId);
                                 let mut argMap = BTreeMap::new();
                                 for (index, p) in callee.params.iter().enumerate() {
-                                    let argVar = info.args.get(index).expect("Argument not found");
+                                    let argVar = info.args.getVariables().get(index).expect("Argument not found");
                                     argMap.insert(p.getName().clone(), argVar.clone());
                                 }
                                 let mut inlineVarCopier =

@@ -92,13 +92,7 @@ impl ClosureGenerator<'_> {
             }
             handlerArgs.extend(envVars.iter().cloned());
             handlerArgs.extend(args.iter().skip(1).cloned());
-            let callInfo = CallInfo {
-                name: instance.handler.clone(),
-                context: None,
-                instanceRefs: Vec::new(),
-                args: handlerArgs,
-                coroutineSpawn: false,
-            };
+            let callInfo = CallInfo::new(instance.handler.clone(), handlerArgs);
             let callResult = bodyBuilder.createTempValueWithType(location.clone(), self.key.result.clone());
             let fnCall = InstructionKind::FunctionCall(callResult.clone(), callInfo);
             caseBlock.addInstruction(fnCall, location.clone());
