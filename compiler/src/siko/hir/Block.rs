@@ -5,6 +5,7 @@ use std::rc::Rc;
 
 use crate::siko::hir::Instruction::Instruction;
 use crate::siko::hir::Instruction::InstructionKind;
+use crate::siko::hir::UseVar::UseVar;
 use crate::siko::location::Location::Location;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
@@ -51,7 +52,7 @@ impl BlockInner {
     pub fn add(&mut self, kind: InstructionKind, location: Location, implicit: bool) {
         self.instructions.push(Instruction {
             implicit: implicit,
-            kind: kind.setVariableKinds(),
+            kind: kind.useVars(),
             location: location,
         });
     }
@@ -61,7 +62,7 @@ impl BlockInner {
             index,
             Instruction {
                 implicit: implicit,
-                kind: kind.setVariableKinds(),
+                kind: kind.useVars(),
                 location: location,
             },
         );
@@ -71,7 +72,7 @@ impl BlockInner {
         let isImplicit = self.instructions[index].implicit || implicit;
         self.instructions[index] = Instruction {
             implicit: isImplicit,
-            kind: kind.setVariableKinds(),
+            kind: kind.useVars(),
             location: location,
         };
     }
