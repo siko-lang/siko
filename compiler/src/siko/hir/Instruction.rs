@@ -366,6 +366,17 @@ impl Arguments {
             Arguments::Unresolved(_) => panic!("Cannot get variables from unresolved arguments"),
         }
     }
+
+    pub fn addMethodReceiver(&mut self, receiver: Variable) {
+        match self {
+            Arguments::Resolved(ref mut vars) => {
+                vars.insert(0, receiver);
+            }
+            Arguments::Unresolved(ref mut args) => {
+                args.insert(0, UnresolvedArgument::Positional(receiver));
+            }
+        }
+    }
 }
 
 impl Into<Arguments> for Vec<Variable> {

@@ -1079,9 +1079,9 @@ impl<'a> Typechecker<'a> {
         //println!("MethodCall {} {} {} {}", dest, receiver, methodName, receiverType);
         let name = self.lookupMethod(receiverType.clone(), methodName, instruction.location.clone());
         let targetFn = self.program.functions.get(&name).expect("Function not found");
-        let args = self.resolveArgs(args, targetFn);
-        let mut extendedArgs = args.clone();
-        extendedArgs.insert(0, receiver.clone());
+        let mut args = args.clone();
+        args.addMethodReceiver(receiver.clone());
+        let extendedArgs = self.resolveArgs(&args, targetFn);
         let fnType = targetFn.getType();
         let (origReceiver, chainEntries) = self.resolveReceiverChain(&receiver);
         let mutableCall = self.mutables.get(&origReceiver.name().to_string()) == Some(&Mutability::ExplicitMutable)
