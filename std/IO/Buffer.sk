@@ -5,8 +5,21 @@ import Slice
 pub struct ByteBuffer {
     data: Vec[U8],
 
-    pub fn new() -> ByteBuffer {
-        ByteBuffer(Vec.new())
+    pub fn new(initialSize: Int = 0) -> ByteBuffer {
+        let mut vec = Vec.new(initialSize);
+        for i in  0..initialSize {
+            vec.push(0.toU8());
+        }
+        ByteBuffer(vec)
+    }
+
+    @unsafe
+    pub fn fromSlice(slice: Slice[U8]) -> ByteBuffer {
+        ByteBuffer(Vec.fromSlice(slice))
+    }
+
+    pub fn fromVec(vec: Vec[U8]) -> ByteBuffer {
+        ByteBuffer(vec)
     }
 
     @safe
@@ -17,6 +30,10 @@ pub struct ByteBuffer {
     @safe
     pub fn asReadBuffer(&self) -> ReadBuffer {
         ReadBuffer(self.data.slice())
+    }
+
+    pub fn toVec(self) -> Vec[U8] {
+        self.data
     }
 }
 

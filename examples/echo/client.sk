@@ -1,39 +1,55 @@
 module Main {
 
-import Libc.Errno
-import Libc.Unistd
-import Convert
-import NativePtr
-import Array
+import IO.Error
+import IO.Buffer
+import IO.Writer
+import IO.Reader
 
 import Net.TcpStream
 
-@unsafe
+fn sendString(tcpStream: &TcpStream, msg: String) -> Result[Int, Error] {
+    let buffer = ByteBuffer.fromVec(msg.toVecU8());
+    tcpStream.write(buffer.asReadBuffer())
+}
+
+fn readString(tcpStream: &TcpStream) -> Result[Option[String], Error] {
+    let inputBuffer = ByteBuffer.new(1024);
+    let received = try tcpStream.read(inputBuffer.asWriteBuffer());
+    if received == 0 {
+        return Ok(None);
+    }
+    Ok(Some(String.fromVecU8(inputBuffer.toVec())))
+}
+
+fn loopFn(tcpStream: &TcpStream) -> Result[(), Error] {
+    print("Enter message: ");
+    let line = readLine();
+    let msg = line + "\\n";
+    try sendString(tcpStream, msg);
+    let inputBuffer = ByteBuffer.new(1024);
+    let response = try readString(tcpStream);
+    let response = match response {
+        None -> {
+            println("Connection closed by peer");
+            return Err(Error.new(0));
+        }
+        Some(r) -> r
+    };
+    print("Received: ${response}");
+    Ok(())
+}
+
 pub fn main() {
-    let tcpStream = connect("127.0.0.1:8080").unwrap();
+    let tcpStream = connect("127.0.0.1:8080").expect("Failed to connect");
     loop {
-        print("Enter message: ");
-        let line = readLine();
-        let msg = line + "\\n";
-        let bytes = msg.slice();
-        let sent = Libc.Unistd.write(tcpStream.sock.getFd(), bytes.asPtr(), bytes.len());
-        if sent < 0 {
-            let err = getErrno();
-            println("write failed: ${err.toInt()}");
-            break;
+        let result = loopFn(tcpStream);
+        match result {
+            Ok(()) -> {}
+            Err(e) -> {
+                println("Error: ${e}");
+                break;
+            }
         }
-        let mut buf: Array[U8, 1024] = Array.uninitialized();
-        let received = Libc.Unistd.read(tcpStream.sock.getFd(), buf.slice().asPtr(), buf.len().toU64());
-        if received < 0 {
-            let err = getErrno();
-            println("read failed: ${err.toInt()}");
-            break;
-        } else if received == 0 {
-            println("Server closed connection");
-            break;
-        }
-        let response = String.fromU8(buf.slice().subSlice(0.toU64(), received.toU64()));
-        print("Received: ${response}");
     }
 }
 

@@ -3,86 +3,12 @@ module Vec {
 import NativePtr
 import Slice
 
-struct InnerVec[T] {
-    items: *T,
-    size: U64,
-    capacity: U64
-
-    @unsafe
-    fn new() -> InnerVec[T] {
-        InnerVec(null(), 0.toU64(), 0.toU64())
-    }
-
-    @safe
-    fn push(mut self, item: T) -> Self {
-        if self.size == self.capacity {
-            if self.capacity == 0.toU64() {
-                self.grow(8.toU64());
-            } else {
-                self.grow(self.capacity * 2.toU64());
-            }
-        }
-        let ptr = offset(self.items, self.size);
-        *ptr = item;
-        self.size += 1.toU64();
-        self
-    }
-
-    @safe
-    fn get(&self, index: U64) -> &T {
-        if self.size <= index {
-            panic("OutOfBounds");
-        }
-        self.getUnchecked(index)
-    }
-
-    @unsafe
-    fn getUnchecked(&self, index: U64) -> &T {
-        let ptr = offset(self.items, index);
-        toRef(ptr)
-    }
-
-    @unsafe
-    pub fn remove(mut self, index: U64) -> (Self, T) {
-        if index < 0.toU64() or index >= self.size {
-            panic("OutOfBounds");
-        }
-        let ptr = offset(self.items, index);
-        let item = *ptr; // drop the item at the index
-        // shift the items to the left using memmove
-        let nextPtr = offset(self.items, (index + 1.toU64()));
-        let destPtr = offset(self.items, index);
-        memmove(destPtr, nextPtr, (self.size - index - 1.toU64()));
-        self.size -= 1.toU64();
-        (self, item)
-    }
-
-    @unsafe
-    fn grow(mut self, capacity: U64) -> Self {
-        self.capacity = capacity;
-        let newItems: *T = allocateArray(self.capacity);
-        if self.size > 0.toU64() {
-            memcpy(newItems, self.items, self.size);
-        }
-        if !self.items.isNull() {
-            deallocate(self.items);
-        }
-        self.items = newItems;
-        self
-    }
-}
-
 pub struct Vec[T] {
     inner: InnerVec[T]
 
     @safe
-    pub fn new() -> Vec[T] {
-        Vec(InnerVec.new())
-    }
-
-    @safe
-    pub fn withCapacity(capacity: Int) -> Vec[T] {
-        let mut vec = Vec.new();
+    pub fn new(capacity: Int = 0) -> Vec[T] {
+        let mut vec = Vec(InnerVec.new());
         vec.inner.grow(capacity.toU64());
         vec
     }
@@ -160,6 +86,102 @@ pub struct Vec[T] {
     @unsafe
     pub fn asPtr(&self) -> *T {
         self.inner.items
+    }
+
+    // Creates a vector from a slice without copying the data.
+    // The resulting vector takes ownership of the slice data.
+    @unsafe
+    pub fn fromSlice(slice: Slice[T]) -> Vec[T] {
+        let mut vec = Vec(InnerVec.fromSlice(slice));
+        vec
+    }
+
+    @unsafe
+    pub fn intoSlice(mut self) -> Slice[T] {
+        let slice = Slice.new(self.inner.items, self.inner.size);
+        // prevent the destructor from running
+        self.inner.items = null();
+        self.inner.size = 0.toU64();
+        self.inner.capacity = 0.toU64();
+        slice
+    }
+}
+
+struct InnerVec[T] {
+    items: *T,
+    size: U64,
+    capacity: U64
+
+    @unsafe
+    fn new() -> InnerVec[T] {
+        InnerVec(null(), 0.toU64(), 0.toU64())
+    }
+
+    @unsafe
+    fn fromSlice(slice: Slice[T]) -> InnerVec[T] {
+        let capacity = slice.len();
+        InnerVec(slice.asPtr(), capacity, capacity)
+    }
+
+    @safe
+    fn push(mut self, item: T) -> Self {
+        if self.size == self.capacity {
+            if self.capacity == 0.toU64() {
+                self.grow(8.toU64());
+            } else {
+                self.grow(self.capacity * 2.toU64());
+            }
+        }
+        let ptr = offset(self.items, self.size);
+        *ptr = item;
+        self.size += 1.toU64();
+        self
+    }
+
+    @safe
+    fn get(&self, index: U64) -> &T {
+        if self.size <= index {
+            panic("OutOfBounds");
+        }
+        self.getUnchecked(index)
+    }
+
+    @unsafe
+    fn getUnchecked(&self, index: U64) -> &T {
+        let ptr = offset(self.items, index);
+        toRef(ptr)
+    }
+
+    @unsafe
+    pub fn remove(mut self, index: U64) -> (Self, T) {
+        if index < 0.toU64() or index >= self.size {
+            panic("OutOfBounds");
+        }
+        let ptr = offset(self.items, index);
+        let item = *ptr; // drop the item at the index
+        // shift the items to the left using memmove
+        let nextPtr = offset(self.items, (index + 1.toU64()));
+        let destPtr = offset(self.items, index);
+        memmove(destPtr, nextPtr, (self.size - index - 1.toU64()));
+        self.size -= 1.toU64();
+        (self, item)
+    }
+
+    @unsafe
+    fn grow(mut self, capacity: U64) -> Self {
+        if capacity <= self.capacity {
+            return self
+        }
+        self.capacity = capacity;
+        let newItems: *T = allocateArray(self.capacity);
+        if self.size > 0.toU64() {
+            memcpy(newItems, self.items, self.size);
+        }
+        if !self.items.isNull() {
+            deallocate(self.items);
+        }
+        self.items = newItems;
+        self
     }
 }
 

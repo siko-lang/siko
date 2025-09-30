@@ -14,12 +14,6 @@ pub struct String {
         String(null(), 0.toU64(), 0.toU64())
     }
 
-    @safe
-    pub fn withCapacity(capacity: Int) -> String {
-        let value = allocateArray(capacity.toU64());
-        String(value, 0.toU64(), capacity.toU64())
-    }
-
     pub fn len(&self) -> Int {
         self.size.toInt()
     }
@@ -98,12 +92,18 @@ pub struct String {
     }
 
     @safe
-    pub fn toVecU8(&self) -> Vec[U8] {
-        let mut vec = Vec.new();
-        for i in 0.toU64() .. self.size {
-            vec.push(*offset(self.value, i));
-        }
-        vec
+    pub fn toVecU8(mut self) -> Vec[U8] {
+        let v = Vec.fromSlice(self.slice());
+        self.capacity = 0.toU64();
+        self.value = null();
+        self.size = 0.toU64();
+        v
+    }
+
+    @safe
+    pub fn fromVecU8(v: Vec[U8]) -> String {
+        let slice = v.intoSlice();
+        String(slice.asPtr(), slice.len(), slice.len())
     }
 }
 

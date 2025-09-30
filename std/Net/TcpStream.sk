@@ -47,7 +47,7 @@ pub struct TcpStream {
     }
 
     @unsafe
-    fn parseAddress(addr: &String, domain: Domain, inAddr: *Libc.Socket.InAddr) -> Result[(), Error] {
+    fn parseAddress(addr: String, domain: Domain, inAddr: *Libc.Socket.InAddr) -> Result[(), Error] {
         let addrCStr = CString.fromString(addr);
         let res = inet_pton(domain.code(), addrCStr.asPtr(), inAddr);
         if res <= 0.toI32() {
@@ -68,13 +68,13 @@ pub struct TcpStream {
     }
 }
 
-instance Reader[TcpStream] {
+pub instance TcpReader Reader[TcpStream] {
     fn read(&self, buffer: &WriteBuffer) -> Result[Int, Error] {
         self.sock.read(buffer)
     }
 }
 
-instance Writer[TcpStream] {
+pub instance TcpWriter Writer[TcpStream] {
     fn write(&self, buffer: &ReadBuffer) -> Result[Int, Error] {
         self.sock.write(buffer)
     }
