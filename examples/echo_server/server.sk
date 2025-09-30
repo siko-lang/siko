@@ -1,0 +1,48 @@
+module Main {
+
+import Net.TcpListener
+import IO.Buffer
+import IO.Reader
+import IO.Writer
+import Net.TcpStream
+import IO.Error
+
+fn readString(tcpStream: &TcpStream) -> Result[Option[String], Error] {
+    let inputBuffer = ByteBuffer.new(1024);
+    let received = try tcpStream.read(inputBuffer.asWriteBuffer());
+    if received == 0 {
+        return Ok(None);
+    }
+    Ok(Some(String.fromVecU8(inputBuffer.toVec())))
+}
+
+fn sendString(tcpStream: &TcpStream, msg: String) -> Result[Int, Error] {
+    let buffer = ByteBuffer.fromVec(msg.toVecU8());
+    tcpStream.write(buffer.asReadBuffer())
+}
+
+fn main() {
+    let listener = bind("127.0.0.1:8080").expect("Failed to bind");
+    listener.listen(128).expect("Failed to listen");
+    println("Server listening on port 8080");
+    loop {
+        let tcpStream = listener.accept().expect("Failed to accept connection");
+        println("Client connected");
+        loop {
+            let inputBuffer = ByteBuffer.new(1024);
+            let response = readString(tcpStream).expect("Failed to read string");
+            let response = match response {
+                None -> {
+                    println("Connection closed by peer");
+                    break;
+                }
+                Some(r) -> {
+                    print("Received: ${r}");
+                    sendString(tcpStream, r.clone()).expect("Failed to send response");
+                }
+            };
+        }
+    }
+}
+
+}

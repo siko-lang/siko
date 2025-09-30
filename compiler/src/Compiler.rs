@@ -189,11 +189,10 @@ impl Compiler {
         }
         runCommand("clang", &compile_args);
         runCommand("clang", &link_args);
-
+        fs::remove_file(c_output_path).expect("Failed to remove C source file");
+        fs::remove_file(object_path).expect("Failed to remove object file");
         if self.config.buildPhase == BuildPhase::Run {
             // remove the c source and object
-            //fs::remove_file(c_output_path).expect("Failed to remove C source file");
-            fs::remove_file(object_path).expect("Failed to remove object file");
             runCommand(&bin_output_path, &[]);
             if self.config.testOnly {
                 fs::remove_file(bin_output_path).expect("Failed to remove binary file");
