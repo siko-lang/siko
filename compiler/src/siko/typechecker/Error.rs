@@ -15,6 +15,7 @@ pub enum TypecheckerError {
     NoImplementationFound(String, Location),
     AmbiguousImplementations(String, String, Vec<String>, Location),
     YieldOutsideCoroutine(String, Location),
+    NamedArgumentMismatch(String, String, String, Location),
 }
 
 impl TypecheckerError {
@@ -104,6 +105,16 @@ impl TypecheckerError {
             }
             TypecheckerError::YieldOutsideCoroutine(fnName, l) => {
                 let slogan = format!("Yield outside coroutine in function: {}", ctx.yellow(fnName));
+                let r = Report::new(ctx, slogan, Some(l.clone()));
+                r.print();
+            }
+            TypecheckerError::NamedArgumentMismatch(name, expectedName, fnName, l) => {
+                let slogan = format!(
+                    "Named argument {} does not match the parameter name {} in function: {}",
+                    ctx.yellow(name),
+                    ctx.yellow(expectedName),
+                    ctx.yellow(fnName)
+                );
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }

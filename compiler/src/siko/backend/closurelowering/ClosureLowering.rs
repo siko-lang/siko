@@ -224,7 +224,7 @@ impl ClosureLowering for UnresolvedArgument {
     fn lower(&mut self, closureStore: &mut ClosureStore) {
         match self {
             UnresolvedArgument::Positional(variable) => variable.lower(closureStore),
-            UnresolvedArgument::Named(_, variable) => variable.lower(closureStore),
+            UnresolvedArgument::Named(_, _, variable) => variable.lower(closureStore),
         }
     }
 }

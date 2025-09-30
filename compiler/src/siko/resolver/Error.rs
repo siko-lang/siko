@@ -23,6 +23,7 @@ pub enum ResolverError {
     MissingTraitMembers(Vec<String>, String, Location),
     InvalidCoroutineBody(Location),
     ImportedModuleNotFound(String, Location),
+    NamedArgumentInDynamicFunctionCall(String, Location),
 }
 
 impl ResolverError {
@@ -144,6 +145,14 @@ impl ResolverError {
             }
             ResolverError::ImportedModuleNotFound(name, location) => {
                 let slogan = format!("Imported module not found: {}", ctx.yellow(name));
+                let r = Report::new(ctx, slogan, Some(location.clone()));
+                r.print();
+            }
+            ResolverError::NamedArgumentInDynamicFunctionCall(name, location) => {
+                let slogan = format!(
+                    "Named argument {} in dynamic function call is not supported",
+                    ctx.yellow(name)
+                );
                 let r = Report::new(ctx, slogan, Some(location.clone()));
                 r.print();
             }

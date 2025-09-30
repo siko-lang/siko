@@ -170,7 +170,7 @@ impl CoroutineLowering for UnresolvedArgument {
     fn lower(&mut self) {
         match self {
             UnresolvedArgument::Positional(variable) => variable.lower(),
-            UnresolvedArgument::Named(_, variable) => variable.lower(),
+            UnresolvedArgument::Named(_, _, variable) => variable.lower(),
         }
     }
 }

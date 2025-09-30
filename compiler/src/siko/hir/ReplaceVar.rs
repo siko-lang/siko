@@ -30,8 +30,8 @@ impl ReplaceVar for UnresolvedArgument {
     fn replaceVar(&self, from: &Variable, to: Variable) -> UnresolvedArgument {
         match self {
             UnresolvedArgument::Positional(variable) => UnresolvedArgument::Positional(variable.replaceVar(from, to)),
-            UnresolvedArgument::Named(name, variable) => {
-                UnresolvedArgument::Named(name.clone(), variable.replaceVar(from, to))
+            UnresolvedArgument::Named(name, location, variable) => {
+                UnresolvedArgument::Named(name.clone(), location.clone(), variable.replaceVar(from, to))
             }
         }
     }

@@ -60,7 +60,7 @@ impl<'a> Finalizer<'a> {
             );
             builder.step();
             builder.addInstruction(
-                InstructionKind::FunctionCall(dropFlag.clone(), CallInfo::new(getFalseName(), vec![])),
+                InstructionKind::FunctionCall(dropFlag.clone(), CallInfo::new(getFalseName(), ())),
                 dropFlag.location().clone(),
             );
             builder.step();
@@ -107,10 +107,7 @@ impl<'a> Finalizer<'a> {
                                         let dropFlag = path.getDropFlag();
                                         self.declaredDropFlags.insert(path, dropFlag.clone());
                                         builder.addInstruction(
-                                            InstructionKind::FunctionCall(
-                                                dropFlag,
-                                                CallInfo::new(getFalseName(), vec![]),
-                                            ),
+                                            InstructionKind::FunctionCall(dropFlag, CallInfo::new(getFalseName(), ())),
                                             instruction.location.clone(),
                                         );
                                         builder.step();
@@ -174,7 +171,7 @@ impl<'a> Finalizer<'a> {
                                                 builder.addInstruction(
                                                     InstructionKind::FunctionCall(
                                                         dropFlag,
-                                                        CallInfo::new(getTrueName(), vec![]),
+                                                        CallInfo::new(getTrueName(), ()),
                                                     ),
                                                     assignPath.location.clone(),
                                                 );
@@ -327,7 +324,7 @@ impl<'a> Finalizer<'a> {
                     // println!("Disabling dropflag for path: {} because {} is moved", path, rootPath);
                     let dropFlag = self.getDropFlagForPath(&path);
                     builder.addInstruction(
-                        InstructionKind::FunctionCall(dropFlag, CallInfo::new(getFalseName(), vec![])),
+                        InstructionKind::FunctionCall(dropFlag, CallInfo::new(getFalseName(), ())),
                         rootPath.location.clone(),
                     );
                     builder.step();
@@ -345,7 +342,7 @@ impl<'a> Finalizer<'a> {
         builder.addInstruction(drop, var.location().clone());
         builder.step();
         builder.addInstruction(
-            InstructionKind::FunctionCall(dropFlag, CallInfo::new(getFalseName(), vec![])),
+            InstructionKind::FunctionCall(dropFlag, CallInfo::new(getFalseName(), ())),
             var.location().clone(),
         );
         builder.step();

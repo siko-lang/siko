@@ -9,7 +9,8 @@ use crate::siko::hir::Data::{Enum, Struct};
 use crate::siko::hir::Implicit::Implicit;
 use crate::siko::hir::Instruction::{
     ClosureCreateInfo, EffectHandler as HirEffectHandler, FieldId, FieldInfo, ImplicitHandler as HirImplicitHandler,
-    ImplicitIndex, InstructionKind, SyntaxBlockId, SyntaxBlockIdSegment, WithContext as HirWithContext, WithInfo,
+    ImplicitIndex, InstructionKind, SyntaxBlockId, SyntaxBlockIdSegment, UnresolvedArgument,
+    WithContext as HirWithContext, WithInfo,
 };
 use crate::siko::hir::Variable::{Variable, VariableName};
 use crate::siko::location::Location::Location;
@@ -346,7 +347,7 @@ impl<'a> ExprResolver<'a> {
                     return self
                         .bodyBuilder
                         .current()
-                        .addFunctionCall(irName, Vec::new(), expr.location.clone());
+                        .addFunctionCall(irName, (), expr.location.clone());
                 }
                 ResolverError::UnknownValue(name.name(), name.location()).report(self.ctx);
             }
@@ -364,15 +365,7 @@ impl<'a> ExprResolver<'a> {
             SimpleExpr::Call(callable, args) => self.resolveCall(expr, env, callable, args, false),
             SimpleExpr::MethodCall(receiver, name, args) => {
                 let receiver = self.resolveExpr(&receiver, env);
-                let mut irArgs = Vec::new();
-                for arg in args {
-                    let arg = match arg {
-                        FunctionArg::Positional(arg) => arg,
-                        FunctionArg::Named(_, arg) => arg,
-                    };
-                    let argId = self.resolveExpr(arg, env);
-                    irArgs.push(argId)
-                }
+                let irArgs = self.processFnArgs(env, args);
                 self.bodyBuilder
                     .current()
                     .addMethodCall(name.toString(), receiver, irArgs, expr.location.clone())
@@ -627,7 +620,7 @@ impl<'a> ExprResolver<'a> {
                 let mut listVar =
                     self.bodyBuilder
                         .current()
-                        .addFunctionCall(getVecNewName(), Vec::new(), expr.location.clone());
+                        .addFunctionCall(getVecNewName(), (), expr.location.clone());
                 for arg in args {
                     let argId = self.resolveExpr(arg, env);
                     listVar = self.bodyBuilder.current().addFunctionCall(
@@ -784,19 +777,7 @@ impl<'a> ExprResolver<'a> {
         args: &Vec<FunctionArg>,
         coroutineSpawn: bool,
     ) -> Variable {
-        let mut irArgs = Vec::new();
-        let mut namedArgs = BTreeMap::new();
-        for arg in args {
-            let arg = match arg {
-                FunctionArg::Positional(arg) => arg,
-                FunctionArg::Named(name, arg) => {
-                    namedArgs.insert(name, arg);
-                    arg
-                }
-            };
-            let argId = self.resolveExpr(arg, env);
-            irArgs.push(argId)
-        }
+        let irArgs = self.processFnArgs(env, args);
         if coroutineSpawn {
             match &callable.expr {
                 SimpleExpr::Value(name) => {
@@ -822,9 +803,10 @@ impl<'a> ExprResolver<'a> {
             }
             SimpleExpr::Value(name) => {
                 if let Some(name) = env.resolve(&name.name()) {
+                    let args = self.processDynamicCallArgs(irArgs);
                     self.bodyBuilder
                         .current()
-                        .addDynamicFunctionCall(name, irArgs, expr.location.clone())
+                        .addDynamicFunctionCall(name, args, expr.location.clone())
                 } else {
                     let irName = self.moduleResolver.resolveName(name);
                     self.bodyBuilder
@@ -834,11 +816,45 @@ impl<'a> ExprResolver<'a> {
             }
             _ => {
                 let callableId = self.resolveExpr(&callable, env);
+                let args = self.processDynamicCallArgs(irArgs);
                 self.bodyBuilder
                     .current()
-                    .addDynamicFunctionCall(callableId, irArgs, expr.location.clone())
+                    .addDynamicFunctionCall(callableId, args, expr.location.clone())
             }
         }
+    }
+
+    fn processFnArgs(&mut self, env: &mut Environment<'_>, args: &Vec<FunctionArg>) -> Vec<UnresolvedArgument> {
+        let mut irArgs = Vec::new();
+        for arg in args {
+            let arg = match arg {
+                FunctionArg::Positional(arg) => {
+                    let argId = self.resolveExpr(arg, env);
+                    UnresolvedArgument::Positional(argId)
+                }
+                FunctionArg::Named(name, arg) => {
+                    let argId = self.resolveExpr(arg, env);
+                    UnresolvedArgument::Named(name.toString(), name.location(), argId)
+                }
+            };
+            irArgs.push(arg)
+        }
+        irArgs
+    }
+
+    fn processDynamicCallArgs(&mut self, irArgs: Vec<UnresolvedArgument>) -> Vec<Variable> {
+        let mut args = Vec::new();
+        for arg in irArgs {
+            match arg {
+                UnresolvedArgument::Named(name, location, _) => {
+                    ResolverError::NamedArgumentInDynamicFunctionCall(name.clone(), location.clone()).report(self.ctx);
+                }
+                UnresolvedArgument::Positional(arg) => {
+                    args.push(arg);
+                }
+            }
+        }
+        args
     }
 
     fn resolvePattern(&mut self, pat: &Pattern, env: &mut Environment, root: Variable) {

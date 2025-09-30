@@ -16,8 +16,8 @@ use crate::siko::{
         InstanceStore::InstanceStore,
         Instantiation::{instantiateEnum, instantiateInstance, instantiateStruct},
         Instruction::{
-            CallInfo, FieldId, FieldInfo, ImplicitIndex, Instruction, InstructionKind, IntegerOp, Mutability,
-            WithContext,
+            Arguments, CallInfo, FieldId, FieldInfo, ImplicitIndex, Instruction, InstructionKind, IntegerOp,
+            Mutability, UnresolvedArgument, WithContext,
         },
         Program::Program,
         ReplaceVar::ReplaceVar,
@@ -663,9 +663,11 @@ impl<'a> Typechecker<'a> {
                 let Some(targetFn) = self.program.functions.get(&info.name) else {
                     panic!("Function not found {}", info.name);
                 };
-                let checkResult = self.checkFunctionCall(&targetFn, info.args.getVariables(), dest, runner);
+                let args = self.resolveArgs(&info.args, &targetFn);
+                let checkResult = self.checkFunctionCall(&targetFn, &args, dest, runner);
                 let mut info = info.clone();
                 info.name = checkResult.fnName;
+                info.args = Arguments::Resolved(args);
                 info.instanceRefs = checkResult.instanceRefs;
                 self.postProcessFunctionCall(builder, dest, info, instruction.location.clone());
             }
@@ -1068,7 +1070,7 @@ impl<'a> Typechecker<'a> {
         dest: &Variable,
         receiver: &Variable,
         methodName: &String,
-        args: &Vec<Variable>,
+        args: &Arguments,
         runner: Runner,
     ) {
         let receiver = receiver.clone();
@@ -1076,9 +1078,10 @@ impl<'a> Typechecker<'a> {
         let receiverType = self.unifier.apply(receiverType);
         //println!("MethodCall {} {} {} {}", dest, receiver, methodName, receiverType);
         let name = self.lookupMethod(receiverType.clone(), methodName, instruction.location.clone());
+        let targetFn = self.program.functions.get(&name).expect("Function not found");
+        let args = self.resolveArgs(args, targetFn);
         let mut extendedArgs = args.clone();
         extendedArgs.insert(0, receiver.clone());
-        let targetFn = self.program.functions.get(&name).expect("Function not found");
         let fnType = targetFn.getType();
         let (origReceiver, chainEntries) = self.resolveReceiverChain(&receiver);
         let mutableCall = self.mutables.get(&origReceiver.name().to_string()) == Some(&Mutability::ExplicitMutable)
@@ -1594,6 +1597,39 @@ impl<'a> Typechecker<'a> {
         }
         let kind = InstructionKind::FunctionCall(dest.clone(), info);
         builder.replaceInstruction(kind, location.clone());
+    }
+
+    fn resolveArgs(&self, args: &Arguments, targetFn: &Function) -> Vec<Variable> {
+        let args = match &args {
+            Arguments::Resolved(args) => args.clone(),
+            Arguments::Unresolved(ref args) => {
+                let mut resolvedArgs = Vec::new();
+                for (index, arg) in args.iter().enumerate() {
+                    match arg {
+                        UnresolvedArgument::Positional(var) => {
+                            resolvedArgs.push(var.clone());
+                        }
+                        UnresolvedArgument::Named(name, location, var) => {
+                            if targetFn.params.len() > index {
+                                let p = &targetFn.params[index];
+                                if &p.getName() != name {
+                                    TypecheckerError::NamedArgumentMismatch(
+                                        name.clone(),
+                                        p.getName(),
+                                        targetFn.name.toString(),
+                                        location.clone(),
+                                    )
+                                    .report(&self.ctx);
+                                }
+                            }
+                            resolvedArgs.push(var.clone())
+                        }
+                    }
+                }
+                resolvedArgs
+            }
+        };
+        args
     }
 
     pub fn generate(&mut self) -> Vec<Function> {

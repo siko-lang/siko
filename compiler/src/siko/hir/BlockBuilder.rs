@@ -220,21 +220,41 @@ impl BlockBuilder {
         location: Location,
         coroutineSpawn: bool,
     ) -> Variable {
-        // for each arg create a temp value and a converter instruction
-        let mut tempArgs = Vec::new();
-        for arg in args.getVariables() {
-            let tempValue = self.bodyBuilder.createTempValue(location.clone());
-            self.addInstruction(
-                InstructionKind::Converter(tempValue.clone(), arg.clone()),
-                location.clone(),
-            );
-            tempArgs.push(tempValue);
-        }
+        let mut info = CallInfo::new(functionName, self.processFunctionInfo(args, &location));
         let result = self.bodyBuilder.createTempValue(location.clone());
-        let mut info = CallInfo::new(functionName.clone(), tempArgs.clone());
         info.coroutineSpawn = coroutineSpawn;
         self.addInstruction(InstructionKind::FunctionCall(result.clone(), info), location);
         result
+    }
+
+    fn processFunctionInfo(&mut self, args: Arguments, location: &Location) -> Arguments {
+        match args {
+            Arguments::Resolved(args) => {
+                let mut tempArgs = Vec::new();
+                for arg in args {
+                    let tempValue = self.bodyBuilder.createTempValue(location.clone());
+                    self.addInstruction(
+                        InstructionKind::Converter(tempValue.clone(), arg.clone()),
+                        location.clone(),
+                    );
+                    tempArgs.push(tempValue);
+                }
+                tempArgs.into()
+            }
+            Arguments::Unresolved(unresolvedArgs) => {
+                let mut tempArgs = Vec::new();
+                for arg in unresolvedArgs {
+                    let input = arg.getVariable();
+                    let tempValue = self.bodyBuilder.createTempValue(location.clone());
+                    self.addInstruction(
+                        InstructionKind::Converter(tempValue.clone(), input.clone()),
+                        location.clone(),
+                    );
+                    tempArgs.push(arg.withVariable(tempValue));
+                }
+                tempArgs.into()
+            }
+        }
     }
 
     pub fn addTypedFunctionCall(
@@ -252,11 +272,11 @@ impl BlockBuilder {
         result
     }
 
-    pub fn addMethodCall(
+    pub fn addMethodCall<T: Into<Arguments>>(
         &mut self,
         name: String,
         receiver: Variable,
-        args: Vec<Variable>,
+        args: T,
         location: Location,
     ) -> Variable {
         let result = self.bodyBuilder.createTempValue(location.clone());
@@ -266,17 +286,9 @@ impl BlockBuilder {
             InstructionKind::Converter(receiverTemp.clone(), receiver.clone()),
             location.clone(),
         );
-        let mut tempArgs = Vec::new();
-        for arg in &args {
-            let tempValue = self.bodyBuilder.createTempValue(location.clone());
-            self.addInstruction(
-                InstructionKind::Converter(tempValue.clone(), arg.clone()),
-                location.clone(),
-            );
-            tempArgs.push(tempValue);
-        }
+        let args = self.processFunctionInfo(args.into(), &location);
         self.addInstruction(
-            InstructionKind::MethodCall(result.clone(), receiverTemp, name, tempArgs),
+            InstructionKind::MethodCall(result.clone(), receiverTemp, name, args),
             location,
         );
         result

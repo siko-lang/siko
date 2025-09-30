@@ -23,7 +23,9 @@ impl UseVar for UnresolvedArgument {
     fn useVars(&self) -> UnresolvedArgument {
         match self {
             UnresolvedArgument::Positional(variable) => UnresolvedArgument::Positional(variable.useVar()),
-            UnresolvedArgument::Named(name, variable) => UnresolvedArgument::Named(name.clone(), variable.useVar()),
+            UnresolvedArgument::Named(name, location, variable) => {
+                UnresolvedArgument::Named(name.clone(), location.clone(), variable.useVar())
+            }
         }
     }
 }

@@ -111,7 +111,9 @@ impl VariableCopy for UnresolvedArgument {
     fn copy(&self, map: &mut CopyHandler) -> UnresolvedArgument {
         match self {
             UnresolvedArgument::Positional(variable) => UnresolvedArgument::Positional(variable.copy(map)),
-            UnresolvedArgument::Named(name, variable) => UnresolvedArgument::Named(name.clone(), variable.copy(map)),
+            UnresolvedArgument::Named(name, location, variable) => {
+                UnresolvedArgument::Named(name.clone(), location.clone(), variable.copy(map))
+            }
         }
     }
 }

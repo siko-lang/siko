@@ -325,14 +325,30 @@ impl Debug for InstanceReference {
 #[derive(Clone, PartialEq)]
 pub enum UnresolvedArgument {
     Positional(Variable),
-    Named(String, Variable),
+    Named(String, Location, Variable),
+}
+
+impl UnresolvedArgument {
+    pub fn getVariable(&self) -> &Variable {
+        match self {
+            UnresolvedArgument::Positional(var) => var,
+            UnresolvedArgument::Named(_, _, var) => var,
+        }
+    }
+
+    pub fn withVariable(&self, var: Variable) -> Self {
+        match self {
+            UnresolvedArgument::Positional(_) => UnresolvedArgument::Positional(var),
+            UnresolvedArgument::Named(name, loc, _) => UnresolvedArgument::Named(name.clone(), loc.clone(), var),
+        }
+    }
 }
 
 impl Display for UnresolvedArgument {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             UnresolvedArgument::Positional(var) => write!(f, "{}", var),
-            UnresolvedArgument::Named(name, var) => write!(f, "{}: {}", name, var),
+            UnresolvedArgument::Named(name, _, var) => write!(f, "{}: {}", name, var),
         }
     }
 }
@@ -355,6 +371,18 @@ impl Arguments {
 impl Into<Arguments> for Vec<Variable> {
     fn into(self) -> Arguments {
         Arguments::Resolved(self)
+    }
+}
+
+impl Into<Arguments> for Vec<UnresolvedArgument> {
+    fn into(self) -> Arguments {
+        Arguments::Unresolved(self)
+    }
+}
+
+impl Into<Arguments> for () {
+    fn into(self) -> Arguments {
+        Arguments::Resolved(vec![])
     }
 }
 
@@ -496,7 +524,7 @@ pub enum IntegerOp {
 pub enum InstructionKind {
     FunctionCall(Variable, CallInfo),
     Converter(Variable, Variable),
-    MethodCall(Variable, Variable, String, Vec<Variable>),
+    MethodCall(Variable, Variable, String, Arguments),
     DynamicFunctionCall(Variable, Variable, Vec<Variable>),
     FieldRef(Variable, Variable, Vec<FieldInfo>),
     Bind(Variable, Variable, bool), //mutable
@@ -603,7 +631,7 @@ impl InstructionKind {
                 format!("{} = convert({})", dest, source)
             }
             InstructionKind::MethodCall(dest, receiver, name, args) => {
-                format!("{} = methodcall({}.{}({:?}))", dest, receiver, name, args)
+                format!("{} = methodcall({}.{}({}))", dest, receiver, name, args)
             }
             InstructionKind::DynamicFunctionCall(dest, callable, args) => {
                 format!("{} = dynamic_call({}, {:?})", dest, callable, args)

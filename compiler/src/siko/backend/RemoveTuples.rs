@@ -191,8 +191,8 @@ impl RemoveTuples for UnresolvedArgument {
     fn removeTuples(&self, ctx: &mut Context) -> Self {
         match self {
             UnresolvedArgument::Positional(variable) => UnresolvedArgument::Positional(variable.removeTuples(ctx)),
-            UnresolvedArgument::Named(name, variable) => {
-                UnresolvedArgument::Named(name.clone(), variable.removeTuples(ctx))
+            UnresolvedArgument::Named(name, location, variable) => {
+                UnresolvedArgument::Named(name.clone(), location.clone(), variable.removeTuples(ctx))
             }
         }
     }

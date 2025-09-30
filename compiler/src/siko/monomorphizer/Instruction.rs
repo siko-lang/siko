@@ -26,8 +26,8 @@ impl Monomorphize for UnresolvedArgument {
     fn process(&self, sub: &Substitution, mono: &mut Monomorphizer) -> Self {
         match self {
             UnresolvedArgument::Positional(variable) => UnresolvedArgument::Positional(variable.process(sub, mono)),
-            UnresolvedArgument::Named(name, variable) => {
-                UnresolvedArgument::Named(name.clone(), variable.process(sub, mono))
+            UnresolvedArgument::Named(name, location, variable) => {
+                UnresolvedArgument::Named(name.clone(), location.clone(), variable.process(sub, mono))
             }
         }
     }

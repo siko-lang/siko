@@ -194,7 +194,9 @@ impl Apply for UnresolvedArgument {
     fn apply(self, sub: &Substitution) -> Self {
         match self {
             UnresolvedArgument::Positional(variable) => UnresolvedArgument::Positional(variable.apply(sub)),
-            UnresolvedArgument::Named(name, variable) => UnresolvedArgument::Named(name, variable.apply(sub)),
+            UnresolvedArgument::Named(name, location, variable) => {
+                UnresolvedArgument::Named(name, location, variable.apply(sub))
+            }
         }
     }
 }

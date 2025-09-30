@@ -25,7 +25,7 @@ impl CollectVariables for UnresolvedArgument {
     fn collectVariables(&self, vars: &mut Vec<Variable>) {
         match self {
             UnresolvedArgument::Positional(variable) => variable.collectVariables(vars),
-            UnresolvedArgument::Named(_, variable) => variable.collectVariables(vars),
+            UnresolvedArgument::Named(_, _, variable) => variable.collectVariables(vars),
         }
     }
 }

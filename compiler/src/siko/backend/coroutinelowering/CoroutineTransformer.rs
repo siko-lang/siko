@@ -364,14 +364,14 @@ impl<'a> CoroutineTransformer<'a> {
         let resultVar = bodyBuilder.createTempValueWithType(location.clone(), self.resumeResultTy.clone());
         let callInfo = CallInfo::new(
             getCoroutineCoResumeResultCompletedName().monomorphized(self.ctx.clone()),
-            vec![],
+            (),
         );
         let resultCtorCall = InstructionKind::FunctionCall(resultVar.clone(), callInfo);
         builder.addInstruction(resultCtorCall, location.clone());
         builder.step();
         let variantVar = bodyBuilder.createTempValueWithType(location.clone(), self.enumTy.clone());
         let variantName = getVariantName(&self.f.name, variantIndex);
-        let callInfo = CallInfo::new(variantName, Vec::new());
+        let callInfo = CallInfo::new(variantName, ());
         let variantCtorCall = InstructionKind::FunctionCall(variantVar.clone(), callInfo);
         builder.addInstruction(variantCtorCall, location.clone());
         builder.step();
@@ -424,10 +424,10 @@ impl<'a> CoroutineTransformer<'a> {
             let resultVar = bodyBuilder.createTempValueWithType(location.clone(), boolTy.clone());
 
             if i == completedIndex {
-                let trueCall = InstructionKind::FunctionCall(resultVar.clone(), CallInfo::new(getTrueName(), vec![]));
+                let trueCall = InstructionKind::FunctionCall(resultVar.clone(), CallInfo::new(getTrueName(), ()));
                 stateBlock.addInstruction(trueCall, location.clone());
             } else {
-                let falseCall = InstructionKind::FunctionCall(resultVar.clone(), CallInfo::new(getFalseName(), vec![]));
+                let falseCall = InstructionKind::FunctionCall(resultVar.clone(), CallInfo::new(getFalseName(), ()));
                 stateBlock.addInstruction(falseCall, location.clone());
             }
             stateBlock.addReturn(resultVar, location.clone());
