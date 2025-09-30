@@ -13,6 +13,7 @@ use crate::siko::hir::Instruction::Arguments;
 use crate::siko::hir::Instruction::CallInfo;
 use crate::siko::hir::Instruction::FieldInfo;
 use crate::siko::hir::Instruction::InstructionKind;
+use crate::siko::hir::Instruction::UnresolvedArgument;
 use crate::siko::hir::Type::formatTypes;
 use crate::siko::hir::Variable::Variable;
 use crate::siko::hir::{Data::Enum, Program::Program, Type::Type};
@@ -219,12 +220,26 @@ impl ClosureLowering for Body {
     }
 }
 
+impl ClosureLowering for UnresolvedArgument {
+    fn lower(&mut self, closureStore: &mut ClosureStore) {
+        match self {
+            UnresolvedArgument::Positional(variable) => variable.lower(closureStore),
+            UnresolvedArgument::Named(_, variable) => variable.lower(closureStore),
+        }
+    }
+}
+
 impl ClosureLowering for Arguments {
     fn lower(&mut self, closureStore: &mut ClosureStore) {
         match self {
             Arguments::Resolved(vars) => {
                 for v in vars {
                     v.lower(closureStore);
+                }
+            }
+            Arguments::Unresolved(args) => {
+                for arg in args {
+                    arg.lower(closureStore);
                 }
             }
         }

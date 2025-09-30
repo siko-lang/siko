@@ -4,7 +4,7 @@ use crate::siko::{
         Function::FunctionKind,
         Instruction::{
             Arguments, CallContextInfo, CallInfo, ImplicitContextIndex, ImplicitContextOperation, ImplicitIndex,
-            InstanceReference, Instruction, InstructionKind, SyntaxBlockId, WithContext,
+            InstanceReference, Instruction, InstructionKind, SyntaxBlockId, UnresolvedArgument, WithContext,
         },
         Substitution::Substitution,
         Type::Type,
@@ -22,10 +22,22 @@ use crate::siko::{
     qualifiedname::{builtins::getAutoDropFnName, QualifiedName},
 };
 
+impl Monomorphize for UnresolvedArgument {
+    fn process(&self, sub: &Substitution, mono: &mut Monomorphizer) -> Self {
+        match self {
+            UnresolvedArgument::Positional(variable) => UnresolvedArgument::Positional(variable.process(sub, mono)),
+            UnresolvedArgument::Named(name, variable) => {
+                UnresolvedArgument::Named(name.clone(), variable.process(sub, mono))
+            }
+        }
+    }
+}
+
 impl Monomorphize for Arguments {
     fn process(&self, sub: &Substitution, mono: &mut Monomorphizer) -> Self {
         match self {
             Arguments::Resolved(vars) => Arguments::Resolved(vars.process(sub, mono)),
+            Arguments::Unresolved(args) => Arguments::Unresolved(args.process(sub, mono)),
         }
     }
 }

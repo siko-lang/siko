@@ -1,5 +1,5 @@
 use crate::siko::hir::{
-    Instruction::{Arguments, InstructionKind},
+    Instruction::{Arguments, InstructionKind, UnresolvedArgument},
     Variable::Variable,
 };
 
@@ -19,10 +19,20 @@ impl<T: UseVar> UseVar for Vec<T> {
     }
 }
 
+impl UseVar for UnresolvedArgument {
+    fn useVars(&self) -> UnresolvedArgument {
+        match self {
+            UnresolvedArgument::Positional(variable) => UnresolvedArgument::Positional(variable.useVar()),
+            UnresolvedArgument::Named(name, variable) => UnresolvedArgument::Named(name.clone(), variable.useVar()),
+        }
+    }
+}
+
 impl UseVar for Arguments {
     fn useVars(&self) -> Arguments {
         match self {
             Arguments::Resolved(vars) => Arguments::Resolved(vars.useVars()),
+            Arguments::Unresolved(args) => Arguments::Unresolved(args.useVars()),
         }
     }
 }

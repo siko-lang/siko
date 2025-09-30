@@ -3,6 +3,7 @@ use std::fmt::Debug;
 use std::fmt::Display;
 
 use crate::siko::hir::Block::BlockId;
+use crate::siko::hir::Instruction::Arguments;
 use crate::siko::hir::Instruction::CallInfo;
 use crate::siko::hir::Instruction::TransformInfo;
 use crate::siko::{
@@ -194,34 +195,34 @@ impl BlockBuilder {
         value
     }
 
-    pub fn addFunctionCall(
+    pub fn addFunctionCall<T: Into<Arguments>>(
         &mut self,
         functionName: QualifiedName,
-        args: Vec<Variable>,
+        args: T,
         location: Location,
     ) -> Variable {
-        self.addFunctionCallInner(functionName, args, location, false)
+        self.addFunctionCallInner(functionName, args.into(), location, false)
     }
 
-    pub fn addCoroutineFunctionCall(
+    pub fn addCoroutineFunctionCall<T: Into<Arguments>>(
         &mut self,
         functionName: QualifiedName,
-        args: Vec<Variable>,
+        args: T,
         location: Location,
     ) -> Variable {
-        self.addFunctionCallInner(functionName, args, location, true)
+        self.addFunctionCallInner(functionName, args.into(), location, true)
     }
 
     pub fn addFunctionCallInner(
         &mut self,
         functionName: QualifiedName,
-        args: Vec<Variable>,
+        args: Arguments,
         location: Location,
         coroutineSpawn: bool,
     ) -> Variable {
         // for each arg create a temp value and a converter instruction
         let mut tempArgs = Vec::new();
-        for arg in &args {
+        for arg in args.getVariables() {
             let tempValue = self.bodyBuilder.createTempValue(location.clone());
             self.addInstruction(
                 InstructionKind::Converter(tempValue.clone(), arg.clone()),

@@ -1,5 +1,5 @@
 use crate::siko::hir::{
-    Instruction::{Arguments, CallInfo, ClosureCreateInfo, ImplicitHandler, WithContext, WithInfo},
+    Instruction::{Arguments, CallInfo, ClosureCreateInfo, ImplicitHandler, UnresolvedArgument, WithContext, WithInfo},
     Trait::{Instance, Trait},
     Type::Type,
 };
@@ -190,10 +190,20 @@ impl Apply for WithInfo {
     }
 }
 
+impl Apply for UnresolvedArgument {
+    fn apply(self, sub: &Substitution) -> Self {
+        match self {
+            UnresolvedArgument::Positional(variable) => UnresolvedArgument::Positional(variable.apply(sub)),
+            UnresolvedArgument::Named(name, variable) => UnresolvedArgument::Named(name, variable.apply(sub)),
+        }
+    }
+}
+
 impl Apply for Arguments {
     fn apply(self, sub: &Substitution) -> Self {
         match self {
             Arguments::Resolved(vars) => Arguments::Resolved(vars.apply(sub)),
+            Arguments::Unresolved(args) => Arguments::Unresolved(args.apply(sub)),
         }
     }
 }

@@ -2,7 +2,7 @@ use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 
 use crate::siko::hir::{
     Block::{Block, BlockInner},
-    Instruction::{Arguments, CallInfo, ClosureCreateInfo, Instruction, InstructionKind},
+    Instruction::{Arguments, CallInfo, ClosureCreateInfo, Instruction, InstructionKind, UnresolvedArgument},
     Variable::{Variable, VariableInfo, VariableName},
     VariableAllocator::VariableAllocator,
 };
@@ -107,10 +107,20 @@ impl<T: VariableCopy> VariableCopy for Vec<T> {
     }
 }
 
+impl VariableCopy for UnresolvedArgument {
+    fn copy(&self, map: &mut CopyHandler) -> UnresolvedArgument {
+        match self {
+            UnresolvedArgument::Positional(variable) => UnresolvedArgument::Positional(variable.copy(map)),
+            UnresolvedArgument::Named(name, variable) => UnresolvedArgument::Named(name.clone(), variable.copy(map)),
+        }
+    }
+}
+
 impl VariableCopy for Arguments {
     fn copy(&self, map: &mut CopyHandler) -> Arguments {
         match self {
             Arguments::Resolved(vars) => Arguments::Resolved(vars.copy(map)),
+            Arguments::Unresolved(args) => Arguments::Unresolved(args.copy(map)),
         }
     }
 }

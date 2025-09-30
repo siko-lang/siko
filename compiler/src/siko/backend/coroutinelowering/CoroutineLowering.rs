@@ -12,7 +12,7 @@ use crate::siko::{
         Data::{Enum, Struct},
         Function::{Function, Parameter, ResultKind},
         FunctionGroupBuilder::FunctionGroupBuilder,
-        Instruction::{Arguments, FieldInfo, Instruction, InstructionKind},
+        Instruction::{Arguments, FieldInfo, Instruction, InstructionKind, UnresolvedArgument},
         Program::Program,
         Type::Type,
         Variable::Variable,
@@ -166,11 +166,23 @@ impl CoroutineLowering for Variable {
     }
 }
 
+impl CoroutineLowering for UnresolvedArgument {
+    fn lower(&mut self) {
+        match self {
+            UnresolvedArgument::Positional(variable) => variable.lower(),
+            UnresolvedArgument::Named(_, variable) => variable.lower(),
+        }
+    }
+}
+
 impl CoroutineLowering for Arguments {
     fn lower(&mut self) {
         match self {
             Arguments::Resolved(vars) => {
                 vars.lower();
+            }
+            Arguments::Unresolved(args) => {
+                args.lower();
             }
         }
     }

@@ -10,7 +10,7 @@ use crate::siko::{
         Function::{Attributes, Function, FunctionKind, Parameter, ResultKind},
         Instruction::{
             Arguments, CallInfo, ClosureCreateInfo, FieldId, FieldInfo, ImplicitHandler, Instruction, InstructionKind,
-            WithContext, WithInfo,
+            UnresolvedArgument, WithContext, WithInfo,
         },
         Program::Program,
         Type::Type,
@@ -187,10 +187,22 @@ impl RemoveTuples for WithInfo {
     }
 }
 
+impl RemoveTuples for UnresolvedArgument {
+    fn removeTuples(&self, ctx: &mut Context) -> Self {
+        match self {
+            UnresolvedArgument::Positional(variable) => UnresolvedArgument::Positional(variable.removeTuples(ctx)),
+            UnresolvedArgument::Named(name, variable) => {
+                UnresolvedArgument::Named(name.clone(), variable.removeTuples(ctx))
+            }
+        }
+    }
+}
+
 impl RemoveTuples for Arguments {
     fn removeTuples(&self, ctx: &mut Context) -> Self {
         match self {
             Arguments::Resolved(vars) => Arguments::Resolved(vars.removeTuples(ctx)),
+            Arguments::Unresolved(args) => Arguments::Unresolved(args.removeTuples(ctx)),
         }
     }
 }

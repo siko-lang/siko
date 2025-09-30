@@ -342,7 +342,8 @@ impl<'a> CoroutineTransformer<'a> {
         builder.step();
         let variantVar = bodyBuilder.createTempValueWithType(location.clone(), self.enumTy.clone());
         let variantName = getVariantName(&self.f.name, variantIndex);
-        let callInfo = CallInfo::new(variantName, variables.iter().map(|v| v.useVar()).collect());
+        let args: Vec<_> = variables.iter().map(|v| v.useVar()).collect();
+        let callInfo = CallInfo::new(variantName, args);
         let variantCtorCall = InstructionKind::FunctionCall(variantVar.clone(), callInfo);
         builder.addInstruction(variantCtorCall, location.clone());
         builder.step();

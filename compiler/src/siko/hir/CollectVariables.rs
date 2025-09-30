@@ -1,5 +1,5 @@
 use crate::siko::hir::{
-    Instruction::{Arguments, CallInfo, ClosureCreateInfo, InstructionKind, WithContext, WithInfo},
+    Instruction::{Arguments, CallInfo, ClosureCreateInfo, InstructionKind, UnresolvedArgument, WithContext, WithInfo},
     Variable::Variable,
 };
 
@@ -21,10 +21,20 @@ impl<T: CollectVariables> CollectVariables for Vec<T> {
     }
 }
 
+impl CollectVariables for UnresolvedArgument {
+    fn collectVariables(&self, vars: &mut Vec<Variable>) {
+        match self {
+            UnresolvedArgument::Positional(variable) => variable.collectVariables(vars),
+            UnresolvedArgument::Named(_, variable) => variable.collectVariables(vars),
+        }
+    }
+}
+
 impl CollectVariables for Arguments {
     fn collectVariables(&self, vars: &mut Vec<Variable>) {
         match self {
             Arguments::Resolved(vs) => vs.collectVariables(vars),
+            Arguments::Unresolved(args) => args.collectVariables(vars),
         }
     }
 }

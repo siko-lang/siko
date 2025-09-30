@@ -323,21 +323,38 @@ impl Debug for InstanceReference {
 }
 
 #[derive(Clone, PartialEq)]
+pub enum UnresolvedArgument {
+    Positional(Variable),
+    Named(String, Variable),
+}
+
+impl Display for UnresolvedArgument {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UnresolvedArgument::Positional(var) => write!(f, "{}", var),
+            UnresolvedArgument::Named(name, var) => write!(f, "{}: {}", name, var),
+        }
+    }
+}
+
+#[derive(Clone, PartialEq)]
 pub enum Arguments {
     Resolved(Vec<Variable>),
+    Unresolved(Vec<UnresolvedArgument>),
 }
 
 impl Arguments {
     pub fn getVariables(&self) -> &Vec<Variable> {
         match self {
             Arguments::Resolved(vars) => vars,
+            Arguments::Unresolved(_) => panic!("Cannot get variables from unresolved arguments"),
         }
     }
+}
 
-    pub fn insert(&mut self, index: usize, var: Variable) {
-        match self {
-            Arguments::Resolved(vars) => vars.insert(index, var),
-        }
+impl Into<Arguments> for Vec<Variable> {
+    fn into(self) -> Arguments {
+        Arguments::Resolved(self)
     }
 }
 
@@ -345,6 +362,11 @@ impl Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Arguments::Resolved(args) => write!(
+                f,
+                "[{}]",
+                args.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(", ")
+            ),
+            Arguments::Unresolved(args) => write!(
                 f,
                 "[{}]",
                 args.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(", ")
@@ -363,10 +385,10 @@ pub struct CallInfo {
 }
 
 impl CallInfo {
-    pub fn new(name: QualifiedName, args: Vec<Variable>) -> Self {
+    pub fn new<T: Into<Arguments>>(name: QualifiedName, args: T) -> Self {
         CallInfo {
             name,
-            args: Arguments::Resolved(args),
+            args: args.into(),
             context: None,
             instanceRefs: Vec::new(),
             coroutineSpawn: false,
