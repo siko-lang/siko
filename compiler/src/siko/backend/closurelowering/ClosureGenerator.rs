@@ -6,7 +6,7 @@ use crate::siko::{
     hir::{
         BodyBuilder::BodyBuilder,
         ConstraintContext::ConstraintContext,
-        Function::{Attributes, Function, FunctionKind, Parameter, ResultKind},
+        Function::{Attributes, Function, FunctionKind, ParamInfo, Parameter, ResultKind},
         Instruction::{CallInfo, EnumCase, FieldId, FieldInfo, InstructionKind, TransformInfo},
         Program::Program,
         Type::Type,
@@ -47,12 +47,16 @@ impl ClosureGenerator<'_> {
         let mut argVars = Vec::new();
         let mut bodyBuilder = BodyBuilder::new();
         let firstParamName = "closure".to_string();
-        handlerParams.push(Parameter::Named(firstParamName.clone(), enumTy.clone(), false));
+        handlerParams.push(Parameter::Named(
+            firstParamName.clone(),
+            enumTy.clone(),
+            ParamInfo::new(),
+        ));
         let closureArg = Variable::newWithType(VariableName::Arg(firstParamName), location.clone(), enumTy.clone());
         argVars.push(closureArg.clone());
         for (it, ty) in self.key.args.iter().enumerate() {
             let paramName = format!("arg{}", it);
-            handlerParams.push(Parameter::Named(paramName.clone(), ty.clone(), false));
+            handlerParams.push(Parameter::Named(paramName.clone(), ty.clone(), ParamInfo::new()));
             let var = Variable::newWithType(VariableName::Arg(paramName), location.clone(), ty.clone());
             argVars.push(var);
         }

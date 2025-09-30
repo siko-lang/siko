@@ -9,7 +9,7 @@ use crate::siko::{
     hir::{
         BodyBuilder::BodyBuilder,
         ConstraintContext::ConstraintContext,
-        Function::{Attributes, Function, FunctionKind, Parameter, ResultKind},
+        Function::{Attributes, Function, FunctionKind, ParamInfo, Parameter, ResultKind},
         FunctionCallResolver::FunctionCallResolver,
         InstanceResolver::InstanceResolver,
         InstanceStore::InstanceStore,
@@ -57,7 +57,7 @@ impl Monomorphize for Variable {
 impl Monomorphize for Parameter {
     fn process(&self, sub: &Substitution, mono: &mut Monomorphizer) -> Self {
         match self {
-            Parameter::Named(name, ty, mutable) => Parameter::Named(name.clone(), ty.process(sub, mono), *mutable),
+            Parameter::Named(name, ty, info) => Parameter::Named(name.clone(), ty.process(sub, mono), info.clone()),
             Parameter::SelfParam(mutable, ty) => Parameter::SelfParam(*mutable, ty.process(sub, mono)),
         }
     }
@@ -599,7 +599,7 @@ impl<'a> Monomorphizer<'a> {
         attributes.inline = true;
         let dropFn = Function {
             name: monoName.clone(),
-            params: vec![Parameter::Named("self".to_string(), ty.clone(), false)],
+            params: vec![Parameter::Named("self".to_string(), ty.clone(), ParamInfo::new())],
             result: ResultKind::SingleReturn(Type::getUnitType()),
             body: Some(bodyBuilder.build()),
             constraintContext: ConstraintContext::new(),

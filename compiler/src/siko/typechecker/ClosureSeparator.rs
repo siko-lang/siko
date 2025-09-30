@@ -3,7 +3,7 @@ use crate::siko::{
         Block::BlockId,
         Body::Body,
         ConstraintContext::ConstraintContext,
-        Function::{Attributes, Function, FunctionKind, Parameter, ResultKind},
+        Function::{Attributes, Function, FunctionKind, ParamInfo, Parameter, ResultKind},
         Instruction::InstructionKind,
         Type::{Type, TypeVar},
         Unifier::Unifier,
@@ -49,14 +49,14 @@ impl<'a> ClosureSeparator<'a> {
         for arg in &self.closureTypeInfo.envTypes {
             let arg_name = getArgName(argIndex);
             let arg = self.unifier.apply(arg.clone());
-            let param = Parameter::Named(arg_name, arg, false);
+            let param = Parameter::Named(arg_name, arg, ParamInfo::new());
             params.push(param);
             argIndex += 1;
         }
         for arg in &self.closureTypeInfo.argTypes {
             let arg_name = getArgName(argIndex);
             let arg = self.unifier.apply(arg.clone());
-            let param = Parameter::Named(arg_name, arg, false);
+            let param = Parameter::Named(arg_name, arg, ParamInfo::new());
             params.push(param);
             argIndex += 1;
         }

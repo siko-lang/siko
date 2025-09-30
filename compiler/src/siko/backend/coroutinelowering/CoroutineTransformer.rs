@@ -4,8 +4,7 @@ use crate::siko::{
     backend::{
         coroutinelowering::{
             CoroutineLowering::CoroutineInstanceInfo,
-            CoroutineStateProcessor::CoroutineStateProcessor,
-            CoroutineStateProcessor::YieldKey,
+            CoroutineStateProcessor::{CoroutineStateProcessor, YieldKey},
             Utils::{getLoweredCoroutineName, getMonomorphizedContext, getResumeResultType, getStateMachineEnumName},
         },
         BuilderUtils::EnumBuilder,
@@ -15,7 +14,7 @@ use crate::siko::{
         BlockBuilder::BlockBuilder,
         BodyBuilder::BodyBuilder,
         ConstraintContext::ConstraintContext,
-        Function::{Attributes, Function, FunctionKind, Parameter, ResultKind},
+        Function::{Attributes, Function, FunctionKind, ParamInfo, Parameter, ResultKind},
         Instruction::{CallInfo, EnumCase, FieldId, FieldInfo, InstructionKind, TransformInfo},
         Program::Program,
         Type::Type,
@@ -146,7 +145,11 @@ impl<'a> CoroutineTransformer<'a> {
         let enumSwitch = InstructionKind::EnumSwitch(coroVar.useVar(), cases);
         mainBlockBuilder.addInstruction(enumSwitch, self.f.kind.getLocation());
         let mut f = self.f.clone();
-        f.params = vec![Parameter::Named("coro".to_string(), self.enumTy.clone(), false)];
+        f.params = vec![Parameter::Named(
+            "coro".to_string(),
+            self.enumTy.clone(),
+            ParamInfo::new(),
+        )];
         f.result = ResultKind::SingleReturn(self.resumeResultTupleTy.clone());
         f.body = Some(bodyBuilder.build());
         // println!("after transformation: {}", f);
@@ -400,7 +403,11 @@ impl<'a> CoroutineTransformer<'a> {
         let isCompletedFnName = QualifiedName::CoroutineStateMachineIsCompleted(Box::new(self.f.name.clone()));
 
         let mut params = Vec::new();
-        params.push(Parameter::Named("stateMachine".to_string(), self.enumTy.asRef(), false));
+        params.push(Parameter::Named(
+            "stateMachine".to_string(),
+            self.enumTy.asRef(),
+            ParamInfo::new(),
+        ));
 
         let mut bodyBuilder = BodyBuilder::new();
         let mut mainBuilder = bodyBuilder.createBlock();

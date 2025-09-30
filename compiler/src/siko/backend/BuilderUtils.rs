@@ -2,7 +2,7 @@ use crate::siko::{
     hir::{
         ConstraintContext::ConstraintContext,
         Data::{Enum, Field, Struct, Variant},
-        Function::{Attributes, Function, FunctionKind, Parameter, ResultKind},
+        Function::{Attributes, Function, FunctionKind, ParamInfo, Parameter, ResultKind},
         Program::Program,
         Type::Type,
     },
@@ -39,7 +39,7 @@ impl<'a> EnumBuilder<'a> {
         let mut variantCtorParams = Vec::new();
         for (i, fieldTy) in fieldTypes.iter().enumerate() {
             let argName = getStructFieldName(i as u32);
-            variantCtorParams.push(Parameter::Named(argName, fieldTy.clone(), false));
+            variantCtorParams.push(Parameter::Named(argName, fieldTy.clone(), ParamInfo::new()));
         }
         let variantCtorFn = Function {
             name: variantName.clone(),
@@ -102,7 +102,7 @@ impl<'a> StructBuilder<'a> {
         let mut structCtorParams = Vec::new();
         for (i, fieldTy) in fieldTypes.iter().enumerate() {
             let argName = getStructFieldName(i as u32);
-            structCtorParams.push(Parameter::Named(argName, fieldTy.clone(), false));
+            structCtorParams.push(Parameter::Named(argName, fieldTy.clone(), ParamInfo::new()));
         }
         let structCtorFn = Function {
             name: structName.clone(),

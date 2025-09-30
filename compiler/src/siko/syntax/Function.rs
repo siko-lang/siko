@@ -1,4 +1,4 @@
-use crate::siko::syntax::Attributes::Attributes;
+use crate::siko::syntax::{Attributes::Attributes, Expr::Expr};
 
 use super::{
     Identifier::Identifier,
@@ -8,7 +8,7 @@ use super::{
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Parameter {
-    Named(Identifier, Type, bool),
+    Named(Identifier, Type, bool, Option<Expr>),
     SelfParam,
     MutSelfParam,
     RefSelfParam,

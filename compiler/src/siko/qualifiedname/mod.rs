@@ -27,6 +27,7 @@ pub enum QualifiedName {
     CoroutineStateMachineVariant(Box<QualifiedName>, u32),     // yielding function name, entry index
     CoroutineStateMachineResume(Box<QualifiedName>),           // yielding function name
     CoroutineStateMachineIsCompleted(Box<QualifiedName>),      // yielding function name
+    DefaultArgFn(Box<QualifiedName>, u32),                     // function name, argument index
 }
 
 impl QualifiedName {
@@ -61,6 +62,7 @@ impl QualifiedName {
             QualifiedName::CoroutineStateMachineIsCompleted(_) => {
                 panic!("CoroutineStateMachineIsCompleted names are not supported")
             }
+            QualifiedName::DefaultArgFn(p, _) => p.module(),
         }
     }
 
@@ -87,6 +89,7 @@ impl QualifiedName {
             QualifiedName::CoroutineStateMachineIsCompleted(_) => {
                 panic!("CoroutineStateMachineIsCompleted names are not supported")
             }
+            QualifiedName::DefaultArgFn(p, _) => *p.clone(),
         }
     }
 
@@ -135,6 +138,7 @@ impl QualifiedName {
             QualifiedName::CoroutineStateMachineIsCompleted(_) => {
                 panic!("CoroutineStateMachineIsCompleted names are not supported")
             }
+            QualifiedName::DefaultArgFn(_, index) => format!("default_arg_{}", index),
         }
     }
 
@@ -191,6 +195,7 @@ impl Display for QualifiedName {
             }
             QualifiedName::CoroutineStateMachineResume(p) => write!(f, "{}.coroutine_resume", p),
             QualifiedName::CoroutineStateMachineIsCompleted(p) => write!(f, "{}.coroutine_is_completed", p),
+            QualifiedName::DefaultArgFn(p, index) => write!(f, "{}.default_arg_{}", p, index),
         }
     }
 }

@@ -29,9 +29,24 @@ impl Attributes {
 }
 
 #[derive(Debug, Clone)]
+pub struct ParamInfo {
+    pub mutable: bool,
+    pub hasDefault: bool,
+}
+
+impl ParamInfo {
+    pub fn new() -> ParamInfo {
+        ParamInfo {
+            mutable: false,
+            hasDefault: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum Parameter {
-    Named(String, Type, bool), // mutable
-    SelfParam(bool, Type),     // mutable
+    Named(String, Type, ParamInfo),
+    SelfParam(bool, Type), // mutable
 }
 
 impl Parameter {
@@ -46,6 +61,13 @@ impl Parameter {
         match &self {
             Parameter::Named(_, ty, _) => ty.clone(),
             Parameter::SelfParam(_, ty) => ty.clone(),
+        }
+    }
+
+    pub fn hasDefaultValue(&self) -> bool {
+        match &self {
+            Parameter::Named(_, _, info) => info.hasDefault,
+            Parameter::SelfParam(_, _) => false,
         }
     }
 }

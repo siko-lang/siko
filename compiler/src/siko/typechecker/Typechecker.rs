@@ -280,8 +280,8 @@ impl<'a> Typechecker<'a> {
         //println!("Initializing {}", self.f.name);
         for param in &self.f.params {
             match &param {
-                Parameter::Named(name, _, mutable) => {
-                    if *mutable {
+                Parameter::Named(name, _, info) => {
+                    if info.mutable {
                         self.mutables.insert(name.clone(), Mutability::ExplicitMutable);
                     }
                 }
@@ -663,7 +663,7 @@ impl<'a> Typechecker<'a> {
                 let Some(targetFn) = self.program.functions.get(&info.name) else {
                     panic!("Function not found {}", info.name);
                 };
-                let args = self.resolveArgs(&info.args, &targetFn);
+                let args = self.resolveArgs(&info.args, &targetFn, builder, instruction.location.clone());
                 let checkResult = self.checkFunctionCall(&targetFn, &args, dest, runner);
                 let mut info = info.clone();
                 info.name = checkResult.fnName;
@@ -1081,7 +1081,7 @@ impl<'a> Typechecker<'a> {
         let targetFn = self.program.functions.get(&name).expect("Function not found");
         let mut args = args.clone();
         args.addMethodReceiver(receiver.clone());
-        let extendedArgs = self.resolveArgs(&args, targetFn);
+        let extendedArgs = self.resolveArgs(&args, targetFn, builder, instruction.location.clone());
         let fnType = targetFn.getType();
         let (origReceiver, chainEntries) = self.resolveReceiverChain(&receiver);
         let mutableCall = self.mutables.get(&origReceiver.name().to_string()) == Some(&Mutability::ExplicitMutable)
@@ -1599,8 +1599,14 @@ impl<'a> Typechecker<'a> {
         builder.replaceInstruction(kind, location.clone());
     }
 
-    fn resolveArgs(&self, args: &Arguments, targetFn: &Function) -> Vec<Variable> {
-        let args = match &args {
+    fn resolveArgs(
+        &mut self,
+        args: &Arguments,
+        targetFn: &Function,
+        builder: &mut BlockBuilder,
+        location: Location,
+    ) -> Vec<Variable> {
+        let mut args = match &args {
             Arguments::Resolved(args) => args.clone(),
             Arguments::Unresolved(ref args) => {
                 let mut resolvedArgs = Vec::new();
@@ -1629,6 +1635,20 @@ impl<'a> Typechecker<'a> {
                 resolvedArgs
             }
         };
+        if args.len() < targetFn.params.len() {
+            for (index, param) in targetFn.params[args.len()..].iter().enumerate() {
+                if param.hasDefaultValue() {
+                    let defaultArgFnName = QualifiedName::DefaultArgFn(Box::new(targetFn.name.clone()), index as u32);
+                    let tmp = self
+                        .bodyBuilder
+                        .createTempValueWithType(location.clone(), param.getType().clone());
+                    let kind = InstructionKind::FunctionCall(tmp.clone(), CallInfo::new(defaultArgFnName, ()));
+                    builder.addInstruction(kind, location.clone());
+                    builder.step();
+                    args.push(tmp);
+                }
+            }
+        }
         args
     }
 

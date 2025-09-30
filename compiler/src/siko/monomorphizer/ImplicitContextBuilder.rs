@@ -4,7 +4,7 @@ use crate::siko::{
     hir::{
         Block::BlockId,
         BodyBuilder::BodyBuilder,
-        Function::{Function, Parameter},
+        Function::{Function, ParamInfo, Parameter},
         Instruction::{
             CallInfo, FieldId, FieldInfo, ImplicitContextOperation, ImplicitIndex, InstructionKind, SyntaxBlockId,
             SyntaxBlockIdSegment,
@@ -68,7 +68,11 @@ impl<'a, 'b> ImplicitContextBuilder<'a, 'b> {
                 builder.addAssign(contextVar.clone(), argVar, Location::empty());
                 contextVarMap.insert(SyntaxBlockId::new(), contextVar.clone());
                 contextVarMap.insert(SyntaxBlockId::new().add(SyntaxBlockIdSegment { value: 0 }), contextVar);
-                let param = Parameter::Named(implicitContextArgName.clone(), Type::Tuple(contextTypes.clone()), false);
+                let param = Parameter::Named(
+                    implicitContextArgName.clone(),
+                    Type::Tuple(contextTypes.clone()),
+                    ParamInfo::new(),
+                );
                 function.params.insert(0, param);
             }
         }

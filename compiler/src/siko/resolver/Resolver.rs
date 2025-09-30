@@ -2,7 +2,7 @@ use crate::siko::{
     hir::{
         ConstraintContext::{Constraint as IrConstraint, ConstraintContext},
         Data::MethodInfo as DataMethodInfo,
-        Function::{Attributes, FunctionKind, Parameter, ResultKind as IrResultKind},
+        Function::{Attributes, FunctionKind, ParamInfo, Parameter, ResultKind as IrResultKind},
         InstanceStore::InstanceStore,
         Instantiation::instantiateTraitWithSub,
         Program::Program,
@@ -246,7 +246,7 @@ impl<'a> Resolver<'a> {
                         let mut ctorParams = Vec::new();
                         for field in &c.fields {
                             let ty = typeResolver.resolveType(&field.ty);
-                            ctorParams.push(Parameter::Named(field.name.toString(), ty.clone(), false));
+                            ctorParams.push(Parameter::Named(field.name.toString(), ty.clone(), ParamInfo::new()));
                             irStruct.fields.push(IrField {
                                 name: field.name.toString(),
                                 ty,
@@ -284,7 +284,7 @@ impl<'a> Resolver<'a> {
                             let mut ctorParams = Vec::new();
                             for (index, item) in variant.items.iter().enumerate() {
                                 let ty = typeResolver.resolveType(item);
-                                ctorParams.push(Parameter::Named(format!("f{}", index), ty.clone(), false));
+                                ctorParams.push(Parameter::Named(format!("f{}", index), ty.clone(), ParamInfo::new()));
                                 items.push(ty);
                             }
                             let variant = IrVariant {
@@ -352,7 +352,7 @@ impl<'a> Resolver<'a> {
                             let mut argTypes = Vec::new();
                             for param in &method.params {
                                 let ty = match param {
-                                    SynParam::Named(_, ty, _) => typeResolver.resolveType(ty),
+                                    SynParam::Named(_, ty, _, _) => typeResolver.resolveType(ty),
                                     SynParam::SelfParam => selfType.clone(),
                                     SynParam::MutSelfParam => selfType.clone(),
                                     SynParam::RefSelfParam => selfType.asRef(),
@@ -469,7 +469,7 @@ impl<'a> Resolver<'a> {
                             let mut argTypes = Vec::new();
                             for param in &method.params {
                                 let ty = match param {
-                                    SynParam::Named(_, ty, _) => typeResolver.resolveType(ty),
+                                    SynParam::Named(_, ty, _, _) => typeResolver.resolveType(ty),
                                     SynParam::SelfParam => selfType.clone(),
                                     SynParam::MutSelfParam => selfType.clone(),
                                     SynParam::RefSelfParam => selfType.asRef(),
@@ -569,7 +569,7 @@ impl<'a> Resolver<'a> {
                             );
                             let functionResolver =
                                 FunctionResolver::new(moduleResolver, constraintContext, Some(owner.clone()));
-                            let irFunction = functionResolver.resolve(
+                            let (irFunction, defaultArgFns) = functionResolver.resolve(
                                 self.ctx,
                                 method,
                                 &self.emptyVariants,
@@ -581,6 +581,9 @@ impl<'a> Resolver<'a> {
                                 &typeResolver,
                                 self.runner.clone(),
                             );
+                            for defaultArgFn in defaultArgFns {
+                                self.program.functions.insert(defaultArgFn.name.clone(), defaultArgFn);
+                            }
                             self.program.functions.insert(irFunction.name.clone(), irFunction);
                         }
                     }
@@ -600,7 +603,7 @@ impl<'a> Resolver<'a> {
                             );
                             let functionResolver =
                                 FunctionResolver::new(moduleResolver, constraintContext.clone(), Some(owner.clone()));
-                            let irFunction = functionResolver.resolve(
+                            let (irFunction, defaultArgFns) = functionResolver.resolve(
                                 self.ctx,
                                 method,
                                 &self.emptyVariants,
@@ -612,6 +615,9 @@ impl<'a> Resolver<'a> {
                                 &typeResolver,
                                 self.runner.clone(),
                             );
+                            for defaultArgFn in defaultArgFns {
+                                self.program.functions.insert(defaultArgFn.name.clone(), defaultArgFn);
+                            }
                             self.program.functions.insert(irFunction.name.clone(), irFunction);
                         }
                     }
@@ -664,7 +670,7 @@ impl<'a> Resolver<'a> {
                             });
                             let functionResolver =
                                 FunctionResolver::new(moduleResolver, constraintContext, Some(owner.clone()));
-                            let mut irFunction = functionResolver.resolve(
+                            let (mut irFunction, defaultArgFns) = functionResolver.resolve(
                                 self.ctx,
                                 method,
                                 &self.emptyVariants,
@@ -686,6 +692,9 @@ impl<'a> Resolver<'a> {
                                 traitName: name.clone(),
                             };
                             traitMethodselector.add(method.name.toString(), selection);
+                            for defaultArgFn in defaultArgFns {
+                                self.program.functions.insert(defaultArgFn.name.clone(), defaultArgFn);
+                            }
                             self.program.functions.insert(irFunction.name.clone(), irFunction);
                         }
                     }
@@ -716,7 +725,7 @@ impl<'a> Resolver<'a> {
                                 .instanceMethods
                                 .get(&method.fullName)
                                 .expect("instance method not found");
-                            let irFunction = functionResolver.resolve(
+                            let (irFunction, defaultArgFns) = functionResolver.resolve(
                                 self.ctx,
                                 methodFn,
                                 &self.emptyVariants,
@@ -728,6 +737,9 @@ impl<'a> Resolver<'a> {
                                 &typeResolver,
                                 self.runner.clone(),
                             );
+                            for defaultArgFn in defaultArgFns {
+                                self.program.functions.insert(defaultArgFn.name.clone(), defaultArgFn);
+                            }
                             self.program.functions.insert(irFunction.name.clone(), irFunction);
                         }
                     }
@@ -738,7 +750,7 @@ impl<'a> Resolver<'a> {
                         let constraintContext =
                             createConstraintContext(&f.typeParams, &typeResolver, &self.program, &self.ctx);
                         let functionResolver = FunctionResolver::new(moduleResolver, constraintContext, None);
-                        let irFunction = functionResolver.resolve(
+                        let (irFunction, defaultArgFns) = functionResolver.resolve(
                             self.ctx,
                             f,
                             &self.emptyVariants,
@@ -750,6 +762,9 @@ impl<'a> Resolver<'a> {
                             &typeResolver,
                             self.runner.clone(),
                         );
+                        for defaultArgFn in defaultArgFns {
+                            self.program.functions.insert(defaultArgFn.name.clone(), defaultArgFn);
+                        }
                         self.program.functions.insert(irFunction.name.clone(), irFunction);
                     }
                     ModuleItem::Effect(effect) => {
@@ -759,7 +774,7 @@ impl<'a> Resolver<'a> {
                             let functionResolver =
                                 FunctionResolver::new(moduleResolver, ConstraintContext::new(), None);
                             let name = build(&moduleResolver.name, &effect.name.toString()).add(method.name.toString());
-                            let mut irFunction = functionResolver.resolve(
+                            let (mut irFunction, defaultArgFns) = functionResolver.resolve(
                                 self.ctx,
                                 method,
                                 &self.emptyVariants,
@@ -775,6 +790,9 @@ impl<'a> Resolver<'a> {
                                 irFunction.kind = FunctionKind::EffectMemberDecl(name.clone());
                             } else {
                                 irFunction.kind = FunctionKind::EffectMemberDefinition(name.clone());
+                            }
+                            for defaultArgFn in defaultArgFns {
+                                self.program.functions.insert(defaultArgFn.name.clone(), defaultArgFn);
                             }
                             self.program.functions.insert(irFunction.name.clone(), irFunction);
                         }

@@ -4,7 +4,7 @@ use crate::siko::hir::BodyBuilder::BodyBuilder;
 use crate::siko::hir::ConstraintContext::ConstraintContext;
 use crate::siko::hir::Data::{Enum, Struct};
 use crate::siko::hir::Function::{
-    Attributes as IrAttributes, ExternKind, Function as IrFunction, FunctionKind, Parameter as IrParameter,
+    Attributes as IrAttributes, ExternKind, Function as IrFunction, FunctionKind, ParamInfo, Parameter as IrParameter,
     ResultKind as IrResultKind,
 };
 use crate::siko::hir::Implicit::Implicit;
@@ -17,6 +17,7 @@ use crate::siko::qualifiedname::{build, QualifiedName};
 use crate::siko::syntax::Attributes::{Attributes, Safety};
 use crate::siko::syntax::Function::{Function, FunctionExternKind, Parameter, ResultKind};
 use crate::siko::syntax::Identifier::Identifier;
+use crate::siko::syntax::Statement::{Block, Statement, StatementKind};
 use crate::siko::syntax::Type::TypeParameterDeclaration;
 use crate::siko::util::error;
 use crate::siko::util::Runner::Runner;
@@ -75,22 +76,63 @@ impl<'a> FunctionResolver<'a> {
         name: QualifiedName,
         typeResolver: &TypeResolver,
         runner: Runner,
-    ) -> IrFunction {
+    ) -> (IrFunction, Vec<IrFunction>) {
         //println!("Resolving function: {}", name);
 
+        let mut defaultArgFns = Vec::new();
         let mut params = Vec::new();
         let bodyBuilder = BodyBuilder::new();
         let mut env = Environment::new(bodyBuilder.getVariableAllocator());
         for (_, param) in f.params.iter().enumerate() {
             let irParam = match param {
-                Parameter::Named(id, ty, mutable) => {
+                Parameter::Named(id, ty, mutable, defaultArgExpr) => {
+                    if let Some(defaultArgExpr) = defaultArgExpr {
+                        let defaultArgFnName = QualifiedName::DefaultArgFn(Box::new(name.clone()), params.len() as u32);
+                        let bodyBuilder = BodyBuilder::new();
+                        let mut exprResolver = ExprResolver::new(
+                            &defaultArgFnName,
+                            bodyBuilder.clone(),
+                            ctx,
+                            self.moduleResolver,
+                            &typeResolver,
+                            emptyVariants,
+                            structs,
+                            variants,
+                            enums,
+                            implicits,
+                            runner.clone(),
+                        );
+                        let block = Block {
+                            location: defaultArgExpr.location.clone(),
+                            statements: vec![Statement {
+                                kind: StatementKind::Expr(defaultArgExpr.clone()),
+                                hasSemicolon: false,
+                            }],
+                        };
+                        let env = Environment::new(bodyBuilder.getVariableAllocator());
+                        exprResolver.resolve(&block, &env);
+                        let body = bodyBuilder.build();
+                        let defaultArgFn = IrFunction::new(
+                            defaultArgFnName.clone(),
+                            Vec::new(),
+                            IrResultKind::SingleReturn(typeResolver.resolveType(ty)),
+                            Some(body),
+                            ConstraintContext::new(),
+                            FunctionKind::UserDefined(f.name.location()),
+                            IrAttributes::new(),
+                        );
+                        defaultArgFns.push(defaultArgFn);
+                    }
                     let var = Variable::newWithType(
                         VariableName::Arg(id.toString()),
                         id.location(),
                         typeResolver.resolveType(ty),
                     );
                     env.addArg(var, *mutable);
-                    IrParameter::Named(id.toString(), typeResolver.resolveType(ty), *mutable)
+                    let mut info = ParamInfo::new();
+                    info.mutable = *mutable;
+                    info.hasDefault = defaultArgExpr.is_some();
+                    IrParameter::Named(id.toString(), typeResolver.resolveType(ty), info)
                 }
                 Parameter::SelfParam => match &self.owner {
                     Some(owner) => {
@@ -161,7 +203,7 @@ impl<'a> FunctionResolver<'a> {
             },
             convertFunctionAttributes(&f.attributes),
         );
-        irFunction
+        (irFunction, defaultArgFns)
     }
 }
 

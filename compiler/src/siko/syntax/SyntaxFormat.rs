@@ -470,7 +470,7 @@ impl Format for ConstraintArgument {
 impl Format for Parameter {
     fn format(&self) -> Vec<Token> {
         match self {
-            Parameter::Named(name, ty, mutable) => {
+            Parameter::Named(name, ty, mutable, defaultValue) => {
                 let mut result = Vec::new();
                 if *mutable {
                     result.push(Token::Chunk("mut ".to_string()));
@@ -478,6 +478,10 @@ impl Format for Parameter {
                 result.extend(name.format());
                 result.push(Token::Chunk(": ".to_string()));
                 result.extend(ty.format());
+                if let Some(default) = defaultValue {
+                    result.push(Token::Chunk(" = ".to_string()));
+                    result.extend(default.format());
+                }
                 result
             }
             Parameter::SelfParam => vec![Token::Chunk("self".to_string())],

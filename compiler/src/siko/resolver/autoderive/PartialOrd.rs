@@ -71,7 +71,7 @@ fn getPartialCmpFn(enumDef: &Enum, enumTy: &Type) -> Function {
     params.push(Parameter::RefSelfParam);
     let otherName = Identifier::new("other".to_string(), enumDef.name.location());
     let selfRefType = Type::Reference(Box::new(enumTy.clone()));
-    params.push(Parameter::Named(otherName, selfRefType, false));
+    params.push(Parameter::Named(otherName, selfRefType, false, None));
 
     let otherRef = Expr {
         expr: SimpleExpr::Value(Identifier::new("other".to_string(), enumDef.name.location())),
@@ -269,7 +269,7 @@ fn getPartialCmpFnForStruct(structDef: &Struct, structTy: &Type) -> Function {
     params.push(Parameter::RefSelfParam);
     let otherName = Identifier::new("other".to_string(), structDef.name.location());
     let selfRefType = Type::Reference(Box::new(structTy.clone()));
-    params.push(Parameter::Named(otherName, selfRefType, false));
+    params.push(Parameter::Named(otherName, selfRefType, false, None));
 
     let body = if structDef.fields.is_empty() {
         // Empty struct is always equal to another empty struct

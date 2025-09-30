@@ -7,7 +7,7 @@ use crate::siko::{
         Body::Body,
         ConstraintContext::ConstraintContext,
         Data::{Enum, Field, Struct, Variant},
-        Function::{Attributes, Function, FunctionKind, Parameter, ResultKind},
+        Function::{Attributes, Function, FunctionKind, ParamInfo, Parameter, ResultKind},
         Instruction::{
             Arguments, CallInfo, ClosureCreateInfo, FieldId, FieldInfo, ImplicitHandler, Instruction, InstructionKind,
             UnresolvedArgument, WithContext, WithInfo,
@@ -84,7 +84,7 @@ impl RemoveTuples for Type {
 impl RemoveTuples for Parameter {
     fn removeTuples(&self, ctx: &mut Context) -> Self {
         match self {
-            Parameter::Named(n, ty, mutable) => Parameter::Named(n.clone(), ty.removeTuples(ctx), *mutable),
+            Parameter::Named(n, ty, info) => Parameter::Named(n.clone(), ty.removeTuples(ctx), info.clone()),
             Parameter::SelfParam(mutable, ty) => Parameter::SelfParam(*mutable, ty.removeTuples(ctx)),
         }
     }
@@ -409,7 +409,7 @@ pub fn removeTuples(program: &Program) -> Program {
                     ty: argType.clone(),
                 };
                 fields.push(field);
-                let param = Parameter::Named(name, argType, false);
+                let param = Parameter::Named(name, argType, ParamInfo::new());
                 params.push(param);
             }
             let tupleStruct = Struct {

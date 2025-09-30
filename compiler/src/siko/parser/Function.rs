@@ -53,7 +53,13 @@ impl<'a> FunctionParser for Parser<'a> {
                     let name = self.parseVarIdentifier();
                     self.expect(TokenKind::Misc(MiscKind::Colon));
                     let ty = self.parseType();
-                    Parameter::Named(name, ty, mutable)
+                    if self.check(TokenKind::Misc(MiscKind::Equal)) {
+                        self.expect(TokenKind::Misc(MiscKind::Equal));
+                        let defaultValue = self.parseExpr();
+                        Parameter::Named(name, ty, mutable, Some(defaultValue))
+                    } else {
+                        Parameter::Named(name, ty, mutable, None)
+                    }
                 }
             };
             params.push(param);

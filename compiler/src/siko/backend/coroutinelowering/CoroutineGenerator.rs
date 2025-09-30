@@ -12,7 +12,7 @@ use crate::siko::{
     hir::{
         BodyBuilder::BodyBuilder,
         ConstraintContext::ConstraintContext,
-        Function::{Attributes, Function, FunctionKind, Parameter, ResultKind},
+        Function::{Attributes, Function, FunctionKind, ParamInfo, Parameter, ResultKind},
         Instruction::{CallInfo, EnumCase, FieldId, FieldInfo, InstructionKind, TransformInfo},
         Program::Program,
         Type::Type,
@@ -40,7 +40,11 @@ impl<'a> CoroutineGenerator<'a> {
         let resultTy = getResumeResultType(&self.coroutineInfo.getCoroutineType());
         let finalResumeTupleTy = getResumeTupleType(&self.coroutineInfo.getCoroutineType());
         let mut params = Vec::new();
-        params.push(Parameter::Named("coro".to_string(), coroutineTy.clone(), false));
+        params.push(Parameter::Named(
+            "coro".to_string(),
+            coroutineTy.clone(),
+            ParamInfo::new(),
+        ));
         let mut bodyBuilder = BodyBuilder::new();
         let mut mainBuilder = bodyBuilder.createBlock();
         let coroutineArg = bodyBuilder.createTempValueWithType(location.clone(), coroutineTy.clone());
@@ -148,7 +152,11 @@ impl<'a> CoroutineGenerator<'a> {
         let coroutineTy = getLoweredCoroutineType(&self.coroutineInfo.getCoroutineType()).asRef();
         let boolTy = Type::Named(getBoolTypeName(), vec![]);
         let mut params = Vec::new();
-        params.push(Parameter::Named("coro".to_string(), coroutineTy.clone(), false));
+        params.push(Parameter::Named(
+            "coro".to_string(),
+            coroutineTy.clone(),
+            ParamInfo::new(),
+        ));
         let mut bodyBuilder = BodyBuilder::new();
         let mut mainBuilder = bodyBuilder.createBlock();
         let coroutineArg = bodyBuilder.createTempValueWithType(location.clone(), coroutineTy.clone());
