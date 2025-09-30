@@ -20,6 +20,7 @@ use crate::siko::{
             WithContext,
         },
         Program::Program,
+        ReplaceVar::ReplaceVar,
         Trait::Instance,
         TraitMethodSelector::TraitMethodSelector,
         Type::{formatTypes, Type, TypeVar},
@@ -866,7 +867,7 @@ impl<'a> Typechecker<'a> {
                         instruction.location.clone(),
                     );
                     builder.step();
-                    let kind = instruction.kind.replaceVar(receiver.clone(), ptrLoadResultVar.clone());
+                    let kind = instruction.kind.replaceVar(&receiver, ptrLoadResultVar.clone());
                     builder.replaceInstruction(kind, instruction.location.clone());
                     receiverType = *innerTy.clone();
                 } else {
@@ -1414,7 +1415,7 @@ impl<'a> Typechecker<'a> {
                     let ty = self.unifier.apply(ty);
                     let newVar = var.clone();
                     newVar.setType(ty);
-                    instruction.kind = instruction.kind.replaceVar(var, newVar);
+                    instruction.kind = instruction.kind.replaceVar(&var, newVar);
                 }
             }
         }

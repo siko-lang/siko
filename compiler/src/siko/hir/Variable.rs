@@ -238,14 +238,6 @@ impl Variable {
         self.info.borrow().ty.clone()
     }
 
-    pub fn replace(&self, from: &Variable, to: Variable) -> Variable {
-        if self == from {
-            to
-        } else {
-            self.clone()
-        }
-    }
-
     pub fn isTemp(&self) -> bool {
         self.name().isTemp()
     }

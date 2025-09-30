@@ -25,6 +25,7 @@ use crate::siko::{
         InstanceResolver::InstanceResolver,
         Instruction::{CallInfo, InstructionKind},
         Program::Program,
+        ReplaceVar::ReplaceVar,
         Utils::createResolvers,
     },
     location::Report::ReportContext,
@@ -235,7 +236,7 @@ impl<'a> DropChecker<'a> {
                         info.instanceRefs.extend(instanceRefs);
                         let implicitClone = InstructionKind::FunctionCall(implicitCloneVar.clone(), info);
                         let implicitCloneRef = InstructionKind::Ref(implicitCloneVarRef.clone(), input.clone());
-                        let updatedKind = instruction.kind.replaceVar(input.clone(), implicitCloneVar);
+                        let updatedKind = instruction.kind.replaceVar(&input, implicitCloneVar);
                         builder.addInstruction(implicitCloneRef, input.location().clone());
                         builder.step();
                         builder.addInstruction(implicitClone, input.location().clone());

@@ -4,6 +4,7 @@ use crate::siko::hir::{
     BodyBuilder::BodyBuilder,
     Function::Function,
     Instruction::InstructionKind,
+    ReplaceVar::ReplaceVar,
     Variable::{Variable, VariableName},
 };
 
@@ -135,7 +136,7 @@ impl<'a> VarSimplifier<'a> {
                     for var in &allVars {
                         if let Some(dest) = self.replace(var.name()) {
                             //println!("Replacing {} with {}", var.name(), dest);
-                            kind = kind.replaceVar(var.clone(), dest.useVar());
+                            kind = kind.replaceVar(&var, dest.useVar());
                         }
                     }
                     if let InstructionKind::Assign(dest, src) = &kind {

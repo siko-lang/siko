@@ -18,6 +18,7 @@ pub mod InstanceStore;
 pub mod Instantiation;
 pub mod Instruction;
 pub mod Program;
+pub mod ReplaceVar;
 pub mod Safety;
 pub mod Substitution;
 pub mod SyntaxBlockIterator;

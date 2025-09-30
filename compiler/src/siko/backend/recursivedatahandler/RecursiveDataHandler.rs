@@ -8,6 +8,7 @@ use crate::siko::{
         Instantiation::instantiateEnum,
         Instruction::{CallInfo, FieldId, InstructionKind},
         Program::Program,
+        ReplaceVar::ReplaceVar,
         Type::Type,
         TypeVarAllocator::TypeVarAllocator,
     },
@@ -71,7 +72,7 @@ fn processFunction(function: &Function, program: &Program) -> Function {
                                             boxedVar.clone(),
                                             CallInfo::new(getBoxNewFnName(), vec![arg.clone()]),
                                         );
-                                        newKind = newKind.replaceVar(arg.clone(), boxedVar);
+                                        newKind = newKind.replaceVar(&arg, boxedVar);
                                         builder.addInstruction(boxCall, instruction.location.clone());
                                         builder.step();
                                     }
