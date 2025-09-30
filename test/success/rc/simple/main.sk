@@ -1,0 +1,34 @@
+module Main {
+
+import Rc
+
+struct Foo {
+}
+
+instance Drop[Foo] {
+    fn drop(self) -> Self {
+        println("Dropping Foo");
+        self
+    }
+}
+
+fn foo() -> Rc[Foo] {
+    Rc.new(Foo())
+}
+
+fn main() {
+    let rc1 = foo();
+    //assert(rc1.strongCount() == 1);
+    {
+        let rc2 = rc1.clone();
+        //assert(rc1.strongCount() == 2);
+        {
+            let rc3 = rc2.clone();
+            //assert(rc1.strongCount() == 3);
+        } // rc3 goes out of scope here
+        //assert(rc1.strongCount() == 2);
+    } // rc2 goes out of scope here
+    //assert(rc1.strongCount() == 1);
+}
+
+}

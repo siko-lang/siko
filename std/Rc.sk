@@ -1,0 +1,53 @@
+module Rc {
+
+import NativePtr
+
+struct Inner[T] {
+    value: T,
+    refCount: Int,
+
+    fn new(value: T) -> Inner[T] {
+        Inner(value: value, refCount: 1)
+    }
+}
+
+pub struct Rc[T] {
+    inner: *Inner[T],
+
+    @safe
+    pub fn new(value: T) -> Rc[T] {
+        let innerPtr: *Inner[T] = allocate();
+        *innerPtr = Inner.new(value);
+        Rc(inner: innerPtr)
+    }
+
+    @safe
+    pub fn strongCount(&self) -> Int {
+        self.inner.refCount
+    }
+}
+
+instance[T] Clone[Rc[T]] {
+    @safe
+    fn clone(&self) -> Rc[T] {
+        let mut innerPtr: *Inner[T] = NativePtr.clone(self.inner);
+        innerPtr.refCount += 1;
+        Rc(inner: self.inner)
+    }
+}
+
+instance[T] Drop[Rc[T]] {
+    @safe
+    fn drop(mut self) -> Self{
+        self.inner.refCount -= 1;
+        if self.inner.refCount == 0 {
+            {
+                let item = self.inner.value; // drop the inner value
+            }
+            deallocate(self.inner);
+        }
+        self
+    }
+}
+
+}
