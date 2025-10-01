@@ -6,6 +6,8 @@ import Libc.Socket
 import Int.Util
 import Libc.String
 
+let INADDR_ANY : U32 = 0.toU32();
+
 @unsafe
 pub fn createSocket(domain: Domain, ty: SockType) -> Result[I32, Error] {
     let sock = Libc.Socket.socket(domain.code(), ty.code(), 0.toI32());
@@ -41,8 +43,7 @@ pub fn bindSocket(sock: I32, sockAddrIn: &Libc.Socket.SockaddrIn) -> Result[(), 
 pub fn parseAddress(addr: Option[String], domain: Domain, mut inAddr: *Libc.Socket.InAddr) -> Result[(), Error] {
     match addr {
         None -> {
-            // INADDR_ANY
-            inAddr.s_addr = 0.toU32();
+            inAddr.s_addr = INADDR_ANY;
             return Ok(());
         }
         Some(addr) -> {

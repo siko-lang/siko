@@ -1,6 +1,7 @@
 use crate::siko::syntax::Data::*;
 use crate::siko::syntax::Effect::Effect;
 use crate::siko::syntax::Function::*;
+use crate::siko::syntax::Global::Global;
 use crate::siko::syntax::Identifier::*;
 use crate::siko::syntax::Implicit::Implicit;
 use crate::siko::syntax::Trait::Instance;
@@ -16,6 +17,7 @@ pub enum ModuleItem {
     Struct(Struct),
     Enum(Enum),
     Function(Function),
+    Global(Global),
     Import(Import),
     Effect(Effect),
     Implicit(Implicit),

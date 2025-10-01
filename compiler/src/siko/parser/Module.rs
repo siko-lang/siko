@@ -8,7 +8,7 @@ use crate::siko::{
     location::Location::{Location, Span},
     parser::{
         Attributes::AttributeParser, Data::DataParser, Effect::EffectParser, Function::FunctionParser,
-        Implicit::ImplicitParser,
+        Global::GlobalParser, Implicit::ImplicitParser,
     },
     syntax::{
         Identifier::Identifier,
@@ -58,6 +58,7 @@ impl<'a> ModuleParser for Parser<'a> {
                 TokenKind::Keyword(KeywordKind::Fn) => {
                     ModuleItem::Function(self.parseFunction(attributes, public, true))
                 }
+                TokenKind::Keyword(KeywordKind::Let) => ModuleItem::Global(self.parseGlobal(attributes, public)),
                 TokenKind::Keyword(KeywordKind::Import) => ModuleItem::Import(self.parseImport()),
                 TokenKind::Keyword(KeywordKind::Effect) => ModuleItem::Effect(self.parseEffect(public)),
                 TokenKind::Keyword(KeywordKind::Implicit) => ModuleItem::Implicit(self.parseImplicit(public)),

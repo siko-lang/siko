@@ -1,4 +1,4 @@
-use crate::siko::syntax::{Expr::FunctionArg, Format::format_block_2_items, Function::ResultKind};
+use crate::siko::syntax::{Expr::FunctionArg, Format::format_block_2_items, Function::ResultKind, Global::Global};
 
 use super::{
     Data::{Enum, Field, Struct, Variant},
@@ -779,12 +779,33 @@ impl Format for Derive {
     }
 }
 
+impl Format for Global {
+    fn format(&self) -> Vec<Token> {
+        let mut result = Vec::new();
+
+        if self.public {
+            result.push(Token::Chunk("pub ".to_string()));
+        }
+
+        result.push(Token::Chunk("let ".to_string()));
+        result.extend(self.name.format());
+        result.push(Token::Chunk(": ".to_string()));
+        result.extend(self.ty.format());
+        result.push(Token::Chunk(" = ".to_string()));
+        result.extend(self.value.format());
+        result.push(Token::Chunk(";".to_string()));
+
+        result
+    }
+}
+
 impl Format for ModuleItem {
     fn format(&self) -> Vec<Token> {
         match self {
             ModuleItem::Struct(s) => s.format(),
             ModuleItem::Enum(e) => e.format(),
             ModuleItem::Function(f) => f.format(),
+            ModuleItem::Global(g) => g.format(),
             ModuleItem::Import(i) => i.format(),
             ModuleItem::Effect(e) => e.format(),
             ModuleItem::Implicit(i) => i.format(),

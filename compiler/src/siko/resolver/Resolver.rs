@@ -16,8 +16,10 @@ use crate::siko::{
     qualifiedname::{build, buildModule, QualifiedName},
     resolver::{autoderive::AutoDerive, FunctionResolver::FunctionResolver, Util::SubstitutionChain},
     syntax::{
-        Function::{Function, Parameter as SynParam},
+        Function::{Function, Parameter as SynParam, ResultKind},
+        Global::Global,
         Module::{Import, Module, ModuleItem},
+        Statement::{Block, Statement, StatementKind},
         Trait::Instance,
         Type::{Constraint, ConstraintArgument, TypeParameterDeclaration},
     },
@@ -151,6 +153,7 @@ pub struct Resolver<'a> {
     program: Program,
     emptyVariants: BTreeSet<QualifiedName>,
     variants: BTreeMap<QualifiedName, QualifiedName>,
+    moduleGlobals: BTreeMap<String, BTreeSet<QualifiedName>>,
     defaultTraitMethods: BTreeMap<QualifiedName, Function>,
     instanceMethods: BTreeMap<QualifiedName, Function>,
     instanceSubChains: BTreeMap<QualifiedName, SubstitutionChain>,
@@ -166,6 +169,7 @@ impl<'a> Resolver<'a> {
             program: Program::new(),
             emptyVariants: BTreeSet::new(),
             variants: BTreeMap::new(),
+            moduleGlobals: BTreeMap::new(),
             defaultTraitMethods: BTreeMap::new(),
             instanceMethods: BTreeMap::new(),
             instanceSubChains: BTreeMap::new(),
@@ -179,6 +183,7 @@ impl<'a> Resolver<'a> {
     }
 
     pub fn process(&mut self) {
+        self.lowerGlobals();
         self.collectLocalNames();
         self.processImports();
         self.processDataTypes();
@@ -189,6 +194,48 @@ impl<'a> Resolver<'a> {
 
         self.updateTraitMethodSelectors();
         //self.dump();
+    }
+
+    fn lowerGlobals(&mut self) {
+        // Lower globals to functions
+        let mut moduleGlobals = BTreeMap::new();
+        for (moduleKey, module) in self.modules.iter_mut() {
+            let module_name_str = moduleKey.clone();
+            let mut globals = BTreeSet::new();
+            for item in &mut module.items {
+                if let ModuleItem::Global(global) = item {
+                    let function = Resolver::processGlobal(global.clone());
+                    let name = function.name.toString();
+                    let functionQualifiedName = build(module_name_str.as_str(), &name);
+                    globals.insert(functionQualifiedName);
+                    *item = ModuleItem::Function(function);
+                }
+            }
+            moduleGlobals.insert(module_name_str, globals);
+        }
+        self.moduleGlobals = moduleGlobals;
+    }
+
+    fn processGlobal(global: Global) -> Function {
+        let expr_location = global.value.location.clone();
+        let statement = Statement {
+            kind: StatementKind::Expr(global.value),
+            hasSemicolon: false,
+        };
+        let block = Block {
+            statements: vec![statement],
+            location: expr_location,
+        };
+        Function {
+            name: global.name,
+            typeParams: None,
+            params: Vec::new(),
+            result: ResultKind::SingleReturn(global.ty),
+            body: Some(block),
+            externKind: None,
+            public: global.public,
+            attributes: global.attributes,
+        }
     }
 
     fn updateTraitMethodSelectors(&mut self) {
@@ -812,6 +859,7 @@ impl<'a> Resolver<'a> {
         variants: &mut BTreeSet<QualifiedName>,
         i: &Import,
         importedInstances: &mut Vec<QualifiedName>,
+        importedGlobals: &mut BTreeSet<QualifiedName>,
     ) {
         if let Some(alias) = &i.alias {
             let moduleName = buildModule(&i.moduleName.toString());
@@ -863,6 +911,15 @@ impl<'a> Resolver<'a> {
                         let functionName = moduleName.add(fnDef.name.toString());
                         let localFunctionName = localModuleName.add(fnDef.name.toString());
                         importedNames.add(&localFunctionName, &functionName);
+                    }
+                    ModuleItem::Global(globalDef) => {
+                        if !globalDef.public {
+                            continue;
+                        }
+                        let globalName = moduleName.add(globalDef.name.toString());
+                        let localGlobalName = localModuleName.add(globalDef.name.toString());
+                        importedNames.add(&localGlobalName, &globalName);
+                        importedGlobals.insert(globalName);
                     }
                     ModuleItem::Import(_) => {}
                     ModuleItem::Trait(traitDef) => {
@@ -972,6 +1029,15 @@ impl<'a> Resolver<'a> {
                         importedNames.add(&fnDef.name, &functionName);
                         importedNames.add(&functionName, &functionName);
                     }
+                    ModuleItem::Global(globalDef) => {
+                        if !globalDef.public {
+                            continue;
+                        }
+                        let globalName = moduleName.add(globalDef.name.toString());
+                        importedNames.add(&globalDef.name, &globalName);
+                        importedNames.add(&globalName, &globalName);
+                        importedGlobals.insert(globalName);
+                    }
                     ModuleItem::Import(_) => {}
                     ModuleItem::Trait(traitDef) => {
                         //format_any(traitDef);
@@ -1047,6 +1113,7 @@ impl<'a> Resolver<'a> {
                                     &mut moduleResolver.variants,
                                     i,
                                     &mut importedInstances,
+                                    &mut moduleResolver.globals,
                                 );
                             }
                             None => {
@@ -1073,25 +1140,27 @@ impl<'a> Resolver<'a> {
     }
 
     fn collectLocalNames(&mut self) {
-        for (_, m) in &self.modules {
+        for (name, m) in &self.modules {
             //println!("Processing module {}", name);
             let (localNames, variants, instances) = Resolver::buildLocalNames(m);
+            let globals = self.moduleGlobals.get(name).cloned().unwrap_or_else(BTreeSet::new);
             let moduleResolver = ModuleResolver {
                 ctx: self.ctx,
-                name: m.name.toString(),
+                name: name.clone(),
                 localNames,
                 importedNames: Names::new(),
                 importedModules: Vec::new(),
                 variants,
+                globals,
             };
             self.program.instanceStores.insert(
-                buildModule(&m.name.to_string()),
+                buildModule(name),
                 InstanceStore {
                     localInstances: instances.clone(),
                     importedInstances: Vec::new(),
                 },
             );
-            self.resolvers.insert(m.name.toString(), moduleResolver);
+            self.resolvers.insert(name.clone(), moduleResolver);
         }
     }
 
@@ -1134,6 +1203,11 @@ impl<'a> Resolver<'a> {
                 ModuleItem::Function(f) => {
                     let functionName = moduleName.add(f.name.toString());
                     localNames.add(&f.name, &functionName);
+                    localNames.add(&functionName, &functionName);
+                }
+                ModuleItem::Global(g) => {
+                    let functionName = moduleName.add(g.name.toString());
+                    localNames.add(&g.name, &functionName);
                     localNames.add(&functionName, &functionName);
                 }
                 ModuleItem::Import(_) => {}

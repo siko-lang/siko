@@ -349,6 +349,12 @@ impl<'a> ExprResolver<'a> {
                         .current()
                         .addFunctionCall(irName, (), expr.location.clone());
                 }
+                if self.moduleResolver.isGlobal(&irName) {
+                    return self
+                        .bodyBuilder
+                        .current()
+                        .addFunctionCall(irName, (), expr.location.clone());
+                }
                 ResolverError::UnknownValue(name.name(), name.location()).report(self.ctx);
             }
             SimpleExpr::FieldAccess(receiver, name) => {

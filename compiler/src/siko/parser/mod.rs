@@ -4,6 +4,7 @@ pub mod Effect;
 pub mod Error;
 pub mod Expr;
 pub mod Function;
+pub mod Global;
 pub mod Implicit;
 pub mod Lexer;
 pub mod Module;

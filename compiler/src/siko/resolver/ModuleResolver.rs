@@ -23,6 +23,7 @@ pub struct ModuleResolver<'a> {
     pub importedNames: Names,
     pub importedModules: Vec<String>,
     pub variants: BTreeSet<QualifiedName>,
+    pub globals: BTreeSet<QualifiedName>,
 }
 
 impl<'a> ModuleResolver<'a> {
@@ -40,6 +41,10 @@ impl<'a> ModuleResolver<'a> {
             return qn;
         }
         ResolverError::UnknownName(name.toString(), name.location()).report(self.ctx);
+    }
+
+    pub fn isGlobal(&self, name: &QualifiedName) -> bool {
+        self.globals.contains(name)
     }
 
     pub fn resolveTypeName(&self, name: &Identifier) -> QualifiedName {

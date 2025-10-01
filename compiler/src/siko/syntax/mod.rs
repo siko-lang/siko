@@ -4,6 +4,7 @@ pub mod Effect;
 pub mod Expr;
 pub mod Format;
 pub mod Function;
+pub mod Global;
 pub mod Identifier;
 pub mod Implicit;
 pub mod Module;
