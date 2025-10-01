@@ -139,6 +139,9 @@ impl Compiler {
                 "--nostd" => {
                     nostd = true;
                 }
+                "--keep-c-source" => {
+                    self.config.keepCSource = true;
+                }
                 _ => {
                     if external_mode {
                         self.config.externalFiles.push(args[i].clone());
@@ -189,7 +192,10 @@ impl Compiler {
         }
         runCommand("clang", &compile_args);
         runCommand("clang", &link_args);
-        fs::remove_file(c_output_path).expect("Failed to remove C source file");
+        if !self.config.keepCSource {
+            // remove the c source and object
+            fs::remove_file(c_output_path).expect("Failed to remove C source file");
+        }
         fs::remove_file(object_path).expect("Failed to remove object file");
         if self.config.buildPhase == BuildPhase::Run {
             // remove the c source and object

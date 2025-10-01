@@ -7,6 +7,7 @@ pub enum Type {
     Named(Identifier, Vec<Type>),
     Tuple(Vec<Type>),
     Function(Vec<Type>, Box<Type>),
+    FunctionPtr(Vec<Type>, Box<Type>),
     Reference(Box<Type>),
     Ptr(Box<Type>),
     SelfType,
@@ -43,6 +44,14 @@ impl fmt::Display for Type {
                     .collect::<Vec<_>>()
                     .join(", ");
                 write!(f, "fn({}) -> {}", params, ret)
+            }
+            Type::FunctionPtr(params, ret) => {
+                let params = params
+                    .iter()
+                    .map(|param| format!("{}", param))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "fn*({}) -> {}", params, ret)
             }
             Type::Reference(inner) => write!(f, "&{}", inner),
             Type::Ptr(inner) => write!(f, "*{}", inner),

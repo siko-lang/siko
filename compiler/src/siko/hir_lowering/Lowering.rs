@@ -60,6 +60,10 @@ impl Lowering {
             }
             HirType::Tuple(_) => unreachable!("Tuple in MIR"),
             HirType::Function(_, _) => unreachable!("Function type in MIR"),
+            HirType::FunctionPtr(args, result) => {
+                let args = args.into_iter().map(|arg| self.lowerType(arg)).collect();
+                MirType::FunctionPtr(args, Box::new(self.lowerType(result)))
+            }
             HirType::Var(_) => unreachable!("Type variable in MIR"),
             HirType::Reference(ty) => MirType::Ptr(Box::new(self.lowerType(ty))),
             HirType::Ptr(ty) => MirType::Ptr(Box::new(self.lowerType(ty))),

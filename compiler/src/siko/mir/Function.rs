@@ -205,6 +205,8 @@ pub enum Instruction {
     LoadPtr(Variable, Variable),
     StorePtr(Variable, Variable),
     IntegerOp(Variable, Variable, Variable, IntegerOp),
+    FunctionPtr(Variable, String),
+    FunctionPtrCall(Variable, Variable, Vec<Variable>),
 }
 
 impl fmt::Display for Instruction {
@@ -280,6 +282,18 @@ impl fmt::Display for Instruction {
                     IntegerOp::BitXor => "^",
                 };
                 write!(f, "IntegerOp({}, {} {} {})", dest, left, op_str, right)
+            }
+            Instruction::FunctionPtr(var, name) => {
+                write!(f, "FunctionPtr({}, {})", var, name)
+            }
+            Instruction::FunctionPtrCall(var, fnptr, args) => {
+                write!(
+                    f,
+                    "FunctionPtrCall({}, {}, [{}])",
+                    var,
+                    fnptr,
+                    args.iter().map(|arg| format!("{}", arg)).collect::<Vec<_>>().join(", ")
+                )
             }
         }
     }

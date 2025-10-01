@@ -402,6 +402,22 @@ impl Format for Type {
                     result
                 }
             }
+            Type::FunctionPtr(params, ret) => {
+                if params.len() > 3 {
+                    let mut result = vec![Token::PushOffset];
+                    result.extend(format_list2(params, &[Token::Chunk(" ->".to_string()), Token::Break]));
+                    result.push(Token::Chunk(" -> ".to_string()));
+                    result.extend(ret.format());
+                    result.push(Token::PopOffset);
+                    result
+                } else {
+                    let mut result = vec![Token::Chunk("fn*(".to_string())];
+                    result.extend(format_list(params, Token::Chunk(", ".to_string())));
+                    result.push(Token::Chunk(") -> ".to_string()));
+                    result.extend(ret.format());
+                    result
+                }
+            }
             Type::Reference(ty) => {
                 let mut result = vec![Token::Chunk("&".to_string())];
                 result.extend(ty.format());

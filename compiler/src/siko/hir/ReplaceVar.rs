@@ -229,6 +229,16 @@ impl ReplaceVar for InstructionKind {
                 let new_a = a.replaceVar(&from, to);
                 InstructionKind::Yield(new_v, new_a)
             }
+            InstructionKind::FunctionPtr(v, name) => {
+                let new_v = v.replaceVar(&from, to);
+                InstructionKind::FunctionPtr(new_v, name.clone())
+            }
+            InstructionKind::FunctionPtrCall(v, f, args) => {
+                let new_v = v.replaceVar(&from, to.clone());
+                let new_f = f.replaceVar(&from, to.clone());
+                let new_args = args.replaceVar(from, to);
+                InstructionKind::FunctionPtrCall(new_v, new_f, new_args)
+            }
         }
     }
 }

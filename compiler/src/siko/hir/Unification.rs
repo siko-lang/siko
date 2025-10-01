@@ -79,6 +79,12 @@ pub fn unify(sub: &mut Substitution, ty1: Type, ty2: Type, allowNamed: bool) -> 
             }
             return unify(sub, *res1, *res2, allowNamed);
         }
+        (Type::FunctionPtr(args1, res1), Type::FunctionPtr(args2, res2)) => {
+            for (arg1, arg2) in zip(args1, args2) {
+                unify(sub, arg1, arg2, allowNamed)?;
+            }
+            return unify(sub, *res1, *res2, allowNamed);
+        }
         (Type::NumericConstant(v1), Type::NumericConstant(v2)) => {
             if v1 == v2 {
                 Ok(())

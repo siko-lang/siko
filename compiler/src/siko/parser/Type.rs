@@ -54,6 +54,12 @@ impl<'a> TypeParser for Parser<'a> {
             }
             TokenKind::Keyword(KeywordKind::Fn) => {
                 self.expect(TokenKind::Keyword(KeywordKind::Fn));
+                let isPtr = if self.check(TokenKind::Op(OperatorKind::Mul)) {
+                    self.expect(TokenKind::Op(OperatorKind::Mul));
+                    true
+                } else {
+                    false
+                };
                 let mut args = Vec::new();
                 self.expect(TokenKind::LeftBracket(BracketKind::Paren));
                 while !self.check(TokenKind::RightBracket(BracketKind::Paren)) {
@@ -68,7 +74,11 @@ impl<'a> TypeParser for Parser<'a> {
                 self.expect(TokenKind::RightBracket(BracketKind::Paren));
                 self.expect(TokenKind::Arrow(ArrowKind::Right));
                 let result = self.parseType();
-                Type::Function(args, Box::new(result))
+                if isPtr {
+                    Type::FunctionPtr(args, Box::new(result))
+                } else {
+                    Type::Function(args, Box::new(result))
+                }
             }
             TokenKind::Keyword(KeywordKind::TypeSelf) => {
                 self.expect(TokenKind::Keyword(KeywordKind::TypeSelf));

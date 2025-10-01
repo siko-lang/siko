@@ -104,4 +104,6 @@ pub enum Instruction {
     Switch(Variable, String, Vec<Branch>),
     AddressOfField(Variable, Variable, i32),
     IntegerOp(Variable, Variable, Variable, IntegerOp),
+    FunctionPtr(Variable, String),
+    FunctionPtrCall(Variable, Variable, Vec<Variable>),
 }

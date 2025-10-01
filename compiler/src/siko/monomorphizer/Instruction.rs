@@ -328,6 +328,10 @@ pub fn processInstruction(
                 std::process::exit(1);
             }
         }
+        InstructionKind::FunctionPtr(ty, name) => {
+            mono.addKey(Key::Function(name.clone(), vec![], HandlerResolution::new(), vec![]));
+            InstructionKind::FunctionPtr(ty.clone(), name.clone())
+        }
         k => k.clone(),
     };
     instruction.kind = processInstructionKind(kind, sub, mono, syntaxBlockId, handlerResolutionStore);
@@ -536,5 +540,9 @@ pub fn processInstructionKind(
             op,
         ),
         InstructionKind::Yield(v, a) => InstructionKind::Yield(v.process(sub, mono), a.process(sub, mono)),
+        InstructionKind::FunctionPtr(v, name) => InstructionKind::FunctionPtr(v.process(sub, mono), name.clone()),
+        InstructionKind::FunctionPtrCall(v, f, args) => {
+            InstructionKind::FunctionPtrCall(v.process(sub, mono), f.process(sub, mono), args.process(sub, mono))
+        }
     }
 }

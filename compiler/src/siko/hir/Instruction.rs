@@ -568,6 +568,8 @@ pub enum InstructionKind {
     ClosureReturn(BlockId, Variable, Variable),
     IntegerOp(Variable, Variable, Variable, IntegerOp),
     Yield(Variable, Variable),
+    FunctionPtr(Variable, QualifiedName),
+    FunctionPtrCall(Variable, Variable, Vec<Variable>),
 }
 
 impl Display for InstructionKind {
@@ -624,6 +626,8 @@ impl InstructionKind {
             InstructionKind::ClosureReturn(_, v, _) => Some(v.clone()),
             InstructionKind::IntegerOp(v, _, _, _) => Some(v.clone()),
             InstructionKind::Yield(v, _) => Some(v.clone()),
+            InstructionKind::FunctionPtr(v, _) => Some(v.clone()),
+            InstructionKind::FunctionPtrCall(v, _, _) => Some(v.clone()),
         }
     }
 
@@ -755,6 +759,12 @@ impl InstructionKind {
             InstructionKind::Yield(v, a) => {
                 format!("{} = yield({})", v, a)
             }
+            InstructionKind::FunctionPtr(v, name) => {
+                format!("{} = fnptr({})", v, name)
+            }
+            InstructionKind::FunctionPtrCall(v, f, args) => {
+                format!("{} = fnptrcall({}, {:?})", v, f, args)
+            }
         }
     }
 
@@ -795,6 +805,8 @@ impl InstructionKind {
             InstructionKind::ClosureReturn(_, _, _) => "closure_return",
             InstructionKind::IntegerOp(_, _, _, _) => "integer_op",
             InstructionKind::Yield(_, _) => "yield",
+            InstructionKind::FunctionPtr(_, _) => "function_ptr",
+            InstructionKind::FunctionPtrCall(_, _, _) => "function_ptr_call",
         }
     }
 }

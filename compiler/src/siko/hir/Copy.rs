@@ -208,6 +208,10 @@ impl VariableCopy for InstructionKind {
                 InstructionKind::IntegerOp(dest.copy(map), v1.copy(map), v2.copy(map), op.clone())
             }
             InstructionKind::Yield(v, a) => InstructionKind::Yield(v.copy(map), a.copy(map)),
+            InstructionKind::FunctionPtr(v, name) => InstructionKind::FunctionPtr(v.copy(map), name.clone()),
+            InstructionKind::FunctionPtrCall(v, f, args) => {
+                InstructionKind::FunctionPtrCall(v.copy(map), f.copy(map), args.copy(map))
+            }
         }
     }
 }

@@ -179,5 +179,11 @@ pub fn getUsageInfo(kind: InstructionKind, referenceStore: &ReferenceStore) -> U
             UsageInfo::with(vec![varToUsage(&left), varToUsage(&right)], Some(dest.toPath()))
         }
         InstructionKind::Yield(dest, arg) => UsageInfo::with(vec![varToUsage(&arg)], Some(dest.toPath())),
+        InstructionKind::FunctionPtr(dest, _) => UsageInfo::with(Vec::new(), Some(dest.toPath())),
+        InstructionKind::FunctionPtrCall(dest, closure, args) => {
+            let mut usages = vec![varToUsage(&closure)];
+            usages.extend(args.iter().map(|arg| varToUsage(arg)));
+            UsageInfo::with(usages, Some(dest.toPath()))
+        }
     }
 }

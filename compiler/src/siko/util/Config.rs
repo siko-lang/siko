@@ -21,6 +21,7 @@ pub struct Config {
     pub inputFiles: Vec<String>,
     pub externalFiles: Vec<String>,
     pub outputFile: String,
+    pub keepCSource: bool,
 }
 
 impl Config {
@@ -34,6 +35,7 @@ impl Config {
             inputFiles: Vec::new(),
             externalFiles: Vec::new(),
             outputFile: format!("siko_main"),
+            keepCSource: false,
         }
     }
 }

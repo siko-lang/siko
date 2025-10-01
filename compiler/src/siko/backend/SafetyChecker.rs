@@ -122,6 +122,8 @@ impl<'a> SafetyChecker<'a> {
             InstructionKind::ClosureReturn(_, _, _) => true,
             InstructionKind::IntegerOp(_, _, _, _) => true,
             InstructionKind::Yield(_, _) => true,
+            InstructionKind::FunctionPtr(_, _) => false,
+            InstructionKind::FunctionPtrCall(_, _, _) => false,
         }
     }
 }

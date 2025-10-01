@@ -336,6 +336,7 @@ fn getNameFromType(ty: &Type) -> Option<QualifiedName> {
         Type::Named(name, _) => Some(name.clone()),
         Type::Reference(base) => getNameFromType(base),
         Type::Ptr(base) => getNameFromType(base),
+        Type::FunctionPtr(_, _) => None,
         Type::Tuple(_) => panic!("Tuple type in borrowcheck"),
         Type::Function(_, _) => panic!("Function type in borrowcheck"),
         Type::Var(type_var) => panic!("Type var in borrowcheck: {}", type_var),

@@ -308,6 +308,14 @@ impl CoroutineLowering for InstructionKind {
                 v.lower();
                 a.lower();
             }
+            InstructionKind::FunctionPtr(v, _) => {
+                v.lower();
+            }
+            InstructionKind::FunctionPtrCall(v, c, a) => {
+                v.lower();
+                c.lower();
+                a.lower();
+            }
         }
     }
 }
@@ -326,6 +334,12 @@ impl CoroutineLowering for Type {
             }
             Type::Ptr(inner) => {
                 inner.lower();
+            }
+            Type::FunctionPtr(args, res) => {
+                for arg in args {
+                    arg.lower();
+                }
+                res.lower();
             }
             _ => {}
         }

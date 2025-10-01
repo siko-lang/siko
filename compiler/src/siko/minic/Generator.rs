@@ -20,38 +20,56 @@ use super::{
 pub struct MiniCGenerator {
     fileName: String,
     program: Program,
+    fnPointers: BTreeMap<Type, String>,
 }
 
 pub fn getStructName(name: &String) -> String {
     format!("{}", name.replace(".", "_"))
 }
 
-pub fn getTypeName(ty: &Type) -> String {
-    match &ty {
-        Type::Void => "void".to_string(),
-        Type::VoidPtr => "void*".to_string(),
-        Type::UInt8 => "uint8_t".to_string(),
-        Type::UInt16 => "uint16_t".to_string(),
-        Type::UInt32 => "uint32_t".to_string(),
-        Type::UInt64 => "uint64_t".to_string(),
-        Type::Int8 => "int8_t".to_string(),
-        Type::Int16 => "int16_t".to_string(),
-        Type::Int32 => "int32_t".to_string(),
-        Type::Int64 => "int64_t".to_string(),
-        Type::Struct(n) => format!("struct {}", getStructName(n)),
-        Type::Ptr(i) => format!("{}*", getTypeName(i)),
-        Type::Array(ty, size) => format!("{}[{}]", getTypeName(ty), size),
-    }
-}
-
 impl MiniCGenerator {
     pub fn new(outputFile: String, program: Program) -> MiniCGenerator {
+        let mut fnPointers = BTreeMap::new();
+        for ty in &program.fnPointerTypes {
+            fnPointers.insert(ty.clone(), format!("fnptr{}", fnPointers.len()));
+        }
         MiniCGenerator {
             fileName: outputFile,
             program: program,
+            fnPointers: fnPointers,
         }
     }
 
+    fn getFnPointerNiceName(&self, ty: &Type) -> String {
+        if let Type::FunctionPtr(args, result) = ty {
+            let args: Vec<String> = args.iter().map(|t| self.getTypeName(t)).collect();
+            format!("fn*({}) -> {}", args.join(", "), self.getTypeName(result))
+        } else {
+            panic!("Not a function pointer type: {}", self.getTypeName(ty));
+        }
+    }
+
+    pub fn getTypeName(&self, ty: &Type) -> String {
+        match &ty {
+            Type::Void => "void".to_string(),
+            Type::VoidPtr => "void*".to_string(),
+            Type::UInt8 => "uint8_t".to_string(),
+            Type::UInt16 => "uint16_t".to_string(),
+            Type::UInt32 => "uint32_t".to_string(),
+            Type::UInt64 => "uint64_t".to_string(),
+            Type::Int8 => "int8_t".to_string(),
+            Type::Int16 => "int16_t".to_string(),
+            Type::Int32 => "int32_t".to_string(),
+            Type::Int64 => "int64_t".to_string(),
+            Type::Struct(n) => format!("struct {}", getStructName(n)),
+            Type::Ptr(i) => format!("{}*", self.getTypeName(i)),
+            Type::Array(ty, size) => format!("{}[{}]", self.getTypeName(ty), size),
+            Type::FunctionPtr(_, _) => match self.fnPointers.get(ty) {
+                Some(name) => name.clone(),
+                None => panic!("Function pointer type not found: {}", self.getFnPointerNiceName(ty)),
+            },
+        }
+    }
     fn getAlignment(&self, ty: &Type) -> u32 {
         match &ty {
             Type::Void => 0,
@@ -67,6 +85,7 @@ impl MiniCGenerator {
             Type::Struct(n) => self.program.getStruct(n).alignment,
             Type::Ptr(_) => 8,
             Type::Array(_, itemSize) => *itemSize / 8,
+            Type::FunctionPtr(_, _) => 8,
         }
     }
 
@@ -76,9 +95,9 @@ impl MiniCGenerator {
         writeln!(buf, "struct {} {{", name)?;
         for (index, field) in s.fields.iter().enumerate() {
             if let Type::Array(ty, size) = &field.ty {
-                writeln!(buf, "  {} field{}[{}];", getTypeName(&ty), index, size)?;
+                writeln!(buf, "  {} field{}[{}];", self.getTypeName(&ty), index, size)?;
             } else {
-                writeln!(buf, "  {} field{};", getTypeName(&field.ty), index)?;
+                writeln!(buf, "  {} field{};", self.getTypeName(&field.ty), index)?;
             }
         }
         writeln!(buf, "}};\n")?;
@@ -145,9 +164,9 @@ impl MiniCGenerator {
             }
             Instruction::Bitcast(dest, src) => {
                 if dest.ty.isPtr() {
-                    format!("{} = ({}){};", dest.name, getTypeName(&dest.ty), src.name)
+                    format!("{} = ({}){};", dest.name, self.getTypeName(&dest.ty), src.name)
                 } else {
-                    format!("{} = *({}*)&{};", dest.name, getTypeName(&dest.ty), src.name)
+                    format!("{} = *({}*)&{};", dest.name, self.getTypeName(&dest.ty), src.name)
                 }
             }
             Instruction::Switch(root, default, branches) => {
@@ -200,6 +219,16 @@ impl MiniCGenerator {
                     format!("{} = {} {} {};", dest.name, left.name, opStr, right.name)
                 }
             }
+            Instruction::FunctionPtr(var, name) => {
+                format!("{} = {};", var.name, name)
+            }
+            Instruction::FunctionPtrCall(var, f, args) => {
+                let mut argRefs = Vec::new();
+                for arg in args {
+                    argRefs.push(format!("{}", arg.name));
+                }
+                format!("{} = {}({});", var.name, f.name, argRefs.join(", "))
+            }
         };
         Some(s)
     }
@@ -208,7 +237,7 @@ impl MiniCGenerator {
         let mut args = Vec::new();
         let mut argNames = Vec::new();
         for arg in &f.args {
-            args.push(format!("{} {}", getTypeName(&arg.ty), arg.name,));
+            args.push(format!("{} {}", self.getTypeName(&arg.ty), arg.name));
             argNames.push(arg.name.clone());
         }
 
@@ -261,11 +290,21 @@ impl MiniCGenerator {
                         localVars.insert(left.clone());
                         localVars.insert(right.clone());
                     }
+                    Instruction::FunctionPtr(dest, _) => {
+                        localVars.insert(dest.clone());
+                    }
+                    Instruction::FunctionPtrCall(dest, f, args) => {
+                        localVars.insert(dest.clone());
+                        localVars.insert(f.clone());
+                        for arg in args {
+                            localVars.insert(arg.clone());
+                        }
+                    }
                 }
             }
         }
 
-        if dumpBuiltinFunction(f, &args, buf, &self.program)? {
+        if dumpBuiltinFunction(f, &args, buf, &self.program, &self)? {
             return Ok(());
         }
 
@@ -274,7 +313,13 @@ impl MiniCGenerator {
             if f.result.isVoid() {
                 write!(buf, "[[ noreturn ]] ")?;
             }
-            writeln!(buf, "{} {}({}) {{", getTypeName(&f.result), f.name, args.join(", "))?;
+            writeln!(
+                buf,
+                "{} {}({}) {{",
+                self.getTypeName(&f.result),
+                f.name,
+                args.join(", ")
+            )?;
             for v in localVars {
                 if argNames.contains(&v.name) {
                     continue;
@@ -282,7 +327,7 @@ impl MiniCGenerator {
                 if v.ty.isVoid() {
                     continue;
                 }
-                writeln!(buf, "   {} {};", getTypeName(&v.ty), v.name)?;
+                writeln!(buf, "   {} {};", self.getTypeName(&v.ty), v.name)?;
             }
             for block in &f.blocks {
                 writeln!(buf, "{}:", block.id)?;
@@ -300,13 +345,19 @@ impl MiniCGenerator {
     fn dumpFunctionDeclaration(&self, f: &Function, buf: &mut File) -> io::Result<()> {
         let mut args = Vec::new();
         for arg in &f.args {
-            args.push(format!("{} {}", getTypeName(&arg.ty), arg.name,));
+            args.push(format!("{} {}", self.getTypeName(&arg.ty), arg.name));
         }
         writeln!(buf, "// Full Name: {}", f.fullName)?;
         if f.result.isVoid() {
             write!(buf, "[[ noreturn ]] ")?;
         }
-        writeln!(buf, "{} {}({});\n", getTypeName(&f.result), f.name, args.join(", "))?;
+        writeln!(
+            buf,
+            "{} {}({});\n",
+            self.getTypeName(&f.result),
+            f.name,
+            args.join(", ")
+        )?;
         Ok(())
     }
 
@@ -331,6 +382,22 @@ impl MiniCGenerator {
         }
 
         writeln!(output, "")?;
+
+        for (ty, name) in &self.fnPointers {
+            if let Type::FunctionPtr(args, result) = ty {
+                let argTypes: Vec<String> = args.iter().map(|t| self.getTypeName(t)).collect();
+                writeln!(output, "// Function pointer type: {}", self.getFnPointerNiceName(ty))?;
+                writeln!(
+                    output,
+                    "typedef {} (*{})({});",
+                    self.getTypeName(result),
+                    name,
+                    argTypes.join(", ")
+                )?;
+            } else {
+                panic!("Not a function pointer type: {}", self.getTypeName(ty));
+            }
+        }
 
         for s in &self.program.strings {
             writeln!(output, "const char* {} = \"{}\";", s.name, s.value)?;

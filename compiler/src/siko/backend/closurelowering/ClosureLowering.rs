@@ -168,6 +168,10 @@ impl ClosureLowering for Type {
                 let name = closureStore.getClosureName(paramTypes, *ret.clone());
                 *self = Type::Named(name, Vec::new());
             }
+            Type::FunctionPtr(args, res) => {
+                args.lower(closureStore);
+                res.lower(closureStore);
+            }
             Type::Tuple(types) => {
                 for ty in types {
                     ty.lower(closureStore);
@@ -390,6 +394,14 @@ impl ClosureLowering for InstructionKind {
             InstructionKind::IntegerOp(_, _, _, _) => {}
             InstructionKind::Yield(v, a) => {
                 v.lower(closureStore);
+                a.lower(closureStore);
+            }
+            InstructionKind::FunctionPtr(v, _) => {
+                v.lower(closureStore);
+            }
+            InstructionKind::FunctionPtrCall(v, c, a) => {
+                v.lower(closureStore);
+                c.lower(closureStore);
                 a.lower(closureStore);
             }
         }

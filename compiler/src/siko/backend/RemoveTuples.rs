@@ -71,12 +71,23 @@ impl RemoveTuples for Type {
                 let r = r.removeTuples(ctx);
                 Type::Function(args, Box::new(r))
             }
+            Type::FunctionPtr(args, res) => {
+                let args = args.removeTuples(ctx);
+                let res = res.removeTuples(ctx);
+                Type::FunctionPtr(args, Box::new(res))
+            }
             Type::Coroutine(yielded, return_) => {
                 let yielded = yielded.removeTuples(ctx);
                 let return_ = return_.removeTuples(ctx);
                 Type::Coroutine(Box::new(yielded), Box::new(return_))
             }
-            ty => ty.clone(),
+            Type::Named(_, _) => self.clone(),
+            Type::Var(_) => self.clone(),
+            Type::SelfType => self.clone(),
+            Type::Never(_) => self.clone(),
+            Type::NumericConstant(_) => self.clone(),
+            Type::Void => Type::Void,
+            Type::VoidPtr => Type::VoidPtr,
         }
     }
 }
@@ -320,6 +331,10 @@ impl RemoveTuples for InstructionKind {
                 op.clone(),
             ),
             InstructionKind::Yield(v, a) => InstructionKind::Yield(v.removeTuples(ctx), a.removeTuples(ctx)),
+            InstructionKind::FunctionPtr(v, name) => InstructionKind::FunctionPtr(v.removeTuples(ctx), name.clone()),
+            InstructionKind::FunctionPtrCall(v, f, args) => {
+                InstructionKind::FunctionPtrCall(v.removeTuples(ctx), f.removeTuples(ctx), args.removeTuples(ctx))
+            }
         }
     }
 }

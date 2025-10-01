@@ -387,6 +387,10 @@ impl<'a> Monomorphizer<'a> {
                 let args = args.into_iter().map(|arg| self.processType(arg)).collect();
                 Type::Function(args, Box::new(self.processType(*result)))
             }
+            Type::FunctionPtr(args, result) => {
+                let args = args.into_iter().map(|arg| self.processType(arg)).collect();
+                Type::FunctionPtr(args, Box::new(self.processType(*result)))
+            }
             Type::Var(v) => {
                 panic!("TypeVar found in monomorphization {}", v);
             }

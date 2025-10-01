@@ -44,6 +44,7 @@ impl HasTrivialDrop for Type {
                     || self.isUnit()
                     || self.isVoid()
                     || self.isVoidPtr()
+                    || self.isFunctionPtr()
             }
         }
     }

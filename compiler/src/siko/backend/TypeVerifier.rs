@@ -315,6 +315,16 @@ impl<'a> TypeVerifier<'a> {
                 self.checkVariable(v);
                 self.checkVariable(a);
             }
+            InstructionKind::FunctionPtr(v, _) => {
+                self.checkVariable(v);
+            }
+            InstructionKind::FunctionPtrCall(v, f, args) => {
+                self.checkVariable(v);
+                self.checkVariable(f);
+                for arg in args {
+                    self.checkVariable(arg);
+                }
+            }
         }
     }
 

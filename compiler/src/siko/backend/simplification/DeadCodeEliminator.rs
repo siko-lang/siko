@@ -171,6 +171,8 @@ impl<'a> DeadCodeEliminator<'a> {
                 }
                 InstructionKind::IntegerOp(_, _, _, _) => {}
                 InstructionKind::Yield(_, _) => {}
+                InstructionKind::FunctionPtr(_, _) => {}
+                InstructionKind::FunctionPtrCall(_, _, _) => {}
             }
         }
     }

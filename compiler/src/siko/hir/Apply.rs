@@ -33,6 +33,11 @@ impl Apply for Type {
                 let newFnResult = fnResult.apply(sub);
                 Type::Function(newArgs, Box::new(newFnResult))
             }
+            Type::FunctionPtr(args, result) => {
+                let newArgs = args.into_iter().map(|arg| arg.apply(sub)).collect();
+                let newResult = result.apply(sub);
+                Type::FunctionPtr(newArgs, Box::new(newResult))
+            }
             Type::Var(v) => sub.get(Type::Var(v)),
             Type::Reference(arg) => arg.apply(sub).asRef(),
             Type::Ptr(arg) => Type::Ptr(Box::new(arg.apply(sub))),
@@ -288,6 +293,10 @@ impl Apply for InstructionKind {
                 InstructionKind::IntegerOp(dest.apply(sub), left.apply(sub), right.apply(sub), op.clone())
             }
             InstructionKind::Yield(v, a) => InstructionKind::Yield(v.apply(sub), a.apply(sub)),
+            InstructionKind::FunctionPtr(v, name) => InstructionKind::FunctionPtr(v.apply(sub), name.clone()),
+            InstructionKind::FunctionPtrCall(v, f, args) => {
+                InstructionKind::FunctionPtrCall(v.apply(sub), f.apply(sub), args.apply(sub))
+            }
         }
     }
 }

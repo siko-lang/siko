@@ -16,6 +16,7 @@ pub enum Type {
     Union(String),
     Ptr(Box<Type>),
     Array(Box<Type>, u32),
+    FunctionPtr(Vec<Type>, Box<Type>),
 }
 
 impl Type {
@@ -74,6 +75,10 @@ impl fmt::Display for Type {
             Type::Union(name) => write!(f, "union {}", name),
             Type::Ptr(inner) => write!(f, "*{}", inner),
             Type::Array(ty, len) => write!(f, "{}[{}]", ty, len),
+            Type::FunctionPtr(args, result) => {
+                let args: Vec<String> = args.iter().map(|t| format!("{}", t)).collect();
+                write!(f, "fn*({}) -> {}", args.join(", "), result)
+            }
         }
     }
 }

@@ -234,6 +234,12 @@ impl<'a> FunctionExecutor<'a> {
                 InstructionKind::Yield(_, _) => {
                     unimplemented!("Yield instruction not supported in interpreter")
                 }
+                InstructionKind::FunctionPtr(_, _) => {
+                    unimplemented!("FunctionPtr instruction not supported in interpreter")
+                }
+                InstructionKind::FunctionPtrCall(_, _, _) => {
+                    unimplemented!("FunctionPtrCall instruction not supported in interpreter")
+                }
             }
         }
     }

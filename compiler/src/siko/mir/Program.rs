@@ -188,6 +188,7 @@ impl Program {
                         Type::Union(n) => self.getUnion(n).alignment,
                         Type::Ptr(_) => 8,
                         Type::Array(_, itemSize) => *itemSize / 8,
+                        Type::FunctionPtr(_, _) => 8,
                     };
                     totalAlignment = std::cmp::max(totalAlignment, alignment);
                     offset += size;
@@ -224,6 +225,7 @@ impl Program {
                         Type::Union(n) => self.getUnion(n).alignment,
                         Type::Ptr(_) => 8,
                         Type::Array(_, itemSize) => *itemSize / 8,
+                        Type::FunctionPtr(_, _) => 8,
                     };
                     totalAlignment = std::cmp::max(totalAlignment, alignment);
                     //println!("variant {} size {} alignment {}", v.name, size, alignment);
@@ -257,6 +259,7 @@ impl Program {
             Type::Union(n) => self.getUnion(n).size,
             Type::Ptr(_) => 8,
             Type::Array(item, size) => self.getTypesize(item) * *size,
+            Type::FunctionPtr(_, _) => 8,
         }
     }
 }

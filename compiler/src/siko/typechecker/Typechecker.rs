@@ -235,8 +235,8 @@ impl<'a> Typechecker<'a> {
     }
 
     pub fn run(&mut self) -> Vec<Function> {
-        //println!("Typechecking function {}", self.f.name);
-        //println!(" {} ", self.f);
+        // println!("Typechecking function {}", self.f.name);
+        // println!(" {} ", self.f);
         let initializeRunner = self.runner.child("initialize");
         initializeRunner.run(|| self.initialize());
         //self.dump(self.f);
@@ -396,6 +396,12 @@ impl<'a> Typechecker<'a> {
                         }
                         InstructionKind::Yield(v, _) => {
                             self.initializeVar(v);
+                        }
+                        InstructionKind::FunctionPtr(var, _) => {
+                            self.initializeVar(var);
+                        }
+                        InstructionKind::FunctionPtrCall(var, _, _) => {
+                            self.initializeVar(var);
                         }
                     }
                 }
@@ -696,10 +702,19 @@ impl<'a> Typechecker<'a> {
                 self.handleMethodCall(&instruction, builder, dest, receiver, methodName, args, runner);
             }
             InstructionKind::DynamicFunctionCall(dest, closure, args) => {
-                let argTypes = args.iter().map(|arg| arg.getType()).collect::<Vec<_>>();
-                let destType = dest.getType();
-                let closureType = Type::Function(argTypes, Box::new(destType));
-                self.unifier.unifyVar(closure, closureType);
+                let closureType = closure.getType();
+                let closureType = self.unifier.apply(closureType);
+                if closureType.isFunctionPtr() {
+                    let (_, resultType) = closureType.splitFnPtrType().expect("Not a function ptr");
+                    self.unifier.unifyVar(dest, resultType);
+                    let kind = InstructionKind::FunctionPtrCall(dest.clone(), closure.clone(), args.clone());
+                    builder.replaceInstruction(kind, instruction.location.clone());
+                } else {
+                    let argTypes = args.iter().map(|arg| arg.getType()).collect::<Vec<_>>();
+                    let destType = dest.getType();
+                    let closureType = Type::Function(argTypes, Box::new(destType));
+                    self.unifier.unifyVar(closure, closureType);
+                }
             }
             InstructionKind::Bind(name, rhs, _) => {
                 self.unifier.unifyVars(name, rhs);
@@ -1035,6 +1050,35 @@ impl<'a> Typechecker<'a> {
                     self.unifier.unifyVar(resumeValue, Type::getUnitType());
                 } else {
                     TypecheckerError::YieldOutsideCoroutine(self.f.name.toString(), instruction.location.clone())
+                        .report(self.ctx);
+                }
+            }
+            InstructionKind::FunctionPtr(var, name) => {
+                let function = self.program.getFunction(name).expect("Function not found");
+                let (args, res) = function.getType().splitFnType().expect("Not a function type");
+                let fnPtrTy = Type::FunctionPtr(args.clone(), Box::new(res.clone()));
+                self.unifier.unifyVar(var, fnPtrTy);
+            }
+            InstructionKind::FunctionPtrCall(dest, closure, args) => {
+                let closureType = closure.getType();
+                let closureType = self.unifier.apply(closureType);
+                if closureType.isFunctionPtr() {
+                    let (argTypes, resultType) = closureType.splitFnPtrType().expect("Not a function ptr");
+                    self.unifier.unifyVar(dest, resultType);
+                    if argTypes.len() != args.len() {
+                        TypecheckerError::ArgCountMismatch(
+                            argTypes.len() as u32,
+                            args.len() as u32,
+                            instruction.location.clone(),
+                        )
+                        .report(self.ctx);
+                    } else {
+                        for (index, arg) in args.iter().enumerate() {
+                            self.unifier.unifyVar(arg, argTypes[index].clone());
+                        }
+                    }
+                } else {
+                    TypecheckerError::NotAFunctionPtr(closureType.to_string(), instruction.location.clone())
                         .report(self.ctx);
                 }
             }

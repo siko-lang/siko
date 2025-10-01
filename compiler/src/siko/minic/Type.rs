@@ -13,6 +13,7 @@ pub enum Type {
     Struct(String),
     Ptr(Box<Type>),
     Array(Box<Type>, u32),
+    FunctionPtr(Vec<Type>, Box<Type>),
 }
 
 impl Type {

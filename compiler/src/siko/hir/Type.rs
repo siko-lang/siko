@@ -32,6 +32,7 @@ pub enum Type {
     Named(QualifiedName, Vec<Type>),
     Tuple(Vec<Type>),
     Function(Vec<Type>, Box<Type>),
+    FunctionPtr(Vec<Type>, Box<Type>),
     Var(TypeVar),
     Reference(Box<Type>),
     Ptr(Box<Type>),
@@ -73,6 +74,13 @@ impl Type {
         }
     }
 
+    pub fn splitFnPtrType(self) -> Option<(Vec<Type>, Type)> {
+        match self {
+            Type::FunctionPtr(args, result) => Some((args, *result)),
+            _ => None,
+        }
+    }
+
     pub fn unpackCoroutine(self) -> Option<(Type, Type)> {
         match self {
             Type::Coroutine(yieldTy, retTy) => Some((*yieldTy, *retTy)),
@@ -93,6 +101,12 @@ impl Type {
                 }
             }
             Type::Function(args, result) => {
+                for arg in args {
+                    vars = arg.collectVars(vars);
+                }
+                vars = result.collectVars(vars);
+            }
+            Type::FunctionPtr(args, result) => {
                 for arg in args {
                     vars = arg.collectVars(vars);
                 }
@@ -133,6 +147,12 @@ impl Type {
                 }
             }
             Type::Function(args, result) => {
+                for arg in args {
+                    vars = arg.collectVarsStable(vars);
+                }
+                vars = result.collectVarsStable(vars);
+            }
+            Type::FunctionPtr(args, result) => {
                 for arg in args {
                     vars = arg.collectVarsStable(vars);
                 }
@@ -314,6 +334,14 @@ impl Type {
                 }
                 return result.isSpecified(fully);
             }
+            Type::FunctionPtr(args, result) => {
+                for arg in args {
+                    if !arg.isSpecified(fully) {
+                        return false;
+                    }
+                }
+                return result.isSpecified(fully);
+            }
             Type::Var(TypeVar::Named(_)) => {
                 return !fully;
             }
@@ -396,6 +424,13 @@ impl Type {
         }
     }
 
+    pub fn isFunctionPtr(&self) -> bool {
+        match &self {
+            Type::FunctionPtr(_, _) => true,
+            _ => false,
+        }
+    }
+
     pub fn makeSingleRef(self) -> Type {
         match self {
             Type::Reference(inner) => {
@@ -472,6 +507,10 @@ impl Display for Type {
             Type::Function(args, result) => {
                 let args: Vec<String> = args.iter().map(|t| format!("{}", t)).collect();
                 write!(f, "fn({}) -> {}", args.join(", "), result)
+            }
+            Type::FunctionPtr(args, result) => {
+                let args: Vec<String> = args.iter().map(|t| format!("{}", t)).collect();
+                write!(f, "fn*({}) -> {}", args.join(", "), result)
             }
             Type::Var(v) => write!(f, "{}", v),
             Type::Reference(ty) => write!(f, "&{}", ty),

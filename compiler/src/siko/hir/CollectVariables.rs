@@ -176,6 +176,14 @@ impl CollectVariables for InstructionKind {
                 v.collectVariables(vars);
                 a.collectVariables(vars);
             }
+            InstructionKind::FunctionPtr(v, _) => {
+                v.collectVariables(vars);
+            }
+            InstructionKind::FunctionPtrCall(v, f, args) => {
+                v.collectVariables(vars);
+                f.collectVariables(vars);
+                args.collectVariables(vars);
+            }
         }
     }
 }

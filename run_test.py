@@ -66,7 +66,7 @@ def compileSiko(currentDir, files):
     else:
         sanitize = ["--sanitize"]
 
-    args = ["./siko", "build"]
+    args = ["./siko", "build", "--keep-c-source"]
     args = args + sanitize + ["-o", bin_output_path] + files
     start_time = time.time()
     r = subprocess.run(args)

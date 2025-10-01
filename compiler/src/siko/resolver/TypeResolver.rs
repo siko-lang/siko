@@ -70,6 +70,13 @@ impl<'a> TypeResolver<'a> {
                 }
                 IrType::Function(irArgs, Box::new(self.resolveType(result)))
             }
+            Type::FunctionPtr(args, result) => {
+                let mut irArgs = Vec::new();
+                for arg in args {
+                    irArgs.push(self.resolveType(arg));
+                }
+                IrType::FunctionPtr(irArgs, Box::new(self.resolveType(result)))
+            }
             Type::Reference(ty) => self.resolveType(ty).asRef(),
             Type::Ptr(ty) => IrType::Ptr(Box::new(self.resolveType(ty))),
             Type::SelfType => IrType::SelfType,

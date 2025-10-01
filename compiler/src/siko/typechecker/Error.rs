@@ -16,6 +16,7 @@ pub enum TypecheckerError {
     AmbiguousImplementations(String, String, Vec<String>, Location),
     YieldOutsideCoroutine(String, Location),
     NamedArgumentMismatch(String, String, String, Location),
+    NotAFunctionPtr(String, Location),
 }
 
 impl TypecheckerError {
@@ -115,6 +116,11 @@ impl TypecheckerError {
                     ctx.yellow(expectedName),
                     ctx.yellow(fnName)
                 );
+                let r = Report::new(ctx, slogan, Some(l.clone()));
+                r.print();
+            }
+            TypecheckerError::NotAFunctionPtr(ty, l) => {
+                let slogan = format!("Value is not a function pointer: {}", ctx.yellow(ty));
                 let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }

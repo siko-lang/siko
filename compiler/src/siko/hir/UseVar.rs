@@ -103,6 +103,10 @@ impl UseVar for InstructionKind {
                 InstructionKind::IntegerOp(dest.clone(), v1.useVar(), v2.useVar(), op.clone())
             }
             InstructionKind::Yield(v, a) => InstructionKind::Yield(v.clone(), a.useVar()),
+            InstructionKind::FunctionPtr(v, name) => InstructionKind::FunctionPtr(v.clone(), name.clone()),
+            InstructionKind::FunctionPtrCall(v, f, args) => {
+                InstructionKind::FunctionPtrCall(v.clone(), f.useVar(), args.useVars())
+            }
         }
     }
 }

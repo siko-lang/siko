@@ -360,6 +360,21 @@ impl<'a> Builder<'a> {
                 HirInstructionKind::Yield(_, _) => {
                     unreachable!("Yield in MIR Lowering");
                 }
+                HirInstructionKind::FunctionPtr(dest, name) => {
+                    let dest = self.buildVariable(dest);
+                    block.instructions.push(Instruction::Declare(dest.clone()));
+                    block.instructions.push(Instruction::FunctionPtr(
+                        dest,
+                        self.lowering.nameManager.processName(name),
+                    ));
+                }
+                HirInstructionKind::FunctionPtrCall(dest, f, args) => {
+                    let dest = self.buildVariable(dest);
+                    let f = self.buildVariable(f);
+                    let args = args.iter().map(|v| self.buildVariable(v)).collect();
+                    block.instructions.push(Instruction::Declare(dest.clone()));
+                    block.instructions.push(Instruction::FunctionPtrCall(dest, f, args));
+                }
             }
         }
         Some(block)

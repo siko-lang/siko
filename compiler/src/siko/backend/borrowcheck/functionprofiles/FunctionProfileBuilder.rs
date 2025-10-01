@@ -375,6 +375,8 @@ impl<'a> FunctionProfileBuilder<'a> {
                 InstructionKind::Yield(_, _) => {
                     unreachable!("Yield in borrow checker");
                 }
+                InstructionKind::FunctionPtr(_, _) => {}
+                InstructionKind::FunctionPtrCall(_, _, _) => {}
             }
         }
     }

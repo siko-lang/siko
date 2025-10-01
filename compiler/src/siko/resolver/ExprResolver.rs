@@ -327,6 +327,11 @@ impl<'a> ExprResolver<'a> {
                                 InstructionKind::ReadImplicit(implicitVar.clone(), ImplicitIndex::Unresolved(irName));
                             self.bodyBuilder.current().addInstruction(kind, name.location());
                             return implicitVar;
+                        } else {
+                            let var = self.bodyBuilder.createTempValue(expr.location.clone());
+                            let kind = InstructionKind::FunctionPtr(var.clone(), irName);
+                            self.bodyBuilder.current().addInstruction(kind, name.location());
+                            return var;
                         }
                     }
                     ResolverError::UnknownValue(name.name(), name.location()).report(self.ctx);
@@ -808,7 +813,8 @@ impl<'a> ExprResolver<'a> {
                     .addFunctionCall(irName, irArgs, expr.location.clone());
             }
             SimpleExpr::Value(name) => {
-                if let Some(name) = env.resolve(&name.name()) {
+                if let Some(newName) = env.resolve(&name.name()) {
+                    let name = newName.withLocation(name.location());
                     let args = self.processDynamicCallArgs(irArgs);
                     self.bodyBuilder
                         .current()

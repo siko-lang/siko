@@ -1,5 +1,5 @@
 use core::panic;
-use std::collections::{btree_map::Entry, BTreeMap};
+use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 
 use super::{
     Data::Struct,
@@ -28,6 +28,7 @@ pub struct MinicBuilder<'a> {
     constants: BTreeMap<String, String>,
     refMap: BTreeMap<String, String>,
     nextTmp: u32,
+    fnPointers: BTreeSet<LType>,
 }
 
 impl<'a> MinicBuilder<'a> {
@@ -37,6 +38,7 @@ impl<'a> MinicBuilder<'a> {
             constants: BTreeMap::new(),
             refMap: BTreeMap::new(),
             nextTmp: 0,
+            fnPointers: BTreeSet::new(),
         }
     }
 
@@ -47,7 +49,7 @@ impl<'a> MinicBuilder<'a> {
         }
     }
 
-    fn lowerVar(&self, v: &Variable) -> LVariable {
+    fn lowerVar(&mut self, v: &Variable) -> LVariable {
         let name = self.resolveVar(&v.name);
         LVariable {
             name: format!("{}", name),
@@ -84,10 +86,11 @@ impl<'a> MinicBuilder<'a> {
             });
         }
 
+        program.fnPointerTypes = self.fnPointers.clone();
         program
     }
 
-    fn lowerParam(&self, p: &Param) -> LParam {
+    fn lowerParam(&mut self, p: &Param) -> LParam {
         LParam {
             name: p.name.clone(),
             ty: self.lowerType(&p.ty),
@@ -312,6 +315,16 @@ impl<'a> MinicBuilder<'a> {
                     );
                     minicBlock.instructions.push(minicInstruction);
                 }
+                Instruction::FunctionPtr(var, name) => {
+                    let minicInstruction = LInstruction::FunctionPtr(self.lowerVar(var), name.clone());
+                    minicBlock.instructions.push(minicInstruction);
+                }
+                Instruction::FunctionPtrCall(var, f, args) => {
+                    let minicArgs: Vec<LVariable> = args.iter().map(|a| self.lowerVar(a)).collect();
+                    let minicInstruction =
+                        LInstruction::FunctionPtrCall(self.lowerVar(var), self.lowerVar(f), minicArgs);
+                    minicBlock.instructions.push(minicInstruction);
+                }
             };
         }
         minicBlock
@@ -465,7 +478,7 @@ impl<'a> MinicBuilder<'a> {
         }
     }
 
-    fn lowerStruct(&self, s: &Struct) -> LStruct {
+    fn lowerStruct(&mut self, s: &Struct) -> LStruct {
         let mut fields = Vec::new();
         for f in &s.fields {
             let minicField = LField {
@@ -484,7 +497,7 @@ impl<'a> MinicBuilder<'a> {
         minicStruct
     }
 
-    fn lowerType(&self, ty: &Type) -> LType {
+    fn lowerType(&mut self, ty: &Type) -> LType {
         match ty {
             Type::Void => LType::Void,
             Type::VoidPtr => LType::VoidPtr,
@@ -500,6 +513,13 @@ impl<'a> MinicBuilder<'a> {
             Type::Union(n) => LType::Struct(n.clone()),
             Type::Ptr(t) => LType::Ptr(Box::new(self.lowerType(t))),
             Type::Array(itemTy, size) => LType::Array(Box::new(self.lowerType(itemTy)), *size),
+            Type::FunctionPtr(args, result) => {
+                let args: Vec<LType> = args.iter().map(|t| self.lowerType(t)).collect();
+                let result = Box::new(self.lowerType(result));
+                let fnPtr = LType::FunctionPtr(args, result);
+                self.fnPointers.insert(fnPtr.clone());
+                fnPtr
+            }
         }
     }
 }
