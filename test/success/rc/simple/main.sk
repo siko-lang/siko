@@ -3,6 +3,7 @@ module Main {
 import Rc
 
 struct Foo {
+    value: Int,
 }
 
 instance Drop[Foo] {
@@ -13,22 +14,24 @@ instance Drop[Foo] {
 }
 
 fn foo() -> Rc[Foo] {
-    Rc.new(Foo())
+    Rc.new(Foo(5))
 }
 
 fn main() {
     let rc1 = foo();
-    //assert(rc1.strongCount() == 1);
+    assert(rc1.strongCount() == 1);
     {
         let rc2 = rc1.clone();
-        //assert(rc1.strongCount() == 2);
+        assert(rc1.strongCount() == 2);
         {
             let rc3 = rc2.clone();
-            //assert(rc1.strongCount() == 3);
+            assert(rc1.strongCount() == 3);
         } // rc3 goes out of scope here
-        //assert(rc1.strongCount() == 2);
+        assert(rc1.strongCount() == 2);
     } // rc2 goes out of scope here
-    //assert(rc1.strongCount() == 1);
+    assert(rc1.strongCount() == 1);
+    let v = rc1.get();
+    assert(v.value == 5);
 }
 
 }
