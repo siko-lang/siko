@@ -143,7 +143,10 @@ impl<'a> MinicBuilder<'a> {
                         panic!("MIR: memcpy from pointer to non-pointer {} -> {}", src, dest);
                     }
                     if dest.ty.isPtr() && !src.ty.isPtr() {
-                        panic!("MIR: memcpy from non-pointer to pointer {} -> {}", src, dest);
+                        panic!(
+                            "MIR: memcpy from non-pointer to pointer {} -> {} {} {}",
+                            src, dest, src.ty, dest.ty
+                        );
                     }
                     let minicInstruction = LInstruction::Memcpy(self.lowerVar(src), self.lowerVar(dest));
                     minicBlock.instructions.push(minicInstruction);

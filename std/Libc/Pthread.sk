@@ -1,0 +1,27 @@
+module Libc.Pthread {
+
+import Array
+
+pub struct PthreadAttr {
+    _priv1: I64,
+    _priv2: Array[U8, 56],
+
+    @unsafe
+    pub fn new() -> PthreadAttr {
+        PthreadAttr(_priv1: 0.toI64(), _priv2: Array.uninitialized())
+    }
+}
+
+pub struct PThread {
+    handle: U64,
+
+    pub fn new() -> PThread {
+        PThread(handle: 0.toU64())
+    }
+}
+
+pub fn pthread_attr_init(attr: *PthreadAttr) -> I32 = extern "C"
+pub fn pthread_create(thread: *PThread, attr: *PthreadAttr, startRoutine: fn*(void*) -> void*, arg: void*) -> I32 = extern "C"
+pub fn pthread_join(thread: PThread, retval: *void*) -> I32 = extern "C"
+
+}

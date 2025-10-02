@@ -1,0 +1,33 @@
+module Sync.Thread {
+
+import Libc.Pthread
+import NativePtr
+
+struct Arg {
+    f: fn() -> ()
+}
+
+@unsafe
+fn entrypoint(arg: void*) -> void* {
+    let argPtr: *Arg = transmute(arg);
+    let f = argPtr.f;
+    NativePtr.deallocate(argPtr);
+    f();
+    let nil: *void = null();
+    return nil;
+}
+
+@safe
+pub fn spawn(f: fn() -> ()) {
+    let thread = PThread.new();
+    let attr = PthreadAttr.new();
+    let arg = Arg(f: f);
+    let argPtr: *Arg = NativePtr.allocate();
+    *argPtr = arg;
+    let attrPtr: *PthreadAttr = NativePtr.toPtr(&attr);
+    pthread_attr_init(attrPtr);
+    let threadPtr: *PThread = NativePtr.toPtr(&thread);
+    pthread_create(threadPtr, attrPtr, entrypoint, argPtr);
+}
+
+}

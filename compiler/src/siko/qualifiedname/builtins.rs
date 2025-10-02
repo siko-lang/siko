@@ -54,6 +54,10 @@ pub fn getI32TypeName() -> QualifiedName {
     build("I32", "I32")
 }
 
+pub fn getI64TypeName() -> QualifiedName {
+    build("I64", "I64")
+}
+
 pub fn getStringTypeName() -> QualifiedName {
     build("String", "String")
 }
