@@ -64,6 +64,7 @@ pub fn process(ctx: &ReportContext, runner: &mut Runner, program: Program) -> Pr
     });
     //println!("after coroutine lowering\n{}", program);
     let program = runner.child("tuple_removal").run(|| removeTuples(&program));
+    //println!("after tuple removal\n{}", program);
     let borrowCheckRunner = runner.child("borrow_check");
     borrowCheckRunner
         .clone()

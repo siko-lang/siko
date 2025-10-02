@@ -43,6 +43,7 @@ impl<'a> ClosureSeparator<'a> {
     }
 
     pub fn process(&mut self) -> Function {
+        self.closureBody.varAllocator = self.function.body.as_ref().unwrap().varAllocator.copy();
         self.processBlock(self.closureEntry);
         let mut params = Vec::new();
         let mut argIndex = 0;
