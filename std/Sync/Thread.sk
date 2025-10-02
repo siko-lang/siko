@@ -7,6 +7,19 @@ struct Arg {
     f: fn() -> ()
 }
 
+pub struct JoinHandle {
+    thread: PThread,
+
+    pub fn new(thread: PThread) -> JoinHandle {
+        JoinHandle(thread: thread)
+    }
+
+    @safe
+    pub fn join(self) {
+        pthread_join(self.thread, null());
+    }
+}
+
 @unsafe
 fn entrypoint(arg: void*) -> void* {
     let argPtr: *Arg = transmute(arg);
@@ -18,7 +31,7 @@ fn entrypoint(arg: void*) -> void* {
 }
 
 @safe
-pub fn spawn(f: fn() -> ()) {
+pub fn spawn(f: fn() -> ()) -> JoinHandle {
     let thread = PThread.new();
     let attr = PthreadAttr.new();
     let arg = Arg(f: f);
@@ -28,6 +41,7 @@ pub fn spawn(f: fn() -> ()) {
     pthread_attr_init(attrPtr);
     let threadPtr: *PThread = NativePtr.toPtr(&thread);
     pthread_create(threadPtr, attrPtr, entrypoint, argPtr);
+    JoinHandle.new(thread)
 }
 
 }
