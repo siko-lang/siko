@@ -325,6 +325,14 @@ impl<'a> TypeVerifier<'a> {
                     self.checkVariable(arg);
                 }
             }
+            InstructionKind::Sizeof(v, t) => {
+                self.checkVariable(v);
+                self.checkVariable(t);
+            }
+            InstructionKind::Transmute(v, t) => {
+                self.checkVariable(v);
+                self.checkVariable(t);
+            }
         }
     }
 

@@ -124,6 +124,8 @@ impl<'a> SafetyChecker<'a> {
             InstructionKind::Yield(_, _) => true,
             InstructionKind::FunctionPtr(_, _) => false,
             InstructionKind::FunctionPtrCall(_, _, _) => false,
+            InstructionKind::Sizeof(_, _) => false,
+            InstructionKind::Transmute(_, _) => false,
         }
     }
 }

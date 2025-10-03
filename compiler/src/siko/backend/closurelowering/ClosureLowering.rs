@@ -404,6 +404,14 @@ impl ClosureLowering for InstructionKind {
                 c.lower(closureStore);
                 a.lower(closureStore);
             }
+            InstructionKind::Sizeof(v, t) => {
+                v.lower(closureStore);
+                t.lower(closureStore);
+            }
+            InstructionKind::Transmute(v, t) => {
+                v.lower(closureStore);
+                t.lower(closureStore);
+            }
         }
     }
 }

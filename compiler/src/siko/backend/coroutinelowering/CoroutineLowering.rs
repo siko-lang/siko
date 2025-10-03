@@ -316,6 +316,14 @@ impl CoroutineLowering for InstructionKind {
                 c.lower();
                 a.lower();
             }
+            InstructionKind::Sizeof(v, t) => {
+                v.lower();
+                t.lower();
+            }
+            InstructionKind::Transmute(v, t) => {
+                v.lower();
+                t.lower();
+            }
         }
     }
 }

@@ -335,6 +335,8 @@ impl RemoveTuples for InstructionKind {
             InstructionKind::FunctionPtrCall(v, f, args) => {
                 InstructionKind::FunctionPtrCall(v.removeTuples(ctx), f.removeTuples(ctx), args.removeTuples(ctx))
             }
+            InstructionKind::Sizeof(v, t) => InstructionKind::Sizeof(v.removeTuples(ctx), t.removeTuples(ctx)),
+            InstructionKind::Transmute(v, t) => InstructionKind::Transmute(v.removeTuples(ctx), t.removeTuples(ctx)),
         }
     }
 }

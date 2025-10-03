@@ -86,10 +86,6 @@ pub fn getNativePtrTransmuteName() -> QualifiedName {
     build("NativePtr", "transmute")
 }
 
-pub fn getNativePtrCastName() -> QualifiedName {
-    build("NativePtr", "cast")
-}
-
 pub fn getNativePtrCloneName() -> QualifiedName {
     build("NativePtr", "clone")
 }

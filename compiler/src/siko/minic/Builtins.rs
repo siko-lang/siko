@@ -6,10 +6,7 @@ use std::{
 use crate::siko::{
     minic::{Generator::MiniCGenerator, Program::Program, Type::Type},
     qualifiedname::{
-        builtins::{
-            getArrayBaseName, getArrayLenName, getArrayUninitializedName, getNativePtrCastName, getNativePtrSizeOfName,
-            getNativePtrTransmuteName,
-        },
+        builtins::{getArrayBaseName, getArrayLenName, getArrayUninitializedName},
         QualifiedName,
     },
 };
@@ -68,45 +65,6 @@ pub fn dumpBuiltinFunction(
             args.join(", ")
         )?;
         writeln!(buf, "    return self->field0;")?;
-        writeln!(buf, "}}\n")?;
-        return Ok(true);
-    }
-
-    if isFn(f, &getNativePtrSizeOfName()) {
-        writeln!(
-            buf,
-            "{} {}({}) {{",
-            generator.getTypeName(&f.result),
-            f.name,
-            args.join(", ")
-        )?;
-        writeln!(buf, "    return sizeof(*addr);")?;
-        writeln!(buf, "}}\n")?;
-        return Ok(true);
-    }
-
-    if isFn(f, &getNativePtrCastName()) {
-        writeln!(
-            buf,
-            "{} {}({}) {{",
-            generator.getTypeName(&f.result),
-            f.name,
-            args.join(", ")
-        )?;
-        writeln!(buf, "    return ({} *)addr;", generator.getTypeName(&f.result))?;
-        writeln!(buf, "}}\n")?;
-        return Ok(true);
-    }
-
-    if isFn(f, &getNativePtrTransmuteName()) {
-        writeln!(
-            buf,
-            "{} {}({}) {{",
-            generator.getTypeName(&f.result),
-            f.name,
-            args.join(", ")
-        )?;
-        writeln!(buf, "    return ({})v;", generator.getTypeName(&f.result))?;
         writeln!(buf, "}}\n")?;
         return Ok(true);
     }

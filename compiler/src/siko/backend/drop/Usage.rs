@@ -185,5 +185,7 @@ pub fn getUsageInfo(kind: InstructionKind, referenceStore: &ReferenceStore) -> U
             usages.extend(args.iter().map(|arg| varToUsage(arg)));
             UsageInfo::with(usages, Some(dest.toPath()))
         }
+        InstructionKind::Sizeof(dest, var) => UsageInfo::with(vec![varToUsage(&var)], Some(dest.toPath())),
+        InstructionKind::Transmute(dest, var) => UsageInfo::with(vec![varToUsage(&var)], Some(dest.toPath())),
     }
 }

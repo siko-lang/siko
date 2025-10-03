@@ -207,6 +207,8 @@ pub enum Instruction {
     IntegerOp(Variable, Variable, Variable, IntegerOp),
     FunctionPtr(Variable, String),
     FunctionPtrCall(Variable, Variable, Vec<Variable>),
+    Sizeof(Variable, Variable),
+    Transmute(Variable, Variable),
 }
 
 impl fmt::Display for Instruction {
@@ -294,6 +296,12 @@ impl fmt::Display for Instruction {
                     fnptr,
                     args.iter().map(|arg| format!("{}", arg)).collect::<Vec<_>>().join(", ")
                 )
+            }
+            Instruction::Sizeof(var, ty) => {
+                write!(f, "Sizeof({}, {})", var, ty)
+            }
+            Instruction::Transmute(var, ty) => {
+                write!(f, "Transmute({}, {})", var, ty)
             }
         }
     }

@@ -297,6 +297,8 @@ impl Apply for InstructionKind {
             InstructionKind::FunctionPtrCall(v, f, args) => {
                 InstructionKind::FunctionPtrCall(v.apply(sub), f.apply(sub), args.apply(sub))
             }
+            InstructionKind::Sizeof(v, t) => InstructionKind::Sizeof(v.apply(sub), t.apply(sub)),
+            InstructionKind::Transmute(v, t) => InstructionKind::Transmute(v.apply(sub), t.apply(sub)),
         }
     }
 }

@@ -33,7 +33,8 @@ use crate::siko::{
         builtins::{
             getImplicitConvertFnName, getIntAddName, getIntBitAndName, getIntBitOrName, getIntBitXorName,
             getIntDivName, getIntEqName, getIntLessThanName, getIntModName, getIntMulName, getIntShiftLeftName,
-            getIntShiftRightName, getIntSubName, getNativePtrCloneName, getNativePtrIsNullName, IntKind,
+            getIntShiftRightName, getIntSubName, getNativePtrCloneName, getNativePtrIsNullName, getNativePtrSizeOfName,
+            getNativePtrTransmuteName, IntKind,
         },
         QualifiedName,
     },
@@ -161,6 +162,7 @@ pub struct Typechecker<'a> {
     fnCallResolver: FunctionCallResolver<'a>,
     closureTypes: BTreeMap<BlockId, ClosureTypeInfo>,
     integerOps: BTreeMap<QualifiedName, IntegerOp>,
+    builtins: BTreeMap<QualifiedName, fn(Variable, Variable) -> InstructionKind>,
     runner: Runner,
 }
 
@@ -211,6 +213,9 @@ impl<'a> Typechecker<'a> {
             integerOps.insert(getIntBitOrName(kind), IntegerOp::BitOr);
             integerOps.insert(getIntBitXorName(kind), IntegerOp::BitXor);
         }
+        let mut builtins: BTreeMap<QualifiedName, fn(Variable, Variable) -> InstructionKind> = BTreeMap::new();
+        builtins.insert(getNativePtrSizeOfName(), InstructionKind::Sizeof);
+        builtins.insert(getNativePtrTransmuteName(), InstructionKind::Transmute);
         Typechecker {
             ctx: ctx,
             program: program,
@@ -230,6 +235,7 @@ impl<'a> Typechecker<'a> {
             unifier: unifier,
             closureTypes: BTreeMap::new(),
             integerOps,
+            builtins,
             runner,
         }
     }
@@ -401,6 +407,12 @@ impl<'a> Typechecker<'a> {
                             self.initializeVar(var);
                         }
                         InstructionKind::FunctionPtrCall(var, _, _) => {
+                            self.initializeVar(var);
+                        }
+                        InstructionKind::Sizeof(var, _) => {
+                            self.initializeVar(var);
+                        }
+                        InstructionKind::Transmute(var, _) => {
                             self.initializeVar(var);
                         }
                     }
@@ -1082,6 +1094,8 @@ impl<'a> Typechecker<'a> {
                         .report(self.ctx);
                 }
             }
+            InstructionKind::Sizeof(_, _) => {}
+            InstructionKind::Transmute(_, _) => {}
         }
     }
 
@@ -1636,6 +1650,13 @@ impl<'a> Typechecker<'a> {
         if let Some(op) = self.integerOps.get(&info.name) {
             let args = info.args.getVariables();
             let kind = InstructionKind::IntegerOp(dest.clone(), args[0].clone(), args[1].clone(), op.clone());
+            builder.replaceInstruction(kind, location.clone());
+            return;
+        }
+        if let Some(constructor) = self.builtins.get(&info.name) {
+            let args = info.args.getVariables();
+            assert_eq!(args.len(), 1, "Builtin function with unexpected number of args");
+            let kind = constructor(dest.clone(), args[0].clone());
             builder.replaceInstruction(kind, location.clone());
             return;
         }

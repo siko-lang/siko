@@ -570,6 +570,8 @@ pub enum InstructionKind {
     Yield(Variable, Variable),
     FunctionPtr(Variable, QualifiedName),
     FunctionPtrCall(Variable, Variable, Vec<Variable>),
+    Sizeof(Variable, Variable),
+    Transmute(Variable, Variable),
 }
 
 impl Display for InstructionKind {
@@ -628,6 +630,8 @@ impl InstructionKind {
             InstructionKind::Yield(v, _) => Some(v.clone()),
             InstructionKind::FunctionPtr(v, _) => Some(v.clone()),
             InstructionKind::FunctionPtrCall(v, _, _) => Some(v.clone()),
+            InstructionKind::Sizeof(v, _) => Some(v.clone()),
+            InstructionKind::Transmute(v, _) => Some(v.clone()),
         }
     }
 
@@ -765,6 +769,12 @@ impl InstructionKind {
             InstructionKind::FunctionPtrCall(v, f, args) => {
                 format!("{} = fnptrcall({}, {:?})", v, f, args)
             }
+            InstructionKind::Sizeof(v, t) => {
+                format!("{} = sizeof({})", v, t)
+            }
+            InstructionKind::Transmute(v, t) => {
+                format!("{} = transmute({})", v, t)
+            }
         }
     }
 
@@ -807,6 +817,8 @@ impl InstructionKind {
             InstructionKind::Yield(_, _) => "yield",
             InstructionKind::FunctionPtr(_, _) => "function_ptr",
             InstructionKind::FunctionPtrCall(_, _, _) => "function_ptr_call",
+            InstructionKind::Sizeof(_, _) => "sizeof",
+            InstructionKind::Transmute(_, _) => "transmute",
         }
     }
 }

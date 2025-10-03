@@ -212,6 +212,8 @@ impl VariableCopy for InstructionKind {
             InstructionKind::FunctionPtrCall(v, f, args) => {
                 InstructionKind::FunctionPtrCall(v.copy(map), f.copy(map), args.copy(map))
             }
+            InstructionKind::Sizeof(v, t) => InstructionKind::Sizeof(v.copy(map), t.copy(map)),
+            InstructionKind::Transmute(v, t) => InstructionKind::Transmute(v.copy(map), t.copy(map)),
         }
     }
 }

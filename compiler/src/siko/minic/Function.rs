@@ -106,4 +106,6 @@ pub enum Instruction {
     IntegerOp(Variable, Variable, Variable, IntegerOp),
     FunctionPtr(Variable, String),
     FunctionPtrCall(Variable, Variable, Vec<Variable>),
+    Sizeof(Variable, Variable),
+    Transmute(Variable, Variable),
 }

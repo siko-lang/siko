@@ -107,6 +107,8 @@ impl UseVar for InstructionKind {
             InstructionKind::FunctionPtrCall(v, f, args) => {
                 InstructionKind::FunctionPtrCall(v.clone(), f.useVar(), args.useVars())
             }
+            InstructionKind::Sizeof(v, t) => InstructionKind::Sizeof(v.clone(), t.useVar()),
+            InstructionKind::Transmute(v, t) => InstructionKind::Transmute(v.clone(), t.useVar()),
         }
     }
 }

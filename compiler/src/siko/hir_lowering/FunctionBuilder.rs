@@ -375,6 +375,18 @@ impl<'a> Builder<'a> {
                     block.instructions.push(Instruction::Declare(dest.clone()));
                     block.instructions.push(Instruction::FunctionPtrCall(dest, f, args));
                 }
+                HirInstructionKind::Sizeof(dest, var) => {
+                    let dest = self.buildVariable(dest);
+                    let var = self.buildVariable(var);
+                    block.instructions.push(Instruction::Declare(dest.clone()));
+                    block.instructions.push(Instruction::Sizeof(dest, var));
+                }
+                HirInstructionKind::Transmute(dest, var) => {
+                    let dest = self.buildVariable(dest);
+                    let var = self.buildVariable(var);
+                    block.instructions.push(Instruction::Declare(dest.clone()));
+                    block.instructions.push(Instruction::Transmute(dest, var));
+                }
             }
         }
         Some(block)

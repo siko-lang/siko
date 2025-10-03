@@ -239,6 +239,16 @@ impl ReplaceVar for InstructionKind {
                 let new_args = args.replaceVar(from, to);
                 InstructionKind::FunctionPtrCall(new_v, new_f, new_args)
             }
+            InstructionKind::Sizeof(v, t) => {
+                let new_v = v.replaceVar(&from, to.clone());
+                let new_t = t.replaceVar(&from, to);
+                InstructionKind::Sizeof(new_v, new_t)
+            }
+            InstructionKind::Transmute(v, t) => {
+                let new_v = v.replaceVar(&from, to.clone());
+                let new_t = t.replaceVar(&from, to);
+                InstructionKind::Transmute(new_v, new_t)
+            }
         }
     }
 }

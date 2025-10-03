@@ -229,6 +229,12 @@ impl MiniCGenerator {
                 }
                 format!("{} = {}({});", var.name, f.name, argRefs.join(", "))
             }
+            Instruction::Sizeof(var, ty) => {
+                format!("{} = sizeof(*{});", var.name, ty.name)
+            }
+            Instruction::Transmute(var, ty) => {
+                format!("{} = ({}){};", var.name, self.getTypeName(&var.ty), ty.name)
+            }
         };
         Some(s)
     }
@@ -299,6 +305,14 @@ impl MiniCGenerator {
                         for arg in args {
                             localVars.insert(arg.clone());
                         }
+                    }
+                    Instruction::Sizeof(dest, ty) => {
+                        localVars.insert(dest.clone());
+                        localVars.insert(ty.clone());
+                    }
+                    Instruction::Transmute(dest, ty) => {
+                        localVars.insert(dest.clone());
+                        localVars.insert(ty.clone());
                     }
                 }
             }

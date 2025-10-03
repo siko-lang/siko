@@ -328,6 +328,14 @@ impl<'a> MinicBuilder<'a> {
                         LInstruction::FunctionPtrCall(self.lowerVar(var), self.lowerVar(f), minicArgs);
                     minicBlock.instructions.push(minicInstruction);
                 }
+                Instruction::Sizeof(var, ty) => {
+                    let minicInstruction = LInstruction::Sizeof(self.lowerVar(var), self.lowerVar(ty));
+                    minicBlock.instructions.push(minicInstruction);
+                }
+                Instruction::Transmute(var, ty) => {
+                    let minicInstruction = LInstruction::Transmute(self.lowerVar(var), self.lowerVar(ty));
+                    minicBlock.instructions.push(minicInstruction);
+                }
             };
         }
         minicBlock

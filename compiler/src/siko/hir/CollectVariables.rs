@@ -184,6 +184,14 @@ impl CollectVariables for InstructionKind {
                 f.collectVariables(vars);
                 args.collectVariables(vars);
             }
+            InstructionKind::Sizeof(v, t) => {
+                v.collectVariables(vars);
+                t.collectVariables(vars);
+            }
+            InstructionKind::Transmute(v, t) => {
+                v.collectVariables(vars);
+                t.collectVariables(vars);
+            }
         }
     }
 }

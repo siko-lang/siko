@@ -240,6 +240,12 @@ impl<'a> FunctionExecutor<'a> {
                 InstructionKind::FunctionPtrCall(_, _, _) => {
                     unimplemented!("FunctionPtrCall instruction not supported in interpreter")
                 }
+                InstructionKind::Sizeof(_, _) => {
+                    unimplemented!("Sizeof instruction not supported in interpreter")
+                }
+                InstructionKind::Transmute(_, _) => {
+                    unimplemented!("Transmute instruction not supported in interpreter")
+                }
             }
         }
     }

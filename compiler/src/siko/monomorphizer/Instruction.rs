@@ -524,5 +524,9 @@ pub fn processInstructionKind(
         InstructionKind::FunctionPtrCall(v, f, args) => {
             InstructionKind::FunctionPtrCall(v.process(sub, mono), f.process(sub, mono), args.process(sub, mono))
         }
+        InstructionKind::Sizeof(var, ty) => InstructionKind::Sizeof(var.process(sub, mono), ty.process(sub, mono)),
+        InstructionKind::Transmute(var, ty) => {
+            InstructionKind::Transmute(var.process(sub, mono), ty.process(sub, mono))
+        }
     }
 }
