@@ -10,7 +10,7 @@ use crate::{
         resolver::Resolver::Resolver,
         typechecker::Typechecker::typecheck,
         util::{
-            Config::{BuildPhase, Config, OptimizationLevel},
+            Config::{BuildPhase, Config, OptimizationLevel, TargetOS},
             Runner::Runner,
         },
     },
@@ -73,6 +73,17 @@ impl Compiler {
         match std::env::var("SIKO_STD_PATH") {
             Ok(val) => {
                 stdLibPath = val.into();
+            }
+            Err(_) => {}
+        }
+        match std::env::var("SIKO_TARGET_OS") {
+            Ok(val) => {
+                self.config.targetOS = match val.as_str() {
+                    "linux" => TargetOS::Linux,
+                    "macos" => TargetOS::MacOS,
+                    "windows" => TargetOS::Windows,
+                    _ => fatalError("Unknown target OS"),
+                };
             }
             Err(_) => {}
         }
@@ -153,7 +164,23 @@ impl Compiler {
             i += 1;
         }
         if !nostd {
-            self.config.externalFiles.push(format!("{}", stdLibPath.display()));
+            let stdCommon = stdLibPath.join("Common");
+            let stdArch;
+            match self.config.targetOS {
+                TargetOS::Linux => {
+                    stdArch = stdLibPath.join("Arch/Linux");
+                }
+                TargetOS::MacOS => {
+                    stdArch = stdLibPath.join("Arch/Darwin");
+                }
+                TargetOS::Windows => {
+                    stdArch = stdLibPath.join("Arch/Windows");
+                }
+            }
+            self.config.externalFiles.push(format!("{}", stdCommon.display()));
+            self.config.externalFiles.push(format!("{}", stdArch.display()));
+            //println!("Using standard library path: {}", stdLibPath.display());
+            //println!("Using architecture path: {}", stdArch.display());
         }
         true
     }

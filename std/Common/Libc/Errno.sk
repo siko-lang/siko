@@ -1,5 +1,6 @@
 module Libc.Errno {
 
+import Arch.Errno
 import Convert
 
 @derive(Discriminator, FromInt, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)
@@ -112,12 +113,8 @@ pub enum Errno {
     }
 }
 
-fn __error() -> *I32 = extern "C"
-
-@safe
 pub fn getErrno() -> Errno {
-    let errPtr: *I32 = __error();
-    let code: I32 = *errPtr;
+    let code = Arch.Errno.getErrno();
     let errno: Option[Errno] = tryFrom(code.toInt());
     errno.expect("Failed parse errno code ${code}")
 }

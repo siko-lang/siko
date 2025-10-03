@@ -11,6 +11,13 @@ pub enum OptimizationLevel {
     O3,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TargetOS {
+    Linux,
+    MacOS,
+    Windows,
+}
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub testOnly: bool,
@@ -22,6 +29,7 @@ pub struct Config {
     pub externalFiles: Vec<String>,
     pub outputFile: String,
     pub keepCSource: bool,
+    pub targetOS: TargetOS,
 }
 
 impl Config {
@@ -36,6 +44,7 @@ impl Config {
             externalFiles: Vec::new(),
             outputFile: format!("siko_main"),
             keepCSource: false,
+            targetOS: TargetOS::Linux,
         }
     }
 }
