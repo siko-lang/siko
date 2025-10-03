@@ -6,8 +6,8 @@ use crate::siko::{
         Instruction::SyntaxBlockId,
         Type::{formatTypesBracket, Type},
     },
-    location::Report::{Report, ReportContext},
-    monomorphizer::Handler::HandlerResolution,
+    location::Report::ReportContext,
+    monomorphizer::{Error::MonomorphizerError, Handler::HandlerResolution},
     qualifiedname::QualifiedName,
 };
 
@@ -83,14 +83,12 @@ impl HandlerResolutionStore {
         for (_, resolution) in &self.resolutions {
             for (name, handler) in &resolution.handlers {
                 if !handler.isUsed() && !handler.optional {
-                    let slogan = format!(
-                        "Unused effect handler {} for {}",
-                        format!("{}", ctx.yellow(&handler.name.toString())),
-                        format!("{}", ctx.yellow(&name.toString())),
-                    );
-                    let r = Report::new(ctx, slogan, Some(handler.location.clone()));
-                    r.print();
-                    std::process::exit(1);
+                    MonomorphizerError::UnusedEffectHandler {
+                        effect: name.clone(),
+                        handler: handler.name.clone(),
+                        location: handler.location.clone(),
+                    }
+                    .report(ctx);
                 }
             }
         }

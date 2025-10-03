@@ -11,9 +11,9 @@ use crate::siko::{
         Utils::createResolvers,
         Variable::Variable,
     },
-    location::Report::Report,
     monomorphizer::{
         Context::HandlerResolutionStore,
+        Error::MonomorphizerError,
         Handler::HandlerResolution,
         Monomorphizer::Monomorphizer,
         Queue::Key,
@@ -74,15 +74,7 @@ pub fn processInstruction(
             // );
             let target_fn = match mono.program.getFunction(&info.name) {
                 Some(f) => f,
-                None => {
-                    let slogan = format!(
-                        "Function {} not found during monomorphization, maybe std is missing?",
-                        format!("{}", mono.ctx.yellow(&info.name.toString()))
-                    );
-                    let r = Report::new(mono.ctx, slogan, None);
-                    r.print();
-                    std::process::exit(1);
-                }
+                None => MonomorphizerError::FunctionNotFound(info.name.clone()).report(mono.ctx),
             };
             //println!("Target function: {}", target_fn.kind);
             let (target_fn, resolution, contextSyntaxBlockId) = match &target_fn.kind {
@@ -91,13 +83,8 @@ pub fn processInstruction(
                     let (handlerResolution, contextSyntaxBlockId) = handlerResolutionStore.get(syntaxBlockId);
                     let handler = handlerResolution.getEffectHandler(&info.name);
                     if handler.is_none() {
-                        let slogan = format!(
-                            "Effect method not present in current effect context: {}",
-                            format!("{}", mono.ctx.yellow(&info.name.toString()))
-                        );
-                        let r = Report::new(mono.ctx, slogan, Some(input.location.clone()));
-                        r.print();
-                        std::process::exit(1);
+                        MonomorphizerError::EffectHandlerMissing(info.name.clone(), input.location.clone())
+                            .report(mono.ctx);
                     }
                     let handler = handler.unwrap();
                     handler.markUsed();
@@ -295,14 +282,7 @@ pub fn processInstruction(
                     ImplicitIndex::Resolved(handler.index.clone(), id),
                 )
             } else {
-                // report error
-                let slogan = format!(
-                    "Implicit variable not present in current implicit context: {}",
-                    format!("{}", mono.ctx.yellow(&implicitName.toString()))
-                );
-                let r = Report::new(mono.ctx, slogan, Some(input.location.clone()));
-                r.print();
-                std::process::exit(1);
+                MonomorphizerError::ImplicitNotFound(implicitName.clone(), input.location.clone()).report(mono.ctx);
             }
         }
         InstructionKind::WriteImplicit(index, src) => {
@@ -318,14 +298,7 @@ pub fn processInstruction(
                     src.process(sub, mono),
                 )
             } else {
-                // report error
-                let slogan = format!(
-                    "Implicit variable not present in current implicit context: {}",
-                    format!("{}", mono.ctx.yellow(&implicitName.toString()))
-                );
-                let r = Report::new(mono.ctx, slogan, Some(input.location.clone()));
-                r.print();
-                std::process::exit(1);
+                MonomorphizerError::ImplicitNotFound(implicitName.clone(), input.location.clone()).report(mono.ctx);
             }
         }
         InstructionKind::FunctionPtr(ty, name) => {
@@ -457,6 +430,13 @@ pub fn processInstructionKind(
             for c in &info.contexts {
                 match c {
                     WithContext::EffectHandler(handler) => {
+                        if handler.method == handler.handler {
+                            MonomorphizerError::EffectHandlerResolvesToSelf(
+                                handler.method.clone(),
+                                handler.location.clone(),
+                            )
+                            .report(mono.ctx);
+                        }
                         handlerResolution.addEffectHandler(
                             handler.method.clone(),
                             handler.handler.clone(),

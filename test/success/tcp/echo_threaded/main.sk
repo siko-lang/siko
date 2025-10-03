@@ -1,0 +1,120 @@
+module Main {
+
+import Net.TcpListener
+import Net.TcpStream
+import IO.Buffer
+import IO.Reader
+import IO.Writer
+import IO.Error
+import Sync.Thread
+
+pub effect TeleType {
+    fn readLine() -> String
+    fn println(input: &String)
+    fn print(input: &String)
+}
+
+fn readString(tcpStream: &TcpStream) -> Result[Option[String], Error] {
+    let inputBuffer = ByteBuffer.new(1024);
+    let received = try tcpStream.read(inputBuffer.asWriteBuffer());
+    if received == 0 {
+        return Ok(None);
+    }
+    Ok(Some(String.fromVecU8(inputBuffer.toVec())))
+}
+
+fn sendString(tcpStream: &TcpStream, msg: String) -> Result[Int, Error] {
+    let buffer = ByteBuffer.fromVec(msg.toVecU8());
+    tcpStream.write(buffer.asReadBuffer())
+}
+
+fn clientLoop(tcpStream: TcpStream) {
+    loop {
+        let inputBuffer = ByteBuffer.new(1024);
+        let response = readString(tcpStream).expect("Failed to read string");
+        let response = match response {
+            None -> {
+                TeleType.println("Connection closed by peer");
+                break;
+            }
+            Some(r) -> {
+                TeleType.print("Received: ${r}");
+                sendString(tcpStream, r.clone()).expect("Failed to send response");
+            }
+        };
+    }
+}
+
+fn server() {
+    let listener = bind("127.0.0.1:8080").expect("Failed to bind");
+    listener.listen(128).expect("Failed to listen");
+    TeleType.println("Server listening on port 8080");
+    let tcpStream = listener.accept().expect("Failed to accept connection");
+    TeleType.println("Client connected");
+    let c = spawn(\-> clientLoop(tcpStream));
+    c.join();
+}
+
+fn loopFn(tcpStream: &TcpStream) -> Result[(), Error] {
+    let line = TeleType.readLine();
+    if line == "exit" {
+        return Err(Error.new(0));
+    }
+    let msg = line + "\\n";
+    try sendString(tcpStream, msg);
+    let inputBuffer = ByteBuffer.new(1024);
+    let response = try readString(tcpStream);
+    let response = match response {
+        None -> {
+            TeleType.println("Connection closed by peer");
+            return Err(Error.new(0));
+        }
+        Some(r) -> r
+    };
+    TeleType.println("Received: ${response}");
+    Ok(())
+}
+
+implicit mut state: Int
+
+fn client() {
+    let mut state = 0;
+    with state = state, TeleType.readLine = mockReadLine {
+        let tcpStream = connect("127.0.0.1:8080").expect("Failed to connect");
+        loop {
+            let result = loopFn(tcpStream);
+            match result {
+                Ok(()) -> {}
+                Err(e) -> {
+                    TeleType.println("Error: ${e}");
+                    break;
+                }
+            }
+        }
+    }
+}
+
+fn mockReadLine() -> String {
+    if state < 3 {
+        state += 1;
+        "mocked: ${state}"
+    } else {
+        "exit".toString()
+    }
+}
+
+fn main() {
+    with TeleType.println = Std.Basic.Util.println,
+         TeleType.print = Std.Basic.Util.print {
+            run();
+        }
+}
+
+fn run() {
+    let t1 = spawn(\-> server());
+    let t2 = spawn(\-> client());
+    t1.join();
+    t2.join();
+}
+
+}

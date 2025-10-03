@@ -1,4 +1,5 @@
 pub mod Context;
+pub mod Error;
 pub mod Function;
 pub mod Handler;
 pub mod ImplicitContextBuilder;

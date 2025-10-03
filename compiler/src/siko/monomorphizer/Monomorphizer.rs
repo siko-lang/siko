@@ -25,12 +25,10 @@ use crate::siko::{
         Unifier::Unifier,
         Variable::{Variable, VariableName},
     },
-    location::{
-        Location::Location,
-        Report::{Report, ReportContext},
-    },
+    location::{Location::Location, Report::ReportContext},
     monomorphizer::{
         Context::{Context, HandlerResolutionStore},
+        Error::MonomorphizerError,
         Function::processBody,
         Handler::HandlerResolution,
         ImplicitContextBuilder::ImplicitContextBuilder,
@@ -126,13 +124,7 @@ impl<'a> Monomorphizer<'a> {
                 ));
             }
             None => {
-                let slogan = format!(
-                    "No {} function found",
-                    format!("{}", self.ctx.yellow(&main_name.toString()))
-                );
-                let r = Report::new(self.ctx, slogan, None);
-                r.print();
-                std::process::exit(1);
+                MonomorphizerError::MissingMainFunction(main_name).report(self.ctx);
             }
         }
     }

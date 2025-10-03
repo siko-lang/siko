@@ -17,6 +17,16 @@ pub struct FileDescriptor {
     pub fn getFd(&self) -> I32 {
         self.fd
     }
+
+    @safe
+    pub fn close(&self) -> Result[(), Error] {
+        let result = Libc.Unistd.close(self.fd);
+        if result < 0.toI32() {
+            let err = getErrno();
+            return Err(Error.new(err.toInt()));
+        }
+        Ok(())
+    }
 }
 
 instance Reader[FileDescriptor] {

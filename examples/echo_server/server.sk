@@ -6,6 +6,7 @@ import IO.Reader
 import IO.Writer
 import Net.TcpStream
 import IO.Error
+import Sync.Thread
 
 fn readString(tcpStream: &TcpStream) -> Result[Option[String], Error] {
     let inputBuffer = ByteBuffer.new(1024);
@@ -21,6 +22,23 @@ fn sendString(tcpStream: &TcpStream, msg: String) -> Result[Int, Error] {
     tcpStream.write(buffer.asReadBuffer())
 }
 
+fn clientLoop(tcpStream: TcpStream) {
+    loop {
+        let inputBuffer = ByteBuffer.new(1024);
+        let response = readString(tcpStream).expect("Failed to read string");
+        let response = match response {
+            None -> {
+                println("Connection closed by peer");
+                break;
+            }
+            Some(r) -> {
+                print("Received: ${r}");
+                sendString(tcpStream, r.clone()).expect("Failed to send response");
+            }
+        };
+    }
+}
+
 fn main() {
     let listener = bind("127.0.0.1:8080").expect("Failed to bind");
     listener.listen(128).expect("Failed to listen");
@@ -28,20 +46,7 @@ fn main() {
     loop {
         let tcpStream = listener.accept().expect("Failed to accept connection");
         println("Client connected");
-        loop {
-            let inputBuffer = ByteBuffer.new(1024);
-            let response = readString(tcpStream).expect("Failed to read string");
-            let response = match response {
-                None -> {
-                    println("Connection closed by peer");
-                    break;
-                }
-                Some(r) -> {
-                    print("Received: ${r}");
-                    sendString(tcpStream, r.clone()).expect("Failed to send response");
-                }
-            };
-        }
+        spawn(\-> clientLoop(tcpStream));
     }
 }
 

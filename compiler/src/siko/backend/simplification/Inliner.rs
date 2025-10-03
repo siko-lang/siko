@@ -77,6 +77,7 @@ impl<'a> Inliner<'a> {
                     match &instruction.kind {
                         InstructionKind::FunctionCall(dest, info) => {
                             let callee = program.functions.get(&info.name).expect("Function not found");
+                            let callArgs = info.args.getVariables();
                             if callee.canbeInlined() && !self.functionGroupInfo.isRecursive(&info.name) {
                                 if groupItems.contains(&info.name) {
                                     // Don't inline functions in the same group
@@ -97,8 +98,24 @@ impl<'a> Inliner<'a> {
                                 //println!("After call block id: {}", afterCallBlockId);
                                 let mut argMap = BTreeMap::new();
                                 for (index, p) in callee.params.iter().enumerate() {
-                                    let argVar = info.args.getVariables().get(index).expect("Argument not found");
-                                    argMap.insert(p.getName().clone(), argVar.clone());
+                                    match callArgs.get(index) {
+                                        Some(argVar) => {
+                                            argMap.insert(p.getName().clone(), argVar.clone());
+                                        }
+                                        None => {
+                                            println!(
+                                                "[inliner] missing argument {} for parameter {} while inlining {}",
+                                                index,
+                                                p.getName(),
+                                                info.name
+                                            );
+                                            println!(
+                                                "[inliner] available args: {:?}",
+                                                callArgs.iter().map(|v| v.to_string()).collect::<Vec<_>>()
+                                            );
+                                            panic!("Argument not found");
+                                        }
+                                    }
                                 }
                                 let mut inlineVarCopier =
                                     VariableInlineCopier::new(bodyBuilder.getVariableAllocator(), argMap);
