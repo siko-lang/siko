@@ -44,7 +44,7 @@ impl<'a> CollisionChecker<'a> {
             for item in &group.items {
                 //println!("Queueing block: {}", item);
                 queue.push(item.clone());
-                self.blockEnvs.insert(item.clone(), Context::new());
+                self.blockEnvs.entry(item.clone()).or_insert_with(Context::new);
             }
             loop {
                 let Some(blockId) = queue.pop() else { break };

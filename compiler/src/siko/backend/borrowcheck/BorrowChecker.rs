@@ -9,6 +9,7 @@ use crate::siko::{
     },
     hir::{
         Block::BlockId,
+        BlockGroupBuilder::BlockGroupBuilder,
         Function::Function,
         Instruction::InstructionKind,
         Program::Program,
@@ -87,21 +88,48 @@ impl<'a> BorrowChecker<'a> {
         for link in &self.profileBuilder.profile.links {
             self.links.insert(link.from.clone(), link.to.clone());
         }
-        self.processBlock(BlockId::first());
+        let blockGroupBuilder = BlockGroupBuilder::new(self.profileBuilder.f);
+        let groupInfo = blockGroupBuilder.process();
+        //println!("Block groups: {:?}", groupInfo.groups);
+        for group in groupInfo.groups {
+            //println!("Processing block group {:?}", group.items);
+            let mut queue = Vec::new();
+            for blockId in &group.items {
+                queue.push(blockId.clone());
+                self.blockEnvs.entry(blockId.clone()).or_insert_with(Environment::new);
+            }
+            while let Some(blockId) = queue.pop() {
+                let entryEnv = self.getEnvForBlock(blockId.clone());
+                let env = entryEnv.snapshot();
+                let jumpTargets = self.processBlock(blockId.clone(), env);
+                for (target, targetEnv) in jumpTargets {
+                    let mut updated = false;
+                    let entry = self.blockEnvs.entry(target.clone()).or_insert_with(|| {
+                        updated = true;
+                        Environment::new()
+                    });
+                    if entry.merge(&targetEnv) {
+                        updated = true;
+                    }
+                    if updated && group.items.contains(&target) {
+                        queue.push(target);
+                    }
+                }
+            }
+        }
     }
 
     fn getEnvForBlock(&mut self, blockId: BlockId) -> Environment {
-        let env = self.blockEnvs.entry(blockId).or_insert_with(|| Environment {
-            deadPaths: Rc::new(RefCell::new(BTreeMap::new())),
-        });
+        let env = self.blockEnvs.entry(blockId).or_insert_with(Environment::new);
         env.clone()
     }
 
-    fn processBlock(&mut self, blockId: BlockId) {
-        let env = self.getEnvForBlock(blockId);
+    fn processBlock(&mut self, blockId: BlockId, env: Environment) -> Vec<(BlockId, Environment)> {
+        //println!(" Processing block: {}", blockId);
         let block = self.profileBuilder.f.getBlockById(blockId);
         let inner = block.getInner();
         let b = inner.borrow();
+        let mut jumpTargets = Vec::new();
         for i in &b.instructions {
             let vars = i.kind.collectVariables();
             let mut varTypes = Vec::new();
@@ -135,42 +163,62 @@ impl<'a> BorrowChecker<'a> {
                 InstructionKind::FieldRef(dest, _, _) => {
                     env.revivePath(&varToPath(&dest));
                 }
-                _ => {
-                    let mut usedVars = i.kind.collectVariables();
-                    if let Some(v) = i.kind.getResultVar() {
-                        usedVars.retain(|x| *x != v);
+                InstructionKind::Jump(_, target) => {
+                    jumpTargets.push((target.clone(), env.snapshot()));
+                }
+                InstructionKind::EnumSwitch(_, cases) => {
+                    for case in cases {
+                        jumpTargets.push((case.branch.clone(), env.snapshot()));
                     }
-                    for usedVar in usedVars {
-                        let varType = self.checkVar(&env, &usedVar);
-                        for tyVar in &varType.vars {
-                            if let Some(borrows) = self.borrows.get(tyVar) {
-                                for (path, info) in &borrows.paths {
-                                    if env.isPathDead(&path) {
-                                        let deathInfo =
-                                            env.getDeathInfo(&path).expect("dead path must have death info");
-                                        if deathInfo.isDrop {
-                                            BorrowCheckerError::UseAfterDrop(
-                                                path.to_string(),
-                                                usedVar.location(),
-                                                info.location.clone(),
-                                            )
-                                            .report(self.ctx);
-                                        } else {
-                                            BorrowCheckerError::UseAfterMove(
-                                                path.to_string(),
-                                                usedVar.location(),
-                                                deathInfo.location,
-                                                info.location.clone(),
-                                            )
-                                            .report(self.ctx);
-                                        }
-                                    }
-                                }
+                }
+                InstructionKind::IntegerSwitch(_, cases) => {
+                    for case in cases {
+                        jumpTargets.push((case.branch.clone(), env.snapshot()));
+                    }
+                }
+                _ => {
+                    self.processInstruction(&env, &i.kind);
+                }
+            }
+        }
+        jumpTargets
+    }
+
+    fn processInstruction(&mut self, env: &Environment, i: &InstructionKind) {
+        let mut usedVars = i.collectVariables();
+        if let Some(v) = i.getResultVar() {
+            usedVars.retain(|x| *x != v);
+        }
+        for usedVar in usedVars {
+            let varType = self.checkVar(env, &usedVar);
+            for tyVar in &varType.vars {
+                if let Some(borrows) = self.borrows.get(tyVar) {
+                    for (path, info) in &borrows.paths {
+                        if env.isPathDead(&path) {
+                            let deathInfo = env.getDeathInfo(&path).expect("dead path must have death info");
+                            if deathInfo.isDrop {
+                                BorrowCheckerError::UseAfterDrop(
+                                    path.to_string(),
+                                    usedVar.location(),
+                                    info.location.clone(),
+                                )
+                                .report(self.ctx);
+                            } else {
+                                BorrowCheckerError::UseAfterMove(
+                                    path.to_string(),
+                                    usedVar.location(),
+                                    deathInfo.location,
+                                    info.location.clone(),
+                                )
+                                .report(self.ctx);
                             }
                         }
                     }
                 }
             }
+        }
+        if let Some(v) = i.getResultVar() {
+            env.revivePath(&varToPath(&v));
         }
     }
 
@@ -236,6 +284,40 @@ struct Environment {
 }
 
 impl Environment {
+    fn new() -> Environment {
+        Environment {
+            deadPaths: Rc::new(RefCell::new(BTreeMap::new())),
+        }
+    }
+
+    fn snapshot(&self) -> Environment {
+        let copy = self.deadPaths.borrow().clone();
+        Environment {
+            deadPaths: Rc::new(RefCell::new(copy)),
+        }
+    }
+
+    fn merge(&self, other: &Environment) -> bool {
+        let mut changed = false;
+        let otherDeadPaths = other.deadPaths.borrow();
+        let mut selfDeadPaths = self.deadPaths.borrow_mut();
+        for (path, info) in otherDeadPaths.iter() {
+            match selfDeadPaths.get_mut(path) {
+                Some(existing) => {
+                    if !existing.isDrop && info.isDrop {
+                        *existing = info.clone();
+                        changed = true;
+                    }
+                }
+                None => {
+                    selfDeadPaths.insert(path.clone(), info.clone());
+                    changed = true;
+                }
+            }
+        }
+        changed
+    }
+
     fn markPathDead(&self, path: Path, location: Location, isDrop: bool) {
         //println!("    Marking path dead: {}", path);
         self.deadPaths.borrow_mut().insert(path, DeathInfo { location, isDrop });

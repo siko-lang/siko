@@ -30,29 +30,29 @@ impl<'a> BlockGroupBuilder<'a> {
                 for instruction in &b.instructions {
                     match &instruction.kind {
                         InstructionKind::Jump(_, target) => {
-                            allDeps.entry(id.clone()).or_insert_with(Vec::new).push(target.clone());
+                            allDeps.entry(target.clone()).or_insert_with(Vec::new).push(id.clone());
                         }
                         InstructionKind::EnumSwitch(_, cases) => {
                             for c in cases {
                                 allDeps
-                                    .entry(id.clone())
+                                    .entry(c.branch.clone())
                                     .or_insert_with(Vec::new)
-                                    .push(c.branch.clone());
+                                    .push(id.clone());
                             }
                         }
                         InstructionKind::IntegerSwitch(_, cases) => {
                             for c in cases {
                                 allDeps
-                                    .entry(id.clone())
+                                    .entry(c.branch.clone())
                                     .or_insert_with(Vec::new)
-                                    .push(c.branch.clone());
+                                    .push(id.clone());
                             }
                         }
                         InstructionKind::With(_, info) => {
                             allDeps
-                                .entry(id.clone())
+                                .entry(info.blockId.clone())
                                 .or_insert_with(Vec::new)
-                                .push(info.blockId.clone());
+                                .push(id.clone());
                         }
                         _ => {}
                     }
