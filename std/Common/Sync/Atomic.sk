@@ -19,14 +19,53 @@ pub struct AtomicU32 {
     }
 
     @safe
-    pub fn store(self, value: U32, order: MemoryOrder = MemoryOrder.SEQ_CST) -> Self {
+    pub fn store(&self, value: U32, order: MemoryOrder = MemoryOrder.SEQ_CST) {
         // match order {
         //     MemoryOrder.RELEASE | MemoryOrder.ACQ_REL | MemoryOrder.SEQ_CST -> {}
         //     _ -> panic("Invalid memory order for store operation"),
         // }
         let ptr = NativePtr.toPtr(&self.value);
         __atomic_store_n(ptr, value, order.discriminator().toU8());
-        self
+    }
+
+    @safe
+    pub fn fetchAdd(&self, value: U32, order: MemoryOrder = MemoryOrder.SEQ_CST) -> U32 {
+        // match order {
+        //     MemoryOrder.RELAXED | MemoryOrder.ACQ_REL | MemoryOrder.SEQ_CST -> {}
+        //     _ -> panic("Invalid memory order for fetch_add operation"),
+        // }
+        let ptr = NativePtr.toPtr(&self.value);
+        __atomic_fetch_add(ptr, value, order.discriminator().toU8())
+    }
+
+    @safe
+    pub fn fetchSub(&self, value: U32, order: MemoryOrder = MemoryOrder.SEQ_CST) -> U32 {
+        // match order {
+        //     MemoryOrder.RELAXED | MemoryOrder.ACQ_REL | MemoryOrder.SEQ_CST -> {}
+        //     _ -> panic("Invalid memory order for fetch_sub operation"),
+        // }
+        let ptr = NativePtr.toPtr(&self.value);
+        __atomic_fetch_sub(ptr, value, order.discriminator().toU8())
+    }
+
+    @safe
+    pub fn addFetch(&self, value: U32, order: MemoryOrder = MemoryOrder.SEQ_CST) -> U32 {
+        // match order {
+        //     MemoryOrder.RELAXED | MemoryOrder.ACQ_REL | MemoryOrder.SEQ_CST -> {}
+        //     _ -> panic("Invalid memory order for add_fetch operation"),
+        // }
+        let ptr = NativePtr.toPtr(&self.value);
+        __atomic_add_fetch(ptr, value, order.discriminator().toU8())
+    }
+
+    @safe
+    pub fn subFetch(&self, value: U32, order: MemoryOrder = MemoryOrder.SEQ_CST) -> U32 {
+        // match order {
+        //     MemoryOrder.RELAXED | MemoryOrder.ACQ_REL | MemoryOrder.SEQ_CST -> {}
+        //     _ -> panic("Invalid memory order for sub_fetch operation"),
+        // }
+        let ptr = NativePtr.toPtr(&self.value);
+        __atomic_sub_fetch(ptr, value, order.discriminator().toU8())
     }
 }
 
@@ -42,5 +81,9 @@ pub enum MemoryOrder {
 
 fn __atomic_load_n(ptr: *U32, order: U8) -> U32 = extern "C" ("stdatomic.h")
 fn __atomic_store_n(ptr: *U32, value: U32, order: U8) = extern "C" ("stdatomic.h")
+fn __atomic_fetch_add(ptr: *U32, value: U32, order: U8) -> U32 = extern "C" ("stdatomic.h")
+fn __atomic_fetch_sub(ptr: *U32, value: U32, order: U8) -> U32 = extern "C" ("stdatomic.h")
+fn __atomic_add_fetch(ptr: *U32, value: U32, order: U8) -> U32 = extern "C" ("stdatomic.h")
+fn __atomic_sub_fetch(ptr: *U32, value: U32, order: U8) -> U32 = extern "C" ("stdatomic.h")
 
 }

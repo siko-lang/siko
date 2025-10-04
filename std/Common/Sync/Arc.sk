@@ -1,0 +1,57 @@
+module Sync.Arc {
+
+import NativePtr
+import Sync.Atomic
+
+struct Inner[T] {
+    value: T,
+    refCount: AtomicU32,
+
+    fn new(value: T) -> Inner[T] {
+        Inner(value: value, refCount: AtomicU32.new(1.toU32()))
+    }
+}
+
+pub struct Arc[T] {
+    inner: *Inner[T],
+
+    @safe
+    pub fn new(value: T) -> Arc[T] {
+        let innerPtr: *Inner[T] = allocate();
+        *innerPtr = Inner.new(value);
+        Arc(inner: innerPtr)
+    }
+
+    @safe
+    pub fn get(&self) -> &T {
+        let inner = NativePtr.clone(self.inner);
+        &inner.value
+    }
+}
+
+instance[T] Clone[Arc[T]] {
+    @safe
+    fn clone(&self) -> Arc[T] {
+        let mut innerPtr: *Inner[T] = NativePtr.clone(self.inner);
+        let count = &innerPtr.refCount;
+        count.addFetch(1.toU32());
+        Arc(inner: self.inner)
+    }
+}
+
+instance[T] Drop[Arc[T]] {
+    @safe
+    fn drop(mut self) -> Self{
+        let count = &self.inner.refCount;
+        let v = count.subFetch(1.toU32());
+        if v == 0.toU32() {
+            {
+                let item = self.inner.value; // drop the inner value
+            }
+            deallocate(self.inner);
+        }
+        self
+    }
+}
+
+}

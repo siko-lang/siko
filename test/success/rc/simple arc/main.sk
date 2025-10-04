@@ -1,0 +1,32 @@
+module Main {
+
+import Sync.Arc
+
+struct Foo {
+    value: Int,
+}
+
+instance Drop[Foo] {
+    fn drop(self) -> Self {
+        println("Dropping Foo");
+        self
+    }
+}
+
+fn foo() -> Arc[Foo] {
+    Arc.new(Foo(5))
+}
+
+fn main() {
+    let rc1 = foo();
+    {
+        let rc2 = rc1.clone();
+        {
+            let rc3 = rc2.clone();
+        } // rc3 goes out of scope here
+    } // rc2 goes out of scope here
+    let v = rc1.get();
+    assert(v.value == 5);
+}
+
+}
