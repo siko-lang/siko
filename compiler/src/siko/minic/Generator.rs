@@ -340,6 +340,15 @@ impl MiniCGenerator {
                 if v.ty.isVoid() {
                     continue;
                 }
+                if v.name == "this" {
+                    if let Some(name) = v.ty.getName() {
+                        let s = self.program.getStruct(&name);
+                        if s.originalName == "()" {
+                            writeln!(buf, "   {} {} = {{}};", self.getTypeName(&v.ty), v.name)?;
+                            continue;
+                        }
+                    }
+                }
                 writeln!(buf, "   {} {};", self.getTypeName(&v.ty), v.name)?;
             }
             for block in &f.blocks {
