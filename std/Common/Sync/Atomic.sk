@@ -1,0 +1,46 @@
+module Sync.Atomic {
+
+import NativePtr
+
+pub struct AtomicU32 {
+    value: U32
+    pub fn new(value: U32) -> AtomicU32 {
+        AtomicU32(value: value)
+    }
+
+    @safe
+    pub fn load(&self, order: MemoryOrder = MemoryOrder.SEQ_CST) -> U32 {
+        // match order {
+        //     MemoryOrder.RELAXED | MemoryOrder.CONSUME | MemoryOrder.ACQUIRE | MemoryOrder.SEQ_CST -> {}
+        //     _ -> panic("Invalid memory order for load operation"),
+        // }
+        let ptr = NativePtr.toPtr(&self.value);
+        __atomic_load_n(ptr, order.discriminator().toU8())
+    }
+
+    @safe
+    pub fn store(self, value: U32, order: MemoryOrder = MemoryOrder.SEQ_CST) -> Self {
+        // match order {
+        //     MemoryOrder.RELEASE | MemoryOrder.ACQ_REL | MemoryOrder.SEQ_CST -> {}
+        //     _ -> panic("Invalid memory order for store operation"),
+        // }
+        let ptr = NativePtr.toPtr(&self.value);
+        __atomic_store_n(ptr, value, order.discriminator().toU8());
+        self
+    }
+}
+
+@derive(Discriminator)
+pub enum MemoryOrder {
+    RELAXED
+    CONSUME
+    ACQUIRE
+    RELEASE
+    ACQ_REL
+    SEQ_CST
+}
+
+fn __atomic_load_n(ptr: *U32, order: U8) -> U32 = extern "C" ("stdatomic.h")
+fn __atomic_store_n(ptr: *U32, value: U32, order: U8) = extern "C" ("stdatomic.h")
+
+}

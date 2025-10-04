@@ -1722,8 +1722,9 @@ impl<'a> Typechecker<'a> {
         };
         if args.len() < targetFn.params.len() {
             for (index, param) in targetFn.params[args.len()..].iter().enumerate() {
+                let i = args.len() + index;
                 if param.hasDefaultValue() {
-                    let defaultArgFnName = QualifiedName::DefaultArgFn(Box::new(targetFn.name.clone()), index as u32);
+                    let defaultArgFnName = QualifiedName::DefaultArgFn(Box::new(targetFn.name.clone()), i as u32);
                     let tmp = self
                         .bodyBuilder
                         .createTempValueWithType(location.clone(), param.getType().clone());
