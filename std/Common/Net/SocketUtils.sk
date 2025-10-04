@@ -5,6 +5,7 @@ import Libc.Errno
 import Libc.Socket
 import Int.Util
 import Libc.String
+import Arch.SockaddrIn
 
 let INADDR_ANY : U32 = 0.toU32();
 
@@ -20,7 +21,7 @@ pub fn createSocket(domain: Domain, ty: SockType) -> Result[I32, Error] {
 }
 
 @unsafe
-pub fn connectSocket(sock: I32, sockAddrIn: &Libc.Socket.SockaddrIn) -> Result[(), Error] {
+pub fn connectSocket(sock: I32, sockAddrIn: &SockaddrIn) -> Result[(), Error] {
     let res = Libc.Socket.connect(sock, sockAddrIn.asPtr(), sockAddrIn.len());
     if res < 0.toI32() {
         let err = getErrno();
@@ -30,7 +31,7 @@ pub fn connectSocket(sock: I32, sockAddrIn: &Libc.Socket.SockaddrIn) -> Result[(
 }
 
 @unsafe
-pub fn bindSocket(sock: I32, sockAddrIn: &Libc.Socket.SockaddrIn) -> Result[(), Error] {
+pub fn bindSocket(sock: I32, sockAddrIn: &SockaddrIn) -> Result[(), Error] {
     let res = Libc.Socket.bind(sock, sockAddrIn.asPtr(), sockAddrIn.len());
     if res < 0.toI32() {
         let err = getErrno();

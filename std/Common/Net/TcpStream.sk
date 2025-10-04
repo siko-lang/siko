@@ -11,6 +11,7 @@ import IO.Buffer
 import IO.Reader
 import IO.Writer
 import Net.SocketUtils
+import Arch.SockaddrIn
 
 pub struct TcpStream {
     sock: FileDescriptor,
@@ -19,7 +20,7 @@ pub struct TcpStream {
     pub fn connect(addr: &String) -> Result[TcpStream, Error] {
         let (ip, port) = try splitHostPort(addr);
         let sock = try createSocket(AF_INET, SOCK_STREAM);
-        let sockAddrIn = Libc.Socket.SockaddrIn.new(AF_INET, port, 0.toU32());
+        let sockAddrIn = SockaddrIn.new(AF_INET, port, 0.toU32());
         try parseAddress(ip, AF_INET, sockAddrIn.addrPtr());
         try connectSocket(sock, sockAddrIn);
         Ok(TcpStream(sock: FileDescriptor.new(sock)))

@@ -12,6 +12,7 @@ import IO.Writer
 import Net.TcpStream
 import NativePtr
 import Net.SocketUtils
+import Arch.SockaddrIn
 
 pub struct TcpListener {
     sock: FileDescriptor,
@@ -20,7 +21,7 @@ pub struct TcpListener {
     pub fn bind(addr: &String) -> Result[TcpListener, Error] {
         let (ip, port) = try splitHostPort(addr);
         let sock = try createSocket(AF_INET, SOCK_STREAM);
-        let sockAddrIn = Libc.Socket.SockaddrIn.new(AF_INET, port, 0.toU32());
+        let sockAddrIn = SockaddrIn.new(AF_INET, port, 0.toU32());
         try parseAddress(ip, AF_INET, sockAddrIn.addrPtr());
         try bindSocket(sock, sockAddrIn);
         Ok(TcpListener(sock: FileDescriptor.new(sock)))

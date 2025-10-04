@@ -1,0 +1,43 @@
+module Arch.SockaddrIn {
+
+import Array
+import NativePtr
+import Libc.Socket
+
+pub struct SockaddrIn {
+    pub sin_family: U16,
+    pub sin_port: U16,
+    pub sin_addr: InAddr,
+    pub sin_zero: Array[U8, 8],
+
+    @unsafe
+    pub fn new(family: Domain, port: U16, addr: U32) -> SockaddrIn {
+        let sinPort = htons(port);
+        let mut sockaddrIn = SockaddrIn(
+            sin_family: family.code().toU16(),
+            sin_port: sinPort,
+            sin_addr: InAddr(s_addr: addr),
+            sin_zero: Array.uninitialized(),
+        );
+        sockaddrIn.sin_zero.fill(0.toU8());
+        sockaddrIn
+    }
+
+    @unsafe
+    pub fn len(&self) -> U32 {
+        let ptr: *SockaddrIn = null();
+        sizeOf(ptr).toU32()
+    }
+
+    @unsafe
+    pub fn asPtr(&self) -> *SockaddrIn {
+        NativePtr.toPtr(self)
+    }
+
+    @unsafe
+    pub fn addrPtr(&self) -> *InAddr {
+        NativePtr.toPtr(&self.sin_addr)
+    }
+}
+
+}
