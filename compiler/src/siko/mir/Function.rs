@@ -209,6 +209,7 @@ pub enum Instruction {
     FunctionPtrCall(Variable, Variable, Vec<Variable>),
     Sizeof(Variable, Variable),
     Transmute(Variable, Variable),
+    CreateArray(Variable),
 }
 
 impl fmt::Display for Instruction {
@@ -302,6 +303,9 @@ impl fmt::Display for Instruction {
             }
             Instruction::Transmute(var, ty) => {
                 write!(f, "Transmute({}, {})", var, ty)
+            }
+            Instruction::CreateArray(var) => {
+                write!(f, "CreateArray({})", var)
             }
         }
     }

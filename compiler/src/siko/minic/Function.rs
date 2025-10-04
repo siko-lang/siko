@@ -108,4 +108,5 @@ pub enum Instruction {
     FunctionPtrCall(Variable, Variable, Vec<Variable>),
     Sizeof(Variable, Variable),
     Transmute(Variable, Variable),
+    CreateUninitializedArray(Variable),
 }

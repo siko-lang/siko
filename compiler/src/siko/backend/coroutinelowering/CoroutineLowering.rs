@@ -324,6 +324,13 @@ impl CoroutineLowering for InstructionKind {
                 v.lower();
                 t.lower();
             }
+            InstructionKind::CreateUninitializedArray(v) => {
+                v.lower();
+            }
+            InstructionKind::ArrayLen(v, arr) => {
+                v.lower();
+                arr.lower();
+            }
         }
     }
 }

@@ -10,7 +10,6 @@ use crate::siko::{
 };
 
 use super::{
-    Builtins::dumpBuiltinFunction,
     Data::Struct,
     Function::{Function, GetMode, Instruction},
     Program::Program,
@@ -235,6 +234,7 @@ impl MiniCGenerator {
             Instruction::Transmute(var, ty) => {
                 format!("{} = ({}){};", var.name, self.getTypeName(&var.ty), ty.name)
             }
+            Instruction::CreateUninitializedArray(_) => return None,
         };
         Some(s)
     }
@@ -314,12 +314,11 @@ impl MiniCGenerator {
                         localVars.insert(dest.clone());
                         localVars.insert(ty.clone());
                     }
+                    Instruction::CreateUninitializedArray(dest) => {
+                        localVars.insert(dest.clone());
+                    }
                 }
             }
-        }
-
-        if dumpBuiltinFunction(f, &args, buf, &self.program, &self)? {
-            return Ok(());
         }
 
         writeln!(buf, "// Full Name: {}", f.fullName)?;

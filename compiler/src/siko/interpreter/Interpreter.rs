@@ -246,6 +246,12 @@ impl<'a> FunctionExecutor<'a> {
                 InstructionKind::Transmute(_, _) => {
                     unimplemented!("Transmute instruction not supported in interpreter")
                 }
+                InstructionKind::CreateUninitializedArray(_) => {
+                    unimplemented!("CreateArray instruction not supported in interpreter")
+                }
+                InstructionKind::ArrayLen(_, _) => {
+                    unimplemented!("ArrayLen instruction not supported in interpreter")
+                }
             }
         }
     }

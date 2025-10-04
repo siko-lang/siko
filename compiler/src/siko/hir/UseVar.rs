@@ -109,6 +109,8 @@ impl UseVar for InstructionKind {
             }
             InstructionKind::Sizeof(v, t) => InstructionKind::Sizeof(v.clone(), t.useVar()),
             InstructionKind::Transmute(v, t) => InstructionKind::Transmute(v.clone(), t.useVar()),
+            InstructionKind::CreateUninitializedArray(v) => InstructionKind::CreateUninitializedArray(v.clone()),
+            InstructionKind::ArrayLen(v, arr) => InstructionKind::ArrayLen(v.clone(), arr.useVar()),
         }
     }
 }

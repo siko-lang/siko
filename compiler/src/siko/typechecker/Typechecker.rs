@@ -31,10 +31,10 @@ use crate::siko::{
     location::{Location::Location, Report::ReportContext},
     qualifiedname::{
         builtins::{
-            getImplicitConvertFnName, getIntAddName, getIntBitAndName, getIntBitOrName, getIntBitXorName,
-            getIntDivName, getIntEqName, getIntLessThanName, getIntModName, getIntMulName, getIntShiftLeftName,
-            getIntShiftRightName, getIntSubName, getNativePtrCloneName, getNativePtrIsNullName, getNativePtrSizeOfName,
-            getNativePtrTransmuteName, IntKind,
+            getArrayLenName, getArrayUninitializedName, getImplicitConvertFnName, getIntAddName, getIntBitAndName,
+            getIntBitOrName, getIntBitXorName, getIntDivName, getIntEqName, getIntLessThanName, getIntModName,
+            getIntMulName, getIntShiftLeftName, getIntShiftRightName, getIntSubName, getNativePtrCloneName,
+            getNativePtrIsNullName, getNativePtrSizeOfName, getNativePtrTransmuteName, IntKind,
         },
         QualifiedName,
     },
@@ -162,7 +162,8 @@ pub struct Typechecker<'a> {
     fnCallResolver: FunctionCallResolver<'a>,
     closureTypes: BTreeMap<BlockId, ClosureTypeInfo>,
     integerOps: BTreeMap<QualifiedName, IntegerOp>,
-    builtins: BTreeMap<QualifiedName, fn(Variable, Variable) -> InstructionKind>,
+    builtins2: BTreeMap<QualifiedName, fn(Variable, Variable) -> InstructionKind>,
+    builtins1: BTreeMap<QualifiedName, fn(Variable) -> InstructionKind>,
     runner: Runner,
 }
 
@@ -213,9 +214,12 @@ impl<'a> Typechecker<'a> {
             integerOps.insert(getIntBitOrName(kind), IntegerOp::BitOr);
             integerOps.insert(getIntBitXorName(kind), IntegerOp::BitXor);
         }
-        let mut builtins: BTreeMap<QualifiedName, fn(Variable, Variable) -> InstructionKind> = BTreeMap::new();
-        builtins.insert(getNativePtrSizeOfName(), InstructionKind::Sizeof);
-        builtins.insert(getNativePtrTransmuteName(), InstructionKind::Transmute);
+        let mut builtins2: BTreeMap<QualifiedName, fn(Variable, Variable) -> InstructionKind> = BTreeMap::new();
+        builtins2.insert(getNativePtrSizeOfName(), InstructionKind::Sizeof);
+        builtins2.insert(getNativePtrTransmuteName(), InstructionKind::Transmute);
+        builtins2.insert(getArrayLenName(), InstructionKind::ArrayLen);
+        let mut builtins1: BTreeMap<QualifiedName, fn(Variable) -> InstructionKind> = BTreeMap::new();
+        builtins1.insert(getArrayUninitializedName(), InstructionKind::CreateUninitializedArray);
         Typechecker {
             ctx: ctx,
             program: program,
@@ -235,7 +239,8 @@ impl<'a> Typechecker<'a> {
             unifier: unifier,
             closureTypes: BTreeMap::new(),
             integerOps,
-            builtins,
+            builtins2,
+            builtins1,
             runner,
         }
     }
@@ -413,6 +418,12 @@ impl<'a> Typechecker<'a> {
                             self.initializeVar(var);
                         }
                         InstructionKind::Transmute(var, _) => {
+                            self.initializeVar(var);
+                        }
+                        InstructionKind::CreateUninitializedArray(var) => {
+                            self.initializeVar(var);
+                        }
+                        InstructionKind::ArrayLen(var, _) => {
                             self.initializeVar(var);
                         }
                     }
@@ -1096,6 +1107,8 @@ impl<'a> Typechecker<'a> {
             }
             InstructionKind::Sizeof(_, _) => {}
             InstructionKind::Transmute(_, _) => {}
+            InstructionKind::CreateUninitializedArray(_) => {}
+            InstructionKind::ArrayLen(_, _) => {}
         }
     }
 
@@ -1653,10 +1666,17 @@ impl<'a> Typechecker<'a> {
             builder.replaceInstruction(kind, location.clone());
             return;
         }
-        if let Some(constructor) = self.builtins.get(&info.name) {
+        if let Some(constructor) = self.builtins2.get(&info.name) {
             let args = info.args.getVariables();
-            assert_eq!(args.len(), 1, "Builtin function with unexpected number of args");
+            assert_eq!(args.len(), 1, "Builtin2 function with unexpected number of args");
             let kind = constructor(dest.clone(), args[0].clone());
+            builder.replaceInstruction(kind, location.clone());
+            return;
+        }
+        if let Some(constructor) = self.builtins1.get(&info.name) {
+            let args = info.args.getVariables();
+            assert_eq!(args.len(), 0, "Builtin1 function with unexpected number of args");
+            let kind = constructor(dest.clone());
             builder.replaceInstruction(kind, location.clone());
             return;
         }

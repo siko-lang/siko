@@ -337,6 +337,10 @@ impl RemoveTuples for InstructionKind {
             }
             InstructionKind::Sizeof(v, t) => InstructionKind::Sizeof(v.removeTuples(ctx), t.removeTuples(ctx)),
             InstructionKind::Transmute(v, t) => InstructionKind::Transmute(v.removeTuples(ctx), t.removeTuples(ctx)),
+            InstructionKind::CreateUninitializedArray(v) => {
+                InstructionKind::CreateUninitializedArray(v.removeTuples(ctx))
+            }
+            InstructionKind::ArrayLen(v, arr) => InstructionKind::ArrayLen(v.removeTuples(ctx), arr.removeTuples(ctx)),
         }
     }
 }

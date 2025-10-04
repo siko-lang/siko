@@ -175,6 +175,8 @@ impl<'a> DeadCodeEliminator<'a> {
                 InstructionKind::FunctionPtrCall(_, _, _) => {}
                 InstructionKind::Sizeof(_, _) => {}
                 InstructionKind::Transmute(_, _) => {}
+                InstructionKind::CreateUninitializedArray(_) => {}
+                InstructionKind::ArrayLen(_, _) => {}
             }
         }
     }

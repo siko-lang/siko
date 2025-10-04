@@ -187,5 +187,7 @@ pub fn getUsageInfo(kind: InstructionKind, referenceStore: &ReferenceStore) -> U
         }
         InstructionKind::Sizeof(dest, var) => UsageInfo::with(vec![varToUsage(&var)], Some(dest.toPath())),
         InstructionKind::Transmute(dest, var) => UsageInfo::with(vec![varToUsage(&var)], Some(dest.toPath())),
+        InstructionKind::CreateUninitializedArray(dest) => UsageInfo::with(Vec::new(), Some(dest.toPath())),
+        InstructionKind::ArrayLen(dest, arr) => UsageInfo::with(vec![varToUsage(&arr)], Some(dest.toPath())),
     }
 }

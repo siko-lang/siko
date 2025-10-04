@@ -333,6 +333,13 @@ impl<'a> TypeVerifier<'a> {
                 self.checkVariable(v);
                 self.checkVariable(t);
             }
+            InstructionKind::CreateUninitializedArray(v) => {
+                self.checkVariable(v);
+            }
+            InstructionKind::ArrayLen(v, arr) => {
+                self.checkVariable(v);
+                self.checkVariable(arr);
+            }
         }
     }
 

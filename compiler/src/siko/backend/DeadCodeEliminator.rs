@@ -151,7 +151,7 @@ impl<'a> DeadCodeEliminator<'a> {
                 InstructionKind::StorePtr(_, _) => {}
                 InstructionKind::CreateClosure(_, _) => {}
                 InstructionKind::ClosureReturn(_, _, _) => {
-                    panic!("ClosureReturn found in drop checker, this should not happen");
+                    panic!("ClosureReturn found in DeadCodeEliminator, this should not happen");
                 }
                 InstructionKind::IntegerOp(_, _, _, _) => {}
                 InstructionKind::Yield(_, _) => {}
@@ -159,6 +159,8 @@ impl<'a> DeadCodeEliminator<'a> {
                 InstructionKind::FunctionPtrCall(_, _, _) => {}
                 InstructionKind::Sizeof(_, _) => {}
                 InstructionKind::Transmute(_, _) => {}
+                InstructionKind::CreateUninitializedArray(_) => {}
+                InstructionKind::ArrayLen(_, _) => {}
             }
         }
     }

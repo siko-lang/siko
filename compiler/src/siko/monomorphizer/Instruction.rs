@@ -528,5 +528,7 @@ pub fn processInstructionKind(
         InstructionKind::Transmute(var, ty) => {
             InstructionKind::Transmute(var.process(sub, mono), ty.process(sub, mono))
         }
+        InstructionKind::CreateUninitializedArray(v) => InstructionKind::CreateUninitializedArray(v.process(sub, mono)),
+        InstructionKind::ArrayLen(v, arr) => InstructionKind::ArrayLen(v.process(sub, mono), arr.process(sub, mono)),
     }
 }

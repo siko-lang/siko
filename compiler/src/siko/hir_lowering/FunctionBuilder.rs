@@ -387,6 +387,27 @@ impl<'a> Builder<'a> {
                     block.instructions.push(Instruction::Declare(dest.clone()));
                     block.instructions.push(Instruction::Transmute(dest, var));
                 }
+                HirInstructionKind::CreateUninitializedArray(var) => {
+                    let var = self.buildVariable(var);
+                    block.instructions.push(Instruction::Declare(var.clone()));
+                    block.instructions.push(Instruction::CreateArray(var));
+                }
+                HirInstructionKind::ArrayLen(var, arr) => {
+                    let var = self.buildVariable(var);
+                    let ty = arr.getType();
+                    let ty = ty.unpackRef();
+                    let name = ty.getName().expect("no name for array");
+                    let (_, ctx) = name.getUnmonomorphized();
+                    let ctx = ctx.expect("no ctx for array");
+                    assert_eq!(ctx.args.len(), 2);
+                    let size = if let HirType::NumericConstant(size) = &ctx.args[1] {
+                        size.clone()
+                    } else {
+                        panic!("ArrayLen with non-constant size");
+                    };
+                    block.instructions.push(Instruction::Declare(var.clone()));
+                    block.instructions.push(Instruction::IntegerLiteral(var, size));
+                }
             }
         }
         Some(block)

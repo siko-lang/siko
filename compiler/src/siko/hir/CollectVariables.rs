@@ -192,6 +192,13 @@ impl CollectVariables for InstructionKind {
                 v.collectVariables(vars);
                 t.collectVariables(vars);
             }
+            InstructionKind::CreateUninitializedArray(v) => {
+                v.collectVariables(vars);
+            }
+            InstructionKind::ArrayLen(v, arr) => {
+                v.collectVariables(vars);
+                arr.collectVariables(vars);
+            }
         }
     }
 }

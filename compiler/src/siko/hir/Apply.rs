@@ -299,6 +299,8 @@ impl Apply for InstructionKind {
             }
             InstructionKind::Sizeof(v, t) => InstructionKind::Sizeof(v.apply(sub), t.apply(sub)),
             InstructionKind::Transmute(v, t) => InstructionKind::Transmute(v.apply(sub), t.apply(sub)),
+            InstructionKind::CreateUninitializedArray(v) => InstructionKind::CreateUninitializedArray(v.apply(sub)),
+            InstructionKind::ArrayLen(v, arr) => InstructionKind::ArrayLen(v.apply(sub), arr.apply(sub)),
         }
     }
 }

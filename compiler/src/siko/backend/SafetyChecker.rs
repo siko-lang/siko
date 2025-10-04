@@ -126,6 +126,8 @@ impl<'a> SafetyChecker<'a> {
             InstructionKind::FunctionPtrCall(_, _, _) => false,
             InstructionKind::Sizeof(_, _) => false,
             InstructionKind::Transmute(_, _) => false,
+            InstructionKind::CreateUninitializedArray(_) => false,
+            InstructionKind::ArrayLen(_, _) => false,
         }
     }
 }

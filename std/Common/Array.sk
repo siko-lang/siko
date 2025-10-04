@@ -9,7 +9,11 @@ pub struct Array[T, Size] {
 
     pub fn len(&self) -> Int = extern
 
-    pub fn base(&self) -> *T = extern
+    @unsafe
+    pub fn base(&self) -> *T {
+        let ptr = NativePtr.toPtr(self);
+        NativePtr.transmute(ptr)
+    }
 
     @unsafe
     pub fn sizeInBytes(&self) -> U64 {

@@ -336,6 +336,10 @@ impl<'a> MinicBuilder<'a> {
                     let minicInstruction = LInstruction::Transmute(self.lowerVar(var), self.lowerVar(ty));
                     minicBlock.instructions.push(minicInstruction);
                 }
+                Instruction::CreateArray(var) => {
+                    let minicInstruction = LInstruction::CreateUninitializedArray(self.lowerVar(var));
+                    minicBlock.instructions.push(minicInstruction);
+                }
             };
         }
         minicBlock

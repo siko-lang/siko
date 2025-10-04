@@ -412,6 +412,13 @@ impl ClosureLowering for InstructionKind {
                 v.lower(closureStore);
                 t.lower(closureStore);
             }
+            InstructionKind::CreateUninitializedArray(v) => {
+                v.lower(closureStore);
+            }
+            InstructionKind::ArrayLen(v, arr) => {
+                v.lower(closureStore);
+                arr.lower(closureStore);
+            }
         }
     }
 }

@@ -249,6 +249,15 @@ impl ReplaceVar for InstructionKind {
                 let new_t = t.replaceVar(&from, to);
                 InstructionKind::Transmute(new_v, new_t)
             }
+            InstructionKind::CreateUninitializedArray(v) => {
+                let new_v = v.replaceVar(&from, to);
+                InstructionKind::CreateUninitializedArray(new_v)
+            }
+            InstructionKind::ArrayLen(v, arr) => {
+                let new_v = v.replaceVar(&from, to.clone());
+                let new_arr = arr.replaceVar(&from, to);
+                InstructionKind::ArrayLen(new_v, new_arr)
+            }
         }
     }
 }

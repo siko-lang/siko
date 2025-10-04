@@ -214,6 +214,8 @@ impl VariableCopy for InstructionKind {
             }
             InstructionKind::Sizeof(v, t) => InstructionKind::Sizeof(v.copy(map), t.copy(map)),
             InstructionKind::Transmute(v, t) => InstructionKind::Transmute(v.copy(map), t.copy(map)),
+            InstructionKind::CreateUninitializedArray(v) => InstructionKind::CreateUninitializedArray(v.copy(map)),
+            InstructionKind::ArrayLen(v, arr) => InstructionKind::ArrayLen(v.copy(map), arr.copy(map)),
         }
     }
 }

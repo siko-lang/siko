@@ -572,6 +572,8 @@ pub enum InstructionKind {
     FunctionPtrCall(Variable, Variable, Vec<Variable>),
     Sizeof(Variable, Variable),
     Transmute(Variable, Variable),
+    CreateUninitializedArray(Variable),
+    ArrayLen(Variable, Variable),
 }
 
 impl Display for InstructionKind {
@@ -632,6 +634,8 @@ impl InstructionKind {
             InstructionKind::FunctionPtrCall(v, _, _) => Some(v.clone()),
             InstructionKind::Sizeof(v, _) => Some(v.clone()),
             InstructionKind::Transmute(v, _) => Some(v.clone()),
+            InstructionKind::CreateUninitializedArray(v) => Some(v.clone()),
+            InstructionKind::ArrayLen(v, _) => Some(v.clone()),
         }
     }
 
@@ -775,6 +779,12 @@ impl InstructionKind {
             InstructionKind::Transmute(v, t) => {
                 format!("{} = transmute({})", v, t)
             }
+            InstructionKind::CreateUninitializedArray(v) => {
+                format!("{} = create_array()", v)
+            }
+            InstructionKind::ArrayLen(v, arr) => {
+                format!("{} = array_len({})", v, arr)
+            }
         }
     }
 
@@ -819,6 +829,8 @@ impl InstructionKind {
             InstructionKind::FunctionPtrCall(_, _, _) => "function_ptr_call",
             InstructionKind::Sizeof(_, _) => "sizeof",
             InstructionKind::Transmute(_, _) => "transmute",
+            InstructionKind::CreateUninitializedArray(_) => "create_array",
+            InstructionKind::ArrayLen(_, _) => "array_len",
         }
     }
 }
