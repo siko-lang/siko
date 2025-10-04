@@ -143,6 +143,7 @@ impl VariableCopy for ClosureCreateInfo {
     fn copy(&self, map: &mut CopyHandler) -> ClosureCreateInfo {
         ClosureCreateInfo {
             closureParams: self.closureParams.copy(map),
+            context: self.context.clone(),
             body: self.body,
             name: self.name.clone(),
             fnArgCount: self.fnArgCount,

@@ -465,6 +465,7 @@ impl Display for CallInfo {
 #[derive(Clone, PartialEq)]
 pub struct ClosureCreateInfo {
     pub closureParams: Vec<Variable>,
+    pub context: Option<CallContextInfo>,
     pub body: BlockId,
     pub name: QualifiedName,
     pub fnArgCount: u32,
@@ -474,6 +475,7 @@ impl ClosureCreateInfo {
     pub fn new(params: Vec<Variable>, body: BlockId, name: QualifiedName, fnArgCount: u32) -> Self {
         ClosureCreateInfo {
             closureParams: params,
+            context: None,
             body,
             name,
             fnArgCount,

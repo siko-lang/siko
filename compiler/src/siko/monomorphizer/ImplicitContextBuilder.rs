@@ -249,6 +249,27 @@ impl<'a, 'b> ImplicitContextBuilder<'a, 'b> {
                                 builder.replaceInstruction(kind, instruction.location.clone());
                             }
                         }
+                        InstructionKind::CreateClosure(dest, info) => {
+                            if let Some(ctx) = &info.context {
+                                let contextVar = if let Some(contextVar) = contextVarMap.get(&ctx.contextSyntaxBlockId)
+                                {
+                                    contextVar.clone()
+                                } else {
+                                    panic!(
+                                    "Context variable not found for id '{}' in implicit context builder for function call '{}'",
+                                    ctx.contextSyntaxBlockId, info.name
+                                );
+                                };
+                                let mut info = info.clone();
+                                info.closureParams.insert(0, contextVar);
+                                //println!(
+                                //    "Patching function call '{}' to include implicit context, new args: {:?} in syntax block {}",
+                                //    info.name, args, ctx.contextSyntaxBlockId
+                                //);
+                                let kind = InstructionKind::CreateClosure(dest.clone(), info);
+                                builder.replaceInstruction(kind, instruction.location.clone());
+                            }
+                        }
                         InstructionKind::BlockEnd(_) => {
                             builder.removeInstruction();
                             continue;

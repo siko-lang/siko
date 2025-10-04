@@ -305,6 +305,17 @@ pub fn processInstruction(
             mono.addKey(Key::Function(name.clone(), vec![], HandlerResolution::new(), vec![]));
             InstructionKind::FunctionPtr(ty.clone(), name.clone())
         }
+        InstructionKind::CreateClosure(dest, info) => {
+            let (handlerResolution, contextSyntaxBlockId) = handlerResolutionStore.get(syntaxBlockId);
+            let ctxInfo = if handlerResolution.isEmptyImplicits() {
+                None
+            } else {
+                Some(CallContextInfo { contextSyntaxBlockId })
+            };
+            let mut info = info.clone();
+            info.context = ctxInfo;
+            InstructionKind::CreateClosure(dest.clone(), info)
+        }
         k => k.clone(),
     };
     instruction.kind = processInstructionKind(kind, sub, mono, syntaxBlockId, handlerResolutionStore);
