@@ -103,7 +103,6 @@ impl<'a> FunctionProfileBuilder<'a> {
     }
 
     fn unifyExtendedTypes(&mut self, a: &ExtendedType, b: &ExtendedType) {
-        //println!("Unifying extended types: {} and {}", a, b);
         assert_eq!(a.vars.len(), b.vars.len());
         for (va, vb) in a.vars.iter().zip(b.vars.iter()) {
             self.unifier.unify(va.clone(), vb.clone(), Location::empty());
@@ -123,8 +122,8 @@ impl<'a> FunctionProfileBuilder<'a> {
     }
 
     pub fn process(&mut self, normalize: bool) -> bool {
-        //println!("Building function profile for: {}", self.f.name);
-        //println!("Function: {}", self.f);
+        // println!("Building function profile for: {}", self.f.name);
+        // println!("Function: {}", self.f);
         self.profile = FunctionProfile {
             name: self.f.name.clone(),
             args: Vec::new(),
@@ -396,13 +395,7 @@ impl<'a> FunctionProfileBuilder<'a> {
             };
             match &info.name {
                 FieldId::Named(name) => {
-                    let structName = currenTy
-                        .ty
-                        .clone()
-                        .unpackPtr()
-                        .unpackRef()
-                        .getName()
-                        .expect("resolveFieldInfos root must have name");
+                    let structName = currenTy.ty.getName().expect("resolveFieldInfos root must have name");
                     //println!("resolveFieldInfos root type: {} {}", currenTy, name);
                     let mut structDef = self.dataGroups.getStruct(&structName).clone();
                     structDef = self.instantiateStructDef(&structDef);

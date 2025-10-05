@@ -49,7 +49,16 @@ impl Type {
         match &self {
             Type::Named(n, _) => Some(n.clone()),
             Type::Reference(ty) => ty.getName(),
+            Type::Ptr(ty) => ty.getName(),
             _ => None,
+        }
+    }
+
+    pub fn unpackRoot(self) -> Type {
+        match self {
+            Type::Reference(ty) => ty.unpackRoot(),
+            Type::Ptr(ty) => ty.unpackRoot(),
+            ty => ty.clone(),
         }
     }
 

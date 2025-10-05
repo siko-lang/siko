@@ -1,0 +1,45 @@
+module Main {
+
+struct Bar {
+    f: Int,
+}
+
+struct Foo {
+    g: Bar,
+}
+
+struct Ptr {
+    p: *Int,
+}
+
+@safe
+fn test1() {
+    let foo = Foo(Bar(42));
+    let ptr: *Int = &raw foo.g.f;
+    *ptr = 43;
+}
+
+@safe
+fn test2() {
+    let foo: *Foo = &raw Foo(Bar(42));
+    let v: Int = foo.g.f;
+    assert(v == 42);
+}
+
+@safe
+fn test3() {
+    let bar = Bar(42);
+    let ptr: *Int = &raw bar.f;
+    let p = Ptr(ptr);
+    let pp = &raw p;
+    let ptr: *Int = pp.p;
+    *ptr = 43;
+}
+
+fn main() {
+    test1();
+    test2();
+    test3();
+}
+
+}

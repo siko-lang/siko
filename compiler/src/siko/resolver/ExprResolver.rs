@@ -1,5 +1,6 @@
 use core::panic;
 use std::collections::{BTreeMap, BTreeSet};
+use std::vec;
 
 use crate::siko::hir::Block::BlockId;
 use crate::siko::hir::BlockBuilder::BlockBuilder;
@@ -363,15 +364,22 @@ impl<'a> ExprResolver<'a> {
                 ResolverError::UnknownValue(name.name(), name.location()).report(self.ctx);
             }
             SimpleExpr::FieldAccess(receiver, name) => {
-                let receiver = self.resolveExpr(receiver, env);
-                let fieldInfos = vec![FieldInfo {
-                    name: FieldId::Named(name.toString()),
-                    ty: None,
-                    location: name.location(),
-                }];
-                self.bodyBuilder
-                    .current()
-                    .addFieldRef(receiver, fieldInfos, expr.location.clone())
+                if let SimpleExpr::FieldAccess(_, _) = &receiver.expr {
+                    let (receiverVar, fields) = self.processFieldRef(expr, env);
+                    self.bodyBuilder
+                        .current()
+                        .addFieldRef(receiverVar, fields, expr.location.clone())
+                } else {
+                    let receiver = self.resolveExpr(receiver, env);
+                    let fieldInfos = vec![FieldInfo {
+                        name: FieldId::Named(name.toString()),
+                        ty: None,
+                        location: name.location(),
+                    }];
+                    self.bodyBuilder
+                        .current()
+                        .addFieldRef(receiver, fieldInfos, expr.location.clone())
+                }
             }
             SimpleExpr::Call(callable, args) => self.resolveCall(expr, env, callable, args, false),
             SimpleExpr::MethodCall(receiver, name, args) => {
@@ -611,24 +619,8 @@ impl<'a> ExprResolver<'a> {
             }
             SimpleExpr::Ref(arg, isRaw) => {
                 if let SimpleExpr::FieldAccess(_, _) = &arg.expr {
-                    let mut fields = Vec::new();
-                    let mut current = &**arg;
-                    loop {
-                        if let SimpleExpr::FieldAccess(receiver, name) = &current.expr {
-                            let field = FieldInfo {
-                                name: FieldId::Named(name.toString()),
-                                location: name.location(),
-                                ty: None,
-                            };
-                            fields.push(field);
-                            current = receiver;
-                        } else {
-                            break;
-                        }
-                    }
-                    let receiverVar = self.resolveExpr(current, env);
+                    let (receiverVar, fields) = self.processFieldRef(arg, env);
                     let addrVar = self.bodyBuilder.createTempValue(expr.location.clone());
-                    fields.reverse();
                     self.bodyBuilder.current().addInstruction(
                         InstructionKind::AddressOfField(addrVar.clone(), receiverVar, fields, *isRaw),
                         expr.location.clone(),
@@ -1015,5 +1007,30 @@ impl<'a> ExprResolver<'a> {
 
     pub fn body(self) -> Body {
         self.bodyBuilder.build()
+    }
+
+    pub fn processFieldRef(&mut self, arg: &Expr, env: &mut Environment<'_>) -> (Variable, Vec<FieldInfo>) {
+        if let SimpleExpr::FieldAccess(_, _) = &arg.expr {
+            let mut fields = vec![];
+            let mut current = &*arg;
+            loop {
+                if let SimpleExpr::FieldAccess(receiver, name) = &current.expr {
+                    let field = FieldInfo {
+                        name: FieldId::Named(name.toString()),
+                        location: name.location(),
+                        ty: None,
+                    };
+                    fields.push(field);
+                    current = receiver;
+                } else {
+                    break;
+                }
+            }
+            let receiverVar = self.resolveExpr(current, env);
+            fields.reverse();
+            (receiverVar, fields)
+        } else {
+            panic!("processFieldRef called on non field access");
+        }
     }
 }

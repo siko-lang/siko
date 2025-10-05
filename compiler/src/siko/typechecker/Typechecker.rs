@@ -71,13 +71,19 @@ pub fn typecheck(ctx: &ReportContext, mut program: Program, runner: Runner) -> P
 struct ReceiverChainEntry {
     source: Variable,
     dest: Variable,
-    field: Option<FieldInfo>,
+    fields: Vec<FieldInfo>,
 }
 
 impl Display for ReceiverChainEntry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(field) = &self.field {
-            write!(f, "{}.{} => {}", self.source, field.name, self.dest)
+        if !self.fields.is_empty() {
+            let names = self
+                .fields
+                .iter()
+                .map(|f| f.name.to_string())
+                .collect::<Vec<_>>()
+                .join(".");
+            write!(f, "{}.{} => {}", self.source, names, self.dest)
         } else {
             write!(f, "{} => {}", self.source, self.dest)
         }
@@ -634,36 +640,6 @@ impl<'a> Typechecker<'a> {
         }
     }
 
-    fn readField(&mut self, receiverType: Type, fieldName: String, location: Location) -> Type {
-        let receiverType = self.unifier.apply(receiverType);
-        let baseType = receiverType.clone().unpackRef();
-        match baseType.clone() {
-            Type::Named(name, _) => {
-                if let Some(structDef) = self.program.structs.get(&name) {
-                    let structDef = self.instantiateStruct(structDef, &baseType);
-                    for f in &structDef.fields {
-                        if f.name == *fieldName {
-                            let mut result = f.ty.clone();
-                            if receiverType.isReference() {
-                                result = f.ty.asRef();
-                            }
-                            return result;
-                        }
-                    }
-                    TypecheckerError::FieldNotFound(fieldName.clone(), receiverType.to_string(), location.clone())
-                        .report(self.ctx);
-                } else {
-                    TypecheckerError::FieldNotFound(fieldName.clone(), receiverType.to_string(), location.clone())
-                        .report(self.ctx);
-                }
-            }
-            _ => {
-                TypecheckerError::FieldNotFound(fieldName.clone(), receiverType.to_string(), location.clone())
-                    .report(self.ctx);
-            }
-        }
-    }
-
     fn checkBlock(&mut self, blockId: BlockId) {
         let mut builder = self.bodyBuilder.iterator(blockId);
         loop {
@@ -706,7 +682,7 @@ impl<'a> Typechecker<'a> {
                     ReceiverChainEntry {
                         source: source.clone(),
                         dest: dest.clone(),
-                        field: None,
+                        fields: Vec::new(),
                     },
                 );
                 let srcTy = self.unifier.apply(source.getType());
@@ -885,70 +861,60 @@ impl<'a> Typechecker<'a> {
                 }
             }
             InstructionKind::FieldRef(dest, receiver, fields) => {
-                let receiver = receiver.clone();
-                let mut receiverType = receiver.getType();
-                assert_eq!(fields.len(), 1, "FieldRef with multiple fields in typecheck!");
+                let receiverType = receiver.getType();
+                let mut receiverType = self.unifier.apply(receiverType);
+                let mut newFields = Vec::new();
+                let mut isPtr = receiverType.isPtr();
+                let mut isRef = receiverType.isReference();
+                // println!("FieldRef start {} {}", receiverType, instruction.location);
+                // for f in fields {
+                //     println!("xxxx FieldRef field {} {}", f.name, f.location);
+                // }
+                for (index, field) in fields.iter().enumerate() {
+                    let root = receiverType.unpackRoot();
+                    let fieldTy = self.checkField(root, &field.name, field.location.clone());
+                    //println!("FieldRef field {} {}", field.name, fieldTy);
+                    let mut newField = field.clone();
+                    newField.ty = Some(fieldTy.clone());
+                    newFields.push(newField);
+                    receiverType = fieldTy;
+                    if receiverType.isPtr() && index < fields.len() - 1 {
+                        isPtr = true;
+                    }
+                    if receiverType.isReference() && index < fields.len() - 1 {
+                        isRef = true;
+                    }
+                }
                 self.receiverChains.insert(
                     dest.clone(),
                     ReceiverChainEntry {
                         source: receiver.clone(),
                         dest: dest.clone(),
-                        field: Some(fields[0].clone()),
+                        fields: newFields.clone(),
                     },
                 );
-                receiverType = self.unifier.apply(receiverType);
-                if let Type::Reference(innerTy) = &receiverType {
-                    receiverType = *innerTy.clone();
-                }
-                if let Type::Ptr(innerTy) = &receiverType {
-                    let ptrLoadResultVar = self
+                //println!("FieldRef rectype: {} isPtr {}", receiverType, isPtr);
+                if isPtr {
+                    let destType = receiverType.clone();
+                    let ptrType = receiverType.asPtr();
+                    let loadPtrVar = self
                         .bodyBuilder
-                        .createTempValueWithType(instruction.location.clone(), *innerTy.clone());
-                    ptrLoadResultVar.setNoDrop();
-                    ptrLoadResultVar.setType(*innerTy.clone());
-                    builder.addInstruction(
-                        InstructionKind::LoadPtr(ptrLoadResultVar.clone(), receiver.clone()),
-                        instruction.location.clone(),
-                    );
+                        .createTempValueWithType(instruction.location.clone(), ptrType);
+                    loadPtrVar.setNoDrop();
+                    let newKind =
+                        InstructionKind::AddressOfField(loadPtrVar.clone(), receiver.clone(), newFields, true);
+                    builder.replaceInstruction(newKind, instruction.location.clone());
+                    self.unifier.unifyVar(dest, destType);
                     builder.step();
-                    let kind = instruction.kind.replaceVar(&receiver, ptrLoadResultVar.clone());
-                    builder.replaceInstruction(kind, instruction.location.clone());
-                    receiverType = *innerTy.clone();
+                    let load = InstructionKind::LoadPtr(dest.clone(), loadPtrVar);
+                    builder.addInstruction(load, instruction.location.clone());
                 } else {
-                    receiverType = receiver.getType();
-                }
-                let fieldName = fields[0].name.clone();
-                match fieldName {
-                    FieldId::Named(n) => {
-                        let result = self.readField(receiverType, n, instruction.location.clone());
-                        self.unifier.unifyVar(dest, result);
+                    if isRef {
+                        receiverType = receiverType.asRef();
                     }
-                    FieldId::Indexed(index) => {
-                        receiverType = self.unifier.apply(receiverType);
-                        let isRef = receiverType.isReference();
-                        match receiverType.clone().unpackRef() {
-                            Type::Tuple(t) => {
-                                if index as usize >= t.len() {
-                                    TypecheckerError::FieldNotFound(
-                                        fieldName.to_string().clone(),
-                                        receiverType.to_string(),
-                                        instruction.location.clone(),
-                                    )
-                                    .report(self.ctx);
-                                }
-                                let fieldType = if isRef {
-                                    t[index as usize].asRef()
-                                } else {
-                                    t[index as usize].clone()
-                                };
-                                self.unifier.unifyVar(dest, fieldType);
-                            }
-                            _ => {
-                                println!("TupleIndex on non-tuple type: {} {}", receiverType, instruction);
-                                TypecheckerError::TypeAnnotationNeeded(instruction.location.clone()).report(self.ctx);
-                            }
-                        }
-                    }
+                    let newKind = InstructionKind::FieldRef(dest.clone(), receiver.clone(), newFields);
+                    builder.replaceInstruction(newKind, instruction.location.clone());
+                    self.unifier.unifyVar(dest, receiverType);
                 }
             }
             InstructionKind::BlockStart(_) => {}
@@ -1254,10 +1220,7 @@ impl<'a> Typechecker<'a> {
         builder.step();
         let mut fields = Vec::new();
         for entry in chainEntries {
-            if let Some(mut field) = entry.field {
-                field.ty = Some(entry.dest.getType());
-                fields.push(field);
-            }
+            fields.extend(entry.fields.clone());
         }
         let updatedReceiver = match selfLessType.getTupleTypes().len() {
             0 => {
@@ -1349,7 +1312,6 @@ impl<'a> Typechecker<'a> {
             let kind = InstructionKind::Assign(origReceiver.clone(), updatedReceiver.clone());
             kinds.push(kind);
         } else {
-            fields.reverse();
             let kind = InstructionKind::FieldAssign(origReceiver.clone(), updatedReceiver.clone(), fields.clone());
             kinds.push(kind);
         }
@@ -1465,10 +1427,11 @@ impl<'a> Typechecker<'a> {
                             builder.replaceInstruction(kind, instruction.location.clone());
                         }
                         if let InstructionKind::FieldRef(dest, root, fields) = &instruction.kind {
-                            assert_eq!(fields.len(), 1, "FieldRef with multiple fields in typecheck!");
                             let mut fields = fields.clone();
-                            let destTy = self.unifier.apply(dest.getType());
-                            fields[0].ty = Some(destTy.clone());
+                            for field in &mut fields {
+                                let ty = field.ty.clone().expect("field type is missing");
+                                field.ty = Some(self.unifier.apply(ty));
+                            }
                             let kind = InstructionKind::FieldRef(dest.clone(), root.clone(), fields);
                             builder.replaceInstruction(kind, instruction.location.clone());
                         }

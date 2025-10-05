@@ -690,7 +690,7 @@ impl InstructionKind {
                 format!("{} = return({})", dest, id)
             }
             InstructionKind::Ref(dest, id) => format!("{} = &({})", dest, id),
-            InstructionKind::PtrOf(var, target) => format!("{} = ptr({})", var, target),
+            InstructionKind::PtrOf(var, target) => format!("{} = ptr_of({})", var, target),
             InstructionKind::DropPath(path) => format!("drop_path({})", path),
             InstructionKind::DropMetadata(id) => {
                 format!("drop_metadata({})", id)

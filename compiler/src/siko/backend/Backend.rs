@@ -7,7 +7,6 @@ use crate::siko::{
         recursivedatahandler::RecursiveDataHandler,
         simplification::Simplifier::{self, Config},
         DeadCodeEliminator::eliminateDeadCode,
-        FieldRefMerger,
         RemoveTuples::removeTuples,
         SafetyChecker::SafetyChecker,
     },
@@ -28,10 +27,6 @@ pub fn process(ctx: &ReportContext, runner: &mut Runner, program: Program) -> Pr
         .child("recursive_data_handling")
         .run(|| RecursiveDataHandler::process(ctx, program));
     //println!("after recursive data handling\n{}", program);
-    let program = runner
-        .child("field_ref_merging")
-        .run(|| FieldRefMerger::mergeFieldRefs(program));
-    //println!("after field ref merge\n{}", program);
     let dropCheckRunner = runner.child("drop_check");
     let program = dropCheckRunner
         .clone()
