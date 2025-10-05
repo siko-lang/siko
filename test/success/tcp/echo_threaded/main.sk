@@ -80,14 +80,23 @@ implicit mut state: Int
 fn client() {
     let mut state = 0;
     with state = state, TeleType.readLine = mockReadLine {
-        let tcpStream = connect("127.0.0.1:8080").expect("Failed to connect");
         loop {
-            let result = loopFn(tcpStream);
-            match result {
-                Ok(()) -> {}
+            let tcpStream = match connect("127.0.0.1:8080") {
+                Ok(s) -> s
                 Err(e) -> {
-                    TeleType.println("Error: ${e}");
-                    break;
+                    TeleType.println("Failed to connect: ${e}");
+                    sleep((100 * 1000).toU32()); // 100 ms
+                    continue;
+                }
+            };
+            loop {
+                let result = loopFn(tcpStream);
+                match result {
+                    Ok(()) -> {}
+                    Err(e) -> {
+                        TeleType.println("Error: ${e}");
+                        return;
+                    }
                 }
             }
         }

@@ -1,6 +1,7 @@
 module Sync.Thread {
 
 import Libc.Pthread
+import Libc.Unistd
 import NativePtr
 
 struct Arg {
@@ -41,6 +42,11 @@ pub fn spawn(f: fn() -> ()) -> JoinHandle {
     pthread_attr_init(attr);
     pthread_create(&raw thread, attr, entrypoint, argPtr);
     JoinHandle.new(thread)
+}
+
+@safe
+pub fn sleep(microseconds: U32) {
+    Libc.Unistd.usleep(microseconds);
 }
 
 }
