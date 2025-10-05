@@ -189,8 +189,8 @@ impl Format for SimpleExpr {
                 result.extend(expr.format());
                 result
             }
-            SimpleExpr::Ref(expr) => {
-                let mut result = vec![Token::Chunk("&".to_string())];
+            SimpleExpr::Ref(expr, isRaw) => {
+                let mut result = vec![Token::Chunk(if *isRaw { "&raw " } else { "&" }.to_string())];
                 result.extend(expr.format());
                 result
             }

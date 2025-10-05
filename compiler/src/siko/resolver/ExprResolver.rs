@@ -597,7 +597,7 @@ impl<'a> ExprResolver<'a> {
                     .addAssign(info.var, argId, expr.location.clone());
                 self.addJump(info.body, env.getSyntaxBlockId(), expr.location.clone())
             }
-            SimpleExpr::Ref(arg) => {
+            SimpleExpr::Ref(arg, isRaw) => {
                 if let SimpleExpr::FieldAccess(_, _) = &arg.expr {
                     let mut fields = Vec::new();
                     let mut current = &**arg;
@@ -618,12 +618,19 @@ impl<'a> ExprResolver<'a> {
                     let addrVar = self.bodyBuilder.createTempValue(expr.location.clone());
                     fields.reverse();
                     self.bodyBuilder.current().addInstruction(
-                        InstructionKind::AddressOfField(addrVar.clone(), receiverVar, fields),
+                        InstructionKind::AddressOfField(addrVar.clone(), receiverVar, fields, *isRaw),
                         expr.location.clone(),
                     );
                     addrVar
                 } else {
                     let argVar = self.resolveExpr(arg, env);
+                    if *isRaw {
+                        let addrVar = self.bodyBuilder.createTempValue(expr.location.clone());
+                        self.bodyBuilder
+                            .current()
+                            .addInstruction(InstructionKind::PtrOf(addrVar.clone(), argVar), expr.location.clone());
+                        return addrVar;
+                    }
                     self.bodyBuilder.current().addRef(argVar, expr.location.clone())
                 }
             }

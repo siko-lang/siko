@@ -88,7 +88,7 @@ pub enum SimpleExpr {
     Return(Option<Box<Expr>>),
     Break(Option<Box<Expr>>),
     Continue(Option<Box<Expr>>),
-    Ref(Box<Expr>),
+    Ref(Box<Expr>, bool), // true if raw ptr (&raw), false if reference (&)
     List(Vec<Expr>),
     With(Box<With>),
     Lambda(Vec<Pattern>, Box<Expr>),
@@ -123,7 +123,7 @@ impl SimpleExpr {
             }
             SimpleExpr::Block(block) => block.doesNotReturn(),
             SimpleExpr::Tuple(exprs) => exprs.iter().any(|expr| expr.doesNotReturn()),
-            SimpleExpr::Ref(expr) => expr.doesNotReturn(),
+            SimpleExpr::Ref(expr, _) => expr.doesNotReturn(),
             SimpleExpr::List(exprs) => exprs.iter().any(|expr| expr.doesNotReturn()),
             SimpleExpr::Yield(expr) => expr.doesNotReturn(),
             _ => false,

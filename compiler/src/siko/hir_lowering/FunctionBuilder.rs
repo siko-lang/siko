@@ -255,7 +255,7 @@ impl<'a> Builder<'a> {
                 }
                 HirInstructionKind::BlockStart(_) => {}
                 HirInstructionKind::BlockEnd(_) => {}
-                HirInstructionKind::AddressOfField(dest, root, fields) => {
+                HirInstructionKind::AddressOfField(dest, root, fields, _) => {
                     let dest = self.buildVariable(dest);
                     let mut receiverTy = root.getType();
                     let root = self.buildVariable(root);

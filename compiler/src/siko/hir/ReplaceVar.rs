@@ -171,10 +171,10 @@ impl ReplaceVar for InstructionKind {
                 let new_arg = arg.replaceVar(&from, to);
                 InstructionKind::FieldAssign(new_var, new_arg, fields.clone())
             }
-            InstructionKind::AddressOfField(var, target, fields) => {
+            InstructionKind::AddressOfField(var, target, fields, isRaw) => {
                 let new_var = var.replaceVar(&from, to.clone());
                 let new_target = target.replaceVar(&from, to);
-                InstructionKind::AddressOfField(new_var, new_target, fields.clone())
+                InstructionKind::AddressOfField(new_var, new_target, fields.clone(), *isRaw)
             }
             InstructionKind::DeclareVar(var, mutability) => {
                 let new_var = var.replaceVar(&from, to);

@@ -362,7 +362,7 @@ impl<'a> FunctionProfileBuilder<'a> {
                 InstructionKind::ClosureReturn(_, _, _) => {
                     panic!("ClosureReturn in borrow checker")
                 }
-                InstructionKind::AddressOfField(dest, root, fieldInfos) => {
+                InstructionKind::AddressOfField(dest, root, fieldInfos, _) => {
                     let currenTy = self.resolveFieldInfos(root, fieldInfos);
                     let mut destType = self.getVarType(dest);
                     if currenTy.vars.len() < destType.vars.len() {

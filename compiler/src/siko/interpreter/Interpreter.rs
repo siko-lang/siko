@@ -209,7 +209,7 @@ impl<'a> FunctionExecutor<'a> {
                     self.frame.bind(dest.name().to_string(), value);
                 }
                 InstructionKind::FieldAssign(_, _, _) => {}
-                InstructionKind::AddressOfField(_, _, _) => {}
+                InstructionKind::AddressOfField(_, _, _, _) => {}
                 InstructionKind::Transform(_, _, _) => {}
                 InstructionKind::EnumSwitch(_, _) => {}
                 InstructionKind::IntegerSwitch(_, _) => {}

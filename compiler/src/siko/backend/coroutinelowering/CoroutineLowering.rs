@@ -260,7 +260,7 @@ impl CoroutineLowering for InstructionKind {
                 rhs.lower();
                 infos.lower();
             }
-            InstructionKind::AddressOfField(dest, receiver, infos) => {
+            InstructionKind::AddressOfField(dest, receiver, infos, _) => {
                 dest.lower();
                 receiver.lower();
                 infos.lower();

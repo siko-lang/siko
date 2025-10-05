@@ -289,10 +289,11 @@ impl RemoveTuples for InstructionKind {
             InstructionKind::FieldAssign(lhs, rhs, fields) => {
                 InstructionKind::FieldAssign(lhs.clone(), rhs.removeTuples(ctx), fields.removeTuples(ctx))
             }
-            InstructionKind::AddressOfField(dest, receiver, fields) => InstructionKind::AddressOfField(
+            InstructionKind::AddressOfField(dest, receiver, fields, isRaw) => InstructionKind::AddressOfField(
                 dest.removeTuples(ctx),
                 receiver.removeTuples(ctx),
                 fields.removeTuples(ctx),
+                *isRaw,
             ),
             InstructionKind::DeclareVar(var, mutability) => {
                 InstructionKind::DeclareVar(var.removeTuples(ctx), mutability.clone())

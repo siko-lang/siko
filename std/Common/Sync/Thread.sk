@@ -37,10 +37,9 @@ pub fn spawn(f: fn() -> ()) -> JoinHandle {
     let arg = Arg(f: f);
     let argPtr: *Arg = NativePtr.allocate();
     *argPtr = arg;
-    let attrPtr: *PthreadAttr = NativePtr.toPtr(&attr);
-    pthread_attr_init(attrPtr);
-    let threadPtr: *PThread = NativePtr.toPtr(&thread);
-    pthread_create(threadPtr, attrPtr, entrypoint, argPtr);
+    let attr = &raw attr;
+    pthread_attr_init(attr);
+    pthread_create(&raw thread, attr, entrypoint, argPtr);
     JoinHandle.new(thread)
 }
 

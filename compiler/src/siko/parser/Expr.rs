@@ -1099,9 +1099,16 @@ impl<'a> ExprParser for Parser<'a> {
             }
             TokenKind::Op(OperatorKind::BitAnd) => {
                 self.expect(TokenKind::Op(OperatorKind::BitAnd));
+                let isRaw = if self.check(TokenKind::Keyword(KeywordKind::Raw)) {
+                    self.expect(TokenKind::Keyword(KeywordKind::Raw));
+                    true
+                } else {
+                    false
+                };
                 let arg = self.parseExpr();
-                self.buildExpr(SimpleExpr::Ref(Box::new(arg)), start)
+                self.buildExpr(SimpleExpr::Ref(Box::new(arg), isRaw), start)
             }
+
             TokenKind::LeftBracket(BracketKind::Square) => {
                 self.expect(TokenKind::LeftBracket(BracketKind::Square));
                 let mut args = Vec::new();

@@ -367,7 +367,7 @@ impl<'a> Typechecker<'a> {
                         }
                         InstructionKind::Assign(_, _) => {}
                         InstructionKind::FieldAssign(_, _, _) => {}
-                        InstructionKind::AddressOfField(var, _, _) => {
+                        InstructionKind::AddressOfField(var, _, _, _) => {
                             self.initializeVar(var);
                         }
                         InstructionKind::DeclareVar(var, mutability) => {
@@ -816,7 +816,7 @@ impl<'a> Typechecker<'a> {
                     let addressOfVar = self
                         .bodyBuilder
                         .createTempValueWithType(instruction.location.clone(), receiverType.clone().asPtr());
-                    let kind = InstructionKind::AddressOfField(addressOfVar.clone(), receiver.clone(), newFields);
+                    let kind = InstructionKind::AddressOfField(addressOfVar.clone(), receiver.clone(), newFields, true);
                     builder.addInstruction(kind, instruction.location.clone());
                     builder.step();
                     let store = InstructionKind::StorePtr(addressOfVar, rhs.clone());
@@ -830,7 +830,7 @@ impl<'a> Typechecker<'a> {
                 // );
                 self.unifier.unifyVar(rhs, receiverType);
             }
-            InstructionKind::AddressOfField(dest, receiver, fields) => {
+            InstructionKind::AddressOfField(dest, receiver, fields, isRaw) => {
                 let receiverType = receiver.getType();
                 let mut receiverType = self.unifier.apply(receiverType);
                 let mut newFields = Vec::new();
@@ -841,8 +841,12 @@ impl<'a> Typechecker<'a> {
                     newFields.push(newField);
                     receiverType = fieldTy;
                 }
-                receiverType = receiverType.asRef();
-                let newKind = InstructionKind::AddressOfField(dest.clone(), receiver.clone(), newFields);
+                if *isRaw {
+                    receiverType = receiverType.asPtr();
+                } else {
+                    receiverType = receiverType.asRef();
+                }
+                let newKind = InstructionKind::AddressOfField(dest.clone(), receiver.clone(), newFields, *isRaw);
                 builder.replaceInstruction(newKind, instruction.location.clone());
                 self.unifier.unifyVar(dest, receiverType);
             }
@@ -1451,13 +1455,13 @@ impl<'a> Typechecker<'a> {
                             let kind = InstructionKind::FieldAssign(dest.clone(), root.clone(), fields);
                             builder.replaceInstruction(kind, instruction.location.clone());
                         }
-                        if let InstructionKind::AddressOfField(dest, root, fields) = &instruction.kind {
+                        if let InstructionKind::AddressOfField(dest, root, fields, isRaw) = &instruction.kind {
                             let mut fields = fields.clone();
                             for field in &mut fields {
                                 let ty = field.ty.clone().expect("field type is missing");
                                 field.ty = Some(self.unifier.apply(ty));
                             }
-                            let kind = InstructionKind::AddressOfField(dest.clone(), root.clone(), fields);
+                            let kind = InstructionKind::AddressOfField(dest.clone(), root.clone(), fields, *isRaw);
                             builder.replaceInstruction(kind, instruction.location.clone());
                         }
                         if let InstructionKind::FieldRef(dest, root, fields) = &instruction.kind {
