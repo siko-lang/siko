@@ -513,6 +513,18 @@ impl<'a> ExprParser for Parser<'a> {
         while !self.check(TokenKind::RightBracket(BracketKind::Curly)) {
             let patternStart = self.currentSpan();
             let mut pattern = self.parsePattern();
+            if self.check(TokenKind::Op(OperatorKind::BitOr)) {
+                let mut patterns = vec![pattern];
+                while self.check(TokenKind::Op(OperatorKind::BitOr)) {
+                    self.expect(TokenKind::Op(OperatorKind::BitOr));
+                    let p = self.parsePattern();
+                    patterns.push(p);
+                }
+                pattern = Pattern {
+                    pattern: SimplePattern::OrPattern(patterns),
+                    location: self.currentLocation(),
+                };
+            }
             if self.check(TokenKind::Keyword(KeywordKind::If)) {
                 self.expect(TokenKind::Keyword(KeywordKind::If));
                 let guardExpr = self.parseExpr();

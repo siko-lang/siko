@@ -25,6 +25,7 @@ pub enum SimplePattern {
     IntegerLiteral(String),
     Wildcard,
     Guarded(Box<Pattern>, Box<Expr>),
+    OrPattern(Vec<Pattern>),
 }
 
 impl SimplePattern {
@@ -84,6 +85,17 @@ impl fmt::Display for SimplePattern {
             SimplePattern::IntegerLiteral(value) => write!(f, "{}", value),
             SimplePattern::Wildcard => write!(f, "_"),
             SimplePattern::Guarded(pattern, expr) => write!(f, "{} if {:?}", pattern, expr),
+            SimplePattern::OrPattern(patterns) => {
+                let mut first = true;
+                for pattern in patterns {
+                    if !first {
+                        write!(f, " | ")?;
+                    }
+                    write!(f, "{}", pattern)?;
+                    first = false;
+                }
+                Ok(())
+            }
         }
     }
 }

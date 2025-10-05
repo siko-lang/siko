@@ -24,6 +24,7 @@ pub enum ResolverError {
     InvalidCoroutineBody(Location),
     ImportedModuleNotFound(String, Location),
     NamedArgumentInDynamicFunctionCall(String, Location),
+    UnsupportedOrPatternInNonMatch(Location),
 }
 
 impl ResolverError {
@@ -154,6 +155,11 @@ impl ResolverError {
                     ctx.yellow(name)
                 );
                 let r = Report::new(ctx, slogan, Some(location.clone()));
+                r.print();
+            }
+            ResolverError::UnsupportedOrPatternInNonMatch(l) => {
+                let slogan = format!("Unsupported pattern in non-match expressions");
+                let r = Report::new(ctx, slogan, Some(l.clone()));
                 r.print();
             }
         }

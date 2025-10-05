@@ -93,6 +93,9 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                     location: Location::empty(),
                 }
             }
+            SimplePattern::OrPattern(_) => {
+                unreachable!("OrPattern should have been handled earlier")
+            }
         }
     }
 
@@ -154,6 +157,9 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
             }
             SimplePattern::Wildcard => Vec::new(),
             SimplePattern::Guarded(pat, _) => self.generateChoices(pat),
+            SimplePattern::OrPattern(_) => {
+                unreachable!("OrPattern should have been handled earlier")
+            }
         }
     }
 
@@ -207,6 +213,9 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
             ),
             SimplePattern::Wildcard => (decision.add(parentData.push(DataPathSegment::Wildcard)), bindings),
             SimplePattern::Guarded(pat, _) => self.generateDecisions(pat, parentData, decision, bindings),
+            SimplePattern::OrPattern(_) => {
+                unreachable!("OrPattern should have been handled earlier")
+            }
         }
     }
 

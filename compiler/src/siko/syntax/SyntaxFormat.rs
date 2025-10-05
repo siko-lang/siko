@@ -307,6 +307,18 @@ impl Format for SimplePattern {
                 result.extend(expr.format());
                 result
             }
+            SimplePattern::OrPattern(patterns) => {
+                let mut result = Vec::new();
+                let mut first = true;
+                for pattern in patterns {
+                    if !first {
+                        result.push(Token::Chunk(" | ".to_string()));
+                    }
+                    result.extend(pattern.format());
+                    first = false;
+                }
+                result
+            }
         }
     }
 }

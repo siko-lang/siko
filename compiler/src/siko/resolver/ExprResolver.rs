@@ -488,6 +488,18 @@ impl<'a> ExprResolver<'a> {
                     .addFunctionCall(name, vec![rhsId], expr.location.clone())
             }
             SimpleExpr::Match(body, branches) => {
+                let mut processedBranches = Vec::new();
+                for branch in branches {
+                    if let SimplePattern::OrPattern(pats) = &branch.pattern.pattern {
+                        for p in pats {
+                            let mut newBranch = branch.clone();
+                            newBranch.pattern = p.clone();
+                            processedBranches.push(newBranch);
+                        }
+                    } else {
+                        processedBranches.push(branch.clone());
+                    }
+                }
                 //crate::siko::syntax::Format::format_any(expr);
                 let bodyId = self.resolveExpr(body, env);
                 let runner = self.runner.child("match_compiler");
@@ -496,7 +508,7 @@ impl<'a> ExprResolver<'a> {
                     bodyId,
                     expr.location.clone(),
                     body.location.clone(),
-                    branches.clone(),
+                    processedBranches.clone(),
                     env,
                     runner.clone(),
                 );
@@ -936,10 +948,19 @@ impl<'a> ExprResolver<'a> {
                     self.resolvePattern(arg, env, tupleValue);
                 }
             }
-            SimplePattern::StringLiteral(_) => todo!(),
-            SimplePattern::IntegerLiteral(_) => todo!(),
+            SimplePattern::StringLiteral(_) => {
+                ResolverError::UnsupportedOrPatternInNonMatch(pat.location.clone()).report(self.ctx);
+            }
+            SimplePattern::IntegerLiteral(_) => {
+                ResolverError::UnsupportedOrPatternInNonMatch(pat.location.clone()).report(self.ctx);
+            }
             SimplePattern::Wildcard => {}
-            SimplePattern::Guarded(_, _) => todo!(),
+            SimplePattern::Guarded(_, _) => {
+                ResolverError::UnsupportedOrPatternInNonMatch(pat.location.clone()).report(self.ctx);
+            }
+            SimplePattern::OrPattern(_) => {
+                ResolverError::UnsupportedOrPatternInNonMatch(pat.location.clone()).report(self.ctx);
+            }
         }
     }
 
