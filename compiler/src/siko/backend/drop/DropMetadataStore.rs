@@ -5,8 +5,9 @@ use std::{
 };
 
 use crate::siko::{
-    backend::drop::Path::{Path, PathSegment, SimplePath},
+    backend::drop::Path::Path,
     hir::{
+        Path::{PathSegment, SimplePath},
         Program::Program,
         Type::Type,
         Variable::{Variable, VariableName},

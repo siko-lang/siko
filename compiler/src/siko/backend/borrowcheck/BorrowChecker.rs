@@ -150,6 +150,11 @@ impl<'a> BorrowChecker<'a> {
                     let refTyVar = destType.vars.first().expect("ref type must have a var");
                     self.borrowPath(varToPath(arg), refTyVar, arg.location().clone());
                 }
+                InstructionKind::AddressOfField(_, _, _, isRaw) => {
+                    if *isRaw {
+                    } else {
+                    }
+                }
                 InstructionKind::PtrOf(dest, _) => {
                     env.revivePath(&varToPath(&dest));
                 }

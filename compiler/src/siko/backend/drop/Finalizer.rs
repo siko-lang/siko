@@ -3,11 +3,8 @@ use std::collections::{BTreeMap, VecDeque};
 
 use crate::siko::{
     backend::drop::{
-        DeclarationStore::DeclarationStore,
-        DropMetadataStore::DropMetadataStore,
-        Path::{Path, PathSegment, SimplePath},
-        ReferenceStore::ReferenceStore,
-        Usage::getUsageInfo,
+        DeclarationStore::DeclarationStore, DropMetadataStore::DropMetadataStore, Path::Path,
+        ReferenceStore::ReferenceStore, Usage::getUsageInfo,
     },
     hir::{
         Block::BlockId,
@@ -15,10 +12,12 @@ use crate::siko::{
         BodyBuilder::BodyBuilder,
         Function::Function,
         Instruction::{CallInfo, EnumCase, FieldId, FieldInfo, InstructionKind, Mutability},
+        Path::{PathSegment, SimplePath},
         Program::Program,
         Type::Type,
-        Variable::Variable,
+        Variable::{Variable, VariableName},
     },
+    location::Location::Location,
     qualifiedname::builtins::{getFalseName, getTrueName},
 };
 
@@ -71,7 +70,7 @@ impl<'a> Finalizer<'a> {
         match self.declaredDropFlags.get(path) {
             Some(v) => v.clone(),
             None => {
-                let v = path.getDropFlag();
+                let v = getDropFlagForPath(path);
                 self.declaredDropFlags.insert(path.clone(), v.clone());
                 v
             }
@@ -104,7 +103,7 @@ impl<'a> Finalizer<'a> {
                                     //println!("Processing DeclarationList: {}", name);
                                     for path in declarationList.paths() {
                                         //println!("Creating dropflag for path: {}", path);
-                                        let dropFlag = path.getDropFlag();
+                                        let dropFlag = getDropFlagForPath(&path);
                                         self.declaredDropFlags.insert(path, dropFlag.clone());
                                         builder.addInstruction(
                                             InstructionKind::FunctionCall(dropFlag, CallInfo::new(getFalseName(), ())),
@@ -347,4 +346,12 @@ impl<'a> Finalizer<'a> {
         );
         builder.step();
     }
+}
+
+pub fn getDropFlagForPath(p: &SimplePath) -> Variable {
+    Variable::newWithType(
+        VariableName::DropFlag(p.to_string()),
+        Location::empty(),
+        Type::getBoolType(),
+    )
 }
