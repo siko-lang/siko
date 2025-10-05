@@ -12,9 +12,10 @@ use crate::siko::{
         BlockGroupBuilder::BlockGroupBuilder,
         Function::Function,
         Instruction::InstructionKind,
+        Path::{buildSegments, SimplePath},
         Program::Program,
         Type::Type,
-        Variable::{Variable, VariableName},
+        Variable::Variable,
     },
     location::{
         Location::Location,
@@ -26,12 +27,23 @@ use crate::siko::{
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Path {
-    pub root: VariableName,
+    pub p: SimplePath,
+}
+
+impl Path {
+    pub fn userVisible(&self) -> String {
+        let mut s = self.p.root.visibleName();
+        for item in &self.p.items {
+            s.push('.');
+            s.push_str(&item.to_string());
+        }
+        s
+    }
 }
 
 impl Display for Path {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.root.visibleName())
+        write!(f, "{}", self.p)
     }
 }
 
@@ -150,9 +162,26 @@ impl<'a> BorrowChecker<'a> {
                     let refTyVar = destType.vars.first().expect("ref type must have a var");
                     self.borrowPath(varToPath(arg), refTyVar, arg.location().clone());
                 }
-                InstructionKind::AddressOfField(_, _, _, isRaw) => {
+                InstructionKind::AddressOfField(dest, receiver, fields, isRaw) => {
                     if *isRaw {
                     } else {
+                        self.useVar(&env, receiver.clone());
+                        let segments = buildSegments(fields);
+                        let path = Path {
+                            p: SimplePath {
+                                root: receiver.name(),
+                                items: segments,
+                            },
+                        };
+                        if self.traceEnabled {
+                            println!("    AddressOfField: {} -> {}", receiver.name(), path);
+                        }
+                        let destType = self.profileBuilder.getFinalVarType(dest);
+                        self.borrowPath(
+                            path,
+                            destType.vars.first().expect("dest type must have a var"),
+                            receiver.location().clone(),
+                        );
                     }
                 }
                 InstructionKind::PtrOf(dest, _) => {
@@ -195,35 +224,46 @@ impl<'a> BorrowChecker<'a> {
             usedVars.retain(|x| *x != v);
         }
         for usedVar in usedVars {
-            let varType = self.checkVar(env, &usedVar);
-            for tyVar in &varType.vars {
-                if let Some(borrows) = self.borrows.get(tyVar) {
-                    for (path, info) in &borrows.paths {
-                        if env.isPathDead(&path) {
-                            let deathInfo = env.getDeathInfo(&path).expect("dead path must have death info");
-                            if deathInfo.isDrop {
-                                BorrowCheckerError::UseAfterDrop(
-                                    path.to_string(),
-                                    usedVar.location(),
-                                    info.location.clone(),
-                                )
-                                .report(self.ctx);
-                            } else {
-                                BorrowCheckerError::UseAfterMove(
-                                    path.to_string(),
-                                    usedVar.location(),
-                                    deathInfo.location,
-                                    info.location.clone(),
-                                )
-                                .report(self.ctx);
-                            }
+            self.useVar(env, usedVar);
+        }
+        if let Some(v) = i.getResultVar() {
+            env.revivePath(&varToPath(&v));
+        }
+    }
+
+    fn useVar(&mut self, env: &Environment, usedVar: Variable) {
+        let varType = self.checkVar(env, &usedVar);
+        if self.traceEnabled {
+            println!("    Checking used var: {} of type {}", usedVar, varType);
+        }
+        for tyVar in &varType.vars {
+            if let Some(borrows) = self.borrows.get(tyVar) {
+                if self.traceEnabled {
+                    for p in borrows.paths.keys() {
+                        println!("     Borrows for type {}: {}", tyVar, p);
+                    }
+                }
+                for (path, info) in &borrows.paths {
+                    if let Some(deathInfo) = env.isPathDead(&path) {
+                        if deathInfo.isDrop {
+                            BorrowCheckerError::UseAfterDrop(
+                                path.userVisible(),
+                                usedVar.location(),
+                                info.location.clone(),
+                            )
+                            .report(self.ctx);
+                        } else {
+                            BorrowCheckerError::UseAfterMove(
+                                path.userVisible(),
+                                usedVar.location(),
+                                deathInfo.location,
+                                info.location.clone(),
+                            )
+                            .report(self.ctx);
                         }
                     }
                 }
             }
-        }
-        if let Some(v) = i.getResultVar() {
-            env.revivePath(&varToPath(&v));
         }
     }
 
@@ -274,7 +314,9 @@ impl<'a> BorrowChecker<'a> {
 }
 
 fn varToPath(v: &Variable) -> Path {
-    Path { root: v.name() }
+    Path {
+        p: SimplePath::new(v.name()),
+    }
 }
 
 #[derive(Clone)]
@@ -333,8 +375,16 @@ impl Environment {
         self.deadPaths.borrow_mut().remove(path);
     }
 
-    fn isPathDead(&self, path: &Path) -> bool {
-        self.deadPaths.borrow().contains_key(path)
+    fn isPathDead(&self, path: &Path) -> Option<DeathInfo> {
+        //println!("    Checking if path is dead: {}", path);
+        //println!("    Dead paths:");
+        for (p, info) in self.deadPaths.borrow().iter() {
+            //println!("      {}", p);
+            if path.p.contains(&p.p) {
+                return Some(info.clone());
+            }
+        }
+        None
     }
 
     fn getDeathInfo(&self, path: &Path) -> Option<DeathInfo> {

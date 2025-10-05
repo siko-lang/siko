@@ -42,8 +42,8 @@ instance[T] Clone[Arc[T]] {
 instance[T] Drop[Arc[T]] {
     @safe
     fn drop(mut self) -> Self{
-        let count = &self.inner.refCount;
-        let v = count.subFetch(1.toU32());
+        let count = &raw self.inner.refCount;
+        let v = toRef(count).subFetch(1.toU32());
         if v == 0.toU32() {
             {
                 let item = self.inner.value; // drop the inner value
