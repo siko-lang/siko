@@ -1124,22 +1124,22 @@ impl<'a> ExprParser for Parser<'a> {
                 self.expect(TokenKind::RightBracket(BracketKind::Square));
                 self.buildExpr(SimpleExpr::List(args), start)
             }
-            TokenKind::Misc(MiscKind::Backslash) => {
-                self.expect(TokenKind::Misc(MiscKind::Backslash));
+            TokenKind::Op(OperatorKind::BitOr) => {
+                self.expect(TokenKind::Op(OperatorKind::BitOr));
                 let mut params = Vec::new();
                 loop {
-                    if self.check(TokenKind::Arrow(ArrowKind::Right)) {
+                    if self.check(TokenKind::Op(OperatorKind::BitOr)) {
                         break;
                     }
                     let param = self.parsePattern();
                     params.push(param);
-                    if self.check(TokenKind::Arrow(ArrowKind::Right)) {
+                    if self.check(TokenKind::Op(OperatorKind::BitOr)) {
                         break;
                     } else {
                         self.expect(TokenKind::Misc(MiscKind::Comma));
                     }
                 }
-                self.expect(TokenKind::Arrow(ArrowKind::Right));
+                self.expect(TokenKind::Op(OperatorKind::BitOr));
                 let body = self.parseExpr();
                 let block = SimpleExpr::Block(Block {
                     statements: vec![Statement {
