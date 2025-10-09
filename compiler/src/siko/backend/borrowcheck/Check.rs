@@ -3,6 +3,7 @@ use crate::siko::{
         functionprofiles::{
             FunctionProfileBuilder::FunctionProfileBuilder, FunctionProfileStore::FunctionProfileStore,
         },
+        usageprocessor::UsageProcessor::UsageProcessor,
         BorrowChecker::BorrowChecker,
         DataGroups::DataGroups,
     },
@@ -51,6 +52,8 @@ impl<'a> Check<'a> {
             }
         }
         for (_, f) in &self.program.functions {
+            let mut processor = UsageProcessor::new(f, runner.child("usage_processor"));
+            processor.process();
             let mut checker = BorrowChecker::new(
                 ctx,
                 f,

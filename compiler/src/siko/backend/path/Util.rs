@@ -1,4 +1,16 @@
-use crate::siko::hir::{Type::Type, Variable::Variable};
+use crate::siko::{
+    backend::path::{Path::Path, SimplePath::buildSegments},
+    hir::{Instruction::FieldInfo, Type::Type, Variable::Variable},
+};
+
+pub fn buildFieldPath(root: &Variable, fields: &Vec<FieldInfo>) -> Path {
+    let mut path = Path::new(root.clone(), root.location().clone());
+    let segments = buildSegments(fields);
+    for segment in segments {
+        path = path.add(segment);
+    }
+    path
+}
 
 pub trait HasTrivialDrop {
     fn hasTrivialDrop(&self) -> bool;

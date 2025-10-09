@@ -153,6 +153,18 @@ impl Compiler {
                 "--keep-c-source" => {
                     self.config.keepCSource = true;
                 }
+                "--dump-pre-typecheck" => {
+                    self.config.dumpCfg.dumpPreTypecheck = true;
+                }
+                "--dump-after-typecheck" => {
+                    self.config.dumpCfg.dumpAfterTypecheck = true;
+                }
+                "--borrow-checker-trace" => {
+                    self.config.dumpCfg.borrowCheckerTraceEnabled = true;
+                }
+                "--usage-processor-trace" => {
+                    self.config.dumpCfg.usageProcessorTraceEnabled = true;
+                }
                 _ => {
                     if external_mode {
                         self.config.externalFiles.push(args[i].clone());
@@ -263,7 +275,10 @@ impl Compiler {
             //verifyTypes(&program);
             program
         });
-        //println!("after typechecker\n{}", program);
+        if self.config.dumpCfg.dumpAfterTypecheck {
+            println!("--- Dump after typecheck ---");
+            println!("{}", program);
+        }
         let program = Backend::process(&ctx, &mut runner, program);
         //println!("after backend\n{}", program);
         let mut mir_program = runner.child("mir_lowering").run(|| {

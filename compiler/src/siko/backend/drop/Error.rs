@@ -1,5 +1,5 @@
 use crate::siko::{
-    backend::drop::Path::Path,
+    backend::path::Path::Path,
     location::Report::{Entry, Report, ReportContext},
 };
 

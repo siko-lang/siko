@@ -1,10 +1,12 @@
 use std::{collections::BTreeMap, fmt::Display};
 
 use crate::siko::{
-    backend::drop::{
-        Event::{Collision, Event, EventSeries},
-        Path::Path,
-        Usage::{Usage, UsageKind},
+    backend::{
+        drop::Event::{Collision, Event, EventSeries},
+        path::{
+            Path::Path,
+            Usage::{Usage, UsageKind},
+        },
     },
     hir::{
         BlockBuilder::InstructionRef,

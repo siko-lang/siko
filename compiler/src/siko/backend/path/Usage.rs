@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use crate::siko::{
-    backend::drop::{Path::Path, ReferenceStore::ReferenceStore, Util::buildFieldPath},
+    backend::path::{Path::Path, ReferenceStore::ReferenceStore, Util::buildFieldPath},
     hir::{Instruction::InstructionKind, Variable::Variable},
 };
 
@@ -71,7 +71,7 @@ impl Display for UsageInfo {
 fn varToUsage(var: &Variable) -> Usage {
     let ty = var.getType();
     //println!("Using variable: {} {}", var.name().visibleName(), ty);
-    assert!(var.isUsage());
+    assert!(var.isUsage() || var.isDrop());
     if ty.isReference() || ty.isPtr() {
         Usage {
             path: var.toPath(),

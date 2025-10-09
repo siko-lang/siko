@@ -1,9 +1,11 @@
 use std::collections::BTreeMap;
 
 use crate::siko::{
-    backend::drop::{
-        BlockProcessor::BlockProcessor, Context::Context, DropMetadataStore::DropMetadataStore, Event::Collision,
-        ReferenceStore::ReferenceStore,
+    backend::{
+        drop::{
+            BlockProcessor::BlockProcessor, Context::Context, DropMetadataStore::DropMetadataStore, Event::Collision,
+        },
+        path::ReferenceStore::ReferenceStore,
     },
     hir::{Block::BlockId, BlockGroupBuilder::BlockGroupBuilder, BodyBuilder::BodyBuilder, Function::Function},
 };

@@ -1,0 +1,54 @@
+module Main {
+
+struct Bar {
+    v: Int,
+}
+
+struct Foo {
+    value: Bar,
+    ref: &Bar,
+    ptr: *Bar,
+}
+
+struct PtrView {
+    ptr: *Foo,
+}
+
+@safe
+fn main() {
+    let value1 = Bar(4);
+    let value2 = Bar(4);
+    let ref1: &Bar = &value1; // ref of value1, must be a simple ref
+    let ptr1: *Bar = &raw value1; // ptr of value1, must be a simple ptr
+    let foo = Foo(value2, ref1, ptr1);
+
+    // by ref
+    let ref1: &Bar = &foo.value; // ref of value field, must be a simple ref
+    let ref2: &Bar = &foo.ref; // ref of ref field, must be a simple ref
+    let ref3: &*Bar = &foo.ptr; // ref of ptr field, must be a ref ptr
+
+    assert(ref1.v == 4);
+    assert(ref2.v == 4);
+    assert(ref3.v == 4);
+
+    // by ptr
+    let ptr1: *Bar = &raw foo.value; // ptr of value field, must be a simple ptr
+    let ptr2: *&Bar = &raw foo.ref; // ptr of ref field, must be a simple ptr
+    let ptr5: **Bar = &raw foo.ptr; // ptr of ptr field, must be a double ptr
+
+    let view = PtrView(&raw foo);
+    let ref4: &Bar = &view.ptr.value; // ref of value field through ptr, must be a simple ref
+    let ref5: &Bar = &view.ptr.ref; // ref of ref field through ptr, must be a simple ref
+    let ref6: &*Bar = &view.ptr.ptr; // ref of ptr field through ptr, must be a ref ptr
+
+    assert(ref4.v == 4);
+    assert(ref5.v == 4);
+    assert(ref6.v == 4);
+
+    // by value
+    let v1: Bar = foo.value; // using value field as value, move
+    let r1: &Bar = foo.ref; // using ref field as value, copy
+    let p1: *Bar = foo.ptr; // using ptr field as value, copy
+}
+
+}

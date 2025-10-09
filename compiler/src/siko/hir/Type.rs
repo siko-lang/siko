@@ -76,6 +76,13 @@ impl Type {
         }
     }
 
+    pub fn isSinglePtr(&self) -> bool {
+        match self {
+            Type::Ptr(inner) => !inner.isPtrLike(),
+            _ => false,
+        }
+    }
+
     pub fn splitFnType(self) -> Option<(Vec<Type>, Type)> {
         match self {
             Type::Function(args, result) => Some((args, *result)),
@@ -415,6 +422,22 @@ impl Type {
     pub fn isPtr(&self) -> bool {
         match &self {
             Type::Ptr(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn isPtrLike(&self) -> bool {
+        match &self {
+            Type::Ptr(_) => true,
+            Type::Reference(inner) => inner.isPtrLike(),
+            _ => false,
+        }
+    }
+
+    pub fn isPtrRef(&self) -> bool {
+        // this is a reference to a ptr
+        match &self {
+            Type::Reference(inner) => inner.isPtr(),
             _ => false,
         }
     }

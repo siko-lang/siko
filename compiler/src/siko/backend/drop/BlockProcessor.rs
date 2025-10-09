@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 
 use crate::siko::{
-    backend::drop::{
-        Context::Context, DropMetadataStore::DropMetadataStore, Path::Path, ReferenceStore::ReferenceStore,
-        Usage::getUsageInfo,
+    backend::{
+        drop::{Context::Context, DropMetadataStore::DropMetadataStore},
+        path::{Path::Path, ReferenceStore::ReferenceStore, Usage::getUsageInfo},
     },
     hir::{Block::BlockId, BlockBuilder::BlockBuilder, Instruction::InstructionKind, Variable::Variable},
 };

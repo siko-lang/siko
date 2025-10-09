@@ -1,21 +1,18 @@
 use std::{cell::RefCell, collections::BTreeMap, fmt::Display, rc::Rc};
 
 use crate::siko::{
-    backend::borrowcheck::{
-        functionprofiles::{
-            FunctionProfileBuilder::FunctionProfileBuilder, FunctionProfileStore::FunctionProfileStore,
+    backend::{
+        borrowcheck::{
+            functionprofiles::{
+                FunctionProfileBuilder::FunctionProfileBuilder, FunctionProfileStore::FunctionProfileStore,
+            },
+            DataGroups::{DataGroups, ExtendedType},
         },
-        DataGroups::{DataGroups, ExtendedType},
+        path::SimplePath::{buildSegments, SimplePath},
     },
     hir::{
-        Block::BlockId,
-        BlockGroupBuilder::BlockGroupBuilder,
-        Function::Function,
-        Instruction::InstructionKind,
-        Path::{buildSegments, SimplePath},
-        Program::Program,
-        Type::Type,
-        Variable::Variable,
+        Block::BlockId, BlockGroupBuilder::BlockGroupBuilder, Function::Function, Instruction::InstructionKind,
+        Program::Program, Type::Type, Variable::Variable,
     },
     location::{
         Location::Location,
@@ -74,13 +71,14 @@ impl<'a> BorrowChecker<'a> {
         functionGroup: Vec<QualifiedName>,
         runner: Runner,
     ) -> BorrowChecker<'a> {
+        let traceEnabled = runner.getConfig().dumpCfg.borrowCheckerTraceEnabled;
         BorrowChecker {
             ctx,
             borrows: BTreeMap::new(),
             profileBuilder: FunctionProfileBuilder::new(f, program, dataGroups, profileStore, functionGroup, runner),
             blockEnvs: BTreeMap::new(),
             links: BTreeMap::new(),
-            traceEnabled: false,
+            traceEnabled: traceEnabled,
         }
     }
 
@@ -165,7 +163,7 @@ impl<'a> BorrowChecker<'a> {
                 InstructionKind::AddressOfField(dest, receiver, fields, isRaw) => {
                     if *isRaw {
                     } else {
-                        self.useVar(&env, receiver.clone());
+                        self.useVar(&env, receiver.clone(), true);
                         let segments = buildSegments(fields);
                         let path = Path {
                             p: SimplePath {
@@ -188,11 +186,11 @@ impl<'a> BorrowChecker<'a> {
                     env.revivePath(&varToPath(&dest));
                 }
                 InstructionKind::Assign(dest, src) => {
-                    self.checkVar(&env, &src);
+                    self.checkVar(&env, &src, false);
                     env.revivePath(&varToPath(&dest));
                 }
                 InstructionKind::FieldAssign(_, src, _) => {
-                    self.checkVar(&env, &src);
+                    self.checkVar(&env, &src, true);
                 }
                 InstructionKind::FieldRef(dest, _, _) => {
                     env.revivePath(&varToPath(&dest));
@@ -224,15 +222,15 @@ impl<'a> BorrowChecker<'a> {
             usedVars.retain(|x| *x != v);
         }
         for usedVar in usedVars {
-            self.useVar(env, usedVar);
+            self.useVar(env, usedVar, false);
         }
         if let Some(v) = i.getResultVar() {
             env.revivePath(&varToPath(&v));
         }
     }
 
-    fn useVar(&mut self, env: &Environment, usedVar: Variable) {
-        let varType = self.checkVar(env, &usedVar);
+    fn useVar(&mut self, env: &Environment, usedVar: Variable, read: bool) {
+        let varType = self.checkVar(env, &usedVar, read);
         if self.traceEnabled {
             println!("    Checking used var: {} of type {}", usedVar, varType);
         }
@@ -300,9 +298,9 @@ impl<'a> BorrowChecker<'a> {
         borrows.paths.insert(path, BorrowInfo { location });
     }
 
-    fn checkVar(&self, env: &Environment, usedVar: &Variable) -> ExtendedType {
+    fn checkVar(&self, env: &Environment, usedVar: &Variable, read: bool) -> ExtendedType {
         let varType = self.profileBuilder.getFinalVarType(&usedVar);
-        if varType.ty.isNamed() {
+        if varType.ty.isNamed() && !read {
             // this is a struct or enum and it is being moved, mark its paths as dead
             if self.traceEnabled {
                 println!("    Moving named var: {} of type {}", usedVar, varType);

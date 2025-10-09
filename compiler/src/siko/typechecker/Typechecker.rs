@@ -252,8 +252,10 @@ impl<'a> Typechecker<'a> {
     }
 
     pub fn run(&mut self) -> Vec<Function> {
-        // println!("Typechecking function {}", self.f.name);
-        // println!(" {} ", self.f);
+        if self.runner.getConfig().dumpCfg.dumpPreTypecheck {
+            println!("Typechecking function {}", self.f.name);
+            println!(" {} ", self.f);
+        }
         let initializeRunner = self.runner.child("initialize");
         initializeRunner.run(|| self.initialize());
         //self.dump(self.f);
@@ -810,19 +812,30 @@ impl<'a> Typechecker<'a> {
                 let receiverType = receiver.getType();
                 let mut receiverType = self.unifier.apply(receiverType);
                 let mut newFields = Vec::new();
+                // println!(
+                //     "AddressOfField start {} {} {} {} {}",
+                //     receiverType, isRaw, instruction.location, dest, receiver
+                // );
                 for field in fields {
-                    let fieldTy = self.checkField(receiverType, &field.name, field.location.clone());
+                    let root = receiverType.unpackRoot();
+                    //println!("xxxx AddressOfField field {} {}", field.name, field.location);
+                    let fieldTy = self.checkField(root, &field.name, field.location.clone());
                     let mut newField = field.clone();
                     newField.ty = Some(fieldTy.clone());
                     newFields.push(newField);
                     receiverType = fieldTy;
                 }
-                if *isRaw {
+                let newKind = if *isRaw {
                     receiverType = receiverType.asPtr();
+                    InstructionKind::AddressOfField(dest.clone(), receiver.clone(), newFields, *isRaw)
                 } else {
-                    receiverType = receiverType.asRef();
-                }
-                let newKind = InstructionKind::AddressOfField(dest.clone(), receiver.clone(), newFields, *isRaw);
+                    if receiverType.isReference() {
+                        InstructionKind::FieldRef(dest.clone(), receiver.clone(), newFields)
+                    } else {
+                        receiverType = receiverType.asRef();
+                        InstructionKind::AddressOfField(dest.clone(), receiver.clone(), newFields, *isRaw)
+                    }
+                };
                 builder.replaceInstruction(newKind, instruction.location.clone());
                 self.unifier.unifyVar(dest, receiverType);
             }
@@ -861,61 +874,7 @@ impl<'a> Typechecker<'a> {
                 }
             }
             InstructionKind::FieldRef(dest, receiver, fields) => {
-                let receiverType = receiver.getType();
-                let mut receiverType = self.unifier.apply(receiverType);
-                let mut newFields = Vec::new();
-                let mut isPtr = receiverType.isPtr();
-                let mut isRef = receiverType.isReference();
-                // println!("FieldRef start {} {}", receiverType, instruction.location);
-                // for f in fields {
-                //     println!("xxxx FieldRef field {} {}", f.name, f.location);
-                // }
-                for (index, field) in fields.iter().enumerate() {
-                    let root = receiverType.unpackRoot();
-                    let fieldTy = self.checkField(root, &field.name, field.location.clone());
-                    //println!("FieldRef field {} {}", field.name, fieldTy);
-                    let mut newField = field.clone();
-                    newField.ty = Some(fieldTy.clone());
-                    newFields.push(newField);
-                    receiverType = fieldTy;
-                    if receiverType.isPtr() && index < fields.len() - 1 {
-                        isPtr = true;
-                    }
-                    if receiverType.isReference() && index < fields.len() - 1 {
-                        isRef = true;
-                    }
-                }
-                self.receiverChains.insert(
-                    dest.clone(),
-                    ReceiverChainEntry {
-                        source: receiver.clone(),
-                        dest: dest.clone(),
-                        fields: newFields.clone(),
-                    },
-                );
-                //println!("FieldRef rectype: {} isPtr {}", receiverType, isPtr);
-                if isPtr {
-                    let destType = receiverType.clone();
-                    let ptrType = receiverType.asPtr();
-                    let loadPtrVar = self
-                        .bodyBuilder
-                        .createTempValueWithType(instruction.location.clone(), ptrType);
-                    loadPtrVar.setNoDrop();
-                    let newKind =
-                        InstructionKind::AddressOfField(loadPtrVar.clone(), receiver.clone(), newFields, true);
-                    builder.replaceInstruction(newKind, instruction.location.clone());
-                    self.unifier.unifyVar(dest, destType);
-                    builder.step();
-                    let load = InstructionKind::LoadPtr(dest.clone(), loadPtrVar);
-                    builder.addInstruction(load, instruction.location.clone());
-                } else {
-                    if isRef {
-                        receiverType = receiverType.asRef();
-                    }
-                    let newKind = InstructionKind::FieldRef(dest.clone(), receiver.clone(), newFields);
-                    builder.replaceInstruction(newKind, instruction.location.clone());
-                    self.unifier.unifyVar(dest, receiverType);
-                }
+                self.processFieldRef(builder, dest, receiver, fields, instruction.location.clone());
             }
             InstructionKind::BlockStart(_) => {}
             InstructionKind::BlockEnd(_) => {}
@@ -1080,6 +1039,127 @@ impl<'a> Typechecker<'a> {
             InstructionKind::CreateUninitializedArray(_) => {}
             InstructionKind::ArrayLen(_, _) => {}
         }
+    }
+
+    fn processFieldRef(
+        &mut self,
+        builder: &mut BlockBuilder,
+        dest: &Variable,
+        receiver: &Variable,
+        fields: &Vec<FieldInfo>,
+        location: Location,
+    ) {
+        let receiverType = receiver.getType();
+        let origReceiverType = self.unifier.apply(receiverType);
+        let mut receiverType = origReceiverType.clone();
+        let mut newFields = Vec::new();
+        let mut isPtrLike = receiverType.isPtrLike();
+        let mut isRef = receiverType.isReference();
+        // println!("FieldRef start {} {}", receiverType, instruction.location);
+        // for f in fields {
+        //     println!("xxxx FieldRef field {} {}", f.name, f.location);
+        // }
+        for (index, field) in fields.iter().enumerate() {
+            let root = receiverType.unpackRoot();
+            let fieldTy = self.checkField(root, &field.name, field.location.clone());
+            //println!("FieldRef field {} {}", field.name, fieldTy);
+            let mut newField = field.clone();
+            newField.ty = Some(fieldTy.clone());
+            newFields.push(newField);
+            receiverType = fieldTy;
+            if receiverType.isPtrLike() && index < fields.len() - 1 {
+                isPtrLike = true;
+            }
+            if receiverType.isReference() && index < fields.len() - 1 {
+                isRef = true;
+            }
+        }
+        self.receiverChains.insert(
+            dest.clone(),
+            ReceiverChainEntry {
+                source: receiver.clone(),
+                dest: dest.clone(),
+                fields: newFields.clone(),
+            },
+        );
+        //println!("FieldRef rectype: {} isPtr {}", receiverType, isPtrLike);
+        if isPtrLike {
+            //println!("FieldRef with ptr-like receiver {} {}", receiverType, origReceiverType);
+            // there is somewhere a pointer in the chain, we need to add loads
+            let destType = receiverType.clone();
+            let mut kinds = Vec::new();
+            let mut currentVar = self.derefReceiver(receiver, &location, origReceiverType, &mut kinds);
+            for (index, field) in newFields.iter().enumerate() {
+                let fieldTy = field.ty.clone().expect("field type missing");
+                let fieldTy = fieldTy.asPtr();
+                let tmp = self
+                    .bodyBuilder
+                    .createTempValueWithType(location.clone(), fieldTy.clone());
+                tmp.setNoDrop();
+                //println!("tmp var for field {}: {} {}", field.name, tmp, fieldTy);
+                let kind = InstructionKind::AddressOfField(tmp.clone(), currentVar.clone(), vec![field.clone()], true);
+                //println!("Adding address-of instruction: {}", kind);
+                kinds.push(kind);
+                currentVar = tmp;
+                if index < newFields.len() - 1 {
+                    currentVar = self.derefReceiver(&currentVar, &location, fieldTy, &mut kinds);
+                }
+            }
+            self.unifier.unifyVar(dest, destType);
+            let load = InstructionKind::LoadPtr(dest.clone(), currentVar);
+            //println!("Adding final load instruction: {}", load);
+            kinds.push(load);
+            builder.removeInstruction();
+            kinds.reverse();
+            for kind in kinds {
+                builder.addInstruction(kind, location.clone());
+            }
+        } else {
+            if isRef {
+                receiverType = receiverType.asRef();
+            }
+            let newKind = InstructionKind::FieldRef(dest.clone(), receiver.clone(), newFields);
+            builder.replaceInstruction(newKind, location.clone());
+            self.unifier.unifyVar(dest, receiverType);
+        }
+    }
+
+    fn derefReceiver(
+        &mut self,
+        receiver: &Variable,
+        location: &Location,
+        origReceiverType: Type,
+        kinds: &mut Vec<InstructionKind>,
+    ) -> Variable {
+        let mut currentVar = receiver.clone();
+        let mut currentReceiverType = origReceiverType;
+        while currentReceiverType.isPtrLike() {
+            // we need to add as many loads as necessary to make this type a single ptr
+            if currentReceiverType.isSinglePtr() {
+                break;
+            }
+            // if it is a reference to a ptr then we first clone it
+            if currentReceiverType.isPtrRef() {
+                let cloneVar = self
+                    .bodyBuilder
+                    .createTempValueWithType(location.clone(), currentReceiverType.clone().unpackRef());
+                let info = CallInfo::new(getNativePtrCloneName(), Arguments::Resolved(vec![currentVar.clone()]));
+                let kind = InstructionKind::FunctionCall(cloneVar.clone(), info);
+                kinds.push(kind);
+                currentVar = cloneVar;
+                currentReceiverType = currentReceiverType.clone().unpackRef();
+            }
+            let currType = currentReceiverType.clone().unpackPtr();
+            let loadVar = self
+                .bodyBuilder
+                .createTempValueWithType(location.clone(), currType.clone());
+            loadVar.setNoDrop();
+            let loadKind = InstructionKind::LoadPtr(loadVar.clone(), currentVar.clone());
+            kinds.push(loadKind);
+            currentVar = loadVar;
+            currentReceiverType = currType;
+        }
+        currentVar
     }
 
     fn resolveReceiverChain(&self, receiver: &Variable) -> (Variable, Vec<ReceiverChainEntry>) {

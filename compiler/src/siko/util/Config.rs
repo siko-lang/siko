@@ -17,6 +17,24 @@ pub enum TargetOS {
     MacOS,
     Windows,
 }
+#[derive(Debug, Clone)]
+pub struct DumpConfig {
+    pub dumpPreTypecheck: bool,
+    pub dumpAfterTypecheck: bool,
+    pub borrowCheckerTraceEnabled: bool,
+    pub usageProcessorTraceEnabled: bool,
+}
+
+impl DumpConfig {
+    pub fn new() -> Self {
+        DumpConfig {
+            dumpPreTypecheck: false,
+            dumpAfterTypecheck: false,
+            borrowCheckerTraceEnabled: false,
+            usageProcessorTraceEnabled: false,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -30,6 +48,7 @@ pub struct Config {
     pub outputFile: String,
     pub keepCSource: bool,
     pub targetOS: TargetOS,
+    pub dumpCfg: DumpConfig,
 }
 
 impl Config {
@@ -45,6 +64,7 @@ impl Config {
             outputFile: format!("siko_main"),
             keepCSource: false,
             targetOS: TargetOS::Linux,
+            dumpCfg: DumpConfig::new(),
         }
     }
 }

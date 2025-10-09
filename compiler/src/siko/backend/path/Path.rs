@@ -1,10 +1,10 @@
 use std::fmt::Debug;
 use std::fmt::Display;
 
+use crate::siko::backend::path::SimplePath::PathSegment;
+use crate::siko::backend::path::SimplePath::SimplePath;
 use crate::siko::hir::Block::BlockId;
 use crate::siko::hir::BlockBuilder::InstructionRef;
-use crate::siko::hir::Path::PathSegment;
-use crate::siko::hir::Path::SimplePath;
 use crate::siko::{hir::Variable::Variable, location::Location::Location};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]

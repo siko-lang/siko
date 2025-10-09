@@ -293,27 +293,38 @@ impl<'a> DataGroups<'a> {
     pub fn extendType(&self, ty: &Type) -> ExtendedType {
         let mut extTy = ExtendedType::new(ty.clone());
         let allocator = TypeVarAllocator::new();
-        if let Some(name) = getNameFromType(ty) {
-            let def = self
-                .dataDefs
-                .get(&name)
-                .expect(&format!("Data definition not found {}", name));
-            match def {
-                DataDef::Struct(s) => {
-                    allocator.useTypes(&s.ty.vars);
-                    extTy.vars.extend(s.ty.vars.clone());
-                }
-                DataDef::Enum(e) => {
-                    allocator.useTypes(&e.ty.vars);
-                    extTy.vars.extend(e.ty.vars.clone());
+        self.extendTypeRecursive(ty, &mut extTy, &mut allocator.clone());
+        extTy
+    }
+
+    pub fn extendTypeRecursive(&self, ty: &Type, extTy: &mut ExtendedType, allocator: &mut TypeVarAllocator) {
+        match ty {
+            Type::Reference(inner) => {
+                self.extendTypeRecursive(inner, extTy, allocator);
+                extTy.vars.insert(0, allocator.next());
+            }
+            Type::Ptr(inner) => {
+                self.extendTypeRecursive(inner, extTy, allocator);
+            }
+            _ => {
+                if let Some(name) = getNameFromType(ty) {
+                    let def = self
+                        .dataDefs
+                        .get(&name)
+                        .expect(&format!("Data definition not found {}", name));
+                    match def {
+                        DataDef::Struct(s) => {
+                            allocator.useTypes(&s.ty.vars);
+                            extTy.vars.extend(s.ty.vars.clone());
+                        }
+                        DataDef::Enum(e) => {
+                            allocator.useTypes(&e.ty.vars);
+                            extTy.vars.extend(e.ty.vars.clone());
+                        }
+                    }
                 }
             }
         }
-        if Type::isReference(ty) {
-            let refVar = allocator.next();
-            extTy.vars.insert(0, refVar);
-        }
-        extTy
     }
 
     pub fn getStruct(&self, name: &QualifiedName) -> &StructDef {
@@ -337,14 +348,14 @@ fn getNameFromType(ty: &Type) -> Option<QualifiedName> {
         Type::Reference(base) => getNameFromType(base),
         Type::Ptr(base) => getNameFromType(base),
         Type::FunctionPtr(_, _) => None,
-        Type::Tuple(_) => panic!("Tuple type in borrowcheck"),
-        Type::Function(_, _) => panic!("Function type in borrowcheck"),
-        Type::Var(type_var) => panic!("Type var in borrowcheck: {}", type_var),
-        Type::SelfType => panic!("Self type in borrowcheck"),
         Type::Never(_) => None,
         Type::NumericConstant(_) => None,
         Type::Void => None,
         Type::VoidPtr => None,
+        Type::Tuple(_) => panic!("Tuple type in borrowcheck"),
+        Type::Function(_, _) => panic!("Function type in borrowcheck"),
+        Type::Var(type_var) => panic!("Type var in borrowcheck: {}", type_var),
+        Type::SelfType => panic!("Self type in borrowcheck"),
         Type::Coroutine(_, _) => panic!("Coroutine type in borrowcheck"),
     }
 }

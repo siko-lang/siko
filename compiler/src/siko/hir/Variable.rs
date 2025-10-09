@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use std::fmt::Display;
 use std::rc::Rc;
 
-use crate::siko::backend::drop::Path::Path;
+use crate::siko::backend::path::Path::Path;
 use crate::siko::hir::Block::BlockId;
 use crate::siko::location::Location::Location;
 
@@ -268,6 +268,10 @@ impl Variable {
 
     pub fn isUsage(&self) -> bool {
         self.kind == VariableKind::Usage
+    }
+
+    pub fn isDrop(&self) -> bool {
+        self.kind == VariableKind::Drop
     }
 
     pub fn toPath(&self) -> Path {

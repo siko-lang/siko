@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Display};
 
-use crate::siko::backend::drop::{
+use crate::siko::backend::path::{
     Path::Path,
     Usage::{Usage, UsageKind},
 };

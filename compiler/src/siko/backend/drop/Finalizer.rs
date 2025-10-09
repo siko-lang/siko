@@ -2,9 +2,14 @@ use core::panic;
 use std::collections::{BTreeMap, VecDeque};
 
 use crate::siko::{
-    backend::drop::{
-        DeclarationStore::DeclarationStore, DropMetadataStore::DropMetadataStore, Path::Path,
-        ReferenceStore::ReferenceStore, Usage::getUsageInfo,
+    backend::{
+        drop::{DeclarationStore::DeclarationStore, DropMetadataStore::DropMetadataStore, Util::HasTrivialDrop},
+        path::{
+            Path::Path,
+            ReferenceStore::ReferenceStore,
+            SimplePath::{PathSegment, SimplePath},
+            Usage::getUsageInfo,
+        },
     },
     hir::{
         Block::BlockId,
@@ -12,7 +17,6 @@ use crate::siko::{
         BodyBuilder::BodyBuilder,
         Function::Function,
         Instruction::{CallInfo, EnumCase, FieldId, FieldInfo, InstructionKind, Mutability},
-        Path::{PathSegment, SimplePath},
         Program::Program,
         Type::Type,
         Variable::{Variable, VariableName},
@@ -264,7 +268,7 @@ impl<'a> Finalizer<'a> {
                                         PathSegment::Indexed(index, ty) => {
                                             dropVarTy = Some(ty.clone());
                                             FieldInfo {
-                                                name: FieldId::Indexed(*index),
+                                                name: FieldId::Indexed(index.clone()),
                                                 location: instruction.location.clone(),
                                                 ty: Some(ty.clone()),
                                             }
@@ -280,11 +284,13 @@ impl<'a> Finalizer<'a> {
                                 dropBlock.addInstruction(fieldAcess, instruction.location.clone());
                                 dropVar
                             };
-                            let dropRes = self
-                                .bodyBuilder
-                                .createTempValueWithType(instruction.location.clone(), Type::getUnitType());
-                            let dropInstruction = InstructionKind::Drop(dropRes, dropVar.useVarAsDrop());
-                            dropBlock.addInstruction(dropInstruction, instruction.location.clone());
+                            if !dropVar.getType().hasTrivialDrop() {
+                                let dropRes = self
+                                    .bodyBuilder
+                                    .createTempValueWithType(instruction.location.clone(), Type::getUnitType());
+                                let dropInstruction = InstructionKind::Drop(dropRes, dropVar.useVarAsDrop());
+                                dropBlock.addInstruction(dropInstruction, instruction.location.clone());
+                            }
                             // when dropping a path we need to disable the drop flag for all sub-paths
                             self.disablePath(&path, &mut dropBlock.iterator());
                             dropBlock.addJump(newBlockId, instruction.location.clone());

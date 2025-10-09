@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 use std::fmt::Display;
 
-use crate::siko::backend::drop::Path::Path;
+use crate::siko::backend::path::Path::Path;
 use crate::siko::hir::Block::BlockId;
 use crate::siko::hir::CollectVariables::CollectVariables;
 use crate::siko::hir::Type::formatTypes;

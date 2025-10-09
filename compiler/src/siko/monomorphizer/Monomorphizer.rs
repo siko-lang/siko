@@ -528,6 +528,9 @@ impl<'a> Monomorphizer<'a> {
                     let mut allocator = &mut TypeVarAllocator::new();
                     let c = instantiateStruct(&mut allocator, &c, &ty);
                     for f in &c.fields {
+                        if f.ty.hasTrivialDrop() {
+                            continue;
+                        }
                         let fieldInfo = FieldInfo {
                             name: FieldId::Named(f.name.clone()),
                             ty: Some(f.ty.clone()),

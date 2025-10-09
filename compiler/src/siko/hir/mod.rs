@@ -18,7 +18,6 @@ pub mod InstanceResolver;
 pub mod InstanceStore;
 pub mod Instantiation;
 pub mod Instruction;
-pub mod Path;
 pub mod Program;
 pub mod ReplaceVar;
 pub mod Safety;

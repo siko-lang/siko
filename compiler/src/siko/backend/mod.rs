@@ -8,5 +8,6 @@ pub mod borrowcheck;
 pub mod closurelowering;
 pub mod coroutinelowering;
 pub mod drop;
+pub mod path;
 pub mod recursivedatahandler;
 pub mod simplification;

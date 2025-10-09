@@ -1,7 +1,7 @@
 use crate::siko::{
-    backend::drop::{
-        DeclarationStore::DeclarationStore, DropMetadataStore::DropMetadataStore, ReferenceStore::ReferenceStore,
-        Usage::getUsageInfo, Util::HasTrivialDrop,
+    backend::{
+        drop::{DeclarationStore::DeclarationStore, DropMetadataStore::DropMetadataStore, Util::HasTrivialDrop},
+        path::{ReferenceStore::ReferenceStore, Usage::getUsageInfo},
     },
     hir::{
         BlockBuilder::BlockBuilder,
@@ -70,22 +70,6 @@ impl<'a> Initializer<'a> {
         }
     }
 
-    fn collectRefs(&mut self) {
-        for blockId in self.bodyBuilder.getAllBlockIds() {
-            let mut builder = self.bodyBuilder.iterator(blockId);
-            loop {
-                if let Some(instruction) = builder.getInstruction() {
-                    if let InstructionKind::Ref(_, src) = &instruction.kind {
-                        self.referenceStore.addReference(src.name());
-                    }
-                    builder.step();
-                } else {
-                    break;
-                }
-            }
-        }
-    }
-
     fn buildDeclarationStore(&mut self) {
         let mut syntaxBlockIterator = SyntaxBlockIterator::new(self.bodyBuilder.clone());
 
@@ -119,7 +103,7 @@ impl<'a> Initializer<'a> {
 
         self.collectExplicitDeclarations();
 
-        self.collectRefs();
+        self.referenceStore.build(self.function);
 
         self.buildDeclarationStore();
 

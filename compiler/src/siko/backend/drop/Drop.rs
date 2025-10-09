@@ -4,17 +4,18 @@ use std::{
 };
 
 use crate::siko::{
-    backend::drop::{
-        CollisionChecker::CollisionChecker,
-        Context::Context,
-        DeclarationStore::DeclarationStore,
-        DropMetadataStore::DropMetadataStore,
-        Error::{reportErrors, Error},
-        Event::Collision,
-        Finalizer::Finalizer,
-        Initializer::Initializer,
-        Path::Path,
-        ReferenceStore::ReferenceStore,
+    backend::{
+        drop::{
+            CollisionChecker::CollisionChecker,
+            Context::Context,
+            DeclarationStore::DeclarationStore,
+            DropMetadataStore::DropMetadataStore,
+            Error::{reportErrors, Error},
+            Event::Collision,
+            Finalizer::Finalizer,
+            Initializer::Initializer,
+        },
+        path::{Path::Path, ReferenceStore::ReferenceStore},
     },
     hir::{
         Block::BlockId,

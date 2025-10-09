@@ -68,6 +68,7 @@ pub struct Branch {
     pub block: String,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum GetMode {
     Noop,
     Ref,
