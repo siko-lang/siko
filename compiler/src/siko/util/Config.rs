@@ -22,7 +22,6 @@ pub struct DumpConfig {
     pub dumpPreTypecheck: bool,
     pub dumpAfterTypecheck: bool,
     pub borrowCheckerTraceEnabled: bool,
-    pub usageProcessorTraceEnabled: bool,
 }
 
 impl DumpConfig {
@@ -31,7 +30,6 @@ impl DumpConfig {
             dumpPreTypecheck: false,
             dumpAfterTypecheck: false,
             borrowCheckerTraceEnabled: false,
-            usageProcessorTraceEnabled: false,
         }
     }
 }

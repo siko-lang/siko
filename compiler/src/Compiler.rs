@@ -162,9 +162,6 @@ impl Compiler {
                 "--borrow-checker-trace" => {
                     self.config.dumpCfg.borrowCheckerTraceEnabled = true;
                 }
-                "--usage-processor-trace" => {
-                    self.config.dumpCfg.usageProcessorTraceEnabled = true;
-                }
                 _ => {
                     if external_mode {
                         self.config.externalFiles.push(args[i].clone());
