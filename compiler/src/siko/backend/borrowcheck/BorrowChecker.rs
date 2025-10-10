@@ -6,6 +6,7 @@ use crate::siko::{
             functionprofiles::{
                 FunctionProfileBuilder::FunctionProfileBuilder, FunctionProfileStore::FunctionProfileStore,
             },
+            BorrowVarMap::BorrowVarMapBuilder,
             DataGroups::{DataGroups, ExtendedType},
         },
         path::SimplePath::{buildSegments, SimplePath},
@@ -100,7 +101,15 @@ impl<'a> BorrowChecker<'a> {
         }
         let blockGroupBuilder = BlockGroupBuilder::new(self.profileBuilder.f);
         let groupInfo = blockGroupBuilder.process();
-        //println!("Block groups: {:?}", groupInfo.groups);
+        let borrowVarMapBuilder = BorrowVarMapBuilder::new(&self.profileBuilder, self.traceEnabled);
+        let initialBorrowVarMap = borrowVarMapBuilder.buildBorrowVarMap(&self.links, &groupInfo);
+        if self.traceEnabled {
+            println!("Links:");
+            for (from, to) in &self.links {
+                println!("  {} -> {}", from, to);
+            }
+            println!("Block groups: {:?}", groupInfo.groups);
+        }
         for group in groupInfo.groups {
             //println!("Processing block group {:?}", group.items);
             let mut queue = Vec::new();
