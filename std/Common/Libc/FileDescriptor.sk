@@ -46,8 +46,8 @@ instance Writer[FileDescriptor] {
     fn write(&self, buffer: &ReadBuffer) -> Result[Int, Error] {
         let bytesWritten = Libc.Unistd.write(self.fd, buffer.data.asPtr(), buffer.data.len());
         if bytesWritten < 0 {
-            let err = getErrno();
-            return Err(Error.new(err.toInt()));
+            let err = Arch.Errno.getErrnoCode();
+            return Err(Error.new(err));
         }
         Ok(bytesWritten)
     }

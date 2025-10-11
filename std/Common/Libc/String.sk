@@ -28,20 +28,29 @@ pub fn fromCString(ptr: *U8) -> String {
     if ptr.isNull() {
         return "".toString();
     }
-    let mut len = 0.toU64();
-    loop {
-        let byte = *NativePtr.offset(ptr, len);
-        if byte == 0.toU8() {
-            break;
-        }
-        len += 1.toU64();
-    }
+    let mut len = strlen(ptr);
     let mut bytes = Vec.new(len.toInt());
     for i in 0..len.toInt() {
         let byte = *NativePtr.offset(ptr, i.toU64());
         bytes.push(byte);
     }
     String.fromVecU8(bytes)
+}
+
+@unsafe
+pub fn strlen(s: *U8) -> U64 {
+    if s.isNull() {
+        return 0.toU64();
+    }
+    let mut len = 0.toU64();
+    loop {
+        let byte = *NativePtr.offset(s, len);
+        if byte == 0.toU8() {
+            break;
+        }
+        len += 1.toU64();
+    }
+    len
 }
 
 }

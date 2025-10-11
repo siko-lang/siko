@@ -1,0 +1,23 @@
+module Libc.Arg {
+
+import NativePtr
+import Libc.String
+import Slice
+
+fn get_saved_argc() -> I32 = extern "C"
+fn get_saved_argv() -> **U8 = extern "C"
+
+@safe
+pub fn getArgs() -> Vec[String] {
+    let argc = get_saved_argc();
+    let argv = get_saved_argv();
+    let mut args = Vec.new();
+    for i in 0.toI32()..argc {
+        let cstr = offset(argv, i.toU64());
+        let str = fromCString(*cstr);
+        args.push(str);
+    }
+    args
+}
+
+}
