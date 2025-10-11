@@ -162,6 +162,9 @@ impl Compiler {
                 "--borrow-checker-trace" => {
                     self.config.dumpCfg.borrowCheckerTraceEnabled = true;
                 }
+                "--instance-resolver-trace" => {
+                    self.config.dumpCfg.instanceResolverTraceEnabled = true;
+                }
                 _ => {
                     if external_mode {
                         self.config.externalFiles.push(args[i].clone());

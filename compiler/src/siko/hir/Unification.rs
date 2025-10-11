@@ -6,10 +6,37 @@ use super::{
     Type::{Type, TypeVar},
 };
 
+#[derive(Debug, Clone, Copy)]
+pub struct Config {
+    pub allowNamed: bool,
+    pub voidSeparate: bool,
+}
+
+impl Config {
+    pub fn default() -> Config {
+        Config {
+            allowNamed: false,
+            voidSeparate: false,
+        }
+    }
+
+    pub fn allowNamed(&self) -> Config {
+        let mut copy = *self;
+        copy.allowNamed = true;
+        copy
+    }
+
+    pub fn voidSeparate(&self) -> Config {
+        let mut copy = *self;
+        copy.voidSeparate = true;
+        copy
+    }
+}
+
 #[derive(Debug)]
 pub struct Error {}
 
-pub fn unify(sub: &mut Substitution, ty1: Type, ty2: Type, allowNamed: bool) -> Result<(), Error> {
+pub fn unify(sub: &mut Substitution, ty1: Type, ty2: Type, cfg: Config) -> Result<(), Error> {
     //println!("Unifying {}/{}", ty1, ty2);
     let ty1 = ty1.apply(sub).makeSingleRef();
     let ty2 = ty2.apply(sub).makeSingleRef();
@@ -20,7 +47,7 @@ pub fn unify(sub: &mut Substitution, ty1: Type, ty2: Type, allowNamed: bool) -> 
                 return Err(Error {});
             } else {
                 for (arg1, arg2) in zip(args1, args2) {
-                    unify(sub, arg1, arg2, allowNamed)?;
+                    unify(sub, arg1, arg2, cfg)?;
                 }
                 Ok(())
             }
@@ -30,7 +57,7 @@ pub fn unify(sub: &mut Substitution, ty1: Type, ty2: Type, allowNamed: bool) -> 
                 return Err(Error {});
             } else {
                 for (arg1, arg2) in zip(args1, args2) {
-                    unify(sub, arg1, arg2, allowNamed)?;
+                    unify(sub, arg1, arg2, cfg)?;
                 }
                 Ok(())
             }
@@ -61,29 +88,29 @@ pub fn unify(sub: &mut Substitution, ty1: Type, ty2: Type, allowNamed: bool) -> 
             sub.add(Type::Var(TypeVar::Var(v)), ty2);
             Ok(())
         }
-        (ty1, Type::Var(v)) if allowNamed => {
+        (ty1, Type::Var(v)) if cfg.allowNamed => {
             sub.add(Type::Var(v), ty1);
             Ok(())
         }
-        (Type::Var(v), ty2) if allowNamed => {
+        (Type::Var(v), ty2) if cfg.allowNamed => {
             sub.add(Type::Var(v), ty2);
             Ok(())
         }
-        (Type::Reference(v1), Type::Reference(v2)) => unify(sub, *v1, *v2, allowNamed),
-        (Type::Ptr(v1), Type::Ptr(v2)) => unify(sub, *v1, *v2, allowNamed),
+        (Type::Reference(v1), Type::Reference(v2)) => unify(sub, *v1, *v2, cfg),
+        (Type::Ptr(v1), Type::Ptr(v2)) => unify(sub, *v1, *v2, cfg),
         (Type::Never(_), _) => Ok(()),
         (_, Type::Never(_)) => Ok(()),
         (Type::Function(args1, res1), Type::Function(args2, res2)) => {
             for (arg1, arg2) in zip(args1, args2) {
-                unify(sub, arg1, arg2, allowNamed)?;
+                unify(sub, arg1, arg2, cfg)?;
             }
-            return unify(sub, *res1, *res2, allowNamed);
+            return unify(sub, *res1, *res2, cfg);
         }
         (Type::FunctionPtr(args1, res1), Type::FunctionPtr(args2, res2)) => {
             for (arg1, arg2) in zip(args1, args2) {
-                unify(sub, arg1, arg2, allowNamed)?;
+                unify(sub, arg1, arg2, cfg)?;
             }
-            return unify(sub, *res1, *res2, allowNamed);
+            return unify(sub, *res1, *res2, cfg);
         }
         (Type::NumericConstant(v1), Type::NumericConstant(v2)) => {
             if v1 == v2 {
@@ -94,11 +121,11 @@ pub fn unify(sub: &mut Substitution, ty1: Type, ty2: Type, allowNamed: bool) -> 
         }
         (Type::Void, Type::Void) => Ok(()),
         (Type::VoidPtr, Type::VoidPtr) => Ok(()),
-        (Type::VoidPtr, Type::Ptr(_)) => Ok(()),
-        (Type::Ptr(_), Type::VoidPtr) => Ok(()),
+        (Type::VoidPtr, Type::Ptr(_)) if !cfg.voidSeparate => Ok(()),
+        (Type::Ptr(_), Type::VoidPtr) if !cfg.voidSeparate => Ok(()),
         (Type::Coroutine(yieldTy1, retTy1), Type::Coroutine(yieldTy2, retTy2)) => {
-            unify(sub, *yieldTy1, *yieldTy2, allowNamed)?;
-            unify(sub, *retTy1, *retTy2, allowNamed)
+            unify(sub, *yieldTy1, *yieldTy2, cfg)?;
+            unify(sub, *retTy1, *retTy2, cfg)
         }
         _ => return Err(Error {}),
     }

@@ -1,7 +1,11 @@
 use std::collections::BTreeMap;
 
 use crate::siko::{
-    hir::{Substitution::Substitution, Type::Type, Unification::unify},
+    hir::{
+        Substitution::Substitution,
+        Type::Type,
+        Unification::{unify, Config},
+    },
     monomorphizer::Monomorphizer::Monomorphizer,
 };
 
@@ -32,7 +36,7 @@ impl<T: Monomorphize, K: Ord + Clone> Monomorphize for BTreeMap<K, T> {
 
 pub fn createTypeSubstitution(ty1: Type, ty2: Type) -> Substitution {
     let mut sub = Substitution::new();
-    if unify(&mut sub, ty1.clone(), ty2.clone(), true).is_err() {
+    if unify(&mut sub, ty1.clone(), ty2.clone(), Config::default().allowNamed()).is_err() {
         panic!("Unification failed for {} {}", ty1, ty2);
     }
     sub

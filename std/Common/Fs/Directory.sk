@@ -1,0 +1,131 @@
+module Fs.Directory {
+
+import Arch.Dirent
+import IO.Error
+import Libc.Dir
+import Libc.Errno
+import Libc.String
+import NativePtr
+
+pub struct Directory {
+    dir: void*,
+
+    @safe
+    pub fn open(path: &String) -> Result[Directory, Error] {
+        let cPath = CString.fromString(path.clone());
+        let dirPtr = Libc.Dir.opendir(cPath.asPtr());
+        if dirPtr.isNull() {
+            let err = Libc.Errno.getErrno();
+            return Err(Error.new(err.toInt()));
+        }
+        let dir = Fs.Directory.Directory(dir: dirPtr);
+        Ok(dir)
+    }
+
+    @safe
+    pub fn read(&self) -> Result[Option[DirEntry], Error] {
+        let entryPtr = Libc.Dir.readdir(self.dir.clone());
+        if entryPtr.isNull() {
+            let err = Libc.Errno.getErrno();
+            if err.toInt() == 0 {
+                return Ok(None);
+            }
+            return Err(Error.new(err.toInt()));
+        }
+        let entry: &Dirent = NativePtr.toRef(entryPtr);
+        Ok(Some(DirEntry.fromDirent(entry)))
+    }
+
+    @safe
+    fn close(&self) -> Result[(), Error] {
+        if self.dir.isNull() {
+            return Ok(());
+        }
+        let res = Libc.Dir.closedir(self.dir.clone());
+        if res < 0.toI32() {
+            let err = Libc.Errno.getErrno();
+            return Err(Error.new(err.toInt()));
+        }
+        Ok(())
+    }
+}
+
+pub enum FileType {
+    Unknown
+    Fifo,
+    CharDevice,
+    Directory,
+    BlockDevice,
+    RegularFile,
+    Symlink,
+    Socket,
+    Whiteout,
+
+    fn fromU8(value: U8) -> FileType {
+        match value.toInt() {
+            0 -> Unknown,
+            1 -> Fifo,
+            2 -> CharDevice,
+            4 -> FileType.Directory,
+            6 -> BlockDevice,
+            8 -> RegularFile,
+            10 -> Symlink,
+            12 -> Socket,
+            14 -> Whiteout,
+            _ -> Unknown,
+        }
+    }
+}
+
+pub instance Show[FileType] {
+    fn show(&self) -> String {
+        let s = match self {
+            Unknown -> "Unknown",
+            Fifo -> "Fifo",
+            CharDevice -> "CharDevice",
+            FileType.Directory -> "Directory",
+            BlockDevice -> "BlockDevice",
+            RegularFile -> "RegularFile",
+            Symlink -> "Symlink",
+            Socket -> "Socket",
+            Whiteout -> "Whiteout",
+        };
+        s.toString()
+    }
+}
+
+pub struct DirEntry {
+    name: String,
+    ty: U8,
+    inode: U64,
+
+    @unsafe
+    pub fn fromDirent(entry: &Dirent) -> DirEntry {
+        DirEntry(
+            name: entry.name(),
+            ty: entry.entryType(),
+            inode: entry.inode(),
+        )
+    }
+
+    pub fn name(&self) -> &String {
+        &self.name
+    }
+
+    pub fn fileType(&self) -> FileType {
+        FileType.fromU8(self.ty)
+    }
+
+    pub fn inode(&self) -> U64 {
+        self.inode
+    }
+}
+
+instance Drop[Directory] {
+    fn drop(self) -> Self {
+        self.close();
+        self
+    }
+}
+
+}

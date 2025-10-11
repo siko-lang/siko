@@ -34,7 +34,7 @@ use crate::siko::{
             getArrayLenName, getArrayUninitializedName, getImplicitConvertFnName, getIntAddName, getIntBitAndName,
             getIntBitOrName, getIntBitXorName, getIntDivName, getIntEqName, getIntLessThanName, getIntModName,
             getIntMulName, getIntShiftLeftName, getIntShiftRightName, getIntSubName, getNativePtrCloneName,
-            getNativePtrIsNullName, getNativePtrSizeOfName, getNativePtrTransmuteName, IntKind,
+            getNativePtrSizeOfName, getNativePtrTransmuteName, IntKind,
         },
         QualifiedName,
     },
@@ -569,13 +569,10 @@ impl<'a> Typechecker<'a> {
                 return self.lookupTraitMethod(receiverType, methodName, location);
             }
             Type::Ptr(_) => {
-                if methodName == "isNull" {
-                    // TODO: make this nicer, somehow??
-                    return getNativePtrIsNullName();
-                } else {
-                    TypecheckerError::MethodNotFound(methodName.clone(), receiverType.to_string(), location.clone())
-                        .report(self.ctx);
-                }
+                return self.lookupTraitMethod(receiverType, methodName, location);
+            }
+            Type::VoidPtr => {
+                return self.lookupTraitMethod(receiverType, methodName, location);
             }
             _ => {
                 TypecheckerError::MethodNotFound(methodName.clone(), receiverType.to_string(), location.clone())

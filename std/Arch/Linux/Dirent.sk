@@ -1,0 +1,28 @@
+module Arch.Dirent {
+
+import Array
+import Libc.String
+
+pub struct Dirent {
+    pub d_ino: U64,
+    pub d_off: I64,
+    pub d_reclen: U16,
+    pub d_type: U8,
+    pub d_name: Array[U8, 256],
+
+    pub fn inode(&self) -> U64 {
+        self.d_ino
+    }
+
+    pub fn entryType(&self) -> U8 {
+        self.d_type
+    }
+
+    @unsafe
+    pub fn name(&self) -> String {
+        let ptr = self.d_name.base();
+        fromCString(ptr)
+    }
+}
+
+}

@@ -7,7 +7,7 @@ use crate::siko::hir::{
     Trait::{Instance, Trait},
     Type::Type,
     TypeVarAllocator::TypeVarAllocator,
-    Unification::unify,
+    Unification::{unify, Config},
 };
 
 pub fn instantiateEnum(allocator: &TypeVarAllocator, e: &Enum, ty: &Type) -> Enum {
@@ -16,7 +16,7 @@ pub fn instantiateEnum(allocator: &TypeVarAllocator, e: &Enum, ty: &Type) -> Enu
     let mut e = e.clone();
     e = e.apply(&sub);
     let mut sub = Substitution::new();
-    let r = unify(&mut sub, ty.clone(), e.ty.clone(), false);
+    let r = unify(&mut sub, ty.clone(), e.ty.clone(), Config::default());
     assert!(r.is_ok());
     e.apply(&sub)
 }
@@ -26,7 +26,7 @@ pub fn instantiateStruct(allocator: &TypeVarAllocator, c: &Struct, ty: &Type) ->
     let mut res = c.clone();
     res = res.apply(&sub);
     let mut sub = Substitution::new();
-    let r = unify(&mut sub, ty.clone(), res.ty.clone(), false);
+    let r = unify(&mut sub, ty.clone(), res.ty.clone(), Config::default());
     assert!(r.is_ok());
     res.apply(&sub)
 }

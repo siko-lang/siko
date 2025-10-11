@@ -8,7 +8,7 @@ use crate::siko::hir::{
     Substitution::Substitution,
     Type::Type,
     TypeVarAllocator::TypeVarAllocator,
-    Unification::unify,
+    Unification::{unify, Config},
     Variable::{Variable, VariableName},
 };
 
@@ -344,7 +344,14 @@ impl<'a> TypeVerifier<'a> {
     }
 
     fn unify(&mut self, ty1: &Type, ty2: &Type) {
-        if unify(&mut self.substitution, ty1.clone(), ty2.clone(), true).is_err() {
+        if unify(
+            &mut self.substitution,
+            ty1.clone(),
+            ty2.clone(),
+            Config::default().allowNamed(),
+        )
+        .is_err()
+        {
             panic!(
                 "Type unification failed: {} and {} in function {}",
                 ty1, ty2, self.function.name

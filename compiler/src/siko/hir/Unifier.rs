@@ -1,7 +1,13 @@
 use std::{cell::RefCell, rc::Rc};
 
 use crate::siko::{
-    hir::{Apply::Apply, Substitution::Substitution, Type::Type, Unification::unify, Variable::Variable},
+    hir::{
+        Apply::Apply,
+        Substitution::Substitution,
+        Type::Type,
+        Unification::{unify, Config},
+        Variable::Variable,
+    },
     location::{
         Location::Location,
         Report::{Report, ReportContext},
@@ -58,7 +64,7 @@ impl Unifier {
         }
         self.runner.run(|| {
             let mut sub = self.substitution.borrow_mut();
-            if let Err(_) = unify(&mut sub, ty1.clone(), ty2.clone(), false) {
+            if let Err(_) = unify(&mut sub, ty1.clone(), ty2.clone(), Config::default()) {
                 let ty = ty1.apply(&sub);
                 let ty2 = ty2.apply(&sub);
                 self.handler.handleError(UnifierError::TypeMismatch(
@@ -74,7 +80,7 @@ impl Unifier {
         //println!("UNIFY {} {}", ty1, ty2);
         self.runner.run(|| {
             let mut sub = self.substitution.borrow_mut();
-            if let Err(_) = unify(&mut sub, ty1.clone(), ty2.clone(), false) {
+            if let Err(_) = unify(&mut sub, ty1.clone(), ty2.clone(), Config::default()) {
                 return false;
             }
             true

@@ -11,7 +11,7 @@ use crate::siko::{
         Trait::Instance,
         Type::Type,
         TypeVarAllocator::TypeVarAllocator,
-        Unification::unify,
+        Unification::{unify, Config},
     },
     qualifiedname::{
         builtins::{getCopyName, getDropName, getImplicitConvertName},
@@ -98,8 +98,15 @@ impl<'a> InstanceResolver<'a> {
                 let mut allMatch = true;
                 let mut sub = Substitution::new();
                 for (implArg, cArg) in zip(&instanceDef.types, &constraint.args) {
-                    //println!("  Unifying impl arg {} with constraint arg {}", implArg, cArg);
-                    if !unify(&mut sub, implArg.clone(), cArg.clone(), false).is_ok() {
+                    // println!("  Unifying impl arg {} with constraint arg {}", implArg, cArg);
+                    if !unify(
+                        &mut sub,
+                        implArg.clone(),
+                        cArg.clone(),
+                        Config::default().voidSeparate(),
+                    )
+                    .is_ok()
+                    {
                         //println!("  Arg {} does not match {}", implArg, cArg);
                         allMatch = false;
                         break;
@@ -151,13 +158,19 @@ impl<'a> InstanceResolver<'a> {
     }
 
     pub fn findInstanceInScope(&self, constraint: &Constraint, runner: Runner) -> InstanceSearchResult {
-        // println!("Finding instance in scope for constraint {}", constraint);
-        // for instance in &self.instanceStore.localInstances {
-        //     println!("Local instance: {}", instance);
-        // }
-        // for instance in &self.instanceStore.importedInstances {
-        //     println!("Imported instance: {}", instance);
-        // }
+        if runner.getConfig().dumpCfg.instanceResolverTraceEnabled {
+            println!("Finding instance in scope for constraint {}", constraint);
+            for (_, instances) in &self.localInstances {
+                for instance in instances {
+                    println!("Local instance: {}", instance.name);
+                }
+            }
+            for (_, instances) in &self.importedInstances {
+                for instance in instances {
+                    println!("Imported instance: {}", instance.name);
+                }
+            }
+        }
         {
             let mut stats = runner.statistics.borrow_mut();
             stats.instanceLookup += 1;
@@ -258,7 +271,7 @@ impl<'a> InstanceResolver<'a> {
                     let mut sub = Substitution::new();
                     let mut allMatch = true;
                     for (arg, karg) in zip(&constraint.args, &known.args) {
-                        if unify(&mut sub, arg.clone(), karg.clone(), false).is_err() {
+                        if unify(&mut sub, arg.clone(), karg.clone(), Config::default()).is_err() {
                             allMatch = false;
                             break;
                         }

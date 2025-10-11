@@ -18,7 +18,7 @@ pub fn null[T]() -> *T {
 }
 
 @unsafe
-pub fn isNull[T](addr: *T) -> Bool {
+pub fn isNullPtr[T](addr: *T) -> Bool {
     toU64(addr) == 0.toU64()
 }
 
@@ -83,20 +83,33 @@ pub fn toU64[T](addr: &*T) -> U64 {
 }
 
 @unsafe
-pub fn show[T](addr: &*T) -> String {
-    let value = toU64(addr);
-    value.toHex()
+pub fn voidPtrToU64(addr: void*) -> U64 {
+    let addr: U64 = transmute(addr);
+    addr
 }
 
 pub instance[T] ShowPtr Show[*T] {
     @unsafe
     fn show(addr: &*T) -> String {
-        show(addr)
+        let v = toU64(addr);
+        v.toHex()
     }
-
     @unsafe
     fn toString(addr: &*T) -> String {
         show(addr)
+    }
+}
+
+pub instance[T] ShowVoidPtr Show[void*] {
+    @unsafe
+    fn show(&self) -> String {
+        let addr = voidPtrToU64(self.clone());
+        addr.toHex()
+    }
+
+    @unsafe
+    fn toString(&self) -> String {
+        show(self)
     }
 }
 
@@ -120,5 +133,34 @@ pub instance[T] PtrClone Clone[*T] {
 }
 
 pub instance[T] PtrCopy Copy[*T]
+
+pub trait Nullable[T] {
+    fn isNull(&self) -> Bool
+}
+
+pub instance[T] NullablePtr Nullable[*T] {
+    @unsafe
+    fn isNull(&self) -> Bool {
+        let addr: *T = clone(self);
+        isNullPtr(addr)
+    }
+}
+
+pub instance NullableVoidPtr Nullable[void*] {
+    @unsafe
+    fn isNull(&self) -> Bool {
+        let addr = voidPtrToU64(self.clone());
+        addr == 0.toU64()
+    }
+}
+
+pub instance CloneVoidPtr Clone[void*] {
+    @unsafe
+    fn clone(&self) -> void* {
+        let addr: *void* = transmute(self);
+        let v: void* = *addr;
+        v
+    }
+}
 
 }

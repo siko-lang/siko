@@ -3,6 +3,8 @@ use std::{
     fmt::{Debug, Display},
 };
 
+use crate::siko::hir::Unification::Config;
+
 use super::{Apply::Apply, Type::Type, Unification::unify};
 
 #[derive(Debug, Clone)]
@@ -58,7 +60,7 @@ impl Display for Substitution {
 pub fn createTypeSubstitutionFrom(ty1: Vec<Type>, ty2: Vec<Type>) -> Substitution {
     let mut sub = Substitution::new();
     for (ty1, ty2) in ty1.into_iter().zip(ty2) {
-        unify(&mut sub, ty1, ty2, true).expect("Unification failed");
+        unify(&mut sub, ty1, ty2, Config::default().allowNamed()).expect("Unification failed");
     }
     sub
 }

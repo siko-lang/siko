@@ -1,5 +1,7 @@
 module Libc.String {
 
+import NativePtr
+
 pub fn memcpy(dest: void*, src: void*, n: U64) -> void* = extern "C" ("string.h")
 
 pub fn memmove(dest: void*, src: void*, n: U64) -> void* = extern "C" ("string.h")
@@ -19,6 +21,27 @@ pub struct CString {
     pub fn asPtr(&self) -> *U8 {
         self.data.asPtr()
     }
+}
+
+@unsafe
+pub fn fromCString(ptr: *U8) -> String {
+    if ptr.isNull() {
+        return "".toString();
+    }
+    let mut len = 0.toU64();
+    loop {
+        let byte = *NativePtr.offset(ptr, len);
+        if byte == 0.toU8() {
+            break;
+        }
+        len += 1.toU64();
+    }
+    let mut bytes = Vec.new(len.toInt());
+    for i in 0..len.toInt() {
+        let byte = *NativePtr.offset(ptr, i.toU64());
+        bytes.push(byte);
+    }
+    String.fromVecU8(bytes)
 }
 
 }
