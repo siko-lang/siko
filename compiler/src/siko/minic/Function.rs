@@ -22,6 +22,7 @@ pub struct Function {
     pub result: Type,
     pub blocks: Vec<Block>,
     pub externKind: Option<ExternKind>,
+    pub varargs: bool,
 }
 
 impl Function {

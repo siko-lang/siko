@@ -153,7 +153,7 @@ pub struct Resolver<'a> {
     program: Program,
     emptyVariants: BTreeSet<QualifiedName>,
     variants: BTreeMap<QualifiedName, QualifiedName>,
-    moduleGlobals: BTreeMap<String, BTreeSet<QualifiedName>>,
+    moduleGlobals: BTreeSet<QualifiedName>,
     defaultTraitMethods: BTreeMap<QualifiedName, Function>,
     instanceMethods: BTreeMap<QualifiedName, Function>,
     instanceSubChains: BTreeMap<QualifiedName, SubstitutionChain>,
@@ -169,7 +169,7 @@ impl<'a> Resolver<'a> {
             program: Program::new(),
             emptyVariants: BTreeSet::new(),
             variants: BTreeMap::new(),
-            moduleGlobals: BTreeMap::new(),
+            moduleGlobals: BTreeSet::new(),
             defaultTraitMethods: BTreeMap::new(),
             instanceMethods: BTreeMap::new(),
             instanceSubChains: BTreeMap::new(),
@@ -198,20 +198,20 @@ impl<'a> Resolver<'a> {
 
     fn lowerGlobals(&mut self) {
         // Lower globals to functions
-        let mut moduleGlobals = BTreeMap::new();
+        let mut moduleGlobals = BTreeSet::new();
         for (moduleKey, module) in self.modules.iter_mut() {
-            let module_name_str = moduleKey.clone();
+            let moduleName = moduleKey.clone();
             let mut globals = BTreeSet::new();
             for item in &mut module.items {
                 if let ModuleItem::Global(global) = item {
                     let function = Resolver::processGlobal(global.clone());
                     let name = function.name.toString();
-                    let functionQualifiedName = build(module_name_str.as_str(), &name);
+                    let functionQualifiedName = build(moduleName.as_str(), &name);
                     globals.insert(functionQualifiedName);
                     *item = ModuleItem::Function(function);
                 }
             }
-            moduleGlobals.insert(module_name_str, globals);
+            moduleGlobals.extend(globals);
         }
         self.moduleGlobals = moduleGlobals;
     }
@@ -1143,7 +1143,6 @@ impl<'a> Resolver<'a> {
         for (name, m) in &self.modules {
             //println!("Processing module {}", name);
             let (localNames, variants, instances) = Resolver::buildLocalNames(m);
-            let globals = self.moduleGlobals.get(name).cloned().unwrap_or_else(BTreeSet::new);
             let moduleResolver = ModuleResolver {
                 ctx: self.ctx,
                 name: name.clone(),
@@ -1151,7 +1150,7 @@ impl<'a> Resolver<'a> {
                 importedNames: Names::new(),
                 importedModules: Vec::new(),
                 variants,
-                globals,
+                globals: self.moduleGlobals.clone(),
             };
             self.program.instanceStores.insert(
                 buildModule(name),

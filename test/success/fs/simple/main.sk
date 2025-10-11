@@ -1,0 +1,23 @@
+module Main {
+
+import Fs.File
+import IO.Writer
+import IO.Reader
+import IO.Buffer
+
+fn main() {
+    {
+        let foo = File.create("test.txt").expect("Could not open file");
+        foo.writeString("Hello, World!\n").expect("Could not write to file");
+    }
+    {
+        let foo = File.open("test.txt").expect("Could not open file");
+        let inputBuffer = ByteBuffer.new(1024);
+        let received = foo.read(inputBuffer.asWriteBuffer()).expect("Could not read from file");
+        let s = String.fromVecU8(inputBuffer.toVec(received.toU64()));
+        assert(s == "Hello, World!\n".toString());
+    }
+
+}
+
+}

@@ -112,8 +112,12 @@ impl<'a> FunctionCallResolver<'a> {
             None => panic!("Function type {} is not a function type!", expectedFnType),
         };
         if args.len() != expectedArgs.len() {
-            TypecheckerError::ArgCountMismatch(expectedArgs.len() as u32, args.len() as u32, location.clone())
-                .report(self.ctx);
+            if args.len() > expectedArgs.len() && f.attributes.varArgs {
+                // allow calling varargs function with more arguments
+            } else {
+                TypecheckerError::ArgCountMismatch(expectedArgs.len() as u32, args.len() as u32, location.clone())
+                    .report(self.ctx);
+            }
         }
         {
             let mut argTypes = Vec::new();

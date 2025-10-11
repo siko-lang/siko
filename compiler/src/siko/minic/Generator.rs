@@ -369,6 +369,9 @@ impl MiniCGenerator {
         for arg in &f.args {
             args.push(format!("{} {}", self.getTypeName(&arg.ty), arg.name));
         }
+        if f.varargs {
+            args.push("...".to_string());
+        }
         writeln!(buf, "// Full Name: {}", f.fullName)?;
         if f.result.isVoid() {
             write!(buf, "_Noreturn ")?;

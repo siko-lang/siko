@@ -11,6 +11,7 @@ pub struct Attributes {
     pub testEntry: bool,
     pub builtin: bool,
     pub safety: Safety,
+    pub varArgs: bool,
 }
 
 impl Attributes {
@@ -20,6 +21,7 @@ impl Attributes {
             testEntry: false,
             builtin: false,
             safety: Safety::Regular,
+            varArgs: false,
         }
     }
 }

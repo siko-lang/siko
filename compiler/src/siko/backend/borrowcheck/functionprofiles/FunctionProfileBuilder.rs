@@ -244,6 +244,19 @@ impl<'a> FunctionProfileBuilder<'a> {
                             self.unifyExtendedTypes(&destType, &calleeProfile.result);
                             for (index, arg) in info.args.getVariables().iter().enumerate() {
                                 let argType = self.getVarType(arg);
+                                if index >= calleeProfile.args.len() {
+                                    let targetfn = self.program.getFunction(&info.name).expect("Function must exist");
+                                    if !targetfn.attributes.varArgs {
+                                        panic!(
+                                            "Too many arguments in function call to {}. Expected {}, found {}.",
+                                            info.name,
+                                            calleeProfile.args.len(),
+                                            info.args.getVariables().len()
+                                        );
+                                    } else {
+                                        break;
+                                    }
+                                }
                                 let mut calleeArgType = calleeProfile.args[index].clone();
                                 if argType.vars.len() > calleeArgType.vars.len() {
                                     calleeArgType.vars.insert(0, self.allocator.next());

@@ -20,12 +20,7 @@ fn readString(tcpStream: &TcpStream) -> Result[Option[String], Error] {
     if received == 0 {
         return Ok(None);
     }
-    Ok(Some(String.fromVecU8(inputBuffer.toVec())))
-}
-
-fn sendString(tcpStream: &TcpStream, msg: String) -> Result[Int, Error] {
-    let buffer = ByteBuffer.fromVec(msg.toVecU8());
-    tcpStream.write(buffer.asReadBuffer())
+    Ok(Some(String.fromVecU8(inputBuffer.toVec(received.toU64()))))
 }
 
 fn clientLoop(tcpStream: TcpStream) {
@@ -39,7 +34,7 @@ fn clientLoop(tcpStream: TcpStream) {
             }
             Some(r) -> {
                 TeleType.print("Received: ${r}");
-                sendString(tcpStream, r.clone()).expect("Failed to send response");
+                tcpStream.writeString(r.clone()).expect("Failed to send response");
             }
         };
     }
@@ -61,7 +56,7 @@ fn loopFn(tcpStream: &TcpStream) -> Result[(), Error] {
         return Err(Error.new(0));
     }
     let msg = line + "\n";
-    try sendString(tcpStream, msg);
+    try tcpStream.writeString(msg);
     let inputBuffer = ByteBuffer.new(1024);
     let response = try readString(tcpStream);
     let response = match response {

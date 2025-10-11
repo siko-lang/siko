@@ -479,6 +479,7 @@ impl<'a> Builder<'a> {
             args: args,
             result: self.lowering.lowerType(&self.function.result.getReturnType()),
             kind: kind,
+            varargs: self.function.attributes.varArgs,
         };
         Some(mirFunction)
     }

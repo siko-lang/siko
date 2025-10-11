@@ -1,0 +1,52 @@
+module Fs.File {
+
+import Libc.FileDescriptor
+import Libc.Fcntl
+import IO.Reader
+import IO.Writer
+import IO.Buffer
+import IO.Error
+
+pub struct File {
+    fd: FileDescriptor,
+
+    pub fn new(fd: FileDescriptor) -> File {
+        File(fd)
+    }
+
+    pub fn getFd(&self) -> I32 {
+        self.fd.getFd()
+    }
+
+    pub fn create(path: &String) -> Result[File, Error] {
+        let flags = O_CREAT | O_RDWR | O_TRUNC;
+        let mode = 0644.toI32(); // rw-r--r--
+        let fd = try Libc.Fcntl.openFile(path, flags, mode);
+        Ok(File(fd: fd))
+    }
+
+    pub fn open(path: &String) -> Result[File, Error] {
+        let flags = O_RDWR;
+        let mode = 0.toI32();
+        let fd = try Libc.Fcntl.openFile(path, flags, mode);
+        Ok(File(fd: fd))
+    }
+
+    pub fn close(&self) -> Result[(), Error] {
+        self.fd.close()
+    }
+}
+
+pub instance FileReader Reader[File] {
+    fn read(&self, buffer: &WriteBuffer) -> Result[Int, Error] {
+        self.fd.read(buffer)
+    }
+}
+
+pub instance FileWriter Writer[File] {
+    fn write(&self, buffer: &ReadBuffer) -> Result[Int, Error] {
+        self.fd.write(buffer)
+    }
+}
+
+}

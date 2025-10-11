@@ -124,20 +124,7 @@ impl Lexer {
             }
         }
         if startsWithInteger {
-            let mut invalidLiteral = false;
-            for c in self.current.chars() {
-                if !isInteger(c) {
-                    invalidLiteral = true;
-                    break;
-                }
-            }
-            if invalidLiteral {
-                self.addError(LexerError::InvalidIdentifier(self.current.clone(), self.span.clone()));
-                self.resetSpan();
-                self.resetCurrent();
-            } else {
-                self.addToken(Token::IntegerLiteral(self.current.clone()));
-            }
+            self.processIntegerLiteral();
         } else {
             if startsWithUpperCase {
                 let token = match self.current.as_ref() {
@@ -189,6 +176,36 @@ impl Lexer {
                 self.addToken(token);
             }
         }
+    }
+
+    fn processIntegerLiteral(&mut self) {
+        // detect if it is octal or hex
+        if self.current.len() > 2 && self.current.starts_with("0x") {
+            // hex => convert it into decimal string
+            let decimalValue = match i64::from_str_radix(&self.current[2..], 16) {
+                Ok(v) => v,
+                Err(_) => {
+                    self.addError(LexerError::InvalidIdentifier(self.current.clone(), self.span.clone()));
+                    self.resetSpan();
+                    self.resetCurrent();
+                    return;
+                }
+            };
+            self.current = decimalValue.to_string();
+        } else if self.current.len() > 1 && self.current.starts_with('0') {
+            // octal => convert it into decimal string
+            let decimalValue = match i64::from_str_radix(&self.current[1..], 8) {
+                Ok(v) => v,
+                Err(_) => {
+                    self.addError(LexerError::InvalidIdentifier(self.current.clone(), self.span.clone()));
+                    self.resetSpan();
+                    self.resetCurrent();
+                    return;
+                }
+            };
+            self.current = decimalValue.to_string();
+        }
+        self.addToken(Token::IntegerLiteral(self.current.clone()));
     }
 
     fn expect(&mut self, c: char) {
@@ -487,7 +504,13 @@ impl Lexer {
                         match self.peek() {
                             Some('.') => {
                                 self.step();
-                                self.addToken(Token::Range(RangeKind::Exclusive))
+                                match self.peek() {
+                                    Some('.') => {
+                                        self.step();
+                                        self.addToken(Token::Misc(MiscKind::ThreeDots))
+                                    }
+                                    _ => self.addToken(Token::Range(RangeKind::Exclusive)),
+                                }
                             }
                             _ => self.addToken(Token::Misc(MiscKind::Dot)),
                         }

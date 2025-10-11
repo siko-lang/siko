@@ -215,6 +215,9 @@ pub fn convertFunctionAttributes(attributes: &Attributes) -> IrAttributes {
     if attributes.inline {
         hirAttributes.inline = true;
     }
+    if attributes.varArgs {
+        hirAttributes.varArgs = true;
+    }
     match attributes.safety {
         Safety::Safe => hirAttributes.safety = IrSafety::Safe,
         Safety::Unsafe => hirAttributes.safety = IrSafety::Unsafe,

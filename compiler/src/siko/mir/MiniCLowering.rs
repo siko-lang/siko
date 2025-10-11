@@ -371,6 +371,7 @@ impl<'a> MinicBuilder<'a> {
                     result: resultTy,
                     blocks: minicBlocks,
                     externKind: None,
+                    varargs: false,
                 }
             }
             FunctionKind::StructCtor => {
@@ -411,6 +412,7 @@ impl<'a> MinicBuilder<'a> {
                     result: resultTy,
                     blocks: vec![block],
                     externKind: None,
+                    varargs: false,
                 }
             }
             FunctionKind::VariantCtor(index) => {
@@ -464,6 +466,7 @@ impl<'a> MinicBuilder<'a> {
                     result: resultTy,
                     blocks: vec![block],
                     externKind: None,
+                    varargs: false,
                 }
             }
             FunctionKind::Extern(kind) => {
@@ -488,6 +491,7 @@ impl<'a> MinicBuilder<'a> {
                         }
                         ExternKind::Builtin => Some(LExternKind::Builtin),
                     },
+                    varargs: f.varargs,
                 }
             }
         }

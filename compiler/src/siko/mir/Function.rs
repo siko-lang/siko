@@ -37,6 +37,7 @@ pub struct Function {
     pub args: Vec<Param>,
     pub result: Type,
     pub kind: FunctionKind,
+    pub varargs: bool,
 }
 
 impl fmt::Display for Function {

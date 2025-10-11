@@ -93,6 +93,11 @@ pub struct String {
 
     @safe
     pub fn toVecU8(mut self) -> Vec[U8] {
+        if self.capacity == 0.toU64() {
+            // string literal, copy to new buffer
+            let s = fromU8(self.slice());
+            return s.toVecU8();
+        }
         let v = Vec.fromSlice(self.slice());
         self.capacity = 0.toU64();
         self.value = null();

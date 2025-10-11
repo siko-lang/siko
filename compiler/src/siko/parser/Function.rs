@@ -20,7 +20,7 @@ pub trait FunctionParser {
 }
 
 impl<'a> FunctionParser for Parser<'a> {
-    fn parseFunction(&mut self, attributes: Attributes, public: bool, allowCoroutine: bool) -> Function {
+    fn parseFunction(&mut self, mut attributes: Attributes, public: bool, allowCoroutine: bool) -> Function {
         self.expect(TokenKind::Keyword(KeywordKind::Fn));
         let name = self.parseVarIdentifier();
         let typeParams = if self.check(TokenKind::LeftBracket(BracketKind::Square)) {
@@ -36,6 +36,11 @@ impl<'a> FunctionParser for Parser<'a> {
                 self.expect(TokenKind::Keyword(KeywordKind::ValueSelf));
                 Parameter::RefSelfParam
             } else {
+                if self.check(TokenKind::Misc(MiscKind::ThreeDots)) {
+                    self.expect(TokenKind::Misc(MiscKind::ThreeDots));
+                    attributes.varArgs = true;
+                    break;
+                }
                 let mutable = if self.check(TokenKind::Keyword(KeywordKind::Mut)) {
                     self.expect(TokenKind::Keyword(KeywordKind::Mut));
                     true
