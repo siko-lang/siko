@@ -147,6 +147,14 @@ impl<'a> BorrowVarMapBuilder<'a> {
             let borrowVar = extV.base();
             sourceVar = Some(borrowVar.clone());
         }
+        if let InstructionKind::AddressOfField(dest, _, _, isRaw) = &kind {
+            if !*isRaw {
+                let mut extV = self.profileBuilder.getFinalVarType(&dest);
+                assert!(extV.ty.isReference());
+                let borrowVar = extV.base();
+                sourceVar = Some(borrowVar.clone());
+            }
+        }
         for v in vars {
             let varType = self.profileBuilder.getFinalVarType(&v);
             allBorrowVars.extend(varType.vars.iter().cloned());
@@ -206,13 +214,9 @@ impl<'a> BorrowVarMapBuilder<'a> {
                         }
                         continue;
                     }
-                    // Different blocks: ensure the CFG actually allows the flow from source to user.
-                    assert!(
-                        reachabilityMap.canReach(&sourceRef.blockId, &userRef.blockId),
-                        "BorrowVarMap: borrow source {} cannot reach user {}",
-                        sourceRef,
-                        userRef
-                    );
+                    if !reachabilityMap.canReach(&sourceRef.blockId, &userRef.blockId) {
+                        continue;
+                    }
                     // Source block tail, after the source instruction.
                     let source_block_size = body.getBlockSize(sourceRef.blockId) as u32;
                     for id in (sourceRef.instructionId + 1)..source_block_size {
