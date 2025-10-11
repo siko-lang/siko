@@ -1,0 +1,64 @@
+module Main {
+
+import Libc.Arg
+import Fs.Directory
+import Fs.Path
+import Sys.Command
+
+struct Config {
+    filters: Vec[String]
+}
+
+struct Test {
+    path: String
+
+    fn run(&self) {
+        Command.new("./siko")
+            .arg("run")
+            .arg(&self.path)
+            .run();
+        //println("Test ${self.path} completed.");
+    }
+}
+
+fn collectTests(basePath: &String) -> Vec[Test] {
+    //println("Collecting tests in ${basePath}");
+    let mut result = Vec.new();
+    let dirIter = listDir(basePath).expect("Failed to list directory");
+    for entry in dirIter {
+        let entry = entry.expect("Failed to read directory entry");
+        if entry.name() == "." or entry.name() == ".." {
+            continue;
+        }
+        let entryPath = join(basePath, entry.name());
+        if entry.isDirectory() {
+            let subPaths = collectTests(&entryPath);
+            for subPath in subPaths {
+                result.push(subPath);
+            }
+        } else if entry.name().endsWith(".sk") {
+            let test = Test(dirname(entryPath));
+            result.push(test);
+        }
+    }
+    return result;
+}
+
+fn main() {
+    let args = getArgs();
+    let mut cfg = Config(filters: Vec.new());
+    for arg in args {
+        cfg.filters.push(arg);
+    }
+    let successTests = collectTests("./test/success");
+    let errorTests = collectTests("./test/errors");
+    for test in successTests {
+        println("Running test: ${&test.path}");
+        test.run();
+    }
+    for testPath in errorTests {
+        //println("Running test: ${testPath.path}");
+    }
+}
+
+}

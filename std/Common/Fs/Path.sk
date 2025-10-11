@@ -1,0 +1,31 @@
+module Fs.Path {
+
+pub fn join(path1: &String, path2: &String) -> String {
+    if path1.len() == 0 {
+        return path2.clone();
+    }
+    if path2.len() == 0 {
+        return path1.clone();
+    }
+    if path1.endsWith("/") or path2.startsWith("/") {
+        return "${path1}${path2}";
+    } else {
+        return "${path1}/${path2}";
+    }
+}
+
+pub fn dirname(path: &String) -> String {
+    let perIndex = path.findLast('/');
+    match perIndex {
+        Some(index) -> {
+            if index == 0.toU64() {
+                return "/".toString();
+            } else {
+                return path.subString(0.toU64(), index);
+            }
+        }
+        None -> path.clone()
+    }
+}
+
+}

@@ -1,0 +1,72 @@
+module Sys.Command {
+
+import Libc.String
+import Libc.Unistd
+import Libc.StdLib
+import Libc.Wait
+import NativePtr
+
+pub struct Command {
+    program: String,
+    args: Vec[String],
+    workDir: Option[String],
+
+    pub fn new(program: &String) -> Command {
+        Command(program.clone(), Vec.new(), workDir: None)
+    }
+
+    pub fn arg(mut self, arg: &String) -> Self {
+        self.args.push(arg.clone());
+        self
+    }
+
+    pub fn args(mut self, args: Vec[String]) -> Self {
+        for arg in args {
+            self.args.push(arg);
+        }
+        self
+    }
+
+    pub fn workDir(mut self, dir: &String) -> Self {
+        self.workDir = Some(dir.clone());
+        self
+    }
+
+    @safe
+    pub fn run(self) {
+        let pid = fork();
+        if pid == 0.toU32() {
+            match self.workDir {
+                Some(dir) -> {
+                    let cDir: CString = fromString(dir);
+                    if chdir(cDir.asPtr()) != 0.toI32() {
+                        println("Failed to change directory to ${cDir}");
+                        exit(1.toI32());
+                    }
+                }
+                None -> {}
+            }
+            let cProgram: CString = fromString(self.program);
+            let mut argStrings = Vec.new();
+            argStrings.push(cProgram.clone());
+            for arg in self.args {
+                let cArg: CString = fromString(arg);
+                argStrings.push(cArg);
+            }
+            let mut cArgs: Vec[*U8] = Vec.new();
+            for arg in argStrings.iter() {
+                cArgs.push(arg.asPtr());
+            }
+            cArgs.push(null());
+            execv(cProgram.asPtr(), cArgs.asPtr());
+            exit(1.toI32());
+        } else {
+            let mut status = 0.toI32();
+            let options = 0.toI32();
+            let statusPtr: *I32 = &raw status;
+            waitpid(pid, statusPtr, options);
+        }
+    }
+}
+
+}

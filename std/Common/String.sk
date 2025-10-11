@@ -110,6 +110,47 @@ pub struct String {
         let slice = v.intoSlice();
         String(slice.asPtr(), slice.len(), slice.len())
     }
+
+    @safe
+    pub fn endsWith(&self, suffix: &String) -> Bool {
+        if suffix.size > self.size {
+            return False;
+        }
+        let start = self.size.clone() - suffix.size.clone(); // FIXME: clone needed
+        let result = NativePtr.memcmp(offset(self.value, start), suffix.value, suffix.size);
+        result == 0
+    }
+
+    @safe
+    pub fn startsWith(&self, prefix: &String) -> Bool {
+        if prefix.size > self.size {
+            return False;
+        }
+        let result = NativePtr.memcmp(self.value, prefix.value, prefix.size);
+        result == 0
+    }
+
+    @safe
+    pub fn findLast(&self, c: U8) -> Option[U64] {
+        for i in 0.toU64()..self.size {
+            let index = self.size.clone() - 1.toU64() - i; // FIXME: clone needed
+            if *NativePtr.offset(self.value, index) == c {
+                return Some(index);
+            }
+        }
+        None
+    }
+
+    @safe
+    pub fn subString(&self, start: U64, end: U64) -> String {
+        if start >= self.size or end > self.size or start >= end {
+            panic("Invalid substring range");
+        }
+        let len = end - start;
+        let newValue = allocateArray(len);
+        memcpy(newValue, offset(self.value, start), len);
+        String(newValue, len, len)
+    }
 }
 
 pub instance Drop[String] {

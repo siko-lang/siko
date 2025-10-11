@@ -8,6 +8,7 @@ pub fn memmove(dest: void*, src: void*, n: U64) -> void* = extern "C" ("string.h
 
 pub fn memcmp(s1: void*, s2: void*, n: U64) -> I32 = extern "C" ("string.h")
 
+@derive(Clone)
 pub struct CString {
     data: Vec[U8]
 
@@ -20,6 +21,14 @@ pub struct CString {
     @unsafe
     pub fn asPtr(&self) -> *U8 {
         self.data.asPtr()
+    }
+}
+
+pub instance Show[CString] {
+    fn show(&self) -> String {
+        let mut data = self.data.clone();
+        data.remove(data.len() - 1);
+        String.fromVecU8(data)
     }
 }
 
