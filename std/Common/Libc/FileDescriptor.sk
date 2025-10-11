@@ -1,11 +1,11 @@
 module Libc.FileDescriptor {
 
 import Libc.Unistd
-import Libc.Errno
 import IO.Error
 import IO.Buffer
 import IO.Reader
 import IO.Writer
+import Arch.Errno
 
 pub struct FileDescriptor {
     fd: I32,
@@ -22,8 +22,8 @@ pub struct FileDescriptor {
     pub fn close(&self) -> Result[(), Error] {
         let result = Libc.Unistd.close(self.fd);
         if result < 0.toI32() {
-            let err = getErrno();
-            return Err(Error.new(err.toInt()));
+            let err = Arch.Errno.getErrnoCode();
+            return Err(Error.new(err));
         }
         Ok(())
     }
@@ -34,8 +34,8 @@ instance Reader[FileDescriptor] {
     fn read(&self, buffer: &WriteBuffer) -> Result[Int, Error] {
         let bytesRead = Libc.Unistd.read(self.fd, buffer.data.asPtr(), buffer.data.len());
         if bytesRead < 0 {
-            let err = getErrno();
-            return Err(Error.new(err.toInt()));
+            let err = Arch.Errno.getErrnoCode();
+            return Err(Error.new(err));
         }
         Ok(bytesRead)
     }

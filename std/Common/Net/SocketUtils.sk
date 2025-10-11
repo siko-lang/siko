@@ -1,11 +1,11 @@
 module Net.SocketUtils {
 
 import IO.Error
-import Libc.Errno
 import Libc.Socket
 import Int.Util
 import Libc.String
 import Arch.SockaddrIn
+import Arch.Errno
 
 let INADDR_ANY : U32 = 0.toU32();
 
@@ -13,9 +13,9 @@ let INADDR_ANY : U32 = 0.toU32();
 pub fn createSocket(domain: Domain, ty: SockType) -> Result[I32, Error] {
     let sock = Libc.Socket.socket(domain.code(), ty.code(), 0.toI32());
     if sock < 0.toI32() {
-        let err = getErrno();
-        println("Err ${err.toInt()}");
-        return Err(Error.new(err.toInt()));
+        let err = Arch.Errno.getErrnoCode();
+        println("Err ${err}");
+        return Err(Error.new(err));
     }
     Ok(sock)
 }
@@ -24,8 +24,8 @@ pub fn createSocket(domain: Domain, ty: SockType) -> Result[I32, Error] {
 pub fn connectSocket(sock: I32, sockAddrIn: &SockaddrIn) -> Result[(), Error] {
     let res = Libc.Socket.connect(sock, sockAddrIn.asPtr(), sockAddrIn.len());
     if res < 0.toI32() {
-        let err = getErrno();
-        return Err(Error.new(err.toInt()));
+        let err = Arch.Errno.getErrnoCode();
+        return Err(Error.new(err));
     }
     Ok(())
 }
@@ -34,8 +34,8 @@ pub fn connectSocket(sock: I32, sockAddrIn: &SockaddrIn) -> Result[(), Error] {
 pub fn bindSocket(sock: I32, sockAddrIn: &SockaddrIn) -> Result[(), Error] {
     let res = Libc.Socket.bind(sock, sockAddrIn.asPtr(), sockAddrIn.len());
     if res < 0.toI32() {
-        let err = getErrno();
-        return Err(Error.new(err.toInt()));
+        let err = Arch.Errno.getErrnoCode();
+        return Err(Error.new(err));
     }
     Ok(())
 }
@@ -51,8 +51,8 @@ pub fn parseAddress(addr: Option[String], domain: Domain, mut inAddr: *Libc.Sock
             let addrCStr = CString.fromString(addr);
             let res = inet_pton(domain.code(), addrCStr.asPtr(), inAddr);
             if res <= 0.toI32() {
-                let err = getErrno();
-                return Err(Error.new(err.toInt()));
+                let err = Arch.Errno.getErrnoCode();
+                return Err(Error.new(err));
             }
         }
     };

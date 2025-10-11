@@ -1,9 +1,9 @@
 module Fs.Directory {
 
 import Arch.Dirent
+import Arch.Errno
 import IO.Error
 import Libc.Dir
-import Libc.Errno
 import Libc.String
 import NativePtr
 
@@ -15,8 +15,8 @@ pub struct Directory {
         let cPath = CString.fromString(path.clone());
         let dirPtr = Libc.Dir.opendir(cPath.asPtr());
         if dirPtr.isNull() {
-            let err = Libc.Errno.getErrno();
-            return Err(Error.new(err.toInt()));
+            let err = Arch.Errno.getErrnoCode();
+            return Err(Error.new(err));
         }
         let dir = Fs.Directory.Directory(dir: dirPtr);
         Ok(dir)
@@ -26,11 +26,11 @@ pub struct Directory {
     pub fn read(&self) -> Result[Option[DirEntry], Error] {
         let entryPtr = Libc.Dir.readdir(self.dir.clone());
         if entryPtr.isNull() {
-            let err = Libc.Errno.getErrno();
-            if err.toInt() == 0 {
+            let err = Arch.Errno.getErrnoCode();
+            if err == 0 {
                 return Ok(None);
             }
-            return Err(Error.new(err.toInt()));
+            return Err(Error.new(err));
         }
         let entry: &Dirent = NativePtr.toRef(entryPtr);
         Ok(Some(DirEntry.fromDirent(entry)))
@@ -43,8 +43,8 @@ pub struct Directory {
         }
         let res = Libc.Dir.closedir(self.dir.clone());
         if res < 0.toI32() {
-            let err = Libc.Errno.getErrno();
-            return Err(Error.new(err.toInt()));
+            let err = Arch.Errno.getErrnoCode();
+            return Err(Error.new(err));
         }
         Ok(())
     }

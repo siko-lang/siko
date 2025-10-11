@@ -3,7 +3,7 @@ module Libc.Fcntl {
 import Libc.FileDescriptor
 import Libc.String
 import IO.Error
-import Libc.Errno
+import Arch.Errno
 
 fn open(path: *U8, flags: I32, ...) -> I32 = extern "C"
 
@@ -12,8 +12,8 @@ pub fn openFile(path: &String, flags: I32, mode: I32) -> Result[FileDescriptor, 
     let cPath = CString.fromString(path.clone());
     let fd = open(cPath.asPtr(), flags, mode);
     if fd < 0.toI32() {
-        let err = getErrno();
-        return Err(Error.new(err.toInt()));
+        let err = Arch.Errno.getErrnoCode();
+        return Err(Error.new(err));
     }
     Ok(FileDescriptor(fd: fd))
 }

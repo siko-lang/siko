@@ -3,7 +3,6 @@ module Net.TcpListener {
 import Libc.FileDescriptor
 import Libc.Socket
 import Libc.String
-import Libc.Errno
 import Libc.Unistd
 import IO.Error
 import IO.Buffer
@@ -13,6 +12,7 @@ import Net.TcpStream
 import NativePtr
 import Net.SocketUtils
 import Arch.SockaddrIn
+import Arch.Errno
 
 pub struct TcpListener {
     sock: FileDescriptor,
@@ -31,8 +31,8 @@ pub struct TcpListener {
     fn listen(&self, backlog: Int) -> Result[(), Error] {
         let res = Libc.Socket.listen(self.sock.fd, backlog.toI32());
         if res < 0.toI32() {
-            let err = getErrno();
-            return Err(Error.new(err.toInt()));
+            let err = Arch.Errno.getErrnoCode();
+            return Err(Error.new(err));
         }
         Ok(())
     }
@@ -41,8 +41,8 @@ pub struct TcpListener {
     fn accept(&self) -> Result[TcpStream, Error] {
         let clientSock = Libc.Socket.accept(self.sock.fd, null(), null());
         if clientSock < 0.toI32() {
-            let err = getErrno();
-            return Err(Error.new(err.toInt()));
+            let err = Arch.Errno.getErrnoCode();
+            return Err(Error.new(err));
         }
         Ok(TcpStream(sock: FileDescriptor.new(clientSock)))
     }
