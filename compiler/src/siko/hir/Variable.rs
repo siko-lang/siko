@@ -72,7 +72,7 @@ impl VariableName {
     pub fn setNoDrop(&mut self) {
         match self {
             VariableName::Tmp(info) => *info = TempInfo { noDrop: true, ..*info },
-            _ => panic!("Can only set noDrop on temp variables"),
+            _ => panic!("Can only set noDrop on temp variables {}", self),
         }
     }
 }
@@ -80,7 +80,13 @@ impl VariableName {
 impl Display for VariableName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            VariableName::Tmp(info) => write!(f, "tmp{}", info.id),
+            VariableName::Tmp(info) => {
+                if info.noDrop {
+                    write!(f, "tmp{}/nodrop", info.id)
+                } else {
+                    write!(f, "tmp{}", info.id)
+                }
+            }
             VariableName::Local(n, i) => write!(f, "{}_{}", n, i),
             VariableName::Arg(n) => write!(f, "{}", n),
             VariableName::ClosureArg(lambdaIndex, argIndex) => write!(f, "closure_arg_{}_{}", lambdaIndex, argIndex),

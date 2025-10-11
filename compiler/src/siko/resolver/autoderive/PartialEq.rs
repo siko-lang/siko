@@ -106,7 +106,8 @@ fn getPartialEqFnForEnum(enumDef: &Enum, enumTy: &Type) -> Function {
             };
             itemsBRefs.push(refB);
         }
-        let variantName = Identifier::new(variant.name.name(), enumDef.name.location());
+        let qualifiedName = format!("{}.{}", enumDef.name.name(), variant.name.name());
+        let variantName = Identifier::new(qualifiedName, enumDef.name.location());
         let variantPatternA = Pattern {
             pattern: SimplePattern::Named(variantName.clone(), itemsABinds),
             location: enumDef.name.location(),

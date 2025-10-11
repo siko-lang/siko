@@ -1,0 +1,29 @@
+module Main {
+
+struct Foo {
+
+}
+
+instance Drop[Foo] {
+    fn drop(self) -> Self {
+        println("Dropping Foo");
+        self
+    }
+}
+
+struct Bar {
+    foo: Foo
+}
+
+fn someFunc(f: &Foo) {
+    println("In someFunc");
+}
+
+fn main() {
+    let bar = Bar(Foo());
+    someFunc(bar.foo); // BUG: here bar.foo is auto-borrowed but it cannot create a temporary that is dropped after the function call!
+                       // the current code gen does that unfortunately, FIXME
+    println("End of main");
+}
+
+}

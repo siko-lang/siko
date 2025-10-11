@@ -1599,7 +1599,7 @@ impl<'a> Typechecker<'a> {
                                 (Type::Reference(inner), src) => {
                                     let mut refSource = source.clone();
                                     if !self.unifier.tryUnify(*inner.clone(), src.clone()) {
-                                        // check implicit conversion is implemented for these types
+                                        // check if implicit conversion is implemented for these types
                                         if self.implResolver.isImplicitConvert(
                                             &src,
                                             &inner,

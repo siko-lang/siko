@@ -5,35 +5,13 @@ import IO.Error
 
 fn main() {
     let dirPath = "/tmp";
-    let result = Directory.open(dirPath);
-    match result {
-        Ok(dir) -> {
-            while True {
-                let entryResult = dir.read();
-                match entryResult {
-                    Ok(entryOpt) -> {
-                        match entryOpt {
-                            Some(entry) -> {
-                                let name = entry.name();
-                                let fileType = entry.fileType();
-                                let inode = entry.inode();
-                                println("name: ${name}, type: ${fileType} inode: ${inode}");
-                            }
-                            None -> {
-                                break;
-                            }
-                        }
-                    }
-                    Err(err) -> {
-                        println("Error reading directory entry: ${err}");
-                        break;
-                    }
-                }
-            }
-        }
-        Err(err) -> {
-            println("Error opening directory: ${err}");
-        }
+    let mut dirIter = listDir(dirPath).expect("Failed to list directory");
+    for entry in dirIter {
+        let entry = entry.expect("Failed to read directory entry");
+        let name = entry.name();
+        let fileType = entry.fileType();
+        let inode = entry.inode();
+        println("name: ${name}, type: ${fileType} inode: ${inode}");
     }
 }
 

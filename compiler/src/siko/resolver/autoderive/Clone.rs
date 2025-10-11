@@ -97,7 +97,8 @@ fn getCloneFnForEnum(enumDef: &Enum, enumTy: &Type) -> Function {
             clonedItems.push(FunctionArg::Positional(clonedItem));
         }
 
-        let variantName = Identifier::new(variant.name.name(), enumDef.name.location());
+        let qualifiedName = format!("{}.{}", enumDef.name.name(), variant.name.name());
+        let variantName = Identifier::new(qualifiedName, enumDef.name.location());
         let variantPattern = Pattern {
             pattern: SimplePattern::Named(variantName.clone(), itemBinds),
             location: enumDef.name.location(),

@@ -1,0 +1,35 @@
+module Main {
+
+struct Iter {
+    value: Int,
+    end: Int,
+}
+
+instance Drop[Iter] {
+    fn drop(self) -> Self {
+        println("Dropping iterator");
+        self
+    }
+}
+
+instance Iterator[Iter] {
+    type Item = Int
+
+    fn next(mut self) -> (Self, Option[Int]) {
+        if self.value >= self.end {
+            return (self, None);
+        }
+        let v = self.value;
+        self.value = self.value + 1;
+        (self, Some(v))
+    }
+}
+
+fn main() {
+    let mut iter = Iter(0, 10);
+    for v in iter {
+        println("Got value ${v}");
+    }
+}
+
+}

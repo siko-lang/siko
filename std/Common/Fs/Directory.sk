@@ -32,11 +32,10 @@ pub struct Directory {
             }
             return Err(Error.new(err));
         }
-        let entry: &Dirent = NativePtr.toRef(entryPtr);
-        Ok(Some(DirEntry.fromDirent(entry)))
+        Ok(Some(DirEntry.fromDirent(entryPtr)))
     }
 
-    @safe
+    @unsafe
     fn close(&self) -> Result[(), Error] {
         if self.dir.isNull() {
             return Ok(());
@@ -50,6 +49,7 @@ pub struct Directory {
     }
 }
 
+@derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)
 pub enum FileType {
     Unknown
     Fifo,
@@ -100,7 +100,8 @@ pub struct DirEntry {
     inode: U64,
 
     @unsafe
-    pub fn fromDirent(entry: &Dirent) -> DirEntry {
+    pub fn fromDirent(entry: *Dirent) -> DirEntry {
+        let entry = *entry;
         DirEntry(
             name: entry.name(),
             ty: entry.entryType(),
@@ -119,13 +120,59 @@ pub struct DirEntry {
     pub fn inode(&self) -> U64 {
         self.inode
     }
+
+    pub fn isDirectory(&self) -> Bool {
+        self.fileType() == FileType.Directory
+    }
+
+    pub fn isFile(&self) -> Bool {
+        self.fileType() == FileType.RegularFile
+    }
 }
 
 instance Drop[Directory] {
+    @safe
     fn drop(self) -> Self {
         self.close();
         self
     }
+}
+
+pub struct DirEntryIterator {
+    dir: Directory,
+    done: Bool,
+
+    pub fn new(path: &String) -> Result[DirEntryIterator, Error] {
+        let dir = try Directory.open(path);
+        Ok(DirEntryIterator(dir, done: False))
+    }
+}
+
+pub instance Iterator[DirEntryIterator] {
+    type Item = Result[DirEntry, Error]
+
+    fn next(mut self) -> (Self, Option[Result[DirEntry, Error]]) {
+        if self.done {
+            return (self, None);
+        }
+        let d: &Directory = &self.dir; // TODO: FIXME: auto ref should work here
+        let entry = match d.read() {
+            Ok(Some(entry)) -> Some(Ok(entry)),
+            Ok(None) -> {
+                self.done = True;
+                None
+            }
+            Err(err) -> {
+                self.done = True;
+                Some(Err(err))
+            }
+        };
+        (self, entry)
+    }
+}
+
+pub fn listDir(path: &String) -> Result[DirEntryIterator, Error] {
+    DirEntryIterator.new(path)
 }
 
 }

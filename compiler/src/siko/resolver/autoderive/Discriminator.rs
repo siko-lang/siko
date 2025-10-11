@@ -59,7 +59,8 @@ fn getDiscriminatorFnForEnum(enumDef: &Enum) -> Function {
     params.push(Parameter::RefSelfParam);
     let mut cases = Vec::new();
     for (index, v) in enumDef.variants.iter().enumerate() {
-        let variantName = Identifier::new(v.name.name(), enumDef.name.location());
+        let qualifiedname = format!("{}.{}", enumDef.name.name(), v.name.name());
+        let variantName = Identifier::new(qualifiedname, enumDef.name.location());
         let mut args = Vec::new();
         for _ in &v.items {
             let pattern = Pattern {
