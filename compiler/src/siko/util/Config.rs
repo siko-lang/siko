@@ -24,6 +24,7 @@ pub struct DumpConfig {
     pub borrowCheckerTraceEnabled: bool,
     pub instanceResolverTraceEnabled: bool,
     pub functionProfileBuilderTraceEnabled: bool,
+    pub simplifierTraceEnabled: bool,
 }
 
 impl DumpConfig {
@@ -34,6 +35,7 @@ impl DumpConfig {
             borrowCheckerTraceEnabled: false,
             instanceResolverTraceEnabled: false,
             functionProfileBuilderTraceEnabled: false,
+            simplifierTraceEnabled: false,
         }
     }
 }

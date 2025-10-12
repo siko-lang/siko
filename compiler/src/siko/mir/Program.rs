@@ -139,6 +139,16 @@ impl Program {
                         let deps = allDeps.get_mut(&s.name).expect("deps not found");
                         deps.push(n.clone());
                     }
+                    Type::Array(ty, _) => {
+                        if let Type::Struct(n) = &**ty {
+                            let deps = allDeps.get_mut(&s.name).expect("deps not found");
+                            deps.push(n.clone());
+                        }
+                        if let Type::Union(n) = &**ty {
+                            let deps = allDeps.get_mut(&s.name).expect("deps not found");
+                            deps.push(n.clone());
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -154,6 +164,16 @@ impl Program {
                     Type::Union(n) => {
                         let deps = allDeps.get_mut(&u.name).expect("deps not found");
                         deps.push(n.clone());
+                    }
+                    Type::Array(ty, _) => {
+                        if let Type::Struct(n) = &**ty {
+                            let deps = allDeps.get_mut(&u.name).expect("deps not found");
+                            deps.push(n.clone());
+                        }
+                        if let Type::Union(n) = &**ty {
+                            let deps = allDeps.get_mut(&u.name).expect("deps not found");
+                            deps.push(n.clone());
+                        }
                     }
                     _ => {}
                 }
@@ -173,23 +193,7 @@ impl Program {
                 let mut totalAlignment = 4;
                 for f in &item.fields {
                     let size = self.getTypesize(&f.ty);
-                    let alignment = match &f.ty {
-                        Type::VoidPtr => 8,
-                        Type::Void => 1,
-                        Type::UInt8 => 1,
-                        Type::UInt16 => 2,
-                        Type::UInt32 => 4,
-                        Type::UInt64 => 8,
-                        Type::Int8 => 1,
-                        Type::Int16 => 2,
-                        Type::Int32 => 4,
-                        Type::Int64 => 8,
-                        Type::Struct(n) => self.getStruct(n).alignment,
-                        Type::Union(n) => self.getUnion(n).alignment,
-                        Type::Ptr(_) => 8,
-                        Type::Array(_, itemSize) => *itemSize / 8,
-                        Type::FunctionPtr(_, _) => 8,
-                    };
+                    let alignment = self.getAlignment(&f.ty);
                     totalAlignment = std::cmp::max(totalAlignment, alignment);
                     offset += size;
                     let padding = (alignment - (offset % alignment)) % alignment;
@@ -210,23 +214,7 @@ impl Program {
                 let mut maxSize = 0;
                 for v in &item.variants {
                     let size = self.getTypesize(&v.ty);
-                    let alignment = match &v.ty {
-                        Type::Void => 0,
-                        Type::VoidPtr => 8,
-                        Type::UInt8 => 1,
-                        Type::UInt16 => 2,
-                        Type::UInt32 => 4,
-                        Type::UInt64 => 8,
-                        Type::Int8 => 1,
-                        Type::Int16 => 2,
-                        Type::Int32 => 4,
-                        Type::Int64 => 8,
-                        Type::Struct(n) => self.getStruct(n).alignment,
-                        Type::Union(n) => self.getUnion(n).alignment,
-                        Type::Ptr(_) => 8,
-                        Type::Array(_, itemSize) => *itemSize / 8,
-                        Type::FunctionPtr(_, _) => 8,
-                    };
+                    let alignment = self.getAlignment(&v.ty);
                     totalAlignment = std::cmp::max(totalAlignment, alignment);
                     //println!("variant {} size {} alignment {}", v.name, size, alignment);
                     maxSize = std::cmp::max(maxSize, size);
@@ -241,6 +229,27 @@ impl Program {
                 self.unions.insert(item.name.clone(), item);
             }
         }
+    }
+
+    fn getAlignment(&mut self, ty: &Type) -> u32 {
+        let alignment = match &ty {
+            Type::VoidPtr => 8,
+            Type::Void => 1,
+            Type::UInt8 => 1,
+            Type::UInt16 => 2,
+            Type::UInt32 => 4,
+            Type::UInt64 => 8,
+            Type::Int8 => 1,
+            Type::Int16 => 2,
+            Type::Int32 => 4,
+            Type::Int64 => 8,
+            Type::Struct(n) => self.getStruct(n).alignment,
+            Type::Union(n) => self.getUnion(n).alignment,
+            Type::Ptr(_) => 8,
+            Type::Array(ty, _) => self.getAlignment(ty),
+            Type::FunctionPtr(_, _) => 8,
+        };
+        alignment
     }
 
     fn getTypesize(&self, ty: &Type) -> u32 {

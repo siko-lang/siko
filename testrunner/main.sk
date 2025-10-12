@@ -1,9 +1,43 @@
 module Main {
 
 import Libc.Arg
+import Fs.File
 import Fs.Directory
 import Fs.Path
 import Sys.Command
+import Sync.Atomic
+import Terminal
+
+struct Statistics {
+    total: AtomicU32,
+    passed: AtomicU32,
+    failed: AtomicU32,
+
+    pub fn new() -> Statistics {
+        Statistics(
+            total: AtomicU32.new(0.toU32()),
+            passed: AtomicU32.new(0.toU32()),
+            failed: AtomicU32.new(0.toU32())
+        )
+    }
+
+    pub fn success(&self) {
+        self.total.fetchAdd(1.toU32());
+        self.passed.fetchAdd(1.toU32());
+    }
+
+    pub fn failure(&self) {
+        self.total.fetchAdd(1.toU32());
+        self.failed.fetchAdd(1.toU32());
+    }
+
+    pub fn dump(&self) {
+        let total = self.total.load();
+        let passed = self.passed.load();
+        let failed = self.failed.load();
+        println("Total: ${total}, Passed: ${passed}, Failed: ${failed}");
+    }
+}
 
 struct Config {
     filters: Vec[String]
@@ -12,12 +46,43 @@ struct Config {
 struct Test {
     path: String
 
-    fn run(&self) {
-        Command.new("./siko")
+    fn run(&self, expectedSuccess: Bool, stats: &Statistics) {
+        let expectedOutputPath = join(self.path, "output.txt");
+        let expectedOutput = match readFile(expectedOutputPath) {
+            Ok(content) -> content,
+            Err(_) -> {
+                println("Failed to read expected output from ${expectedOutputPath}");
+                stats.failure();
+                return;
+            }
+        };
+        print("- ${self.path} -");
+        let mut command = Command.new("./siko")
             .arg("run")
-            .arg(&self.path)
-            .run();
-        //println("Test ${self.path} completed.");
+            .addEnv("SIKO_STD_PATH", "./std")
+            .arg(&self.path);
+        command.run();
+        if command.success() == expectedSuccess {
+            let actualOutput = command.capturedStdout();
+            if actualOutput == expectedOutput {
+                println(" ${green("success")}");
+                stats.success();
+            } else {
+                println(" ${red("failed")}");
+                println("Expected output:");
+                println("-----");
+                println("${expectedOutput}");
+                println("-----");
+                println("Actual output:");
+                println("-----");
+                println("${actualOutput}");
+                println("-----");
+                stats.failure();
+            }
+        } else {
+            println(" ${red("failed")}");
+            stats.failure();
+        }
     }
 }
 
@@ -50,15 +115,22 @@ fn main() {
     for arg in args {
         cfg.filters.push(arg);
     }
+    let stats = Statistics.new();
     let successTests = collectTests("./test/success");
     let errorTests = collectTests("./test/errors");
-    for test in successTests {
-        println("Running test: ${test.path}");
-        test.run();
+    if !successTests.empty() {
+        println("Success tests:");
+        for test in successTests {
+            test.run(True, stats);
+        }
     }
-    for testPath in errorTests {
-        //println("Running test: ${testPath.path}");
+    if !errorTests.empty() {
+        println("Error tests:");
+        for test in errorTests {
+            test.run(False, stats);
+        }
     }
+    stats.dump();
 }
 
 }

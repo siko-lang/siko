@@ -1,21 +1,18 @@
 use std::collections::BTreeSet;
 
-use crate::siko::hir::{Block::BlockId, BodyBuilder::BodyBuilder, Function::Function, Instruction::InstructionKind};
+use crate::siko::hir::{
+    Block::BlockId, BlockBuilder::InstructionRef, BodyBuilder::BodyBuilder, Function::Function,
+    Instruction::InstructionKind,
+};
 
 pub fn eliminateDeadCode(f: &Function) -> Option<Function> {
     let mut eliminator = DeadCodeEliminator::new(f);
     eliminator.process()
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
-struct InstructionId {
-    block: BlockId,
-    id: usize,
-}
-
 pub struct DeadCodeEliminator<'a> {
     function: &'a Function,
-    visited: BTreeSet<InstructionId>,
+    visited: BTreeSet<InstructionRef>,
 }
 
 impl<'a> DeadCodeEliminator<'a> {
@@ -42,9 +39,9 @@ impl<'a> DeadCodeEliminator<'a> {
             for (blockId, block) in body.blocks.iter() {
                 let inner = block.getInner();
                 for (index, _i) in inner.borrow().instructions.iter().enumerate() {
-                    let id = InstructionId {
-                        block: *blockId,
-                        id: index,
+                    let id = InstructionRef {
+                        blockId: *blockId,
+                        instructionId: index as u32,
                     };
                     if !self.visited.contains(&id) {
                         //println!("DCE: Found dead instruction: {}", _i);
@@ -67,9 +64,9 @@ impl<'a> DeadCodeEliminator<'a> {
             loop {
                 if let Some(_i) = builder.getInstruction() {
                     //println!("DCE: Checking instruction: {}", _i);
-                    let id = InstructionId {
-                        block: *blockId,
-                        id: index,
+                    let id = InstructionRef {
+                        blockId: *blockId,
+                        instructionId: index as u32,
                     };
                     if !self.visited.contains(&id) {
                         //println!("DCE: Removing dead instruction: {}", _i);
@@ -98,9 +95,9 @@ impl<'a> DeadCodeEliminator<'a> {
         let block = self.function.getBlockById(blockId);
         let inner = block.getInner();
         for (index, instruction) in inner.borrow().instructions.iter().enumerate() {
-            let id = InstructionId {
-                block: blockId,
-                id: index,
+            let id = InstructionRef {
+                blockId: blockId,
+                instructionId: index as u32,
             };
             //println!("Processing instruction: {} in block {:?}", instruction, id);
             let added = self.visited.insert(id);

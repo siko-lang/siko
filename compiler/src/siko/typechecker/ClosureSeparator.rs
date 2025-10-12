@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use crate::siko::{
     hir::{
         Block::BlockId,
@@ -23,6 +25,7 @@ pub struct ClosureSeparator<'a> {
     closureBody: Body,
     unifier: &'a mut Unifier,
     typeVars: Vec<TypeVar>,
+    visitedBlocks: BTreeSet<BlockId>,
 }
 
 impl<'a> ClosureSeparator<'a> {
@@ -39,6 +42,7 @@ impl<'a> ClosureSeparator<'a> {
             closureBody: Body::new(),
             unifier,
             typeVars: Vec::new(),
+            visitedBlocks: BTreeSet::new(),
         }
     }
 
@@ -76,6 +80,8 @@ impl<'a> ClosureSeparator<'a> {
         let resultTy = self.unifier.apply(resultTy);
         // println!("Closure result type: {}", resultTy);
         // println!("Constraint context: {}", constraintContext);
+        let mut attributes = Attributes::new();
+        attributes.safety = self.function.attributes.safety;
         let closureFn = Function::new(
             self.closureTypeInfo
                 .name
@@ -87,13 +93,17 @@ impl<'a> ClosureSeparator<'a> {
             Some(self.closureBody.clone()),
             constraintContext,
             FunctionKind::UserDefined(self.function.kind.getLocation()),
-            Attributes::new(),
+            attributes,
         );
         // println!("Closure function created: {}", closureFn);
         closureFn
     }
 
     fn processBlock(&mut self, blockId: BlockId) {
+        if self.visitedBlocks.contains(&blockId) {
+            return;
+        }
+        self.visitedBlocks.insert(blockId);
         let mut block = self.function.getBlockById(blockId).clone();
         for instructionIndex in 0..block.size() {
             let instr = block.getInstruction(instructionIndex);

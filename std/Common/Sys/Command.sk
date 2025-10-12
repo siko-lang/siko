@@ -1,18 +1,34 @@
 module Sys.Command {
 
+import Array
 import Libc.String
 import Libc.Unistd
 import Libc.StdLib
+import Libc.FileDescriptor
+import IO.Reader
+import IO.Buffer
 import Libc.Wait
 import NativePtr
+import Arch.Wait
+import Sync.Thread
 
 pub struct Command {
     program: String,
     args: Vec[String],
     workDir: Option[String],
+    status: I32,
+    capturedStdout: String,
+    envs: Vec[String],
 
     pub fn new(program: &String) -> Command {
-        Command(program.clone(), Vec.new(), workDir: None)
+        Command(
+            program.clone(),
+            Vec.new(),
+            workDir: None,
+            status: 0.toI32(),
+            capturedStdout: String.new(),
+            envs: Vec.new(),
+        )
     }
 
     pub fn arg(mut self, arg: &String) -> Self {
@@ -32,10 +48,47 @@ pub struct Command {
         self
     }
 
+    pub fn success(&self) -> Bool {
+       if wExited(self.status) {
+           wExitStatus(self.status) == 0.toI32()
+       } else {
+            False
+       }
+    }
+
+    pub fn addEnv(mut self, env: &String, value: &String) -> Self {
+        self.envs.push("${env}=${value}");
+        self
+    }
+
+    pub fn capturedStdout(&self) -> &String {
+         &self.capturedStdout
+    }
+
+    pub fn status(&self) -> I32 {
+         self.status
+    }
+
     @safe
-    pub fn run(self) {
+    pub fn run(mut self) -> Self {
+        let stdOutPipe: Array[I32, 2] = Array.uninitialized();
+        if pipe(stdOutPipe.base()) != 0.toI32() {
+            println("Failed to create stdout redirect pipe");
+            exit(1.toI32());
+        }
         let pid = fork();
         if pid == 0.toU32() {
+            // child process
+            // redirect stdout to pipe
+            if dup2(stdOutPipe.slice().getUnchecked(1.toU64()), 1.toI32()) < 0.toI32() {
+                println("Failed to redirect stdout");
+                exit(1.toI32());
+            }
+            // close read end of pipe
+            if Libc.Unistd.close(stdOutPipe.slice().getUnchecked(0.toU64())) < 0.toI32() {
+                println("Failed to close read end of pipe");
+                exit(1.toI32());
+            }
             match self.workDir {
                 Some(dir) -> {
                     let cDir: CString = fromString(dir);
@@ -58,14 +111,52 @@ pub struct Command {
                 cArgs.push(arg.asPtr());
             }
             cArgs.push(null());
-            execv(cProgram.asPtr(), cArgs.asPtr());
+            let mut envStrings = Vec.new();
+            for env in self.envs {
+                let cEnv: CString = fromString(env);
+                envStrings.push(cEnv);
+            }
+            let mut cEnvs: Vec[*U8] = Vec.new();
+            for env in envStrings.iter() {
+                cEnvs.push(env.asPtr());
+            }
+            cEnvs.push(null());
+            execve(cProgram.asPtr(), cArgs.asPtr(), cEnvs.asPtr());
             exit(1.toI32());
         } else {
             let mut status = 0.toI32();
             let options = 0.toI32();
             let statusPtr: *I32 = &raw status;
+            if Libc.Unistd.close(stdOutPipe.slice().getUnchecked(1.toU64())) < 0.toI32() {
+                println("Failed to close write end of pipe");
+                exit(1.toI32());
+            }
+            let outputFd = stdOutPipe.slice().getUnchecked(0.toU64()).clone();
+            let mut capturePtr: *String = &raw self.capturedStdout;
+            let captureStdoutThread = spawn(|| {
+                let outputFd = FileDescriptor.new(outputFd);
+                let mut buffer = ByteBuffer.new(4096);
+                let mut captured = String.new();
+                loop {
+                    let n = match outputFd.read(buffer.asWriteBuffer()) {
+                        Ok(n) -> n.clone(),
+                        Err(_) -> {
+                            break;
+                        }
+                    };
+                    if n == 0 {
+                        break;
+                    } else {
+                        captured.appendSlice(buffer.asSlice(n.toU64()));
+                    }
+                }
+                *capturePtr = captured;
+             });
             waitpid(pid, statusPtr, options);
+            captureStdoutThread.join();
+            self.status = status;
         }
+        self
     }
 }
 

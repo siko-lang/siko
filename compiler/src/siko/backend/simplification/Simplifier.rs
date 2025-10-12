@@ -11,7 +11,7 @@ pub struct Config {
     pub enableInliner: bool,
 }
 
-pub fn simplify(mut program: Program, config: Config) -> Program {
+pub fn simplify(mut program: Program, config: Config, traceEnabled: bool) -> Program {
     let functionGroupBuilder = FunctionGroupBuilder::new(&program);
     let functionGroupInfo = functionGroupBuilder.process();
     let mut inliner = Inliner::new(config.enableInliner, &functionGroupInfo);
@@ -19,7 +19,7 @@ pub fn simplify(mut program: Program, config: Config) -> Program {
         //println!("Simplifying function group: {:?}", group.items);
         for fnName in &group.items {
             let mut simplifiedFunc = program.functions.get(&fnName).unwrap().clone();
-            simplifiedFunc = simplifyFunction(&program, simplifiedFunc, &group.items, &mut inliner);
+            simplifiedFunc = simplifyFunction(&program, simplifiedFunc, &group.items, &mut inliner, traceEnabled);
             program.functions.insert(fnName.clone(), simplifiedFunc);
         }
     }
@@ -41,13 +41,15 @@ pub fn simplifyFunction(
     mut simplifiedFunc: Function,
     groupItems: &Vec<QualifiedName>,
     inliner: &mut Inliner,
+    traceEnabled: bool,
 ) -> Function {
-    let trace = false;
+    let trace = traceEnabled;
     let mut simplified = true;
     while simplified {
         simplified = false;
         if trace {
             println!("Running simplification passes for function: {}", simplifiedFunc.name);
+            println!("start state {}", simplifiedFunc);
             println!("starting VarSimplifier");
         }
         if let Some(f) = VarSimplifier::simplifyFunction(&simplifiedFunc) {

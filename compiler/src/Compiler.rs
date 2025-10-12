@@ -168,6 +168,9 @@ impl Compiler {
                 "--function-profile-builder-trace" => {
                     self.config.dumpCfg.functionProfileBuilderTraceEnabled = true;
                 }
+                "--simplifier-trace" => {
+                    self.config.dumpCfg.simplifierTraceEnabled = true;
+                }
                 _ => {
                     if external_mode {
                         self.config.externalFiles.push(args[i].clone());

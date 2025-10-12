@@ -33,7 +33,7 @@ pub struct File {
         Ok(File(fd: fd))
     }
 
-    pub fn close(&self) -> Result[(), Error] {
+    fn close(&self) -> Result[(), Error] {
         self.fd.close()
     }
 }
@@ -48,6 +48,27 @@ pub instance FileWriter Writer[File] {
     fn write(&self, buffer: &ReadBuffer) -> Result[Int, Error] {
         self.fd.write(buffer)
     }
+}
+
+@safe
+pub fn readFile(path: &String) -> Result[String, Error] {
+    let file = try File.open(path);
+    let mut result = String.new();
+    let mut buffer = ByteBuffer.new(8192); // TODO: if stat is available, use file size
+    loop {
+        let writeBuffer = buffer.asWriteBuffer();
+        let n = match file.read(&writeBuffer) {
+            Ok(n) -> n,
+            Err(e) -> {
+                return Err(e);
+            }
+        };
+        if n == 0 {
+            break;
+        }
+        result.appendSlice(buffer.asSlice(n.toU64()));
+    }
+    Ok(result)
 }
 
 }

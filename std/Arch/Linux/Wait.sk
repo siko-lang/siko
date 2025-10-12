@@ -1,0 +1,69 @@
+module Arch.Wait {
+
+// here we will reimplement the macros from <sys/wait.h> on linux
+// as functions, so that they can be used from Siko.
+pub let WEXITED: I32 = 0x00000004.toI32();
+pub let WSTOPPED: I32 = 0x00000008.toI32();
+pub let WCONTINUED: I32 = 0x00000010.toI32();
+pub let WNOWAIT: I32 = 0x00000020.toI32();
+
+pub fn wStatus(x: I32) -> I32 {
+    x & 0177.toI32()
+}
+
+pub fn wExitStatus(x: I32) -> I32 {
+    (x >> 8.toI32()) & 0x000000ff.toI32()
+}
+
+pub fn wExited(x: I32) -> Bool {
+    wStatus(x) == 0.toI32()
+}
+
+pub fn wSignaled(x: I32) -> Bool {
+    let status = wStatus(x);
+    status != WSTOPPED and status != 0.toI32()
+}
+
+pub fn wStopSig(x: I32) -> I32 {
+    x >> 8.toI32()
+}
+
+pub fn wStopped(x: I32) -> Bool {
+    let status = wStatus(x);
+    status == WSTOPPED and wStopSig(x) != 0x13.toI32()
+}
+
+//#define _WSTATUS(x)     (_W_INT(x) & 0177)
+// #define WEXITSTATUS(x)  ((_W_INT(x) >> 8) & 0x000000ff)
+// #else /* !__DARWIN_UNIX03 */
+// #define WEXITSTATUS(x)  (_W_INT(x) >> 8)
+// #endif /* !__DARWIN_UNIX03 */
+// /* 0x13 == SIGCONT */
+// #define WSTOPSIG(x)     (_W_INT(x) >> 8)
+// #define WIFCONTINUED(x) (_WSTATUS(x) == _WSTOPPED && WSTOPSIG(x) == 0x13)
+// #define WIFSTOPPED(x)   (_WSTATUS(x) == _WSTOPPED && WSTOPSIG(x) != 0x13)
+// #define WIFEXITED(x)    (_WSTATUS(x) == 0)
+// #define WIFSIGNALED(x)  (_WSTATUS(x) != _WSTOPPED && _WSTATUS(x) != 0)
+// #define WTERMSIG(x)     (_WSTATUS(x))
+// #if (!defined(_POSIX_C_SOURCE) || defined(_DARWIN_C_SOURCE))
+// #define WCOREDUMP(x)    (_W_INT(x) & WCOREFLAG)
+
+// #define W_EXITCODE(ret, sig)    ((ret) << 8 | (sig))
+// #define W_STOPCODE(sig)         ((sig) << 8 | _WSTOPPED)
+// #endif /* (!defined(_POSIX_C_SOURCE) || defined(_DARWIN_C_SOURCE)) */
+
+// /*
+//  * [XSI] The following symbolic constants shall be defined as possible
+//  * values for the fourth argument to waitid().
+//  */
+// /* WNOHANG already defined for wait4() */
+// /* WUNTRACED defined for wait4() but not for waitid() */
+// #define WEXITED         0x00000004  /* [XSI] Processes which have exitted */
+// #if __DARWIN_UNIX03
+// /* waitid() parameter */
+// #define WSTOPPED        0x00000008  /* [XSI] Any child stopped by signal */
+// #endif
+// #define WCONTINUED      0x00000010  /* [XSI] Any child stopped then continued */
+// #define WNOWAIT         0x00000020  /* [XSI] Leave process returned waitable */
+
+}

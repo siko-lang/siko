@@ -1,7 +1,10 @@
 use std::collections::BTreeSet;
 
 use crate::siko::{
-    hir::{Block::BlockId, Function::Function, Instruction::InstructionKind, Program::Program},
+    hir::{
+        Block::BlockId, BlockBuilder::InstructionRef, Function::Function, Instruction::InstructionKind,
+        Program::Program,
+    },
     location::Report::{Report, ReportContext},
 };
 
@@ -15,15 +18,9 @@ pub fn eliminateDeadCode(ctx: &ReportContext, program: Program) -> Program {
     result
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
-struct InstructionId {
-    block: usize,
-    id: usize,
-}
-
 pub struct DeadCodeEliminator<'a> {
     function: &'a Function,
-    visited: BTreeSet<InstructionId>,
+    visited: BTreeSet<InstructionRef>,
 }
 
 impl<'a> DeadCodeEliminator<'a> {
@@ -38,13 +35,14 @@ impl<'a> DeadCodeEliminator<'a> {
         if self.function.body.is_some() {
             self.processBlock(BlockId::first());
         }
+
         if let Some(body) = &self.function.body {
-            for (blockIndex, (_, block)) in body.blocks.iter().enumerate() {
+            for (blockId, block) in body.blocks.iter() {
                 let inner = block.getInner();
                 for (index, instruction) in inner.borrow().instructions.iter().enumerate() {
-                    if !self.visited.contains(&InstructionId {
-                        block: blockIndex,
-                        id: index,
+                    if !self.visited.contains(&InstructionRef {
+                        blockId: blockId.clone(),
+                        instructionId: index as u32,
                     }) {
                         if !instruction.implicit {
                             println!("unreachable code {}", instruction);
@@ -58,7 +56,7 @@ impl<'a> DeadCodeEliminator<'a> {
         }
         let mut result = self.function.clone();
         if let Some(body) = &mut result.body {
-            for (blockIndex, (_, block)) in body.blocks.iter_mut().enumerate() {
+            for (blockId, block) in body.blocks.iter_mut() {
                 let inner = block.getInner();
                 let mut b = inner.borrow_mut();
                 let instructions: Vec<_> = b
@@ -67,9 +65,9 @@ impl<'a> DeadCodeEliminator<'a> {
                     .cloned()
                     .enumerate()
                     .filter(|(index, _)| {
-                        self.visited.contains(&InstructionId {
-                            block: blockIndex,
-                            id: *index,
+                        self.visited.contains(&InstructionRef {
+                            blockId: blockId.clone(),
+                            instructionId: *index as u32,
                         })
                     })
                     .map(|(_, i)| i.clone())
@@ -84,9 +82,9 @@ impl<'a> DeadCodeEliminator<'a> {
         let block = self.function.getBlockById(blockId);
         let inner = block.getInner();
         for (index, instruction) in inner.borrow().instructions.iter().enumerate() {
-            let added = self.visited.insert(InstructionId {
-                block: blockId.id as usize,
-                id: index,
+            let added = self.visited.insert(InstructionRef {
+                blockId: blockId,
+                instructionId: index as u32,
             });
             if !added {
                 return;

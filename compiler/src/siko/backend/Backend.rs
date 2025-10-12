@@ -38,16 +38,20 @@ pub fn process(ctx: &ReportContext, runner: &mut Runner, program: Program) -> Pr
     let cfg = runner.getConfig();
     let monoRunner = runner.child("monomorphizer");
     let program = monoRunner.clone().run(|| {
-        let monomorphizer = Monomorphizer::new(cfg, ctx, program, monoRunner);
+        let monomorphizer = Monomorphizer::new(cfg.clone(), ctx, program, monoRunner);
         monomorphizer.run()
     });
     //println!("after mono\n{}", program);
     //verifyTypes(&program);
 
     //println!("after remove tuples\n{}", program);
-    let program = runner
-        .child("simplification")
-        .run(|| Simplifier::simplify(program, Config { enableInliner: false }));
+    let program = runner.child("simplification").run(|| {
+        Simplifier::simplify(
+            program,
+            Config { enableInliner: false },
+            cfg.dumpCfg.simplifierTraceEnabled,
+        )
+    });
     //println!("after simplification\n{}", program);
     let program = ClosureLowering::process(program);
     //println!("after closure lowering\n{}", program);
@@ -64,9 +68,13 @@ pub fn process(ctx: &ReportContext, runner: &mut Runner, program: Program) -> Pr
     borrowCheckRunner
         .clone()
         .run(|| Check::new(&program).process(ctx, borrowCheckRunner));
-    let program = runner
-        .child("simplification2")
-        .run(|| Simplifier::simplify(program, Config { enableInliner: true }));
+    let program = runner.child("simplification2").run(|| {
+        Simplifier::simplify(
+            program,
+            Config { enableInliner: true },
+            cfg.dumpCfg.simplifierTraceEnabled,
+        )
+    });
     //println!("Final program:\n{}", program);
     program
 }
