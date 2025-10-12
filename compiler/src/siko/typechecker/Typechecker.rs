@@ -171,6 +171,8 @@ pub struct Typechecker<'a> {
     builtins2: BTreeMap<QualifiedName, fn(Variable, Variable) -> InstructionKind>,
     builtins1: BTreeMap<QualifiedName, fn(Variable) -> InstructionKind>,
     runner: Runner,
+    fieldAccessDests: BTreeSet<VariableName>,
+    fieldAccessByRefs: BTreeSet<VariableName>,
 }
 
 impl<'a> Typechecker<'a> {
@@ -248,6 +250,8 @@ impl<'a> Typechecker<'a> {
             builtins2,
             builtins1,
             runner,
+            fieldAccessDests: BTreeSet::new(),
+            fieldAccessByRefs: BTreeSet::new(),
         }
     }
 
@@ -1150,6 +1154,7 @@ impl<'a> Typechecker<'a> {
             );
             builder.replaceInstruction(newKind, location.clone());
             self.unifier.unifyVar(dest, receiverType);
+            self.fieldAccessDests.insert(dest.name());
         }
     }
 
@@ -1552,10 +1557,15 @@ impl<'a> Typechecker<'a> {
                                 let ty = field.ty.clone().expect("field type is missing");
                                 field.ty = Some(self.unifier.apply(ty));
                             }
+                            let mut isRef = info.isRef;
+                            if self.fieldAccessByRefs.contains(&dest.name()) {
+                                isRef = true;
+                                dest.setType(dest.getType().asRef());
+                            }
                             let info = FieldAccessInfo {
                                 receiver: info.receiver.clone(),
                                 fields: fields,
-                                isRef: info.isRef,
+                                isRef: isRef,
                             };
                             let kind = InstructionKind::FieldAccess(dest.clone(), info);
                             builder.replaceInstruction(kind, instruction.location.clone());
@@ -1645,33 +1655,17 @@ impl<'a> Typechecker<'a> {
                                     builder.replaceInstruction(kind, instruction.location.clone());
                                 }
                                 (Type::Reference(inner), src) => {
-                                    let mut refSource = source.clone();
-                                    if !self.unifier.tryUnify(*inner.clone(), src.clone()) {
-                                        // check if implicit conversion is implemented for these types
-                                        if self.implResolver.isImplicitConvert(
-                                            &src,
-                                            &inner,
-                                            processConvertersRunner.child("is_implicit_convert"),
-                                        ) {
-                                            let newVar = self
-                                                .bodyBuilder
-                                                .createTempValueWithType(instruction.location.clone(), *inner.clone());
-                                            newVar.setType(*inner.clone());
-                                            let kind = self.addImplicitConvertCall(&newVar, source);
-                                            builder.addInstruction(kind, instruction.location.clone());
-                                            builder.step();
-                                            refSource = newVar;
-                                        } else {
-                                            TypecheckerError::TypeMismatch(
-                                                destTy.to_string(),
-                                                sourceTy.to_string(),
-                                                instruction.location.clone(),
-                                            )
-                                            .report(self.ctx);
-                                        }
-                                    }
-                                    let kind = InstructionKind::Ref(dest.clone(), refSource.clone());
-                                    builder.replaceInstruction(kind, instruction.location.clone());
+                                    self.convertToRef(
+                                        &processConvertersRunner,
+                                        &mut builder,
+                                        &instruction,
+                                        &destTy,
+                                        &sourceTy,
+                                        inner,
+                                        src,
+                                        dest,
+                                        source,
+                                    );
                                 }
                                 (t1, t2) => {
                                     if !self.unifier.tryUnify(t1.clone(), t2.clone()) {
@@ -1706,6 +1700,49 @@ impl<'a> Typechecker<'a> {
             }
         }
         //println!("Converters processed");
+    }
+
+    fn convertToRef(
+        &mut self,
+        processConvertersRunner: &Runner,
+        builder: &mut BlockBuilder,
+        instruction: &Instruction,
+        destTy: &Type,
+        sourceTy: &Type,
+        inner: &Box<Type>,
+        src: &Type,
+        dest: &Variable,
+        source: &Variable,
+    ) {
+        let mut refSource = source.clone();
+        if !self.unifier.tryUnify(*inner.clone(), src.clone()) {
+            // check if implicit conversion is implemented for these types
+            if self
+                .implResolver
+                .isImplicitConvert(&src, &inner, processConvertersRunner.child("is_implicit_convert"))
+            {
+                let newVar = self
+                    .bodyBuilder
+                    .createTempValueWithType(instruction.location.clone(), *inner.clone());
+                newVar.setType(*inner.clone());
+                let kind = self.addImplicitConvertCall(&newVar, source);
+                builder.addInstruction(kind, instruction.location.clone());
+                builder.step();
+                refSource = newVar;
+            } else {
+                TypecheckerError::TypeMismatch(destTy.to_string(), sourceTy.to_string(), instruction.location.clone())
+                    .report(self.ctx);
+            }
+        } else {
+            if self.fieldAccessDests.contains(&source.name()) {
+                self.fieldAccessByRefs.insert(source.name());
+                let kind = InstructionKind::Assign(dest.clone(), source.clone());
+                builder.replaceInstruction(kind, instruction.location.clone());
+                return;
+            }
+        }
+        let kind = InstructionKind::Ref(dest.clone(), refSource.clone());
+        builder.replaceInstruction(kind, instruction.location.clone());
     }
 
     fn removeBinds(&mut self) {
