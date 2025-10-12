@@ -478,8 +478,10 @@ impl MiniCGenerator {
         }
         writeln!(output, "int32_t saved_argc = 0;")?;
         writeln!(output, "uint8_t** saved_argv = 0;\n")?;
+        writeln!(output, "extern uint8_t** environ;")?;
         writeln!(output, "int32_t get_saved_argc() {{ return saved_argc; }}")?;
         writeln!(output, "uint8_t** get_saved_argv() {{ return saved_argv; }}")?;
+        writeln!(output, "uint8_t** get_environ() {{ return environ; }}\n")?;
         writeln!(output, "int main(int argc, char** argv) {{")?;
         writeln!(output, "   saved_argc = argc;")?;
         writeln!(output, "   saved_argv = (uint8_t**)argv;")?;

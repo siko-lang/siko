@@ -4,6 +4,7 @@ import Array
 import Libc.String
 import Libc.Unistd
 import Libc.StdLib
+import Libc.Env
 import Libc.FileDescriptor
 import IO.Reader
 import IO.Buffer
@@ -117,8 +118,20 @@ pub struct Command {
                 envStrings.push(cEnv);
             }
             let mut cEnvs: Vec[*U8] = Vec.new();
+            // push our environment variables
             for env in envStrings.iter() {
                 cEnvs.push(env.asPtr());
+            }
+            // copy existing environment variables
+            let existingEnvs = Libc.Env.get_environ();
+            let mut i = 0.toU64();
+            loop {
+                let envPtr = *NativePtr.offset(existingEnvs, i);
+                if envPtr.isNull() {
+                    break;
+                }
+                cEnvs.push(envPtr);
+                i += 1.toU64();
             }
             cEnvs.push(null());
             execve(cProgram.asPtr(), cArgs.asPtr(), cEnvs.asPtr());
