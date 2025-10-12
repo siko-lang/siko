@@ -147,12 +147,15 @@ impl<'a> BorrowVarMapBuilder<'a> {
             let borrowVar = extV.base();
             sourceVar = Some(borrowVar.clone());
         }
-        if let InstructionKind::AddressOfField(dest, _, _, isRaw) = &kind {
-            if !*isRaw {
+        if let InstructionKind::FieldAccess(dest, info) = &kind {
+            if info.isRef {
                 let mut extV = self.profileBuilder.getFinalVarType(&dest);
-                assert!(extV.ty.isReference());
-                let borrowVar = extV.base();
-                sourceVar = Some(borrowVar.clone());
+                let receiverType = self.profileBuilder.getFinalVarType(&info.receiver);
+                if !receiverType.vars.contains(&extV.vars[0]) {
+                    assert!(extV.ty.isReference());
+                    let borrowVar = extV.base();
+                    sourceVar = Some(borrowVar.clone());
+                }
             }
         }
         for v in vars {

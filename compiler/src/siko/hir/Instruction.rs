@@ -561,7 +561,7 @@ pub enum InstructionKind {
     Jump(Variable, BlockId),
     Assign(Variable, Variable),
     FieldAssign(Variable, Variable, Vec<FieldInfo>),
-    AddressOfField(Variable, Variable, Vec<FieldInfo>, bool), // bool indicates if it's a raw pointer (&raw) or reference (&)
+    AddressOfField(Variable, Variable, Vec<FieldInfo>),
     DeclareVar(Variable, Mutability),
     Transform(Variable, Variable, TransformInfo),
     EnumSwitch(Variable, Vec<EnumCase>),
@@ -623,7 +623,7 @@ impl InstructionKind {
             InstructionKind::Jump(v, _) => Some(v.clone()),
             InstructionKind::Assign(v, _) => Some(v.clone()),
             InstructionKind::FieldAssign(_, _, _) => None,
-            InstructionKind::AddressOfField(v, _, _, _) => Some(v.clone()),
+            InstructionKind::AddressOfField(v, _, _) => Some(v.clone()),
             InstructionKind::DeclareVar(v, _) => Some(v.clone()),
             InstructionKind::Transform(v, _, _) => Some(v.clone()),
             InstructionKind::EnumSwitch(_, _) => None,
@@ -669,7 +669,7 @@ impl InstructionKind {
                 format!("{} = dynamic_call({}, {:?})", dest, callable, args)
             }
             InstructionKind::FieldAccess(dest, info) => {
-                let byRef = if info.isRef { "by_ref" } else { "" };
+                let byRef = if info.isRef { " by_ref" } else { " by_value" };
                 format!(
                     "{} = ({}){}{}",
                     dest,
@@ -719,9 +719,9 @@ impl InstructionKind {
                 let fields = fields.iter().map(|info| info.to_string()).collect::<Vec<_>>().join(".");
                 format!("fieldassign({}, {}, {})", v, arg, fields)
             }
-            InstructionKind::AddressOfField(v, receiver, fields, isRaw) => {
+            InstructionKind::AddressOfField(v, receiver, fields) => {
                 let fields = fields.iter().map(|info| info.to_string()).collect::<Vec<_>>().join(".");
-                format!("address_of_field({}, {}, {}, {})", v, receiver, fields, isRaw)
+                format!("address_of_field({}, {}, {})", v, receiver, fields)
             }
             InstructionKind::DeclareVar(v, mutability) => {
                 format!("declare({}, {:?})", v, mutability)
@@ -822,7 +822,7 @@ impl InstructionKind {
             InstructionKind::Jump(_, _) => "jump",
             InstructionKind::Assign(_, _) => "assign",
             InstructionKind::FieldAssign(_, _, _) => "field_assign",
-            InstructionKind::AddressOfField(_, _, _, _) => "address_of_field",
+            InstructionKind::AddressOfField(_, _, _) => "address_of_field",
             InstructionKind::DeclareVar(_, _) => "declare_var",
             InstructionKind::Transform(_, _, _) => "transform",
             InstructionKind::EnumSwitch(_, _) => "enum_switch",

@@ -106,7 +106,7 @@ impl<'a> SafetyChecker<'a> {
             InstructionKind::Jump(_, _) => true,
             InstructionKind::Assign(_, _) => true,
             InstructionKind::FieldAssign(_, _, _) => true,
-            InstructionKind::AddressOfField(_, _, _, isRaw) => !isRaw,
+            InstructionKind::AddressOfField(_, _, _) => false,
             InstructionKind::DeclareVar(_, _) => true,
             InstructionKind::Transform(_, _, _) => true,
             InstructionKind::EnumSwitch(_, _) => true,

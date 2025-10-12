@@ -88,6 +88,9 @@ impl<'a> BorrowChecker<'a> {
     }
 
     fn movePath(&mut self, path: Path, liveBorrowVars: &Vec<Type>) {
+        if self.traceEnabled {
+            println!("  Move path: {}", path);
+        }
         // this is a struct or enum and it is being moved, mark its paths as dead
         for tyVar in liveBorrowVars {
             if let Some(borrows) = self.borrows.get(tyVar) {
@@ -146,19 +149,19 @@ impl<'a> BorrowChecker<'a> {
                         let refTyVar = destType.vars.first().expect("ref type must have a var");
                         self.borrowPath(arg.toPath(), refTyVar, arg.location().clone());
                     }
-                    InstructionKind::AddressOfField(dest, receiver, fields, isRaw) => {
-                        if *isRaw {
-                        } else {
-                            let path = buildFieldPath(receiver, fields);
+                    InstructionKind::FieldAccess(dest, info) => {
+                        if info.isRef {
+                            let path = buildFieldPath(&info.receiver, &info.fields);
                             if self.traceEnabled {
-                                println!("    AddressOfField: {} -> {}", receiver.name(), path);
+                                println!("    FieldRef: {} -> {}", info.receiver.name(), path);
                             }
                             let destType = self.profileBuilder.getFinalVarType(dest);
-                            self.borrowPath(
-                                path,
-                                destType.vars.first().expect("dest type must have a var"),
-                                receiver.location().clone(),
-                            );
+                            let refTyVar = destType.vars.first().expect("dest type must have a var");
+                            let receiverType = self.profileBuilder.getFinalVarType(&info.receiver);
+                            if !receiverType.vars.contains(refTyVar) {
+                                // the reference is not present in the receiver, it introduces a new borrow
+                                self.borrowPath(path, refTyVar, info.receiver.location().clone());
+                            }
                         }
                     }
                     _ => {}
@@ -187,14 +190,20 @@ impl<'a> BorrowChecker<'a> {
                             } else {
                                 let path = buildFieldPath(&info.receiver, &info.fields);
                                 if self.traceEnabled {
-                                    println!("    FieldRef: {} -> {}", info.receiver.name(), path);
+                                    println!("    FieldRef: {} -> {} {}", info.receiver.name(), path, info.isRef);
                                 }
                                 self.movePath(path, liveBorrowVars);
                             }
                         }
-                        InstructionKind::AddressOfField(_, _, _, _) => {}
+                        InstructionKind::AddressOfField(_, _, _) => {}
                         _ => {
-                            let vars = instruction.kind.collectVariables();
+                            if self.traceEnabled {
+                                println!("  Other instruction: {}", instruction.kind);
+                            }
+                            let mut vars = instruction.kind.collectVariables();
+                            if let Some(v) = instruction.kind.getResultVar() {
+                                vars.retain(|x| *x != v);
+                            }
                             for v in vars {
                                 self.movePath(v.toPath(), liveBorrowVars);
                             }

@@ -36,6 +36,7 @@ pub struct FunctionProfileBuilder<'a> {
     pub paramNameMap: BTreeMap<String, usize>,
     pub profileStore: &'a mut FunctionProfileStore,
     pub functionGroup: Vec<QualifiedName>,
+    traceEnabled: bool,
 }
 
 impl<'a> FunctionProfileBuilder<'a> {
@@ -63,6 +64,7 @@ impl<'a> FunctionProfileBuilder<'a> {
             paramNameMap: BTreeMap::new(),
             profileStore,
             functionGroup,
+            traceEnabled: runner.getConfig().dumpCfg.functionProfileBuilderTraceEnabled,
         }
     }
 
@@ -122,8 +124,10 @@ impl<'a> FunctionProfileBuilder<'a> {
     }
 
     pub fn process(&mut self, normalize: bool) -> bool {
-        // println!("Building function profile for: {}", self.f.name);
-        // println!("Function: {}", self.f);
+        if self.traceEnabled {
+            println!("Building function profile for: {}", self.f.name);
+            println!("Function: {}", self.f);
+        }
         self.profile = FunctionProfile {
             name: self.f.name.clone(),
             args: Vec::new(),
@@ -136,7 +140,9 @@ impl<'a> FunctionProfileBuilder<'a> {
             self.profile.args.push(extTy);
             self.paramNameMap.insert(p.getName().clone(), index);
         }
-        //println!("Function profile: {}", profile);
+        if self.traceEnabled {
+            println!("Initial function profile: {}", self.profile);
+        }
         match &self.f.body {
             Some(body) => {
                 for (_, b) in &body.blocks {
@@ -201,10 +207,14 @@ impl<'a> FunctionProfileBuilder<'a> {
         };
         if normalize {
             self.profile.normalize();
-            //println!("Normalized function profile: {}", self.profile);
+            if self.traceEnabled {
+                println!("Normalized function profile: {}", self.profile);
+            }
             self.profile.processLinks();
         }
-        //println!("Function profile: {}", self.profile);
+        if self.traceEnabled {
+            println!("Final function profile: {}", self.profile);
+        }
         let updated = self.profileStore.addProfile(self.profile.clone());
         updated
     }
@@ -233,7 +243,9 @@ impl<'a> FunctionProfileBuilder<'a> {
                 //println!("Variable type: {} {}", var.name(), extTy);
                 self.varTypes.insert(name, extTy);
             }
-            //println!("Processing instruction: {}", instr);
+            if self.traceEnabled {
+                println!("Processing instruction: {}", instr);
+            }
             match &instr.kind {
                 InstructionKind::FunctionCall(dest, info) => {
                     match self.profileStore.getProfile(&info.name) {
@@ -282,9 +294,14 @@ impl<'a> FunctionProfileBuilder<'a> {
                     panic!("DynamicFunctionCall in borrow checker")
                 }
                 InstructionKind::FieldAccess(dest, info) => {
-                    let currenTy = self.resolveFieldInfos(&info.receiver, &info.fields);
-                    let destTy = self.getVarType(dest);
-                    //println!("FieldRef: {} {} {}", currenTy, destTy, receiver.getType());
+                    let currenTy = self.resolveFieldInfos(&info.receiver, &info.fields, false);
+                    let mut destTy = self.getVarType(dest);
+                    if info.isRef && !currenTy.ty.isReference() {
+                        destTy.base();
+                    }
+                    if self.traceEnabled {
+                        println!("FieldAccess: {} {} {}", currenTy, destTy, info.receiver.getType());
+                    }
                     self.unifyExtendedTypes(&currenTy, &destTy);
                 }
                 InstructionKind::Bind(_, _, _) => panic!("Bind in borrow checker"),
@@ -331,8 +348,10 @@ impl<'a> FunctionProfileBuilder<'a> {
                 }
                 InstructionKind::FieldAssign(root, value, infos) => {
                     let valueType = self.getVarType(value);
-                    let currenTy = self.resolveFieldInfos(root, infos);
-                    //println!("FieldAssign: {} {}", currenTy, valueType);
+                    let currenTy = self.resolveFieldInfos(root, infos, false);
+                    if self.traceEnabled {
+                        println!("FieldAssign: {} {}", currenTy, valueType);
+                    }
                     self.unifyExtendedTypes(&currenTy, &valueType);
                 }
                 InstructionKind::DeclareVar(_, _) => {}
@@ -374,13 +393,15 @@ impl<'a> FunctionProfileBuilder<'a> {
                 InstructionKind::ClosureReturn(_, _, _) => {
                     panic!("ClosureReturn in borrow checker")
                 }
-                InstructionKind::AddressOfField(dest, root, fieldInfos, _) => {
-                    let currenTy = self.resolveFieldInfos(root, fieldInfos);
+                InstructionKind::AddressOfField(dest, root, fieldInfos) => {
+                    let currenTy = self.resolveFieldInfos(root, fieldInfos, true);
                     let mut destType = self.getVarType(dest);
                     if currenTy.vars.len() < destType.vars.len() {
                         destType.base();
                     }
-                    //println!("AddressOfField: {} {}", currenTy, destType);
+                    if self.traceEnabled {
+                        println!("AddressOfField: {} {}", currenTy, destType);
+                    }
                     self.unifyExtendedTypes(&currenTy, &destType);
                 }
                 InstructionKind::IntegerOp(_, _, _, _) => {}
@@ -390,14 +411,24 @@ impl<'a> FunctionProfileBuilder<'a> {
                 InstructionKind::FunctionPtr(_, _) => {}
                 InstructionKind::FunctionPtrCall(_, _, _) => {}
                 InstructionKind::Sizeof(_, _) => {}
-                InstructionKind::Transmute(_, _) => {}
+                InstructionKind::Transmute(dest, src) => {
+                    let mut destType = self.getVarType(dest);
+                    let mut srcType = self.getVarType(src);
+                    if destType.ty.isReference() && srcType.ty.isPtr() {
+                        destType.base();
+                    }
+                    if srcType.ty.isReference() && destType.ty.isPtr() {
+                        srcType.base();
+                    }
+                    self.unifyExtendedTypes(&destType, &srcType);
+                }
                 InstructionKind::CreateUninitializedArray(_) => {}
                 InstructionKind::ArrayLen(_, _) => {}
             }
         }
     }
 
-    fn resolveFieldInfos(&mut self, root: &Variable, infos: &Vec<FieldInfo>) -> ExtendedType {
+    fn resolveFieldInfos(&mut self, root: &Variable, infos: &Vec<FieldInfo>, raw: bool) -> ExtendedType {
         let mut currenTy = self.getVarType(root);
         for info in infos {
             let refVar = if currenTy.ty.isReference() {
@@ -417,13 +448,17 @@ impl<'a> FunctionProfileBuilder<'a> {
                     }
                     self.unifyExtendedTypes(&structDef.ty, &currenTy);
                     structDef = self.unifier.apply(structDef);
-                    //println!("Instantiated struct def: {}", structDef);
+                    if self.traceEnabled {
+                        println!("Instantiated struct def: {}", structDef);
+                    }
                     let field = structDef.getField(&name);
                     currenTy = field.ty.clone();
-                    if let Some(refVar) = refVar {
-                        if !currenTy.ty.isReference() {
-                            currenTy.ty = currenTy.ty.asRef();
-                            currenTy.vars.insert(0, refVar);
+                    if !raw {
+                        if let Some(refVar) = refVar {
+                            if !currenTy.ty.isReference() {
+                                currenTy.ty = currenTy.ty.asRef();
+                                currenTy.vars.insert(0, refVar);
+                            }
                         }
                     }
                 }
@@ -432,6 +467,11 @@ impl<'a> FunctionProfileBuilder<'a> {
                 }
             }
         }
-        currenTy
+        if raw {
+            currenTy.ty = currenTy.ty.asPtr();
+            currenTy
+        } else {
+            currenTy
+        }
     }
 }

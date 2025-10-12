@@ -341,7 +341,7 @@ impl ClosureLowering for InstructionKind {
                 rhs.lower(closureStore);
                 infos.lower(closureStore);
             }
-            InstructionKind::AddressOfField(dest, receiver, infos, _) => {
+            InstructionKind::AddressOfField(dest, receiver, infos) => {
                 dest.lower(closureStore);
                 receiver.lower(closureStore);
                 infos.lower(closureStore);

@@ -255,7 +255,7 @@ impl<'a> TypeVerifier<'a> {
                 self.checkVariable(root);
                 self.checkVariable(rhs);
             }
-            InstructionKind::AddressOfField(dest, root, fields, _) => {
+            InstructionKind::AddressOfField(dest, root, fields) => {
                 let mut rootType = root.getType().clone();
                 for f in fields {
                     rootType = self.checkFieldInfo(rootType, f);

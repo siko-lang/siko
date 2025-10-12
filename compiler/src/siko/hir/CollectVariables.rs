@@ -137,7 +137,7 @@ impl CollectVariables for InstructionKind {
                 var.collectVariables(vars);
                 value.collectVariables(vars);
             }
-            InstructionKind::AddressOfField(var, target, _, _) => {
+            InstructionKind::AddressOfField(var, target, _) => {
                 var.collectVariables(vars);
                 target.collectVariables(vars);
             }

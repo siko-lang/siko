@@ -165,6 +165,9 @@ impl Compiler {
                 "--instance-resolver-trace" => {
                     self.config.dumpCfg.instanceResolverTraceEnabled = true;
                 }
+                "--function-profile-builder-trace" => {
+                    self.config.dumpCfg.functionProfileBuilderTraceEnabled = true;
+                }
                 _ => {
                     if external_mode {
                         self.config.externalFiles.push(args[i].clone());

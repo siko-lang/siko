@@ -23,6 +23,7 @@ pub struct DumpConfig {
     pub dumpAfterTypecheck: bool,
     pub borrowCheckerTraceEnabled: bool,
     pub instanceResolverTraceEnabled: bool,
+    pub functionProfileBuilderTraceEnabled: bool,
 }
 
 impl DumpConfig {
@@ -32,6 +33,7 @@ impl DumpConfig {
             dumpAfterTypecheck: false,
             borrowCheckerTraceEnabled: false,
             instanceResolverTraceEnabled: false,
+            functionProfileBuilderTraceEnabled: false,
         }
     }
 }

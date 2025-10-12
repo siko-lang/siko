@@ -409,11 +409,10 @@ pub fn processInstructionKind(
             rhs.process(sub, mono),
             fields.process(sub, mono),
         ),
-        InstructionKind::AddressOfField(dest, receiver, fields, isRaw) => InstructionKind::AddressOfField(
+        InstructionKind::AddressOfField(dest, receiver, fields) => InstructionKind::AddressOfField(
             dest.process(sub, mono),
             receiver.process(sub, mono),
             fields.process(sub, mono),
-            isRaw,
         ),
         InstructionKind::DeclareVar(var, mutability) => {
             InstructionKind::DeclareVar(var.process(sub, mono), mutability.clone())

@@ -375,7 +375,7 @@ impl<'a> Typechecker<'a> {
                         }
                         InstructionKind::Assign(_, _) => {}
                         InstructionKind::FieldAssign(_, _, _) => {}
-                        InstructionKind::AddressOfField(var, _, _, _) => {
+                        InstructionKind::AddressOfField(var, _, _) => {
                             self.initializeVar(var);
                         }
                         InstructionKind::DeclareVar(var, mutability) => {
@@ -791,7 +791,7 @@ impl<'a> Typechecker<'a> {
                     let addressOfVar = self
                         .bodyBuilder
                         .createTempValueWithType(instruction.location.clone(), receiverType.clone().asPtr());
-                    let kind = InstructionKind::AddressOfField(addressOfVar.clone(), receiver.clone(), newFields, true);
+                    let kind = InstructionKind::AddressOfField(addressOfVar.clone(), receiver.clone(), newFields);
                     builder.addInstruction(kind, instruction.location.clone());
                     builder.step();
                     let store = InstructionKind::StorePtr(addressOfVar, rhs.clone());
@@ -805,7 +805,7 @@ impl<'a> Typechecker<'a> {
                 // );
                 self.unifier.unifyVar(rhs, receiverType);
             }
-            InstructionKind::AddressOfField(dest, receiver, fields, isRaw) => {
+            InstructionKind::AddressOfField(dest, receiver, fields) => {
                 let receiverType = receiver.getType();
                 let mut receiverType = self.unifier.apply(receiverType);
                 let mut newFields = Vec::new();
@@ -813,6 +813,7 @@ impl<'a> Typechecker<'a> {
                 //     "AddressOfField start {} {} {} {} {}",
                 //     receiverType, isRaw, instruction.location, dest, receiver
                 // );
+                let mut isRef = receiverType.isReference();
                 for field in fields {
                     let root = receiverType.unpackRoot();
                     //println!("xxxx AddressOfField field {} {}", field.name, field.location);
@@ -820,26 +821,11 @@ impl<'a> Typechecker<'a> {
                     let mut newField = field.clone();
                     newField.ty = Some(fieldTy.clone());
                     newFields.push(newField);
+                    isRef = isRef || fieldTy.isReference();
                     receiverType = fieldTy;
                 }
-                let newKind = if *isRaw {
-                    receiverType = receiverType.asPtr();
-                    InstructionKind::AddressOfField(dest.clone(), receiver.clone(), newFields, *isRaw)
-                } else {
-                    if receiverType.isReference() {
-                        InstructionKind::FieldAccess(
-                            dest.clone(),
-                            FieldAccessInfo {
-                                receiver: receiver.clone(),
-                                fields: newFields,
-                                isRef: false,
-                            },
-                        )
-                    } else {
-                        receiverType = receiverType.asRef();
-                        InstructionKind::AddressOfField(dest.clone(), receiver.clone(), newFields, *isRaw)
-                    }
-                };
+                receiverType = receiverType.asPtr();
+                let newKind = InstructionKind::AddressOfField(dest.clone(), receiver.clone(), newFields);
                 builder.replaceInstruction(newKind, instruction.location.clone());
                 self.unifier.unifyVar(dest, receiverType);
             }
@@ -883,6 +869,7 @@ impl<'a> Typechecker<'a> {
                     dest,
                     &info.receiver,
                     &info.fields,
+                    info.isRef,
                     instruction.location.clone(),
                 );
             }
@@ -1057,6 +1044,7 @@ impl<'a> Typechecker<'a> {
         dest: &Variable,
         receiver: &Variable,
         fields: &Vec<FieldInfo>,
+        wantRef: bool,
         location: Location,
     ) {
         let receiverType = receiver.getType();
@@ -1065,7 +1053,7 @@ impl<'a> Typechecker<'a> {
         let mut newFields = Vec::new();
         let mut isPtrLike = receiverType.isPtrLike();
         let mut isRef = receiverType.isReference();
-        // println!("FieldRef start {} {}", receiverType, instruction.location);
+        //println!("FieldRef start {} {}", receiverType, location);
         // for f in fields {
         //     println!("xxxx FieldRef field {} {}", f.name, f.location);
         // }
@@ -1096,7 +1084,7 @@ impl<'a> Typechecker<'a> {
         if isPtrLike {
             //println!("FieldRef with ptr-like receiver {} {}", receiverType, origReceiverType);
             // there is somewhere a pointer in the chain, we need to add loads
-            let destType = receiverType.clone();
+            let mut destType = receiverType.clone();
             let mut kinds = Vec::new();
             let mut currentVar = self.derefReceiver(receiver, &location, origReceiverType, &mut kinds);
             for (index, field) in newFields.iter().enumerate() {
@@ -1107,7 +1095,7 @@ impl<'a> Typechecker<'a> {
                     .createTempValueWithType(location.clone(), fieldTy.clone());
                 tmp.setNoDrop();
                 //println!("tmp var for field {}: {} {}", field.name, tmp, fieldTy);
-                let kind = InstructionKind::AddressOfField(tmp.clone(), currentVar.clone(), vec![field.clone()], true);
+                let kind = InstructionKind::AddressOfField(tmp.clone(), currentVar.clone(), vec![field.clone()]);
                 //println!("Adding address-of instruction: {}", kind);
                 kinds.push(kind);
                 currentVar = tmp;
@@ -1115,25 +1103,49 @@ impl<'a> Typechecker<'a> {
                     currentVar = self.derefReceiver(&currentVar, &location, fieldTy, &mut kinds);
                 }
             }
+            if wantRef {
+                if !destType.isReference() {
+                    destType = destType.asRef();
+                }
+                let destAsPtr = destType.asPtr();
+                let currenTy = currentVar.getType();
+                let currentTy = self.unifier.apply(currenTy);
+                //println!("Final deref {} {}", currentTy, destAsPtr);
+                if destAsPtr == currentTy {
+                    let load = InstructionKind::LoadPtr(dest.clone(), currentVar);
+                    kinds.push(load);
+                } else {
+                    //println!("Adding final transmute instruction: {} -> {}", currentTy, destAsPtr);
+                    let transmute = InstructionKind::Transmute(dest.clone(), currentVar);
+                    kinds.push(transmute);
+                }
+            } else {
+                let load = InstructionKind::LoadPtr(dest.clone(), currentVar);
+                //println!("Adding final load instruction: {}", load);
+                kinds.push(load);
+            }
             self.unifier.unifyVar(dest, destType);
-            let load = InstructionKind::LoadPtr(dest.clone(), currentVar);
-            //println!("Adding final load instruction: {}", load);
-            kinds.push(load);
             builder.removeInstruction();
             kinds.reverse();
             for kind in kinds {
                 builder.addInstruction(kind, location.clone());
             }
         } else {
+            let mut wantRef = wantRef;
             if isRef {
                 receiverType = receiverType.asRef();
+                wantRef = false; // if already a ref, FieldAccess returns a ref by value
+            } else {
+                if wantRef {
+                    receiverType = receiverType.asRef();
+                }
             }
             let newKind = InstructionKind::FieldAccess(
                 dest.clone(),
                 FieldAccessInfo {
                     receiver: receiver.clone(),
                     fields: newFields,
-                    isRef: false,
+                    isRef: wantRef,
                 },
             );
             builder.replaceInstruction(newKind, location.clone());
@@ -1509,8 +1521,7 @@ impl<'a> Typechecker<'a> {
         }
     }
 
-    fn addFieldTypes(&mut self) {
-        // same as addFieldTypes but uses the bodybuilder api
+    fn processFieldAccessOps(&mut self) {
         let allblocksIds = self.bodyBuilder.getAllBlockIds();
         for blockId in allblocksIds {
             let mut builder = self.bodyBuilder.iterator(blockId);
@@ -1526,13 +1537,13 @@ impl<'a> Typechecker<'a> {
                             let kind = InstructionKind::FieldAssign(dest.clone(), root.clone(), fields);
                             builder.replaceInstruction(kind, instruction.location.clone());
                         }
-                        if let InstructionKind::AddressOfField(dest, root, fields, isRaw) = &instruction.kind {
+                        if let InstructionKind::AddressOfField(dest, root, fields) = &instruction.kind {
                             let mut fields = fields.clone();
                             for field in &mut fields {
                                 let ty = field.ty.clone().expect("field type is missing");
                                 field.ty = Some(self.unifier.apply(ty));
                             }
-                            let kind = InstructionKind::AddressOfField(dest.clone(), root.clone(), fields, *isRaw);
+                            let kind = InstructionKind::AddressOfField(dest.clone(), root.clone(), fields);
                             builder.replaceInstruction(kind, instruction.location.clone());
                         }
                         if let InstructionKind::FieldAccess(dest, info) = &instruction.kind {
@@ -1826,7 +1837,7 @@ impl<'a> Typechecker<'a> {
         }
 
         self.processConverters();
-        self.addFieldTypes();
+        self.processFieldAccessOps();
         self.removeBinds();
 
         let mut resultFn = self.f.clone();

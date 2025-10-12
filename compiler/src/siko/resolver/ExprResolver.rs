@@ -621,12 +621,18 @@ impl<'a> ExprResolver<'a> {
             SimpleExpr::Ref(arg, isRaw) => {
                 if let SimpleExpr::FieldAccess(_, _) = &arg.expr {
                     let (receiverVar, fields) = self.processFieldRef(arg, env);
-                    let addrVar = self.bodyBuilder.createTempValue(expr.location.clone());
-                    self.bodyBuilder.current().addInstruction(
-                        InstructionKind::AddressOfField(addrVar.clone(), receiverVar, fields, *isRaw),
-                        expr.location.clone(),
-                    );
-                    addrVar
+                    if *isRaw {
+                        let addrVar = self.bodyBuilder.createTempValue(expr.location.clone());
+                        self.bodyBuilder.current().addInstruction(
+                            InstructionKind::AddressOfField(addrVar.clone(), receiverVar, fields),
+                            expr.location.clone(),
+                        );
+                        addrVar
+                    } else {
+                        self.bodyBuilder
+                            .current()
+                            .addFieldAccess(receiverVar, fields, true, expr.location.clone())
+                    }
                 } else {
                     let argVar = self.resolveExpr(arg, env);
                     if *isRaw {

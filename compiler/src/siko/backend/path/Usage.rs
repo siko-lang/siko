@@ -126,19 +126,8 @@ pub fn getUsageInfo(kind: InstructionKind, referenceStore: &ReferenceStore) -> U
                 )
             }
         }
-        InstructionKind::AddressOfField(dest, receiver, fields, isRaw) => {
-            if isRaw {
-                UsageInfo::empty() // ptr shenanigans do not count as usages
-            } else {
-                let path = buildFieldPath(&receiver, &fields);
-                UsageInfo::with(
-                    vec![Usage {
-                        path: path,
-                        kind: UsageKind::Ref,
-                    }],
-                    Some(dest.toPath()),
-                )
-            }
+        InstructionKind::AddressOfField(_, _, _) => {
+            UsageInfo::empty() // ptr shenanigans do not count as usages
         }
         InstructionKind::Tuple(dest, args) => {
             UsageInfo::with(args.iter().map(|arg| varToUsage(arg)).collect(), Some(dest.toPath()))

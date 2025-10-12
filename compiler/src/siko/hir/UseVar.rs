@@ -83,8 +83,8 @@ impl UseVar for InstructionKind {
             InstructionKind::FieldAssign(dest, rhs, infos) => {
                 InstructionKind::FieldAssign(dest.clone(), rhs.useVar(), infos.clone())
             }
-            InstructionKind::AddressOfField(dest, rhs, infos, isRaw) => {
-                InstructionKind::AddressOfField(dest.clone(), rhs.useVar(), infos.clone(), *isRaw)
+            InstructionKind::AddressOfField(dest, rhs, infos) => {
+                InstructionKind::AddressOfField(dest.clone(), rhs.useVar(), infos.clone())
             }
             InstructionKind::DeclareVar(v, mutability) => InstructionKind::DeclareVar(v.clone(), mutability.clone()),
             InstructionKind::Transform(dest, arg, index) => {

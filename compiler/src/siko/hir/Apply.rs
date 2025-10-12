@@ -272,8 +272,8 @@ impl Apply for InstructionKind {
             InstructionKind::FieldAssign(name, rhs, fields) => {
                 InstructionKind::FieldAssign(name.apply(sub), rhs.apply(sub), fields.apply(sub))
             }
-            InstructionKind::AddressOfField(var, receiver, fields, isRaw) => {
-                InstructionKind::AddressOfField(var.apply(sub), receiver.apply(sub), fields.apply(sub), isRaw)
+            InstructionKind::AddressOfField(var, receiver, fields) => {
+                InstructionKind::AddressOfField(var.apply(sub), receiver.apply(sub), fields.apply(sub))
             }
             InstructionKind::DeclareVar(var, mutability) => {
                 InstructionKind::DeclareVar(var.apply(sub), mutability.clone())

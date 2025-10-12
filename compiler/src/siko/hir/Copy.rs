@@ -189,8 +189,8 @@ impl VariableCopy for InstructionKind {
             InstructionKind::Jump(v, b) => InstructionKind::Jump(v.copy(map), b.clone()),
             InstructionKind::Assign(d, s) => InstructionKind::Assign(d.copy(map), s.copy(map)),
             InstructionKind::FieldAssign(d, r, i) => InstructionKind::FieldAssign(d.copy(map), r.copy(map), i.clone()),
-            InstructionKind::AddressOfField(d, r, i, isRaw) => {
-                InstructionKind::AddressOfField(d.copy(map), r.copy(map), i.clone(), *isRaw)
+            InstructionKind::AddressOfField(d, r, i) => {
+                InstructionKind::AddressOfField(d.copy(map), r.copy(map), i.clone())
             }
             InstructionKind::DeclareVar(v, m) => InstructionKind::DeclareVar(v.copy(map), m.clone()),
             InstructionKind::Transform(d, a, i) => InstructionKind::Transform(d.copy(map), a.copy(map), i.clone()),
