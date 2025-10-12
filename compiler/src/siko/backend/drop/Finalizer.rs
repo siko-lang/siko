@@ -16,7 +16,7 @@ use crate::siko::{
         BlockBuilder::BlockBuilder,
         BodyBuilder::BodyBuilder,
         Function::Function,
-        Instruction::{CallInfo, EnumCase, FieldId, FieldInfo, InstructionKind, Mutability},
+        Instruction::{CallInfo, EnumCase, FieldAccessInfo, FieldId, FieldInfo, InstructionKind, Mutability},
         Program::Program,
         Type::Type,
         Variable::{Variable, VariableName},
@@ -279,9 +279,15 @@ impl<'a> Finalizer<'a> {
                                 let dropVar = self
                                     .bodyBuilder
                                     .createTempValueWithType(instruction.location.clone(), dropVarTy.unwrap());
-                                let fieldAcess =
-                                    InstructionKind::FieldRef(dropVar.useVarAsDrop(), path.root.clone(), fields);
-                                dropBlock.addInstruction(fieldAcess, instruction.location.clone());
+                                let fieldAccess = InstructionKind::FieldAccess(
+                                    dropVar.useVarAsDrop(),
+                                    FieldAccessInfo {
+                                        receiver: path.root.clone(),
+                                        fields,
+                                        isRef: false,
+                                    },
+                                );
+                                dropBlock.addInstruction(fieldAccess, instruction.location.clone());
                                 dropVar
                             };
                             if !dropVar.getType().hasTrivialDrop() {

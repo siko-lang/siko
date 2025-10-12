@@ -281,8 +281,8 @@ impl<'a> FunctionProfileBuilder<'a> {
                 InstructionKind::DynamicFunctionCall(_, _, _) => {
                     panic!("DynamicFunctionCall in borrow checker")
                 }
-                InstructionKind::FieldRef(dest, receiver, infos) => {
-                    let currenTy = self.resolveFieldInfos(receiver, infos);
+                InstructionKind::FieldAccess(dest, info) => {
+                    let currenTy = self.resolveFieldInfos(&info.receiver, &info.fields);
                     let destTy = self.getVarType(dest);
                     //println!("FieldRef: {} {} {}", currenTy, destTy, receiver.getType());
                     self.unifyExtendedTypes(&currenTy, &destTy);

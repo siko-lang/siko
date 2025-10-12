@@ -1,5 +1,8 @@
 use crate::siko::hir::{
-    Instruction::{Arguments, CallInfo, ClosureCreateInfo, InstructionKind, UnresolvedArgument, WithContext, WithInfo},
+    Instruction::{
+        Arguments, CallInfo, ClosureCreateInfo, FieldAccessInfo, InstructionKind, UnresolvedArgument, WithContext,
+        WithInfo,
+    },
     Variable::Variable,
 };
 
@@ -68,6 +71,12 @@ impl CollectVariables for ClosureCreateInfo {
     }
 }
 
+impl CollectVariables for FieldAccessInfo {
+    fn collectVariables(&self, vars: &mut Vec<Variable>) {
+        self.receiver.collectVariables(vars);
+    }
+}
+
 impl CollectVariables for InstructionKind {
     fn collectVariables(&self, vars: &mut Vec<Variable>) {
         match self {
@@ -89,9 +98,9 @@ impl CollectVariables for InstructionKind {
                 func.collectVariables(vars);
                 args.collectVariables(vars);
             }
-            InstructionKind::FieldRef(var, target, _) => {
+            InstructionKind::FieldAccess(var, info) => {
                 var.collectVariables(vars);
-                target.collectVariables(vars);
+                info.collectVariables(vars);
             }
             InstructionKind::Bind(var, value, _) => {
                 var.collectVariables(vars);

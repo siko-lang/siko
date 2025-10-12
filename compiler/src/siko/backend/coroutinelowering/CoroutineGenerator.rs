@@ -13,7 +13,7 @@ use crate::siko::{
         BodyBuilder::BodyBuilder,
         ConstraintContext::ConstraintContext,
         Function::{Attributes, Function, FunctionKind, ParamInfo, Parameter, ResultKind},
-        Instruction::{CallInfo, EnumCase, FieldId, FieldInfo, InstructionKind, TransformInfo},
+        Instruction::{CallInfo, EnumCase, FieldAccessInfo, FieldId, FieldInfo, InstructionKind, TransformInfo},
         Program::Program,
         Type::Type,
         Variable::{Variable, VariableName},
@@ -77,7 +77,14 @@ impl<'a> CoroutineGenerator<'a> {
             };
             let fieldRefVar =
                 bodyBuilder.createTempValueWithType(location.clone(), instance.stateMachineEnumTy.clone());
-            let fieldRef = InstructionKind::FieldRef(fieldRefVar.clone(), transformVar.clone(), vec![fieldInfo]);
+            let fieldRef = InstructionKind::FieldAccess(
+                fieldRefVar.clone(),
+                FieldAccessInfo {
+                    receiver: transformVar.clone(),
+                    fields: vec![fieldInfo],
+                    isRef: false,
+                },
+            );
             caseBuilder.addInstruction(fieldRef, location.clone());
             let resumeResult = bodyBuilder.createTempValueWithType(location.clone(), instance.resumeTupleTy.clone());
             let callInfo = CallInfo::new(instance.resumeFnName.clone(), vec![fieldRefVar.useVar()]);
@@ -90,10 +97,13 @@ impl<'a> CoroutineGenerator<'a> {
                 location: location.clone(),
                 ty: Some(instance.stateMachineEnumTy.clone()),
             };
-            let stateMachineFieldRef = InstructionKind::FieldRef(
+            let stateMachineFieldRef = InstructionKind::FieldAccess(
                 stateMachineFieldRefVar.clone(),
-                resumeResult.useVar(),
-                vec![stateMachineFieldInfo],
+                FieldAccessInfo {
+                    receiver: resumeResult.useVar(),
+                    fields: vec![stateMachineFieldInfo],
+                    isRef: false,
+                },
             );
             caseBuilder.addInstruction(stateMachineFieldRef, location.clone());
             let coroutineResultFieldRefVar = bodyBuilder.createTempValueWithType(location.clone(), resultTy.clone());
@@ -102,10 +112,13 @@ impl<'a> CoroutineGenerator<'a> {
                 location: location.clone(),
                 ty: Some(resultTy.clone()),
             };
-            let coroutineResultFieldRef = InstructionKind::FieldRef(
+            let coroutineResultFieldRef = InstructionKind::FieldAccess(
                 coroutineResultFieldRefVar.clone(),
-                resumeResult.useVar(),
-                vec![coroutineResultFieldInfo],
+                FieldAccessInfo {
+                    receiver: resumeResult.useVar(),
+                    fields: vec![coroutineResultFieldInfo],
+                    isRef: false,
+                },
             );
             caseBuilder.addInstruction(coroutineResultFieldRef, location.clone());
             let wrapperStateMachineVar = bodyBuilder.createTempValueWithType(location.clone(), coroutineTy.clone());
@@ -190,7 +203,14 @@ impl<'a> CoroutineGenerator<'a> {
             };
             let fieldRefVar =
                 bodyBuilder.createTempValueWithType(location.clone(), instance.stateMachineEnumTy.asRef());
-            let fieldRef = InstructionKind::FieldRef(fieldRefVar.clone(), transformVar.clone(), vec![fieldInfo]);
+            let fieldRef = InstructionKind::FieldAccess(
+                fieldRefVar.clone(),
+                FieldAccessInfo {
+                    receiver: transformVar.clone(),
+                    fields: vec![fieldInfo],
+                    isRef: false,
+                },
+            );
             caseBuilder.addInstruction(fieldRef, location.clone());
 
             let resultVar = bodyBuilder.createTempValueWithType(location.clone(), boolTy.clone());

@@ -15,7 +15,7 @@ use crate::siko::{
         BodyBuilder::BodyBuilder,
         ConstraintContext::ConstraintContext,
         Function::{Attributes, Function, FunctionKind, ParamInfo, Parameter, ResultKind},
-        Instruction::{CallInfo, EnumCase, FieldId, FieldInfo, InstructionKind, TransformInfo},
+        Instruction::{CallInfo, EnumCase, FieldAccessInfo, FieldId, FieldInfo, InstructionKind, TransformInfo},
         Program::Program,
         Type::Type,
         Variable::{Variable, VariableName},
@@ -192,7 +192,14 @@ impl<'a> CoroutineTransformer<'a> {
                     ty: Some(variable.getType()),
                 };
                 let extractedVar = bodyBuilder.createTempValueWithType(location.clone(), variable.getType());
-                let fieldRef = InstructionKind::FieldRef(extractedVar.clone(), transformVar.useVar(), vec![fieldInfo]);
+                let fieldRef = InstructionKind::FieldAccess(
+                    extractedVar.clone(),
+                    FieldAccessInfo {
+                        receiver: transformVar.useVar(),
+                        fields: vec![fieldInfo],
+                        isRef: false,
+                    },
+                );
                 builder.addInstruction(fieldRef, location.clone());
                 builder.step();
 
@@ -228,7 +235,14 @@ impl<'a> CoroutineTransformer<'a> {
                     ty: Some(variable.getType()),
                 };
                 let extractedVar = bodyBuilder.createTempValueWithType(location.clone(), variable.getType());
-                let fieldRef = InstructionKind::FieldRef(extractedVar.clone(), transformVar.useVar(), vec![fieldInfo]);
+                let fieldRef = InstructionKind::FieldAccess(
+                    extractedVar.clone(),
+                    FieldAccessInfo {
+                        receiver: transformVar.useVar(),
+                        fields: vec![fieldInfo],
+                        isRef: false,
+                    },
+                );
                 builder.addInstruction(fieldRef, location.clone());
                 builder.step();
 

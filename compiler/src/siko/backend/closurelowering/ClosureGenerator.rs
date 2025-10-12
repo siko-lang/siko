@@ -7,7 +7,7 @@ use crate::siko::{
         BodyBuilder::BodyBuilder,
         ConstraintContext::ConstraintContext,
         Function::{Attributes, Function, FunctionKind, ParamInfo, Parameter, ResultKind},
-        Instruction::{CallInfo, EnumCase, FieldId, FieldInfo, InstructionKind, TransformInfo},
+        Instruction::{CallInfo, EnumCase, FieldAccessInfo, FieldId, FieldInfo, InstructionKind, TransformInfo},
         Program::Program,
         Type::Type,
         Variable::{Variable, VariableName},
@@ -90,7 +90,14 @@ impl ClosureGenerator<'_> {
                     location: location.clone(),
                     ty: Some(ty.clone()),
                 };
-                let fieldRef = InstructionKind::FieldRef(envVar.clone(), closureEnvVar.clone(), vec![fieldInfo]);
+                let fieldRef = InstructionKind::FieldAccess(
+                    envVar.clone(),
+                    FieldAccessInfo {
+                        receiver: closureEnvVar.clone(),
+                        fields: vec![fieldInfo],
+                        isRef: false,
+                    },
+                );
                 caseBlock.addInstruction(fieldRef, location.clone());
                 envVars.push(envVar);
             }

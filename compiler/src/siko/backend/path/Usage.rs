@@ -96,9 +96,9 @@ pub fn getUsageInfo(kind: InstructionKind, referenceStore: &ReferenceStore) -> U
         ),
         InstructionKind::Assign(dest, src) => UsageInfo::with(vec![varToUsage(&src)], Some(dest.toPath())),
         InstructionKind::Return(_, arg) => UsageInfo::with(vec![varToUsage(&arg)], None),
-        InstructionKind::FieldRef(dest, receiver, names) => {
+        InstructionKind::FieldAccess(dest, info) => {
             let destTy = dest.getType();
-            let path = buildFieldPath(&receiver, &names);
+            let path = buildFieldPath(&info.receiver, &info.fields);
             let kind = if destTy.isReference() || destTy.isPtr() || referenceStore.isReference(&dest.name()) {
                 UsageKind::Ref
             } else {

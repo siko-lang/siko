@@ -6,7 +6,7 @@ use crate::siko::{
         BodyBuilder::BodyBuilder,
         Function::{Function, FunctionKind},
         Instantiation::instantiateEnum,
-        Instruction::{CallInfo, FieldId, InstructionKind},
+        Instruction::{CallInfo, FieldAccessInfo, FieldId, InstructionKind},
         Program::Program,
         ReplaceVar::ReplaceVar,
         Type::Type,
@@ -103,10 +103,10 @@ fn processFunction(function: &Function, program: &Program) -> Function {
                             transformVars.insert(dest.clone(), variantType);
                         }
                     }
-                    InstructionKind::FieldRef(dest, source, fields) => {
-                        if let Some(variantTypes) = transformVars.get(source) {
-                            assert_eq!(fields.len(), 1);
-                            let fieldInfo = &fields[0];
+                    InstructionKind::FieldAccess(dest, info) => {
+                        if let Some(variantTypes) = transformVars.get(&info.receiver) {
+                            assert_eq!(info.fields.len(), 1);
+                            let fieldInfo = &info.fields[0];
                             let index = match &fieldInfo.name {
                                 FieldId::Indexed(index) => index,
                                 _ => {
@@ -117,8 +117,8 @@ fn processFunction(function: &Function, program: &Program) -> Function {
                             //     "Transforming field reference: {} from {} to {} index {}",
                             //     dest, source, variantTypes, index
                             // );
-                            let isRef = source.getType().isReference();
-                            let newSource = source.clone();
+                            let isRef = info.receiver.getType().isReference();
+                            let newSource = info.receiver.clone();
                             if isRef {
                                 newSource.setType(variantTypes.asRef());
                             } else {
@@ -129,7 +129,14 @@ fn processFunction(function: &Function, program: &Program) -> Function {
                                 fieldTy = fieldTy.asRef();
                             }
                             let newDest = bodyBuilder.createTempValueWithType(instruction.location.clone(), fieldTy);
-                            let newKind = InstructionKind::FieldRef(newDest.clone(), newSource, fields.clone());
+                            let newKind = InstructionKind::FieldAccess(
+                                newDest.clone(),
+                                FieldAccessInfo {
+                                    receiver: newSource,
+                                    fields: info.fields.clone(),
+                                    isRef: info.isRef,
+                                },
+                            );
                             builder.replaceInstruction(newKind, instruction.location.clone());
                             let releaseCall = if isRef {
                                 InstructionKind::FunctionCall(

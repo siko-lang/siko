@@ -6,8 +6,8 @@ use crate::siko::{
         BodyBuilder::BodyBuilder,
         Function::{Function, ParamInfo, Parameter},
         Instruction::{
-            CallInfo, FieldId, FieldInfo, ImplicitContextOperation, ImplicitIndex, InstructionKind, SyntaxBlockId,
-            SyntaxBlockIdSegment,
+            CallInfo, FieldAccessInfo, FieldId, FieldInfo, ImplicitContextOperation, ImplicitIndex, InstructionKind,
+            SyntaxBlockId, SyntaxBlockIdSegment,
         },
         Program::Program,
         Type::Type,
@@ -142,10 +142,13 @@ impl<'a, 'b> ImplicitContextBuilder<'a, 'b> {
                                             location: instruction.location.clone(),
                                             ty: Some(fieldTy),
                                         };
-                                        let kind = InstructionKind::FieldRef(
+                                        let kind = InstructionKind::FieldAccess(
                                             fieldRefVar.clone(),
-                                            prevContext.clone(),
-                                            vec![fieldInfo],
+                                            FieldAccessInfo {
+                                                receiver: prevContext.clone(),
+                                                fields: vec![fieldInfo],
+                                                isRef: false,
+                                            },
                                         );
                                         builder.addInstruction(kind, instruction.location.clone());
                                         builder.step();
@@ -192,7 +195,14 @@ impl<'a, 'b> ImplicitContextBuilder<'a, 'b> {
                                     location: instruction.location.clone(),
                                     ty: Some(fieldTy),
                                 };
-                                let kind = InstructionKind::FieldRef(fieldRefVar.clone(), contextVar, vec![fieldInfo]);
+                                let kind = InstructionKind::FieldAccess(
+                                    fieldRefVar.clone(),
+                                    FieldAccessInfo {
+                                        receiver: contextVar,
+                                        fields: vec![fieldInfo],
+                                        isRef: false,
+                                    },
+                                );
                                 builder.replaceInstruction(kind, instruction.location.clone());
                                 builder.step();
                                 let kind = InstructionKind::LoadPtr(dest, fieldRefVar);
@@ -217,7 +227,14 @@ impl<'a, 'b> ImplicitContextBuilder<'a, 'b> {
                                     location: instruction.location.clone(),
                                     ty: Some(fieldTy),
                                 };
-                                let kind = InstructionKind::FieldRef(fieldRefVar.clone(), contextVar, vec![fieldInfo]);
+                                let kind = InstructionKind::FieldAccess(
+                                    fieldRefVar.clone(),
+                                    FieldAccessInfo {
+                                        receiver: contextVar,
+                                        fields: vec![fieldInfo],
+                                        isRef: false,
+                                    },
+                                );
                                 builder.replaceInstruction(kind, instruction.location.clone());
                                 builder.step();
                                 let kind = InstructionKind::StorePtr(fieldRefVar, src);

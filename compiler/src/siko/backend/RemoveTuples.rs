@@ -9,8 +9,8 @@ use crate::siko::{
         Data::{Enum, Field, Struct, Variant},
         Function::{Attributes, Function, FunctionKind, ParamInfo, Parameter, ResultKind},
         Instruction::{
-            Arguments, CallInfo, ClosureCreateInfo, FieldId, FieldInfo, ImplicitHandler, Instruction, InstructionKind,
-            UnresolvedArgument, WithContext, WithInfo,
+            Arguments, CallInfo, ClosureCreateInfo, FieldAccessInfo, FieldId, FieldInfo, ImplicitHandler, Instruction,
+            InstructionKind, UnresolvedArgument, WithContext, WithInfo,
         },
         Program::Program,
         Type::Type,
@@ -226,6 +226,15 @@ impl RemoveTuples for CallInfo {
     }
 }
 
+impl RemoveTuples for FieldAccessInfo {
+    fn removeTuples(&self, ctx: &mut Context) -> Self {
+        let mut result = self.clone();
+        result.receiver = result.receiver.removeTuples(ctx);
+        result.fields = result.fields.removeTuples(ctx);
+        result
+    }
+}
+
 impl RemoveTuples for InstructionKind {
     fn removeTuples(&self, ctx: &mut Context) -> InstructionKind {
         match self {
@@ -250,11 +259,9 @@ impl RemoveTuples for InstructionKind {
                 root.removeTuples(ctx),
                 args.removeTuples(ctx),
             ),
-            InstructionKind::FieldRef(dest, receiver, field) => InstructionKind::FieldRef(
-                dest.removeTuples(ctx),
-                receiver.removeTuples(ctx),
-                field.removeTuples(ctx),
-            ),
+            InstructionKind::FieldAccess(dest, info) => {
+                InstructionKind::FieldAccess(dest.removeTuples(ctx), info.removeTuples(ctx))
+            }
             InstructionKind::Bind(_, _, _) => {
                 panic!("Bind instruction found in RemoveTuples, this should not happen");
             }

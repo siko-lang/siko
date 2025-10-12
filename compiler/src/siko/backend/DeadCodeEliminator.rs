@@ -102,7 +102,7 @@ impl<'a> DeadCodeEliminator<'a> {
                     unreachable!("method call in DCE")
                 }
                 InstructionKind::DynamicFunctionCall(_, _, _) => {}
-                InstructionKind::FieldRef(_, _, _) => {}
+                InstructionKind::FieldAccess(_, _) => {}
                 InstructionKind::Bind(_, _, _) => {}
                 InstructionKind::Tuple(_, _) => {}
                 InstructionKind::StringLiteral(_, _) => {}

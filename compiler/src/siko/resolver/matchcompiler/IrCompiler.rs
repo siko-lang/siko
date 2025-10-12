@@ -137,13 +137,14 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
         let root = ctx.get(&tuple.dataPath.asRef().getParent().owned());
         let mut ctx = ctx.clone();
         for index in 0..tuple.size {
-            let value = builder.addFieldRef(
+            let value = builder.addFieldAccess(
                 root.clone(),
                 vec![FieldInfo {
                     name: FieldId::Indexed(index as u32),
                     ty: None,
                     location: self.bodyLocation.clone(),
                 }],
+                false,
                 self.bodyLocation.clone(),
             );
             ctx = ctx.add(tuple.dataPath.push(DataPathSegment::TupleIndex(index)), value);
@@ -177,13 +178,14 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
                     let transformValue = builder.addTransform(root.clone(), index, self.bodyLocation.clone());
                     let mut ctx = ctx.clone();
                     for (index, _) in v.items.iter().enumerate() {
-                        let value = builder.addFieldRef(
+                        let value = builder.addFieldAccess(
                             transformValue.clone(),
                             vec![FieldInfo {
                                 name: FieldId::Indexed(index as u32),
                                 ty: None,
                                 location: self.bodyLocation.clone(),
                             }],
+                            false,
                             self.bodyLocation.clone(),
                         );
                         let path = switch
@@ -481,7 +483,7 @@ fn generateAccessor(
                 ty: None,
                 location: root.location(),
             }];
-            builder.addFieldRef(parentPathVar, fields, root.location())
+            builder.addFieldAccess(parentPathVar, fields, false, root.location())
         }
         DataPathSegment::ItemIndex(index) => {
             let fields = vec![FieldInfo {
@@ -489,7 +491,7 @@ fn generateAccessor(
                 ty: None,
                 location: root.location(),
             }];
-            builder.addFieldRef(parentPathVar, fields, root.location())
+            builder.addFieldAccess(parentPathVar, fields, false, root.location())
         }
         DataPathSegment::Variant(variantName, enumName) => {
             let enumDef = resolver.enums.get(enumName).expect("enum not found");

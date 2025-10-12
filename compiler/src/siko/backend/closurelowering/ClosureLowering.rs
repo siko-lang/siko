@@ -11,6 +11,7 @@ use crate::siko::hir::Data::Struct;
 use crate::siko::hir::Function::Parameter;
 use crate::siko::hir::Instruction::Arguments;
 use crate::siko::hir::Instruction::CallInfo;
+use crate::siko::hir::Instruction::FieldAccessInfo;
 use crate::siko::hir::Instruction::FieldInfo;
 use crate::siko::hir::Instruction::InstructionKind;
 use crate::siko::hir::Instruction::UnresolvedArgument;
@@ -250,6 +251,13 @@ impl ClosureLowering for Arguments {
     }
 }
 
+impl ClosureLowering for FieldAccessInfo {
+    fn lower(&mut self, closureStore: &mut ClosureStore) {
+        self.receiver.lower(closureStore);
+        self.fields.lower(closureStore);
+    }
+}
+
 impl ClosureLowering for InstructionKind {
     fn lower(&mut self, closureStore: &mut ClosureStore) {
         match self {
@@ -279,10 +287,9 @@ impl ClosureLowering for InstructionKind {
                 let kind = InstructionKind::FunctionCall(dest.clone(), callInfo);
                 *self = kind;
             }
-            InstructionKind::FieldRef(dest, receiver, infos) => {
+            InstructionKind::FieldAccess(dest, info) => {
                 dest.lower(closureStore);
-                receiver.lower(closureStore);
-                infos.lower(closureStore);
+                info.lower(closureStore);
             }
             InstructionKind::Bind(lhs, rhs, _) => {
                 lhs.lower(closureStore);

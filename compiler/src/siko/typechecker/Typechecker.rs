@@ -16,8 +16,8 @@ use crate::siko::{
         InstanceStore::InstanceStore,
         Instantiation::{instantiateEnum, instantiateInstance, instantiateStruct},
         Instruction::{
-            Arguments, CallInfo, FieldId, FieldInfo, ImplicitIndex, Instruction, InstructionKind, IntegerOp,
-            Mutability, UnresolvedArgument, WithContext,
+            Arguments, CallInfo, FieldAccessInfo, FieldId, FieldInfo, ImplicitIndex, Instruction, InstructionKind,
+            IntegerOp, Mutability, UnresolvedArgument, WithContext,
         },
         Program::Program,
         ReplaceVar::ReplaceVar,
@@ -329,7 +329,7 @@ impl<'a> Typechecker<'a> {
                         InstructionKind::DynamicFunctionCall(var, _, _) => {
                             self.initializeVar(var);
                         }
-                        InstructionKind::FieldRef(var, _, _) => {
+                        InstructionKind::FieldAccess(var, _) => {
                             self.initializeVar(var);
                         }
                         InstructionKind::Bind(var, rhs, mutable) => {
@@ -827,7 +827,14 @@ impl<'a> Typechecker<'a> {
                     InstructionKind::AddressOfField(dest.clone(), receiver.clone(), newFields, *isRaw)
                 } else {
                     if receiverType.isReference() {
-                        InstructionKind::FieldRef(dest.clone(), receiver.clone(), newFields)
+                        InstructionKind::FieldAccess(
+                            dest.clone(),
+                            FieldAccessInfo {
+                                receiver: receiver.clone(),
+                                fields: newFields,
+                                isRef: false,
+                            },
+                        )
                     } else {
                         receiverType = receiverType.asRef();
                         InstructionKind::AddressOfField(dest.clone(), receiver.clone(), newFields, *isRaw)
@@ -870,8 +877,14 @@ impl<'a> Typechecker<'a> {
                     self.queue.push_back(case.branch);
                 }
             }
-            InstructionKind::FieldRef(dest, receiver, fields) => {
-                self.processFieldRef(builder, dest, receiver, fields, instruction.location.clone());
+            InstructionKind::FieldAccess(dest, info) => {
+                self.processFieldAccess(
+                    builder,
+                    dest,
+                    &info.receiver,
+                    &info.fields,
+                    instruction.location.clone(),
+                );
             }
             InstructionKind::BlockStart(_) => {}
             InstructionKind::BlockEnd(_) => {}
@@ -1038,7 +1051,7 @@ impl<'a> Typechecker<'a> {
         }
     }
 
-    fn processFieldRef(
+    fn processFieldAccess(
         &mut self,
         builder: &mut BlockBuilder,
         dest: &Variable,
@@ -1115,7 +1128,14 @@ impl<'a> Typechecker<'a> {
             if isRef {
                 receiverType = receiverType.asRef();
             }
-            let newKind = InstructionKind::FieldRef(dest.clone(), receiver.clone(), newFields);
+            let newKind = InstructionKind::FieldAccess(
+                dest.clone(),
+                FieldAccessInfo {
+                    receiver: receiver.clone(),
+                    fields: newFields,
+                    isRef: false,
+                },
+            );
             builder.replaceInstruction(newKind, location.clone());
             self.unifier.unifyVar(dest, receiverType);
         }
@@ -1312,14 +1332,17 @@ impl<'a> Typechecker<'a> {
                     .bodyBuilder
                     .createTempValueWithType(location.clone(), selfType.clone());
                 implicitSelf.setType(selfType.clone());
-                let implicitSelfIndex = InstructionKind::FieldRef(
+                let implicitSelfIndex = InstructionKind::FieldAccess(
                     implicitSelf.clone(),
-                    implicitResult.clone(),
-                    vec![FieldInfo {
-                        name: FieldId::Indexed(0),
-                        ty: Some(selfType.clone()),
-                        location: location.clone(),
-                    }],
+                    FieldAccessInfo {
+                        receiver: implicitResult.clone(),
+                        fields: vec![FieldInfo {
+                            name: FieldId::Indexed(0),
+                            ty: Some(selfType.clone()),
+                            location: location.clone(),
+                        }],
+                        isRef: false,
+                    },
                 );
                 let destTy = dest.getType();
                 let resVar = self
@@ -1327,14 +1350,17 @@ impl<'a> Typechecker<'a> {
                     .createTempValueWithType(location.clone(), destTy.clone());
                 resVar.setType(destTy.clone());
                 let assign = InstructionKind::Assign(dest.clone(), resVar.clone());
-                let resIndex = InstructionKind::FieldRef(
+                let resIndex = InstructionKind::FieldAccess(
                     resVar.clone(),
-                    implicitResult.clone(),
-                    vec![FieldInfo {
-                        name: FieldId::Indexed(1),
-                        ty: Some(destTy.clone()),
-                        location: location.clone(),
-                    }],
+                    FieldAccessInfo {
+                        receiver: implicitResult.clone(),
+                        fields: vec![FieldInfo {
+                            name: FieldId::Indexed(1),
+                            ty: Some(destTy.clone()),
+                            location: location.clone(),
+                        }],
+                        isRef: false,
+                    },
                 );
                 kinds.push(resIndex);
                 kinds.push(implicitSelfIndex);
@@ -1348,14 +1374,17 @@ impl<'a> Typechecker<'a> {
                     .bodyBuilder
                     .createTempValueWithType(location.clone(), selfType.clone());
                 implicitSelf.setType(selfType.clone());
-                let implicitSelfIndex = InstructionKind::FieldRef(
+                let implicitSelfIndex = InstructionKind::FieldAccess(
                     implicitSelf.clone(),
-                    implicitResult.clone(),
-                    vec![FieldInfo {
-                        name: FieldId::Indexed(0),
-                        ty: Some(selfType.clone()),
-                        location: location.clone(),
-                    }],
+                    FieldAccessInfo {
+                        receiver: implicitResult.clone(),
+                        fields: vec![FieldInfo {
+                            name: FieldId::Indexed(0),
+                            ty: Some(selfType.clone()),
+                            location: location.clone(),
+                        }],
+                        isRef: false,
+                    },
                 );
                 let mut args = Vec::new();
                 let mut tupleIndices = Vec::new();
@@ -1365,14 +1394,17 @@ impl<'a> Typechecker<'a> {
                         .createTempValueWithType(location.clone(), argType.clone());
                     args.push(resVar.clone());
                     resVar.setType(argType.clone());
-                    let tupleIndexN = InstructionKind::FieldRef(
+                    let tupleIndexN = InstructionKind::FieldAccess(
                         resVar.clone(),
-                        implicitResult.clone(),
-                        vec![FieldInfo {
-                            name: FieldId::Indexed((argIndex + 1) as u32),
-                            ty: Some(argType.clone()),
-                            location: location.clone(),
-                        }],
+                        FieldAccessInfo {
+                            receiver: implicitResult.clone(),
+                            fields: vec![FieldInfo {
+                                name: FieldId::Indexed((argIndex + 1) as u32),
+                                ty: Some(argType.clone()),
+                                location: location.clone(),
+                            }],
+                            isRef: false,
+                        },
                     );
                     tupleIndices.push(tupleIndexN);
                 }
@@ -1503,13 +1535,18 @@ impl<'a> Typechecker<'a> {
                             let kind = InstructionKind::AddressOfField(dest.clone(), root.clone(), fields, *isRaw);
                             builder.replaceInstruction(kind, instruction.location.clone());
                         }
-                        if let InstructionKind::FieldRef(dest, root, fields) = &instruction.kind {
-                            let mut fields = fields.clone();
+                        if let InstructionKind::FieldAccess(dest, info) = &instruction.kind {
+                            let mut fields = info.fields.clone();
                             for field in &mut fields {
                                 let ty = field.ty.clone().expect("field type is missing");
                                 field.ty = Some(self.unifier.apply(ty));
                             }
-                            let kind = InstructionKind::FieldRef(dest.clone(), root.clone(), fields);
+                            let info = FieldAccessInfo {
+                                receiver: info.receiver.clone(),
+                                fields: fields,
+                                isRef: info.isRef,
+                            };
+                            let kind = InstructionKind::FieldAccess(dest.clone(), info);
                             builder.replaceInstruction(kind, instruction.location.clone());
                         }
                         builder.step();

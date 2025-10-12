@@ -534,12 +534,19 @@ pub enum IntegerOp {
 }
 
 #[derive(Clone, PartialEq)]
+pub struct FieldAccessInfo {
+    pub receiver: Variable,
+    pub fields: Vec<FieldInfo>,
+    pub isRef: bool,
+}
+
+#[derive(Clone, PartialEq)]
 pub enum InstructionKind {
     FunctionCall(Variable, CallInfo),
     Converter(Variable, Variable),
     MethodCall(Variable, Variable, String, Arguments),
     DynamicFunctionCall(Variable, Variable, Vec<Variable>),
-    FieldRef(Variable, Variable, Vec<FieldInfo>),
+    FieldAccess(Variable, FieldAccessInfo),
     Bind(Variable, Variable, bool), //mutable
     Tuple(Variable, Vec<Variable>),
     StringLiteral(Variable, String),
@@ -601,7 +608,7 @@ impl InstructionKind {
             InstructionKind::Converter(v, _) => Some(v.clone()),
             InstructionKind::MethodCall(v, _, _, _) => Some(v.clone()),
             InstructionKind::DynamicFunctionCall(v, _, _) => Some(v.clone()),
-            InstructionKind::FieldRef(v, _, _) => Some(v.clone()),
+            InstructionKind::FieldAccess(v, _) => Some(v.clone()),
             InstructionKind::Bind(v, _, _) => Some(v.clone()),
             InstructionKind::Tuple(v, _) => Some(v.clone()),
             InstructionKind::StringLiteral(v, _) => Some(v.clone()),
@@ -661,12 +668,16 @@ impl InstructionKind {
             InstructionKind::DynamicFunctionCall(dest, callable, args) => {
                 format!("{} = dynamic_call({}, {:?})", dest, callable, args)
             }
-            InstructionKind::FieldRef(dest, v, fields) => format!(
-                "{} = ({}){}",
-                dest,
-                v,
-                fields.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(".")
-            ),
+            InstructionKind::FieldAccess(dest, info) => {
+                let byRef = if info.isRef { "by_ref" } else { "" };
+                format!(
+                    "{} = ({}){}{}",
+                    dest,
+                    info.receiver,
+                    info.fields.iter().map(|f| f.to_string()).collect::<Vec<_>>().join("."),
+                    byRef
+                )
+            }
             InstructionKind::Bind(v, rhs, mutable) => {
                 if *mutable {
                     format!("mut {} = {}", v, rhs)
@@ -796,7 +807,7 @@ impl InstructionKind {
             InstructionKind::Converter(_, _) => "convert",
             InstructionKind::MethodCall(_, _, _, _) => "methodcall",
             InstructionKind::DynamicFunctionCall(_, _, _) => "dynamic_call",
-            InstructionKind::FieldRef(_, _, _) => "fieldref",
+            InstructionKind::FieldAccess(_, _) => "field_access",
             InstructionKind::Bind(_, _, _) => "bind",
             InstructionKind::Tuple(_, _) => "tuple",
             InstructionKind::StringLiteral(_, _) => "string_literal",

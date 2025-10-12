@@ -192,16 +192,16 @@ impl<'a> Builder<'a> {
                             .push(Instruction::Transform(dest, root, info.variantIndex));
                     }
                 }
-                HirInstructionKind::FieldRef(dest, root, fields) => {
+                HirInstructionKind::FieldAccess(dest, info) => {
                     let dest = self.buildVariable(dest);
-                    let mut currentReceiver = self.buildVariable(root);
-                    let mut receiverTy = root.getType();
-                    for (index, field) in fields.iter().enumerate() {
+                    let mut currentReceiver = self.buildVariable(&info.receiver);
+                    let mut receiverTy = info.receiver.getType();
+                    for (index, field) in info.fields.iter().enumerate() {
                         let tmpVariable = MirVariable {
-                            name: format!("{}_{}_{}", root.name(), index, field.name),
+                            name: format!("{}_{}_{}", info.receiver.name(), index, field.name),
                             ty: self.lowering.lowerType(field.ty.as_ref().expect("no type")),
                         };
-                        let destVar = if index == fields.len() - 1 {
+                        let destVar = if index == info.fields.len() - 1 {
                             dest.clone()
                         } else {
                             tmpVariable.clone()

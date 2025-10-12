@@ -5,6 +5,7 @@ use std::fmt::Display;
 use crate::siko::hir::Block::BlockId;
 use crate::siko::hir::Instruction::Arguments;
 use crate::siko::hir::Instruction::CallInfo;
+use crate::siko::hir::Instruction::FieldAccessInfo;
 use crate::siko::hir::Instruction::TransformInfo;
 use crate::siko::{
     hir::Instruction::{Mutability, SyntaxBlockId},
@@ -303,10 +304,23 @@ impl BlockBuilder {
         result
     }
 
-    pub fn addFieldRef(&mut self, receiver: Variable, fields: Vec<FieldInfo>, location: Location) -> Variable {
+    pub fn addFieldAccess(
+        &mut self,
+        receiver: Variable,
+        fields: Vec<FieldInfo>,
+        isRef: bool,
+        location: Location,
+    ) -> Variable {
         let result = self.bodyBuilder.createTempValue(location.clone());
         self.addInstruction(
-            InstructionKind::FieldRef(result.clone(), receiver, fields),
+            InstructionKind::FieldAccess(
+                result.clone(),
+                FieldAccessInfo {
+                    receiver,
+                    fields,
+                    isRef,
+                },
+            ),
             location.clone(),
         );
         result
@@ -316,12 +330,20 @@ impl BlockBuilder {
         &mut self,
         receiver: Variable,
         fields: Vec<FieldInfo>,
+        isRef: bool,
         location: Location,
         ty: Type,
     ) -> Variable {
         let result = self.bodyBuilder.createTempValueWithType(location.clone(), ty);
         self.addInstruction(
-            InstructionKind::FieldRef(result.clone(), receiver, fields),
+            InstructionKind::FieldAccess(
+                result.clone(),
+                FieldAccessInfo {
+                    receiver,
+                    fields,
+                    isRef,
+                },
+            ),
             location.clone(),
         );
         result

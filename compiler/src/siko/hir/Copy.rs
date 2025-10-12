@@ -2,7 +2,9 @@ use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 
 use crate::siko::hir::{
     Block::{Block, BlockInner},
-    Instruction::{Arguments, CallInfo, ClosureCreateInfo, Instruction, InstructionKind, UnresolvedArgument},
+    Instruction::{
+        Arguments, CallInfo, ClosureCreateInfo, FieldAccessInfo, Instruction, InstructionKind, UnresolvedArgument,
+    },
     Variable::{Variable, VariableInfo, VariableName},
     VariableAllocator::VariableAllocator,
 };
@@ -151,6 +153,16 @@ impl VariableCopy for ClosureCreateInfo {
     }
 }
 
+impl VariableCopy for FieldAccessInfo {
+    fn copy(&self, map: &mut CopyHandler) -> FieldAccessInfo {
+        FieldAccessInfo {
+            receiver: self.receiver.copy(map),
+            fields: self.fields.clone(),
+            isRef: self.isRef,
+        }
+    }
+}
+
 impl VariableCopy for InstructionKind {
     fn copy(&self, map: &mut CopyHandler) -> InstructionKind {
         match self {
@@ -162,7 +174,7 @@ impl VariableCopy for InstructionKind {
             InstructionKind::DynamicFunctionCall(v, f, a) => {
                 InstructionKind::DynamicFunctionCall(v.copy(map), f.copy(map), a.clone())
             }
-            InstructionKind::FieldRef(v, r, i) => InstructionKind::FieldRef(v.copy(map), r.copy(map), i.clone()),
+            InstructionKind::FieldAccess(v, info) => InstructionKind::FieldAccess(v.copy(map), info.copy(map)),
             InstructionKind::Bind(v, s, m) => InstructionKind::Bind(v.copy(map), s.copy(map), *m),
             InstructionKind::Tuple(v, args) => InstructionKind::Tuple(v.copy(map), args.copy(map)),
             InstructionKind::StringLiteral(v, l) => InstructionKind::StringLiteral(v.copy(map), l.clone()),

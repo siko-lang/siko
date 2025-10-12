@@ -1,7 +1,7 @@
 use crate::siko::hir::{
     Instruction::{
-        Arguments, CallInfo, ClosureCreateInfo, ImplicitHandler, InstructionKind, UnresolvedArgument, WithContext,
-        WithInfo,
+        Arguments, CallInfo, ClosureCreateInfo, FieldAccessInfo, ImplicitHandler, InstructionKind, UnresolvedArgument,
+        WithContext, WithInfo,
     },
     Variable::Variable,
 };
@@ -87,6 +87,16 @@ impl ReplaceVar for WithInfo {
     }
 }
 
+impl ReplaceVar for FieldAccessInfo {
+    fn replaceVar(&self, from: &Variable, to: Variable) -> FieldAccessInfo {
+        FieldAccessInfo {
+            receiver: self.receiver.replaceVar(from, to),
+            fields: self.fields.clone(),
+            isRef: self.isRef,
+        }
+    }
+}
+
 impl ReplaceVar for InstructionKind {
     fn replaceVar(&self, from: &Variable, to: Variable) -> InstructionKind {
         match self {
@@ -112,10 +122,10 @@ impl ReplaceVar for InstructionKind {
                 let new_args = args.replaceVar(from, to);
                 InstructionKind::DynamicFunctionCall(new_var, new_func, new_args)
             }
-            InstructionKind::FieldRef(var, target, name) => {
-                let new_var = var.replaceVar(&from, to.clone());
-                let new_target = target.replaceVar(&from, to);
-                InstructionKind::FieldRef(new_var, new_target, name.clone())
+            InstructionKind::FieldAccess(dest, info) => {
+                let new_dest = dest.replaceVar(&from, to.clone());
+                let new_info = info.replaceVar(&from, to);
+                InstructionKind::FieldAccess(new_dest, new_info)
             }
             InstructionKind::Bind(var, value, mutable) => {
                 let new_var = var.replaceVar(&from, to.clone());

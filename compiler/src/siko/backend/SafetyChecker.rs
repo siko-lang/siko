@@ -85,7 +85,7 @@ impl<'a> SafetyChecker<'a> {
                 unreachable!("Method call should not appear in safety checker")
             }
             InstructionKind::DynamicFunctionCall(_, _, _) => true,
-            InstructionKind::FieldRef(_, _, _) => true,
+            InstructionKind::FieldAccess(_, _) => true,
             InstructionKind::Bind(_, _, _) => true,
             InstructionKind::Tuple(_, _) => true,
             InstructionKind::StringLiteral(_, _) => true,

@@ -12,7 +12,7 @@ use crate::siko::{
         Data::{Enum, Struct},
         Function::{Function, Parameter, ResultKind},
         FunctionGroupBuilder::FunctionGroupBuilder,
-        Instruction::{Arguments, FieldInfo, Instruction, InstructionKind, UnresolvedArgument},
+        Instruction::{Arguments, FieldAccessInfo, FieldInfo, Instruction, InstructionKind, UnresolvedArgument},
         Program::Program,
         Type::Type,
         Variable::Variable,
@@ -188,6 +188,13 @@ impl CoroutineLowering for Arguments {
     }
 }
 
+impl CoroutineLowering for FieldAccessInfo {
+    fn lower(&mut self) {
+        self.receiver.lower();
+        self.fields.lower();
+    }
+}
+
 impl CoroutineLowering for InstructionKind {
     fn lower(&mut self) {
         match self {
@@ -205,10 +212,9 @@ impl CoroutineLowering for InstructionKind {
             InstructionKind::DynamicFunctionCall(_, _, _) => {
                 panic!("DynamicFunctionCall instruction found in coroutine lowering");
             }
-            InstructionKind::FieldRef(dest, receiver, infos) => {
+            InstructionKind::FieldAccess(dest, info) => {
                 dest.lower();
-                receiver.lower();
-                infos.lower();
+                info.lower();
             }
             InstructionKind::Bind(lhs, rhs, _) => {
                 lhs.lower();

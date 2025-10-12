@@ -156,7 +156,7 @@ impl<'a> FunctionExecutor<'a> {
                 InstructionKind::DynamicFunctionCall(_, _, _) => {
                     unreachable!("Dynamic function call instruction not supported in interpreter")
                 }
-                InstructionKind::FieldRef(_, _, _) => {}
+                InstructionKind::FieldAccess(_, _) => {}
                 InstructionKind::Bind(_, _, _) => {
                     panic!("Bind instruction not supported in interpreter")
                 }

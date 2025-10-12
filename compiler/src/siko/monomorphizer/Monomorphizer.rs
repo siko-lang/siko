@@ -15,7 +15,7 @@ use crate::siko::{
         InstanceStore::InstanceStore,
         Instantiation::{instantiateEnum, instantiateStruct},
         Instruction::{
-            CallInfo, EffectHandler, EnumCase, FieldId, FieldInfo, InstructionKind, SyntaxBlockId,
+            CallInfo, EffectHandler, EnumCase, FieldAccessInfo, FieldId, FieldInfo, InstructionKind, SyntaxBlockId,
             SyntaxBlockIdSegment, WithContext, WithInfo,
         },
         Program::Program,
@@ -74,6 +74,16 @@ impl Monomorphize for ResultKind {
         match self {
             ResultKind::SingleReturn(ty) => ResultKind::SingleReturn(ty.process(sub, mono)),
             ResultKind::Coroutine(ty) => ResultKind::Coroutine(ty.process(sub, mono)),
+        }
+    }
+}
+
+impl Monomorphize for FieldAccessInfo {
+    fn process(&self, sub: &Substitution, mono: &mut Monomorphizer) -> Self {
+        FieldAccessInfo {
+            receiver: self.receiver.process(sub, mono),
+            fields: self.fields.process(sub, mono),
+            isRef: self.isRef,
         }
     }
 }
@@ -536,8 +546,13 @@ impl<'a> Monomorphizer<'a> {
                             ty: Some(f.ty.clone()),
                             location: location.clone(),
                         };
-                        let field =
-                            builder.addTypedFieldRef(dropVar.clone(), vec![fieldInfo], location.clone(), f.ty.clone());
+                        let field = builder.addTypedFieldRef(
+                            dropVar.clone(),
+                            vec![fieldInfo],
+                            false,
+                            location.clone(),
+                            f.ty.clone(),
+                        );
                         let dropRes = bodyBuilder.createTempValueWithType(location.clone(), Type::getUnitType());
                         let dropKind = InstructionKind::Drop(dropRes, field.clone());
                         builder.addInstruction(dropKind, location.clone());
@@ -582,7 +597,7 @@ impl<'a> Monomorphizer<'a> {
                         ty: Some(arg.clone()),
                         location: location.clone(),
                     }];
-                    let field = builder.addTypedFieldRef(dropVar.clone(), fields, location.clone(), arg.clone());
+                    let field = builder.addTypedFieldRef(dropVar.clone(), fields, false, location.clone(), arg.clone());
                     let dropRes = bodyBuilder.createTempValueWithType(location.clone(), Type::getUnitType());
                     let dropKind = InstructionKind::Drop(dropRes, field);
                     builder.addInstruction(dropKind, location.clone());

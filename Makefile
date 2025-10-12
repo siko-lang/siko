@@ -28,3 +28,6 @@ testworkflow: compiler/target/release/siko
 	sudo apt update
 	sudo apt install -y valgrind
 	@./run_test.py --workflow
+
+testrunner: compiler/target/release/siko
+	@./siko build testrunner -o testrunner.bin

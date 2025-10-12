@@ -368,7 +368,7 @@ impl<'a> ExprResolver<'a> {
                     let (receiverVar, fields) = self.processFieldRef(expr, env);
                     self.bodyBuilder
                         .current()
-                        .addFieldRef(receiverVar, fields, expr.location.clone())
+                        .addFieldAccess(receiverVar, fields, false, expr.location.clone())
                 } else {
                     let receiver = self.resolveExpr(receiver, env);
                     let fieldInfos = vec![FieldInfo {
@@ -378,7 +378,7 @@ impl<'a> ExprResolver<'a> {
                     }];
                     self.bodyBuilder
                         .current()
-                        .addFieldRef(receiver, fieldInfos, expr.location.clone())
+                        .addFieldAccess(receiver, fieldInfos, false, expr.location.clone())
                 }
             }
             SimpleExpr::Call(callable, args) => self.resolveCall(expr, env, callable, args, false),
@@ -391,13 +391,14 @@ impl<'a> ExprResolver<'a> {
             }
             SimpleExpr::TupleIndex(receiver, index) => {
                 let receiver = self.resolveExpr(&receiver, env);
-                self.bodyBuilder.current().addFieldRef(
+                self.bodyBuilder.current().addFieldAccess(
                     receiver,
                     vec![FieldInfo {
                         name: FieldId::Indexed(index.parse().unwrap()),
                         ty: None,
                         location: expr.location.clone(),
                     }],
+                    false,
                     expr.location.clone(),
                 )
             }
@@ -897,13 +898,14 @@ impl<'a> ExprResolver<'a> {
                         }
                         for (index, arg) in args.iter().enumerate() {
                             let field = &structDef.fields[index];
-                            let fieldId = self.bodyBuilder.current().addFieldRef(
+                            let fieldId = self.bodyBuilder.current().addFieldAccess(
                                 root.clone(),
                                 vec![FieldInfo {
                                     name: FieldId::Named(field.name.clone()),
                                     ty: None,
                                     location: pat.location.clone(),
                                 }],
+                                false,
                                 pat.location.clone(),
                             );
                             self.resolvePattern(arg, env, fieldId);
@@ -928,13 +930,14 @@ impl<'a> ExprResolver<'a> {
             }
             SimplePattern::Tuple(args) => {
                 for (index, arg) in args.iter().enumerate() {
-                    let tupleValue = self.bodyBuilder.current().addFieldRef(
+                    let tupleValue = self.bodyBuilder.current().addFieldAccess(
                         root.clone(),
                         vec![FieldInfo {
                             name: FieldId::Indexed(index as u32),
                             ty: None,
                             location: pat.location.clone(),
                         }],
+                        false,
                         pat.location.clone(),
                     );
                     self.resolvePattern(arg, env, tupleValue);

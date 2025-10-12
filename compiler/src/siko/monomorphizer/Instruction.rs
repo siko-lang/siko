@@ -373,11 +373,9 @@ pub fn processInstructionKind(
             root.process(sub, mono),
             args.process(sub, mono),
         ),
-        InstructionKind::FieldRef(dest, root, fields) => InstructionKind::FieldRef(
-            dest.process(sub, mono),
-            root.process(sub, mono),
-            fields.process(sub, mono),
-        ),
+        InstructionKind::FieldAccess(dest, info) => {
+            InstructionKind::FieldAccess(dest.process(sub, mono), info.process(sub, mono))
+        }
         InstructionKind::Bind(_, _, _) => {
             panic!("Bind instruction found in Monomorphizer, this should not happen");
         }

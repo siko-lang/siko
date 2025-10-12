@@ -1,5 +1,8 @@
 use crate::siko::hir::{
-    Instruction::{Arguments, CallInfo, ClosureCreateInfo, ImplicitHandler, UnresolvedArgument, WithContext, WithInfo},
+    Instruction::{
+        Arguments, CallInfo, ClosureCreateInfo, FieldAccessInfo, ImplicitHandler, UnresolvedArgument, WithContext,
+        WithInfo,
+    },
     Trait::{Instance, Trait},
     Type::Type,
 };
@@ -229,6 +232,14 @@ impl Apply for ClosureCreateInfo {
     }
 }
 
+impl Apply for FieldAccessInfo {
+    fn apply(mut self, sub: &Substitution) -> Self {
+        self.receiver = self.receiver.apply(sub);
+        self.fields = self.fields.apply(sub);
+        self
+    }
+}
+
 impl Apply for InstructionKind {
     fn apply(self, sub: &Substitution) -> Self {
         match self {
@@ -242,9 +253,7 @@ impl Apply for InstructionKind {
             InstructionKind::DynamicFunctionCall(dest, callable, args) => {
                 InstructionKind::DynamicFunctionCall(dest.apply(sub), callable.apply(sub), args.apply(sub))
             }
-            InstructionKind::FieldRef(dest, root, field) => {
-                InstructionKind::FieldRef(dest.apply(sub), root.apply(sub), field.clone())
-            }
+            InstructionKind::FieldAccess(dest, info) => InstructionKind::FieldAccess(dest.apply(sub), info.apply(sub)),
             InstructionKind::Bind(dest, rhs, mutable) => {
                 InstructionKind::Bind(dest.apply(sub), rhs.apply(sub), mutable)
             }

@@ -24,7 +24,7 @@ use crate::siko::{
         FunctionCallResolver::FunctionCallResolver,
         Graph::GraphBuilder,
         InstanceResolver::InstanceResolver,
-        Instruction::{CallInfo, InstructionKind},
+        Instruction::{CallInfo, FieldAccessInfo, InstructionKind},
         Program::Program,
         ReplaceVar::ReplaceVar,
         Utils::createResolvers,
@@ -181,13 +181,14 @@ impl<'a> DropChecker<'a> {
                     let instruction = builder
                         .getInstruction()
                         .expect(&format!("No instruction at index {}", index));
-                    if let InstructionKind::FieldRef(dest, receiver, fields) = instruction.kind {
+                    if let InstructionKind::FieldAccess(dest, fieldAccessInfo) = instruction.kind {
                         let implicitCloneVar = self
                             .bodyBuilder
                             .createTempValueWithType(dest.location().clone(), dest.getType().asRef());
-                        let implicitCloneVarRef = self
-                            .bodyBuilder
-                            .createTempValueWithType(dest.location().clone(), receiver.getType().asRef());
+                        let implicitCloneVarRef = self.bodyBuilder.createTempValueWithType(
+                            dest.location().clone(),
+                            fieldAccessInfo.receiver.getType().asRef(),
+                        );
                         let (fnName, instanceRefs) = self.fnCallResolver.resolveCloneCall(
                             implicitCloneVar.clone(),
                             dest.clone(),
@@ -196,9 +197,16 @@ impl<'a> DropChecker<'a> {
                         let mut info = CallInfo::new(fnName, vec![implicitCloneVar.clone()]);
                         info.instanceRefs.extend(instanceRefs);
                         let implicitClone = InstructionKind::FunctionCall(dest.clone(), info);
-                        let implicitCloneRef = InstructionKind::Ref(implicitCloneVarRef.clone(), receiver.clone());
-                        let updatedKind =
-                            InstructionKind::FieldRef(implicitCloneVar.clone(), implicitCloneVarRef.clone(), fields);
+                        let implicitCloneRef =
+                            InstructionKind::Ref(implicitCloneVarRef.clone(), fieldAccessInfo.receiver.clone());
+                        let updatedKind = InstructionKind::FieldAccess(
+                            implicitCloneVar.clone(),
+                            FieldAccessInfo {
+                                receiver: implicitCloneVarRef.clone(),
+                                fields: fieldAccessInfo.fields,
+                                isRef: fieldAccessInfo.isRef,
+                            },
+                        );
                         builder.addInstruction(implicitCloneRef, dest.location().clone());
                         builder.step();
                         builder.replaceInstruction(updatedKind, dest.location().clone());

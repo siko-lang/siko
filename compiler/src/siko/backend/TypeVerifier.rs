@@ -167,15 +167,21 @@ impl<'a> TypeVerifier<'a> {
                 let ty = Type::Ptr(Box::new(src.getType().clone()));
                 self.unify(&ty, &dest.getType());
             }
-            InstructionKind::FieldRef(dest, src, fields) => {
+            InstructionKind::FieldAccess(dest, info) => {
                 //println!("FieldRef: {} src {}", dest, src.getType());
-                let mut rootType = src.getType().clone();
-                for f in fields {
+                let mut rootType = info.receiver.getType().clone();
+                for f in &info.fields {
                     rootType = self.checkFieldInfo(rootType, f);
                 }
                 self.unify(
                     &dest.getType(),
-                    &fields.last().expect("msg").ty.clone().expect("field type not found"),
+                    &info
+                        .fields
+                        .last()
+                        .expect("msg")
+                        .ty
+                        .clone()
+                        .expect("field type not found"),
                 );
             }
             InstructionKind::Tuple(dest, items) => {

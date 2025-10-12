@@ -181,12 +181,16 @@ impl<'a> BorrowChecker<'a> {
                     match &instruction.kind {
                         InstructionKind::Ref(_, _) => {}
                         InstructionKind::PtrOf(_, _) => {}
-                        InstructionKind::FieldRef(_, receiver, fields) => {
-                            let path = buildFieldPath(receiver, fields);
-                            if self.traceEnabled {
-                                println!("    FieldRef: {} -> {}", receiver.name(), path);
+                        InstructionKind::FieldAccess(_, info) => {
+                            if info.isRef {
+                                // this is a borrow, do nothing
+                            } else {
+                                let path = buildFieldPath(&info.receiver, &info.fields);
+                                if self.traceEnabled {
+                                    println!("    FieldRef: {} -> {}", info.receiver.name(), path);
+                                }
+                                self.movePath(path, liveBorrowVars);
                             }
-                            self.movePath(path, liveBorrowVars);
                         }
                         InstructionKind::AddressOfField(_, _, _, _) => {}
                         _ => {

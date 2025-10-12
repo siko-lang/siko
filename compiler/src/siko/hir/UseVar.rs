@@ -1,5 +1,5 @@
 use crate::siko::hir::{
-    Instruction::{Arguments, InstructionKind, UnresolvedArgument},
+    Instruction::{Arguments, FieldAccessInfo, InstructionKind, UnresolvedArgument},
     Variable::Variable,
 };
 
@@ -39,6 +39,16 @@ impl UseVar for Arguments {
     }
 }
 
+impl UseVar for FieldAccessInfo {
+    fn useVars(&self) -> FieldAccessInfo {
+        FieldAccessInfo {
+            receiver: self.receiver.useVar(),
+            fields: self.fields.clone(),
+            isRef: self.isRef,
+        }
+    }
+}
+
 impl UseVar for InstructionKind {
     fn useVars(&self) -> InstructionKind {
         match self {
@@ -54,9 +64,7 @@ impl UseVar for InstructionKind {
             InstructionKind::DynamicFunctionCall(dest, closure, args) => {
                 InstructionKind::DynamicFunctionCall(dest.clone(), closure.useVar(), args.useVars())
             }
-            InstructionKind::FieldRef(dest, receiver, infos) => {
-                InstructionKind::FieldRef(dest.clone(), receiver.useVar(), infos.clone())
-            }
+            InstructionKind::FieldAccess(dest, info) => InstructionKind::FieldAccess(dest.clone(), info.useVars()),
             InstructionKind::Bind(dest, src, mutability) => {
                 InstructionKind::Bind(dest.clone(), src.useVar(), mutability.clone())
             }
