@@ -105,6 +105,9 @@ impl<'a> FunctionProfileBuilder<'a> {
     }
 
     fn unifyExtendedTypes(&mut self, a: &ExtendedType, b: &ExtendedType) {
+        if a.ty.isVoidPtr() || b.ty.isVoidPtr() {
+            return;
+        }
         assert_eq!(a.vars.len(), b.vars.len());
         for (va, vb) in a.vars.iter().zip(b.vars.iter()) {
             self.unifier.unify(va.clone(), vb.clone(), Location::empty());
@@ -157,10 +160,12 @@ impl<'a> FunctionProfileBuilder<'a> {
                         let structDef = self.dataGroups.getStruct(&self.f.name);
                         let instantiatedDef = self.instantiateStructDef(structDef);
                         for (index, field) in instantiatedDef.fields.iter().enumerate() {
-                            // println!(
-                            //     "Unifying struct field: {} with arg type: {}",
-                            //     field.ty, profile.args[index]
-                            // );
+                            if self.traceEnabled {
+                                println!(
+                                    "Unifying struct field: {} with arg type: {}",
+                                    field.ty, profile.args[index]
+                                );
+                            }
                             let mut fieldTy = field.ty.clone();
                             if fieldTy.vars.len() < profile.args[index].vars.len() {
                                 fieldTy.vars.insert(0, self.allocator.next());
@@ -182,15 +187,17 @@ impl<'a> FunctionProfileBuilder<'a> {
                         let enumDef = self.dataGroups.getEnum(&enumName);
                         let instantiatedDef = self.instantiateEnumDef(enumDef);
                         let variant = &instantiatedDef.variants[index as usize];
-                        // println!(
-                        //     "Unifying enum variant: {} with arg type: {}",
-                        //     variant.ty, profile.args[0]
-                        // );
                         let mut variantTy = variant.ty.clone();
                         if !profile.args.is_empty() {
                             // Variant without argument
                             if variantTy.vars.len() < profile.args[0].vars.len() {
                                 variantTy.vars.insert(0, self.allocator.next());
+                            }
+                            if self.traceEnabled {
+                                println!(
+                                    "Unifying enum variant: {} with arg type: {}",
+                                    variant.ty, profile.args[0]
+                                );
                             }
                             self.unifyExtendedTypes(&variantTy, &profile.args[0]);
                         }
@@ -416,11 +423,12 @@ impl<'a> FunctionProfileBuilder<'a> {
                     let mut srcType = self.getVarType(src);
                     if destType.ty.isReference() && srcType.ty.isPtr() {
                         destType.base();
+                        self.unifyExtendedTypes(&destType, &srcType);
                     }
                     if srcType.ty.isReference() && destType.ty.isPtr() {
                         srcType.base();
+                        self.unifyExtendedTypes(&destType, &srcType);
                     }
-                    self.unifyExtendedTypes(&destType, &srcType);
                 }
                 InstructionKind::CreateUninitializedArray(_) => {}
                 InstructionKind::ArrayLen(_, _) => {}

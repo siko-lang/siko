@@ -6,6 +6,7 @@ import Fs.Directory
 import Fs.Path
 import Sys.Command
 import Sync.Atomic
+import Sync.Thread
 import Terminal
 import Time
 
@@ -15,7 +16,7 @@ struct Statistics {
     failed: AtomicU32,
     skipped: AtomicU32
 
-    pub fn new() -> Statistics {
+    fn new() -> Statistics {
         Statistics(
             total: AtomicU32.new(0.toU32()),
             passed: AtomicU32.new(0.toU32()),
@@ -24,22 +25,22 @@ struct Statistics {
         )
     }
 
-    pub fn success(&self) {
+    fn success(&self) {
         self.total.fetchAdd(1.toU32());
         self.passed.fetchAdd(1.toU32());
     }
 
-    pub fn failure(&self) {
+    fn failure(&self) {
         self.total.fetchAdd(1.toU32());
         self.failed.fetchAdd(1.toU32());
     }
 
-    pub fn skip(&self) {
+    fn skip(&self) {
         self.total.fetchAdd(1.toU32());
         self.skipped.fetchAdd(1.toU32());
     }
 
-    pub fn dump(&self) {
+    fn dump(&self) {
         let total = self.total.load();
         let passed = self.passed.load();
         let failed = self.failed.load();
@@ -52,58 +53,108 @@ struct Config {
     filters: Vec[String]
 }
 
+@derive(Clone, Copy, Eq, PartialEq)
+enum TestType {
+    Success,
+    Error
+
+    fn validateResult(&self, success: Bool) -> Bool {
+        match self {
+            Success -> success
+            Error -> !success
+        }
+    }
+}
+
+@derive(Clone)
 struct Test {
     path: String
+    ty: TestType
 
-    fn run(&self, expectedSuccess: Bool, stats: &Statistics) {
-        let skipPath = join(self.path, "SKIP");
-        if readFile(skipPath).isOk() {
-            print("- ${self.path} - ${yellow("skipped")}\n");
-            stats.skip();
-            return;
-        }
-        let expectedOutputPath = join(self.path, "output.txt");
+    fn compile(&self, binaryOutputPath: &String) -> (Bool, String) {
+        let mut command = Command.new("./siko")
+            .arg("build")
+            .addEnv("SIKO_STD_PATH", "./std")
+            .arg(&self.path)
+            .arg("-o")
+            .arg(&binaryOutputPath)
+            .arg("--keep-c-source");
+        command.run();
+        (command.success(), command.capturedStdout().clone())
+    }
+
+    fn runBinary(&self, binaryPath: &String) -> (Bool, String) {
+        let mut command = Command.new(binaryPath);
+        command.run();
+        (command.success(), command.capturedStdout().clone())
+    }
+
+    fn getExpectedOutput(&self, stats: &Statistics) -> Result[String, ()] {
+        let expectedOutputPath = Fs.Path.join(self.path, "output.txt");
         let expectedOutput = match readFile(expectedOutputPath) {
             Ok(content) -> content,
             Err(_) -> {
                 println("Failed to read expected output from ${expectedOutputPath}");
                 stats.failure();
-                return;
+                return Err(());
             }
         };
-        print("- ${self.path} -");
-        let mut command = Command.new("./siko")
-            .arg("run")
-            .addEnv("SIKO_STD_PATH", "./std")
-            .arg(&self.path);
-        let start = Instant.now();
-        command.run();
-        let duration = start.elapsed();
-        if command.success() == expectedSuccess {
-            let actualOutput = command.capturedStdout();
-            if actualOutput == expectedOutput {
-                println(" ${green("success")} (${duration.toMillis()} ms)");
-                stats.success();
-            } else {
-                println(" ${red("failed")}");
-                println("Expected output:");
-                println("-----");
-                println("${expectedOutput}");
-                println("-----");
-                println("Actual output:");
-                println("-----");
-                println("${actualOutput}");
-                println("-----");
-                stats.failure();
-            }
+        Ok(expectedOutput)
+    }
+
+    fn printFailure(&self) {
+        println("- ${self.path} - ${red("failed")}");
+    }
+
+    fn validateOutput(&self, actualOutput: &String, stats: &Statistics, duration: &Duration) -> Result[(), ()] {
+        let expectedOutput = try self.getExpectedOutput(stats);
+        if actualOutput == expectedOutput {
+            println("- ${self.path} - ${green("success")} (${duration.toMillis()} ms)");
+            stats.success();
+            Ok(())
         } else {
-            println(" ${red("failed")}");
+            self.printFailure();
+            println("Expected output:");
+            println("-----");
+            println("${expectedOutput}");
+            println("-----");
+            println("Actual output:");
+            println("-----");
+            println("${actualOutput}");
+            println("-----");
+            stats.failure();
+            Err(())
+        }
+    }
+
+    fn run(&self, stats: &Statistics) -> Result[(), ()] {
+        let skipPath = Fs.Path.join(self.path, "SKIP");
+        if readFile(skipPath).isOk() {
+            println("- ${self.path} - ${yellow("skipped")}");
+            stats.skip();
+            return Ok(());
+        }
+        let binaryOutputPath = Fs.Path.join(self.path, "main.bin");
+
+        let start = Instant.now();
+        let (mut success, mut output) = self.compile(&binaryOutputPath);
+        if self.ty == TestType.Success {
+            let (s, o) = self.runBinary(&binaryOutputPath);
+            success = s;
+            output = o;
+        }
+        let duration = start.elapsed();
+        if self.ty.validateResult(success) {
+            self.validateOutput(&output, stats, &duration);
+        } else {
+            self.printFailure();
             stats.failure();
         }
+        Ok(())
     }
 }
 
-fn collectTests(basePath: &String) -> Vec[Test] {
+fn collectTests(basePath: &String, ty: TestType) -> Vec[Test] {
     //println("Collecting tests in ${basePath}");
     let mut result = Vec.new();
     let dirIter = listDir(basePath).expect("Failed to list directory");
@@ -112,18 +163,70 @@ fn collectTests(basePath: &String) -> Vec[Test] {
         if entry.name() == "." or entry.name() == ".." {
             continue;
         }
-        let entryPath = join(basePath, entry.name());
+        let entryPath = Fs.Path.join(basePath, entry.name());
         if entry.isDirectory() {
-            let subPaths = collectTests(&entryPath);
+            let subPaths = collectTests(&entryPath, ty);
             for subPath in subPaths {
                 result.push(subPath);
             }
         } else if entry.name().endsWith(".sk") {
-            let test = Test(dirname(entryPath));
+            let test = Test(dirname(entryPath), ty);
             result.push(test);
         }
     }
     return result;
+}
+
+struct Executor {
+    stats: &Statistics,
+    tests: Vec[Test],
+    current: AtomicU32,
+
+    fn new(stats: &Statistics, tests: Vec[Test]) -> Executor {
+        Executor(stats: stats, tests: tests, current: AtomicU32.new(0.toU32()))
+    }
+
+    fn getNext(&self) -> Option[Test] {
+        let index = self.current.fetchAdd(1.toU32()).toInt();
+        if index < self.tests.len() {
+             Some(self.tests.get(index).clone())
+        } else {
+            None
+        }
+    }
+
+    fn run(&self) {
+        loop {
+            match self.getNext() {
+                Some(test) -> {
+                    test.run(self.stats);
+                }
+                None -> break,
+            }
+        }
+    }
+}
+
+fn runParallel(tests: Vec[Test], stats: &Statistics) {
+    let numThreads = 4;
+    let executor = Executor.new(stats, tests);
+    let mut threads = Vec.new();
+    for _ in 0 .. numThreads {
+        let exec = &executor;
+        let thread = Sync.Thread.spawn(|| {
+            exec.run();
+        });
+        threads.push(thread);
+    }
+    for thread in threads {
+        thread.join();
+    }
+}
+
+fn runSequential(tests: Vec[Test], stats: &Statistics) {
+    for test in tests {
+        test.run(stats);
+    }
 }
 
 fn main() {
@@ -132,20 +235,17 @@ fn main() {
     for arg in args {
         cfg.filters.push(arg);
     }
+    let mut parallelMode = True;
     let stats = Statistics.new();
-    let successTests = collectTests("./test/success");
-    let errorTests = collectTests("./test/errors");
+    let successTests = collectTests("./test/success", Success);
+    let errorTests = collectTests("./test/errors", Error);
     if !successTests.empty() {
         println("Success tests:");
-        for test in successTests {
-            test.run(True, stats);
-        }
+        runParallel(successTests, stats);
     }
     if !errorTests.empty() {
         println("Error tests:");
-        for test in errorTests {
-            test.run(False, stats);
-        }
+        runParallel(errorTests, stats);
     }
     stats.dump();
 }
