@@ -1,0 +1,35 @@
+module Time {
+
+import Libc.Time
+
+pub struct Duration {
+    seconds: I64,
+    nanoseconds: I64
+
+    pub fn toMillis(&self) -> I64 {
+        self.seconds.clone() * 1000.toI64() + self.nanoseconds.clone() / (1 * 1000 * 1000).toI64()
+    }
+}
+
+pub struct Instant {
+    seconds: I64,
+    nanoseconds: I64
+
+    pub fn now() -> Instant {
+        let ts = getMonotonicClock().expect("Failed to get monotonic clock");
+        Instant(ts.tv_sec, ts.tv_nsec)
+    }
+
+    pub fn elapsed(&self) -> Duration {
+        let now = Instant.now();
+        let sec = now.seconds - self.seconds.clone();
+        let nsec = now.nanoseconds - self.nanoseconds.clone();
+        if nsec < 0.toI64() {
+            Duration(sec - 1.toI64(), nsec + (1 * 1000 * 1000 * 1000).toI64())
+        } else {
+            Duration(sec, nsec)
+        }
+    }
+}
+
+}

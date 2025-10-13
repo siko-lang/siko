@@ -1,0 +1,36 @@
+module Libc.Time {
+
+import IO.Error
+import Arch.Errno
+
+pub struct TimeSpec {
+    pub tv_sec: I64,
+    pub tv_nsec: I64
+}
+
+pub let CLOCK_REALTIME: I32 = 0.toI32();
+pub let CLOCK_MONOTONIC: I32 = 6.toI32();
+
+fn clock_gettime(clk_id: I32, tp: *TimeSpec) -> I32 = extern "C"
+
+@safe
+pub fn getTimeSpec(clockId: I32) -> Result[TimeSpec, Error] {
+    let ts = TimeSpec(0.toI64(), 0.toI64());
+    let res = clock_gettime(clockId, &raw ts);
+    if res == 0.toI32() {
+        Ok(ts)
+    } else {
+        let err = Arch.Errno.getErrnoCode();
+        Err(Error.new(err))
+    }
+}
+
+pub fn getRealTimeClock() -> Result[TimeSpec, Error] {
+    getTimeSpec(CLOCK_REALTIME)
+}
+
+pub fn getMonotonicClock() -> Result[TimeSpec, Error] {
+    getTimeSpec(CLOCK_MONOTONIC)
+}
+
+}

@@ -7,6 +7,7 @@ import Fs.Path
 import Sys.Command
 import Sync.Atomic
 import Terminal
+import Time
 
 struct Statistics {
     total: AtomicU32,
@@ -75,11 +76,13 @@ struct Test {
             .arg("run")
             .addEnv("SIKO_STD_PATH", "./std")
             .arg(&self.path);
+        let start = Instant.now();
         command.run();
+        let duration = start.elapsed();
         if command.success() == expectedSuccess {
             let actualOutput = command.capturedStdout();
             if actualOutput == expectedOutput {
-                println(" ${green("success")}");
+                println(" ${green("success")} (${duration.toMillis()} ms)");
                 stats.success();
             } else {
                 println(" ${red("failed")}");
