@@ -766,7 +766,19 @@ impl<'a> Typechecker<'a> {
                 if self.mutables.get(&dest.name().to_string()) == Some(&Mutability::Immutable) {
                     TypecheckerError::ImmutableAssign(instruction.location.clone()).report(self.ctx);
                 }
-                self.unifier.unifyVars(dest, src);
+                let destType = dest.getType();
+                let destType = self.unifier.apply(destType);
+                let srcType = src.getType();
+                let srcType = self.unifier.apply(srcType);
+                if self
+                    .implResolver
+                    .isImplicitConvert(&srcType, &destType, self.runner.child("is_implicit_convert"))
+                {
+                    let kind = InstructionKind::Converter(dest.clone(), src.clone());
+                    builder.replaceInstruction(kind, instruction.location.clone());
+                } else {
+                    self.unifier.unifyVars(dest, src);
+                }
             }
             InstructionKind::FieldAssign(receiver, rhs, fields) => {
                 if self.mutables.get(&receiver.name().to_string()) == Some(&Mutability::Immutable) {

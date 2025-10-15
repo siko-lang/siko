@@ -153,9 +153,9 @@ struct Test {
         }
     }
 
-    fn run(&self, stats: &Statistics, stdLock: &Mutex) -> Result[(), ()] {
+    fn run(&self, stats: &Statistics, stdLock: &Mutex, forced: Bool) -> Result[(), ()] {
         let skipPath = Fs.Path.join(self.path, "SKIP");
-        if readFile(skipPath).isOk() {
+        if readFile(skipPath).isOk() and !forced {
             self.printSkipped(stdLock);
             stats.skip();
             return Ok(());
@@ -237,7 +237,7 @@ struct Executor {
                     if !test.matchFilters(self.cfg) {
                         continue;
                     }
-                    test.run(self.stats, self.stdLock);
+                    test.run(self.stats, self.stdLock, !self.cfg.filters.empty());
                 }
                 None -> break,
             }
@@ -266,7 +266,7 @@ fn runSequential(tests: Vec[Test], stats: &Statistics, stdLock: &Mutex, cfg: &Co
         if !test.matchFilters(cfg) {
             continue;
         }
-        test.run(stats, stdLock);
+        test.run(stats, stdLock, !cfg.filters.empty());
     }
 }
 
