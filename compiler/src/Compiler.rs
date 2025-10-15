@@ -219,7 +219,15 @@ impl Compiler {
             runner.report();
             return;
         }
-        let mut compile_args = vec!["-g", "-c", &c_output_path, "-o", &object_path, "-Wno-pointer-sign"];
+        let mut compile_args = vec![
+            "-g",
+            "-c",
+            &c_output_path,
+            "-o",
+            &object_path,
+            "-Wno-pointer-sign",
+            "-Wno-incompatible-pointer-types",
+        ];
         let mut link_args = vec!["-g", &object_path, "-o", &bin_output_path];
         if self.config.sanitized {
             compile_args.push(CLANG_SANITIZE_FLAGS);

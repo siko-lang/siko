@@ -71,6 +71,18 @@ struct Test {
     path: String
     ty: TestType
 
+    fn matchFilters(&self, cfg: &Config) -> Bool {
+        if cfg.filters.empty() {
+            return True;
+        }
+        for filter in cfg.filters.iter() {
+            if self.path.contains(filter) {
+                return True;
+            }
+        }
+        False
+    }
+
     fn compile(&self, binaryOutputPath: &String) -> (Bool, String) {
         let mut command = Command.new("./siko")
             .arg("build")
@@ -102,18 +114,32 @@ struct Test {
         Ok(expectedOutput)
     }
 
-    fn printFailure(&self) {
+    fn printFailure(&self, stdLock: &Mutex) {
+        stdLock.lock();
         println("- ${self.path} - ${red("failed")}");
+        stdLock.unlock();
     }
 
-    fn validateOutput(&self, actualOutput: &String, stats: &Statistics, duration: &Duration) -> Result[(), ()] {
+    fn printSuccess(&self, duration: &Duration, stdLock: &Mutex) {
+        stdLock.lock();
+        println("- ${self.path} - ${green("success")} (${duration.toMillis()} ms)");
+        stdLock.unlock();
+    }
+
+    fn printSkipped(&self, stdLock: &Mutex) {
+        stdLock.lock();
+        println("- ${self.path} - ${yellow("skipped")}");
+        stdLock.unlock();
+    }
+
+    fn validateOutput(&self, actualOutput: &String, stats: &Statistics, duration: &Duration, stdLock: &Mutex) -> Result[(), ()] {
         let expectedOutput = try self.getExpectedOutput(stats);
         if actualOutput == expectedOutput {
-            println("- ${self.path} - ${green("success")} (${duration.toMillis()} ms)");
+            self.printSuccess(duration, stdLock);
             stats.success();
             Ok(())
         } else {
-            self.printFailure();
+            self.printFailure(stdLock);
             println("Expected output:");
             println("-----");
             println("${expectedOutput}");
@@ -127,10 +153,10 @@ struct Test {
         }
     }
 
-    fn run(&self, stats: &Statistics) -> Result[(), ()] {
+    fn run(&self, stats: &Statistics, stdLock: &Mutex) -> Result[(), ()] {
         let skipPath = Fs.Path.join(self.path, "SKIP");
         if readFile(skipPath).isOk() {
-            println("- ${self.path} - ${yellow("skipped")}");
+            self.printSkipped(stdLock);
             stats.skip();
             return Ok(());
         }
@@ -145,9 +171,9 @@ struct Test {
         }
         let duration = start.elapsed();
         if self.ty.validateResult(success) {
-            self.validateOutput(&output, stats, &duration);
+            self.validateOutput(&output, stats, &duration, stdLock);
         } else {
-            self.printFailure();
+            self.printFailure(stdLock);
             stats.failure();
         }
         Ok(())
@@ -181,9 +207,11 @@ struct Executor {
     stats: &Statistics,
     tests: Vec[Test],
     current: AtomicU32,
+    stdLock: &Mutex,
+    cfg: &Config
 
-    fn new(stats: &Statistics, tests: Vec[Test]) -> Executor {
-        Executor(stats: stats, tests: tests, current: AtomicU32.new(0.toU32()))
+    fn new(stats: &Statistics, tests: Vec[Test], stdLock: &Mutex, cfg: &Config) -> Executor {
+        Executor(stats: stats, tests: tests, current: AtomicU32.new(0.toU32()), stdLock: stdLock, cfg: cfg)
     }
 
     fn getNext(&self) -> Option[Test] {
@@ -199,7 +227,10 @@ struct Executor {
         loop {
             match self.getNext() {
                 Some(test) -> {
-                    test.run(self.stats);
+                    if !test.matchFilters(self.cfg) {
+                        continue;
+                    }
+                    test.run(self.stats, self.stdLock);
                 }
                 None -> break,
             }
@@ -207,9 +238,9 @@ struct Executor {
     }
 }
 
-fn runParallel(tests: Vec[Test], stats: &Statistics) {
+fn runParallel(tests: Vec[Test], stats: &Statistics, stdLock: &Mutex, cfg: &Config) {
     let numThreads = 4;
-    let executor = Executor.new(stats, tests);
+    let executor = Executor.new(stats, tests, stdLock, cfg);
     let mut threads = Vec.new();
     for _ in 0 .. numThreads {
         let exec = &executor;
@@ -223,14 +254,19 @@ fn runParallel(tests: Vec[Test], stats: &Statistics) {
     }
 }
 
-fn runSequential(tests: Vec[Test], stats: &Statistics) {
+fn runSequential(tests: Vec[Test], stats: &Statistics, stdLock: &Mutex, cfg: &Config) {
     for test in tests {
-        test.run(stats);
+        if !test.matchFilters(cfg) {
+            continue;
+        }
+        test.run(stats, stdLock);
     }
 }
 
 fn main() {
-    let args = getArgs();
+    let mut stdLock = Mutex.new();
+    let mut args = getArgs();
+    args.remove(0); // remove program name
     let mut cfg = Config(filters: Vec.new());
     for arg in args {
         cfg.filters.push(arg);
@@ -241,11 +277,11 @@ fn main() {
     let errorTests = collectTests("./test/errors", Error);
     if !successTests.empty() {
         println("Success tests:");
-        runParallel(successTests, stats);
+        runParallel(successTests, stats, &stdLock, cfg);
     }
     if !errorTests.empty() {
         println("Error tests:");
-        runParallel(errorTests, stats);
+        runParallel(errorTests, stats, &stdLock, cfg);
     }
     stats.dump();
 }

@@ -14,8 +14,13 @@ clean:
 	@cargo clean
 	@rm -f siko
 
+.PHONY: test
 test: compiler/target/release/siko
 	@./run_test.py
+
+.PHONY: testnew
+testnew: testrunner
+	@./testrunner.bin
 
 .PHONY: stdtest
 stdtest: compiler/target/release/siko

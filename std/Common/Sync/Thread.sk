@@ -1,5 +1,6 @@
 module Sync.Thread {
 
+import Arch.Pthread
 import Libc.Pthread
 import Libc.Unistd
 import NativePtr
@@ -47,6 +48,33 @@ pub fn spawn(f: fn() -> ()) -> JoinHandle {
 @safe
 pub fn sleep(microseconds: U32) {
     Libc.Unistd.usleep(microseconds);
+}
+
+pub struct Mutex {
+    inner: Arch.Pthread.Mutex,
+
+    @safe
+    pub fn new() -> Mutex {
+        let mutexAttr = Arch.Pthread.MutexAttr.new();
+        if pthread_mutexattr_init(&raw mutexAttr) != 0.toI32() {
+            panic("Failed to initialize mutex attributes");
+        }
+        let mutex = Arch.Pthread.Mutex.new();
+        if pthread_mutex_init(&raw mutex, &raw mutexAttr) != 0.toI32() {
+            panic("Failed to initialize mutex");
+        }
+        Mutex(inner: mutex)
+    }
+
+    @safe
+    pub fn lock(&self) {
+        pthread_mutex_lock(&raw self.inner);
+    }
+
+    @safe
+    pub fn unlock(&self) {
+        pthread_mutex_unlock(&raw self.inner);
+    }
 }
 
 }

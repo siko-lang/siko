@@ -1,16 +1,17 @@
 module Libc.Pthread {
 
+import Arch.Pthread
 import Array
 
-pub struct PthreadAttr {
-    _priv1: I64,
-    _priv2: Array[U8, 56],
+// pub struct PthreadAttr {
+//     _priv1: I64,
+//     _priv2: Array[U8, 56],
 
-    @unsafe
-    pub fn new() -> PthreadAttr {
-        PthreadAttr(_priv1: 0.toI64(), _priv2: Array.uninitialized())
-    }
-}
+//     @unsafe
+//     pub fn new() -> PthreadAttr {
+//         PthreadAttr(_priv1: 0.toI64(), _priv2: Array.uninitialized())
+//     }
+// }
 
 pub struct PThread {
     handle: U64,
@@ -23,5 +24,9 @@ pub struct PThread {
 pub fn pthread_attr_init(attr: *PthreadAttr) -> I32 = extern "C"
 pub fn pthread_create(thread: *PThread, attr: *PthreadAttr, startRoutine: fn*(void*) -> void*, arg: void*) -> I32 = extern "C"
 pub fn pthread_join(thread: PThread, retval: *void*) -> I32 = extern "C"
+pub fn pthread_mutex_lock(mutex: *Mutex) -> I32 = extern "C"
+pub fn pthread_mutex_unlock(mutex: *Mutex) -> I32 = extern "C"
+pub fn pthread_mutex_init(mutex: *Mutex, attr: *MutexAttr) -> I32 = extern "C"
+pub fn pthread_mutexattr_init(attr: *MutexAttr) -> I32 = extern "C"
 
 }

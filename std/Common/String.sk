@@ -158,6 +158,20 @@ pub struct String {
         memcpy(newValue, offset(self.value, start), len);
         String(newValue, len, len)
     }
+
+    @safe
+    pub fn contains(&self, other: &String) -> Bool {
+        if other.size > self.size {
+            return False;
+        }
+        for i in 0.toU64() .. (self.size.clone() - other.size.clone() + 1.toU64()) {
+            let result = NativePtr.memcmp(offset(self.value, i), other.value, other.size);
+            if result == 0 {
+                return True;
+            }
+        }
+        False
+    }
 }
 
 pub instance Drop[String] {
