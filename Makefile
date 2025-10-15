@@ -2,9 +2,6 @@ compiler/target/release/siko: $(shell find compiler/src/ -type f)
 	@cargo build --release
 	@cp target/release/siko .
 
-simple: compiler/target/release/siko
-	@./siko test.sk
-
 .PHONY: fmt
 fmt:
 	@cargo fmt
@@ -16,11 +13,11 @@ clean:
 
 .PHONY: test
 test: compiler/target/release/siko
-	@./run_test.py
+	@./legacy_run_test.py
 
 .PHONY: testnew
-testnew: testrunner
-	@./testrunner.bin
+testnew: runner.bin
+	@./runner.bin
 
 .PHONY: stdtest
 stdtest: compiler/target/release/siko
@@ -29,8 +26,7 @@ stdtest: compiler/target/release/siko
 testworkflow: compiler/target/release/siko
 	sudo apt update
 	sudo apt install -y valgrind
-	@./run_test.py --workflow
+	@./legacy_run_test.py --workflow
 
-.PHONY: testrunner
-testrunner: compiler/target/release/siko
-	@./siko build testrunner -o testrunner.bin
+runner.bin: compiler/target/release/siko
+	@./siko build testrunner -o runner.bin
