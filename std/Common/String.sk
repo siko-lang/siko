@@ -92,7 +92,7 @@ pub struct String {
             }
         }
         if start < self.size {
-            let partSlice = Slice.new(offset(self.value, start), self.size.clone() - start);
+            let partSlice = Slice.new(offset(self.value, start), self.size - start);
             parts.push(String.fromU8(partSlice));
         }
         parts
@@ -123,7 +123,7 @@ pub struct String {
         if suffix.size > self.size {
             return False;
         }
-        let start = self.size.clone() - suffix.size.clone(); // FIXME: clone needed
+        let start = self.size - suffix.size;
         let result = NativePtr.memcmp(offset(self.value, start), suffix.value, suffix.size);
         result == 0
     }
@@ -140,7 +140,7 @@ pub struct String {
     @safe
     pub fn findLast(&self, c: U8) -> Option[U64] {
         for i in 0.toU64()..self.size {
-            let index = self.size.clone() - 1.toU64() - i; // FIXME: clone needed
+            let index = self.size - 1.toU64() - i;
             if *NativePtr.offset(self.value, index) == c {
                 return Some(index);
             }
@@ -164,7 +164,7 @@ pub struct String {
         if other.size > self.size {
             return False;
         }
-        for i in 0.toU64() .. (self.size.clone() - other.size.clone() + 1.toU64()) {
+        for i in 0.toU64() .. (self.size - other.size + 1.toU64()) {
             let result = NativePtr.memcmp(offset(self.value, i), other.value, other.size);
             if result == 0 {
                 return True;

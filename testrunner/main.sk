@@ -165,6 +165,13 @@ struct Test {
         let start = Instant.now();
         let (mut success, mut output) = self.compile(&binaryOutputPath);
         if self.ty == TestType.Success {
+            if !success {
+                self.printFailure(stdLock);
+                stats.failure();
+                println("Compilation failed");
+                println("${output}");
+                return Ok(());
+            }
             let (s, o) = self.runBinary(&binaryOutputPath);
             success = s;
             output = o;
