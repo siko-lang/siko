@@ -4,18 +4,27 @@ import Std.Ops
 
 pub struct Range[T] {
     start: T,
-    end: T
+    end: T,
+    inclusive: Bool,
 
-    pub fn range[T](start: T, end: T) -> Range[T] {
-        Range(start, end)
+    pub fn range[T](start: T, end: T, inclusive: Bool = False) -> Range[T] {
+        Range(start, end, inclusive)
     }
 
     pub fn contains[T: Ord[T]](&self, value: &T) -> Bool {
-        value >= self.start and value < self.end
+        value >= self.start and self.checkEnd(value)
     }
 
     pub fn intoIterator[T: Clone[T]](self) -> RangeIterator[T] {
         RangeIterator.new(self)
+    }
+
+    fn checkEnd[T: Ord[T]](&self, value: &T) -> Bool {
+        if self.inclusive {
+            value <= self.end
+        } else {
+            value < self.end
+        }
     }
 }
 
@@ -41,7 +50,7 @@ pub instance[T: Ord[T], Step[T]] IteratorRangeIterator Iterator[RangeIterator[T]
     type Item = T
 
     fn next(mut self) -> (Self, Option[T]) {
-        if self.current < self.range.end {
+        if self.range.checkEnd(self.current) {
             let nextValue = self.current.step();
             let current = self.current;
             self.current = nextValue;

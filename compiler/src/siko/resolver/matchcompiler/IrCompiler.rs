@@ -341,38 +341,24 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
             .bodyBuilder
             .current()
             .addBlockStart(env.getSyntaxBlockId(), self.bodyLocation.clone());
-        let mut accessorMap = BTreeMap::new();
-        for (path, name) in &m.bindings.bindings {
-            //println!("Creating binding for {} at {}", name, path.last());
-            let accessor = generateAccessor(
-                self.resolver,
-                envBlockbuilder.clone(),
-                path.last().asRef(),
-                &self.bodyId,
-                &mut accessorMap,
-            );
-            let new = self
-                .resolver
-                .bodyBuilder
-                .createLocalValue(&name, self.bodyLocation.clone());
-            self.resolver
-                .bodyBuilder
-                .current()
-                .addBind(new.clone(), accessor, false, self.bodyLocation.clone());
-            env.addValue(name.clone(), new);
-        }
+
         let mut leafBodyBuilder = self.resolver.createBlock(&env);
         if !leaf.guardedMatches.is_empty() {
             let mut guardBlocks = Vec::new();
-            for m in leaf.guardedMatches.iter() {
+            for guardMatch in leaf.guardedMatches.iter() {
                 let mut guardEnv = Environment::child(self.parentEnv, syntaxBlockId.clone());
                 let mut accessorMap = BTreeMap::new();
-                for (path, name) in &m.bindings.bindings {
+                for (path, name) in &guardMatch.bindings.bindings {
+                    let refVar = self
+                        .resolver
+                        .bodyBuilder
+                        .current()
+                        .addRef(self.bodyId.clone(), self.bodyLocation.clone());
                     let accessor = generateAccessor(
                         self.resolver,
                         envBlockbuilder.clone(),
                         path.last().asRef(),
-                        &self.bodyId,
+                        &refVar,
                         &mut accessorMap,
                     );
                     let new = self
@@ -387,8 +373,8 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
                     );
                     guardEnv.addValue(name.clone(), new);
                 }
-                let guardTestBlock = self.resolver.createBlock(&env);
-                let guardBodyBlock = self.resolver.createBlock(&env);
+                let guardTestBlock = self.resolver.createBlock(&guardEnv);
+                let guardBodyBlock = self.resolver.createBlock(&guardEnv);
                 guardBlocks.push((guardTestBlock, guardBodyBlock, guardEnv));
             }
             for (guardIndex, guard) in leaf.guardedMatches.iter().enumerate() {
@@ -409,14 +395,14 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
                 let guardValue = self.resolver.resolveExpr(&guardExpr, &mut guardEnv);
                 let mut guardBodyBlockBuilder = guardBlocks[guardIndex].1.clone();
                 guardBodyBlockBuilder.current();
-                let guardBranchValue = self.resolver.resolveExpr(&guardedBranch.body, &mut env);
+                let guardBranchValue = self.resolver.resolveExpr(&guardedBranch.body, &mut guardEnv);
                 if !guardedBranch.body.doesNotReturn() {
                     let mut builder = self.resolver.bodyBuilder.current().implicit();
                     builder.addAssign(self.matchValue.clone(), guardBranchValue, self.matchLocation.clone());
                     self.resolver.addJumpToBuilder(
                         self.contBlockId,
                         self.bodyLocation.clone(),
-                        env.getSyntaxBlockId(),
+                        guardEnv.getSyntaxBlockId(),
                         &mut builder,
                     );
                 }
@@ -447,6 +433,26 @@ impl<'a, 'b> IrCompiler<'a, 'b> {
             envBlockbuilder.addJump(leafBodyBuilder.getBlockId(), self.bodyLocation.clone());
         }
         leafBodyBuilder.current();
+        let mut accessorMap = BTreeMap::new();
+        for (path, name) in &m.bindings.bindings {
+            //println!("Creating binding for {} at {}", name, path.last());
+            let accessor = generateAccessor(
+                self.resolver,
+                leafBodyBuilder.clone(),
+                path.last().asRef(),
+                &self.bodyId,
+                &mut accessorMap,
+            );
+            let new = self
+                .resolver
+                .bodyBuilder
+                .createLocalValue(&name, self.bodyLocation.clone());
+            self.resolver
+                .bodyBuilder
+                .current()
+                .addBind(new.clone(), accessor, false, self.bodyLocation.clone());
+            env.addValue(name.clone(), new);
+        }
         let exprValue = self.resolver.resolveExpr(&branch.body, &mut env);
         if !branch.body.doesNotReturn() {
             let mut builder = self.resolver.bodyBuilder.current().implicit();

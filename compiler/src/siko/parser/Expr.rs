@@ -746,6 +746,27 @@ impl<'a> ExprParser for Parser<'a> {
                 ),
                 start,
             );
+        } else if self.check(TokenKind::Range(RangeKind::Inclusive)) {
+            self.expect(TokenKind::Range(RangeKind::Inclusive));
+            let end = self.parseExpr();
+            let trueValue = self.buildExpr(
+                SimpleExpr::Name(Identifier::new(getTrueName().toString(), self.currentLocation())),
+                start.clone(),
+            );
+            return self.buildExpr(
+                SimpleExpr::Call(
+                    Box::new(Expr {
+                        expr: SimpleExpr::Value(Identifier::new(getRangeCtorName().toString(), self.currentLocation())),
+                        location: self.currentLocation(),
+                    }),
+                    vec![
+                        FunctionArg::Positional(left),
+                        FunctionArg::Positional(end),
+                        FunctionArg::Positional(trueValue),
+                    ],
+                ),
+                start,
+            );
         }
         loop {
             if self.check(TokenKind::Keyword(KeywordKind::In)) {

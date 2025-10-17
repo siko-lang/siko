@@ -509,6 +509,10 @@ impl Lexer {
                                         self.step();
                                         self.addToken(Token::Misc(MiscKind::ThreeDots))
                                     }
+                                    Some('=') => {
+                                        self.step();
+                                        self.addToken(Token::Range(RangeKind::Inclusive))
+                                    }
                                     _ => self.addToken(Token::Range(RangeKind::Exclusive)),
                                 }
                             }

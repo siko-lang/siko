@@ -80,6 +80,47 @@ pub fn parseNum(s: &String) -> Result[Int, String] {
     Ok(result)
 }
 
+@safe
+pub fn parseNumGeneric(s: &String, base: Int) -> Result[Int, String] {
+    let bytes = s.slice();
+    let mut result: Int = 0;
+    let mut negative = False;
+    let mut start = 0.toU64();
+
+    if bytes.len() == 0.toU64() {
+        return Err("Empty string".toString());
+    }
+
+    if bytes.getUnchecked(0.toU64()) == '-' {
+        negative = True;
+        start = 1.toU64();
+    }
+
+    for i in start..bytes.len() {
+        let c = bytes.getUnchecked(i);
+        let mut digit: Int = 0;
+        if c >= '0' and c <= '9' {
+            digit = (c - '0').toInt();
+        } else if c >= 'a' and c <= 'f' {
+            digit = (c - 'a' + 10.toU8()).toInt();
+        } else if c >= 'A' and c <= 'F' {
+            digit = (c - 'A' + 10.toU8()).toInt();
+        } else {
+            return Err("Invalid character in integer literal".toString());
+        }
+        if digit >= base {
+            return Err("Digit out of range for base".toString());
+        }
+        result = result * base + digit;
+    }
+
+    if negative {
+        result = -result;
+    }
+
+    Ok(result)
+}
+
 @test
 fn parseNumTest() {
     assert(parseNum(&"123".toString()) == Ok(123));
@@ -88,5 +129,20 @@ fn parseNumTest() {
     assert(parseNum(&"".toString()) == Err("Empty string".toString()));
     assert(parseNum(&"12a3".toString()) == Err("Invalid character in integer literal".toString()));
 }
+
+@test
+fn parseNumGenericTest() {
+    assert(parseNumGeneric(&"123".toString(), 10) == Ok(123));
+    assert(parseNumGeneric(&"-123".toString(), 10) == Ok(-123));
+    assert(parseNumGeneric(&"0".toString(), 10) == Ok(0));
+    assert(parseNumGeneric(&"".toString(), 10) == Err("Empty string".toString()));
+    assert(parseNumGeneric(&"1a3".toString(), 16) == Ok(419));
+    assert(parseNumGeneric(&"-1A3".toString(), 16) == Ok(-419));
+    assert(parseNumGeneric(&"1a3".toString(), 10) == Err("Digit out of range for base".toString()));
+    assert(parseNumGeneric(&"123".toString(), 8) == Ok(83));
+    assert(parseNumGeneric(&"-123".toString(), 8) == Ok(-83));
+    assert(parseNumGeneric(&"128".toString(), 8) == Err("Digit out of range for base".toString()));
+}
+
 
 }
