@@ -1,0 +1,282 @@
+module Siko.Parser.Token {
+import Siko.Location
+
+@derive(PartialEq, Eq, Clone, Copy)
+pub enum BracketKind {
+    Paren,
+    Curly,
+    Square,
+}
+
+@derive(PartialEq, Eq, Clone, Copy)
+pub enum OperatorKind {
+    Equal,
+    NotEqual,
+    LessThan,
+    GreaterThan,
+    LessThanOrEqual,
+    GreaterThanOrEqual,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    And,
+    Or,
+    AddAssign,
+    SubAssign,
+    MulAssign,
+    DivAssign,
+    ShiftLeft,
+    ShiftRight,
+    BitAnd,
+    BitOr,
+    BitXor,
+}
+
+@derive(PartialEq, Eq, Clone, Copy)
+pub enum KeywordKind {
+    Module,
+    Struct,
+    Fn,
+    Enum,
+    Trait,
+    Instance,
+    Extern,
+    Import,
+    Hiding,
+    As,
+    In,
+    Mut,
+    ValueSelf,
+    TypeSelf,
+    If,
+    Then,
+    Else,
+    Return,
+    Try,
+    Loop,
+    While,
+    For,
+    Continue,
+    Break,
+    Match,
+    Effect,
+    Implicit,
+    With,
+    Using,
+    Let,
+    Derive,
+    Type,
+    Pub,
+    Void,
+    Not,
+    Yield,
+    Co,
+    Raw,
+}
+
+@derive(PartialEq, Eq, Clone, Copy)
+pub enum ArrowKind {
+    Left,
+    Right,
+    DoubleRight,
+    DoubleLeft,
+}
+
+@derive(PartialEq, Eq, Clone, Copy)
+pub enum RangeKind {
+    Exclusive,
+    Inclusive,
+}
+
+@derive(PartialEq, Eq, Clone, Copy)
+pub enum MiscKind {
+    Dot,
+    ThreeDots,
+    Equal,
+    Comma,
+    Colon,
+    Semicolon,
+    ExclamationMark,
+    Percent,
+    Backslash,
+    Tilde,
+    Wildcard,
+    At,
+}
+
+@derive(PartialEq, Eq, Clone)
+pub enum Token {
+    VarIdentifier(String),
+    TypeIdentifier(String),
+    LeftBracket(BracketKind),
+    RightBracket(BracketKind),
+    StringLiteral(String),
+    IntegerLiteral(String),
+    CharLiteral(String),
+    Keyword(KeywordKind),
+    Arrow(ArrowKind),
+    Range(RangeKind),
+    Misc(MiscKind),
+    Op(OperatorKind),
+    EOF,
+
+    pub fn kind(&self) -> TokenKind {
+        match self {
+            Token.VarIdentifier(_) -> TokenKind.VarIdentifier,
+            Token.TypeIdentifier(_) -> TokenKind.TypeIdentifier,
+            Token.LeftBracket(k) -> TokenKind.LeftBracket(k),
+            Token.RightBracket(k) -> TokenKind.RightBracket(k),
+            Token.StringLiteral(_) -> TokenKind.StringLiteral,
+            Token.IntegerLiteral(_) -> TokenKind.IntegerLiteral,
+            Token.CharLiteral(_) -> TokenKind.CharLiteral,
+            Token.Keyword(k) -> TokenKind.Keyword(k),
+            Token.Arrow(k) -> TokenKind.Arrow(k),
+            Token.Range(k) -> TokenKind.Range(k),
+            Token.Misc(k) -> TokenKind.Misc(k),
+            Token.Op(k) -> TokenKind.Op(k),
+            Token.EOF -> TokenKind.EOF,
+        }
+    }
+}
+
+pub instance Show[Token] {
+    fn show(&self) -> String {
+        match self {
+            Token.VarIdentifier(v) -> v.clone(),
+            Token.TypeIdentifier(v) -> v.clone(),
+            _ -> self.kind().show()
+        }
+    }
+}
+
+@derive(PartialEq, Eq, Clone, Copy)
+pub enum TokenKind {
+    VarIdentifier,
+    TypeIdentifier,
+    LeftBracket(BracketKind),
+    RightBracket(BracketKind),
+    StringLiteral,
+    IntegerLiteral,
+    CharLiteral,
+    Keyword(KeywordKind),
+    Arrow(ArrowKind),
+    Range(RangeKind),
+    Misc(MiscKind),
+    Op(OperatorKind),
+    EOF,
+}
+
+pub instance Show[TokenKind] {
+    fn show(&self) -> String {
+        match self {
+            TokenKind.VarIdentifier -> "identifier",
+            TokenKind.TypeIdentifier -> "type identifier",
+            TokenKind.LeftBracket(BracketKind.Curly) -> "{{",
+            TokenKind.LeftBracket(BracketKind.Paren) -> "(",
+            TokenKind.LeftBracket(BracketKind.Square) -> "[",
+            TokenKind.RightBracket(BracketKind.Curly) -> "}}",
+            TokenKind.RightBracket(BracketKind.Paren) -> ")",
+            TokenKind.RightBracket(BracketKind.Square) -> "]",
+            TokenKind.StringLiteral -> "string literal",
+            TokenKind.IntegerLiteral -> "integer literal,"
+            TokenKind.CharLiteral -> "char literal",
+            TokenKind.Keyword(KeywordKind.As) -> "as",
+            TokenKind.Keyword(KeywordKind.Break) -> "break",
+            TokenKind.Keyword(KeywordKind.Struct) -> "struct",
+            TokenKind.Keyword(KeywordKind.Continue) -> "continue",
+            TokenKind.Keyword(KeywordKind.Derive) -> "derive",
+            TokenKind.Keyword(KeywordKind.Effect) -> "effect",
+            TokenKind.Keyword(KeywordKind.Else) -> "else",
+            TokenKind.Keyword(KeywordKind.Enum) -> "enum",
+            TokenKind.Keyword(KeywordKind.Extern) -> "extern",
+            TokenKind.Keyword(KeywordKind.Fn) -> "fn",
+            TokenKind.Keyword(KeywordKind.For) -> "for",
+            TokenKind.Keyword(KeywordKind.Hiding) -> "hiding",
+            TokenKind.Keyword(KeywordKind.If) -> "if",
+            TokenKind.Keyword(KeywordKind.Implicit) -> "implicit",
+            TokenKind.Keyword(KeywordKind.Import) -> "import",
+            TokenKind.Keyword(KeywordKind.In) -> "in",
+            TokenKind.Keyword(KeywordKind.Instance) -> "instance",
+            TokenKind.Keyword(KeywordKind.Let) -> "let",
+            TokenKind.Keyword(KeywordKind.Loop) -> "loop",
+            TokenKind.Keyword(KeywordKind.Match) -> "match",
+            TokenKind.Keyword(KeywordKind.Module) -> "module",
+            TokenKind.Keyword(KeywordKind.Mut) -> "mut",
+            TokenKind.Keyword(KeywordKind.Pub) -> "pub",
+            TokenKind.Keyword(KeywordKind.Return) -> "return",
+            TokenKind.Keyword(KeywordKind.Trait) -> "trait",
+            TokenKind.Keyword(KeywordKind.Try) -> "try",
+            TokenKind.Keyword(KeywordKind.Type) -> "type",
+            TokenKind.Keyword(KeywordKind.Using) -> "using",
+            TokenKind.Keyword(KeywordKind.ValueSelf) -> "self",
+            TokenKind.Keyword(KeywordKind.TypeSelf) -> "Self",
+            TokenKind.Keyword(KeywordKind.While) -> "while",
+            TokenKind.Keyword(KeywordKind.With) -> "with",
+            TokenKind.Keyword(KeywordKind.Then) -> "then",
+            TokenKind.Keyword(KeywordKind.Void) -> "void",
+            TokenKind.Keyword(KeywordKind.Not) -> "not",
+            TokenKind.Keyword(KeywordKind.Yield) -> "yield",
+            TokenKind.Keyword(KeywordKind.Co) -> "co",
+            TokenKind.Keyword(KeywordKind.Raw) -> "raw",
+            TokenKind.Arrow(ArrowKind.DoubleLeft) -> "<=",
+            TokenKind.Arrow(ArrowKind.DoubleRight) -> "->",
+            TokenKind.Arrow(ArrowKind.Left) -> "<-",
+            TokenKind.Arrow(ArrowKind.Right) -> "->",
+            TokenKind.Range(RangeKind.Exclusive) -> "..",
+            TokenKind.Range(RangeKind.Inclusive) -> "..=",
+            TokenKind.Misc(MiscKind.At) -> "@",
+            TokenKind.Misc(MiscKind.Backslash) -> "\\",
+            TokenKind.Misc(MiscKind.Colon) -> ":",
+            TokenKind.Misc(MiscKind.Comma) -> ",",
+            TokenKind.Misc(MiscKind.Dot) -> ".",
+            TokenKind.Misc(MiscKind.ThreeDots) -> "...",
+            TokenKind.Misc(MiscKind.Equal) -> "=",
+            TokenKind.Misc(MiscKind.ExclamationMark) -> "!",
+            TokenKind.Misc(MiscKind.Percent) -> "%",
+            TokenKind.Misc(MiscKind.Semicolon) -> ";",
+            TokenKind.Misc(MiscKind.Tilde) -> "~",
+            TokenKind.Misc(MiscKind.Wildcard) -> "_",
+            TokenKind.Op(OperatorKind.Add) -> "+",
+            TokenKind.Op(OperatorKind.And) -> "&&",
+            TokenKind.Op(OperatorKind.Div) -> "/",
+            TokenKind.Op(OperatorKind.Equal) -> "==",
+            TokenKind.Op(OperatorKind.GreaterThan) -> ">",
+            TokenKind.Op(OperatorKind.GreaterThanOrEqual) -> ">=",
+            TokenKind.Op(OperatorKind.LessThan) -> "<",
+            TokenKind.Op(OperatorKind.LessThanOrEqual) -> "<=",
+            TokenKind.Op(OperatorKind.Mul) -> "*",
+            TokenKind.Op(OperatorKind.NotEqual) -> "!=",
+            TokenKind.Op(OperatorKind.Or) -> "||",
+            TokenKind.Op(OperatorKind.Sub) -> "-",
+            TokenKind.Op(OperatorKind.AddAssign) -> "+=",
+            TokenKind.Op(OperatorKind.SubAssign) -> "-=",
+            TokenKind.Op(OperatorKind.MulAssign) -> "*=",
+            TokenKind.Op(OperatorKind.DivAssign) -> "/=",
+            TokenKind.Op(OperatorKind.ShiftLeft) -> "<<",
+            TokenKind.Op(OperatorKind.ShiftRight) -> ">>",
+            TokenKind.Op(OperatorKind.BitAnd) -> "&",
+            TokenKind.Op(OperatorKind.BitOr) -> "|",
+            TokenKind.Op(OperatorKind.BitXor) -> "^",
+            TokenKind.EOF -> "EOF",
+        }
+    }
+}
+
+@derive(PartialEq, Eq, Clone)
+pub struct TokenInfo {
+    pub token: Token,
+    pub span: Span,
+
+    pub fn kind(&self) -> TokenKind {
+        self.token.kind()
+    }
+}
+
+pub instance Show[TokenInfo] {
+    fn show(&self) -> String {
+        self.token.show()
+    }
+}
+
+}

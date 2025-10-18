@@ -71,6 +71,10 @@ impl<'a> PatternParser for Parser<'a> {
                 let literal = self.parseIntegerLiteral();
                 self.buildPattern(SimplePattern::IntegerLiteral(literal))
             }
+            TokenKind::CharLiteral => {
+                let literal = self.parseCharLiteral();
+                self.buildPattern(SimplePattern::IntegerLiteral(literal))
+            }
             TokenKind::StringLiteral => {
                 let literal = self.parseStringLiteral();
                 self.buildPattern(SimplePattern::StringLiteral(literal))

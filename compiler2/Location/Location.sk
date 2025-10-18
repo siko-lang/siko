@@ -1,0 +1,103 @@
+module Siko.Location {
+
+@derive(Clone, PartialEq, Eq, PartialOrd, Ord)
+pub struct FileId {
+    pub index: I32,
+
+    pub fn empty() -> FileId {
+        FileId(index: 0.toI32())
+    }
+
+    pub fn new(index: I32) -> FileId {
+        FileId(index)
+    }
+}
+
+pub instance Show[FileId] {
+    fn show(&self) -> String {
+        "FileId(${self.index})"
+    }
+}
+
+// impl FileId {
+//     pub fn getLines(&self) -> Vec<String> {
+//         let fileName = self.fileManager.get(&self);
+//         let content = std::fs::read(fileName).expect("Failed to read file");
+//         let content = String::from_utf8(content).expect("not utf8!");
+//         content.split("\n").map(|s| s.to_string()).collect()
+//     }
+// }
+
+@derive(Copy, PartialEq, Eq, PartialOrd, Ord, Clone)
+pub struct Position {
+    pub line: I32,
+    pub offset: I32,
+
+    pub fn new() -> Position {
+        Position(line: 0.toI32(), offset: 0.toI32())
+    }
+}
+
+pub instance Show[Position] {
+    fn show(&self) -> String {
+        "${self.line}:${self.offset}"
+    }
+}
+
+@derive(Copy, PartialEq, Eq, PartialOrd, Ord, Clone)
+pub struct Span {
+    pub start: Position,
+    pub end: Position,
+
+    pub fn new() -> Span {
+        Span(start: Position.new(), end: Position.new())
+    }
+
+    pub fn merge(self, other: Span) -> Span {
+        assert(self.start <= other.start);
+        assert(self.end <= other.end);
+        Span(start: self.start, end: other.end)
+    }
+}
+
+pub instance Show[Span] {
+    fn show(&self) -> String {
+        "${self.start}-${self.end}"
+    }
+}
+
+@derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)
+pub struct Location {
+    pub fileId: FileId,
+    pub span: Span,
+
+    pub fn empty() -> Location {
+        Location(
+            fileId: FileId.empty(),
+            span: Span.new(),
+        )
+    }
+
+    pub fn new(fileId: FileId, span: Span) -> Location {
+        Location(
+            fileId: fileId,
+            span: span,
+        )
+    }
+
+    pub fn merge(self, other: Location) -> Location {
+        assert(self.fileId == other.fileId);
+        Location(
+            fileId: self.fileId,
+            span: self.span.merge(other.span),
+        )
+    }
+}
+
+pub instance Show[Location] {
+    fn show(&self) -> String {
+        "${self.fileId}:${self.span}"
+    }
+}
+
+}

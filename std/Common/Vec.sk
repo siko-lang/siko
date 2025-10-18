@@ -112,6 +112,22 @@ pub struct Vec[T] {
         }
         self
     }
+
+    pub fn extend(mut self, other: Vec[T]) -> Self {
+        for item in other {
+            self.push(item);
+        }
+        self
+    }
+
+    @unsafe
+    pub fn appendSlice(mut self, slice: Slice[T]) -> Self {
+        for i in 0.toU64() .. slice.len() {
+            let item = *offset(slice.asPtr(), i);
+            self.push(item);
+        }
+        self
+    }
 }
 
 struct InnerVec[T] {

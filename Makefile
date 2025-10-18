@@ -30,3 +30,6 @@ testworkflow: compiler/target/release/siko
 
 runner.bin: compiler/target/release/siko
 	@./siko build testrunner -o runner.bin
+
+self.bin: compiler/target/release/siko
+	@./siko build compiler2 -o self.bin

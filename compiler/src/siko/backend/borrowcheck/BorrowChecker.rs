@@ -181,6 +181,10 @@ impl<'a> BorrowChecker<'a> {
                     instructionId: index as u32,
                 };
                 if let Some(liveBorrowVars) = borrowVarMap.borrowVarMap.get(&instrRef) {
+                    if self.traceEnabled {
+                        println!(" Checking instruction: {}", instruction.kind);
+                        println!("  Live borrow vars: {:?}", liveBorrowVars);
+                    }
                     match &instruction.kind {
                         InstructionKind::Ref(_, _) => {}
                         InstructionKind::PtrOf(_, _) => {}

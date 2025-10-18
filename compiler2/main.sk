@@ -1,0 +1,66 @@
+module Main {
+
+import Siko.Location
+import Siko.Parser.Lexer
+import Fs.File
+import Fs.Path
+import Fs.Directory
+import Sys.Process
+
+struct PackageFinder {
+    sourceFiles: Vec[String],
+
+    fn new() -> PackageFinder {
+        PackageFinder(
+            sourceFiles: Vec.new(),
+        )
+    }
+
+    fn collectSourceFiles(mut self, basePath: &String) -> Self {
+        let dirIter = listDir(basePath).expect("Failed to list directory");
+        for entry in dirIter {
+            let entry = entry.expect("Failed to read directory entry");
+            if entry.name() == "." or entry.name() == ".." {
+                continue;
+            }
+            let entryPath = Fs.Path.join(basePath, entry.name());
+            if entry.isDirectory() {
+                self.collectSourceFiles(&entryPath);
+            } else if entry.name().endsWith(".sk") {
+                let sourceFile = Fs.Path.join(basePath, entry.name());
+                self.sourceFiles.push(sourceFile);
+            }
+        }
+        self
+    }
+}
+
+fn main() {
+    let mut args = Sys.Process.getArgs();
+    args.remove(0); // remove program name
+    let mut finder = PackageFinder.new();
+    for arg in args {
+        finder.collectSourceFiles(&arg);
+    }
+    for sourceFile in finder.sourceFiles {
+        println(sourceFile);
+        match readFile(&sourceFile) {
+            Ok(content) -> {
+                let fileId = FileId.new(0.toI32());
+                let mut lexer = Lexer.new(content.toVecU8(), fileId, Position.new());
+                let (tokens, errors) = lexer.lex(addEOF: True);
+                for token in tokens {
+                    println("  ${token}");
+                }
+                // for error in errors {
+                //     println("  Error: ${error}");
+                // }
+            }
+            Err(_) -> {
+                println("  Failed to read file");
+            }
+        }
+    }
+}
+
+}

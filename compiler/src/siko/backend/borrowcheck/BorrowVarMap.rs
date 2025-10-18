@@ -96,6 +96,10 @@ impl<'a> BorrowVarMapBuilder<'a> {
                 }
             }
         }
+        if self.traceEnabled {
+            println!("Initial borrow variable map:");
+            borrowVarMap.dump(body);
+        }
         self.extendBorrowVarLiveness(&mut borrowVarMap, body, &reachabilityMap);
         if self.traceEnabled {
             println!("Borrow variable map:");
@@ -202,6 +206,9 @@ impl<'a> BorrowVarMapBuilder<'a> {
                 for userRef in users {
                     if *userRef == sourceRef {
                         continue;
+                    }
+                    if self.traceEnabled {
+                        println!(" Extending borrow var {} from {} to {}", borrowVar, sourceRef, userRef);
                     }
                     // Same-block case: populate instructions strictly between source and user.
                     if sourceRef.blockId == userRef.blockId {

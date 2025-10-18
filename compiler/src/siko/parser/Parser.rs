@@ -193,6 +193,16 @@ impl<'a> Parser<'a> {
         }
     }
 
+    pub fn parseCharLiteral(&mut self) -> String {
+        match self.tokens[self.index].token.clone() {
+            Token::CharLiteral(v) => {
+                self.step();
+                v
+            }
+            t => self.reportError(TokenKind::CharLiteral, t.kind()),
+        }
+    }
+
     pub fn parseStringLiteral(&mut self) -> String {
         match self.tokens[self.index].token.clone() {
             Token::StringLiteral(v) => {

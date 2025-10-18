@@ -1,0 +1,592 @@
+module Siko.Parser.Lexer {
+
+import Siko.Parser.Token
+import Siko.Location
+import Int.Util
+import Siko.Parser.Error
+
+fn isIdentifier(c: U8) -> Bool {
+    match if c {
+        'a'..='z' -> True,
+        'A'..='Z' -> True,
+        '0'..='9' -> True,
+        '_' => True,
+        _ -> False,
+    }
+}
+
+fn isUppercase(c: U8) -> Bool {
+    match if c {
+        'A'..='Z' -> True,
+        _ -> False,
+    }
+}
+
+fn isInteger(c: U8) -> Bool {
+    match if c {
+        '0'..='9' -> True,
+        _ -> False,
+    }
+}
+
+fn getSingleCharToken(c: U8) -> Option[Token] {
+    let token = match c {
+        '(' -> Token.LeftBracket(BracketKind.Paren),
+        ')' -> Token.RightBracket(BracketKind.Paren),
+        '{' -> Token.LeftBracket(BracketKind.Curly),
+        '}' -> Token.RightBracket(BracketKind.Curly),
+        '[' -> Token.LeftBracket(BracketKind.Square),
+        ']' -> Token.RightBracket(BracketKind.Square),
+        ':' -> Token.Misc(MiscKind.Colon),
+        ',' -> Token.Misc(MiscKind.Comma),
+        ';' -> Token.Misc(MiscKind.Semicolon),
+        '@' -> Token.Misc(MiscKind.At),
+        '&' -> Token.Op(OperatorKind.BitAnd),
+        '\\' -> Token.Misc(MiscKind.Backslash),
+        '|' -> Token.Op(OperatorKind.BitOr),
+        '^' -> Token.Op(OperatorKind.BitXor),
+        _ -> return None,
+    };
+    Some(token)
+}
+
+pub struct Lexer {
+    content: Vec[U8],
+    index: Int,
+    current: String,
+    position: Position,
+    fileId: FileId,
+    span: Span,
+    tokens: Vec[TokenInfo],
+    errors: Vec[LexerError],
+
+    pub fn new(content: Vec[U8], fileId: FileId, position: Position) -> Lexer {
+        Lexer(
+            content: content,
+            index: 0,
+            current: String.new(),
+            position: position,
+            fileId: fileId,
+            span: Span.new(),
+            tokens: Vec.new(),
+            errors: Vec.new(),
+        )
+    }
+
+    fn peek(&self) -> Option[U8] {
+        if self.index < self.content.len() {
+            Some(self.content.get(self.index).clone())
+        } else {
+            None
+        }
+    }
+
+    fn step(mut self) -> Self {
+        match self.peek() {
+            Some('\n') -> {
+                self.position.offset = 0.toI32();
+                self.position.line = self.position.line + 1.toI32();
+            }
+            _ -> {
+                self.position.offset += 1.toI32();
+            }
+        }
+        self.index = self.index + 1;
+        self.span.end = self.position.clone();
+        self
+    }
+
+    fn ignore(mut self) -> Self {
+        self.step();
+        self.resetSpan();
+        self
+    }
+
+    fn resetSpan(mut self) -> Self {
+        self.span.start = self.position.clone();
+        self.span.end = self.position.clone();
+        self
+    }
+
+    fn resetCurrent(mut self) -> Self {
+        self.current = String.new();
+        self
+    }
+
+    fn addToken(mut self, token: Token) -> Self {
+        self.tokens.push(TokenInfo(
+            token: token,
+            span: self.span.clone(),
+        ));
+        self.resetSpan();
+        self.resetCurrent();
+        self
+    }
+
+    fn addError(mut self, error: LexerError) -> Self {
+        self.errors.push(error);
+        self
+    }
+
+    fn processIdentifier(mut self, c: U8) -> Self {
+        let startsWithInteger = isInteger(c);
+        let startsWithUpperCase = isUppercase(c);
+        self.current.pushChar(c);
+        self.step();
+        loop {
+            match self.peek() {
+                Some(c) if isIdentifier(c) -> {
+                    self.current.pushChar(c);
+                    self.step();
+                }
+                _ -> {
+                    break;
+                }
+            }
+        }
+        if startsWithInteger {
+            self.processIntegerLiteral();
+        } else {
+            if startsWithUpperCase {
+                let token = match self.current {
+                    "Self" -> Token.Keyword(KeywordKind.TypeSelf),
+                    _ -> Token.TypeIdentifier(self.current.clone()),
+                };
+                self.addToken(token);
+            } else {
+                let token = match self.current {
+                    "module" -> Token.Keyword(KeywordKind.Module),
+                    "struct" -> Token.Keyword(KeywordKind.Struct),
+                    "enum" -> Token.Keyword(KeywordKind.Enum),
+                    "fn" -> Token.Keyword(KeywordKind.Fn),
+                    "import" -> Token.Keyword(KeywordKind.Import),
+                    "if" -> Token.Keyword(KeywordKind.If),
+                    "else" -> Token.Keyword(KeywordKind.Else),
+                    "for" -> Token.Keyword(KeywordKind.For),
+                    "in" -> Token.Keyword(KeywordKind.In),
+                    "while" -> Token.Keyword(KeywordKind.While),
+                    "loop" -> Token.Keyword(KeywordKind.Loop),
+                    "match" -> Token.Keyword(KeywordKind.Match),
+                    "let" -> Token.Keyword(KeywordKind.Let),
+                    "derive" -> Token.Keyword(KeywordKind.Derive),
+                    "extern" -> Token.Keyword(KeywordKind.Extern),
+                    "trait" -> Token.Keyword(KeywordKind.Trait),
+                    "instance" -> Token.Keyword(KeywordKind.Instance),
+                    "effect" -> Token.Keyword(KeywordKind.Effect),
+                    "self" -> Token.Keyword(KeywordKind.ValueSelf),
+                    "mut" -> Token.Keyword(KeywordKind.Mut),
+                    "return" -> Token.Keyword(KeywordKind.Return),
+                    "continue" -> Token.Keyword(KeywordKind.Continue),
+                    "break" -> Token.Keyword(KeywordKind.Break),
+                    "implicit" -> Token.Keyword(KeywordKind.Implicit),
+                    "type" -> Token.Keyword(KeywordKind.Type),
+                    "pub" -> Token.Keyword(KeywordKind.Pub),
+                    "as" -> Token.Keyword(KeywordKind.As),
+                    "and" -> Token.Op(OperatorKind.And),
+                    "or" -> Token.Op(OperatorKind.Or),
+                    "with" -> Token.Keyword(KeywordKind.With),
+                    "void" -> Token.Keyword(KeywordKind.Void),
+                    "not" -> Token.Keyword(KeywordKind.Not),
+                    "try" -> Token.Keyword(KeywordKind.Try),
+                    "yield" -> Token.Keyword(KeywordKind.Yield),
+                    "co" -> Token.Keyword(KeywordKind.Co),
+                    "raw" -> Token.Keyword(KeywordKind.Raw),
+                    "_" -> Token.Misc(MiscKind.Wildcard),
+                    _ -> Token.VarIdentifier(self.current.clone()),
+                };
+                self.addToken(token);
+            }
+        }
+        self
+    }
+
+    fn processIntegerLiteral(mut self) -> Self {
+        // detect if it is octal or hex
+        if self.current.len() > 2 and self.current.startsWith("0x") {
+            // hex -> convert it into decimal string
+            let sub = self.current.subString(2.toU64(), self.current.len().toU64());
+            let decimalValue = match parseNumGeneric(&sub, 16) {
+                Ok(v) -> v,
+                Err(_) -> {
+                    self.addError(LexerError.InvalidIdentifier(self.current.clone(), self.span.clone()));
+                    self.resetSpan();
+                    self.resetCurrent();
+                    return self;
+                }
+            };
+            self.current = "${decimalValue}";
+        } else if self.current.len() > 1 and self.current.startsWith("0") {
+            // octal -> convert it into decimal string
+            let sub = self.current.subString(1.toU64(), self.current.len().toU64());
+            let decimalValue = match parseNumGeneric(&sub, 8) {
+                Ok(v) -> v,
+                Err(_) -> {
+                    self.addError(LexerError.InvalidIdentifier(self.current.clone(), self.span.clone()));
+                    self.resetSpan();
+                    self.resetCurrent();
+                    return self;
+                }
+            };
+            self.current = "${decimalValue}";
+        }
+        self.addToken(Token.IntegerLiteral(self.current.clone()));
+        self
+    }
+
+    fn expect(mut self, c: U8) -> Self {
+        match self.peek() {
+            Some(c1) if c1 == c -> self.step(),
+            Some(c1) -> self.addError(LexerError.UnexpectedCharacter(c1, self.span.clone())),
+            None -> self.addError(LexerError.UnexpectedEndOfFile(self.span.clone())),
+        }
+        self
+    }
+
+    fn processStringInterpolation(mut self) -> Self {
+        self.addToken(Token.Op(OperatorKind.Add));
+        self.addToken(Token.VarIdentifier("Std.Fmt.Show.show"));
+        self.addToken(Token.LeftBracket(BracketKind.Paren));
+
+        self.step();
+        let start = self.position.clone();
+        let mut level = 1;
+        let mut subchars = Vec.new();
+        loop {
+            match self.peek() {
+                Some('}') -> {
+                        self.step();
+                        level = level - 1;
+                        if level == 0 {
+                            break;
+                        }
+                    }
+                Some('{') -> {
+                        self.step();
+                        level = level + 1;
+                }
+                Some(c) -> {
+                        subchars.push(c);
+                        self.step();
+                    }
+                None -> {
+                    self.addError(LexerError.UnendingStringLiteral(self.span.clone()));
+                    return self;
+                }
+            }
+        }
+
+        let mut sublexer = Lexer.new(subchars, self.fileId.clone(), start);
+        sublexer.resetSpan();
+        let (tokens, errors) = sublexer.lex(False);
+        //println!("Tokens: {:?}", tokens);
+        self.errors.extend(errors);
+        self.tokens.extend(tokens);
+
+        self.addToken(Token.RightBracket(BracketKind.Paren));
+        self.addToken(Token.Op(OperatorKind.Add));
+        self
+    }
+
+    fn processString(mut self) -> Self {
+        let mut literal = String.new();
+        self.step();
+        loop {
+            match self.peek() {
+                Some('"') -> {
+                    self.step();
+                    break;
+                }
+                Some('\\') -> {
+                    self.step();
+                    match self.peek() {
+                        Some('n') -> {
+                            literal.pushChar('\n');
+                            self.step();
+                        }
+                        Some('t') -> {
+                            literal.pushChar('\t');
+                            self.step();
+                        }
+                        Some('r') -> {
+                            literal.pushChar('\r');
+                            self.step();
+                        }
+                        Some('\\') -> {
+                            literal.pushChar('\\');
+                            self.step();
+                        }
+                        Some('"') -> {
+                            literal.pushChar('"');
+                            self.step();
+                        }
+                        Some('\'') -> {
+                            literal.pushChar('\'');
+                            self.step();
+                        }
+                        Some(c) -> {
+                            let mut literal = String.new();
+                            literal.pushChar('\\');
+                            literal.pushChar(c);
+                            self.addError(LexerError.InvalidEscapeSequence(literal, self.span.clone()));
+                            self.step();
+                        }
+                        None -> {
+                            self.addError(LexerError.UnendingStringLiteral(self.span.clone()));
+                        }
+                    }
+                }
+                Some('$') -> {
+                    self.step();
+                    match self.peek() {
+                        Some('{') -> {
+                            self.addToken(Token.StringLiteral(literal));
+                            literal = String.new();
+                            self.processStringInterpolation();
+                        }
+                        _ -> {
+                            literal.pushChar('$');
+                        }
+                    }
+                }
+                Some(c) -> {
+                    literal.pushChar(c);
+                    self.step();
+                }
+                None -> self.addError(LexerError.UnendingStringLiteral(self.span.clone())),
+            }
+        }
+        self.addToken(Token.StringLiteral(literal));
+        self
+    }
+
+    fn processCharLiteral(mut self) -> Self {
+        let mut literal = String.new();
+        self.step();
+        loop {
+            match self.peek() {
+                Some('\'') -> {
+                    self.step();
+                    break;
+                }
+                Some('\\') -> {
+                    self.step();
+                    match self.peek() {
+                        Some('n') -> {
+                            literal.pushChar('\n');
+                            self.step();
+                        }
+                        Some('t') -> {
+                            literal.pushChar('\t');
+                            self.step();
+                        }
+                        Some('r') -> {
+                            literal.pushChar('\r');
+                            self.step();
+                        }
+                        Some('\\') -> {
+                            literal.pushChar('\\');
+                            self.step();
+                        }
+                        Some('\'') -> {
+                            literal.pushChar('\'');
+                            self.step();
+                        }
+                        Some(c) -> {
+                            let mut literal = String.new();
+                            literal.pushChar('\\');
+                            literal.pushChar(c);
+                            self.addError(LexerError.InvalidEscapeSequence(literal, self.span.clone()));
+                            self.step();
+                        }
+                        None -> {
+                            self.addError(LexerError.UnendingCharLiteral(self.span.clone()));
+                        }
+                    }
+                }
+                Some(c) -> {
+                    literal.pushChar(c);
+                    self.step();
+                }
+                None -> self.addError(LexerError.UnendingCharLiteral(self.span.clone())),
+            }
+        }
+        if literal.len() != 1 {
+            self.addError(LexerError.InvalidCharLiteral(literal, self.span.clone()));
+        } else {
+            self.addToken(Token.CharLiteral(literal));
+        }
+        self
+    }
+
+    fn processSingle(mut self, c: U8) -> Self {
+        match getSingleCharToken(c) {
+            Some(token) -> {
+                self.step();
+                self.addToken(token);
+            }
+            None -> {}
+        }
+        self
+    }
+
+    fn ignoreComment(mut self) -> Self {
+        self.step();
+        loop {
+            match self.peek() {
+                Some('\n') -> break,
+                None -> break,
+                _ -> self.step(),
+            }
+        }
+        self
+    }
+
+    pub fn lex(mut self, addEOF: Bool) -> (Vec[TokenInfo], Vec[LexerError]) {
+        loop {
+            match self.peek() {
+                Some(c) if isIdentifier(c) -> self.processIdentifier(c),
+                Some(c) if getSingleCharToken(c).isSome() -> self.processSingle(c),
+                Some(c) -> match c {
+                    '\n' -> self.ignore(),
+                    '\t' -> self.ignore(),
+                    '\r' -> self.ignore(),
+                    ' ' -> self.ignore(),
+                    '/' -> {
+                        self.step();
+                        match self.peek() {
+                            Some('/') -> self.ignoreComment(),
+                            Some('=') -> {
+                                self.step();
+                                self.addToken(Token.Op(OperatorKind.DivAssign))
+                            }
+                            _ -> self.addToken(Token.Op(OperatorKind.Div)),
+                        }
+                    }
+                    '*' -> {
+                        self.step();
+                        match self.peek() {
+                            Some('=') -> {
+                                self.step();
+                                self.addToken(Token.Op(OperatorKind.MulAssign))
+                            }
+                            _ -> self.addToken(Token.Op(OperatorKind.Mul)),
+                        }
+                    }
+                    '-' -> {
+                        self.step();
+                        match self.peek() {
+                            Some('>') -> {
+                                self.step();
+                                self.addToken(Token.Arrow(ArrowKind.Right))
+                            }
+                            Some('=') -> {
+                                self.step();
+                                self.addToken(Token.Op(OperatorKind.SubAssign))
+                            }
+                            _ -> self.addToken(Token.Op(OperatorKind.Sub)),
+                        }
+                    }
+                    '>' -> {
+                        self.step();
+                        match self.peek() {
+                            Some('=') -> {
+                                self.step();
+                                self.addToken(Token.Op(OperatorKind.GreaterThanOrEqual))
+                            }
+                            Some('>') -> {
+                                self.step();
+                                self.addToken(Token.Op(OperatorKind.ShiftRight))
+                            }
+                            _ -> self.addToken(Token.Op(OperatorKind.GreaterThan)),
+                        }
+                    }
+                    '<' -> {
+                        self.step();
+                        match self.peek() {
+                            Some('=') -> {
+                                self.step();
+                                self.addToken(Token.Op(OperatorKind.LessThanOrEqual))
+                            }
+                            Some('-') -> {
+                                self.step();
+                                self.addToken(Token.Arrow(ArrowKind.Left))
+                            }
+                            Some('<') -> {
+                                self.step();
+                                self.addToken(Token.Op(OperatorKind.ShiftLeft))
+                            }
+                            _ -> self.addToken(Token.Op(OperatorKind.LessThan)),
+                        }
+                    }
+                    '+' -> {
+                        self.step();
+                        match self.peek() {
+                            Some('=') -> {
+                                self.step();
+                                self.addToken(Token.Op(OperatorKind.AddAssign))
+                            }
+                            _ -> self.addToken(Token.Op(OperatorKind.Add)),
+                        }
+                    }
+                    '=' -> {
+                        self.step();
+                        match self.peek() {
+                            Some('=') -> {
+                                self.step();
+                                self.addToken(Token.Op(OperatorKind.Equal))
+                            }
+                            Some('>') -> {
+                                self.step();
+                                self.addToken(Token.Arrow(ArrowKind.DoubleRight))
+                            }
+                            _ -> self.addToken(Token.Misc(MiscKind.Equal)),
+                        }
+                    }
+                    '.' -> {
+                        self.step();
+                        match self.peek() {
+                            Some('.') -> {
+                                self.step();
+                                match self.peek() {
+                                    Some('.') -> {
+                                        self.step();
+                                        self.addToken(Token.Misc(MiscKind.ThreeDots))
+                                    }
+                                    _ -> self.addToken(Token.Range(RangeKind.Exclusive)),
+                                }
+                            }
+                            _ -> self.addToken(Token.Misc(MiscKind.Dot)),
+                        }
+                    }
+                    '!' -> {
+                        self.step();
+                        match self.peek() {
+                            Some('=') -> {
+                                self.step();
+                                self.addToken(Token.Op(OperatorKind.NotEqual))
+                            }
+                            _ -> self.addToken(Token.Misc(MiscKind.ExclamationMark)),
+                        }
+                    }
+                    '"' -> {
+                        self.processString();
+                    }
+                    '\'' -> {
+                        self.processCharLiteral();
+                    }
+                    _ -> {
+                        self.addError(LexerError.UnsupportedCharacter(c, self.span.clone()));
+                        self.step();
+                    }
+                },
+                None -> break,
+            }
+        }
+        if addEOF {
+            self.addToken(Token.EOF);
+        }
+        (self.tokens.clone(), self.errors.clone())
+    }
+}
+
+}

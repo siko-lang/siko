@@ -14,7 +14,7 @@ use crate::siko::{
 use super::{
     Parser::*,
     Pattern::PatternParser,
-    Token::{ArrowKind, BracketKind, KeywordKind, MiscKind, OperatorKind, Token, TokenKind},
+    Token::{ArrowKind, BracketKind, KeywordKind, MiscKind, OperatorKind, TokenKind},
     Type::TypeParser,
 };
 
@@ -971,13 +971,8 @@ impl<'a> ExprParser for Parser<'a> {
                 self.buildExpr(SimpleExpr::IntegerLiteral(literal), start)
             }
             TokenKind::CharLiteral => {
-                let tokenInfo = self.current().clone();
-                self.step();
-                if let Token::CharLiteral(value) = tokenInfo.token {
-                    self.buildExpr(SimpleExpr::CharLiteral(value), start)
-                } else {
-                    unreachable!()
-                }
+                let literal = self.parseCharLiteral();
+                self.buildExpr(SimpleExpr::CharLiteral(literal), start)
             }
             TokenKind::Keyword(KeywordKind::ValueSelf) => {
                 self.expect(TokenKind::Keyword(KeywordKind::ValueSelf));
