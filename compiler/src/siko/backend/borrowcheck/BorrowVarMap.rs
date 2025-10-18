@@ -3,8 +3,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::siko::{
     backend::borrowcheck::functionprofiles::FunctionProfileBuilder::FunctionProfileBuilder,
     hir::{
+        Block::BlockId,
         BlockBuilder::InstructionRef,
-        BlockGroupBuilder::{BlockGroupInfo, ReachabilityMap},
+        BlockGroupBuilder::BlockGroupInfo,
         Body::Body,
         Instruction::InstructionKind,
         Type::{formatTypes, Type},
@@ -67,14 +68,8 @@ impl<'a> BorrowVarMapBuilder<'a> {
     }
 
     pub fn buildBorrowVarMap(&self, links: &BTreeMap<Type, Type>, groupInfo: &BlockGroupInfo) -> BorrowVarMap {
-        let reachabilityMap = groupInfo.buildReachabilityMap();
-        let reachabilityMap2 = groupInfo.buildReachabilityMap2();
         let mut borrowVarMap = BorrowVarMap::new();
-        assert_eq!(reachabilityMap, reachabilityMap2);
         let inverseLinkMap = self.buildInverseLinkMap(links);
-        if self.traceEnabled {
-            println!("Reachability map:\n{}", reachabilityMap);
-        }
         let body = self.profileBuilder.f.body.as_ref().unwrap();
         for (blockId, block) in &body.blocks {
             if self.traceEnabled {
@@ -100,7 +95,7 @@ impl<'a> BorrowVarMapBuilder<'a> {
             println!("Initial borrow variable map:");
             borrowVarMap.dump(body);
         }
-        self.extendBorrowVarLiveness(&mut borrowVarMap, body, &reachabilityMap);
+        self.extendBorrowVarLiveness(&mut borrowVarMap, body, groupInfo);
         if self.traceEnabled {
             println!("Borrow variable map:");
             borrowVarMap.dump(body);
@@ -183,9 +178,7 @@ impl<'a> BorrowVarMapBuilder<'a> {
         (resolvedBorrowVars, sourceVar)
     }
 
-    fn extendBorrowVarLiveness(&self, borrowVarMap: &mut BorrowVarMap, body: &Body, reachabilityMap: &ReachabilityMap) {
-        // Precompute reverse reachability so we can pick blocks on any path to the user.
-        let reverseReachability = reachabilityMap.buildReverseReachabilityMap();
+    fn extendBorrowVarLiveness(&self, borrowVarMap: &mut BorrowVarMap, body: &Body, groupInfo: &BlockGroupInfo) {
         // Collect every instruction that already mentions each borrow variable.
         let mut borrowVarToUsers: BTreeMap<Type, Vec<InstructionRef>> = BTreeMap::new();
         for (instrRef, vars) in &borrowVarMap.borrowVarMap {
@@ -210,52 +203,76 @@ impl<'a> BorrowVarMapBuilder<'a> {
                     if self.traceEnabled {
                         println!(" Extending borrow var {} from {} to {}", borrowVar, sourceRef, userRef);
                     }
-                    // Same-block case: populate instructions strictly between source and user.
-                    if sourceRef.blockId == userRef.blockId {
-                        if sourceRef.instructionId >= userRef.instructionId {
-                            continue;
-                        }
-                        for instr_id in (sourceRef.instructionId + 1)..=userRef.instructionId {
-                            let instr_ref = InstructionRef {
-                                blockId: sourceRef.blockId,
-                                instructionId: instr_id,
-                            };
-                            borrowVarMap.addBorrowVarToInstruction(instr_ref, &borrowVar);
-                        }
+                    self.extendBorrowVarBetween(
+                        borrowVarMap,
+                        body,
+                        groupInfo,
+                        sourceRef,
+                        *userRef,
+                        &borrowVar,
+                    );
+                }
+            }
+        }
+    }
+
+    fn extendBorrowVarBetween(
+        &self,
+        borrowVarMap: &mut BorrowVarMap,
+        body: &Body,
+        groupInfo: &BlockGroupInfo,
+        sourceRef: InstructionRef,
+        userRef: InstructionRef,
+        borrowVar: &Type,
+    ) {
+        #[derive(Clone, Copy)]
+        enum WorkItem {
+            Instruction(InstructionRef),
+            BlockEntry(BlockId),
+        }
+
+        let mut worklist: Vec<WorkItem> = Vec::new();
+        let mut visited_instructions: BTreeSet<InstructionRef> = BTreeSet::new();
+        let mut visited_blocks: BTreeSet<BlockId> = BTreeSet::new();
+        worklist.push(WorkItem::Instruction(userRef));
+
+        while let Some(item) = worklist.pop() {
+            match item {
+                WorkItem::Instruction(instr_ref) => {
+                    if !visited_instructions.insert(instr_ref) {
                         continue;
                     }
-                    if !reachabilityMap.canReach(&sourceRef.blockId, &userRef.blockId) {
+                    if instr_ref != sourceRef {
+                        borrowVarMap.addBorrowVarToInstruction(instr_ref, borrowVar);
+                    }
+                    if instr_ref == sourceRef {
                         continue;
                     }
-                    // Source block tail, after the source instruction.
-                    let source_block_size = body.getBlockSize(sourceRef.blockId) as u32;
-                    for id in (sourceRef.instructionId + 1)..source_block_size {
-                        let instr_ref = InstructionRef {
-                            blockId: sourceRef.blockId,
-                            instructionId: id,
-                        };
-                        borrowVarMap.addBorrowVarToInstruction(instr_ref, &borrowVar);
+                    if instr_ref.instructionId > 0 {
+                        worklist.push(WorkItem::Instruction(InstructionRef {
+                            blockId: instr_ref.blockId,
+                            instructionId: instr_ref.instructionId - 1,
+                        }));
+                    } else {
+                        worklist.push(WorkItem::BlockEntry(instr_ref.blockId));
                     }
-                    // All intermediate blocks that lie on a path from source block to user block.
-                    for block in
-                        reachabilityMap.intermediateBlocks(&sourceRef.blockId, &userRef.blockId, &reverseReachability)
-                    {
-                        let block_size = body.getBlockSize(block) as u32;
-                        for id in 0..block_size {
-                            let instr_ref = InstructionRef {
-                                blockId: block,
-                                instructionId: id,
-                            };
-                            borrowVarMap.addBorrowVarToInstruction(instr_ref, &borrowVar);
+                }
+                WorkItem::BlockEntry(block_id) => {
+                    if !visited_blocks.insert(block_id) {
+                        continue;
+                    }
+                    if let Some(preds) = groupInfo.deps.get(&block_id) {
+                        for pred in preds {
+                            let size = body.getBlockSize(*pred);
+                            if size == 0 {
+                                worklist.push(WorkItem::BlockEntry(*pred));
+                            } else {
+                                worklist.push(WorkItem::Instruction(InstructionRef {
+                                    blockId: *pred,
+                                    instructionId: (size - 1) as u32,
+                                }));
+                            }
                         }
-                    }
-                    // Prefix of the user block before the consuming instruction.
-                    for id in 0..userRef.instructionId {
-                        let instr_ref = InstructionRef {
-                            blockId: userRef.blockId,
-                            instructionId: id,
-                        };
-                        borrowVarMap.addBorrowVarToInstruction(instr_ref, &borrowVar);
                     }
                 }
             }
