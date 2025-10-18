@@ -427,10 +427,11 @@ impl MiniCGenerator {
         for s in &self.program.strings {
             let v = s
                 .value
+                .replace("\\", "\\\\")
                 .replace("\n", "\\n")
                 .replace("\t", "\\t")
-                .replace("\"", "\\\"")
-                .replace("\\", "\\\\");
+                .replace("\"", "\\\"");
+
             writeln!(output, "const char* {} = \"{}\";", s.name, v)?;
         }
 
