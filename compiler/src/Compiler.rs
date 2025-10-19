@@ -174,6 +174,9 @@ impl Compiler {
                 "--unused-assignment-trace" => {
                     self.config.dumpCfg.unusedAssignmentEliminatorTraceEnabled = true;
                 }
+                "--disable-inliner" => {
+                    self.config.enableInliner = false;
+                }
                 _ => {
                     if external_mode {
                         self.config.externalFiles.push(args[i].clone());

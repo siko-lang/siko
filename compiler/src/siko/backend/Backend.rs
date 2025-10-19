@@ -74,7 +74,9 @@ pub fn process(ctx: &ReportContext, runner: &mut Runner, program: Program) -> Pr
     let program = simplification2Runner.run(|| {
         Simplifier::simplify(
             program,
-            Config { enableInliner: true },
+            Config {
+                enableInliner: cfg.enableInliner,
+            },
             cfg.dumpCfg.simplifierTraceEnabled,
             simplification2Runner.clone(),
         )

@@ -55,6 +55,7 @@ pub struct Config {
     pub keepCSource: bool,
     pub targetOS: TargetOS,
     pub dumpCfg: DumpConfig,
+    pub enableInliner: bool,
 }
 
 impl Config {
@@ -71,6 +72,7 @@ impl Config {
             keepCSource: false,
             targetOS: TargetOS::Linux,
             dumpCfg: DumpConfig::new(),
+            enableInliner: true,
         }
     }
 }
