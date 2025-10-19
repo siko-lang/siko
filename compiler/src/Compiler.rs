@@ -171,6 +171,9 @@ impl Compiler {
                 "--simplifier-trace" => {
                     self.config.dumpCfg.simplifierTraceEnabled = true;
                 }
+                "--unused-assignment-trace" => {
+                    self.config.dumpCfg.unusedAssignmentEliminatorTraceEnabled = true;
+                }
                 _ => {
                     if external_mode {
                         self.config.externalFiles.push(args[i].clone());

@@ -12,6 +12,8 @@ pub struct Statistics {
     pub instanceCacheLookup: u64,
     pub instanceCacheHit: u64,
     pub instanceCacheMiss: u64,
+    pub maxSCCSizeInUnusedAssignmentEliminator: usize,
+    pub maxFixPointIterationCountInAssignmentEliminator: u32,
 }
 
 impl Statistics {
@@ -21,6 +23,8 @@ impl Statistics {
             instanceCacheLookup: 0,
             instanceCacheHit: 0,
             instanceCacheMiss: 0,
+            maxSCCSizeInUnusedAssignmentEliminator: 0,
+            maxFixPointIterationCountInAssignmentEliminator: 0,
         }
     }
 }
@@ -152,5 +156,13 @@ impl Runner {
         println!("  Instance cache lookups: {}", stats.instanceCacheLookup);
         println!("  Instance cache hits: {}", stats.instanceCacheHit);
         println!("  Instance cache misses: {}", stats.instanceCacheMiss);
+        println!(
+            "  Max SCC size in unused assignment elim: {}",
+            stats.maxSCCSizeInUnusedAssignmentEliminator
+        );
+        println!(
+            "  Max fixpoint iterations in unused assignment elim: {}",
+            stats.maxFixPointIterationCountInAssignmentEliminator
+        );
     }
 }

@@ -1,46 +1,48 @@
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fmt::Display,
-};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::siko::{
     backend::simplification::Utils,
     hir::{
         Block::BlockId,
         BlockBuilder::{BlockBuilder, InstructionRef},
+        BlockGroupBuilder::{BlockGroupBuilder, BlockGroupInfo},
         BodyBuilder::BodyBuilder,
         Function::Function,
         Instruction::InstructionKind,
         Program::Program,
         Variable::{Variable, VariableName},
     },
+    util::Runner::Runner,
 };
 
-pub fn simplifyFunction(f: &Function, program: &Program) -> Option<Function> {
-    let mut eliminator = UnusedAssignmentEliminator::new(f, program);
+type DefinitionMap = BTreeMap<VariableName, BTreeSet<InstructionRef>>;
+
+pub fn simplifyFunction(f: &Function, program: &Program, runner: Runner) -> Option<Function> {
+    let mut eliminator = UnusedAssignmentEliminator::new(f, program, runner);
     eliminator.process()
 }
 
 pub struct UnusedAssignmentEliminator<'a> {
     program: &'a Program,
     function: &'a Function,
-    blockEnvs: BTreeMap<BlockId, Environment>,
-    queue: Vec<BlockId>,
     modified: bool,
     assigned: BTreeSet<InstructionRef>,
     used: BTreeSet<InstructionRef>,
+    runner: Runner,
+    traceEnabled: bool,
 }
 
 impl<'a> UnusedAssignmentEliminator<'a> {
-    pub fn new(f: &'a Function, program: &'a Program) -> UnusedAssignmentEliminator<'a> {
+    pub fn new(f: &'a Function, program: &'a Program, runner: Runner) -> UnusedAssignmentEliminator<'a> {
+        let traceEnabled = runner.getConfig().dumpCfg.unusedAssignmentEliminatorTraceEnabled;
         UnusedAssignmentEliminator {
             function: f,
             program,
-            blockEnvs: BTreeMap::new(),
-            queue: Vec::new(),
             assigned: BTreeSet::new(),
             used: BTreeSet::new(),
             modified: false,
+            runner,
+            traceEnabled,
         }
     }
 
@@ -49,22 +51,95 @@ impl<'a> UnusedAssignmentEliminator<'a> {
             return None; // No body to evaluate
         }
 
+        if self.traceEnabled {
+            println!(
+                "[UAE] ===== Function {} =====",
+                self.function.name
+            );
+        }
+
         // println!("UnusedAssignmentEliminator processing function: {}", self.function.name);
         // println!("{}", self.function);
 
         let mut bodyBuilder = BodyBuilder::cloneFunction(self.function);
         let allBlockIds = bodyBuilder.getAllBlockIds();
-        for blockId in allBlockIds {
-            let env = Environment::new();
-            self.blockEnvs.insert(blockId, env);
-        }
-        self.queue.push(BlockId::first());
 
-        while let Some(blockId) = self.queue.pop() {
-            //println!("Queue length: {}", self.queue.len());
-            let mut builder = bodyBuilder.iterator(blockId);
-            self.processBlock(&mut builder);
-        }
+        let mut blockSummaries: BTreeMap<BlockId, BlockSummary> = BTreeMap::new();
+        let analyzeRunner = self.runner.child("analyze_blocks");
+        analyzeRunner.run(|| {
+            for blockId in &allBlockIds {
+                let mut builder = bodyBuilder.iterator(*blockId);
+                let summary = self.analyzeBlock(&mut builder);
+                blockSummaries.insert(*blockId, summary);
+            }
+        });
+
+        let blockGroupBuilder = BlockGroupBuilder::new(self.function);
+        let groupInfo = blockGroupBuilder.process();
+
+        let mut incoming: BTreeMap<BlockId, DefinitionMap> = BTreeMap::new();
+        let mut outgoing: BTreeMap<BlockId, DefinitionMap> = BTreeMap::new();
+
+        let propagationRunner = self.runner.child("propagate");
+        propagationRunner.run(|| {
+            for group in &groupInfo.groups {
+                let scc_size = group.items.len();
+                {
+                    let mut stats = self.runner.statistics.borrow_mut();
+                    if stats.maxSCCSizeInUnusedAssignmentEliminator < scc_size {
+                        stats.maxSCCSizeInUnusedAssignmentEliminator = scc_size;
+                    }
+                }
+                if self.traceEnabled {
+                    let block_list: Vec<String> = group
+                        .items
+                        .iter()
+                        .map(|bid| format!("{}", bid))
+                        .collect();
+                    println!("[UAE] SCC start (size {}): {}", scc_size, block_list.join(", "));
+                }
+                let groupSet: BTreeSet<BlockId> = group.items.iter().cloned().collect();
+                let mut queue: VecDeque<BlockId> = VecDeque::new();
+                let mut queued: BTreeSet<BlockId> = BTreeSet::new();
+                let blockRunner = propagationRunner.child("block");
+                for blockId in &group.items {
+                    if queued.insert(*blockId) {
+                        queue.push_back(*blockId);
+                    }
+                }
+                let mut iterations: u32 = 0;
+                while let Some(blockId) = queue.pop_front() {
+                    iterations = iterations.saturating_add(1);
+                    queued.remove(&blockId);
+                    let summary = blockSummaries.get(&blockId).expect("Missing block summary");
+                    if self.traceEnabled {
+                        println!("[UAE]   Iteration {} processing block {}", iterations, blockId);
+                    }
+                    blockRunner.run(|| {
+                        self.process_propagation_block(
+                            blockId,
+                            summary,
+                            &groupInfo,
+                            &groupSet,
+                            &mut incoming,
+                            &mut outgoing,
+                            &mut queue,
+                            &mut queued,
+                            self.traceEnabled,
+                        );
+                    });
+                }
+                {
+                    let mut stats = self.runner.statistics.borrow_mut();
+                    if stats.maxFixPointIterationCountInAssignmentEliminator < iterations {
+                        stats.maxFixPointIterationCountInAssignmentEliminator = iterations;
+                    }
+                }
+                if self.traceEnabled {
+                    println!("[UAE] SCC finished after {} iterations", iterations);
+                }
+            }
+        });
 
         let mut unused = BTreeMap::new();
         for assigned in &self.assigned {
@@ -81,6 +156,12 @@ impl<'a> UnusedAssignmentEliminator<'a> {
                     .expect("Failed to get instruction at index");
                 if Utils::canBeEliminated(self.program, &i.kind) {
                     //println!("Eliminating instruction: {}", i);
+                    if self.traceEnabled {
+                        println!(
+                            "[UAE] Removing unused instruction {:?} from block {} in {}",
+                            i.kind, blockId, self.function.name
+                        );
+                    }
                     builder.removeInstructionAt(iRef.instructionId as usize);
                     self.modified = true;
                 }
@@ -95,131 +176,207 @@ impl<'a> UnusedAssignmentEliminator<'a> {
         }
         let mut f = self.function.clone();
         f.body = Some(bodyBuilder.build());
+
+        if self.traceEnabled {
+            println!("[UAE] ===== Function {} finished =====", self.function.name);
+        }
+
         Some(f)
     }
 
-    fn useVar(&mut self, var: &Variable, env: &Environment) {
-        let refs = env.get(&var.name());
-        for iRef in refs {
-            //println!("Using variable {} assigned at {:?}", var, iRef);
-            self.used.insert(iRef);
+    fn useVar(
+        &mut self,
+        var: &Variable,
+        env: &DefinitionMap,
+        externalReads: &mut BTreeSet<VariableName>,
+    ) {
+        let name = var.name();
+        if let Some(defs) = env.get(&name) {
+            for def in defs {
+                self.used.insert(*def);
+            }
+        } else {
+            externalReads.insert(name);
         }
     }
 
-    fn getEnvForBlock(&mut self, blockId: BlockId) -> &mut Environment {
-        self.blockEnvs
-            .get_mut(&blockId)
-            .expect("Environment for block should exist")
-    }
+    fn analyzeBlock(&mut self, builder: &mut BlockBuilder) -> BlockSummary {
+        let mut env: DefinitionMap = BTreeMap::new();
+        let mut externalReads: BTreeSet<VariableName> = BTreeSet::new();
+        let mut blockAssigned: BTreeSet<InstructionRef> = BTreeSet::new();
 
-    fn processBlock(&mut self, builder: &mut BlockBuilder) {
-        let mut env = self.getEnvForBlock(builder.getBlockId()).clone();
-        //println!("---------- Evaluating block: {}/ {}", builder.getBlockId(), env);
         loop {
             if let Some(instruction) = builder.getInstruction() {
-                //println!("Processing instruction: {}", instruction);
                 match instruction.kind {
                     InstructionKind::DeclareVar(_, _) => {}
-                    InstructionKind::EnumSwitch(var, cases) => {
-                        self.useVar(&var, &env);
-                        for case in &cases {
-                            let targetBranch = case.branch;
-                            let targetEnv = self.getEnvForBlock(targetBranch);
-                            if targetEnv.merge(&env) {
-                                //println!("enum switch to true block {} with updated environment", targetBranch);
-                                self.queue.push(targetBranch);
-                            }
-                        }
+                    InstructionKind::EnumSwitch(var, _) => {
+                        self.useVar(&var, &env, &mut externalReads);
                     }
-                    InstructionKind::IntegerSwitch(var, cases) => {
-                        self.useVar(&var, &env);
-                        for case in &cases {
-                            let targetBranch = case.branch;
-                            let targetEnv = self.getEnvForBlock(targetBranch);
-                            if targetEnv.merge(&env) {
-                                //println!("enum switch to true block {} with updated environment", targetBranch);
-                                self.queue.push(targetBranch);
-                            }
-                        }
+                    InstructionKind::IntegerSwitch(var, _) => {
+                        self.useVar(&var, &env, &mut externalReads);
                     }
-                    InstructionKind::Jump(_, target) => {
-                        let targetEnv = self.getEnvForBlock(target);
-                        if targetEnv.merge(&env) {
-                            //println!("Jumping to block {} with updated environment", target);
-                            self.queue.push(target);
-                        }
-                    }
+                    InstructionKind::Jump(_, _) => {}
                     InstructionKind::Return(_, v) => {
-                        self.useVar(&v, &env);
+                        self.useVar(&v, &env, &mut externalReads);
                     }
                     InstructionKind::StorePtr(v1, v2) => {
-                        self.useVar(&v1, &env);
-                        self.useVar(&v2, &env);
+                        self.useVar(&v1, &env, &mut externalReads);
+                        self.useVar(&v2, &env, &mut externalReads);
                     }
                     k => {
                         let mut vars = k.collectVariables();
                         if let Some(v) = k.getResultVar() {
                             if v.isUserDefined() {
-                                //println!("Using variable {} assigned at {:?}", v, builder.getInstructionRef());
                                 self.used.insert(builder.getInstructionRef());
                             }
                             let iRef = builder.getInstructionRef();
                             self.assigned.insert(iRef);
-                            env.set(v.name(), iRef);
+                            blockAssigned.insert(iRef);
+                            let varName = v.name();
+                            env.entry(varName.clone())
+                                .or_insert_with(BTreeSet::new)
+                                .insert(iRef);
                             vars.retain(|x| x != &v);
                         }
-                        for v in vars {
-                            self.useVar(&v, &env);
+                        for variable in vars.iter() {
+                            self.useVar(variable, &env, &mut externalReads);
                         }
                     }
                 }
                 builder.step();
             } else {
-                break; // No more instructions
+                break;
             }
         }
-    }
-}
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct Environment {
-    values: BTreeMap<VariableName, Vec<InstructionRef>>,
-}
-
-impl Environment {
-    pub fn new() -> Environment {
-        Environment {
-            values: BTreeMap::new(),
-        }
-    }
-
-    pub fn get(&self, var: &VariableName) -> Vec<InstructionRef> {
-        //println!("Getting variable {} from env", var);
-        self.values.get(var).cloned().unwrap_or_default()
-    }
-
-    pub fn set(&mut self, var: VariableName, value: InstructionRef) {
-        //println!("Setting variable {} to {:?}", var, value);
-        self.values.entry(var).or_insert_with(Vec::new).push(value);
-    }
-
-    fn merge(&mut self, env: &Environment) -> bool {
-        let mut changed = false;
-        for (var, refs) in env.values.iter() {
-            let entry = self.values.entry(var.clone()).or_insert_with(Vec::new);
-            for r in refs {
-                if !entry.contains(r) {
-                    entry.push(*r);
-                    changed = true;
+        let mut exportedDefs: DefinitionMap = BTreeMap::new();
+        for (var, defs) in &env {
+            for def in defs {
+                if blockAssigned.contains(def) {
+                    exportedDefs
+                        .entry(var.clone())
+                        .or_insert_with(BTreeSet::new)
+                        .insert(*def);
                 }
             }
         }
-        changed
+
+        BlockSummary {
+            externalReads,
+            exportedDefs,
+        }
     }
+
+    fn process_propagation_block(
+        &mut self,
+        blockId: BlockId,
+        summary: &BlockSummary,
+        groupInfo: &BlockGroupInfo,
+        groupSet: &BTreeSet<BlockId>,
+        incoming: &mut BTreeMap<BlockId, DefinitionMap>,
+        outgoing: &mut BTreeMap<BlockId, DefinitionMap>,
+        queue: &mut VecDeque<BlockId>,
+        queued: &mut BTreeSet<BlockId>,
+        traceEnabled: bool,
+    ) {
+        let entry = incoming.entry(blockId).or_insert_with(BTreeMap::new);
+
+        let mut newEntry: DefinitionMap = BTreeMap::new();
+        if let Some(preds) = groupInfo.deps.get(&blockId) {
+            for pred in preds {
+                if let Some(out) = outgoing.get(pred) {
+                    for (var, defs) in out {
+                        newEntry
+                            .entry(var.clone())
+                            .or_insert_with(BTreeSet::new)
+                            .extend(defs.iter().copied());
+                    }
+                }
+            }
+        }
+
+        let mut addedDefs = Vec::new();
+        for (var, defs) in &newEntry {
+            let entrySet = entry.entry(var.clone()).or_insert_with(BTreeSet::new);
+            for def in defs {
+                if entrySet.insert(*def) {
+                    addedDefs.push((var.clone(), *def));
+                }
+            }
+        }
+
+        let existingVars: Vec<VariableName> = entry.keys().cloned().collect();
+        for var in existingVars {
+            if let Some(newDefs) = newEntry.get(&var) {
+                if let Some(entrySet) = entry.get_mut(&var) {
+                    entrySet.retain(|def| newDefs.contains(def));
+                    if entrySet.is_empty() {
+                        entry.remove(&var);
+                        if traceEnabled {
+                            println!("[UAE]     Block {}: cleared incoming {}", blockId, var);
+                        }
+                    }
+                }
+            } else {
+                entry.remove(&var);
+                if traceEnabled {
+                    println!("[UAE]     Block {}: cleared incoming {}", blockId, var);
+                }
+            }
+        }
+
+        if traceEnabled {
+            if addedDefs.is_empty() {
+                println!("[UAE]     Block {}: no new incoming definitions", blockId);
+            } else {
+                println!("[UAE]     Block {}: new incoming definitions", blockId);
+                for (var, def) in &addedDefs {
+                    println!("[UAE]       {} <= {}", var, def);
+                }
+            }
+        }
+
+        for (var, def) in &addedDefs {
+            if summary.externalReads.contains(var) {
+                self.used.insert(*def);
+            }
+        }
+
+        let mut newOutgoing = entry.clone();
+        for (var, defs) in &summary.exportedDefs {
+            newOutgoing
+                .entry(var.clone())
+                .or_insert_with(BTreeSet::new)
+                .extend(defs.iter().copied());
+        }
+
+        let outgoingEntry = outgoing.entry(blockId).or_insert_with(BTreeMap::new);
+        if *outgoingEntry != newOutgoing {
+            *outgoingEntry = newOutgoing;
+            if let Some(succs) = groupInfo.inverseDeps.get(&blockId) {
+                if traceEnabled && !succs.is_empty() {
+                    let succ_list: Vec<String> = succs.iter().map(|bid| format!("{}", bid)).collect();
+                    println!("[UAE]     Block {} changed, enqueue successors: {}", blockId, succ_list.join(", "));
+                }
+                for succ in succs {
+                    if groupSet.contains(succ) {
+                        if queued.insert(*succ) {
+                            if traceEnabled {
+                                println!("[UAE]       queued block {}", succ);
+                            }
+                            queue.push_back(*succ);
+                        }
+                    }
+                }
+            }
+        } else if traceEnabled {
+            println!("[UAE]     Block {} outgoing unchanged", blockId);
+        }
+    }
+
 }
 
-impl Display for Environment {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}", self.values)
-    }
+struct BlockSummary {
+    externalReads: BTreeSet<VariableName>,
+    exportedDefs: DefinitionMap,
 }

@@ -25,6 +25,7 @@ pub struct DumpConfig {
     pub instanceResolverTraceEnabled: bool,
     pub functionProfileBuilderTraceEnabled: bool,
     pub simplifierTraceEnabled: bool,
+    pub unusedAssignmentEliminatorTraceEnabled: bool,
 }
 
 impl DumpConfig {
@@ -36,6 +37,7 @@ impl DumpConfig {
             instanceResolverTraceEnabled: false,
             functionProfileBuilderTraceEnabled: false,
             simplifierTraceEnabled: false,
+            unusedAssignmentEliminatorTraceEnabled: false,
         }
     }
 }

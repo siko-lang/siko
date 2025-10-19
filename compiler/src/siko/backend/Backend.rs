@@ -45,11 +45,13 @@ pub fn process(ctx: &ReportContext, runner: &mut Runner, program: Program) -> Pr
     //verifyTypes(&program);
 
     //println!("after remove tuples\n{}", program);
-    let program = runner.child("simplification").run(|| {
+    let simplificationRunner = runner.child("simplification");
+    let program = simplificationRunner.run(|| {
         Simplifier::simplify(
             program,
             Config { enableInliner: false },
             cfg.dumpCfg.simplifierTraceEnabled,
+            simplificationRunner.clone(),
         )
     });
     //println!("after simplification\n{}", program);
@@ -68,11 +70,13 @@ pub fn process(ctx: &ReportContext, runner: &mut Runner, program: Program) -> Pr
     borrowCheckRunner
         .clone()
         .run(|| Check::new(&program).process(ctx, borrowCheckRunner));
-    let program = runner.child("simplification2").run(|| {
+    let simplification2Runner = runner.child("simplification2");
+    let program = simplification2Runner.run(|| {
         Simplifier::simplify(
             program,
             Config { enableInliner: true },
             cfg.dumpCfg.simplifierTraceEnabled,
+            simplification2Runner.clone(),
         )
     });
     //println!("Final program:\n{}", program);
