@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use crate::siko::{
     backend::{
         drop::{Context::Context, DropMetadataStore::DropMetadataStore},
-        path::{Path::Path, ReferenceStore::ReferenceStore, Usage::getUsageInfo},
+        path::{Path::Path, Usage::getUsageInfo},
     },
     hir::{Block::BlockId, BlockBuilder::BlockBuilder, Instruction::InstructionKind, Variable::Variable},
 };
@@ -11,15 +11,13 @@ use crate::siko::{
 pub struct BlockProcessor<'a> {
     receiverPaths: BTreeMap<Variable, Path>,
     dropMetadataStore: &'a DropMetadataStore,
-    referenceStore: &'a ReferenceStore,
 }
 
 impl<'a> BlockProcessor<'a> {
-    pub fn new(dropMetadataStore: &'a DropMetadataStore, referenceStore: &'a ReferenceStore) -> BlockProcessor<'a> {
+    pub fn new(dropMetadataStore: &'a DropMetadataStore) -> BlockProcessor<'a> {
         BlockProcessor {
             receiverPaths: BTreeMap::new(),
             dropMetadataStore,
-            referenceStore,
         }
     }
 
@@ -54,7 +52,7 @@ impl<'a> BlockProcessor<'a> {
                         jumpTargets.push(info.blockId.clone());
                     }
                     kind => {
-                        let usageinfo = getUsageInfo(kind.clone(), self.referenceStore);
+                        let usageinfo = getUsageInfo(kind.clone());
                         // println!("Instruction: {}", instruction.kind);
                         // println!("Usage info: {}", usageinfo);
                         for mut usage in usageinfo.usages {

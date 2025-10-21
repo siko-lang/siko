@@ -1,7 +1,7 @@
 use crate::siko::{
     backend::{
         drop::{DeclarationStore::DeclarationStore, DropMetadataStore::DropMetadataStore, Util::HasTrivialDrop},
-        path::{ReferenceStore::ReferenceStore, Usage::getUsageInfo},
+        path::Usage::getUsageInfo,
     },
     hir::{
         BlockBuilder::BlockBuilder,
@@ -20,7 +20,6 @@ pub struct Initializer<'a> {
     program: &'a Program,
     dropMetadataStore: &'a mut DropMetadataStore,
     declarationStore: &'a mut DeclarationStore,
-    referenceStore: &'a mut ReferenceStore,
 }
 
 impl<'a> Initializer<'a> {
@@ -29,7 +28,6 @@ impl<'a> Initializer<'a> {
         program: &'a Program,
         dropMetadataStore: &'a mut DropMetadataStore,
         declarationStore: &'a mut DeclarationStore,
-        referenceStore: &'a mut ReferenceStore,
     ) -> Initializer<'a> {
         Initializer {
             bodyBuilder: BodyBuilder::cloneFunction(f),
@@ -37,7 +35,6 @@ impl<'a> Initializer<'a> {
             program: program,
             dropMetadataStore,
             declarationStore,
-            referenceStore,
         }
     }
 
@@ -79,7 +76,7 @@ impl<'a> Initializer<'a> {
                     self.declareVar(var, &syntaxBlock, builder, true);
                 }
                 kind => {
-                    let usageInfo = getUsageInfo(kind.clone(), &mut self.referenceStore);
+                    let usageInfo = getUsageInfo(kind.clone());
                     if let Some(assignPath) = usageInfo.assign {
                         if assignPath.isRootOnly() {
                             // println!("Declaring variable for assignPath: {}", assignPath);
@@ -102,8 +99,6 @@ impl<'a> Initializer<'a> {
         // graph.printDot();
 
         self.collectExplicitDeclarations();
-
-        self.referenceStore.build(self.function);
 
         self.buildDeclarationStore();
 

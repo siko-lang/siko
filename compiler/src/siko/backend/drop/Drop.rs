@@ -15,7 +15,7 @@ use crate::siko::{
             Finalizer::Finalizer,
             Initializer::Initializer,
         },
-        path::{Path::Path, ReferenceStore::ReferenceStore},
+        path::Path::Path,
     },
     hir::{
         Block::BlockId,
@@ -38,29 +38,15 @@ pub fn checkDrops(ctx: &ReportContext, program: Program, runner: Runner) -> Prog
     for (name, f) in &program.functions {
         let mut dropMetadataStore = DropMetadataStore::new();
         let mut declarationStore = DeclarationStore::new();
-        let mut referenceStore = ReferenceStore::new();
-        let mut initializer = Initializer::new(
-            f,
-            &program,
-            &mut dropMetadataStore,
-            &mut declarationStore,
-            &mut referenceStore,
-        );
+        let mut initializer = Initializer::new(f, &program, &mut dropMetadataStore, &mut declarationStore);
         let initializerRunner = runner.child("initializer");
         let f = initializerRunner.run(|| initializer.process());
         //declarationStore.dump();
         let checkerRunner = runner.child("drop_checker");
-        let mut checker = DropChecker::new(
-            &f,
-            ctx,
-            &program,
-            &mut dropMetadataStore,
-            &referenceStore,
-            checkerRunner.clone(),
-        );
+        let mut checker = DropChecker::new(&f, ctx, &program, &mut dropMetadataStore, checkerRunner.clone());
         //println!("Checking drops for {}", name);
         let f = checkerRunner.run(|| checker.process());
-        let mut finalizer = Finalizer::new(&f, &program, &mut dropMetadataStore, &declarationStore, &referenceStore);
+        let mut finalizer = Finalizer::new(&f, &program, &mut dropMetadataStore, &declarationStore);
         let finalizerRunner = runner.child("finalizer");
         let f = finalizerRunner.run(|| finalizer.process());
         if false {
@@ -93,7 +79,6 @@ pub struct DropChecker<'a> {
     dropMetadataStore: &'a mut DropMetadataStore,
     implResolver: InstanceResolver<'a>,
     fnCallResolver: FunctionCallResolver<'a>,
-    referenceStore: &'a ReferenceStore,
     runner: Runner,
 }
 
@@ -103,7 +88,6 @@ impl<'a> DropChecker<'a> {
         ctx: &'a ReportContext,
         program: &'a Program,
         dropMetadataStore: &'a mut DropMetadataStore,
-        referenceStore: &'a ReferenceStore,
         runner: Runner,
     ) -> DropChecker<'a> {
         let (implResolver, fnCallResolver) = createResolvers(f, ctx, program, runner.child("resolvers"));
@@ -116,7 +100,6 @@ impl<'a> DropChecker<'a> {
             dropMetadataStore,
             implResolver,
             fnCallResolver,
-            referenceStore,
             runner,
         }
     }
@@ -132,12 +115,8 @@ impl<'a> DropChecker<'a> {
         // graph = graph.withPostfix("dropcheck");
         // graph.build().printDot();
 
-        let mut collisionChecker = CollisionChecker::new(
-            self.bodyBuilder.clone(),
-            self.dropMetadataStore,
-            self.referenceStore,
-            self.function,
-        );
+        let mut collisionChecker =
+            CollisionChecker::new(self.bodyBuilder.clone(), self.dropMetadataStore, self.function);
         let collisionCheckerRunner = self.runner.child("collision_checker");
         let allCollisions = collisionCheckerRunner.run(|| collisionChecker.process());
         let (allCollisions, implicitClones) = self.processImplicitClones(allCollisions);

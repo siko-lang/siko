@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use crate::siko::{
-    backend::path::{Path::Path, ReferenceStore::ReferenceStore, Util::buildFieldPath},
+    backend::path::{Path::Path, Util::buildFieldPath},
     hir::{Instruction::InstructionKind, Variable::Variable},
 };
 
@@ -85,7 +85,7 @@ fn varToUsage(var: &Variable) -> Usage {
     }
 }
 
-pub fn getUsageInfo(kind: InstructionKind, referenceStore: &ReferenceStore) -> UsageInfo {
+pub fn getUsageInfo(kind: InstructionKind) -> UsageInfo {
     match kind {
         InstructionKind::DeclareVar(_, _) => UsageInfo::empty(),
         InstructionKind::BlockStart(_) => UsageInfo::empty(),
@@ -99,7 +99,7 @@ pub fn getUsageInfo(kind: InstructionKind, referenceStore: &ReferenceStore) -> U
         InstructionKind::FieldAccess(dest, info) => {
             let destTy = dest.getType();
             let path = buildFieldPath(&info.receiver, &info.fields);
-            let kind = if destTy.isReference() || destTy.isPtr() || referenceStore.isReference(&dest.name()) {
+            let kind = if destTy.isReference() || destTy.isPtr() {
                 UsageKind::Ref
             } else {
                 UsageKind::Move

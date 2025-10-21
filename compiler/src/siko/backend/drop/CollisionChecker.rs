@@ -1,11 +1,8 @@
 use std::collections::BTreeMap;
 
 use crate::siko::{
-    backend::{
-        drop::{
-            BlockProcessor::BlockProcessor, Context::Context, DropMetadataStore::DropMetadataStore, Event::Collision,
-        },
-        path::ReferenceStore::ReferenceStore,
+    backend::drop::{
+        BlockProcessor::BlockProcessor, Context::Context, DropMetadataStore::DropMetadataStore, Event::Collision,
     },
     hir::{Block::BlockId, BlockGroupBuilder::BlockGroupBuilder, BodyBuilder::BodyBuilder, Function::Function},
 };
@@ -13,7 +10,6 @@ use crate::siko::{
 pub struct CollisionChecker<'a> {
     bodyBuilder: BodyBuilder,
     dropMetadataStore: &'a DropMetadataStore,
-    referenceStore: &'a ReferenceStore,
     blockEnvs: BTreeMap<BlockId, Context>,
     f: &'a Function,
 }
@@ -22,13 +18,11 @@ impl<'a> CollisionChecker<'a> {
     pub fn new(
         bodyBuilder: BodyBuilder,
         dropMetadataStore: &'a DropMetadataStore,
-        referenceStore: &'a ReferenceStore,
         f: &'a Function,
     ) -> CollisionChecker<'a> {
         CollisionChecker {
             bodyBuilder,
             dropMetadataStore,
-            referenceStore,
             blockEnvs: BTreeMap::new(),
             f,
         }
@@ -53,7 +47,7 @@ impl<'a> CollisionChecker<'a> {
                 totalCount += 1;
                 //println!("CollisionChecker processing block: {}", blockId);
                 let builder = self.bodyBuilder.iterator(blockId);
-                let mut blockProcessor = BlockProcessor::new(self.dropMetadataStore, self.referenceStore);
+                let mut blockProcessor = BlockProcessor::new(self.dropMetadataStore);
                 let startContext = self.blockEnvs.get(&blockId).cloned().expect("Missing block context");
                 let (context, jumpTargets) = blockProcessor.process(builder, startContext);
                 let (collisions, baseEvents) = context.validate();

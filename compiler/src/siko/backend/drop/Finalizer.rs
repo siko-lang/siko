@@ -6,7 +6,6 @@ use crate::siko::{
         drop::{DeclarationStore::DeclarationStore, DropMetadataStore::DropMetadataStore, Util::HasTrivialDrop},
         path::{
             Path::Path,
-            ReferenceStore::ReferenceStore,
             SimplePath::{PathSegment, SimplePath},
             Usage::getUsageInfo,
         },
@@ -32,7 +31,6 @@ pub struct Finalizer<'a> {
     dropMetadataStore: &'a mut DropMetadataStore,
     declarationStore: &'a DeclarationStore,
     declaredDropFlags: BTreeMap<SimplePath, Variable>,
-    referenceStore: &'a ReferenceStore,
 }
 
 impl<'a> Finalizer<'a> {
@@ -41,7 +39,6 @@ impl<'a> Finalizer<'a> {
         program: &'a Program,
         dropMetadataStore: &'a mut DropMetadataStore,
         declarationStore: &'a DeclarationStore,
-        referenceStore: &'a ReferenceStore,
     ) -> Finalizer<'a> {
         Finalizer {
             bodyBuilder: BodyBuilder::cloneFunction(f),
@@ -50,7 +47,6 @@ impl<'a> Finalizer<'a> {
             dropMetadataStore,
             declarationStore,
             declaredDropFlags: BTreeMap::new(),
-            referenceStore,
         }
     }
 
@@ -141,7 +137,7 @@ impl<'a> Finalizer<'a> {
                                 builder.step();
                             }
                             kind => {
-                                let usageInfo = getUsageInfo(kind.clone(), self.referenceStore);
+                                let usageInfo = getUsageInfo(kind.clone());
                                 for usage in usageInfo.usages {
                                     if !usage.isMove() {
                                         continue;
