@@ -2,6 +2,7 @@ module NativePtr {
 
 import Libc.String as Mem
 import Allocator
+import Int.Util
 
 pub fn sizeOf[T](addr: *T) -> U64 = extern
 
@@ -86,6 +87,21 @@ pub fn toU64[T](addr: &*T) -> U64 {
 pub fn voidPtrToU64(addr: void*) -> U64 {
     let addr: U64 = transmute(addr);
     addr
+}
+
+@unsafe
+pub fn printPtr[T](addr: &*T) {
+    // helper function to print pointer value for debugging
+    // without allocation
+    // if/when the compiler supports inline string building, this can be replaced
+
+    let v = toU64(addr);
+    let digits = v.toHexVec();
+    let s = digits.slice();
+    let literal = StringLiteral.new(s.asPtr(), s.len());
+    printLiteral("pointer:");
+    printLiteral(literal);
+    printLiteral("\n");
 }
 
 pub instance[T] ShowPtr Show[*T] {

@@ -61,6 +61,28 @@ pub struct U64 {
         hex.reverse();
         hex
     }
+
+    pub fn toHexVec(&self) -> Vec[U8] {
+        let digits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'];
+        let mut hex: Vec[U8] = Vec.new();
+        let mut n = self.clone();
+        let zero = 0.toU64();
+        let sixteen = 16.toU64();
+
+        if n == zero {
+            return ['0', 'x', '0'];
+        }
+
+        while n > zero {
+            let rem = n.mod(sixteen);
+            let digit: U8 = digits.get(rem.toInt()).clone();
+            hex.push(digit);
+            n /= sixteen;
+        }
+        hex.extend(['x', '0']);
+        hex.reverse();
+        hex
+    }
 }
 
 pub instance AddU64 Add[U64, U64] {
