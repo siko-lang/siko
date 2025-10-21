@@ -177,6 +177,15 @@ impl Compiler {
                 "--disable-inliner" => {
                     self.config.enableInliner = false;
                 }
+                "--dump-after-drop-check" => {
+                    self.config.dumpCfg.dumpAfterDropCheck = true;
+                }
+                "--disable-safety-checks" => {
+                    self.config.disableSafetyChecks = true;
+                }
+                "--dump-final-hir" => {
+                    self.config.dumpFinalHIR = true;
+                }
                 _ => {
                     if external_mode {
                         self.config.externalFiles.push(args[i].clone());

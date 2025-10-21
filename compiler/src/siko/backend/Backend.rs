@@ -18,7 +18,9 @@ use crate::siko::{
 
 pub fn process(ctx: &ReportContext, runner: &mut Runner, program: Program) -> Program {
     let safetyChecker = SafetyChecker::new(&program);
-    safetyChecker.check(ctx);
+    if !runner.getConfig().disableSafetyChecks {
+        safetyChecker.check(ctx);
+    }
     let program = runner
         .child("dead_code_elimination")
         .run(|| eliminateDeadCode(&ctx, program));
@@ -31,6 +33,9 @@ pub fn process(ctx: &ReportContext, runner: &mut Runner, program: Program) -> Pr
     let program = dropCheckRunner
         .clone()
         .run(|| checkDrops(&ctx, program, dropCheckRunner));
+    if runner.getConfig().dumpCfg.dumpAfterDropCheck {
+        println!("after drop check:\n{}", program);
+    }
     //println!("after dropcheck\n{}", program);
     // program
     //     .dumpToFile("hirdump/afterdropcheck")
@@ -81,6 +86,8 @@ pub fn process(ctx: &ReportContext, runner: &mut Runner, program: Program) -> Pr
             simplification2Runner.clone(),
         )
     });
-    //println!("Final program:\n{}", program);
+    if runner.getConfig().dumpFinalHIR {
+        println!("Final HIR:\n{}", program);
+    }
     program
 }

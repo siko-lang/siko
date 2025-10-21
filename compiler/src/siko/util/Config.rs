@@ -26,6 +26,7 @@ pub struct DumpConfig {
     pub functionProfileBuilderTraceEnabled: bool,
     pub simplifierTraceEnabled: bool,
     pub unusedAssignmentEliminatorTraceEnabled: bool,
+    pub dumpAfterDropCheck: bool,
 }
 
 impl DumpConfig {
@@ -38,6 +39,7 @@ impl DumpConfig {
             functionProfileBuilderTraceEnabled: false,
             simplifierTraceEnabled: false,
             unusedAssignmentEliminatorTraceEnabled: false,
+            dumpAfterDropCheck: false,
         }
     }
 }
@@ -56,6 +58,8 @@ pub struct Config {
     pub targetOS: TargetOS,
     pub dumpCfg: DumpConfig,
     pub enableInliner: bool,
+    pub disableSafetyChecks: bool,
+    pub dumpFinalHIR: bool,
 }
 
 impl Config {
@@ -73,6 +77,8 @@ impl Config {
             targetOS: TargetOS::Linux,
             dumpCfg: DumpConfig::new(),
             enableInliner: true,
+            disableSafetyChecks: false,
+            dumpFinalHIR: false,
         }
     }
 }
