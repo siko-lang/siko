@@ -7,12 +7,19 @@ pub trait Mod[T] {
     fn mod(&self, other: &T) -> T
 }
 
-
 @safe
 pub fn showNum[T: Clone[T], Copy[T], PartialEq[T],
               PartialOrd[T], Neg[T],
               Mod[T], From[Int, T], Into[T, Int],
               Div[T, T], Add[T, T, Output=T]](num: &T) -> String {
+    let digits = showNumVec(num);
+    String.fromU8(digits.slice())
+}
+
+pub fn showNumVec[T: Clone[T], Copy[T], PartialEq[T],
+              PartialOrd[T], Neg[T],
+              Mod[T], From[Int, T], Into[T, Int],
+              Div[T, T], Add[T, T, Output=T]](num: &T) -> Vec[U8] {
     // FIXME: fix constants
     let zero: T = from(0);
     let ten: T = from(10);
@@ -20,7 +27,7 @@ pub fn showNum[T: Clone[T], Copy[T], PartialEq[T],
 
     let mut n = num.clone();
     if n == zero {
-        return "0".toString();
+        return ['0'];
     }
 
     let mut isNegative = False;
@@ -45,8 +52,7 @@ pub fn showNum[T: Clone[T], Copy[T], PartialEq[T],
     }
 
     digits.reverse();
-
-    String.fromU8(digits.slice())
+    digits
 }
 
 @safe

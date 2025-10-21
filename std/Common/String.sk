@@ -43,7 +43,7 @@ pub struct String {
     }
 
     @safe
-    pub fn pushChar(self, c: U8) -> Self {
+    pub fn pushChar(mut self, c: U8) -> Self {
         let newCapacity = self.size + 1.toU64();
         let newValue = allocateArray(newCapacity);
         memcpy(newValue, self.value, self.size);
@@ -51,7 +51,10 @@ pub struct String {
         if self.capacity > 0.toU64() {
             NativePtr.deallocate(self.value);
         }
-        String(newValue, newCapacity, newCapacity)
+        self.value = newValue;
+        self.size = newCapacity;
+        self.capacity = newCapacity;
+        self
     }
 
     @safe
@@ -68,6 +71,9 @@ pub struct String {
     @safe
     pub fn fromU8(value: Slice[U8]) -> String {
         let capacity = value.len();
+        if capacity == 0.toU64() {
+            return String(null(), 0.toU64(), 0.toU64());
+        }
         let newValue = allocateArray(capacity);
         memcpy(newValue, value.asPtr(), capacity);
         String(newValue, capacity, capacity)
@@ -101,6 +107,9 @@ pub struct String {
     @safe
     pub fn toVecU8(mut self) -> Vec[U8] {
         if self.capacity == 0.toU64() {
+            if self.size == 0.toU64() {
+                return Vec.new();
+            }
             // string literal, copy to new buffer
             let s = fromU8(self.slice());
             return s.toVecU8();

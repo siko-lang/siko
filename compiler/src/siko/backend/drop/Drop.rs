@@ -220,7 +220,7 @@ impl<'a> DropChecker<'a> {
                         }
                         if vars.len() != 1 {
                             if let InstructionKind::FieldAssign(_, value, _) = &instruction.kind {
-                                vars.retain(|v| *v != *value);
+                                vars = vec![value.clone()];
                             } else {
                                 println!("Instruction: {}", instruction);
                                 panic!(
