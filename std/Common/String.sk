@@ -232,6 +232,38 @@ pub instance PartialEqString PartialEq[String] {
     }
 }
 
+pub instance EqString Eq[String]
+
+pub instance PartialOrdString PartialOrd[String] {
+    @safe
+    fn partialCmp(&self, other: &String) -> Option[Ordering] {
+        let minSize = if self.size < other.size { self.size } else { other.size };
+        let result = NativePtr.memcmp(self.value, other.value, minSize);
+        if result < 0 {
+            Some(Ordering.Less)
+        } else if result > 0 {
+            Some(Ordering.Greater)
+        } else {
+            if self.size < other.size {
+                Some(Ordering.Less)
+            } else if self.size > other.size {
+                Some(Ordering.Greater)
+            } else {
+                Some(Ordering.Equal)
+            }
+        }
+    }
+}
+
+pub instance OrdString Ord[String] {
+    fn cmp(&self, other: &String) -> Ordering {
+        match self.partialCmp(other) {
+            Some(ordering) -> ordering,
+            None -> panic("Cannot compare strings")
+        }
+    }
+}
+
 pub instance CloneString Clone[String] {
     fn clone(&self) -> String {
         self.clone()
@@ -281,6 +313,20 @@ pub instance CloneStringLiteral Clone[StringLiteral] {
 pub instance PartialEqStringLiteral PartialEq[StringLiteral] {
     fn eq(&self, other: &StringLiteral) -> Bool {
         self.toString().eq(&other.toString())
+    }
+}
+
+pub instance EqStringLiteral Eq[StringLiteral]
+
+pub instance PartialOrdStringLiteral PartialOrd[StringLiteral] {
+    fn partialCmp(&self, other: &StringLiteral) -> Option[Ordering] {
+        self.toString().partialCmp(&other.toString())
+    }
+}
+
+pub instance OrdStringLiteral Ord[StringLiteral] {
+    fn cmp(&self, other: &StringLiteral) -> Ordering {
+        self.toString().cmp(&other.toString())
     }
 }
 

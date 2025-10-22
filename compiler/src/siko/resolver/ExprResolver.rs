@@ -324,7 +324,11 @@ impl<'a> ExprResolver<'a> {
                     if let Some(irName) = self.moduleResolver.tryResolverName(name) {
                         if self.implicits.contains_key(&irName) {
                             let implicitVar = self.bodyBuilder.createTempValue(expr.location.clone());
-                            let kind =
+                            self.bodyBuilder
+                                .current()
+                                .implicit()
+                                .addDeclare(implicitVar.clone(), expr.location.clone());
+                            let kind: InstructionKind =
                                 InstructionKind::ReadImplicit(implicitVar.clone(), ImplicitIndex::Unresolved(irName));
                             self.bodyBuilder.current().addInstruction(kind, name.location());
                             return implicitVar;

@@ -1,0 +1,32 @@
+module Main {
+
+struct Foo {
+    value: Int
+
+    fn myMethod(&self) -> Int {
+        self.value
+    }
+
+    fn increment(mut self) -> Self {
+        self.value += 1;
+        self
+    }
+}
+
+implicit mut myImplicit: Foo
+
+fn doit() {
+    myImplicit.myMethod();
+    myImplicit.increment();
+    myImplicit.myMethod();
+}
+
+fn main() {
+    let mut f = Foo(42);
+    with myImplicit = f {
+        doit();
+    }
+    assert(f.myMethod() == 43);
+}
+
+}

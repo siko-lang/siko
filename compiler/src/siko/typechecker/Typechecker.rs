@@ -173,6 +173,7 @@ pub struct Typechecker<'a> {
     runner: Runner,
     fieldAccessDests: BTreeSet<VariableName>,
     fieldAccessByRefs: BTreeSet<VariableName>,
+    implicits: BTreeMap<VariableName, QualifiedName>,
 }
 
 impl<'a> Typechecker<'a> {
@@ -252,6 +253,7 @@ impl<'a> Typechecker<'a> {
             runner,
             fieldAccessDests: BTreeSet::new(),
             fieldAccessByRefs: BTreeSet::new(),
+            implicits: BTreeMap::new(),
         }
     }
 
@@ -934,6 +936,11 @@ impl<'a> Typechecker<'a> {
                     ImplicitIndex::Resolved(_, _) => panic!("Implicit index already resolved in typechecker!"),
                 };
                 let implicit = self.program.getImplicit(&implicitName).expect("Implicit not found");
+                if implicit.mutable {
+                    self.mutables
+                        .insert(var.name().to_string(), Mutability::ExplicitMutable);
+                }
+                self.implicits.insert(var.name(), implicitName.clone());
                 self.unifier.unifyVar(var, implicit.ty);
             }
             InstructionKind::WriteImplicit(index, var) => {
@@ -1136,6 +1143,9 @@ impl<'a> Typechecker<'a> {
                     kinds.push(transmute);
                 }
             } else {
+                if dest.isTemp() {
+                    dest.setNoDrop();
+                }
                 let load = InstructionKind::LoadPtr(dest.clone(), currentVar);
                 //println!("Adding final load instruction: {}", load);
                 kinds.push(load);
@@ -1449,6 +1459,11 @@ impl<'a> Typechecker<'a> {
         if fields.is_empty() {
             let kind = InstructionKind::Assign(origReceiver.clone(), updatedReceiver.clone());
             kinds.push(kind);
+            if let Some(name) = self.implicits.get(&origReceiver.name()) {
+                let kind =
+                    InstructionKind::WriteImplicit(ImplicitIndex::Unresolved(name.clone()), origReceiver.clone());
+                kinds.push(kind);
+            }
         } else {
             let kind = InstructionKind::FieldAssign(origReceiver.clone(), updatedReceiver.clone(), fields.clone());
             kinds.push(kind);
