@@ -32,4 +32,5 @@ runner.bin: compiler/target/release/siko
 	@./siko build testrunner -o runner.bin
 
 self.bin: compiler/target/release/siko
-	@./siko build compiler2 -o self.bin
+	@# Disable inliner because the current backend is slow and inlining makes compilation too slow.
+	@./siko build compiler2 --disable-inliner -o self.bin

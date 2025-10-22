@@ -1,0 +1,55 @@
+module Siko.Interner {
+
+import Map
+
+pub implicit mut interner: Interner
+
+@derive(PartialEq, Eq, Hash, Clone, Copy)
+pub struct String {
+    id: Int,
+
+    pub fn new(orig: String.String) -> String {
+        interner.intern(orig)
+    }
+}
+
+pub instance Show[String] {
+    fn show(&self) -> String.String {
+        interner.get(self).clone()
+    }
+
+    fn toString(&self) -> String.String {
+        self.show()
+    }
+}
+
+pub struct Interner {
+    strings: Vec[String.String],
+    stringToId: Map[String.String, Int],
+
+    pub fn new() -> Interner {
+        Interner(
+            strings: Vec.new(),
+            stringToId: Map.new(),
+        )
+    }
+
+    pub fn intern(mut self, value: String.String) -> (Self, String) {
+        let s = match self.stringToId.get(value) {
+            Some(id) -> String(id: id),
+            None -> {
+                let id = self.strings.len();
+                self.strings.push(value.clone());
+                self.stringToId.insert(value, id);
+                String(id: id)
+            }
+        };
+        (self, s)
+    }
+
+    pub fn get(&self, s: &String) -> &String.String {
+        self.strings.get(s.id)
+    }
+}
+
+}

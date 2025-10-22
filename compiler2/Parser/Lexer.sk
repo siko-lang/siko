@@ -1,5 +1,6 @@
 module Siko.Parser.Lexer {
 
+import Siko.Interner as I
 import Siko.Parser.Token
 import Siko.Location
 import Int.Util
@@ -150,7 +151,7 @@ pub struct Lexer {
             if startsWithUpperCase {
                 let token = match &self.current {
                     "Self" -> Token.Keyword(KeywordKind.TypeSelf),
-                    _ -> Token.TypeIdentifier(self.current.clone()),
+                    _ -> Token.TypeIdentifier(I.String.new(self.current.clone())),
                 };
                 self.addToken(token);
             } else {
@@ -192,7 +193,7 @@ pub struct Lexer {
                     "co" -> Token.Keyword(KeywordKind.Co),
                     "raw" -> Token.Keyword(KeywordKind.Raw),
                     "_" -> Token.Misc(MiscKind.Wildcard),
-                    _ -> Token.VarIdentifier(self.current.clone()),
+                    _ -> Token.VarIdentifier(I.String.new(self.current.clone())),
                 };
                 self.addToken(token);
             }
@@ -229,7 +230,7 @@ pub struct Lexer {
             };
             self.current = "${decimalValue}";
         }
-        self.addToken(Token.IntegerLiteral(self.current.clone()));
+        self.addToken(Token.IntegerLiteral(I.String.new(self.current.clone())));
         self
     }
 
@@ -244,7 +245,7 @@ pub struct Lexer {
 
     fn processStringInterpolation(mut self) -> Self {
         self.addToken(Token.Op(OperatorKind.Add));
-        self.addToken(Token.VarIdentifier("Std.Fmt.Show.show"));
+        self.addToken(Token.VarIdentifier(I.String.new("Std.Fmt.Show.show")));
         self.addToken(Token.LeftBracket(BracketKind.Paren));
 
         self.step();
@@ -339,7 +340,7 @@ pub struct Lexer {
                     self.step();
                     match self.peek() {
                         Some('{') -> {
-                            self.addToken(Token.StringLiteral(literal));
+                            self.addToken(Token.StringLiteral(I.String.new(literal)));
                             literal = String.new();
                             self.processStringInterpolation();
                         }
@@ -355,7 +356,7 @@ pub struct Lexer {
                 None -> self.addError(LexerError.UnendingStringLiteral(self.span.clone())),
             }
         }
-        self.addToken(Token.StringLiteral(literal));
+        self.addToken(Token.StringLiteral(I.String.new(literal)));
         self
     }
 
@@ -413,7 +414,7 @@ pub struct Lexer {
         if literal.len() != 1 {
             self.addError(LexerError.InvalidCharLiteral(literal, self.span.clone()));
         } else {
-            self.addToken(Token.CharLiteral(literal));
+            self.addToken(Token.CharLiteral(I.String.new(literal)));
         }
         self
     }

@@ -931,6 +931,7 @@ impl<'a> Typechecker<'a> {
                 self.queue.push_back(blockId);
             }
             InstructionKind::ReadImplicit(var, name) => {
+                var.setNoDrop();
                 let implicitName = match name {
                     ImplicitIndex::Unresolved(name) => name,
                     ImplicitIndex::Resolved(_, _) => panic!("Implicit index already resolved in typechecker!"),

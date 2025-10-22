@@ -1,6 +1,8 @@
 module Siko.Parser.Token {
 import Siko.Location
 
+import Siko.Interner as I
+
 @derive(PartialEq, Eq, Clone, Copy)
 pub enum BracketKind {
     Paren,
@@ -105,15 +107,15 @@ pub enum MiscKind {
     At,
 }
 
-@derive(PartialEq, Eq, Clone)
+@derive(PartialEq, Eq, Clone, Copy)
 pub enum Token {
-    VarIdentifier(String),
-    TypeIdentifier(String),
+    VarIdentifier(I.String),
+    TypeIdentifier(I.String),
     LeftBracket(BracketKind),
     RightBracket(BracketKind),
-    StringLiteral(String),
-    IntegerLiteral(String),
-    CharLiteral(String),
+    StringLiteral(I.String),
+    IntegerLiteral(I.String),
+    CharLiteral(I.String),
     Keyword(KeywordKind),
     Arrow(ArrowKind),
     Range(RangeKind),
@@ -143,8 +145,8 @@ pub enum Token {
 pub instance Show[Token] {
     fn show(&self) -> String {
         match self {
-            Token.VarIdentifier(v) -> v.clone(),
-            Token.TypeIdentifier(v) -> v.clone(),
+            Token.VarIdentifier(v) -> v.show(),
+            Token.TypeIdentifier(v) -> v.show(),
             _ -> self.kind().show()
         }
     }

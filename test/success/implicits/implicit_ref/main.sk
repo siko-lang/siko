@@ -1,0 +1,37 @@
+module Main {
+
+struct Foo {
+    value: Int
+
+    fn myMethod(&self) {
+        println("value ${self.value}");
+    }
+}
+
+instance Drop[Foo] {
+    fn drop(self) -> Self {
+        println("dropping Foo");
+        self
+    }
+}
+
+implicit mut myImplicit: Foo
+
+fn doit() {
+    // check: this call must not drop myImplicit
+    // myImplicit must be passed as &Foo
+    // myImplicit is dropped at the end of main
+    myImplicit.myMethod();
+}
+
+fn main() {
+    let mut f = Foo(42);
+    with myImplicit = f {
+        println("before doit");
+        doit();
+        println("after doit");
+    }
+    println("at end of main");
+}
+
+}
