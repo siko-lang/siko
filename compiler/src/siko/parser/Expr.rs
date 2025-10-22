@@ -33,7 +33,6 @@ pub trait ExprParser {
     fn parseExpr(&mut self) -> Expr;
     fn parseUnary(&mut self) -> Expr;
     fn parsePrimary(&mut self) -> Expr;
-    fn parseIndex(&mut self) -> Expr;
     fn callNext(&mut self, index: usize) -> Expr;
     fn buildExpr(&mut self, e: SimpleExpr, start: Span) -> Expr;
 }
@@ -684,7 +683,7 @@ impl<'a> ExprParser for Parser<'a> {
 
     fn parseFieldAccessOrCall(&mut self) -> Expr {
         let start = self.currentSpan();
-        let mut current = self.parseIndex();
+        let mut current = self.parsePrimary();
         loop {
             if self.check(TokenKind::Misc(MiscKind::Dot)) {
                 self.expect(TokenKind::Misc(MiscKind::Dot));
@@ -724,6 +723,16 @@ impl<'a> ExprParser for Parser<'a> {
                 } else {
                     current = self.buildExpr(SimpleExpr::Call(Box::new(current), args), start.clone());
                 }
+            } else if self.check(TokenKind::LeftBracket(BracketKind::Square)) {
+                self.expect(TokenKind::LeftBracket(BracketKind::Square));
+                let indexExpr = self.parseExpr();
+                self.expect(TokenKind::RightBracket(BracketKind::Square));
+                let call = SimpleExpr::MethodCall(
+                    Box::new(current.clone()),
+                    Identifier::new("index".to_string(), self.currentLocation()),
+                    vec![FunctionArg::Positional(indexExpr.clone())],
+                );
+                current = self.buildExpr(call, start.clone());
             } else {
                 break;
             }
@@ -951,27 +960,6 @@ impl<'a> ExprParser for Parser<'a> {
             }
             _ => self.parseFieldAccessOrCall(),
         }
-    }
-
-    fn parseIndex(&mut self) -> Expr {
-        let start = self.currentSpan();
-        let mut current = self.parsePrimary();
-        loop {
-            if self.check(TokenKind::LeftBracket(BracketKind::Square)) {
-                self.expect(TokenKind::LeftBracket(BracketKind::Square));
-                let indexExpr = self.parseExpr();
-                self.expect(TokenKind::RightBracket(BracketKind::Square));
-                let call = SimpleExpr::MethodCall(
-                    Box::new(current.clone()),
-                    Identifier::new("index".to_string(), self.currentLocation()),
-                    vec![FunctionArg::Positional(indexExpr.clone())],
-                );
-                current = self.buildExpr(call, start.clone());
-            } else {
-                break;
-            }
-        }
-        return current;
     }
 
     fn parsePrimary(&mut self) -> Expr {
