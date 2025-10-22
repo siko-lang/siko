@@ -45,6 +45,8 @@ struct Statistics {
         let passed = self.passed.load();
         let failed = self.failed.load();
         let skipped = self.skipped.load();
+        let passed = if failed > 0.toU32() { passed.toString() } else { green(passed.toString()) };
+        let failed = if failed > 0.toU32() { red(failed.toString()) } else { failed.toString() };
         println("Total: ${total}, Passed: ${passed}, Failed: ${failed} (Skipped: ${skipped})");
     }
 }
@@ -66,10 +68,10 @@ enum TestType {
     }
 }
 
-@derive(Clone)
 struct Test {
     path: String
     ty: TestType
+    failed: AtomicBool
 
     fn matchFilters(&self, cfg: &Config) -> Bool {
         if cfg.filters.empty() {
@@ -101,12 +103,13 @@ struct Test {
         (command.success(), command.capturedStdout().clone())
     }
 
-    fn getExpectedOutput(&self, stats: &Statistics) -> Result[String, ()] {
+    fn getExpectedOutput(&self, stats: &Statistics, stdLock: &Mutex) -> Result[String, ()] {
         let expectedOutputPath = Fs.Path.join(self.path, "output.txt");
         let expectedOutput = match readFile(expectedOutputPath) {
             Ok(content) -> content,
             Err(_) -> {
                 println("Failed to read expected output from ${expectedOutputPath}");
+                self.printFailure(stdLock);
                 stats.failure();
                 return Err(());
             }
@@ -118,6 +121,7 @@ struct Test {
         stdLock.lock();
         println("- ${self.path} - ${red("failed")}");
         stdLock.unlock();
+        self.failed.store(True);
     }
 
     fn printSuccess(&self, duration: &Duration, stdLock: &Mutex) {
@@ -133,7 +137,7 @@ struct Test {
     }
 
     fn validateOutput(&self, actualOutput: &String, stats: &Statistics, duration: &Duration, stdLock: &Mutex) -> Result[(), ()] {
-        let expectedOutput = try self.getExpectedOutput(stats);
+        let expectedOutput = try self.getExpectedOutput(stats, stdLock);
         if actualOutput == expectedOutput {
             self.printSuccess(duration, stdLock);
             stats.success();
@@ -203,7 +207,7 @@ fn collectTests(basePath: &String, ty: TestType) -> Vec[Test] {
                 result.push(subPath);
             }
         } else if entry.name().endsWith(".sk") {
-            let test = Test(dirname(entryPath), ty);
+            let test = Test(dirname(entryPath), ty, AtomicBool.new(False));
             result.push(test);
         }
     }
@@ -212,19 +216,19 @@ fn collectTests(basePath: &String, ty: TestType) -> Vec[Test] {
 
 struct Executor {
     stats: &Statistics,
-    tests: Vec[Test],
+    tests: &Vec[Test],
     current: AtomicU32,
     stdLock: &Mutex,
     cfg: &Config
 
-    fn new(stats: &Statistics, tests: Vec[Test], stdLock: &Mutex, cfg: &Config) -> Executor {
+    fn new(stats: &Statistics, tests: &Vec[Test], stdLock: &Mutex, cfg: &Config) -> Executor {
         Executor(stats: stats, tests: tests, current: AtomicU32.new(0.toU32()), stdLock: stdLock, cfg: cfg)
     }
 
-    fn getNext(&self) -> Option[Test] {
+    fn getNext(&self) -> Option[&Test] {
         let index = self.current.fetchAdd(1.toU32()).toInt();
         if index < self.tests.len() {
-             Some(self.tests.get(index).clone())
+             Some(self.tests.get(index))
         } else {
             None
         }
@@ -245,7 +249,7 @@ struct Executor {
     }
 }
 
-fn runParallel(tests: Vec[Test], stats: &Statistics, stdLock: &Mutex, cfg: &Config) {
+fn runParallel(tests: &Vec[Test], stats: &Statistics, stdLock: &Mutex, cfg: &Config) {
     let numThreads = 4;
     let executor = Executor.new(stats, tests, stdLock, cfg);
     let mut threads = Vec.new();
@@ -261,8 +265,8 @@ fn runParallel(tests: Vec[Test], stats: &Statistics, stdLock: &Mutex, cfg: &Conf
     }
 }
 
-fn runSequential(tests: Vec[Test], stats: &Statistics, stdLock: &Mutex, cfg: &Config) {
-    for test in tests {
+fn runSequential(tests: &Vec[Test], stats: &Statistics, stdLock: &Mutex, cfg: &Config) {
+    for test in tests.iter() {
         if !test.matchFilters(cfg) {
             continue;
         }
@@ -292,6 +296,17 @@ fn main() {
     }
     stats.dump();
     if stats.failed.load() > 0.toU32() {
+        println("${red("Failed tests:")}");
+        for test in successTests.iter() {
+            if test.failed.load() {
+                println("- ${test.path}");
+            }
+        }
+        for test in errorTests.iter() {
+            if test.failed.load() {
+                println("- ${test.path}");
+            }
+        }
         setExitCode(1.toI32());
     }
 }

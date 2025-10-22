@@ -62,4 +62,31 @@ fn __atomic_fetch_sub(ptr: *U32, value: U32, order: U8) -> U32 = extern "C" ("st
 fn __atomic_add_fetch(ptr: *U32, value: U32, order: U8) -> U32 = extern "C" ("stdatomic.h")
 fn __atomic_sub_fetch(ptr: *U32, value: U32, order: U8) -> U32 = extern "C" ("stdatomic.h")
 
+pub struct AtomicBool {
+    value: AtomicU32
+
+    fn boolToU32(value: Bool) -> U32 {
+        if value {
+            return 1.toU32();
+        } else {
+            return 0.toU32();
+        }
+    }
+
+    pub fn new(value: Bool) -> AtomicBool {
+        let intValue: U32 = boolToU32(value);
+        AtomicBool(value: AtomicU32.new(intValue))
+    }
+
+    pub fn load(&self, order: MemoryOrder = MemoryOrder.SEQ_CST) -> Bool {
+        let intValue = self.value.load(order);
+        return intValue != 0.toU32();
+    }
+
+    pub fn store(&self, value: Bool, order: MemoryOrder = MemoryOrder.SEQ_CST) {
+        let intValue: U32 = boolToU32(value);
+        self.value.store(intValue, order);
+    }
+}
+
 }
