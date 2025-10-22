@@ -61,8 +61,8 @@ pub struct Map[K, V] {
         self.root.isNull()
     }
 
-    pub fn iter(&self) -> MapIterator[K, V] {
-        MapIterator.new(self)
+    pub fn iter(&self) -> MapIteratorRef[K, V] {
+        MapIteratorRef.new(self)
     }
 }
 
@@ -331,15 +331,15 @@ fn inorder[K, V: Show[V]](root: *Node[K, V]) {
     inorder(root.right);
 }
 
-pub struct MapIterator[K, V] {
+pub struct MapIteratorRef[K, V] {
     m: &Map[K, V]
     current: *Node[K, V],
     prev: *Node[K, V]
 
     @safe
-    pub fn new(m: &Map[K, V]) -> MapIterator[K, V] {
+    pub fn new(m: &Map[K, V]) -> MapIteratorRef[K, V] {
         let current = minValueNode(m.root);
-        MapIterator(m, current, null())
+        MapIteratorRef(m, current, null())
     }
 
     @unsafe
@@ -359,7 +359,7 @@ pub struct MapIterator[K, V] {
     }
 }
 
-pub instance[K, V] IteratorMapIterator Iterator[MapIterator[K, V]] {
+pub instance[K, V] IteratorMapIterator Iterator[MapIteratorRef[K, V]] {
     type Item = (&K, &V)
 
     @safe
@@ -374,11 +374,11 @@ pub instance[K, V] IteratorMapIterator Iterator[MapIterator[K, V]] {
     }
 }
 
-pub instance[K, V] IntoIteratorMap IntoIterator[Map[K, V]] {
+pub instance[K, V] IntoIteratorRefMap IntoIterator[&Map[K, V]] {
     type Item = (&K, &V)
-    type Iter = MapIterator[(&K, &V)]
+    type Iter = MapIteratorRef[K, V]
 
-    fn intoIterator(self) -> MapIterator[K, V] {
+    fn intoIterator(self) -> MapIteratorRef[K, V] {
         self.iter()
     }
 }

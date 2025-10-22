@@ -257,6 +257,15 @@ pub instance[T] IntoIteratorVec IntoIterator[Vec[T]] {
     }
 }
 
+pub instance[T] IntoIteratorRefVec IntoIterator[&Vec[T]] {
+    type Item = &T
+    type Iter = VecIteratorRef[T]
+
+    fn intoIterator(self) -> VecIteratorRef[T] {
+        self.iter()
+    }
+}
+
 struct VecIteratorRef[T] {
     vec: &Vec[T]
     index: U64
@@ -276,6 +285,14 @@ pub instance[T] IteratorVecIteratorRef Iterator[VecIteratorRef[T]] {
     }
 }
 
+pub instance[T] IndexVec Index[Vec[T], Int] {
+    type Output = T
+
+    fn index(&self, index: Int) -> &T {
+        self.get(index)
+    }
+}
+
 instance[T] Drop[Vec[T]] {
     @unsafe
     fn drop(mut self) -> Self {
@@ -292,7 +309,7 @@ pub instance[T: Show[T]] ShowVec Show[Vec[T]] {
         let mut result = String.new();
         result.push("[");
         let mut first = True;
-        for item in self.iter() {
+        for item in self {
             if !first {
                 result.push(", ");
             }
@@ -329,7 +346,7 @@ pub instance[T: Clone[T]] VecClone Clone[Vec[T]] {
     fn clone(&self) -> Vec[T] {
         let mut newVec: Vec[T] = Vec.new();
         newVec.inner.grow(self.inner.capacity);
-        for item in self.iter() {
+        for item in self {
             newVec.push(item.clone());
         }
         newVec

@@ -77,7 +77,7 @@ struct Test {
         if cfg.filters.empty() {
             return True;
         }
-        for filter in cfg.filters.iter() {
+        for filter in cfg.filters {
             if self.path.contains(filter) {
                 return True;
             }
@@ -266,7 +266,7 @@ fn runParallel(tests: &Vec[Test], stats: &Statistics, stdLock: &Mutex, cfg: &Con
 }
 
 fn runSequential(tests: &Vec[Test], stats: &Statistics, stdLock: &Mutex, cfg: &Config) {
-    for test in tests.iter() {
+    for test in tests {
         if !test.matchFilters(cfg) {
             continue;
         }
@@ -297,12 +297,12 @@ fn main() {
     stats.dump();
     if stats.failed.load() > 0.toU32() {
         println("${red("Failed tests:")}");
-        for test in successTests.iter() {
+        for test in successTests {
             if test.failed.load() {
                 println("- ${test.path}");
             }
         }
-        for test in errorTests.iter() {
+        for test in errorTests {
             if test.failed.load() {
                 println("- ${test.path}");
             }
