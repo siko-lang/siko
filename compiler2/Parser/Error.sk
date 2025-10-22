@@ -1,5 +1,7 @@
 module Siko.Parser.Error {
 
+import Terminal
+import Siko.Location.Report
 import Siko.Location
 
 @derive(Clone)
@@ -12,6 +14,51 @@ pub enum LexerError {
     InvalidEscapeSequence(String, Span),
     UnexpectedCharacter(U8, Span),
     UnexpectedEndOfFile(Span),
+
+    pub fn report(&self, fileId: FileId) {
+        match self {
+            InvalidIdentifier(n, span) -> {
+                let slogan = "invalid identifier ${yellow(n)}";
+                let r = Report.new(slogan, Some(Location.new(fileId, span)));
+                r.print();
+            }
+            UnsupportedCharacter(c, span) -> {
+                let slogan = "unsupported character";
+                let r = Report.new(slogan, Some(Location.new(fileId, span)));
+                r.print();
+            }
+            UnendingStringLiteral(span) -> {
+                let slogan = "unending string literal";
+                let r = Report.new(slogan, Some(Location.new(fileId, span)));
+                r.print();
+            }
+            UnendingCharLiteral(span) -> {
+                let slogan = "unending char literal";
+                let r = Report.new(slogan, Some(Location.new(fileId, span)));
+                r.print();
+            }
+            InvalidCharLiteral(s, span) -> {
+                let slogan = "invalid char literal ${yellow(&s)}";
+                let r = Report.new(slogan, Some(Location.new(fileId, span)));
+                r.print();
+            }
+            InvalidEscapeSequence(s, span) -> {
+                let slogan = "invalid escape sequence ${yellow(&s)}";
+                let r = Report.new(slogan, Some(Location.new(fileId, span)));
+                r.print();
+            }
+            UnexpectedCharacter(c, span) -> {
+                let slogan = "unexpected character";
+                let r = Report.new(slogan, Some(Location.new(fileId, span)));
+                r.print();
+            }
+            UnexpectedEndOfFile(span) -> {
+                let slogan = "unexpected end of file";
+                let r = Report.new(slogan, Some(Location.new(fileId, span)));
+                r.print();
+            }
+        }
+    }
 }
 
 }

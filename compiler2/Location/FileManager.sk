@@ -1,0 +1,38 @@
+module Siko.Location.FileManager {
+
+import Siko.Location
+
+pub implicit mut fileManager: FileManager
+
+pub struct FileManager {
+    pub names: Vec[String],
+    pub content: Vec[Vec[String]],
+
+    pub fn new() -> FileManager {
+        FileManager(names: Vec.new(), content: Vec.new())
+    }
+
+    pub fn add(mut self, fileName: String, fileContent: Vec[String]) -> (Self, FileId) {
+        self.names.push(fileName);
+        self.content.push(fileContent);
+        let fileId = FileId.new((self.names.len() - 1).toI32());
+        (self, fileId)
+    }
+
+    pub fn get(&self, fileId: &FileId) -> (String, Vec[String]) {
+        (
+            self.names[fileId.index.toInt()].clone(),
+            self.content[fileId.index.toInt()].clone(),
+        )
+    }
+
+    pub fn getFileName(&self, fileId: &FileId) -> String {
+        self.names[fileId.index.toInt()].clone()
+    }
+
+    pub fn getFileContent(&self, fileId: &FileId) -> Vec[String] {
+        self.content[fileId.index.toInt()].clone()
+    }
+}
+
+}

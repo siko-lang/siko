@@ -1,0 +1,105 @@
+module Siko.Location.Report {
+
+import Siko.Location
+import Terminal
+
+pub struct Entry {
+    msg: Option[String],
+    location: Location,
+
+    pub fn new(msg: Option[String], location: Location) -> Entry {
+        Entry(
+            msg: msg,
+            location: location,
+        )
+    }
+}
+
+pub struct Report {
+    slogan: String,
+    entries: Vec[Entry],
+
+    pub fn new(slogan: String, location: Option[Location]) -> Report {
+        let mut entries = Vec.new();
+        match location {
+            Some(loc) -> {
+                entries.push(Entry.new(None, loc));
+            }
+            None -> {
+            }
+        }
+        build(slogan, entries)
+    }
+
+    pub fn build(slogan: String, entries: Vec[Entry]) -> Report {
+        Report(
+            slogan: slogan,
+            entries: entries,
+        )
+    }
+
+    pub fn print(&self) {
+        println("${red("ERROR")}: ${self.slogan}");
+        for entry in self.entries {
+            match entry.msg {
+                Some(msg) -> {
+                    println("   ${blue(msg)}");
+                }
+                None -> {
+                }
+            }
+            let filename = entry.location.fileId.getFileName();
+            let startLoc = entry.location.span.start.line + 1.toI32();
+            let startOffset = entry.location.span.start.offset + 1.toI32();
+            println("${red(" --->")} ${filename}:${startLoc}:${startOffset}");
+            let lines = entry.location.fileId.getLines();
+            let startLine = entry.location.span.start.line;
+            let endLine = entry.location.span.end.line;
+            let mut separatorPrinted = False;
+            // for (lineNumber, line) in lines.iter().enumerate() {
+            //     let lineNumber = lineNumber.toI32();
+            //     let distance = std::cmp::min((lineNumber - startLine).abs(), (endLine - lineNumber).abs());
+            //     if lineNumber >= startLine and lineNumber <= endLine {
+            //         if distance < 3 {
+            //             let highlighted_line = if lineNumber == startLine && lineNumber == endLine {
+            //                 let start = entry.location.span.start.offset as usize;
+            //                 let end = entry.location.span.end.offset as usize;
+            //                 let mut modifiedLine = String.new();
+            //                 modifiedLine.push_str(&line[..start]);
+            //                 modifiedLine.push_str(&self.ctx.yellow(&line[start..end]));
+            //                 modifiedLine.push_str(&line[end..]);
+            //                 modifiedLine
+            //             } else if lineNumber == startLine {
+            //                 let start = entry.location.span.start.offset as usize;
+            //                 let mut modifiedLine = String.new();
+            //                 modifiedLine.push_str(&line[..start]);
+            //                 modifiedLine.push_str(&self.ctx.yellow(&line[start..]));
+            //                 modifiedLine
+            //             } else if lineNumber == endLine {
+            //                 let end = entry.location.span.end.offset as usize;
+            //                 let mut modifiedLine = String.new();
+            //                 modifiedLine.push_str(&self.ctx.yellow(&line[..end]));
+            //                 modifiedLine.push_str(&line[end..]);
+            //                 modifiedLine
+            //             } else {
+            //                 self.ctx.yellow(line)
+            //             };
+            //             println!(
+            //                 " {} {} {}",
+            //                 self.ctx.red("|"),
+            //                 self.ctx.blue(&format!("{}", lineNumber + 1)),
+            //                 highlighted_line
+            //             );
+            //         } else {
+            //             if !separatorPrinted {
+            //                 separatorPrinted = true;
+            //                 println!(" {}", "...");
+            //             }
+            //         }
+            //     }
+            // }
+        }
+    }
+}
+
+}

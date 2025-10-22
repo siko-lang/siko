@@ -42,7 +42,6 @@ pub fn compile() {
     for arg in args {
         finder.collectSourceFiles(&arg);
     }
-
     for sourceFile in finder.sourceFiles {
         println(sourceFile);
         match readFile(&sourceFile) {
@@ -53,9 +52,9 @@ pub fn compile() {
                 for token in tokens {
                     println("  ${token}");
                 }
-                // for error in errors {
-                //     println("  Error: ${error}");
-                // }
+                for error in errors {
+                    error.report(fileId);
+                }
             }
             Err(_) -> {
                 println("  Failed to read file");
