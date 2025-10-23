@@ -18,6 +18,7 @@ use crate::siko::{
     syntax::{
         Function::{Function, Parameter as SynParam, ResultKind},
         Global::Global,
+        Identifier::Identifier,
         Module::{Import, Module, ModuleItem},
         Statement::{Block, Statement, StatementKind},
         Trait::Instance,
@@ -185,6 +186,7 @@ impl<'a> Resolver<'a> {
     pub fn process(&mut self) {
         self.lowerGlobals();
         self.collectLocalNames();
+        self.buildPreludeImports();
         self.processImports();
         self.processDataTypes();
         self.processImplicits();
@@ -856,6 +858,7 @@ impl<'a> Resolver<'a> {
     pub fn processSourceModule(
         sourceModule: &Module,
         importedNames: &mut Names,
+        implicityImportedNames: &mut Names,
         variants: &mut BTreeSet<QualifiedName>,
         i: &Import,
         importedInstances: &mut Vec<QualifiedName>,
@@ -864,6 +867,11 @@ impl<'a> Resolver<'a> {
         if let Some(alias) = &i.alias {
             let moduleName = buildModule(&i.moduleName.toString());
             let localModuleName = buildModule(&alias.to_string());
+            let importedNames = if i.implicitImport {
+                implicityImportedNames
+            } else {
+                importedNames
+            };
             for item in &sourceModule.items {
                 match item {
                     ModuleItem::Struct(structDef) => {
@@ -974,6 +982,11 @@ impl<'a> Resolver<'a> {
                 }
             }
         } else {
+            let importedNames = if i.implicitImport {
+                implicityImportedNames
+            } else {
+                importedNames
+            };
             let moduleName = buildModule(&sourceModule.name.to_string());
             for item in &sourceModule.items {
                 match item {
@@ -1110,6 +1123,7 @@ impl<'a> Resolver<'a> {
                                 Resolver::processSourceModule(
                                     sourceModule,
                                     &mut moduleResolver.importedNames,
+                                    &mut moduleResolver.implicitlyImportedNames,
                                     &mut moduleResolver.variants,
                                     i,
                                     &mut importedInstances,
@@ -1149,6 +1163,7 @@ impl<'a> Resolver<'a> {
                 localNames,
                 importedNames: Names::new(),
                 importedModules: Vec::new(),
+                implicitlyImportedNames: Names::new(),
                 variants,
                 globals: self.moduleGlobals.clone(),
             };
@@ -1269,6 +1284,30 @@ impl<'a> Resolver<'a> {
                         self.program.implicits.insert(name, irImplicit);
                     }
                     _ => {}
+                }
+            }
+        }
+    }
+
+    fn buildPreludeImports(&mut self) {
+        let mut preludeModuleNames = Vec::new();
+        for (_, m) in &self.modules {
+            if m.attributes.prelude {
+                preludeModuleNames.push(m.name.name());
+            }
+        }
+        for (_, m) in &mut self.modules {
+            // for each prelude module add an implicit import if not self
+            for name in &preludeModuleNames {
+                if name != &m.name.name() {
+                    m.items.insert(
+                        0,
+                        ModuleItem::Import(Import {
+                            moduleName: Identifier::new(name.clone(), m.name.location()),
+                            alias: None,
+                            implicitImport: true,
+                        }),
+                    );
                 }
             }
         }

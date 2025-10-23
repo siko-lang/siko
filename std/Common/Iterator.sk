@@ -1,4 +1,34 @@
+@prelude
 module Iterator {
+
+pub trait Iterator[T] {
+    type Item
+    fn next(self) -> (Self, Option[Item])
+
+    fn enumerate(self) -> Enumerate[T] {
+        Enumerate(self, 0.toU64())
+    }
+
+    // fn map[U](self, f: fn(Item) -> U) -> Map[Item, U, T] {
+    //     Map (iter: self, f: f)
+    // }
+}
+
+pub trait IntoIterator[T] {
+    type Item
+    type Iter: Iterator[Iter, Item=Item]
+
+    fn intoIterator(self) -> Iter
+}
+
+pub instance[T, I: Iterator[T, Item=I]] IteratorIntoIterator IntoIterator[T] {
+    type Item = I
+    type Iter = T
+
+    fn intoIterator(self) -> T {
+        self
+    }
+}
 
 pub struct Enumerate[T] {
     iter: T,
@@ -23,29 +53,26 @@ pub instance[T, E: Iterator[T, Item=E]] Iterator[Enumerate[T]] {
     }
 }
 
-pub trait Iterator[T] {
-    type Item
-    fn next(self) -> (Self, Option[Item])
-
-    fn enumerate(self) -> Enumerate[T] {
-        Enumerate(self, 0.toU64())
-    }
+pub struct Map[T, U, I] {
+    iter: I,
+    f: fn(T) -> U
 }
 
-pub trait IntoIterator[T] {
-    type Item
-    type Iter: Iterator[Iter, Item=Item]
+// pub instance[T, U, I: Iterator[I, Item=T]] Iterator[Map[T, U, I]] {
+//     type Item = U
 
-    fn intoIterator(self) -> Iter
-}
-
-pub instance[T, I: Iterator[T, Item=I]] IteratorIntoIterator IntoIterator[T] {
-    type Item = I
-    type Iter = T
-
-    fn intoIterator(self) -> T {
-        self
-    }
-}
+//     fn next(self) -> (Self, Option[U]) {
+//         let (newIter, itemOpt) = self.iter.next();
+//         match itemOpt {
+//             Some(item) -> {
+//                 let result = (self.f)(item);
+//                 (Map (iter: newIter, f: self.f), Some(result))
+//             }
+//             None -> {
+//                 (Map (iter: newIter, f: self.f), None)
+//             }
+//         }
+//     }
+// }
 
 }

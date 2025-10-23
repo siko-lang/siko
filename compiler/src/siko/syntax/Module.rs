@@ -1,3 +1,4 @@
+use crate::siko::syntax::Attributes::Attributes;
 use crate::siko::syntax::Data::*;
 use crate::siko::syntax::Effect::Effect;
 use crate::siko::syntax::Function::*;
@@ -36,4 +37,5 @@ pub struct Import {
 pub struct Module {
     pub name: Identifier,
     pub items: Vec<ModuleItem>,
+    pub attributes: Attributes,
 }

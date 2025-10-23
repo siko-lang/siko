@@ -1,3 +1,4 @@
+@prelude
 module Vec {
 
 import NativePtr
@@ -338,6 +339,51 @@ pub instance[T: PartialEq[T]] PartialEqVec PartialEq[Vec[T]] {
             i + 1
         }
         True
+    }
+}
+
+pub instance[T: Eq[T]] EqVec Eq[Vec[T]]
+
+pub instance[T: PartialOrd[T]] PartialOrdVec PartialOrd[Vec[T]] {
+    fn partialCmp(&self, other: &Vec[T]) -> Option[Ordering] {
+        let minLen = min(self.len(), other.len());
+        loop i = 0 {
+            if i >= minLen {
+                break;
+            }
+            let a = self.getUnchecked(i);
+            let b = other.getUnchecked(i);
+            let ord = a.partialCmp(b);
+            match ord {
+                Some(Ordering.Equal) -> {
+                    // continue
+                }
+                _ -> {
+                    return ord
+                }
+            }
+            i + 1
+        }
+        self.len().partialCmp(&other.len())
+    }
+}
+
+pub instance[T: Ord[T]] OrdVec Ord[Vec[T]] {
+    fn cmp(&self, other: &Vec[T]) -> Ordering {
+        let minLen = min(self.len(), other.len());
+        loop i = 0 {
+            if i >= minLen {
+                break;
+            }
+            let a = self.getUnchecked(i);
+            let b = other.getUnchecked(i);
+            let ord = a.cmp(b);
+            if ord != Ordering.Equal {
+                return ord
+            }
+            i + 1
+        }
+        self.len().cmp(&other.len())
     }
 }
 

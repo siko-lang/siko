@@ -5,15 +5,11 @@ use super::{
 };
 
 use crate::siko::{
-    location::Location::{Location, Span},
     parser::{
         Attributes::AttributeParser, Data::DataParser, Effect::EffectParser, Function::FunctionParser,
         Global::GlobalParser, Implicit::ImplicitParser,
     },
-    syntax::{
-        Identifier::Identifier,
-        Module::{Import, Module, ModuleItem},
-    },
+    syntax::Module::{Import, Module, ModuleItem},
 };
 pub trait ModuleParser {
     fn parseImport(&mut self) -> Import;
@@ -39,6 +35,7 @@ impl<'a> ModuleParser for Parser<'a> {
     }
 
     fn parseModule(&mut self) -> Module {
+        let (moduleAttributes, _) = self.parseAttributes();
         self.expect(TokenKind::Keyword(KeywordKind::Module));
         let name = self.parseModuleName();
         self.expect(TokenKind::LeftBracket(BracketKind::Curly));
@@ -69,39 +66,10 @@ impl<'a> ModuleParser for Parser<'a> {
             items.push(item);
         }
         self.expect(TokenKind::RightBracket(BracketKind::Curly));
-        let implicitImports = vec![
-            "String",
-            "List",
-            "Bool",
-            "Box",
-            "Int",
-            "U8",
-            "U16",
-            "U32",
-            "U64",
-            "I8",
-            "I16",
-            "I32",
-            "I64",
-            "Result",
-            "Option",
-            "Ordering",
-            "Show",
-            "Iterator",
-            "Std.Ops.Basic",
-            "Std.Fmt",
-            "Std.Cmp",
-            "Std.Basic.Util",
-            "Vec",
-            "Range",
-        ];
-        for i in implicitImports {
-            items.push(ModuleItem::Import(Import {
-                moduleName: Identifier::new(i.to_string(), Location::new(self.fileId.clone(), Span::new())),
-                alias: None,
-                implicitImport: true,
-            }))
+        Module {
+            name,
+            items,
+            attributes: moduleAttributes,
         }
-        Module { name, items }
     }
 }

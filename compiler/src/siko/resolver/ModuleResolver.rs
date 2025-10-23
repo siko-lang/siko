@@ -21,6 +21,7 @@ pub struct ModuleResolver<'a> {
     pub name: String,
     pub localNames: Names,
     pub importedNames: Names,
+    pub implicitlyImportedNames: Names,
     pub importedModules: Vec<String>,
     pub variants: BTreeSet<QualifiedName>,
     pub globals: BTreeSet<QualifiedName>,
@@ -48,35 +49,50 @@ impl<'a> ModuleResolver<'a> {
     }
 
     pub fn resolveTypeName(&self, name: &Identifier) -> QualifiedName {
+        // println!("local names:");
+        // for (k, v) in &self.localNames.names {
+        //     println!("  {}: {:?}", k, v);
+        // }
+        // println!("imported names:");
+        // for (k, v) in &self.importedNames.names {
+        //     println!("  {}: {:?}", k, v);
+        // }
+        // println!("implicitly imported names:");
+        // for (k, v) in &self.implicitlyImportedNames.names {
+        //     println!("  {}: {:?}", k, v);
+        // }
         if let Some(names) = self.localNames.names.get(&name.name()) {
-            let mut typeNames = Vec::new();
-            for name in names {
-                if !self.variants.contains(name) {
-                    typeNames.push(name.clone());
-                }
-            }
-            if typeNames.len() > 1 {
-                ResolverError::Ambiguous(name.toString(), name.location()).report(self.ctx);
-            }
-            if typeNames.len() > 0 {
-                return typeNames.first().unwrap().clone();
+            if let Some(value) = self.resolveTypeNames(name, names) {
+                return value;
             }
         }
         if let Some(names) = self.importedNames.names.get(&name.name()) {
-            let mut typeNames = Vec::new();
-            for name in names {
-                if !self.variants.contains(name) {
-                    typeNames.push(name.clone());
-                }
+            if let Some(value) = self.resolveTypeNames(name, names) {
+                return value;
             }
-            if typeNames.len() > 1 {
-                ResolverError::Ambiguous(name.toString(), name.location()).report(self.ctx);
-            }
-            if typeNames.len() > 0 {
-                return typeNames.first().unwrap().clone();
+        }
+        if let Some(names) = self.implicitlyImportedNames.names.get(&name.name()) {
+            if let Some(value) = self.resolveTypeNames(name, names) {
+                return value;
             }
         }
         ResolverError::UnknownTypeName(name.toString(), name.location()).report(self.ctx);
+    }
+
+    fn resolveTypeNames(&self, name: &Identifier, names: &BTreeSet<QualifiedName>) -> Option<QualifiedName> {
+        let mut typeNames = Vec::new();
+        for name in names {
+            if !self.variants.contains(name) {
+                typeNames.push(name.clone());
+            }
+        }
+        if typeNames.len() > 1 {
+            ResolverError::Ambiguous(name.toString(), name.location()).report(self.ctx);
+        }
+        if typeNames.len() > 0 {
+            return Some(typeNames.first().unwrap().clone());
+        }
+        None
     }
 
     pub fn tryResolverName(&self, name: &Identifier) -> Option<QualifiedName> {
@@ -87,6 +103,12 @@ impl<'a> ModuleResolver<'a> {
             return Some(names.first().unwrap().clone());
         }
         if let Some(names) = self.importedNames.names.get(&name.name()) {
+            if names.len() > 1 {
+                ResolverError::Ambiguous(name.toString(), name.location()).report(self.ctx);
+            }
+            return Some(names.first().unwrap().clone());
+        }
+        if let Some(names) = self.implicitlyImportedNames.names.get(&name.name()) {
             if names.len() > 1 {
                 ResolverError::Ambiguous(name.toString(), name.location()).report(self.ctx);
             }

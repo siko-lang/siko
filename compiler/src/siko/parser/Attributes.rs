@@ -28,6 +28,7 @@ impl<'a> AttributeParser for Parser<'a> {
                     "unsafe" => attributes.safety = Safety::Unsafe,
                     "safe" => attributes.safety = Safety::Safe,
                     "builtin" => attributes.builtin = true,
+                    "prelude" => attributes.prelude = true,
                     _ => self.reportError3(&format!("Unknown attribute: {}", name), name.location()),
                 }
             } else if self.check(TokenKind::Keyword(KeywordKind::Derive)) {

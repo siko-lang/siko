@@ -1,0 +1,80 @@
+module Siko.Syntax.Identifier {
+
+import Siko.Interner as I
+import Siko.Location
+
+@derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)
+struct Fragment {
+    pub name: I.String,
+    pub location: Location,
+}
+
+@derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)
+pub struct Identifier {
+    fragments: Vec[Fragment],
+
+    pub fn merge(mut self, other: Identifier) -> Self {
+        for fragment in other.fragments {
+            self.fragments.push(fragment);
+        }
+        self
+    }
+
+    pub fn dot(mut self, location: Location) -> Self {
+        self.fragments.push(Fragment(name: I.String.new("."), location));
+        self
+    }
+
+    pub fn new(s: String, location: Location) -> Identifier {
+        Identifier(fragments: [Fragment(name: I.String.new(s), location)])
+    }
+
+    pub fn name(&self) -> String {
+        unimplemented()
+    }
+
+    // pub fn name(&self) -> String {
+    //     self.fragments
+    //         .iter()
+    //         .map(|f| f.name.clone())
+    //         .collect::<Vec<_>>()
+    //         .join("")
+    // }
+
+    // pub fn location(&self) -> Location {
+    //     if self.fragments.is_empty() {
+    //         Location.empty()
+    //     } else {
+    //         let mut l = self.fragments[0].location.clone();
+    //         for fragment in &self.fragments[1..] {
+    //             l = l.merge(fragment.location.clone())
+    //         }
+    //         l
+    //     }
+    // }
+
+    // pub fn split(&self) -> Option<(Identifier, Identifier)> {
+    //     if self.fragments.len() < 3 {
+    //         None
+    //     } else {
+    //         let first = &self.fragments[0..self.fragments.len() - 2];
+    //         let second = &self.fragments[self.fragments.len() - 1..];
+    //         Some((
+    //             Identifier {
+    //                 fragments: first.to_vec(),
+    //             },
+    //             Identifier {
+    //                 fragments: second.to_vec(),
+    //             },
+    //         ))
+    //     }
+    // }
+}
+
+pub instance IdentifierShow Show[Identifier] {
+    fn show(&self) -> String {
+        self.name()
+    }
+}
+
+}

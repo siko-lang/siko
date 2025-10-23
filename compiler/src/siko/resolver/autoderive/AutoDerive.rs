@@ -118,5 +118,6 @@ pub fn processModule(module: &Module) -> Module {
     Module {
         name: module.name.clone(),
         items,
+        attributes: module.attributes.clone(),
     }
 }
