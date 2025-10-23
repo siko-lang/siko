@@ -26,6 +26,7 @@ pub struct Unifier {
     pub verbose: bool,
     pub runner: Runner,
     pub applyRunner: Runner,
+    pub unificationConfig: Config,
 }
 
 impl Unifier {
@@ -37,6 +38,7 @@ impl Unifier {
             verbose: false,
             runner,
             applyRunner,
+            unificationConfig: Config::default(),
         }
     }
 
@@ -48,6 +50,7 @@ impl Unifier {
             verbose: false,
             runner,
             applyRunner,
+            unificationConfig: Config::default(),
         }
     }
 
@@ -58,13 +61,17 @@ impl Unifier {
         })
     }
 
+    pub fn allowNamed(&mut self) {
+        self.unificationConfig = self.unificationConfig.allowNamed();
+    }
+
     pub fn unify(&mut self, ty1: Type, ty2: Type, location: Location) {
         if self.verbose {
             println!("Unifying {} and {}", ty1, ty2);
         }
         self.runner.run(|| {
             let mut sub = self.substitution.borrow_mut();
-            if let Err(_) = unify(&mut sub, ty1.clone(), ty2.clone(), Config::default()) {
+            if let Err(_) = unify(&mut sub, ty1.clone(), ty2.clone(), self.unificationConfig.clone()) {
                 let ty = ty1.apply(&sub);
                 let ty2 = ty2.apply(&sub);
                 self.handler.handleError(UnifierError::TypeMismatch(
@@ -80,7 +87,7 @@ impl Unifier {
         //println!("UNIFY {} {}", ty1, ty2);
         self.runner.run(|| {
             let mut sub = self.substitution.borrow_mut();
-            if let Err(_) = unify(&mut sub, ty1.clone(), ty2.clone(), Config::default()) {
+            if let Err(_) = unify(&mut sub, ty1.clone(), ty2.clone(), self.unificationConfig.clone()) {
                 return false;
             }
             true

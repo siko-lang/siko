@@ -75,6 +75,10 @@ impl<'a> FunctionCallResolver<'a> {
         self.knownImpls = impls;
     }
 
+    pub fn allowNamed(&mut self) {
+        self.unifier.allowNamed();
+    }
+
     pub fn resolve(
         &mut self,
         f: &Function,
@@ -129,7 +133,11 @@ impl<'a> FunctionCallResolver<'a> {
                 // }
                 argTypes.push(ty);
             }
-            //println!("Expected args: {:?}, got args: {:?}", expectedArgs, argTypes);
+            // println!(
+            //     "Expected args: {}, got args: {}",
+            //     formatTypes(&expectedArgs),
+            //     formatTypes(&argTypes)
+            // );
         }
         if expectedArgs.len() > 0 {
             expectedResult = expectedResult.changeSelfType(expectedArgs[0].clone());

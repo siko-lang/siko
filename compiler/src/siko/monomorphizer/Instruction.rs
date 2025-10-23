@@ -140,6 +140,7 @@ pub fn processInstruction(
                     );
                     fnCallResolver.mergeSubstitution(sub);
                     fnCallResolver.setKnownImpls(resolvedImpls);
+                    fnCallResolver.allowNamed();
                     //println!("Substitution: {} ", sub);
                     let mut args = Vec::new();
                     for arg in info.args.getVariables() {
