@@ -87,6 +87,7 @@ impl<'a> FunctionCallResolver<'a> {
         location: Location,
         runner: Runner,
     ) -> CheckFunctionCallResult {
+        let traceEnabled = runner.getConfig().dumpCfg.functionCallResolverTraceEnabled;
         let checkConstraintRunner = runner.child("check_constraints");
         let fnType = f.getType();
         let fnType = fnType.resolveSelfType();
@@ -95,22 +96,28 @@ impl<'a> FunctionCallResolver<'a> {
             fnName: f.name.clone(),
             instanceRefs: Vec::new(),
         };
-        // println!(
-        //     "Checking trait (method?) call: {} {} {} {}",
-        //     f.name, fnType, f.constraintContext, self.knownConstraints
-        // );
-        //let destType = self.unifier.apply(resultVar.getType());
-        //println!("Dest type: {}", destType);
+        if traceEnabled {
+            println!(
+                "Checking trait (method?) call: {} {} {} {}",
+                f.name, fnType, f.constraintContext, self.knownConstraints
+            );
+            let destType = self.unifier.apply(resultVar.getType());
+            println!("Dest type: {}", destType);
+        }
         let mut types = f.constraintContext.typeParameters.clone();
         types.push(fnType.clone());
         let sub = instantiateTypes(&mut self.allocator, &types);
         let expectedFnType = fnType.apply(&sub);
-        //println!("Instantiated fn type: {}", expectedFnType);
+        if traceEnabled {
+            println!("Instantiated fn type: {}", expectedFnType);
+        }
         let neededConstraints =
             ConstraintExpander::new(self.program, self.allocator.clone(), f.constraintContext.clone())
                 .expandKnownConstraints();
         let neededConstraints = neededConstraints.apply(&sub);
-        //println!("Needed constraints: {}", neededConstraints);
+        if traceEnabled {
+            println!("Needed constraints: {}", neededConstraints);
+        }
         let (expectedArgs, mut expectedResult) = match expectedFnType.clone().splitFnType() {
             Some((fnArgs, fnResult)) => (fnArgs, fnResult),
             None => panic!("Function type {} is not a function type!", expectedFnType),
@@ -133,11 +140,13 @@ impl<'a> FunctionCallResolver<'a> {
                 // }
                 argTypes.push(ty);
             }
-            // println!(
-            //     "Expected args: {}, got args: {}",
-            //     formatTypes(&expectedArgs),
-            //     formatTypes(&argTypes)
-            // );
+            if traceEnabled {
+                println!(
+                    "Expected args: {}, got args: {}",
+                    formatTypes(&expectedArgs),
+                    formatTypes(&argTypes)
+                );
+            }
         }
         if expectedArgs.len() > 0 {
             expectedResult = expectedResult.changeSelfType(expectedArgs[0].clone());
@@ -151,8 +160,10 @@ impl<'a> FunctionCallResolver<'a> {
         //println!("Needed constraints: {}", neededConstraints);
         //println!("Known constraints: {}", self.knownConstraints);
         let knownConstraints = self.unifier.apply(self.knownConstraints.clone());
-        // println!("After applying unifier, known constraints: {}", knownConstraints);
-        // println!("known impls: {:?}", self.knownImpls);
+        if traceEnabled {
+            println!("After applying unifier, needed constraints: {}", neededConstraints);
+            println!("After applying unifier, known constraints: {}", knownConstraints);
+        }
         let neededConstraints = neededConstraints.constraints;
         let mut remaining = neededConstraints.clone();
         let mut tryMore = true;
@@ -160,7 +171,9 @@ impl<'a> FunctionCallResolver<'a> {
             loop {
                 let mut resolvedSomething = false;
                 remaining = self.unifier.apply(remaining);
-                //println!("Remaining constraints: {:?}", remaining);
+                if traceEnabled {
+                    println!("Remaining constraints: {:?}", remaining);
+                }
                 if remaining.is_empty() {
                     break;
                 }
@@ -183,6 +196,7 @@ impl<'a> FunctionCallResolver<'a> {
                             tryMore,
                             &mut resolvedSomething,
                             current,
+                            traceEnabled,
                         );
                     });
                 }
@@ -194,9 +208,11 @@ impl<'a> FunctionCallResolver<'a> {
 
         checkResult.fnType = expectedFnType.clone();
         self.unifier.unifyVar(resultVar, expectedResult);
-        // println!("result impl refs {:?}", checkResult.instanceRefs);
-        // println!("result name {}", checkResult.fnName);
-        // println!("needed constraints: {:?}", neededConstraints);
+        if traceEnabled {
+            println!("result impl refs {:?}", checkResult.instanceRefs);
+            println!("result name {}", checkResult.fnName);
+            println!("needed constraints: {:?}", neededConstraints);
+        }
         //assert_eq!(checkResult.instanceRefs.len(), neededConstraints.len());
         checkResult
     }
@@ -215,6 +231,7 @@ impl<'a> FunctionCallResolver<'a> {
         tryMore: bool,
         resolvedSomething: &mut bool,
         current: super::ConstraintContext::Constraint,
+        traceEnabled: bool,
     ) {
         if let Some((index, foundConstraint)) = self.instanceResolver.findImplInKnownConstraints(
             &current,
@@ -222,9 +239,13 @@ impl<'a> FunctionCallResolver<'a> {
             runner.child("known_constraints"),
         ) {
             *resolvedSomething = true;
-            //println!("---------- Using known instance for {}", current);
+            if traceEnabled {
+                println!("---------- Using known constraint for {}", current);
+            }
             for (a, b) in zip(&current.associatedTypes, &foundConstraint.associatedTypes) {
-                //println!("Unifying impl assoc {} with constraint assoc {}", a, b);
+                if traceEnabled {
+                    println!("Unifying known assoc {} with constraint assoc {}", a, b);
+                }
                 self.unifier.unify(a.ty.clone(), b.ty.clone(), location.clone());
             }
             if current.main {
@@ -235,7 +256,9 @@ impl<'a> FunctionCallResolver<'a> {
                         .getInstance(knownImpl)
                         .expect("Known impl not found in program");
                     let instanceDef = instantiateInstance(&self.allocator, &instanceDef);
-                    //println!("Found impl {} for {}", instanceDef.name, current);
+                    if traceEnabled {
+                        println!("Found known impl {} for {}", instanceDef.name, current);
+                    }
                     assert_eq!(instanceDef.traitName.add(f.name.getShortName()), f.name);
                     self.findInstanceMember(f, location, checkResult, expectedFnType, &instanceDef);
                     let expectedFnType = self.unifier.apply(expectedFnType.clone());
@@ -257,16 +280,22 @@ impl<'a> FunctionCallResolver<'a> {
             }
         } else {
             // we will select an instance now
-            //println!("---------- Trying to find instance for {}", current);
+            if traceEnabled {
+                println!("---------- Trying to find instance for {}", current);
+            }
             match self
                 .instanceResolver
                 .findInstanceInScope(&current, runner.child("find_instance"))
             {
                 InstanceSearchResult::Found(instanceDef) => {
                     *resolvedSomething = true;
-                    //println!("Found impl {} for {}", instanceDef.name, current);
+                    if traceEnabled {
+                        println!("Found impl {} for {}", instanceDef.name, current);
+                    }
                     for (a, b) in zip(&instanceDef.associatedTypes, &current.associatedTypes) {
-                        //println!("Unifying impl assoc {} with constraint assoc {}", a, b);
+                        if traceEnabled {
+                            println!("Unifying impl assoc {} with constraint assoc {}", a, b);
+                        }
                         self.unifier.unify(a.ty.clone(), b.ty.clone(), location.clone());
                     }
                     checkResult.fnType = expectedFnType.clone();

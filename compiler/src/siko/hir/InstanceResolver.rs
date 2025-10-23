@@ -98,6 +98,10 @@ impl<'a> InstanceResolver<'a> {
                 let mut allMatch = true;
                 let mut sub = Substitution::new();
                 for (implArg, cArg) in zip(&instanceDef.types, &constraint.args) {
+                    if cArg.isGeneric() && !implArg.isGeneric() {
+                        allMatch = false;
+                        break;
+                    }
                     // println!("  Unifying impl arg {} with constraint arg {}", implArg, cArg);
                     if !unify(
                         &mut sub,
@@ -116,6 +120,16 @@ impl<'a> InstanceResolver<'a> {
                     //println!("Applying substitution: {}", sub);
                     instanceDef = instanceDef.apply(&sub);
                     //println!("Impl after applying substitution: {}", instanceDef);
+                    if runner.getConfig().dumpCfg.instanceResolverTraceEnabled {
+                        let indent = "  ".repeat(level as usize);
+                        println!(
+                            "{}Candidate {} matches for {}, sub constraints: {}",
+                            indent,
+                            instanceDef.name,
+                            constraint,
+                            instanceDef.constraintContext
+                        );
+                    }
                     let mut allSubConstraintsMatch = true;
                     for c in &instanceDef.constraintContext.constraints {
                         //println!("  checking sub constraint: {}", c);
@@ -213,10 +227,9 @@ impl<'a> InstanceResolver<'a> {
         level: u32,
         runner: Runner,
     ) -> InstanceSearchResult {
-        for arg in constraint.args.iter() {
-            if arg.isGeneric() {
-                return InstanceSearchResult::NotFound;
-            }
+        if runner.getConfig().dumpCfg.instanceResolverTraceEnabled {
+            let indent = "  ".repeat(level as usize);
+            println!("{}-> resolve level {} constraint {}", indent, level, constraint);
         }
         // println!(
         //     "Finding instance in scope for constraint {} at level {}",

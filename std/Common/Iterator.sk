@@ -12,6 +12,10 @@ pub trait Iterator[T] {
     fn map[U](self, f: fn(Item) -> U) -> MapIter[Item, U, T] {
         MapIter (iter: self, f: f)
     }
+
+    fn collect[C: FromIterator[C, Item]](self) -> C {
+        FromIterator.fromIterator(self)
+    }
 }
 
 pub trait IntoIterator[T] {
@@ -74,6 +78,11 @@ pub instance[T, U, I: Iterator[I, Item=T]] Iterator[MapIter[T, U, I]] {
             }
         }
     }
+}
+
+pub trait FromIterator[T, I] {
+    fn fromIterator[S, Iter: IntoIterator[S, Item=I, Iter=Iter]](iter: S) -> T
+    //fn fromIterator[S: Iterator[S, Item=I]](iter: S) -> T
 }
 
 }

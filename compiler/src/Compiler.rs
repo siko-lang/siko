@@ -186,6 +186,9 @@ impl Compiler {
                 "--dump-final-hir" => {
                     self.config.dumpFinalHIR = true;
                 }
+                "--function-call-resolver-trace" => {
+                    self.config.dumpCfg.functionCallResolverTraceEnabled = true;
+                }
                 _ => {
                     if external_mode {
                         self.config.externalFiles.push(args[i].clone());
