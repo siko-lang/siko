@@ -39,6 +39,34 @@ pub fn instantiateInstance(allocator: &TypeVarAllocator, i: &Instance) -> Instan
     for ty in &i.typeParams {
         vars = ty.collectVars(vars);
     }
+    for at in &i.associatedTypes {
+        vars = at.ty.collectVars(vars);
+    }
+    for ty in &i.constraintContext.typeParameters {
+        vars = ty.collectVars(vars);
+    }
+    for constraint in &i.constraintContext.constraints {
+        for ty in &constraint.args {
+            vars = ty.collectVars(vars);
+        }
+        for at in &constraint.associatedTypes {
+            vars = at.ty.collectVars(vars);
+        }
+    }
+    for member in &i.members {
+        vars = member.memberType.collectVars(vars);
+        for ty in &member.constraint.typeParameters {
+            vars = ty.collectVars(vars);
+        }
+        for constraint in &member.constraint.constraints {
+            for ty in &constraint.args {
+                vars = ty.collectVars(vars);
+            }
+            for at in &constraint.associatedTypes {
+                vars = at.ty.collectVars(vars);
+            }
+        }
+    }
     let mut sub = Substitution::new();
     for var in &vars {
         sub.add(Type::Var(var.clone()), allocator.next());

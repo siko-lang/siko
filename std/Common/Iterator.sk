@@ -9,9 +9,9 @@ pub trait Iterator[T] {
         Enumerate(self, 0.toU64())
     }
 
-    // fn map[U](self, f: fn(Item) -> U) -> Map[Item, U, T] {
-    //     Map (iter: self, f: f)
-    // }
+    fn map[U](self, f: fn(Item) -> U) -> MapIter[Item, U, T] {
+        MapIter (iter: self, f: f)
+    }
 }
 
 pub trait IntoIterator[T] {
@@ -53,26 +53,27 @@ pub instance[T, E: Iterator[T, Item=E]] Iterator[Enumerate[T]] {
     }
 }
 
-pub struct Map[T, U, I] {
+pub struct MapIter[T, U, I] {
     iter: I,
     f: fn(T) -> U
 }
 
-// pub instance[T, U, I: Iterator[I, Item=T]] Iterator[Map[T, U, I]] {
-//     type Item = U
+pub instance[T, U, I: Iterator[I, Item=T]] Iterator[MapIter[T, U, I]] {
+    type Item = U
 
-//     fn next(self) -> (Self, Option[U]) {
-//         let (newIter, itemOpt) = self.iter.next();
-//         match itemOpt {
-//             Some(item) -> {
-//                 let result = (self.f)(item);
-//                 (Map (iter: newIter, f: self.f), Some(result))
-//             }
-//             None -> {
-//                 (Map (iter: newIter, f: self.f), None)
-//             }
-//         }
-//     }
-// }
+    fn next(self) -> (Self, Option[U]) {
+        let (newIter, itemOpt) = self.iter.next();
+        match itemOpt {
+            Some(item) -> {
+                let f = self.f;
+                let result = f(item);
+                (MapIter (iter: newIter, f: f), Some(result))
+            }
+            None -> {
+                (MapIter (iter: newIter, f: self.f), None)
+            }
+        }
+    }
+}
 
 }

@@ -1,5 +1,6 @@
 use crate::siko::{
     hir::{
+        Apply::Apply,
         ConstraintContext::{Constraint as IrConstraint, ConstraintContext},
         Data::MethodInfo as DataMethodInfo,
         Function::{Attributes, FunctionKind, ParamInfo, Parameter, ResultKind as IrResultKind},
@@ -398,6 +399,18 @@ impl<'a> Resolver<'a> {
                         let selfType = irParams[0].clone();
                         let mut irTrait = IrTrait::new(traitName, irParams, associatedTypes, constraintContext);
                         for method in &traitDef.methods {
+                            let mut typeResolver = typeResolver.clone();
+                            let typeParams = getTypeParams(&method.typeParams);
+                            for param in typeParams {
+                                typeResolver.addTypeParams(param);
+                            }
+                            let methodConstraint = addTypeParams(
+                                ConstraintContext::new(),
+                                &method.typeParams,
+                                &typeResolver,
+                                &self.program,
+                                &self.ctx,
+                            );
                             let mut argTypes = Vec::new();
                             for param in &method.params {
                                 let ty = match param {
@@ -418,7 +431,7 @@ impl<'a> Resolver<'a> {
                                 fullName: fullName.clone(),
                                 default: isDefault,
                                 memberType: IrType::Function(argTypes, Box::new(result)),
-                                constraint: ConstraintContext::new(),
+                                constraint: methodConstraint,
                             });
                             if isDefault {
                                 self.defaultTraitMethods.insert(fullName, method.clone());
@@ -500,10 +513,20 @@ impl<'a> Resolver<'a> {
                         for (t1, t2) in zip(instantiatedTrait.params.clone(), irInstance.types.clone()) {
                             unifier.unify(t1, t2, i.location.clone());
                         }
+                        for assocTy in &irInstance.associatedTypes {
+                            let assocVar = IrType::Var(TypeVar::Named(assocTy.name.clone()));
+                            let assocValue = assocTy.ty.clone();
+                            unifier.substitution.borrow_mut().add(assocVar, assocValue);
+                        }
                         subChain.add(unifier.substitution.borrow().clone());
                         self.instanceSubChains.insert(irInstance.name.clone(), subChain);
                         let mut implementedMembers = BTreeSet::new();
                         for method in &i.methods {
+                            let typeParams = getTypeParams(&method.typeParams);
+                            let mut typeResolver = typeResolver.clone();
+                            for ty in typeParams {
+                                typeResolver.addTypeParams(ty);
+                            }
                             implementedMembers.insert(method.name.clone());
                             if !allTraitMembers.contains(&method.name.name()) {
                                 ResolverError::InvalidInstanceMember(
@@ -547,15 +570,19 @@ impl<'a> Resolver<'a> {
                         }
                         for (name, method) in usedDefaults {
                             //println!("Using default method {}", method);
+                            let subSnapshot = unifier.substitution.borrow().clone();
                             let memberType = unifier.apply(method.memberType);
                             //println!("Resolved member type: {}", memberType);
-                            let constraintContext = addTypeParams(
-                                irInstance.constraintContext.clone(),
-                                &None,
-                                &typeResolver,
-                                &self.program,
-                                &self.ctx,
-                            );
+                            let mut constraintContext = irInstance.constraintContext.clone();
+                            let methodConstraint = method.constraint.clone().apply(&subSnapshot);
+                            for param in methodConstraint.typeParameters {
+                                constraintContext.addTypeParam(param);
+                            }
+                            for constraint in methodConstraint.constraints {
+                                if !constraintContext.contains(&constraint) {
+                                    constraintContext.addConstraint(constraint);
+                                }
+                            }
                             let fullName = irInstance.name.add(name.clone());
                             irInstance.members.push(MemberInfo {
                                 name: name.clone(),
@@ -687,10 +714,15 @@ impl<'a> Resolver<'a> {
                             constraintContext.addTypeParam(param.clone());
                         }
                         for associatedType in &traitDef.associatedTypes {
-                            typeResolver.addTypeParams(IrType::Var(TypeVar::Named(associatedType.clone())));
+                            let ty = IrType::Var(TypeVar::Named(associatedType.clone()));
+                            typeResolver.addTypeParams(ty);
                         }
                         for method in &syntaxTraitDef.methods {
-                            //println!("Processing trait method {}", method.name);
+                            let mut typeResolver = typeResolver.clone();
+                            let typeParams = getTypeParams(&method.typeParams);
+                            for param in typeParams {
+                                typeResolver.addTypeParams(param);
+                            }
                             let mut constraintContext = addTypeParams(
                                 constraintContext.clone(),
                                 &method.typeParams,
@@ -749,17 +781,21 @@ impl<'a> Resolver<'a> {
                     }
                     ModuleItem::Instance(i) => {
                         let typeParams = getTypeParams(&i.typeParams);
-                        let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
+                        let mut typeResolver = TypeResolver::new(moduleResolver, &typeParams);
                         let traitName = moduleResolver.resolveName(&i.traitName);
                         let qn = buildInstanceName(moduleResolver, i, traitName, &typeResolver);
                         let defaultSubstitutionChain = self
                             .instanceSubChains
                             .get(&qn)
                             .expect("instance substitution chain not found");
-                        let defaultfnTypeResolver = typeResolver.withSubChain(&defaultSubstitutionChain);
+                        let mut defaultfnTypeResolver = typeResolver.withSubChain(&defaultSubstitutionChain);
                         let irInstance = &self.program.getInstance(&qn).expect("Instance not found");
+                        for assocTy in &irInstance.associatedTypes {
+                            let irType = IrType::Var(TypeVar::Named(assocTy.name.clone()));
+                            typeResolver.addTypeParams(irType.clone());
+                            defaultfnTypeResolver.addTypeParams(irType);
+                        }
                         for method in &irInstance.members {
-                            //println!("Processing instance method {} ({})", method.name, method.fullName);
                             let functionResolver = FunctionResolver::new(
                                 moduleResolver,
                                 method.constraint.clone(),
@@ -770,6 +806,14 @@ impl<'a> Resolver<'a> {
                             } else {
                                 &typeResolver
                             };
+                            let mut typeResolver = typeResolver.clone();
+                            let vars = method.memberType.collectVarsStable(Vec::new());
+                            for v in vars {
+                                let ty = IrType::Var(v.clone());
+                                if !typeResolver.typeParameters.contains(&ty) {
+                                    typeResolver.addTypeParams(ty);
+                                }
+                            }
                             let methodFn = self
                                 .instanceMethods
                                 .get(&method.fullName)

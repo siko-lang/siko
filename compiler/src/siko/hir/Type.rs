@@ -463,6 +463,13 @@ impl Type {
         }
     }
 
+    pub fn isFunction(&self) -> bool {
+        match &self {
+            Type::Function(_, _) => true,
+            _ => false,
+        }
+    }
+
     pub fn makeSingleRef(self) -> Type {
         match self {
             Type::Reference(inner) => {

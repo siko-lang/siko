@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 #[derive(Clone)]
 pub struct TypeResolver<'a> {
     pub moduleResolver: &'a ModuleResolver<'a>,
-    typeParameters: BTreeSet<IrType>,
+    pub typeParameters: BTreeSet<IrType>,
     subChain: Option<&'a SubstitutionChain>,
 }
 

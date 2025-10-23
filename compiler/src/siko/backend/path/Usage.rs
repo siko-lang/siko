@@ -72,7 +72,7 @@ fn varToUsage(var: &Variable) -> Usage {
     let ty = var.getType();
     //println!("Using variable: {} {}", var.name().visibleName(), ty);
     assert!(var.isUsage() || var.isDrop());
-    if ty.isReference() || ty.isPtr() {
+    if ty.isReference() || ty.isPtr() || ty.isFunction() {
         Usage {
             path: var.toPath(),
             kind: UsageKind::Ref,
