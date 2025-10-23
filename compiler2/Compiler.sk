@@ -1,5 +1,6 @@
 module Siko.Compiler {
 
+import Siko.Location.FileManager
 import Siko.Location
 import Siko.Parser.Lexer
 import Fs.File
@@ -42,11 +43,13 @@ pub fn compile() {
     for arg in args {
         finder.collectSourceFiles(&arg);
     }
-    for sourceFile in finder.sourceFiles {
+    for (index, sourceFile) in finder.sourceFiles.iter().enumerate() {
         println(sourceFile);
         match readFile(&sourceFile) {
             Ok(content) -> {
-                let fileId = FileId.new(0.toI32());
+                let lines = content.split('\n');
+                let fileId = FileId.new(index.toU32());
+                FileManager.addFile(sourceFile.clone(), lines);
                 let mut lexer = Lexer.new(content.toVecU8(), fileId, Position.new());
                 let (tokens, errors) = lexer.lex(addEOF: True);
                 for token in tokens {

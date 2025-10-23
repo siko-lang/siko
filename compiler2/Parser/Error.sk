@@ -15,6 +15,12 @@ pub enum LexerError {
     UnexpectedCharacter(U8, Span),
     UnexpectedEndOfFile(Span),
 
+    fn char(c: U8) -> String {
+        let mut s = String.new();
+        s.pushChar(c);
+        s
+    }
+
     pub fn report(&self, fileId: FileId) {
         match self {
             InvalidIdentifier(n, span) -> {
@@ -23,7 +29,7 @@ pub enum LexerError {
                 r.print();
             }
             UnsupportedCharacter(c, span) -> {
-                let slogan = "unsupported character";
+                let slogan = "unsupported character: ${yellow(char(c))}";
                 let r = Report.new(slogan, Some(Location.new(fileId, span)));
                 r.print();
             }
@@ -48,7 +54,7 @@ pub enum LexerError {
                 r.print();
             }
             UnexpectedCharacter(c, span) -> {
-                let slogan = "unexpected character";
+                let slogan = "unexpected character: ${yellow(char(c))}";
                 let r = Report.new(slogan, Some(Location.new(fileId, span)));
                 r.print();
             }

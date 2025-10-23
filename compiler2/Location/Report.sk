@@ -49,55 +49,51 @@ pub struct Report {
                 }
             }
             let filename = entry.location.fileId.getFileName();
-            let startLoc = entry.location.span.start.line + 1.toI32();
-            let startOffset = entry.location.span.start.offset + 1.toI32();
+            let startLoc = entry.location.span.start.line + 1.toU32();
+            let startOffset = entry.location.span.start.offset + 1.toU32();
             println("${red(" --->")} ${filename}:${startLoc}:${startOffset}");
             let lines = entry.location.fileId.getLines();
             let startLine = entry.location.span.start.line;
             let endLine = entry.location.span.end.line;
             let mut separatorPrinted = False;
-            // for (lineNumber, line) in lines.iter().enumerate() {
-            //     let lineNumber = lineNumber.toI32();
-            //     let distance = std::cmp::min((lineNumber - startLine).abs(), (endLine - lineNumber).abs());
-            //     if lineNumber >= startLine and lineNumber <= endLine {
-            //         if distance < 3 {
-            //             let highlighted_line = if lineNumber == startLine && lineNumber == endLine {
-            //                 let start = entry.location.span.start.offset as usize;
-            //                 let end = entry.location.span.end.offset as usize;
-            //                 let mut modifiedLine = String.new();
-            //                 modifiedLine.push_str(&line[..start]);
-            //                 modifiedLine.push_str(&self.ctx.yellow(&line[start..end]));
-            //                 modifiedLine.push_str(&line[end..]);
-            //                 modifiedLine
-            //             } else if lineNumber == startLine {
-            //                 let start = entry.location.span.start.offset as usize;
-            //                 let mut modifiedLine = String.new();
-            //                 modifiedLine.push_str(&line[..start]);
-            //                 modifiedLine.push_str(&self.ctx.yellow(&line[start..]));
-            //                 modifiedLine
-            //             } else if lineNumber == endLine {
-            //                 let end = entry.location.span.end.offset as usize;
-            //                 let mut modifiedLine = String.new();
-            //                 modifiedLine.push_str(&self.ctx.yellow(&line[..end]));
-            //                 modifiedLine.push_str(&line[end..]);
-            //                 modifiedLine
-            //             } else {
-            //                 self.ctx.yellow(line)
-            //             };
-            //             println!(
-            //                 " {} {} {}",
-            //                 self.ctx.red("|"),
-            //                 self.ctx.blue(&format!("{}", lineNumber + 1)),
-            //                 highlighted_line
-            //             );
-            //         } else {
-            //             if !separatorPrinted {
-            //                 separatorPrinted = true;
-            //                 println!(" {}", "...");
-            //             }
-            //         }
-            //     }
-            // }
+            for (lineNumber, line) in lines.iter().enumerate() {
+                let lineNumber = lineNumber.toU32();
+                let distance = min((lineNumber - startLine), (endLine - lineNumber));
+                if lineNumber >= startLine and lineNumber <= endLine {
+                    if distance < 3.toU32() {
+                        let highlighted_line = if lineNumber == startLine and lineNumber == endLine {
+                            let start = entry.location.span.start.offset;
+                            let end = entry.location.span.end.offset;
+                            let mut modifiedLine = String.new();
+                            modifiedLine.push(line.subString(0.toU64(), start.toU64()));
+                            modifiedLine.push(yellow(line.subString(start.toU64(), end.toU64())));
+                            modifiedLine.push(line.subString(end.toU64(), line.len().toU64()));
+                            modifiedLine
+                        } else if lineNumber == startLine {
+                            let start = entry.location.span.start.offset;
+                            let mut modifiedLine = String.new();
+                            modifiedLine.push(line.subString(0.toU64(), start.toU64()));
+                            modifiedLine.push(yellow(line.subString(start.toU64(), line.len().toU64())));
+                            modifiedLine
+                        } else if lineNumber == endLine {
+                            let end = entry.location.span.end.offset;
+                            let mut modifiedLine = String.new();
+                            modifiedLine.push(yellow(line.subString(0.toU64(), end.toU64())));
+                            modifiedLine.push(line.subString(end.toU64(), line.len().toU64()));
+                            modifiedLine
+                        } else {
+                            yellow(line)
+                        };
+                        let lineNumberStr = "${lineNumber + 1.toU32()}";
+                        println(" ${red("|")} ${blue(lineNumberStr)} ${highlighted_line}");
+                    } else {
+                        if !separatorPrinted {
+                            separatorPrinted = True;
+                            println(" ...");
+                        }
+                    }
+                }
+            }
         }
     }
 }

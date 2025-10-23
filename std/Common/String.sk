@@ -159,10 +159,14 @@ pub struct String {
 
     @safe
     pub fn subString(&self, start: U64, end: U64) -> String {
-        if start >= self.size or end > self.size or start >= end {
+        if start >= self.size or end > self.size or start > end {
+            println("start: ${start}, end: ${end}, size: ${self.size}");
             panic("Invalid substring range");
         }
         let len = end - start;
+        if len == 0.toU64() {
+            return String.new();
+        }
         let newValue = allocateArray(len);
         memcpy(newValue, offset(self.value, start), len);
         String(newValue, len, len)

@@ -24,6 +24,11 @@ pub struct U32 {
     }
 
     @safe
+    pub fn toU64(&self) -> U64 {
+        transmute(self.clone())
+    }
+
+    @safe
     pub fn clone(&self) -> U32 {
         *toPtr(self)
     }
@@ -36,14 +41,36 @@ pub instance AddU32 Add[U32, U32] {
     }
 }
 
-pub instance AddU32 Add[U32, &U32] {
+pub instance AddRefU32 Add[U32, &U32] {
     type Output = U32
     fn add(self, other: &U32) -> U32 {
         self.add(other)
     }
 }
 
-pub instance SubU32 Sub[U32] {
+pub instance AddRef2U32 Add[&U32, U32] {
+    type Output = U32
+    fn add(self, other: U32) -> U32 {
+        self.add(other)
+    }
+}
+
+pub instance SubU32 Sub[U32, U32] {
+    type Output = U32
+    fn sub(self, other: U32) -> U32 {
+        self.sub(other)
+    }
+}
+
+pub instance SubRefU32 Sub[U32, &U32] {
+    type Output = U32
+    fn sub(self, other: &U32) -> U32 {
+        self.sub(other)
+    }
+}
+
+pub instance SubRef2U32 Sub[&U32, U32] {
+    type Output = U32
     fn sub(self, other: U32) -> U32 {
         self.sub(other)
     }
