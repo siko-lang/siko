@@ -161,6 +161,12 @@ impl<'a> DropChecker<'a> {
                         .getInstruction()
                         .expect(&format!("No instruction at index {}", index));
                     if let InstructionKind::FieldAccess(dest, fieldAccessInfo) = instruction.kind {
+                        if dest.getType().isFunction() {
+                            instructions.retain(|&x| x != index);
+                            index += 1;
+                            builder.step();
+                            continue;
+                        }
                         let implicitCloneVar = self
                             .bodyBuilder
                             .createTempValueWithType(dest.location().clone(), dest.getType().asRef());

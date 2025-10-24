@@ -1,6 +1,7 @@
 @prelude
 module Vec {
 
+import Default
 import NativePtr
 import Slice
 
@@ -128,6 +129,24 @@ pub struct Vec[T] {
             self.push(item);
         }
         self
+    }
+
+    @safe
+    pub fn subVec[T: Clone[T]](&self, start: Int, end: Int) -> Vec[T] {
+        if start >= self.len() or end > self.len() or start > end {
+            println("start: ${start}, end: ${end}, size: ${self.len()}");
+            panic("Invalid subvec range");
+        }
+        let len = end - start;
+        if len == 0 {
+            return Vec.new();
+        }
+        let mut newVec: Vec[T] = Vec.new();
+        for i in start .. end {
+            let item = self.inner.getUnchecked(i.toU64()).clone();
+            newVec.push(item);
+        }
+        newVec
     }
 }
 
@@ -406,6 +425,27 @@ pub instance[T] FromIteratorVec FromIterator[Vec[T], T] {
             vec.push(item);
         }
         vec
+    }
+}
+
+pub instance JoinStringVec Join[Vec[String]] {
+    type Separator = String
+    type Output = String
+
+    @safe
+    fn join(&self, separator: String) -> String {
+        let mut result : String = String.new();
+        let mut first = True;
+        for item in self {
+            if !first {
+                let slice: Slice[U8] = separator.slice();
+                result.appendSlice(slice);
+            }
+            first = False;
+            let slice: Slice[U8] = item.slice();
+            result.appendSlice(slice);
+        }
+        result
     }
 }
 

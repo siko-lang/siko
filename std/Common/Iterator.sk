@@ -16,6 +16,10 @@ pub trait Iterator[T] {
     fn collect[C: FromIterator[C, Item]](self) -> C {
         FromIterator.fromIterator(self)
     }
+
+    fn skip(self, n: Int) -> SkipIter[T] {
+        SkipIter (iter: self, n: n)
+    }
 }
 
 pub trait IntoIterator[T] {
@@ -39,19 +43,19 @@ pub struct Enumerate[T] {
     index: U64
 }
 
-pub instance[T, E: Iterator[T, Item=E]] Iterator[Enumerate[T]] {
+pub instance[T, E: Iterator[T, Item=E]] EnumerateIterator Iterator[Enumerate[T]] {
     type Item = (U64, E)
 
-    fn next(self) -> (Self, Option[(U64, E)]) {
-        let (newIter, itemOpt) = self.iter.next();
-        match itemOpt {
+    fn next(mut self) -> (Self, Option[(U64, E)]) {
+        let item = self.iter.next();
+        match item {
             Some(item) -> {
                 let result = (self.index, item);
-                let newEnumerate = Enumerate(newIter, self.index + 1.toU64());
-                (newEnumerate, Some(result))
+                self.index += 1.toU64();
+                (self, Some(result))
             }
             None -> {
-                (Enumerate(newIter, self.index), None)
+                (self, None)
             }
         }
     }
@@ -62,19 +66,19 @@ pub struct MapIter[T, U, I] {
     f: fn(T) -> U
 }
 
-pub instance[T, U, I: Iterator[I, Item=T]] Iterator[MapIter[T, U, I]] {
+pub instance[T, U, I: Iterator[I, Item=T]] MapIterator Iterator[MapIter[T, U, I]] {
     type Item = U
 
-    fn next(self) -> (Self, Option[U]) {
-        let (newIter, itemOpt) = self.iter.next();
-        match itemOpt {
+    fn next(mut self) -> (Self, Option[U]) {
+        let item =  self.iter.next();
+        match item {
             Some(item) -> {
                 let f = self.f;
                 let result = f(item);
-                (MapIter (iter: newIter, f: f), Some(result))
+                (self, Some(result))
             }
             None -> {
-                (MapIter (iter: newIter, f: self.f), None)
+                (self, None)
             }
         }
     }
@@ -83,6 +87,24 @@ pub instance[T, U, I: Iterator[I, Item=T]] Iterator[MapIter[T, U, I]] {
 pub trait FromIterator[T, I] {
     fn fromIterator[S, Iter: IntoIterator[S, Item=I, Iter=Iter]](iter: S) -> T
     //fn fromIterator[S: Iterator[S, Item=I]](iter: S) -> T
+}
+
+pub struct SkipIter[I] {
+    iter: I,
+    n: Int
+}
+
+pub instance[T, I: Iterator[I, Item=T]] SkipIterator Iterator[SkipIter[I]] {
+    type Item = T
+
+    fn next(mut self) -> (Self, Option[T]) {
+        while self.n > 0 {
+            self.iter.next();
+            self.n -= 1;
+        }
+        let item = self.iter.next();
+        (self, item)
+    }
 }
 
 }

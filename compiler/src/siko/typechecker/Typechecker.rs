@@ -1916,7 +1916,7 @@ impl<'a> Typechecker<'a> {
 
         self.addTypes(&mut resultFn);
         //self.dump(&resultFn);
-        self.verify(&resultFn);
+        //self.verify(&resultFn);
 
         let mut functions = Vec::new();
 

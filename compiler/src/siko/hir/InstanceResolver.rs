@@ -124,10 +124,7 @@ impl<'a> InstanceResolver<'a> {
                         let indent = "  ".repeat(level as usize);
                         println!(
                             "{}Candidate {} matches for {}, sub constraints: {}",
-                            indent,
-                            instanceDef.name,
-                            constraint,
-                            instanceDef.constraintContext
+                            indent, instanceDef.name, constraint, instanceDef.constraintContext
                         );
                     }
                     let mut allSubConstraintsMatch = true;
@@ -301,6 +298,9 @@ impl<'a> InstanceResolver<'a> {
     }
 
     pub fn isCopy(&self, ty: &Type, runner: Runner) -> bool {
+        if ty.isFunction() {
+            return true;
+        }
         let constraint = Constraint {
             name: getCopyName(),
             args: vec![ty.clone()],

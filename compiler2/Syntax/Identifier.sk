@@ -33,42 +33,42 @@ pub struct Identifier {
         unimplemented()
     }
 
-    // pub fn name(&self) -> String {
-    //     self.fragments
-    //         .iter()
-    //         .map(|f| f.name.clone())
-    //         .collect::<Vec<_>>()
-    //         .join("")
-    // }
+    pub fn name(&self) -> String {
+        let parts: Vec[String] = self.fragments
+            .iter()
+            .map(|f| f.name.clone())
+            .collect();
+        parts.join("".toString())
+    }
 
-    // pub fn location(&self) -> Location {
-    //     if self.fragments.is_empty() {
-    //         Location.empty()
-    //     } else {
-    //         let mut l = self.fragments[0].location.clone();
-    //         for fragment in &self.fragments[1..] {
-    //             l = l.merge(fragment.location.clone())
-    //         }
-    //         l
-    //     }
-    // }
+    pub fn location(&self) -> Location {
+        if self.fragments.empty() {
+            Location.empty()
+        } else {
+            let mut l = self.fragments[0].location.clone();
+            for fragment in self.fragments.iter().skip(1) {
+                l = l.merge(fragment.location.clone());
+            }
+            l
+        }
+    }
 
-    // pub fn split(&self) -> Option<(Identifier, Identifier)> {
-    //     if self.fragments.len() < 3 {
-    //         None
-    //     } else {
-    //         let first = &self.fragments[0..self.fragments.len() - 2];
-    //         let second = &self.fragments[self.fragments.len() - 1..];
-    //         Some((
-    //             Identifier {
-    //                 fragments: first.to_vec(),
-    //             },
-    //             Identifier {
-    //                 fragments: second.to_vec(),
-    //             },
-    //         ))
-    //     }
-    // }
+    pub fn split(&self) -> Option[(Identifier, Identifier)] {
+        if self.fragments.len() < 3 {
+            None
+        } else {
+            let first = self.fragments.subVec(0, self.fragments.len() - 2);
+            let second = self.fragments.subVec(self.fragments.len() - 1, self.fragments.len());
+            Some((
+                Identifier(
+                    fragments: first,
+                ),
+                Identifier(
+                    fragments: second,
+                ),
+            ))
+        }
+    }
 }
 
 pub instance IdentifierShow Show[Identifier] {

@@ -16,7 +16,7 @@ use crate::siko::hir::Instruction::{
 use crate::siko::hir::Variable::{Variable, VariableName};
 use crate::siko::location::Location::Location;
 use crate::siko::location::Report::ReportContext;
-use crate::siko::qualifiedname::builtins::{getVecNewName, getVecPushName};
+use crate::siko::qualifiedname::builtins::getVecNewName;
 use crate::siko::qualifiedname::{build, QualifiedName};
 use crate::siko::resolver::matchcompiler::Compiler::MatchCompiler;
 use crate::siko::syntax::Expr::{BinaryOp, Expr, FunctionArg, SimpleExpr, UnaryOp};
@@ -650,15 +650,20 @@ impl<'a> ExprResolver<'a> {
                 }
             }
             SimpleExpr::List(args) => {
-                let mut listVar =
+                let emptyListVar =
                     self.bodyBuilder
                         .current()
                         .addFunctionCall(getVecNewName(), (), expr.location.clone());
+                let listVar = self.bodyBuilder.createTempValue(expr.location.clone());
+                self.bodyBuilder
+                    .current()
+                    .addBind(listVar.clone(), emptyListVar, true, expr.location.clone());
                 for arg in args {
                     let argId = self.resolveExpr(arg, env);
-                    listVar = self.bodyBuilder.current().addFunctionCall(
-                        getVecPushName(),
-                        vec![listVar, argId],
+                    self.bodyBuilder.current().addMethodCall(
+                        "push".to_string(),
+                        listVar.clone(),
+                        vec![argId],
                         expr.location.clone(),
                     );
                 }
