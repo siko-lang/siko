@@ -100,6 +100,44 @@ impl<'a> ExprParser for Parser<'a> {
     fn parseIf(&mut self) -> Expr {
         let start = self.currentSpan();
         self.expect(TokenKind::Keyword(KeywordKind::If));
+        if self.check(TokenKind::Keyword(KeywordKind::Let)) {
+            self.expect(TokenKind::Keyword(KeywordKind::Let));
+            let pattern = self.parsePattern();
+            self.expect(TokenKind::Misc(MiscKind::Equal));
+            let cond = self.parseExpr();
+            let block = self.parseBlock();
+            let mut branches = Vec::new();
+            let trueBranch = self.buildExpr(SimpleExpr::Block(block), start.clone());
+            branches.push(Branch {
+                pattern,
+                body: trueBranch,
+            });
+            let elseBranch = if self.check(TokenKind::Keyword(KeywordKind::Else)) {
+                self.expect(TokenKind::Keyword(KeywordKind::Else));
+                if self.check(TokenKind::Keyword(KeywordKind::If)) {
+                    self.parseIf()
+                } else {
+                    let block = self.parseBlock();
+                    self.buildExpr(SimpleExpr::Block(block), start.clone())
+                }
+            } else {
+                Expr {
+                    expr: SimpleExpr::Block(Block {
+                        statements: Vec::new(),
+                        location: self.currentLocation(),
+                    }),
+                    location: self.currentLocation(),
+                }
+            };
+            branches.push(Branch {
+                pattern: Pattern {
+                    pattern: SimplePattern::Wildcard,
+                    location: self.currentLocation(),
+                },
+                body: elseBranch,
+            });
+            return self.buildExpr(SimpleExpr::Match(Box::new(cond), branches), start);
+        }
         let cond = self.parseExpr();
         let block = self.parseBlock();
         let mut branches = Vec::new();

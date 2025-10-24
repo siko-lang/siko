@@ -90,15 +90,12 @@ pub struct Command {
                 println("Failed to close read end of pipe");
                 exit(1.toI32());
             }
-            match self.workDir {
-                Some(dir) -> {
-                    let cDir: CString = fromString(dir);
-                    if chdir(cDir.asPtr()) != 0.toI32() {
-                        println("Failed to change directory to ${cDir}");
-                        exit(1.toI32());
-                    }
+            if let Some(dir) = self.workDir {
+                let cDir: CString = fromString(dir);
+                if chdir(cDir.asPtr()) != 0.toI32() {
+                    println("Failed to change directory to ${cDir}");
+                    exit(1.toI32());
                 }
-                None -> {}
             }
             let cProgram: CString = fromString(self.program);
             let mut argStrings = Vec.new();
