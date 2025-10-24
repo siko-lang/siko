@@ -376,6 +376,64 @@ impl<'a> ExprParser for Parser<'a> {
     fn parseWhile(&mut self) -> Expr {
         let start = self.currentSpan();
         self.expect(TokenKind::Keyword(KeywordKind::While));
+        if self.check(TokenKind::Keyword(KeywordKind::Let)) {
+            self.expect(TokenKind::Keyword(KeywordKind::Let));
+            let pattern = self.parsePattern();
+            self.expect(TokenKind::Misc(MiscKind::Equal));
+            let value = self.parseExpr();
+            self.expect(TokenKind::LeftBracket(BracketKind::Curly));
+            self.undo();
+            let block = self.parseBlock();
+            let matchExpr = Expr {
+                expr: SimpleExpr::Match(
+                    Box::new(value),
+                    vec![
+                        Branch {
+                            pattern,
+                            body: Expr {
+                                expr: SimpleExpr::Block(block),
+                                location: self.currentLocation(),
+                            },
+                        },
+                        Branch {
+                            pattern: Pattern {
+                                pattern: SimplePattern::Wildcard,
+                                location: self.currentLocation(),
+                            },
+                            body: Expr {
+                                expr: SimpleExpr::Break(None),
+                                location: self.currentLocation(),
+                            },
+                        },
+                    ],
+                ),
+                location: self.currentLocation(),
+            };
+            let loopBody = Expr {
+                expr: SimpleExpr::Block(Block {
+                    statements: vec![Statement {
+                        kind: StatementKind::Expr(matchExpr),
+                        hasSemicolon: true,
+                    }],
+                    location: self.currentLocation(),
+                }),
+                location: self.currentLocation(),
+            };
+            return self.buildExpr(
+                SimpleExpr::Loop(
+                    Pattern {
+                        pattern: SimplePattern::Tuple(Vec::new()),
+                        location: self.currentLocation(),
+                    },
+                    Box::new(Expr {
+                        expr: SimpleExpr::Tuple(Vec::new()),
+                        location: self.currentLocation(),
+                    }),
+                    Box::new(loopBody),
+                ),
+                start,
+            );
+        }
         let cond = self.parseExpr();
         self.expect(TokenKind::LeftBracket(BracketKind::Curly));
         self.undo();
