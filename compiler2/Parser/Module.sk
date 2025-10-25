@@ -1,0 +1,74 @@
+module Siko.Parser.Module {
+
+import Siko.Parser.Parser
+import Siko.Parser.Token
+import Siko.Parser.Attributes
+import Siko.Parser.Implicit
+import Siko.Syntax.Module as M
+
+pub trait ModuleParser[T] {
+    fn parseImport(self) -> (Self, M.Import)
+    fn parseModule(self) -> (Self, M.Module)
+}
+
+instance ModuleParser[Parser] {
+    fn parseImport(mut self) -> (Self, M.Import) {
+        self.expect(TokenKind.Keyword(KeywordKind.Import));
+        let name = self.parseModuleName();
+        let alias = if self.check(TokenKind.Keyword(KeywordKind.As)) {
+            self.expect(TokenKind.Keyword(KeywordKind.As));
+            let alias = self.parseModuleName();
+            Some(alias)
+        } else {
+            None
+        };
+        let i = M.Import(
+            moduleName: name,
+            alias,
+            implicitImport: False,
+        );
+        (self, i)
+    }
+
+    fn parseModule(mut self) -> (Self, M.Module) {
+        let (moduleAttributes, _) = self.parseAttributes();
+        self.expect(TokenKind.Keyword(KeywordKind.Module));
+        let name = self.parseModuleName();
+        self.expect(TokenKind.LeftBracket(BracketKind.Curly));
+        let mut items = Vec.new();
+        while !self.check(TokenKind.RightBracket(BracketKind.Curly)) {
+            let (attributes, derives) = self.parseAttributes();
+            let mut public = False;
+            if self.check(TokenKind.Keyword(KeywordKind.Pub)) {
+                self.expect(TokenKind.Keyword(KeywordKind.Pub));
+                public = True;
+            }
+            let item = match self.peek() {
+                // TokenKind.Keyword(KeywordKind.Struct) -> {
+                //     ModuleItem.Struct(self.parseStruct(derives, public, attributes))
+                // }
+                // TokenKind.Keyword(KeywordKind.Enum) -> ModuleItem.Enum(self.parseEnum(derives, public, attributes)),
+                // TokenKind.Keyword(KeywordKind.Fn) -> {
+                //     ModuleItem.Function(self.parseFunction(attributes, public, true))
+                // }
+                //TokenKind.Keyword(KeywordKind.Let) -> ModuleItem.Global(self.parseGlobal(attributes, public)),
+                //TokenKind.Keyword(KeywordKind.Import) -> ModuleItem.Import(self.parseImport()),
+                //TokenKind.Keyword(KeywordKind.Effect) -> ModuleItem.Effect(self.parseEffect(public)),
+                TokenKind.Keyword(KeywordKind.Implicit) -> M.ModuleItem.Implicit(self.parseImplicit(public)),
+                //TokenKind.Keyword(KeywordKind.Trait) -> ModuleItem.Trait(self.parseTrait(public)),
+                //TokenKind.Keyword(KeywordKind.Instance) -> ModuleItem.Instance(self.parseInstance(public)),
+                kind -> self.reportError2("<module item>", kind),
+            };
+            items.push(item);
+        }
+        self.expect(TokenKind.RightBracket(BracketKind.Curly));
+        let m = M.Module(
+            name,
+            items,
+            attributes: moduleAttributes,
+        );
+        (self, m)
+    }
+}
+
+}

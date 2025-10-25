@@ -3,6 +3,7 @@ module Siko.Compiler {
 import Siko.Location.FileManager
 import Siko.Location
 import Siko.Parser.Lexer
+import Siko.Parser.Parser
 import Fs.File
 import Fs.Path
 import Fs.Directory
@@ -52,11 +53,15 @@ pub fn compile() {
                 FileManager.addFile(sourceFile.clone(), lines);
                 let mut lexer = Lexer.new(content.toVecU8(), fileId, Position.new());
                 let (tokens, errors) = lexer.lex(addEOF: True);
-                for token in tokens {
-                    println("  ${token}");
-                }
-                for error in errors {
+                // for token in tokens {
+                //     println("  ${token}");
+                // }
+                for error in &errors {
                     error.report(fileId);
+                }
+                if errors.empty() {
+                    let mut parser = Parser.new(fileId);
+                    let parserResult = parser.parse(tokens);
                 }
             }
             Err(_) -> {

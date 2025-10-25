@@ -1,0 +1,199 @@
+module Siko.Parser.Type {
+
+import Siko.Syntax.Type
+import Siko.Syntax.Identifier
+import Siko.Parser.Parser
+import Siko.Parser.Token
+
+pub trait TypeParser[T] {
+    fn parseType(self) -> (Self, Type)
+    fn parseTypeConstraint(self) -> (Self, Constraint)
+    fn parseTypeConstraints(self) -> (Self, Vec[Constraint])
+    fn parseTypeParams(self) -> (Self, Vec[Identifier])
+    fn parseTypeParameterDeclaration(self) -> (Self, TypeParameterDeclaration)
+}
+
+instance TypeParser[Parser] {
+    fn parseType(mut self) -> (Self, Type) {
+        let ty = match self.peek() {
+            TokenKind.TypeIdentifier -> {
+                let name = self.parseQualifiedTypeName();
+                let mut args = Vec.new();
+                if self.check(TokenKind.LeftBracket(BracketKind.Square)) {
+                    self.expect(TokenKind.LeftBracket(BracketKind.Square));
+                    while !self.check(TokenKind.RightBracket(BracketKind.Square)) {
+                        let arg = self.parseType();
+                        args.push(arg);
+                        if self.check(TokenKind.RightBracket(BracketKind.Square)) {
+                            break;
+                        } else {
+                            self.expect(TokenKind.Misc(MiscKind.Comma));
+                        }
+                    }
+                    self.expect(TokenKind.RightBracket(BracketKind.Square));
+                }
+                Type.Named(name, args)
+            }
+            TokenKind.LeftBracket(BracketKind.Paren) -> {
+                let mut items = Vec.new();
+                self.expect(TokenKind.LeftBracket(BracketKind.Paren));
+                while !self.check(TokenKind.RightBracket(BracketKind.Paren)) {
+                    let item = self.parseType();
+                    items.push(item);
+                    if self.check(TokenKind.RightBracket(BracketKind.Paren)) {
+                        break;
+                    } else {
+                        self.expect(TokenKind.Misc(MiscKind.Comma));
+                    }
+                }
+                self.expect(TokenKind.RightBracket(BracketKind.Paren));
+                Type.Tuple(items)
+            }
+            TokenKind.Keyword(KeywordKind.Fn) -> {
+                self.expect(TokenKind.Keyword(KeywordKind.Fn));
+                let isPtr = if self.check(TokenKind.Op(OperatorKind.Mul)) {
+                    self.expect(TokenKind.Op(OperatorKind.Mul));
+                    True
+                } else {
+                    False
+                };
+                let mut args = Vec.new();
+                self.expect(TokenKind.LeftBracket(BracketKind.Paren));
+                while !self.check(TokenKind.RightBracket(BracketKind.Paren)) {
+                    let arg = self.parseType();
+                    args.push(arg);
+                    if self.check(TokenKind.RightBracket(BracketKind.Paren)) {
+                        break;
+                    } else {
+                        self.expect(TokenKind.Misc(MiscKind.Comma));
+                    }
+                }
+                self.expect(TokenKind.RightBracket(BracketKind.Paren));
+                self.expect(TokenKind.Arrow(ArrowKind.Right));
+                let result = self.parseType();
+                if isPtr {
+                    Type.FunctionPtr(args, result)
+                } else {
+                    Type.Function(args, result)
+                }
+            }
+            TokenKind.Keyword(KeywordKind.TypeSelf) -> {
+                self.expect(TokenKind.Keyword(KeywordKind.TypeSelf));
+                Type.SelfType
+            }
+            TokenKind.Op(OperatorKind.BitAnd) -> {
+                self.expect(TokenKind.Op(OperatorKind.BitAnd));
+                let ty = self.parseType();
+                Type.Reference(ty)
+            }
+            TokenKind.Op(OperatorKind.Mul) -> {
+                self.expect(TokenKind.Op(OperatorKind.Mul));
+                let ty = self.parseType();
+                Type.Ptr(ty)
+            }
+            TokenKind.Misc(MiscKind.ExclamationMark) -> {
+                self.expect(TokenKind.Misc(MiscKind.ExclamationMark));
+                Type.Never
+            }
+            TokenKind.IntegerLiteral -> {
+                let literal = self.parseIntegerLiteral();
+                Type.NumericConstant(literal)
+            }
+            TokenKind.Keyword(KeywordKind.Void) -> {
+                self.expect(TokenKind.Keyword(KeywordKind.Void));
+                if self.check(TokenKind.Op(OperatorKind.Mul)) {
+                    self.expect(TokenKind.Op(OperatorKind.Mul));
+                    Type.VoidPtr
+                } else {
+                    Type.Void
+                }
+            }
+            TokenKind.Keyword(KeywordKind.Co) -> {
+                self.expect(TokenKind.Keyword(KeywordKind.Co));
+                self.expect(TokenKind.LeftBracket(BracketKind.Paren));
+                let yieldTy = self.parseType();
+                self.expect(TokenKind.RightBracket(BracketKind.Paren));
+                self.expect(TokenKind.Arrow(ArrowKind.Right));
+                let resultTy = self.parseType();
+                Type.Coroutine((yieldTy), resultTy)
+            }
+            kind -> self.reportError2("<type>", kind),
+        };
+        (self, ty)
+    }
+
+    fn parseTypeConstraint(mut self) -> (Self, Constraint) {
+        let traitName = self.parseTypeIdentifier();
+        let mut args = Vec.new();
+        if self.check(TokenKind.LeftBracket(BracketKind.Square)) {
+            self.expect(TokenKind.LeftBracket(BracketKind.Square));
+            while !self.check(TokenKind.RightBracket(BracketKind.Square)) {
+                let ty = self.parseType();
+                if self.check(TokenKind.Misc(MiscKind.Equal)) {
+                    self.expect(TokenKind.Misc(MiscKind.Equal));
+                    let loc = self.currentLocation();
+                    let associatedTy = self.parseType();
+                    if let Type.Named(name, _) = ty {
+                        args.push(ConstraintArgument.AssociatedType(name, associatedTy));
+                    } else {
+                        self.reportError3("Unexpected associated type ${ty}", loc);
+                    }
+                } else {
+                    args.push(ConstraintArgument.Type(ty));
+                }
+                if self.check(TokenKind.Misc(MiscKind.Comma)) {
+                    self.expect(TokenKind.Misc(MiscKind.Comma));
+                    continue;
+                }
+            }
+        }
+        self.expect(TokenKind.RightBracket(BracketKind.Square));
+        let c = Constraint(name: traitName, args: args);
+        (self, c)
+    }
+
+    fn parseTypeConstraints(mut self) -> (Self, Vec[Constraint]) {
+        let mut constraints = Vec.new();
+        while self.check(TokenKind.TypeIdentifier) {
+            let constraint = self.parseTypeConstraint();
+            constraints.push(constraint);
+            if self.check(TokenKind.Misc(MiscKind.Comma)) {
+                self.expect(TokenKind.Misc(MiscKind.Comma));
+                continue;
+            } else {
+                break;
+            }
+        }
+        (self, constraints)
+    }
+
+    fn parseTypeParams(mut self) -> (Self, Vec[Identifier]) {
+        let mut params = Vec.new();
+        while self.check(TokenKind.TypeIdentifier) {
+            let param = self.parseTypeIdentifier();
+            params.push(param);
+            if self.check(TokenKind.Misc(MiscKind.Comma)) {
+                self.expect(TokenKind.Misc(MiscKind.Comma));
+                continue;
+            } else {
+                break;
+            }
+        }
+        (self, params)
+    }
+
+    fn parseTypeParameterDeclaration(mut self) -> (Self, TypeParameterDeclaration) {
+        let mut constraints = Vec.new();
+        self.expect(TokenKind.LeftBracket(BracketKind.Square));
+        let params = self.parseTypeParams();
+        if self.check(TokenKind.Misc(MiscKind.Colon)) {
+            self.expect(TokenKind.Misc(MiscKind.Colon));
+            constraints = self.parseTypeConstraints();
+        }
+        self.expect(TokenKind.RightBracket(BracketKind.Square));
+        let decl = TypeParameterDeclaration(params, constraints);
+        (self, decl)
+    }
+}
+
+}

@@ -1,0 +1,34 @@
+module Siko.Parser.Implicit {
+
+import Siko.Parser.Parser
+import Siko.Parser.Token
+import Siko.Parser.Type
+import Siko.Syntax.Implicit as I
+
+pub trait ImplicitParser[T] {
+    fn parseImplicit(self, public: Bool) -> (Self, I.Implicit)
+}
+
+instance ImplicitParser[Parser] {
+    fn parseImplicit(mut self, public: Bool) -> (Self, I.Implicit) {
+        self.expect(TokenKind.Keyword(KeywordKind.Implicit));
+        let isMutable = if self.check(TokenKind.Keyword(KeywordKind.Mut)) {
+            self.expect(TokenKind.Keyword(KeywordKind.Mut));
+            True
+        } else {
+            False
+        };
+        let name = self.parseVarIdentifier();
+        self.expect(TokenKind.Misc(MiscKind.Colon));
+        let ty = self.parseType();
+        let i = I.Implicit(
+            name,
+            ty,
+            mutable: isMutable,
+            public,
+        );
+        (self, i)
+    }
+}
+
+}

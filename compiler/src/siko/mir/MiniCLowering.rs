@@ -23,6 +23,10 @@ use crate::siko::minic::{Constant::StringConstant, Data::Field as LField};
 use crate::siko::{minic::Data::Struct as LStruct, mir::Function::ExternKind};
 use crate::siko::{minic::Function::Branch as LBranch, mir::Function::IntegerOp};
 
+fn addPrefix(name: &str) -> String {
+    format!("_siko_minic_{}", name)
+}
+
 pub struct MinicBuilder<'a> {
     program: &'a Program,
     constants: BTreeMap<String, String>,
@@ -52,7 +56,7 @@ impl<'a> MinicBuilder<'a> {
     fn lowerVar(&mut self, v: &Variable) -> LVariable {
         let name = self.resolveVar(&v.name);
         LVariable {
-            name: format!("{}", name),
+            name: addPrefix(&name),
             ty: self.lowerType(&v.ty),
         }
     }
@@ -92,7 +96,7 @@ impl<'a> MinicBuilder<'a> {
 
     fn lowerParam(&mut self, p: &Param) -> LParam {
         LParam {
-            name: p.name.clone(),
+            name: addPrefix(&p.name),
             ty: self.lowerType(&p.ty),
         }
     }
