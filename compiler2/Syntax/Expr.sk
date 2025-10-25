@@ -1,0 +1,145 @@
+module Siko.Syntax.Expr {
+
+import Siko.Syntax.Identifier
+import Siko.Location
+import Siko.Syntax.Statement
+import Siko.Syntax.Pattern
+
+@derive(PartialEq, Eq, Clone, Copy)
+pub enum BinaryOp {
+    And,
+    Or,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Equal,
+    NotEqual,
+    LessThan,
+    GreaterThan,
+    LessThanOrEqual,
+    GreaterThanOrEqual,
+    ShiftLeft,
+    ShiftRight,
+    BitAnd,
+    BitOr,
+    BitXor,
+}
+
+@derive(PartialEq, Eq, Clone, Copy)
+pub enum UnaryOp {
+    Not,
+    Neg,
+    Deref,
+}
+
+@derive(PartialEq, Eq, Clone)
+pub struct Branch {
+    pub pattern: Pattern,
+    pub body: Expr,
+}
+
+@derive(PartialEq, Eq, Clone)
+pub struct ContextHandler {
+    pub name: Identifier,
+    pub handler: Identifier,
+    pub optional: Bool,
+}
+
+@derive(PartialEq, Eq, Clone)
+pub struct With {
+    pub handlers: Vec[ContextHandler],
+    pub body: Expr,
+}
+
+@derive(Clone, PartialEq, Eq)
+pub struct Expr {
+    pub expr: SimpleExpr,
+    pub location: Location,
+
+    pub fn doesNotReturn(&self) -> Bool {
+        self.expr.doesNotReturn()
+    }
+}
+
+@derive(Clone, PartialEq, Eq)
+pub enum FunctionArg {
+    Positional(Expr),
+    Named(Identifier, Expr),
+}
+
+@derive(Clone, PartialEq, Eq)
+pub enum SimpleExpr {
+    Value(Identifier),
+    SelfValue,
+    Name(Identifier),
+    FieldAccess(Expr, Identifier),
+    TupleIndex(Expr, String),
+    Call(Expr, Vec[FunctionArg]),
+    MethodCall(Expr, Identifier, Vec[FunctionArg]),
+    Loop(Pattern, Expr, Expr),
+    BinaryOp(BinaryOp, Expr, Expr),
+    UnaryOp(UnaryOp, Expr),
+    Match(Expr, Vec[Branch]),
+    Block(Block),
+    Tuple(Vec[Expr]),
+    StringLiteral(String),
+    IntegerLiteral(String),
+    CharLiteral(String),
+    Return(Option[Expr]),
+    Break(Option[Expr]),
+    Continue(Option[Expr]),
+    Ref(Expr, Bool), // true if raw ptr (&raw), false if reference (&)
+    List(Vec[Expr]),
+    With(With),
+    Lambda(Vec[Pattern], Expr),
+    Yield(Expr),
+    SpawnCoroutine(Expr),
+
+    pub fn doesNotReturn(&self) -> Bool {
+        match self {
+            Return(_) | Break(_) | Continue(_) -> True,
+            FieldAccess(expr, _) -> expr.doesNotReturn(),
+            TupleIndex(expr, _) -> expr.doesNotReturn(),
+            Call(func, args) -> {
+                func.doesNotReturn()
+                    or args.iter().any(|arg| match arg {
+                        FunctionArg.Positional(e) -> e.doesNotReturn(),
+                        FunctionArg.Named(_, e) -> e.doesNotReturn(),
+                    })
+            }
+            MethodCall(obj, _, args) -> {
+                obj.doesNotReturn()
+                    or args.iter().any(|arg| match arg {
+                        FunctionArg.Positional(e) -> e.doesNotReturn(),
+                        FunctionArg.Named(_, e) -> e.doesNotReturn(),
+                    })
+            }
+            BinaryOp(_, left, right) -> left.doesNotReturn() or right.doesNotReturn(),
+            UnaryOp(_, expr) -> expr.doesNotReturn(),
+            Match(expr, branches) -> {
+                expr.doesNotReturn() or branches.iter().all(|branch| branch.body.doesNotReturn())
+            }
+            Block(block) -> block.doesNotReturn(),
+            Tuple(exprs) -> exprs.iter().any(|expr| expr.doesNotReturn()),
+            Ref(expr, _) -> expr.doesNotReturn(),
+            List(exprs) -> exprs.iter().any(|expr| expr.doesNotReturn()),
+            Yield(expr) -> expr.doesNotReturn(),
+            _ -> False,
+        }
+    }
+}
+
+instance Show[Expr] {
+    fn show(&self) -> String {
+        "${self.expr}"
+    }
+}
+
+instance Show[SimpleExpr] {
+    fn show(&self) -> String {
+        "<expr>"
+    }
+}
+
+}

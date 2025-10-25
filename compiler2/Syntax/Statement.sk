@@ -1,0 +1,44 @@
+module Siko.Syntax.Statement {
+
+import Siko.Location
+import Siko.Syntax.Expr
+import Siko.Syntax.Pattern
+import Siko.Syntax.Type
+
+@derive(Clone, PartialEq, Eq)
+pub struct Block {
+    pub statements: Vec[Statement],
+    pub location: Location,
+
+    pub fn doesNotReturn(&self) -> Bool {
+        for s in self.statements {
+            if s.kind.doesNotReturn() {
+                return True;
+            }
+        }
+        False
+    }
+}
+
+@derive(Clone, PartialEq, Eq)
+pub enum StatementKind {
+    Expr(Expr),
+    Assign(Expr, Expr),
+    Let(Pattern, Expr, Option[Type]),
+
+    pub fn doesNotReturn(&self) -> Bool {
+        match self {
+            StatementKind.Expr(expr) -> expr.doesNotReturn(),
+            StatementKind.Assign(_, rhs) -> rhs.doesNotReturn(),
+            StatementKind.Let(_, rhs, _) -> rhs.doesNotReturn(),
+        }
+    }
+}
+
+@derive(Clone, PartialEq, Eq)
+pub struct Statement {
+    pub kind: StatementKind,
+    pub hasSemicolon: Bool,
+}
+
+}

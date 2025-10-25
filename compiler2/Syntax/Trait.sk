@@ -1,0 +1,64 @@
+module Siko.Syntax.Trait {
+
+import Siko.Syntax.Identifier
+import Siko.Syntax.Type
+import Siko.Syntax.Function
+import Siko.Location
+
+@derive(PartialEq, Eq, Clone)
+pub struct Trait {
+    pub name: Identifier,
+    pub params: Vec[Identifier],
+    pub typeParams: Option[TypeParameterDeclaration],
+    pub associatedTypes: Vec[AssociatedTypeDeclaration],
+    pub methods: Vec[Function],
+    pub public: Bool,
+}
+
+@derive(PartialEq, Eq, Clone)
+pub struct AssociatedTypeDeclaration {
+    pub name: Identifier,
+    pub constraints: Vec[Constraint],
+}
+
+instance Show[AssociatedTypeDeclaration] {
+    fn show(&self) -> String {
+        if self.constraints.empty() {
+            "type ${self.name}"
+        } else {
+            let constraints: Vec[String] = self
+                .constraints
+                .iter()
+                .map(|constraint| constraint.show())
+                .collect();
+            let constraints = constraints.join(", ".toString());
+            "type ${self.name}: ${constraints}"
+        }
+    }
+}
+
+@derive(PartialEq, Eq, Clone)
+pub struct AssociatedType {
+    pub name: Identifier,
+    pub ty: Type,
+}
+
+instance Show[AssociatedType] {
+    fn show(&self) -> String {
+        "type ${self.name} = ${self.ty}"
+    }
+}
+
+@derive(PartialEq, Eq, Clone)
+pub struct Instance {
+    pub public: Bool,
+    pub name: Option[Identifier],
+    pub typeParams: Option[TypeParameterDeclaration],
+    pub traitName: Identifier,
+    pub types: Vec[Type],
+    pub associatedTypes: Vec[AssociatedType],
+    pub methods: Vec[Function],
+    pub location: Location,
+}
+
+}

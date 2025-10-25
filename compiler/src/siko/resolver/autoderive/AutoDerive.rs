@@ -22,7 +22,7 @@ pub fn processModule(module: &Module) -> Module {
                     //println!("  Derive: {} struct {}", derive.name, structDef.name);
                     match derive.name.name().as_ref() {
                         "Clone" => {
-                            let i = deriveCloneForStruct(structDef);
+                            let i = deriveCloneForStruct(structDef, &module.name.name());
                             instances.push(i);
                         }
                         "Copy" => {

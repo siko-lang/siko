@@ -143,10 +143,12 @@ pub struct Resolver<'a> {
     instanceSubChains: BTreeMap<QualifiedName, SubstitutionChain>,
     traitAssociatedTypes: BTreeMap<QualifiedName, BTreeSet<String>>,
     runner: Runner,
+    traceEnabled: bool,
 }
 
 impl<'a> Resolver<'a> {
     pub fn new(ctx: &'a ReportContext, runner: Runner) -> Resolver<'a> {
+        let traceEnabled = runner.getConfig().dumpCfg.resolverTraceEnabled;
         Resolver {
             ctx: ctx,
             modules: BTreeMap::new(),
@@ -160,6 +162,7 @@ impl<'a> Resolver<'a> {
             instanceSubChains: BTreeMap::new(),
             traitAssociatedTypes: BTreeMap::new(),
             runner: runner,
+            traceEnabled: traceEnabled,
         }
     }
 
@@ -169,18 +172,53 @@ impl<'a> Resolver<'a> {
     }
 
     pub fn process(&mut self) {
+        if self.traceEnabled {
+            println!("Resolver: Starting resolution");
+        }
         self.lowerGlobals();
+        if self.traceEnabled {
+            println!("Resolver: Lowered globals");
+        }
         self.collectLocalNames();
+        if self.traceEnabled {
+            println!("Resolver: Collected local names");
+        }
         self.buildPreludeImports();
+        if self.traceEnabled {
+            println!("Resolver: Built prelude imports");
+        }
         self.processImports();
+        if self.traceEnabled {
+            println!("Resolver: Processed imports");
+        }
         self.processDataTypes();
+        if self.traceEnabled {
+            println!("Resolver: Processed data types");
+        }
         self.processImplicits();
+        if self.traceEnabled {
+            println!("Resolver: Processed implicits");
+        }
         self.processTraitAssociatedTypes();
+        if self.traceEnabled {
+            println!("Resolver: Processed trait associated types");
+        }
         self.processTraits();
+        if self.traceEnabled {
+            println!("Resolver: Processed traits");
+        }
         self.processInstances();
+        if self.traceEnabled {
+            println!("Resolver: Processed instances");
+        }
         self.processFunctions();
-
+        if self.traceEnabled {
+            println!("Resolver: Processed functions");
+        }
         self.updateTraitMethodSelectors();
+        if self.traceEnabled {
+            println!("Resolver: Updated trait method selectors");
+        }
         //self.dump();
     }
 
@@ -655,17 +693,20 @@ impl<'a> Resolver<'a> {
             let mut traitMethodselector = TraitMethodSelector::new();
             for item in &m.items {
                 match item {
-                    ModuleItem::Struct(c) => {
-                        let owner = createSelfType(&c.name, c.typeParams.as_ref(), moduleResolver);
-                        let typeParams = getTypeParams(&c.typeParams);
+                    ModuleItem::Struct(s) => {
+                        if self.traceEnabled {
+                            println!("Processing struct methods for {}.{}", moduleResolver.name, s.name);
+                        }
+                        let owner = createSelfType(&s.name, s.typeParams.as_ref(), moduleResolver);
+                        let typeParams = getTypeParams(&s.typeParams);
                         let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
                         let constraintContext = createConstraintContext(
                             &self.traitAssociatedTypes,
-                            &c.typeParams,
+                            &s.typeParams,
                             &typeResolver,
                             &self.ctx,
                         );
-                        for method in &c.methods {
+                        for method in &s.methods {
                             let constraintContext = addTypeParams(
                                 &self.traitAssociatedTypes,
                                 constraintContext.clone(),
@@ -673,8 +714,12 @@ impl<'a> Resolver<'a> {
                                 &typeResolver,
                                 &self.ctx,
                             );
-                            let functionResolver =
-                                FunctionResolver::new(moduleResolver, constraintContext, Some(owner.clone()));
+                            let functionResolver = FunctionResolver::new(
+                                moduleResolver,
+                                constraintContext,
+                                Some(owner.clone()),
+                                self.traceEnabled,
+                            );
                             let (irFunction, defaultArgFns) = functionResolver.resolve(
                                 self.ctx,
                                 method,
@@ -694,6 +739,9 @@ impl<'a> Resolver<'a> {
                         }
                     }
                     ModuleItem::Enum(e) => {
+                        if self.traceEnabled {
+                            println!("Processing enum methods for {}.{}", moduleResolver.name, e.name);
+                        }
                         let owner = createSelfType(&e.name, e.typeParams.as_ref(), moduleResolver);
                         let typeParams = getTypeParams(&e.typeParams);
                         let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
@@ -711,8 +759,12 @@ impl<'a> Resolver<'a> {
                                 &typeResolver,
                                 &self.ctx,
                             );
-                            let functionResolver =
-                                FunctionResolver::new(moduleResolver, constraintContext.clone(), Some(owner.clone()));
+                            let functionResolver = FunctionResolver::new(
+                                moduleResolver,
+                                constraintContext.clone(),
+                                Some(owner.clone()),
+                                self.traceEnabled,
+                            );
                             let (irFunction, defaultArgFns) = functionResolver.resolve(
                                 self.ctx,
                                 method,
@@ -732,6 +784,12 @@ impl<'a> Resolver<'a> {
                         }
                     }
                     ModuleItem::Trait(syntaxTraitDef) => {
+                        if self.traceEnabled {
+                            println!(
+                                "Processing trait methods for {}.{}",
+                                moduleResolver.name, syntaxTraitDef.name
+                            );
+                        }
                         let name = moduleResolver.resolveName(&syntaxTraitDef.name);
                         let traitDef = self.program.getTrait(&name).unwrap();
                         let owner = traitDef.params.first().expect("first trait param not found");
@@ -788,8 +846,12 @@ impl<'a> Resolver<'a> {
                                 associatedTypes: associatedTypes,
                                 main: true,
                             });
-                            let functionResolver =
-                                FunctionResolver::new(moduleResolver, constraintContext, Some(owner.clone()));
+                            let functionResolver = FunctionResolver::new(
+                                moduleResolver,
+                                constraintContext,
+                                Some(owner.clone()),
+                                self.traceEnabled,
+                            );
                             let (mut irFunction, defaultArgFns) = functionResolver.resolve(
                                 self.ctx,
                                 method,
@@ -819,6 +881,13 @@ impl<'a> Resolver<'a> {
                         }
                     }
                     ModuleItem::Instance(i) => {
+                        if self.traceEnabled {
+                            println!(
+                                "Processing instance methods for {}.{}",
+                                moduleResolver.name,
+                                i.name.as_ref().map_or("<anon>".to_string(), |n| n.to_string())
+                            );
+                        }
                         let typeParams = getTypeParams(&i.typeParams);
                         let mut typeResolver = TypeResolver::new(moduleResolver, &typeParams);
                         let traitName = moduleResolver.resolveName(&i.traitName);
@@ -839,6 +908,7 @@ impl<'a> Resolver<'a> {
                                 moduleResolver,
                                 method.constraint.clone(),
                                 Some(irInstance.types[0].clone()),
+                                self.traceEnabled,
                             );
                             let typeResolver = if method.default {
                                 &defaultfnTypeResolver
@@ -876,6 +946,9 @@ impl<'a> Resolver<'a> {
                         }
                     }
                     ModuleItem::Function(f) => {
+                        if self.traceEnabled {
+                            println!("Processing function {}.{}", moduleResolver.name, f.name);
+                        }
                         let typeParams = getTypeParams(&f.typeParams);
                         let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
                         //println!("Processing function {}", f.name);
@@ -885,7 +958,8 @@ impl<'a> Resolver<'a> {
                             &typeResolver,
                             &self.ctx,
                         );
-                        let functionResolver = FunctionResolver::new(moduleResolver, constraintContext, None);
+                        let functionResolver =
+                            FunctionResolver::new(moduleResolver, constraintContext, None, self.traceEnabled);
                         let (irFunction, defaultArgFns) = functionResolver.resolve(
                             self.ctx,
                             f,
@@ -904,11 +978,18 @@ impl<'a> Resolver<'a> {
                         self.program.functions.insert(irFunction.name.clone(), irFunction);
                     }
                     ModuleItem::Effect(effect) => {
+                        if self.traceEnabled {
+                            println!("Processing effect methods for {}.{}", moduleResolver.name, effect.name);
+                        }
                         let typeParams = getTypeParams(&None);
                         let typeResolver = TypeResolver::new(moduleResolver, &typeParams);
                         for method in &effect.methods {
-                            let functionResolver =
-                                FunctionResolver::new(moduleResolver, ConstraintContext::new(), None);
+                            let functionResolver = FunctionResolver::new(
+                                moduleResolver,
+                                ConstraintContext::new(),
+                                None,
+                                self.traceEnabled,
+                            );
                             let name = build(&moduleResolver.name, &effect.name.toString()).add(method.name.toString());
                             let (mut irFunction, defaultArgFns) = functionResolver.resolve(
                                 self.ctx,
@@ -947,6 +1028,7 @@ impl<'a> Resolver<'a> {
         importedNames: &mut Names,
         implicityImportedNames: &mut Names,
         variants: &mut BTreeSet<QualifiedName>,
+        enums: &mut BTreeSet<QualifiedName>,
         i: &Import,
         importedInstances: &mut Vec<QualifiedName>,
         importedGlobals: &mut BTreeSet<QualifiedName>,
@@ -982,6 +1064,7 @@ impl<'a> Resolver<'a> {
                             continue;
                         }
                         let enumName = moduleName.add(enumDef.name.toString());
+                        enums.insert(enumName.clone());
                         let localEnumName = localModuleName.add(enumDef.name.toString());
                         importedNames.add(&localEnumName, &enumName);
                         for variantDef in &enumDef.variants {
@@ -1101,6 +1184,7 @@ impl<'a> Resolver<'a> {
                             continue;
                         }
                         let enumName = moduleName.add(enumDef.name.toString());
+                        enums.insert(enumName.clone());
                         importedNames.add(&enumDef.name, &enumName);
                         importedNames.add(&enumName, &enumName);
                         for variantDef in &enumDef.variants {
@@ -1212,6 +1296,7 @@ impl<'a> Resolver<'a> {
                                     &mut moduleResolver.importedNames,
                                     &mut moduleResolver.implicitlyImportedNames,
                                     &mut moduleResolver.variants,
+                                    &mut moduleResolver.enums,
                                     i,
                                     &mut importedInstances,
                                     &mut moduleResolver.globals,
@@ -1243,7 +1328,7 @@ impl<'a> Resolver<'a> {
     fn collectLocalNames(&mut self) {
         for (name, m) in &self.modules {
             //println!("Processing module {}", name);
-            let (localNames, variants, instances) = Resolver::buildLocalNames(m);
+            let (localNames, variants, enums, instances) = Resolver::buildLocalNames(m);
             let moduleResolver = ModuleResolver {
                 ctx: self.ctx,
                 name: name.clone(),
@@ -1252,6 +1337,7 @@ impl<'a> Resolver<'a> {
                 importedModules: Vec::new(),
                 implicitlyImportedNames: Names::new(),
                 variants,
+                enums,
                 globals: self.moduleGlobals.clone(),
             };
             self.program.instanceStores.insert(
@@ -1265,9 +1351,17 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    pub fn buildLocalNames(m: &Module) -> (Names, BTreeSet<QualifiedName>, Vec<QualifiedName>) {
+    pub fn buildLocalNames(
+        m: &Module,
+    ) -> (
+        Names,
+        BTreeSet<QualifiedName>,
+        BTreeSet<QualifiedName>,
+        Vec<QualifiedName>,
+    ) {
         let mut localNames = Names::new();
         let mut variants = BTreeSet::new();
+        let mut enums = BTreeSet::new();
         let mut instances = Vec::new();
         let moduleName = buildModule(&m.name.to_string());
         for item in &m.items {
@@ -1285,6 +1379,7 @@ impl<'a> Resolver<'a> {
                 }
                 ModuleItem::Enum(e) => {
                     let enumName = moduleName.add(e.name.toString());
+                    enums.insert(enumName.clone());
                     localNames.add(&e.name, &enumName);
                     localNames.add(&enumName, &enumName);
                     for v in &e.variants {
@@ -1349,7 +1444,7 @@ impl<'a> Resolver<'a> {
                 }
             }
         }
-        (localNames, variants, instances)
+        (localNames, variants, enums, instances)
     }
 
     fn processImplicits(&mut self) {

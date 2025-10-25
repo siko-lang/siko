@@ -22,6 +22,7 @@ pub struct ModuleResolver<'a> {
     pub implicitlyImportedNames: Names,
     pub importedModules: Vec<String>,
     pub variants: BTreeSet<QualifiedName>,
+    pub enums: BTreeSet<QualifiedName>,
     pub globals: BTreeSet<QualifiedName>,
 }
 
@@ -93,7 +94,66 @@ impl<'a> ModuleResolver<'a> {
         None
     }
 
+    pub fn resolveTypeOrVariantName(&self, name: &Identifier) -> QualifiedName {
+        // println!("local names:");
+        // for (k, v) in &self.localNames.names {
+        //     println!("  {}: {:?}", k, v);
+        // }
+        // println!("imported names:");
+        // for (k, v) in &self.importedNames.names {
+        //     println!("  {}: {:?}", k, v);
+        // }
+        // println!("implicitly imported names:");
+        // for (k, v) in &self.implicitlyImportedNames.names {
+        //     println!("  {}: {:?}", k, v);
+        // }
+        if let Some(names) = self.localNames.names.get(&name.name()) {
+            if let Some(value) = self.resolveTypeOrVariantNames(name, names) {
+                return value;
+            }
+        }
+        if let Some(names) = self.importedNames.names.get(&name.name()) {
+            if let Some(value) = self.resolveTypeOrVariantNames(name, names) {
+                return value;
+            }
+        }
+        if let Some(names) = self.implicitlyImportedNames.names.get(&name.name()) {
+            if let Some(value) = self.resolveTypeOrVariantNames(name, names) {
+                return value;
+            }
+        }
+        ResolverError::UnknownName(name.toString(), name.location()).report(self.ctx);
+    }
+
+    fn resolveTypeOrVariantNames(&self, name: &Identifier, names: &BTreeSet<QualifiedName>) -> Option<QualifiedName> {
+        let mut patternNames = Vec::new();
+        for name in names {
+            if !self.enums.contains(name) {
+                patternNames.push(name.clone());
+            }
+        }
+        if patternNames.len() > 1 {
+            ResolverError::Ambiguous(name.toString(), name.location()).report(self.ctx);
+        }
+        if patternNames.len() > 0 {
+            return Some(patternNames.first().unwrap().clone());
+        }
+        None
+    }
+
     pub fn tryResolverName(&self, name: &Identifier) -> Option<QualifiedName> {
+        // println!("local names:");
+        // for (k, v) in &self.localNames.names {
+        //     println!("  {}: {:?}", k, v);
+        // }
+        // println!("imported names:");
+        // for (k, v) in &self.importedNames.names {
+        //     println!("  {}: {:?}", k, v);
+        // }
+        // println!("implicitly imported names:");
+        // for (k, v) in &self.implicitlyImportedNames.names {
+        //     println!("  {}: {:?}", k, v);
+        // }
         if let Some(names) = self.localNames.names.get(&name.name()) {
             if names.len() > 1 {
                 ResolverError::Ambiguous(name.toString(), name.location()).report(self.ctx);

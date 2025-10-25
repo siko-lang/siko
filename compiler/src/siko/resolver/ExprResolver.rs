@@ -352,7 +352,7 @@ impl<'a> ExprResolver<'a> {
                 }
             }
             SimpleExpr::Name(name) => {
-                let irName = self.moduleResolver.resolveName(name);
+                let irName = self.moduleResolver.resolveTypeOrVariantName(name);
                 if self.emptyVariants.contains(&irName) {
                     return self
                         .bodyBuilder

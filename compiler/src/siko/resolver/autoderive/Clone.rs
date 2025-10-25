@@ -98,7 +98,7 @@ fn getCloneFnForEnum(enumDef: &Enum, enumTy: &Type) -> Function {
         }
 
         let qualifiedName = format!("{}.{}", enumDef.name.name(), variant.name.name());
-        let variantName = Identifier::new(qualifiedName, enumDef.name.location());
+        let variantName = Identifier::new(qualifiedName.clone(), enumDef.name.location());
         let variantPattern = Pattern {
             pattern: SimplePattern::Named(variantName.clone(), itemBinds),
             location: enumDef.name.location(),
@@ -107,20 +107,11 @@ fn getCloneFnForEnum(enumDef: &Enum, enumTy: &Type) -> Function {
         // Construct the cloned variant
         let clonedVariant = if variant.items.is_empty() {
             // No arguments, just the variant name
-            withName(
-                &format!("{}.{}", enumDef.name.name(), variant.name.name()),
-                enumDef.name.location(),
-            )
+            withName(&qualifiedName, enumDef.name.location())
         } else {
             // Call the variant constructor with cloned arguments
             Expr {
-                expr: SimpleExpr::Call(
-                    Box::new(withName(
-                        &format!("{}.{}", enumDef.name.name(), variant.name.name()),
-                        enumDef.name.location(),
-                    )),
-                    clonedItems,
-                ),
+                expr: SimpleExpr::Call(Box::new(withName(&qualifiedName, enumDef.name.location())), clonedItems),
                 location: enumDef.name.location(),
             }
         };
@@ -155,7 +146,7 @@ fn getCloneFnForEnum(enumDef: &Enum, enumTy: &Type) -> Function {
     }
 }
 
-pub fn deriveCloneForStruct(structDef: &Struct) -> Instance {
+pub fn deriveCloneForStruct(structDef: &Struct, moduleName: &String) -> Instance {
     let traitName = Identifier::new("Std.Ops.Basic.Clone".to_string(), structDef.name.location());
     let instanceName = Identifier::new(format!("Clone_{}", structDef.name.name()), structDef.name.location());
     let typeArgs = match structDef.typeParams {
@@ -181,8 +172,10 @@ pub fn deriveCloneForStruct(structDef: &Struct) -> Instance {
         };
         Some(decl)
     };
-    let structTy = Type::Named(structDef.name.clone(), typeArgs);
-    let cloneFn = getCloneFnForStruct(structDef, &structTy);
+    let qualifiedName = format!("{}.{}", moduleName, structDef.name.name());
+    let qualifiedNameId = Identifier::new(qualifiedName.clone(), structDef.name.location());
+    let structTy = Type::Named(qualifiedNameId, typeArgs);
+    let cloneFn = getCloneFnForStruct(structDef, &structTy, &qualifiedName);
     let types = vec![structTy];
     let instance = Instance {
         public: true,
@@ -198,7 +191,7 @@ pub fn deriveCloneForStruct(structDef: &Struct) -> Instance {
     instance
 }
 
-fn getCloneFnForStruct(structDef: &Struct, structTy: &Type) -> Function {
+fn getCloneFnForStruct(structDef: &Struct, structTy: &Type, qualifiedName: &String) -> Function {
     let fnName = Identifier::new("clone".to_string(), structDef.name.location());
     let mut params = Vec::new();
     params.push(Parameter::RefSelfParam);
@@ -230,12 +223,12 @@ fn getCloneFnForStruct(structDef: &Struct, structTy: &Type) -> Function {
     // Create the struct constructor call
     let structConstructor = if structDef.fields.is_empty() {
         // Empty struct, just the struct name
-        withName(&structDef.name.name(), structDef.name.location())
+        withName(&qualifiedName, structDef.name.location())
     } else {
         // Struct with fields
         Expr {
             expr: SimpleExpr::Call(
-                Box::new(withName(&structDef.name.name(), structDef.name.location())),
+                Box::new(withName(&qualifiedName, structDef.name.location())),
                 clonedFields,
             ),
             location: structDef.name.location(),

@@ -1,0 +1,88 @@
+module Siko.Syntax.Pattern {
+
+import Siko.Syntax.Identifier
+import Siko.Syntax.Expr
+import Siko.Location
+
+@derive(Clone, PartialEq, Eq)
+pub struct Pattern {
+    pub pattern: SimplePattern,
+    pub location: Location,
+
+    pub fn isGuarded(&self) -> Bool {
+        self.pattern.isGuarded()
+    }
+}
+
+@derive(Clone, PartialEq, Eq)
+pub enum SimplePattern {
+    Named(Identifier, Vec[Pattern]),
+    Bind(Identifier, Bool), // mutable
+    Tuple(Vec[Pattern]),
+    StringLiteral(String),
+    IntegerLiteral(String),
+    Wildcard,
+    Guarded(Pattern, Expr),
+    OrPattern(Vec[Pattern]),
+
+    pub fn isGuarded(&self) -> Bool {
+        match self {
+            Guarded(_, _) -> True,
+            _ -> False,
+        }
+    }
+}
+
+instance Show[Pattern] {
+    fn show(&self) -> String {
+        "${self.pattern}"
+    }
+}
+
+
+instance Show[SimplePattern] {
+    fn show(&self) -> String {
+        match self {
+            Named(identifier, patterns) -> {
+                if patterns.empty() {
+                    "${identifier}"
+                } else {
+                    let patterns: Vec[String] = patterns
+                        .iter()
+                        .map(|p| p.show())
+                        .collect();
+                    let patternsStr = patterns.join(", ".toString());
+                    "${identifier}(${patternsStr})"
+                }
+            }
+            Bind(identifier, mutable) -> {
+                if mutable {
+                    "mut ${identifier}"
+                } else {
+                    "${identifier}"
+                }
+            }
+            Tuple(patterns) -> {
+                let patterns: Vec[String] = patterns
+                    .iter()
+                    .map(|p| p.show())
+                    .collect();
+                let patternsStr = patterns.join(", ".toString());
+                "(${patternsStr})"
+            }
+            StringLiteral(value) -> "\"${value}\"",
+            IntegerLiteral(value) -> "${value}",
+            Wildcard -> "_".toString(),
+            Guarded(pattern, expr) -> "${pattern} if { ${expr} }",
+            OrPattern(patterns) -> {
+                let patternsStr : Vec[String] = patterns
+                    .iter()
+                    .map(|p| p.show())
+                    .collect();
+                patternsStr.join(" | ".toString())
+            }
+        }
+    }
+}
+
+}

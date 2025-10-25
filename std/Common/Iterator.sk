@@ -20,6 +20,24 @@ pub trait Iterator[T] {
     fn skip(self, n: Int) -> SkipIter[T] {
         SkipIter (iter: self, n: n)
     }
+
+    fn any(self, f: fn(Item) -> Bool) -> Bool {
+        for item in self {
+            if f(item) {
+                return True;
+            }
+        }
+        False
+    }
+
+    fn all(self, f: fn(Item) -> Bool) -> Bool {
+        for item in self {
+            if !f(item) {
+                return False;
+            }
+        }
+        True
+    }
 }
 
 pub trait IntoIterator[T] {

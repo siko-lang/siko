@@ -30,6 +30,7 @@ pub struct FunctionResolver<'a> {
     moduleResolver: &'a ModuleResolver<'a>,
     constraintContext: ConstraintContext,
     owner: Option<IrType>,
+    traceEnabled: bool,
 }
 
 pub fn createSelfType(
@@ -56,11 +57,13 @@ impl<'a> FunctionResolver<'a> {
         moduleResolver: &'a ModuleResolver,
         constraintContext: ConstraintContext,
         owner: Option<IrType>,
+        traceEnabled: bool,
     ) -> FunctionResolver<'a> {
         FunctionResolver {
             moduleResolver: moduleResolver,
             constraintContext: constraintContext,
             owner: owner,
+            traceEnabled: traceEnabled,
         }
     }
 
@@ -77,8 +80,9 @@ impl<'a> FunctionResolver<'a> {
         typeResolver: &TypeResolver,
         runner: Runner,
     ) -> (IrFunction, Vec<IrFunction>) {
-        //println!("Resolving function: {}", name);
-
+        if self.traceEnabled {
+            println!("Resolving function: {}", name);
+        }
         let mut defaultArgFns = Vec::new();
         let mut params = Vec::new();
         let bodyBuilder = BodyBuilder::new();

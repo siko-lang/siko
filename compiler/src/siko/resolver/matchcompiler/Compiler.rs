@@ -67,7 +67,11 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
     fn resolve(&self, pattern: &Pattern) -> Pattern {
         match &pattern.pattern {
             SimplePattern::Named(origId, args) => {
-                let name = self.irCompiler.resolver.moduleResolver.resolveName(&origId);
+                let name = self
+                    .irCompiler
+                    .resolver
+                    .moduleResolver
+                    .resolveTypeOrVariantName(&origId);
                 let id = Identifier::new(name.toString(), Location::empty());
                 let args = args.iter().map(|p| self.resolve(p)).collect();
                 Pattern {

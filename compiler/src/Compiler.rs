@@ -189,6 +189,9 @@ impl Compiler {
                 "--function-call-resolver-trace" => {
                     self.config.dumpCfg.functionCallResolverTraceEnabled = true;
                 }
+                "--resolver-trace" => {
+                    self.config.dumpCfg.resolverTraceEnabled = true;
+                }
                 _ => {
                     if external_mode {
                         self.config.externalFiles.push(args[i].clone());

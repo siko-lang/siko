@@ -1,0 +1,50 @@
+module Siko.Syntax.Function {
+
+import Siko.Syntax.Identifier
+import Siko.Syntax.Type
+import Siko.Syntax.Expr
+import Siko.Syntax.Statement
+import Siko.Syntax.Attributes
+
+@derive(Clone, PartialEq, Eq)
+pub enum Parameter {
+    Named(Identifier, Type, Bool, Option[Expr]),
+    SelfParam,
+    MutSelfParam,
+    RefSelfParam,
+}
+
+@derive(Clone, PartialEq, Eq)
+pub enum FunctionExternKind {
+    Builtin,
+    C(Option[String]),
+}
+
+@derive(Clone, PartialEq, Eq)
+pub enum ResultKind {
+    SingleReturn(Type),
+    Coroutine(Type),
+
+    pub fn assertSingleReturn(&self) -> &Type {
+        match self {
+            SingleReturn(ty) -> ty,
+            Coroutine(_) -> {
+                panic("Expected single return type, found coroutine type.")
+            }
+        }
+    }
+}
+
+@derive(Clone, PartialEq, Eq)
+pub struct Function {
+    pub name: Identifier,
+    pub typeParams: Option[TypeParameterDeclaration],
+    pub params: Vec[Parameter],
+    pub result: ResultKind,
+    pub body: Option[Block],
+    pub externKind: Option[FunctionExternKind],
+    pub public: Bool,
+    pub attributes: Attributes,
+}
+
+}

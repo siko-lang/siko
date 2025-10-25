@@ -28,6 +28,7 @@ pub struct DumpConfig {
     pub unusedAssignmentEliminatorTraceEnabled: bool,
     pub dumpAfterDropCheck: bool,
     pub functionCallResolverTraceEnabled: bool,
+    pub resolverTraceEnabled: bool,
 }
 
 impl DumpConfig {
@@ -42,6 +43,7 @@ impl DumpConfig {
             unusedAssignmentEliminatorTraceEnabled: false,
             dumpAfterDropCheck: false,
             functionCallResolverTraceEnabled: false,
+            resolverTraceEnabled: false,
         }
     }
 }
