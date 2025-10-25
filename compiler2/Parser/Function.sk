@@ -1,0 +1,132 @@
+module Siko.Parser.Function {
+
+import Siko.Parser.Parser
+import Siko.Parser.Token
+import Siko.Parser.Type
+import Siko.Syntax.Function as F
+import Siko.Syntax.Attributes
+import Siko.Syntax.Type
+
+pub trait FunctionParser[T] {
+    fn parseFunction(self, attributes: Attributes, public: Bool, allowGenerator: Bool) -> (Self, F.Function)
+}
+
+instance FunctionParser[Parser] {
+    fn parseFunction(mut self, mut attributes: Attributes, public: Bool, allowCoroutine: Bool) -> (Self, F.Function) {
+        self.expect(TokenKind.Keyword(KeywordKind.Fn));
+        let name = self.parseVarIdentifier();
+        let typeParams = if self.check(TokenKind.LeftBracket(BracketKind.Square)) {
+            Some(self.parseTypeParameterDeclaration())
+        } else {
+            None
+        };
+        self.expect(TokenKind.LeftBracket(BracketKind.Paren));
+        let mut params = Vec.new();
+        while !self.check(TokenKind.RightBracket(BracketKind.Paren)) {
+            let param = if self.check(TokenKind.Op(OperatorKind.BitAnd)) {
+                self.expect(TokenKind.Op(OperatorKind.BitAnd));
+                self.expect(TokenKind.Keyword(KeywordKind.ValueSelf));
+                F.Parameter.RefSelfParam
+            } else {
+                if self.check(TokenKind.Misc(MiscKind.ThreeDots)) {
+                    self.expect(TokenKind.Misc(MiscKind.ThreeDots));
+                    attributes.varArgs = True;
+                    break;
+                }
+                let mutable = if self.check(TokenKind.Keyword(KeywordKind.Mut)) {
+                    self.expect(TokenKind.Keyword(KeywordKind.Mut));
+                    True
+                } else {
+                    False
+                };
+                if self.check(TokenKind.Keyword(KeywordKind.ValueSelf)) {
+                    self.expect(TokenKind.Keyword(KeywordKind.ValueSelf));
+                    if mutable {
+                        F.Parameter.MutSelfParam
+                    } else {
+                        F.Parameter.SelfParam
+                    }
+                } else {
+                    let name = self.parseVarIdentifier();
+                    self.expect(TokenKind.Misc(MiscKind.Colon));
+                    let ty = self.parseType();
+                    if self.check(TokenKind.Misc(MiscKind.Equal)) {
+                        self.expect(TokenKind.Misc(MiscKind.Equal));
+                        let defaultValue = self.parseExpr();
+                        F.Parameter.Named(name, ty, mutable, Some(defaultValue))
+                    } else {
+                        F.Parameter.Named(name, ty, mutable, None)
+                    }
+                }
+            };
+            params.push(param);
+            if self.check(TokenKind.RightBracket(BracketKind.Paren)) {
+                break;
+            }
+            self.expect(TokenKind.Misc(MiscKind.Comma));
+        }
+        self.expect(TokenKind.RightBracket(BracketKind.Paren));
+        let result = if self.check(TokenKind.Misc(MiscKind.Colon)) and allowCoroutine {
+            self.expect(TokenKind.Misc(MiscKind.Colon));
+            let coroutineTy = self.parseType();
+            F.ResultKind.Coroutine(coroutineTy)
+        } else {
+            if self.check(TokenKind.Arrow(ArrowKind.Right)) {
+                self.expect(TokenKind.Arrow(ArrowKind.Right));
+                F.ResultKind.SingleReturn(self.parseType())
+            } else {
+                F.ResultKind.SingleReturn(Type.Tuple(Vec.new()))
+            }
+        };
+        let (externKind, body) = if self.check(TokenKind.Misc(MiscKind.Equal)) {
+            self.expect(TokenKind.Misc(MiscKind.Equal));
+            self.expect(TokenKind.Keyword(KeywordKind.Extern));
+            if self.check(TokenKind.StringLiteral) {
+                let location = self.currentLocation();
+                let stringLiteral = self.parseStringLiteral();
+                if stringLiteral.resolve() == "C" {
+                    if self.check(TokenKind.LeftBracket(BracketKind.Paren)) {
+                        self.expect(TokenKind.LeftBracket(BracketKind.Paren));
+                        let header = if self.check(TokenKind.StringLiteral) {
+                            Some(self.parseStringLiteral())
+                        } else {
+                            None
+                        };
+                        self.expect(TokenKind.RightBracket(BracketKind.Paren));
+                        (Some(F.FunctionExternKind.C(header)), None)
+                    } else {
+                        (Some(F.FunctionExternKind.C(None)), None)
+                    }
+                } else {
+                    // FIXME: ERROR: the compiler should accept a semicolon here
+                    // however that turns the never type into a unit and that does
+                    // not unify with the above branch's type
+                    // basically a branch's value should not be a unit if it never returns
+                    self.reportError3("Unknown extern kind: ${stringLiteral}", location)
+                }
+            } else {
+                (Some(F.FunctionExternKind.Builtin), None)
+            }
+        } else {
+            let body = if self.check(TokenKind.LeftBracket(BracketKind.Curly)) {
+                Some(self.parseBlock())
+            } else {
+                None
+            };
+            (None, body)
+        };
+        let f = F.Function(
+            name,
+            typeParams,
+            params,
+            result,
+            body: body,
+            externKind,
+            public,
+            attributes,
+        );
+        (self, f)
+    }
+}
+
+}

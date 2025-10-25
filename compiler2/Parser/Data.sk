@@ -1,0 +1,140 @@
+module Siko.Parser.Data {
+
+import Siko.Parser.Parser
+import Siko.Parser.Attributes
+import Siko.Parser.Token
+import Siko.Parser.Type
+import Siko.Parser.Function
+import Siko.Syntax.Data as D
+import Siko.Syntax.Attributes
+import Siko.Syntax.Module as M
+
+pub trait DataParser[T] {
+    fn parseStruct(self, derives: Vec[M.Derive], public: Bool, attributes: Attributes) -> (Self, D.Struct)
+    fn parseEnum(self, derives: Vec[M.Derive], public: Bool, attributes: Attributes) -> (Self, D.Enum)
+    fn parseVariant(self) -> (Self, D.Variant)
+    fn parseField(self, public: Bool) -> (Self, D.Field)
+}
+
+instance DataParser[Parser] {
+    fn parseStruct(mut self, derives: Vec[M.Derive], public: Bool, attributes: Attributes) -> (Self, D.Struct) {
+        self.expect(TokenKind.Keyword(KeywordKind.Struct));
+        let name = self.parseTypeIdentifier();
+        let typeParams = if self.check(TokenKind.LeftBracket(BracketKind.Square)) {
+            Some(self.parseTypeParameterDeclaration())
+        } else {
+            None
+        };
+        self.expect(TokenKind.LeftBracket(BracketKind.Curly));
+        let mut fields = Vec.new();
+        let mut methods = Vec.new();
+        while !self.check(TokenKind.RightBracket(BracketKind.Curly)) {
+            let (fnAttributes, _) = self.parseAttributes();
+            let mut public = False;
+            if self.check(TokenKind.Keyword(KeywordKind.Pub)) {
+                self.expect(TokenKind.Keyword(KeywordKind.Pub));
+                public = True;
+            }
+            match self.peek() {
+                TokenKind.Keyword(KeywordKind.Fn) -> {
+                    let method = self.parseFunction(fnAttributes, public, False);
+                    methods.push(method);
+                }
+                TokenKind.VarIdentifier -> {
+                    let field = self.parseField(public);
+                    fields.push(field);
+                    if self.check(TokenKind.Misc(MiscKind.Comma)) {
+                        self.expect(TokenKind.Misc(MiscKind.Comma));
+                    }
+                }
+                kind -> self.reportError2("<structDef member>", kind),
+            }
+        }
+        self.expect(TokenKind.RightBracket(BracketKind.Curly));
+        let s = D.Struct(
+            name,
+            typeParams: typeParams,
+            isExtern: attributes.builtin,
+            fields: fields,
+            methods: methods,
+            derives,
+            public,
+        );
+        (self, s)
+    }
+
+    fn parseEnum(mut self, derives: Vec[M.Derive], public: Bool, attributes: Attributes) -> (Self, D.Enum) {
+        self.expect(TokenKind.Keyword(KeywordKind.Enum));
+        let name = self.parseTypeIdentifier();
+        let typeParams = if self.check(TokenKind.LeftBracket(BracketKind.Square)) {
+            Some(self.parseTypeParameterDeclaration())
+        } else {
+            None
+        };
+        let mut variants = Vec.new();
+        let mut methods = Vec.new();
+        self.expect(TokenKind.LeftBracket(BracketKind.Curly));
+        while !self.check(TokenKind.RightBracket(BracketKind.Curly)) {
+            let (fnAttributes, _) = self.parseAttributes();
+            let mut public = False;
+            if self.check(TokenKind.Keyword(KeywordKind.Pub)) {
+                self.expect(TokenKind.Keyword(KeywordKind.Pub));
+                public = True;
+            }
+            match self.peek() {
+                TokenKind.Keyword(KeywordKind.Fn) -> {
+                    let method = self.parseFunction(fnAttributes, public, False);
+                    methods.push(method);
+                }
+                TokenKind.TypeIdentifier -> {
+                    let variant = self.parseVariant();
+                    variants.push(variant);
+                    if self.check(TokenKind.Misc(MiscKind.Comma)) {
+                        self.expect(TokenKind.Misc(MiscKind.Comma));
+                    }
+                }
+                kind -> self.reportError2("<enum member>", kind),
+            }
+        }
+        self.expect(TokenKind.RightBracket(BracketKind.Curly));
+        let e = D.Enum(
+            name,
+            typeParams,
+            variants,
+            methods,
+            derives,
+            public,
+        );
+        (self, e)
+    }
+
+    fn parseField(mut self, public: Bool) -> (Self, D.Field) {
+        let name = self.parseVarIdentifier();
+        self.expect(TokenKind.Misc(MiscKind.Colon));
+        let ty = self.parseType();
+        let f = D.Field(name, ty, public);
+        (self, f)
+    }
+
+    fn parseVariant(mut self) -> (Self, D.Variant) {
+        let name = self.parseTypeIdentifier();
+        let mut items = Vec.new();
+        if self.check(TokenKind.LeftBracket(BracketKind.Paren)) {
+            self.expect(TokenKind.LeftBracket(BracketKind.Paren));
+            while !self.check(TokenKind.RightBracket(BracketKind.Paren)) {
+                let item = self.parseType();
+                items.push(item);
+                if self.check(TokenKind.RightBracket(BracketKind.Paren)) {
+                    break;
+                } else {
+                    self.expect(TokenKind.Misc(MiscKind.Comma));
+                }
+            }
+            self.expect(TokenKind.RightBracket(BracketKind.Paren));
+        }
+        let v = D.Variant(name, items);
+        (self, v)
+    }
+}
+
+}

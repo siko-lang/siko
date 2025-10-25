@@ -4,6 +4,8 @@ import Siko.Parser.Parser
 import Siko.Parser.Token
 import Siko.Parser.Attributes
 import Siko.Parser.Implicit
+import Siko.Parser.Data
+import Siko.Parser.Function
 import Siko.Syntax.Module as M
 
 pub trait ModuleParser[T] {
@@ -44,13 +46,13 @@ instance ModuleParser[Parser] {
                 public = True;
             }
             let item = match self.peek() {
-                // TokenKind.Keyword(KeywordKind.Struct) -> {
-                //     ModuleItem.Struct(self.parseStruct(derives, public, attributes))
-                // }
-                // TokenKind.Keyword(KeywordKind.Enum) -> ModuleItem.Enum(self.parseEnum(derives, public, attributes)),
-                // TokenKind.Keyword(KeywordKind.Fn) -> {
-                //     ModuleItem.Function(self.parseFunction(attributes, public, true))
-                // }
+                TokenKind.Keyword(KeywordKind.Struct) -> {
+                    M.ModuleItem.Struct(self.parseStruct(derives, public, attributes))
+                }
+                TokenKind.Keyword(KeywordKind.Enum) -> M.ModuleItem.Enum(self.parseEnum(derives, public, attributes)),
+                TokenKind.Keyword(KeywordKind.Fn) -> {
+                    M.ModuleItem.Function(self.parseFunction(attributes, public, True))
+                }
                 //TokenKind.Keyword(KeywordKind.Let) -> ModuleItem.Global(self.parseGlobal(attributes, public)),
                 //TokenKind.Keyword(KeywordKind.Import) -> ModuleItem.Import(self.parseImport()),
                 //TokenKind.Keyword(KeywordKind.Effect) -> ModuleItem.Effect(self.parseEffect(public)),
