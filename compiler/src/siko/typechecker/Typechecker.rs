@@ -1878,8 +1878,9 @@ impl<'a> Typechecker<'a> {
             }
         };
         if args.len() < targetFn.params.len() {
-            for (index, param) in targetFn.params[args.len()..].iter().enumerate() {
-                let i = args.len() + index;
+            let origArgsLen = args.len();
+            for (index, param) in targetFn.params[origArgsLen..].iter().enumerate() {
+                let i = origArgsLen + index;
                 if param.hasDefaultValue() {
                     let defaultArgFnName = QualifiedName::DefaultArgFn(Box::new(targetFn.name.clone()), i as u32);
                     let tmp = self

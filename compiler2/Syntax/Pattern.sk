@@ -3,6 +3,7 @@ module Siko.Syntax.Pattern {
 import Siko.Syntax.Identifier
 import Siko.Syntax.Expr
 import Siko.Location
+import Siko.Util
 
 @derive(Clone, PartialEq, Eq)
 pub struct Pattern {
@@ -39,7 +40,6 @@ instance Show[Pattern] {
     }
 }
 
-
 instance Show[SimplePattern] {
     fn show(&self) -> String {
         match self {
@@ -47,12 +47,8 @@ instance Show[SimplePattern] {
                 if patterns.empty() {
                     "${identifier}"
                 } else {
-                    let patterns: Vec[String] = patterns
-                        .iter()
-                        .map(|p| p.show())
-                        .collect();
-                    let patternsStr = patterns.join(", ".toString());
-                    "${identifier}(${patternsStr})"
+                    let patterns = formatList(patterns);
+                    "${identifier}(${patterns})"
                 }
             }
             Bind(identifier, mutable) -> {
@@ -63,23 +59,14 @@ instance Show[SimplePattern] {
                 }
             }
             Tuple(patterns) -> {
-                let patterns: Vec[String] = patterns
-                    .iter()
-                    .map(|p| p.show())
-                    .collect();
-                let patternsStr = patterns.join(", ".toString());
-                "(${patternsStr})"
+                formatList(patterns, sep: ", ", begin: "(", end: ")")
             }
             StringLiteral(value) -> "\"${value}\"",
             IntegerLiteral(value) -> "${value}",
             Wildcard -> "_".toString(),
             Guarded(pattern, expr) -> "${pattern} if { ${expr} }",
             OrPattern(patterns) -> {
-                let patternsStr : Vec[String] = patterns
-                    .iter()
-                    .map(|p| p.show())
-                    .collect();
-                patternsStr.join(" | ".toString())
+                formatList(patterns, sep: " | ")
             }
         }
     }

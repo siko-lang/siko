@@ -72,7 +72,12 @@ impl<'a> SafetyChecker<'a> {
     pub fn isSafeInstruction(&self, instr: &Instruction) -> bool {
         match &instr.kind {
             InstructionKind::FunctionCall(_, info) => {
-                let f = self.program.functions.get(&info.name).expect("Function not found");
+                let f = match self.program.functions.get(&info.name) {
+                    Some(func) => func,
+                    None => {
+                        panic!("Function {} not found in safety checker", info.name)
+                    }
+                };
                 if f.kind.isExtern() {
                     return false;
                 }

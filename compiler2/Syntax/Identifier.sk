@@ -2,11 +2,18 @@ module Siko.Syntax.Identifier {
 
 import Siko.Interner as I
 import Siko.Location
+import Siko.Util
 
 @derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)
 struct Fragment {
     pub name: I.String,
     pub location: Location,
+}
+
+instance Show[Fragment] {
+    fn show(&self) -> String {
+        self.name.show()
+    }
 }
 
 @derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)
@@ -30,11 +37,7 @@ pub struct Identifier {
     }
 
     pub fn name(&self) -> String {
-        let parts: Vec[String] = self.fragments
-            .iter()
-            .map(|f| f.name.clone())
-            .collect();
-        parts.join("".toString())
+        formatList(self.fragments)
     }
 
     pub fn location(&self) -> Location {
@@ -67,7 +70,7 @@ pub struct Identifier {
     }
 }
 
-pub instance IdentifierShow Show[Identifier] {
+instance Show[Identifier] {
     fn show(&self) -> String {
         self.name()
     }

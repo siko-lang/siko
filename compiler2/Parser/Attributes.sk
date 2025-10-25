@@ -1,0 +1,50 @@
+module Siko.Parser.Attributes {
+
+import Siko.Parser.Token
+import Siko.Parser.Parser
+import Siko.Syntax.Attributes
+import Siko.Syntax.Module
+import Siko.Parser.Util
+
+pub trait AttributeParser[T] {
+    fn parseAttributes(self) -> (Self, Attributes, Vec[Derive])
+    fn parseDerives(self) -> (Self, Vec[Derive])
+}
+
+instance AttributeParser[Parser] {
+    fn parseAttributes(mut self) -> (Self, Attributes, Vec[Derive]) {
+        let mut attributes = Attributes.new();
+        let mut derives = Vec.new();
+        while self.check(TokenKind.Misc(MiscKind.At)) {
+            self.expect(TokenKind.Misc(MiscKind.At));
+            if self.check(TokenKind.VarIdentifier) {
+                let name = self.parseVarIdentifier();
+                match name.name() {
+                    "test" -> { attributes.testEntry = True; }
+                    "inline" -> { attributes.inline = True; }
+                    "unsafe" -> { attributes.safety = Safety.Unsafe; }
+                    "safe" -> { attributes.safety = Safety.Safe; }
+                    "builtin" -> { attributes.builtin = True; }
+                    "prelude" -> { attributes.prelude = True; }
+                    "derive" -> {
+                        derives = self.parseDerives();
+                    }
+                    _ -> self.reportError3("Unknown attribute: ${name}", name.location()),
+                }
+            } else {
+                self.reportError2("expected attribute", self.peek());
+            }
+        }
+        (self, attributes, derives)
+    }
+
+    fn parseDerives(mut self) -> (Self, Vec[Derive]) {
+        let (parser, derives) = parseList(self, |parser| {
+            let (parser, item) = parser.parseTypeIdentifier();
+            (parser, Derive(name: item))
+        });
+        (parser, derives)
+    }
+}
+
+}

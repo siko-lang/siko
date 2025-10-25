@@ -4,6 +4,7 @@ import Siko.Syntax.Identifier
 import Siko.Syntax.Type
 import Siko.Syntax.Function
 import Siko.Location
+import Siko.Util
 
 @derive(PartialEq, Eq, Clone)
 pub struct Trait {
@@ -26,12 +27,7 @@ instance Show[AssociatedTypeDeclaration] {
         if self.constraints.empty() {
             "type ${self.name}"
         } else {
-            let constraints: Vec[String] = self
-                .constraints
-                .iter()
-                .map(|constraint| constraint.show())
-                .collect();
-            let constraints = constraints.join(", ".toString());
+            let constraints = formatList(self.constraints);
             "type ${self.name}: ${constraints}"
         }
     }

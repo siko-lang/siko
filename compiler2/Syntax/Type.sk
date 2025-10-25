@@ -1,6 +1,7 @@
 module Siko.Syntax.Type {
 
 import Siko.Syntax.Identifier
+import Siko.Util
 
 @derive(Debug, Clone, PartialEq, Eq)
 pub enum Type {
@@ -29,27 +30,14 @@ pub instance Show[Type] {
                 }
             }
             Tuple(elements) -> {
-                let elems: Vec[String] = elements
-                    .iter()
-                    .map(|el| el.show())
-                    .collect();
-                let elems = elems.join(", ".toString());
-                "(${elems})"
+                formatList(elements, sep: ", ", begin: "(", end: ")")
             }
             Function(params, ret) -> {
-                let params: Vec[String] = params
-                    .iter()
-                    .map(|param| param.show())
-                    .collect();
-                let params = params.join(", ".toString());
+                let params = formatList(params);
                 "fn(${params}) -> ${ret}"
             }
             FunctionPtr(params, ret) -> {
-                let params: Vec[String] = params
-                    .iter()
-                    .map(|param| param.show())
-                    .collect();
-                let params = params.join(", ".toString());
+                let params = formatList(params);
                 "fn*(${params}) -> ${ret}"
             }
             Reference(inner) -> "&${inner}"
@@ -72,20 +60,12 @@ pub struct TypeParameterDeclaration {
 
 pub instance Show[TypeParameterDeclaration] {
     fn show(&self) -> String {
-        let params: Vec[String] = self
-            .params
-            .iter()
-            .map(|param| param.show())
-            .collect();
+        let params = formatList(self.params);
         if self.constraints.empty() {
-            "[${params.join(", ".toString())}]"
+            "[${params}]"
         } else {
-            let constraints: Vec[String] = self
-                .constraints
-                .iter()
-                .map(|constraint| constraint.show())
-                .collect();
-            "[${params.join(", ".toString())}: ${constraints.join(", ".toString())}]"
+            let constraints = formatList(self.constraints);
+            "[${params}: ${constraints}]"
         }
     }
 }

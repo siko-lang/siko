@@ -98,24 +98,20 @@ pub struct Parser {
     pub fn reportError(&self, expected: TokenKind, found: TokenKind) -> ! {
         let location = self.currentLocation();
         let slogan = "Expected ${yellow(expected.show())} found ${yellow(found.show())}";
-        let r = Report.new(slogan, Some(location));
-        r.print();
-        Siko.Util.exit(1);
+        self.reportError3(slogan, location);
     }
 
     pub fn reportError2(&self, expected: String, found: TokenKind) -> ! {
         let location = self.currentLocation();
         let slogan = "Expected ${yellow(expected)} found ${yellow(found.show())}";
-        let r = Report.new(slogan, Some(location));
+        self.reportError3(slogan, location);
+    }
+
+    pub fn reportError3(&self, msg: String, location: Location) -> ! {
+        let r = Report.new(msg, Some(location));
         r.print();
         Siko.Util.exit(1);
     }
-
-    // pub fn reportError3(&mut self, msg: &str, location: Location) -> ! {
-    //     let line = location.span.start.line + 1;
-    //     let offset = location.span.start.offset + 1;
-    //     error(format!("{} at {}:{}:{}", msg, self.fileName, line, offset));
-    // }
 
     pub fn step(mut self) -> Self {
         self.index += 1;

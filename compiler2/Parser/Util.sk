@@ -1,0 +1,30 @@
+module Siko.Parser.Util {
+
+import Siko.Parser.Token
+import Siko.Parser.Parser
+import Siko.Syntax.Attributes
+import Siko.Syntax.Module
+
+pub fn parseList[T](
+    mut parser: Parser,
+    parseFn: fn(Parser) -> (Parser, T),
+    begin: TokenKind = TokenKind.LeftBracket(BracketKind.Paren),
+    end: TokenKind = TokenKind.RightBracket(BracketKind.Paren),
+) -> (Parser, Vec[T]) {
+    let mut items = Vec.new();
+    parser.expect(begin);
+    while !parser.check(end) {
+        let (p, item) = parseFn(parser);
+        parser = p;
+        items.push(item);
+        if parser.check(end) {
+            break;
+        } else {
+            parser.expect(TokenKind.Misc(MiscKind.Comma));
+        }
+    }
+    parser.expect(end);
+    (parser, items)
+}
+
+}
