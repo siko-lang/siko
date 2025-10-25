@@ -20,8 +20,23 @@ pub struct Vec[T] {
         self
     }
 
+    pub fn pop(mut self) -> (Self, Option[T]) {
+        let res = self.inner.pop();
+        (self, res)
+    }
+
     pub fn get(&self, index: Int) -> &T {
         self.inner.get(index.toU64())
+    }
+
+    @safe
+    pub fn last(&self) -> Option[&T] {
+        if self.inner.size == 0.toU64() {
+            return None
+        }
+        let index = self.inner.size - 1.toU64();
+        let item = self.inner.getUnchecked(index);
+        Some(item)
     }
 
     @safe
@@ -182,6 +197,17 @@ struct InnerVec[T] {
     }
 
     @safe
+    pub fn pop(mut self) -> (Self, Option[T]) {
+        if self.size == 0.toU64() {
+            return (self, None)
+        }
+        let index = self.size - 1.toU64();
+        let item = *offset(self.items, index);
+        self.size -= 1.toU64();
+        (self, Some(item))
+    }
+
+    @safe
     fn get(&self, index: U64) -> &T {
         if self.size <= index {
             panic("OutOfBounds");
@@ -310,6 +336,14 @@ pub instance[T] IndexVec Index[Vec[T], Int] {
 
     fn index(&self, index: Int) -> &T {
         self.get(index)
+    }
+}
+
+pub instance[T] IndexVecRef Index[Vec[T], &Int] {
+    type Output = T
+
+    fn index(&self, index: &Int) -> &T {
+        self.get(index.clone())
     }
 }
 

@@ -1,0 +1,267 @@
+module Siko.Parser.Parser {
+
+import Siko.Interner as I
+import Siko.Location
+import Siko.Parser.Token
+import Siko.Syntax.Module
+import Siko.Syntax.Identifier
+import Siko.Location.Report
+import Siko.Util
+
+pub struct Parser {
+    tokens: Vec[TokenInfo],
+    index: Int,
+    pub fileId: FileId,
+    modules: Vec[Module],
+    spans: Vec[Span],
+    pub opTable: Vec[Vec[OperatorKind]],
+
+    pub fn new(fileId: FileId) -> Parser {
+        Parser(
+            tokens: Vec.new(),
+            index: 0,
+            fileId: fileId,
+            modules: Vec.new(),
+            spans: Vec.new(),
+            opTable: [
+                [OperatorKind.And, OperatorKind.Or],
+                [OperatorKind.BitOr, OperatorKind.BitXor, OperatorKind.BitAnd],
+                [OperatorKind.Equal, OperatorKind.NotEqual],
+                [
+                    OperatorKind.LessThan,
+                    OperatorKind.GreaterThan,
+                    OperatorKind.LessThanOrEqual,
+                    OperatorKind.GreaterThanOrEqual,
+                ],
+                [OperatorKind.ShiftLeft, OperatorKind.ShiftRight],
+                [OperatorKind.Add, OperatorKind.Sub],
+                [OperatorKind.Mul, OperatorKind.Div],
+            ],
+        )
+    }
+
+    pub fn currentSpan(&self) -> Span {
+        self.tokens[self.index].span.clone()
+    }
+
+    pub fn endSpan(&self) -> Span {
+        if self.index > 0 {
+            self.tokens[self.index - 1].span.clone()
+        } else {
+            self.tokens[self.index].span.clone()
+        }
+    }
+
+    pub fn pushSpan(mut self) -> Self {
+        let span = self.tokens[self.index].span.clone();
+        self.spans.push(span);
+        self
+    }
+
+    pub fn popSpan(mut self) -> (Self, Location) {
+        let start = self.spans.pop().unwrap();
+        let merged = start.merge(self.tokens[self.index - 1].span.clone());
+        (self, Location.new(self.fileId.clone(), merged))
+    }
+
+    pub fn useSpan(&self) -> Location {
+        let start = self.spans.last().unwrap();
+        let merged = start.clone().merge(self.tokens[self.index - 1].span.clone());
+        Location.new(self.fileId.clone(), merged)
+    }
+
+    pub fn peek(&self) -> TokenKind {
+        self.tokens[self.index].kind()
+    }
+
+    pub fn current(&self) -> &TokenInfo {
+        &self.tokens[self.index]
+    }
+
+    pub fn check(&self, kind: TokenKind) -> Bool {
+        self.peek() == kind
+    }
+
+    pub fn isDone(&self) -> Bool {
+        self.check(TokenKind.EOF)
+    }
+
+    pub fn expect(mut self, kind: TokenKind) -> Self {
+        if self.tokens[self.index].kind() != kind {
+            self.reportError(kind, self.tokens[self.index].kind());
+        } else {
+            self.step();
+        }
+        self
+    }
+
+    pub fn reportError(&self, expected: TokenKind, found: TokenKind) -> ! {
+        let location = self.currentLocation();
+        let slogan = "Expected ${yellow(expected.show())} found ${yellow(found.show())}";
+        let r = Report.new(slogan, Some(location));
+        r.print();
+        Siko.Util.exit(1);
+    }
+
+    pub fn reportError2(&self, expected: String, found: TokenKind) -> ! {
+        let location = self.currentLocation();
+        let slogan = "Expected ${yellow(expected)} found ${yellow(found.show())}";
+        let r = Report.new(slogan, Some(location));
+        r.print();
+        Siko.Util.exit(1);
+    }
+
+    // pub fn reportError3(&mut self, msg: &str, location: Location) -> ! {
+    //     let line = location.span.start.line + 1;
+    //     let offset = location.span.start.offset + 1;
+    //     error(format!("{} at {}:{}:{}", msg, self.fileName, line, offset));
+    // }
+
+    pub fn step(mut self) -> Self {
+        self.index += 1;
+        self
+    }
+
+    pub fn undo(mut self) -> Self {
+        self.index -= 1;
+        self
+    }
+
+    pub fn parseQualifiedTypeName(mut self) -> (Self, Identifier) {
+        let mut id = self.parseTypeIdentifier();
+        while self.check(TokenKind.Misc(MiscKind.Dot)) {
+            self.expect(TokenKind.Misc(MiscKind.Dot));
+            id.dot(self.currentLocation());
+            let next = self.parseTypeIdentifier();
+            id.merge(next);
+        }
+        (self, id)
+    }
+
+    pub fn parseQualifiedVarName(mut self) -> (Self, Identifier) {
+        if self.check(TokenKind.VarIdentifier) {
+            let id = self.parseVarIdentifier();
+            return (self, id);
+        }
+        let mut id = self.parseTypeIdentifier();
+        while self.check(TokenKind.Misc(MiscKind.Dot)) {
+            self.expect(TokenKind.Misc(MiscKind.Dot));
+            id.dot(self.currentLocation());
+            if self.check(TokenKind.TypeIdentifier) {
+                id.merge(self.parseTypeIdentifier());
+            } else if self.check(TokenKind.VarIdentifier) {
+                id.merge(self.parseVarIdentifier());
+                break;
+            } else {
+                self.reportError2("<qualified variable name>", self.peek());
+            }
+        }
+        (self, id)
+    }
+
+    pub fn parseTypeIdentifier(mut self) -> (Self, Identifier) {
+        match self.tokens[self.index].token.clone() {
+            Token.TypeIdentifier(v) -> {
+                let i = Identifier.new(v, self.currentLocation());
+                self.step();
+                (self, i)
+            }
+            t -> self.reportError(TokenKind.TypeIdentifier, t.kind()),
+        }
+    }
+
+    pub fn parseVarIdentifier(mut self) -> (Self, Identifier) {
+        match self.tokens[self.index].token.clone() {
+            Token.VarIdentifier(v) -> {
+                let i = Identifier.new(v, self.currentLocation());
+                self.step();
+                (self, i)
+            }
+            t -> self.reportError(TokenKind.VarIdentifier, t.kind()),
+        }
+    }
+
+    pub fn parseIntegerLiteral(mut self) -> (Self, I.String) {
+        match self.tokens[self.index].token.clone() {
+            Token.IntegerLiteral(v) -> {
+                self.step();
+                (self, v)
+            }
+            t -> self.reportError(TokenKind.IntegerLiteral, t.kind()),
+        }
+    }
+
+    pub fn parseCharLiteral(mut self) -> (Self, I.String) {
+        match self.tokens[self.index].token.clone() {
+            Token.CharLiteral(v) -> {
+                self.step();
+                (self, v)
+            }
+            t -> self.reportError(TokenKind.CharLiteral, t.kind()),
+        }
+    }
+
+    pub fn parseStringLiteral(mut self) -> (Self, I.String) {
+        match self.tokens[self.index].token.clone() {
+            Token.StringLiteral(v) -> {
+                self.step();
+                (self, v)
+            }
+            t -> self.reportError(TokenKind.StringLiteral, t.kind()),
+        }
+    }
+
+    pub fn currentLocation(&self) -> Location {
+        Location.new(self.fileId.clone(), self.tokens[self.index].span.clone())
+    }
+
+    pub fn parseModuleName(mut self) -> (Self, Identifier) {
+        let mut id = self.parseTypeIdentifier();
+        while self.check(TokenKind.Misc(MiscKind.Dot)) {
+            self.expect(TokenKind.Misc(MiscKind.Dot));
+            id.dot(self.currentLocation());
+            let next = self.parseTypeIdentifier();
+            id.merge(next);
+        }
+        (self, id)
+    }
+
+    pub fn parseQualifiedName(mut self) -> (Self, Identifier) {
+        if self.check(TokenKind.TypeIdentifier) {
+            let mut id = self.parseTypeIdentifier();
+            while self.check(TokenKind.Misc(MiscKind.Dot)) {
+                self.expect(TokenKind.Misc(MiscKind.Dot));
+                id.dot(self.currentLocation());
+                if self.check(TokenKind.TypeIdentifier) {
+                    let next = self.parseTypeIdentifier();
+                    id.merge(next);
+                } else {
+                    let next = self.parseVarIdentifier();
+                    id.merge(next);
+                    break;
+                }
+            }
+            (self, id)
+        } else {
+            let id = self.parseVarIdentifier();
+            (self, id)
+        }
+    }
+
+    pub fn parse(mut self, tokens: Vec[TokenInfo]) -> Self {
+        //println!("Tokens {:?}", tokens);
+        self.tokens = tokens;
+        //println!("Errors {:?}", errors);
+        // while !self.isDone() {
+        //     let m = self.parseModule();
+        //     self.modules.push(m);
+        // }
+        self
+    }
+
+    pub fn modules(self) -> Vec[Module] {
+        self.modules
+    }
+}
+
+}
