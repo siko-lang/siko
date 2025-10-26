@@ -1,0 +1,29 @@
+module Main {
+
+struct Foo {
+    a: Int,
+}
+
+instance Drop[Foo] {
+    fn drop(self) -> Self {
+        println("Dropping Foo with a = ${self.a}");
+        self
+    }
+}
+
+fn doStuff(f: Foo, func: fn(Foo) -> Foo) -> Foo {
+    func(f)
+}
+
+fn main() {
+    let mut foo = Foo(a: 42);
+    println("Before doStuff");
+    let b = doStuff(foo, |f| {
+        f
+    });
+    println("After doStuff");
+    foo = b;
+    println("After reassigning foo");
+}
+
+}

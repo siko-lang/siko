@@ -738,13 +738,13 @@ impl<'a> ExprResolver<'a> {
                 let targetBlock = self.bodyBuilder.getTargetBlockId();
                 let mut savedLoopInfos = Vec::new();
                 std::mem::swap(&mut savedLoopInfos, &mut self.loopInfos);
-                self.bodyBuilder
-                    .current()
-                    .addDeclare(lambdaVar.clone(), expr.location.clone());
                 let lambdaName = QualifiedName::Lambda(Box::new(self.name.clone()), currentLambdaIndex);
                 let mut lambdaEnv = Environment::lambdaEnv(env, self.createSyntaxBlockIdSegment());
                 let mut lambdaBodyBuilder = self.createBlock(&lambdaEnv);
                 lambdaBodyBuilder.current();
+                self.bodyBuilder
+                    .current()
+                    .addDeclare(lambdaVar.clone(), expr.location.clone());
                 for (index, p) in params.iter().enumerate() {
                     let pVar = Variable::new(
                         VariableName::LambdaArg(lambdaBodyBuilder.getBlockId(), index as u32),
