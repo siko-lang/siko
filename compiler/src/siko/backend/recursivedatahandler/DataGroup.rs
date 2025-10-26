@@ -151,10 +151,16 @@ fn processSingleDataGroup(mut program: Program, group: DependencyGroup<Type>) ->
                     for param in ctorFunc.params.iter_mut() {
                         match param {
                             Parameter::Named(_, ty, _) => {
-                                *ty = sub.get(ty.clone());
+                                if group.items.contains(ty) {
+                                    //println!("Updating variant ctor param type: {}", ty);
+                                    *ty = sub.get(ty.clone());
+                                }
                             }
                             Parameter::SelfParam(_, ty) => {
-                                *ty = sub.get(ty.clone());
+                                if group.items.contains(ty) {
+                                    //println!("Updating variant ctor self param type: {}", ty);
+                                    *ty = sub.get(ty.clone());
+                                }
                             }
                         }
                     }

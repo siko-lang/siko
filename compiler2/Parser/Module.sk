@@ -6,6 +6,7 @@ import Siko.Parser.Attributes
 import Siko.Parser.Implicit
 import Siko.Parser.Data
 import Siko.Parser.Function
+import Siko.Parser.Trait
 import Siko.Syntax.Module as M
 
 pub trait ModuleParser[T] {
@@ -57,8 +58,8 @@ instance ModuleParser[Parser] {
                 //TokenKind.Keyword(KeywordKind.Import) -> ModuleItem.Import(self.parseImport()),
                 //TokenKind.Keyword(KeywordKind.Effect) -> ModuleItem.Effect(self.parseEffect(public)),
                 TokenKind.Keyword(KeywordKind.Implicit) -> M.ModuleItem.Implicit(self.parseImplicit(public)),
-                //TokenKind.Keyword(KeywordKind.Trait) -> ModuleItem.Trait(self.parseTrait(public)),
-                //TokenKind.Keyword(KeywordKind.Instance) -> ModuleItem.Instance(self.parseInstance(public)),
+                TokenKind.Keyword(KeywordKind.Trait) -> M.ModuleItem.Trait(self.parseTrait(public)),
+                TokenKind.Keyword(KeywordKind.Instance) -> M.ModuleItem.Instance(self.parseInstance(public)),
                 kind -> self.reportError2("<module item>", kind),
             };
             items.push(item);

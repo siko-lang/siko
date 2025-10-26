@@ -115,7 +115,7 @@ fn processFunction(function: &Function, program: &Program) -> Function {
                             };
                             // println!(
                             //     "Transforming field reference: {} from {} to {} index {}",
-                            //     dest, source, variantTypes, index
+                            //     dest, info.receiver, variantTypes, index
                             // );
                             let isRef = info.receiver.getType().isReference();
                             let newSource = info.receiver.clone();
@@ -125,6 +125,10 @@ fn processFunction(function: &Function, program: &Program) -> Function {
                                 newSource.setType(variantTypes.clone());
                             }
                             let mut fieldTy = variantTypes.getTupleTypes()[*index as usize].clone();
+                            if !fieldTy.isBoxed(&dest.getType().unpackRef()) {
+                                builder.step();
+                                continue;
+                            }
                             if isRef {
                                 fieldTy = fieldTy.asRef();
                             }
