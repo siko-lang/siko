@@ -7,6 +7,8 @@ import Siko.Parser.Implicit
 import Siko.Parser.Data
 import Siko.Parser.Function
 import Siko.Parser.Trait
+import Siko.Parser.Global
+import Siko.Parser.Effect
 import Siko.Syntax.Module as M
 
 pub trait ModuleParser[T] {
@@ -54,9 +56,9 @@ instance ModuleParser[Parser] {
                 TokenKind.Keyword(KeywordKind.Fn) -> {
                     M.ModuleItem.Function(self.parseFunction(attributes, public, True))
                 }
-                //TokenKind.Keyword(KeywordKind.Let) -> ModuleItem.Global(self.parseGlobal(attributes, public)),
-                //TokenKind.Keyword(KeywordKind.Import) -> ModuleItem.Import(self.parseImport()),
-                //TokenKind.Keyword(KeywordKind.Effect) -> ModuleItem.Effect(self.parseEffect(public)),
+                TokenKind.Keyword(KeywordKind.Let) -> M.ModuleItem.Global(self.parseGlobal(attributes, public)),
+                TokenKind.Keyword(KeywordKind.Import) -> M.ModuleItem.Import(self.parseImport()),
+                TokenKind.Keyword(KeywordKind.Effect) -> M.ModuleItem.Effect(self.parseEffect(public)),
                 TokenKind.Keyword(KeywordKind.Implicit) -> M.ModuleItem.Implicit(self.parseImplicit(public)),
                 TokenKind.Keyword(KeywordKind.Trait) -> M.ModuleItem.Trait(self.parseTrait(public)),
                 TokenKind.Keyword(KeywordKind.Instance) -> M.ModuleItem.Instance(self.parseInstance(public)),

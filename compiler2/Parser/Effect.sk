@@ -1,0 +1,40 @@
+module Siko.Parser.Effect {
+
+import Siko.Parser.Parser
+import Siko.Parser.Token
+import Siko.Parser.Attributes
+import Siko.Parser.Function
+import Siko.Syntax.Effect as E
+
+pub trait EffectParser[T] {
+    fn parseEffect(mut self, public: Bool) -> (Self, E.Effect)
+}
+
+instance EffectParser[Parser] {
+    fn parseEffect(mut self, public: Bool) -> (Self, E.Effect) {
+        self.expect(TokenKind.Keyword(KeywordKind.Effect));
+        let name = self.parseTypeIdentifier();
+        let mut methods = Vec.new();
+        if self.check(TokenKind.LeftBracket(BracketKind.Curly)) {
+            self.expect(TokenKind.LeftBracket(BracketKind.Curly));
+            while !self.check(TokenKind.RightBracket(BracketKind.Curly)) {
+                let (attributes, _) = self.parseAttributes();
+                if self.check(TokenKind.Keyword(KeywordKind.Fn)) {
+                    let function = self.parseFunction(attributes, True, False);
+                    methods.push(function);
+                    continue;
+                }
+                self.reportError2("expected effect member", self.peek());
+            }
+            self.expect(TokenKind.RightBracket(BracketKind.Curly));
+        }
+        let e = E.Effect(
+            name: name,
+            methods,
+            public: public,
+        );
+        (self, e)
+    }
+}
+
+}

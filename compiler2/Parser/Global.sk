@@ -1,0 +1,33 @@
+module Siko.Parser.Global {
+
+import Siko.Parser.Parser
+import Siko.Parser.Token
+import Siko.Parser.Type
+import Siko.Syntax.Attributes
+import Siko.Syntax.Global
+
+pub trait GlobalParser[T] {
+    fn parseGlobal(mut self, attributes: Attributes, public: Bool) -> (Self, Global)
+}
+
+instance GlobalParser[Parser]  {
+    fn parseGlobal(mut self, attributes: Attributes, public: Bool) -> (Self, Global) {
+        self.expect(TokenKind.Keyword(KeywordKind.Let));
+        let name = self.parseTypeIdentifier();
+        self.expect(TokenKind.Misc(MiscKind.Colon));
+        let ty = self.parseType();
+        self.expect(TokenKind.Misc(MiscKind.Equal));
+        let value = self.parseExpr();
+        self.expect(TokenKind.Misc(MiscKind.Semicolon));
+        let g = Global(
+            name,
+            ty,
+            value,
+            public,
+            attributes,
+        );
+        (self, g)
+    }
+}
+
+}
