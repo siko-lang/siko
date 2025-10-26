@@ -35,6 +35,10 @@ impl FileManager {
     }
 
     pub fn get(&self, id: &FileId) -> String {
-        self.files.borrow().get(id).expect("No file found").clone()
+        if let Some(file) = self.files.borrow().get(id) {
+            return file.clone();
+        } else {
+            format!("INTERNAL COMPILER ERROR")
+        }
     }
 }

@@ -11,7 +11,6 @@ use crate::siko::resolver::Environment::Environment;
 use crate::siko::resolver::Error::ResolverError;
 use crate::siko::resolver::ExprResolver::ExprResolver;
 use crate::siko::syntax::Expr::Branch;
-use crate::siko::syntax::Identifier::Identifier;
 use crate::siko::syntax::Pattern::{Pattern, SimplePattern};
 use crate::siko::util::Runner::Runner;
 use std::collections::{BTreeMap, BTreeSet};
@@ -64,45 +63,6 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         v
     }
 
-    fn resolve(&self, pattern: &Pattern) -> Pattern {
-        match &pattern.pattern {
-            SimplePattern::Named(origId, args) => {
-                let name = self
-                    .irCompiler
-                    .resolver
-                    .moduleResolver
-                    .resolveTypeOrVariantName(&origId);
-                let id = Identifier::new(name.toString(), Location::empty());
-                let args = args.iter().map(|p| self.resolve(p)).collect();
-                Pattern {
-                    pattern: SimplePattern::Named(id, args),
-                    location: Location::empty(),
-                }
-            }
-            SimplePattern::Bind(_, _) => pattern.clone(),
-            SimplePattern::Tuple(args) => {
-                let args = args.iter().map(|p| self.resolve(p)).collect();
-                Pattern {
-                    pattern: SimplePattern::Tuple(args),
-                    location: Location::empty(),
-                }
-            }
-            SimplePattern::StringLiteral(_) => pattern.clone(),
-            SimplePattern::IntegerLiteral(_) => pattern.clone(),
-            SimplePattern::Wildcard => pattern.clone(),
-            SimplePattern::Guarded(pat, expr) => {
-                let resolvedPat = self.resolve(pat);
-                Pattern {
-                    pattern: SimplePattern::Guarded(Box::new(resolvedPat), expr.clone()),
-                    location: Location::empty(),
-                }
-            }
-            SimplePattern::OrPattern(_) => {
-                unreachable!("OrPattern should have been handled earlier")
-            }
-        }
-    }
-
     fn generateChoices(&self, pattern: &Pattern) -> Vec<Pattern> {
         let wildcardPattern = Pattern {
             pattern: SimplePattern::Wildcard,
@@ -110,7 +70,11 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         };
         match &pattern.pattern {
             SimplePattern::Named(origId, args) => {
-                let name = self.irCompiler.resolver.moduleResolver.resolveName(&origId);
+                let name = self
+                    .irCompiler
+                    .resolver
+                    .moduleResolver
+                    .resolveTypeOrVariantName(&origId);
                 let mut result = Vec::new();
                 if let Some(_enumName) = self.irCompiler.resolver.variants.get(&name) {
                     // Instead of generating O(n²) specific variant alternatives,
@@ -123,9 +87,8 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
                             choiceArgs.extend(args.iter().cloned().take(index));
                             choiceArgs.push(choice);
                             choiceArgs.extend(repeat(wildcardPattern.clone()).take(args.len() - index - 1));
-                            let id = Identifier::new(name.toString(), Location::empty());
                             let pat = Pattern {
-                                pattern: SimplePattern::Named(id, choiceArgs),
+                                pattern: SimplePattern::Named(origId.clone(), choiceArgs),
                                 location: Location::empty(),
                             };
                             result.push(pat);
@@ -177,7 +140,11 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
         //println!("generateDecisions: {}, {}, {}", pattern, parentData, decision);
         match &pattern.pattern {
             SimplePattern::Named(origId, args) => {
-                let name = self.irCompiler.resolver.moduleResolver.resolveName(&origId);
+                let name = self
+                    .irCompiler
+                    .resolver
+                    .moduleResolver
+                    .resolveTypeOrVariantName(&origId);
                 if let Some(enumName) = self.irCompiler.resolver.variants.get(&name) {
                     let path = parentData.push(DataPathSegment::Variant(name, enumName.clone()));
                     let mut decision = decision.add(path.clone());
@@ -226,14 +193,17 @@ impl<'a, 'b> MatchCompiler<'a, 'b> {
     fn processAndVerifyPatterns(&mut self, runner: Runner) -> Node {
         let mut matches = Vec::new();
         for (index, branch) in self.branches.clone().iter().enumerate() {
-            let branchPattern = self.resolve(&branch.pattern);
-            let (decision, bindings) =
-                self.generateDecisions(&branchPattern, &DataPath::root(), &DecisionPath::new(), Bindings::new());
+            let (decision, bindings) = self.generateDecisions(
+                &branch.pattern,
+                &DataPath::root(),
+                &DecisionPath::new(),
+                Bindings::new(),
+            );
             //println!("{} Pattern {}\n decision: {}", index, branch.pattern, decision);
-            let choices = self.generateChoices(&branchPattern);
+            let choices = self.generateChoices(&branch.pattern);
             matches.push(Match::new(
-                MatchKind::UserDefined(index as i64, branchPattern.isGuarded()),
-                branchPattern,
+                MatchKind::UserDefined(index as i64, branch.pattern.isGuarded()),
+                branch.pattern.clone(),
                 decision,
                 bindings,
             ));
