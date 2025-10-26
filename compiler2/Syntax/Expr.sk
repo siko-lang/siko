@@ -40,6 +40,26 @@ pub struct Branch {
     pub body: Expr,
 }
 
+@derive(PartialEq, Eq, Clone, Copy)
+pub enum MatchIfOp {
+    In,
+    Equal,
+    Predicate,
+}
+
+@derive(PartialEq, Eq, Clone)
+pub struct MatchIfBranch {
+    pub condition: Option[Expr],
+    pub op: MatchIfOp,
+    pub body: Expr,
+}
+
+@derive(PartialEq, Eq, Clone)
+pub struct MatchIf {
+    pub scrutinee: Option[Expr],
+    pub branches: Vec[MatchIfBranch],
+}
+
 @derive(PartialEq, Eq, Clone)
 pub struct ContextHandler {
     pub name: Identifier,
@@ -79,9 +99,15 @@ pub enum SimpleExpr {
     Call(Expr, Vec[FunctionArg]),
     MethodCall(Expr, Identifier, Vec[FunctionArg]),
     Loop(Pattern, Expr, Expr),
+    While(Expr, Expr),
+    WhileLet(Pattern, Expr, Expr),
+    For(Pattern, Expr, Expr),
+    MatchIf(MatchIf),
     BinaryOp(BinaryOp, Expr, Expr),
     UnaryOp(UnaryOp, Expr),
     Match(Expr, Vec[Branch]),
+    If(Expr, Expr, Option[Expr]),
+    IfLet(Pattern, Expr, Expr, Option[Expr]),
     Block(Block),
     Tuple(Vec[Expr]),
     StringLiteral(I.String),
@@ -118,6 +144,38 @@ pub enum SimpleExpr {
             }
             BinaryOp(_, left, right) -> left.doesNotReturn() or right.doesNotReturn(),
             UnaryOp(_, expr) -> expr.doesNotReturn(),
+            If(cond, trueBranch, falseBranch) -> {
+                cond.doesNotReturn()
+                    or (trueBranch.doesNotReturn()
+                        and match falseBranch {
+                            Some(expr) -> expr.doesNotReturn(),
+                            None -> False,
+                        })
+            }
+            IfLet(_, cond, trueBranch, falseBranch) -> {
+                cond.doesNotReturn()
+                    or (trueBranch.doesNotReturn()
+                        and match falseBranch {
+                            Some(expr) -> expr.doesNotReturn(),
+                            None -> False,
+                        })
+            }
+            While(cond, body) -> cond.doesNotReturn() or body.doesNotReturn(),
+            WhileLet(_, cond, body) -> cond.doesNotReturn() or body.doesNotReturn(),
+            For(_, source, body) -> source.doesNotReturn() or body.doesNotReturn(),
+            SimpleExpr.MatchIf(matchIf) -> {
+                let scrutineeDoesNotReturn = match matchIf.scrutinee {
+                    Some(expr) -> expr.doesNotReturn(),
+                    None -> False,
+                };
+                let conditionDoesNotReturn = matchIf.branches.iter().any(|branch| match &branch.condition {
+                    Some(expr) -> expr.doesNotReturn(),
+                    None -> False,
+                });
+                scrutineeDoesNotReturn
+                    or conditionDoesNotReturn
+                    or matchIf.branches.iter().all(|branch| branch.body.doesNotReturn())
+            }
             Match(expr, branches) -> {
                 expr.doesNotReturn() or branches.iter().all(|branch| branch.body.doesNotReturn())
             }

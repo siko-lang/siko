@@ -37,17 +37,24 @@ instance TypeParser[Parser] {
             TokenKind.LeftBracket(BracketKind.Paren) -> {
                 let mut items = Vec.new();
                 self.expect(TokenKind.LeftBracket(BracketKind.Paren));
+                let mut endedWithComma = False;
                 while !self.check(TokenKind.RightBracket(BracketKind.Paren)) {
                     let item = self.parseType();
                     items.push(item);
                     if self.check(TokenKind.RightBracket(BracketKind.Paren)) {
+                        endedWithComma = False;
                         break;
                     } else {
                         self.expect(TokenKind.Misc(MiscKind.Comma));
+                        endedWithComma = True;
                     }
                 }
                 self.expect(TokenKind.RightBracket(BracketKind.Paren));
-                Type.Tuple(items)
+                if items.len() == 1 and !endedWithComma {
+                    Type.Paren(items.remove(0))
+                } else {
+                    Type.Tuple(items)
+                }
             }
             TokenKind.Keyword(KeywordKind.Fn) -> {
                 self.expect(TokenKind.Keyword(KeywordKind.Fn));

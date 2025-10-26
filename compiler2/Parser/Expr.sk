@@ -16,6 +16,7 @@ pub trait ExprParser[T] {
     fn parseBlock(self) -> (Self, S.Block)
     fn parseStatement(self) -> (Self, S.StatementKind, SemicolonRequirement)
     fn parseIf(self) -> (Self, E.Expr)
+    fn parseElseBranch(self, start: Span) -> (Self, Option[E.Expr])
     fn parseFor(self) -> (Self, E.Expr)
     fn parseLoop(self) -> (Self, E.Expr)
     fn parseWhile(self) -> (Self, E.Expr)
@@ -93,6 +94,22 @@ instance ExprParser[Parser] {
         (self, expr)
     }
 
+    fn parseElseBranch(mut self, start: Span) -> (Self, Option[E.Expr]) {
+        let falseBranch = if self.check(TokenKind.Keyword(KeywordKind.Else)) {
+            self.expect(TokenKind.Keyword(KeywordKind.Else));
+            let falseBranch = if self.check(TokenKind.Keyword(KeywordKind.If)) {
+                self.parseIf()
+            } else {
+                let block = self.parseBlock();
+                self.buildExpr(E.SimpleExpr.Block(block), start)
+            };
+            Some(falseBranch)
+        } else {
+            None
+        };
+        (self, falseBranch)
+    }
+
     fn parseIf(mut self) -> (Self, E.Expr) {
         let start = self.currentSpan();
         self.expect(TokenKind.Keyword(KeywordKind.If));
@@ -102,101 +119,16 @@ instance ExprParser[Parser] {
             self.expect(TokenKind.Misc(MiscKind.Equal));
             let cond = self.parseExpr();
             let block = self.parseBlock();
-            let mut branches = Vec.new();
-            let trueBranch = self.buildExpr(E.SimpleExpr.Block(block), start.clone());
-            branches.push(E.Branch(
-                pattern,
-                body: trueBranch,
-            ));
-            let elseBranch = if self.check(TokenKind.Keyword(KeywordKind.Else)) {
-                self.expect(TokenKind.Keyword(KeywordKind.Else));
-                if self.check(TokenKind.Keyword(KeywordKind.If)) {
-                    self.parseIf()
-                } else {
-                    let block = self.parseBlock();
-                    self.buildExpr(E.SimpleExpr.Block(block), start.clone())
-                }
-            } else {
-                E.Expr(
-                    expr: E.SimpleExpr.Block(S.Block(
-                        statements: Vec.new(),
-                        location: self.currentLocation(),
-                    )),
-                    location: self.currentLocation(),
-                )
-            };
-            branches.push(E.Branch(
-                pattern: Pattern(
-                    pattern: SimplePattern.Wildcard,
-                    location: self.currentLocation(),
-                ),
-                body: elseBranch,
-            ));
-            let expr = self.buildExpr(E.SimpleExpr.Match(cond, branches), start);
+            let trueBranch = self.buildExpr(E.SimpleExpr.Block(block), start);
+            let falseBranch = self.parseElseBranch(start);
+            let expr = self.buildExpr(E.SimpleExpr.IfLet(pattern, cond, trueBranch, falseBranch), start);
             return (self, expr);
         }
         let cond = self.parseExpr();
         let block = self.parseBlock();
-        let mut branches = Vec.new();
-        let trueBranch = self.buildExpr(E.SimpleExpr.Block(block), start.clone());
-        branches.push(E.Branch(
-            pattern: Pattern(
-                pattern: SimplePattern.Named(
-                    Identifier.fromString(getTrueName().toString(), self.currentLocation()),
-                    Vec.new(),
-                ),
-                location: self.currentLocation(),
-            ),
-            body: trueBranch,
-        ));
-        if self.check(TokenKind.Keyword(KeywordKind.Else)) {
-            self.expect(TokenKind.Keyword(KeywordKind.Else));
-            if !self.check(TokenKind.Keyword(KeywordKind.If)) {
-                let block = self.parseBlock();
-                let falseBranch = self.buildExpr(E.SimpleExpr.Block(block), start.clone());
-                branches.push(E.Branch(
-                    pattern: Pattern(
-                        pattern: SimplePattern.Named(
-                            Identifier.fromString(getFalseName().toString(), self.currentLocation()),
-                            Vec.new(),
-                        ),
-                        location: self.currentLocation(),
-                    ),
-                    body: falseBranch,
-                ));
-            } else {
-                let falseBranch = self.parseIf();
-                branches.push(E.Branch(
-                    pattern: Pattern(
-                        pattern: SimplePattern.Named(
-                            Identifier.fromString(getFalseName().toString(), self.currentLocation()),
-                            Vec.new(),
-                        ),
-                        location: self.currentLocation(),
-                    ),
-                    body: falseBranch,
-                ));
-            }
-        } else {
-            branches.push(E.Branch(
-                pattern: Pattern(
-                    pattern: SimplePattern.Named(
-                        Identifier.fromString(getFalseName().toString(), self.currentLocation()),
-                        Vec.new(),
-                    ),
-                    location: self.currentLocation(),
-                ),
-                body: E.Expr(
-                    expr: E.SimpleExpr.Block(S.Block(
-                        statements: Vec.new(),
-                        location: self.currentLocation(),
-                    )),
-                    location: self.currentLocation(),
-                ),
-            ))
-        }
-
-        let expr = self.buildExpr(E.SimpleExpr.Match(cond, branches), start);
+        let trueBranch = self.buildExpr(E.SimpleExpr.Block(block), start);
+        let falseBranch = self.parseElseBranch(start);
+        let expr = self.buildExpr(E.SimpleExpr.If(cond, trueBranch, falseBranch), start);
         (self, expr)
     }
 
@@ -206,122 +138,9 @@ instance ExprParser[Parser] {
         let pattern = self.parsePattern();
         self.expect(TokenKind.Keyword(KeywordKind.In));
         let source = self.parseExpr();
-        self.expect(TokenKind.LeftBracket(BracketKind.Curly));
-        self.undo();
-        let body = self.parseBlock();
-        let end = self.endSpan();
-        let location = Location.new(self.fileId.clone(), start.merge(end));
-        let mut statements = Vec.new();
-        let source = self.buildExpr(
-            E.SimpleExpr.Call(
-                E.Expr(
-                    expr: E.SimpleExpr.Value(Identifier.fromString(
-                        "IntoIterator.intoIterator",
-                        location.clone(),
-                    )),
-                    location: location.clone(),
-                ),
-                [E.FunctionArg.Positional(source)],
-            ),
-            start.clone(),
-        );
-        let iter = Pattern(
-            pattern: SimplePattern.Bind(Identifier.fromString(".iter", location.clone()), True),
-            location: location.clone(),
-        );
-        statements.push(S.Statement(
-            kind: S.StatementKind.Let(iter, source, None),
-            hasSemicolon: False,
-        ));
-        let someBranch = E.Branch(
-            pattern: Pattern(
-                pattern: SimplePattern.Named(
-                    Identifier.fromString("Option.Some", location.clone()),
-                    [pattern],
-                ),
-                location: location.clone(),
-            ),
-            body: E.Expr(
-                expr: E.SimpleExpr.Block(S.Block(
-                    statements: [S.Statement(
-                        kind: S.StatementKind.Expr(E.Expr(
-                            expr: E.SimpleExpr.Block(body),
-                            location: location.clone(),
-                        )),
-                        hasSemicolon: True,
-                    )],
-                    location: location.clone(),
-                )),
-                location: location.clone(),
-            ),
-        );
-        let noneBranch = E.Branch(
-            pattern: Pattern(
-                pattern: SimplePattern.Named(Identifier.fromString("Option.None", location.clone()), Vec.new()),
-                location: location.clone(),
-            ),
-            body: E.Expr(
-                expr: E.SimpleExpr.Block(S.Block(
-                    statements: [S.Statement(
-                        kind: S.StatementKind.Expr(E.Expr(
-                            expr: E.SimpleExpr.Break(None),
-                            location: location.clone(),
-                        )),
-                        hasSemicolon: True,
-                    )],
-                    location: location.clone(),
-                )),
-                location: location.clone(),
-            ),
-        );
-        let nextCall = E.Expr(
-            expr: E.SimpleExpr.MethodCall(
-                E.Expr(
-                    expr: E.SimpleExpr.Value(Identifier.fromString(".iter", location.clone())),
-                    location: location.clone(),
-                ),
-                Identifier.fromString("next", location.clone()),
-                [],
-            ),
-            location: location.clone(),
-        );
-        let matchExpr = E.Expr(
-            expr: E.SimpleExpr.Match(nextCall, [someBranch, noneBranch]),
-            location: location.clone(),
-        );
-        let loopBody = E.Expr(
-            expr: E.SimpleExpr.Block(S.Block(
-                statements: [S.Statement(
-                    kind: S.StatementKind.Expr(matchExpr),
-                    hasSemicolon: True,
-                )],
-                location: location.clone(),
-            )),
-            location: location.clone(),
-        );
-        let loopExpr = E.Expr(
-            expr: E.SimpleExpr.Loop(
-                Pattern(
-                    pattern: SimplePattern.Tuple(Vec.new()),
-                    location: location.clone(),
-                ),
-                E.Expr(
-                    expr: E.SimpleExpr.Tuple(Vec.new()),
-                    location: location.clone(),
-                ),
-                loopBody,
-            ),
-            location: location.clone(),
-        );
-        statements.push(S.Statement(
-            kind: S.StatementKind.Expr(loopExpr),
-            hasSemicolon: True,
-        ));
-        let block = E.SimpleExpr.Block(S.Block(
-            statements: statements,
-            location: location.clone(),
-        ));
-        let expr = self.buildExpr(block, start);
+        let block = self.parseBlock();
+        let body = self.buildExpr(E.SimpleExpr.Block(block), start);
+        let expr = self.buildExpr(E.SimpleExpr.For(pattern, source, body), start);
         (self, expr)
     }
 
@@ -381,211 +200,53 @@ instance ExprParser[Parser] {
             let pattern = self.parsePattern();
             self.expect(TokenKind.Misc(MiscKind.Equal));
             let value = self.parseExpr();
-            self.expect(TokenKind.LeftBracket(BracketKind.Curly));
-            self.undo();
             let block = self.parseBlock();
-            let matchExpr = E.Expr(
-                expr: E.SimpleExpr.Match(
-                    value,
-                    [
-                        E.Branch(
-                            pattern,
-                            body: E.Expr(
-                                expr: E.SimpleExpr.Block(block),
-                                location: self.currentLocation(),
-                            ),
-                        ),
-                        E.Branch(
-                            pattern: Pattern(
-                                pattern: SimplePattern.Wildcard,
-                                location: self.currentLocation(),
-                            ),
-                            body: E.Expr(
-                                expr: E.SimpleExpr.Break(None),
-                                location: self.currentLocation(),
-                            ),
-                        ),
-                    ],
-                ),
-                location: self.currentLocation(),
-            );
-            let loopBody = E.Expr(
-                expr: E.SimpleExpr.Block(S.Block(
-                    statements: [S.Statement(
-                        kind: S.StatementKind.Expr(matchExpr),
-                        hasSemicolon: True,
-                    )],
-                    location: self.currentLocation(),
-                )),
-                location: self.currentLocation(),
-            );
-            let expr = self.buildExpr(
-                E.SimpleExpr.Loop(
-                    Pattern(
-                        pattern: SimplePattern.Tuple(Vec.new()),
-                        location: self.currentLocation(),
-                    ),
-                    E.Expr(
-                        expr: E.SimpleExpr.Tuple(Vec.new()),
-                        location: self.currentLocation(),
-                    ),
-                    loopBody,
-                ),
-                start,
-            );
+            let body = self.buildExpr(E.SimpleExpr.Block(block), start);
+            let expr = self.buildExpr(E.SimpleExpr.WhileLet(pattern, value, body), start);
             return (self, expr);
         }
         let cond = self.parseExpr();
-        self.expect(TokenKind.LeftBracket(BracketKind.Curly));
-        self.undo();
         let body = self.parseBlock();
-        let body = E.Expr(
-            expr: E.SimpleExpr.Match(
-                cond,
-                [
-                    E.Branch(
-                        pattern: Pattern(
-                            pattern: SimplePattern.Named(
-                                Identifier.fromString(getTrueName().toString(), self.currentLocation()),
-                                Vec.new(),
-                            ),
-                            location: self.currentLocation(),
-                        ),
-                        body: E.Expr(
-                            expr: E.SimpleExpr.Block(body),
-                            location: self.currentLocation(),
-                        ),
-                    ),
-                    E.Branch(
-                        pattern: Pattern(
-                            pattern: SimplePattern.Named(
-                                Identifier.fromString(getFalseName().toString(), self.currentLocation()),
-                                Vec.new(),
-                            ),
-                            location: self.currentLocation(),
-                        ),
-                        body: E.Expr(
-                            expr: E.SimpleExpr.Break(None),
-                            location: self.currentLocation(),
-                        ),
-                    ),
-                ],
-            ),
-            location: self.currentLocation(),
-        );
-        let body = E.Expr(
-            expr: E.SimpleExpr.Block(S.Block(
-                statements: [S.Statement(
-                    kind: S.StatementKind.Expr(body),
-                    hasSemicolon: True,
-                )],
-                location: self.currentLocation(),
-            )),
-            location: self.currentLocation(),
-        );
-        let expr = self.buildExpr(
-            E.SimpleExpr.Loop(
-                Pattern(
-                    pattern: SimplePattern.Tuple(Vec.new()),
-                    location: self.currentLocation(),
-                ),
-                E.Expr(
-                    expr: E.SimpleExpr.Tuple(Vec.new()),
-                    location: self.currentLocation(),
-                ),
-                body,
-            ),
-            start,
-        );
+        let body = self.buildExpr(E.SimpleExpr.Block(body), start);
+        let expr = self.buildExpr(E.SimpleExpr.While(cond, body), start);
         (self, expr)
     }
 
     fn parseMatchIf(mut self) -> (Self, E.Expr) {
         let start = self.currentSpan();
         self.expect(TokenKind.Keyword(KeywordKind.If));
-        let (body, bodyGiven) = if self.check(TokenKind.LeftBracket(BracketKind.Curly)) {
-            (self.buildExpr(E.SimpleExpr.Tuple(Vec.new()), start), False)
-        } else {
-            (self.parseExpr(), True)
-        };
+        let mut scrutinee: Option[E.Expr] = None;
+        if !self.check(TokenKind.LeftBracket(BracketKind.Curly)) {
+            let expr = self.parseExpr();
+            scrutinee = Some(expr);
+        }
         self.expect(TokenKind.LeftBracket(BracketKind.Curly));
         let mut branches = Vec.new();
         while !self.check(TokenKind.RightBracket(BracketKind.Curly)) {
-            let pattern = if self.check(TokenKind.Misc(MiscKind.Wildcard)) {
+            let condition = if self.check(TokenKind.Misc(MiscKind.Wildcard)) {
                 self.expect(TokenKind.Misc(MiscKind.Wildcard));
-                let pattern = Pattern(
-                    pattern: SimplePattern.Wildcard,
-                    location: self.currentLocation(),
-                );
-                self.expect(TokenKind.Arrow(ArrowKind.Right));
-                pattern
+                None
             } else {
-                let guardExpr = self.parseExpr();
-                let pattern = if bodyGiven {
-                    let loc = self.currentLocation();
-                    let identifier = Identifier.fromString("value", loc.clone());
-                    let extendedGuardExpr = if self.check(TokenKind.Arrow(ArrowKind.Right)) {
-                        let extendedGuardExpr = E.SimpleExpr.MethodCall(
-                            guardExpr,
-                            Identifier.fromString("contains", loc.clone()),
-                            [E.FunctionArg.Positional(E.Expr(
-                                expr: E.SimpleExpr.Value(identifier.clone()),
-                                location: loc.clone(),
-                            ))],
-                        );
-                        self.expect(TokenKind.Arrow(ArrowKind.Right));
-                        extendedGuardExpr
-                    } else {
-                        self.expect(TokenKind.Arrow(ArrowKind.DoubleRight));
-                        let extendedGuardExpr = E.SimpleExpr.BinaryOp(
-                            E.BinaryOp.Equal,
-                            guardExpr,
-                            E.Expr(
-                                expr: E.SimpleExpr.Value(identifier.clone()),
-                                location: loc.clone(),
-                            ),
-                        );
-                        extendedGuardExpr
-                    };
-                    let guardExpr = E.Expr(
-                        expr: extendedGuardExpr,
-                        location: loc.clone(),
-                    );
-                    let pattern = Pattern(
-                        pattern: SimplePattern.Guarded(
-                            Pattern(
-                                pattern: SimplePattern.Bind(identifier, True),
-                                location: loc.clone(),
-                            ),
-                            guardExpr,
-                        ),
-                        location: loc.clone(),
-                    );
-
-                    pattern
-                } else {
-                    let pattern = Pattern(
-                        pattern: SimplePattern.Guarded(
-                            Pattern(
-                                pattern: SimplePattern.Bind(
-                                    Identifier.fromString("value", self.currentLocation()),
-                                    False,
-                                ),
-                                location: self.currentLocation(),
-                            ),
-                            guardExpr,
-                        ),
-                        location: self.currentLocation(),
-                    );
+                Some(self.parseExpr())
+            };
+            let op = match self.peek() {
+                TokenKind.Arrow(ArrowKind.Right) -> {
                     self.expect(TokenKind.Arrow(ArrowKind.Right));
-                    pattern
-                };
-                pattern
+                    if scrutinee.isSome() {
+                        E.MatchIfOp.In
+                    } else {
+                        E.MatchIfOp.Predicate
+                    }
+                }
+                TokenKind.Arrow(ArrowKind.DoubleRight) -> {
+                    self.expect(TokenKind.Arrow(ArrowKind.DoubleRight));
+                    E.MatchIfOp.Equal
+                }
+                kind -> self.reportError2("'=>' or '->'", kind),
             };
             let body = if self.check(TokenKind.LeftBracket(BracketKind.Curly)) {
                 let block = self.parseBlock();
-                let expr = self.buildExpr(E.SimpleExpr.Block(block), start.clone());
-                expr
+                self.buildExpr(E.SimpleExpr.Block(block), start.clone())
             } else {
                 let expr = self.parseExpr();
                 if self.check(TokenKind.Misc(MiscKind.Comma)) {
@@ -593,10 +254,18 @@ instance ExprParser[Parser] {
                 }
                 expr
             };
-            branches.push(E.Branch(pattern, body));
+            branches.push(E.MatchIfBranch(
+                condition: condition,
+                op: op,
+                body: body,
+            ));
         }
         self.expect(TokenKind.RightBracket(BracketKind.Curly));
-        let expr = self.buildExpr(E.SimpleExpr.Match(body, branches), start.clone());
+        let matchIf = E.MatchIf(
+            scrutinee: scrutinee,
+            branches: branches,
+        );
+        let expr = self.buildExpr(E.SimpleExpr.MatchIf(matchIf), start);
         (self, expr)
     }
 
@@ -637,7 +306,7 @@ instance ExprParser[Parser] {
             self.expect(TokenKind.Arrow(ArrowKind.Right));
             let body = if self.check(TokenKind.LeftBracket(BracketKind.Curly)) {
                 let block = self.parseBlock();
-                let expr = self.buildExpr(E.SimpleExpr.Block(block), start.clone());
+                let expr = self.buildExpr(E.SimpleExpr.Block(block), start);
                 expr
             } else {
                 let expr = self.parseExpr();
@@ -649,7 +318,7 @@ instance ExprParser[Parser] {
             branches.push(E.Branch(pattern, body));
         }
         self.expect(TokenKind.RightBracket(BracketKind.Curly));
-        let expr = self.buildExpr(E.SimpleExpr.Match(body, branches), start.clone());
+        let expr = self.buildExpr(E.SimpleExpr.Match(body, branches), start);
         (self, expr)
     }
 
@@ -791,10 +460,10 @@ instance ExprParser[Parser] {
                 self.expect(TokenKind.Misc(MiscKind.Dot));
                 if self.peek() == TokenKind.IntegerLiteral {
                     let name = self.parseIntegerLiteral();
-                    current = self.buildExpr(E.SimpleExpr.TupleIndex(current, name), start.clone());
+                    current = self.buildExpr(E.SimpleExpr.TupleIndex(current, name), start);
                 } else {
                     let name = self.parseVarIdentifier();
-                    current = self.buildExpr(E.SimpleExpr.FieldAccess(current, name), start.clone());
+                    current = self.buildExpr(E.SimpleExpr.FieldAccess(current, name), start);
                 }
             } else if self.check(TokenKind.LeftBracket(BracketKind.Paren)) {
                 self.expect(TokenKind.LeftBracket(BracketKind.Paren));
@@ -822,9 +491,9 @@ instance ExprParser[Parser] {
                 }
                 self.expect(TokenKind.RightBracket(BracketKind.Paren));
                 if let E.SimpleExpr.FieldAccess(receiver, name) = current.expr.clone() {
-                    current = self.buildExpr(E.SimpleExpr.MethodCall(receiver, name, args), start.clone());
+                    current = self.buildExpr(E.SimpleExpr.MethodCall(receiver, name, args), start);
                 } else {
-                    current = self.buildExpr(E.SimpleExpr.Call(current, args), start.clone());
+                    current = self.buildExpr(E.SimpleExpr.Call(current, args), start);
                 }
             } else if self.check(TokenKind.LeftBracket(BracketKind.Square)) {
                 self.expect(TokenKind.LeftBracket(BracketKind.Square));
@@ -835,7 +504,7 @@ instance ExprParser[Parser] {
                     Identifier.fromString("index", self.currentLocation()),
                     [E.FunctionArg.Positional(indexExpr.clone())],
                 );
-                current = self.buildExpr(call, start.clone());
+                current = self.buildExpr(call, start);
             } else {
                 break;
             }
@@ -865,7 +534,7 @@ instance ExprParser[Parser] {
             let end = self.parseExpr();
             let trueValue = self.buildExpr(
                 E.SimpleExpr.Name(Identifier.fromString(getTrueName().toString(), self.currentLocation())),
-                start.clone(),
+                start,
             );
             let expr = self.buildExpr(
                 E.SimpleExpr.Call(
@@ -1029,7 +698,7 @@ instance ExprParser[Parser] {
                 } else {
                     assertNE(op, E.BinaryOp.And);
                     assertNE(op, E.BinaryOp.Or);
-                    left = self.buildExpr(E.SimpleExpr.BinaryOp(op, left, rhs), start.clone());
+                    left = self.buildExpr(E.SimpleExpr.BinaryOp(op, left, rhs), start);
                 }
             } else {
                 break;

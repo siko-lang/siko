@@ -6,6 +6,7 @@ import Siko.Util
 
 @derive(Debug, Clone, PartialEq, Eq)
 pub enum Type {
+    Paren(Type),
     Named(Identifier, Vec[Type]),
     Tuple(Vec[Type]),
     Function(Vec[Type], Type),
@@ -23,6 +24,9 @@ pub enum Type {
 pub instance Show[Type] {
     fn show(&self) -> String {
         match self {
+            Paren(inner) -> {
+                "(${inner})"
+            }
             Named(id, args) -> {
                 if args.empty() {
                     "${id}"
@@ -31,7 +35,11 @@ pub instance Show[Type] {
                 }
             }
             Tuple(elements) -> {
-                formatList(elements, sep: ", ", begin: "(", end: ")")
+                if elements.len() == 1 {
+                    "(${elements[0]},)"
+                } else {
+                    formatList(elements, sep: ", ", begin: "(", end: ")")
+                }
             }
             Function(params, ret) -> {
                 let params = formatList(params);
