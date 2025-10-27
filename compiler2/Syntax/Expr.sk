@@ -34,6 +34,18 @@ pub enum UnaryOp {
     Deref,
 }
 
+@derive(PartialEq, Eq, Clone, Copy)
+pub enum InOp {
+    In,
+    NotIn,
+}
+
+@derive(PartialEq, Eq, Clone, Copy)
+pub enum RangeOp {
+    Exclusive,
+    Inclusive,
+}
+
 @derive(PartialEq, Eq, Clone)
 pub struct Branch {
     pub pattern: Pattern,
@@ -103,11 +115,17 @@ pub enum SimpleExpr {
     WhileLet(Pattern, Expr, Expr),
     For(Pattern, Expr, Expr),
     MatchIf(MatchIf),
+    And(Expr, Expr),
+    Or(Expr, Expr),
+    In(Expr, Expr, InOp),
+    Range(Expr, Expr, RangeOp),
+    Index(Expr, Expr),
     BinaryOp(BinaryOp, Expr, Expr),
     UnaryOp(UnaryOp, Expr),
     Match(Expr, Vec[Branch]),
     If(Expr, Expr, Option[Expr]),
     IfLet(Pattern, Expr, Expr, Option[Expr]),
+    Try(Expr),
     Block(Block),
     Tuple(Vec[Expr]),
     StringLiteral(I.String),
@@ -142,8 +160,14 @@ pub enum SimpleExpr {
                         FunctionArg.Named(_, e) -> e.doesNotReturn(),
                     })
             }
+            SimpleExpr.And(left, right) -> left.doesNotReturn() or right.doesNotReturn(),
+            SimpleExpr.Or(left, right) -> left.doesNotReturn() or right.doesNotReturn(),
+            SimpleExpr.In(item, container, _) -> item.doesNotReturn() or container.doesNotReturn(),
+            SimpleExpr.Range(start, end, _) -> start.doesNotReturn() or end.doesNotReturn(),
+            SimpleExpr.Index(expr, index) -> expr.doesNotReturn() or index.doesNotReturn(),
             BinaryOp(_, left, right) -> left.doesNotReturn() or right.doesNotReturn(),
             UnaryOp(_, expr) -> expr.doesNotReturn(),
+            Try(expr) -> expr.doesNotReturn(),
             If(cond, trueBranch, falseBranch) -> {
                 cond.doesNotReturn()
                     or (trueBranch.doesNotReturn()

@@ -499,12 +499,7 @@ instance ExprParser[Parser] {
                 self.expect(TokenKind.LeftBracket(BracketKind.Square));
                 let indexExpr = self.parseExpr();
                 self.expect(TokenKind.RightBracket(BracketKind.Square));
-                let call = E.SimpleExpr.MethodCall(
-                    current.clone(),
-                    Identifier.fromString("index", self.currentLocation()),
-                    [E.FunctionArg.Positional(indexExpr.clone())],
-                );
-                current = self.buildExpr(call, start);
+                current = self.buildExpr(E.SimpleExpr.Index(current.clone(), indexExpr), start);
             } else {
                 break;
             }
@@ -518,38 +513,12 @@ instance ExprParser[Parser] {
         if self.check(TokenKind.Range(RangeKind.Exclusive)) {
             self.expect(TokenKind.Range(RangeKind.Exclusive));
             let end = self.parseExpr();
-            let expr = self.buildExpr(
-                E.SimpleExpr.Call(
-                    E.Expr(
-                        expr: E.SimpleExpr.Value(Identifier.fromString(getRangeCtorName().toString(), self.currentLocation())),
-                        location: self.currentLocation(),
-                    ),
-                    [E.FunctionArg.Positional(left), E.FunctionArg.Positional(end)],
-                ),
-                start,
-            );
+            let expr = self.buildExpr(E.SimpleExpr.Range(left, end, E.RangeOp.Exclusive), start);
             return (self, expr);
         } else if self.check(TokenKind.Range(RangeKind.Inclusive)) {
             self.expect(TokenKind.Range(RangeKind.Inclusive));
             let end = self.parseExpr();
-            let trueValue = self.buildExpr(
-                E.SimpleExpr.Name(Identifier.fromString(getTrueName().toString(), self.currentLocation())),
-                start,
-            );
-            let expr = self.buildExpr(
-                E.SimpleExpr.Call(
-                    E.Expr(
-                        expr: E.SimpleExpr.Value(Identifier.fromString(getRangeCtorName().toString(), self.currentLocation())),
-                        location: self.currentLocation(),
-                    ),
-                    [
-                        E.FunctionArg.Positional(left),
-                        E.FunctionArg.Positional(end),
-                        E.FunctionArg.Positional(trueValue),
-                    ],
-                ),
-                start,
-            );
+            let expr = self.buildExpr(E.SimpleExpr.Range(left, end, E.RangeOp.Inclusive), start);
             return (self, expr);
         }
         loop {
@@ -557,15 +526,7 @@ instance ExprParser[Parser] {
                 self.expect(TokenKind.Keyword(KeywordKind.In));
                 let item = left;
                 let container = self.parseExpr();
-                let containsCall = E.Expr(
-                    expr: E.SimpleExpr.MethodCall(
-                        container,
-                        Identifier.fromString("contains", self.currentLocation()),
-                        [E.FunctionArg.Positional(item)],
-                    ),
-                    location: self.currentLocation(),
-                );
-                let expr = self.buildExpr(containsCall.expr, start);
+                let expr = self.buildExpr(E.SimpleExpr.In(item, container, E.InOp.In), start);
                 return (self, expr);
             }
             if self.check(TokenKind.Keyword(KeywordKind.Not)) {
@@ -573,15 +534,7 @@ instance ExprParser[Parser] {
                 self.expect(TokenKind.Keyword(KeywordKind.In));
                 let item = left;
                 let container = self.parseExpr();
-                let containsCall = E.Expr(
-                    expr: E.SimpleExpr.MethodCall(
-                        container,
-                        Identifier.fromString("notContains", self.currentLocation()),
-                        [E.FunctionArg.Positional(item)],
-                    ),
-                    location: self.currentLocation(),
-                );
-                let expr = self.buildExpr(containsCall.expr, start);
+                let expr = self.buildExpr(E.SimpleExpr.In(item, container, E.InOp.NotIn), start);
                 return (self, expr);
             }
             let ops = &self.opTable[index];
@@ -596,24 +549,95 @@ instance ExprParser[Parser] {
                 let location = self.currentLocation();
                 self.expect(TokenKind.Op(op));
                 let rhs = self.callNext(index);
-                let op = match op {
-                    OperatorKind.And -> E.BinaryOp.And,
-                    OperatorKind.Or -> E.BinaryOp.Or,
-                    OperatorKind.Add -> E.BinaryOp.Add,
-                    OperatorKind.Sub -> E.BinaryOp.Sub,
-                    OperatorKind.Mul -> E.BinaryOp.Mul,
-                    OperatorKind.Div -> E.BinaryOp.Div,
-                    OperatorKind.Equal -> E.BinaryOp.Equal,
-                    OperatorKind.NotEqual -> E.BinaryOp.NotEqual,
-                    OperatorKind.LessThan -> E.BinaryOp.LessThan,
-                    OperatorKind.GreaterThan -> E.BinaryOp.GreaterThan,
-                    OperatorKind.LessThanOrEqual -> E.BinaryOp.LessThanOrEqual,
-                    OperatorKind.GreaterThanOrEqual -> E.BinaryOp.GreaterThanOrEqual,
-                    OperatorKind.ShiftLeft -> E.BinaryOp.ShiftLeft,
-                    OperatorKind.ShiftRight -> E.BinaryOp.ShiftRight,
-                    OperatorKind.BitAnd -> E.BinaryOp.BitAnd,
-                    OperatorKind.BitOr -> E.BinaryOp.BitOr,
-                    OperatorKind.BitXor -> E.BinaryOp.BitXor,
+                match op {
+                    OperatorKind.And -> {
+                        left = self.buildExpr(E.SimpleExpr.And(left, rhs), start);
+                    }
+                    OperatorKind.Or -> {
+                        left = self.buildExpr(E.SimpleExpr.Or(left, rhs), start);
+                    }
+                    OperatorKind.Add -> {
+                        left =
+                            self.buildExpr(E.SimpleExpr.BinaryOp(E.BinaryOp.Add, left, rhs), start);
+                    }
+                    OperatorKind.Sub -> {
+                        left =
+                            self.buildExpr(E.SimpleExpr.BinaryOp(E.BinaryOp.Sub, left, rhs), start);
+                    }
+                    OperatorKind.Mul -> {
+                        left =
+                            self.buildExpr(E.SimpleExpr.BinaryOp(E.BinaryOp.Mul, left, rhs), start);
+                    }
+                    OperatorKind.Div -> {
+                        left =
+                            self.buildExpr(E.SimpleExpr.BinaryOp(E.BinaryOp.Div, left, rhs), start);
+                    }
+                    OperatorKind.Equal -> {
+                        left = self.buildExpr(
+                            E.SimpleExpr.BinaryOp(E.BinaryOp.Equal, left, rhs),
+                            start,
+                        );
+                    }
+                    OperatorKind.NotEqual -> {
+                        left = self.buildExpr(
+                            E.SimpleExpr.BinaryOp(E.BinaryOp.NotEqual, left, rhs),
+                            start,
+                        );
+                    }
+                    OperatorKind.LessThan -> {
+                        left = self.buildExpr(
+                            E.SimpleExpr.BinaryOp(E.BinaryOp.LessThan, left, rhs),
+                            start,
+                        );
+                    }
+                    OperatorKind.GreaterThan -> {
+                        left = self.buildExpr(
+                            E.SimpleExpr.BinaryOp(E.BinaryOp.GreaterThan, left, rhs),
+                            start,
+                        );
+                    }
+                    OperatorKind.LessThanOrEqual -> {
+                        left = self.buildExpr(
+                            E.SimpleExpr.BinaryOp(E.BinaryOp.LessThanOrEqual, left, rhs),
+                            start,
+                        );
+                    }
+                    OperatorKind.GreaterThanOrEqual -> {
+                        left = self.buildExpr(
+                            E.SimpleExpr.BinaryOp(E.BinaryOp.GreaterThanOrEqual, left, rhs),
+                            start,
+                        );
+                    }
+                    OperatorKind.ShiftLeft -> {
+                        left = self.buildExpr(
+                            E.SimpleExpr.BinaryOp(E.BinaryOp.ShiftLeft, left, rhs),
+                            start,
+                        );
+                    }
+                    OperatorKind.ShiftRight -> {
+                        left = self.buildExpr(
+                            E.SimpleExpr.BinaryOp(E.BinaryOp.ShiftRight, left, rhs),
+                            start,
+                        );
+                    }
+                    OperatorKind.BitAnd -> {
+                        left = self.buildExpr(
+                            E.SimpleExpr.BinaryOp(E.BinaryOp.BitAnd, left, rhs),
+                            start,
+                        );
+                    }
+                    OperatorKind.BitOr -> {
+                        left = self.buildExpr(
+                            E.SimpleExpr.BinaryOp(E.BinaryOp.BitOr, left, rhs),
+                            start,
+                        );
+                    }
+                    OperatorKind.BitXor -> {
+                        left = self.buildExpr(
+                            E.SimpleExpr.BinaryOp(E.BinaryOp.BitXor, left, rhs),
+                            start,
+                        );
+                    }
                     OperatorKind.AddAssign -> {
                         self.reportError3("AddAssign is not supported in expressions", location)
                     }
@@ -626,79 +650,6 @@ instance ExprParser[Parser] {
                     OperatorKind.DivAssign -> {
                         self.reportError3("DivAssign is not supported in expressions", location)
                     }
-                };
-                if op == E.BinaryOp.And {
-                    let trueBranch = E.Branch(
-                        pattern: Pattern(
-                            pattern: SimplePattern.Named(
-                                Identifier.fromString(getTrueName().toString(), self.currentLocation()),
-                                Vec.new(),
-                            ),
-                            location: self.currentLocation(),
-                        ),
-                        body: rhs,
-                    );
-                    let falseBranch = E.Branch(
-                        pattern: Pattern(
-                            pattern: SimplePattern.Named(
-                                Identifier.fromString(getFalseName().toString(), self.currentLocation()),
-                                Vec.new(),
-                            ),
-                            location: self.currentLocation(),
-                        ),
-                        body: self.buildExpr(
-                            E.SimpleExpr.Call(
-                                E.Expr(
-                                    expr: E.SimpleExpr.Value(Identifier.fromString(
-                                        getFalseName().toString(),
-                                        self.currentLocation(),
-                                    )),
-                                    location: self.currentLocation(),
-                                ),
-                                Vec.new(),
-                            ),
-                            start,
-                        ),
-                    );
-                    left = self.buildExpr(E.SimpleExpr.Match(left, [trueBranch, falseBranch]), start);
-                } else if op == E.BinaryOp.Or {
-                    let trueBranch = E.Branch(
-                        pattern: Pattern(
-                            pattern: SimplePattern.Named(
-                                Identifier.fromString(getTrueName().toString(), self.currentLocation()),
-                                Vec.new(),
-                            ),
-                            location: self.currentLocation(),
-                        ),
-                        body: self.buildExpr(
-                            E.SimpleExpr.Call(
-                                E.Expr(
-                                    expr: E.SimpleExpr.Value(Identifier.fromString(
-                                        getTrueName().toString(),
-                                        self.currentLocation(),
-                                    )),
-                                    location: self.currentLocation(),
-                                ),
-                                Vec.new(),
-                            ),
-                            start,
-                        ),
-                    );
-                    let falseBranch = E.Branch(
-                        pattern: Pattern(
-                            pattern: SimplePattern.Named(
-                                Identifier.fromString(getFalseName().toString(), self.currentLocation()),
-                                Vec.new(),
-                            ),
-                            location: self.currentLocation(),
-                        ),
-                        body: rhs,
-                    );
-                    left = self.buildExpr(E.SimpleExpr.Match(left, [trueBranch, falseBranch]), start);
-                } else {
-                    assertNE(op, E.BinaryOp.And);
-                    assertNE(op, E.BinaryOp.Or);
-                    left = self.buildExpr(E.SimpleExpr.BinaryOp(op, left, rhs), start);
                 }
             } else {
                 break;
@@ -810,74 +761,7 @@ instance ExprParser[Parser] {
             TokenKind.Keyword(KeywordKind.Try) -> {
                 self.expect(TokenKind.Keyword(KeywordKind.Try));
                 let arg = self.parseExpr();
-                let matchExpr = E.Expr(
-                    expr: E.SimpleExpr.Match(
-                        arg,
-                        [
-                            E.Branch(
-                                pattern: Pattern(
-                                    pattern: SimplePattern.Named(
-                                        Identifier.fromString("Result.Result.Ok", self.currentLocation()),
-                                        [Pattern(
-                                            pattern: SimplePattern.Bind(
-                                                Identifier.fromString("value", self.currentLocation()),
-                                                False,
-                                            ),
-                                            location: self.currentLocation(),
-                                        )],
-                                    ),
-                                    location: self.currentLocation(),
-                                ),
-                                body: E.Expr(
-                                    expr: E.SimpleExpr.Value(Identifier.fromString(
-                                        "value",
-                                        self.currentLocation(),
-                                    )),
-                                    location: self.currentLocation(),
-                                ),
-                            ),
-                            E.Branch(
-                                pattern: Pattern(
-                                    pattern: SimplePattern.Named(
-                                        Identifier.fromString("Result.Result.Err", self.currentLocation()),
-                                        [Pattern(
-                                            pattern: SimplePattern.Bind(
-                                                Identifier.fromString("err", self.currentLocation()),
-                                                False,
-                                            ),
-                                            location: self.currentLocation(),
-                                        )],
-                                    ),
-                                    location: self.currentLocation(),
-                                ),
-                                body: E.Expr(
-                                    expr: E.SimpleExpr.Return(Some(E.Expr(
-                                        expr: E.SimpleExpr.Call(
-                                            E.Expr(
-                                                expr: E.SimpleExpr.Value(Identifier.fromString(
-                                                    "Result.Result.Err",
-                                                    self.currentLocation(),
-                                                )),
-                                                location: self.currentLocation(),
-                                            ),
-                                            [E.FunctionArg.Positional(E.Expr(
-                                                expr: E.SimpleExpr.Value(Identifier.fromString(
-                                                    "err",
-                                                    self.currentLocation(),
-                                                )),
-                                                location: self.currentLocation(),
-                                            ))],
-                                        ),
-                                        location: self.currentLocation(),
-                                    ))),
-                                    location: self.currentLocation(),
-                                ),
-                            ),
-                        ],
-                    ),
-                    location: self.currentLocation(),
-                );
-                self.buildExpr(matchExpr.expr, start)
+                self.buildExpr(E.SimpleExpr.Try(arg), start)
             }
             TokenKind.Keyword(KeywordKind.Yield) -> {
                 self.expect(TokenKind.Keyword(KeywordKind.Yield));
@@ -926,7 +810,6 @@ instance ExprParser[Parser] {
                 let arg = self.parseExpr();
                 self.buildExpr(E.SimpleExpr.Ref(arg, isRaw), start)
             }
-
             TokenKind.LeftBracket(BracketKind.Square) -> {
                 self.expect(TokenKind.LeftBracket(BracketKind.Square));
                 let mut args = Vec.new();
