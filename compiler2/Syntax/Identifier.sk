@@ -19,29 +19,39 @@ instance Show[Fragment] {
 @derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)
 pub struct Identifier {
     fragments: Vec[Fragment],
+    name: I.String,
 
     pub fn merge(mut self, other: Identifier) -> Self {
         for fragment in other.fragments {
             self.fragments.push(fragment);
         }
+        self.updateName();
         self
     }
 
     pub fn dot(mut self, location: Location) -> Self {
         self.fragments.push(Fragment(name: I.String.new("."), location));
+        self.updateName();
         self
     }
 
     pub fn new(s: I.String, location: Location) -> Identifier {
-        Identifier(fragments: [Fragment(name: s, location)])
+        Identifier(fragments: [Fragment(name: s.clone(), location)], name: s)
     }
 
     pub fn fromString(s: String, location: Location) -> Identifier {
-        Identifier(fragments: [Fragment(name: I.String.new(s), location)])
+        let name = I.String.new(s);
+        Identifier(fragments: [Fragment(name.clone(), location)], name: name)
     }
 
-    pub fn name(&self) -> String {
-        formatList(self.fragments)
+    pub fn name(&self) -> I.String {
+        self.name.clone()
+    }
+
+    fn updateName(mut self) -> Self {
+        let name = formatList(self.fragments, sep: "");
+        self.name = I.String.new(name);
+        self
     }
 
     pub fn location(&self) -> Location {
@@ -65,9 +75,11 @@ pub struct Identifier {
             Some((
                 Identifier(
                     fragments: first,
+                    name: I.String.new(formatList(first, sep: "")),
                 ),
                 Identifier(
                     fragments: second,
+                    name: I.String.new(formatList(second, sep: "")),
                 ),
             ))
         }
@@ -76,7 +88,7 @@ pub struct Identifier {
 
 instance Show[Identifier] {
     fn show(&self) -> String {
-        self.name()
+        self.name().resolve().clone()
     }
 }
 
