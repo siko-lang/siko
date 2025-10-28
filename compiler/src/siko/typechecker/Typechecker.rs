@@ -532,14 +532,21 @@ impl<'a> Typechecker<'a> {
     }
 
     fn lookupTraitMethod(&mut self, receiverType: Type, methodName: &String, location: Location) -> QualifiedName {
+        if let Some(fnName) = self.lookupTraitMethodOpt(methodName, location.clone()) {
+            return fnName;
+        }
+        TypecheckerError::MethodNotFound(methodName.clone(), receiverType.to_string(), location.clone())
+            .report(self.ctx);
+    }
+
+    fn lookupTraitMethodOpt(&mut self, methodName: &String, location: Location) -> Option<QualifiedName> {
         if let Some(selections) = self.traitMethodselector.get(methodName) {
             if selections.len() > 1 {
                 TypecheckerError::MethodAmbiguous(methodName.clone(), location.clone()).report(self.ctx);
             }
-            return selections[0].method.clone();
+            return Some(selections[0].method.clone());
         }
-        TypecheckerError::MethodNotFound(methodName.clone(), receiverType.to_string(), location.clone())
-            .report(self.ctx);
+        None
     }
 
     fn lookupMethod(&mut self, receiverType: Type, methodName: &String, location: Location) -> QualifiedName {
@@ -574,9 +581,15 @@ impl<'a> Typechecker<'a> {
             Type::Coroutine(_, _) => {
                 return self.lookupTraitMethod(receiverType, methodName, location);
             }
-            Type::Ptr(_) => {
-                return self.lookupTraitMethod(receiverType, methodName, location);
-            }
+            Type::Ptr(_) => match self.lookupTraitMethodOpt(methodName, location.clone()) {
+                Some(fnName) => {
+                    return fnName;
+                }
+                None => {
+                    let inner = baseType.unpackPtr();
+                    return self.lookupMethod(inner, methodName, location);
+                }
+            },
             Type::VoidPtr => {
                 return self.lookupTraitMethod(receiverType, methodName, location);
             }
@@ -1639,6 +1652,10 @@ impl<'a> Typechecker<'a> {
                             let sourceTy = self.unifier.apply(source.getType());
                             //println!("Processing converter {} : {} -> {}", instruction, sourceTy, destTy);
                             match (&destTy, &sourceTy) {
+                                (Type::Reference(inner1), Type::Ptr(inner2)) if inner1 == inner2 => {
+                                    let kind = InstructionKind::Transmute(dest.clone(), source.clone());
+                                    builder.replaceInstruction(kind, instruction.location.clone());
+                                }
                                 (Type::Reference(inner), Type::Reference(src)) => {
                                     self.unifier
                                         .unify(*inner.clone(), *src.clone(), instruction.location.clone());
