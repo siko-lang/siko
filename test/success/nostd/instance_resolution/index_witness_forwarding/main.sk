@@ -1,0 +1,34 @@
+module Main {
+
+trait S[T] {
+    fn foo(t: T)
+}
+
+trait Z[T] {
+    fn fooz(t: T)
+}
+
+struct P {}
+
+instance MyInstanceZ Z[P] {
+    fn fooz(t: P) {}
+}
+
+struct Q[T] { f: T }
+
+instance[T: Z[T]] MyInstanceS S[Q[T]] {
+    fn foo[T: Z[T]](t: Q[T]) {
+        fooz(t.f);
+    }
+}
+
+fn gen[T: S[T]](t: T) {
+    foo(t);
+}
+
+fn main() {
+    let q = Q(P());
+    gen(q);
+}
+
+}

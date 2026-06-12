@@ -1,0 +1,229 @@
+module Std.VecDeque {
+
+import Std.Ptr
+
+pub struct VecDeque[T] {
+    data: *T,
+    head: Int,
+    size: Int,
+    capacity: Int,
+
+    @safe
+    pub fn new() -> VecDeque[T] {
+        VecDeque(get_null_ptr(), 0, 0, 0)
+    }
+
+    pub fn len(v: VecDeque[T]) -> Int {
+        v.size
+    }
+
+    pub fn is_empty(v: VecDeque[T]) -> Bool {
+        v.size == 0
+    }
+
+    fn wrap_index(v: VecDeque[T], index: Int) -> Int {
+        if v.capacity == 0 {
+            0
+        } else {
+            index.mod(v.capacity)
+        }
+    }
+
+    @safe
+    pub fn get(v: VecDeque[T], index: Int) -> T {
+        if index >= v.size || index < 0 {
+            panic("Index out of bounds");
+        }
+        let physical_idx = v.wrap_index(v.head + index);
+        *offset_of(v.data, physical_idx)
+    }
+
+    @safe
+    pub fn push_back(v: VecDeque[T], item: T) {
+        if v.size == v.capacity {
+            v.grow();
+        }
+        let physical_idx = v.wrap_index(v.head + v.size);
+        *offset_of(v.data, physical_idx) = item;
+        v.size = v.size + 1;
+    }
+
+    @safe
+    pub fn push_front(v: VecDeque[T], item: T) {
+        if v.size == v.capacity {
+            v.grow();
+        }
+        let new_head = if v.head == 0 { v.capacity - 1 } else { v.head - 1 };
+        *offset_of(v.data, new_head) = item;
+        v.head = new_head;
+        v.size = v.size + 1;
+    }
+
+    @safe
+    pub fn pop_back(v: VecDeque[T]) -> Option[T] {
+        if v.size == 0 {
+            None
+        } else {
+            let physical_idx = v.wrap_index(v.head + v.size - 1);
+            let item = *offset_of(v.data, physical_idx);
+            v.size = v.size - 1;
+            Some(item)
+        }
+    }
+
+    @safe
+    pub fn pop_front(v: VecDeque[T]) -> Option[T] {
+        if v.size == 0 {
+            None
+        } else {
+            let item = *offset_of(v.data, v.head);
+            v.head = v.wrap_index(v.head + 1);
+            v.size = v.size - 1;
+            Some(item)
+        }
+    }
+
+    @safe
+    pub fn first(v: VecDeque[T]) -> Option[T] {
+        if v.size == 0 { None } else { Some(*offset_of(v.data, v.head)) }
+    }
+
+    @safe
+    pub fn last(v: VecDeque[T]) -> Option[T] {
+        if v.size == 0 {
+            None
+        } else {
+            Some(*offset_of(v.data, v.wrap_index(v.head + v.size - 1)))
+        }
+    }
+
+    @unsafe
+    fn grow(v: VecDeque[T]) {
+        let old_cap = v.capacity;
+        if v.capacity == 0 {
+            v.capacity = 1;
+        } else {
+            v.capacity = v.capacity * 2;
+        }
+
+        let new_data = gc_allocate_array(v.capacity);
+
+        if v.size > 0 {
+            if v.head == 0 {
+                Std.Ptr.copy(new_data, v.data, 0, 0, v.size);
+            } else {
+                let head_len = old_cap - v.head;
+                Std.Ptr.copy(new_data, v.data, v.head, 0, head_len);
+                let tail_len = v.size - head_len;
+                Std.Ptr.copy(new_data, v.data, 0, head_len, tail_len);
+            }
+        }
+
+        v.data = new_data;
+        v.head = 0;
+    }
+
+    @safe
+    pub fn clear(v: VecDeque[T]) {
+        v.data = get_null_ptr();
+        v.head = 0;
+        v.size = 0;
+        v.capacity = 0;
+    }
+
+    pub fn iter(v: VecDeque[T]) -> VecDequeIterator[T] {
+        VecDequeIterator(v, 0)
+    }
+}
+
+pub struct VecDequeIterator[T] {
+    deque: VecDeque[T],
+    index: Int
+}
+
+instance[T] Iterator[VecDequeIterator[T]] {
+    type Item = T
+    fn next(a: VecDequeIterator[T]) -> Option[T] {
+        if a.index < a.deque.size {
+            let item = a.deque.get(a.index);
+            a.index = a.index + 1;
+            Some(item)
+        } else {
+            None
+        }
+    }
+}
+
+instance[T] IntoIterator[VecDeque[T]] {
+    type Item = T
+    type IntoIter = VecDequeIterator[T]
+
+    fn into_iter(a: VecDeque[T]) -> VecDequeIterator[T] {
+        VecDequeIterator(a, 0)
+    }
+}
+
+instance[T: PartialEq[T]] PartialEq[VecDeque[T]] {
+    fn eq(a: VecDeque[T], b: VecDeque[T]) -> Bool {
+        if a.size != b.size {
+            return False;
+        }
+        let i = 0;
+        while i < a.size {
+            if a.get(i).not_eq(b.get(i)) {
+                return False;
+            }
+            i = i + 1;
+        }
+        True
+    }
+}
+
+instance[T: Eq[T]] Eq[VecDeque[T]] {}
+
+instance[T] Index[VecDeque[T]] {
+    type Key = Int
+    type Output = T
+    fn index(a: VecDeque[T], index: Int) -> T {
+        a.get(index)
+    }
+}
+
+instance[T] IndexAssign[VecDeque[T]] {
+    type Key = Int
+    type Value = T
+
+    @safe
+    fn index_assign(a: VecDeque[T], index: Int, value: T) {
+        if index >= a.size || index < 0 {
+            panic("Index out of bounds");
+        }
+        let physical_idx = a.wrap_index(a.head + index);
+        *offset_of(a.data, physical_idx) = value;
+    }
+}
+
+instance[A] FromIterator[VecDeque[A]] {
+    type Item = A
+    fn from_iter[I: Iterator[I, Item=A]](iter: I) -> VecDeque[A] {
+        let v = VecDeque.new();
+        loop {
+            match iter.next() {
+                Some(x) => v.push_back(x),
+                None => { return v; }
+            }
+        }
+    }
+}
+
+instance[T: Clone[T]] Clone[VecDeque[T]] {
+    fn clone(a: VecDeque[T]) -> VecDeque[T] {
+        let v = VecDeque.new();
+        for i in a {
+            v.push_back(i.clone());
+        }
+        v
+    }
+}
+
+}

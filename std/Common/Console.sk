@@ -1,0 +1,68 @@
+@prelude
+module Std.Console {
+
+import Std.Libc.Unistd as Unistd
+import Std.Libc.FileDescriptor as FD
+import Std.IO.Buffer
+import Std.Vec
+
+@safe
+pub fn read_line() -> String {
+    let fd = FD.get_stdin().get_fd();
+    let buf = ByteBuffer.new(1);
+    let write_buf = buf.as_write_buffer();
+    let bytes: Vec[U8] = Vec.new();
+    loop {
+        let n = Unistd.read(fd, write_buf.as_ptr(), 1.as_u64());
+        if n <= 0 {
+            break;
+        }
+        let byte = buf.as_slice(1.as_u64())[0];
+        if byte == 10.as_u8() {
+            break;
+        }
+        bytes.push(byte);
+    }
+    String.from_bytes(bytes.as_ptr(), bytes.len())
+}
+
+@safe
+pub fn print(v: String) {
+    Unistd.write(FD.get_stdout().get_fd(), v.as_ptr(), v.len().as_u64());
+}
+
+@safe
+pub fn println_str(v: String) {
+    let fd = FD.get_stdout().get_fd();
+    Unistd.write(fd, v.as_ptr(), v.len().as_u64());
+    Unistd.write(fd, "\n".as_ptr(), 1.as_u64());
+    Unistd.fsync(fd);
+}
+
+pub fn println[T: ToString[T]](value: T) -> () {
+    println_str(value.to_string())
+}
+
+@safe
+pub fn eprint(v: String) {
+    Unistd.write(FD.get_stdout().get_fd(), v.as_ptr(), v.len().as_u64());
+}
+
+@safe
+pub fn eprintln_str(v: String) {
+    let fd = FD.get_stdout().get_fd();
+    Unistd.write(fd, v.as_ptr(), v.len().as_u64());
+    Unistd.write(fd, "\n".as_ptr(), 1.as_u64());
+    Unistd.fsync(fd);
+}
+
+pub fn eprintln[T: ToString[T]](value: T) -> () {
+    eprintln_str(value.to_string())
+}
+
+@safe
+pub fn flush() {
+    Unistd.fsync(FD.get_stdout().get_fd());
+}
+
+}

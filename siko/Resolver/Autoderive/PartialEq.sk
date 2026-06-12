@@ -1,0 +1,333 @@
+module Siko.Resolver.Autoderive.PartialEq {
+
+import Siko.Resolver.Autoderive.Utils
+import Siko.AST.Data
+import Siko.AST.Traits
+import Siko.AST.Name
+import Siko.AST.Type
+import Siko.AST.Identifier
+import Siko.AST.Generics
+import Siko.AST.Function
+import Siko.AST.Expr
+import Siko.AST.Pattern
+import Siko.Utils.VarAllocator
+import Siko.AST.QualifiedName
+import Siko.Constants.Builtins as B
+import Siko.Location
+import Siko.Interner as I
+
+pub fn derive_partialeq_enum(enum_def: EnumDef, module_name: I.String) -> Option[InstanceDef] {
+    let trait_name = get_resolved_trait_name();
+    if !enum_def.has_derive(trait_name) {
+        return None;
+    }
+    Some(build_partialeq_enum(enum_def, module_name))
+}
+
+pub fn build_partialeq_enum(enum_def: EnumDef, module_name: I.String) -> InstanceDef {
+    let trait_name = get_resolved_trait_name();
+    let loc = enum_def.name.location;
+
+    let enum_qname = QualifiedName.new(enum_def.name.name);
+    let (type_arg_defs, enum_type_args) =
+        build_type_arg_defs(enum_def.type_arg_defs, trait_name, loc);
+    let enum_type = TypeDef.Named(Name.Resolved(enum_qname), enum_type_args);
+
+    let prefix = instance_synth_name(trait_name, [enum_type], loc);
+    let (method_fn, method_short) =
+        build_partialeq_method(enum_def, prefix, type_arg_defs, enum_type, module_name);
+
+    make_instance(
+        trait_name,
+        type_arg_defs,
+        enum_type,
+        [method_fn],
+        [method_short],
+        module_name,
+        loc,
+    )
+}
+
+pub fn build_partialeq_method(
+    enum_def: EnumDef,
+    instance_prefix: Identifier,
+    type_arg_defs: Option[TypeArgDefs],
+    self_type: TypeDef,
+    module_name: I.String,
+) -> (FunctionDef, Identifier) {
+    let loc = enum_def.name.location;
+    let var_alloc = VarAllocator.new();
+
+    let var_a = var_alloc.allocate_user(I.intern("a"));
+    let var_b = var_alloc.allocate_user(I.intern("b"));
+    let body = build_eq_body(enum_def, var_a, var_b, var_alloc, loc);
+
+    let method_short = Identifier.new(I.intern("eq"), loc);
+    let method_fn = make_binary_method(
+        instance_prefix,
+        method_short,
+        type_arg_defs,
+        self_type,
+        bool_type(),
+        var_a,
+        var_b,
+        body,
+        module_name,
+        var_alloc,
+    );
+    (method_fn, method_short)
+}
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+fn get_resolved_trait_name() -> Name {
+    Name.Resolved(QualifiedName.new(B.get_trait_partial_eq()))
+}
+
+fn bool_type() -> TypeDef {
+    TypeDef.Named(
+        Name.Resolved(QualifiedName.new(B.get_bool_type())),
+        [],
+    )
+}
+
+fn true_expr(loc: Location) -> Expr {
+    Expr(
+        ExprKind.FunctionCall(
+            FunctionCallInfo(
+                QualifiedName.new(B.get_bool_true()),
+                FunctionKind.VariantCtor,
+                [],
+                WitnessInfo.new(),
+                Vec.new(),
+            )
+        ),
+        loc,
+        None,
+    )
+}
+
+fn false_expr(loc: Location) -> Expr {
+    Expr(
+        ExprKind.FunctionCall(
+            FunctionCallInfo(
+                QualifiedName.new(B.get_bool_false()),
+                FunctionKind.VariantCtor,
+                [],
+                WitnessInfo.new(),
+                Vec.new(),
+            )
+        ),
+        loc,
+        None,
+    )
+}
+
+fn call_partialeq(a: Expr, lhs: Expr, loc: Location) -> Expr {
+    Expr(
+        ExprKind.FunctionCall(
+            FunctionCallInfo(
+                QualifiedName.new(B.get_op_eq()),
+                FunctionKind.UserDefined,
+                [a, lhs],
+                WitnessInfo.new(),
+                Vec.new(),
+            )
+        ),
+        loc,
+        None,
+    )
+}
+
+// ── body generation ───────────────────────────────────────────────────────────
+
+fn build_eq_body(
+    enum_def: EnumDef,
+    var_a: VariableName,
+    var_b: VariableName,
+    var_alloc: VarAllocator,
+    loc: Location,
+) -> Expr {
+    let scrutinee = tuple_scrutinee(var_a, var_b, loc);
+
+    let arms: Vec[MatchArm] = enum_def
+        .variants
+        .iter()
+        .map(|variant| {
+            let n = variant.items.len();
+            let a_vars = allocate_vars(n, I.intern("a"), var_alloc);
+            let b_vars = allocate_vars(n, I.intern("b"), var_alloc);
+
+            let variant_name = Name.Resolved(QualifiedName.new(
+                I.intern("${enum_def.name.name}.${variant.name.name}")
+            ));
+
+            let pattern = Pattern(
+                PatternKind.Tuple([
+                    Pattern(
+                        PatternKind.Named(NamedPatternInfo(name: variant_name, args: binding_pats(a_vars, loc), named_args: Vec.new(), has_rest: False)),
+                        loc,
+                        None,
+                    ),
+                    Pattern(
+                        PatternKind.Named(NamedPatternInfo(name: variant_name, args: binding_pats(b_vars, loc), named_args: Vec.new(), has_rest: False)),
+                        loc,
+                        None,
+                    ),
+                ]),
+                loc,
+                None,
+            );
+
+            let body = build_arm_body(a_vars, b_vars, loc);
+            MatchArm(pattern, body)
+        })
+        .collect();
+
+    if enum_def.variants.len() > 1 {
+        arms.push(MatchArm(
+            Pattern(PatternKind.Wildcard, loc, None),
+            call_partialeq(
+                call_discriminator(var_a, loc),
+                call_discriminator(var_b, loc),
+                loc,
+            ),
+        ));
+    }
+
+    Expr(
+        ExprKind.Match(MatchInfo(scrutinee, arms)),
+        loc,
+        None,
+    )
+}
+
+fn build_arm_body(a_vars: Vec[VariableName], b_vars: Vec[VariableName], loc: Location) -> Expr {
+    if a_vars.is_empty() {
+        return true_expr(loc);
+    }
+    build_nested_ifs(a_vars, b_vars, 0, loc)
+}
+
+fn build_nested_ifs(
+    a_vars: Vec[VariableName],
+    b_vars: Vec[VariableName],
+    idx: Int,
+    loc: Location,
+) -> Expr {
+    let cond = call_partialeq(
+        Expr(
+            ExprKind.Var(a_vars[idx]),
+            loc,
+            None,
+        ),
+        Expr(
+            ExprKind.Var(b_vars[idx]),
+            loc,
+            None,
+        ),
+        loc,
+    );
+
+    let then_branch = if idx + 1 < a_vars.len() {
+        build_nested_ifs(a_vars, b_vars, idx + 1, loc)
+    } else {
+        true_expr(loc)
+    };
+
+    Expr(
+        ExprKind.If(
+            cond,
+            then_branch,
+            Some(false_expr(loc)),
+        ),
+        loc,
+        None,
+    )
+}
+
+pub fn build_partialeq_struct_method(
+    struct_def: StructDef,
+    instance_prefix: Identifier,
+    type_arg_defs: Option[TypeArgDefs],
+    self_type: TypeDef,
+    module_name: I.String,
+) -> (FunctionDef, Identifier) {
+    let loc = struct_def.name.location;
+    let var_alloc = VarAllocator.new();
+    let var_a = var_alloc.allocate_user(I.intern("a"));
+    let var_b = var_alloc.allocate_user(I.intern("b"));
+    let body = build_struct_eq_body(struct_def.fields, var_a, var_b, loc);
+    let method_short = Identifier.new(I.intern("eq"), loc);
+    let method_fn = make_binary_method(
+        instance_prefix,
+        method_short,
+        type_arg_defs,
+        self_type,
+        bool_type(),
+        var_a,
+        var_b,
+        body,
+        module_name,
+        var_alloc,
+    );
+    (method_fn, method_short)
+}
+
+fn build_struct_eq_body(
+    fields: Vec[FieldDef],
+    var_a: VariableName,
+    var_b: VariableName,
+    loc: Location,
+) -> Expr {
+    if fields.is_empty() {
+        return true_expr(loc);
+    }
+    build_struct_nested_ifs(fields, var_a, var_b, 0, loc)
+}
+
+fn build_struct_nested_ifs(
+    fields: Vec[FieldDef],
+    var_a: VariableName,
+    var_b: VariableName,
+    idx: Int,
+    loc: Location,
+) -> Expr {
+    let cond = call_partialeq(
+        field_access(var_a, fields[idx].name, loc),
+        field_access(var_b, fields[idx].name, loc),
+        loc,
+    );
+    let then_branch = if idx + 1 < fields.len() {
+        build_struct_nested_ifs(fields, var_a, var_b, idx + 1, loc)
+    } else {
+        true_expr(loc)
+    };
+    Expr(
+        ExprKind.If(
+            cond,
+            then_branch,
+            Some(false_expr(loc)),
+        ),
+        loc,
+        None,
+    )
+}
+
+pub fn derive_partialeq_struct(struct_def: StructDef, module_name: I.String) -> Option[InstanceDef] {
+    let trait_name = get_resolved_trait_name();
+    if !struct_def.has_derive(trait_name) {
+        return None;
+    }
+    let loc = struct_def.name.location;
+    let struct_qname = QualifiedName.new(struct_def.name.name);
+    let (type_arg_defs, struct_type_args) =
+        build_type_arg_defs(struct_def.type_arg_defs, trait_name, loc);
+    let struct_type = TypeDef.Named(Name.Resolved(struct_qname), struct_type_args);
+    let prefix = instance_synth_name(trait_name, [struct_type], loc);
+    let (method_fn, method_short) =
+        build_partialeq_struct_method(struct_def, prefix, type_arg_defs, struct_type, module_name);
+    Some(make_instance(trait_name, type_arg_defs, struct_type, [method_fn], [method_short], module_name, loc))
+}
+
+}

@@ -1,0 +1,125 @@
+module Std.Slice {
+
+import Std.Ptr
+
+pub struct Slice[T] {
+    data: *T,
+    size: Int
+
+    @safe
+    pub fn sub(s: Slice[T], start: Int, end: Int) -> Slice[T] {
+        if s.size < end {
+            panic("Slice out of bounds");
+        }
+        if end < start {
+            panic("Slice out of bounds");
+        }
+        Slice(offset_of(s.data, start), end - start)
+    }
+
+    pub fn from_raw(data: *T, size: Int) -> Slice[T] {
+        Slice(data, size)
+    }
+
+    pub fn data(s: Slice[T]) -> *T {
+        s.data
+    }
+
+    pub fn len(s: Slice[T]) -> Int {
+        s.size
+    }
+
+    @safe
+    pub fn contains[T: PartialEq[T]](v: Slice[T], item: T) -> Bool {
+        for i in 0..v.size {
+            if (*offset_of(v.data, i)).eq(item) {
+                return True;
+            }
+        }
+        False
+    }
+
+    pub fn swap(s: Slice[T], a: Int, b: Int) {
+        let tmp = s[a];
+        s[a] = s[b];
+        s[b] = tmp;
+    }
+
+    fn partition[T: Ord[T]](s: Slice[T]) -> Int {
+        let pivot = s[s.size - 1];
+        let i = 0;
+        let j = 0;
+        while j < s.size - 1 {
+            match s[j].cmp(pivot) {
+                Ordering.Greater => {}
+                _ => {
+                    s.swap(i, j);
+                    i = i + 1;
+                }
+            }
+            j = j + 1;
+        }
+        s.swap(i, s.size - 1);
+        i
+    }
+
+    pub fn sort[T: Ord[T]](s: Slice[T]) {
+        if s.size > 1 {
+            let pivot_idx = s.partition();
+            if pivot_idx > 0 {
+                s.sub(0, pivot_idx).sort();
+            }
+            if pivot_idx + 1 < s.size {
+                s.sub(pivot_idx + 1, s.size).sort();
+            }
+        }
+    }
+
+    pub fn reverse(s: Slice[T]) {
+        let i = 0;
+        let j = s.size - 1;
+        while i < j {
+            s.swap(i, j);
+            i = i + 1;
+            j = j - 1;
+        }
+    }
+
+    pub fn truncate(s: Slice[T], new_size: U64) {
+        if new_size.as_int() < s.size {
+            s.size = new_size.as_int();
+        }
+    }
+
+    pub fn as_ptr(s: Slice[T]) -> *T {
+        s.data
+    }
+}
+
+instance[T] Index[Slice[T]] {
+    type Key = Int
+    type Output = T
+
+    @safe
+    fn index(a: Slice[T], index: Int) -> T {
+        if a.size < index {
+            panic("Slice out of bounds");
+        }
+        *offset_of(a.data, index)
+    }
+}
+
+instance[T] IndexAssign[Slice[T]] {
+    type Key = Int
+    type Value = T
+
+    @safe
+    fn index_assign(a: Slice[T], index: Int, value: T) {
+        if a.size < index {
+            panic("Slice out of bounds");
+        }
+        *offset_of(a.data, index) = value;
+    }
+}
+
+}

@@ -1,0 +1,206 @@
+@prelude
+module Std.Int.U16 {
+
+import Std.Intrinsics
+
+@builtin
+pub struct U16 {
+    @builtin
+    @op(eq)
+    pub fn eq(a: U16, b: U16) -> Bool
+
+    @builtin
+    @op(lt)
+    pub fn lt(a: U16, b: U16) -> Bool
+
+    @builtin
+    @op(add)
+    pub fn add(a: U16, b: U16) -> U16
+
+    @builtin
+    @op(sub)
+    pub fn sub(a: U16, b: U16) -> U16
+
+    @builtin
+    @op(mul)
+    pub fn mul(a: U16, b: U16) -> U16
+
+    @builtin
+    @op(div)
+    pub fn div(a: U16, b: U16) -> U16
+
+    @builtin
+    @op(neg)
+    pub fn neg(a: U16) -> U16
+
+    @builtin
+    @op(mod)
+    pub fn mod(a: U16, b: U16) -> U16
+
+    @builtin
+    @op(band)
+    pub fn band(a: U16, b: U16) -> U16
+
+    @builtin
+    @op(bor)
+    pub fn bor(a: U16, b: U16) -> U16
+
+    @builtin
+    @op(xor)
+    pub fn bxor(a: U16, b: U16) -> U16
+
+    @builtin
+    @op(not)
+    pub fn not(a: U16) -> U16
+
+    @builtin
+    @op(shl)
+    pub fn shl(a: U16, n: U16) -> U16
+
+    @builtin
+    @op(shr)
+    pub fn shr(a: U16, n: U16) -> U16
+
+    @safe
+    pub fn as_int(a: U16) -> Int {
+        transmute(a)
+    }
+
+    pub fn saturating_sub(a: U16, b: U16) -> U16 {
+        if a > b { a - b } else { 0.as_u16() } // FIXME: add untyped literals
+    }
+}
+
+instance PartialEq[U16] {
+    fn eq(a: U16, b: U16) -> Bool {
+        a.eq(b)
+    }
+}
+
+instance Eq[U16] {}
+
+instance PartialOrd[U16] {
+    fn partial_cmp(a: U16, b: U16) -> Option[Ordering] {
+        if a.eq(b) {
+            Some(Ordering.Equal)
+        } else {
+            if a.lt(b) {
+                Some(Ordering.Less)
+            } else {
+                Some(Ordering.Greater)
+            }
+        }
+    }
+}
+
+instance Ord[U16] {
+    fn cmp(a: U16, b: U16) -> Ordering {
+        if a.eq(b) {
+            Ordering.Equal
+        } else {
+            if a.lt(b) {
+                Ordering.Less
+            } else {
+                Ordering.Greater
+            }
+        }
+    }
+}
+
+instance Add[U16] {
+    type Output = U16
+    fn add(a: U16, b: U16) -> U16 {
+        a.add(b)
+    }
+}
+
+instance Sub[U16] {
+    type Output = U16
+    fn sub(a: U16, b: U16) -> U16 {
+        a.sub(b)
+    }
+}
+
+instance Mul[U16] {
+    type Output = U16
+    fn mul(a: U16, b: U16) -> U16 {
+        a.mul(b)
+    }
+}
+
+instance Div[U16] {
+    type Output = U16
+    fn div(a: U16, b: U16) -> U16 {
+        a.div(b)
+    }
+}
+
+instance Mod[U16] {
+    type Output = U16
+    fn mod(a: U16, b: U16) -> U16 {
+        a.mod(b)
+    }
+}
+
+instance Neg[U16] {
+    type Output = U16
+    fn neg(a: U16) -> U16 {
+        a.neg()
+    }
+}
+
+instance BitAnd[U16] {
+    type Output = U16
+    fn band(a: U16, b: U16) -> U16 {
+        a.band(b)
+    }
+}
+
+instance BitOr[U16] {
+    type Output = U16
+    fn bor(a: U16, b: U16) -> U16 {
+        a.bor(b)
+    }
+}
+
+instance BitXor[U16] {
+    type Output = U16
+    fn bxor(a: U16, b: U16) -> U16 {
+        a.bxor(b)
+    }
+}
+
+instance Shl[U16] {
+    type Output = U16
+    fn shl(a: U16, b: U16) -> U16 {
+        a.shl(b)
+    }
+}
+
+instance Shr[U16] {
+    type Output = U16
+    fn shr(a: U16, b: U16) -> U16 {
+        a.shr(b)
+    }
+}
+
+instance BNot[U16] {
+    type Output = U16
+    fn bnot(a: U16) -> U16 {
+        a.not()
+    }
+}
+
+instance ToString[U16] {
+    fn to_string(a: U16) -> String {
+        a.as_int().to_string()
+    }
+}
+
+instance Clone[U16] {
+    fn clone(a: U16) -> U16 {
+        a
+    }
+}
+
+}

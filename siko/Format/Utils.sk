@@ -1,0 +1,121 @@
+module Siko.Format.Utils {
+
+import Siko.AST.Data
+import Siko.AST.Program
+import Siko.AST.Effects
+import Siko.AST.Expr
+import Siko.AST.Pattern
+import Siko.AST.Type
+import Siko.AST.Traits
+import Siko.AST.Globals
+import Siko.AST.Module
+import Siko.AST.Function
+import Siko.AST.Generics
+import Siko.AST.Statement
+import Siko.Format.Formatter
+import Siko.Format.Data as D
+import Siko.Format.Expr as E
+import Siko.Format.Pattern as P
+import Siko.Format.Effects as Eff
+import Siko.Format.Function as F
+import Siko.Format.Globals as GL
+import Siko.Format.Generics as G
+import Siko.Format.Traits as TR
+import Siko.Format.Types as T
+import Siko.Format.Module as M
+import Siko.Format.Program as PR
+
+pub fn format_program(program: Program) -> String {
+    PR.format_program(program)
+}
+
+pub fn format_module(module_def: Module) -> String {
+    let f = Formatter.new();
+    M.format_module(f, module_def);
+    f.finish()
+}
+
+pub fn format_struct(def: StructDef) -> String {
+    let f = Formatter.new();
+    D.format_struct_def(f, def);
+    f.finish()
+}
+
+pub fn format_enum(def: EnumDef) -> String {
+    let f = Formatter.new();
+    D.format_enum_def(f, def);
+    f.finish()
+}
+
+pub fn format_fn(def: FunctionDef) -> String {
+    let f = Formatter.new();
+    F.format_fn_def(f, def);
+    f.finish()
+}
+
+pub fn format_trait(def: TraitDef) -> String {
+    let f = Formatter.new();
+    TR.format_trait_def(f, def);
+    f.finish()
+}
+
+pub fn format_instance(def: InstanceDef) -> String {
+    let f = Formatter.new();
+    TR.format_instance_def(f, def);
+    f.finish()
+}
+
+pub fn format_type(ty: TypeDef) -> String {
+    let f = Formatter.new();
+    T.format_type_def(f, ty);
+    f.finish()
+}
+
+pub fn format_types(types: Vec[TypeDef]) -> String {
+    let ss: Vec[String] = types.iter().map(|t|format_type(t)).collect();
+    join(ss, ", ")
+}
+
+pub fn format_bound(b: Bound) -> String {
+    let f = Formatter.new();
+    G.format_bound(f, b);
+    f.finish()
+}
+
+pub fn format_effect(def: EffectDef) -> String {
+    let f = Formatter.new();
+    Eff.format_effect_def(f, def);
+    f.finish()
+}
+
+pub fn format_expr(expr: Expr) -> String {
+    let f = Formatter.new();
+    E.format_expr(f, expr);
+    f.finish()
+}
+
+pub fn format_pattern(pattern: Pattern) -> String {
+    let f = Formatter.new();
+    P.format_pattern(f, pattern);
+    f.finish()
+}
+
+pub fn format_pattern_kind(pattern: PatternKind) -> String {
+    let f = Formatter.new();
+    P.format_pattern_kind(f, pattern);
+    f.finish()
+}
+
+pub fn format_stmt(stmt: Statement) -> String {
+    let f = Formatter.new();
+    E.format_statement(f, stmt);
+    f.finish()
+}
+
+pub fn format_global(def: GlobalDef) -> String {
+    let f = Formatter.new();
+    GL.format_global_def(f, def);
+    f.finish()
+}
+
+}

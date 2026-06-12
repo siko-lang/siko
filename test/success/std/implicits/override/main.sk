@@ -1,0 +1,31 @@
+module Main {
+
+// Like effects/05_override: an inner with block creates a fresh implicit scope
+// for counter, leaving the outer counter untouched.
+
+implicit counter : Int
+
+fn increment() {
+    counter = counter + 1;
+}
+
+fn inner() {
+    let local = 0;
+    with counter = local {
+        increment();
+    }
+    // local is now 1; outer counter is unchanged
+}
+
+fn main() {
+    let n = 0;
+    with counter = n {
+        increment();  // n = 1
+        inner();      // shadows counter with local; n stays 1
+        increment();  // n = 2
+    }
+    assert(n == 2);
+    println(n.to_string());
+}
+
+}

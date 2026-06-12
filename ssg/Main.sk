@@ -1,0 +1,35 @@
+module Main {
+
+import Std.Sys.Process as Sys
+import SSG.Site
+
+fn main() {
+    let args = Sys.get_args();
+    if args.len() < 3 {
+        println("usage: ssg build <site-dir>");
+        Sys.exit(1.as_i32());
+    }
+    let cmd = args[1];
+    match cmd {
+        "build" => {
+            let site_dir = args[2];
+            let src_root = "${site_dir}/src";
+            let out_root = "${site_dir}/output";
+            let layouts_dir = "${site_dir}/_layouts";
+            println("Building ${src_root} -> ${out_root}");
+            match build(src_root, out_root, layouts_dir) {
+                Ok(_) => println("Done."),
+                Err(e) => {
+                    println("Error: ${e}");
+                    Sys.exit(1.as_i32());
+                }
+            }
+        }
+        _ => {
+            println("unknown command: ${cmd}");
+            Sys.exit(1.as_i32());
+        }
+    }
+}
+
+}

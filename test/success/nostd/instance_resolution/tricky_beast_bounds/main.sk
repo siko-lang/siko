@@ -1,0 +1,38 @@
+module Main {
+
+trait Foo[T] {
+    fn foo(t: T)
+}
+
+trait Bar[T] {
+    fn bar(t: T)
+}
+
+struct Q[T] {
+    t: T
+}
+
+struct Z {}
+
+instance[T: Foo[T], Bar[T]] MyFooForQ Foo[Q[T]] {
+    fn foo(q: Q[T]) {
+        bar(q.t);
+    }
+}
+
+instance MyFooForZ Foo[Z] {
+    fn foo(z: Z) {}
+}
+
+instance Bar[Z] {
+    fn bar(z: Z) {}
+}
+
+fn stuff[T: Foo[T]](t: T) { foo(t); }
+
+fn main() {
+    let z = Z();
+    let q = Q(z);
+    stuff(q);
+}
+}

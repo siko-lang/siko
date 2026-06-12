@@ -1,0 +1,34 @@
+module Siko.Utils.TypeVarAllocator {
+
+import Siko.AST.Type
+import Siko.Interner as I
+
+pub struct TypeVarAllocator {
+    pub next: Int,
+
+    pub fn new() -> TypeVarAllocator {
+        TypeVarAllocator(0)
+    }
+
+    pub fn allocate(a: TypeVarAllocator) -> TypeDef {
+        let name = TypeDef.Var(TypeVar.Var(a.next));
+        a.next += 1;
+        name
+    }
+
+    pub fn allocate_named(a: TypeVarAllocator) -> TypeDef {
+        TypeDef.Var(TypeVar.Named(a.allocate_name()))
+    }
+
+    pub fn allocate_name(a: TypeVarAllocator) -> I.String {
+        let name = "?${a.next}";
+        a.next += 1;
+        I.intern(name)
+    }
+
+    pub fn get_id(a: TypeVarAllocator) -> Int {
+        a.next
+    }
+}
+
+}

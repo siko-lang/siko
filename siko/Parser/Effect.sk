@@ -1,0 +1,50 @@
+module Siko.Parser.Effect {
+
+import Siko.AST.Data
+import Siko.AST.Effects
+import Siko.AST.Annotations
+import Siko.Parser.Function
+import Siko.Parser.Generics
+import Siko.Parser.Annotations
+import Siko.Parser.Module
+import Siko.Parser.Parser
+import Siko.Parser.Token
+
+pub trait EffectParser[T] {
+    fn parse_effect_def(p: T, annotations: Vec[Annotation], public: Bool) -> Result[EffectDef, ParseError]
+}
+
+instance EffectParser[Parser] {
+    fn parse_effect_def(parser: Parser, annotations: Vec[Annotation], public: Bool) -> Result[EffectDef, ParseError] {
+        parser.expect(TokenKind.KwEffect)?;
+        let type_arg_def = parser.parse_optional_type_arg_defs()?;
+        let name = parser.expect_type_ident()?;
+        parser.expect(TokenKind.LBrace)?;
+        let methods = Vec.new();
+        let associated_types = Vec.new();
+        while parser.peek() != TokenKind.RBrace && parser.peek() != TokenKind.Eof {
+            if parser.peek() == TokenKind.KwType {
+                parser.advance();
+                let assoc_name = parser.expect_type_ident()?;
+                associated_types.push(AssociatedType(assoc_name));
+            } else {
+                let method_annotations = if parser.peek() == TokenKind.At {
+                    parser.parse_annotations(False)?
+                } else {
+                    Vec.new()
+                };
+                let is_pub = if parser.peek() == TokenKind.KwPub {
+                    parser.advance();
+                    True
+                } else {
+                    False
+                };
+                methods.push(parser.parse_fn_def(method_annotations, is_pub)?);
+            }
+        }
+        parser.expect(TokenKind.RBrace)?;
+        Ok(EffectDef(annotations, public, name, associated_types, type_arg_def, methods, MethodMap.new()))
+    }
+}
+
+}

@@ -1,0 +1,46 @@
+module SSG.NavGen {
+
+pub struct PostInfo {
+    pub title: String,
+    pub date: String,
+    pub slug: String,
+    pub is_dir: Bool,
+    pub priority: Int,
+}
+
+pub fn sort_posts(posts: Vec[PostInfo]) {
+    let i = 1;
+    while i < posts.len() {
+        let j = i;
+        while j > 0 {
+            let a = posts[j - 1];
+            let b = posts[j];
+            let swap = if a.priority != b.priority {
+                a.priority > b.priority
+            } else if a.date != b.date {
+                a.date < b.date
+            } else {
+                a.title > b.title
+            };
+            if swap {
+                posts.swap(j - 1, j);
+                j = j - 1;
+            } else {
+                break;
+            }
+        }
+        i = i + 1;
+    }
+}
+
+pub fn generate(posts: Vec[PostInfo]) -> String {
+    sort_posts(posts);
+    let out = "<nav>\n";
+    for post in posts {
+        out = out + "  <a href=\"${post.slug}.html\">${post.title}</a>\n";
+    }
+    out = out + "</nav>\n";
+    out
+}
+
+}

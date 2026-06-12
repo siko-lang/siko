@@ -1,0 +1,52 @@
+module Siko.Typechecker.Checker {
+
+import Siko.AST.QualifiedName
+import Siko.HIR.Program
+import Siko.Instances.InstanceResolver
+import Siko.Typechecker.Collector
+import Siko.Typechecker.Error
+import Siko.Typechecker.Finalize
+import Siko.Typechecker.Sanity
+import Siko.Typechecker.Solver
+import Siko.Config
+
+pub fn typecheck_function(key: QualifiedName, program: Program, instance_resolver: InstanceResolver) -> Result[(), Vec[TypeError]] {
+    let func = program.functions.get(key).unwrap().clone();
+    let collector = Collector.new(program);
+    let annotated = collector.collect_function(func);
+    if !collector.errors.is_empty() {
+        return Err(collector.errors);
+    }
+    let allocator = collector.get_allocator();
+    let constraints = collector.into_constraints();
+    let solver = Solver.new(program, instance_resolver, func, constraints, allocator).with_debug(get_config().debug_typecheck);
+    match solver.solve() {
+        Err(e) => { return Err([e]); }
+        Ok(_) => {}
+    }
+    let method_resolutions = solver.get_method_resolutions();
+    let witness_map = solver.get_witness_map();
+    let finalizer = Finalizer.new(solver.into_subst(), program, method_resolutions, witness_map);
+    let finalized = finalizer.finalize_function(annotated);
+    let sanity_errors = sanity_check(finalized);
+    if !sanity_errors.is_empty() {
+        return Err(sanity_errors);
+    }
+    program.functions.insert(key, finalized);
+    Ok(())
+}
+
+pub fn typecheck_program(program: Program, instance_resolver: InstanceResolver) -> Result[(), Vec[TypeError]] {
+    let keys: Vec[QualifiedName] = program.functions.keys().collect();
+    let errors: Vec[TypeError] = Vec.new();
+    for key in keys {
+        if let Err(errs) = typecheck_function(key, program, instance_resolver) {
+            for e in errs {
+                errors.push(e);
+            }
+        }
+    }
+    if errors.is_empty() { Ok(()) } else { Err(errors) }
+}
+
+}

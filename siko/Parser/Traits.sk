@@ -1,0 +1,177 @@
+module Siko.Parser.Traits {
+
+import Siko.AST.Data
+import Siko.AST.Name
+import Siko.AST.Traits
+import Siko.AST.Annotations
+import Siko.Interner as I
+import Siko.Parser.Function
+import Siko.Parser.Generics
+import Siko.Parser.Annotations
+import Siko.Parser.Module
+import Siko.Parser.Parser
+import Siko.Parser.Token
+import Siko.Parser.Type
+
+pub trait TraitsParser[T] {
+    fn parse_trait_def(p: T, annotations: Vec[Annotation], public: Bool) -> Result[TraitDef, ParseError]
+    fn parse_instance_def(p: T, annotations: Vec[Annotation], public: Bool) -> Result[InstanceDef, ParseError]
+}
+
+instance TraitsParser[Parser] {
+    fn parse_trait_def(parser: Parser, annotations: Vec[Annotation], public: Bool) -> Result[TraitDef, ParseError] {
+        parser.expect(TokenKind.KwTrait)?;
+        let type_arg_def = parser.parse_optional_type_arg_defs()?;
+        let name = parser.expect_type_ident()?;
+        parser.expect(TokenKind.LBracket)?;
+        let type_args = Vec.new();
+        while parser.peek() != TokenKind.RBracket && parser.peek() != TokenKind.Eof {
+            type_args.push(parser.expect_type_ident()?);
+            if parser.peek() == TokenKind.Comma {
+                parser.advance();
+            }
+        }
+        parser.expect(TokenKind.RBracket)?;
+        parser.expect(TokenKind.LBrace)?;
+        let methods = Vec.new();
+        let associated_types = Vec.new();
+        while parser.peek() != TokenKind.RBrace && parser.peek() != TokenKind.Eof {
+            if parser.peek() == TokenKind.KwType {
+                parser.advance();
+                let assoc_name = parser.expect_type_ident()?;
+                associated_types.push(AssociatedType(assoc_name));
+            } else {
+                let method_annotations = if parser.peek() == TokenKind.At {
+                    parser.parse_annotations(False)?
+                } else {
+                    Vec.new()
+                };
+                let is_pub = if parser.peek() == TokenKind.KwPub {
+                    parser.advance();
+                    True
+                } else {
+                    False
+                };
+                methods.push(parser.parse_fn_def(method_annotations, is_pub)?);
+            }
+        }
+        parser.expect(TokenKind.RBrace)?;
+        Ok(TraitDef(annotations, public, name, type_args, associated_types, type_arg_def, methods, MethodMap.new(), Vec.new()))
+    }
+
+    fn parse_instance_def(parser: Parser, annotations: Vec[Annotation], public: Bool) -> Result[InstanceDef, ParseError] {
+        let kw_start = parser.current().start;
+        let kw_end = parser.current().end;
+        parser.expect(TokenKind.KwInstance)?;
+        let instance_location = parser.loc(kw_start, kw_end);
+        let type_arg_defs = parser.parse_optional_type_arg_defs()?;
+        let first = parser.expect_type_ident()?;
+        let (instance_name, trait_name) = match parser.peek() {
+            TokenKind.TypeIdentifier(_) => {
+                let trait_ident = parser.parse_dotted_name()?;
+                (Some(first), Name.Unresolved(trait_ident))
+            }
+            _ => {
+                while parser.peek() == TokenKind.Dot {
+                    parser.advance();
+                    let next = parser.expect_type_ident()?;
+                    first = first.merge(next);
+                }
+                (None, Name.Unresolved(first))
+            }
+        };
+        parser.expect(TokenKind.LBracket)?;
+        let args = Vec.new();
+        while parser.peek() != TokenKind.RBracket && parser.peek() != TokenKind.Eof {
+            args.push(parser.parse_type_def()?);
+            if parser.peek() == TokenKind.Comma {
+                parser.advance();
+            }
+        }
+        parser.expect(TokenKind.RBracket)?;
+        let methods = Vec.new();
+        let type_assignments = Vec.new();
+        let external_derive_instance_info = if parser.peek() == TokenKind.Assign {
+            parser.advance();
+            let loc = parser.cur_pos();
+            let auto_name = parser.expect_var_ident()?;
+            if I.resolve(auto_name.name) != "auto" {
+                return Err(ParseError.new("expected auto", loc));
+            }
+            let params = if parser.peek() == TokenKind.LParen {
+                parser.advance();
+                let mode_ident = parser.expect_type_ident()?;
+                let mode = match I.resolve(mode_ident.name) {
+                    "Map" => ExternalDeriveMode.Map,
+                    "Fold" => ExternalDeriveMode.Fold,
+                    _ => return Err(ParseError.new("expected Map or Fold", parser.cur_pos())),
+                };
+                let (fn_name, body) = if parser.peek() == TokenKind.Comma {
+                    parser.advance();
+                    match parser.peek() {
+                        TokenKind.Assign => {
+                            parser.advance();
+                            (FnName.Inferred, BodyStrategy.Identity)
+                        }
+                        TokenKind.Bang => {
+                            parser.advance();
+                            (FnName.Inferred, BodyStrategy.Unreachable)
+                        }
+                        _ => {
+                            let var_ident = parser.expect_var_ident()?;
+                            let fn_name = FnName.Explicit(Name.Unresolved(var_ident));
+                            let body = if parser.peek() == TokenKind.Comma {
+                                parser.advance();
+                                match parser.peek() {
+                                    TokenKind.Assign => { parser.advance(); BodyStrategy.Identity }
+                                    TokenKind.Bang => { parser.advance(); BodyStrategy.Unreachable }
+                                    _ => return Err(ParseError.new("expected = or !", parser.cur_pos())),
+                                }
+                            } else {
+                                BodyStrategy.Generate
+                            };
+                            (fn_name, body)
+                        }
+                    }
+                } else {
+                    (FnName.Inferred, BodyStrategy.Generate)
+                };
+                let params = ExternalDeriveParams(mode, fn_name, body);
+                parser.expect(TokenKind.RParen)?;
+                Some(params)
+            } else {
+                None
+            };
+            Some(ExternalDerivedInstanceInfo(params))
+        } else {
+            parser.expect(TokenKind.LBrace)?;
+            while parser.peek() != TokenKind.RBrace && parser.peek() != TokenKind.Eof {
+                if parser.peek() == TokenKind.KwType {
+                    parser.advance();
+                    let assoc_name = parser.expect_type_ident()?;
+                    parser.expect(TokenKind.Assign)?;
+                    let ty = parser.parse_type_def()?;
+                    type_assignments.push(TypeAssignment(assoc_name, ty));
+                } else {
+                    let method_annotations = if parser.peek() == TokenKind.At {
+                        parser.parse_annotations(False)?
+                    } else {
+                        Vec.new()
+                    };
+                    let is_pub = if parser.peek() == TokenKind.KwPub {
+                        parser.advance();
+                        True
+                    } else {
+                        False
+                    };
+                    methods.push(parser.parse_fn_def(method_annotations, is_pub)?);
+                }
+            }
+            parser.expect(TokenKind.RBrace)?;
+            None
+        };
+        Ok(InstanceDef(annotations, public, instance_name, type_arg_defs, trait_name, args, type_assignments, methods, I.intern(""), Vec.new(), instance_location, external_derive_instance_info))
+    }
+}
+
+}

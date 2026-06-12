@@ -1,0 +1,522 @@
+module Std.Map {
+
+struct Node[K, V] {
+    key: K,
+    value: V,
+    height: Int,
+    left: Option[Node[K, V]],
+    right: Option[Node[K, V]],
+    parent: Option[Node[K, V]],
+}
+
+pub struct Map[K, V] {
+    root: Option[Node[K, V]],
+    size: Int,
+
+    pub fn new() -> Map[K, V] {
+        Map(None, 0)
+    }
+
+    pub fn insert[K: Ord[K]](m: Map[K, V], key: K, value: V) -> Option[V] {
+        let (old, new_root) = insertNode(m.root, key, value);
+        m.root = new_root;
+        match new_root {
+            Some(root) => { root.parent = None; }
+            None => {}
+        }
+        match old {
+            None => {
+                m.size = m.size + 1;
+                None
+            }
+            Some(_) => old
+        }
+    }
+
+    pub fn remove[K: Ord[K]](m: Map[K, V], key: K) -> Option[V] {
+        let (old, new_root) = removeNode(m.root, key);
+        m.root = new_root;
+        match new_root {
+            Some(root) => { root.parent = None; }
+            None => {}
+        }
+        match old {
+            None => None,
+            Some(_) => {
+                m.size = m.size - 1;
+                old
+            }
+        }
+    }
+
+    pub fn get[K: Ord[K]](m: Map[K, V], key: K) -> Option[V] {
+        searchNode(m.root, key)
+    }
+
+    pub fn contains_key[K: Ord[K]](m: Map[K, V], key: K) -> Bool {
+        m.get(key).is_some()
+    }
+
+    pub fn len(m: Map[K, V]) -> Int {
+        m.size
+    }
+
+    pub fn is_empty(m: Map[K, V]) -> Bool {
+        m.size == 0
+    }
+
+    pub fn iter(m: Map[K, V]) -> MapIterator[K, V] {
+        MapIterator(minNodeOpt(m.root))
+    }
+
+    pub fn extend[K: Ord[K]](m: Map[K, V], other: Map[K, V]) {
+        for (k, v) in other {
+            m.insert(k, v);
+        }
+    }
+
+    pub fn clear(m: Map[K, V]) {
+        m.root = None;
+        m.size = 0;
+    }
+
+    pub fn contains_key[K: Ord[K]](m: Map[K, V], key: K) -> Bool {
+        m.get(key).is_some()
+    }
+
+    pub fn entry[K: Ord[K]](m: Map[K, V], key: K) -> Entry[K, V] {
+        Entry(m, key)
+    }
+
+    pub fn keys(m: Map[K, V]) -> KeyIterator[K, V] {
+        KeyIterator(m.iter())
+    }
+
+    pub fn values(m: Map[K, V]) -> ValueIterator[K, V] {
+        ValueIterator(m.iter())
+    }
+}
+
+pub struct Entry[K, V] {
+    map: Map[K, V],
+    key: K,
+
+    pub fn or_insert[K: Ord[K]](e: Entry[K, V], value: V) -> V {
+        match e.map.get(e.key) {
+            Some(v) => v,
+            None => {
+                e.map.insert(e.key, value);
+                value
+            }
+        }
+    }
+
+    pub fn or_insert_with[K: Ord[K]](e: Entry[K, V], f: fn() -> V) -> V {
+        match e.map.get(e.key) {
+            Some(v) => v,
+            None => {
+                let value = f();
+                e.map.insert(e.key, value);
+                value
+            }
+        }
+    }
+
+    pub fn apply[K: Ord[K]](e: Entry[K, V], default: V, f: fn(V) -> V) {
+        let v = e.map.get(e.key).unwrap_or(default);
+        e.map.insert(e.key, f(v));
+    }
+}
+
+fn nodeHeight[K, V](n: Option[Node[K, V]]) -> Int {
+    match n {
+        None => 0,
+        Some(node) => node.height
+    }
+}
+
+fn maxInt(a: Int, b: Int) -> Int {
+    if a > b { a } else { b }
+}
+
+fn updateHeight[K, V](node: Node[K, V]) {
+    node.height = 1 + maxInt(nodeHeight(node.left), nodeHeight(node.right));
+}
+
+fn balanceFactor[K, V](node: Node[K, V]) -> Int {
+    nodeHeight(node.left) - nodeHeight(node.right)
+}
+
+// Sets root.left = left and maintains left.parent = Some(root).
+fn updateLeft[K, V](root: Node[K, V], left: Option[Node[K, V]]) {
+    root.left = left;
+    match left {
+        None => {}
+        Some(node) => { node.parent = Some(root); }
+    }
+}
+
+// Sets root.right = right and maintains right.parent = Some(root).
+fn updateRight[K, V](root: Node[K, V], right: Option[Node[K, V]]) {
+    root.right = right;
+    match right {
+        None => {}
+        Some(node) => { node.parent = Some(root); }
+    }
+}
+
+fn rotateRight[K, V](z: Node[K, V]) -> Node[K, V] {
+    let y = z.left.unwrap();
+    let t3 = y.right;
+
+    y.parent = z.parent;
+
+    y.right = Some(z);
+    z.parent = Some(y);
+
+    z.left = t3;
+    match t3 {
+        None => {}
+        Some(t3_node) => { t3_node.parent = Some(z); }
+    }
+
+    updateHeight(z);
+    updateHeight(y);
+    y
+}
+
+fn rotateLeft[K, V](z: Node[K, V]) -> Node[K, V] {
+    let y = z.right.unwrap();
+    let t2 = y.left;
+
+    y.parent = z.parent;
+
+    y.left = Some(z);
+    z.parent = Some(y);
+
+    z.right = t2;
+    match t2 {
+        None => {}
+        Some(t2_node) => { t2_node.parent = Some(z); }
+    }
+
+    updateHeight(z);
+    updateHeight(y);
+    y
+}
+
+fn rebalance[K, V](node: Node[K, V]) -> Node[K, V] {
+    updateHeight(node);
+    let bf = balanceFactor(node);
+    if bf > 1 {
+        if balanceFactor(node.left.unwrap()) < 0 {
+            updateLeft(node, Some(rotateLeft(node.left.unwrap())));
+        }
+        rotateRight(node)
+    } else {
+        if bf < -1 {
+            if balanceFactor(node.right.unwrap()) > 0 {
+                updateRight(node, Some(rotateRight(node.right.unwrap())));
+            }
+            rotateLeft(node)
+        } else {
+            node
+        }
+    }
+}
+
+fn newNode[K, V](key: K, value: V) -> Node[K, V] {
+    Node(key, value, 1, None, None, None)
+}
+
+fn insertNode[K, V: Ord[K]](root: Option[Node[K, V]], key: K, value: V) -> (Option[V], Option[Node[K, V]]) {
+    match root {
+        None => (None, Some(newNode(key, value))),
+        Some(node) => match key.cmp(node.key) {
+            Ordering.Less => {
+                let (old, new_left) = insertNode(node.left, key, value);
+                updateLeft(node, new_left);
+                (old, Some(rebalance(node)))
+            }
+            Ordering.Greater => {
+                let (old, new_right) = insertNode(node.right, key, value);
+                updateRight(node, new_right);
+                (old, Some(rebalance(node)))
+            }
+            Ordering.Equal => {
+                let old = Some(node.value);
+                node.value = value;
+                (old, Some(node))
+            }
+        }
+    }
+}
+
+fn minNodeOpt[K, V](root: Option[Node[K, V]]) -> Option[Node[K, V]] {
+    match root {
+        None => None,
+        Some(node) => match node.left {
+            None => Some(node),
+            Some(_) => minNodeOpt(node.left)
+        }
+    }
+}
+
+// Returns (min_node, subtree_with_min_removed).
+fn removeMin[K, V](node: Node[K, V]) -> (Node[K, V], Option[Node[K, V]]) {
+    match node.left {
+        None => (node, node.right),
+        Some(left) => {
+            let (min, new_left) = removeMin(left);
+            updateLeft(node, new_left);
+            (min, Some(rebalance(node)))
+        }
+    }
+}
+
+fn removeNode[K, V: Ord[K]](root: Option[Node[K, V]], key: K) -> (Option[V], Option[Node[K, V]]) {
+    match root {
+        None => (None, None),
+        Some(node) => match key.cmp(node.key) {
+            Ordering.Less => {
+                let (old, new_left) = removeNode(node.left, key);
+                updateLeft(node, new_left);
+                (old, Some(rebalance(node)))
+            }
+            Ordering.Greater => {
+                let (old, new_right) = removeNode(node.right, key);
+                updateRight(node, new_right);
+                (old, Some(rebalance(node)))
+            }
+            Ordering.Equal => {
+                let old = Some(node.value);
+                match node.right {
+                    None => (old, node.left),
+                    Some(right) => {
+                        let (succ, new_right) = removeMin(right);
+                        node.key = succ.key;
+                        node.value = succ.value;
+                        updateRight(node, new_right);
+                        (old, Some(rebalance(node)))
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn searchNode[K, V: Ord[K]](root: Option[Node[K, V]], key: K) -> Option[V] {
+    match root {
+        None => None,
+        Some(node) => match key.cmp(node.key) {
+            Ordering.Less => searchNode(node.left, key),
+            Ordering.Greater => searchNode(node.right, key),
+            Ordering.Equal => Some(node.value)
+        }
+    }
+}
+
+// Walks up through parent pointers until we arrive via a left edge,
+// meaning the parent has not yet been yielded.
+fn goUpLeft[K, V: Ord[K]](node: Node[K, V]) -> Option[Node[K, V]] {
+    match node.parent {
+        None => None,
+        Some(parent) => match node.key.cmp(parent.key) {
+            Ordering.Less => Some(parent),
+            _ => goUpLeft(parent)
+        }
+    }
+}
+
+fn successor[K, V: Ord[K]](node: Node[K, V]) -> Option[Node[K, V]] {
+    match node.right {
+        Some(_) => minNodeOpt(node.right),
+        None => goUpLeft(node)
+    }
+}
+
+pub struct MapIterator[K, V] {
+    current: Option[Node[K, V]],
+}
+
+instance[K, V: Ord[K]] Iterator[MapIterator[K, V]] {
+    type Item = (K, V)
+
+    fn next(a: MapIterator[K, V]) -> Option[(K, V)] {
+        match a.current {
+            None => None,
+            Some(node) => {
+                let key = node.key;
+                let value = node.value;
+                a.current = successor(node);
+                Some((key, value))
+            }
+        }
+    }
+}
+
+instance[K, V: Ord[K]] IntoIterator[Map[K, V]] {
+    type Item = (K, V)
+    type IntoIter = MapIterator[K, V]
+
+    fn into_iter(m: Map[K, V]) -> MapIterator[K, V] {
+        m.iter()
+    }
+}
+
+instance[K, V: Ord[K]] Index[Map[K, V]] {
+    type Key = K
+    type Output = V
+    fn index(a: Map[K, V], index: K) -> V {
+        match a.get(index) {
+            Some(v) => v,
+            None => panic("Map: key not found"),
+        }
+    }
+}
+
+instance[K, V: Ord[K]] IndexAssign[Map[K, V]] {
+    type Key = K
+    type Value = V
+    fn index_assign(a: Map[K, V], index: K, value: V) {
+        a.insert(index, value);
+    }
+}
+
+instance[K, V: Ord[K]] Clone[Map[K, V]] {
+    fn clone(m: Map[K, V]) -> Map[K, V] {
+        let new = Map.new();
+        for (k, v) in m {
+            new.insert(k, v);
+        }
+        new
+    }
+}
+
+pub struct ValueIterator[K, V] {
+    iter: MapIterator[K, V],
+
+    // HACK:
+    pub fn into_iter(v: ValueIterator[K, V]) -> ValueIterator[K, V] {
+        v
+    }
+}
+
+instance[K, V: Ord[K]] Iterator[ValueIterator[K, V]] {
+    type Item = V
+
+    fn next(a: ValueIterator[K, V]) -> Option[V] {
+        match a.iter.next() {
+            None => None,
+            Some((k, v)) => {
+                Some(v)
+            }
+        }
+    }
+}
+
+pub struct KeyIterator[K, V] {
+    iter: MapIterator[K, V],
+
+    // HACK:
+    pub fn into_iter(v: KeyIterator[K, V]) -> KeyIterator[K, V] {
+        v
+    }
+}
+
+instance[K, V: Ord[K]] Iterator[KeyIterator[K, V]] {
+    type Item = K
+
+    fn next(a: KeyIterator[K, V]) -> Option[K] {
+        match a.iter.next() {
+            None => None,
+            Some((k, v)) => {
+                Some(k)
+            }
+        }
+    }
+}
+
+instance[K, V: Ord[K], PartialEq[V]] PartialEq[Map[K, V]] {
+    fn eq(a: Map[K, V], b: Map[K, V]) -> Bool {
+        if a.size != b.size {
+            return False;
+        }
+        let iter_a = a.into_iter();
+        let iter_b = b.into_iter();
+        loop {
+            match iter_a.next() {
+                None => { return True; }
+                Some((ka, va)) => {
+                    match iter_b.next() {
+                        None => { return False; }
+                        Some((kb, vb)) => {
+                            match ka.cmp(kb) {
+                                Ordering.Equal => {
+                                    if va.not_eq(vb) { return False; }
+                                }
+                                _ => { return False; }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+instance[K, V: Ord[K], Eq[V]] Eq[Map[K, V]] {}
+
+instance[K, V: Ord[K], Ord[V]] PartialOrd[Map[K, V]] {
+    fn partial_cmp(a: Map[K, V], b: Map[K, V]) -> Option[Ordering] {
+        Some(a.cmp(b))
+    }
+}
+
+instance[K, V: Ord[K], Ord[V]] Ord[Map[K, V]] {
+    fn cmp(a: Map[K, V], b: Map[K, V]) -> Ordering {
+        let iter_a = a.into_iter();
+        let iter_b = b.into_iter();
+        loop {
+            match iter_a.next() {
+                None => {
+                    match iter_b.next() {
+                        None => { return Ordering.Equal; }
+                        Some(_) => { return Ordering.Less; }
+                    }
+                }
+                Some((ka, va)) => {
+                    match iter_b.next() {
+                        None => { return Ordering.Greater; }
+                        Some((kb, vb)) => {
+                            match ka.cmp(kb) {
+                                Ordering.Equal => {
+                                    match va.cmp(vb) {
+                                        Ordering.Equal => {}
+                                        other => { return other; }
+                                    }
+                                }
+                                other => { return other; }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+instance[K, V: Ord[K]] FromIterator[Map[K, V]] {
+    type Item = (K, V)
+    fn from_iter[I: Iterator[I, Item=(K, V)]](iter: I) -> Map[K, V] {
+        let m = Map.new();
+        loop {
+            match iter.next() {
+                Some((k, v)) => {m.insert(k, v); }
+                None => { return m; }
+            }
+        }
+    }
+}
+
+}

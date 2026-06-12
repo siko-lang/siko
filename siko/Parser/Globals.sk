@@ -1,0 +1,27 @@
+module Siko.Parser.Globals {
+
+import Siko.AST.Annotations
+import Siko.AST.Globals
+import Siko.Parser.Expr
+import Siko.Parser.Parser
+import Siko.Parser.Token
+import Siko.Parser.Type
+
+pub trait GlobalParser[T] {
+    fn parse_global_def(p: T, annotations: Vec[Annotation], public: Bool) -> Result[GlobalDef, ParseError]
+}
+
+instance GlobalParser[Parser] {
+    fn parse_global_def(parser: Parser, annotations: Vec[Annotation], public: Bool) -> Result[GlobalDef, ParseError] {
+        parser.expect(TokenKind.KwLet)?;
+        let name = parser.expect_type_ident()?;
+        parser.expect(TokenKind.Colon)?;
+        let ty = parser.parse_type_def()?;
+        parser.expect(TokenKind.Assign)?;
+        let expr = parser.parse_expr()?;
+        parser.expect(TokenKind.Semicolon)?;
+        Ok(GlobalDef(annotations, public, name, ty, expr))
+    }
+}
+
+}

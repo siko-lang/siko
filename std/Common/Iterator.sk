@@ -1,0 +1,372 @@
+@prelude
+module Std.Iterator {
+
+pub trait Iterator[T] {
+    type Item
+    fn next(i: T) -> Option[Item]
+
+    fn zip[Other, OtherIter: IntoIterator[Other, IntoIter=OtherIter]](i: T, j: Other) -> ZipIterator[T, OtherIter] {
+        ZipIterator(i, j.into_iter())
+    }
+
+    fn enumerate(i: T) -> EnumerateIterator[T] {
+        EnumerateIterator(i, 0)
+    }
+
+    fn filter(i: T, f: fn(Item) -> Bool) -> FilterIterator[T, Item] {
+        FilterIterator(i, f)
+    }
+
+    fn map[B](i: T, f: fn(Item) -> B) -> MapIterator[T, Item, B] {
+        MapIterator(i, f)
+    }
+
+    fn flat_map[B, InnerItem: Iterator[B, Item=InnerItem]](i: T, f: fn(Item) -> B) -> FlatMapIterator[T, Item, B, InnerItem] {
+        FlatMapIterator(i, f, None)
+    }
+
+    fn find(i: T, f: fn(Item) -> Bool) -> Option[Item] {
+        loop {
+            match i.next() {
+                Some(x) => {
+                    if (f)(x) {
+                        return Some(x);
+                    }
+                }
+                None => { return None; }
+            }
+        }
+    }
+
+    fn chain[Other, OtherIter: IntoIterator[Other, Item=Item, IntoIter=OtherIter]](i: T, j: Other) -> ChainIterator[T, OtherIter] {
+        ChainIterator(Some(i), Some(j.into_iter()))
+    }
+
+    // fn flatten[InnerIter, InnerItem: IntoIterator[Item, Item=InnerItem, IntoIter=InnerIter]](i: T) -> FlatMapIterator[T, Item, InnerIter, InnerItem] {
+    //     i.flat_map(|x| x.into_iter())
+    // }
+
+    fn filter_map[B](i: T, f: fn(Item) -> Option[B]) -> FilterMapIterator[T, Item, B] {
+        FilterMapIterator(i, f)
+    }
+
+    fn collect[B: FromIterator[B, Item=Item]](i: T) -> B {
+        from_iter(i)
+    }
+
+    fn find_map[B](i: T, f: fn(Item) -> Option[B]) -> Option[B] {
+        loop {
+            match i.next() {
+                Some(x) => {
+                    match (f)(x) {
+                        Some(y) => { return Some(y); },
+                        None => {},
+                    }
+                },
+                None => { return None; },
+            }
+        }
+    }
+
+    fn any(i: T, f: fn(Item) -> Bool) -> Bool {
+        for x in i {
+            if (f)(x) {
+                return True;
+            }
+        }
+        False
+    }
+
+    fn all(i: T, f: fn(Item) -> Bool) -> Bool {
+        for x in i {
+            if !(f)(x) {
+                return False;
+            }
+        }
+        True
+    }
+
+    fn cloned[Item: Clone[Item]](i: T) -> ClonedIterator[T] {
+        ClonedIterator(i)
+    }
+
+    fn skip(i: T, n: Int) -> SkipIterator[T] {
+        SkipIterator(i, n)
+    }
+
+    fn take(i: T, n: Int) -> TakeIterator[T] {
+        TakeIterator(i, n)
+    }
+
+    fn for_each(i: T, f: fn(Item) -> ()) {
+        for x in i {
+            (f)(x);
+        }
+    }
+
+    fn last(i: T) -> Option[Item] {
+        let result = None;
+        for x in i {
+            result = Some(x);
+        }
+        result
+    }
+
+    fn position(i: T, f: fn(Item) -> Bool) -> Option[Int] {
+        let idx = 0;
+        for x in i {
+            if (f)(x) {
+                return Some(idx);
+            }
+            idx = idx + 1;
+        }
+        None
+    }
+
+}
+
+pub struct ClonedIterator[T] {
+    iter: T
+}
+
+instance[Item, T: Iterator[T, Item = Item], Clone[Item]] Iterator[ClonedIterator[T]] {
+    type Item = Item
+    fn next(c: ClonedIterator[T]) -> Option[Item] {
+        c.iter.next().clone()
+    }
+}
+
+pub trait[IntoIter: Iterator[IntoIter, Item = Item]] IntoIterator[T] {
+    type Item
+    type IntoIter
+
+    fn into_iter(a: T) -> IntoIter
+}
+
+pub struct EnumerateIterator[A] {
+    iter: A,
+    index: Int
+}
+
+instance[Item, T: Iterator[T, Item = Item]] IntoIterator[T] {
+    type Item = Item
+    type IntoIter = T
+
+    fn into_iter(a: T) -> T {
+        a
+    }
+}
+
+instance[Item, A: Iterator[A, Item = Item]] Iterator[EnumerateIterator[A]] {
+    type Item = (Int, Item)
+    fn next(a: EnumerateIterator[A]) -> Option[(Int, Item)] {
+        match a.iter.next() {
+            Some(x) => {
+                let idx = a.index;
+                a.index = a.index + 1;
+                Some((idx, x))
+            }
+            None => None
+        }
+    }
+}
+
+pub struct ZipIterator[A, B] {
+    left: A,
+    right: B
+}
+
+
+instance[A, B, ItemA, ItemB: Iterator[A, Item = ItemA], Iterator[B, Item = ItemB]] Iterator[ZipIterator[A, B]] {
+    type Item = (ItemA, ItemB)
+    fn next(a: ZipIterator[A, B]) -> Option[(ItemA, ItemB)] {
+        match a.left.next() {
+            Some(x) => match a.right.next() {
+                Some(y) => Some((x, y)),
+                None => None
+            }
+            None => None
+        }
+    }
+}
+
+pub struct MapIterator[A, Item, B] {
+    iter: A,
+    map: fn(Item) -> B
+}
+
+
+instance[Item, B, A: Iterator[A, Item = Item]] Iterator[MapIterator[A, Item, B]] {
+    type Item = B
+    fn next(m: MapIterator[A, Item, B]) -> Option[B] {
+        match m.iter.next() {
+            Some(x) => Some((m.map)(x)),
+            None => None
+        }
+    }
+}
+
+pub struct FlatMapIterator[A, Item, B, InnerItem] {
+    iter: A,
+    f: fn(Item) -> B,
+    inner: Option[B]
+}
+
+
+instance[I, InnerItem, B, A: Iterator[A, Item = I], Iterator[B, Item = InnerItem]] Iterator[FlatMapIterator[A, I, B, InnerItem]] {
+    type Item = InnerItem
+    fn next(fm: FlatMapIterator[A, I, B, InnerItem]) -> Option[InnerItem] {
+        loop {
+            match fm.inner {
+                Some(inner_iter) => {
+                    match inner_iter.next() {
+                        Some(x) => return Some(x),
+                        None => {
+                            fm.inner = None;
+                        }
+                    }
+                }
+                None => {
+                    match fm.iter.next() {
+                        Some(x) => {
+                            fm.inner = Some((fm.f)(x));
+                        }
+                        None => return None
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub trait FromIterator[T] {
+    type Item
+    fn from_iter[I: Iterator[I, Item=Item]](iter: I) -> T
+}
+
+pub struct FilterIterator[A, Item] {
+    iter: A,
+    filter: fn(Item) -> Bool
+}
+
+instance[Item, A: Iterator[A, Item = Item]] Iterator[FilterIterator[A, Item]] {
+    type Item = Item
+    fn next(f: FilterIterator[A, Item]) -> Option[Item] {
+        loop {
+            let i : Option[Item] = f.iter.next();
+            match i {
+                Some(x) => {
+                    if (f.filter)(x) {
+                        return Some(x);
+                    }
+                }
+                None => { return None; }
+            }
+        }
+    }
+}
+
+pub struct ChainIterator[A, B] {
+    left: Option[A],
+    right: Option[B],
+}
+
+
+instance[Item, A, B: Iterator[A, Item = Item], Iterator[B, Item = Item]] Iterator[ChainIterator[A, B]] {
+    type Item = Item
+    fn next(c: ChainIterator[A, B]) -> Option[Item] {
+        loop {
+            match c.left {
+                Some(left_iter) => {
+                    match left_iter.next() {
+                        Some(x) => return Some(x),
+                        None => { c.left = None; }
+                    }
+                }
+                None => {
+                    match c.right {
+                        Some(right_iter) => return right_iter.next(),
+                        None => return None,
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub struct FilterMapIterator[A, Item, B] {
+    iter: A,
+    f: fn(Item) -> Option[B]
+}
+
+instance[Item, B, A: Iterator[A, Item = Item]] Iterator[FilterMapIterator[A, Item, B]] {
+    type Item = B
+    fn next(fm: FilterMapIterator[A, Item, B]) -> Option[B] {
+        loop {
+            match fm.iter.next() {
+                Some(x) => {
+                    match (fm.f)(x) {
+                        Some(y) => return Some(y),
+                        None => {}
+                    }
+                }
+                None => return None
+            }
+        }
+    }
+}
+
+pub struct TakeIterator[A] {
+    iter: A,
+    remaining: Int,
+}
+
+instance[Item, A: Iterator[A, Item = Item]] Iterator[TakeIterator[A]] {
+    type Item = Item
+    fn next(t: TakeIterator[A]) -> Option[Item] {
+        if t.remaining == 0 {
+            None
+        } else {
+            t.remaining = t.remaining - 1;
+            t.iter.next()
+        }
+    }
+}
+
+pub struct SkipIterator[A] {
+    iter: A,
+    skip: Int,
+}
+
+// FIXME:
+// instance[Item, A: Iterator[A, Item = Item]] Iterator[SkipIterator[A]] {
+//     type Item = Item
+//     fn next(s: SkipIterator[A]) -> Option[Item] {
+//         for _ in range(0, s.skip) {
+//             match s.iter.next() {
+//                 Some(_) => {}
+//                 None => return None,
+//             }
+//         }
+//         s.skip = 0;
+//         s.iter.next()
+//     }
+// }
+
+// FIXME: unzip should be a method on Iterator with Item=(A,B) constraint,
+// but associated-type equality in method bounds is not yet supported.
+pub fn unzip[A, B, Iter: Iterator[Iter, Item = (A, B)]](iter: Iter) -> (Vec[A], Vec[B]) {
+    let as_ = Vec.new();
+    let bs = Vec.new();
+    loop {
+        match iter.next() {
+            Some((a, b)) => {
+                as_.push(a);
+                bs.push(b);
+            }
+            None => { return (as_, bs); }
+        }
+    }
+}
+
+}

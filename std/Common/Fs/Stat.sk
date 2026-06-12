@@ -1,0 +1,105 @@
+module Std.Fs.Stat {
+
+import Std.Arch.Stat
+import Std.Arch.Errno
+import Std.IO.Error
+import Std.Libc.Stat as Libc
+import Std.Libc.String
+
+pub struct Timestamp {
+    pub sec: I64,
+    pub nsec: I64,
+}
+
+// Platform-neutral stat result. Types are widened to accommodate macOS and Linux:
+//   device:     I32 (macOS) / U64 (Linux) → I64
+//   nlink:      U16 (macOS) / U64 (Linux) → U64
+//   mode:       U16 (macOS) / U32 (Linux) → U32
+//   block_size: I32 (macOS) / I64 (Linux) → I64
+//   birth_time: exists on macOS, absent on Linux → Option[Timestamp]
+pub struct StatResult {
+    pub size: I64,
+    pub inode: U64,
+    pub device: I64,
+    pub mode: U32,
+    pub uid: U32,
+    pub gid: U32,
+    pub nlink: U64,
+    pub atime: Timestamp,
+    pub mtime: Timestamp,
+    pub ctime: Timestamp,
+    pub birth_time: Option[Timestamp],
+    pub block_size: I64,
+    pub blocks: I64,
+
+    pub fn is_directory(s: StatResult) -> Bool {
+        (s.mode & 0xF000.as_u32()) == 0x4000.as_u32()  // S_IFDIR
+    }
+
+    pub fn is_file(s: StatResult) -> Bool {
+        (s.mode & 0xF000.as_u32()) == 0x8000.as_u32()  // S_IFREG
+    }
+
+    pub fn is_symlink(s: StatResult) -> Bool {
+        (s.mode & 0xF000.as_u32()) == 0xA000.as_u32()  // S_IFLNK
+    }
+}
+
+fn ts(t: TimeSpec) -> Timestamp {
+    Timestamp(t.tv_sec, t.tv_nsec)
+}
+
+fn build_result(buf: StatBuf) -> StatResult {
+    StatResult(
+        buf.st_size,
+        buf.st_ino,
+        buf.st_dev.as_int().as_i64(),
+        buf.st_mode.as_int().as_u32(),
+        buf.st_uid,
+        buf.st_gid,
+        buf.st_nlink.as_int().as_u64(),
+        ts(buf.st_atimespec),
+        ts(buf.st_mtimespec),
+        ts(buf.st_ctimespec),
+        Some(ts(buf.st_birthtimespec)),
+        buf.st_blksize.as_int().as_i64(),
+        buf.st_blocks,
+    )
+}
+
+@safe
+pub fn stat(path: String) -> Result[StatResult, Error] {
+    let cpath = CString.from_string(path);
+    let buf = StatBuf.new();
+    let ret = Libc.stat(cpath.as_ptr(), &buf);
+    if ret < 0.as_i32() {
+        Err(Error.with_message(Std.Arch.Errno.get_errno(), path))
+    } else {
+        Ok(build_result(buf))
+    }
+}
+
+@safe
+pub fn fstat(fd: I32) -> Result[StatResult, Error] {
+    let buf = StatBuf.new();
+    let ret = Libc.fstat(fd, &buf);
+    if ret < 0.as_i32() {
+        Err(Error.new(Std.Arch.Errno.get_errno()))
+    } else {
+        Ok(build_result(buf))
+    }
+}
+
+@safe
+pub fn lstat(path: String) -> Result[StatResult, Error] {
+    let cpath = CString.from_string(path);
+    let buf = StatBuf.new();
+    let ret = Libc.lstat(cpath.as_ptr(), &buf);
+    if ret < 0.as_i32() {
+        Err(Error.with_message(Std.Arch.Errno.get_errno(), path))
+    } else {
+        Ok(build_result(buf))
+    }
+}
+
+}

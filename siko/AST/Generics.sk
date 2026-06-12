@@ -1,0 +1,31 @@
+module Siko.AST.Generics {
+
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.Type
+import Siko.Interner as I
+
+@derive(Clone)
+pub struct TypeArgDefs {
+    pub type_args: Vec[Identifier],
+    pub bounds: Vec[Bound],
+
+    pub fn type_params(tad: TypeArgDefs) -> Vec[I.String] {
+        tad.type_args.iter().map(|id| id.name).collect()
+    }
+}
+
+@derive(Clone, PartialEq, Eq)
+pub struct Bound {
+    pub trait_name: Name,
+    pub type_args: Vec[Name],
+    pub constraints: Vec[Constraint],
+}
+
+@derive(Clone, PartialEq, Eq)
+pub struct Constraint {
+    pub lhs: Identifier,
+    pub rhs: TypeDef,
+}
+
+}

@@ -1,0 +1,273 @@
+@prelude
+module Std.Int {
+
+import Std.Intrinsics
+
+@builtin
+pub struct Int {
+    @builtin
+    @op(eq)
+    pub fn eq(a: Int, b: Int) -> Bool
+
+    @builtin
+    @op(lt)
+    pub fn lt(a: Int, b: Int) -> Bool
+
+    @builtin
+    @op(add)
+    pub fn add(a: Int, b: Int) -> Int
+
+    @builtin
+    @op(sub)
+    pub fn sub(a: Int, b: Int) -> Int
+
+    @builtin
+    @op(mul)
+    pub fn mul(a: Int, b: Int) -> Int
+
+    @builtin
+    @op(div)
+    pub fn div(a: Int, b: Int) -> Int
+
+    @builtin
+    @op(neg)
+    pub fn neg(a: Int) -> Int
+
+    @builtin
+    @op(mod)
+    pub fn mod(a: Int, b: Int) -> Int
+
+    @builtin
+    @op(band)
+    pub fn band(a: Int, b: Int) -> Int
+
+    @builtin
+    @op(bor)
+    pub fn bor(a: Int, b: Int) -> Int
+
+    @builtin
+    @op(xor)
+    pub fn bxor(a: Int, b: Int) -> Int
+
+    @builtin
+    @op(not)
+    pub fn not(a: Int) -> Int
+
+    @builtin
+    @op(shl)
+    pub fn shl(a: Int, n: Int) -> Int
+
+    @builtin
+    @op(shr)
+    pub fn shr(a: Int, n: Int) -> Int
+
+    @safe
+    pub fn as_i8(a: Int) -> I8 {
+        transmute(a)
+    }
+
+    @safe
+    pub fn as_i16(a: Int) -> I16 {
+        transmute(a)
+    }
+
+    @safe
+    pub fn as_i32(a: Int) -> I32 {
+        transmute(a)
+    }
+
+    @safe
+    pub fn as_i64(a: Int) -> I64 {
+        transmute(a)
+    }
+
+    @safe
+    pub fn as_u8(a: Int) -> U8 {
+        transmute(a)
+    }
+
+    @safe
+    pub fn as_u16(a: Int) -> U16 {
+        transmute(a)
+    }
+
+    @safe
+    pub fn as_u32(a: Int) -> U32 {
+        transmute(a)
+    }
+
+    @safe
+    pub fn as_u64(a: Int) -> U64 {
+        transmute(a)
+    }
+
+    pub fn saturating_sub(a: Int, b: Int) -> Int {
+        if a > b { a - b } else { 0 }
+    }
+}
+
+instance PartialEq[Int] {
+    fn eq(a: Int, b: Int) -> Bool {
+        a.eq(b)
+    }
+}
+
+instance Eq[Int] {}
+
+instance PartialOrd[Int] {
+    fn partial_cmp(a: Int, b: Int) -> Option[Ordering] {
+        if a.eq(b) {
+            Some(Ordering.Equal)
+        } else {
+            if a.lt(b) {
+                Some(Ordering.Less)
+            } else {
+                Some(Ordering.Greater)
+            }
+        }
+    }
+}
+
+instance Ord[Int] {
+    fn cmp(a: Int, b: Int) -> Ordering {
+        if a.eq(b) {
+            Ordering.Equal
+        } else {
+            if a.lt(b) {
+                Ordering.Less
+            } else {
+                Ordering.Greater
+            }
+        }
+    }
+}
+
+instance Add[Int] {
+    type Output = Int
+    fn add(a: Int, b: Int) -> Int {
+        a.add(b)
+    }
+}
+
+instance Sub[Int] {
+    type Output = Int
+    fn sub(a: Int, b: Int) -> Int {
+        a.sub(b)
+    }
+}
+
+instance Mul[Int] {
+    type Output = Int
+    fn mul(a: Int, b: Int) -> Int {
+        a.mul(b)
+    }
+}
+
+instance Div[Int] {
+    type Output = Int
+    fn div(a: Int, b: Int) -> Int {
+        a.div(b)
+    }
+}
+
+instance Mod[Int] {
+    type Output = Int
+    fn mod(a: Int, b: Int) -> Int {
+        a.mod(b)
+    }
+}
+
+instance Neg[Int] {
+    type Output = Int
+    fn neg(a: Int) -> Int {
+        a.neg()
+    }
+}
+
+instance BitAnd[Int] {
+    type Output = Int
+    fn band(a: Int, b: Int) -> Int {
+        a.band(b)
+    }
+}
+
+instance BitOr[Int] {
+    type Output = Int
+    fn bor(a: Int, b: Int) -> Int {
+        a.bor(b)
+    }
+}
+
+instance BitXor[Int] {
+    type Output = Int
+    fn bxor(a: Int, b: Int) -> Int {
+        a.bxor(b)
+    }
+}
+
+instance Shl[Int] {
+    type Output = Int
+    fn shl(a: Int, b: Int) -> Int {
+        a.shl(b)
+    }
+}
+
+instance Shr[Int] {
+    type Output = Int
+    fn shr(a: Int, b: Int) -> Int {
+        a.shr(b)
+    }
+}
+
+instance BNot[Int] {
+    type Output = Int
+    fn bnot(a: Int) -> Int {
+        a.not()
+    }
+}
+
+instance ToString[Int] {
+    fn to_string(a: Int) -> String {
+        int_to_string(a)
+    }
+}
+
+instance Clone[Int] {
+    fn clone(a: Int) -> Int {
+        a
+    }
+}
+
+fn int_to_string(v: Int) -> String {
+    if v == 0 {
+        return "0";
+    }
+
+    let is_negative = v < 0;
+    let temp = if is_negative { 0 - v } else { v };
+
+    // Create a vector to collect the ASCII bytes
+    let bytes = Vec.new();
+    let curr = temp;
+
+    // Extract digits from right to left
+    while curr > 0 {
+        let remainder = curr.mod(10);
+        // Convert digit to its U8 ASCII representation ('0' is 48)
+        bytes.push((remainder + 48).as_u8());
+        curr = curr / 10;
+    }
+
+    // Append the negative sign if necessary
+    if is_negative {
+        bytes.push(45.as_u8()); // '-' is 45
+    }
+
+    // The digits are currently backward, reverse the vector
+    bytes.reverse();
+
+    // Use String's conversion mechanism that accepts a Slice
+    String.from_slice(bytes.slice())
+}
+
+}

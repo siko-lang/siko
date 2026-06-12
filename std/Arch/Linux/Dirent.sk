@@ -1,0 +1,28 @@
+module Std.Arch.Dirent {
+
+import Std.Array
+import Std.Libc.String
+
+pub struct Dirent {
+    pub d_ino: U64,
+    pub d_off: I64,
+    pub d_reclen: U16,
+    pub d_type: U8,
+    pub d_name: [U8; 256],
+
+    pub fn inode(d: Dirent) -> U64 {
+        d.d_ino
+    }
+
+    pub fn entry_type(d: Dirent) -> U8 {
+        d.d_type
+    }
+
+    @unsafe
+    pub fn name(d: Dirent) -> String {
+        let ptr = Std.Array.as_ptr(&d.d_name);
+        from_cstring(ptr)
+    }
+}
+
+}

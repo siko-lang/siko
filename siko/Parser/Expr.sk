@@ -1,0 +1,773 @@
+module Siko.Parser.Expr {
+
+import Siko.AST.Expr
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.Pattern
+import Siko.AST.Statement as S
+import Siko.Constants.Builtins as B
+import Siko.Interner as I
+import Siko.Parser.Parser
+import Siko.Parser.Token
+import Siko.Parser.Type
+
+pub trait ExprParser[T] {
+    fn parse_expr(p: T) -> Result[Expr, ParseError]
+    fn parse_range_expr(p: T) -> Result[Expr, ParseError]
+    fn parse_or_expr(p: T) -> Result[Expr, ParseError]
+    fn parse_and_expr(p: T) -> Result[Expr, ParseError]
+    fn parse_bitor_expr(p: T) -> Result[Expr, ParseError]
+    fn parse_bitxor_expr(p: T) -> Result[Expr, ParseError]
+    fn parse_bitand_expr(p: T) -> Result[Expr, ParseError]
+    fn parse_cmp_expr(p: T) -> Result[Expr, ParseError]
+    fn parse_shift_expr(p: T) -> Result[Expr, ParseError]
+    fn parse_add_expr(p: T) -> Result[Expr, ParseError]
+    fn parse_mul_expr(p: T) -> Result[Expr, ParseError]
+    fn parse_unary_expr(p: T) -> Result[Expr, ParseError]
+    fn parse_call_expr(p: T) -> Result[Expr, ParseError]
+    fn parse_primary(p: T) -> Result[Expr, ParseError]
+    fn parse_if_expr(p: T) -> Result[Expr, ParseError]
+    fn parse_with_expr(p: T) -> Result[Expr, ParseError]
+    fn parse_handler_selection(p: T) -> Result[HandlerSelection, ParseError]
+    fn parse_block_expr(p: T) -> Result[Expr, ParseError]
+    fn parse_match_expr(p: T) -> Result[Expr, ParseError]
+    fn parse_pattern(p: T) -> Result[Pattern, ParseError]
+    fn parse_statement(p: T) -> Result[S.Statement, ParseError]
+}
+
+instance ExprParser[Parser] {
+    fn parse_expr(parser: Parser) -> Result[Expr, ParseError] {
+        parser.parse_range_expr()
+    }
+
+    fn parse_range_expr(parser: Parser) -> Result[Expr, ParseError] {
+        let lhs = parser.parse_or_expr()?;
+        if parser.peek() == TokenKind.DotDot {
+            let location = lhs.location;
+            parser.advance();
+            let rhs = parser.parse_or_expr()?;
+            let callee = Expr(ExprKind.Name(Name.Unresolved(Identifier(B.get_range_range(), location))), location, None);
+            return Ok(Expr(ExprKind.Call(CallInfo(callee, [lhs, rhs], Vec.new())), location, None));
+        }
+        Ok(lhs)
+    }
+
+    fn parse_or_expr(parser: Parser) -> Result[Expr, ParseError] {
+        let lhs = parser.parse_and_expr()?;
+        while parser.peek() == TokenKind.PipePipe {
+            let location = lhs.location;
+            parser.advance();
+            let rhs = parser.parse_and_expr()?;
+            lhs = Expr(ExprKind.BinaryOp(BinaryOp.Or, lhs, rhs), location, None);
+        }
+        Ok(lhs)
+    }
+
+    fn parse_and_expr(parser: Parser) -> Result[Expr, ParseError] {
+        let lhs = parser.parse_bitor_expr()?;
+        while parser.peek() == TokenKind.AmpAmp {
+            let location = lhs.location;
+            parser.advance();
+            let rhs = parser.parse_bitor_expr()?;
+            lhs = Expr(ExprKind.BinaryOp(BinaryOp.And, lhs, rhs), location, None);
+        }
+        Ok(lhs)
+    }
+
+    fn parse_bitor_expr(parser: Parser) -> Result[Expr, ParseError] {
+        let lhs = parser.parse_bitxor_expr()?;
+        loop {
+            let op = match parser.peek() {
+                TokenKind.Pipe => BinaryOp.BitOr
+                _              => { break; }
+            };
+            let location = lhs.location;
+            parser.advance();
+            let rhs = parser.parse_bitxor_expr()?;
+            lhs = Expr(ExprKind.BinaryOp(op, lhs, rhs), location, None);
+        }
+        Ok(lhs)
+    }
+
+    fn parse_bitxor_expr(parser: Parser) -> Result[Expr, ParseError] {
+        let lhs = parser.parse_bitand_expr()?;
+        loop {
+            let op = match parser.peek() {
+                TokenKind.Caret => BinaryOp.Xor
+                _               => { break; }
+            };
+            let location = lhs.location;
+            parser.advance();
+            let rhs = parser.parse_bitand_expr()?;
+            lhs = Expr(ExprKind.BinaryOp(op, lhs, rhs), location, None);
+        }
+        Ok(lhs)
+    }
+
+    fn parse_bitand_expr(parser: Parser) -> Result[Expr, ParseError] {
+        let lhs = parser.parse_cmp_expr()?;
+        loop {
+            let op = match parser.peek() {
+                TokenKind.Amp => BinaryOp.BitAnd
+                _             => { break; }
+            };
+            let location = lhs.location;
+            parser.advance();
+            let rhs = parser.parse_cmp_expr()?;
+            lhs = Expr(ExprKind.BinaryOp(op, lhs, rhs), location, None);
+        }
+        Ok(lhs)
+    }
+
+    fn parse_cmp_expr(parser: Parser) -> Result[Expr, ParseError] {
+        let lhs = parser.parse_shift_expr()?;
+        loop {
+            let op = match parser.peek() {
+                TokenKind.EqEq   => BinaryOp.Eq
+                TokenKind.BangEq => BinaryOp.NotEq
+                TokenKind.Lt     => BinaryOp.Less
+                TokenKind.Gt     => BinaryOp.Greater
+                TokenKind.LtEq   => BinaryOp.LessEq
+                TokenKind.GtEq   => BinaryOp.GreaterEq
+                _                => { break; }
+            };
+            let location = lhs.location;
+            parser.advance();
+            let rhs = parser.parse_shift_expr()?;
+            lhs = Expr(ExprKind.BinaryOp(op, lhs, rhs), location, None);
+        }
+        Ok(lhs)
+    }
+
+    fn parse_shift_expr(parser: Parser) -> Result[Expr, ParseError] {
+        let lhs = parser.parse_add_expr()?;
+        loop {
+            let op = match parser.peek() {
+                TokenKind.LtLt => BinaryOp.Shl
+                TokenKind.GtGt => BinaryOp.Shr
+                _              => { break; }
+            };
+            let location = lhs.location;
+            parser.advance();
+            let rhs = parser.parse_add_expr()?;
+            lhs = Expr(ExprKind.BinaryOp(op, lhs, rhs), location, None);
+        }
+        Ok(lhs)
+    }
+
+    fn parse_add_expr(parser: Parser) -> Result[Expr, ParseError] {
+        let lhs = parser.parse_mul_expr()?;
+        loop {
+            let op = match parser.peek() {
+                TokenKind.Plus  => BinaryOp.Add
+                TokenKind.Minus => BinaryOp.Sub
+                _               => { break; }
+            };
+            let location = lhs.location;
+            parser.advance();
+            let rhs = parser.parse_mul_expr()?;
+            lhs = Expr(ExprKind.BinaryOp(op, lhs, rhs), location, None);
+        }
+        Ok(lhs)
+    }
+
+    fn parse_mul_expr(parser: Parser) -> Result[Expr, ParseError] {
+        let lhs = parser.parse_unary_expr()?;
+        loop {
+            let op = match parser.peek() {
+                TokenKind.Star    => BinaryOp.Mul
+                TokenKind.Slash   => BinaryOp.Div
+                TokenKind.Percent => BinaryOp.Mod
+                _                 => { break; }
+            };
+            let location = lhs.location;
+            parser.advance();
+            let rhs = parser.parse_unary_expr()?;
+            lhs = Expr(ExprKind.BinaryOp(op, lhs, rhs), location, None);
+        }
+        Ok(lhs)
+    }
+
+    fn parse_unary_expr(parser: Parser) -> Result[Expr, ParseError] {
+        let start = parser.cur_pos();
+        match parser.peek() {
+            TokenKind.Minus => {
+                parser.advance();
+                let operand = parser.parse_unary_expr()?;
+                let location = parser.loc(start, parser.cur_pos());
+                Ok(Expr(ExprKind.UnaryOp(UnaryOp.Neg, operand), location, None))
+            }
+            TokenKind.Bang => {
+                parser.advance();
+                let operand = parser.parse_unary_expr()?;
+                let location = parser.loc(start, parser.cur_pos());
+                Ok(Expr(ExprKind.UnaryOp(UnaryOp.Not, operand), location, None))
+            }
+            TokenKind.Tilde => {
+                parser.advance();
+                let operand = parser.parse_unary_expr()?;
+                let location = parser.loc(start, parser.cur_pos());
+                Ok(Expr(ExprKind.UnaryOp(UnaryOp.BNot, operand), location, None))
+            }
+            TokenKind.Star => {
+                parser.advance();
+                let operand = parser.parse_unary_expr()?;
+                let location = parser.loc(start, parser.cur_pos());
+                Ok(Expr(ExprKind.Deref(operand), location, None))
+            }
+            TokenKind.Amp => {
+                parser.advance();
+                let operand = parser.parse_unary_expr()?;
+                let location = parser.loc(start, parser.cur_pos());
+                Ok(Expr(ExprKind.AddrOf(operand), location, None))
+            }
+            _ => parser.parse_call_expr()
+        }
+    }
+
+    fn parse_call_expr(parser: Parser) -> Result[Expr, ParseError] {
+        let expr = parser.parse_primary()?;
+        match expr.kind {
+            ExprKind.Block(_) => return Ok(expr),
+            _ => (),
+        }
+        loop {
+            if parser.peek() == TokenKind.LParen {
+                let location = expr.location;
+                parser.advance();
+                let args = Vec.new();
+                let named_args = Vec.new();
+                while parser.peek() != TokenKind.RParen && parser.peek() != TokenKind.Eof {
+                    match parser.peek() {
+                        TokenKind.VarIdentifier(name) if parser.peek_next() == TokenKind.Colon => {
+                            let index = args.len();
+                            parser.advance();
+                            parser.advance();
+                            args.push(parser.parse_expr()?);
+                            named_args.push(NamedArgument(index, name));
+                        }
+                        _ => {
+                            args.push(parser.parse_expr()?);
+                        }
+                    }
+                    if parser.peek() == TokenKind.Comma {
+                        parser.advance();
+                    }
+                }
+                parser.expect(TokenKind.RParen)?;
+                expr = Expr(ExprKind.Call(CallInfo(expr, args, named_args)), location, None);
+            } else if parser.peek() == TokenKind.Dot {
+                parser.advance();
+                match parser.peek() {
+                    TokenKind.VarIdentifier(_) => {
+                        let start = parser.cur_pos();
+                        let ident = parser.expect_var_ident()?;
+                        if parser.peek() == TokenKind.LParen {
+                            parser.advance();
+                            let args = Vec.new();
+                            while parser.peek() != TokenKind.RParen && parser.peek() != TokenKind.Eof {
+                                args.push(parser.parse_expr()?);
+                                if parser.peek() == TokenKind.Comma {
+                                    parser.advance();
+                                }
+                            }
+                            parser.expect(TokenKind.RParen)?;
+                            let location = parser.loc(start, parser.cur_pos());
+                            expr = Expr(ExprKind.MethodCall(MethodCallInfo(expr, ident, args, Vec.new())), location, None);
+                        } else {
+                            let location = parser.loc(start, parser.cur_pos());
+                            expr = Expr(ExprKind.FieldAccess(expr, ident), location, None);
+                        }
+                    }
+                    TokenKind.IntLiteral(n) => {
+                        parser.advance();
+                        let location = expr.location;
+                        let index = match String.parse_int(I.resolve(n), 10) {
+                            Ok(i)  => i
+                            Err(_) => return Err(ParseError.new("invalid tuple index", parser.cur_pos()))
+                        };
+                        expr = Expr(ExprKind.TupleIndex(expr, index), location, None);
+                    }
+                    _ => return Err(ParseError.new("expected field or tuple index", parser.cur_pos()))
+                }
+            } else if parser.peek() == TokenKind.LBracket {
+                let location = expr.location;
+                parser.advance();
+                let idx = parser.parse_expr()?;
+                parser.expect(TokenKind.RBracket)?;
+                expr = Expr(ExprKind.Index(expr, idx), location, None);
+            } else if parser.peek() == TokenKind.Question {
+                let location = expr.location;
+                parser.advance();
+                expr = Expr(ExprKind.Try(expr), location, None);
+            } else {
+                break;
+            }
+        }
+        Ok(expr)
+    }
+
+    fn parse_primary(parser: Parser) -> Result[Expr, ParseError] {
+        let start = parser.cur_pos();
+        match parser.peek() {
+            TokenKind.IntLiteral(s) => {
+                let end = parser.current().end;
+                parser.advance();
+                let location = parser.loc(start, end);
+                Ok(Expr(ExprKind.IntLiteral(I.resolve(s)), location, None))
+            }
+            TokenKind.CharLiteral(b) => {
+                let end = parser.current().end;
+                parser.advance();
+                let location = parser.loc(start, end);
+                Ok(Expr(ExprKind.CharLiteral(b), location, None))
+            }
+            TokenKind.StringLiteral(s) => {
+                let end = parser.current().end;
+                parser.advance();
+                let location = parser.loc(start, end);
+                Ok(Expr(ExprKind.StringLiteral(I.resolve(s)), location, None))
+            }
+            TokenKind.KwReturn => {
+                parser.advance();
+                let inner = match parser.peek() {
+                    TokenKind.Semicolon | TokenKind.RBrace | TokenKind.Eof => {
+                        let location = parser.loc(start, parser.cur_pos());
+                        Expr(ExprKind.Tuple(Vec.new()), location, None)
+                    }
+                    _ => parser.parse_expr()?
+                };
+                let location = parser.loc(start, parser.cur_pos());
+                Ok(Expr(ExprKind.Return(inner), location, None))
+            }
+            TokenKind.KwIf    => parser.parse_if_expr()
+            TokenKind.KwMatch => parser.parse_match_expr()
+            TokenKind.LBrace  => parser.parse_block_expr()
+            TokenKind.LBracket => {
+                parser.advance();
+                let items = Vec.new();
+                while parser.peek() != TokenKind.RBracket && parser.peek() != TokenKind.Eof {
+                    items.push(parser.parse_expr()?);
+                    if parser.peek() == TokenKind.Comma {
+                        parser.advance();
+                    } else {
+                        break;
+                    }
+                }
+                parser.expect(TokenKind.RBracket)?;
+                let location = parser.loc(start, parser.cur_pos());
+                Ok(Expr(ExprKind.List(items), location, None))
+            }
+            TokenKind.KwWith  => parser.parse_with_expr()
+            TokenKind.LParen  => {
+                parser.advance();
+                if parser.peek() == TokenKind.RParen {
+                    parser.advance();
+                    let location = parser.loc(start, parser.cur_pos());
+                    return Ok(Expr(ExprKind.Tuple(Vec.new()), location, None));
+                }
+                let first = parser.parse_expr()?;
+                if parser.peek() == TokenKind.RParen {
+                    parser.advance();
+                    let location = parser.loc(start, parser.cur_pos());
+                    return Ok(Expr(ExprKind.Paren(first), location, None));
+                }
+                let exprs = [first];
+                while parser.peek() == TokenKind.Comma {
+                    parser.advance();
+                    if parser.peek() == TokenKind.RParen {
+                        break;
+                    }
+                    exprs.push(parser.parse_expr()?);
+                }
+                parser.expect(TokenKind.RParen)?;
+                let location = parser.loc(start, parser.cur_pos());
+                Ok(Expr(ExprKind.Tuple(exprs), location, None))
+            }
+            TokenKind.PipePipe => {
+                parser.advance();
+                let body = parser.parse_expr()?;
+                let location = parser.loc(start, parser.cur_pos());
+                Ok(Expr(ExprKind.UnresolvedLambda(Vec.new(), body), location, None))
+            }
+            TokenKind.Pipe => {
+                parser.advance();
+                let args = Vec.new();
+                while parser.peek() != TokenKind.Pipe && parser.peek() != TokenKind.Eof {
+                    args.push(parser.parse_pattern()?);
+                    if parser.peek() == TokenKind.Comma {
+                        parser.advance();
+                    }
+                }
+                parser.expect(TokenKind.Pipe)?;
+                let body = parser.parse_expr()?;
+                let location = parser.loc(start, parser.cur_pos());
+                Ok(Expr(ExprKind.UnresolvedLambda(args, body), location, None))
+            }
+            TokenKind.VarIdentifier(_) => {
+                let ident = parser.expect_var_ident()?;
+                let location = ident.location;
+                Ok(Expr(ExprKind.Var(VariableName.Unresolved(ident)), location, None))
+            }
+            TokenKind.TypeIdentifier(_) => {
+                let first = parser.parse_expr_dotted_name()?;
+                let location = first.location;
+                Ok(Expr(ExprKind.Name(Name.Unresolved(first)), location, None))
+            }
+            TokenKind.KwSizeOf => {
+                parser.advance();
+                parser.expect(TokenKind.LParen)?;
+                let ty = parser.parse_type_def()?;
+                parser.expect(TokenKind.RParen)?;
+                let location = parser.loc(start, parser.cur_pos());
+                Ok(Expr(ExprKind.SizeOf(ty), location, None))
+            }
+            other => Err(ParseError.new("unexpected token in expression: ${other}", start))
+        }
+    }
+
+    fn parse_if_expr(parser: Parser) -> Result[Expr, ParseError] {
+        let start = parser.cur_pos();
+        parser.expect(TokenKind.KwIf)?;
+        if parser.peek() == TokenKind.KwLet {
+            parser.advance();
+            let pattern = parser.parse_pattern()?;
+            parser.expect(TokenKind.Assign)?;
+            let cond = parser.parse_expr()?;
+            let then = parser.parse_block_expr()?;
+            let else_ = if parser.peek() == TokenKind.KwElse {
+                parser.advance();
+                if parser.peek() == TokenKind.KwIf {
+                    Some(parser.parse_if_expr()?)
+                } else {
+                    Some(parser.parse_block_expr()?)
+                }
+            } else {
+                None
+            };
+            let location = parser.loc(start, parser.cur_pos());
+            Ok(Expr(ExprKind.IfLet(pattern, cond, then, else_), location, None))
+        } else {
+            let cond = parser.parse_expr()?;
+            let then = parser.parse_block_expr()?;
+            let else_ = if parser.peek() == TokenKind.KwElse {
+                parser.advance();
+                if parser.peek() == TokenKind.KwIf {
+                    Some(parser.parse_if_expr()?)
+                } else {
+                    Some(parser.parse_block_expr()?)
+                }
+            } else {
+                None
+            };
+            let location = parser.loc(start, parser.cur_pos());
+            Ok(Expr(ExprKind.If(cond, then, else_), location, None))
+        }
+    }
+
+    fn parse_with_expr(parser: Parser) -> Result[Expr, ParseError] {
+        let start = parser.cur_pos();
+        parser.expect(TokenKind.KwWith)?;
+        let selections = Vec.new();
+        while parser.peek() != TokenKind.LBrace && parser.peek() != TokenKind.Eof {
+            selections.push(parser.parse_handler_selection()?);
+            if parser.peek() == TokenKind.Comma {
+                parser.advance();
+            }
+        }
+        let body = parser.parse_block_expr()?;
+        let location = parser.loc(start, parser.cur_pos());
+        Ok(Expr(ExprKind.With(WithInfo(selections, body)), location, None))
+    }
+
+    fn parse_handler_selection(parser: Parser) -> Result[HandlerSelection, ParseError] {
+        let method = parser.parse_expr_dotted_name()?;
+        parser.expect(TokenKind.Assign)?;
+        let handler = parser.parse_expr_dotted_name()?;
+        Ok(HandlerSelection.Unresolved(method, handler))
+    }
+
+    fn parse_block_expr(parser: Parser) -> Result[Expr, ParseError] {
+        let start = parser.cur_pos();
+        parser.expect(TokenKind.LBrace)?;
+        let stmts = Vec.new();
+        while parser.peek() != TokenKind.RBrace && parser.peek() != TokenKind.Eof {
+            stmts.push(parser.parse_statement()?);
+        }
+        parser.expect(TokenKind.RBrace)?;
+        let location = parser.loc(start, parser.cur_pos());
+        Ok(Expr(ExprKind.Block(stmts), location, None))
+    }
+
+    fn parse_match_expr(parser: Parser) -> Result[Expr, ParseError] {
+        let start = parser.cur_pos();
+        parser.expect(TokenKind.KwMatch)?;
+        let scrutinee = parser.parse_expr()?;
+        parser.expect(TokenKind.LBrace)?;
+        let arms = Vec.new();
+        while parser.peek() != TokenKind.RBrace && parser.peek() != TokenKind.Eof {
+            let patterns = Vec.new();
+            loop {
+                let inner = parser.parse_pattern()?;
+                let pattern = if parser.peek() == TokenKind.KwIf {
+                    let location = inner.location;
+                    parser.advance();
+                    let guard = parser.parse_expr()?;
+                    Pattern(PatternKind.Guard(inner, guard, None), location, None)
+                } else if parser.peek() == TokenKind.Colon {
+                    let location = inner.location;
+                    parser.advance();
+                    let ty = parser.parse_type_def()?;
+                    Pattern(PatternKind.Typed(inner, ty), location, None)
+                } else {
+                    inner
+                };
+                patterns.push(pattern);
+                if parser.peek() == TokenKind.Pipe {
+                    parser.advance();
+                } else {
+                    break;
+                }
+            }
+            parser.expect(TokenKind.FatArrow)?;
+            let body = parser.parse_expr()?;
+            for pattern in patterns {
+                arms.push(MatchArm(pattern, body));
+            }
+            if parser.peek() == TokenKind.Comma {
+                parser.advance();
+            }
+        }
+        parser.expect(TokenKind.RBrace)?;
+        let location = parser.loc(start, parser.cur_pos());
+        Ok(Expr(ExprKind.Match(MatchInfo(scrutinee, arms)), location, None))
+    }
+
+    fn parse_pattern(parser: Parser) -> Result[Pattern, ParseError] {
+        let start = parser.cur_pos();
+        match parser.peek() {
+            TokenKind.VarIdentifier(s) => {
+                let end = parser.current().end;
+                parser.advance();
+                let location = parser.loc(start, end);
+                let ident = Identifier.new(s, location);
+                Ok(Pattern(PatternKind.Binding(VariableName.Unresolved(ident)), location, None))
+            }
+            TokenKind.Wildcard => {
+                let end = parser.current().end;
+                parser.advance();
+                let location = parser.loc(start, end);
+                Ok(Pattern(PatternKind.Wildcard, location, None))
+            }
+            TokenKind.TypeIdentifier(_) => {
+                let first = parser.expect_type_ident()?;
+                while parser.peek() == TokenKind.Dot {
+                    parser.advance();
+                    let next = parser.expect_type_ident()?;
+                    first = first.merge(next);
+                }
+                let name = Name.Unresolved(first);
+                let args = if parser.peek() == TokenKind.LParen {
+                    parser.advance();
+                    let pats = Vec.new();
+                    let named_args = Vec.new();
+                    let has_rest = False;
+                    while parser.peek() != TokenKind.RParen && parser.peek() != TokenKind.Eof {
+                        if parser.peek() == TokenKind.DotDot {
+                            parser.advance();
+                            has_rest = True;
+                            break;
+                        }
+                        match parser.peek() {
+                            TokenKind.VarIdentifier(name) if parser.peek_next() == TokenKind.Colon => {
+                                let index = pats.len();
+                                parser.advance();
+                                parser.advance();
+                                pats.push(parser.parse_pattern()?);
+                                named_args.push(NamedPatternArg(index, name));
+                            }
+                            _ => {
+                                pats.push(parser.parse_pattern()?);
+                            }
+                        }
+                        if parser.peek() == TokenKind.Comma {
+                            parser.advance();
+                        }
+                    }
+                    parser.expect(TokenKind.RParen)?;
+                    (pats, named_args, has_rest)
+                } else {
+                    (Vec.new(), Vec.new(), False)
+                };
+                let location = parser.loc(start, parser.cur_pos());
+                Ok(Pattern(PatternKind.Named(NamedPatternInfo(name: name, args: args.0, named_args: args.1, has_rest: args.2)), location, None))
+            }
+            TokenKind.LParen => {
+                parser.advance();
+                if parser.peek() == TokenKind.RParen {
+                    parser.advance();
+                    let location = parser.loc(start, parser.cur_pos());
+                    return Ok(Pattern(PatternKind.Tuple(Vec.new()), location, None));
+                }
+                let first = parser.parse_pattern()?;
+                if parser.peek() == TokenKind.RParen {
+                    parser.advance();
+                    return Ok(first);
+                }
+                let pats = [first];
+                while parser.peek() == TokenKind.Comma {
+                    parser.advance();
+                    if parser.peek() == TokenKind.RParen {
+                        break;
+                    }
+                    pats.push(parser.parse_pattern()?);
+                }
+                parser.expect(TokenKind.RParen)?;
+                let location = parser.loc(start, parser.cur_pos());
+                Ok(Pattern(PatternKind.Tuple(pats), location, None))
+            }
+            TokenKind.StringLiteral(s) => {
+                let end = parser.current().end;
+                parser.advance();
+                let location = parser.loc(start, end);
+                Ok(Pattern(PatternKind.StringLiteral(s), location, None))
+            }
+            TokenKind.IntLiteral(s) => {
+                let end = parser.current().end;
+                parser.advance();
+                let location = parser.loc(start, end);
+                Ok(Pattern(PatternKind.IntLiteral(s), location, None))
+            }
+            TokenKind.CharLiteral(b) => {
+                let end = parser.current().end;
+                parser.advance();
+                let location = parser.loc(start, end);
+                Ok(Pattern(PatternKind.CharLiteral(b), location, None))
+            }
+            other => Err(ParseError.new("unexpected token in pattern: ${other}", start))
+        }
+    }
+
+    fn parse_statement(parser: Parser) -> Result[S.Statement, ParseError] {
+        if parser.peek() == TokenKind.KwIf {
+            let expr = parser.parse_if_expr()?;
+            if parser.peek() == TokenKind.Semicolon {
+                parser.advance();
+                return Ok(S.Expr(expr));
+            }
+            return Ok(S.TrailingExpr(expr));
+        }
+        if parser.peek() == TokenKind.KwMatch {
+            let expr = parser.parse_match_expr()?;
+            if parser.peek() == TokenKind.Semicolon {
+                parser.advance();
+                return Ok(S.Expr(expr));
+            }
+            return Ok(S.TrailingExpr(expr));
+        }
+        if parser.peek() == TokenKind.LBrace {
+            let expr = parser.parse_block_expr()?;
+            if parser.peek() == TokenKind.Semicolon {
+                parser.advance();
+                return Ok(S.Expr(expr));
+            }
+            return Ok(S.TrailingExpr(expr));
+        }
+        if parser.peek() == TokenKind.KwFor {
+            parser.advance();
+            let pattern = parser.parse_pattern()?;
+            parser.expect(TokenKind.KwIn)?;
+            let iterable = parser.parse_expr()?;
+            parser.expect(TokenKind.LBrace)?;
+            let body = Vec.new();
+            while parser.peek() != TokenKind.RBrace && parser.peek() != TokenKind.Eof {
+                body.push(parser.parse_statement()?);
+            }
+            parser.expect(TokenKind.RBrace)?;
+            return Ok(S.ForLoop(pattern, iterable, body));
+        }
+        if parser.peek() == TokenKind.KwWhile {
+            parser.advance();
+            let cond = parser.parse_expr()?;
+            parser.expect(TokenKind.LBrace)?;
+            let body = Vec.new();
+            while parser.peek() != TokenKind.RBrace && parser.peek() != TokenKind.Eof {
+                body.push(parser.parse_statement()?);
+            }
+            parser.expect(TokenKind.RBrace)?;
+            return Ok(S.WhileLoop(cond, body));
+        }
+        if parser.peek() == TokenKind.KwLoop {
+            parser.advance();
+            parser.expect(TokenKind.LBrace)?;
+            let body = Vec.new();
+            while parser.peek() != TokenKind.RBrace && parser.peek() != TokenKind.Eof {
+                body.push(parser.parse_statement()?);
+            }
+            parser.expect(TokenKind.RBrace)?;
+            return Ok(S.Loop(body));
+        }
+        if parser.peek() == TokenKind.KwBreak {
+            parser.advance();
+            if parser.peek() == TokenKind.Semicolon {
+                parser.advance();
+            }
+            return Ok(S.Break);
+        }
+        if parser.peek() == TokenKind.KwContinue {
+            parser.advance();
+            if parser.peek() == TokenKind.Semicolon {
+                parser.advance();
+            }
+            return Ok(S.Continue);
+        }
+        if parser.peek() == TokenKind.KwLet {
+            parser.advance();
+            let pattern = parser.parse_pattern()?;
+            let type_annotation = if parser.peek() == TokenKind.Colon {
+                parser.advance();
+                Some(parser.parse_type_annotation()?)
+            } else {
+                None
+            };
+            parser.expect(TokenKind.Assign)?;
+            let expr = parser.parse_expr()?;
+            if parser.peek() == TokenKind.Semicolon {
+                parser.advance();
+            }
+            return Ok(S.UnresolvedLet(pattern, type_annotation, expr));
+        }
+        let expr = parser.parse_expr()?;
+        if parser.peek() == TokenKind.Assign {
+            parser.advance();
+            let rhs = parser.parse_expr()?;
+            if parser.peek() == TokenKind.Semicolon {
+                parser.advance();
+            }
+            Ok(S.Assign(expr, rhs))
+        } else if parser.peek() == TokenKind.PlusAssign || parser.peek() == TokenKind.MinusAssign || parser.peek() == TokenKind.StarAssign || parser.peek() == TokenKind.SlashAssign {
+            let op = match parser.peek() {
+                TokenKind.PlusAssign  => BinaryOp.Add
+                TokenKind.MinusAssign => BinaryOp.Sub
+                TokenKind.StarAssign  => BinaryOp.Mul
+                TokenKind.SlashAssign => BinaryOp.Div
+                _                     => panic("unreachable")
+            };
+            parser.advance();
+            let rhs = parser.parse_expr()?;
+            if parser.peek() == TokenKind.Semicolon {
+                parser.advance();
+            }
+            let location = expr.location;
+            let binop = Expr(ExprKind.BinaryOp(op, expr, rhs), location, None);
+            Ok(S.Assign(expr, binop))
+        } else if parser.peek() == TokenKind.Semicolon {
+            parser.advance();
+            Ok(S.Expr(expr))
+        } else {
+            Ok(S.TrailingExpr(expr))
+        }
+    }
+}
+
+}

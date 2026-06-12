@@ -1,0 +1,89 @@
+module Siko.Parser.Module {
+
+import Siko.AST.Module
+import Siko.AST.Program
+import Siko.Parser.Annotations
+import Siko.Parser.Data
+import Siko.Parser.Effect
+import Siko.Parser.Function
+import Siko.Parser.Globals
+import Siko.Parser.Implicits
+import Siko.Parser.Parser
+import Siko.Parser.Token
+import Siko.Parser.Traits
+
+pub trait ModuleParser[T] {
+    fn parse_program(p: T) -> Result[Program, ParseError]
+    fn parse_module(p: T) -> Result[Module, ParseError]
+    fn parse_module_item(p: T) -> Result[ModuleItem, ParseError]
+    fn parse_import(p: T) -> Result[ImportDef, ParseError]
+}
+
+instance ModuleParser[Parser] {
+    fn parse_program(parser: Parser) -> Result[Program, ParseError] {
+        let modules = Vec.new();
+        while parser.peek() != TokenKind.Eof {
+            modules.push(parser.parse_module()?);
+        }
+        Ok(Program(modules))
+    }
+
+    fn parse_module(parser: Parser) -> Result[Module, ParseError] {
+        let annotations = parser.parse_annotations(False)?;
+        parser.expect(TokenKind.KwModule)?;
+        let name = parser.parse_dotted_name()?;
+        parser.expect(TokenKind.LBrace)?;
+        let items = Vec.new();
+        while parser.peek() != TokenKind.RBrace && parser.peek() != TokenKind.Eof {
+            items.push(parser.parse_module_item()?);
+        }
+        parser.expect(TokenKind.RBrace)?;
+        Ok(Module(annotations, name, items))
+    }
+
+    fn parse_module_item(parser: Parser) -> Result[ModuleItem, ParseError] {
+        let annotations = parser.parse_annotations(True)?;
+        let is_pub = if parser.peek() == TokenKind.KwPub {
+            parser.advance();
+            True
+        } else {
+            False
+        };
+        match parser.peek() {
+            TokenKind.KwImport => {
+                if is_pub {
+                    return Err(ParseError.new("import cannot be pub", parser.cur_pos()));
+                }
+                Ok(ModuleItem.Import(parser.parse_import()?))
+            }
+            TokenKind.KwStruct => Ok(ModuleItem.Struct(parser.parse_struct_def(annotations, is_pub)?))
+            TokenKind.KwEnum => Ok(ModuleItem.Enum(parser.parse_enum_def(annotations, is_pub)?))
+            TokenKind.KwTrait => Ok(ModuleItem.Trait(parser.parse_trait_def(annotations, is_pub)?))
+            TokenKind.KwInstance => Ok(ModuleItem.Instance(parser.parse_instance_def(annotations, is_pub)?))
+            TokenKind.KwFn => Ok(ModuleItem.Function(parser.parse_fn_def(annotations, is_pub)?))
+            TokenKind.KwEffect => Ok(ModuleItem.Effect(parser.parse_effect_def(annotations, is_pub)?))
+            TokenKind.KwImplicit => Ok(ModuleItem.Implicit(parser.parse_implicit_def(is_pub)?))
+            TokenKind.KwLet => Ok(ModuleItem.Global(parser.parse_global_def(annotations, is_pub)?))
+            other => Err(ParseError.new("unexpected token in module: ${other}", parser.cur_pos()))
+        }
+    }
+
+    fn parse_import(parser: Parser) -> Result[ImportDef, ParseError] {
+        parser.expect(TokenKind.KwImport)?;
+        let module_name = parser.parse_dotted_name()?;
+        let alias = if parser.peek() == TokenKind.KwAs {
+            parser.advance();
+            Some(parser.expect_type_ident()?)
+        } else {
+            None
+        };
+        Ok(ImportDef(
+            module_name: module_name,
+            alias: alias,
+            is_implicit: False,
+            used: False,
+        ))
+    }
+}
+
+}

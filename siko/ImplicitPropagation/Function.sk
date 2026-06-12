@@ -1,0 +1,228 @@
+module Siko.ImplicitPropagation.Function {
+
+import Std.Map
+import Std.Set
+import Siko.AST.Data
+import Siko.AST.Expr
+import Siko.AST.Statement as S
+import Siko.AST.Function
+import Siko.AST.Identifier
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.HIR.Program
+import Siko.ImplicitPropagation.Rewriter
+import Siko.ImplicitPropagation.Util
+import Siko.Normalizer
+import Siko.Interner as I
+import Siko.Location
+
+fn rewrite_function(
+    func: FunctionDef,
+    fn_implicits: Vec[String],
+    ctx_struct_map: Map[Vec[String], QualifiedName],
+    fn_implicit_ctx: Map[String, Vec[String]],
+    implicit_types: Map[String, TypeDef],
+    is_entrypoint: Bool,
+    div_fns: Set[QualifiedName],
+) -> FunctionDef {
+    let loc = func.name.location.clone();
+
+    if is_entrypoint {
+        let zero_qname = ctx_struct_map.get(fn_implicits).unwrap().clone();
+        let zero_ty = named_ty(zero_qname.name());
+        let ctx_local = func.var_allocator.allocate_user(I.intern("_ctx"));
+        let ctx_local_expr = typed_var_expr(ctx_local, Some(zero_ty.clone()), loc);
+        let ctor_expr = Expr(
+            ExprKind.FunctionCall(
+                FunctionCallInfo(
+                    zero_qname,
+                    FunctionKind.StructCtor,
+                    [],
+                    WitnessInfo.new(),
+                    Vec.new(),
+                )
+            ),
+            loc.clone(),
+            Some(zero_ty),
+        );
+        if let Some(body) = func.body {
+            let rewriter = Rewriter(
+                Map.new(),
+                fn_implicit_ctx,
+                ctx_struct_map,
+                implicit_types,
+                func.var_allocator,
+                fn_implicits.clone(),
+                Some(ctx_local_expr),
+                Map.new(),
+            );
+            let body_rw = rewriter.rewrite_expr(body);
+            let let_stmt = S.Statement.Let(S.LetInfo(ctx_local, None, ctor_expr));
+            let new_body = match body_rw.kind {
+                ExprKind.Block(stmts) => {
+                    stmts.insert(0, let_stmt);
+                    Expr(ExprKind.Block(stmts), loc, body_rw.ty)
+                }
+                _ => {
+                    let ty = body_rw.ty.clone();
+                    Expr(
+                        ExprKind.Block([let_stmt, S.Statement.TrailingExpr(body_rw)]),
+                        loc,
+                        ty,
+                    )
+                }
+            };
+            func.body = Some(new_body);
+        }
+        normalize_function(func, div_fns);
+        return func;
+    }
+
+    let ctx_struct_qname = ctx_struct_map.get(fn_implicits).unwrap().clone();
+    let ctx_struct_ty = named_ty(ctx_struct_qname.name());
+
+    let ctx_param = func.var_allocator.allocate_user(I.intern("_ctx"));
+    func.args.insert(
+        0,
+        FunctionArg(ctx_param.clone(), ctx_struct_ty.clone(), None),
+    );
+    if let FunctionDefKind.Closure(n) = func.kind {
+        func.kind = FunctionDefKind.Closure(n + 1);
+    }
+
+    let ctx_param_expr = typed_var_expr(ctx_param, Some(ctx_struct_ty.clone()), loc);
+
+    let initial_implicits: Map[String, Expr] = Map.new();
+    for imp in fn_implicits {
+        let field = ctx_field_name(imp);
+        let wrapper_ty = named_ty(wrapper_struct_name(imp));
+        let ctx_var_expr = typed_var_expr(ctx_param, Some(ctx_struct_ty.clone()), loc);
+        let field_expr = typed_field_expr(ctx_var_expr, field, Some(wrapper_ty), loc);
+        initial_implicits.insert(imp.clone(), field_expr);
+    }
+
+    if let Some(body) = func.body {
+        let rewriter = Rewriter(
+            initial_implicits,
+            fn_implicit_ctx,
+            ctx_struct_map,
+            implicit_types,
+            func.var_allocator,
+            fn_implicits.clone(),
+            Some(ctx_param_expr),
+            Map.new(),
+        );
+        func.body = Some(rewriter.rewrite_expr(body));
+    }
+
+    normalize_function(func, div_fns);
+    func
+}
+
+pub fn propagate_implicits(program: Program) {
+    let implicit_types: Map[String, TypeDef] = program
+        .implicits
+        .iter()
+        .map(|(k, v)| (I.resolve(k.name()), v.ty.clone()))
+        .collect();
+
+    let div_fns = program.get_divergent_functions();
+
+    let any_loc: Location = program
+        .implicits
+        .values()
+        .next()
+        .map(|i| i.name.location.clone())
+        .or_else(|| {
+            program
+                .functions
+                .values()
+                .next()
+                .map(|f| f.name.location.clone())
+        })
+        .expect("propagate_implicits: empty program");
+
+    for (imp_name, imp_ty) in implicit_types.iter() {
+        let struct_name = wrapper_struct_name(imp_name);
+        let struct_qname = QualifiedName.new(struct_name.clone());
+        if !program.structs.contains_key(struct_qname) {
+            let struct_def = StructDef(
+                annotations: [],
+                public: False,
+                name: Identifier.new(struct_name, any_loc.clone()),
+                qualified_name: struct_qname.clone(),
+                type_arg_defs: None,
+                fields: [FieldDef(False, Identifier.new(I.intern("value"), any_loc.clone()), imp_ty.clone(), None)],
+                all_fields_public: False,
+                methods: [],
+                method_map: MethodMap.new(),
+                module_name: I.intern(""),
+                default_value_names: Vec.new(),
+            );
+            program.structs.insert(struct_qname, struct_def);
+        }
+    }
+
+    let fn_implicit_ctx: Map[String, Vec[String]] = program
+        .functions
+        .iter()
+        .filter(|(_, f)| !f.is_extern())
+        .map(|(k, _)| (I.resolve(k.name()), k.implicit_ctx().iter().map(|q| I.resolve(q.name())).collect()))
+        .collect();
+
+    let ctx_struct_map: Map[Vec[String], QualifiedName] = Map.new();
+    for implicits in fn_implicit_ctx.values() {
+        ctx_struct_map
+            .entry(implicits.clone())
+            .or_insert_with(|| QualifiedName.new(ctx_struct_name(implicits)));
+    }
+
+    for (implicits, struct_qname) in ctx_struct_map.iter() {
+        let fields: Vec[FieldDef] = implicits
+            .iter()
+            .map(|imp| FieldDef(
+                False,
+                Identifier.new(ctx_field_name(imp), any_loc.clone()),
+                named_ty(wrapper_struct_name(imp)),
+                None,
+            ))
+            .collect();
+        let struct_def = StructDef(
+            annotations: [],
+            public: False,
+            name: Identifier.new(struct_qname.name(), any_loc.clone()),
+            qualified_name: struct_qname.clone(),
+            type_arg_defs: None,
+            fields: fields,
+            all_fields_public: False,
+            methods: [],
+            method_map: MethodMap.new(),
+            module_name: I.intern(""),
+            default_value_names: Vec.new(),
+        );
+        program.structs.insert(struct_qname.clone(), struct_def);
+    }
+
+    let fn_keys: Vec[QualifiedName] = program.functions.keys().cloned().collect();
+    for key in fn_keys {
+        let func = program.functions.remove(key).unwrap();
+        if func.is_extern() {
+            program.functions.insert(key, func);
+            continue;
+        }
+        let implicits: Vec[String] = key.implicit_ctx().iter().map(|q| I.resolve(q.name())).collect();
+        let is_entrypoint = I.resolve(key.name()) == "Main.main" || func.is_c_callback();
+        let rewritten = rewrite_function(
+            func,
+            implicits,
+            ctx_struct_map,
+            fn_implicit_ctx,
+            implicit_types,
+            is_entrypoint,
+            div_fns,
+        );
+        program.functions.insert(key, rewritten);
+    }
+}
+
+}

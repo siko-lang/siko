@@ -1,0 +1,127 @@
+module Siko.AST.Data {
+
+import Siko.AST.Generics
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.Type
+import Siko.AST.Expr
+import Siko.AST.Function
+import Siko.AST.QualifiedName
+import Siko.AST.Annotations
+import Siko.Interner as I
+
+import Std.Map
+
+@derive(Clone)
+pub struct MethodMap {
+    pub names: Map[I.String, QualifiedName],
+
+    pub fn new() -> MethodMap {
+        MethodMap(Map.new())
+    }
+}
+
+@derive(Clone)
+pub struct FieldDef {
+    pub public: Bool,
+    pub name: Identifier,
+    pub ty: TypeDef,
+    pub default_value: Option[Expr],
+}
+
+@derive(Clone)
+pub struct ItemInfo {
+    pub name: Option[Identifier],
+    pub ty: TypeDef,
+}
+
+@derive(Clone)
+pub struct VariantDef {
+    pub name: Identifier,
+    pub qualified_name: QualifiedName,
+    pub items: Vec[ItemInfo],
+}
+
+@derive(Clone)
+pub struct StructDef {
+    pub annotations: Vec[Annotation],
+    pub public: Bool,
+    pub name: Identifier,
+    pub qualified_name: QualifiedName,
+    pub type_arg_defs: Option[TypeArgDefs],
+    pub fields: Vec[FieldDef],
+    pub all_fields_public: Bool,
+    pub methods: Vec[FunctionDef],
+    pub method_map: MethodMap,
+    pub module_name: I.String,
+    pub default_value_names: Vec[DefaultValueInfo],
+
+    pub fn has_derive(s: StructDef, trait_name: Name) -> Bool {
+        for a in s.annotations {
+            if Annotation.has_derive(a, trait_name) {
+                return True;
+            }
+        }
+        False
+    }
+
+    pub fn is_builtin(s: StructDef) -> Bool {
+        for a in s.annotations {
+            if a.is_builtin() {
+                return True;
+            }
+        }
+        False
+    }
+
+    pub fn is_builtin_string(s: StructDef) -> Bool {
+        for a in s.annotations {
+            if a.is_builtin_string() {
+                return True;
+            }
+        }
+        False
+    }
+
+    pub fn is_value_type(s: StructDef) -> Bool {
+        for a in s.annotations {
+            if a.is_value_type() {
+                return True;
+            }
+        }
+        False
+    }
+}
+
+@derive(Clone)
+pub struct EnumDef {
+    pub annotations: Vec[Annotation],
+    pub public: Bool,
+    pub name: Identifier,
+    pub qualified_name: QualifiedName,
+    pub type_arg_defs: Option[TypeArgDefs],
+    pub variants: Vec[VariantDef],
+    pub methods: Vec[FunctionDef],
+    pub method_map: MethodMap,
+    pub module_name: I.String,
+
+    pub fn has_derive(e: EnumDef, trait_name: Name) -> Bool {
+        for a in e.annotations {
+            if Annotation.has_derive(a, trait_name) {
+                return True;
+            }
+        }
+        False
+    }
+
+    pub fn is_builtin(e: EnumDef) -> Bool {
+        for a in e.annotations {
+            if a.is_builtin() {
+                return True;
+            }
+        }
+        False
+    }
+}
+
+}

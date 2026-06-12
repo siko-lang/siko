@@ -1,0 +1,86 @@
+module Siko.Resolver.Autoderive.Clone {
+
+import Siko.Resolver.Autoderive.Map
+import Siko.Resolver.Autoderive.Utils
+import Siko.AST.Data
+import Siko.AST.Traits
+import Siko.AST.Name
+import Siko.AST.Type
+import Siko.AST.Identifier
+import Siko.AST.Generics
+import Siko.AST.Function
+import Siko.AST.QualifiedName
+import Siko.Constants.Builtins as B
+import Siko.Interner as I
+
+pub fn derive_clone_enum(enum_def: EnumDef, module_name: I.String) -> Option[InstanceDef] {
+    let trait_name = get_resolved_trait_name();
+    if !enum_def.has_derive(trait_name) {
+        return None;
+    }
+    Some(build_clone_enum(enum_def, module_name))
+}
+
+pub fn build_clone_enum(enum_def: EnumDef, module_name: I.String) -> InstanceDef {
+    let trait_name = get_resolved_trait_name();
+    let loc = enum_def.name.location;
+    let enum_qname = QualifiedName.new(enum_def.name.name);
+    let (type_arg_defs, enum_type_args) =
+        build_type_arg_defs(enum_def.type_arg_defs, trait_name, loc);
+    let enum_type = TypeDef.Named(Name.Resolved(enum_qname), enum_type_args);
+    let prefix = instance_synth_name(trait_name, [enum_type], loc);
+    let (method_fn, method_short) =
+        build_clone_method_enum(enum_def, prefix, type_arg_defs, enum_type, module_name);
+    make_instance(trait_name, type_arg_defs, enum_type, [method_fn], [method_short], module_name, loc)
+}
+
+pub fn build_clone_method_enum(
+    enum_def: EnumDef,
+    instance_prefix: Identifier,
+    type_arg_defs: Option[TypeArgDefs],
+    self_type: TypeDef,
+    module_name: I.String,
+) -> (FunctionDef, Identifier) {
+    let short_name = Identifier.new(I.intern("clone"), enum_def.name.location);
+    let fn_qname = QualifiedName.new(B.get_op_clone());
+    build_map_method(enum_def, instance_prefix, type_arg_defs, self_type, fn_qname, short_name, module_name, [], BodyStrategy.Generate)
+}
+
+pub fn derive_clone_struct(struct_def: StructDef, module_name: I.String) -> Option[InstanceDef] {
+    let trait_name = get_resolved_trait_name();
+    if !struct_def.has_derive(trait_name) {
+        return None;
+    }
+    Some(build_clone_struct(struct_def, module_name))
+}
+
+pub fn build_clone_struct(struct_def: StructDef, module_name: I.String) -> InstanceDef {
+    let trait_name = get_resolved_trait_name();
+    let loc = struct_def.name.location;
+    let struct_qname = QualifiedName.new(struct_def.name.name);
+    let (type_arg_defs, struct_type_args) =
+        build_type_arg_defs(struct_def.type_arg_defs, trait_name, loc);
+    let struct_type = TypeDef.Named(Name.Resolved(struct_qname), struct_type_args);
+    let prefix = instance_synth_name(trait_name, [struct_type], loc);
+    let (method_fn, method_short) =
+        build_clone_method_struct(struct_def, prefix, type_arg_defs, struct_type, module_name);
+    make_instance(trait_name, type_arg_defs, struct_type, [method_fn], [method_short], module_name, loc)
+}
+
+pub fn build_clone_method_struct(
+    struct_def: StructDef,
+    instance_prefix: Identifier,
+    type_arg_defs: Option[TypeArgDefs],
+    self_type: TypeDef,
+    module_name: I.String,
+) -> (FunctionDef, Identifier) {
+    let short_name = Identifier.new(I.intern("clone"), struct_def.name.location);
+    let fn_qname = QualifiedName.new(B.get_op_clone());
+    build_map_method_struct(struct_def, instance_prefix, type_arg_defs, self_type, fn_qname, short_name, module_name, [], BodyStrategy.Generate)
+}
+
+fn get_resolved_trait_name() -> Name {
+    Name.Resolved(QualifiedName.new(B.get_trait_clone()))
+}
+
+}

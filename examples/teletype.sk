@@ -1,0 +1,62 @@
+module TeleType {
+
+pub effect TeleType {
+    fn read_line() -> String
+    fn println(input: String)
+}
+
+pub fn run() {
+    while True {
+        let input = read_line();
+        if input == "exit" {
+            break;
+        }
+        println("You said: ${input}");
+    }
+}
+
+}
+
+module Main {
+
+import TeleType as T
+
+implicit state: Int
+
+fn mock_read_line() -> String {
+    if state < 3 {
+        state = state + 1;
+        "mocked: ${state}"
+    } else {
+        "exit"
+    }
+}
+
+fn mock_println(input: String) {
+    let expected_string = "You said: mocked: ${state}";
+    assert(expected_string == input);
+}
+
+@test
+fn test_teletype() {
+    let state = 0;
+    with T.println = mock_println,
+         T.read_line = mock_read_line,
+         state = state {
+        T.run();
+    }
+}
+
+fn real_teletype() {
+    println("Starting teletype");
+    with T.println = println,
+         T.read_line = read_line {
+        T.run();
+    }
+}
+
+fn main() {
+    real_teletype();
+}
+
+}

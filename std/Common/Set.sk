@@ -1,0 +1,89 @@
+module Std.Set {
+
+import Std.Map as M
+
+pub struct Set[T] {
+    values: M.Map[T, ()]
+
+    pub fn new() -> Set[T] {
+        Set(M.Map.new())
+    }
+
+    pub fn insert[T: Ord[T]](s: Set[T], value: T) -> Bool {
+        s.values.insert(value, ()).is_none()
+    }
+
+    pub fn contains[T: Ord[T]](s: Set[T], value: T) -> Bool {
+        s.values.get(value).is_some()
+    }
+
+    pub fn remove[T: Ord[T]](s: Set[T], value: T) -> Bool {
+        s.values.remove(value).is_some()
+    }
+
+    pub fn len(s: Set[T]) -> Int {
+        s.values.len()
+    }
+
+    pub fn is_empty(s: Set[T]) -> Bool {
+        s.values.len() == 0
+    }
+
+    pub fn iter(s: Set[T]) -> SetIterator[T] {
+        SetIterator(s.values.iter())
+    }
+
+    pub fn clear(s: Set[T]) {
+        s.values.clear();
+    }
+}
+
+pub struct SetIterator[T] {
+    iter: M.MapIterator[T, ()]
+}
+
+
+instance[T: Ord[T]] IntoIterator[Set[T]] {
+    type Item = T
+    type IntoIter = SetIterator[T]
+
+    fn into_iter(s: Set[T]) -> SetIterator[T] {
+        s.iter()
+    }
+}
+
+
+instance[T: Ord[T]] Iterator[SetIterator[T]] {
+    type Item = T
+    fn next(a: SetIterator[T]) -> Option[T] {
+        match a.iter.next() {
+            Some(x) => Some(x.0),
+            None => None
+        }
+    }
+}
+
+instance[T: Ord[T]] Clone[Set[T]] {
+    fn clone(s: Set[T]) -> Set[T] {
+        let new = Set.new();
+        for x in s {
+            new.insert(x);
+        }
+        new
+    }
+}
+
+instance[T: Ord[T]] FromIterator[Set[T]] {
+    type Item = T
+    fn from_iter[I: Iterator[I, Item=T]](iter: I) -> Set[T] {
+        let s = Set.new();
+        loop {
+            match iter.next() {
+                Some(v) => {s.insert(v); }
+                None => { return s; }
+            }
+        }
+    }
+}
+
+}

@@ -1,0 +1,133 @@
+module Siko.LowerBuiltins {
+
+import Siko.AST.Data
+import Siko.AST.Function
+import Siko.AST.Generics
+import Siko.AST.Expr
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.Pattern
+import Siko.AST.Statement as S
+import Siko.AST.QualifiedName
+import Siko.AST.Annotations
+import Siko.AST.Type
+import Siko.HIR.Program
+import Siko.Location
+import Siko.Interner as I
+import Siko.Constants.Builtins as B
+
+// ── Rewrite trait ─────────────────────────────────────────────────────────────
+
+trait Rewrite[T] {
+    fn rewrite(t: T, ctx: BuiltinLowerer) -> T
+}
+
+instance Rewrite[TypeDef] {
+    fn rewrite(ty: TypeDef, ctx: BuiltinLowerer) -> TypeDef { ty }
+}
+
+instance Rewrite[Location]      = auto(Map, =)
+instance Rewrite[I.String]      = auto(Map, =)
+instance Rewrite[String]        = auto(Map, =)
+instance Rewrite[Int]           = auto(Map, =)
+instance Rewrite[U8]            = auto(Map, =)
+instance Rewrite[Bool]          = auto(Map, =)
+instance Rewrite[QualifiedName] = auto(Map, =)
+instance Rewrite[VariableName]  = auto(Map, =)
+instance Rewrite[Name]          = auto(Map, =)
+instance Rewrite[Identifier]    = auto(Map, =)
+instance Rewrite[FunctionKind]  = auto(Map, =)
+instance Rewrite[BinaryOp]      = auto(Map, =)
+instance Rewrite[UnaryOp]       = auto(Map, =)
+instance Rewrite[WitnessInfo]   = auto(Map, =)
+instance Rewrite[HandlerSelection] = auto(Map, =)
+instance Rewrite[ImplicitRefInfo]  = auto(Map, =)
+instance Rewrite[CreateClosureInfo] = auto(Map, =)
+instance Rewrite[FunctionPtrInfo]   = auto(Map, =)
+instance Rewrite[LambdaArg]     = auto(Map, =)
+instance Rewrite[DeriveAnnotation] = auto(Map, =)
+instance Rewrite[TypeArgDefs]   = auto(Map, =)
+instance Rewrite[MethodMap]     = auto(Map, =)
+instance Rewrite[FunctionArg]   = auto(Map)
+instance Rewrite[Pattern]       = auto(Map)
+instance Rewrite[PatternKind]   = auto(Map)
+instance Rewrite[FunctionCallInfo] = auto(Map)
+instance Rewrite[NamedArgument]      = auto(Map, =)
+instance Rewrite[NamedPatternArg]    = auto(Map, =)
+instance Rewrite[NamedPatternInfo]   = auto(Map)
+instance Rewrite[MethodCallInfo]   = auto(Map)
+instance Rewrite[CallInfo]         = auto(Map)
+instance Rewrite[WithInfo]      = auto(Map)
+instance Rewrite[MatchArm]      = auto(Map)
+instance Rewrite[S.LetInfo]     = auto(Map)
+instance Rewrite[S.DeclareInfo] = auto(Map)
+instance Rewrite[S.Statement]   = auto(Map)
+instance Rewrite[MatchInfo]     = auto(Map)
+
+instance[T: Rewrite[T]] Rewrite[Option[T]] {
+    fn rewrite(opt: Option[T], ctx: BuiltinLowerer) -> Option[T] {
+        opt.map(|t| rewrite(t, ctx))
+    }
+}
+
+instance[T: Rewrite[T]] Rewrite[Vec[T]] {
+    fn rewrite(vec: Vec[T], ctx: BuiltinLowerer) -> Vec[T] {
+        vec.into_iter().map(|t| rewrite(t, ctx)).collect()
+    }
+}
+
+instance Rewrite[ExprKind] = auto(Map)
+
+instance Rewrite[Expr] {
+    fn rewrite(expr: Expr, ctx: BuiltinLowerer) -> Expr {
+        let loc = expr.location.clone();
+        let ty = expr.ty.clone();
+        match expr.kind {
+            ExprKind.FunctionCall(FunctionCallInfo(qn, FunctionKind.Builtin, args, _, _)) => {
+                if qn.base_name() == B.get_transmute() {
+                    let args = args.rewrite(ctx);
+                    let arg = args[0];
+                    return Expr(ExprKind.Transmute(arg), loc, ty);
+                }
+                if let Some(fdef) = ctx.program.functions.get(qn) {
+                    if let Some(op) = fdef.is_binary_op() {
+                        let args = args.rewrite(ctx);
+                        let lhs = args[0];
+                        let rhs = args[1];
+                        return Expr(ExprKind.BinaryOp(op, lhs, rhs), loc, ty);
+                    }
+                    if let Some(op) = fdef.is_unary_op() {
+                        let args = args.rewrite(ctx);
+                        let operand = args[0];
+                        return Expr(ExprKind.UnaryOp(op, operand), loc, ty);
+                    }
+                }
+                Expr(ExprKind.FunctionCall(FunctionCallInfo(qn, FunctionKind.Builtin, args.rewrite(ctx), WitnessInfo.new(), Vec.new())), loc, ty)
+            }
+            kind => Expr(kind.rewrite(ctx), loc, ty)
+        }
+    }
+}
+
+// ── BuiltinLowerer ────────────────────────────────────────────────────────────
+
+struct BuiltinLowerer {
+    program: Program,
+}
+
+// ── Entry point ───────────────────────────────────────────────────────────────
+
+pub fn lower_builtins(program: Program) {
+    let ctx = BuiltinLowerer(program);
+    let func_keys: Vec[QualifiedName] = program.functions.keys().cloned().collect();
+    for key in func_keys {
+        let func = program.functions.remove(key).unwrap();
+        if func.kind == FunctionDefKind.Builtin {
+            program.functions.remove(key);
+        }
+        func.body = rewrite(func.body, ctx);
+        program.functions.insert(key, func);
+    }
+}
+
+}

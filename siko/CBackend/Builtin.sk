@@ -1,0 +1,69 @@
+module Siko.CBackend.Builtin {
+
+import Siko.AST.Function
+import Siko.AST.Type
+import Siko.CBackend.Emit
+import Siko.CBackend.Util
+import Siko.Constants.Builtins as B
+import Siko.Format.Utils
+import Siko.Interner as I
+
+fn emit_builtin_sig(emitter: Emitter, fdef: FunctionDef) {
+    let ty = fdef.result_type.unwrap();
+    if let TypeDef.Never(_) = ty {
+        emitter.append("__attribute__((noreturn)) ");
+    }
+    emitter.emit_type(ty);
+    emitter.append(" ");
+    emitter.append(fn_name(fdef.qualified_name));
+    emitter.append("(");
+    for (i, arg) in fdef.args.iter().enumerate() {
+        if i > 0 {
+            emitter.append(", ");
+        }
+        emitter.emit_type(arg.type_def);
+        emitter.append(" ");
+        emitter.append(var_name(arg.name));
+    }
+    emitter.append(")");
+}
+
+fn emit_builtin_fn(emitter: Emitter, fdef: FunctionDef, body: String) {
+    emit_builtin_sig(emitter, fdef);
+    emitter.append(" {\n");
+    emitter.append(body);
+    emitter.append("}\n");
+    emitter.append("\n");
+}
+
+fn emit_discriminator(emitter: Emitter, fdef: FunctionDef) {
+    let v = var_name(fdef.args[0].name);
+    let arg_ty = fdef.args[0].type_def;
+    let ty_str = format_type(arg_ty);
+    let is_enum = emitter.program.enums.iter().any(|(k, _)| I.resolve(k.name()) == ty_str);
+    if is_enum {
+        let is_vt = emitter.is_value_type_ty(arg_ty);
+        let access = if is_vt { "." } else { "->" };
+        emit_builtin_fn(emitter, fdef, "  return (int64_t)${v}${access}tag;\n");
+    } else {
+        emit_builtin_fn(emitter, fdef, "  return (int64_t)0;\n");
+    }
+}
+
+fn emit_uninitialized(emitter: Emitter, fdef: FunctionDef) {
+    let ty = fdef.result_type.unwrap();
+    emit_builtin_sig(emitter, fdef);
+    emitter.append(" {\n  ");
+    emitter.emit_type(ty);
+    emitter.append(" result;\n  return result;\n}\n\n");
+}
+
+pub fn try_emit_builtin(emitter: Emitter, fdef: FunctionDef) -> Bool {
+    let base = fdef.qualified_name.base_name();
+    if base == B.get_util_discriminator() { emit_discriminator(emitter, fdef); }
+    else if base == B.get_util_uninitialized() { emit_uninitialized(emitter, fdef); }
+    else { return False; }
+    True
+}
+
+}

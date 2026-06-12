@@ -1,0 +1,72 @@
+module Siko.Monomorphizer.Data {
+
+import Siko.AST.Type
+import Siko.AST.QualifiedName
+import Siko.Unification.Sub
+import Siko.Monomorphizer
+import Siko.Monomorphizer.Specialize
+import Siko.Config
+
+pub fn process_struct(
+    qname: QualifiedName,
+    type_args: Vec[TypeDef],
+    mono_name: QualifiedName,
+    mono: Monomorphizer,
+) {
+    let struct_def = mono.source.struct_def(qname).clone();
+    if get_config().debug_mono {
+        println("Processing ${mono_name.name()}");
+    }
+    mono.sub = struct_def
+        .type_arg_defs
+        .map(|tad| {
+            tad.type_args
+                .iter()
+                .map(|id| id.name.clone())
+                .zip(type_args.iter().cloned())
+                .collect()
+        })
+        .unwrap_or_else(|| Substitution.new());
+
+    let spec_fields = struct_def.fields.specialize(mono);
+
+    let mono_struct = struct_def;
+    mono_struct.qualified_name = mono_name.clone();
+    mono_struct.type_arg_defs = None;
+    mono_struct.fields = spec_fields;
+
+    mono.output.structs.insert(mono_name, mono_struct);
+}
+
+pub fn process_enum(
+    qname: QualifiedName,
+    type_args: Vec[TypeDef],
+    mono_name: QualifiedName,
+    mono: Monomorphizer,
+) {
+    let enum_def = mono.source.enum_def(qname).clone();
+    if get_config().debug_mono {
+        println("Processing ${mono_name.name()}");
+    }
+    mono.sub = enum_def
+        .type_arg_defs
+        .map(|tad| {
+            tad.type_args
+                .iter()
+                .map(|id| id.name.clone())
+                .zip(type_args.iter().cloned())
+                .collect()
+        })
+        .unwrap_or_else(|| Substitution.new());
+
+    let spec_variants = enum_def.variants.specialize(mono);
+
+    let mono_enum = enum_def;
+    mono_enum.qualified_name = mono_name.clone();
+    mono_enum.type_arg_defs = None;
+    mono_enum.variants = spec_variants;
+
+    mono.output.enums.insert(mono_name, mono_enum);
+}
+
+}

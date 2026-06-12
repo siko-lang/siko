@@ -1,0 +1,27 @@
+module Main {
+
+// Like effects/02_dispatch: same function called in two different implicit contexts.
+// Tests that monomorphization produces two correctly specialized versions.
+
+implicit counter : Int
+
+fn increment() {
+    counter = counter + 1;
+}
+
+fn main() {
+    let a = 0;
+    let b = 10;
+    with counter = a {
+        increment();
+    }
+    with counter = b {
+        increment();
+    }
+    assert(a == 1);
+    assert(b == 11);
+    println(a.to_string());
+    println(b.to_string());
+}
+
+}

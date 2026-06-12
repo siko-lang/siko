@@ -1,0 +1,64 @@
+module Std.Arch.Stat {
+
+// struct timespec: same layout on macOS and Linux for 64-bit builds
+@value_type
+pub struct TimeSpec {
+    pub tv_sec: I64,
+    pub tv_nsec: I64,
+
+    pub fn new() -> TimeSpec {
+        TimeSpec(0.as_i64(), 0.as_i64())
+    }
+}
+
+// macOS stat structure (64-bit inode, _DARWIN_FEATURE_64_BIT_INODE, the default for all 64-bit builds).
+// The C compiler inserts 4 bytes of alignment padding between st_rdev and st_atimespec
+// automatically (TimeSpec alignment = 8), matching the real struct stat layout exactly.
+// Linux has a different field order and types — the Linux arch layer provides its own StatBuf.
+@value_type
+pub struct StatBuf {
+    pub st_dev: I32,
+    pub st_mode: U16,
+    pub st_nlink: U16,
+    pub st_ino: U64,
+    pub st_uid: U32,
+    pub st_gid: U32,
+    pub st_rdev: I32,
+    pub st_atimespec: TimeSpec,
+    pub st_mtimespec: TimeSpec,
+    pub st_ctimespec: TimeSpec,
+    pub st_birthtimespec: TimeSpec,
+    pub st_size: I64,
+    pub st_blocks: I64,
+    pub st_blksize: I32,
+    pub st_flags: U32,
+    pub st_gen: U32,
+    pub st_lspare: I32,
+    pub st_qspare: [I64; 2],
+
+    @unsafe
+    pub fn new() -> StatBuf {
+        StatBuf(
+            st_dev: 0.as_i32(),
+            st_mode: 0.as_u16(),
+            st_nlink: 0.as_u16(),
+            st_ino: 0.as_u64(),
+            st_uid: 0.as_u32(),
+            st_gid: 0.as_u32(),
+            st_rdev: 0.as_i32(),
+            st_atimespec: TimeSpec.new(),
+            st_mtimespec: TimeSpec.new(),
+            st_ctimespec: TimeSpec.new(),
+            st_birthtimespec: TimeSpec.new(),
+            st_size: 0.as_i64(),
+            st_blocks: 0.as_i64(),
+            st_blksize: 0.as_i32(),
+            st_flags: 0.as_u32(),
+            st_gen: 0.as_u32(),
+            st_lspare: 0.as_i32(),
+            st_qspare: uninitialized(),
+        )
+    }
+}
+
+}

@@ -1,0 +1,22 @@
+module Siko.Parser.Implicits {
+
+import Siko.AST.Implicits
+import Siko.Parser.Parser
+import Siko.Parser.Token
+import Siko.Parser.Type
+
+pub trait ImplicitParser[T] {
+    fn parse_implicit_def(p: T, public: Bool) -> Result[ImplicitDef, ParseError]
+}
+
+instance ImplicitParser[Parser] {
+    fn parse_implicit_def(parser: Parser, public: Bool) -> Result[ImplicitDef, ParseError] {
+        parser.expect(TokenKind.KwImplicit)?;
+        let name = parser.expect_var_ident()?;
+        parser.expect(TokenKind.Colon)?;
+        let ty = parser.parse_type_def()?;
+        Ok(ImplicitDef(public, name, ty))
+    }
+}
+
+}

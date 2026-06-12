@@ -1,0 +1,406 @@
+module Siko.ClosureLowering {
+
+import Std.Map
+import Std.Set
+import Siko.AST.Data
+import Siko.AST.Function
+import Siko.AST.Generics
+import Siko.AST.Expr
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.Pattern
+import Siko.AST.Statement as S
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.AST.Annotations
+import Siko.HIR.Program
+import Siko.Location
+import Siko.Utils.VarAllocator
+import Siko.Normalizer
+import Siko.Interner as I
+import Siko.Constants.Builtins as B
+
+// ── Data structures ────────────────────────────────────────────────────────────
+
+@derive(Clone)
+struct VariantInfo {
+    variant_short_name: I.String,
+    variant_qname: QualifiedName,
+    lambda_qname: QualifiedName,
+    capture_types: Vec[TypeDef],
+}
+
+@derive(Clone)
+struct ClosureEnumInfo {
+    enum_qname: QualifiedName,
+    handler_qname: QualifiedName,
+    param_types: Vec[TypeDef],
+    ret_type: TypeDef,
+    variants: Vec[VariantInfo],
+}
+
+// ── Rewrite trait ─────────────────────────────────────────────────────────────
+
+trait Rewrite[T] {
+    fn rewrite(t: T, ctx: ClosureLowerer) -> T
+}
+
+instance Rewrite[Location]          = auto(Map, =)
+instance Rewrite[I.String]          = auto(Map, =)
+instance Rewrite[String]            = auto(Map, =)
+instance Rewrite[Int]               = auto(Map, =)
+instance Rewrite[U8]                = auto(Map, =)
+instance Rewrite[QualifiedName]     = auto(Map, =)
+instance Rewrite[VariableName]      = auto(Map, =)
+instance Rewrite[Name]              = auto(Map, =)
+instance Rewrite[Identifier]        = auto(Map, =)
+instance Rewrite[FunctionKind]      = auto(Map, =)
+instance Rewrite[BinaryOp]          = auto(Map, =)
+instance Rewrite[UnaryOp]           = auto(Map, =)
+instance Rewrite[TypeDef] {
+    fn rewrite(ty: TypeDef, ctx: ClosureLowerer) -> TypeDef {
+        match ty {
+            TypeDef.Fn(args, ret) => {
+                let args = args.into_iter().map(|a| rewrite(a, ctx)).collect();
+                let ret = rewrite(ret, ctx);
+                let fn_type = TypeDef.Fn(args, ret);
+                let info = ctx.get_or_create_enum(fn_type);
+                TypeDef.Named(Name.Resolved(info.enum_qname), [])
+            }
+            TypeDef.FnPtr(args, ret) => TypeDef.FnPtr(
+                args.into_iter().map(|a| rewrite(a, ctx)).collect(),
+                rewrite(ret, ctx),
+            ),
+            TypeDef.Named(n, args) => TypeDef.Named(n, args),
+            TypeDef.Paren(inner)   => TypeDef.Paren(rewrite(inner, ctx)),
+            TypeDef.Ptr(inner)     => TypeDef.Ptr(rewrite(inner, ctx)),
+            TypeDef.Array(inner, n) => TypeDef.Array(rewrite(inner, ctx), n),
+            TypeDef.Numeric(n)     => TypeDef.Numeric(n),
+            TypeDef.Var(_)         => ty,
+            TypeDef.Never(t)       => TypeDef.Never(t),
+            TypeDef.Void           => TypeDef.Void,
+            TypeDef.VoidPtr        => TypeDef.VoidPtr,
+            TypeDef.Tuple(_)       => panic("lower_closures: unexpected Tuple type (should be lowered already)"),
+            TypeDef.Wildcard       => panic("lower_closures: unexpected Wildcard type"),
+        }
+    }
+}
+instance Rewrite[WitnessInfo]       = auto(Map, =)
+instance Rewrite[HandlerSelection]  = auto(Map, =)
+instance Rewrite[ImplicitRefInfo]   = auto(Map, =)
+instance Rewrite[CreateClosureInfo] = auto(Map, =)
+instance Rewrite[FunctionPtrInfo]   = auto(Map, =)
+instance Rewrite[LambdaArg]         = auto(Map, =)
+instance Rewrite[Pattern]           = auto(Map)
+instance Rewrite[PatternKind]       = auto(Map)
+
+instance Rewrite[Bool]              = auto(Map, =)
+instance Rewrite[DefaultValueInfo]  = auto(Map, =)
+instance Rewrite[Annotation]        = auto(Map, =)
+instance Rewrite[TypeArgDefs]       = auto(Map, =)
+instance Rewrite[MethodMap]         = auto(Map, =)
+instance Rewrite[FunctionDef]       = auto(Map, =)
+instance Rewrite[FunctionArg]       = auto(Map)
+
+instance Rewrite[FieldDef]          = auto(Map)
+instance Rewrite[ItemInfo]          = auto(Map)
+instance Rewrite[VariantDef]        = auto(Map)
+instance Rewrite[StructDef]         = auto(Map)
+instance Rewrite[EnumDef]           = auto(Map)
+
+instance Rewrite[FunctionCallInfo]  = auto(Map)
+instance Rewrite[NamedArgument]      = auto(Map, =)
+instance Rewrite[NamedPatternArg]    = auto(Map, =)
+instance Rewrite[NamedPatternInfo]   = auto(Map)
+instance Rewrite[MethodCallInfo]    = auto(Map)
+instance Rewrite[CallInfo]          = auto(Map)
+instance Rewrite[WithInfo]          = auto(Map)
+instance Rewrite[MatchArm]          = auto(Map)
+instance Rewrite[S.LetInfo]         = auto(Map)
+instance Rewrite[S.DeclareInfo]     = auto(Map)
+instance Rewrite[S.Statement]       = auto(Map)
+instance Rewrite[ExprKind]          = auto(Map)
+instance Rewrite[MatchInfo]         = auto(Map)
+
+instance Rewrite[Expr] {
+    fn rewrite(expr: Expr, ctx: ClosureLowerer) -> Expr {
+        ctx.rewrite_expr(expr)
+    }
+}
+
+instance[T: Rewrite[T]] Rewrite[Option[T]] {
+    fn rewrite(opt: Option[T], ctx: ClosureLowerer) -> Option[T] {
+        opt.map(|t| rewrite(t, ctx))
+    }
+}
+
+instance[T: Rewrite[T]] Rewrite[Vec[T]] {
+    fn rewrite(vec: Vec[T], ctx: ClosureLowerer) -> Vec[T] {
+        vec.into_iter().map(|t| rewrite(t, ctx)).collect()
+    }
+}
+
+// ── ClosureLowerer ────────────────────────────────────────────────────────────
+
+struct ClosureLowerer {
+    repr_loc: Location,
+    functions: Map[QualifiedName, FunctionDef],
+    fn_type_to_enum: Map[TypeDef, ClosureEnumInfo],
+    enum_index: Int,
+
+    fn get_or_create_enum(ctx: ClosureLowerer, fn_type: TypeDef) -> ClosureEnumInfo {
+        if let Some(info) = ctx.fn_type_to_enum.get(fn_type) {
+            return info.clone();
+        }
+        let idx = ctx.enum_index;
+        ctx.enum_index += 1;
+        let base = I.intern("${B.get_siko_closure_str()}${idx}");
+        let handler_name = I.intern("${B.get_siko_closure_str()}${idx}_handler");
+        let enum_qname = QualifiedName.Simple(base);
+        let handler_qname = QualifiedName.Simple(handler_name);
+        let (param_types, ret_type) = match fn_type {
+            TypeDef.Fn(params, ret) => (params, ret),
+            _ => panic("get_or_create_enum: not a Fn type"),
+        };
+        let info = ClosureEnumInfo(enum_qname, handler_qname, param_types, ret_type, Vec.new());
+        ctx.fn_type_to_enum.insert(fn_type, info.clone());
+        info
+    }
+
+    fn rewrite_expr(ctx: ClosureLowerer, expr: Expr) -> Expr {
+        let loc = expr.location.clone();
+        let ty = expr.ty.clone();
+        let rewritten_ty = expr.ty.rewrite(ctx);
+
+        match expr.kind {
+            ExprKind.CreateClosure(CreateClosureInfo(lambda_qname, captures, _)) => {
+                let fn_type = ty.clone().unwrap();
+                let info = ctx.get_or_create_enum(fn_type.clone());
+
+                let lambda_def = ctx.functions.get(lambda_qname).unwrap();
+                let capture_count = match lambda_def.kind {
+                    FunctionDefKind.Closure(n) => n,
+                    _ => panic("rewrite_expr: lambda is not Closure kind"),
+                };
+                let capture_types: Vec[TypeDef] = lambda_def.args
+                    .iter()
+                    .take(capture_count)
+                    .map(|a| a.type_def.clone())
+                    .collect();
+
+                let variant_idx = info.variants.len();
+                let variant_short_name = I.intern("Variant${variant_idx}");
+                let variant_qname = QualifiedName.Simple(I.intern("${I.resolve(info.enum_qname.name())}.Variant${variant_idx}"));
+
+                info.variants.push(VariantInfo(variant_short_name, variant_qname.clone(), lambda_qname, capture_types.clone()));
+                ctx.fn_type_to_enum.insert(fn_type, info.clone());
+
+                let args: Vec[Expr] = captures
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| Expr(ExprKind.Var(v.clone()), loc.clone(), Some(capture_types[i].clone())))
+                    .collect();
+
+                let enum_ty = Some(TypeDef.Named(Name.Resolved(info.enum_qname), []));
+                Expr(ExprKind.FunctionCall(FunctionCallInfo(
+                    variant_qname,
+                    FunctionKind.VariantCtor,
+                    args,
+                    WitnessInfo.new(),
+                    Vec.new(),
+                )), loc, enum_ty)
+            }
+
+            ExprKind.DynamicCall(callee, args) => {
+                let fn_type = callee.ty.clone().unwrap();
+                let info = ctx.get_or_create_enum(fn_type);
+                let callee = rewrite(callee, ctx);
+                let args = rewrite(args, ctx);
+                let call_args: Vec[Expr] = Vec.new();
+                call_args.push(callee);
+                call_args.extend(args);
+                Expr(ExprKind.FunctionCall(FunctionCallInfo(
+                    info.handler_qname,
+                    FunctionKind.UserDefined,
+                    call_args,
+                    WitnessInfo.new(),
+                    Vec.new(),
+                )), loc, rewritten_ty)
+            }
+
+            kind => Expr(kind.rewrite(ctx), loc, rewritten_ty),
+        }
+    }
+}
+
+// ── Post-rewrite generation ───────────────────────────────────────────────────
+
+fn generate_enum(info: ClosureEnumInfo, repr_loc: Location) -> EnumDef {
+    let variants: Vec[VariantDef] = info.variants.iter().map(|vi| {
+        VariantDef(
+            Identifier.new(vi.variant_short_name, repr_loc.clone()),
+            vi.variant_qname.clone(),
+            vi.capture_types.iter().map(|t| ItemInfo(name: None, ty: t.clone())).collect(),
+        )
+    }).collect();
+
+    EnumDef(
+        [],
+        False,
+        Identifier.new(info.enum_qname.name(), repr_loc.clone()),
+        info.enum_qname,
+        None,
+        variants,
+        [],
+        MethodMap.new(),
+        I.intern(""),
+    )
+}
+
+fn generate_handler(info: ClosureEnumInfo, repr_loc: Location) -> FunctionDef {
+    let var_alloc = VarAllocator.new();
+    let closure_var = var_alloc.allocate_temp();
+
+    let arg_vars: Vec[VariableName] = info.param_types
+        .iter()
+        .map(|_| var_alloc.allocate_temp())
+        .collect();
+
+    let enum_ty = TypeDef.Named(Name.Resolved(info.enum_qname.clone()), []);
+
+    let fn_args: Vec[FunctionArg] = Vec.new();
+    fn_args.push(FunctionArg(closure_var.clone(), enum_ty.clone(), None));
+    for (i, pt) in info.param_types.iter().enumerate() {
+        fn_args.push(FunctionArg(arg_vars[i].clone(), pt.clone(), None));
+    }
+
+    let arms: Vec[MatchArm] = info.variants.iter().map(|vi| {
+        let cap_vars: Vec[VariableName] = vi.capture_types
+            .iter()
+            .map(|_| var_alloc.allocate_temp())
+            .collect();
+
+        let sub_pats: Vec[Pattern] = vi.capture_types
+            .iter()
+            .enumerate()
+            .map(|(i, ct)| Pattern(
+                PatternKind.Binding(cap_vars[i].clone()),
+                repr_loc.clone(),
+                Some(ct.clone()),
+            ))
+            .collect();
+
+        let pat = Pattern(
+            PatternKind.Named(NamedPatternInfo(
+                name: Name.Resolved(vi.variant_qname.clone()),
+                args: sub_pats,
+                named_args: Vec.new(),
+                has_rest: False,
+            )),
+            repr_loc.clone(),
+            Some(enum_ty.clone()),
+        );
+
+        let call_args: Vec[Expr] = Vec.new();
+        for (i, ct) in vi.capture_types.iter().enumerate() {
+            call_args.push(Expr(ExprKind.Var(cap_vars[i].clone()), repr_loc.clone(), Some(ct.clone())));
+        }
+        for (i, pt) in info.param_types.iter().enumerate() {
+            call_args.push(Expr(ExprKind.Var(arg_vars[i].clone()), repr_loc.clone(), Some(pt.clone())));
+        }
+
+        let body = Expr(ExprKind.FunctionCall(FunctionCallInfo(
+            vi.lambda_qname.clone(),
+            FunctionKind.UserDefined,
+            call_args,
+            WitnessInfo.new(),
+            Vec.new(),
+        )), repr_loc.clone(), Some(info.ret_type.clone()));
+
+        MatchArm(pat, body)
+    }).collect();
+
+    let scrutinee = Expr(
+        ExprKind.Var(closure_var),
+        repr_loc.clone(),
+        Some(enum_ty),
+    );
+
+    let body = Expr(
+        ExprKind.Match(MatchInfo(scrutinee, arms)),
+        repr_loc.clone(),
+        Some(info.ret_type.clone()),
+    );
+
+    FunctionDef(
+        annotations: [],
+        public: False,
+        name: Identifier.new(info.handler_qname.name(), repr_loc.clone()),
+        qualified_name: info.handler_qname,
+        kind: FunctionDefKind.Regular,
+        type_arg_defs: None,
+        args: fn_args,
+        result_type: Some(info.ret_type),
+        body: Some(body),
+        module_name: I.intern(""),
+        var_allocator: var_alloc,
+        is_varargs: False,
+        default_value_names: Vec.new(),
+        source_package: None,
+    )
+}
+
+// ── Entry point ───────────────────────────────────────────────────────────────
+
+pub fn lower_closures(program: Program) {
+    let repr_loc = any_location(program);
+    let ctx = ClosureLowerer(repr_loc.clone(), program.functions.clone(), Map.new(), 0);
+
+    let struct_keys: Vec[QualifiedName] = program.structs.keys().cloned().collect();
+    for key in struct_keys {
+        let def = program.structs.remove(key).unwrap();
+        program.structs.insert(key, rewrite(def, ctx));
+    }
+
+    let enum_keys: Vec[QualifiedName] = program.enums.keys().cloned().collect();
+    for key in enum_keys {
+        let def = program.enums.remove(key).unwrap();
+        program.enums.insert(key, rewrite(def, ctx));
+    }
+
+    let func_keys: Vec[QualifiedName] = program.functions.keys().cloned().collect();
+    for key in func_keys {
+        let func = program.functions.remove(key).unwrap();
+        func.args = rewrite(func.args, ctx);
+        func.result_type = rewrite(func.result_type, ctx);
+        func.body = rewrite(func.body, ctx);
+        program.functions.insert(key, func);
+    }
+
+    for (_, info) in ctx.fn_type_to_enum {
+        let enum_def = generate_enum(info.clone(), repr_loc.clone());
+        program.enums.insert(info.enum_qname.clone(), enum_def);
+
+        for vi in info.variants.iter() {
+            program.variant_enum_map.insert(vi.variant_qname.clone(), info.enum_qname.clone());
+        }
+
+        let handler = generate_handler(info, repr_loc.clone());
+        normalize_function(handler, Set.new());
+        program.functions.insert(handler.qualified_name.clone(), handler);
+    }
+}
+
+fn any_location(program: Program) -> Location {
+    for func in program.functions.values() {
+        if let Some(body) = func.body {
+            return body.location.clone();
+        }
+    }
+    for def in program.structs.values() {
+        return def.name.location.clone();
+    }
+    panic("lower_closures: program has no declarations to borrow a location from")
+}
+
+}

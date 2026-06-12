@@ -1,0 +1,488 @@
+module Siko.Parser.Lexer {
+
+import Siko.Parser.Token
+import Siko.Interner as I
+
+pub struct LexError {
+    pub message: String,
+    pub pos: Int
+}
+
+pub struct Lexer {
+    input: Vec[U8],
+    pos: Int,
+    base_pos: Int,
+    tokens: Vec[Token],
+
+    fn new(input: String) -> Lexer {
+        Lexer(input.to_bytes(), 0, 0, Vec.new())
+    }
+
+    fn sub(input: Vec[U8], start: Int, end: Int, base_pos: Int) -> Lexer {
+        let sub = input.sub(start, end);
+        Lexer(sub, 0, base_pos, Vec.new())
+    }
+
+    fn tokenize(l: Lexer) -> Result[Vec[Token], LexError] {
+        loop {
+            l.skip_whitespace_and_comments();
+            let start = l.absolute_pos();
+            match l.peek() {
+                None => {
+                    l.tokens.push(Token(Eof, start, start));
+                    return Ok(l.tokens);
+                }
+                Some(c) => {
+                    l.advance();
+                    if c == '"' {
+                        l.lex_string_literal(start)?;
+                    } else {
+                        if c == '\'' {
+                            l.tokens.push(l.lex_char_literal(start)?);
+                        } else {
+                            if is_ident_start(c) {
+                                l.tokens.push(l.lex_ident_or_keyword(start));
+                            } else {
+                                if is_digit(c) {
+                                    l.tokens.push(l.lex_int_literal(start));
+                                } else {
+                                    l.tokens.push(l.lex_symbol(c, start)?);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn absolute_pos(l: Lexer) -> Int {
+        l.base_pos + l.pos
+    }
+
+    fn peek(l: Lexer) -> Option[U8] {
+        if l.pos < l.input.len() {
+            Some(l.input[l.pos])
+        } else {
+            None
+        }
+    }
+
+    fn peek2(l: Lexer) -> Option[U8] {
+        if l.pos + 1 < l.input.len() {
+            Some(l.input[l.pos + 1])
+        } else {
+            None
+        }
+    }
+
+    fn advance(l: Lexer) {
+        if l.pos < l.input.len() {
+            l.pos = l.pos + 1;
+        }
+    }
+
+    fn skip_block_comment(l: Lexer) {
+        l.advance(); // '/'
+        l.advance(); // '*'
+        let depth = 1;
+        loop {
+            match (l.peek(), l.peek2()) {
+                (Some('/'), Some('*')) => { l.advance(); l.advance(); depth = depth + 1; }
+                (Some('*'), Some('/')) => {
+                    l.advance(); l.advance();
+                    depth = depth - 1;
+                    if depth == 0 { return; }
+                }
+                (Some(_), _) => { l.advance(); }
+                (None, _)    => { return; }
+            }
+        }
+    }
+
+    fn skip_whitespace_and_comments(l: Lexer) {
+        loop {
+            while match l.peek() { Some(b) => is_whitespace(b), None => False } {
+                l.advance();
+            }
+            match l.peek() {
+                Some('/') => {
+                    match l.peek2() {
+                        Some('/') => {
+                            while match l.peek() { Some('\n') => False, None => False, Some(_) => True } {
+                                l.advance();
+                            }
+                        }
+                        Some('*') => { l.skip_block_comment(); }
+                        _ => { return; }
+                    }
+                }
+                _ => { return; }
+            }
+        }
+    }
+
+    fn lex_string_literal(l: Lexer, open_pos: Int) -> Result[(), LexError] {
+        let seg_bytes: Vec[U8] = Vec.new();
+        let seg_start = open_pos;
+        let has_interp = False;
+
+        loop {
+            match l.peek() {
+                None => {
+                    return Err(LexError("unterminated string literal", open_pos));
+                }
+                Some('"') => {
+                    l.advance();
+                    let end = l.absolute_pos();
+                    let s = String.from_slice(seg_bytes.slice());
+                    l.tokens.push(Token(StringLiteral(I.intern(s)), seg_start, end));
+                    if has_interp {
+                        l.tokens.push(Token(RParen, end, end));
+                    }
+                    return Ok(());
+                }
+                Some('\\') => {
+                    seg_bytes.push(l.lex_escape(open_pos, '"')?);
+                }
+                Some('$') => {
+                    l.advance();
+                    match l.peek() {
+                        Some('{') => {
+                            l.advance(); // consume '{'
+                            let interp_pos = l.absolute_pos();
+
+                            // emit accumulated segment, wrapping whole expr in LParen on first interpolation
+                            if !has_interp {
+                                l.tokens.push(Token(LParen, open_pos, open_pos));
+                                has_interp = True;
+                            }
+                            let s = String.from_slice(seg_bytes.slice());
+                            l.tokens.push(Token(StringLiteral(I.intern(s)), seg_start, interp_pos));
+                            seg_bytes = Vec.new();
+
+                            l.tokens.push(Token(Plus,   interp_pos, interp_pos));
+                            l.tokens.push(Token(LParen, interp_pos, interp_pos));
+
+                            // scan to matching '}'
+                            let sub_local_start = l.pos;
+                            let sub_abs_start = l.absolute_pos();
+                            let depth = 1;
+                            loop {
+                                match l.peek() {
+                                    Some('{') => { depth = depth + 1; l.advance(); }
+                                    Some('}') => {
+                                        depth = depth - 1;
+                                        l.advance();
+                                        if depth == 0 { break; }
+                                    }
+                                    Some(_) => { l.advance(); }
+                                    None => {
+                                        return Err(LexError("unterminated string interpolation", sub_abs_start));
+                                    }
+                                }
+                            }
+                            let sub_local_end = l.pos - 1;
+
+                            // sub-lex the interpolated expression
+                            let sub_lexer = sub(l.input, sub_local_start, sub_local_end, sub_abs_start);
+                            let sub_tokens = sub_lexer.tokenize()?;
+                            for tok in sub_tokens {
+                                match tok.kind {
+                                    Eof => {}
+                                    _   => { l.tokens.push(tok); }
+                                }
+                            }
+
+                            let after = l.absolute_pos();
+                            l.tokens.push(Token(RParen,                          after, after));
+                            l.tokens.push(Token(Dot,                             after, after));
+                            l.tokens.push(Token(VarIdentifier(I.intern("to_string")),      after, after));
+                            l.tokens.push(Token(LParen,                          after, after));
+                            l.tokens.push(Token(RParen,                          after, after));
+                            l.tokens.push(Token(Plus,                            after, after));
+
+                            seg_start = after;
+                        }
+                        _ => {
+                            seg_bytes.push('$');
+                        }
+                    }
+                }
+                Some(c) => {
+                    seg_bytes.push(c);
+                    l.advance();
+                }
+            }
+        }
+    }
+
+    fn lex_char_literal(l: Lexer, start: Int) -> Result[Token, LexError] {
+        let byte_val = match l.peek() {
+            Some('\\') => {
+                l.lex_escape(start, '\'')?
+            }
+            Some('\'') => { return Err(LexError("empty char literal", start)); }
+            Some(c)    => { l.advance(); c }
+            None       => { return Err(LexError("unterminated char literal", start)); }
+        };
+        match l.peek() {
+            Some('\'') => { l.advance(); Ok(Token(CharLiteral(byte_val), start, l.absolute_pos())) }
+            _          => Err(LexError("unterminated char literal", start))
+        }
+    }
+
+    fn lex_escape(l: Lexer, start: Int, quote: U8) -> Result[U8, LexError] {
+        l.advance(); // consume backslash
+        match l.peek() {
+            Some('n')  => { l.advance(); Ok('\n') }
+            Some('t')  => { l.advance(); Ok('\t') }
+            Some('r')  => { l.advance(); Ok('\r') }
+            Some('\\') => { l.advance(); Ok('\\') }
+            Some('0')  => { l.advance(); Ok('\0') }
+            Some('x')  => {
+                l.advance();
+                match (l.peek(), l.peek2()) {
+                    (Some(hi), Some(lo)) => {
+                        if is_hex_digit(hi) && is_hex_digit(lo) {
+                            l.advance();
+                            l.advance();
+                            Ok(hex_val(hi) * 16.as_u8() + hex_val(lo))
+                        } else {
+                            Err(LexError("\\x escape requires exactly 2 hex digits", l.absolute_pos()))
+                        }
+                    }
+                    _ => Err(LexError("\\x escape requires exactly 2 hex digits", l.absolute_pos()))
+                }
+            }
+            Some(c) => {
+                if c == quote {
+                    l.advance(); Ok(c)
+                } else {
+                    Err(LexError("unknown escape \\${String.from_byte(c)}", l.absolute_pos()))
+                }
+            }
+            None => Err(LexError("unterminated escape", l.absolute_pos()))
+        }
+    }
+
+    fn lex_ident_or_keyword(l: Lexer, start: Int) -> Token {
+        while match l.peek() { Some(b) => is_ident_continue(b), None => False } {
+            l.advance();
+        }
+        let s = collect_bytes(l.input, start - l.base_pos, l.pos);
+        Token(keyword_or_ident(s), start, l.absolute_pos())
+    }
+
+    fn lex_int_literal(l: Lexer, start: Int) -> Token {
+        let rel = start - l.base_pos;
+        if l.input[rel] == '0' {
+            match l.peek() {
+                Some(b) if b == 'x' || b == 'X' => {
+                    l.advance();
+                    while match l.peek() { Some(b) => is_hex_digit(b), None => False } {
+                        l.advance();
+                    }
+                    let s = collect_bytes(l.input, rel + 2, l.pos);
+                    let value = s.parse_int(16).unwrap();
+                    return Token(IntLiteral(I.intern(value.to_string())), start, l.absolute_pos());
+                },
+                Some(b) if b == 'o' || b == 'O' => {
+                    l.advance();
+                    while match l.peek() { Some(b) => b >= '0' && b <= '7', None => False } {
+                        l.advance();
+                    }
+                    let s = collect_bytes(l.input, rel + 2, l.pos);
+                    let value = s.parse_int(8).unwrap();
+                    return Token(IntLiteral(I.intern(value.to_string())), start, l.absolute_pos());
+                },
+                _ => {},
+            }
+        }
+        while match l.peek() { Some(b) => is_digit(b), None => False } {
+            l.advance();
+        }
+        let s = collect_bytes(l.input, start - l.base_pos, l.pos);
+        Token(IntLiteral(I.intern(s)), start, l.absolute_pos())
+    }
+
+    fn lex_symbol(l: Lexer, c: U8, start: Int) -> Result[Token, LexError] {
+        if c == '{' { return Ok(Token(LBrace,    start, l.absolute_pos())); }
+        if c == '}' { return Ok(Token(RBrace,    start, l.absolute_pos())); }
+        if c == '(' { return Ok(Token(LParen,    start, l.absolute_pos())); }
+        if c == ')' { return Ok(Token(RParen,    start, l.absolute_pos())); }
+        if c == '[' { return Ok(Token(LBracket,  start, l.absolute_pos())); }
+        if c == ']' { return Ok(Token(RBracket,  start, l.absolute_pos())); }
+        if c == ',' { return Ok(Token(Comma,     start, l.absolute_pos())); }
+        if c == ';' { return Ok(Token(Semicolon, start, l.absolute_pos())); }
+        if c == ':' { return Ok(Token(Colon,     start, l.absolute_pos())); }
+        if c == '.' {
+            return Ok(match l.peek() {
+                Some('.') => {
+                    l.advance();
+                    match l.peek() {
+                        Some('.') => { l.advance(); Token(DotDotDot, start, l.absolute_pos()) }
+                        _         => Token(DotDot, start, l.absolute_pos())
+                    }
+                }
+                _ => Token(Dot, start, l.absolute_pos())
+            });
+        }
+        if c == '+' {
+            return Ok(match l.peek() {
+                Some('=') => { l.advance(); Token(PlusAssign,  start, l.absolute_pos()) }
+                _         => Token(Plus, start, l.absolute_pos())
+            });
+        }
+        if c == '*' {
+            return Ok(match l.peek() {
+                Some('=') => { l.advance(); Token(StarAssign,  start, l.absolute_pos()) }
+                _         => Token(Star, start, l.absolute_pos())
+            });
+        }
+        if c == '@' { return Ok(Token(At,        start, l.absolute_pos())); }
+        if c == '?' { return Ok(Token(Question,  start, l.absolute_pos())); }
+        if c == '-' {
+            return Ok(match l.peek() {
+                Some('>') => { l.advance(); Token(Arrow,       start, l.absolute_pos()) }
+                Some('=') => { l.advance(); Token(MinusAssign, start, l.absolute_pos()) }
+                _         => Token(Minus, start, l.absolute_pos())
+            });
+        }
+        if c == '/' {
+            return Ok(match l.peek() {
+                Some('=') => { l.advance(); Token(SlashAssign, start, l.absolute_pos()) }
+                _         => Token(Slash, start, l.absolute_pos())
+            });
+        }
+        if c == '=' {
+            return Ok(match l.peek() {
+                Some('=') => { l.advance(); Token(EqEq,    start, l.absolute_pos()) }
+                Some('>') => { l.advance(); Token(FatArrow, start, l.absolute_pos()) }
+                _         => Token(Assign, start, l.absolute_pos())
+            });
+        }
+        if c == '!' {
+            return Ok(match l.peek() {
+                Some('=') => { l.advance(); Token(BangEq, start, l.absolute_pos()) }
+                _         => Token(Bang, start, l.absolute_pos())
+            });
+        }
+        if c == '<' {
+            return Ok(match l.peek() {
+                Some('=') => { l.advance(); Token(LtEq, start, l.absolute_pos()) }
+                Some('<') => { l.advance(); Token(LtLt, start, l.absolute_pos()) }
+                _         => Token(Lt, start, l.absolute_pos())
+            });
+        }
+        if c == '>' {
+            return Ok(match l.peek() {
+                Some('=') => { l.advance(); Token(GtEq, start, l.absolute_pos()) }
+                Some('>') => { l.advance(); Token(GtGt, start, l.absolute_pos()) }
+                _         => Token(Gt, start, l.absolute_pos())
+            });
+        }
+        if c == '&' {
+            return Ok(match l.peek() {
+                Some('&') => { l.advance(); Token(AmpAmp, start, l.absolute_pos()) }
+                _         => Token(Amp, start, l.absolute_pos())
+            });
+        }
+        if c == '|' {
+            return Ok(match l.peek() {
+                Some('|') => { l.advance(); Token(PipePipe, start, l.absolute_pos()) }
+                _         => Token(Pipe, start, l.absolute_pos())
+            });
+        }
+        if c == '^' {
+            return Ok(Token(Caret, start, l.absolute_pos()));
+        }
+        if c == '%' {
+            return Ok(Token(Percent, start, l.absolute_pos()));
+        }
+        if c == '~' {
+            return Ok(Token(Tilde, start, l.absolute_pos()));
+        }
+        Err(LexError("unexpected character '${String.from_byte(c)}'", start))
+    }
+}
+
+fn is_whitespace(b: U8) -> Bool {
+    b == ' ' || b == '\t' || b == '\n' || b == '\r'
+}
+
+fn is_ident_continue(b: U8) -> Bool {
+    (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '_'
+}
+
+fn is_ident_start(b: U8) -> Bool {
+    (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_'
+}
+
+fn is_digit(b: U8) -> Bool {
+    b >= '0' && b <= '9'
+}
+
+fn is_hex_digit(b: U8) -> Bool {
+    (b >= '0' && b <= '9') || (b >= 'a' && b <= 'f') || (b >= 'A' && b <= 'F')
+}
+
+fn hex_val(b: U8) -> U8 {
+    if b >= '0' && b <= '9' { b - '0' }
+    else if b >= 'a' && b <= 'f' { b - 'a' + 10.as_u8() }
+    else { b - 'A' + 10.as_u8() }
+}
+
+fn is_upper(b: U8) -> Bool {
+    b >= 'A' && b <= 'Z'
+}
+
+fn collect_bytes(input: Vec[U8], from: Int, to: Int) -> String {
+    String.from_slice(input.sub_slice(from, to))
+}
+
+fn keyword_or_ident(s: String) -> TokenKind {
+    match s {
+        "module"   => KwModule,
+        "import"   => KwImport,
+        "as"       => KwAs,
+        "pub"      => KwPub,
+        "struct"   => KwStruct,
+        "enum"     => KwEnum,
+        "effect"   => KwEffect,
+        "trait"    => KwTrait,
+        "instance" => KwInstance,
+        "fn"       => KwFn,
+        "let"      => KwLet,
+        "if"       => KwIf,
+        "else"     => KwElse,
+        "return"   => KwReturn,
+        "type"     => KwType,
+        "match"    => KwMatch,
+        "for"      => KwFor,
+        "in"       => KwIn,
+        "loop"     => KwLoop,
+        "break"    => KwBreak,
+        "continue" => KwContinue,
+        "with"     => KwWith,
+        "implicit" => KwImplicit,
+        "while"    => KwWhile,
+        "void"     => KwVoid,
+        "sizeof"   => KwSizeOf,
+        "_"        => Wildcard,
+        _ => {
+            let first = s.as_slice()[0];
+            if is_upper(first) {
+                TypeIdentifier(I.intern(s))
+            } else {
+                VarIdentifier(I.intern(s))
+            }
+        }
+    }
+}
+
+pub fn tokenize(input: String) -> Result[Vec[Token], LexError] {
+    Lexer.new(input).tokenize()
+}
+
+}

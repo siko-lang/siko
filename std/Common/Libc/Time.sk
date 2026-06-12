@@ -1,0 +1,37 @@
+module Std.Libc.Time {
+
+import Std.IO.Error
+import Std.Arch.Errno
+
+@value_type
+pub struct TimeSpec {
+    pub tv_sec: I64,
+    pub tv_nsec: I64
+}
+
+pub let CLOCK_REALTIME: I32 = 0.as_i32();
+pub let CLOCK_MONOTONIC: I32 = 6.as_i32();
+
+@extern("C")
+fn clock_gettime(clk_id: I32, tp: *TimeSpec) -> I32
+
+@safe
+pub fn get_time_spec(clock_id: I32) -> Result[TimeSpec, Error] {
+    let ts = TimeSpec(0.as_i64(), 0.as_i64());
+    let res = clock_gettime(clock_id, &ts);
+    if res == 0.as_i32() {
+        Ok(ts)
+    } else {
+        Err(Error.new(Std.Arch.Errno.get_errno()))
+    }
+}
+
+pub fn get_realtime_clock() -> Result[TimeSpec, Error] {
+    get_time_spec(CLOCK_REALTIME)
+}
+
+pub fn get_monotonic_clock() -> Result[TimeSpec, Error] {
+    get_time_spec(CLOCK_MONOTONIC)
+}
+
+}

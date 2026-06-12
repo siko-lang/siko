@@ -1,0 +1,206 @@
+@prelude
+module Std.Int.U8 {
+
+import Std.Intrinsics
+
+@builtin
+pub struct U8 {
+    @builtin
+    @op(eq)
+    pub fn eq(a: U8, b: U8) -> Bool
+
+    @builtin
+    @op(lt)
+    pub fn lt(a: U8, b: U8) -> Bool
+
+    @builtin
+    @op(add)
+    pub fn add(a: U8, b: U8) -> U8
+
+    @builtin
+    @op(sub)
+    pub fn sub(a: U8, b: U8) -> U8
+
+    @builtin
+    @op(mul)
+    pub fn mul(a: U8, b: U8) -> U8
+
+    @builtin
+    @op(div)
+    pub fn div(a: U8, b: U8) -> U8
+
+    @builtin
+    @op(neg)
+    pub fn neg(a: U8) -> U8
+
+    @builtin
+    @op(mod)
+    pub fn mod(a: U8, b: U8) -> U8
+
+    @builtin
+    @op(band)
+    pub fn band(a: U8, b: U8) -> U8
+
+    @builtin
+    @op(bor)
+    pub fn bor(a: U8, b: U8) -> U8
+
+    @builtin
+    @op(xor)
+    pub fn bxor(a: U8, b: U8) -> U8
+
+    @builtin
+    @op(not)
+    pub fn not(a: U8) -> U8
+
+    @builtin
+    @op(shl)
+    pub fn shl(a: U8, n: U8) -> U8
+
+    @builtin
+    @op(shr)
+    pub fn shr(a: U8, n: U8) -> U8
+
+    @safe
+    pub fn as_int(a: U8) -> Int {
+        transmute(a)
+    }
+
+    pub fn saturating_sub(a: U8, b: U8) -> U8 {
+        if a > b { a - b } else { 0.as_u8() } // FIXME: add untyped literals
+    }
+}
+
+instance PartialEq[U8] {
+    fn eq(a: U8, b: U8) -> Bool {
+        a.eq(b)
+    }
+}
+
+instance Eq[U8] {}
+
+instance PartialOrd[U8] {
+    fn partial_cmp(a: U8, b: U8) -> Option[Ordering] {
+        if a.eq(b) {
+            Some(Ordering.Equal)
+        } else {
+            if a.lt(b) {
+                Some(Ordering.Less)
+            } else {
+                Some(Ordering.Greater)
+            }
+        }
+    }
+}
+
+instance Ord[U8] {
+    fn cmp(a: U8, b: U8) -> Ordering {
+        if a.eq(b) {
+            Ordering.Equal
+        } else {
+            if a.lt(b) {
+                Ordering.Less
+            } else {
+                Ordering.Greater
+            }
+        }
+    }
+}
+
+instance Add[U8] {
+    type Output = U8
+    fn add(a: U8, b: U8) -> U8 {
+        a.add(b)
+    }
+}
+
+instance Sub[U8] {
+    type Output = U8
+    fn sub(a: U8, b: U8) -> U8 {
+        a.sub(b)
+    }
+}
+
+instance Mul[U8] {
+    type Output = U8
+    fn mul(a: U8, b: U8) -> U8 {
+        a.mul(b)
+    }
+}
+
+instance Div[U8] {
+    type Output = U8
+    fn div(a: U8, b: U8) -> U8 {
+        a.div(b)
+    }
+}
+
+instance Mod[U8] {
+    type Output = U8
+    fn mod(a: U8, b: U8) -> U8 {
+        a.mod(b)
+    }
+}
+
+instance Neg[U8] {
+    type Output = U8
+    fn neg(a: U8) -> U8 {
+        a.neg()
+    }
+}
+
+instance BitAnd[U8] {
+    type Output = U8
+    fn band(a: U8, b: U8) -> U8 {
+        a.band(b)
+    }
+}
+
+instance BitOr[U8] {
+    type Output = U8
+    fn bor(a: U8, b: U8) -> U8 {
+        a.bor(b)
+    }
+}
+
+instance BitXor[U8] {
+    type Output = U8
+    fn bxor(a: U8, b: U8) -> U8 {
+        a.bxor(b)
+    }
+}
+
+instance Shl[U8] {
+    type Output = U8
+    fn shl(a: U8, b: U8) -> U8 {
+        a.shl(b)
+    }
+}
+
+instance Shr[U8] {
+    type Output = U8
+    fn shr(a: U8, b: U8) -> U8 {
+        a.shr(b)
+    }
+}
+
+instance BNot[U8] {
+    type Output = U8
+    fn bnot(a: U8) -> U8 {
+        a.not()
+    }
+}
+
+instance ToString[U8] {
+    fn to_string(a: U8) -> String {
+        a.as_int().to_string()
+    }
+}
+
+instance Clone[U8] {
+    fn clone(a: U8) -> U8 {
+        a
+    }
+}
+
+}

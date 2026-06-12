@@ -1,0 +1,51 @@
+module Siko.AST.Pattern {
+
+import Siko.Location
+import Siko.AST.Name
+import Siko.AST.Expr
+import Siko.AST.Type
+import Siko.AST.QualifiedName
+import Siko.Interner as I
+
+@derive(Clone)
+pub struct NamedPatternArg {
+    pub index: Int,
+    pub name: I.String,
+}
+
+@derive(Clone)
+pub struct Pattern {
+    pub kind: PatternKind,
+    pub location: Location,
+    pub ty: Option[TypeDef],
+}
+
+@derive(Clone)
+pub struct NamedPatternInfo {
+    pub name: Name,
+    pub args: Vec[Pattern],
+    pub named_args: Vec[NamedPatternArg],
+    pub has_rest: Bool,
+}
+
+@derive(Clone)
+pub enum PatternKind {
+    Binding(VariableName),
+    Tuple(Vec[Pattern]),
+    Named(NamedPatternInfo),
+    Wildcard,
+    StringLiteral(I.String),
+    IntLiteral(I.String),
+    CharLiteral(U8),
+    Guard(Pattern, Expr, Option[Expr]),
+    Typed(Pattern, TypeDef),
+
+    pub fn name(pk: PatternKind) -> QualifiedName {
+        match pk {
+            Named(info) => info.name.resolved(),
+            _              => panic("not a named pattern"),
+        }
+    }
+}
+
+}

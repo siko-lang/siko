@@ -1,0 +1,44 @@
+@prelude
+module Std.Range {
+
+pub struct Range {
+    pub from: Int,
+    pub to: Int
+
+    pub fn range(from: Int, to: Int) -> Range {
+        Range(from, to)
+    }
+
+    pub fn iter(a: Range) -> RangeIterator {
+        RangeIterator(a.from, a.to)
+    }
+}
+
+pub struct RangeIterator {
+    current: Int,
+    to: Int
+}
+
+instance Iterator[RangeIterator] {
+    type Item = Int
+    fn next(a: RangeIterator) -> Option[Int] {
+        if a.current < a.to {
+            let val = a.current;
+            a.current = a.current + 1;
+            Some(val)
+        } else {
+            None
+        }
+    }
+}
+
+instance IntoIterator[Range] {
+    type Item = Int
+    type IntoIter = RangeIterator
+
+    fn into_iter(a: Range) -> RangeIterator {
+        a.iter()
+    }
+}
+
+}

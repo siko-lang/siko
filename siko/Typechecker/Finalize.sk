@@ -1,0 +1,365 @@
+module Siko.Typechecker.Finalize {
+
+import Std.Map
+import Siko.AST.Expr
+import Siko.AST.Function
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.Pattern
+import Siko.AST.QualifiedName
+import Siko.AST.Statement as S
+import Siko.AST.Type
+import Siko.HIR.Program
+import Siko.Instances.FunctionInstanceResolver
+import Siko.Interner as I
+import Siko.Location
+import Siko.Typechecker.Constraints
+import Siko.Unification.Sub
+import Siko.Constants.Builtins as B
+
+pub struct CallResolution {
+    pub result_var: Int,
+    pub qname: QualifiedName,
+    pub kind: FunctionKind,
+}
+
+// ── Finalize trait ────────────────────────────────────────────────────────────
+
+trait Finalize[T] {
+    fn finalize(t: T, f: Finalizer) -> T
+}
+
+instance Finalize[TypeDef] {
+    fn finalize(ty: TypeDef, f: Finalizer) -> TypeDef {
+        f.sub.apply(ty)
+    }
+}
+
+instance Finalize[Location]      = auto(Map, =)
+instance Finalize[I.String]      = auto(Map, =)
+instance Finalize[String]        = auto(Map, =)
+instance Finalize[Int]           = auto(Map, =)
+instance Finalize[U8]            = auto(Map, =)
+instance Finalize[QualifiedName] = auto(Map, =)
+instance Finalize[VariableName]  = auto(Map, =)
+instance Finalize[Name]          = auto(Map, =)
+instance Finalize[Identifier]    = auto(Map, =)
+instance Finalize[FunctionKind]  = auto(Map, =)
+instance Finalize[BinaryOp]      = auto(Map, =)
+instance Finalize[UnaryOp]       = auto(Map, =)
+instance Finalize[WitnessInfo]   = auto(Map, =)
+instance Finalize[HandlerSelection] = auto(Map, =)
+instance Finalize[ImplicitRefInfo]  = auto(Map, =)
+instance Finalize[CreateClosureInfo] = auto(Map, =)
+instance Finalize[FunctionPtrInfo]   = auto(Map, =)
+
+instance Finalize[LambdaArg]    = auto(Map)
+instance Finalize[FunctionCallInfo] = auto(Map)
+instance Finalize[NamedArgument]     = auto(Map, =)
+instance Finalize[Bool]              = auto(Map, =)
+instance Finalize[NamedPatternArg]   = auto(Map, =)
+instance Finalize[NamedPatternInfo]  = auto(Map)
+instance Finalize[MethodCallInfo]   = auto(Map)
+instance Finalize[CallInfo]         = auto(Map)
+instance Finalize[MatchInfo]    = auto(Map)
+instance Finalize[MatchArm]     = auto(Map)
+instance Finalize[WithInfo]     = auto(Map)
+instance Finalize[Pattern]      = auto(Map)
+instance Finalize[PatternKind]  = auto(Map)
+instance Finalize[ExprKind]     = auto(Map)
+
+instance Finalize[Expr] {
+    fn finalize(expr: Expr, f: Finalizer) -> Expr {
+        f.finalize_expr(expr)
+    }
+}
+
+instance[T: Finalize[T]] Finalize[Option[T]] {
+    fn finalize(opt: Option[T], f: Finalizer) -> Option[T] {
+        opt.map(|t| finalize(t, f))
+    }
+}
+
+instance[T: Finalize[T]] Finalize[Vec[T]] {
+    fn finalize(vec: Vec[T], f: Finalizer) -> Vec[T] {
+        vec.into_iter().map(|t| finalize(t, f)).collect()
+    }
+}
+
+instance Finalize[S.LetInfo] {
+    fn finalize(info: S.LetInfo, f: Finalizer) -> S.LetInfo {
+        let new_rhs = finalize(info.rhs, f);
+        S.LetInfo(info.name, new_rhs.ty, new_rhs)
+    }
+}
+
+instance Finalize[S.DeclareInfo] = auto(Map)
+
+instance Finalize[S.Statement] {
+    fn finalize(stmt: S.Statement, f: Finalizer) -> S.Statement {
+        f.finalize_stmt(stmt)
+    }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+fn build_array_elem_ptr(container: Expr, idx: Expr, container_ty: TypeDef, elem_ty: TypeDef) -> Expr {
+    let loc = container.location;
+    let ptr_array_ty = TypeDef.Ptr(container_ty);
+    let ptr_elem_ty = TypeDef.Ptr(elem_ty);
+    let addr_of = Expr(ExprKind.AddrOf(container), loc, Some(ptr_array_ty));
+    let as_ptr_call = Expr(ExprKind.FunctionCall(FunctionCallInfo(
+        QualifiedName.new(I.intern("Std.Array.as_ptr")),
+        FunctionKind.UserDefined,
+        [addr_of],
+        WitnessInfo.new(),
+        Vec.new(),
+    )), loc, Some(ptr_elem_ty));
+    Expr(ExprKind.FunctionCall(FunctionCallInfo(
+        QualifiedName.new(I.intern("Std.Ptr.offset_of")),
+        FunctionKind.UserDefined,
+        [as_ptr_call, idx],
+        WitnessInfo.new(),
+        Vec.new(),
+    )), loc, Some(ptr_elem_ty))
+}
+
+// ── Finalizer ─────────────────────────────────────────────────────────────────
+
+pub struct Finalizer {
+    pub sub: Substitution,
+    pub program: Program,
+    pub method_resolutions: Map[Int, CallResolution],
+    pub witness_map: Map[WitnessKey, BoundWitness],
+
+    pub fn new(sub: Substitution, program: Program, method_resolutions: Map[Int, CallResolution], witness_map: Map[WitnessKey, BoundWitness]) -> Finalizer {
+        Finalizer(sub, program, method_resolutions, witness_map)
+    }
+
+    fn never_return_ty(f: Finalizer, qname: QualifiedName) -> Option[TypeDef] {
+        match f.program.functions.get(qname) {
+            None => None,
+            Some(func) => match func.result_type {
+                Some(TypeDef.Never(explicit)) => Some(TypeDef.Never(explicit)),
+                _ => None,
+            }
+        }
+    }
+
+    pub fn finalize_function(f: Finalizer, func: FunctionDef) -> FunctionDef {
+        let body = match func.body {
+            None => return func,
+            Some(b) => b,
+        };
+        let result = func;
+        result.body = Some(f.finalize_expr(body));
+        result
+    }
+
+    fn apply_ty(f: Finalizer, ty: Option[TypeDef]) -> Option[TypeDef] {
+        match ty {
+            Some(t) => Some(f.sub.apply(t)),
+            None => None,
+        }
+    }
+
+    fn result_var(f: Finalizer, expr: Expr) -> Int {
+        match expr.ty {
+            Some(TypeDef.Var(TypeVar.Var(n))) => n,
+            _ => panic("finalize: expr.ty is not a bare flex var"),
+        }
+    }
+
+    fn build_witnesses(f: Finalizer, result_var: Int) -> WitnessInfo {
+        let witnesses = Vec.new();
+        let idx = 0;
+        while True {
+            match f.witness_map.get(WitnessKey(result_var, idx)) {
+                Some(bw) => {
+                    witnesses.push(bw);
+                    idx = idx + 1;
+                }
+                None => { break; }
+            }
+        }
+        WitnessInfo(witnesses)
+    }
+
+    fn inject_default_args(f: Finalizer, qname: QualifiedName, args: Vec[Expr], loc: Location) -> Vec[Expr] {
+        if let Some(func) = f.program.functions.get(qname) {
+            for i in args.len() .. func.args.len() {
+                let dv = func.default_value_names.iter().find(|dv| dv.index == i).unwrap();
+                let default_func = f.program.functions.get(dv.name).unwrap();
+                let default_ty = f.sub.apply(default_func.result_type.unwrap());
+                args.push(Expr(
+                    ExprKind.FunctionCall(FunctionCallInfo(
+                        dv.name,
+                        FunctionKind.UserDefined,
+                        Vec.new(),
+                        WitnessInfo.new(),
+                        Vec.new(),
+                    )),
+                    loc,
+                    Some(default_ty),
+                ));
+            }
+        }
+        args
+    }
+
+    fn inject_ctor_default_args(f: Finalizer, qname: QualifiedName, args: Vec[Expr], loc: Location) -> Vec[Expr] {
+        if let Some(struct_def) = f.program.structs.get(qname) {
+            for i in args.len() .. struct_def.fields.len() {
+                let dv = struct_def.default_value_names.iter().find(|dv| dv.index == i).unwrap();
+                let default_func = f.program.functions.get(dv.name).unwrap();
+                let default_ty = f.sub.apply(default_func.result_type.unwrap());
+                args.push(Expr(
+                    ExprKind.FunctionCall(FunctionCallInfo(
+                        dv.name,
+                        FunctionKind.UserDefined,
+                        Vec.new(),
+                        WitnessInfo.new(),
+                        Vec.new(),
+                    )),
+                    loc,
+                    Some(default_ty),
+                ));
+            }
+        }
+        args
+    }
+
+    fn finalize_expr(f: Finalizer, expr: Expr) -> Expr {
+        let ty = f.apply_ty(expr.ty);
+        let loc = expr.location;
+
+        match expr.kind {
+            ExprKind.MethodCall(MethodCallInfo(receiver, _method, args, _named_args)) => {
+                let result_var = f.result_var(expr);
+                let cr = f.method_resolutions.get(result_var).unwrap();
+                let witnesses = f.build_witnesses(result_var);
+                let new_args = Vec.new();
+                new_args.push(f.finalize_expr(receiver));
+                for a in args { new_args.push(f.finalize_expr(a)); }
+                let new_args = f.inject_default_args(cr.qname, new_args, loc);
+                let call_ty = match f.never_return_ty(cr.qname) {
+                    Some(t) => Some(t),
+                    None => ty,
+                };
+                Expr(ExprKind.FunctionCall(FunctionCallInfo(cr.qname, cr.kind, new_args, witnesses, Vec.new())), loc, call_ty)
+            }
+
+            ExprKind.FunctionCall(FunctionCallInfo(qname, kind, args, _, named_args)) => {
+                let new_args = finalize(args, f);
+                match kind {
+                    FunctionKind.UserDefined | FunctionKind.Extern(_) | FunctionKind.Builtin => {
+                        let new_args = f.inject_default_args(qname, new_args, loc);
+                        let result_var = f.result_var(expr);
+                        let witnesses = f.build_witnesses(result_var);
+                        let call_ty = match f.never_return_ty(qname) {
+                            Some(t) => Some(t),
+                            None => ty,
+                        };
+                        Expr(ExprKind.FunctionCall(FunctionCallInfo(qname, kind, new_args, witnesses, named_args)), loc, call_ty)
+                    }
+                    FunctionKind.StructCtor => {
+                        let new_args = f.inject_ctor_default_args(qname, new_args, loc);
+                        Expr(ExprKind.FunctionCall(FunctionCallInfo(qname, kind, new_args, WitnessInfo.new(), named_args)), loc, ty)
+                    }
+                    FunctionKind.VariantCtor =>
+                        Expr(ExprKind.FunctionCall(FunctionCallInfo(qname, kind, new_args, WitnessInfo.new(), named_args)), loc, ty),
+                }
+            }
+
+            ExprKind.Index(container, idx) => {
+                let result_var = f.result_var(expr);
+                let finalized_container = f.finalize_expr(container);
+                let finalized_idx = f.finalize_expr(idx);
+                let container_ty = finalized_container.ty.unwrap();
+                match container_ty {
+                    TypeDef.Named(Name.Resolved(qname), type_args) if qname.base_name() == B.get_array_type() => {
+                        let elem_ty = type_args[0];
+                        let ptr = build_array_elem_ptr(finalized_container, finalized_idx, container_ty, elem_ty);
+                        Expr(ExprKind.Deref(ptr), loc, Some(elem_ty))
+                    }
+                    _ => {
+                        let witnesses = f.build_witnesses(result_var);
+                        Expr(ExprKind.FunctionCall(FunctionCallInfo(
+                            QualifiedName.new(B.get_index_index()),
+                            FunctionKind.UserDefined,
+                            [finalized_container, finalized_idx],
+                            witnesses,
+                            Vec.new(),
+                        )), loc, ty)
+                    }
+                }
+            }
+
+            ExprKind.FunctionPtr(info) => {
+                let result_var = f.result_var(expr);
+                let witnesses = f.build_witnesses(result_var);
+                Expr(ExprKind.FunctionPtr(FunctionPtrInfo(info.name, witnesses)), loc, ty)
+            }
+
+            ExprKind.DynamicCall(callee, args) => {
+                let new_callee = f.finalize_expr(callee);
+                let new_args: Vec[_] = args.into_iter().map(|a| f.finalize_expr(a)).collect();
+                match new_callee.ty {
+                    Some(TypeDef.FnPtr(_, _)) =>
+                        Expr(ExprKind.FunctionPtrCall(new_callee, new_args), loc, ty),
+                    _ =>
+                        Expr(ExprKind.DynamicCall(new_callee, new_args), loc, ty),
+                }
+            }
+
+            kind => Expr(kind.finalize(f), loc, ty),
+        }
+    }
+
+    fn finalize_stmt(f: Finalizer, stmt: S.Statement) -> S.Statement {
+        match stmt {
+            S.Let(info) => S.Let(finalize(info, f)),
+            S.Declare(info) => S.Declare(finalize(info, f)),
+            S.Assign(lhs, rhs) => {
+                match lhs.kind {
+                    ExprKind.Index(container, idx) => {
+                        let assign_var = match lhs.ty {
+                            Some(TypeDef.Var(TypeVar.Var(n))) => n,
+                            _ => panic("finalize: index-assign lhs must have flex var ty"),
+                        };
+                        let finalized_container = f.finalize_expr(container);
+                        let finalized_idx = f.finalize_expr(idx);
+                        let finalized_rhs = f.finalize_expr(rhs);
+                        let container_ty = finalized_container.ty.unwrap();
+                        match container_ty {
+                            TypeDef.Named(Name.Resolved(qname), type_args) if qname.base_name() == B.get_array_type() => {
+                                let elem_ty = type_args[0];
+                                let ptr = build_array_elem_ptr(finalized_container, finalized_idx, container_ty, elem_ty);
+                                S.Assign(Expr(ExprKind.Deref(ptr), lhs.location, Some(elem_ty)), finalized_rhs)
+                            }
+                            _ => {
+                                let witnesses = f.build_witnesses(assign_var);
+                                S.Expr(Expr(ExprKind.FunctionCall(FunctionCallInfo(
+                                    QualifiedName.new(B.get_index_assign_index_assign()),
+                                    FunctionKind.UserDefined,
+                                    [finalized_container, finalized_idx, finalized_rhs],
+                                    witnesses,
+                                    Vec.new(),
+                                )), lhs.location, Some(TypeDef.Tuple(Vec.new()))))
+                            }
+                        }
+                    }
+                    _ => S.Assign(f.finalize_expr(lhs), f.finalize_expr(rhs)),
+                }
+            }
+            S.Expr(e) => S.Expr(finalize(e, f)),
+            S.TrailingExpr(e) => S.TrailingExpr(finalize(e, f)),
+            S.Loop(stmts) => S.Loop(finalize(stmts, f)),
+            S.Break => S.Break,
+            S.Continue => S.Continue,
+            _ => panic("finalize: unexpected statement kind"),
+        }
+    }
+}
+
+}

@@ -1,0 +1,296 @@
+module Siko.Resolver.Desugar {
+
+import Siko.Resolver.ExprResolver
+import Siko.Resolver.Env
+import Siko.Resolver.Error
+import Siko.Location
+import Siko.Resolver
+import Siko.AST.Expr
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.QualifiedName
+import Siko.AST.Pattern
+import Siko.AST.Statement as S
+import Siko.Constants.Builtins as B
+import Siko.Interner as I
+
+pub fn desugar_try(expr_resolver: ExprResolver, resolved_inner: Expr, loc: Location) -> ExprKind {
+    let ok_var = expr_resolver.var_allocator.allocate_temp();
+    let err_var = expr_resolver.var_allocator.allocate_temp();
+    let ok_pat = Pattern(
+        PatternKind.Named(NamedPatternInfo(
+            name: Name.Resolved(QualifiedName.new(B.get_result_ok())),
+            args: [Pattern(PatternKind.Binding(ok_var), loc, None)],
+            named_args: Vec.new(),
+            has_rest: False,
+        )),
+        loc,
+        None,
+    );
+    let ok_body = Expr(ExprKind.Var(ok_var), loc, None);
+    let err_pat = Pattern(
+        PatternKind.Named(NamedPatternInfo(
+            name: Name.Resolved(QualifiedName.new(B.get_result_err())),
+            args: [Pattern(PatternKind.Binding(err_var), loc, None)],
+            named_args: Vec.new(),
+            has_rest: False,
+        )),
+        loc,
+        None,
+    );
+    let converted_err = Expr(
+        ExprKind.FunctionCall(FunctionCallInfo(
+            QualifiedName.new(B.get_convert_into()),
+            FunctionKind.UserDefined,
+            [Expr(ExprKind.Var(err_var), loc, None)],
+            WitnessInfo.new(),
+            Vec.new(),
+        )),
+        loc,
+        None,
+    );
+    let err_body = Expr(
+        ExprKind.Return(Expr(
+            ExprKind.FunctionCall(FunctionCallInfo(
+                QualifiedName.new(B.get_result_err()),
+                FunctionKind.VariantCtor,
+                [converted_err],
+                WitnessInfo.new(),
+                Vec.new(),
+            )),
+            loc,
+            None,
+        )),
+        loc,
+        None,
+    );
+    ExprKind.Match(MatchInfo(
+        resolved_inner,
+        [
+            MatchArm(ok_pat, ok_body),
+            MatchArm(err_pat, err_body),
+        ],
+    ))
+}
+
+pub fn desugar_list(expr_resolver: ExprResolver, resolved_items: Vec[Expr], loc: Location) -> ExprKind {
+    let tmp = expr_resolver.var_allocator.allocate_temp();
+    let new_call = Expr(
+        ExprKind.FunctionCall(FunctionCallInfo(
+            QualifiedName.new(B.get_vec_new()),
+            FunctionKind.UserDefined,
+            Vec.new(),
+            WitnessInfo.new(),
+            Vec.new(),
+        )),
+        loc,
+        None,
+    );
+    let stmts = [S.Statement.Let(S.LetInfo(tmp, None, new_call))];
+    for item in resolved_items {
+        let push_call = Expr(
+            ExprKind.FunctionCall(FunctionCallInfo(
+                QualifiedName.new(B.get_vec_push()),
+                FunctionKind.UserDefined,
+                [Expr(ExprKind.Var(tmp), loc, None), item],
+                WitnessInfo.new(),
+                Vec.new(),
+            )),
+            loc,
+            None,
+        );
+        stmts.push(S.Statement.Expr(push_call));
+    }
+    stmts.push(S.Statement.TrailingExpr(Expr(ExprKind.Var(tmp), loc, None)));
+    ExprKind.Block(stmts)
+}
+
+pub fn desugar_binary_op(op: BinaryOp, lhs: Expr, rhs: Expr) -> ExprKind {
+    let loc = lhs.location;
+    match op {
+        BinaryOp.And => {
+            let false_val = Expr(
+                ExprKind.FunctionCall(FunctionCallInfo(
+                    QualifiedName.new(B.get_bool_false()),
+                    FunctionKind.VariantCtor,
+                    Vec.new(),
+                    WitnessInfo.new(),
+                    Vec.new(),
+                )),
+                loc,
+                None,
+            );
+            ExprKind.If(lhs, rhs, Some(false_val))
+        }
+        BinaryOp.Or => {
+            let true_val = Expr(
+                ExprKind.FunctionCall(FunctionCallInfo(
+                    QualifiedName.new(B.get_bool_true()),
+                    FunctionKind.VariantCtor,
+                    Vec.new(),
+                    WitnessInfo.new(),
+                    Vec.new(),
+                )),
+                loc,
+                None,
+            );
+            ExprKind.If(lhs, true_val, Some(rhs))
+        }
+        _ => {
+            let fn_name = match op {
+                BinaryOp.Add => B.get_op_add(),
+                BinaryOp.Sub => B.get_op_sub(),
+                BinaryOp.Mul => B.get_op_mul(),
+                BinaryOp.Div => B.get_op_div(),
+                BinaryOp.Eq => B.get_op_eq(),
+                BinaryOp.NotEq => B.get_op_not_eq(),
+                BinaryOp.Less => B.get_op_less(),
+                BinaryOp.Greater => B.get_op_greater(),
+                BinaryOp.LessEq => B.get_op_less_eq(),
+                BinaryOp.GreaterEq => B.get_op_greater_eq(),
+                BinaryOp.And | BinaryOp.Or => panic("Illegal binary op"),
+                BinaryOp.BitAnd => B.get_op_band(),
+                BinaryOp.BitOr => B.get_op_bor(),
+                BinaryOp.Xor => B.get_op_bxor(),
+                BinaryOp.Mod => B.get_op_mod(),
+                BinaryOp.Shl => B.get_op_shl(),
+                BinaryOp.Shr => B.get_op_shr(),
+            };
+            ExprKind.FunctionCall(FunctionCallInfo(
+                QualifiedName.new(fn_name),
+                FunctionKind.UserDefined,
+                [lhs, rhs],
+                WitnessInfo.new(),
+                Vec.new(),
+            ))
+        }
+    }
+}
+
+pub fn desugar_unary_op(op: UnaryOp, operand: Expr) -> ExprKind {
+    let fn_name = match op {
+        UnaryOp.Neg => B.get_op_neg(),
+        UnaryOp.Not => B.get_op_not(),
+        UnaryOp.BNot => B.get_op_bnot(),
+    };
+    ExprKind.FunctionCall(FunctionCallInfo(
+        QualifiedName.new(fn_name),
+        FunctionKind.UserDefined,
+        [operand],
+        WitnessInfo.new(),
+        Vec.new(),
+    ))
+}
+
+pub fn desugar_while_loop(
+    expr_resolver: ExprResolver,
+    env: Environment,
+    cond: Expr,
+    body: Vec[S.Statement],
+) -> Result[S.Statement, ResolveError] {
+    let loc = cond.location;
+    let resolved_cond = expr_resolver.resolve_expr(cond, env)?;
+    let loop_body = expr_resolver.resolve_stmts(body, env)?;
+    let if_expr = Expr(
+        ExprKind.If(
+            resolved_cond,
+            Expr(ExprKind.Block(loop_body), loc, None),
+            Some(Expr(ExprKind.Block([S.Statement.Break]), loc, None)),
+        ),
+        loc,
+        None,
+    );
+    Ok(S.Statement.Loop([S.Statement.Expr(if_expr)]))
+}
+
+pub fn desugar_for_loop(
+    expr_resolver: ExprResolver,
+    env: Environment,
+    result: Vec[S.Statement],
+    pattern: Pattern,
+    iterable: Expr,
+    body: Vec[S.Statement],
+) -> Result[S.Statement, ResolveError] {
+    let loc = iterable.location;
+    let resolved_iterable = expr_resolver.resolve_expr(iterable, env)?;
+    let iter_var = expr_resolver.var_allocator.allocate_temp();
+    env.add(iter_var);
+    let into_iter_call = Expr(
+        ExprKind.MethodCall(MethodCallInfo(
+            resolved_iterable,
+            Identifier.new(I.intern("into_iter"), loc),
+            Vec.new(),
+            Vec.new(),
+        )),
+        loc,
+        None,
+    );
+    result.push(S.Statement.Let(S.LetInfo(iter_var, None, into_iter_call)));
+    let next_call = Expr(
+        ExprKind.MethodCall(MethodCallInfo(
+            Expr(ExprKind.Var(iter_var), loc, None),
+            Identifier.new(I.intern("next"), loc),
+            Vec.new(),
+            Vec.new(),
+        )),
+        loc,
+        None,
+    );
+    let arm_env = env.child();
+    let resolved_pattern = expr_resolver.resolve_pattern(pattern, arm_env)?;
+    let some_pattern = Pattern(
+        PatternKind.Named(NamedPatternInfo(
+            name: Name.Resolved(QualifiedName.new(B.get_option_some())),
+            args: [resolved_pattern],
+            named_args: Vec.new(),
+            has_rest: False,
+        )),
+        pattern.location,
+        None,
+    );
+    let resolved_body = expr_resolver.resolve_stmts(body, arm_env)?;
+    let none_pattern = Pattern(
+        PatternKind.Named(NamedPatternInfo(
+            name: Name.Resolved(QualifiedName.new(B.get_option_none())),
+            args: Vec.new(),
+            named_args: Vec.new(),
+            has_rest: False,
+        )),
+        pattern.location,
+        None,
+    );
+    let match_expr = Expr(
+        ExprKind.Match(MatchInfo(
+            next_call,
+            [
+                MatchArm(some_pattern, Expr(ExprKind.Block(resolved_body), loc, None)),
+                MatchArm(none_pattern, Expr(ExprKind.Block([S.Statement.Break]), loc, None)),
+            ],
+        )),
+        loc,
+        None,
+    );
+    Ok(S.Statement.Loop([S.Statement.Expr(match_expr)]))
+}
+
+pub fn desugar_if_let(
+    expr_resolver: ExprResolver,
+    pattern: Pattern,
+    cond: Expr,
+    then: Expr,
+    else_expr: Option[Expr],
+    loc: Location,
+    env: Environment,
+) -> Result[Expr, ResolveError] {
+    let else_branch = match else_expr {
+        Some(e) => e,
+        None => Expr(ExprKind.Tuple(Vec.new()), loc, None),
+    };
+    let match_arms = [
+        MatchArm(pattern, then),
+        MatchArm(Pattern(PatternKind.Wildcard, loc, None), else_branch),
+    ];
+    let desugared = Expr(ExprKind.Match(MatchInfo(cond, match_arms)), loc, None);
+    expr_resolver.resolve_expr(desugared, env)
+}
+}

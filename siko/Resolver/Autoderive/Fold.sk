@@ -1,0 +1,220 @@
+module Siko.Resolver.Autoderive.Fold {
+
+import Siko.Resolver.Autoderive.Utils
+import Siko.AST.Data
+import Siko.AST.Traits
+import Siko.AST.Name
+import Siko.AST.Type
+import Siko.AST.Identifier
+import Siko.AST.Generics
+import Siko.AST.Function
+import Siko.AST.Expr
+import Siko.AST.Statement as S
+import Siko.AST.Pattern
+import Siko.Utils.VarAllocator
+import Siko.AST.QualifiedName
+import Siko.Location
+import Siko.Interner as I
+
+pub fn build_fold_method(
+    enum_def: EnumDef,
+    instance_prefix: Identifier,
+    type_arg_defs: Option[TypeArgDefs],
+    fn_qname: QualifiedName,
+    short_name: Identifier,
+    module_name: I.String,
+    extra_args: Vec[FunctionArg],
+    body_strategy: BodyStrategy,
+) -> (FunctionDef, Identifier) {
+    let loc = enum_def.name.location;
+    let var_alloc = VarAllocator.new();
+    let var_a = var_alloc.allocate_user(I.intern("a"));
+    let extra_arg_defs: Vec[FunctionArg] = extra_args.iter().map(|arg| {
+        let v = var_alloc.allocate_user(arg.name.get_user_name());
+        FunctionArg(v, arg.type_def, None)
+    }).collect();
+    let extra_arg_vars: Vec[VariableName] = extra_arg_defs.iter().map(|arg| arg.name).collect();
+    let self_type = TypeDef.Named(
+        Name.Resolved(QualifiedName.new(enum_def.name.name)),
+        [],
+    );
+    let body = match body_strategy {
+        BodyStrategy.Identity => unit_expr(loc),
+        BodyStrategy.Unreachable => build_unreachable(loc),
+        BodyStrategy.Generate => build_fold_body(enum_def, var_a, fn_qname, extra_arg_vars, var_alloc, loc),
+    };
+    let method = make_unary_method(
+        instance_prefix,
+        short_name,
+        type_arg_defs,
+        self_type,
+        Some(TypeDef.Tuple([])),
+        var_a,
+        extra_arg_defs,
+        body,
+        module_name,
+        var_alloc,
+    );
+    (method, short_name)
+}
+
+fn build_fold_body(
+    enum_def: EnumDef,
+    var_a: VariableName,
+    fn_qname: QualifiedName,
+    extra_arg_vars: Vec[VariableName],
+    var_alloc: VarAllocator,
+    loc: Location,
+) -> Expr {
+    let scrutinee = Expr(
+        ExprKind.Var(var_a),
+        loc,
+        None,
+    );
+
+    let arms: Vec[MatchArm] = enum_def
+        .variants
+        .iter()
+        .map(|variant| {
+            let n = variant.items.len();
+            let field_vars = allocate_vars(n, I.intern("f"), var_alloc);
+            let variant_qname = QualifiedName.new(
+                I.intern("${enum_def.name.name}.${variant.name.name}")
+            );
+            let pattern = Pattern(
+                PatternKind.Named(NamedPatternInfo(
+                    name: Name.Resolved(variant_qname),
+                    args: binding_pats(field_vars, loc),
+                    named_args: Vec.new(),
+                    has_rest: False,
+                )),
+                loc,
+                None,
+            );
+            let body = build_fold_arm_body(field_vars, fn_qname, extra_arg_vars, loc);
+            MatchArm(pattern, body)
+        })
+        .collect();
+
+    Expr(
+        ExprKind.Match(MatchInfo(scrutinee, arms)),
+        loc,
+        None,
+    )
+}
+
+fn build_fold_arm_body(field_vars: Vec[VariableName], fn_qname: QualifiedName, extra_arg_vars: Vec[VariableName], loc: Location) -> Expr {
+    if field_vars.is_empty() {
+        return unit_expr(loc);
+    }
+    let calls: Vec[Expr] = field_vars.iter().map(|v| call_fn(fn_qname, v, extra_arg_vars, loc)).collect();
+    if calls.len() == 1 {
+        calls.remove(0)
+    } else {
+        let last = calls.pop().unwrap();
+        let stmts: Vec[S.Statement] = calls.into_iter().map(|e| S.Statement.Expr(e)).collect();
+        stmts.push(S.Statement.TrailingExpr(last));
+        Expr(
+            ExprKind.Block(stmts),
+            loc,
+            None,
+        )
+    }
+}
+
+fn call_fn(fn_qname: QualifiedName, v: VariableName, extra_arg_vars: Vec[VariableName], loc: Location) -> Expr {
+    let args: Vec[Expr] = [Expr(ExprKind.Var(v), loc, None)];
+    for ev in extra_arg_vars {
+        args.push(Expr(ExprKind.Var(ev), loc, None));
+    }
+    Expr(
+        ExprKind.FunctionCall(FunctionCallInfo(fn_qname, FunctionKind.UserDefined, args, WitnessInfo.new(), Vec.new())),
+        loc,
+        None,
+    )
+}
+
+fn unit_expr(loc: Location) -> Expr {
+    Expr(
+        ExprKind.Tuple([]),
+        loc,
+        None,
+    )
+}
+
+fn seq_calls(exprs: Vec[Expr], fn_qname: QualifiedName, extra_arg_vars: Vec[VariableName], loc: Location) -> Expr {
+    let calls: Vec[Expr] = exprs
+        .iter()
+        .map(|e| {
+            let args: Vec[Expr] = [e];
+            for ev in extra_arg_vars {
+                args.push(Expr(ExprKind.Var(ev), loc, None));
+            }
+            Expr(
+                ExprKind.FunctionCall(FunctionCallInfo(fn_qname, FunctionKind.UserDefined, args, WitnessInfo.new(), Vec.new())),
+                loc,
+                None,
+            )
+        })
+        .collect();
+    if calls.len() == 1 {
+        calls.into_iter().next().unwrap()
+    } else {
+        let last = calls.pop().unwrap();
+        let stmts: Vec[S.Statement] = calls.into_iter().map(|e| S.Statement.Expr(e)).collect();
+        stmts.push(S.Statement.TrailingExpr(last));
+        Expr(
+            ExprKind.Block(stmts),
+            loc,
+            None,
+        )
+    }
+}
+
+pub fn build_fold_method_struct(
+    struct_def: StructDef,
+    instance_prefix: Identifier,
+    type_arg_defs: Option[TypeArgDefs],
+    fn_qname: QualifiedName,
+    short_name: Identifier,
+    module_name: I.String,
+    extra_args: Vec[FunctionArg],
+    body_strategy: BodyStrategy,
+) -> (FunctionDef, Identifier) {
+    let loc = struct_def.name.location;
+    let var_alloc = VarAllocator.new();
+    let var_a = var_alloc.allocate_user(I.intern("a"));
+    let extra_arg_defs: Vec[FunctionArg] = extra_args.iter().map(|arg| {
+        let v = var_alloc.allocate_user(arg.name.get_user_name());
+        FunctionArg(v, arg.type_def, None)
+    }).collect();
+    let extra_arg_vars: Vec[VariableName] = extra_arg_defs.iter().map(|arg| arg.name).collect();
+    let self_type = TypeDef.Named(
+        Name.Resolved(QualifiedName.new(struct_def.name.name)),
+        [],
+    );
+    let body = match body_strategy {
+        BodyStrategy.Identity => unit_expr(loc),
+        BodyStrategy.Unreachable => build_unreachable(loc),
+        BodyStrategy.Generate => if struct_def.fields.is_empty() {
+            unit_expr(loc)
+        } else {
+            seq_calls(field_exprs(struct_def.fields, var_a, loc), fn_qname, extra_arg_vars, loc)
+        },
+    };
+    let method = make_unary_method(
+        instance_prefix,
+        short_name,
+        type_arg_defs,
+        self_type,
+        Some(TypeDef.Tuple([])),
+        var_a,
+        extra_arg_defs,
+        body,
+        module_name,
+        var_alloc,
+    );
+    (method, short_name)
+}
+
+}

@@ -1,0 +1,74 @@
+module Siko.Resolver.Types {
+
+import Siko.Resolver
+import Siko.Resolver.Error
+import Siko.AST.Type
+import Siko.AST.Name
+import Siko.AST.QualifiedName
+import Siko.Constants.Builtins as B
+
+instance Resolvable[TypeDef] {
+    fn resolve(t: TypeDef, ctx: ResolverContext) -> Result[TypeDef, ResolveError] {
+        match t {
+            TypeDef.Named(name, args) => {
+                let unresolved_name = name.unresolved();
+                let resolved_args: Vec[_]= args
+                    .iter()
+                    .map(|arg| arg.resolve(ctx))
+                    .collect();
+                let resolved_args = Result.collect(resolved_args)?;
+                ctx.type_resolver
+                    .resolve_name(unresolved_name, resolved_args)
+            }
+            TypeDef.Tuple(types) => {
+                let resolved_types: Vec[_] = types
+                    .iter()
+                    .map(|t| t.resolve(ctx))
+                    .collect();
+                let resolved_types = Result.collect(resolved_types)?;
+                Ok(TypeDef.Tuple(resolved_types))
+            }
+            TypeDef.Paren(inner) => {
+                let resolved_inner = inner.resolve(ctx)?;
+                Ok(TypeDef.Paren(resolved_inner))
+            }
+            TypeDef.Fn(args, result) => {
+                let resolved_args: Vec[_] = args
+                    .iter()
+                    .map(|a| a.resolve(ctx))
+                    .collect();
+                let resolved_args = Result.collect(resolved_args)?;
+                let resolved_result = result.resolve(ctx)?;
+                Ok(TypeDef.Fn(resolved_args, resolved_result))
+            }
+            TypeDef.FnPtr(args, result) => {
+                let resolved_args: Vec[_] = args
+                    .iter()
+                    .map(|a| a.resolve(ctx))
+                    .collect();
+                let resolved_args = Result.collect(resolved_args)?;
+                let resolved_result = result.resolve(ctx)?;
+                Ok(TypeDef.FnPtr(resolved_args, resolved_result))
+            }
+            TypeDef.Ptr(inner) => {
+                let resolved_inner = inner.resolve(ctx)?;
+                Ok(TypeDef.Ptr(resolved_inner))
+            }
+            TypeDef.Array(inner, n) => {
+                let resolved_inner = inner.resolve(ctx)?;
+                Ok(TypeDef.Named(
+                    Name.Resolved(QualifiedName.new(B.get_array_type())),
+                    [resolved_inner, TypeDef.Numeric(n)],
+                ))
+            }
+            TypeDef.Numeric(n) => Ok(TypeDef.Numeric(n)),
+            TypeDef.Var(_) => panic("Var in unresolved type"),
+            TypeDef.Never(t) => Ok(TypeDef.Never(t)),
+            TypeDef.Wildcard => Ok(TypeDef.Wildcard),
+            TypeDef.Void => Ok(TypeDef.Void),
+            TypeDef.VoidPtr => Ok(TypeDef.VoidPtr),
+        }
+    }
+}
+
+}

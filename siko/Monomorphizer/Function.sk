@@ -1,0 +1,70 @@
+module Siko.Monomorphizer.Function {
+
+import Siko.Monomorphizer
+import Siko.Monomorphizer.Specialize
+import Siko.Unification.Sub
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.AST.Expr
+import Siko.Interner as I
+import Siko.Config
+
+pub fn process_function(
+    qname: QualifiedName,
+    type_args: Vec[TypeDef],
+    fn_witnesses: Vec[I.String],
+    effect_ctx: EffectCtx,
+    implicit_ctx: ImplicitCtx,
+    mono_name: QualifiedName,
+    mono: Monomorphizer,
+) {
+    let func = mono
+        .source
+        .functions
+        .get(qname)
+        .unwrap()
+        .clone();
+    mono.current_module = func.module_name.clone();
+    mono.current_fn_witnesses = fn_witnesses.clone();
+    mono.current_effect_ctx = effect_ctx.clone();
+    mono.current_implicit_ctx = implicit_ctx.clone();
+    if get_config().debug_mono {
+        println("Processing ${mono_name.name()}");
+    }
+    mono.sub = func
+        .type_arg_defs
+        .map(|tad| {
+            tad.type_args
+                .iter()
+                .map(|id| id.name.clone())
+                .zip(type_args.iter().cloned())
+                .collect()
+        })
+        .unwrap_or_else(|| Substitution.new());
+
+    let spec_args = func.args.specialize(mono);
+    let spec_result = func.result_type.specialize(mono);
+
+    let spec_body = match func.body {
+        Some(body) => match body.kind {
+            ExprKind.Block(stmts) => Some(Expr(
+                ExprKind.Block(stmts.specialize(mono)),
+                body.location.clone(),
+                body.ty.specialize(mono),
+            )),
+            _ => Some(body.specialize(mono)),
+        }
+        None => None,
+    };
+
+    let mono_func = func;
+    mono_func.qualified_name = mono_name.clone();
+    mono_func.type_arg_defs = None;
+    mono_func.args = spec_args;
+    mono_func.result_type = spec_result;
+    mono_func.body = spec_body;
+
+    mono.output.functions.insert(mono_name, mono_func);
+}
+
+}

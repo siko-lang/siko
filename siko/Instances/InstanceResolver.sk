@@ -1,0 +1,89 @@
+module Siko.Instances.InstanceResolver {
+
+import Std.Map
+import Siko.AST.Traits
+import Siko.Format.Utils
+import Siko.HIR.Program
+import Siko.Instances.ModuleInstanceResolver
+import Siko.Interner as I
+
+pub struct InstanceResolver {
+    pub modules: Map[I.String, ModuleInstanceResolver],
+
+    pub fn build(program: Program) -> InstanceResolver {
+        let canonical: Map[I.String, Vec[InstanceDef]] = Map.new();
+        for instance_def in program.canonical_instances {
+            canonical.entry(instance_def.trait_name.name()).or_insert_with(|| Vec.new()).push(instance_def);
+        }
+
+        let modules: Map[I.String, ModuleInstanceResolver] = Map.new();
+
+        for module_name in program.module_names {
+            let local: Map[I.String, Vec[InstanceDef]] = Map.new();
+            for instance_def in program.named_instances.values() {
+                if instance_def.module_name == module_name {
+                    local.entry(instance_def.trait_name.name()).or_insert_with(|| Vec.new()).push(instance_def);
+                }
+            }
+
+            let imported: Map[I.String, Vec[InstanceDef]] = Map.new();
+            if let Some(imports) = program.module_instance_imports.get(module_name) {
+                for qname in imports {
+                    if let Some(instance_def) = program.named_instances.get(qname) {
+                        imported.entry(instance_def.trait_name.name()).or_insert_with(|| Vec.new()).push(instance_def);
+                    }
+                }
+            }
+
+            modules.insert(module_name, ModuleInstanceResolver(local, imported, canonical));
+        }
+
+        InstanceResolver(modules)
+    }
+
+    pub fn for_module(r: InstanceResolver, module_name: I.String) -> Option[ModuleInstanceResolver] {
+        r.modules.get(module_name)
+    }
+
+    pub fn format(r: InstanceResolver) -> String {
+        let out = "";
+        for (module_name, resolver) in r.modules {
+            out = out + "module ${I.resolve(module_name)}\n";
+            out = out + format_tier("local", resolver.local);
+            out = out + format_tier("imported", resolver.imported);
+            out = out + format_tier("canonical", resolver.canonical);
+        }
+        out
+    }
+}
+
+fn format_instance_short(instance_def: InstanceDef) -> String {
+    let args: Vec[_] = instance_def.args.iter().map(|a| format_type(a)).collect();
+    let args_s = "";
+    let i = 0;
+    for arg in args {
+        if i > 0 {
+            args_s = args_s + ", ";
+        }
+        args_s = args_s + arg;
+        i = i + 1;
+    }
+    let head = "${I.resolve(instance_def.trait_name.name())}[${args_s}]";
+    match instance_def.name {
+        Some(name) => "instance ${I.resolve(name.name)} ${head}",
+        None => "instance ${head}",
+    }
+}
+
+fn format_tier(label: String, tier: Map[I.String, Vec[InstanceDef]]) -> String {
+    let out = "  ${label}:\n";
+    for (trait_name, instances) in tier {
+        out = out + "    ${I.resolve(trait_name)}:\n";
+        for instance_def in instances {
+            out = out + "      ${format_instance_short(instance_def)}\n";
+        }
+    }
+    out
+}
+
+}

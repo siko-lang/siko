@@ -1,0 +1,67 @@
+module Siko.Format.Generics {
+
+import Siko.AST.Generics
+import Siko.AST.Identifier
+import Siko.Interner as I
+import Siko.Format.Formatter
+import Siko.Format.Types
+
+pub fn format_type_arg_defs(f: Formatter, defs: TypeArgDefs) {
+    f.push("[");
+    let i = 0;
+    for arg in defs.type_args {
+        if i > 0 { f.push(", "); }
+        f.push(I.resolve(arg.name));
+        i = i + 1;
+    }
+    if !defs.bounds.is_empty() {
+        f.push(": ");
+        let j = 0;
+        for bound in defs.bounds {
+            if j > 0 { f.push(", "); }
+            format_bound(f, bound);
+            j = j + 1;
+        }
+    }
+    f.push("]");
+}
+
+pub fn format_type_arg_ident_list(f: Formatter, args: Vec[Identifier]) {
+    if args.is_empty() {
+        return;
+    }
+    f.push("[");
+    let i = 0;
+    for arg in args {
+        if i > 0 { f.push(", "); }
+        f.push(I.resolve(arg.name));
+        i = i + 1;
+    }
+    f.push("]");
+}
+
+pub fn format_bound(f: Formatter, bound: Bound) {
+    f.push(I.resolve(bound.trait_name.name()));
+    let has_args = !bound.type_args.is_empty();
+    let has_constraints = !bound.constraints.is_empty();
+    if has_args || has_constraints {
+        f.push("[");
+        let i = 0;
+        for ta in bound.type_args {
+            if i > 0 { f.push(", "); }
+            f.push(I.resolve(ta.name()));
+            i = i + 1;
+        }
+        let j = 0;
+        for constraint in bound.constraints {
+            if j > 0 || has_args { f.push(", "); }
+            f.push(I.resolve(constraint.lhs.name));
+            f.push("=");
+            format_type_def(f, constraint.rhs);
+            j = j + 1;
+        }
+        f.push("]");
+    }
+}
+
+}

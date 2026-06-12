@@ -1,0 +1,162 @@
+module Siko.Parser.Data {
+
+import Siko.AST.Data
+import Siko.AST.QualifiedName
+import Siko.AST.Annotations
+import Siko.Interner as I
+import Siko.Parser.Expr
+import Siko.Parser.Function
+import Siko.Parser.Generics
+import Siko.Parser.Annotations
+import Siko.Parser.Module
+import Siko.Parser.Parser
+import Siko.Parser.Token
+import Siko.Parser.Type
+
+pub trait DataParser[T] {
+    fn parse_struct_def(p: T, annotations: Vec[Annotation], public: Bool) -> Result[StructDef, ParseError]
+    fn parse_field_def(p: T, public: Bool) -> Result[FieldDef, ParseError]
+    fn parse_enum_def(p: T, annotations: Vec[Annotation], public: Bool) -> Result[EnumDef, ParseError]
+    fn parse_variant_def(p: T) -> Result[VariantDef, ParseError]
+}
+
+instance DataParser[Parser] {
+    fn parse_struct_def(parser: Parser, annotations: Vec[Annotation], public: Bool) -> Result[StructDef, ParseError] {
+        parser.expect(TokenKind.KwStruct)?;
+        let name = parser.expect_type_ident()?;
+        let type_arg_defs = parser.parse_optional_type_arg_defs()?;
+        parser.expect(TokenKind.LBrace)?;
+        let fields = Vec.new();
+        let methods = Vec.new();
+        while parser.peek() != TokenKind.RBrace && parser.peek() != TokenKind.Eof {
+            let method_annotations = if parser.peek() == TokenKind.At {
+                parser.parse_annotations(False)?
+            } else {
+                Vec.new()
+            };
+            let item_public = if parser.peek() == TokenKind.KwPub {
+                parser.advance();
+                True
+            } else {
+                False
+            };
+            if parser.peek() == TokenKind.KwFn {
+                methods.push(parser.parse_fn_def(method_annotations, item_public)?);
+            } else {
+                fields.push(parser.parse_field_def(item_public)?);
+                if parser.peek() == TokenKind.Comma {
+                    parser.advance();
+                }
+            }
+        }
+        parser.expect(TokenKind.RBrace)?;
+        let qualified_name = QualifiedName.new(name.name);
+        Ok(StructDef(
+            annotations: annotations,
+            public: public,
+            name: name,
+            qualified_name: qualified_name,
+            type_arg_defs: type_arg_defs,
+            fields: fields,
+            all_fields_public: fields.iter().all(|f| f.public),
+            methods: methods,
+            method_map: MethodMap.new(),
+            module_name: I.intern(""),
+            default_value_names: Vec.new(),
+        ))
+    }
+
+    fn parse_field_def(parser: Parser, public: Bool) -> Result[FieldDef, ParseError] {
+        let name = parser.expect_var_ident()?;
+        parser.expect(TokenKind.Colon)?;
+        let ty = parser.parse_type_def()?;
+        let default_value = if parser.peek() == TokenKind.Assign {
+            parser.advance();
+            Some(parser.parse_expr()?)
+        } else {
+            None
+        };
+        Ok(FieldDef(
+            public: public,
+            name: name,
+            ty: ty,
+            default_value: default_value,
+        ))
+    }
+
+    fn parse_enum_def(parser: Parser, annotations: Vec[Annotation], public: Bool) -> Result[EnumDef, ParseError] {
+        parser.expect(TokenKind.KwEnum)?;
+        let name = parser.expect_type_ident()?;
+        let type_arg_defs = parser.parse_optional_type_arg_defs()?;
+        parser.expect(TokenKind.LBrace)?;
+        let variants = Vec.new();
+        let methods = Vec.new();
+        while parser.peek() != TokenKind.RBrace && parser.peek() != TokenKind.Eof {
+            let method_annotations = if parser.peek() == TokenKind.At {
+                parser.parse_annotations(False)?
+            } else {
+                Vec.new()
+            };
+            let item_public = if parser.peek() == TokenKind.KwPub {
+                parser.advance();
+                True
+            } else {
+                False
+            };
+            if parser.peek() == TokenKind.KwFn {
+                methods.push(parser.parse_fn_def(method_annotations, item_public)?);
+            } else {
+                variants.push(parser.parse_variant_def()?);
+                if parser.peek() == TokenKind.Comma {
+                    parser.advance();
+                }
+            }
+        }
+        parser.expect(TokenKind.RBrace)?;
+        let qualified_name = QualifiedName.new(name.name);
+        Ok(EnumDef(
+            annotations: annotations,
+            public: public,
+            name: name,
+            qualified_name: qualified_name,
+            type_arg_defs: type_arg_defs,
+            variants: variants,
+            methods: methods,
+            method_map: MethodMap.new(),
+            module_name: I.intern(""),
+        ))
+    }
+
+    fn parse_variant_def(parser: Parser) -> Result[VariantDef, ParseError] {
+        let name = parser.expect_type_ident()?;
+        let items = if parser.peek() == TokenKind.LParen {
+            parser.advance();
+            let types = Vec.new();
+            while parser.peek() != TokenKind.RParen && parser.peek() != TokenKind.Eof {
+                let item_name = match parser.peek() {
+                    TokenKind.VarIdentifier(_) if parser.peek_next() == TokenKind.Colon => {
+                        let ident = parser.expect_var_ident()?;
+                        parser.advance();
+                        Some(ident)
+                    }
+                    _ => None,
+                };
+                types.push(ItemInfo(name: item_name, ty: parser.parse_type_def()?));
+                if parser.peek() == TokenKind.Comma {
+                    parser.advance();
+                }
+            }
+            parser.expect(TokenKind.RParen)?;
+            types
+        } else {
+            Vec.new()
+        };
+        Ok(VariantDef(
+            name: name,
+            qualified_name: QualifiedName.new(I.intern("")),
+            items: items,
+        ))
+    }
+}
+
+}

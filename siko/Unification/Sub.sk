@@ -1,0 +1,145 @@
+module Siko.Unification.Sub {
+
+import Std.Map
+import Siko.AST.Type
+import Siko.AST.Generics
+import Siko.Format.Utils
+import Siko.Interner as I
+
+pub struct Substitution {
+    pub bindings: Map[TypeVar, TypeDef],
+
+    pub fn new() -> Substitution {
+        Substitution(Map.new())
+    }
+
+    pub fn bind(sub: Substitution, var: Int, ty: TypeDef) {
+        if ty == TypeDef.Var(TypeVar.Var(var)) {
+            return;
+        }
+        sub.bindings.insert(TypeVar.Var(var), ty);
+    }
+
+    pub fn bind_named(sub: Substitution, name: I.String, ty: TypeDef) {
+        if ty == TypeDef.Var(TypeVar.Named(name)) {
+            return;
+        }
+        sub.bindings.insert(TypeVar.Named(name), ty);
+    }
+
+    pub fn lookup(sub: Substitution, var: Int) -> Option[TypeDef] {
+        sub.bindings.get(TypeVar.Var(var))
+    }
+
+    pub fn lookup_named(sub: Substitution, name: I.String) -> Option[TypeDef] {
+        sub.bindings.get(TypeVar.Named(name))
+    }
+
+    pub fn apply(sub: Substitution, ty: TypeDef) -> TypeDef {
+        match ty {
+            TypeDef.Var(v) => match v {
+                TypeVar.Var(_) => match sub.bindings.get(v) {
+                    Some(bound) => sub.apply(bound),
+                    None => ty,
+                }
+                TypeVar.Named(_) => match sub.bindings.get(v) {
+                    Some(bound) => bound,
+                    None => ty,
+                }
+            }
+            TypeDef.Named(name, args) => {
+                TypeDef.Named(name, args.iter().map(|a| sub.apply(a)).collect())
+            }
+            TypeDef.Tuple(elems) => TypeDef.Tuple(elems.iter().map(|e| sub.apply(e)).collect()),
+            TypeDef.Fn(params, ret) => TypeDef.Fn(
+                params.iter().map(|p| sub.apply(p)).collect(),
+                sub.apply(ret),
+            ),
+            TypeDef.FnPtr(params, ret) => TypeDef.FnPtr(
+                params.iter().map(|p| sub.apply(p)).collect(),
+                sub.apply(ret),
+            ),
+            TypeDef.Paren(inner) => TypeDef.Paren(sub.apply(inner)),
+            TypeDef.Ptr(inner) => TypeDef.Ptr(sub.apply(inner)),
+            TypeDef.Array(inner, n) => TypeDef.Array(sub.apply(inner), n),
+            TypeDef.Never(_) | TypeDef.Wildcard | TypeDef.Void | TypeDef.VoidPtr | TypeDef.Numeric(_) => ty,
+        }
+    }
+
+    pub fn apply_all(sub: Substitution, args: Vec[TypeDef]) -> Vec[TypeDef] {
+        args.iter().map(|t| sub.apply(t)).collect()
+    }
+
+    pub fn merge(sub: Substitution, other: Substitution) {
+        for (k, v) in other.bindings {
+            sub.bindings.insert(k, v);
+        }
+    }
+
+    pub fn format(sub: Substitution) -> String {
+        let s = "";
+        for (var, ty) in sub.bindings {
+            let var_s = match var {
+                TypeVar.Var(v) => "?${v}",
+                TypeVar.Named(n) => I.resolve(n),
+            };
+            let ty = format_type(ty);
+            let line = "${var_s}, ${ty}";
+            s = s + line;
+            s = s + "\n";
+        }
+        s
+    }
+}
+
+instance FromIterator[Substitution] {
+    type Item = (I.String, TypeDef)
+    fn from_iter[I: Iterator[I, Item=(I.String, TypeDef)]](iter: I) -> Substitution {
+        let sub = Substitution.new();
+        loop {
+            match iter.next() {
+                Some((n, t)) => { sub.bind_named(n, t); },
+                None => { return sub; }
+            }
+        }
+    }
+}
+
+pub trait Apply[T] {
+    fn apply(t: T, sub: Substitution) -> T
+}
+
+instance Apply[TypeDef] {
+    fn apply(ty: TypeDef, sub: Substitution) -> TypeDef {
+        sub.apply(ty)
+    }
+}
+
+instance[T: Apply[T]] Apply[Vec[T]] {
+    fn apply(v: Vec[T], sub: Substitution) -> Vec[T] {
+        v.iter().map(|t| t.apply(sub)).collect()
+    }
+}
+
+instance[T: Apply[T]] Apply[Option[T]] {
+    fn apply(o: Option[T], sub: Substitution) -> Option[T] {
+        match o {
+            Some(t) => Some(t.apply(sub)),
+            None => None,
+        }
+    }
+}
+
+instance Apply[Constraint] {
+    fn apply(c: Constraint, sub: Substitution) -> Constraint {
+        Constraint(c.lhs.clone(), c.rhs.apply(sub))
+    }
+}
+
+instance Apply[Bound] {
+    fn apply(b: Bound, sub: Substitution) -> Bound {
+        Bound(b.trait_name.clone(), b.type_args.clone(), b.constraints.apply(sub))
+    }
+}
+
+}

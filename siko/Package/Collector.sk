@@ -1,0 +1,198 @@
+module Siko.Package.Collector {
+
+import Std.IO.Error as IO
+import Siko.Package.Info
+import Siko.Package.Parser as P
+import Std.Fs.Directory
+import Std.Fs.Stat as S
+import Std.Map
+
+pub enum CollectorError {
+    IOError(IO.Error),
+    ParseError(P.Error),
+    MultipleRootPackages,
+    MissingDependency(String),
+}
+
+instance ToString[CollectorError] {
+    fn to_string(e: CollectorError) -> String {
+        match e {
+            CollectorError.IOError(io) => "io error: ${io}",
+            CollectorError.ParseError(pe) => "parse error: ${pe}",
+            CollectorError.MultipleRootPackages => "multiple root packages given, at most one is allowed",
+            CollectorError.MissingDependency(name) => "dependency not found: ${name}",
+        }
+    }
+}
+
+instance ToString[SourcePackage] {
+    fn to_string(p: SourcePackage) -> String {
+        let root = match p.root {
+            Some(r) => r,
+            None => "<implicit>",
+        };
+        let kind = if p.is_root { "root" } else { "dep" };
+        "${kind} ${p.info} at ${root}"
+    }
+}
+
+instance Into[IO.Error, CollectorError] {
+    fn into(value: IO.Error) -> CollectorError {
+        CollectorError.IOError(value)
+    }
+}
+
+instance Into[P.Error, CollectorError] {
+    fn into(value: P.Error) -> CollectorError {
+        CollectorError.ParseError(value)
+    }
+}
+
+@derive(Clone)
+pub struct SourcePackage {
+    pub root: Option[String],
+    pub info: PackageInfo,
+    pub files: Vec[String],
+    pub is_root: Bool,
+}
+
+fn select_packages(
+    name: String,
+    by_name: Map[String, SourcePackage],
+    visited: Map[String, Bool],
+    result: Vec[SourcePackage],
+) -> Result[(), CollectorError] {
+    if visited.contains_key(name) {
+        return Ok(());
+    }
+    visited.insert(name, True);
+    let pkg = match by_name.get(name) {
+        Some(p) => p,
+        None => return Err(CollectorError.MissingDependency(name)),
+    };
+    for dep in pkg.info.dependencies {
+        select_packages(dep.name, by_name, visited, result)?;
+    }
+    result.push(pkg);
+    Ok(())
+}
+
+pub struct Collector {
+    packages: Map[String, SourcePackage],
+    bare_files: Vec[String],
+    no_std: Bool,
+
+    pub fn new(no_std: Bool) -> Collector {
+        Collector(packages: Map.new(), bare_files: Vec.new(), no_std: no_std)
+    }
+
+    fn walk(c: Collector, dir: String, active_pkg: Option[String], is_root: Bool) -> Result[(), CollectorError] {
+        let entries = Std.Fs.Directory.list_dir(dir)?;
+
+        let subdirs: Vec[String] = Vec.new();
+        let sk_files: Vec[String] = Vec.new();
+        let has_toml = False;
+
+        for entry_result in entries {
+            let entry = entry_result?;
+            if entry.name() == "." || entry.name() == ".." {
+                continue;
+            }
+            let path = dir + "/" + entry.name();
+            if entry.is_directory() {
+                subdirs.push(path);
+            } else if entry.name() == "package.toml" {
+                has_toml = True;
+            } else if entry.name().ends_with(".sk") {
+                sk_files.push(path);
+            }
+        }
+
+        let pkg_key = if has_toml {
+            let toml_path = dir + "/package.toml";
+            let info = P.parse(toml_path)?;
+            c.packages.insert(dir, SourcePackage(root: Some(dir), info: info, files: Vec.new(), is_root: is_root));
+            Some(dir)
+        } else {
+            active_pkg
+        };
+
+        for path in sk_files {
+            match pkg_key {
+                Some(key) => c.packages.get(key).unwrap().files.push(path),
+                None => c.bare_files.push(path),
+            }
+        }
+
+        for subdir in subdirs {
+            c.walk(subdir, pkg_key, False)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn collect(c: Collector, inputs: Vec[String], lib_paths: Vec[String]) -> Result[Vec[SourcePackage], CollectorError] {
+        for lib in lib_paths {
+            let s = S.stat(lib)?;
+            if s.is_directory() {
+                c.walk(lib, None, False)?;
+            }
+        }
+        for input in inputs {
+            let s = S.stat(input)?;
+            if s.is_directory() {
+                c.walk(input, None, True)?;
+            } else if input.ends_with(".sk") {
+                c.bare_files.push(input);
+            }
+        }
+
+        let pkgs: Vec[SourcePackage] = Vec.new();
+        let root_count = 0;
+        for (_, pkg) in c.packages {
+            if pkg.is_root {
+                root_count += 1;
+            }
+            pkgs.push(pkg);
+        }
+        if root_count > 1 {
+            return Err(CollectorError.MultipleRootPackages);
+        }
+
+        if root_count == 0 && !c.bare_files.is_empty() {
+            let deps: Vec[Dependency] = Vec.new();
+            if !c.no_std {
+                deps.push(Dependency(name: "Std", version: ""));
+            }
+            pkgs.push(SourcePackage(
+                root: None,
+                info: PackageInfo(name: "", version: "", dependencies: deps),
+                files: c.bare_files,
+                is_root: True,
+            ));
+        }
+
+        // build name -> package map for dep resolution
+        let by_name: Map[String, SourcePackage] = Map.new();
+        for pkg in pkgs {
+            by_name.insert(pkg.info.name, pkg);
+        }
+        // for (name, pkg) in by_name {
+        //     println("package: ${name}: ${pkg}");
+        // }
+
+        // dep-first walk from root
+        let result: Vec[SourcePackage] = Vec.new();
+        let visited: Map[String, Bool] = Map.new();
+        for (_, pkg) in by_name {
+            if pkg.is_root {
+                select_packages(pkg.info.name, by_name, visited, result)?;
+                break;
+            }
+        }
+
+        Ok(result)
+    }
+}
+
+}

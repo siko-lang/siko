@@ -1,0 +1,32 @@
+module Siko.Package.Info {
+
+@derive(Clone)
+pub struct PackageInfo {
+    pub name: String,
+    pub version: String,
+    pub dependencies: Vec[Dependency],
+}
+
+@derive(Clone)
+pub struct Dependency {
+    pub name: String,
+    pub version: String,
+}
+
+instance ToString[Dependency] {
+    fn to_string(d: Dependency) -> String {
+        "${d.name}@${d.version}"
+    }
+}
+
+instance ToString[PackageInfo] {
+    fn to_string(p: PackageInfo) -> String {
+        let deps: Vec[String] = Vec.new();
+        for d in p.dependencies {
+            deps.push(d.to_string());
+        }
+        "${p.name}@${p.version} [${Std.Vec.join(deps, ", ")}]"
+    }
+}
+
+}

@@ -1,0 +1,180 @@
+module Siko.AST.Function {
+
+import Siko.AST.Expr
+import Siko.AST.Generics
+import Siko.AST.Type
+import Siko.AST.Identifier
+import Siko.AST.QualifiedName
+import Siko.AST.Annotations
+import Siko.Utils.VarAllocator
+import Siko.Interner as I
+import Siko.Package.Collector as PC
+
+@derive(Clone, PartialEq, Std.Ops.Eq)
+pub struct ExternConfig {
+    pub header: Option[I.String],
+    pub name: Option[I.String],
+}
+
+@derive(Clone, PartialEq, Std.Ops.Eq)
+pub enum ExternMode {
+    C(ExternConfig)
+    Builtin // just pure @extern
+}
+
+@derive(Clone, PartialEq, Std.Ops.Eq)
+pub struct ExternInfo {
+    pub mode: ExternMode
+}
+
+@derive(Clone, PartialEq, Std.Ops.Eq)
+pub enum FunctionDefKind {
+    Regular,
+    Extern,
+    TraitMethod,
+    EffectMethod,
+    Closure(Int),
+    Builtin,
+}
+
+@derive(Clone)
+pub struct DefaultValueInfo {
+    pub index: Int,
+    pub name: QualifiedName,
+}
+
+@derive(Clone)
+pub struct FunctionDef {
+    pub annotations: Vec[Annotation],
+    pub public: Bool,
+    pub name: Identifier,
+    pub qualified_name: QualifiedName,
+    pub kind: FunctionDefKind,
+    pub type_arg_defs: Option[TypeArgDefs],
+    pub args: Vec[FunctionArg],
+    pub result_type: Option[TypeDef],
+    pub body: Option[Expr],
+    pub module_name: I.String,
+    pub var_allocator: VarAllocator,
+    pub is_varargs: Bool,
+    pub default_value_names: Vec[DefaultValueInfo],
+    pub source_package: Option[PC.SourcePackage],
+
+    pub fn is_extern(f: FunctionDef) -> Bool {
+        for a in f.annotations {
+            if a.is_extern() {
+                return True;
+            }
+        }
+        False
+    }
+
+    pub fn is_builtin(f: FunctionDef) -> Bool {
+        for a in f.annotations {
+            if a.is_builtin() {
+                return True;
+            }
+        }
+        False
+    }
+
+    pub fn extern_c_name(f: FunctionDef) -> Option[I.String] {
+        for a in f.annotations {
+            if let Annotation.Extern(ann) = a {
+                if let ExternMode.C(c) = ann.mode {
+                    if let Some(name) = c.name {
+                        return Some(name);
+                    }
+                    return Some(f.name.name());
+                }
+            }
+        }
+        None
+    }
+
+    pub fn extern_c_header(f: FunctionDef) -> Option[I.String] {
+        for a in f.annotations {
+            if let Annotation.Extern(ann) = a {
+                if let ExternMode.C(c) = ann.mode {
+                    return c.header;
+                }
+            }
+        }
+        None
+    }
+
+    pub fn get_kind(f: FunctionDef) -> FunctionKind {
+        if f.is_extern() {
+            FunctionKind.Extern(f.extern_c_name())
+        } else {
+            if f.is_builtin() {
+                FunctionKind.Builtin
+            } else {
+                FunctionKind.UserDefined
+            }
+        }
+    }
+
+    pub fn is_binary_op(f: FunctionDef) -> Option[BinaryOp] {
+        for a in f.annotations {
+            if let Some(op) = a.is_binary_op() {
+                return Some(op);
+            }
+        }
+        None
+    }
+
+    pub fn is_unary_op(f: FunctionDef) -> Option[UnaryOp] {
+        for a in f.annotations {
+            if let Some(op) = a.is_unary_op() {
+                return Some(op);
+            }
+        }
+        None
+    }
+
+    pub fn is_safe(f: FunctionDef) -> Bool {
+        for a in f.annotations {
+            if a.is_safe() {
+                return True;
+            }
+        }
+        False
+    }
+
+    pub fn is_unsafe(f: FunctionDef) -> Bool {
+        for a in f.annotations {
+            if a.is_unsafe() {
+                return True;
+            }
+        }
+        False
+    }
+
+    pub fn is_c_callback(f: FunctionDef) -> Bool {
+        for a in f.annotations {
+            if a.is_c_callback() {
+                return True;
+            }
+        }
+        False
+    }
+
+    pub fn is_test(f: FunctionDef) -> Bool {
+        for a in f.annotations {
+            if a.is_test() {
+                return True;
+            }
+        }
+        False
+    }
+}
+
+@derive(Clone)
+pub struct FunctionArg {
+    pub name: VariableName,
+    pub type_def: TypeDef,
+    pub default_value: Option[Expr],
+}
+
+}

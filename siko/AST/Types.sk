@@ -1,0 +1,98 @@
+module Siko.AST.Type {
+
+import Siko.AST.Name
+import Siko.AST.QualifiedName
+import Siko.Interner as I
+import Siko.Format.Utils
+
+@derive(PartialEq, Std.Ops.Eq, PartialOrd, Ord, Clone)
+pub enum TypeVar {
+    Named(I.String),
+    Var(Int),
+}
+
+@derive(PartialEq, Std.Ops.Eq, PartialOrd, Ord, Clone)
+pub enum TypeDef {
+    Named(Name, Vec[TypeDef]),
+    Tuple(Vec[TypeDef]),
+    Paren(TypeDef),
+    Fn(Vec[TypeDef], TypeDef),
+    FnPtr(Vec[TypeDef], TypeDef),
+    Var(TypeVar),
+    Never(Bool),
+    Ptr(TypeDef),
+    Wildcard,
+    Void,
+    VoidPtr,
+    Array(TypeDef, Int),
+    Numeric(Int),
+
+    pub fn name(ty: TypeDef) -> QualifiedName {
+        match ty {
+            TypeDef.Named(n, _) => n.resolved(),
+            _ => panic("not a named type"),
+        }
+    }
+
+    pub fn is_mono(ty: TypeDef) -> Bool {
+        match ty {
+            TypeDef.Named(n, args) => {
+                if !n.resolved().is_mono() {
+                    return False;
+                }
+                for a in args {
+                    if !a.is_mono() {
+                        return False;
+                    }
+                }
+                True
+            }
+            TypeDef.Tuple(args) => {
+                for a in args {
+                    if !a.is_mono() {
+                        return False;
+                    }
+                }
+                True
+            }
+            TypeDef.Paren(arg) => arg.is_mono(),
+            TypeDef.Fn(args, r) | TypeDef.FnPtr(args, r) => {
+                for a in args {
+                    if !a.is_mono() {
+                        return False;
+                    }
+                }
+                r.is_mono()
+            }
+            TypeDef.Ptr(inner) => inner.is_mono(),
+            TypeDef.Array(inner, _) => inner.is_mono(),
+            TypeDef.Var(_) => True,
+            TypeDef.Never(_) => True,
+            TypeDef.Wildcard => True,
+            TypeDef.Void => True,
+            TypeDef.VoidPtr => True,
+            TypeDef.Numeric(_) => True,
+        }
+    }
+
+    pub fn has_flex_var(ty: TypeDef) -> Bool {
+        match ty {
+            TypeDef.Var(TypeVar.Var(_)) => True,
+            TypeDef.Named(_, args) => args.iter().any(|a| a.has_flex_var()),
+            TypeDef.Tuple(args) => args.iter().any(|a| a.has_flex_var()),
+            TypeDef.Paren(inner) => inner.has_flex_var(),
+            TypeDef.Fn(params, ret) | TypeDef.FnPtr(params, ret) => params.iter().any(|a| a.has_flex_var()) || ret.has_flex_var(),
+            TypeDef.Ptr(inner) => inner.has_flex_var(),
+            TypeDef.Array(inner, _) => inner.has_flex_var(),
+            TypeDef.Var(TypeVar.Named(_)) | TypeDef.Never(_) | TypeDef.Wildcard | TypeDef.Void | TypeDef.VoidPtr | TypeDef.Numeric(_) => False,
+        }
+    }
+}
+
+instance ToString[TypeDef] {
+    fn to_string(ty: TypeDef) -> String {
+        format_type(ty)
+    }
+}
+
+}

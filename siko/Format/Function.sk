@@ -1,0 +1,66 @@
+module Siko.Format.Function {
+
+import Siko.AST.Expr
+import Siko.AST.Function
+import Siko.Interner as I
+import Siko.Format.Formatter
+import Siko.Format.Generics
+import Siko.Format.Types
+import Siko.Format.Expr
+
+pub fn format_fn_def(f: Formatter, def: FunctionDef) {
+    f.format_annotations(def.annotations);
+    f.push_indent();
+    if def.public {
+        f.push("pub ");
+    }
+    f.push("fn ");
+    if def.qualified_name.is_simple() {
+        f.push(I.resolve(def.name.name));
+    } else {
+        f.push(I.resolve(def.qualified_name.name()));
+    }
+    match def.type_arg_defs {
+        Some(tad) => format_type_arg_defs(f, tad),
+        None => {}
+    }
+    f.push("(");
+    let i = 0;
+    for arg in def.args {
+        if i > 0 { f.push(", "); }
+        f.push(arg.name.format());
+        f.push(": ");
+        format_type_def(f, arg.type_def);
+        match arg.default_value {
+            Some(expr) => {
+                f.push(" = ");
+                format_expr(f, expr);
+            }
+            None => {}
+        }
+        i = i + 1;
+    }
+    f.push(")");
+    match def.result_type {
+        Some(rt) => {
+            f.push(" -> ");
+            format_type_def(f, rt);
+        }
+        None => {}
+    }
+    match def.body {
+        Some(body) => {
+            f.push(" ");
+            match body.kind {
+                ExprKind.Block(stmts) => format_stmts(f, stmts),
+                _ => format_expr(f, body),
+            }
+            f.push("\n");
+        }
+        None => {
+            f.push("\n");
+        }
+    }
+}
+
+}

@@ -1,0 +1,86 @@
+module Siko.Format.Traits {
+
+import Siko.AST.Traits
+import Siko.Interner as I
+import Siko.Format.Formatter
+import Siko.Format.Function
+import Siko.Format.Generics
+import Siko.Format.Types
+
+pub fn format_trait_def(f: Formatter, def: TraitDef) {
+    f.format_annotations(def.annotations);
+    f.push_indent();
+    if def.public {
+        f.push("pub ");
+    }
+    f.push("trait");
+    match def.type_arg_defs {
+        Some(tad) => format_type_arg_defs(f, tad),
+        None => {}
+    }
+    f.push(" ");
+    f.push(I.resolve(def.name.name));
+    format_type_arg_ident_list(f, def.type_args);
+    f.push(" {\n");
+    f.indent_up();
+    for assoc in def.associated_types {
+        f.push_indent();
+        f.push("type ");
+        f.push(I.resolve(assoc.name.name));
+        f.push("\n");
+    }
+    for method in def.methods {
+        format_fn_def(f, method);
+    }
+    f.indent_down();
+    f.push_indent();
+    f.push("}\n");
+}
+
+pub fn format_instance_def(f: Formatter, def: InstanceDef) {
+    f.format_annotations(def.annotations);
+    f.push_indent();
+    if def.public {
+        f.push("pub ");
+    }
+    f.push("instance");
+    match def.type_arg_defs {
+        Some(tad) => format_type_arg_defs(f, tad),
+        None => {}
+    }
+    f.push(" ");
+    match def.name {
+        Some(name) => {
+            f.push(I.resolve(name.name));
+            f.push(" ");
+        }
+        None => {}
+    }
+    f.push(I.resolve(def.trait_name.name()));
+    f.push("[");
+    let i = 0;
+    for arg in def.args {
+        if i > 0 { f.push(", "); }
+        format_type_def(f, arg);
+        i = i + 1;
+    }
+    f.push("]");
+    f.push(" {\n");
+    f.indent_up();
+    for ta in def.type_assignments {
+        f.push_indent();
+        f.push("type ");
+        f.push(I.resolve(ta.name.name));
+        f.push(" = ");
+        format_type_def(f, ta.ty);
+        f.push("\n");
+    }
+    for method in def.methods {
+        format_fn_def(f, method);
+    }
+    f.indent_down();
+    f.push_indent();
+    f.push("}\n");
+}
+
+}

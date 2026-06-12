@@ -1,0 +1,182 @@
+module Siko.BoundExpansion {
+
+import Std.Set
+import Siko.AST.Function
+import Siko.AST.Generics
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.Type
+import Siko.HIR.Program
+import Siko.Location
+import Siko.Unification.Sub
+import Siko.Utils.TypeVarAllocator
+import Siko.Interner as I
+
+pub fn expand_program(program: Program) {
+    let keys: Vec[_] = program.functions.keys().collect();
+    for key in keys {
+        let func = program.functions.get(key).unwrap();
+        let expanded = expand_function(func, program);
+        program.functions.insert(key, expanded);
+    }
+}
+
+fn expand_function(func: FunctionDef, program: Program) -> FunctionDef {
+    let tad = match func.type_arg_defs {
+        None => return func,
+        Some(t) => t,
+    };
+    func.type_arg_defs = None;
+
+    let allocator = TypeVarAllocator.new();
+    let bounds = tad.bounds.clone();
+    let i = 0;
+    while i < bounds.len() {
+        let bound = bounds[i];
+        let loc = synth_loc(bound, func);
+        let (new_constraints, new_bounds, new_type_params) =
+            expand_one(bound, program, loc, allocator);
+
+        if !new_constraints.is_empty() {
+            for name in new_type_params {
+                if !tad.type_args.iter().any(|id| id.name == name) {
+                    tad.type_args.push(Identifier.new(name, loc));
+                }
+            }
+            let b = bounds[i].clone();
+            b.constraints.extend(new_constraints);
+            bounds[i] = b;
+        }
+
+        for nb in new_bounds {
+            if !bounds.contains(nb) {
+                bounds.push(nb);
+            }
+        }
+
+        i += 1;
+    }
+
+    func.type_arg_defs = Some(TypeArgDefs(tad.type_args, bounds));
+    func
+}
+
+fn expand_one(bound: Bound, program: Program, loc: Location, allocator: TypeVarAllocator) -> (Vec[Constraint], Vec[Bound], Vec[I.String]) {
+    let trait_qname = match bound.trait_name {
+        Name.Resolved(q) => q,
+        _ => return ([], [], []),
+    };
+
+    let trait_def = match program.traits.get(trait_qname) {
+        Some(t) => t,
+        None => return ([], [], []),
+    };
+
+    let has_header_extras = trait_def.type_arg_defs
+        .map(|h| !h.type_args.is_empty() || !h.bounds.is_empty())
+        .unwrap_or(False);
+    if !has_header_extras && trait_def.associated_types.is_empty() {
+        return ([], [], []);
+    }
+
+    let primary_subst = trait_def.type_args.iter()
+        .zip(bound.type_args.iter())
+        .map(|(param, actual)| (param.name, TypeDef.Var(TypeVar.Named(actual.name()))))
+        .collect();
+
+    let primary_names = trait_def.type_args.iter().map(|id| id.name).collect();
+
+    let new_constraints = [];
+    let new_type_params = [];
+    let fresh_subst = Substitution.new();
+
+    let header_names: Vec[I.String] = match trait_def.type_arg_defs {
+        Some(h) => h.type_args.iter().map(|a| a.name).collect(),
+        None => [],
+    };
+    let assoc_names: Vec[I.String] = trait_def.associated_types.iter().map(|a| a.name.name).collect();
+
+    for name in header_names.into_iter().chain(assoc_names) {
+        maybe_add_assoc_constraint(
+            name,
+            bound,
+            primary_names,
+            new_constraints,
+            new_type_params,
+            fresh_subst,
+            loc,
+            allocator,
+        );
+    }
+
+    let has_header_bounds = trait_def.type_arg_defs
+        .map(|h| !h.bounds.is_empty())
+        .unwrap_or(False);
+    if new_constraints.is_empty() && !has_header_bounds {
+        return ([], [], []);
+    }
+
+    let combined_subst = primary_subst;
+    for c in bound.constraints {
+        if let TypeDef.Var(TypeVar.Named(rhs_name)) = c.rhs {
+            combined_subst.bind_named(c.lhs.name, TypeDef.Var(TypeVar.Named(rhs_name)));
+        }
+    }
+    combined_subst.merge(fresh_subst);
+
+    let new_bounds = [];
+    if let Some(header) = trait_def.type_arg_defs {
+        for hbound in header.bounds {
+            let new_type_args = hbound.type_args.iter()
+                .map(|ta| Name.Unresolved(Identifier.new(subst_name(combined_subst, ta.name()), loc)))
+                .collect();
+            let new_cstrs = hbound.constraints.apply(combined_subst);
+            new_bounds.push(Bound(hbound.trait_name, new_type_args, new_cstrs));
+        }
+    }
+
+    (new_constraints, new_bounds, new_type_params)
+}
+
+fn maybe_add_assoc_constraint(
+    name: I.String,
+    bound: Bound,
+    primary_names: Set[I.String],
+    new_constraints: Vec[Constraint],
+    new_type_params: Vec[I.String],
+    fresh_subst: Substitution,
+    loc: Location,
+    allocator: TypeVarAllocator,
+) {
+    if primary_names.contains(name) {
+        return;
+    }
+    if bound.constraints.iter().any(|c| c.lhs.name == name) {
+        return;
+    }
+    if new_constraints.iter().any(|c| c.lhs.name == name) {
+        return;
+    }
+    let fresh = allocator.allocate_name();
+    new_type_params.push(fresh);
+    fresh_subst.bind_named(name, TypeDef.Var(TypeVar.Named(fresh)));
+    new_constraints.push(Constraint(Identifier.new(name, loc), TypeDef.Var(TypeVar.Named(fresh))));
+}
+
+fn subst_name(subst: Substitution, name: I.String) -> I.String {
+    match subst.lookup_named(name) {
+        Some(TypeDef.Var(TypeVar.Named(n))) => n,
+        _ => name,
+    }
+}
+
+fn synth_loc(bound: Bound, func: FunctionDef) -> Location {
+    for ta in bound.type_args {
+        if let Name.Unresolved(id) = ta {
+            return id.location;
+        }
+    }
+    func.name.location
+}
+
+}

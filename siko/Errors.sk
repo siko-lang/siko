@@ -1,0 +1,180 @@
+module Siko.Errors {
+
+import Siko.Format.Utils
+import Siko.Instances.InstanceChecker
+import Siko.Interner as I
+import Siko.MatchValidation as MV
+import Siko.Monomorphizer.Error
+import Siko.Parser.Parser
+import Siko.Report
+import Siko.Resolver.Error
+import Siko.SafetyChecker as SC
+import Siko.Typechecker.Error
+import Std.Sys.Process as Sys
+
+pub fn exit_with_error() -> ! {
+    Sys.exit(1.as_i32())
+}
+
+pub fn report_parse_error(e: ParserError) {
+    report(e.message, Some(e.location));
+}
+
+pub fn report_parse_errors(errors: Vec[ParserError]) -> ! {
+    for e in errors { report_parse_error(e); }
+    exit_with_error()
+}
+
+pub fn report_instance_error(e: InstanceError) {
+    match e {
+        InstanceError.SpecializedCanonicalInstance(trait_name, arg, offending_type) =>
+            report("Canonical instance of `${trait_name}` has specialized argument `${arg}`: `${offending_type}` is not a type variable", None),
+        InstanceError.MissingRequiredMethod(trait_name, method_name, instance_name, location) =>
+            report("Instance `${instance_name}` of trait `${trait_name}` is missing required method `${method_name}`", Some(location)),
+        InstanceError.UnknownTraitMethod(trait_name, method_name, instance_name, location) =>
+            report("Instance `${instance_name}` of trait `${trait_name}` implements unknown method `${method_name}`", Some(location)),
+    }
+}
+
+pub fn report_resolve_error(e: ResolveError) {
+    match e {
+        ResolveError.ModuleNotFound(ident) =>
+            report("module not found: " + I.resolve(ident.name()), Some(ident.location)),
+        ResolveError.AmbiguousName(ident, candidates) => {
+            let names: Vec[String] = candidates.iter().map(|c| I.resolve(c.name())).collect();
+            report("ambiguous name: " + I.resolve(ident.name()) + " (" + join(names, ", ") + ")", Some(ident.location));
+        },
+        ResolveError.NameNotFound(ident) =>
+            report("name not found: " + I.resolve(ident.name()), Some(ident.location)),
+        ResolveError.NotAType(ident) =>
+            report("not a type: " + I.resolve(ident.name()), Some(ident.location)),
+        ResolveError.NotATrait(ident) =>
+            report("not a trait: " + I.resolve(ident.name()), Some(ident.location)),
+        ResolveError.HigherKindedTypeNotSupported(ident) =>
+            report("higher kinded type not supported: " + I.resolve(ident.name()), Some(ident.location)),
+        ResolveError.InvalidTypeArgCount(ident, expected, got) =>
+            report("wrong type arg count for " + I.resolve(ident.name()) + ": expected " + expected.to_string() + ", got " + got.to_string(), Some(ident.location)),
+        ResolveError.InvalidTraitArgCount(ident, expected, got) =>
+            report("wrong trait arg count for " + I.resolve(ident.name()) + ": expected " + expected.to_string() + ", got " + got.to_string(), Some(ident.location)),
+        ResolveError.UnknownAssociatedType(ident) =>
+            report("unknown associated type: " + I.resolve(ident.name()), Some(ident.location)),
+        ResolveError.NotAVariant(ident) =>
+            report("not a variant: " + I.resolve(ident.name()), Some(ident.location)),
+        ResolveError.WrongPatternArgCount(ident, expected, got) =>
+            report("wrong pattern arg count for " + I.resolve(ident.name()) + ": expected " + expected.to_string() + ", got " + got.to_string(), Some(ident.location)),
+        ResolveError.InvalidEffectHandler(ident) =>
+            report("invalid effect handler: " + I.resolve(ident.name()), Some(ident.location)),
+        ResolveError.NamedArgOnDynamicCall(location) =>
+            report("named arguments are not allowed on dynamic calls", Some(location)),
+        ResolveError.DefaultArgNotAtEnd(ident) =>
+            report("default arguments must be at the end of the argument list in " + I.resolve(ident.name()), Some(ident.location)),
+        ResolveError.DefaultArgNotAllowed(ident) =>
+            report("default arguments are not allowed in " + I.resolve(ident.name()), Some(ident.location)),
+        ResolveError.StructFieldDefaultNotAtEnd(ident) =>
+            report("field " + I.resolve(ident.name()) + " must come before fields with default values", Some(ident.location)),
+        ResolveError.StructPatternPrivateFields(ident) =>
+            report("cannot pattern match on struct `" + I.resolve(ident.name()) + "`: not all fields are public", Some(ident.location)),
+        ResolveError.StructCtorPrivateFields(ident) =>
+            report("cannot construct struct `" + I.resolve(ident.name()) + "`: not all fields are public", Some(ident.location)),
+        ResolveError.WrongNamedPatternArg(ident, got, expected) =>
+            report("wrong named pattern arg for " + I.resolve(ident.name()) + ": got `" + I.resolve(got) + "`, expected `" + I.resolve(expected) + "`", Some(ident.location)),
+        ResolveError.PatternItemNotNamed(ident, name) =>
+            report("pattern item `" + I.resolve(name) + "` in " + I.resolve(ident.name()) + " is not a named field", Some(ident.location)),
+        ResolveError.RedundantRestPattern(ident) =>
+            report("redundant `..` in pattern for " + I.resolve(ident.name()) + ": all fields are already covered", Some(ident.location)),
+        ResolveError.DuplicateNamedPatternArg(ident, name) =>
+            report("duplicate named pattern arg `" + I.resolve(name) + "` in " + I.resolve(ident.name()), Some(ident.location)),
+        ResolveError.PositionalArgWithRest(ident) =>
+            report("positional pattern args cannot be mixed with `..` in " + I.resolve(ident.name()), Some(ident.location)),
+    }
+}
+
+pub fn report_match_validation_errors(errors: Vec[MV.MatchValidationError]) -> ! {
+    for e in errors { report_match_validation_error(e); }
+    exit_with_error()
+}
+
+pub fn report_match_validation_error(e: MV.MatchValidationError) {
+    match e {
+        MV.MatchValidationError.RedundantPattern(location) =>
+            report("redundant pattern:", Some(location)),
+        MV.MatchValidationError.MissingPatterns(location, patterns) =>
+            report("non-exhaustive match: missing patterns: ${join(patterns, ", ")}", Some(location)),
+    }
+}
+
+pub fn report_mono_errors(errors: Vec[MonoError]) -> ! {
+    for e in errors { report_mono_error(e); }
+    exit_with_error()
+}
+
+pub fn report_mono_error(error: MonoError) {
+    match error {
+        MonoError.UnresolvedEffectHandler(method, location) =>
+            report("unresolved effect handler for `${method}`", Some(location)),
+        MonoError.UnsetImplicit(name, location) =>
+            report("implicit `${name}` is not set in this context", Some(location)),
+    }
+}
+
+pub fn report_type_errors(errors: Vec[TypeError]) -> ! {
+    for e in errors { report_type_error(e); }
+    exit_with_error()
+}
+
+pub fn report_type_error(e: TypeError) {
+    match e {
+        TypeError.TypeMismatch(expected, found, location) =>
+            report("Type mismatch: expected `${format_type(expected)}`, found `${format_type(found)}`", Some(location)),
+        TypeError.ArgCountMismatch(name, expected, found, location) =>
+            report("Argument count mismatch for `${name}`: expected ${expected.to_string()}, found ${found.to_string()}", Some(location)),
+        TypeError.InstanceNotFound(trait_name, args, location) =>
+            report("No instance of `${trait_name}` found for `[${format_types(args)}]`", Some(location)),
+        TypeError.AmbiguousInstance(trait_name, args, candidates, location) => {
+            let candidates = candidates.iter().map(|c| I.resolve(c)).collect();
+            let candidates_str = join(candidates, ", ");
+            report("Ambiguous instance of `${trait_name}` for `[${format_types(args)}]`: candidates are ${candidates_str}", Some(location))
+        }
+        TypeError.NotAStruct(ty, location) =>
+            report("Not a struct: `${format_type(ty)}`", Some(location)),
+        TypeError.FieldNotFound(struct_name, field, location) =>
+            report("Struct `${struct_name}` has no field `${field}`", Some(location)),
+        TypeError.FieldNotPublic(struct_name, field, location) =>
+            report("Field `${field}` in struct `${struct_name}` is private", Some(location)),
+        TypeError.MethodNotPublic(struct_name, method, location) =>
+            report("Method `${method}` in struct `${struct_name}` is private", Some(location)),
+        TypeError.InvalidReceiverType(ty, location) =>
+            report("Invalid receiver type for method call: `${format_type(ty)}`", Some(location)),
+        TypeError.MethodNotFound(type_name, method, location) =>
+            report("Type `${type_name}` has no method `${method}`", Some(location)),
+        TypeError.AmbiguousTraitMethod(method, candidates, location) => {
+            let candidates = candidates.iter().map(|c| I.resolve(c)).collect();
+            let candidates_str = join(candidates, ", ");
+            report("Ambiguous trait method `${method}`: multiple imported traits define it (${candidates_str})", Some(location))
+        }
+        TypeError.IncorrectTupleIndex(ty, index, location) =>
+            report("Tuple index on type `${format_type(ty)}` with index `${index.to_string()}` is not valid", Some(location)),
+        TypeError.AmbiguousType(location) =>
+            report("Cannot infer type: add a type annotation", Some(location)),
+        TypeError.WrongNamedArgument(fn_name, arg_name, expected_name, location) =>
+            report("Wrong named argument `${arg_name}` for function `${fn_name}`: expected `${expected_name}`", Some(location)),
+        TypeError.VariantItemNotNamed(variant_name, arg_name, location) =>
+            report("Variant item `${arg_name}` in `${variant_name}` has no name", Some(location)),
+    }
+}
+
+pub fn report_safety_errors(errors: Vec[SC.SafetyError]) -> ! {
+    for e in errors { report_safety_error(e); }
+    exit_with_error()
+}
+
+pub fn report_safety_error(e: SC.SafetyError) {
+    match e {
+        SC.SafetyError.UnsafeFunctionNotAnnotated(location) =>
+            report("Unsafe function must be annotated with @safe or @unsafe", Some(location)),
+        SC.SafetyError.SafeFunctionAnnotated(location) =>
+            report("Safe function must not be annotated with @safe or @unsafe", Some(location)),
+    }
+}
+
+}

@@ -1,0 +1,82 @@
+module Std.Sync.Thread {
+
+import Std.Arch.Pthread
+import Std.Libc.Pthread
+import Std.Libc.Unistd
+import Std.Ptr
+import Std.Intrinsics
+
+@value_type
+struct Arg {
+    f: fn() -> ()
+}
+
+pub struct JoinHandle {
+    thread: PThread,
+
+    pub fn new(thread: PThread) -> JoinHandle {
+        JoinHandle(thread: thread)
+    }
+
+    @safe
+    pub fn join(j: JoinHandle) {
+        pthread_join(j.thread.handle, get_null_ptr());
+    }
+}
+
+@unsafe
+@c_callback
+fn entrypoint(arg: void*) -> void* {
+    let arg_ptr: *Arg = transmute(arg);
+    let arg = *arg_ptr;
+    let f = arg.f;
+    deallocate(arg_ptr);
+    f();
+    return get_null_voidptr();
+}
+
+@safe
+pub fn spawn(f: fn() -> ()) -> JoinHandle {
+    let thread = PThread.new();
+    let attr = PthreadAttr.new();
+    let arg = Arg(f: f);
+    let arg_ptr: *Arg = allocate();
+    *arg_ptr = arg;
+    pthread_attr_init(&attr);
+    pthread_create(&thread, &attr, entrypoint, transmute(arg_ptr));
+    JoinHandle.new(thread)
+}
+
+@safe
+pub fn sleep(microseconds: U32) {
+    Std.Libc.Unistd.usleep(microseconds);
+}
+
+pub struct Mutex {
+    inner: Std.Arch.Pthread.Mutex,
+
+    @safe
+    pub fn new() -> Mutex {
+        let mutex_attr = Std.Arch.Pthread.MutexAttr.new();
+        if pthread_mutexattr_init(&mutex_attr) != 0.as_i32() {
+            panic("Failed to initialize mutex attributes");
+        }
+        let mutex = Std.Arch.Pthread.Mutex.new();
+        if pthread_mutex_init(&mutex, &mutex_attr) != 0.as_i32() {
+            panic("Failed to initialize mutex");
+        }
+        Mutex(inner: mutex)
+    }
+
+    @safe
+    pub fn lock(m: Mutex) {
+        pthread_mutex_lock(&m.inner);
+    }
+
+    @safe
+    pub fn unlock(m: Mutex) {
+        pthread_mutex_unlock(&m.inner);
+    }
+}
+
+}

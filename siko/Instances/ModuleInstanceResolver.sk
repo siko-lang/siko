@@ -1,0 +1,72 @@
+module Siko.Instances.ModuleInstanceResolver {
+
+import Std.Map
+import Siko.AST.Traits
+import Siko.AST.Type
+import Siko.Unification.Sub
+import Siko.Unification.Instantiate
+import Siko.Unification.Unify
+import Siko.Utils.TypeVarAllocator
+import Siko.Interner as I
+
+pub struct ModuleInstanceResolver {
+    pub local: Map[I.String, Vec[InstanceDef]],
+    pub imported: Map[I.String, Vec[InstanceDef]],
+    pub canonical: Map[I.String, Vec[InstanceDef]],
+
+    pub fn resolve_instance(r: ModuleInstanceResolver, trait_name: I.String, query_args: Vec[TypeDef], allocator: TypeVarAllocator) -> InstanceLookupResult {
+        for tier in [r.local, r.imported, r.canonical] {
+            let candidates = match tier.get(trait_name) {
+                Some(v) => v,
+                None => { continue; }
+            };
+            let matches: Vec[_] = candidates.iter()
+                .filter_map(|inst_def| match try_match(inst_def, query_args, allocator) {
+                    Some(w) => Some((inst_def, w)),
+                    None => None,
+                })
+                .collect();
+            match matches.len() {
+                0 => { continue; }
+                1 => {
+                    let (inst_def, witness) = matches[0];
+                    return InstanceLookupResult.Found(inst_def, witness);
+                }
+                _ => return InstanceLookupResult.Ambiguous(matches),
+            }
+        }
+        InstanceLookupResult.NotFound
+    }
+}
+
+pub enum InstanceLookupResult {
+    Found(InstanceDef, Substitution),
+    NotFound,
+    Ambiguous(Vec[(InstanceDef, Substitution)]),
+}
+
+fn try_match(inst_def: InstanceDef, query_args: Vec[TypeDef], allocator: TypeVarAllocator) -> Option[Substitution] {
+    let params = match inst_def.type_arg_defs {
+        Some(tad) => tad.type_params(),
+        None => Vec.new(),
+    };
+    let inst_map = instantiate(params, allocator);
+    let inst_args = inst_def.args.apply(inst_map);
+    if inst_args.len() != query_args.len() {
+        return None;
+    }
+    let sub = Substitution.new();
+    for (ia, qa) in inst_args.iter().zip(query_args.iter()) {
+        match unify(ia, qa, sub) {
+            Err(_) => return None,
+            Ok(_) => {}
+        }
+    }
+    let witness = Substitution.new();
+    for p in params {
+        witness.bind_named(p, sub.apply(inst_map.lookup_named(p).unwrap()));
+    }
+    Some(witness)
+}
+
+}

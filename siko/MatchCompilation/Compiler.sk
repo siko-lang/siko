@@ -1,0 +1,456 @@
+module Siko.MatchCompilation.Compiler {
+
+import Std.Map
+import Std.Set
+import Siko.AST.QualifiedName
+import Siko.MatchCompilation.DataPath
+import Siko.MatchCompilation.Error
+import Siko.MatchCompilation.Pattern
+import Siko.MatchCompilation.Tree
+import Siko.Interner as I
+
+pub struct VariantInfo {
+    pub name: QualifiedName,
+    pub item_count: Int,
+}
+
+pub struct EnumInfo {
+    pub variants: Vec[VariantInfo],
+}
+
+pub struct StructInfo {
+    pub name: QualifiedName,
+    pub field_count: Int,
+}
+
+pub fn compile(branches: Vec[MatchBranch], enums: Map[QualifiedName, EnumInfo], structs: Map[I.String, StructInfo]) -> (Node, Vec[MatchError]) {
+    let used_patterns: Set[Int] = Set.new();
+    let missing_patterns: Set[String] = Set.new();
+    let all_matches: Vec[Match] = [];
+
+    let index = 0;
+    for branch in branches {
+        let (decision, bindings) = generate_decisions(branch.pattern, DataPath.root(), DecisionPath.new(), Bindings.new());
+        let choices = generate_choices(branch.pattern);
+        all_matches.push(Match.new(MatchKind.UserDefined(index, branch.is_guarded), branch.pattern, decision, bindings));
+        for choice in choices {
+            let (choice_decision, choice_bindings) = generate_decisions(choice, DataPath.root(), DecisionPath.new(), Bindings.new());
+            all_matches.push(Match.new(MatchKind.Alternative, choice, choice_decision, choice_bindings));
+        }
+        index = index + 1;
+    }
+
+    let data_types: Map[DataPath, DataType] = Map.new();
+    for m in all_matches {
+        for path in m.decision_path.decisions {
+            match path.last() {
+                DataPathSegment.Root => {}
+                DataPathSegment.Tuple(count) => {
+                    let parent = path.get_parent();
+                    data_types.insert(parent, DataType.Tuple(count));
+                }
+                DataPathSegment.TupleIndex(_) => {}
+                DataPathSegment.ItemIndex(_) => {}
+                DataPathSegment.Variant(_, enum_name) => {
+                    let parent = path.get_parent();
+                    data_types.insert(parent, DataType.Enum(enum_name));
+                }
+                DataPathSegment.IntegerLiteral(_) => {
+                    let parent = path.get_parent();
+                    data_types.insert(parent, DataType.Integer);
+                }
+                DataPathSegment.CharLiteral(_) => {
+                    let parent = path.get_parent();
+                    data_types.insert(parent, DataType.Byte);
+                }
+                DataPathSegment.StringLiteral(_) => {
+                    let parent = path.get_parent();
+                    data_types.insert(parent, DataType.StringType);
+                }
+                DataPathSegment.Struct(name) => {
+                    let parent = path.get_parent();
+                    data_types.insert(parent, DataType.Struct(name));
+                }
+                DataPathSegment.Wildcard => {
+                    let parent = path.get_parent();
+                    if !data_types.contains_key(parent) {
+                        data_types.insert(parent, DataType.Wildcard);
+                    }
+                }
+            }
+        }
+    }
+
+    let pending_paths = [DataPath.root()];
+    let node = build_node(pending_paths, DecisionPath.new(), data_types, all_matches, enums, structs);
+    node.add(all_matches, used_patterns, missing_patterns);
+
+    let errors: Vec[MatchError] = [];
+    let i = 0;
+    for _ in branches {
+        if !used_patterns.contains(i) {
+            errors.push(MatchError.RedundantPattern(i));
+        }
+        i = i + 1;
+    }
+    let missing: Vec[String] = missing_patterns.iter().collect();
+    if !missing.is_empty() {
+        errors.push(MatchError.MissingPattern(missing));
+    }
+    (node, errors)
+}
+
+fn build_node(
+    pending_paths: Vec[DataPath],
+    current_decision: DecisionPath,
+    data_types: Map[DataPath, DataType],
+    all_matches: Vec[Match],
+    enums: Map[QualifiedName, EnumInfo],
+    structs: Map[I.String, StructInfo],
+) -> Node {
+    if pending_paths.is_empty() {
+        return Node.Leaf(LeafNode.new(current_decision));
+    }
+    let current_path = pending_paths[0];
+    let rest = pending_paths.sub(1, pending_paths.len());
+    match data_types.get(current_path) {
+        Some(ty) => {
+            match ty {
+                DataType.Struct(name) => {
+                    let s = structs.get(name).expect("struct not found ${name}");
+                    let struct_path = current_path.push(DataPathSegment.Struct(name));
+                    let child_decision = current_decision.add(struct_path);
+                    let pendings: Vec[DataPath] = [];
+                    let idx = 0;
+                    while idx < s.field_count {
+                        pendings.push(struct_path.push(DataPathSegment.ItemIndex(idx)));
+                        idx = idx + 1;
+                    }
+                    pendings.extend(rest);
+                    let child = build_node(pendings, child_decision, data_types, all_matches, enums, structs);
+                    Node.Struct(StructNode(s.name, s.field_count, struct_path, child))
+                }
+                DataType.Enum(enum_name) => {
+                    let e = enums.get(enum_name).expect("enum not found ${enum_name.name()}");
+                    let values: Set[QualifiedName] = Set.new();
+                    for m in all_matches {
+                        match remaining_match_decisions(current_decision.decisions, m.decision_path.decisions) {
+                            Some(remaining) => {
+                                match remaining.first() {
+                                    Some(next) => {
+                                        match next.last() {
+                                            DataPathSegment.Variant(value, _) => {
+                                                values.insert(value);
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                    None => {}
+                                }
+                            }
+                            None => {}
+                        }
+                    }
+                    let cases: Map[Case, Node] = Map.new();
+                    for variant in e.variants {
+                        if !values.contains(variant.name) {
+                            continue;
+                        }
+                        let case_path = current_path.push(DataPathSegment.Variant(variant.name, enum_name));
+                        let child_decision = current_decision.add(case_path);
+                        let pendings = rest.clone();
+                        let idx = variant.item_count - 1;
+                        while idx >= 0 {
+                            pendings.insert(0, case_path.push(DataPathSegment.ItemIndex(idx)));
+                            idx = idx - 1;
+                        }
+                        let child = build_node(pendings, child_decision, data_types, all_matches, enums, structs);
+                        cases.insert(Case.Variant(variant.name), child);
+                    }
+                    if values.len() < e.variants.len() {
+                        let wildcard_path = current_path.push(DataPathSegment.Wildcard);
+                        let pendings = rest.clone();
+                        pendings.insert(0, wildcard_path);
+                        let child_decision = current_decision.add(wildcard_path);
+                        let child = build_node(pendings, child_decision, data_types, all_matches, enums, structs);
+                        cases.insert(Case.Default, child);
+                    }
+                    Node.Switch(SwitchNode(current_path, SwitchKind.Enum(enum_name), cases))
+                }
+                DataType.Tuple(size) => {
+                    let tuple_path = current_path.push(DataPathSegment.Tuple(size));
+                    let child_decision = current_decision.add(tuple_path);
+                    let pendings: Vec[DataPath] = [];
+                    let idx = 0;
+                    while idx < size {
+                        pendings.push(tuple_path.push(DataPathSegment.TupleIndex(idx)));
+                        idx = idx + 1;
+                    }
+                    pendings.extend(rest);
+                    let child = build_node(pendings, child_decision, data_types, all_matches, enums, structs);
+                    Node.Tuple(TupleNode(size, tuple_path, child))
+                }
+                DataType.Integer => {
+                    let values: Set[I.String] = Set.new();
+                    for m in all_matches {
+                        match remaining_match_decisions(current_decision.decisions, m.decision_path.decisions) {
+                            Some(remaining) => {
+                                match remaining.first() {
+                                    Some(next) => {
+                                        match next.last() {
+                                            DataPathSegment.IntegerLiteral(value) => {
+                                                values.insert(value);
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                    None => {}
+                                }
+                            }
+                            None => {}
+                        }
+                    }
+                    let cases: Map[Case, Node] = Map.new();
+                    for value in values {
+                        let lit_path = current_path.push(DataPathSegment.IntegerLiteral(value));
+                        let pendings = rest.clone();
+                        pendings.insert(0, lit_path);
+                        let child_decision = current_decision.add(lit_path);
+                        let child = build_node(pendings, child_decision, data_types, all_matches, enums, structs);
+                        cases.insert(Case.Integer(value), child);
+                    }
+                    let wildcard_path = current_path.push(DataPathSegment.Wildcard);
+                    let pendings = rest.clone();
+                    pendings.insert(0, wildcard_path);
+                    let child_decision = current_decision.add(wildcard_path);
+                    let child = build_node(pendings, child_decision, data_types, all_matches, enums, structs);
+                    cases.insert(Case.Default, child);
+                    Node.Switch(SwitchNode(current_path, SwitchKind.Integer, cases))
+                }
+                DataType.Byte => {
+                    let values: Set[Int] = Set.new();
+                    for m in all_matches {
+                        match remaining_match_decisions(current_decision.decisions, m.decision_path.decisions) {
+                            Some(remaining) => {
+                                match remaining.first() {
+                                    Some(next) => {
+                                        match next.last() {
+                                            DataPathSegment.CharLiteral(value) => {
+                                                values.insert(value);
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                    None => {}
+                                }
+                            }
+                            None => {}
+                        }
+                    }
+                    let cases: Map[Case, Node] = Map.new();
+                    for value in values {
+                        let lit_path = current_path.push(DataPathSegment.CharLiteral(value));
+                        let pendings = rest.clone();
+                        pendings.insert(0, lit_path);
+                        let child_decision = current_decision.add(lit_path);
+                        let child = build_node(pendings, child_decision, data_types, all_matches, enums, structs);
+                        cases.insert(Case.Char(value), child);
+                    }
+                    let wildcard_path = current_path.push(DataPathSegment.Wildcard);
+                    let pendings = rest.clone();
+                    pendings.insert(0, wildcard_path);
+                    let child_decision = current_decision.add(wildcard_path);
+                    let child = build_node(pendings, child_decision, data_types, all_matches, enums, structs);
+                    cases.insert(Case.Default, child);
+                    Node.Switch(SwitchNode(current_path, SwitchKind.Byte, cases))
+                }
+                DataType.StringType => {
+                    let values: Set[I.String] = Set.new();
+                    for m in all_matches {
+                        match remaining_match_decisions(current_decision.decisions, m.decision_path.decisions) {
+                            Some(remaining) => {
+                                match remaining.first() {
+                                    Some(next) => {
+                                        match next.last() {
+                                            DataPathSegment.StringLiteral(value) => {
+                                                values.insert(value);
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                    None => {}
+                                }
+                            }
+                            None => {}
+                        }
+                    }
+                    let cases: Map[Case, Node] = Map.new();
+                    for value in values {
+                        let lit_path = current_path.push(DataPathSegment.StringLiteral(value));
+                        let pendings = rest.clone();
+                        pendings.insert(0, lit_path);
+                        let child_decision = current_decision.add(lit_path);
+                        let child = build_node(pendings, child_decision, data_types, all_matches, enums, structs);
+                        cases.insert(Case.StringCase(value), child);
+                    }
+                    let wildcard_path = current_path.push(DataPathSegment.Wildcard);
+                    let pendings = rest.clone();
+                    pendings.insert(0, wildcard_path);
+                    let child_decision = current_decision.add(wildcard_path);
+                    let child = build_node(pendings, child_decision, data_types, all_matches, enums, structs);
+                    cases.insert(Case.Default, child);
+                    Node.Switch(SwitchNode(current_path, SwitchKind.StringKind, cases))
+                }
+                DataType.Wildcard => {
+                    let wildcard_path = current_path.push(DataPathSegment.Wildcard);
+                    let pendings = pending_paths.clone();
+                    pendings[0] = wildcard_path;
+                    let child_decision = current_decision.add(wildcard_path);
+                    let child = build_node(pendings, child_decision, data_types, all_matches, enums, structs);
+                    Node.Wildcard(WildcardNode(current_path, child))
+                }
+            }
+        }
+        None => build_node(rest, current_decision, data_types, all_matches, enums, structs),
+    }
+}
+
+fn generate_decisions(
+    pattern: Pattern,
+    parent_data: DataPath,
+    decision: DecisionPath,
+    bindings: Bindings,
+) -> (DecisionPath, Bindings) {
+    match pattern.kind {
+        PatternKind.Variant(variant_name, enum_name, args) => {
+            let path = parent_data.push(DataPathSegment.Variant(variant_name, enum_name));
+            let d =decision.add(path);
+            let index = 0;
+            for arg in args {
+                let arg_path = path.push(DataPathSegment.ItemIndex(index));
+                let (new_d, new_b) = generate_decisions(arg, arg_path, d, bindings);
+                d = new_d;
+                bindings = new_b;
+                index = index + 1;
+            }
+            (d, bindings)
+        }
+        PatternKind.Struct(name, args) => {
+            let path = parent_data.push(DataPathSegment.Struct(name));
+            let d = decision.add(path);
+            let index = 0;
+            for arg in args {
+                let arg_path = path.push(DataPathSegment.ItemIndex(index));
+                let (new_d, new_b) = generate_decisions(arg, arg_path, d, bindings);
+                d = new_d;
+                bindings = new_b;
+                index = index + 1;
+            }
+            (d, bindings)
+        }
+        PatternKind.Bind(name) => {
+            let bind_path = parent_data.as_binding_path();
+            let bind_decision = decision.add(parent_data);
+            bindings.bindings.insert(bind_decision, name);
+            (decision.add(bind_path), bindings)
+        }
+        PatternKind.Tuple(args) => {
+            let path = parent_data.push(DataPathSegment.Tuple(args.len()));
+            let d =decision.add(path);
+            let index = 0;
+            for arg in args {
+                let arg_path = path.push(DataPathSegment.TupleIndex(index));
+                let (new_d, new_b) = generate_decisions(arg, arg_path, d, bindings);
+                d = new_d;
+                bindings = new_b;
+                index = index + 1;
+            }
+            (d, bindings)
+        }
+        PatternKind.StringLiteral(v) => {
+            (decision.add(parent_data.push(DataPathSegment.StringLiteral(v))), bindings)
+        }
+        PatternKind.IntegerLiteral(v) => {
+            (decision.add(parent_data.push(DataPathSegment.IntegerLiteral(v))), bindings)
+        }
+        PatternKind.CharLiteral(b) => {
+            (decision.add(parent_data.push(DataPathSegment.CharLiteral(b))), bindings)
+        }
+        PatternKind.Wildcard => {
+            (decision.add(parent_data.push(DataPathSegment.Wildcard)), bindings)
+        }
+    }
+}
+
+fn generate_choices(pattern: Pattern) -> Vec[Pattern] {
+    let wildcard = Pattern.wildcard();
+    match pattern.kind {
+        PatternKind.Variant(variant_name, enum_name, args) => {
+            let result: Vec[Pattern] = [wildcard];
+            let index = 0;
+            for arg in args {
+                let choices = generate_choices(arg);
+                for choice in choices {
+                    let choice_args: Vec[Pattern] = args.iter().take(index).collect();
+                    choice_args.push(choice);
+                    let remaining = args.len() - index - 1;
+                    let i = 0;
+                    while i < remaining {
+                        choice_args.push(wildcard);
+                        i = i + 1;
+                    }
+                    result.push(Pattern.new(PatternKind.Variant(variant_name, enum_name, choice_args)));
+                }
+                index = index + 1;
+            }
+            result
+        }
+        PatternKind.Struct(name, args) => {
+            let result: Vec[Pattern] = [];
+            let index = 0;
+            for arg in args {
+                let choices = generate_choices(arg);
+                for choice in choices {
+                    let choice_args: Vec[Pattern] = args.iter().take(index).collect();
+                    choice_args.push(choice);
+                    let remaining = args.len() - index - 1;
+                    let i = 0;
+                    while i < remaining {
+                        choice_args.push(wildcard);
+                        i = i + 1;
+                    }
+                    result.push(Pattern.new(PatternKind.Struct(name, choice_args)));
+                }
+                index = index + 1;
+            }
+            result
+        }
+        PatternKind.Bind(_) => [],
+        PatternKind.Tuple(args) => {
+            let result: Vec[Pattern] = [];
+            let index = 0;
+            for arg in args {
+                let choices = generate_choices(arg);
+                for choice in choices {
+                    let choice_args: Vec[Pattern] = args.iter().take(index).collect();
+                    choice_args.push(choice);
+                    let remaining = args.len() - index - 1;
+                    let i = 0;
+                    while i < remaining {
+                        choice_args.push(wildcard);
+                        i = i + 1;
+                    }
+                    result.push(Pattern.new(PatternKind.Tuple(choice_args)));
+                }
+                index = index + 1;
+            }
+            result
+        }
+        PatternKind.StringLiteral(_) => [wildcard],
+        PatternKind.IntegerLiteral(_) => [wildcard],
+        PatternKind.CharLiteral(_) => [wildcard],
+        PatternKind.Wildcard => [],
+    }
+}
+
+}

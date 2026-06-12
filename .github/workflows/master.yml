@@ -1,0 +1,48 @@
+name: Master
+
+on: [push]
+
+jobs:
+  linux-tests:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+      with:
+          submodules: recursive
+    - name: Install Boehm GC
+      run: sudo apt-get install -y libgc-dev
+    - name: Bootstrap
+      run: make base.bin
+    - name: Compile compiler
+      run: make siko.bin
+    - name: Compile testrunner
+      run: make build
+      working-directory: ./
+    - name: Run tests
+      run: make test
+      working-directory: ./
+
+  macos-tests:
+
+    runs-on: macos-latest
+    env:
+      SIKO_TARGET_OS: macos
+
+    steps:
+    - uses: actions/checkout@v3
+      with:
+          submodules: recursive
+    - name: Install Boehm GC
+      run: brew install bdw-gc
+    - name: Bootstrap
+      run: make base.bin
+    - name: Compile compiler
+      run: make siko.bin
+    - name: Compile testrunner
+      run: make build
+      working-directory: ./
+    - name: Run tests
+      run: make test
+      working-directory: ./

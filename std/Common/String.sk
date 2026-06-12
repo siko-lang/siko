@@ -1,0 +1,423 @@
+@prelude
+module Std.String {
+
+import Std.Vec
+import Std.Range
+import Std.Slice
+import Std.Ptr
+import Std.Intrinsics
+
+pub struct String {
+    value: *U8,
+    len: U64,
+
+    @safe
+    fn add(a: String, b: String) -> String {
+        let alen = a.len();
+        let blen = b.len();
+        let total = alen + blen;
+        let data: *U8 = gc_allocate_array(total);
+        Std.Ptr.copy(data, a.value, 0, 0, alen);
+        Std.Ptr.copy(data, b.value, 0, alen, blen);
+        String(data, total.as_u64())
+    }
+
+    pub fn len(s: String) -> Int {
+        s.len.as_int()
+    }
+
+    pub fn as_ptr(s: String) -> *U8 {
+        s.value
+    }
+
+    @unsafe
+    pub fn from_literal(s: *I8, size: Int) -> String {
+        String(transmute(s), size.as_u64())
+    }
+
+    @unsafe
+    pub fn from_bytes(s: *U8, size: Int) -> String {
+        let data: *U8 = gc_allocate_array(size);
+        Std.Ptr.copy(data, transmute(s), 0, 0, size);
+        String(data, size.as_u64())
+    }
+
+    fn eq(a: String, b: String) -> Bool {
+        let n = a.len();
+        let m = b.len();
+        if n != m {
+            return False;
+        }
+        let bytes_a = a.as_slice();
+        let bytes_b = b.as_slice();
+        for i in 0..n {
+            if bytes_a[i] != bytes_b[i] {
+                return False;
+            }
+        }
+        True
+    }
+
+    pub fn as_slice(s: String) -> Slice[U8] {
+        Slice.from_raw(s.as_ptr(), s.len())
+    }
+
+    pub fn to_bytes(s: String) -> Vec[U8] {
+        let n = s.len();
+        let arr = s.as_slice();
+        let v = Vec.new();
+        for i in 0..n {
+            v.push(arr[i]);
+        }
+        v
+    }
+
+    pub fn starts_with(s: String, prefix: String) -> Bool {
+        let n = s.len();
+        let m = prefix.len();
+        let prefix_bytes = prefix.as_slice();
+        if n < m {
+            return False;
+        }
+        let bytes = s.as_slice();
+        for i in 0..m {
+            if bytes[i] != prefix_bytes[i] {
+                return False;
+            }
+        }
+        True
+    }
+
+    pub fn ends_with(s: String, suffix: String) -> Bool {
+        let n = s.len();
+        let m = suffix.len();
+        let suffix_bytes = suffix.as_slice();
+        if n < m {
+            return False;
+        }
+        let bytes = s.as_slice();
+        for i in 0..m {
+            if bytes[n - m + i] != suffix_bytes[i] {
+                return False;
+            }
+        }
+        True
+    }
+
+    pub fn substring(s: String, start: Int, end: Int) -> String {
+        let sl = s.as_slice().sub(start, end);
+        String.from_slice(sl)
+    }
+
+    @safe
+    pub fn from_slice(s: Slice[U8]) -> String {
+        from_bytes(s.as_ptr(), s.len())
+    }
+
+    pub fn parse_int(s: String, base: Int) -> Result[Int, ()] {
+        let bytes = s.as_slice();
+        let n = s.len();
+        if n == 0 {
+            return Err(());
+        }
+        let result = 0;
+        for i in 0..n {
+            let b = bytes[i];
+            let digit = if b >= '0' && b <= '9' {
+                b.as_int() - '0'.as_int()
+            } else {
+                if b >= 'a' && b <= 'z' {
+                    b.as_int() - 'a'.as_int() + 10
+                } else {
+                    if b >= 'A' && b <= 'Z' {
+                        b.as_int() - 'A'.as_int() + 10
+                    } else {
+                        return Err(());
+                    }
+                }
+            };
+            if digit >= base {
+                return Err(());
+            }
+            result = result * base + digit;
+        }
+        Ok(result)
+    }
+
+    pub fn lt(a: String, b: String) -> Bool {
+        let n = a.len();
+        let m = b.len();
+        let bytes_a = a.as_slice();
+        let bytes_b = b.as_slice();
+        let min_len = if n < m { n } else { m };
+        for i in 0..min_len {
+            if bytes_a[i] < bytes_b[i] {
+                return True;
+            }
+            if bytes_a[i] > bytes_b[i] {
+                return False;
+            }
+        }
+        n < m
+    }
+
+    pub fn strip_prefix(s: String, prefix: String) -> Option[String] {
+        if s.starts_with(prefix) {
+            Some(s.substring(prefix.len(), s.len()))
+        } else {
+            None
+        }
+    }
+
+    pub fn is_empty(s: String) -> Bool {
+        s.len() == 0
+    }
+
+    pub fn sub(s: String, start: Int, end: Int) -> String {
+        s.substring(start, end)
+    }
+
+    pub fn find(s: String, needle: String) -> Option[Int] {
+        let slen = s.len();
+        let nlen = needle.len();
+        if nlen == 0 {
+            return Some(0);
+        }
+        if nlen > slen {
+            return None;
+        }
+        let sbytes = s.as_slice();
+        let nbytes = needle.as_slice();
+        let i = 0;
+        while i <= slen - nlen {
+            let j = 0;
+            let matched = True;
+            while j < nlen {
+                if sbytes[i + j] != nbytes[j] {
+                    matched = False;
+                    break;
+                }
+                j = j + 1;
+            }
+            if matched {
+                return Some(i);
+            }
+            i = i + 1;
+        }
+        None
+    }
+
+    pub fn contains(s: String, needle: String) -> Bool {
+        s.find(needle) != None
+    }
+
+    pub fn rfind(s: String, b: U8) -> Option[Int] {
+        let n = s.len();
+        let bytes = s.as_slice();
+        let i = n - 1;
+        while i >= 0 {
+            if bytes[i] == b {
+                return Some(i);
+            }
+            i = i - 1;
+        }
+        None
+    }
+
+    pub fn split(s: String, sep: String) -> SplitIterator {
+        SplitIterator(s, sep, 0, False)
+    }
+
+    pub fn chars(s: String) -> CharsIterator {
+        CharsIterator(s, 0)
+    }
+
+    pub fn replace(s: String, from: String, to: String) -> String {
+        let result = "";
+        let slen = s.len();
+        let flen = from.len();
+        let i = 0;
+        while i < slen {
+            let matched = flen > 0;
+            if matched && i + flen <= slen {
+                let sbytes = s.as_slice();
+                let fbytes = from.as_slice();
+                for k in 0..flen {
+                    if sbytes[i + k] != fbytes[k] {
+                        matched = False;
+                        break;
+                    }
+                }
+            } else {
+                matched = False;
+            }
+            if matched {
+                result = result + to;
+                i = i + flen;
+            } else {
+                result = result + String.from_byte(s.as_slice()[i]);
+                i = i + 1;
+            }
+        }
+        result
+    }
+
+    pub fn capitalize(s: String) -> String {
+        if s.is_empty() {
+            return s;
+        }
+        let bytes = s.as_slice();
+        let first = bytes[0];
+        if first >= 97.as_u8() && first <= 122.as_u8() {
+            String.from_byte(first - 32.as_u8()) + s.substring(1, s.len())
+        } else {
+            s
+        }
+    }
+
+    pub fn strip_suffix(s: String, suffix: String) -> Option[String] {
+        if s.ends_with(suffix) {
+            Some(s.substring(0, s.len() - suffix.len()))
+        } else {
+            None
+        }
+    }
+
+    pub fn trim_start_matches(s: String, p: String) -> String {
+        while s.starts_with(p) {
+            s = s.substring(p.len(), s.len());
+        }
+        s
+    }
+
+    @safe
+    pub fn from_byte(b: U8) -> String {
+        let data = gc_allocate_array(1);
+        *offset_of(data, 0) = b;
+        String.from_bytes(data, 1)
+    }
+}
+
+pub struct SplitIterator {
+    s: String,
+    sep: String,
+    pos: Int,
+    done: Bool,
+}
+
+pub struct CharsIterator {
+    s: String,
+    pos: Int,
+}
+
+instance Iterator[CharsIterator] {
+    type Item = U8
+
+    fn next(i: CharsIterator) -> Option[U8] {
+        if i.pos < i.s.len() {
+            let b = i.s.as_slice()[i.pos];
+            i.pos = i.pos + 1;
+            Some(b)
+        } else {
+            None
+        }
+    }
+}
+
+instance Iterator[SplitIterator] {
+    type Item = String
+
+    fn next(i: SplitIterator) -> Option[String] {
+        if i.done {
+            return None;
+        }
+        let slen = i.s.len();
+        let seplen = i.sep.len();
+        let sbytes = i.s.as_slice();
+        let sepbytes = i.sep.as_slice();
+        let found = slen;
+        let j = i.pos;
+        while j + seplen <= slen {
+            let matches = True;
+            for k in 0..seplen {
+                if sbytes[j + k] != sepbytes[k] {
+                    matches = False;
+                    break;
+                }
+            }
+            if matches {
+                found = j;
+                break;
+            }
+            j = j + 1;
+        }
+        let part = i.s.substring(i.pos, found);
+        if found == slen {
+            i.done = True;
+        } else {
+            i.pos = found + seplen;
+        }
+        Some(part)
+    }
+}
+
+instance PartialEq[String] {
+    fn eq(a: String, b: String) -> Bool {
+        a.eq(b)
+    }
+}
+
+instance Eq[String] {}
+
+instance Add[String] {
+    type Output = String
+    fn add(a: String, b: String) -> String {
+        a.add(b)
+    }
+}
+
+pub trait ToString[T] {
+    fn to_string(a: T) -> String
+}
+
+instance ToString[String] {
+    fn to_string(a: String) -> String {
+        a
+    }
+}
+
+instance PartialOrd[String] {
+    fn partial_cmp(a: String, b: String) -> Option[Ordering] {
+        if a.eq(b) {
+            Some(Ordering.Equal)
+        } else {
+            if a.lt(b) {
+                Some(Ordering.Less)
+            } else {
+                Some(Ordering.Greater)
+            }
+        }
+    }
+}
+
+instance Ord[String] {
+    fn cmp(a: String, b: String) -> Ordering {
+        if a.eq(b) {
+            Ordering.Equal
+        } else {
+            if a.lt(b) {
+                Ordering.Less
+            } else {
+                Ordering.Greater
+            }
+        }
+    }
+}
+
+instance Clone[String] {
+    fn clone(a: String) -> String {
+        a
+    }
+}
+
+}

@@ -1,0 +1,199 @@
+module Siko.Instances.FunctionInstanceResolver {
+
+import Std.Map
+import Siko.AST.Generics
+import Siko.AST.Traits
+import Siko.AST.Type
+import Siko.Instances.ModuleInstanceResolver
+import Siko.Unification.Apply
+import Siko.Unification.Sub
+import Siko.Utils.TypeVarAllocator
+import Siko.Interner as I
+
+@derive(Clone)
+pub enum BoundWitness {
+    FunctionBound(Int),
+    Instance(I.String),
+
+    pub fn format(w: BoundWitness) -> String {
+        match w {
+            BoundWitness.FunctionBound(index) => "#${index}",
+            BoundWitness.Instance(module_name) => I.resolve(module_name),
+        }
+    }
+}
+
+pub struct BoundResolution {
+    pub witness: BoundWitness,
+    pub assoc_types: Map[I.String, TypeDef],
+    pub primary_args: Vec[TypeDef],
+    pub instance_qname: Option[I.String],
+    pub type_witness: Substitution,
+
+    fn from_function_bound(idx: Int, assoc_types: Map[I.String, TypeDef]) -> BoundResolution {
+        BoundResolution(BoundWitness.FunctionBound(idx), assoc_types, [], None, Substitution.new())
+    }
+
+    fn from_instance(module_name: I.String, assoc_types: Map[I.String, TypeDef], primary_args: Vec[TypeDef], instance_qname: Option[I.String], type_witness: Substitution) -> BoundResolution {
+        BoundResolution(BoundWitness.Instance(module_name), assoc_types, primary_args, instance_qname, type_witness)
+    }
+
+    pub fn into_witness(r: BoundResolution) -> BoundWitness {
+        r.witness
+    }
+}
+
+pub fn into_witnesses(resolutions: Vec[BoundResolution]) -> Vec[BoundWitness] {
+    resolutions.iter().map(|r| r.witness).collect()
+}
+
+pub enum BoundResult {
+    Satisfied(BoundResolution),
+    NotFound,
+    Ambiguous(Vec[I.String]),
+}
+
+pub struct FunctionBoundEntry {
+    pub trait_name: I.String,
+    pub args: Vec[TypeDef],
+    pub assoc_types: Map[I.String, TypeDef],
+}
+
+pub struct FunctionInstanceResolver {
+    pub module_name: I.String,
+    pub module_resolver: ModuleInstanceResolver,
+    pub function_bounds: Vec[FunctionBoundEntry],
+    pub allocator: TypeVarAllocator,
+
+    pub fn new(module_name: I.String, module_resolver: ModuleInstanceResolver, function_bounds: Vec[FunctionBoundEntry], allocator: TypeVarAllocator) -> FunctionInstanceResolver {
+        FunctionInstanceResolver(module_name, module_resolver, function_bounds, allocator)
+    }
+
+    fn check_sub_bounds(r: FunctionInstanceResolver, instance_def: InstanceDef, type_witness: Substitution, sub: Substitution) -> Bool {
+        let tad = match instance_def.type_arg_defs {
+            None => return True,
+            Some(t) => t,
+        };
+        for bound in tad.bounds {
+            let sub_args = bound_args(bound, type_witness, sub);
+            match r.resolve(bound.trait_name.name(), sub_args, sub) {
+                BoundResult.Satisfied(_) => {}
+                _ => return False,
+            }
+        }
+        True
+    }
+
+    fn finish_instance(r: FunctionInstanceResolver, instance_def: InstanceDef, type_witness: Substitution, sub: Substitution) -> BoundResult {
+        if let Some(tad) = instance_def.type_arg_defs {
+            for bound in tad.bounds {
+                let sub_args = bound_args(bound, type_witness, sub);
+                let result = r.resolve_and_extract(bound.trait_name.name(), sub_args, bound.constraints, sub, type_witness);
+                match result {
+                    BoundResult.Satisfied(_) => {}
+                    _ => return result,
+                }
+            }
+        }
+        let assoc_types = Map.new();
+        for ta in instance_def.type_assignments {
+            assoc_types.insert(ta.name.name, type_witness.apply(ta.ty));
+        }
+        let primary_args = instance_def.args.apply(type_witness);
+        let instance_qname = match instance_def.name {
+            Some(n) => Some(n.name),
+            None => None,
+        };
+        BoundResult.Satisfied(BoundResolution.from_instance(
+            r.module_name,
+            assoc_types,
+            primary_args,
+            instance_qname,
+            type_witness,
+        ))
+    }
+
+    pub fn resolve_and_extract(r: FunctionInstanceResolver, trait_name: I.String, args: Vec[TypeDef], constraints: Vec[Constraint], sub: Substitution, out: Substitution) -> BoundResult {
+        match r.resolve(trait_name, args, sub) {
+            BoundResult.Satisfied(resolution) => {
+                for constraint in constraints {
+                    if let Some(concrete) = resolution.assoc_types.get(constraint.lhs.name) {
+                        extract_named_bindings(constraint.rhs, concrete, out);
+                    }
+                }
+                BoundResult.Satisfied(resolution)
+            }
+            other => other,
+        }
+    }
+
+    pub fn resolve(r: FunctionInstanceResolver, trait_name: I.String, query_args: Vec[TypeDef], sub: Substitution) -> BoundResult {
+        let i = 0;
+        for entry in r.function_bounds {
+            if entry.trait_name == trait_name && entry.args.len() == query_args.len() {
+                let resolved = entry.args.apply(sub);
+                let compatible = True;
+                let j = 0;
+                while j < resolved.len() {
+                    let rv = resolved[j];
+                    let qv = query_args[j];
+                    if !(rv == qv || match qv { TypeDef.Var(TypeVar.Var(_)) => True, _ => False }) {
+                        compatible = False;
+                        break;
+                    }
+                    j += 1;
+                }
+                if compatible {
+                    return BoundResult.Satisfied(BoundResolution.from_function_bound(i, entry.assoc_types));
+                }
+            }
+            i += 1;
+        }
+
+        match r.module_resolver.resolve_instance(trait_name, query_args, r.allocator) {
+            InstanceLookupResult.Found(instance_def, type_witness) => {
+                r.finish_instance(instance_def, type_witness, sub)
+            }
+            InstanceLookupResult.NotFound => BoundResult.NotFound,
+            InstanceLookupResult.Ambiguous(candidates) => {
+                if query_args.iter().any(|a| a.has_flex_var()) {
+                    let names: Vec[_] = candidates.iter().map(|(inst_def, _)| match inst_def.name {
+                        Some(n) => n.name,
+                        None => I.intern("instance ${I.resolve(trait_name)}"),
+                    }).collect();
+                    return BoundResult.Ambiguous(names);
+                }
+                let viable: Vec[(InstanceDef, Substitution)] = Vec.new();
+                for (instance_def, type_witness) in candidates {
+                    if r.check_sub_bounds(instance_def, type_witness, sub) {
+                        viable.push((instance_def, type_witness));
+                    }
+                }
+                match viable.len() {
+                    0 => BoundResult.NotFound,
+                    1 => {
+                        let (instance_def, type_witness) = viable[0];
+                        r.finish_instance(instance_def, type_witness, sub)
+                    }
+                    _ => {
+                        let names: Vec[_] = viable.iter().map(|(inst_def, _)| match inst_def.name {
+                            Some(n) => n.name,
+                            None => I.intern("instance ${I.resolve(trait_name)}"),
+                        }).collect();
+                        BoundResult.Ambiguous(names)
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub fn bound_args(bound: Bound, type_witness: Substitution, sub: Substitution) -> Vec[TypeDef] {
+    bound.type_args.iter().map(|name| {
+        let var_name = name.name();
+        let raw = type_witness.lookup_named(var_name).unwrap_or(TypeDef.Var(TypeVar.Named(var_name)));
+        sub.apply(raw)
+    }).collect()
+}
+
+}

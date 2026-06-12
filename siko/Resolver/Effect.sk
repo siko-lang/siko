@@ -1,0 +1,23 @@
+module Siko.Resolver.Effect {
+
+import Siko.Resolver
+import Siko.Resolver.Error
+import Siko.AST.Effects
+import Siko.AST.Data
+
+instance Resolvable[EffectDef] {
+    fn resolve(e: EffectDef, ctx: ResolverContext) -> Result[EffectDef, ResolveError] {
+        ctx.type_resolver.add_args(e.type_arg_defs);
+        Ok(EffectDef(
+            annotations: e.annotations,
+            public: e.public,
+            name: e.name.with_prefix(ctx.module_name()),
+            associated_types: e.associated_types,
+            type_arg_defs: e.type_arg_defs.resolve(ctx)?,
+            methods: Vec.new(),
+            method_map: MethodMap.new(),
+        ))
+    }
+}
+
+}

@@ -1,0 +1,35 @@
+module Siko.AST.Statement {
+
+import Siko.AST.Expr
+import Siko.AST.Pattern
+import Siko.AST.Type
+
+@derive(Clone)
+pub struct LetInfo {
+    pub name: VariableName,
+    pub ty: Option[TypeDef],
+    pub rhs: Expr,
+}
+
+@derive(Clone)
+pub struct DeclareInfo {
+    pub name: VariableName,
+    pub ty: Option[TypeDef],
+}
+
+@derive(Clone)
+pub enum Statement {
+    Let(LetInfo),
+    UnresolvedLet(Pattern, Option[TypeDef], Expr),
+    Declare(DeclareInfo),
+    Assign(Expr, Expr),
+    Expr(Expr),
+    TrailingExpr(Expr),
+    Loop(Vec[Statement]),
+    ForLoop(Pattern, Expr, Vec[Statement]),
+    WhileLoop(Expr, Vec[Statement]),
+    Break,
+    Continue,
+}
+
+}

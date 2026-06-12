@@ -1,0 +1,483 @@
+module Siko.Format.Expr {
+
+import Siko.AST.Expr
+import Siko.AST.Statement as S
+import Siko.Interner as I
+import Siko.Format.Formatter
+import Siko.Format.Pattern
+import Siko.Format.Types
+
+pub fn format_expr(f: Formatter, expr: Expr) {
+    match expr.ty {
+        Some(ty) => {
+            f.push("(");
+            format_expr_inner(f, expr);
+            f.push(": ");
+            format_type_def(f, ty);
+            f.push(")");
+        }
+        None => format_expr_inner(f, expr),
+    }
+}
+
+fn format_expr_inner(f: Formatter, expr: Expr) {
+    match expr.kind {
+        ExprKind.IntLiteral(s) => f.push(s),
+        ExprKind.CharLiteral(b) => format_char_literal(f, b),
+        ExprKind.StringLiteral(s) => {
+            f.push("\"");
+            f.push(escape_string(s));
+            f.push("\"");
+        }
+        ExprKind.Var(name) => f.push(name.format()),
+        ExprKind.Name(name) => f.push(I.resolve(name.name())),
+        ExprKind.BinaryOp(op, lhs, rhs) => {
+            format_expr(f, lhs);
+            f.push(" ");
+            f.push(binary_op_str(op));
+            f.push(" ");
+            format_expr(f, rhs);
+        }
+        ExprKind.UnaryOp(op, operand) => {
+            match op {
+                UnaryOp.Neg  => f.push("-"),
+                UnaryOp.Not  => f.push("!"),
+                UnaryOp.BNot => f.push("~"),
+            }
+            format_expr(f, operand);
+        }
+        ExprKind.Call(CallInfo(callee, args, named_args)) => {
+            format_expr(f, callee);
+            f.push("(");
+            let i = 0;
+            for arg in args {
+                if i > 0 { f.push(", "); }
+                let name = named_args.iter().find(|na| na.index == i);
+                match name {
+                    Some(na) => {
+                        f.push(I.resolve(na.name));
+                        f.push(": ");
+                    }
+                    None => {}
+                }
+                format_expr(f, arg);
+                i = i + 1;
+            }
+            f.push(")");
+        }
+        ExprKind.DynamicCall(callee, args) => {
+            f.push("(");
+            format_expr(f, callee);
+            f.push(")(");
+            let i = 0;
+            for arg in args {
+                if i > 0 { f.push(", "); }
+                format_expr(f, arg);
+                i = i + 1;
+            }
+            f.push(")");
+        }
+        ExprKind.FieldAccess(expr, field) => {
+            format_expr(f, expr);
+            f.push(".");
+            f.push(I.resolve(field.name));
+        }
+        ExprKind.TupleIndex(expr, index) => {
+            format_expr(f, expr);
+            f.push(".");
+            f.push(index.to_string());
+        }
+        ExprKind.MethodCall(MethodCallInfo(receiver, method_name, args, named_args)) => {
+            format_expr(f, receiver);
+            f.push(".");
+            f.push(I.resolve(method_name.name));
+            f.push("(");
+            let i = 0;
+            for arg in args {
+                if i > 0 { f.push(", "); }
+                let name = named_args.iter().find(|na| na.index == i);
+                match name {
+                    Some(na) => {
+                        f.push(I.resolve(na.name));
+                        f.push(": ");
+                    }
+                    None => {}
+                }
+                format_expr(f, arg);
+                i = i + 1;
+            }
+            f.push(")");
+        }
+        ExprKind.FunctionCall(FunctionCallInfo(name, kind, args, witness_info, _)) => {
+            f.push(I.resolve(name.name()));
+            match kind {
+                FunctionKind.VariantCtor => {
+                    if args.is_empty() {
+                        return;
+                    }
+                }
+                _ => {}
+            }
+            let witnesses = witness_info.witnesses;
+            if !witnesses.is_empty() {
+                f.push("{");
+                let i = 0;
+                for w in witnesses {
+                    if i > 0 { f.push(", "); }
+                    f.push(w.format());
+                    i = i + 1;
+                }
+                f.push("}");
+            }
+            f.push("(");
+            let i = 0;
+            for arg in args {
+                if i > 0 { f.push(", "); }
+                format_expr(f, arg);
+                i = i + 1;
+            }
+            f.push(")");
+        }
+        ExprKind.If(cond, then, else_expr) => {
+            f.push("if ");
+            format_expr(f, cond);
+            f.push(" ");
+            format_block_expr(f, then);
+            match else_expr {
+                Some(else_branch) => {
+                    f.push(" else ");
+                    format_block_expr(f, else_branch);
+                }
+                None => {}
+            }
+        }
+        ExprKind.IfLet(pattern, cond, then, else_expr) => {
+            f.push("if let ");
+            format_pattern(f, pattern);
+            f.push(" = ");
+            format_expr(f, cond);
+            f.push(" ");
+            format_block_expr(f, then);
+            match else_expr {
+                Some(else_branch) => {
+                    f.push(" else ");
+                    format_block_expr(f, else_branch);
+                }
+                None => {}
+            }
+        }
+        ExprKind.Block(stmts) => format_stmts(f, stmts),
+        ExprKind.Tuple(exprs) => {
+            f.push("(");
+            let i = 0;
+            for expr in exprs {
+                if i > 0 { f.push(", "); }
+                format_expr(f, expr);
+                i = i + 1;
+            }
+            f.push(")");
+        }
+        ExprKind.Paren(inner) => {
+            f.push("(");
+            format_expr(f, inner);
+            f.push(")");
+        }
+        ExprKind.Return(inner) => {
+            f.push("return ");
+            format_expr(f, inner);
+        }
+        ExprKind.Match(MatchInfo(scrutinee, arms)) => {
+            f.push("match ");
+            format_expr(f, scrutinee);
+            f.push(" {\n");
+            f.indent_up();
+            for arm in arms {
+                f.push_indent();
+                format_pattern(f, arm.pattern);
+                f.push(" => ");
+                format_expr(f, arm.body);
+                f.push(",\n");
+            }
+            f.indent_down();
+            f.push_indent();
+            f.push("}");
+        }
+        ExprKind.With(WithInfo(handlers, body)) => {
+            f.push("with ");
+            let i = 0;
+            for handler in handlers {
+                if i > 0 { f.push(", "); }
+                format_handler_selection(f, handler);
+                i = i + 1;
+            }
+            f.push(" ");
+            format_block_expr(f, body);
+        }
+        ExprKind.ImplicitRef(ImplicitRefInfo(name)) => {
+            f.push("implicit-ref!(");
+            f.push(I.resolve(name.name()));
+            f.push(")");
+        }
+        ExprKind.UnresolvedLambda(args, body) => {
+            f.push("|");
+            let i = 0;
+            for pat in args {
+                if i > 0 { f.push(", "); }
+                format_pattern(f, pat);
+                i = i + 1;
+            }
+            f.push("| ");
+            format_expr(f, body);
+        }
+        ExprKind.ResolvedLambda(args, body, capture_count) => {
+            f.push("|[${capture_count}]");
+            let i = 0;
+            for arg in args {
+                if i > 0 { f.push(", "); } else { f.push(" "); }
+                f.push(arg.name.format());
+                i = i + 1;
+            }
+            f.push("| ");
+            format_expr(f, body);
+        }
+        ExprKind.CreateClosure(CreateClosureInfo(name, captures, _)) => {
+            f.push("create_closure!(");
+            f.push(I.resolve(name.name()));
+            for cap in captures {
+                f.push(", ");
+                f.push(cap.format());
+            }
+            f.push(")");
+        }
+        ExprKind.Try(inner) => {
+            format_expr(f, inner);
+            f.push("?");
+        }
+        ExprKind.List(items) => {
+            f.push("[");
+            let i = 0;
+            for item in items {
+                if i > 0 { f.push(", "); }
+                format_expr(f, item);
+                i = i + 1;
+            }
+            f.push("]");
+        }
+        ExprKind.Index(base, idx) => {
+            format_expr(f, base);
+            f.push("[");
+            format_expr(f, idx);
+            f.push("]");
+        }
+        ExprKind.Transmute(base) => {
+            f.push("transmute!(");
+            format_expr(f, base);
+            f.push(")");
+        }
+        ExprKind.SizeOf(ty) => {
+            f.push("sizeof(");
+            format_type_def(f, ty);
+            f.push(")");
+        }
+        ExprKind.Deref(base) => {
+            f.push("*(");
+            format_expr(f, base);
+            f.push(")");
+        }
+        ExprKind.AddrOf(base) => {
+            f.push("&(");
+            format_expr(f, base);
+            f.push(")");
+        }
+        ExprKind.FunctionPtr(info) => {
+            f.push("fn*(");
+            f.push(I.resolve(info.name.name()));
+            f.push(")");
+        }
+        ExprKind.FunctionPtrCall(callee, args) => {
+            format_expr(f, callee);
+            f.push("(");
+            let i = 0;
+            for arg in args {
+                if i > 0 { f.push(", "); }
+                format_expr(f, arg);
+                i = i + 1;
+            }
+            f.push(")");
+        }
+    }
+}
+
+fn format_handler_selection(f: Formatter, handler: HandlerSelection) {
+    match handler {
+        HandlerSelection.Unresolved(method, h) => {
+            f.push(I.resolve(method.name));
+            f.push(" = ");
+            f.push(I.resolve(h.name));
+        }
+        HandlerSelection.EffectFunction(method, h) => {
+            f.push(I.resolve(method.name()));
+            f.push(" = ");
+            f.push(I.resolve(h.name()));
+        }
+        HandlerSelection.Implicit(implicit_def, var) => {
+            f.push(I.resolve(implicit_def.name()));
+            f.push(" = ");
+            f.push(var.format());
+        }
+    }
+}
+
+fn format_block_expr(f: Formatter, expr: Expr) {
+    match expr.kind {
+        ExprKind.Block(stmts) => format_stmts(f, stmts),
+        _ => format_expr(f, expr),
+    }
+}
+
+pub fn format_stmts(f: Formatter, stmts: Vec[S.Statement]) {
+    f.push("{\n");
+    f.indent_up();
+    for stmt in stmts {
+        f.push_indent();
+        format_statement(f, stmt);
+        let needs_newline_only = match stmt {
+            S.TrailingExpr(_) => True,
+            S.Loop(_)         => True,
+            S.ForLoop(_, _, _) => True,
+            S.WhileLoop(_, _) => True,
+            _                 => False,
+        };
+        if needs_newline_only {
+            f.push("\n");
+        } else {
+            f.push(";\n");
+        }
+    }
+    f.indent_down();
+    f.push_indent();
+    f.push("}");
+}
+
+pub fn format_statement(f: Formatter, stmt: S.Statement) {
+    match stmt {
+        S.Let(S.LetInfo(name, type_annotation, expr)) => {
+            f.push("let ");
+            f.push(name.format());
+            match type_annotation {
+                Some(ty) => {
+                    f.push(": ");
+                    format_type_def(f, ty);
+                }
+                None => {}
+            }
+            f.push(" = ");
+            format_expr(f, expr);
+        }
+        S.UnresolvedLet(pattern, type_annotation, expr) => {
+            f.push("let ");
+            format_pattern(f, pattern);
+            match type_annotation {
+                Some(ty) => {
+                    f.push(": ");
+                    format_type_def(f, ty);
+                }
+                None => {}
+            }
+            f.push(" = ");
+            format_expr(f, expr);
+        }
+        S.Declare(S.DeclareInfo(name, ty)) => {
+            f.push("let ");
+            f.push(name.format());
+            match ty {
+                Some(t) => {
+                    f.push(": ");
+                    format_type_def(f, t);
+                }
+                None => {}
+            }
+        }
+        S.Assign(lhs, rhs) => {
+            format_expr(f, lhs);
+            f.push(" = ");
+            format_expr(f, rhs);
+        }
+        S.Expr(expr) => format_expr(f, expr),
+        S.TrailingExpr(expr) => format_expr(f, expr),
+        S.Loop(stmts) => {
+            f.push("loop ");
+            format_stmts(f, stmts);
+        }
+        S.ForLoop(pattern, iterable, body) => {
+            f.push("for ");
+            format_pattern(f, pattern);
+            f.push(" in ");
+            format_expr(f, iterable);
+            f.push(" ");
+            format_stmts(f, body);
+        }
+        S.WhileLoop(cond, body) => {
+            f.push("while ");
+            format_expr(f, cond);
+            f.push(" ");
+            format_stmts(f, body);
+        }
+        S.Break    => f.push("break"),
+        S.Continue => f.push("continue"),
+    }
+}
+
+fn binary_op_str(op: BinaryOp) -> String {
+    match op {
+        BinaryOp.Add      => "+",
+        BinaryOp.Sub      => "-",
+        BinaryOp.Mul      => "*",
+        BinaryOp.Div      => "/",
+        BinaryOp.And      => "&&",
+        BinaryOp.Or       => "||",
+        BinaryOp.Eq       => "==",
+        BinaryOp.NotEq    => "!=",
+        BinaryOp.Less     => "<",
+        BinaryOp.Greater  => ">",
+        BinaryOp.LessEq   => "<=",
+        BinaryOp.GreaterEq => ">=",
+        BinaryOp.Mod      => "%",
+        BinaryOp.BitAnd   => "&",
+        BinaryOp.BitOr    => "|",
+        BinaryOp.Xor      => "xor",
+        BinaryOp.Shl      => "<<",
+        BinaryOp.Shr      => ">>",
+    }
+}
+
+fn escape_string(s: String) -> String {
+    let bytes = s.as_slice();
+    let n = s.len();
+    let out = "";
+    let i = 0;
+    while i < n {
+        let b = bytes[i];
+        if b == '"' {
+            out = out + "\\\"";
+        } else {
+            if b == '\\' {
+                out = out + "\\\\";
+            } else {
+                if b == '\n' {
+                    out = out + "\\n";
+                } else {
+                    if b == '\t' {
+                        out = out + "\\t";
+                    } else {
+                        out = out + String.from_slice([b].slice());
+                    }
+                }
+            }
+        }
+        i = i + 1;
+    }
+    out
+}
+
+}

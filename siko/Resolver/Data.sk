@@ -1,0 +1,70 @@
+module Siko.Resolver.Data {
+
+import Siko.Resolver
+import Siko.Resolver.Error
+import Siko.AST.Data
+
+instance Resolvable[StructDef] {
+    fn resolve(s: StructDef, ctx: ResolverContext) -> Result[StructDef, ResolveError] {
+        ctx.type_resolver.add_args(s.type_arg_defs);
+        Ok(StructDef(
+            annotations: s.annotations.resolve(ctx)?,
+            public: s.public,
+            name: s.name.with_prefix(ctx.module_name()),
+            qualified_name: s.qualified_name,
+            type_arg_defs: s.type_arg_defs.resolve(ctx)?,
+            fields: s.fields.resolve(ctx)?,
+            all_fields_public: s.all_fields_public,
+            methods: Vec.new(),
+            method_map: MethodMap.new(),
+            module_name: ctx.module_name(),
+            default_value_names: Vec.new(),
+        ))
+    }
+}
+
+instance Resolvable[FieldDef] {
+    fn resolve(f: FieldDef, ctx: ResolverContext) -> Result[FieldDef, ResolveError] {
+        Ok(FieldDef(
+            public: f.public,
+            name: f.name,
+            ty: f.ty.resolve(ctx)?,
+            default_value: None,
+        ))
+    }
+}
+
+instance Resolvable[EnumDef] {
+    fn resolve(e: EnumDef, ctx: ResolverContext) -> Result[EnumDef, ResolveError] {
+        ctx.type_resolver.add_args(e.type_arg_defs);
+        Ok(EnumDef(
+            annotations: e.annotations.resolve(ctx)?,
+            public: e.public,
+            name: e.name.with_prefix(ctx.module_name()),
+            qualified_name: e.qualified_name,
+            type_arg_defs: e.type_arg_defs.resolve(ctx)?,
+            variants: e.variants.resolve(ctx)?,
+            methods: Vec.new(),
+            method_map: MethodMap.new(),
+            module_name: ctx.module_name(),
+        ))
+    }
+}
+
+instance Resolvable[ItemInfo] {
+    fn resolve(i: ItemInfo, ctx: ResolverContext) -> Result[ItemInfo, ResolveError] {
+        Ok(ItemInfo(name: i.name, ty: i.ty.resolve(ctx)?))
+    }
+}
+
+instance Resolvable[VariantDef] {
+    fn resolve(v: VariantDef, ctx: ResolverContext) -> Result[VariantDef, ResolveError] {
+        Ok(VariantDef(
+            name: v.name,
+            qualified_name: v.qualified_name,
+            items: v.items.resolve(ctx)?,
+        ))
+    }
+}
+
+}

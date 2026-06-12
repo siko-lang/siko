@@ -1,0 +1,117 @@
+module Siko.Resolver.ModuleResolver {
+
+import Siko.AST.Identifier
+import Siko.Resolver.ModuleItem
+import Siko.Resolver.Error
+import Siko.Interner as I
+import Std.Map
+
+pub struct ModuleResolver {
+    module_name: I.String,
+    local_items: Map[I.String, Vec[ModuleItem]],
+    imported_items: Map[I.String, Vec[ModuleItem]],
+    implicit_items: Map[I.String, Vec[ModuleItem]],
+
+    pub fn new(
+        module_name: I.String,
+        local_items: Vec[ModuleItem],
+        imported_items: Vec[ModuleItem],
+        implicit_items: Vec[ModuleItem],
+    ) -> ModuleResolver {
+        let local_items_map = Map.new();
+        for item in local_items {
+            local_items_map
+                .entry(item.name.name())
+                .or_insert(Vec.new())
+                .push(item);
+        }
+        let imported_items_map = Map.new();
+        for item in imported_items {
+            imported_items_map
+                .entry(item.name.name())
+                .or_insert(Vec.new())
+                .push(item);
+        }
+        let implicit_items_map = Map.new();
+        for item in implicit_items {
+            implicit_items_map
+                .entry(item.name.name())
+                .or_insert(Vec.new())
+                .push(item);
+        }
+        ModuleResolver(
+            module_name,
+            local_items_map,
+            imported_items_map,
+            implicit_items_map,
+        )
+    }
+
+    pub fn resolve(m: ModuleResolver, name: Identifier) -> Result[ModuleItem, ResolveError] {
+        if let Some(items) = m.local_items.get(name.name()) {
+            if items.len() > 1 {
+                let candidates = items.iter().map(|i| i.qualified_name).collect();
+                return Err(ResolveError.AmbiguousName(name, candidates));
+            }
+            return Ok(items[0]);
+        }
+        if let Some(items) = m.imported_items.get(name.name()) {
+            if items.len() > 1 {
+                let candidates = items.iter().map(|i| i.qualified_name).collect();
+                return Err(ResolveError.AmbiguousName(name, candidates));
+            }
+            let item = items[0];
+            if let Some(def) = item.import_def { def.used = True; }
+            return Ok(item);
+        }
+        if let Some(items) = m.implicit_items.get(name.name()) {
+            if items.len() > 1 {
+                let candidates = items.iter().map(|i| i.qualified_name).collect();
+                return Err(ResolveError.AmbiguousName(name, candidates));
+            }
+            return Ok(items[0]);
+        }
+        return Err(ResolveError.NameNotFound(name));
+    }
+
+    pub fn try_type_names(
+        m: ModuleResolver,
+        name: Identifier,
+        items: Vec[ModuleItem],
+    ) -> Result[ModuleItem, ResolveError] {
+        if items.len() > 1 {
+            let candidates = items.iter().map(|i| i.qualified_name).collect();
+            return Err(ResolveError.AmbiguousName(name, candidates));
+        }
+        return Ok(items.first().unwrap());
+    }
+
+    pub fn resolve_type_name(m: ModuleResolver, name: Identifier) -> Result[ModuleItem, ResolveError] {
+        if let Some(items) = m.local_items.get(name.name()) {
+            let non_variant: Vec[_] = items.iter().filter(|i| !i.kind.is_variant()).collect();
+            if !non_variant.is_empty() {
+                return m.try_type_names(name, non_variant);
+            }
+        }
+        if let Some(items) = m.imported_items.get(name.name()) {
+            let non_variant: Vec[_] = items.iter().filter(|i| !i.kind.is_variant()).collect();
+            if !non_variant.is_empty() {
+                if let Some(def) = non_variant[0].import_def { def.used = True; }
+                return m.try_type_names(name, non_variant);
+            }
+        }
+        if let Some(items) = m.implicit_items.get(name.name()) {
+            let non_variant: Vec[_] = items.iter().filter(|i| !i.kind.is_variant()).collect();
+            if !non_variant.is_empty() {
+                return m.try_type_names(name, non_variant);
+            }
+        }
+        return Err(ResolveError.NameNotFound(name));
+    }
+
+    pub fn module_name(m: ModuleResolver) -> I.String {
+        m.module_name
+    }
+}
+
+}

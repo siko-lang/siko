@@ -1,0 +1,90 @@
+module Siko.Package.Parser {
+
+import Siko.Package.Info
+import Std.Map
+import Std.Toml as T
+import Std.Fs.File
+
+pub enum Error {
+    IoError,
+    TomlError,
+    ContentError,
+}
+
+instance ToString[Error] {
+    fn to_string(e: Error) -> String {
+        match e {
+            Error.IoError => "io error",
+            Error.TomlError => "toml parse error",
+            Error.ContentError => "invalid package.toml content",
+        }
+    }
+}
+
+struct Table {
+    m: Map[String, T.TomlValue],
+
+    fn get_string(t: Table, name: String) -> Result[String, Error] {
+        match t.m.get(name) {
+            Some(T.TomlValue.Str(s)) => Ok(s),
+            _ => Err(Error.ContentError),
+        }
+    }
+
+    fn get_table(t: Table, name: String) -> Result[Table, Error] {
+         match t.m.get(name) {
+            Some(T.TomlValue.Table(m)) => Ok(Table(m)),
+            _ => Err(Error.ContentError),
+        }
+    }
+}
+
+fn as_table(v: T.TomlValue) -> Result[Table, Error] {
+    match v {
+        T.TomlValue.Table(m) => Ok(Table(m)),
+        _ => Err(Error.ContentError),
+    }
+}
+
+pub fn parse(f: String) -> Result[PackageInfo, Error] {
+    match read_file(f) {
+        Ok(contents) => {
+            match T.parse(contents) {
+                Ok(T.TomlOutput(m)) => {
+                    let root = Table(m);
+                    let name = root.get_string("name")?;
+                    let version = root.get_string("version")?;
+                    let dependencies = Vec.new();
+                    if root.m.contains_key("dependencies") {
+                        let dep_table = root.get_table("dependencies")?;
+                        for (name, dep_info) in dep_table.m {
+                            let version = match dep_info {
+                                T.TomlValue.Str(s) => s,
+                                T.TomlValue.Table(m) => {
+                                    let t = Table(m);
+                                    t.get_string("version")?
+                                }
+                                _ => return Err(Error.ContentError),
+                            };
+                            let dep = Dependency(name: name, version: version);
+                            dependencies.push(dep);
+                        }
+                    }
+                    let info = PackageInfo(
+                        name: name,
+                        version: version,
+                        dependencies: dependencies);
+                    Ok(info)
+                }
+                Err(_) => {
+                    return Err(Error.TomlError);
+                }
+            }
+        }
+        Err(_) => {
+            return Err(Error.IoError);
+        }
+    }
+}
+
+}

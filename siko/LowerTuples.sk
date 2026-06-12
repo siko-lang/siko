@@ -1,0 +1,335 @@
+module Siko.LowerTuples {
+
+import Std.Map
+import Siko.AST.Data
+import Siko.AST.Function
+import Siko.AST.Generics
+import Siko.AST.Expr
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.Pattern
+import Siko.AST.Statement as S
+import Siko.AST.QualifiedName
+import Siko.AST.Annotations
+import Siko.AST.Type
+import Siko.HIR.Program
+import Siko.Location
+import Siko.Utils.VarAllocator
+import Siko.Format.Utils
+import Siko.Interner as I
+import Siko.Constants.Builtins as B
+
+// ── Rewrite trait ─────────────────────────────────────────────────────────────
+
+trait Rewrite[T] {
+    fn rewrite(t: T, ctx: TupleLowerer) -> T
+}
+
+instance Rewrite[TypeDef] {
+    fn rewrite(ty: TypeDef, ctx: TupleLowerer) -> TypeDef {
+        assert(ty.is_mono());
+        match ty {
+            TypeDef.Tuple(elems) => {
+                let rewritten: Vec[TypeDef] = elems
+                    .into_iter()
+                    .map(|e| rewrite(e, ctx))
+                    .collect();
+                let name = format_type(TypeDef.Named(
+                    Name.Resolved(QualifiedName.Simple(B.get_siko_tuple())),
+                    rewritten.clone(),
+                ));
+                let qname = QualifiedName.new_mono(
+                    B.get_siko_tuple(),
+                    rewritten.clone(),
+                    [],
+                    Map.new(),
+                    [],
+                );
+                if !ctx.new_structs.contains_key(qname) {
+                    let fields: Vec[FieldDef] = rewritten
+                        .iter()
+                        .enumerate()
+                        .map(|(i, ty)| FieldDef(
+                            False,
+                            Identifier.new(I.intern("item_${i}"), ctx.repr_loc.clone()),
+                            ty.clone(),
+                            None,
+                        ))
+                        .collect();
+                    ctx.new_structs.insert(
+                        qname.clone(),
+                        StructDef(
+                            annotations: [],
+                            public: False,
+                            name: Identifier.new(I.intern(name), ctx.repr_loc.clone()),
+                            qualified_name: qname.clone(),
+                            type_arg_defs: None,
+                            fields: fields,
+                            all_fields_public: False,
+                            methods: [],
+                            method_map: MethodMap.new(),
+                            module_name: I.intern(""),
+                            default_value_names: Vec.new(),
+                        ),
+                    );
+                }
+                TypeDef.Named(Name.Resolved(qname), [])
+            }
+            TypeDef.Named(n, args) => TypeDef.Named(n, args),
+            TypeDef.Paren(inner) => TypeDef.Paren(rewrite(inner, ctx)),
+            TypeDef.Fn(args, result) => TypeDef.Fn(
+                args.into_iter().map(|a| rewrite(a, ctx)).collect(),
+                rewrite(result, ctx),
+            ),
+            TypeDef.FnPtr(args, result) => TypeDef.FnPtr(
+                args.into_iter().map(|a| rewrite(a, ctx)).collect(),
+                rewrite(result, ctx),
+            ),
+            TypeDef.Ptr(inner) => TypeDef.Ptr(rewrite(inner, ctx)),
+            TypeDef.Array(inner, n) => TypeDef.Array(rewrite(inner, ctx), n),
+            TypeDef.Numeric(_) => ty,
+            TypeDef.Var(_) => ty,
+            TypeDef.Never(t) => TypeDef.Never(t),
+            TypeDef.Void => TypeDef.Void,
+            TypeDef.VoidPtr => TypeDef.VoidPtr,
+            TypeDef.Wildcard => panic("Wildcard in lower_tuples"),
+        }
+    }
+}
+
+instance Rewrite[Location]      = auto(Map, =)
+instance Rewrite[I.String]      = auto(Map, =)
+instance Rewrite[String]        = auto(Map, =)
+instance Rewrite[Int]           = auto(Map, =)
+instance Rewrite[U8]          = auto(Map, =)
+instance Rewrite[QualifiedName] = auto(Map, =)
+instance Rewrite[VariableName]  = auto(Map, =)
+instance Rewrite[Name]          = auto(Map, =)
+instance Rewrite[Identifier]    = auto(Map, =)
+instance Rewrite[FunctionKind]  = auto(Map, =)
+instance Rewrite[BinaryOp]      = auto(Map, =)
+instance Rewrite[UnaryOp]       = auto(Map, =)
+instance Rewrite[WitnessInfo]   = auto(Map, =)
+instance Rewrite[HandlerSelection] = auto(Map, =)
+instance Rewrite[ImplicitRefInfo]  = auto(Map, =)
+instance Rewrite[CreateClosureInfo] = auto(Map)
+instance Rewrite[FunctionPtrInfo]   = auto(Map, =)
+instance Rewrite[LambdaArg]     = auto(Map, =)
+instance Rewrite[Pattern]       = auto(Map)
+instance Rewrite[PatternKind]   = auto(Map)
+
+instance Rewrite[Bool]             = auto(Map, =)
+instance Rewrite[DefaultValueInfo] = auto(Map, =)
+instance Rewrite[DeriveAnnotation] = auto(Map, =)
+instance Rewrite[TypeArgDefs]      = auto(Map, =)
+instance Rewrite[MethodMap]        = auto(Map, =)
+instance Rewrite[FunctionDef]      = auto(Map, =)
+instance Rewrite[FunctionArg]      = auto(Map)
+
+instance Rewrite[Annotation]       = auto(Map, =)
+instance Rewrite[FieldDef]         = auto(Map)
+instance Rewrite[ItemInfo]         = auto(Map)
+instance Rewrite[VariantDef]       = auto(Map)
+instance Rewrite[StructDef]        = auto(Map)
+instance Rewrite[EnumDef]          = auto(Map)
+
+instance Rewrite[FunctionCallInfo] = auto(Map)
+instance Rewrite[NamedArgument]      = auto(Map, =)
+instance Rewrite[NamedPatternArg]    = auto(Map, =)
+instance Rewrite[NamedPatternInfo]   = auto(Map)
+instance Rewrite[MethodCallInfo]   = auto(Map)
+instance Rewrite[CallInfo]         = auto(Map)
+instance Rewrite[WithInfo]         = auto(Map)
+instance Rewrite[MatchArm]         = auto(Map)
+instance Rewrite[S.LetInfo]        = auto(Map)
+instance Rewrite[S.DeclareInfo]    = auto(Map)
+instance Rewrite[S.Statement]      = auto(Map)
+instance Rewrite[ExprKind]         = auto(Map)
+instance Rewrite[MatchInfo]        = auto(Map, !)
+
+instance Rewrite[Expr] {
+    fn rewrite(expr: Expr, ctx: TupleLowerer) -> Expr {
+        ctx.rewrite_expr(expr)
+    }
+}
+
+instance[T: Rewrite[T]] Rewrite[Option[T]] {
+    fn rewrite(opt: Option[T], ctx: TupleLowerer) -> Option[T] {
+        opt.map(|t| rewrite(t, ctx))
+    }
+}
+
+instance[T: Rewrite[T]] Rewrite[Vec[T]] {
+    fn rewrite(vec: Vec[T], ctx: TupleLowerer) -> Vec[T] {
+        vec.into_iter().map(|t| rewrite(t, ctx)).collect()
+    }
+}
+
+// ── TupleLowerer ──────────────────────────────────────────────────────────────
+
+struct TupleLowerer {
+    var_alloc: VarAllocator,
+    repr_loc: Location,
+    new_structs: Map[QualifiedName, StructDef],
+
+    fn rewrite_expr(ctx: TupleLowerer, expr: Expr) -> Expr {
+        let loc = expr.location.clone();
+        let ty = rewrite(expr.ty, ctx);
+
+        match expr.kind {
+            ExprKind.Tuple(elems) => {
+                let struct_name = match ty {
+                    Some(TypeDef.Named(qn, _)) => qn.name(),
+                    _ => panic("lower_tuples: cannot determine monomorphic struct name for Tuple expression"),
+                };
+                Expr(ExprKind.FunctionCall(FunctionCallInfo(
+                    QualifiedName.Simple(struct_name),
+                    FunctionKind.StructCtor,
+                    elems.rewrite(ctx),
+                    WitnessInfo.new(),
+                    Vec.new(),
+                )), loc, ty)
+            }
+
+            ExprKind.Match(MatchInfo(scrutinee, arms)) => {
+                let scrutinee = scrutinee.rewrite(ctx);
+                if arms.len() == 1 {
+                    if let PatternKind.Tuple(sub_pats) = arms[0].pattern.kind {
+                        let sub_pats = sub_pats.clone();
+                        let arm = arms.into_iter().next().unwrap();
+                        let body = rewrite(arm.body, ctx);
+                        return lower_tuple_match(scrutinee, sub_pats, body, ctx.var_alloc, loc);
+                    }
+                }
+                Expr(ExprKind.Match(MatchInfo(scrutinee, arms.rewrite(ctx))), loc, ty)
+            }
+
+            ExprKind.TupleIndex(recv, index) => Expr(
+                ExprKind.FieldAccess(
+                    recv.rewrite(ctx),
+                    Identifier.new(I.intern("item_${index}"), loc.clone()),
+                ),
+                loc, ty,
+            ),
+
+            kind => Expr(kind.rewrite(ctx), loc, ty),
+        }
+    }
+}
+
+fn lower_tuple_match(
+    scrutinee: Expr,
+    sub_pats: Vec[Pattern],
+    body: Expr,
+    var_alloc: VarAllocator,
+    loc: Location,
+) -> Expr {
+    let elem_types: Vec[TypeDef] = match scrutinee.ty.unwrap() {
+        TypeDef.Named(Name.Resolved(qn), _) => match qn {
+            QualifiedName.Mono(mono_name) => mono_name.args.clone(),
+            _ => panic("lower_tuple_match: scrutinee type is not a mono siko_tuple"),
+        },
+        other => panic("lower_tuple_match: unexpected scrutinee type"),
+    };
+
+    let stmts: Vec[S.Statement] = [];
+
+    let scrutinee_ty = scrutinee.ty.clone();
+    let scrutinee_expr = if let ExprKind.Var(_) = scrutinee.kind {
+        scrutinee
+    } else {
+        let tmp = var_alloc.allocate_temp();
+        stmts.push(S.Statement.Let(S.LetInfo(tmp.clone(), scrutinee_ty.clone(), scrutinee)));
+        Expr(ExprKind.Var(tmp), loc.clone(), scrutinee_ty)
+    };
+
+    for (i, pat) in sub_pats.iter().enumerate() {
+        match pat.kind {
+            PatternKind.Binding(v) => {
+                let elem_ty = elem_types[i].clone();
+                let access = Expr(
+                    ExprKind.FieldAccess(
+                        scrutinee_expr.clone(),
+                        Identifier.new(I.intern("item_${i}"), loc.clone()),
+                    ),
+                    loc.clone(),
+                    Some(elem_ty.clone()),
+                );
+                stmts.push(S.Statement.Let(S.LetInfo(v.clone(), Some(elem_ty), access)));
+            }
+            PatternKind.Wildcard => {}
+            other => panic("lower_tuples: unexpected pattern in tuple destructure"),
+        }
+    }
+
+    if stmts.is_empty() {
+        return body;
+    }
+
+    stmts.push(S.Statement.TrailingExpr(body));
+    Expr(ExprKind.Block(stmts), loc.clone(), None)
+}
+
+pub fn lower_tuples(program: Program) {
+    let repr_loc = any_location(program);
+    let new_structs: Map[QualifiedName, StructDef] = Map.new();
+    let ctx = TupleLowerer(VarAllocator.new(), repr_loc, new_structs);
+
+    let unit_qname = QualifiedName.Simple(B.get_siko_tuple());
+    if !program.structs.contains_key(unit_qname) {
+        program.structs.insert(
+            unit_qname.clone(),
+            StructDef(
+                annotations: [],
+                public: False,
+                name: Identifier.new(B.get_siko_tuple(), repr_loc.clone()),
+                qualified_name: unit_qname,
+                type_arg_defs: None,
+                fields: [],
+                all_fields_public: True,
+                methods: [],
+                method_map: MethodMap.new(),
+                module_name: I.intern(""),
+                default_value_names: Vec.new(),
+            ),
+        );
+    }
+
+    let struct_keys: Vec[QualifiedName] = program.structs.keys().cloned().collect();
+    for key in struct_keys {
+        let def = program.structs.remove(key).unwrap();
+        program.structs.insert(key, rewrite(def, ctx));
+    }
+
+    let enum_keys: Vec[QualifiedName] = program.enums.keys().cloned().collect();
+    for key in enum_keys {
+        let def = program.enums.remove(key).unwrap();
+        program.enums.insert(key, rewrite(def, ctx));
+    }
+
+    let func_keys: Vec[QualifiedName] = program.functions.keys().cloned().collect();
+    for key in func_keys {
+        let func = program.functions.remove(key).unwrap();
+        func.args = rewrite(func.args, ctx);
+        func.result_type = rewrite(func.result_type, ctx);
+        ctx.var_alloc = func.var_allocator.clone();
+        func.body = rewrite(func.body, ctx);
+        program.functions.insert(key, func);
+    }
+
+    program.structs.extend(new_structs);
+}
+
+fn any_location(program: Program) -> Location {
+    for func in program.functions.values() {
+        if let Some(body) = func.body {
+            return body.location.clone();
+        }
+    }
+    for def in program.structs.values() {
+        return def.name.location.clone();
+    }
+    panic("lower_tuples: program has no declarations to borrow a location from")
+}
+
+}

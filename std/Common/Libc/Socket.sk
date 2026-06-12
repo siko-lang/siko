@@ -1,0 +1,61 @@
+module Std.Libc.Socket {
+
+import Std.Arch.SockaddrIn
+
+pub fn htons(value: U16) -> U16 {
+    ((value & 0xFF.as_u16()) << 8.as_u16()) | ((value >> 8.as_u16()) & 0xFF.as_u16())
+}
+
+@derive(Clone, PartialEq, Eq)
+pub enum Domain {
+    AF_UNSPEC,
+    AF_UNIX,
+    AF_INET,
+
+    pub fn code(d: Domain) -> I32 {
+        discriminator(d).as_i32()
+    }
+}
+
+@derive(Clone, PartialEq, Eq)
+pub enum SockType {
+    Unused,
+    SOCK_STREAM,
+    SOCK_DGRAM,
+    SOCK_RAW,
+
+    pub fn code(s: SockType) -> I32 {
+        discriminator(s).as_i32()
+    }
+}
+
+@value_type
+pub struct InAddr {
+    pub s_addr: U32,
+}
+
+pub let SOL_SOCKET: I32 = 0xffff.as_i32();
+pub let SO_REUSEADDR: I32 = 4.as_i32();
+
+@extern("C", "sys/socket.h")
+pub fn socket(domain: I32, ty: I32, protocol: I32) -> I32
+
+@extern("C", "sys/socket.h")
+pub fn bind(sockfd: I32, addr: *SockaddrIn, addrlen: I32) -> I32
+
+@extern("C", "sys/socket.h")
+pub fn listen(sockfd: I32, backlog: I32) -> I32
+
+@extern("C", "sys/socket.h")
+pub fn accept(sockfd: I32, addr: void*, addrlen: void*) -> I32
+
+@extern("C", "sys/socket.h")
+pub fn setsockopt(sockfd: I32, level: I32, optname: I32, optval: *I32, optlen: I32) -> I32
+
+@extern("C", "arpa/inet.h")
+pub fn inet_pton(af: I32, src: *U8, dst: *InAddr) -> I32
+
+@extern("C", "sys/socket.h")
+pub fn connect(sockfd: I32, addr: *SockaddrIn, addrlen: I32) -> I32
+
+}

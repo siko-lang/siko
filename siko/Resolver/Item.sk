@@ -1,0 +1,103 @@
+module Siko.Resolver.ModuleItem {
+
+import Siko.AST.Identifier
+import Siko.AST.Module as M
+import Siko.AST.QualifiedName
+import Siko.AST.Expr
+import Siko.Interner as I
+
+pub struct ModuleItem {
+    pub public: Bool,
+    pub aliasable: Bool,
+    pub name: Identifier,
+    pub qualified_name: QualifiedName,
+    pub kind: ModuleItemKind,
+    pub import_def: Option[M.ImportDef],
+}
+
+pub enum ModuleItemKind {
+    Struct(struct_name: Identifier, type_arg_count: Int, field_count: Int),
+    Enum(enum_name: Identifier, type_arg_count: Int),
+    Variant(enum_name: Identifier, variant_name: Identifier, item_count: Int),
+    Function(name: Identifier, kind: FunctionKind),
+    Trait(trait_name: Identifier, type_arg_count: Int, associated_types: Vec[I.String]),
+    Instance(instance_name: Identifier),
+    Effect(effect_name: Identifier, associated_types: Vec[I.String]),
+    Implicit(implicit_name: Identifier),
+    Global(global_name: Identifier),
+
+    pub fn is_type(kind: ModuleItemKind) -> Bool {
+        match kind {
+            ModuleItemKind.Struct(_, _, _) | ModuleItemKind.Enum(_, _) => True,
+            _ => False,
+        }
+    }
+
+    pub fn is_trait(kind: ModuleItemKind) -> Bool {
+        match kind {
+            ModuleItemKind.Trait(_, _, _) => True,
+            _ => False,
+        }
+    }
+
+    pub fn is_variant(kind: ModuleItemKind) -> Bool {
+        match kind {
+            ModuleItemKind.Variant(_, _, _) => True,
+            _ => False,
+        }
+    }
+
+    pub fn get_type_arg_count(kind: ModuleItemKind) -> Int {
+        match kind {
+            ModuleItemKind.Struct(_, c, _) | ModuleItemKind.Enum(_, c) => c,
+            ModuleItemKind.Trait(_, c, _) => c,
+            _ => 0,
+        }
+    }
+
+    pub fn is_function(kind: ModuleItemKind) -> Bool {
+        match kind {
+            ModuleItemKind.Function(_, _) => True,
+            _ => False,
+        }
+    }
+
+    pub fn is_effect(kind: ModuleItemKind) -> Bool {
+        match kind {
+            ModuleItemKind.Effect(_, _) => True,
+            _ => False,
+        }
+    }
+
+    pub fn is_implicit(kind: ModuleItemKind)-> Bool {
+        match kind {
+            ModuleItemKind.Implicit(_) => True,
+            _ => False,
+        }
+    }
+
+    pub fn is_global(kind: ModuleItemKind) -> Bool {
+        match kind {
+            ModuleItemKind.Global(_) => True,
+            _ => False,
+        }
+    }
+}
+
+instance ToString[ModuleItemKind] {
+    fn to_string(kind: ModuleItemKind) -> String {
+        match kind {
+            ModuleItemKind.Struct(_, _, _) => "struct",
+            ModuleItemKind.Enum(_, _) => "enum",
+            ModuleItemKind.Variant(_, _, _) => "variant",
+            ModuleItemKind.Function(_, _) => "function",
+            ModuleItemKind.Trait(_, _, _) => "trait",
+            ModuleItemKind.Instance(_) => "instance",
+            ModuleItemKind.Effect(_, _) => "effect",
+            ModuleItemKind.Implicit(_) => "implicit",
+            ModuleItemKind.Global(_) => "global",
+        }
+    }
+}
+
+}

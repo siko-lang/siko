@@ -1,0 +1,84 @@
+module Siko.Parser.Function {
+
+import Siko.AST.Expr
+import Siko.AST.Function
+import Siko.AST.QualifiedName
+import Siko.AST.Annotations
+import Siko.Interner as I
+import Siko.Parser.Expr
+import Siko.Parser.Generics
+import Siko.Parser.Parser
+import Siko.Parser.Token
+import Siko.Parser.Type
+import Siko.Utils.VarAllocator
+
+pub trait FunctionParser[T] {
+    fn parse_fn_def(p: T, annotations: Vec[Annotation], public: Bool) -> Result[FunctionDef, ParseError]
+    fn parse_fn_arg(p: T) -> Result[FunctionArg, ParseError]
+}
+
+instance FunctionParser[Parser] {
+    fn parse_fn_def(parser: Parser, annotations: Vec[Annotation], public: Bool) -> Result[FunctionDef, ParseError] {
+        parser.expect(TokenKind.KwFn)?;
+        let name = parser.expect_var_ident()?;
+        let type_arg_defs = parser.parse_optional_type_arg_defs()?;
+        parser.expect(TokenKind.LParen)?;
+        let args = Vec.new();
+        let is_varargs = False;
+        while parser.peek() != TokenKind.RParen && parser.peek() != TokenKind.Eof {
+            if parser.peek() == TokenKind.DotDotDot {
+                parser.advance();
+                is_varargs = True;
+                break;
+            }
+            args.push(parser.parse_fn_arg()?);
+            if parser.peek() == TokenKind.Comma {
+                parser.advance();
+            }
+        }
+        parser.expect(TokenKind.RParen)?;
+        let result_type = if parser.peek() == TokenKind.Arrow {
+            parser.advance();
+            Some(parser.parse_type_def()?)
+        } else {
+            None
+        };
+        let body = if parser.peek() == TokenKind.LBrace {
+            Some(parser.parse_block_expr()?)
+        } else {
+            None
+        };
+        let qualified_name = QualifiedName.new(name.name);
+        Ok(FunctionDef(
+            annotations: annotations,
+            public: public,
+            name: name,
+            qualified_name: qualified_name,
+            kind: FunctionDefKind.Regular,
+            type_arg_defs: type_arg_defs,
+            args: args,
+            result_type: result_type,
+            body: body,
+            module_name: I.intern(""),
+            var_allocator: VarAllocator.new(),
+            is_varargs: is_varargs,
+            default_value_names: Vec.new(),
+            source_package: Some(parser.source_package),
+        ))
+    }
+
+    fn parse_fn_arg(parser: Parser) -> Result[FunctionArg, ParseError] {
+        let name = parser.expect_var_ident()?;
+        parser.expect(TokenKind.Colon)?;
+        let type_def = parser.parse_type_def()?;
+        let default_value = if parser.peek() == TokenKind.Assign {
+            parser.advance();
+            Some(parser.parse_expr()?)
+        } else {
+            None
+        };
+        Ok(FunctionArg(VariableName.Unresolved(name), type_def, default_value))
+    }
+}
+
+}

@@ -1,0 +1,380 @@
+module Std.Toml {
+
+import Std.Map
+
+// =========================================================================
+// Data types
+// =========================================================================
+
+pub enum TomlValue {
+    Integer(Int),
+    Boolean(Bool),
+    Str(String),
+    Array(Vec[TomlValue]),
+    Table(Map[String, TomlValue]),
+}
+
+pub struct TomlOutput {
+    pub values: Map[String, TomlValue]
+}
+
+pub enum TomlError {
+    UnterminatedString,
+    InvalidInteger(String),
+    UnexpectedChar(String),
+    ExpectedToken(String),
+    UnexpectedToken,
+    ExpectedIdentifier,
+    ExpectedValue,
+}
+
+instance ToString[TomlError] {
+    fn to_string(e: TomlError) -> String {
+        match e {
+            TomlError.UnterminatedString => "Unterminated string",
+            TomlError.InvalidInteger(s) => "Invalid integer: ${s}",
+            TomlError.UnexpectedChar(c) => "Unexpected character: ${c}",
+            TomlError.ExpectedToken(s) => "Expected token: ${s}",
+            TomlError.UnexpectedToken => "Unexpected token",
+            TomlError.ExpectedIdentifier => "Expected identifier",
+            TomlError.ExpectedValue => "Expected value",
+        }
+    }
+}
+
+// =========================================================================
+// Lexer
+// =========================================================================
+
+enum Token {
+    LeftBracket,
+    RightBracket,
+    LeftBrace,
+    RightBrace,
+    Equals,
+    Comma,
+    Ident(String),
+    StrVal(String),
+    IntVal(Int),
+    BoolVal(Bool),
+    EOF,
+}
+
+struct Lexer {
+    bytes: Vec[U8],
+    pos: Int,
+
+    fn new(input: String) -> Lexer {
+        Lexer(input.to_bytes(), 0)
+    }
+
+    fn peek(l: Lexer) -> Option[U8] {
+        if l.pos < l.bytes.len() {
+            Some(l.bytes[l.pos])
+        } else {
+            None
+        }
+    }
+
+    fn advance(l: Lexer) -> Option[U8] {
+        let ch = l.peek();
+        if ch.is_some() {
+            l.pos += 1;
+        }
+        ch
+    }
+
+    fn tokenize(l: Lexer) -> Result[Vec[Token], TomlError] {
+        let tokens: Vec[Token] = Vec.new();
+        loop {
+            let ch = match l.peek() {
+                None => { break; }
+                Some(c) => c,
+            };
+            if ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' {
+                l.advance();
+            } else if ch == '#' {
+                loop {
+                    match l.advance() {
+                        None => { break; }
+                        Some(c) => { if c == '\n' { break; } }
+                    }
+                }
+            } else if ch == '[' {
+                tokens.push(Token.LeftBracket);
+                l.advance();
+            } else if ch == ']' {
+                tokens.push(Token.RightBracket);
+                l.advance();
+            } else if ch == '{' {
+                tokens.push(Token.LeftBrace);
+                l.advance();
+            } else if ch == '}' {
+                tokens.push(Token.RightBrace);
+                l.advance();
+            } else if ch == '=' {
+                tokens.push(Token.Equals);
+                l.advance();
+            } else if ch == ',' {
+                tokens.push(Token.Comma);
+                l.advance();
+            } else if ch == '"' {
+                l.advance();
+                let s = "";
+                loop {
+                    match l.peek() {
+                        None => { return Err(TomlError.UnterminatedString); }
+                        Some(c) => {
+                            if c == '"' { break; }
+                            s = s + String.from_byte(c);
+                            l.advance();
+                        }
+                    }
+                }
+                l.advance();
+                tokens.push(Token.StrVal(s));
+            } else if ch == '-' || (ch >= '0' && ch <= '9') {
+                let num_str = "";
+                loop {
+                    match l.peek() {
+                        None => { break; }
+                        Some(c) => {
+                            if c == '-' || (c >= '0' && c <= '9') {
+                                num_str = num_str + String.from_byte(c);
+                                l.advance();
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                }
+                let val = match num_str.parse_int(10) {
+                    Err(_) => { return Err(TomlError.InvalidInteger(num_str)); }
+                    Ok(v) => v,
+                };
+                tokens.push(Token.IntVal(val));
+            } else if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_' {
+                let ident = "";
+                loop {
+                    match l.peek() {
+                        None => { break; }
+                        Some(c) => {
+                            if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' {
+                                ident = ident + String.from_byte(c);
+                                l.advance();
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                }
+                if ident == "true" {
+                    tokens.push(Token.BoolVal(True));
+                } else if ident == "false" {
+                    tokens.push(Token.BoolVal(False));
+                } else {
+                    tokens.push(Token.Ident(ident));
+                }
+            } else {
+                return Err(TomlError.UnexpectedChar(String.from_byte(ch)));
+            }
+        }
+        tokens.push(Token.EOF);
+        Ok(tokens)
+    }
+}
+
+// =========================================================================
+// Parser
+// =========================================================================
+
+struct Parser {
+    tokens: Vec[Token],
+    pos: Int,
+
+    fn new(tokens: Vec[Token]) -> Parser {
+        Parser(tokens, 0)
+    }
+
+    fn peek(p: Parser) -> Token {
+        if p.pos < p.tokens.len() {
+            p.tokens[p.pos]
+        } else {
+            Token.EOF
+        }
+    }
+
+    fn is_eof(p: Parser) -> Bool {
+        match p.peek() {
+            Token.EOF => True,
+            _ => False,
+        }
+    }
+
+    fn advance(p: Parser) -> Token {
+        let t = p.peek();
+        match t {
+            Token.EOF => {}
+            _ => { p.pos += 1; }
+        }
+        t
+    }
+
+    fn consume_left_bracket(p: Parser) -> Result[(), TomlError] {
+        match p.peek() {
+            Token.LeftBracket => { p.advance(); Ok(()) }
+            _ => Err(TomlError.ExpectedToken("[")),
+        }
+    }
+
+    fn consume_right_bracket(p: Parser) -> Result[(), TomlError] {
+        match p.peek() {
+            Token.RightBracket => { p.advance(); Ok(()) }
+            _ => Err(TomlError.ExpectedToken("]")),
+        }
+    }
+
+    fn consume_left_brace(p: Parser) -> Result[(), TomlError] {
+        match p.peek() {
+            Token.LeftBrace => { p.advance(); Ok(()) }
+            _ => Err(TomlError.ExpectedToken("{")),
+        }
+    }
+
+    fn consume_right_brace(p: Parser) -> Result[(), TomlError] {
+        match p.peek() {
+            Token.RightBrace => { p.advance(); Ok(()) }
+            _ => Err(TomlError.ExpectedToken("}")),
+        }
+    }
+
+    fn consume_equals(p: Parser) -> Result[(), TomlError] {
+        match p.peek() {
+            Token.Equals => { p.advance(); Ok(()) }
+            _ => Err(TomlError.ExpectedToken("=")),
+        }
+    }
+
+    fn parse(p: Parser) -> Result[TomlOutput, TomlError] {
+        let root: TomlOutput = TomlOutput(values: Map.new());
+        let current_table_name: Option[String] = None;
+        let current_table_data: Map[String, TomlValue] = Map.new();
+
+        while !p.is_eof() {
+            match p.peek() {
+                Token.LeftBracket => {
+                    flush(root.values, current_table_name, current_table_data);
+                    current_table_name = Some(p.parse_table_header()?);
+                }
+                Token.Ident(_) => {
+                    let (key, value) = p.parse_kv_pair()?;
+                    current_table_data.insert(key, value);
+                }
+                _ => { return Err(TomlError.UnexpectedToken); }
+            }
+        }
+        flush(root.values, current_table_name, current_table_data);
+        Ok(root)
+    }
+
+    fn parse_table_header(p: Parser) -> Result[String, TomlError] {
+        p.consume_left_bracket()?;
+        let name = match p.advance() {
+            Token.Ident(s) => s,
+            _ => { return Err(TomlError.ExpectedIdentifier); }
+        };
+        p.consume_right_bracket()?;
+        Ok(name)
+    }
+
+    fn parse_kv_pair(p: Parser) -> Result[(String, TomlValue), TomlError] {
+        let key = match p.advance() {
+            Token.Ident(s) => s,
+            _ => { return Err(TomlError.ExpectedIdentifier); }
+        };
+        p.consume_equals()?;
+        let value = p.parse_value()?;
+        Ok((key, value))
+    }
+
+    fn parse_value(p: Parser) -> Result[TomlValue, TomlError] {
+        match p.peek() {
+            Token.IntVal(i) => { p.advance(); Ok(TomlValue.Integer(i)) }
+            Token.BoolVal(b) => { p.advance(); Ok(TomlValue.Boolean(b)) }
+            Token.StrVal(s) => { p.advance(); Ok(TomlValue.Str(s)) }
+            Token.LeftBracket => p.parse_array(),
+            Token.LeftBrace => p.parse_inline_table(),
+            _ => Err(TomlError.ExpectedValue),
+        }
+    }
+
+    fn parse_array(p: Parser) -> Result[TomlValue, TomlError] {
+        p.consume_left_bracket()?;
+        let elements: Vec[TomlValue] = Vec.new();
+        loop {
+            match p.peek() {
+                Token.RightBracket => { break; }
+                _ => {}
+            }
+            elements.push(p.parse_value()?);
+            match p.peek() {
+                Token.Comma => { p.advance(); }
+                Token.RightBracket => {}
+                _ => { return Err(TomlError.ExpectedToken(", or ]")); }
+            }
+        }
+        p.consume_right_bracket()?;
+        Ok(TomlValue.Array(elements))
+    }
+
+    fn parse_inline_table(p: Parser) -> Result[TomlValue, TomlError] {
+        p.consume_left_brace()?;
+        let table: Map[String, TomlValue] = Map.new();
+        loop {
+            match p.peek() {
+                Token.RightBrace => { break; }
+                _ => {}
+            }
+            let key = match p.advance() {
+                Token.Ident(s) => s,
+                _ => { return Err(TomlError.ExpectedIdentifier); }
+            };
+            p.consume_equals()?;
+            let value = p.parse_value()?;
+            table.insert(key, value);
+            match p.peek() {
+                Token.Comma => { p.advance(); }
+                Token.RightBrace => {}
+                _ => { return Err(TomlError.ExpectedToken(", or }")); }
+            }
+        }
+        p.consume_right_brace()?;
+        Ok(TomlValue.Table(table))
+    }
+}
+
+fn flush(root: Map[String, TomlValue], name: Option[String], data: Map[String, TomlValue]) {
+    if data.is_empty() { return; }
+    match name {
+        Some(t_name) => { root.insert(t_name, TomlValue.Table(data.clone())); }
+        None => {
+            for (k, v) in data {
+                root.insert(k, v);
+            }
+        }
+    }
+    data.clear();
+}
+
+// =========================================================================
+// Public entry point
+// =========================================================================
+
+pub fn parse(input: String) -> Result[TomlOutput, TomlError] {
+    let lexer = Lexer.new(input);
+    let tokens = lexer.tokenize()?;
+    let parser = Parser.new(tokens);
+    parser.parse()
+}
+
+}

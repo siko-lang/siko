@@ -1,0 +1,90 @@
+module Siko.Format.Pattern {
+
+import Siko.AST.Pattern
+import Siko.Format.Formatter
+import Siko.Format.Types
+import Siko.Format.Expr
+import Siko.Interner as I
+
+pub fn format_pattern(f: Formatter, pattern: Pattern) {
+    match pattern.ty {
+        Some(ty) => {
+            f.push("(");
+            format_pattern_kind(f, pattern.kind);
+            f.push(": ");
+            format_type_def(f, ty);
+            f.push(")");
+        }
+        None => format_pattern_kind(f, pattern.kind),
+    }
+}
+
+pub fn format_pattern_kind(f: Formatter, kind: PatternKind) {
+    match kind {
+        PatternKind.Wildcard => f.push("_"),
+        PatternKind.Binding(name) => f.push(name.format()),
+        PatternKind.Named(info) => {
+            f.push(I.resolve(info.name.name()));
+            if !info.args.is_empty() {
+                f.push("(");
+                let i = 0;
+                for arg in info.args {
+                    if i > 0 {
+                        f.push(", ");
+                    }
+                    format_pattern(f, arg);
+                    i = i + 1;
+                }
+                f.push(")");
+            }
+        }
+        PatternKind.StringLiteral(s) => {
+            f.push("\"");
+            f.push(I.resolve(s));
+            f.push("\"");
+        }
+        PatternKind.IntLiteral(s) => f.push(I.resolve(s)),
+        PatternKind.CharLiteral(b) => format_char_literal(f, b),
+        PatternKind.Guard(pat, expr, guard_var) => {
+            format_pattern(f, pat);
+            f.push(" if ");
+            format_expr(f, expr);
+            if let Some(var) = guard_var {
+                f.push(" [guard: ");
+                format_expr(f, var);
+                f.push("]");
+            }
+        }
+        PatternKind.Typed(pat, ty) => {
+            format_pattern(f, pat);
+            f.push(": ");
+            format_type_def(f, ty);
+        }
+        PatternKind.Tuple(pats) => {
+            f.push("(");
+            let i = 0;
+            for pat in pats {
+                if i > 0 {
+                    f.push(", ");
+                }
+                format_pattern(f, pat);
+                i = i + 1;
+            }
+            f.push(")");
+        }
+    }
+}
+
+pub fn format_char_literal(f: Formatter, b: U8) {
+    if b == '\n' { f.push("'\\n'"); return; }
+    if b == '\t' { f.push("'\\t'"); return; }
+    if b == '\r' { f.push("'\\r'"); return; }
+    if b == '\\' { f.push("'\\\\'"); return; }
+    if b == '\'' { f.push("'\\''"); return; }
+    if b == '\0' { f.push("'\\0'"); return; }
+    f.push("'");
+    f.push(String.from_slice([b].slice()));
+    f.push("'");
+}
+
+}

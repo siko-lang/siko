@@ -1,0 +1,24 @@
+module Siko.Format.Globals {
+
+import Siko.AST.Globals
+import Siko.Interner as I
+import Siko.Format.Expr
+import Siko.Format.Formatter
+import Siko.Format.Types
+
+pub fn format_global_def(f: Formatter, def: GlobalDef) {
+    f.format_annotations(def.annotations);
+    f.push_indent();
+    if def.public {
+        f.push("pub ");
+    }
+    f.push("let ");
+    f.push(I.resolve(def.name.name));
+    f.push(": ");
+    format_type_def(f, def.ty);
+    f.push(" = ");
+    format_expr(f, def.expr);
+    f.push(";\n");
+}
+
+}

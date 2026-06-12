@@ -1,0 +1,48 @@
+@prelude
+module Std.Result {
+
+pub enum Result[T, E] {
+    Ok(T),
+    Err(E)
+
+    pub fn is_ok(r: Result[T, E]) -> Bool {
+        match r {
+            Ok(_) => True,
+            Err(_) => False
+        }
+    }
+
+    pub fn is_err(r: Result[T, E]) -> Bool {
+        match r {
+            Ok(_) => False,
+            Err(_) => True
+        }
+    }
+
+    pub fn unwrap(r: Result[T, E]) -> T {
+        match r {
+            Ok(v) => v,
+            Err(_) => panic("called `Result.unwrap()` on an `Err` value")
+        }
+    }
+
+    pub fn collect(results: Vec[Result[T, E]]) -> Result[Vec[T], E] {
+        let out = Vec.new();
+        for r in results {
+            match r {
+                Ok(v) => out.push(v),
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(out)
+    }
+
+    pub fn expect(r: Result[T, E], msg: String) -> T {
+        match r {
+            Ok(v) => v,
+            Err(e) => panic(msg)
+        }
+    }
+}
+
+}

@@ -1,0 +1,73 @@
+module Siko.Utils.SCC {
+
+import Std.Map
+
+pub fn compute[T: Ord[T]](graph: Map[T, Vec[T]]) -> Vec[Vec[T]] {
+    let state = State(
+        graph,
+        0,
+        Vec.new(),
+        Map.new(),
+        Map.new(),
+        Map.new(),
+        Vec.new(),
+    );
+
+    let roots: Vec[T] = state.graph.keys().collect();
+    for node in roots {
+        if !state.index.contains_key(node) {
+            state.visit(node);
+        }
+    }
+
+    state.sccs
+}
+
+struct State[T] {
+    graph: Map[T, Vec[T]],
+    counter: Int,
+    stack: Vec[T],
+    index: Map[T, Int],
+    lowlink: Map[T, Int],
+    on_stack: Map[T, Bool],
+    sccs: Vec[Vec[T]],
+
+    fn visit[T: Ord[T]](state: State[T], v: T) {
+        let idx = state.counter;
+        state.index.insert(v, idx);
+        state.lowlink.insert(v, idx);
+        state.counter = state.counter + 1;
+        state.stack.push(v);
+        state.on_stack.insert(v, True);
+
+        let neighbours: Vec[T] = state.graph.get(v).unwrap_or([]);
+
+        for w in neighbours {
+            if !state.index.contains_key(w) {
+                state.visit(w);
+                let w_low = state.lowlink.get(w).unwrap();
+                let v_low = state.lowlink.get(v).unwrap();
+                state.lowlink.insert(v, v_low.min(w_low));
+            } else if state.on_stack.get(w).unwrap_or(False) {
+                let w_idx = state.index.get(w).unwrap();
+                let v_low = state.lowlink.get(v).unwrap();
+                state.lowlink.insert(v, v_low.min(w_idx));
+            }
+        }
+
+        if state.lowlink.get(v).unwrap() == state.index.get(v).unwrap() {
+            let scc = Vec.new();
+            loop {
+                let w = state.stack.pop().unwrap();
+                state.on_stack.insert(w, False);
+                scc.push(w);
+                if w == v {
+                    break;
+                }
+            }
+            state.sccs.push(scc);
+        }
+    }
+}
+
+}

@@ -1,0 +1,147 @@
+module Main {
+
+import Std.Map
+import Std.Rand
+
+fn getValues(m: Map[Int, Int]) -> Vec[Int] {
+    let values = Vec.new();
+    for (k, v) in m {
+        values.push(v);
+    }
+    values
+}
+
+fn randTest() {
+    let rng = Rand.new(0);
+    let testValues = Vec.new();
+    let map = Map.new();
+    for i in 0..1000 {
+        let value = rng.next();
+        // println("Inserting: ${value} len ${testValues.len()}");
+        let inserted = map.insert(value, value);
+        if testValues.contains(value) {
+            assert(inserted.is_some());
+        } else {
+            testValues.push(value);
+            assert(inserted.is_none());
+        }
+        testValues.sort();
+        assert(testValues == getValues(map));
+    }
+}
+
+fn complexTest() {
+    let m = Map.new();
+    let currentValues = Vec.new();
+    let rng = Rand.new(0);
+    for _ in 0..100 {
+        let cmd = rng.next();
+        //println("==========Command: ${cmd}");
+        match cmd.mod(3) {
+            0 => { // insert
+                //println("Insert command");
+                let value = rng.next();
+                if currentValues.contains(value) {
+                    //println("Insert command, but value already exists: ${value}");
+                    assert(m.insert(value, value).is_some());
+                } else {
+                    //println("Insert command with new value: ${value}");
+                    assert(m.insert(value, value).is_none());
+                    currentValues.push(value);
+                    currentValues.sort();
+                    //println("Current values after insertion: ${currentValues}");
+                    assert(currentValues == getValues(m));
+                }
+            }
+            1 => {
+                //println("Search command");
+                //println("Len ${currentValues.len()}");
+                if currentValues.is_empty() {
+                    //println("No values to search for");
+                    continue;
+                }
+                let index = rng.next();
+                let index = index.mod(currentValues.len());
+                //println("Will look at value at index ${index}");
+                let value = currentValues.get(index);
+                //println("Searching for ${value}");
+                let found = m.get(value);
+                assert(!found.is_none());
+            }
+            2 => {
+                //println("Remove command");
+                if currentValues.is_empty() {
+                    //println("No values to remove");
+                    let v = rng.next();
+                    let result = m.remove(v);
+                    match result {
+                        Some(v2) => {
+                            panic("Removed non existing data ${v} and returned ${v2}");
+                        }
+                        None => {}
+                    }
+                } else {
+                    let index = rng.next().mod(currentValues.len());
+                    let value = currentValues.get(index);
+                    //println("Deleting ${value}");
+                    let found = m.get(value);
+                    //println("Found: ${found.isNull()}");
+                    assert(!found.is_none());
+                    let removed = m.remove(value);
+                    match removed {
+                        Some(v) => {
+                            if v != value {
+                                panic("removed ${value} but got ${v} as removed value in result");
+                            }
+                        }
+                        None => {
+                            panic("Removed value not returned");
+                        }
+                    }
+                    currentValues.remove(index);
+                    //println("Current values after deletion: ${currentValues}");
+                    assert(currentValues == getValues(m));
+                }
+            }
+            _ => {
+                panic("Unexpected command");
+            }
+        }
+    }
+}
+
+fn basicTest() {
+    let m = Map.new();
+    let expectedValues = Vec.new();
+    let testValues = [10, 20, 30, 40, 50, 25];
+    for v in testValues {
+        //println("Inserting: ${v}");
+        if m.insert(v, v).is_none() {
+            expectedValues.push(v);
+            expectedValues.sort();
+            assert(expectedValues == getValues(m));
+        }
+    }
+    let v = m.insert(25, 25);
+    assert(v.is_some());
+    let found = m.get(25);
+    assert(found.is_some());
+    m.remove(40);
+    let found = m.get(40);
+    assert(found.is_none());
+    assert([10, 20, 25, 30, 50] == getValues(m));
+    m.clear();
+    let testValues = [10, 20, 30, 40, 50, 25, 25];
+    for v in testValues {
+        let n = m.get(v);
+        assert(n.is_none());
+    }
+}
+
+fn main() {
+    randTest();
+    complexTest();
+    basicTest();
+}
+
+}

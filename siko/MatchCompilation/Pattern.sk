@@ -1,0 +1,72 @@
+module Siko.MatchCompilation.Pattern {
+
+import Siko.AST.Expr
+import Siko.AST.QualifiedName
+import Siko.Interner as I
+
+pub struct MatchBranch {
+    pub pattern: Pattern,
+    pub is_guarded: Bool,
+
+    pub fn new(pattern: Pattern, is_guarded: Bool) -> MatchBranch {
+        MatchBranch(pattern, is_guarded)
+    }
+}
+
+pub struct Pattern {
+    pub kind: PatternKind,
+
+    pub fn new(kind: PatternKind) -> Pattern {
+        Pattern(kind)
+    }
+
+    pub fn wildcard() -> Pattern {
+        Pattern(PatternKind.Wildcard)
+    }
+
+    pub fn to_string(p: Pattern) -> String {
+        match p.kind {
+            PatternKind.Variant(variant, _, args) => {
+                if args.is_empty() {
+                    I.resolve(variant.name())
+                } else {
+                    let inner = args.iter().map(|a| a.to_string()).collect();
+                    let joined = join(inner, ", ");
+                    "${I.resolve(variant.name())}(${joined})"
+                }
+            }
+            PatternKind.Struct(name, args) => {
+                if args.is_empty() {
+                    I.resolve(name)
+                } else {
+                    let inner = args.iter().map(|a| a.to_string()).collect();
+                    let joined = join(inner, ", ");
+                    "${I.resolve(name)}(${joined})"
+                }
+            }
+            PatternKind.Bind(name) => I.resolve(name.get_user_name()),
+            PatternKind.Tuple(args) => {
+                let inner = args.iter().map(|a| a.to_string()).collect();
+                let joined = join(inner, ", ");
+                "(${joined})"
+            }
+            PatternKind.StringLiteral(s) => "\"${s}\"",
+            PatternKind.IntegerLiteral(v) => I.resolve(v),
+            PatternKind.CharLiteral(b) => "'${b.to_string()}'",
+            PatternKind.Wildcard => "_",
+        }
+    }
+}
+
+pub enum PatternKind {
+    Variant(QualifiedName, QualifiedName, Vec[Pattern]),
+    Struct(I.String, Vec[Pattern]),
+    Bind(VariableName),
+    Tuple(Vec[Pattern]),
+    StringLiteral(I.String),
+    IntegerLiteral(I.String),
+    CharLiteral(Int),
+    Wildcard,
+}
+
+}

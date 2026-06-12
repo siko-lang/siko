@@ -1,0 +1,116 @@
+@prelude
+module Std.Option {
+
+@derive(PartialEq, Eq, PartialOrd, Ord, Clone)
+pub enum Option[T] {
+    Some(T),
+    None
+
+    pub fn is_none(o: Option[T]) -> Bool {
+        match o {
+            Some(_) => False,
+            None => True
+        }
+    }
+
+    pub fn is_some(o: Option[T]) -> Bool {
+        match o {
+            Some(_) => True,
+            None => False
+        }
+    }
+
+    pub fn unwrap(o: Option[T]) -> T {
+        match o {
+            Some(v) => v,
+            None => panic("called `Option.unwrap()` on a `None` value")
+        }
+    }
+
+    pub fn expect(o: Option[T], msg: String) -> T {
+        match o {
+            Some(v) => v,
+            None => panic(msg)
+        }
+    }
+
+    pub fn unwrap_or(o: Option[T], default: T) -> T {
+        match o {
+            Some(v) => v,
+            None => default,
+        }
+    }
+
+    pub fn unwrap_or_else(o: Option[T], f: fn() -> T) -> T {
+        match o {
+            Some(v) => v,
+            None => f()
+        }
+    }
+
+    pub fn map[B](o: Option[T], f: fn(T) -> B) -> Option[B] {
+        match o {
+            Some(v) => Some(f(v)),
+            None => None
+        }
+    }
+
+    pub fn map_or[B](o: Option[T], default: B, f: fn(T) -> B) -> B {
+        match o {
+            Some(v) => f(v),
+            None => default
+        }
+    }
+
+    pub fn or(o: Option[T], other: Option[T]) -> Option[T] {
+        match o {
+            Some(v) => Some(v),
+            None => other,
+        }
+    }
+
+    pub fn or_else(o: Option[T], f: fn() -> Option[T]) -> Option[T] {
+        match o {
+            Some(v) => Some(v),
+            None => f()
+        }
+    }
+
+    pub fn and_then[B](o: Option[T], f: fn(T) -> Option[B]) -> Option[B] {
+        match o {
+            Some(v) => f(v),
+            None => None,
+        }
+    }
+
+    pub fn iter(o: Option[T]) -> OptionIterator[T] {
+        OptionIterator(o)
+    }
+}
+
+pub struct OptionIterator[T] {
+    o: Option[T]
+}
+
+instance[T] Iterator[OptionIterator[T]] {
+    fn next(o: OptionIterator[T]) -> Option[T] {
+        match o.o {
+            Some(v) => {
+                o.o = None;
+                Some(v)
+            }
+            None => None
+        }
+    }
+}
+
+instance[T: ToString[T]] ToString[Option[T]] {
+    fn to_string(o: Option[T]) -> String {
+        match o {
+            Some(v) => "Some(${v})",
+            None => "None",
+        }
+    }
+}
+
+}

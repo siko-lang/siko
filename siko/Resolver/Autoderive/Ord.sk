@@ -1,0 +1,302 @@
+module Siko.Resolver.Autoderive.Ord {
+
+import Siko.Resolver.Autoderive.Utils
+import Siko.AST.Data
+import Siko.AST.Traits
+import Siko.AST.Name
+import Siko.AST.Type
+import Siko.AST.Identifier
+import Siko.AST.Generics
+import Siko.AST.Function
+import Siko.AST.Expr
+import Siko.AST.Pattern
+import Siko.Utils.VarAllocator
+import Siko.AST.QualifiedName
+import Siko.Constants.Builtins as B
+import Siko.Location
+import Siko.Interner as I
+
+pub fn derive_ord_enum(enum_def: EnumDef, module_name: I.String) -> Option[InstanceDef] {
+    let trait_name = get_resolved_trait_name();
+    if !enum_def.has_derive(trait_name) {
+        return None;
+    }
+    Some(build_ord_enum(enum_def, module_name))
+}
+
+pub fn build_ord_enum(enum_def: EnumDef, module_name: I.String) -> InstanceDef {
+    let trait_name = get_resolved_trait_name();
+    let loc = enum_def.name.location;
+    let enum_qname = QualifiedName.new(enum_def.name.name);
+    let (type_arg_defs, enum_type_args) =
+        build_type_arg_defs(enum_def.type_arg_defs, trait_name, loc);
+    let enum_type = TypeDef.Named(Name.Resolved(enum_qname), enum_type_args);
+    let prefix = instance_synth_name(trait_name, [enum_type], loc);
+    let (method_fn, method_short) =
+        build_ord_method(enum_def, prefix, type_arg_defs, enum_type, module_name);
+    make_instance(trait_name, type_arg_defs, enum_type, [method_fn], [method_short], module_name, loc)
+}
+
+pub fn build_ord_method(
+    enum_def: EnumDef,
+    instance_prefix: Identifier,
+    type_arg_defs: Option[TypeArgDefs],
+    self_type: TypeDef,
+    module_name: I.String,
+) -> (FunctionDef, Identifier) {
+    let loc = enum_def.name.location;
+    let var_alloc = VarAllocator.new();
+    let var_a = var_alloc.allocate_user(I.intern("a"));
+    let var_b = var_alloc.allocate_user(I.intern("b"));
+    let body = build_cmp_body(enum_def, var_a, var_b, var_alloc, loc);
+    let method_short = Identifier.new(I.intern("cmp"), loc);
+    let method_fn = make_binary_method(
+        instance_prefix,
+        method_short,
+        type_arg_defs,
+        self_type,
+        ordering_type(),
+        var_a,
+        var_b,
+        body,
+        module_name,
+        var_alloc,
+    );
+    (method_fn, method_short)
+}
+
+pub fn derive_ord_struct(struct_def: StructDef, module_name: I.String) -> Option[InstanceDef] {
+    let trait_name = get_resolved_trait_name();
+    if !struct_def.has_derive(trait_name) {
+        return None;
+    }
+    let loc = struct_def.name.location;
+    let struct_qname = QualifiedName.new(struct_def.name.name);
+    let (type_arg_defs, struct_type_args) =
+        build_type_arg_defs(struct_def.type_arg_defs, trait_name, loc);
+    let struct_type = TypeDef.Named(Name.Resolved(struct_qname), struct_type_args);
+    let prefix = instance_synth_name(trait_name, [struct_type], loc);
+    let (method_fn, method_short) =
+        build_ord_struct_method(struct_def, prefix, type_arg_defs, struct_type, module_name);
+    Some(make_instance(trait_name, type_arg_defs, struct_type, [method_fn], [method_short], module_name, loc))
+}
+
+pub fn build_ord_struct_method(
+    struct_def: StructDef,
+    instance_prefix: Identifier,
+    type_arg_defs: Option[TypeArgDefs],
+    self_type: TypeDef,
+    module_name: I.String,
+) -> (FunctionDef, Identifier) {
+    let loc = struct_def.name.location;
+    let var_alloc = VarAllocator.new();
+    let var_a = var_alloc.allocate_user(I.intern("a"));
+    let var_b = var_alloc.allocate_user(I.intern("b"));
+    let body = build_struct_cmp_body(struct_def.fields, var_a, var_b, var_alloc, loc);
+    let method_short = Identifier.new(I.intern("cmp"), loc);
+    let method_fn = make_binary_method(
+        instance_prefix,
+        method_short,
+        type_arg_defs,
+        self_type,
+        ordering_type(),
+        var_a,
+        var_b,
+        body,
+        module_name,
+        var_alloc,
+    );
+    (method_fn, method_short)
+}
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+fn get_resolved_trait_name() -> Name {
+    Name.Resolved(QualifiedName.new(B.get_trait_ord()))
+}
+
+fn ordering_type() -> TypeDef {
+    TypeDef.Named(
+        Name.Resolved(QualifiedName.new(B.get_ordering_type())),
+        [],
+    )
+}
+
+fn ordering_expr(variant: I.String, loc: Location) -> Expr {
+    Expr(
+        ExprKind.FunctionCall(
+            FunctionCallInfo(
+                QualifiedName.new(variant),
+                FunctionKind.VariantCtor,
+                [],
+                WitnessInfo.new(),
+                Vec.new(),
+            )
+        ),
+        loc,
+        None,
+    )
+}
+
+fn equal_pattern(loc: Location) -> Pattern {
+    Pattern(
+        PatternKind.Named(NamedPatternInfo(
+            name: Name.Resolved(QualifiedName.new(B.get_ordering_equal())),
+            args: [],
+            named_args: Vec.new(),
+            has_rest: False,
+        )),
+        loc,
+        None,
+    )
+}
+
+fn call_ord(a: Expr, b: Expr, loc: Location) -> Expr {
+    Expr(
+        ExprKind.FunctionCall(
+            FunctionCallInfo(
+                QualifiedName.new(B.get_op_cmp()),
+                FunctionKind.UserDefined,
+                [a, b],
+                WitnessInfo.new(),
+                Vec.new(),
+            )
+        ),
+        loc,
+        None,
+    )
+}
+
+// ── body generation ───────────────────────────────────────────────────────────
+
+fn build_cmp_body(
+    enum_def: EnumDef,
+    var_a: VariableName,
+    var_b: VariableName,
+    var_alloc: VarAllocator,
+    loc: Location,
+) -> Expr {
+    let scrutinee = tuple_scrutinee(var_a, var_b, loc);
+    let arms: Vec[MatchArm] = [];
+
+    for vi in enum_def.variants {
+        let vi_name = Name.Resolved(QualifiedName.new(
+            I.intern("${enum_def.name.name}.${vi.name.name}")
+        ));
+        let n = vi.items.len();
+        let a_vars = allocate_vars(n, I.intern("a"), var_alloc);
+        let b_vars = allocate_vars(n, I.intern("b"), var_alloc);
+        let pattern = Pattern(
+            PatternKind.Tuple([
+                Pattern(PatternKind.Named(NamedPatternInfo(name: vi_name, args: binding_pats(a_vars, loc), named_args: Vec.new(), has_rest: False)), loc, None),
+                Pattern(PatternKind.Named(NamedPatternInfo(name: vi_name, args: binding_pats(b_vars, loc), named_args: Vec.new(), has_rest: False)), loc, None),
+            ]),
+            loc,
+            None,
+        );
+        arms.push(MatchArm(pattern, build_arm_body(a_vars, b_vars, var_alloc, loc)));
+    }
+
+    arms.push(MatchArm(
+        Pattern(PatternKind.Wildcard, loc, None),
+        call_ord(call_discriminator(var_a, loc), call_discriminator(var_b, loc), loc),
+    ));
+
+    Expr(ExprKind.Match(MatchInfo(scrutinee, arms)), loc, None)
+}
+
+fn build_arm_body(
+    a_vars: Vec[VariableName],
+    b_vars: Vec[VariableName],
+    var_alloc: VarAllocator,
+    loc: Location,
+) -> Expr {
+    if a_vars.is_empty() {
+        return ordering_expr(B.get_ordering_equal(), loc);
+    }
+    build_nested_cmps(a_vars, b_vars, 0, var_alloc, loc)
+}
+
+fn build_nested_cmps(
+    a_vars: Vec[VariableName],
+    b_vars: Vec[VariableName],
+    idx: Int,
+    var_alloc: VarAllocator,
+    loc: Location,
+) -> Expr {
+    let cmp_call = call_ord(
+        Expr(ExprKind.Var(a_vars[idx]), loc, None),
+        Expr(ExprKind.Var(b_vars[idx]), loc, None),
+        loc,
+    );
+    let then_branch = if idx + 1 < a_vars.len() {
+        build_nested_cmps(a_vars, b_vars, idx + 1, var_alloc, loc)
+    } else {
+        ordering_expr(B.get_ordering_equal(), loc)
+    };
+    let r_var = var_alloc.allocate_user(I.intern("r"));
+    Expr(
+        ExprKind.Match(MatchInfo(
+            cmp_call,
+            [
+                MatchArm(equal_pattern(loc), then_branch),
+                MatchArm(
+                    Pattern(PatternKind.Binding(r_var), loc, None),
+                    Expr(ExprKind.Var(r_var), loc, None),
+                ),
+            ],
+        )),
+        loc,
+        None,
+    )
+}
+
+fn build_struct_cmp_body(
+    fields: Vec[FieldDef],
+    var_a: VariableName,
+    var_b: VariableName,
+    var_alloc: VarAllocator,
+    loc: Location,
+) -> Expr {
+    if fields.is_empty() {
+        return ordering_expr(B.get_ordering_equal(), loc);
+    }
+    build_struct_nested_cmps(fields, var_a, var_b, 0, var_alloc, loc)
+}
+
+fn build_struct_nested_cmps(
+    fields: Vec[FieldDef],
+    var_a: VariableName,
+    var_b: VariableName,
+    idx: Int,
+    var_alloc: VarAllocator,
+    loc: Location,
+) -> Expr {
+    let cmp_call = call_ord(
+        field_access(var_a, fields[idx].name, loc),
+        field_access(var_b, fields[idx].name, loc),
+        loc,
+    );
+    let then_branch = if idx + 1 < fields.len() {
+        build_struct_nested_cmps(fields, var_a, var_b, idx + 1, var_alloc, loc)
+    } else {
+        ordering_expr(B.get_ordering_equal(), loc)
+    };
+    let r_var = var_alloc.allocate_user(I.intern("r"));
+    Expr(
+        ExprKind.Match(MatchInfo(
+            cmp_call,
+            [
+                MatchArm(equal_pattern(loc), then_branch),
+                MatchArm(
+                    Pattern(PatternKind.Binding(r_var), loc, None),
+                    Expr(ExprKind.Var(r_var), loc, None),
+                ),
+            ],
+        )),
+        loc,
+        None,
+    )
+}
+
+}

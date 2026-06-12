@@ -1,0 +1,159 @@
+module Siko.Parser.Annotations {
+
+import Siko.AST.Annotations
+import Siko.AST.Expr
+import Siko.AST.Function
+import Siko.AST.Name
+import Siko.Interner as I
+import Siko.Parser.Parser
+import Siko.Parser.Token
+
+pub trait AnnotationParser[T] {
+    fn parse_annotations(p: T, allow_derives: Bool) -> Result[Vec[Annotation], ParseError]
+}
+
+instance AnnotationParser[Parser] {
+    fn parse_annotations(parser: Parser, allow_derives: Bool) -> Result[Vec[Annotation], ParseError] {
+        let annotations = Vec.new();
+        while parser.peek() == TokenKind.At {
+            parser.advance();
+            match parser.peek() {
+                TokenKind.VarIdentifier(name) => {
+                    match I.resolve(name) {
+                        "derive" => {
+                            if allow_derives == False {
+                                return Err(ParseError.new("derives are not allowed here", parser.cur_pos()));
+                            }
+                            parser.advance();
+                            parser.expect(TokenKind.LParen)?;
+                            loop {
+                                let ident = parser.parse_dotted_name()?;
+                                annotations.push(Annotation.Derive(DeriveAnnotation(Name.Unresolved(ident))));
+                                if parser.peek() == TokenKind.Comma {
+                                    parser.advance();
+                                } else {
+                                    break;
+                                }
+                            }
+                            parser.expect(TokenKind.RParen)?;
+                        }
+                        "prelude" => {
+                            parser.advance();
+                            annotations.push(Annotation.Prelude);
+                        }
+                        "builtin" => {
+                            parser.advance();
+                            annotations.push(Annotation.Builtin);
+                        }
+                        "value_type" => {
+                            parser.advance();
+                            annotations.push(Annotation.ValueType);
+                        }
+                        "safe" => {
+                            parser.advance();
+                            annotations.push(Annotation.Safe);
+                        }
+                        "unsafe" => {
+                            parser.advance();
+                            annotations.push(Annotation.Unsafe);
+                        }
+                        "c_callback" => {
+                            parser.advance();
+                            annotations.push(Annotation.CCallback);
+                        }
+                        "test" => {
+                            parser.advance();
+                            annotations.push(Annotation.Test);
+                        }
+                        "op" => {
+                            parser.advance();
+                            parser.expect(TokenKind.LParen)?;
+                            let op_kind = match parser.peek() {
+                                TokenKind.VarIdentifier(n) => {
+                                    parser.advance();
+                                    match I.resolve(n) {
+                                        "add"  => OpKind.BinaryOp(BinaryOp.Add),
+                                        "sub"  => OpKind.BinaryOp(BinaryOp.Sub),
+                                        "mul"  => OpKind.BinaryOp(BinaryOp.Mul),
+                                        "div"  => OpKind.BinaryOp(BinaryOp.Div),
+                                        "mod"  => OpKind.BinaryOp(BinaryOp.Mod),
+                                        "lt"   => OpKind.BinaryOp(BinaryOp.Less),
+                                        "eq"   => OpKind.BinaryOp(BinaryOp.Eq),
+                                        "band" => OpKind.BinaryOp(BinaryOp.BitAnd),
+                                        "bor"  => OpKind.BinaryOp(BinaryOp.BitOr),
+                                        "xor"  => OpKind.BinaryOp(BinaryOp.Xor),
+                                        "shl"  => OpKind.BinaryOp(BinaryOp.Shl),
+                                        "shr"  => OpKind.BinaryOp(BinaryOp.Shr),
+                                        "neg"  => OpKind.UnaryOp(UnaryOp.Neg),
+                                        "not"  => OpKind.UnaryOp(UnaryOp.Not),
+                                        "bnot" => OpKind.UnaryOp(UnaryOp.BNot),
+                                        _ => return Err(ParseError.new("unknown op name in @op(...)", parser.cur_pos()))
+                                    }
+                                }
+                                _ => return Err(ParseError.new("expected op name in @op(...)", parser.cur_pos()))
+                            };
+                            parser.expect(TokenKind.RParen)?;
+                            annotations.push(Annotation.Op(op_kind));
+                        }
+                        "extern" => {
+                            parser.advance();
+                            if parser.peek() == TokenKind.LParen {
+                                parser.advance();
+                                match parser.peek() {
+                                    TokenKind.StringLiteral(abi) if I.resolve(abi) == "C" => {
+                                        parser.advance();
+                                        let (header, alt_name) = if parser.peek() == TokenKind.Comma {
+                                            parser.advance();
+                                            let h = match parser.peek() {
+                                                TokenKind.StringLiteral(h) => {
+                                                    parser.advance();
+                                                    Some(h)
+                                                }
+                                                _ => return Err(ParseError.new("expected header string after @extern(\"C\",", parser.cur_pos()))
+                                            };
+                                            let n = if parser.peek() == TokenKind.Comma {
+                                                parser.advance();
+                                                match parser.peek() {
+                                                    TokenKind.StringLiteral(n) => {
+                                                        parser.advance();
+                                                        Some(n)
+                                                    }
+                                                    _ => return Err(ParseError.new("expected alt name string after header in @extern(\"C\",...,", parser.cur_pos()))
+                                                }
+                                            } else {
+                                                None
+                                            };
+                                            (h, n)
+                                        } else {
+                                            (None, None)
+                                        };
+                                        parser.expect(TokenKind.RParen)?;
+                                        let extern_cfg = ExternConfig(header, alt_name);
+                                        annotations.push(Annotation.Extern(ExternAnnotation(ExternMode.C(extern_cfg))));
+                                    }
+                                    _ => return Err(ParseError.new("expected \"C\" in @extern(...)", parser.cur_pos()))
+                                }
+                            } else {
+                                annotations.push(Annotation.Extern(ExternAnnotation(ExternMode.Builtin)));
+                            }
+                        }
+                        _ => {
+                            annotations.push(Annotation.Generic(name));
+                            parser.advance();
+                        }
+                    }
+                }
+                TokenKind.TypeIdentifier(name) => {
+                    annotations.push(Annotation.Generic(name));
+                    parser.advance();
+                }
+                _ => {
+                    return Err(ParseError.new("expected annotation name after @", parser.cur_pos()));
+                }
+            }
+        }
+        Ok(annotations)
+    }
+}
+
+}

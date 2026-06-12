@@ -1,0 +1,284 @@
+module Siko.ImplicitPropagation.Rewriter {
+
+import Std.Map
+import Siko.AST.Expr
+import Siko.AST.Name
+import Siko.AST.Identifier
+import Siko.AST.Pattern
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.AST.Statement as S
+import Siko.Location
+import Siko.Utils.VarAllocator
+import Siko.Interner as I
+import Siko.ImplicitPropagation.Util
+
+trait Rewrite[T] {
+    fn rewrite(t: T, rewriter: Rewriter) -> T
+}
+
+instance Rewrite[Location] = auto(Map, =)
+instance Rewrite[TypeDef] = auto(Map, =)
+instance Rewrite[String] = auto(Map, =)
+instance Rewrite[U8] = auto(Map, =)
+instance Rewrite[Int] = auto(Map, =)
+instance Rewrite[VariableName] = auto(Map, =)
+instance Rewrite[Name] = auto(Map, =)
+instance Rewrite[I.String] = auto(Map, =)
+instance Rewrite[Identifier] = auto(Map, =)
+instance Rewrite[QualifiedName] = auto(Map, =)
+instance Rewrite[WitnessInfo] = auto(Map, =)
+instance Rewrite[FunctionCallInfo] = auto(Map)
+instance Rewrite[NamedArgument]      = auto(Map, =)
+instance Rewrite[Bool]               = auto(Map, =)
+instance Rewrite[NamedPatternArg]    = auto(Map, =)
+instance Rewrite[NamedPatternInfo]   = auto(Map)
+instance Rewrite[MethodCallInfo]   = auto(Map)
+instance Rewrite[CallInfo]         = auto(Map)
+instance Rewrite[FunctionKind] = auto(Map)
+instance Rewrite[BinaryOp] = auto(Map)
+instance Rewrite[UnaryOp] = auto(Map)
+instance Rewrite[MatchArm] = auto(Map)
+instance Rewrite[S.LetInfo] = auto(Map)
+instance Rewrite[S.DeclareInfo] = auto(Map)
+instance Rewrite[S.Statement] = auto(Map)
+instance Rewrite[Pattern] = auto(Map)
+instance Rewrite[PatternKind] = auto(Map)
+instance Rewrite[ExprKind] = auto(Map)
+instance Rewrite[LambdaArg] = auto(Map, =)
+instance Rewrite[MatchInfo] = auto(Map)
+instance Rewrite[WithInfo] = auto(Map, !)
+instance Rewrite[ImplicitRefInfo] = auto(Map, !)
+instance Rewrite[CreateClosureInfo] = auto(Map, !)
+instance Rewrite[FunctionPtrInfo]   = auto(Map, =)
+
+instance[T: Rewrite[T]] Rewrite[Option[T]] {
+    fn rewrite(opt: Option[T], rewriter: Rewriter) -> Option[T] {
+        opt.map(|t| rewrite(t, rewriter))
+    }
+}
+
+instance[T: Rewrite[T]] Rewrite[Vec[T]] {
+    fn rewrite(vec: Vec[T], rewriter: Rewriter) -> Vec[T] {
+        vec.into_iter().map(|t| rewrite(t, rewriter)).collect()
+    }
+}
+
+instance Rewrite[Expr] {
+    fn rewrite(expr: Expr, rewriter: Rewriter) -> Expr {
+        rewriter.rewrite_expr(expr)
+    }
+}
+
+fn rewrite_function_call(info: FunctionCallInfo, rewriter: Rewriter, loc: Location, e_ty: Option[TypeDef]) -> Expr {
+    let FunctionCallInfo(callee, kind, args, witnesses, named_args) = info;
+    let callee_implicits = rewriter
+        .fn_implicit_ctx
+        .get(I.resolve(callee.name()))
+        .unwrap_or(Vec.new());
+    let (stmts, ctx_var, ctx_ty) =
+        rewriter.ensure_ctx_var(callee_implicits, loc);
+    let ctx_var_expr = typed_var_expr(ctx_var, ctx_ty, loc);
+    let new_args = [ctx_var_expr];
+    new_args.extend(args.rewrite(rewriter));
+    let new_call = Expr(
+        ExprKind.FunctionCall(
+            FunctionCallInfo(
+                callee,
+                FunctionKind.UserDefined,
+                new_args,
+                witnesses,
+                named_args,
+            )
+        ),
+        loc,
+        e_ty.clone(),
+    );
+    stmts.push(S.Statement.TrailingExpr(new_call));
+    Expr(ExprKind.Block(stmts), loc, e_ty)
+}
+
+fn rewrite_with(wi: WithInfo, rewriter: Rewriter, loc: Location) -> Expr {
+    let WithInfo(selections, body) = wi;
+    let saved = rewriter.current_implicits.clone();
+    let stmts: Vec[S.Statement] = [];
+    let back: Vec[(VariableName, VariableName, String)] = [];
+
+    for sel in selections {
+        if let HandlerSelection.Implicit(qname, orig_var) = sel {
+            let qname_str = I.resolve(qname.name());
+            let wrapper_name = wrapper_struct_name(qname_str);
+            let wrapper_ty = named_ty(wrapper_name);
+            let val_ty = rewriter.implicit_types.get(qname_str);
+            let wrap_struct = QualifiedName.new(wrapper_name);
+            let wrap_var = rewriter.var_alloc.allocate_temp();
+
+            let orig_var_expr = typed_var_expr(orig_var, val_ty, loc);
+            let ctor_expr = Expr(
+                ExprKind.FunctionCall(
+                    FunctionCallInfo(
+                        wrap_struct,
+                        FunctionKind.StructCtor,
+                        [orig_var_expr],
+                        WitnessInfo.new(),
+                        Vec.new(),
+                    )
+                ),
+                loc.clone(),
+                Some(wrapper_ty.clone()),
+            );
+            stmts.push(S.Statement.Let(S.LetInfo(wrap_var.clone(), None, ctor_expr)));
+
+            let wrap_var_expr = typed_var_expr(wrap_var, Some(wrapper_ty), loc);
+            rewriter.current_implicits.insert(qname_str.clone(), wrap_var_expr);
+            back.push((orig_var, wrap_var, qname_str));
+        }
+    }
+
+    for (_, _, qname_str) in back.iter() {
+        rewriter.active_overrides.entry(qname_str).apply(0, |v| v + 1);
+    }
+    let body_rw = body.rewrite(rewriter);
+    for (_, _, qname_str) in back.iter() {
+        rewriter.active_overrides.entry(qname_str).apply(0, |v| v - 1);
+    }
+
+    match body_rw.kind {
+        ExprKind.Block(body_stmts) => stmts.extend(body_stmts),
+        _ => stmts.push(S.Statement.Expr(body_rw)),
+    }
+
+    for (orig, wrap, qname_str) in back {
+        let val_ty = rewriter.implicit_types.get(qname_str);
+        let wrap_ty = Some(named_ty(wrapper_struct_name(qname_str)));
+        let wrap_var_expr = typed_var_expr(wrap, wrap_ty, loc);
+        let value_field = typed_field_expr(wrap_var_expr, I.intern("value"),val_ty.clone(), loc);
+        let orig_var_expr = typed_var_expr(orig, val_ty, loc);
+        stmts.push(S.Statement.Assign(orig_var_expr, value_field));
+    }
+
+    rewriter.current_implicits = saved;
+
+    Expr(ExprKind.Block(stmts), loc, None)
+}
+
+fn rewrite_closure(info: CreateClosureInfo, rewriter: Rewriter, loc: Location, e_ty: Option[TypeDef]) -> Expr {
+    let CreateClosureInfo(lambda_qname, captures, witnesses) = info;
+    let lambda_implicits = rewriter
+        .fn_implicit_ctx
+        .get(I.resolve(lambda_qname.name()))
+        .unwrap_or(Vec.new());
+    let (stmts, ctx_var, _) = rewriter.ensure_ctx_var(lambda_implicits, loc);
+    let new_captures = [ctx_var];
+    new_captures.extend(captures);
+    let new_closure = Expr(
+        ExprKind.CreateClosure(CreateClosureInfo(lambda_qname, new_captures, witnesses)),
+        loc,
+        e_ty,
+    );
+    stmts.push(S.Statement.TrailingExpr(new_closure));
+    Expr(ExprKind.Block(stmts), loc, None)
+}
+
+pub struct Rewriter {
+    pub current_implicits: Map[String, Expr],
+    pub fn_implicit_ctx: Map[String, Vec[String]],
+    pub ctx_struct_map: Map[Vec[String], QualifiedName],
+    pub implicit_types: Map[String, TypeDef],
+    pub var_alloc: VarAllocator,
+    pub fn_implicits: Vec[String],
+    pub ctx_param_expr: Option[Expr],
+    pub active_overrides: Map[String, Int],
+
+    fn build_ctx_arg(rewriter: Rewriter, callee_implicits: Vec[String], loc: Location) -> Expr {
+        if callee_implicits == rewriter.fn_implicits
+            && callee_implicits
+                .iter()
+                .all(|i| rewriter.active_overrides.get(i).unwrap_or(0) == 0)
+        {
+            if let Some(ctx_expr) = rewriter.ctx_param_expr {
+                let e = ctx_expr.clone();
+                e.location = loc.clone();
+                return e;
+            }
+        }
+        let struct_qname = rewriter.ctx_struct_map.get(callee_implicits).unwrap().clone();
+        let fields: Vec[Expr] = callee_implicits
+            .iter()
+            .map(|imp| {
+                rewriter.current_implicits
+                    .get(imp)
+                    .unwrap()
+                    .clone()
+            })
+            .collect();
+        Expr(
+            ExprKind.FunctionCall(
+                FunctionCallInfo(
+                    struct_qname.clone(),
+                    FunctionKind.StructCtor,
+                    fields,
+                    WitnessInfo.new(),
+                    Vec.new(),
+                )
+            ),
+            loc.clone(),
+            Some(named_ty(struct_qname.name())),
+        )
+    }
+
+    fn ensure_ctx_var(
+        rewriter: Rewriter,
+        callee_implicits: Vec[String],
+        loc: Location,
+    ) -> (Vec[S.Statement], VariableName, Option[TypeDef]) {
+        let ctx_expr = rewriter.build_ctx_arg(callee_implicits, loc);
+        let ty = ctx_expr.ty.clone();
+        match ctx_expr.kind {
+            ExprKind.Var(v) => ([], v, ty),
+            _ => {
+                let tmp = rewriter.var_alloc.allocate_temp();
+                let let_stmt = S.Statement.Let(S.LetInfo(tmp.clone(), None, ctx_expr));
+                ([let_stmt], tmp, ty)
+            }
+        }
+    }
+
+    pub fn rewrite_expr(rewriter: Rewriter, expr: Expr) -> Expr {
+        let loc = expr.location.clone();
+        let orig_ty = expr.ty.clone();
+        match expr.kind {
+            ExprKind.ImplicitRef(ImplicitRefInfo(qname)) => {
+                let qname_str = I.resolve(qname.name());
+                let val_ty = rewriter.implicit_types.get(qname_str);
+                let wrapper = rewriter
+                    .current_implicits
+                    .get(qname_str)
+                    .unwrap()
+                    .clone();
+                typed_field_expr(wrapper, I.intern("value"),val_ty, loc)
+            }
+
+            ExprKind.With(info) => {
+                rewrite_with(info, rewriter, loc)
+            }
+
+            ExprKind.FunctionCall(info) if info.kind == FunctionKind.UserDefined => {
+                rewrite_function_call(info, rewriter, loc, orig_ty)
+            }
+
+            ExprKind.CreateClosure(info) => {
+                rewrite_closure(info, rewriter, loc, orig_ty)
+            }
+            kind => {
+                match kind {
+                    ExprKind.ImplicitRef(_) => unreachable(),
+                    _ => (),
+                };
+                Expr(kind.rewrite(rewriter), loc, orig_ty)
+            }
+        }
+    }
+}
+
+}

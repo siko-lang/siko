@@ -1,0 +1,92 @@
+module Siko.CBackend.ValueTypes {
+
+import Std.Map
+import Std.Set
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.HIR.Program
+import Siko.Utils.SCC as SCC
+import Siko.Constants.Builtins as B
+
+fn collect_type_deps(ty: TypeDef, deps: Vec[QualifiedName]) {
+    match ty {
+        TypeDef.Named(name, args) => {
+            deps.push(name.resolved());
+            for arg in args {
+                collect_type_deps(arg, deps);
+            }
+        }
+        TypeDef.Tuple(elems) => {
+            for e in elems {
+                collect_type_deps(e, deps);
+            }
+        }
+        TypeDef.Fn(args, ret) | TypeDef.FnPtr(args, ret) => {
+            for a in args {
+                collect_type_deps(a, deps);
+            }
+            collect_type_deps(ret, deps);
+        }
+        _ => {}
+    }
+}
+
+pub fn compute_value_types(program: Program) -> (Set[QualifiedName], Vec[QualifiedName]) {
+    let graph: Map[QualifiedName, Vec[QualifiedName]] = Map.new();
+
+    for (qname, edef) in program.enums.iter() {
+        let deps: Vec[QualifiedName] = Vec.new();
+        for variant in edef.variants.iter() {
+            for item in variant.items.iter() {
+                collect_type_deps(item.ty, deps);
+            }
+        }
+        deps.dedup();
+        graph.insert(qname, deps);
+    }
+
+    let ordered: Vec[QualifiedName] = Vec.new();
+
+    for (qname, sdef) in program.structs.iter() {
+        if qname.name() == B.get_string_type() {
+            ordered.push(qname);
+            continue
+        }
+        let deps: Vec[QualifiedName] = Vec.new();
+        for field in sdef.fields.iter() {
+            collect_type_deps(field.ty, deps);
+        }
+        deps.dedup();
+        graph.insert(qname, deps);
+    }
+
+    let sccs = SCC.compute(graph);
+
+    let value_types: Set[QualifiedName] = Set.new();
+
+    for scc in sccs {
+        if scc.len() == 1 {
+            let node = scc[0];
+            if let Some(s) = program.structs.get(node) {
+                if s.is_value_type() || s.fields.len() == 0 {
+                    value_types.insert(node);
+                    ordered.push(node);
+                    continue;
+                }
+            }
+            if !program.enums.contains_key(node) {
+                continue;
+            }
+            let deps = graph.get(node).unwrap_or([]);
+            let has_self_loop = deps.iter().any(|d| d == node);
+            if !has_self_loop {
+                value_types.insert(node);
+                ordered.push(node);
+            }
+        }
+    }
+
+    (value_types, ordered)
+}
+
+}

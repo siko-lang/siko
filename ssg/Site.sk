@@ -1,0 +1,273 @@
+module SSG.Site {
+
+import Std.Fs.File as FsFile
+import Std.Fs.Directory as Directory
+import Std.IO.Error
+import SSG.MD
+import SSG.Template
+import SSG.NavGen
+
+fn slug_from_filename(filename: String) -> String {
+    match filename.strip_suffix(".md") {
+        Some(s) => s,
+        None => filename,
+    }
+}
+
+fn title_from_doc(doc: Document) -> String {
+    match doc.metadata.fields.get("title") {
+        Some(t) => t,
+        None => "(untitled)",
+    }
+}
+
+fn date_from_doc(doc: Document) -> String {
+    match doc.metadata.fields.get("date") {
+        Some(d) => d,
+        None => "",
+    }
+}
+
+fn priority_from_doc(doc: Document) -> Int {
+    match doc.metadata.fields.get("priority") {
+        Some(p) => match p.parse_int(10) {
+            Ok(n) => n,
+            Err(_) => 0,
+        },
+        None => 0,
+    }
+}
+
+fn layout_from_doc(doc: Document) -> String {
+    match doc.metadata.fields.get("layout") {
+        Some(l) => l,
+        None => "blog",
+    }
+}
+
+struct DirMeta {
+    title: String,
+    priority: Int,
+}
+
+fn read_dir_meta(dir: String, folder_name: String) -> DirMeta {
+    let default_title = folder_name.capitalize();
+    match FsFile.read_file("${dir}/metadata.md") {
+        Err(_) => DirMeta(title: default_title, priority: 0),
+        Ok(src) => {
+            let doc = parse(src);
+            let title = match doc.metadata.fields.get("title") {
+                Some(t) => t,
+                None => default_title,
+            };
+            DirMeta(title: title, priority: priority_from_doc(doc))
+        }
+    }
+}
+
+@derive(Clone)
+struct Ancestor {
+    slug: String,
+    title: String,
+}
+
+fn root_prefix(depth: Int) -> String {
+    let prefix = "";
+    let i = 0;
+    while i < depth {
+        prefix = prefix + "../";
+        i = i + 1;
+    }
+    prefix
+}
+
+fn make_breadcrumb(ancestors: Vec[Ancestor], title: String) -> String {
+    let depth = ancestors.len();
+    let prefix = root_prefix(depth);
+    let crumb = "<a href=\"${prefix}index.html\">Siko Language</a>";
+    let i = 0;
+    while i < ancestors.len() {
+        let anc = ancestors[i];
+        let link_prefix = root_prefix(depth - i);
+        crumb = crumb + " · <a href=\"${link_prefix}${anc.slug}.html\">${anc.title}</a>";
+        i = i + 1;
+    }
+    crumb = crumb + " · ${title}";
+    crumb
+}
+
+fn list_entries(dir: String) -> Result[Vec[Directory.DirEntry], Error] {
+    let result: Vec[Directory.DirEntry] = Vec.new();
+    let entries = Directory.list_dir(dir)?;
+    for entry_result in entries {
+        let entry = entry_result?;
+        if entry.name().starts_with(".") { continue; }
+        result.push(entry);
+    }
+    Ok(result)
+}
+
+fn build_recursive(src_dir: String, out_dir: String, layouts_dir: String, ancestors: Vec[Ancestor]) -> Result[Vec[PostInfo], Error] {
+    let posts: Vec[PostInfo] = Vec.new();
+    let entries = list_entries(src_dir)?;
+
+    for entry in entries {
+        let name = entry.name();
+        if entry.is_file() {
+            if !name.ends_with(".md") { continue; }
+            if name == "metadata.md" { continue; }
+            let slug = slug_from_filename(name);
+            let src = FsFile.read_file("${src_dir}/${name}")?;
+            let doc = parse(src);
+            let title = title_from_doc(doc);
+            let date = date_from_doc(doc);
+            let layout_name = layout_from_doc(doc);
+            let layout = FsFile.read_file("${layouts_dir}/${layout_name}.html")?;
+            let breadcrumb = make_breadcrumb(ancestors, title);
+            let prefix = root_prefix(ancestors.len());
+            let html = render(layout, doc)
+                .replace("{{breadcrumb}}", breadcrumb)
+                .replace("{{style_path}}", prefix)
+                .replace("{{nav_path}}", "");
+            let out_path = "${out_dir}/${slug}.html";
+            FsFile.write_file(out_path, html)?;
+            println("  ${src_dir}/${name} -> ${out_path}");
+            posts.push(PostInfo(title: title, date: date, slug: slug, is_dir: False, priority: priority_from_doc(doc)));
+        } else if entry.is_directory() {
+            let meta = read_dir_meta("${src_dir}/${name}", name);
+            let sub_ancestors = ancestors.clone();
+            sub_ancestors.push(Ancestor(slug: name, title: meta.title));
+            Directory.create_dir_all("${out_dir}/${name}")?;
+            let sub_posts = build_recursive("${src_dir}/${name}", "${out_dir}/${name}", layouts_dir, sub_ancestors)?;
+            build_section_index(sub_posts, name, meta.title, ancestors, out_dir, layouts_dir)?;
+            posts.push(PostInfo(title: meta.title, date: "", slug: name, is_dir: True, priority: meta.priority));
+        }
+    }
+
+    let nav = generate(posts);
+    FsFile.write_file("${out_dir}/nav.html", nav)?;
+
+    Ok(posts)
+}
+
+fn build_section_index(posts: Vec[PostInfo], folder: String, label: String, ancestors: Vec[Ancestor], out_dir: String, layouts_dir: String) -> Result[(), Error] {
+    let depth = ancestors.len();
+    let prefix = root_prefix(depth);
+    let nav = "<nav>\n";
+    for post in posts {
+        let href = "${folder}/${post.slug}.html";
+        nav = nav + "  <a href=\"${href}\">${post.title}</a>\n";
+    }
+    nav = nav + "</nav>\n";
+    let crumb = "<a href=\"${prefix}index.html\">Siko Language</a>";
+    let i = 0;
+    while i < ancestors.len() {
+        let anc = ancestors[i];
+        let link_prefix = root_prefix(depth - i);
+        crumb = crumb + " · <a href=\"${link_prefix}${anc.slug}.html\">${anc.title}</a>";
+        i = i + 1;
+    }
+    crumb = crumb + " · ${label}";
+    let style_prefix = root_prefix(depth);
+    let layout = FsFile.read_file("${layouts_dir}/index.html")?;
+    let html = layout
+        .replace("{{title}}", label)
+        .replace("{{content}}", nav)
+        .replace("{{breadcrumb}}", crumb)
+        .replace("{{style_path}}", style_prefix);
+    let out_path = "${out_dir}/${folder}.html";
+    FsFile.write_file(out_path, html)?;
+    println("  index -> ${out_path}");
+    Ok(())
+}
+
+fn best_target(src_root: String, folder: String) -> Result[String, Error] {
+    let src_subdir = "${src_root}/${folder}";
+    let entries = list_entries(src_subdir)?;
+    let best_date = "";
+    let best_slug = "";
+    for entry in entries {
+        if !entry.is_file() { continue; }
+        let filename = entry.name();
+        if !filename.ends_with(".md") { continue; }
+        let slug = slug_from_filename(filename);
+        let src = FsFile.read_file("${src_subdir}/${filename}")?;
+        let doc = parse(src);
+        let date = date_from_doc(doc);
+        if best_slug.is_empty() || date > best_date {
+            best_date = date;
+            best_slug = slug;
+        }
+    }
+    if best_slug.is_empty() || best_date.is_empty() {
+        Ok("${folder}.html")
+    } else {
+        Ok("${folder}/${best_slug}.html")
+    }
+}
+
+pub fn build(src_root: String, out_root: String, layouts_dir: String) -> Result[(), Error] {
+    let entries = list_entries(src_root)?;
+    let nav_entries: Vec[PostInfo] = Vec.new();
+    for entry in entries {
+        let name = entry.name();
+        if entry.is_directory() {
+            let meta = read_dir_meta("${src_root}/${name}", name);
+            let sub_ancestors: Vec[Ancestor] = [Ancestor(slug: name, title: meta.title)];
+            Directory.create_dir_all("${out_root}/${name}")?;
+            let posts = build_recursive("${src_root}/${name}", "${out_root}/${name}", layouts_dir, sub_ancestors)?;
+            let top_ancestors: Vec[Ancestor] = Vec.new();
+            build_section_index(posts, name, meta.title, top_ancestors, out_root, layouts_dir)?;
+            nav_entries.push(PostInfo(title: meta.title, date: "", slug: name, is_dir: True, priority: meta.priority));
+        } else if entry.is_file() {
+            if !name.ends_with(".md") { continue; }
+            if name == "metadata.md" { continue; }
+            let slug = slug_from_filename(name);
+            let src = FsFile.read_file("${src_root}/${name}")?;
+            let doc = parse(src);
+            let title = title_from_doc(doc);
+            let date = date_from_doc(doc);
+            let priority = priority_from_doc(doc);
+            let layout_name = layout_from_doc(doc);
+            let layout = FsFile.read_file("${layouts_dir}/${layout_name}.html")?;
+            let top_ancestors: Vec[Ancestor] = Vec.new();
+            let breadcrumb = make_breadcrumb(top_ancestors, title);
+            let html = render(layout, doc)
+                .replace("{{breadcrumb}}", breadcrumb)
+                .replace("{{style_path}}", "")
+                .replace("{{nav_path}}", "");
+            FsFile.write_file("${out_root}/${slug}.html", html)?;
+            println("  ${src_root}/${name} -> ${out_root}/${slug}.html");
+            nav_entries.push(PostInfo(title: title, date: date, slug: slug, is_dir: False, priority: priority));
+        }
+    }
+    sort_posts(nav_entries);
+    let site_nav = "<nav>\n";
+    for nav_entry in nav_entries {
+        let target = if nav_entry.is_dir {
+            best_target(src_root, nav_entry.slug)?
+        } else {
+            "${nav_entry.slug}.html"
+        };
+        site_nav = site_nav + "  <a href=\"${target}\">${nav_entry.title}</a>\n";
+    }
+    let extra_nav_path = "${out_root}/../_nav_extra.html";
+    let extra = match FsFile.read_file(extra_nav_path) {
+        Ok(s) => s,
+        Err(_) => "",
+    };
+    site_nav = site_nav + extra + "</nav>\n";
+    FsFile.write_file("${out_root}/site-nav.html", site_nav)?;
+    println("  site-nav -> ${out_root}/site-nav.html");
+    let static_dir = "${out_root}/../static";
+    for entry in list_entries(static_dir)? {
+        if !entry.is_file() { continue; }
+        let name = entry.name();
+        let content = FsFile.read_file("${static_dir}/${name}")?;
+        FsFile.write_file("${out_root}/${name}", content)?;
+        println("  ${static_dir}/${name} -> ${out_root}/${name}");
+    }
+    Ok(())
+}
+
+}

@@ -1,0 +1,80 @@
+module SSG.MDTest {
+
+import SSG.MD
+
+@test
+fn test_heading1() {
+    let doc = parse("# Hello World");
+    assert(doc.body == "<h1>Hello World</h1>\n");
+}
+
+@test
+fn test_heading2() {
+    let doc = parse("## Section");
+    assert(doc.body == "<h2>Section</h2>\n");
+}
+
+@test
+fn test_heading3() {
+    let doc = parse("### Subsection");
+    assert(doc.body == "<h3>Subsection</h3>\n");
+}
+
+@test
+fn test_paragraph() {
+    let doc = parse("Hello world");
+    assert(doc.body == "<p>Hello world</p>\n");
+}
+
+@test
+fn test_inline_code() {
+    let doc = parse("Use `foo` here");
+    assert(doc.body == "<p>Use <code>foo</code> here</p>\n");
+}
+
+@test
+fn test_inline_bold() {
+    let doc = parse("This is **bold** text");
+    assert(doc.body == "<p>This is <strong>bold</strong> text</p>\n");
+}
+
+@test
+fn test_list() {
+    let doc = parse("- foo\n- bar\n- baz");
+    assert(doc.body == "<ul>\n<li>foo</li>\n<li>bar</li>\n<li>baz</li>\n</ul>\n");
+}
+
+@test
+fn test_code_block() {
+    let doc = parse("```\nfn foo() {}\n```");
+    assert(doc.body == "<pre><code>fn foo() {}\n</code></pre>\n");
+}
+
+@test
+fn test_metadata() {
+    let doc = parse("date: 2026-06-12\ntitle: Hello\n\n# Hello");
+    assert(doc.metadata.fields.get("date") == Some("2026-06-12"));
+    assert(doc.metadata.fields.get("title") == Some("Hello"));
+    assert(doc.body == "<h1>Hello</h1>\n");
+}
+
+@test
+fn test_metadata_empty() {
+    let doc = parse("# No metadata");
+    assert(doc.metadata.fields.len() == 0);
+    assert(doc.body == "<h1>No metadata</h1>\n");
+}
+
+@test
+fn test_blank_line_between_paragraphs() {
+    let doc = parse("foo\n\nbar");
+    assert(doc.body == "<p>foo</p>\n<p>bar</p>\n");
+}
+
+@test
+fn test_list_followed_by_paragraph() {
+    let doc = parse("- item\n\nfoo");
+    assert(doc.body == "<ul>\n<li>item</li>\n</ul>\n<p>foo</p>\n");
+}
+
+}

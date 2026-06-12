@@ -1,0 +1,199 @@
+module Siko.MatchCompilation.Tree {
+
+import Std.Map
+import Std.Set
+import Siko.AST.QualifiedName
+import Siko.AST.Expr as E
+import Siko.MatchCompilation.DataPath
+import Siko.MatchCompilation.Pattern
+import Siko.Interner as I
+
+pub struct TupleNode {
+    pub size: Int,
+    pub data_path: DataPath,
+    pub next: Node,
+}
+
+pub struct StructNode {
+    pub name: QualifiedName,
+    pub field_count: Int,
+    pub data_path: DataPath,
+    pub next: Node,
+}
+
+@derive(PartialEq, Std.Ops.Eq, PartialOrd, Ord, Clone)
+pub enum Case {
+    Variant(QualifiedName),
+    Integer(I.String),
+    Char(Int),
+    StringCase(I.String),
+    Default,
+}
+
+@derive(PartialEq, Std.Ops.Eq, PartialOrd, Ord, Clone)
+pub enum SwitchKind {
+    Enum(QualifiedName),
+    Integer,
+    Byte,
+    StringKind,
+
+    pub fn is_enum(k: SwitchKind) -> Bool {
+        match k {
+            SwitchKind.Enum(_) => True,
+            _ => False,
+        }
+    }
+}
+
+pub struct SwitchNode {
+    pub data_path: DataPath,
+    pub kind: SwitchKind,
+    pub cases: Map[Case, Node],
+}
+
+pub struct LeafNode {
+    pub decision_path: DecisionPath,
+    pub guarded_matches: Vec[Match],
+    pub final_match: Option[Match],
+
+    pub fn new(decision_path: DecisionPath) -> LeafNode {
+        LeafNode(decision_path, [], None)
+    }
+}
+
+pub struct WildcardNode {
+    pub path: DataPath,
+    pub next: Node,
+}
+
+pub enum Node {
+    Tuple(TupleNode),
+    Struct(StructNode),
+    Switch(SwitchNode),
+    Leaf(LeafNode),
+    Wildcard(WildcardNode),
+
+    pub fn get_data_path(n: Node) -> DataPath {
+        match n {
+            Node.Tuple(t) => t.data_path.get_parent(),
+            Node.Struct(s) => s.data_path.get_parent(),
+            Node.Switch(s) => s.data_path,
+            Node.Leaf(l) => l.decision_path.last(),
+            Node.Wildcard(w) => w.path,
+        }
+    }
+
+    pub fn is_leaf(n: Node) -> Bool {
+        match n {
+            Node.Leaf(_) => True,
+            _ => False,
+        }
+    }
+
+    pub fn add(n: Node, matches: Vec[Match], used_patterns: Set[Int], missing_patterns: Set[String]) {
+        match n {
+            Node.Tuple(t) => t.next.add(matches, used_patterns, missing_patterns),
+            Node.Struct(s) => s.next.add(matches, used_patterns, missing_patterns),
+            Node.Switch(s) => {
+                let keys: Vec[Case] = s.cases.keys().collect();
+                for key in keys {
+                    s.cases[key].add(matches, used_patterns, missing_patterns);
+                }
+            }
+            Node.Wildcard(w) => w.next.add(matches, used_patterns, missing_patterns),
+            Node.Leaf(leaf) => {
+                let local_match: Option[Match] = None;
+                for m in matches {
+                    let match_result = match remaining_match_decisions(leaf.decision_path.decisions, m.decision_path.decisions) {
+                        Some(remaining) => remaining.is_empty(),
+                        None => False,
+                    };
+                    if match_result {
+                        if m.kind.is_guarded() {
+                            leaf.guarded_matches.push(m);
+                            continue;
+                        }
+                        match local_match {
+                            Some(local) => {
+                                match (local.kind, m.kind) {
+                                    (MatchKind.Alternative, MatchKind.UserDefined(_, _)) => {
+                                        local_match = Some(m);
+                                    },
+                                    (MatchKind.UserDefined(i1, _), MatchKind.UserDefined(i2, _)) => {
+                                        if i2 < i1 {
+                                            local_match = Some(m);
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            None => {
+                                local_match = Some(m);
+                            }
+                        }
+                    }
+                }
+                match local_match {
+                    Some(m) => {
+                        match m.kind {
+                            MatchKind.Alternative => {
+                                missing_patterns.insert(m.pattern.to_string());
+                            }
+                            MatchKind.UserDefined(index, _) => {
+                                used_patterns.insert(index);
+                                let filtered: Vec[Match] = [];
+                                for guarded_match in leaf.guarded_matches {
+                                    match guarded_match.kind {
+                                        MatchKind.UserDefined(guarded_index, _) => {
+                                            if guarded_index < index {
+                                                used_patterns.insert(guarded_index);
+                                                filtered.push(guarded_match);
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                                leaf.guarded_matches = filtered;
+                            }
+                        }
+                        leaf.final_match = Some(m);
+                    }
+                    None => panic("Empty leaf node in decision tree"),
+                }
+            }
+        }
+    }
+}
+
+pub struct Match {
+    pub kind: MatchKind,
+    pub pattern: Pattern,
+    pub decision_path: DecisionPath,
+    pub bindings: Bindings,
+
+    pub fn new(kind: MatchKind, pattern: Pattern, decision_path: DecisionPath, bindings: Bindings) -> Match {
+        Match(kind, pattern, decision_path, bindings)
+    }
+}
+
+pub struct Bindings {
+    pub bindings: Map[DecisionPath, E.VariableName],
+
+    pub fn new() -> Bindings {
+        Bindings(Map.new())
+    }
+}
+
+pub enum MatchKind {
+    UserDefined(Int, Bool),
+    Alternative,
+
+    pub fn is_guarded(k: MatchKind) -> Bool {
+        match k {
+            MatchKind.UserDefined(_, guarded) => guarded,
+            MatchKind.Alternative => False,
+        }
+    }
+}
+
+}

@@ -1,0 +1,30 @@
+module Std.Libc.Process {
+
+import Std.Libc.String
+
+@extern("C")
+fn get_saved_argc() -> I32
+
+@extern("C")
+fn get_saved_arg(index: I32) -> *U8
+
+@extern("C")
+fn set_program_result(result: I32)
+
+@safe
+pub fn get_args() -> Vec[String] {
+    let argc = get_saved_argc();
+    let args = Vec.new();
+    for i in 0..argc.as_int() {
+        let cstr = get_saved_arg(i.as_i32());
+        args.push(from_cstring(cstr));
+    }
+    args
+}
+
+@safe
+pub fn set_exit_code(code: I32) {
+    set_program_result(code);
+}
+
+}

@@ -1,0 +1,69 @@
+module Main {
+
+enum NetworkError {
+    Timeout,
+    Refused,
+}
+
+enum ParseError {
+    InvalidInput,
+    Overflow,
+}
+
+enum AppError {
+    Network(NetworkError),
+    Parse(ParseError),
+}
+
+instance Into[NetworkError, AppError] {
+    fn into(value: NetworkError) -> AppError {
+        AppError.Network(value)
+    }
+}
+
+instance Into[ParseError, AppError] {
+    fn into(value: ParseError) -> AppError {
+        AppError.Parse(value)
+    }
+}
+
+fn fetch(fail: Bool) -> Result[String, NetworkError] {
+    if fail {
+        Err(NetworkError.Timeout)
+    } else {
+        Ok("hello")
+    }
+}
+
+fn parse(fail: Bool) -> Result[Int, ParseError] {
+    if fail {
+        Err(ParseError.InvalidInput)
+    } else {
+        Ok(42)
+    }
+}
+
+fn run(fail_fetch: Bool, fail_parse: Bool) -> Result[Int, AppError] {
+    let _ = fetch(fail_fetch)?;
+    let n = parse(fail_parse)?;
+    Ok(n)
+}
+
+fn main() {
+    match run(False, False) {
+        Ok(n) => println("got ${n}"),
+        Err(_) => println("error"),
+    }
+    match run(True, False) {
+        Ok(_) => println("ok"),
+        Err(AppError.Network(NetworkError.Timeout)) => println("timeout"),
+        Err(_) => println("error"),
+    }
+    match run(False, True) {
+        Ok(_) => println("ok"),
+        Err(AppError.Parse(ParseError.InvalidInput)) => println("invalid input"),
+        Err(_) => println("error"),
+    }
+}
+
+}

@@ -1,0 +1,123 @@
+module Siko.AST.Annotations {
+
+import Siko.AST.Name
+import Siko.AST.Function
+import Siko.AST.Expr as E
+import Siko.Interner as I
+
+@derive(Clone)
+pub struct DeriveAnnotation {
+    pub trait_name: Name,
+}
+
+@derive(Clone)
+pub struct ExternAnnotation {
+    pub mode: ExternMode,
+}
+
+@derive(Clone)
+pub enum OpKind {
+    BinaryOp(E.BinaryOp)
+    UnaryOp(E.UnaryOp)
+}
+
+@derive(Clone)
+pub enum Annotation {
+    Derive(DeriveAnnotation),
+    Extern(ExternAnnotation),
+    Prelude,
+    Generic(I.String),
+    Builtin,
+    Op(OpKind),
+    ValueType,
+    Safe,
+    Unsafe,
+    CCallback,
+    Test,
+
+    pub fn has_derive(a: Annotation, trait_name: Name) -> Bool {
+        match a {
+            Annotation.Derive(d) => d.trait_name == trait_name,
+            _ => False,
+        }
+    }
+
+    pub fn is_extern(a: Annotation) -> Bool {
+        match a {
+            Annotation.Extern(_) => True,
+            _ => False,
+        }
+    }
+
+    pub fn is_prelude(a: Annotation) -> Bool {
+        match a {
+            Annotation.Prelude => True,
+            _ => False,
+        }
+    }
+
+    pub fn is_builtin(a: Annotation) -> Bool {
+        match a {
+            Annotation.Builtin => True,
+            _ => False,
+        }
+    }
+
+    pub fn is_binary_op(a: Annotation) -> Option[E.BinaryOp] {
+        match a {
+            Annotation.Op(OpKind.BinaryOp(op)) => Some(op),
+            _ => None,
+        }
+    }
+
+    pub fn is_unary_op(a: Annotation) -> Option[E.UnaryOp] {
+        match a {
+            Annotation.Op(OpKind.UnaryOp(op)) => Some(op),
+            _ => None,
+        }
+    }
+
+    pub fn is_value_type(a: Annotation) -> Bool {
+        match a {
+            Annotation.ValueType => True,
+            _ => False,
+        }
+    }
+
+    pub fn is_builtin_string(a: Annotation) -> Bool {
+        match a {
+            Annotation.Generic(i) if I.resolve(i) == "builtinstring" => True,
+            _ => False,
+        }
+    }
+
+    pub fn is_safe(a: Annotation) -> Bool {
+        match a {
+            Annotation.Safe => True,
+            _ => False,
+        }
+    }
+
+    pub fn is_unsafe(a: Annotation) -> Bool {
+        match a {
+            Annotation.Unsafe => True,
+            _ => False,
+        }
+    }
+
+    pub fn is_c_callback(a: Annotation) -> Bool {
+        match a {
+            Annotation.CCallback => True,
+            _ => False,
+        }
+    }
+
+    pub fn is_test(a: Annotation) -> Bool {
+        match a {
+            Annotation.Test => True,
+            _ => False,
+        }
+    }
+}
+
+}

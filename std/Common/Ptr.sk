@@ -1,0 +1,66 @@
+module Std.Ptr {
+
+import Std.Libc.Stdlib
+import Std.Libc.String
+import Std.GC
+import Std.Intrinsics
+
+@unsafe
+pub fn allocate[T]() -> *T {
+    transmute(malloc(sizeof(T)))
+}
+
+@unsafe
+pub fn deallocate[T](ptr: *T) {
+    free(transmute(ptr));
+}
+
+@unsafe
+pub fn get_null_ptr[T]() -> *T {
+    transmute(0)
+}
+
+@unsafe
+pub fn get_null_voidptr() -> void* {
+    transmute(0)
+}
+
+@unsafe
+pub fn is_null_voidptr(ptr: void*) -> Bool {
+    transmute(ptr) == 0.as_u64()
+}
+
+@unsafe
+pub fn is_null_ptr[T](ptr: *T) -> Bool {
+    transmute(ptr) == 0.as_u64()
+}
+
+@unsafe
+pub fn allocate_array[T](count: Int) -> *T {
+    transmute(malloc(count.as_u64() * sizeof(T)))
+}
+
+@unsafe
+pub fn gc_allocate[T]() -> *T {
+    transmute(gc_malloc(sizeof(T)))
+}
+
+@unsafe
+pub fn gc_allocate_array[T](count: Int) -> *T {
+    transmute(gc_malloc(count.as_u64() * sizeof(T)))
+}
+
+@unsafe
+pub fn offset_of[T](ptr: *T, offset: Int) -> *T {
+    let base: U64 = transmute(ptr);
+    transmute(base + offset.as_u64() * sizeof(T))
+}
+
+@unsafe
+pub fn copy[T](dest: *T, src: *T, src_index: Int, dest_index: Int, size: Int) {
+    let d = offset_of(dest, dest_index);
+    let s = offset_of(src, src_index);
+    memmove(transmute(d), transmute(s), size.as_u64() * sizeof(T));
+}
+
+}

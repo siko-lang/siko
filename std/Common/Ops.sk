@@ -1,0 +1,184 @@
+@prelude
+module Std.Ops {
+
+pub trait PartialEq[T] {
+    fn eq(a: T, b: T) -> Bool
+
+    fn not_eq(a: T, b: T) -> Bool {
+        match a.eq(b) {
+            True => False,
+            False => True
+        }
+    }
+}
+
+pub trait[T: PartialEq[T]] Eq[T] {
+}
+
+pub trait[T: PartialEq[T]] PartialOrd[T] {
+    fn partial_cmp(a: T, b: T) -> Option[Ordering]
+
+    fn less_than(a: T, b: T) -> Bool {
+        match a.partial_cmp(b) {
+            Some(Ordering.Less) => True,
+            _ => False
+        }
+    }
+
+    fn greater_than(a: T, b: T) -> Bool {
+        match a.partial_cmp(b) {
+            Some(Ordering.Greater) => True,
+            _ => False
+        }
+    }
+
+    fn less_than_or_equal(a: T, b: T) -> Bool {
+        match a.partial_cmp(b) {
+            Some(Ordering.Less) => True,
+            Some(Ordering.Equal) => True,
+            _ => False
+        }
+    }
+
+    fn greater_than_or_equal(a: T, b: T) -> Bool {
+        match a.partial_cmp(b) {
+            Some(Ordering.Greater) => True,
+            Some(Ordering.Equal) => True,
+            _ => False
+        }
+    }
+}
+
+pub trait[T: PartialOrd[T], Eq[T]] Ord[T] {
+    fn cmp(a: T, b: T) -> Ordering
+
+    fn min(a: T, b: T) -> T {
+        if a < b { a } else { b }
+    }
+
+    fn max(a: T, b: T) -> T {
+        if a > b { a } else { b }
+    }
+}
+
+pub trait Add[T] {
+    type Output
+    fn add(a: T, b: T) -> Output
+}
+
+pub trait Sub[T] {
+    type Output
+    fn sub(a: T, b: T) -> Output
+}
+
+pub trait Mul[T] {
+    type Output
+    fn mul(a: T, b: T) -> Output
+}
+
+pub trait Div[T] {
+    type Output
+    fn div(a: T, b: T) -> Output
+}
+
+pub trait Mod[T] {
+    type Output
+    fn mod(a: T, b: T) -> Output
+}
+
+pub trait Neg[T] {
+    type Output
+    fn neg(a: T) -> Output
+}
+
+pub trait BitAnd[T] {
+    type Output
+    fn band(a: T, b: T) -> Output
+}
+
+pub trait BitOr[T] {
+    type Output
+    fn bor(a: T, b: T) -> Output
+}
+
+pub trait BitXor[T] {
+    type Output
+    fn bxor(a: T, b: T) -> Output
+}
+
+pub trait Shl[T] {
+    type Output
+    fn shl(a: T, b: T) -> Output
+}
+
+pub trait Shr[T] {
+    type Output
+    fn shr(a: T, b: T) -> Output
+}
+
+pub trait BNot[T] {
+    type Output
+    fn bnot(a: T) -> Output
+}
+
+pub trait Not[T] {
+    type Output
+    fn not(a: T) -> Output
+}
+
+pub trait Index[T] {
+    type Key
+    type Output
+    fn index(a: T, index: Key) -> Output
+}
+
+pub trait IndexAssign[T] {
+    type Key
+    type Value
+    fn index_assign(a: T, index: Key, value: Value)
+}
+
+pub trait Clone[T] {
+    fn clone(t: T) -> T
+}
+
+instance[A, B: Clone[A], Clone[B]] Clone[(A, B)] {
+    fn clone(t: (A, B)) -> (A, B) {
+        let (a, b) = t;
+        (a.clone(), b.clone())
+    }
+}
+
+instance[A, B, C: Clone[A], Clone[B], Clone[C]] Clone[(A, B, C)] {
+    fn clone(t: (A, B, C)) -> (A, B, C) {
+        let (a, b, c) = t;
+        (a.clone(), b.clone(), c.clone())
+    }
+}
+
+instance[A, B, C, D: Clone[A], Clone[B], Clone[C], Clone[D]] Clone[(A, B, C, D)] {
+    fn clone(t: (A, B, C, D)) -> (A, B, C, D) {
+        let (a, b, c, d) = t;
+        (a.clone(), b.clone(), c.clone(), d.clone())
+    }
+}
+
+instance[A, B, C, D, E: Clone[A], Clone[B], Clone[C], Clone[D], Clone[E]] Clone[(A, B, C, D, E)] {
+    fn clone(t: (A, B, C, D, E)) -> (A, B, C, D, E) {
+        let (a, b, c, d, e) = t;
+        (a.clone(), b.clone(), c.clone(), d.clone(), e.clone())
+    }
+}
+
+instance[A, B, C, D, E, F: Clone[A], Clone[B], Clone[C], Clone[D], Clone[E], Clone[F]] Clone[(A, B, C, D, E, F)] {
+    fn clone(t: (A, B, C, D, E, F)) -> (A, B, C, D, E, F) {
+        let (a, b, c, d, e, f) = t;
+        (a.clone(), b.clone(), c.clone(), d.clone(), e.clone(), f.clone())
+    }
+}
+
+pub trait FromInt[T] {
+    fn from_int(a: Int) -> Option[T]
+}
+
+}

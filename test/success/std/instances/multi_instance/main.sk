@@ -1,0 +1,75 @@
+module Lib {
+
+pub trait Show[T] {
+    fn show(value: T) -> ()
+}
+
+}
+
+module Lib.A {
+
+import Lib
+
+pub instance MyShow Show[String] {
+    fn show(value: String) -> () {
+        println("hello from A ${value}");
+    }
+}
+
+
+}
+
+module Lib.B {
+
+import Lib
+
+pub instance MyShow Show[String] {
+    fn show(value: String) -> () {
+        println("hello from B ${value}");
+    }
+}
+
+}
+
+module Lib.C {
+
+import Lib
+
+pub fn some[T: Show[T]](t: T) {
+    show(t);
+}
+
+}
+
+module Lib.A.User {
+
+import Lib.A
+import Lib.C
+
+pub fn foo() {
+    some("stuff");
+}
+
+}
+
+module Lib.B.User {
+
+import Lib.B
+import Lib.C
+
+pub fn foo() {
+    some("stuff");
+}
+
+}
+
+module Main {
+
+import Lib.A.User
+import Lib.B.User
+
+fn main() -> () {
+    Lib.A.User.foo();
+    Lib.B.User.foo();
+}
+}

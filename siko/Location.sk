@@ -1,0 +1,51 @@
+module Siko.Location {
+
+import Siko.FileManager
+
+@derive(PartialEq, Std.Ops.Eq, PartialOrd, Ord, Clone)
+pub struct Location {
+    pub file_id: Int,
+    pub span: Span,
+
+    pub fn new(file_id: Int, span: Span) -> Location {
+        Location(file_id, span)
+    }
+
+    pub fn merge(loc: Location, other: Location) -> Location {
+        assert(loc.file_id == other.file_id);
+        Location(loc.file_id, loc.span.merge(other.span))
+    }
+
+    pub fn short(loc: Location) -> String {
+        let path = Siko.FileManager.get_name(loc.file_id);
+        let source = Siko.FileManager.get_content(loc.file_id);
+        let line = 1;
+        let col = 1;
+        let i = 0;
+        let bytes = source.as_slice();
+        while i < loc.span.start && i < source.len() {
+            if bytes[i] == '\n' {
+                line = line + 1;
+                col = 1;
+            } else {
+                col = col + 1;
+            }
+            i = i + 1;
+        }
+        "${path}:${line.to_string()}:${col.to_string()}"
+    }
+}
+
+@derive(PartialEq, Std.Ops.Eq, PartialOrd, Ord, Clone)
+pub struct Span {
+    pub start: Int,
+    pub end: Int,
+
+    pub fn merge(a: Span, b: Span) -> Span {
+        let start = a.start.min(b.start);
+        let end = a.end.max(b.end);
+        Span(start, end)
+    }
+}
+
+}

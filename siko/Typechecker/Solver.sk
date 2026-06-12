@@ -1,0 +1,831 @@
+module Siko.Typechecker.Solver {
+
+import Std.Map
+import Std.Set
+import Siko.AST.Expr
+import Siko.AST.Function
+import Siko.AST.Name
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.HIR.Program
+import Siko.Instances.FunctionInstanceResolver
+import Siko.Instances.InstanceResolver
+import Siko.Interner as I
+import Siko.Location
+import Siko.Typechecker.Constraints as C
+import Siko.Typechecker.Error
+import Siko.Typechecker.Finalize
+import Siko.Format.Utils
+import Siko.Unification.Instantiate
+import Siko.Unification.Sub
+import Siko.Unification.Unify
+import Siko.Utils.TypeVarAllocator
+import Siko.Constants.Builtins as B
+
+pub struct SolverContext {
+    pub sub: Substitution,
+    pub allocator: TypeVarAllocator,
+    pub program: Program,
+    pub func_resolver: FunctionInstanceResolver,
+    pub module_name: I.String,
+}
+
+pub enum ProcessResult {
+    Satisfied(Vec[Int], Vec[(C.ConstraintKind, Location)], Option[CallResolution], Option[(C.WitnessKey, BoundWitness)]),
+    Pending(Vec[Int]),
+    Failed(TypeError),
+}
+
+fn collect_named_vars(ty: TypeDef, out: Set[I.String]) {
+    match ty {
+        TypeDef.Var(TypeVar.Named(n)) => { out.insert(n); }
+        TypeDef.Named(_, args) => {
+            for a in args { collect_named_vars(a, out); }
+        }
+        TypeDef.Tuple(elems) => {
+            for a in elems { collect_named_vars(a, out); }
+        }
+        TypeDef.Fn(params, ret) | TypeDef.FnPtr(params, ret) => {
+            for p in params { collect_named_vars(p, out); }
+            collect_named_vars(ret, out);
+        }
+        TypeDef.Paren(inner) => collect_named_vars(inner, out),
+        _ => {}
+    }
+}
+
+fn collect_flex_vars(ty: TypeDef) -> Vec[Int] {
+    match ty {
+        TypeDef.Var(TypeVar.Var(n)) => [n],
+        TypeDef.Named(_, args) => {
+            let v = Vec.new();
+            for a in args { v.extend(collect_flex_vars(a)); }
+            v
+        }
+        TypeDef.Tuple(elems) => {
+            let v = Vec.new();
+            for a in elems { v.extend(collect_flex_vars(a)); }
+            v
+        }
+        TypeDef.Fn(params, ret) | TypeDef.FnPtr(params, ret) => {
+            let v = Vec.new();
+            for p in params { v.extend(collect_flex_vars(p)); }
+            v.extend(collect_flex_vars(ret));
+            v
+        }
+        TypeDef.Paren(inner) => collect_flex_vars(inner),
+        _ => [],
+    }
+}
+
+fn resolve_method(type_qname: QualifiedName, method: I.String, caller_module: I.String, program: Program, location: Location) -> Result[QualifiedName, TypeError] {
+    match program.structs.get(type_qname) {
+        Some(struct_def) => {
+            match struct_def.method_map.names.get(method) {
+                Some(mq) => {
+                    let func_def = program.functions.get(mq).unwrap();
+                    if caller_module == struct_def.module_name || func_def.public {
+                        return Ok(mq);
+                    } else {
+                        return Err(TypeError.MethodNotPublic(type_qname.name(), method, location));
+                    }
+                }
+                None => {}
+            }
+        }
+        None => {
+            match program.enums.get(type_qname) {
+                Some(enum_def) => {
+                    match enum_def.method_map.names.get(method) {
+                        Some(mq) => {
+                            let func_def = program.functions.get(mq).unwrap();
+                            if caller_module == enum_def.module_name || func_def.public {
+                                return Ok(mq);
+                            } else {
+                                return Err(TypeError.MethodNotPublic(type_qname.name(), method, location));
+                            }
+                        }
+                        None => {}
+                    }
+                }
+                None => {
+                    return Err(TypeError.InvalidReceiverType(TypeDef.Named(Name.Resolved(type_qname), Vec.new()), location));
+                }
+            }
+        }
+    }
+    Err(TypeError.MethodNotFound(type_qname.name(), method, location))
+}
+
+fn satisfied(newly_bound: Vec[Int], spawn: Vec[(C.ConstraintKind, Location)], call_resolution: Option[CallResolution], witness: Option[(C.WitnessKey, BoundWitness)]) -> ProcessResult {
+    ProcessResult.Satisfied(newly_bound, spawn, call_resolution, witness)
+}
+
+fn ok_satisfied(spawn: Vec[(C.ConstraintKind, Location)]) -> ProcessResult {
+    ProcessResult.Satisfied(Vec.new(), spawn, None, None)
+}
+
+pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -> ProcessResult {
+    match kind {
+        C.ConstraintKind.Unify(t1, t2) => {
+            let unifier = Unifier.new(ctx.sub);
+            match unifier.unify_types(t1, t2) {
+                Ok(()) => ProcessResult.Satisfied(unifier.take_newly_bound(), Vec.new(), None, None),
+                Err(UnifyError.Mismatch(a, b)) =>
+                    ProcessResult.Failed(TypeError.TypeMismatch(a, b, location)),
+            }
+        }
+
+        C.ConstraintKind.HasField(receiver, field, result) => {
+            let resolved = ctx.sub.apply(receiver);
+            match resolved {
+                TypeDef.Var(TypeVar.Var(n)) => ProcessResult.Pending([n]),
+                TypeDef.Named(Name.Resolved(qname), type_args) => {
+                    match ctx.program.structs.get(qname) {
+                        None => ProcessResult.Failed(TypeError.NotAStruct(resolved, location)),
+                        Some(struct_def) => {
+                            let type_params = match struct_def.type_arg_defs {
+                                Some(tad) => tad.type_params(),
+                                None => Vec.new(),
+                            };
+                            let found = None;
+                            for f in struct_def.fields {
+                                if f.name.name() == field {
+                                    found = Some(f);
+                                }
+                            }
+                            match found {
+                                None => ProcessResult.Failed(TypeError.FieldNotFound(qname.name(), field, location)),
+                                Some(f) => {
+                                    if ctx.module_name == struct_def.module_name || f.public {
+                                        let sub = Substitution.new();
+                                        let i = 0;
+                                        for name in type_params {
+                                            if i < type_args.len() {
+                                                sub.bind_named(name, type_args[i]);
+                                            }
+                                            i = i + 1;
+                                        }
+                                        let field_ty = sub.apply(f.ty);
+                                        ok_satisfied([(C.ConstraintKind.Unify(result, field_ty), location)])
+                                    } else {
+                                        ProcessResult.Failed(TypeError.FieldNotPublic(qname.name(), field, location))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                other => ProcessResult.Failed(TypeError.NotAStruct(other, location)),
+            }
+        }
+
+        C.ConstraintKind.HasTupleIndex(receiver, index, result) => {
+            let resolved = ctx.sub.apply(receiver);
+            match resolved {
+                TypeDef.Var(TypeVar.Var(n)) => ProcessResult.Pending([n]),
+                TypeDef.Tuple(tys) => {
+                    if tys.len() > index {
+                        ok_satisfied([(C.ConstraintKind.Unify(result, tys[index]), location)])
+                    } else {
+                        ProcessResult.Failed(TypeError.IncorrectTupleIndex(resolved, index, location))
+                    }
+                }
+                other => ProcessResult.Failed(TypeError.IncorrectTupleIndex(other, index, location)),
+            }
+        }
+
+        C.ConstraintKind.HasIndex(container_ty, idx_ty, result_ty) => {
+            let resolved = ctx.sub.apply(container_ty);
+            match resolved {
+                TypeDef.Var(TypeVar.Var(n)) => ProcessResult.Pending([n]),
+                TypeDef.Named(Name.Resolved(qname), type_args) if qname.base_name() == B.get_array_type() => {
+                    let elem_ty = type_args[0];
+                    ok_satisfied([
+                        (C.ConstraintKind.Unify(idx_ty, TypeDef.Named(Name.Resolved(QualifiedName.new(B.get_int_type())), [])), location),
+                        (C.ConstraintKind.Unify(result_ty, elem_ty), location),
+                    ])
+                }
+                _ => ok_satisfied([(C.ConstraintKind.CallFunction(
+                    QualifiedName.new(B.get_index_index()),
+                    FunctionKind.UserDefined,
+                    [resolved, idx_ty],
+                    result_ty,
+                ), location)])
+            }
+        }
+
+        C.ConstraintKind.HasIndexAssign(container_ty, idx_ty, value_ty, assign_result_ty) => {
+            let resolved = ctx.sub.apply(container_ty);
+            match resolved {
+                TypeDef.Var(TypeVar.Var(n)) => ProcessResult.Pending([n]),
+                TypeDef.Named(Name.Resolved(qname), type_args) if qname.base_name() == B.get_array_type() => {
+                    let elem_ty = type_args[0];
+                    ok_satisfied([
+                        (C.ConstraintKind.Unify(idx_ty, TypeDef.Named(Name.Resolved(QualifiedName.new(B.get_int_type())), [])), location),
+                        (C.ConstraintKind.Unify(value_ty, elem_ty), location),
+                        (C.ConstraintKind.Unify(assign_result_ty, TypeDef.Tuple(Vec.new())), location),
+                    ])
+                }
+                _ => ok_satisfied([(C.ConstraintKind.CallFunction(
+                    QualifiedName.new(B.get_index_assign_index_assign()),
+                    FunctionKind.UserDefined,
+                    [resolved, idx_ty, value_ty],
+                    assign_result_ty,
+                ), location)])
+            }
+        }
+
+        C.ConstraintKind.CallMethod(receiver, method, args, result) => {
+            let resolved = ctx.sub.apply(receiver);
+            let method_qname = match resolved {
+                TypeDef.Var(TypeVar.Var(n)) => return ProcessResult.Pending([n]),
+                TypeDef.Named(Name.Resolved(qname), _) => {
+                    match resolve_method(qname, method, ctx.module_name, ctx.program, location) {
+                        Ok(mq) => mq,
+                        Err(TypeError.MethodNotFound(_, _, _)) => {
+                            match ctx.program.module_trait_method_map.get(ctx.module_name) {
+                                Some(m) => match m.get(method) {
+                                    Some(fqns) => {
+                                        if fqns.len() == 1 {
+                                            fqns[0]
+                                        } else {
+                                            let candidates = fqns.iter().map(|q| q.name()).collect();
+                                            return ProcessResult.Failed(TypeError.AmbiguousTraitMethod(method, candidates, location));
+                                        }
+                                    }
+                                    None => return ProcessResult.Failed(TypeError.MethodNotFound(qname.name(), method, location)),
+                                }
+                                None => return ProcessResult.Failed(TypeError.MethodNotFound(qname.name(), method, location)),
+                            }
+                        }
+                        Err(e) => return ProcessResult.Failed(e),
+                    }
+                }
+                TypeDef.Var(TypeVar.Named(_)) => {
+                    match ctx.program.module_trait_method_map.get(ctx.module_name) {
+                        Some(m) => match m.get(method) {
+                            Some(fqns) => {
+                                if fqns.len() == 1 {
+                                    fqns[0]
+                                } else {
+                                    let candidates = fqns.iter().map(|q| q.name()).collect();
+                                    return ProcessResult.Failed(TypeError.AmbiguousTraitMethod(method, candidates, location));
+                                }
+                            }
+                            None => return ProcessResult.Failed(TypeError.MethodNotFound(I.intern("(generic)"), method, location)),
+                        }
+                        None => return ProcessResult.Failed(TypeError.MethodNotFound(I.intern("(generic)"), method, location)),
+                    }
+                }
+                other => return ProcessResult.Failed(TypeError.InvalidReceiverType(other, location)),
+            };
+
+            let fndef = ctx.program.functions.get(method_qname).unwrap();
+            let kind = match fndef.extern_c_name() {
+                Some(name) => FunctionKind.Extern(Some(name)),
+                None => if fndef.is_extern() { FunctionKind.Extern(None) } else { if fndef.is_builtin() { FunctionKind.Builtin } else { FunctionKind.UserDefined } },
+            };
+            let full_args = Vec.new();
+            full_args.push(receiver);
+            full_args.extend(args);
+
+            let result_var = match result {
+                TypeDef.Var(TypeVar.Var(n)) => n,
+                _ => panic("solver: CallMethod result is not a fresh var"),
+            };
+
+            ProcessResult.Satisfied(
+                Vec.new(),
+                [(C.ConstraintKind.CallFunction(method_qname, kind, full_args, result), location)],
+                Some(CallResolution(result_var, method_qname, kind)),
+                None
+            )
+        }
+
+        C.ConstraintKind.CallFunction(qname, kind, args, result) => {
+            match kind {
+                FunctionKind.UserDefined | FunctionKind.Extern(_) | FunctionKind.Builtin => {
+                    let func = ctx.program.functions.get(qname).unwrap();
+                    let param_ann_tys: Vec[TypeDef] = func.args.iter().map(|a| a.type_def).collect();
+                    let result_ann_ty = func.result_type;
+                    let type_params = match func.type_arg_defs {
+                        Some(tad) => tad.type_params(),
+                        None => Vec.new(),
+                    };
+                    let bounds = match func.type_arg_defs {
+                        Some(tad) => tad.bounds,
+                        None => Vec.new(),
+                    };
+
+                    if func.is_varargs {
+                        if args.len() < func.args.len() {
+                            return ProcessResult.Failed(TypeError.ArgCountMismatch(qname.name(), func.args.len(), args.len(), location));
+                        }
+                        args = args.iter().take(func.args.len()).collect();
+                    } else if args.len() > func.args.len() {
+                        return ProcessResult.Failed(TypeError.ArgCountMismatch(qname.name(), func.args.len(), args.len(), location));
+                    } else if args.len() < func.args.len() {
+                        let all_covered = (args.len() .. func.args.len()).iter().all(|i| func.default_value_names.iter().any(|dv| dv.index == i));
+                        if !all_covered {
+                            return ProcessResult.Failed(TypeError.ArgCountMismatch(qname.name(), func.args.len(), args.len(), location));
+                        }
+                    }
+
+                    let all_named: Set[I.String] = Set.new();
+                    for name in type_params {
+                        all_named.insert(name);
+                    }
+                    for ty in param_ann_tys {
+                        collect_named_vars(ty, all_named);
+                    }
+                    match result_ann_ty {
+                        Some(ty) => collect_named_vars(ty, all_named),
+                        None => {}
+                    }
+                    for bound in bounds {
+                        for ta in bound.type_args {
+                            all_named.insert(ta.name());
+                        }
+                        for c in bound.constraints {
+                            collect_named_vars(c.rhs, all_named);
+                        }
+                    }
+                    let all_named_vec: Vec[I.String] = all_named.iter().collect();
+                    let generic_inst = instantiate(all_named_vec, ctx.allocator);
+
+                    let param_tys: Vec[TypeDef] = param_ann_tys.iter().map(|t| generic_inst.apply(t)).collect();
+                    let ret_ty = match result_ann_ty {
+                        Some(ty) => generic_inst.apply(ty),
+                        None => TypeDef.Tuple(Vec.new()),
+                    };
+
+                    let spawn: Vec[(C.ConstraintKind, Location)] = Vec.new();
+                    let i = 0;
+                    for arg_ty in args {
+                        spawn.push((C.ConstraintKind.Unify(arg_ty, param_tys[i]), location));
+                        i = i + 1;
+                    }
+                    for i in args.len() .. func.args.len() {
+                        let dv = func.default_value_names.iter().find(|dv| dv.index == i).unwrap();
+                        let fresh = ctx.allocator.allocate();
+                        spawn.push((C.ConstraintKind.CallFunction(dv.name, FunctionKind.UserDefined, Vec.new(), fresh), location));
+                        spawn.push((C.ConstraintKind.Unify(fresh, param_tys[i]), location));
+                    }
+                    spawn.push((C.ConstraintKind.Unify(result, ret_ty), location));
+
+                    let call_result_var = match result {
+                        TypeDef.Var(TypeVar.Var(n)) => n,
+                        _ => panic("solver: CallFunction result is not a fresh var"),
+                    };
+
+                    let bound_index = 0;
+                    for bound in bounds {
+                        let bound_args: Vec[TypeDef] = bound.type_args.iter().map(|name| {
+                            match generic_inst.lookup_named(name.name()) {
+                                Some(ty) => ty,
+                                None => TypeDef.Var(TypeVar.Named(name.name())),
+                            }
+                        }).collect();
+                        let assoc_constraints: Vec[(TypeDef, I.String)] = bound.constraints.iter()
+                            .map(|c| (generic_inst.apply(c.rhs), c.lhs.name()))
+                            .collect();
+                        spawn.push((C.ConstraintKind.HasInstance(
+                            bound.trait_name.name(),
+                            bound_args,
+                            assoc_constraints,
+                            Some(C.WitnessKey(call_result_var, bound_index))
+                        ), location));
+                        bound_index = bound_index + 1;
+                    }
+
+                    ok_satisfied(spawn)
+                }
+
+                FunctionKind.StructCtor => {
+                    let struct_def = ctx.program.struct_def(qname);
+                    let field_ann_tys: Vec[TypeDef] = struct_def.fields.iter().map(|f| f.ty).collect();
+                    let type_params = match struct_def.type_arg_defs {
+                        Some(tad) => tad.type_params(),
+                        None => Vec.new(),
+                    };
+
+                    if args.len() > struct_def.fields.len() {
+                        return ProcessResult.Failed(TypeError.ArgCountMismatch(qname.name(), struct_def.fields.len(), args.len(), location));
+                    } else if args.len() < struct_def.fields.len() {
+                        let all_covered = (args.len() .. struct_def.fields.len()).iter().all(|i| struct_def.default_value_names.iter().any(|dv| dv.index == i));
+                        if !all_covered {
+                            return ProcessResult.Failed(TypeError.ArgCountMismatch(qname.name(), struct_def.fields.len(), args.len(), location));
+                        }
+                    }
+
+                    let generic_inst = instantiate(type_params, ctx.allocator);
+                    let type_args: Vec[TypeDef] = type_params.iter().map(|n| generic_inst.lookup_named(n).unwrap()).collect();
+
+                    let spawn: Vec[(C.ConstraintKind, Location)] = Vec.new();
+                    let i = 0;
+                    for arg_ty in args {
+                        let field_ty = generic_inst.apply(field_ann_tys[i]);
+                        spawn.push((C.ConstraintKind.Unify(arg_ty, field_ty), location));
+                        i = i + 1;
+                    }
+                    for i in args.len() .. struct_def.fields.len() {
+                        let dv = struct_def.default_value_names.iter().find(|dv| dv.index == i).unwrap();
+                        let fresh = ctx.allocator.allocate();
+                        spawn.push((C.ConstraintKind.CallFunction(dv.name, FunctionKind.UserDefined, Vec.new(), fresh), location));
+                        spawn.push((C.ConstraintKind.Unify(fresh, generic_inst.apply(field_ann_tys[i])), location));
+                    }
+                    let struct_ty = TypeDef.Named(Name.Resolved(qname), type_args);
+                    spawn.push((C.ConstraintKind.Unify(result, struct_ty), location));
+                    ok_satisfied(spawn)
+                }
+
+                FunctionKind.VariantCtor => {
+                    let (enum_qname, item_ann_tys, type_params) = ctx.program.find_variant(qname);
+
+                    if args.len() != item_ann_tys.len() {
+                        return ProcessResult.Failed(TypeError.ArgCountMismatch(qname.name(), item_ann_tys.len(), args.len(), location));
+                    }
+
+                    let generic_inst = instantiate(type_params, ctx.allocator);
+                    let type_args: Vec[TypeDef] = type_params.iter().map(|n| generic_inst.lookup_named(n).unwrap()).collect();
+
+                    let spawn: Vec[(C.ConstraintKind, Location)] = Vec.new();
+                    let i = 0;
+                    for arg_ty in args {
+                        let item_ty = generic_inst.apply(item_ann_tys[i]);
+                        spawn.push((C.ConstraintKind.Unify(arg_ty, item_ty), location));
+                        i = i + 1;
+                    }
+                    let enum_ty = TypeDef.Named(Name.Resolved(enum_qname), type_args);
+                    spawn.push((C.ConstraintKind.Unify(result, enum_ty), location));
+                    ok_satisfied(spawn)
+                }
+            }
+        }
+
+        C.ConstraintKind.DynamicCall(callee, args, result) => {
+            let resolved = ctx.sub.apply(callee);
+            match resolved {
+                TypeDef.Var(TypeVar.Var(n)) => ProcessResult.Pending([n]),
+                TypeDef.Fn(param_tys, ret_ty) | TypeDef.FnPtr(param_tys, ret_ty) => {
+                    if param_tys.len() != args.len() {
+                        return ProcessResult.Failed(TypeError.ArgCountMismatch(I.intern("<fn>"), param_tys.len(), args.len(), location));
+                    }
+                    let spawn: Vec[(C.ConstraintKind, Location)] = Vec.new();
+                    let i = 0;
+                    for arg_ty in args {
+                        spawn.push((C.ConstraintKind.Unify(arg_ty, param_tys[i]), location));
+                        i = i + 1;
+                    }
+                    spawn.push((C.ConstraintKind.Unify(result, ret_ty), location));
+                    ok_satisfied(spawn)
+                }
+                other => ProcessResult.Failed(TypeError.InvalidReceiverType(other, location)),
+            }
+        }
+
+        C.ConstraintKind.GetFunctionPtrType(qname, result) => {
+            let func = ctx.program.functions.get(qname).unwrap();
+            let param_ann_tys: Vec[TypeDef] = func.args.iter().map(|a| a.type_def).collect();
+            let result_ann_ty = func.result_type;
+            let type_params = match func.type_arg_defs {
+                Some(tad) => tad.type_params(),
+                None => Vec.new(),
+            };
+            let bounds = match func.type_arg_defs {
+                Some(tad) => tad.bounds,
+                None => Vec.new(),
+            };
+            let all_named: Set[I.String] = Set.new();
+            for name in type_params { all_named.insert(name); }
+            for ty in param_ann_tys { collect_named_vars(ty, all_named); }
+            match result_ann_ty {
+                Some(ty) => collect_named_vars(ty, all_named),
+                None => {}
+            }
+            let all_named_vec: Vec[I.String] = all_named.iter().collect();
+            let generic_inst = instantiate(all_named_vec, ctx.allocator);
+
+            let param_tys: Vec[TypeDef] = param_ann_tys.iter().map(|t| generic_inst.apply(t)).collect();
+            let ret_ty = match result_ann_ty {
+                Some(ty) => generic_inst.apply(ty),
+                None => TypeDef.Tuple(Vec.new()),
+            };
+
+            let call_result_var = match result {
+                TypeDef.Var(TypeVar.Var(n)) => n,
+                _ => panic("solver: GetFunctionPtrType result is not a fresh var"),
+            };
+
+            let spawn: Vec[(C.ConstraintKind, Location)] = Vec.new();
+            spawn.push((C.ConstraintKind.Unify(result, TypeDef.FnPtr(param_tys, ret_ty)), location));
+
+            let bound_index = 0;
+            for bound in bounds {
+                let bound_args: Vec[TypeDef] = bound.type_args.iter().map(|name| {
+                    match generic_inst.lookup_named(name.name()) {
+                        Some(ty) => ty,
+                        None => TypeDef.Var(TypeVar.Named(name.name())),
+                    }
+                }).collect();
+                let assoc_constraints: Vec[(TypeDef, I.String)] = bound.constraints.iter()
+                    .map(|c| (generic_inst.apply(c.rhs), c.lhs.name()))
+                    .collect();
+                spawn.push((C.ConstraintKind.HasInstance(
+                    bound.trait_name.name(),
+                    bound_args,
+                    assoc_constraints,
+                    Some(C.WitnessKey(call_result_var, bound_index))
+                ), location));
+                bound_index = bound_index + 1;
+            }
+            ok_satisfied(spawn)
+        }
+
+        C.ConstraintKind.HasInstance(trait_name, args, assoc_constraints, witness_key) => {
+            let resolved_args: Vec[TypeDef] = args.iter().map(|a| ctx.sub.apply(a)).collect();
+            let pending: Vec[Int] = Vec.new();
+            for a in resolved_args {
+                pending.extend(collect_flex_vars(a));
+            }
+
+            match ctx.func_resolver.resolve(trait_name, resolved_args, ctx.sub) {
+                BoundResult.Satisfied(resolution) => {
+                    let spawn: Vec[(C.ConstraintKind, Location)] = Vec.new();
+                    for (flex_var, assoc_name) in assoc_constraints {
+                        match resolution.assoc_types.get(assoc_name) {
+                            Some(concrete) => spawn.push((C.ConstraintKind.Unify(flex_var, concrete), location)),
+                            None => {}
+                        }
+                    }
+                    let i = 0;
+                    for arg in resolved_args {
+                        if i < resolution.primary_args.len() {
+                            match arg {
+                                TypeDef.Var(TypeVar.Var(_)) =>
+                                    spawn.push((C.ConstraintKind.Unify(arg, resolution.primary_args[i]), location)),
+                                _ => {}
+                            }
+                        }
+                        i = i + 1;
+                    }
+                    let witness = match witness_key {
+                        Some(key) => Some((key, resolution.into_witness())),
+                        None => None,
+                    };
+                    ProcessResult.Satisfied(Vec.new(), spawn, None, witness)
+                }
+                BoundResult.NotFound =>
+                    ProcessResult.Failed(TypeError.InstanceNotFound(trait_name, resolved_args, location)),
+                BoundResult.Ambiguous(candidates) => {
+                    if !pending.is_empty() {
+                        return ProcessResult.Pending(pending);
+                    }
+                    ProcessResult.Failed(TypeError.AmbiguousInstance(trait_name, resolved_args, candidates, location))
+                }
+            }
+        }
+
+        C.ConstraintKind.MatchVariant(scrutinee, variant, item_types) => {
+            let (enum_qname, item_ann_tys, type_params) = ctx.program.find_variant(variant);
+            let generic_inst = instantiate(type_params, ctx.allocator);
+            let type_args: Vec[TypeDef] = type_params.iter().map(|n| generic_inst.lookup_named(n).unwrap()).collect();
+            let enum_ty = TypeDef.Named(Name.Resolved(enum_qname), type_args);
+
+            let spawn: Vec[(C.ConstraintKind, Location)] = Vec.new();
+            spawn.push((C.ConstraintKind.Unify(scrutinee, enum_ty), location));
+            let i = 0;
+            for item_var in item_types {
+                let item_ty = generic_inst.apply(item_ann_tys[i]);
+                spawn.push((C.ConstraintKind.Unify(item_var, item_ty), location));
+                i = i + 1;
+            }
+            ok_satisfied(spawn)
+        }
+
+        C.ConstraintKind.MatchStruct(scrutinee, struct_qname, item_types) => {
+            let struct_def = ctx.program.structs.get(struct_qname).unwrap();
+            let type_params = match struct_def.type_arg_defs {
+                Some(tad) => tad.type_params(),
+                None => Vec.new(),
+            };
+            let generic_inst = instantiate(type_params, ctx.allocator);
+            let type_args: Vec[TypeDef] = type_params.iter().map(|n| generic_inst.lookup_named(n).unwrap()).collect();
+            let struct_ty = TypeDef.Named(Name.Resolved(struct_qname), type_args);
+
+            let spawn: Vec[(C.ConstraintKind, Location)] = Vec.new();
+            spawn.push((C.ConstraintKind.Unify(scrutinee, struct_ty), location));
+            let i = 0;
+            for item_var in item_types {
+                let field_ty = generic_inst.apply(struct_def.fields[i].ty);
+                spawn.push((C.ConstraintKind.Unify(item_var, field_ty), location));
+                i = i + 1;
+            }
+            ok_satisfied(spawn)
+        }
+
+        C.ConstraintKind.ResolveImplicit(qname, result) => {
+            let implicit_def = ctx.program.implicits.get(qname).unwrap();
+            ok_satisfied([(C.ConstraintKind.Unify(result, implicit_def.ty), location)])
+        }
+    }
+}
+
+pub struct Solver {
+    pub constraints: Vec[C.Constraint],
+    pub sub: Substitution,
+    pub allocator: TypeVarAllocator,
+    pub registry: Map[Int, Vec[Int]],
+    pub active: Vec[Int],
+    pub active_start: Int,
+    pub program: Program,
+    pub func_resolver: FunctionInstanceResolver,
+    pub module_name: I.String,
+    pub func_name: I.String,
+    pub enable_debug: Bool,
+    pub method_resolutions: Map[Int, CallResolution],
+    pub witness_map: Map[C.WitnessKey, BoundWitness],
+
+    pub fn new(program: Program, instance_resolver: InstanceResolver, func: FunctionDef, constraints: Vec[C.Constraint], allocator: TypeVarAllocator) -> Solver {
+        let function_bounds: Vec[FunctionBoundEntry] = match func.type_arg_defs {
+            None => Vec.new(),
+            Some(tad) => tad.bounds.iter().map(|bound| {
+                let args: Vec[TypeDef] = bound.type_args.iter().map(|name| TypeDef.Var(TypeVar.Named(name.name()))).collect();
+                let assoc_types: Map[I.String, TypeDef] = bound.constraints.iter()
+                    .map(|c| (c.lhs.name(), c.rhs))
+                    .collect();
+                FunctionBoundEntry(bound.trait_name.name(), args, assoc_types)
+            }).collect(),
+        };
+
+        let module_resolver = match instance_resolver.for_module(func.module_name) {
+            Some(r) => r,
+            None => panic("no resolver for module `${I.resolve(func.module_name)}`"),
+        };
+        let func_resolver = FunctionInstanceResolver.new(func.module_name, module_resolver, function_bounds, allocator);
+
+        let active: Vec[Int] = Vec.new();
+        let i = 0;
+        while i < constraints.len() {
+            active.push(i);
+            i = i + 1;
+        }
+
+        Solver(
+            constraints,
+            Substitution.new(),
+            allocator,
+            Map.new(),
+            active,
+            0,
+            program,
+            func_resolver,
+            func.module_name,
+            func.name.name(),
+            False,
+            Map.new(),
+            Map.new(),
+        )
+    }
+
+    pub fn with_debug(s: Solver, enable: Bool) -> Solver {
+        s.enable_debug = enable;
+        s
+    }
+
+    pub fn solve(s: Solver) -> Result[(), TypeError] {
+        if s.enable_debug {
+            let n = s.constraints.len();
+            println("[tc2] === ${I.resolve(s.func_name)} (${n.to_string()} constraints) ===");
+            for c in s.constraints {
+                println("  #${c.id.to_string()}   ${C.ConstraintKind.describe(c.kind)}  @ ${c.location.short()}");
+            }
+            println("");
+        }
+
+        while s.active_start < s.active.len() {
+            let id = s.active[s.active_start];
+            s.active_start = s.active_start + 1;
+
+            if s.constraints[id].state == C.ConstraintState.Satisfied {
+                continue;
+            }
+
+            let kind = s.constraints[id].kind;
+            let location = s.constraints[id].location;
+
+            if s.enable_debug {
+                let applied = C.ConstraintKind.apply(kind, s.sub);
+                let raw = C.ConstraintKind.describe(kind);
+                let app = C.ConstraintKind.describe(applied);
+                println("[tc2] #${id.to_string()} ${raw}  @ ${location.short()}");
+                if raw != app {
+                    println("       [= ${app}]");
+                }
+            }
+
+            let ctx = SolverContext(s.sub, s.allocator, s.program, s.func_resolver, s.module_name);
+
+            match process(kind, ctx, location) {
+                ProcessResult.Satisfied(newly_bound, spawn, call_resolution, witness) => {
+                    if s.enable_debug {
+                        if newly_bound.is_empty() && spawn.is_empty() {
+                            println("       -> ok");
+                        } else {
+                            if !newly_bound.is_empty() {
+                                let bindings: Vec[String] = newly_bound.iter().map(|v| {
+                                    let ty = s.sub.apply(TypeDef.Var(TypeVar.Var(v)));
+                                    "$${v.to_string()} = ${format_type(ty)}"
+                                }).collect();
+                                println("       -> bind: ${join(bindings, ", ")}");
+                            }
+                            for (sk, sl) in spawn {
+                                println("       -> spawn #${s.constraints.len().to_string()}: ${C.ConstraintKind.describe(sk)}  @ ${sl.short()}");
+                            }
+                        }
+                    }
+
+                    s.constraints[id].state = C.ConstraintState.Satisfied;
+
+                    match call_resolution {
+                        Some(cr) => { s.method_resolutions.insert(cr.result_var, cr); }
+                        None => {}
+                    }
+                    match witness {
+                        Some((key, bw)) => { s.witness_map.insert(key, bw); }
+                        None => {}
+                    }
+
+                    for (spawn_kind, spawn_loc) in spawn {
+                        let new_id = s.constraints.len();
+                        s.constraints.push(C.Constraint.new(new_id, spawn_kind, spawn_loc));
+                        s.active.push(new_id);
+                    }
+
+                    for var in newly_bound {
+                        match s.registry.remove(var) {
+                            Some(subscribers) => {
+                                if s.enable_debug && !subscribers.is_empty() {
+                                    let wake_strs: Vec[String] = subscribers.iter().map(|s| s.to_string()).collect();
+                                    println("       -> requeue $${var.to_string()}  wakes [${join(wake_strs, ", ")}]");
+                                }
+                                for sub_id in subscribers {
+                                    if s.constraints[sub_id].state != C.ConstraintState.Satisfied {
+                                        s.active.push(sub_id);
+                                    }
+                                }
+                            }
+                            None => {}
+                        }
+                    }
+                }
+                ProcessResult.Pending(subscribe_to) => {
+                    if s.enable_debug {
+                        let waiting: Vec[String] = subscribe_to.iter().map(|v| "$${v.to_string()}").collect();
+                        println("       -> pending, waiting on ${join(waiting, ", ")}");
+                    }
+                    for var in subscribe_to {
+                        s.registry.entry(var).or_insert_with(|| Vec.new()).push(id);
+                    }
+                }
+                ProcessResult.Failed(e) => {
+                    if s.enable_debug {
+                        let applied = C.ConstraintKind.apply(kind, s.sub);
+                        println("       -> FAILED: ${C.ConstraintKind.describe(applied)}");
+                    }
+                    return Err(e);
+                }
+            }
+        }
+
+        match s.constraints.iter().find(|c| c.state != C.ConstraintState.Satisfied) {
+            Some(stalled) => {
+                if s.enable_debug {
+                    println("[tc2] STALLED: #${stalled.id.to_string()} ${C.ConstraintKind.describe(stalled.kind)}  @ ${stalled.location.short()}");
+                }
+                Err(TypeError.AmbiguousType(stalled.location))
+            }
+            None => {
+                if s.enable_debug {
+                    println("[tc2] === ${I.resolve(s.func_name)} — done (${s.constraints.len().to_string()} constraints) ===\n");
+                }
+                Ok(())
+            }
+        }
+    }
+
+    pub fn into_subst(s: Solver) -> Substitution {
+        s.sub
+    }
+
+    pub fn get_method_resolutions(s: Solver) -> Map[Int, CallResolution] {
+        s.method_resolutions
+    }
+
+    pub fn get_witness_map(s: Solver) -> Map[C.WitnessKey, BoundWitness] {
+        s.witness_map
+    }
+}
+
+}

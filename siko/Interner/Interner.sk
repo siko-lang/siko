@@ -1,0 +1,92 @@
+module Siko.Interner {
+
+import Std.String as S
+
+import Std.Map
+
+implicit interner: Interner
+
+@derive(PartialEq, Std.Ops.Eq, PartialOrd, Ord, Clone)
+pub struct String {
+    index: Int
+}
+
+// instance PartialEq[String] {
+//     fn eq(a: String, b: String) -> Bool {
+//         a.index == b.index
+//     }
+// }
+
+// instance Eq[String] {
+// }
+
+// instance PartialOrd[String] {
+//     fn partial_cmp(a: String, b: String) -> Option[Ordering] {
+//         Some(resolve(a).cmp(resolve(b)))
+//     }
+// }
+
+// instance Ord[String] {
+//     fn cmp(a: String, b: String) -> Ordering {
+//         resolve(a).cmp(resolve(b))
+//     }
+// }
+
+// instance Clone[String] {
+//     fn clone(s: String) -> String {
+//         s
+//     }
+// }
+
+instance ToString[String] {
+    fn to_string(s: String) -> S.String {
+        Interner.resolve(s)
+    }
+}
+
+pub struct Interner {
+    values: Map[Int, S.String],
+    indices: Map[S.String, Int],
+
+    pub fn new() -> Interner {
+        Interner(Map.new(), Map.new())
+    }
+
+    fn intern_string(interner: Interner, value: S.String) -> String {
+        if let Some(index) = interner.indices.get(value) {
+            return String(index);
+        }
+        let index = interner.values.len();
+        interner.values.insert(index, value);
+        interner.indices.insert(value, index);
+        String(index)
+    }
+
+    fn resolve_string(interner: Interner, interned: String) -> S.String {
+        match interner.values.get(interned.index) {
+            Some(s) => s,
+            None => panic("interned string not found"),
+        }
+    }
+
+    pub fn intern(value: S.String) -> String {
+        interner.intern_string(value)
+    }
+
+    pub fn resolve(interned: String) -> S.String {
+        interner.resolve_string(interned)
+    }
+}
+
+pub effect Compiler {
+    fn compile()
+}
+
+pub fn run() {
+    let current = Interner.new();
+    with interner = current {
+        compile();
+    }
+}
+
+}

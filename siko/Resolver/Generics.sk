@@ -1,0 +1,42 @@
+module Siko.Resolver.Generics {
+
+import Siko.Resolver
+import Siko.Resolver.Error
+import Siko.AST.Generics
+
+instance Resolvable[TypeArgDefs] {
+    fn resolve(t: TypeArgDefs, ctx: ResolverContext) -> Result[TypeArgDefs, ResolveError] {
+        Ok(TypeArgDefs(
+            t.type_args,
+            t.bounds.resolve(ctx)?,
+        ))
+    }
+}
+
+instance Resolvable[Bound] {
+    fn resolve(b: Bound, ctx: ResolverContext) -> Result[Bound, ResolveError] {
+        for arg in b.type_args {
+            ctx.type_resolver.resolve_name(arg.unresolved(), Vec.new())?;
+        }
+        let (resolved_trait_name, associated_types) = ctx
+            .type_resolver
+            .resolve_trait_name(b.trait_name, b.type_args.len())?;
+        for constraint in b.constraints {
+            if !associated_types.contains(constraint.lhs.name()) {
+                return Err(ResolveError.UnknownAssociatedType(constraint.lhs));
+            }
+        }
+        let constraints: Vec[_] = b.constraints
+            .iter()
+            .map(|c| Ok(Constraint(c.lhs, c.rhs.resolve(ctx)?)))
+            .collect();
+        let constraints = Result.collect(constraints)?;
+        Ok(Bound(
+            resolved_trait_name,
+            b.type_args,
+            constraints,
+        ))
+    }
+}
+
+}

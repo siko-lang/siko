@@ -1,0 +1,162 @@
+module Siko.MatchCompilation.DataPath {
+
+import Siko.AST.QualifiedName
+import Siko.Interner as I
+
+@derive(PartialEq, Std.Ops.Eq, PartialOrd, Ord, Clone)
+pub enum DataPathSegment {
+    Root,
+    Tuple(Int),
+    TupleIndex(Int),
+    ItemIndex(Int),
+    Variant(QualifiedName, QualifiedName),
+    IntegerLiteral(I.String),
+    CharLiteral(Int),
+    StringLiteral(I.String),
+    Struct(I.String),
+    Wildcard,
+
+    pub fn to_string(s: DataPathSegment) -> String {
+        match s {
+            DataPathSegment.Root => "Root",
+            DataPathSegment.Tuple(len) => "/tuple${len}",
+            DataPathSegment.TupleIndex(index) => ".t${index}",
+            DataPathSegment.ItemIndex(index) => ".i${index}",
+            DataPathSegment.Variant(name, _) => ".${I.resolve(name.name())}",
+            DataPathSegment.IntegerLiteral(lit) => "[int:${lit}]",
+            DataPathSegment.CharLiteral(b) => "[char:${b}]",
+            DataPathSegment.StringLiteral(lit) => "[str:\"${lit}\"]",
+            DataPathSegment.Struct(name) => ".${name}",
+            DataPathSegment.Wildcard => "._",
+        }
+    }
+}
+
+@derive(PartialEq, Std.Ops.Eq, PartialOrd, Ord, Clone)
+pub struct DataPath {
+    pub segments: Vec[DataPathSegment],
+
+    pub fn root() -> DataPath {
+        DataPath([DataPathSegment.Root])
+    }
+
+    pub fn push(p: DataPath, segment: DataPathSegment) -> DataPath {
+        let segs = p.segments.clone();
+        segs.push(segment);
+        DataPath(segs)
+    }
+
+    pub fn last(p: DataPath) -> DataPathSegment {
+        p.segments[p.segments.len() - 1]
+    }
+
+    pub fn get_parent(p: DataPath) -> DataPath {
+        if p.segments.len() == 1 {
+            return p;
+        }
+        let segs = p.segments.clone();
+        segs.pop();
+        DataPath(segs)
+    }
+
+    pub fn is_child(p: DataPath, parent: DataPath) -> Bool {
+        let s1 = p.segments;
+        let s2 = parent.segments;
+        if s1.len() <= s2.len() {
+            return False;
+        }
+        let ok = True;
+        let i = 0;
+        while i < s2.len() {
+            if s1[i] != s2[i] {
+                ok = False;
+                break;
+            }
+            i = i + 1;
+        }
+        ok
+    }
+
+    pub fn as_binding_path(p: DataPath) -> DataPath {
+        let segs = p.segments.clone();
+        segs.push(DataPathSegment.Wildcard);
+        DataPath(segs)
+    }
+
+    pub fn to_string(p: DataPath) -> String {
+        let parts = p.segments.iter().map(|s| s.to_string()).collect();
+        join(parts, "")
+    }
+}
+
+@derive(PartialEq, Std.Ops.Eq, PartialOrd, Ord, Clone)
+pub struct DecisionPath {
+    pub decisions: Vec[DataPath],
+
+    pub fn new() -> DecisionPath {
+        DecisionPath([])
+    }
+
+    pub fn add(d: DecisionPath, path: DataPath) -> DecisionPath {
+        let decisions = d.decisions.clone();
+        decisions.push(path);
+        DecisionPath(decisions)
+    }
+
+    pub fn last(d: DecisionPath) -> DataPath {
+        d.decisions[d.decisions.len() - 1]
+    }
+
+    pub fn to_string(d: DecisionPath) -> String {
+        let parts = d.decisions.iter().map(|p| p.to_string()).collect();
+        join(parts, " -> ")
+    }
+}
+
+pub enum DataType {
+    Struct(I.String),
+    Enum(QualifiedName),
+    Tuple(Int),
+    Integer,
+    Byte,
+    StringType,
+    Wildcard,
+}
+
+pub fn remaining_match_decisions(node: Vec[DataPath], branch: Vec[DataPath]) -> Option[Vec[DataPath]] {
+    let node_remaining = node;
+    let branch_remaining = branch;
+    loop {
+        if node_remaining.is_empty() {
+            return Some(branch_remaining);
+        }
+        if branch_remaining.is_empty() {
+            return None;
+        }
+        let path = branch_remaining[0];
+        branch_remaining = branch_remaining.sub(1, branch_remaining.len());
+        node_remaining = remove_paths(path, node_remaining);
+    }
+}
+
+fn remove_paths(path: DataPath, node: Vec[DataPath]) -> Vec[DataPath] {
+    let remaining = node;
+    loop {
+        if remaining.is_empty() {
+            break;
+        }
+        let node_path = remaining[0];
+        let remove = match path.last() {
+            DataPathSegment.Wildcard => node_path.is_child(path.get_parent()),
+            _ => path == node_path,
+        };
+        if remove {
+            remaining = remaining.sub(1, remaining.len());
+        } else {
+            break;
+        }
+    }
+    remaining
+}
+
+}

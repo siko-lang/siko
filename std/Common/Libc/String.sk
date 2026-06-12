@@ -1,0 +1,64 @@
+module Std.Libc.String {
+
+import Std.Ptr
+import Std.Intrinsics
+
+@extern("C", "stdlib.h")
+pub fn memcpy(dest: void*, src: void*, n: U64) -> void*
+
+@extern("C", "stdlib.h")
+pub fn memmove(dest: void*, src: void*, n: U64) -> void*
+
+@extern("C", "stdlib.h")
+pub fn memcmp(s1: void*, s2: void*, n: U64) -> I32
+
+@derive(Clone)
+pub struct CString {
+    data: Vec[U8]
+
+    pub fn from_string(s: String) -> CString {
+        let bytes = s.to_bytes();
+        bytes.push(0.as_u8());
+        CString(bytes)
+    }
+
+    @unsafe
+    pub fn as_ptr(c: CString) -> *I8 {
+        transmute(c.data.as_ptr())
+    }
+}
+
+instance ToString[CString] {
+    fn to_string(c: CString) -> String {
+        let data = c.data.clone();
+        data.remove(data.len() - 1);
+        String.from_slice(data.slice())
+    }
+}
+
+@unsafe
+pub fn from_cstring(ptr: *U8) -> String {
+    if is_null_ptr(ptr) {
+        return "";
+    }
+    let len = strlen(ptr);
+    String.from_bytes(ptr, len.as_int())
+}
+
+@unsafe
+pub fn strlen(s: *U8) -> U64 {
+    if is_null_ptr(s) {
+        return 0.as_u64();
+    }
+    let len = 0;
+    loop {
+        let byte = *offset_of(s, len);
+        if byte == 0.as_u8() {
+            break;
+        }
+        len += 1;
+    }
+    len.as_u64()
+}
+
+}

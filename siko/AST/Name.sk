@@ -1,0 +1,34 @@
+module Siko.AST.Name {
+
+import Siko.Interner as I
+import Siko.AST.Identifier
+import Siko.AST.QualifiedName
+
+@derive(PartialEq, Eq, PartialOrd, Ord, Clone)
+pub enum Name {
+    Unresolved(Identifier),
+    Resolved(QualifiedName),
+
+    pub fn name(n: Name) -> I.String {
+        match n {
+            Unresolved(id) => id.name,
+            Resolved(qn)   => qn.name(),
+        }
+    }
+
+    pub fn unresolved(n: Name) -> Identifier {
+        match n {
+            Unresolved(id) => id,
+            Resolved(_)    => panic("Not unresolved"),
+        }
+    }
+
+    pub fn resolved(n: Name) -> QualifiedName {
+        match n {
+            Unresolved(_)  => panic("Not resolved"),
+            Resolved(qn)   => qn,
+        }
+    }
+}
+
+}

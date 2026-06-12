@@ -1,0 +1,53 @@
+module Siko.Format.Module {
+
+import Siko.AST.Module
+import Siko.Interner as I
+import Siko.Format.Formatter
+import Siko.Format.Data
+import Siko.Format.Effects
+import Siko.Format.Function
+import Siko.Format.Globals
+import Siko.Format.Implicits
+import Siko.Format.Traits
+
+pub fn format_module(f: Formatter, m: Module) {
+    f.format_annotations(m.annotations);
+    f.push("module ");
+    f.push(I.resolve(m.name.name));
+    f.push(" {\n\n");
+    for item in m.items {
+        format_module_item(f, item);
+        f.push("\n");
+    }
+    f.push("}\n");
+}
+
+fn format_module_item(f: Formatter, item: ModuleItem) {
+    match item {
+        ModuleItem.Struct(def)   => format_struct_def(f, def),
+        ModuleItem.Enum(def)     => format_enum_def(f, def),
+        ModuleItem.Function(def) => format_fn_def(f, def),
+        ModuleItem.Import(imp)   => format_import(f, imp),
+        ModuleItem.Trait(def)    => format_trait_def(f, def),
+        ModuleItem.Instance(def) => format_instance_def(f, def),
+        ModuleItem.Effect(def)   => format_effect_def(f, def),
+        ModuleItem.Implicit(def) => format_implicit_def(f, def),
+        ModuleItem.Global(def)   => format_global_def(f, def),
+    }
+}
+
+fn format_import(f: Formatter, imp: ImportDef) {
+    f.push_indent();
+    f.push("import ");
+    f.push(I.resolve(imp.module_name.name));
+    match imp.alias {
+        Some(alias) => {
+            f.push(" as ");
+            f.push(I.resolve(alias.name));
+        }
+        None => {}
+    }
+    f.push("\n");
+}
+
+}

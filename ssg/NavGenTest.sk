@@ -1,0 +1,30 @@
+module SSG.NavGenTest {
+
+import SSG.NavGen
+
+@test
+fn test_generate_sorted() {
+    let posts = [
+        PostInfo(title: "Older Post", date: "2026-01-01", slug: "older", is_dir: False, priority: 0),
+        PostInfo(title: "Newest Post", date: "2026-06-12", slug: "newest", is_dir: False, priority: 0),
+        PostInfo(title: "Middle Post", date: "2026-03-15", slug: "middle", is_dir: False, priority: 0),
+    ];
+    let nav = generate(posts);
+    assert(nav == "<nav>\n  <a href=\"newest.html\">Newest Post</a>\n  <a href=\"middle.html\">Middle Post</a>\n  <a href=\"older.html\">Older Post</a>\n</nav>\n");
+}
+
+@test
+fn test_generate_single() {
+    let posts = [PostInfo(title: "Only Post", date: "2026-06-12", slug: "only", is_dir: False, priority: 0)];
+    let nav = generate(posts);
+    assert(nav == "<nav>\n  <a href=\"only.html\">Only Post</a>\n</nav>\n");
+}
+
+@test
+fn test_generate_empty() {
+    let posts: Vec[PostInfo] = [];
+    let nav = generate(posts);
+    assert(nav == "<nav>\n</nav>\n");
+}
+
+}

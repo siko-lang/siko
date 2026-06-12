@@ -1,0 +1,28 @@
+module Main {
+
+// Like effects/03_deep_call: implicit threaded through a deep call chain.
+
+implicit counter : Int
+
+fn baz() {
+    counter = counter + 1;
+}
+
+fn bar() {
+    baz();
+}
+
+fn foo() {
+    bar();
+}
+
+fn main() {
+    let n = 0;
+    with counter = n {
+        foo();
+    }
+    assert(n == 1);
+    println(n.to_string());
+}
+
+}

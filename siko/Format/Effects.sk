@@ -1,0 +1,38 @@
+module Siko.Format.Effects {
+
+import Siko.AST.Effects
+import Siko.Interner as I
+import Siko.Format.Formatter
+import Siko.Format.Function
+import Siko.Format.Generics
+
+pub fn format_effect_def(f: Formatter, def: EffectDef) {
+    f.format_annotations(def.annotations);
+    f.push_indent();
+    if def.public {
+        f.push("pub ");
+    }
+    f.push("effect");
+    match def.type_arg_defs {
+        Some(tad) => format_type_arg_defs(f, tad),
+        None => {}
+    }
+    f.push(" ");
+    f.push(I.resolve(def.name.name));
+    f.push(" {\n");
+    f.indent_up();
+    for assoc in def.associated_types {
+        f.push_indent();
+        f.push("type ");
+        f.push(I.resolve(assoc.name.name));
+        f.push("\n");
+    }
+    for method in def.methods {
+        format_fn_def(f, method);
+    }
+    f.indent_down();
+    f.push_indent();
+    f.push("}\n");
+}
+
+}

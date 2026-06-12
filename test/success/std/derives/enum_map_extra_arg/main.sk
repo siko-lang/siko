@@ -1,0 +1,32 @@
+module Main {
+
+enum Wrap {
+    Some(Int),
+    None
+}
+
+trait MyMap[T] {
+    fn my_map(a: T, offset: Int) -> T
+}
+
+instance MyMap[Int] {
+    fn my_map(a: Int, offset: Int) -> Int { a + offset }
+}
+
+instance MyMap[Wrap] = auto(Map, my_map)
+
+fn main() {
+    let x = Wrap.Some(5);
+    let y = my_map(x, 10);
+    match y {
+        Some(n) => println(n),
+        None => println("none")
+    };
+    let z = my_map(Wrap.None, 10);
+    match z {
+        Some(n) => println(n),
+        None => println("none")
+    };
+}
+
+}

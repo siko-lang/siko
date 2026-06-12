@@ -1,0 +1,49 @@
+module Siko.Unification.Apply {
+
+import Siko.AST.Type
+import Siko.Unification.Sub
+
+pub fn extract_named_bindings(pattern: TypeDef, concrete: TypeDef, out: Substitution) {
+    match pattern {
+        TypeDef.Var(TypeVar.Named(s)) => {
+            out.bind_named(s, concrete);
+        }
+        TypeDef.Named(_, pargs) => {
+            if let TypeDef.Named(_, cargs) = concrete {
+                for (p, c) in pargs.iter().zip(cargs.iter()) {
+                    extract_named_bindings(p, c, out);
+                }
+            }
+        }
+        TypeDef.Tuple(pelems) => {
+            if let TypeDef.Tuple(celems) = concrete {
+                for (p, c) in pelems.iter().zip(celems.iter()) {
+                    extract_named_bindings(p, c, out);
+                }
+            }
+        }
+        TypeDef.Fn(pargs, presult) => {
+            if let TypeDef.Fn(cargs, cresult) = concrete {
+                for (p, c) in pargs.iter().zip(cargs.iter()) {
+                    extract_named_bindings(p, c, out);
+                }
+                extract_named_bindings(presult, cresult, out);
+            }
+        }
+        TypeDef.Paren(inner) => extract_named_bindings(inner, concrete, out),
+        TypeDef.Ptr(inner) => {
+            if let TypeDef.Ptr(cinner) = concrete {
+                extract_named_bindings(inner, cinner, out);
+            }
+        }
+        TypeDef.Array(inner, _) => {
+            if let TypeDef.Array(cinner, _) = concrete {
+                extract_named_bindings(inner, cinner, out);
+            }
+        }
+        TypeDef.Numeric(_) => {}
+        _ => {}
+    }
+}
+
+}

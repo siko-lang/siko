@@ -1,0 +1,92 @@
+module Siko.Format.Data {
+
+import Siko.AST.Data
+import Siko.Interner as I
+import Siko.Format.Formatter
+import Siko.Format.Expr
+import Siko.Format.Function
+import Siko.Format.Generics
+import Siko.Format.Types
+
+pub fn format_struct_def(f: Formatter, def: StructDef) {
+    f.format_annotations(def.annotations);
+    f.push_indent();
+    if def.public {
+        f.push("pub ");
+    }
+    f.push("struct ");
+    if def.qualified_name.is_simple() {
+        f.push(I.resolve(def.name.name));
+    } else {
+        f.push(I.resolve(def.qualified_name.name()));
+    }
+    match def.type_arg_defs {
+        Some(tad) => format_type_arg_defs(f, tad),
+        None => {}
+    }
+    f.push(" {\n");
+    f.indent_up();
+    for field in def.fields {
+        f.push_indent();
+        if field.public {
+            f.push("pub ");
+        }
+        f.push(I.resolve(field.name.name));
+        f.push(": ");
+        format_type_def(f, field.ty);
+        match field.default_value {
+            Some(expr) => { f.push(" = "); format_expr(f, expr); }
+            None => {}
+        }
+        f.push(",\n");
+    }
+    for method in def.methods {
+        format_fn_def(f, method);
+    }
+    f.indent_down();
+    f.push_indent();
+    f.push("}\n");
+}
+
+pub fn format_enum_def(f: Formatter, def: EnumDef) {
+    f.format_annotations(def.annotations);
+    f.push_indent();
+    if def.public {
+        f.push("pub ");
+    }
+    f.push("enum ");
+    if def.qualified_name.is_simple() {
+        f.push(I.resolve(def.name.name));
+    } else {
+        f.push(I.resolve(def.qualified_name.name()));
+    }
+    match def.type_arg_defs {
+        Some(tad) => format_type_arg_defs(f, tad),
+        None => {}
+    }
+    f.push(" {\n");
+    f.indent_up();
+    for variant in def.variants {
+        f.push_indent();
+        f.push(I.resolve(variant.name.name));
+        if !variant.items.is_empty() {
+            f.push("(");
+            let i = 0;
+            for ty in variant.items {
+                if i > 0 { f.push(", "); }
+                format_type_def(f, ty.ty);
+                i = i + 1;
+            }
+            f.push(")");
+        }
+        f.push(",\n");
+    }
+    for method in def.methods {
+        format_fn_def(f, method);
+    }
+    f.indent_down();
+    f.push_indent();
+    f.push("}\n");
+}
+
+}

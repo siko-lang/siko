@@ -1,0 +1,217 @@
+module Siko.Resolver.Module {
+
+import Siko.Resolver.Error
+import Siko.Resolver.ModuleItem
+import Siko.AST.Module as M
+import Siko.AST.Identifier
+import Siko.AST.QualifiedName
+import Siko.AST.Function
+import Siko.AST.Generics
+import Siko.Utils.SCC
+import Std.Map
+import Siko.Interner as I
+
+pub fn create_module_groups(modules: Vec[M.Module]) -> Result[Vec[Vec[I.String]], ResolveError] {
+    let graph = Map.new();
+
+    for m in modules {
+        graph.insert(m.name.name(), []);
+    }
+
+    for m in modules {
+        let module_deps = graph.entry(m.name.name()).or_insert_with(|| Vec.new());
+        for i in m.items {
+            if let M.ModuleItem.Import(import_def) = i {
+                if !graph.contains_key(import_def.module_name.name()) {
+                    return Err(ResolveError.ModuleNotFound(import_def.module_name));
+                }
+                module_deps.push(import_def.module_name.name());
+            }
+        }
+    }
+
+    Ok(compute(graph))
+}
+
+fn two_name_items(
+    public: Bool,
+    full_name: Identifier,
+    short_name: Identifier,
+    kind: ModuleItemKind,
+) -> Vec[ModuleItem] {
+    let qn = QualifiedName.new(full_name.name);
+    [
+        ModuleItem(
+            public: public,
+            aliasable: False,
+            name: full_name,
+            qualified_name: qn,
+            kind: kind,
+            import_def: None,
+        ),
+        ModuleItem(
+            public: public,
+            aliasable: True,
+            name: short_name,
+            qualified_name: qn,
+            kind: kind,
+            import_def: None,
+        ),
+    ]
+}
+
+fn push_method_items(
+    items: Vec[ModuleItem],
+    public: Bool,
+    type_full: Identifier,
+    type_short: Identifier,
+    mdef: FunctionDef,
+) {
+    let qualified_name = QualifiedName.new(type_full.merge(mdef.name).name);
+    let named_items = [
+        (type_full.merge(mdef.name), False),
+        (type_short.merge(mdef.name), True),
+        (mdef.name, True),
+    ];
+    for (name, aliasable) in named_items {
+        items.push(ModuleItem(
+            public: public,
+            aliasable: aliasable,
+            name: name,
+            qualified_name: qualified_name,
+            kind: ModuleItemKind.Function(mdef.name, mdef.get_kind()),
+            import_def: None,
+        ));
+    }
+}
+
+pub fn get_items(item: M.ModuleItem, module_name: Identifier) -> Vec[ModuleItem] {
+    match item {
+        M.ModuleItem.Struct(def) => {
+            let struct_name = module_name.merge(def.name);
+            let kind =
+                ModuleItemKind.Struct(def.name, get_type_arg_count(def.type_arg_defs), def.fields.len());
+            let items =
+                two_name_items(def.public, struct_name, def.name, kind);
+            for mdef in def.methods {
+                push_method_items(items, mdef.public, struct_name, def.name, mdef);
+            }
+            items
+        }
+        M.ModuleItem.Enum(def) => {
+            let enum_name = module_name.merge(def.name);
+            let items = Vec.new();
+            for variant in def.variants {
+                let qualified_name = QualifiedName.new(enum_name.merge(variant.name).name);
+                let kind = ModuleItemKind.Variant(
+                    def.name,
+                    variant.name,
+                    variant.items.len(),
+                );
+                let names = [
+                    (True, variant.name),
+                    (True, def.name.merge(variant.name)),
+                    (False, enum_name.merge(variant.name)),
+                ];
+                for (aliasable, name) in names {
+                    items.push(ModuleItem(
+                        public: def.public,
+                        aliasable: aliasable,
+                        name: name,
+                        qualified_name: qualified_name,
+                        kind: kind,
+                        import_def: None,
+                    ));
+                }
+            }
+            let enum_kind =
+                ModuleItemKind.Enum(def.name, get_type_arg_count(def.type_arg_defs));
+            items.extend(two_name_items(
+                def.public,
+                enum_name,
+                def.name,
+                enum_kind,
+            ));
+            for mdef in def.methods {
+                push_method_items(items, mdef.public, enum_name, def.name, mdef);
+            }
+            items
+        }
+        M.ModuleItem.Function(def) => {
+            let function_name = module_name.merge(def.name);
+            let kind = ModuleItemKind.Function(def.name, def.get_kind());
+            two_name_items(def.public, function_name, def.name, kind)
+        }
+        M.ModuleItem.Trait(def) => {
+            let trait_name = module_name.merge(def.name);
+            let associated_types: Vec[_] =
+                def.associated_types.iter().map(|a| a.name.name()).collect();
+            let kind = ModuleItemKind.Trait(
+                def.name,
+                def.type_args.len(),
+                associated_types,
+            );
+            let items =
+                two_name_items(def.public, trait_name, def.name, kind);
+            for mdef in def.methods {
+                push_method_items(items, def.public, trait_name, def.name, mdef);
+            }
+            items
+        }
+        M.ModuleItem.Effect(def) => {
+            let effect_name = module_name.merge(def.name);
+            let associated_types: Vec[_] =
+                def.associated_types.iter().map(|a| a.name.name()).collect();
+            let kind = ModuleItemKind.Effect(def.name, associated_types);
+            let items =
+                two_name_items(def.public, effect_name, def.name, kind);
+            for mdef in def.methods {
+                push_method_items(items, def.public, effect_name, def.name, mdef);
+            }
+            items
+        }
+        M.ModuleItem.Implicit(def) => {
+            let implicit_name = module_name.merge(def.name);
+            let kind = ModuleItemKind.Implicit(def.name);
+            two_name_items(def.public, implicit_name, def.name, kind)
+        }
+        M.ModuleItem.Global(def) => {
+            let global_name = module_name.merge(def.name);
+            let kind = ModuleItemKind.Global(def.name);
+            two_name_items(def.public, global_name, def.name, kind)
+        }
+        M.ModuleItem.Instance(def) => match def.name {
+            Some(name) => {
+                let instance_name = module_name.merge(name);
+                let kind = ModuleItemKind.Instance(name);
+                two_name_items(def.public, instance_name, name, kind)
+            }
+            None => Vec.new(),
+        }
+        _ => Vec.new(),
+    }
+}
+
+pub fn get_local_items(module_def: M.Module) -> Vec[ModuleItem] {
+    module_def
+        .items
+        .iter()
+        .flat_map(|item| get_items(item, module_def.name).into_iter())
+        .collect()
+}
+
+pub fn get_exported_items(module_def: M.Module) -> Vec[ModuleItem] {
+    get_local_items(module_def)
+        .into_iter()
+        .filter(|i| i.public)
+        .collect()
+}
+
+fn get_type_arg_count(d: Option[TypeArgDefs]) -> Int {
+    match d {
+        None => 0,
+        Some(a) => a.type_args.len(),
+    }
+}
+
+}

@@ -1,0 +1,166 @@
+module Siko.Unification.Unify {
+
+import Siko.AST.Type
+import Siko.Unification.Sub
+
+pub enum UnifyError {
+    Mismatch(TypeDef, TypeDef),
+}
+
+pub struct Unifier {
+    sub: Substitution,
+    newly_bound: Vec[Int],
+
+    pub fn new(sub: Substitution) -> Unifier {
+        Unifier(sub, [])
+    }
+
+    pub fn take_newly_bound(u: Unifier) -> Vec[Int] {
+        let result = u.newly_bound;
+        u.newly_bound = [];
+        result
+    }
+
+    pub fn unify_types(u: Unifier, t1: TypeDef, t2: TypeDef) -> Result[(), UnifyError] {
+        let t1 = u.sub.apply(t1);
+        let t2 = u.sub.apply(t2);
+        u.unify_resolved(t1, t2)
+    }
+
+    fn unify_resolved(u: Unifier, t1: TypeDef, t2: TypeDef) -> Result[(), UnifyError] {
+        match (t1, t2) {
+            (TypeDef.Var(TypeVar.Var(a)), TypeDef.Var(TypeVar.Var(b))) if a == b => Ok(()),
+
+            (TypeDef.Var(TypeVar.Var(n)), TypeDef.Never(True)) => {
+                u.sub.bind(n, TypeDef.Never(False));
+                u.newly_bound.push(n);
+                Ok(())
+            }
+            (TypeDef.Never(True), TypeDef.Var(TypeVar.Var(n))) => {
+                u.sub.bind(n, TypeDef.Never(False));
+                u.newly_bound.push(n);
+                Ok(())
+            }
+
+            (TypeDef.Var(TypeVar.Var(_)), TypeDef.Never(False)) => Ok(()),
+            (TypeDef.Never(False), TypeDef.Var(TypeVar.Var(_))) => Ok(()),
+
+            (TypeDef.Var(TypeVar.Var(n)), other) => {
+                occurs_check(n, other);
+                u.sub.bind(n, other);
+                u.newly_bound.push(n);
+                Ok(())
+            }
+            (other, TypeDef.Var(TypeVar.Var(n))) => {
+                occurs_check(n, other);
+                u.sub.bind(n, other);
+                u.newly_bound.push(n);
+                Ok(())
+            }
+
+            (TypeDef.Never(_), _) => Ok(()),
+            (_, TypeDef.Never(_)) => Ok(()),
+
+            (TypeDef.Var(TypeVar.Named(a)), TypeDef.Var(TypeVar.Named(b))) => {
+                if a == b {
+                    Ok(())
+                } else {
+                    Err(UnifyError.Mismatch(t1, t2))
+                }
+            }
+
+            (TypeDef.Named(n1, a1), TypeDef.Named(n2, a2)) => {
+                if n1.name() != n2.name() || a1.len() != a2.len() {
+                    return Err(UnifyError.Mismatch(t1, t2));
+                }
+                let pairs: Vec[_] = a1.iter().zip(a2.iter()).map(|(a, b)| (a, b)).collect();
+                for (a, b) in pairs {
+                    u.unify_types(a, b)?;
+                }
+                Ok(())
+            }
+
+            (TypeDef.Tuple(e1), TypeDef.Tuple(e2)) => {
+                if e1.len() != e2.len() {
+                    return Err(UnifyError.Mismatch(t1, t2));
+                }
+                let pairs: Vec[_] = e1.iter().zip(e2.iter()).map(|(a, b)| (a, b)).collect();
+                for (a, b) in pairs {
+                    u.unify_types(a, b)?;
+                }
+                Ok(())
+            }
+
+            (TypeDef.Fn(p1, r1), TypeDef.Fn(p2, r2)) => {
+                if p1.len() != p2.len() {
+                    return Err(UnifyError.Mismatch(t1, t2));
+                }
+                let pairs: Vec[_] = p1.iter().zip(p2.iter()).map(|(a, b)| (a, b)).collect();
+                for (a, b) in pairs {
+                    u.unify_types(a, b)?;
+                }
+                u.unify_types(r1, r2)
+            }
+
+            (TypeDef.FnPtr(p1, r1), TypeDef.FnPtr(p2, r2)) => {
+                if p1.len() != p2.len() {
+                    return Err(UnifyError.Mismatch(t1, t2));
+                }
+                let pairs: Vec[_] = p1.iter().zip(p2.iter()).map(|(a, b)| (a, b)).collect();
+                for (a, b) in pairs {
+                    u.unify_types(a, b)?;
+                }
+                u.unify_types(r1, r2)
+            }
+
+            (TypeDef.Ptr(a), TypeDef.Ptr(b)) => u.unify_types(a, b),
+
+            (TypeDef.Array(a, n1), TypeDef.Array(b, n2)) => {
+                if n1 != n2 {
+                    return Err(UnifyError.Mismatch(t1, t2));
+                }
+                u.unify_types(a, b)
+            }
+
+            (TypeDef.Paren(inner), other) => {
+                u.unify_resolved(inner, other)
+            }
+            (other, TypeDef.Paren(inner)) => {
+                u.unify_resolved(inner, other)
+            }
+            (TypeDef.VoidPtr, TypeDef.VoidPtr) => Ok(()),
+            (TypeDef.Void, TypeDef.Void) => Ok(()),
+            (TypeDef.Numeric(a), TypeDef.Numeric(b)) => {
+                if a == b { Ok(()) } else { Err(UnifyError.Mismatch(t1, t2)) }
+            }
+            _ => {
+                Err(UnifyError.Mismatch(t1, t2))
+            }
+        }
+    }
+}
+
+pub fn unify(t1: TypeDef, t2: TypeDef, sub: Substitution) -> Result[(), UnifyError] {
+    Unifier.new(sub).unify_types(t1, t2)
+}
+
+fn occurs_check(var: Int, ty: TypeDef) {
+    match ty {
+        TypeDef.Var(TypeVar.Var(n)) if n == var => {
+            panic("occurs check: $${var} would create a recursive type — compiler bug");
+        }
+        TypeDef.Var(_) => {}
+        TypeDef.Named(_, args) => args.iter().for_each(|a| occurs_check(var, a)),
+        TypeDef.Tuple(elems) => elems.iter().for_each(|e| occurs_check(var, e)),
+        TypeDef.Fn(params, ret) | TypeDef.FnPtr(params, ret) => {
+            params.iter().for_each(|p| occurs_check(var, p));
+            occurs_check(var, ret);
+        }
+        TypeDef.Paren(inner) => occurs_check(var, inner),
+        TypeDef.Ptr(inner) => occurs_check(var, inner),
+        TypeDef.Array(inner, _) => occurs_check(var, inner),
+        TypeDef.Never(_) | TypeDef.Wildcard | TypeDef.Void | TypeDef.VoidPtr | TypeDef.Numeric(_) => {}
+    }
+}
+
+}

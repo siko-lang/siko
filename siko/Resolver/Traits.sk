@@ -1,0 +1,65 @@
+module Siko.Resolver.Trait {
+
+import Siko.Resolver
+import Siko.Resolver.Error
+import Siko.AST.Traits
+import Siko.AST.Data
+
+instance Resolvable[TraitDef] {
+    fn resolve(t: TraitDef, ctx: ResolverContext) -> Result[TraitDef, ResolveError] {
+        ctx.type_resolver.add_args(t.type_arg_defs);
+        let assoc_names: Vec[_] = t
+            .associated_types
+            .iter()
+            .map(|at| at.name.name)
+            .collect();
+        ctx.type_resolver.add_assoc_type_names(assoc_names);
+        Ok(TraitDef(
+            annotations: t.annotations,
+            public: t.public,
+            name: t.name.with_prefix(ctx.module_name()),
+            type_args: t.type_args,
+            associated_types: t.associated_types,
+            type_arg_defs: t.type_arg_defs.resolve(ctx)?,
+            methods: Vec.new(),
+            method_map: MethodMap.new(),
+            required_method_names: Vec.new(),
+        ))
+    }
+}
+
+instance Resolvable[InstanceDef] {
+    fn resolve(i: InstanceDef, ctx: ResolverContext) -> Result[InstanceDef, ResolveError] {
+        ctx.type_resolver.add_args(i.type_arg_defs);
+        let name = match i.name {
+            Some(name) => Some(name.with_prefix(ctx.module_name())),
+            None => None,
+        };
+        let (resolved_trait_name, assoc_names) = ctx
+            .type_resolver
+            .resolve_trait_name(i.trait_name, i.args.len())?;
+        ctx.type_resolver.add_assoc_type_names(assoc_names);
+        let type_assignments: Vec[_] = i
+            .type_assignments
+            .iter()
+            .map(|ta| Ok(TypeAssignment(ta.name, ta.ty.resolve(ctx)?)))
+            .collect();
+        let type_assignments = Result.collect(type_assignments)?;
+        Ok(InstanceDef(
+            annotations: i.annotations,
+            public: i.public,
+            name: name,
+            type_arg_defs: i.type_arg_defs.resolve(ctx)?,
+            trait_name: resolved_trait_name,
+            args: i.args.resolve(ctx)?,
+            type_assignments: type_assignments,
+            methods: Vec.new(),
+            module_name: ctx.module_name(),
+            method_names: Vec.new(),
+            location: i.location,
+            external_derived_instance_info: i.external_derived_instance_info,
+        ))
+    }
+}
+
+}

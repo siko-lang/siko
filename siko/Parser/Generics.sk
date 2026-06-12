@@ -1,0 +1,69 @@
+module Siko.Parser.Generics {
+
+import Siko.AST.Generics
+import Siko.AST.Name
+import Siko.Parser.Parser
+import Siko.Parser.Token
+import Siko.Parser.Type
+
+pub trait GenericsParser[T] {
+    fn parse_optional_type_arg_defs(p: T) -> Result[Option[TypeArgDefs], ParseError]
+}
+
+instance GenericsParser[Parser] {
+    fn parse_optional_type_arg_defs(parser: Parser) -> Result[Option[TypeArgDefs], ParseError] {
+        if parser.peek() != TokenKind.LBracket {
+            return Ok(None);
+        }
+        parser.advance();
+        let type_args = Vec.new();
+        let bounds = Vec.new();
+        while parser.peek() != TokenKind.RBracket && parser.peek() != TokenKind.Eof {
+            let arg = parser.expect_type_ident()?;
+            type_args.push(arg);
+            if parser.peek() == TokenKind.Colon {
+                parser.advance();
+                loop {
+                    let trait_ident = parser.parse_dotted_name()?;
+                    let trait_name = Name.Unresolved(trait_ident);
+                    let (bound_type_args, constraints) = if parser.peek() == TokenKind.LBracket {
+                        parser.advance();
+                        let bta = Vec.new();
+                        let constraints = Vec.new();
+                        while parser.peek() != TokenKind.RBracket && parser.peek() != TokenKind.Eof {
+                            let n = parser.expect_type_ident()?;
+                            if parser.peek() == TokenKind.Assign {
+                                parser.advance();
+                                let rhs = parser.parse_type_def()?;
+                                constraints.push(Constraint(n, rhs));
+                            } else {
+                                bta.push(Name.Unresolved(n));
+                            }
+                            if parser.peek() == TokenKind.Comma {
+                                parser.advance();
+                            }
+                        }
+                        parser.expect(TokenKind.RBracket)?;
+                        (bta, constraints)
+                    } else {
+                        (Vec.new(), Vec.new())
+                    };
+                    bounds.push(Bound(trait_name, bound_type_args, constraints));
+                    if parser.peek() == TokenKind.Comma {
+                        parser.advance();
+                    } else {
+                        break;
+                    }
+                }
+                break;
+            }
+            if parser.peek() == TokenKind.Comma {
+                parser.advance();
+            }
+        }
+        parser.expect(TokenKind.RBracket)?;
+        Ok(Some(TypeArgDefs(type_args, bounds)))
+    }
+}
+
+}

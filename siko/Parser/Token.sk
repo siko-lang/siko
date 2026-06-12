@@ -1,0 +1,185 @@
+module Siko.Parser.Token {
+
+import Siko.Interner as I
+
+@derive(PartialEq, Eq)
+pub enum TokenKind {
+    IntLiteral(I.String),
+    StringLiteral(I.String),
+    CharLiteral(U8),
+    TypeIdentifier(I.String),
+    VarIdentifier(I.String),
+
+    KwModule,
+    KwImport,
+    KwAs,
+    KwPub,
+    KwStruct,
+    KwEnum,
+    KwEffect,
+    KwTrait,
+    KwInstance,
+    KwFn,
+    KwLet,
+    KwIf,
+    KwElse,
+    KwReturn,
+    KwType,
+    KwMatch,
+    KwFor,
+    KwIn,
+    KwLoop,
+    KwBreak,
+    KwContinue,
+    KwWith,
+    KwImplicit,
+    KwWhile,
+    KwVoid,
+    KwSizeOf,
+
+    LBrace,
+    RBrace,
+    LParen,
+    RParen,
+    LBracket,
+    RBracket,
+    Comma,
+    Semicolon,
+    Colon,
+    Dot,
+    DotDot,
+    DotDotDot,
+
+    Arrow,
+    FatArrow,
+    Assign,
+    EqEq,
+    BangEq,
+    Lt,
+    Gt,
+    LtEq,
+    GtEq,
+    LtLt,
+    GtGt,
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    Percent,
+    Amp,
+    AmpAmp,
+    Pipe,
+    PipePipe,
+    Caret,
+    Bang,
+    Tilde,
+    At,
+    Question,
+    Wildcard,
+
+    PlusAssign,
+    MinusAssign,
+    StarAssign,
+    SlashAssign,
+
+    Eof
+}
+
+pub struct Token {
+    pub kind: TokenKind,
+    pub start: Int,
+    pub end: Int
+}
+
+instance ToString[Token] {
+    fn to_string(t: Token) -> String {
+        t.kind.to_string()
+    }
+}
+
+instance ToString[TokenKind] {
+    fn to_string(t: TokenKind) -> String {
+        token_kind_to_string(t)
+    }
+}
+
+fn token_kind_to_string(k: TokenKind) -> String {
+    match k {
+        IntLiteral(s)      => "Int(" + I.resolve(s) + ")",
+        StringLiteral(s)   => "Str(" + I.resolve(s) + ")",
+        CharLiteral(_)     => "Char",
+        TypeIdentifier(s)  => "Type(" + I.resolve(s) + ")",
+        VarIdentifier(s)   => "Var(" + I.resolve(s) + ")",
+        KwModule           => "module",
+        KwImport           => "import",
+        KwAs               => "as",
+        KwPub              => "pub",
+        KwStruct           => "struct",
+        KwEnum             => "enum",
+        KwEffect           => "effect",
+        KwTrait            => "trait",
+        KwInstance         => "instance",
+        KwFn               => "fn",
+        KwLet              => "let",
+        KwIf               => "if",
+        KwElse             => "else",
+        KwReturn           => "return",
+        KwType             => "type",
+        KwMatch            => "match",
+        KwFor              => "for",
+        KwIn               => "in",
+        KwLoop             => "loop",
+        KwBreak            => "break",
+        KwContinue         => "continue",
+        KwWith             => "with",
+        KwImplicit         => "implicit",
+        KwWhile            => "while",
+        KwVoid             => "void",
+        KwSizeOf           => "sizeof",
+        LBrace             => "{",
+        RBrace             => "}",
+        LParen             => "(",
+        RParen             => ")",
+        LBracket           => "[",
+        RBracket           => "]",
+        Comma              => ",",
+        Semicolon          => ";",
+        Colon              => ":",
+        Dot                => ".",
+        DotDot             => "..",
+        DotDotDot          => "...",
+        Arrow              => "->",
+        FatArrow           => "=>",
+        Assign             => "=",
+        EqEq               => "==",
+        BangEq             => "!=",
+        Lt                 => "<",
+        Gt                 => ">",
+        LtEq               => "<=",
+        GtEq               => ">=",
+        LtLt               => "<<",
+        GtGt               => ">>",
+        Plus               => "+",
+        Minus              => "-",
+        Star               => "*",
+        Slash              => "/",
+        Percent            => "%",
+        Amp                => "&",
+        AmpAmp             => "&&",
+        Pipe               => "|",
+        PipePipe           => "||",
+        Caret              => "^",
+        Bang               => "!",
+        Tilde              => "~",
+        At                 => "@",
+        Question           => "?",
+        Wildcard           => "_",
+        PlusAssign         => "+=",
+        MinusAssign        => "-=",
+        StarAssign         => "*=",
+        SlashAssign        => "/=",
+        Eof                => "EOF"
+    }
+}
+
+}

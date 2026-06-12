@@ -1,0 +1,171 @@
+module Siko.MatchValidation {
+
+import Std.Map
+import Siko.AST.Expr as E
+import Siko.Interner as I
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.Pattern
+import Siko.AST.Statement as S
+import Siko.AST.Type
+import Siko.AST.QualifiedName
+import Siko.HIR.Program
+import Siko.Location
+import Siko.MatchCompilation.Compiler
+import Siko.MatchCompilation.Error
+import Siko.MatchCompilation.Pattern as MC
+
+pub enum MatchValidationError {
+    RedundantPattern(Location),
+    MissingPatterns(Location, Vec[String]),
+}
+
+trait Validate[T] {
+    fn validate(t: T, validator: MatchValidator)
+}
+
+instance Validate[Location]          = auto(Fold, =)
+instance Validate[TypeDef]           = auto(Fold, =)
+instance Validate[I.String]          = auto(Fold, =)
+instance Validate[String]            = auto(Fold, =)
+instance Validate[Int]               = auto(Fold, =)
+instance Validate[U8]              = auto(Fold, =)
+instance Validate[QualifiedName]     = auto(Fold, =)
+instance Validate[E.VariableName]    = auto(Fold, =)
+instance Validate[Name]              = auto(Fold, =)
+instance Validate[Identifier]        = auto(Fold, =)
+instance Validate[E.WitnessInfo]     = auto(Fold, =)
+instance Validate[E.FunctionKind]    = auto(Fold, =)
+instance Validate[E.BinaryOp]        = auto(Fold, =)
+instance Validate[E.UnaryOp]         = auto(Fold, =)
+instance Validate[E.HandlerSelection] = auto(Fold, =)
+instance Validate[E.LambdaArg]       = auto(Fold, =)
+instance Validate[E.ImplicitRefInfo] = auto(Fold, =)
+instance Validate[E.CreateClosureInfo] = auto(Fold, =)
+instance Validate[E.FunctionPtrInfo]   = auto(Fold, =)
+
+instance Validate[E.FunctionCallInfo] = auto(Fold)
+instance Validate[E.NamedArgument]    = auto(Fold, =)
+instance Validate[Bool]               = auto(Fold, =)
+instance Validate[NamedPatternArg]    = auto(Fold, =)
+instance Validate[NamedPatternInfo]   = auto(Fold)
+instance Validate[E.MethodCallInfo]   = auto(Fold)
+instance Validate[E.CallInfo]         = auto(Fold)
+instance Validate[E.WithInfo]         = auto(Fold)
+instance Validate[E.MatchArm]         = auto(Fold)
+instance Validate[E.ExprKind]         = auto(Fold)
+instance Validate[E.Expr]             = auto(Fold)
+instance Validate[S.LetInfo]           = auto(Fold)
+instance Validate[S.DeclareInfo]       = auto(Fold)
+instance Validate[S.Statement]        = auto(Fold)
+instance Validate[Pattern]            = auto(Fold)
+instance Validate[PatternKind]        = auto(Fold)
+
+instance[T: Validate[T]] Validate[Option[T]] {
+    fn validate(opt: Option[T], validator: MatchValidator) {
+        if let Some(t) = opt {
+            validate(t, validator);
+        }
+    }
+}
+
+instance[T: Validate[T]] Validate[Vec[T]] {
+    fn validate(vec: Vec[T], validator: MatchValidator) {
+        for t in vec {
+            validate(t, validator);
+        }
+    }
+}
+
+instance Validate[E.MatchInfo] {
+    fn validate(info: E.MatchInfo, validator: MatchValidator) {
+        validator.validate_match_arms(info.arms, info.scrutinee.location);
+        validate(info.scrutinee, validator);
+        validate(info.arms, validator);
+    }
+}
+
+pub fn validate_program(program: Program) -> Vec[MatchValidationError] {
+    let enum_info: Map[QualifiedName, EnumInfo] = Map.new();
+    for (qname, def) in program.enums {
+        let variants: Vec[VariantInfo] = def.variants.iter().map(|v| VariantInfo(v.qualified_name, v.items.len())).collect();
+        enum_info.insert(qname, EnumInfo(variants));
+    }
+
+    let struct_info: Map[I.String, StructInfo] = Map.new();
+    for (qname, def) in program.structs {
+        struct_info.insert(qname.name(), StructInfo(qname, def.fields.len()));
+    }
+
+    let validator = MatchValidator.new(program, enum_info, struct_info);
+    for func in program.functions.values() {
+        if let Some(body) = func.body {
+            validate(body, validator);
+        }
+    }
+    validator.errors
+}
+
+struct MatchValidator {
+    program: Program
+    errors: Vec[MatchValidationError],
+    enum_info: Map[QualifiedName, EnumInfo],
+    struct_info: Map[I.String, StructInfo],
+
+    pub fn new(program: Program, enum_info: Map[QualifiedName, EnumInfo], struct_info: Map[I.String, StructInfo]) -> MatchValidator {
+        MatchValidator(program, Vec.new(), enum_info, struct_info)
+    }
+
+    fn validate_match_arms(
+        validator: MatchValidator,
+        arms: Vec[E.MatchArm],
+        match_location: Location,
+    ) {
+        let branches: Vec[MC.MatchBranch] = arms.iter().map(|arm| {
+            match arm.pattern.kind {
+                PatternKind.Guard(inner, _, _) => MC.MatchBranch.new(validator.to_mc_pattern(inner), True),
+                _ => MC.MatchBranch.new(validator.to_mc_pattern(arm.pattern), False),
+            }
+        }).collect();
+
+        let (_, mc_errors) = compile(branches, validator.enum_info, validator.struct_info);
+        for err in mc_errors {
+            match err {
+                MatchError.RedundantPattern(idx) => {
+                    validator.errors.push(MatchValidationError.RedundantPattern(arms[idx].pattern.location));
+                },
+                MatchError.MissingPattern(patterns) => {
+                    validator.errors.push(MatchValidationError.MissingPatterns(match_location, patterns));
+                },
+            }
+        }
+    }
+
+    fn to_mc_pattern(validator: MatchValidator, pat: Pattern) -> MC.Pattern {
+        match pat.kind {
+            PatternKind.Wildcard => MC.Pattern.wildcard(),
+            PatternKind.Binding(v) => MC.Pattern.new(MC.PatternKind.Bind(v)),
+            PatternKind.StringLiteral(s) => MC.Pattern.new(MC.PatternKind.StringLiteral(s)),
+            PatternKind.IntLiteral(s) => MC.Pattern.new(MC.PatternKind.IntegerLiteral(s)),
+            PatternKind.CharLiteral(b) => MC.Pattern.new(MC.PatternKind.CharLiteral(b.as_int())),
+            PatternKind.Tuple(pats) => {
+                let mc_pats = pats.iter().map(|p| validator.to_mc_pattern(p)).collect();
+                MC.Pattern.new(MC.PatternKind.Tuple(mc_pats))
+            },
+            PatternKind.Named(info) => {
+                let qn = info.name.resolved();
+                let mc_sub = info.args.iter().map(|p| validator.to_mc_pattern(p)).collect();
+                if validator.program.variant_enum_map.contains_key(qn) {
+                    let enum_qname = validator.program.variant_enum_map.get(qn).unwrap();
+                    MC.Pattern.new(MC.PatternKind.Variant(qn, enum_qname, mc_sub))
+                } else {
+                    MC.Pattern.new(MC.PatternKind.Struct(qn.name(), mc_sub))
+                }
+            },
+            PatternKind.Guard(_, _, _) => panic("Guard must be unwrapped before to_mc_pattern"),
+            PatternKind.Typed(p, _) => validator.to_mc_pattern(p),
+        }
+    }
+}
+
+}

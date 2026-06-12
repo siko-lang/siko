@@ -1,0 +1,31 @@
+module Siko.Utils.VarAllocator {
+
+import Siko.Interner as I
+import Siko.AST.Expr
+
+@derive(Clone)
+pub struct VarAllocator {
+    pub next: Int,
+
+    pub fn new() -> VarAllocator {
+        VarAllocator(0)
+    }
+
+    pub fn allocate_temp(v: VarAllocator) -> VariableName {
+        let name = VariableName.Temp(v.next);
+        v.next += 1;
+        name
+    }
+
+    pub fn allocate_user(v: VarAllocator, name: I.String) -> VariableName {
+        let name = VariableName.UserDefined(name, v.next);
+        v.next += 1;
+        name
+    }
+
+    pub fn get_id(v: VarAllocator) -> Int {
+        v.next
+    }
+}
+
+}

@@ -1,0 +1,74 @@
+module Std.Libc.FileDescriptor {
+
+import Std.Libc.Unistd
+import Std.IO.Error
+import Std.IO.Buffer
+import Std.IO.Reader
+import Std.IO.Writer
+import Std.Arch.Errno
+
+pub struct FileDescriptor {
+    fd: I32,
+
+    pub fn new(fd: I32) -> FileDescriptor {
+        FileDescriptor(fd)
+    }
+
+    pub fn get_fd(f: FileDescriptor) -> I32 {
+        f.fd
+    }
+
+    @safe
+    pub fn close(f: FileDescriptor) -> Result[(), Error] {
+        let result = Std.Libc.Unistd.close(f.fd);
+        if result < 0.as_i32() {
+            return Err(Error.new(Std.Arch.Errno.get_errno()));
+        }
+        Ok(())
+    }
+
+    @safe
+    pub fn is_terminal(f: FileDescriptor) -> Result[Bool, Error] {
+        let result = Std.Libc.Unistd.isatty(f.fd);
+        if result < 0.as_i32() {
+            return Err(Error.new(Std.Arch.Errno.get_errno()));
+        }
+        Ok(result != 0.as_i32())
+    }
+}
+
+instance Reader[FileDescriptor] {
+    @safe
+    fn read(f: FileDescriptor, buffer: WriteBuffer) -> Result[Int, Error] {
+        let bytes_read = Std.Libc.Unistd.read(f.fd, buffer.as_ptr(), buffer.len().as_u64());
+        if bytes_read < 0 {
+            return Err(Error.new(Std.Arch.Errno.get_errno()));
+        }
+        Ok(bytes_read)
+    }
+}
+
+instance Writer[FileDescriptor] {
+    @safe
+    fn write(f: FileDescriptor, buffer: ReadBuffer) -> Result[Int, Error] {
+        let bytes_written = Std.Libc.Unistd.write(f.fd, buffer.as_ptr(), buffer.len().as_u64());
+        if bytes_written < 0 {
+            return Err(Error.new(Std.Arch.Errno.get_errno()));
+        }
+        Ok(bytes_written)
+    }
+}
+
+pub fn get_stdin() -> FileDescriptor {
+    FileDescriptor(0.as_i32())
+}
+
+pub fn get_stdout() -> FileDescriptor {
+    FileDescriptor(1.as_i32())
+}
+
+pub fn get_stderr() -> FileDescriptor {
+    FileDescriptor(2.as_i32())
+}
+
+}

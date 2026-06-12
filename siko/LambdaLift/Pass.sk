@@ -1,0 +1,374 @@
+module Siko.LambdaLift.Pass {
+
+import Std.Map
+import Std.Set
+import Siko.AST.Annotations
+import Siko.Package.Collector as PC
+import Siko.AST.Expr as E
+import Siko.AST.Function
+import Siko.AST.Generics
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.Pattern
+import Siko.AST.QualifiedName
+import Siko.AST.Statement as S
+import Siko.AST.Type
+import Siko.HIR.Program
+import Siko.Instances.FunctionInstanceResolver
+import Siko.Interner as I
+import Siko.Location
+import Siko.Normalizer
+import Siko.Utils.VarAllocator
+
+// ── Lift trait ───────────────────────────────────────────────────────────────
+
+trait Lift[T] {
+    fn lift(t: T, lifter: LambdaLifter) -> T
+}
+
+instance Lift[Location]            = auto(Map, =)
+instance Lift[TypeDef]             = auto(Map, =)
+instance Lift[I.String]            = auto(Map, =)
+instance Lift[String]              = auto(Map, =)
+instance Lift[Int]                 = auto(Map, =)
+instance Lift[U8]                  = auto(Map, =)
+instance Lift[E.VariableName]      = auto(Map, =)
+instance Lift[QualifiedName]       = auto(Map, =)
+instance Lift[Name]                = auto(Map, =)
+instance Lift[Identifier]          = auto(Map, =)
+instance Lift[E.WitnessInfo]       = auto(Map, =)
+instance Lift[E.FunctionKind]      = auto(Map, =)
+instance Lift[E.BinaryOp]          = auto(Map, =)
+instance Lift[E.UnaryOp]           = auto(Map, =)
+instance Lift[E.HandlerSelection]  = auto(Map, =)
+instance Lift[E.LambdaArg]         = auto(Map, =)
+instance Lift[E.ImplicitRefInfo]   = auto(Map, =)
+instance Lift[E.CreateClosureInfo] = auto(Map, =)
+instance Lift[E.FunctionPtrInfo]   = auto(Map, =)
+instance Lift[Pattern]             = auto(Map, =)
+instance Lift[PatternKind]         = auto(Map, =)
+
+instance Lift[E.FunctionCallInfo]  = auto(Map)
+instance Lift[E.NamedArgument]     = auto(Map, =)
+instance Lift[E.MethodCallInfo]    = auto(Map)
+instance Lift[E.CallInfo]          = auto(Map)
+instance Lift[E.MatchInfo]         = auto(Map)
+instance Lift[E.MatchArm]          = auto(Map)
+instance Lift[E.WithInfo]          = auto(Map)
+instance Lift[S.LetInfo]           = auto(Map)
+instance Lift[S.DeclareInfo]       = auto(Map)
+instance Lift[S.Statement]         = auto(Map)
+instance Lift[E.ExprKind]          = auto(Map)
+
+instance[T: Lift[T]] Lift[Option[T]] {
+    fn lift(opt: Option[T], lifter: LambdaLifter) -> Option[T] {
+        opt.map(|t| lift(t, lifter))
+    }
+}
+
+instance[T: Lift[T]] Lift[Vec[T]] {
+    fn lift(vec: Vec[T], lifter: LambdaLifter) -> Vec[T] {
+        vec.into_iter().map(|t| lift(t, lifter)).collect()
+    }
+}
+
+instance Lift[E.Expr] {
+    fn lift(expr: E.Expr, lifter: LambdaLifter) -> E.Expr {
+        lift_expr(lifter, expr)
+    }
+}
+
+// ── CollectBounds trait ───────────────────────────────────────────────────────
+
+trait CollectBounds[T] {
+    fn collect_bounds(t: T, out: Set[Int])
+}
+
+instance CollectBounds[Location]            = auto(Fold, =)
+instance CollectBounds[TypeDef]             = auto(Fold, =)
+instance CollectBounds[I.String]            = auto(Fold, =)
+instance CollectBounds[String]              = auto(Fold, =)
+instance CollectBounds[Int]                 = auto(Fold, =)
+instance CollectBounds[U8]                  = auto(Fold, =)
+instance CollectBounds[E.VariableName]      = auto(Fold, =)
+instance CollectBounds[QualifiedName]       = auto(Fold, =)
+instance CollectBounds[Name]                = auto(Fold, =)
+instance CollectBounds[Identifier]          = auto(Fold, =)
+instance CollectBounds[E.WitnessInfo]       = auto(Fold, =)
+instance CollectBounds[E.FunctionKind]      = auto(Fold, =)
+instance CollectBounds[E.BinaryOp]          = auto(Fold, =)
+instance CollectBounds[E.UnaryOp]           = auto(Fold, =)
+instance CollectBounds[E.HandlerSelection]  = auto(Fold, =)
+instance CollectBounds[E.LambdaArg]         = auto(Fold, =)
+instance CollectBounds[E.ImplicitRefInfo]   = auto(Fold, =)
+instance CollectBounds[E.CreateClosureInfo] = auto(Fold, =)
+instance CollectBounds[E.FunctionPtrInfo]   = auto(Fold, =)
+instance CollectBounds[Pattern]             = auto(Fold, =)
+instance CollectBounds[PatternKind]         = auto(Fold, =)
+
+instance CollectBounds[E.MatchInfo]  = auto(Fold)
+instance CollectBounds[E.MatchArm]   = auto(Fold)
+instance CollectBounds[E.WithInfo]   = auto(Fold)
+instance CollectBounds[S.LetInfo]    = auto(Fold)
+instance CollectBounds[S.DeclareInfo] = auto(Fold)
+instance CollectBounds[S.Statement]  = auto(Fold)
+instance CollectBounds[E.ExprKind]   = auto(Fold)
+instance CollectBounds[E.Expr]       = auto(Fold)
+
+instance CollectBounds[E.NamedArgument] = auto(Fold, =)
+instance CollectBounds[E.MethodCallInfo] = auto(Fold)
+instance CollectBounds[E.CallInfo] = auto(Fold)
+
+instance CollectBounds[E.FunctionCallInfo] {
+    fn collect_bounds(info: E.FunctionCallInfo, out: Set[Int]) {
+        for w in info.witnesses.witnesses {
+            match w {
+                BoundWitness.FunctionBound(idx) => { out.insert(idx); },
+                _ => {},
+            }
+        }
+        collect_bounds(info.args, out);
+    }
+}
+
+instance[T: CollectBounds[T]] CollectBounds[Option[T]] {
+    fn collect_bounds(opt: Option[T], out: Set[Int]) {
+        if let Some(t) = opt { collect_bounds(t, out); }
+    }
+}
+
+instance[T: CollectBounds[T]] CollectBounds[Vec[T]] {
+    fn collect_bounds(vec: Vec[T], out: Set[Int]) {
+        for t in vec { collect_bounds(t, out); }
+    }
+}
+
+// ── RemapWitnesses trait ──────────────────────────────────────────────────────
+
+trait RemapWitnesses[T] {
+    fn remap_witnesses(t: T, remap: Map[Int, Int])
+}
+
+instance RemapWitnesses[Location]            = auto(Fold, =)
+instance RemapWitnesses[TypeDef]             = auto(Fold, =)
+instance RemapWitnesses[I.String]            = auto(Fold, =)
+instance RemapWitnesses[String]              = auto(Fold, =)
+instance RemapWitnesses[Int]                 = auto(Fold, =)
+instance RemapWitnesses[U8]                  = auto(Fold, =)
+instance RemapWitnesses[E.VariableName]      = auto(Fold, =)
+instance RemapWitnesses[QualifiedName]       = auto(Fold, =)
+instance RemapWitnesses[Name]                = auto(Fold, =)
+instance RemapWitnesses[Identifier]          = auto(Fold, =)
+instance RemapWitnesses[E.WitnessInfo]       = auto(Fold, =)
+instance RemapWitnesses[E.FunctionKind]      = auto(Fold, =)
+instance RemapWitnesses[E.BinaryOp]          = auto(Fold, =)
+instance RemapWitnesses[E.UnaryOp]           = auto(Fold, =)
+instance RemapWitnesses[E.HandlerSelection]  = auto(Fold, =)
+instance RemapWitnesses[E.LambdaArg]         = auto(Fold, =)
+instance RemapWitnesses[E.ImplicitRefInfo]   = auto(Fold, =)
+instance RemapWitnesses[E.CreateClosureInfo] = auto(Fold, =)
+instance RemapWitnesses[E.FunctionPtrInfo]   = auto(Fold, =)
+instance RemapWitnesses[Pattern]             = auto(Fold, =)
+instance RemapWitnesses[PatternKind]         = auto(Fold, =)
+
+instance RemapWitnesses[E.MatchInfo]  = auto(Fold)
+instance RemapWitnesses[E.MatchArm]   = auto(Fold)
+instance RemapWitnesses[E.WithInfo]   = auto(Fold)
+instance RemapWitnesses[S.LetInfo]    = auto(Fold)
+instance RemapWitnesses[S.DeclareInfo] = auto(Fold)
+instance RemapWitnesses[S.Statement]  = auto(Fold)
+instance RemapWitnesses[E.ExprKind]   = auto(Fold)
+instance RemapWitnesses[E.Expr]       = auto(Fold)
+
+instance RemapWitnesses[E.NamedArgument] = auto(Fold, =)
+instance RemapWitnesses[E.MethodCallInfo] = auto(Fold)
+instance RemapWitnesses[E.CallInfo] = auto(Fold)
+
+instance RemapWitnesses[E.FunctionCallInfo] {
+    fn remap_witnesses(info: E.FunctionCallInfo, remap: Map[Int, Int]) {
+        info.witnesses.witnesses = info.witnesses.witnesses.iter().map(|w| match w {
+            BoundWitness.FunctionBound(idx) => BoundWitness.FunctionBound(remap.get(idx).unwrap()),
+            other => other,
+        }).collect();
+        remap_witnesses(info.args, remap);
+    }
+}
+
+instance[T: RemapWitnesses[T]] RemapWitnesses[Option[T]] {
+    fn remap_witnesses(opt: Option[T], remap: Map[Int, Int]) {
+        if let Some(t) = opt { remap_witnesses(t, remap); }
+    }
+}
+
+instance[T: RemapWitnesses[T]] RemapWitnesses[Vec[T]] {
+    fn remap_witnesses(vec: Vec[T], remap: Map[Int, Int]) {
+        for t in vec { remap_witnesses(t, remap); }
+    }
+}
+
+// ── Pass ─────────────────────────────────────────────────────────────────────
+
+pub fn lift_lambdas(program: Program) {
+    let keys: Vec[QualifiedName] = program.functions.keys().collect();
+    let div_fns = program.get_divergent_functions();
+    for key in keys {
+        let func = program.functions.get(key).unwrap().clone();
+        if func.body.is_none() {
+            continue;
+        }
+        let parent_bounds = match func.type_arg_defs {
+            Some(tad) => tad.bounds.clone(),
+            None => [],
+        };
+        let parent_name = I.resolve(func.name.name());
+        let module_name = func.module_name;
+        let parent_safety_annotations = func.annotations.iter().filter(|a| a.is_safe() || a.is_unsafe()).collect();
+        let lifter = LambdaLifter(
+            counter: 0,
+            parent_name: parent_name,
+            module_name: module_name,
+            parent_bounds: parent_bounds,
+            parent_var_allocator: func.var_allocator.clone(),
+            new_functions: [],
+            divergent_fns: div_fns,
+            parent_safety_annotations: parent_safety_annotations,
+            parent_source_package: func.source_package,
+        );
+        let lifted_func = lift_function(lifter, func);
+        program.functions.insert(key, lifted_func);
+        for new_func in lifter.new_functions {
+            program.functions.insert(new_func.qualified_name.clone(), new_func);
+        }
+    }
+}
+
+struct LambdaLifter {
+    counter: Int,
+    parent_name: String,
+    module_name: I.String,
+    parent_bounds: Vec[Bound],
+    parent_var_allocator: VarAllocator,
+    new_functions: Vec[FunctionDef],
+    divergent_fns: Set[QualifiedName],
+    parent_safety_annotations: Vec[Annotation],
+    parent_source_package: Option[PC.SourcePackage],
+}
+
+fn lift_function(lifter: LambdaLifter, func: FunctionDef) -> FunctionDef {
+    match func.body {
+        Some(body) => { func.body = Some(lift_expr(lifter, body)); }
+        None => {}
+    }
+    func
+}
+
+fn fresh_lambda_qname(lifter: LambdaLifter) -> (QualifiedName, String) {
+    let n = lifter.counter;
+    lifter.counter = lifter.counter + 1;
+    let name = "${lifter.parent_name}_lambda_${n.to_string()}";
+    (QualifiedName.new(I.intern(name)), name)
+}
+
+fn lift_expr(lifter: LambdaLifter, expr: E.Expr) -> E.Expr {
+    let loc = expr.location;
+    let ty = expr.ty;
+    match expr.kind {
+        E.ExprKind.ResolvedLambda(args, body, capture_count) => {
+            let lifted_body = lift_expr(lifter, body);
+
+            let (user_arg_types, result_type) = match ty {
+                Some(TypeDef.Fn(arg_tys, result_ty)) => (arg_tys, result_ty),
+                _ => panic("ResolvedLambda has no Fn type annotation"),
+            };
+
+            let all_args: Vec[FunctionArg] = [];
+            let capture_vars: Vec[E.VariableName] = [];
+            let i = 0;
+            for arg in args {
+                let arg_ty = if i < capture_count {
+                    capture_vars.push(arg.name);
+                    arg.ty.unwrap()
+                } else {
+                    user_arg_types[i - capture_count]
+                };
+                all_args.push(FunctionArg(arg.name, arg_ty, None));
+                i = i + 1;
+            }
+
+            let named_vars: Set[I.String] = Set.new();
+            for arg in all_args {
+                collect_named_type_vars(arg.type_def, named_vars);
+            }
+            collect_named_type_vars(result_type, named_vars);
+
+            let referenced_indices: Vec[Int] = collect_referenced_bound_indices(lifted_body).iter().collect();
+            let index_remap: Map[Int, Int] = Map.new();
+            let new_idx = 0;
+            for old_idx in referenced_indices {
+                index_remap.insert(old_idx, new_idx);
+                new_idx = new_idx + 1;
+            }
+            let lambda_bounds: Vec[Bound] = referenced_indices.iter().map(|idx| lifter.parent_bounds[idx].clone()).collect();
+            if !index_remap.is_empty() {
+                remap_witnesses(lifted_body, index_remap);
+            }
+
+            let type_arg_defs = if named_vars.is_empty() && lambda_bounds.is_empty() {
+                None
+            } else {
+                let type_arg_idents: Vec[Identifier] = named_vars.iter().map(|n| Identifier.new(n, loc)).collect();
+                Some(TypeArgDefs(type_arg_idents, lambda_bounds))
+            };
+
+            let (lambda_qname, lambda_name) = fresh_lambda_qname(lifter);
+            let lambda_ident = Identifier.new(I.intern(lambda_name), loc);
+
+            let new_func = FunctionDef(
+                annotations: lifter.parent_safety_annotations.clone(),
+                public: False,
+                name: lambda_ident,
+                qualified_name: lambda_qname.clone(),
+                kind: FunctionDefKind.Closure(capture_vars.len()),
+                type_arg_defs: type_arg_defs,
+                args: all_args,
+                result_type: Some(result_type),
+                body: Some(lifted_body),
+                module_name: lifter.module_name,
+                var_allocator: lifter.parent_var_allocator.clone(),
+                is_varargs: False,
+                default_value_names: Vec.new(),
+                source_package: lifter.parent_source_package,
+            );
+            lifter.new_functions.push(new_func);
+            normalize_function(lifter.new_functions[lifter.new_functions.len() - 1], lifter.divergent_fns);
+
+            let closure_witnesses = E.WitnessInfo.new();
+            closure_witnesses.witnesses = referenced_indices.iter().map(|parent_idx| BoundWitness.FunctionBound(parent_idx)).collect();
+
+            E.Expr(E.ExprKind.CreateClosure(E.CreateClosureInfo(lambda_qname, capture_vars, closure_witnesses)), loc, ty)
+        },
+        kind => E.Expr(kind.lift(lifter), loc, ty),
+    }
+}
+
+fn collect_named_type_vars(ty: TypeDef, out: Set[I.String]) {
+    match ty {
+        TypeDef.Var(TypeVar.Named(name)) => { out.insert(name); },
+        TypeDef.Named(_, args) => { for a in args { collect_named_type_vars(a, out); } },
+        TypeDef.Tuple(elems) => { for e in elems { collect_named_type_vars(e, out); } },
+        TypeDef.Fn(args, result) | TypeDef.FnPtr(args, result) => {
+            for a in args { collect_named_type_vars(a, out); }
+            collect_named_type_vars(result, out);
+        },
+        TypeDef.Paren(inner) => collect_named_type_vars(inner, out),
+        _ => {},
+    }
+}
+
+fn collect_referenced_bound_indices(expr: E.Expr) -> Set[Int] {
+    let out: Set[Int] = Set.new();
+    collect_bounds(expr, out);
+    out
+}
+
+}

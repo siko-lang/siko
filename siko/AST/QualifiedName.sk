@@ -1,0 +1,171 @@
+module Siko.AST.QualifiedName {
+
+import Std.Map
+import Std.Util
+import Std.MD5 as MD5
+import Siko.Interner as I
+import Siko.AST.Type
+import Siko.Format.Utils
+
+@derive(PartialEq, Eq, PartialOrd, Ord, Clone)
+pub struct MonoName2 {
+    pub name: I.String,
+    pub args: Vec[TypeDef],
+    pub witnesses: Vec[I.String],
+    pub effect_ctx: Map[QualifiedName, QualifiedName],
+    pub implicit_ctx: Vec[QualifiedName],
+    hashed: String,
+}
+
+@derive(Clone)
+pub enum QualifiedName {
+    Simple(I.String),
+    Mono(MonoName2),
+
+    pub fn new(name: I.String) -> QualifiedName {
+        Simple(name)
+    }
+
+    pub fn new_mono(
+            name: I.String,
+            args: Vec[TypeDef],
+            witnesses: Vec[I.String],
+            effect_ctx: Map[QualifiedName, QualifiedName],
+            implicit_ctx: Vec[QualifiedName]) -> QualifiedName {
+        let qn = Mono(MonoName2(name, args, witnesses, effect_ctx, implicit_ctx, ""));
+        let h = qn.get_hashed();
+        qn.save_hashed(h);
+        qn
+    }
+
+    pub fn name(qn: QualifiedName) -> I.String {
+        match qn {
+            Simple(s) => s,
+            Mono(m) => {
+                let base = I.resolve(m.name);
+                let (args_str, extras) = qn.extra();
+                I.intern(base + args_str + extras)
+            }
+        }
+    }
+
+    pub fn extra(qn: QualifiedName) -> (String, String) {
+        match qn {
+            Simple(_) => ("", ""),
+            Mono(m) => {
+                let args_str = if m.args.is_empty() {
+                    ""
+                } else {
+                    let parts: Vec[String] = m.args.iter().map(|a| format_type(a)).collect();
+                    "[" + join(parts, ", ") + "]"
+                };
+                let witness_str = if m.witnesses.is_empty() {
+                    ""
+                } else {
+                    let parts: Vec[String] = m.witnesses.iter().map(|w| I.resolve(w)).collect();
+                    "(" + join(parts, ", ") + ")"
+                };
+                let effect_str = if m.effect_ctx.is_empty() {
+                    ""
+                } else {
+                    let entries: Vec[String] = m.effect_ctx.iter()
+                        .map(|(k, v)| I.resolve(k.name()) + "->" + I.resolve(v.name()))
+                        .collect();
+                    "{" + join(entries, ",") + "}"
+                };
+                let implicit_str = if m.implicit_ctx.is_empty() {
+                    ""
+                } else {
+                    let parts: Vec[String] = m.implicit_ctx.iter().map(|q| I.resolve(q.name())).collect();
+                    "{" + join(parts, ",") + "}"
+                };
+                (args_str, witness_str + effect_str + implicit_str)
+            }
+        }
+    }
+
+    pub fn base_name(qn: QualifiedName) -> I.String {
+        match qn {
+            Simple(s) => s,
+            Mono(m) => m.name,
+        }
+    }
+
+    pub fn is_simple(qn: QualifiedName) -> Bool {
+        match qn {
+            Simple(_) => True,
+            Mono(_) => False,
+        }
+    }
+
+    pub fn is_mono(qn: QualifiedName) -> Bool {
+        match qn {
+            Simple(_) => False,
+            Mono(_) => True,
+        }
+    }
+
+    pub fn type_args(qn: QualifiedName) -> Vec[TypeDef] {
+        match qn {
+            Simple(_) => Vec.new(),
+            Mono(m) => m.args,
+        }
+    }
+
+    pub fn implicit_ctx(qn: QualifiedName) -> Vec[QualifiedName] {
+        match qn {
+            Simple(_) => Vec.new(),
+            Mono(m) => m.implicit_ctx,
+        }
+    }
+
+    fn get_hashed(qn: QualifiedName) -> String {
+        let (type_args, extra) = qn.extra();
+        if extra.is_empty() {
+            return I.resolve(qn.name());
+        }
+        let digest = MD5.compute(extra.to_bytes());
+        let hash = bytes_to_hex(digest);
+        let simple_name = match qn {
+            Simple(s) => s,
+            Mono(name) => name.name,
+        };
+        "${simple_name}${type_args}_${hash}"
+    }
+
+    fn save_hashed(qn: QualifiedName, hashed: String) {
+        match qn {
+            Simple(_) => (),
+            Mono(m) => { m.hashed = hashed; }
+        }
+    }
+
+    pub fn hashed(qn: QualifiedName) -> String {
+        match qn {
+            Simple(_) => I.resolve(qn.name()),
+            Mono(m) => m.hashed,
+        }
+    }
+}
+
+instance PartialEq[QualifiedName] {
+    fn eq(a: QualifiedName, b: QualifiedName) -> Bool {
+        a.name() == b.name()
+    }
+}
+
+instance Eq[QualifiedName] {}
+
+instance PartialOrd[QualifiedName] {
+    fn partial_cmp(a: QualifiedName, b: QualifiedName) -> Option[Ordering] {
+        Some(a.name().cmp(b.name()))
+    }
+}
+
+instance Ord[QualifiedName] {
+    fn cmp(a: QualifiedName, b: QualifiedName) -> Ordering {
+        a.name().cmp(b.name())
+    }
+}
+
+}

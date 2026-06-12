@@ -1,0 +1,59 @@
+module Siko.Format.Formatter {
+
+import Siko.AST.Annotations
+import Siko.Interner as I
+import Std.StringBuilder
+
+pub struct Formatter {
+    pub buf: StringBuilder,
+    pub indent: Int,
+
+    pub fn new() -> Formatter {
+        Formatter(StringBuilder.new(), 0)
+    }
+
+    pub fn push(f: Formatter, s: String) {
+        f.buf.push(s);
+    }
+
+    pub fn push_indent(f: Formatter) {
+        let i = 0;
+        while i < f.indent {
+            f.buf.push("    ");
+            i = i + 1;
+        }
+    }
+
+    pub fn indent_up(f: Formatter) {
+        f.indent = f.indent + 1;
+    }
+
+    pub fn indent_down(f: Formatter) {
+        f.indent = f.indent - 1;
+    }
+
+    pub fn finish(f: Formatter) -> String {
+        f.buf.to_string()
+    }
+
+    pub fn format_annotations(f: Formatter, annotations: Vec[Annotation]) {
+        for ann in annotations {
+            // TODO: write this properly!
+            // f.push_indent();
+            // f.push("@");
+            // f.push(ann);
+            // f.push("\n");
+        }
+    }
+
+    pub fn format_derives(f: Formatter, derives: Vec[DeriveAnnotation]) {
+        for d in derives {
+            f.push_indent();
+            f.push("@derive(");
+            f.push(I.resolve(d.trait_name.name()));
+            f.push(")\n");
+        }
+    }
+}
+
+}

@@ -1,0 +1,22 @@
+module SSG.TemplateTest {
+
+import SSG.MD
+import SSG.Template
+
+@test
+fn test_render_basic() {
+    let layout = "<title>{{title}}</title><p class=\"date\">{{date}}</p>{{content}}";
+    let doc = parse("title: My Post\ndate: 2026-06-12\n\n# My Post\n\nHello.");
+    let out = render(layout, doc);
+    assert(out == "<title>My Post</title><p class=\"date\">2026-06-12</p><h1>My Post</h1>\n<p>Hello.</p>\n");
+}
+
+@test
+fn test_render_missing_metadata() {
+    let layout = "<title>{{title}}</title>{{date}}{{content}}";
+    let doc = parse("# No Meta");
+    let out = render(layout, doc);
+    assert(out == "<title></title><h1>No Meta</h1>\n");
+}
+
+}

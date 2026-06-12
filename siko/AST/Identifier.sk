@@ -1,0 +1,41 @@
+module Siko.AST.Identifier {
+
+import Siko.Interner as I
+import Siko.Location
+import Siko.AST.QualifiedName
+
+@derive(PartialEq, Std.Ops.Eq, PartialOrd, Ord, Clone)
+pub struct Identifier {
+    pub name: I.String,
+    pub location: Location,
+
+    pub fn new(name: I.String, location: Location) -> Identifier {
+        Identifier(name, location)
+    }
+
+    pub fn merge(id: Identifier, other: Identifier) -> Identifier {
+        let name = I.resolve(id.name) + "." + I.resolve(other.name);
+        Identifier(I.intern(name), id.location.merge(other.location))
+    }
+
+    pub fn with_prefix(id: Identifier, prefix: I.String) -> Identifier {
+        let name = I.resolve(prefix) + "." + I.resolve(id.name);
+        Identifier(I.intern(name), id.location)
+    }
+
+    pub fn name(id: Identifier) -> I.String {
+        id.name
+    }
+
+    pub fn merge_qn(id: Identifier, qn: QualifiedName) -> QualifiedName {
+        match qn {
+            Simple(n) => {
+                let n = I.resolve(id.name) + "." + I.resolve(n);
+                Simple(I.intern(n))
+            }
+            _ => panic("Mono name in merge_qn"),
+        }
+    }
+}
+
+}

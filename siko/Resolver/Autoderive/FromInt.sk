@@ -1,0 +1,137 @@
+module Siko.Resolver.Autoderive.FromInt {
+
+import Siko.Resolver.Autoderive.Utils
+import Siko.AST.Data
+import Siko.AST.Traits
+import Siko.AST.Name
+import Siko.AST.Type
+import Siko.AST.Identifier
+import Siko.AST.Function
+import Siko.AST.Expr
+import Siko.AST.Pattern
+import Siko.Utils.VarAllocator
+import Siko.AST.QualifiedName
+import Siko.Constants.Builtins as B
+import Siko.Location
+import Siko.Interner as I
+
+pub fn derive_from_int_enum(enum_def: EnumDef, module_name: I.String) -> Option[InstanceDef] {
+    let trait_name = get_resolved_trait_name();
+    if !enum_def.has_derive(trait_name) {
+        return None;
+    }
+    if enum_def.type_arg_defs.is_some() {
+        panic("@derive(FromInt) is not supported for generic enums: ${enum_def.name.name}");
+    }
+    for variant in enum_def.variants {
+        if !variant.items.is_empty() {
+            panic("@derive(FromInt): variant ${enum_def.name.name}.${variant.name.name} has items; only simple variants are supported");
+        }
+    }
+    Some(build_from_int_enum(enum_def, module_name))
+}
+
+fn build_from_int_enum(enum_def: EnumDef, module_name: I.String) -> InstanceDef {
+    let trait_name = get_resolved_trait_name();
+    let loc = enum_def.name.location;
+    let enum_qname = QualifiedName.new(enum_def.name.name);
+    let enum_type = TypeDef.Named(Name.Resolved(enum_qname), []);
+    let prefix = instance_synth_name(trait_name, [enum_type], loc);
+    let (method_fn, method_short) = build_from_int_method(enum_def, prefix, enum_type, module_name);
+    make_instance(trait_name, None, enum_type, [method_fn], [method_short], module_name, loc)
+}
+
+pub fn build_from_int_method(
+    enum_def: EnumDef,
+    instance_prefix: Identifier,
+    enum_type: TypeDef,
+    module_name: I.String,
+) -> (FunctionDef, Identifier) {
+    let loc = enum_def.name.location;
+    let var_alloc = VarAllocator.new();
+    let var_a = var_alloc.allocate_user(I.intern("a"));
+
+    let short_name = Identifier.new(I.intern("from_int"), loc);
+    let body = build_body(enum_def, var_a, enum_type, loc);
+
+    let method_fn = make_unary_method(
+        instance_prefix,
+        short_name,
+        None,
+        int_type(),
+        Some(option_type(enum_type)),
+        var_a,
+        [],
+        body,
+        module_name,
+        var_alloc,
+    );
+    (method_fn, short_name)
+}
+
+fn build_body(enum_def: EnumDef, var_a: VariableName, enum_type: TypeDef, loc: Location) -> Expr {
+    let arms: Vec[MatchArm] = [];
+
+    for (i, variant) in enum_def.variants.iter().enumerate() {
+        let pattern = Pattern(PatternKind.IntLiteral(I.intern("${i}")), loc, None);
+        let variant_qname = QualifiedName.new(
+            I.intern("${enum_def.name.name}.${variant.name.name}")
+        );
+        let variant_expr = Expr(
+            ExprKind.FunctionCall(FunctionCallInfo(
+                variant_qname,
+                FunctionKind.VariantCtor,
+                [],
+                WitnessInfo.new(),
+                Vec.new(),
+            )),
+            loc,
+            None,
+        );
+        let some_expr = Expr(
+            ExprKind.FunctionCall(FunctionCallInfo(
+                QualifiedName.new(B.get_option_some()),
+                FunctionKind.VariantCtor,
+                [variant_expr],
+                WitnessInfo.new(),
+                Vec.new(),
+            )),
+            loc,
+            None,
+        );
+        arms.push(MatchArm(pattern, some_expr));
+    }
+
+    let none_expr = Expr(
+        ExprKind.FunctionCall(FunctionCallInfo(
+            QualifiedName.new(B.get_option_none()),
+            FunctionKind.VariantCtor,
+            [],
+            WitnessInfo.new(),
+            Vec.new(),
+        )),
+        loc,
+        None,
+    );
+    arms.push(MatchArm(Pattern(PatternKind.Wildcard, loc, None), none_expr));
+
+    Expr(
+        ExprKind.Match(MatchInfo(Expr(ExprKind.Var(var_a), loc, None), arms)),
+        loc,
+        None,
+    )
+}
+
+fn get_resolved_trait_name() -> Name {
+    Name.Resolved(QualifiedName.new(B.get_trait_from_int()))
+}
+
+fn int_type() -> TypeDef {
+    TypeDef.Named(Name.Resolved(QualifiedName.new(B.get_int_type())), [])
+}
+
+fn option_type(inner: TypeDef) -> TypeDef {
+    TypeDef.Named(Name.Resolved(QualifiedName.new(B.get_option_type())), [inner])
+}
+
+}

@@ -1,0 +1,53 @@
+module Siko.Monomorphizer.Types {
+
+import Std.Map
+import Siko.AST.Type
+import Siko.AST.Name
+import Siko.Unification.Sub
+import Siko.AST.QualifiedName
+import Siko.Interner as I
+
+pub fn specialize_type(ty: TypeDef, sub: Substitution) -> TypeDef {
+    match ty {
+        TypeDef.Var(TypeVar.Named(s)) => {
+            let t = match sub.lookup_named(s) {
+                Some(t) => t.clone(),
+                None => panic("specialize_type: named type var '${I.resolve(s)}' not found in substitution\n${sub.format()}"),
+            };
+            specialize_type(t, sub)
+        }
+        TypeDef.Var(TypeVar.Var(_)) => ty.clone(),
+        TypeDef.Named(name, args) => {
+            let spec_args: Vec[TypeDef] = args.iter().map(|a| specialize_type(a, sub)).collect();
+            TypeDef.Named(
+                Name.Resolved(QualifiedName.new_mono(
+                    name.name(),
+                    spec_args,
+                    [],
+                    Map.new(),
+                    [],
+                )),
+                [],
+            )
+        }
+        TypeDef.Tuple(elems) => TypeDef.Tuple(elems.iter().map(|e| specialize_type(e, sub)).collect()),
+        TypeDef.Fn(args, result) => TypeDef.Fn(
+            args.iter().map(|a| specialize_type(a, sub)).collect(),
+            specialize_type(result, sub),
+        ),
+        TypeDef.FnPtr(args, result) => TypeDef.FnPtr(
+            args.iter().map(|a| specialize_type(a, sub)).collect(),
+            specialize_type(result, sub),
+        ),
+        TypeDef.Paren(inner) => TypeDef.Paren(specialize_type(inner, sub)),
+        TypeDef.Ptr(inner) => TypeDef.Ptr(specialize_type(inner, sub)),
+        TypeDef.Array(inner, n) => TypeDef.Array(specialize_type(inner, sub), n),
+        TypeDef.Numeric(n) => TypeDef.Numeric(n),
+        TypeDef.Never(t) => TypeDef.Never(t),
+        TypeDef.Void => TypeDef.Void,
+        TypeDef.VoidPtr => TypeDef.VoidPtr,
+        TypeDef.Wildcard => panic("Wildcard in specialize_type"),
+    }
+}
+
+}

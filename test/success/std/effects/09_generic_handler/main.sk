@@ -1,0 +1,22 @@
+module Main {
+
+// Effect method is non-generic, but the handler is generic.
+// This tests that the monomorphizer correctly infers the handler's
+// type args from the concrete argument types at the call site.
+
+effect Printer {
+    fn print_value(s: String)
+}
+
+fn generic_handler[T: ToString[T]](value: T) {
+    println(value.to_string())
+}
+
+fn main() {
+    with print_value = generic_handler {
+        Printer.print_value("hello")
+        Printer.print_value("world")
+    }
+}
+
+}

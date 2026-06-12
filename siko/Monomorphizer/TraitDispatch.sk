@@ -1,0 +1,143 @@
+module Siko.Monomorphizer.TraitDispatch {
+
+import Siko.Instances.FunctionInstanceResolver
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.Unification.Sub
+import Siko.Unification.Apply
+import Siko.Monomorphizer
+import Siko.Utils.TypeVarAllocator
+import Siko.Interner as I
+
+pub fn dispatch_trait_call(
+    callee: QualifiedName,
+    witness: BoundWitness,
+    arg_types: Vec[TypeDef],
+    result_type: Option[TypeDef],
+    mono: Monomorphizer,
+) -> (QualifiedName, Vec[TypeDef]) {
+    let (
+        generic_params,
+        param_types,
+        declared_result_type,
+        self_bound_trait,
+        self_bound_type_args,
+        self_bound_constraints,
+    ) = {
+        let func = mono
+            .source
+            .functions
+            .get(callee)
+            .unwrap();
+        let tad = func.type_arg_defs.unwrap();
+        let self_bound = tad.bounds[0];
+        let gp = tad.type_params();
+        let pt: Vec[TypeDef] = func.args.iter().map(|a| a.type_def.clone()).collect();
+        let sb_trait = self_bound.trait_name.name();
+        let sb_args: Vec[I.String] = self_bound.type_args.iter().map(|n| n.name()).collect();
+        let sb_constraints = self_bound.constraints.clone();
+        (gp, pt, func.result_type.clone(), sb_trait, sb_args, sb_constraints)
+    };
+
+    let callee_inst = Substitution.new();
+    for (p, a) in param_types.iter().zip(arg_types.iter()) {
+        extract_named_bindings(p, a, callee_inst);
+    }
+    match (declared_result_type, result_type) {
+        (Some(decl), Some(actual)) => {
+            extract_named_bindings(decl, actual, callee_inst);
+        }
+        _ => {}
+    }
+
+    let query_args: Vec[TypeDef] = self_bound_type_args
+        .iter()
+        .map(|var_name| {
+            callee_inst
+                .lookup_named(var_name)
+                .clone()
+                .unwrap_or_else(|| TypeDef.Var(TypeVar.Named(var_name.clone())))
+        })
+        .collect();
+
+    let module_name = mono.resolve_witness_to_module(witness);
+
+    let module_resolver = mono
+        .instance_resolver
+        .for_module(module_name)
+        .unwrap();
+
+    let func_resolver = FunctionInstanceResolver.new(
+        module_name.clone(),
+        module_resolver,
+        [],
+        TypeVarAllocator.new(),
+    );
+    let resolution = match func_resolver.resolve_and_extract(
+        self_bound_trait,
+        query_args,
+        self_bound_constraints,
+        Substitution.new(),
+        callee_inst,
+    ) {
+        BoundResult.Satisfied(r) => r,
+        _ => panic("mono: instance `${self_bound_trait}[...]` not found or ambiguous"),
+    };
+
+    let concrete_type_args: Vec[TypeDef] = generic_params
+        .iter()
+        .map(|p| callee_inst.lookup_named(p).clone().unwrap_or(TypeDef.Wildcard))
+        .collect();
+
+    let instance_qname = resolution.instance_qname.unwrap();
+    let trait_prefix = "${self_bound_trait}.";
+    let method_name = callee
+        .name();
+    let method_name = I.resolve(method_name);
+    let method_name = method_name
+        .strip_prefix(trait_prefix)
+        .unwrap();
+    let concrete_method = "${instance_qname}.${method_name}"
+    let concrete_method = QualifiedName.new(I.intern(concrete_method));
+
+    match mono.source.functions.get(concrete_method) {
+        Some(mf) => {
+            let method_type_args = match mf.type_arg_defs {
+                Some(method_tad) => {
+                    let mp: Vec[I.String] = method_tad.type_args.iter().map(|id| id.name.clone()).collect();
+                    let mpt: Vec[TypeDef] = mf.args.iter().map(|a| a.type_def.clone()).collect();
+                    let mapping = Substitution.new();
+                    for (p, a) in mpt.iter().zip(arg_types.iter()) {
+                        extract_named_bindings(p, a, mapping);
+                    }
+                    mp.iter()
+                        .map(|p| {
+                            mapping
+                                .lookup_named(p)
+                                .or_else(|| resolution.type_witness.lookup_named(p))
+                                .or_else(|| callee_inst.lookup_named(p))
+                                .clone()
+                                .unwrap()
+                        })
+                        .collect()
+                }
+                None => []
+            };
+            (concrete_method, method_type_args)
+        }
+        None => {
+            let trait_func = mono
+                .source
+                .functions
+                .get(callee)
+                .unwrap();
+            if trait_func.body.is_some() {
+                (callee.clone(), concrete_type_args)
+            } else {
+                panic("mono: instance `${instance_qname}` is missing required method `${method_name}` — should have been caught by instance checker")
+            }
+        }
+    }
+}
+
+}

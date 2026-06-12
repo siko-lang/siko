@@ -1,0 +1,57 @@
+module Main {
+
+import Std.Toml as Toml
+import Std.Fs.File
+
+fn pad(indent: Int) -> String {
+    let s = "";
+    for _ in 0..indent {
+        s = s + "  ";
+    }
+    s
+}
+
+fn dump(value: Toml.TomlValue, indent: Int) {
+    match value {
+        Toml.TomlValue.Integer(i) => println("${pad(indent)}${i}"),
+        Toml.TomlValue.Boolean(b) => println("${pad(indent)}${if b { "true" } else { "false" }}"),
+        Toml.TomlValue.Str(s) => println("${pad(indent)}\"${s}\""),
+        Toml.TomlValue.Array(arr) => {
+            println("${pad(indent)}[");
+            for elem in arr {
+                dump(elem, indent + 1);
+            }
+            println("${pad(indent)}]");
+        }
+        Toml.TomlValue.Table(table) => {
+            for (k, v) in table {
+                println("${pad(indent)}${k}:");
+                dump(v, indent + 1);
+            }
+        }
+    }
+}
+
+fn main() {
+    let path = "package.toml";
+    match read_file(path) {
+        Ok(contents) => {
+            match Toml.parse(contents) {
+                Ok(output) => {
+                    for (k, v) in output.values {
+                        println("${k}:");
+                        dump(v, 1);
+                    }
+                }
+                Err(err) => {
+                    println("parse error ${err}");
+                }
+            }
+        }
+        Err(_) => {
+            println("error: could not read file: ${path}");
+        }
+    }
+}
+
+}

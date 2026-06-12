@@ -1,0 +1,258 @@
+module Siko.AST.Expr {
+
+import Siko.Interner as I
+import Siko.Location
+import Siko.Instances.FunctionInstanceResolver
+import Siko.AST.Name
+import Siko.AST.Type
+import Siko.AST.Pattern
+import Siko.AST.Identifier
+import Siko.AST.Statement as S
+import Siko.AST.QualifiedName
+
+@derive(Clone)
+pub struct WitnessInfo {
+    pub witnesses: Vec[BoundWitness],
+
+    pub fn new() -> WitnessInfo {
+        WitnessInfo(Vec.new())
+    }
+}
+
+@derive(Clone)
+pub struct Expr {
+    pub kind: ExprKind,
+    pub location: Location,
+    pub ty: Option[TypeDef],
+
+    pub fn new(kind: ExprKind, location: Location) -> Expr {
+        Siko.AST.Expr.Expr(kind, location, None)
+    }
+
+    fn is_divergent(expr: Expr) -> Bool {
+        match expr.kind {
+            Return(_) => True,
+            Block(stmts) => {
+                match stmts.last() {
+                    Some(S.TrailingExpr(e)) => e.is_divergent(),
+                    Some(S.Expr(e)) => e.is_divergent(),
+                    Some(S.Break)           => True,
+                    Some(S.Continue)        => True,
+                    _                       => False,
+                }
+            }
+            If(_, then_branch, else_branch) => {
+                then_branch.is_divergent() && match else_branch {
+                    Some(e) => e.is_divergent(),
+                    None    => False,
+                }
+            }
+            IfLet(_, _, then_branch, else_branch) => {
+                then_branch.is_divergent() && match else_branch {
+                    Some(e) => e.is_divergent(),
+                    None    => False,
+                }
+            }
+            _ => False,
+        }
+    }
+}
+
+@derive(Clone, PartialEq, Std.Ops.Eq)
+pub enum FunctionKind {
+    UserDefined,
+    StructCtor,
+    VariantCtor,
+    Extern(Option[I.String]), // Some(name) = extern "C" with original C name
+    Builtin,
+}
+
+instance ToString[FunctionKind] {
+    fn to_string(k: FunctionKind) -> String {
+        match k {
+            FunctionKind.UserDefined => "UserDefined",
+            FunctionKind.StructCtor => "StructCtor",
+            FunctionKind.VariantCtor => "VariantCtor",
+            FunctionKind.Extern(_) => "Extern",
+            FunctionKind.Builtin => "Builtin",
+        }
+    }
+}
+
+@derive(Clone)
+pub struct MatchArm {
+    pub pattern: Pattern,
+    pub body: Expr,
+}
+
+@derive(Clone)
+pub enum HandlerSelection {
+    Unresolved(Identifier, Identifier),
+    EffectFunction(QualifiedName, QualifiedName),
+    Implicit(QualifiedName, VariableName),
+}
+
+@derive(Clone)
+pub struct MatchInfo {
+    pub scrutinee: Expr,
+    pub arms: Vec[MatchArm],
+}
+
+@derive(Clone)
+pub struct NamedArgument {
+    pub index: Int,
+    pub name: I.String,
+}
+
+@derive(Clone)
+pub struct FunctionCallInfo {
+    pub qname: QualifiedName,
+    pub kind: FunctionKind,
+    pub args: Vec[Expr],
+    pub witnesses: WitnessInfo,
+    pub named_args: Vec[NamedArgument],
+}
+
+@derive(Clone)
+pub struct MethodCallInfo {
+    pub receiver: Expr,
+    pub name: Identifier,
+    pub args: Vec[Expr],
+    pub named_args: Vec[NamedArgument],
+}
+
+@derive(Clone)
+pub struct CallInfo {
+    pub callee: Expr,
+    pub args: Vec[Expr],
+    pub named_args: Vec[NamedArgument],
+}
+
+@derive(Clone)
+pub struct WithInfo {
+    pub selections: Vec[HandlerSelection],
+    pub body: Expr,
+}
+
+@derive(Clone)
+pub struct ImplicitRefInfo {
+    pub name: QualifiedName,
+}
+
+@derive(Clone)
+pub struct LambdaArg {
+    pub name: VariableName,
+    pub ty: Option[TypeDef],
+}
+
+@derive(Clone)
+pub struct CreateClosureInfo {
+    pub name: QualifiedName,
+    pub params: Vec[VariableName],
+    pub witnesses: WitnessInfo,
+}
+
+@derive(Clone)
+pub struct FunctionPtrInfo {
+    pub name: QualifiedName,
+    pub witnesses: WitnessInfo,
+}
+
+@derive(Clone)
+pub enum ExprKind {
+    IntLiteral(String),
+    StringLiteral(String),
+    CharLiteral(U8),
+    Var(VariableName),
+    Name(Name),
+    BinaryOp(BinaryOp, Expr, Expr),
+    UnaryOp(UnaryOp, Expr),
+    Call(CallInfo),
+    MethodCall(MethodCallInfo),
+    FieldAccess(Expr, Identifier),
+    TupleIndex(Expr, Int),
+    FunctionCall(FunctionCallInfo),
+    DynamicCall(Expr, Vec[Expr]),
+    FunctionPtr(FunctionPtrInfo),
+    FunctionPtrCall(Expr, Vec[Expr]),
+    If(Expr, Expr, Option[Expr]),
+    IfLet(Pattern, Expr, Expr, Option[Expr]),
+    Block(Vec[S.Statement]),
+    Tuple(Vec[Expr]),
+    Paren(Expr),
+    Return(Expr),
+    Match(MatchInfo),
+    With(WithInfo),
+    ImplicitRef(ImplicitRefInfo),
+    UnresolvedLambda(Vec[Pattern], Expr),
+    ResolvedLambda(Vec[LambdaArg], Expr, Int),
+    CreateClosure(CreateClosureInfo),
+    List(Vec[Expr]),
+    Index(Expr, Expr),
+    Try(Expr),
+    Transmute(Expr),
+    SizeOf(TypeDef),
+    Deref(Expr),
+    AddrOf(Expr),
+}
+
+@derive(PartialEq, Std.Ops.Eq, PartialOrd, Ord, Clone)
+pub enum VariableName {
+    Unresolved(Identifier),
+    UserDefined(I.String, Int),
+    Temp(Int),
+
+    pub fn get_user_name(v: VariableName) -> I.String {
+        match v {
+            VariableName.Unresolved(id)        => id.name(),
+            VariableName.UserDefined(name, _)  => name,
+            Temp(i)               => I.intern("$tmp_" + i.to_string()),
+        }
+    }
+
+    pub fn unresolved(v: VariableName) -> Identifier {
+        match v {
+            VariableName.Unresolved(id) => id,
+            _              => panic("not unresolved variable"),
+        }
+    }
+
+    pub fn format(v: VariableName) -> String {
+        match v {
+            VariableName.Unresolved(id)        => I.resolve(id.name),
+            VariableName.UserDefined(name, id) => I.resolve(name) + "_" + id.to_string(),
+            Temp(id)              => "$tmp_" + id.to_string(),
+        }
+    }
+}
+
+@derive(Clone)
+pub enum BinaryOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    And,
+    Or,
+    Eq,
+    NotEq,
+    Less,
+    Greater,
+    LessEq,
+    GreaterEq,
+    Mod,
+    BitAnd,
+    BitOr,
+    Xor,
+    Shl,
+    Shr,
+}
+
+@derive(Clone)
+pub enum UnaryOp {
+    Neg,
+    Not,
+    BNot,
+}
+
+}

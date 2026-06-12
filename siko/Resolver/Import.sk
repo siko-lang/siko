@@ -1,0 +1,62 @@
+module Siko.Resolver.Import {
+
+import Siko.AST.Module as M
+import Siko.Resolver.ModuleItem
+import Siko.Resolver
+import Siko.Resolver.Error
+
+pub fn process_import(
+    import_def: M.ImportDef,
+    ctx: GlobalResolverContext,
+) -> Result[Vec[ModuleItem], ResolveError] {
+    match import_def.alias {
+        Some(alias) => {
+            let module_items = ctx.get_exported_items_by_module(import_def.module_name.name());
+            match module_items {
+                Some(items) => {
+                    let new_items = Vec.new();
+                    for item in items {
+                        if item.aliasable {
+                            new_items.push(ModuleItem(
+                                public: item.public,
+                                aliasable: item.aliasable,
+                                name: item.name.with_prefix(alias.name()),
+                                qualified_name: item.qualified_name,
+                                kind: item.kind,
+                                import_def: Some(import_def),
+                            ));
+                        }
+                    }
+                    Ok(new_items)
+                }
+                None => {
+                    return Err(ResolveError.ModuleNotFound(import_def.module_name));
+                }
+            }
+        }
+        None => {
+            let module_items = ctx.get_exported_items_by_module(import_def.module_name.name());
+            match module_items {
+                Some(items) => {
+                    let new_items = Vec.new();
+                    for item in items {
+                        new_items.push(ModuleItem(
+                            public: item.public,
+                            aliasable: item.aliasable,
+                            name: item.name,
+                            qualified_name: item.qualified_name,
+                            kind: item.kind,
+                            import_def: Some(import_def),
+                        ));
+                    }
+                    Ok(new_items)
+                }
+                None => {
+                    return Err(ResolveError.ModuleNotFound(import_def.module_name));
+                }
+            }
+        }
+    }
+}
+
+}

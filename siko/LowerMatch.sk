@@ -1,0 +1,553 @@
+module Siko.LowerMatch {
+
+import Std.Map
+import Siko.Interner as I
+import Siko.AST.Expr
+import Siko.AST.Statement as S
+import Siko.AST.Name
+import Siko.AST.Identifier
+import Siko.AST.Pattern
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.HIR.Program
+import Siko.Location
+import Siko.Utils.VarAllocator
+import Siko.MatchCompilation.Compiler
+import Siko.MatchCompilation.Pattern as MC
+import Siko.MatchCompilation.Tree as T
+import Siko.MatchCompilation.DataPath
+import Siko.Unification.Sub
+import Siko.Constants.Builtins as B
+
+trait Lower[T] {
+    fn lower(t: T, lowerer: MatchLowerer) -> T
+}
+
+instance Lower[Location] = auto(Map, =)
+instance Lower[TypeDef] = auto(Map, =)
+instance Lower[I.String] = auto(Map, =)
+instance Lower[String] = auto(Map, =)
+instance Lower[Int] = auto(Map, =)
+instance Lower[U8] = auto(Map, =)
+instance Lower[QualifiedName] = auto(Map, =)
+instance Lower[VariableName] = auto(Map, =)
+instance Lower[Name] = auto(Map, =)
+instance Lower[Identifier] = auto(Map, =)
+instance Lower[WitnessInfo] = auto(Map, =)
+instance Lower[FunctionKind] = auto(Map, =)
+instance Lower[BinaryOp] = auto(Map, =)
+instance Lower[UnaryOp] = auto(Map, =)
+instance Lower[HandlerSelection] = auto(Map, =)
+instance Lower[MatchInfo] = auto(Map, !)
+instance Lower[LambdaArg] = auto(Map, =)
+instance Lower[ImplicitRefInfo] = auto(Map, =)
+instance Lower[CreateClosureInfo] = auto(Map, =)
+instance Lower[FunctionPtrInfo]   = auto(Map, =)
+
+instance Lower[S.LetInfo]        = auto(Map)
+instance Lower[S.DeclareInfo]    = auto(Map)
+instance Lower[FunctionCallInfo] = auto(Map)
+instance Lower[NamedArgument]        = auto(Map, =)
+instance Lower[Bool]                 = auto(Map, =)
+instance Lower[NamedPatternArg]      = auto(Map, =)
+instance Lower[NamedPatternInfo]     = auto(Map)
+instance Lower[MethodCallInfo]   = auto(Map)
+instance Lower[CallInfo]         = auto(Map)
+instance Lower[WithInfo] = auto(Map)
+instance Lower[MatchArm] = auto(Map)
+instance Lower[S.Statement] = auto(Map)
+instance Lower[Pattern] = auto(Map)
+instance Lower[PatternKind] = auto(Map)
+instance Lower[ExprKind] = auto(Map)
+
+instance[T: Lower[T]] Lower[Option[T]] {
+    fn lower(opt: Option[T], lowerer: MatchLowerer) -> Option[T] {
+        opt.map(|t| lower(t, lowerer))
+    }
+}
+
+instance[T: Lower[T]] Lower[Vec[T]] {
+    fn lower(vec: Vec[T], lowerer: MatchLowerer) -> Vec[T] {
+        vec.into_iter().map(|t| lower(t, lowerer)).collect()
+    }
+}
+
+instance Lower[Expr] {
+    fn lower(expr: Expr, lowerer: MatchLowerer) -> Expr {
+        lowerer.lower_expr(expr)
+    }
+}
+
+pub fn lower_matches(program: Program) {
+    let enum_info = build_enum_info(program);
+    let struct_info = build_struct_info(program);
+    let keys: Vec[QualifiedName] = program.functions.keys().cloned().collect();
+    for key in keys {
+        let func = program.functions.get(key).unwrap();
+        if let Some(body) = func.body {
+            let lowerer = MatchLowerer(
+                enum_info,
+                struct_info,
+                program,
+                func.var_allocator,
+            );
+            let new_body = lowerer.lower_expr(body);
+            func.body = Some(new_body);
+        }
+    }
+}
+
+fn build_enum_info(program: Program) -> Map[QualifiedName, EnumInfo] {
+    let enum_info: Map[QualifiedName, EnumInfo] = Map.new();
+    for (qname, def) in program.enums.iter() {
+        let variants: Vec[VariantInfo] = def.variants
+            .iter()
+            .map(|v| VariantInfo(v.qualified_name, v.items.len()))
+            .collect();
+        enum_info.insert(qname, EnumInfo(variants));
+    }
+    enum_info
+}
+
+fn build_struct_info(program: Program) -> Map[I.String, StructInfo] {
+    let struct_info: Map[I.String, StructInfo] = Map.new();
+    for (qname, def) in program.structs.iter() {
+        struct_info.insert(qname.name(), StructInfo(qname, def.fields.len()));
+    }
+    struct_info
+}
+
+pub struct MatchLowerer {
+    pub enum_info: Map[QualifiedName, EnumInfo],
+    pub struct_info: Map[I.String, StructInfo],
+    pub program: Program,
+    pub var_alloc: VarAllocator,
+
+    fn fresh(lowerer: MatchLowerer) -> VariableName {
+        lowerer.var_alloc.allocate_temp()
+    }
+
+    fn stmt_block(lowerer: MatchLowerer, body: Expr, loc: Location) -> Expr {
+        Expr(ExprKind.Block([S.Statement.Expr(body)]), loc, None)
+    }
+
+    fn lower_string_switch(
+        lowerer: MatchLowerer,
+        switch: T.SwitchNode,
+        path_env: Map[DataPath, VariableName],
+        path_ty_env: Map[DataPath, TypeDef],
+        arms: Vec[MatchArm],
+        loc: Location,
+    ) -> Expr {
+        let scrutinee_var = path_env.get(switch.data_path).unwrap();
+        let scrutinee_ty = path_ty_env.get(switch.data_path);
+        let scrutinee_expr = Expr(ExprKind.Var(scrutinee_var), loc.clone(), scrutinee_ty);
+
+        let string_ty = TypeDef.Named(Name.Resolved(QualifiedName.new(B.get_string_type())), []);
+        let bool_ty   = TypeDef.Named(Name.Resolved(QualifiedName.new(B.get_bool_type())), []);
+
+        let string_cases: Vec[(I.String, Expr)] = [];
+        let default_body: Option[Expr] = None;
+
+        for (case, sub_node) in switch.cases.into_iter() {
+            let body = lowerer.stmt_block(lowerer.lower_node(sub_node, path_env, path_ty_env, arms, loc), loc);
+            match case {
+                T.Case.StringCase(s) => string_cases.push((s, body)),
+                T.Case.Default       => { default_body = Some(body) }
+                _ => panic("unexpected case in string switch"),
+            }
+        }
+
+        // Build if-else chain right-to-left so the first case is the outermost if.
+        string_cases.reverse();
+        let result: Expr = match default_body {
+            Some(d) => d,
+            None    => Expr(ExprKind.Tuple([]), loc.clone(), Some(TypeDef.Tuple([]))),
+        };
+        for (s, body) in string_cases {
+            let literal = Expr(ExprKind.StringLiteral(I.resolve(s)), loc.clone(), Some(string_ty.clone()));
+            let cond = Expr(
+                ExprKind.FunctionCall(FunctionCallInfo(
+                    QualifiedName.new(B.get_string_eq()),
+                    FunctionKind.UserDefined,
+                    [scrutinee_expr.clone(), literal],
+                    WitnessInfo.new(),
+                    Vec.new(),
+                )),
+                loc.clone(),
+                Some(bool_ty.clone()),
+            );
+            result = Expr(ExprKind.If(cond, body, Some(lowerer.stmt_block(result, loc))), loc.clone(), None);
+        }
+        result
+    }
+
+    pub fn lower_expr(lowerer: MatchLowerer, expr: Expr) -> Expr {
+        let loc = expr.location.clone();
+        let ty = expr.ty.clone();
+        match expr.kind {
+            ExprKind.Match(MatchInfo(scrutinee, arms)) => {
+                let scrutinee = lowerer.lower_expr(scrutinee);
+                let arms = arms.lower(lowerer);
+                lowerer.compile_match(scrutinee, arms, loc)
+            }
+            kind => Expr(kind.lower(lowerer), loc, ty)
+        }
+    }
+
+    fn compile_match(lowerer: MatchLowerer, scrutinee: Expr, arms: Vec[MatchArm], loc: Location) -> Expr {
+        let scrutinee_var = lowerer.fresh();
+
+        let branches: Vec[MC.MatchBranch] = arms
+            .iter()
+            .map(|arm| {
+                let (inner, is_guarded) = match arm.pattern.kind {
+                    PatternKind.Guard(inner, _, _) => (inner, True),
+                    _ => (arm.pattern, False),
+                };
+                MC.MatchBranch.new(lowerer.to_mc_pat(inner), is_guarded)
+            })
+            .collect();
+
+        let (tree, _) = compile(branches, lowerer.enum_info, lowerer.struct_info);
+
+        let path_env: Map[DataPath, VariableName] = Map.new();
+        path_env.insert(DataPath.root(), scrutinee_var);
+
+        let path_ty_env: Map[DataPath, TypeDef] = Map.new();
+        if let Some(ty) = scrutinee.ty {
+            path_ty_env.insert(DataPath.root(), ty);
+        }
+
+        let tree_expr = lowerer.lower_node(tree, path_env, path_ty_env, arms, loc);
+
+        Expr(
+            ExprKind.Block([
+                S.Statement.Let(S.LetInfo(scrutinee_var, None, scrutinee)),
+                S.Statement.Expr(tree_expr),
+            ]),
+            loc,
+            None,
+        )
+    }
+
+    fn to_mc_pat(lowerer: MatchLowerer, pat: Pattern) -> MC.Pattern {
+        match pat.kind {
+            PatternKind.Wildcard => MC.Pattern.wildcard(),
+            PatternKind.Binding(v) => MC.Pattern.new(MC.PatternKind.Bind(v)),
+            PatternKind.StringLiteral(s) => MC.Pattern.new(MC.PatternKind.StringLiteral(s)),
+            PatternKind.IntLiteral(s) => MC.Pattern.new(MC.PatternKind.IntegerLiteral(s)),
+            PatternKind.CharLiteral(b) => MC.Pattern.new(MC.PatternKind.CharLiteral(b.as_int())),
+            PatternKind.Tuple(pats) => MC.Pattern.new(MC.PatternKind.Tuple(
+                pats.iter().map(|p| lowerer.to_mc_pat(p)).collect(),
+            )),
+            PatternKind.Named(info) => {
+                match info.name {
+                    Name.Resolved(qn) => {
+                        let mc_sub = info.args.iter().map(|p| lowerer.to_mc_pat(p)).collect();
+                        if lowerer.program.variant_enum_map.contains_key(qn) {
+                            let enum_qname = lowerer.program.variant_enum_map.get(qn).unwrap();
+                            MC.Pattern.new(MC.PatternKind.Variant(qn, enum_qname, mc_sub))
+                        } else {
+                            MC.Pattern.new(MC.PatternKind.Struct(qn.name(), mc_sub))
+                        }
+                    }
+                    Name.Unresolved(_) => panic("unexpected name state in to_mc_pat"),
+                }
+            }
+            PatternKind.Guard(_, _, _) => panic("Guard must be unwrapped before to_mc_pat"),
+            PatternKind.Typed(_, _) => panic("unexpected typed pattern in to_mc_pat"),
+        }
+    }
+
+    fn lower_node(
+        lowerer: MatchLowerer,
+        node: T.Node,
+        path_env: Map[DataPath, VariableName],
+        path_ty_env: Map[DataPath, TypeDef],
+        arms: Vec[MatchArm],
+        loc: Location,
+    ) -> Expr {
+        match node {
+            T.Node.Switch(switch) => if switch.kind == T.SwitchKind.StringKind {
+                lowerer.lower_string_switch(switch, path_env, path_ty_env, arms, loc)
+            } else {
+                lowerer.lower_switch(switch, path_env, path_ty_env, arms, loc)
+            },
+            T.Node.Tuple(tuple) => lowerer.lower_tuple(tuple, path_env, path_ty_env, arms, loc),
+            T.Node.Struct(sn) => lowerer.lower_struct(sn, path_env, path_ty_env, arms, loc),
+            T.Node.Wildcard(wildcard) => lowerer.lower_node(wildcard.next, path_env, path_ty_env, arms, loc),
+            T.Node.Leaf(leaf) => lowerer.lower_leaf(leaf, path_env, path_ty_env, arms, loc),
+        }
+    }
+
+    fn lower_switch(
+        lowerer: MatchLowerer,
+        switch: T.SwitchNode,
+        path_env: Map[DataPath, VariableName],
+        path_ty_env: Map[DataPath, TypeDef],
+        arms: Vec[MatchArm],
+        loc: Location,
+    ) -> Expr {
+        let scrutinee_var = path_env.get(switch.data_path).unwrap();
+        let scrutinee_ty = path_ty_env.get(switch.data_path);
+        let scrutinee_expr = Expr(ExprKind.Var(scrutinee_var), loc.clone(), scrutinee_ty);
+
+        let flat_arms: Vec[MatchArm] = switch
+            .cases
+            .into_iter()
+            .map(|(case, sub_node)| match (switch.kind, case) {
+                (T.SwitchKind.Enum(enum_qname), T.Case.Variant(variant_qname)) => {
+                    let enum_def = lowerer.program.enums.get(enum_qname).unwrap();
+                    let raw_item_types: Vec[TypeDef] = enum_def
+                        .variants
+                        .iter()
+                        .find(|v| v.qualified_name == variant_qname)
+                        .unwrap()
+                        .items
+                        .iter()
+                        .map(|i| i.ty.clone())
+                        .collect();
+                    let type_params = match enum_def.type_arg_defs {
+                        Some(tad) => tad.type_params(),
+                        None => Vec.new(),
+                    };
+                    let item_types: Vec[TypeDef] = if type_params.is_empty() {
+                        raw_item_types
+                    } else if let Some(TypeDef.Named(_, concrete_args)) = scrutinee_ty {
+                        let sub = Substitution.new();
+                        for (param, concrete) in type_params.iter().zip(concrete_args.iter()) {
+                            sub.bind_named(param, concrete);
+                        }
+                        raw_item_types.iter().map(|t| sub.apply(t)).collect()
+                    } else {
+                        raw_item_types
+                    };
+
+                    let field_temps: Vec[VariableName] =
+                        (0..item_types.len()).into_iter().map(|_| lowerer.fresh()).collect();
+
+                    let new_env = path_env.clone();
+                    let new_ty_env = path_ty_env.clone();
+                    let variant_path = switch.data_path.push(DataPathSegment.Variant(
+                        variant_qname,
+                        enum_qname,
+                    ));
+                    for (i, temp) in field_temps.iter().enumerate() {
+                        let item_path = variant_path.push(DataPathSegment.ItemIndex(i));
+                        new_env.insert(item_path, temp);
+                        new_ty_env.insert(item_path, item_types[i]);
+                    }
+
+                    let sub_pats: Vec[Pattern] = field_temps
+                        .iter()
+                        .enumerate()
+                        .map(|(i, t)| Pattern(PatternKind.Binding(t), loc.clone(), Some(item_types[i])))
+                        .collect();
+                    let pattern = Pattern(
+                        PatternKind.Named(NamedPatternInfo(name: Name.Resolved(variant_qname), args: sub_pats, named_args: Vec.new(), has_rest: False)),
+                        loc.clone(),
+                        scrutinee_ty,
+                    );
+                    let body = lowerer.stmt_block(lowerer.lower_node(sub_node, new_env, new_ty_env, arms, loc), loc);
+                    MatchArm(pattern, body)
+                }
+                (_, T.Case.Integer(s)) => MatchArm(
+                    Pattern(PatternKind.IntLiteral(s), loc.clone(), scrutinee_ty),
+                    lowerer.stmt_block(lowerer.lower_node(sub_node, path_env, path_ty_env, arms, loc), loc),
+                ),
+                (_, T.Case.Char(b)) => MatchArm(
+                    Pattern(PatternKind.CharLiteral(b.as_u8()), loc.clone(), scrutinee_ty),
+                    lowerer.stmt_block(lowerer.lower_node(sub_node, path_env, path_ty_env, arms, loc), loc),
+                ),
+                (_, T.Case.StringCase(s)) => MatchArm(
+                    Pattern(PatternKind.StringLiteral(s), loc.clone(), scrutinee_ty),
+                    lowerer.stmt_block(lowerer.lower_node(sub_node, path_env, path_ty_env, arms, loc), loc),
+                ),
+                (_, T.Case.Default) => MatchArm(
+                    Pattern(PatternKind.Wildcard, loc.clone(), scrutinee_ty),
+                    lowerer.stmt_block(lowerer.lower_node(sub_node, path_env, path_ty_env, arms, loc), loc),
+                ),
+                _ => panic("unexpected (SwitchKind, Case) combination"),
+            })
+            .collect();
+
+        Expr(ExprKind.Match(MatchInfo(scrutinee_expr, flat_arms)), loc.clone(), None)
+    }
+
+    fn lower_tuple(
+        lowerer: MatchLowerer,
+        tuple: T.TupleNode,
+        path_env: Map[DataPath, VariableName],
+        path_ty_env: Map[DataPath, TypeDef],
+        arms: Vec[MatchArm],
+        loc: Location,
+    ) -> Expr {
+        let parent_path = tuple.data_path.get_parent();
+        let scrutinee_var = path_env.get(parent_path).unwrap();
+        let scrutinee_ty = path_ty_env.get(parent_path);
+
+        let field_temps: Vec[VariableName] =
+           (0..tuple.size).into_iter().map(|_| lowerer.fresh()).collect();
+
+        let new_env = path_env.clone();
+        let new_ty_env = path_ty_env.clone();
+        let stmts: Vec[S.Statement] = [];
+        for (i, temp) in field_temps.iter().enumerate() {
+            let item_path = tuple.data_path.push(DataPathSegment.TupleIndex(i));
+            let item_ty = if let Some(TypeDef.Tuple(elem_tys)) = path_ty_env.get(parent_path) {
+                if i < elem_tys.len() { Some(elem_tys[i]) } else { None }
+            } else { None };
+            new_env.insert(item_path, temp);
+            if let Some(ty) = item_ty {
+                new_ty_env.insert(item_path, ty);
+            }
+            let scrutinee_expr = Expr(ExprKind.Var(scrutinee_var), loc.clone(), scrutinee_ty);
+            stmts.push(S.Statement.Let(S.LetInfo(temp, item_ty, Expr(ExprKind.TupleIndex(scrutinee_expr, i), loc.clone(), item_ty))));
+        }
+
+        let body = lowerer.lower_node(tuple.next, new_env, new_ty_env, arms, loc);
+        stmts.push(S.Statement.Expr(body));
+        Expr(ExprKind.Block(stmts), loc.clone(), None)
+    }
+
+    fn lower_struct(
+        lowerer: MatchLowerer,
+        sn: T.StructNode,
+        path_env: Map[DataPath, VariableName],
+        path_ty_env: Map[DataPath, TypeDef],
+        arms: Vec[MatchArm],
+        loc: Location,
+    ) -> Expr {
+        let parent_path = sn.data_path.get_parent();
+        let scrutinee_var = path_env.get(parent_path).unwrap();
+        let scrutinee_ty = path_ty_env.get(parent_path);
+
+        let struct_def = lowerer.program.structs.get(sn.name).unwrap();
+
+        let field_temps: Vec[VariableName] =
+            (0..sn.field_count).into_iter().map(|_| lowerer.fresh()).collect();
+
+        let new_env = path_env.clone();
+        let new_ty_env = path_ty_env.clone();
+        let stmts: Vec[S.Statement] = [];
+        for (i, temp) in field_temps.iter().enumerate() {
+            let item_path = sn.data_path.push(DataPathSegment.ItemIndex(i));
+            let field = struct_def.fields[i];
+            let item_ty = Some(field.ty.clone());
+            new_env.insert(item_path, temp);
+            new_ty_env.insert(item_path, field.ty);
+            let scrutinee_expr = Expr(ExprKind.Var(scrutinee_var), loc.clone(), scrutinee_ty);
+            stmts.push(S.Statement.Let(S.LetInfo(temp, item_ty, Expr(ExprKind.FieldAccess(scrutinee_expr, field.name), loc.clone(), item_ty))));
+        }
+
+        let body = lowerer.lower_node(sn.next, new_env, new_ty_env, arms, loc);
+        stmts.push(S.Statement.Expr(body));
+        Expr(ExprKind.Block(stmts), loc.clone(), None)
+    }
+
+    fn lower_leaf(
+        lowerer: MatchLowerer,
+        leaf: T.LeafNode,
+        path_env: Map[DataPath, VariableName],
+        path_ty_env: Map[DataPath, TypeDef],
+        arms: Vec[MatchArm],
+        loc: Location,
+    ) -> Expr {
+        let final_m = leaf.final_match.unwrap();
+        let final_idx = mc_arm_index(final_m);
+        let final_body = arms[final_idx].body.clone();
+
+        let result = make_arm_block(
+            final_m.bindings,
+            path_env,
+            path_ty_env,
+            final_body,
+            loc,
+        );
+
+        leaf.guarded_matches.reverse();
+        for guarded_m in leaf.guarded_matches {
+            let guard_idx = mc_arm_index(guarded_m);
+            let guard_arm = arms[guard_idx];
+            let (guard_setup, guard_cond) = extract_guard_exprs(guard_arm);
+            let guard_body = guard_arm.body.clone();
+
+            let binding_stmts = make_binding_stmts(guarded_m.bindings, path_env, path_ty_env, loc);
+
+            let if_expr = Expr(
+                ExprKind.If(guard_cond, guard_body, Some(result)),
+                loc.clone(),
+                None,
+            );
+
+            let stmts = binding_stmts;
+            if let Some(setup) = guard_setup {
+                match setup.kind {
+                    ExprKind.Block(setup_stmts) => stmts.extend(setup_stmts),
+                    _ => stmts.push(S.Statement.Expr(setup)),
+                }
+            }
+            result = if stmts.is_empty() {
+                if_expr
+            } else {
+                stmts.push(S.Statement.Expr(if_expr));
+                Expr(ExprKind.Block(stmts), loc.clone(), None)
+            };
+        }
+
+        result
+    }
+}
+
+fn mc_arm_index(m: T.Match) -> Int {
+    match m.kind {
+        T.MatchKind.UserDefined(i, _) => i,
+        T.MatchKind.Alternative => panic("Alternative match reached lowering"),
+    }
+}
+
+fn make_binding_stmts(
+    bindings: T.Bindings,
+    path_env: Map[DataPath, VariableName],
+    path_ty_env: Map[DataPath, TypeDef],
+    loc: Location,
+) -> Vec[S.Statement] {
+    bindings
+        .bindings
+        .iter()
+        .map(|(dec_path, target_var)| {
+            let data_path = dec_path.last();
+            let source_var = path_env.get(data_path).unwrap();
+            let ty = path_ty_env.get(data_path);
+            let rhs = Expr(ExprKind.Var(source_var), loc.clone(), ty);
+            S.Statement.Let(S.LetInfo(target_var, ty, rhs))
+        })
+        .collect()
+}
+
+fn make_arm_block(
+    bindings: T.Bindings,
+    path_env: Map[DataPath, VariableName],
+    path_ty_env: Map[DataPath, TypeDef],
+    body: Expr,
+    loc: Location,
+) -> Expr {
+    let stmts = make_binding_stmts(bindings, path_env, path_ty_env, loc);
+    if stmts.is_empty() {
+        body
+    } else {
+        stmts.push(S.Statement.Expr(body));
+        Expr(ExprKind.Block(stmts), loc.clone(), None)
+    }
+}
+
+fn extract_guard_exprs(arm: MatchArm) -> (Option[Expr], Expr) {
+    match arm.pattern.kind {
+        PatternKind.Guard(_, guard_expr, Some(guard_var)) => (Some(guard_expr.clone()), guard_var.clone()),
+        PatternKind.Guard(_, guard_expr, None) => (None, guard_expr.clone()),
+        _ => panic("arm has no guard expression"),
+    }
+}
+
+}

@@ -1,0 +1,289 @@
+module Std.Sys.Command {
+
+import Std.Array
+import Std.Intrinsics
+import Std.Libc.Env
+import Std.Libc.FileDescriptor
+import Std.Libc.Stdlib
+import Std.Libc.String
+import Std.Libc.Unistd as Unistd
+import Std.Libc.Wait
+import Std.IO.Buffer
+import Std.IO.Reader
+import Std.IO.Writer
+import Std.IO.Error
+import Std.Arch.Wait
+import Std.Ptr
+import Std.Sync.Thread as T
+
+pub struct CommandResult {
+    status: I32,
+    captured_stdout: String,
+
+    pub fn success(r: CommandResult) -> Bool {
+        if w_exited(r.status) {
+            w_exit_status(r.status) == 0.as_i32()
+        } else {
+            False
+        }
+    }
+
+    pub fn status(r: CommandResult) -> I32 {
+        r.status
+    }
+
+    pub fn captured_stdout(r: CommandResult) -> String {
+        r.captured_stdout
+    }
+}
+
+pub struct ChildProcess {
+    stdin_fd: I32,
+    pid: U32,
+    capture_thread: Option[T.JoinHandle],
+    captured_stdout: *String,
+
+    pub fn write_stdin(child: ChildProcess, data: String) -> Result[(), Error] {
+        let fd = FileDescriptor.new(child.stdin_fd);
+        let buf = ByteBuffer.from_vec(data.to_bytes());
+        fd.write(buf.as_read_buffer())?;
+        Ok(())
+    }
+
+    @safe
+    pub fn close_stdin(child: ChildProcess) {
+        if child.stdin_fd >= 0.as_i32() {
+            Unistd.close(child.stdin_fd);
+            child.stdin_fd = -1.as_i32();
+        }
+    }
+
+    @safe
+    pub fn wait(child: ChildProcess) -> CommandResult {
+        let status = 0.as_i32();
+        waitpid(child.pid, &status, 0.as_i32());
+        match child.capture_thread {
+            Some(t) => t.join(),
+            None => {}
+        }
+        CommandResult(status: status, captured_stdout: *child.captured_stdout)
+    }
+}
+
+pub struct Command {
+    program: String,
+    args: Vec[String],
+    work_dir: Option[String],
+    status: I32,
+    captured_stdout: String,
+    envs: Vec[String],
+    use_path: Bool,
+    stdin_pipe: Bool,
+    capture_stdout: Bool,
+
+    pub fn new(program: String) -> Command {
+        Command(
+            program: program,
+            args: Vec.new(),
+            work_dir: None,
+            status: 0.as_i32(),
+            captured_stdout: "",
+            envs: Vec.new(),
+            use_path: False,
+            stdin_pipe: False,
+            capture_stdout: False,
+        )
+    }
+
+    pub fn with_path(cmd: Command) -> Command {
+        cmd.use_path = True;
+        cmd
+    }
+
+    pub fn with_stdin_pipe(cmd: Command) -> Command {
+        cmd.stdin_pipe = True;
+        cmd
+    }
+
+    pub fn with_capture_stdout(cmd: Command) -> Command {
+        cmd.capture_stdout = True;
+        cmd
+    }
+
+    pub fn arg(cmd: Command, arg: String) -> Command {
+        cmd.args.push(arg);
+        cmd
+    }
+
+    pub fn args(cmd: Command, args: Vec[String]) -> Command {
+        for arg in args {
+            cmd.args.push(arg);
+        }
+        cmd
+    }
+
+    pub fn work_dir(cmd: Command, dir: String) -> Command {
+        cmd.work_dir = Some(dir);
+        cmd
+    }
+
+    pub fn success(cmd: Command) -> Bool {
+        if w_exited(cmd.status) {
+            w_exit_status(cmd.status) == 0.as_i32()
+        } else {
+            False
+        }
+    }
+
+    pub fn add_env(cmd: Command, env: String, value: String) -> Command {
+        cmd.envs.push("${env}=${value}");
+        cmd
+    }
+
+    pub fn captured_stdout(cmd: Command) -> String {
+        cmd.captured_stdout
+    }
+
+    pub fn status(cmd: Command) -> I32 {
+        cmd.status
+    }
+
+    @safe
+    pub fn spawn(cmd: Command) -> ChildProcess {
+        let stdout_read = -1.as_i32();
+        let stdout_write = -1.as_i32();
+        if cmd.capture_stdout {
+            let stdout_fds: [I32; 2] = uninitialized();
+            let stdout_ptr = Std.Array.as_ptr(&stdout_fds);
+            if Unistd.pipe(stdout_ptr) != 0.as_i32() {
+                println("Failed to create stdout pipe");
+                exit(1.as_i32());
+            }
+            stdout_read = *stdout_ptr;
+            stdout_write = *offset_of(stdout_ptr, 1);
+        }
+
+        let stdin_read = -1.as_i32();
+        let stdin_write = -1.as_i32();
+        if cmd.stdin_pipe {
+            let stdin_fds: [I32; 2] = uninitialized();
+            let stdin_ptr = Std.Array.as_ptr(&stdin_fds);
+            if Unistd.pipe(stdin_ptr) != 0.as_i32() {
+                println("Failed to create stdin pipe");
+                exit(1.as_i32());
+            }
+            stdin_read = *stdin_ptr;
+            stdin_write = *offset_of(stdin_ptr, 1);
+        }
+
+        let pid = Unistd.fork();
+        if pid == 0.as_u32() {
+            if stdout_write >= 0.as_i32() {
+                if Unistd.dup2(stdout_write, 1.as_i32()) < 0.as_i32() {
+                    exit(1.as_i32());
+                }
+                Unistd.close(stdout_read);
+            }
+            if stdin_read >= 0.as_i32() {
+                if Unistd.dup2(stdin_read, 0.as_i32()) < 0.as_i32() {
+                    exit(1.as_i32());
+                }
+                Unistd.close(stdin_write);
+            }
+            if let Some(dir) = cmd.work_dir {
+                let c_dir = CString.from_string(dir);
+                if Unistd.chdir(transmute(c_dir.as_ptr())) != 0.as_i32() {
+                    exit(1.as_i32());
+                }
+            }
+            cmd.exec_child()
+        } else {
+            if stdout_write >= 0.as_i32() {
+                Unistd.close(stdout_write);
+            }
+            if stdin_read >= 0.as_i32() {
+                Unistd.close(stdin_read);
+            }
+            let captured = gc_allocate();
+            let capture_thread = if cmd.capture_stdout {
+                let t = T.spawn(|| {
+                    let fd = FileDescriptor.new(stdout_read);
+                    let buffer = ByteBuffer.new(4096);
+                    let bytes: Vec[U8] = Vec.new();
+                    loop {
+                        let n = match fd.read(buffer.as_write_buffer()) {
+                            Ok(n) => n,
+                            Err(_) => { break; }
+                        };
+                        if n == 0 { break; }
+                        let chunk = buffer.as_slice(n.as_u64());
+                        for i in 0..n {
+                            bytes.push(chunk[i]);
+                        }
+                    }
+                    *captured = String.from_slice(bytes.slice());
+                });
+                Some(t)
+            } else {
+                None
+            };
+            ChildProcess(
+                stdin_fd: stdin_write,
+                pid: pid,
+                capture_thread: capture_thread,
+                captured_stdout: captured,
+            )
+        }
+    }
+
+    @unsafe
+    fn exec_child(cmd: Command) -> ! {
+        let c_path = CString.from_string(cmd.program);
+        let arg_strings: Vec[CString] = Vec.new();
+        arg_strings.push(CString.from_string(cmd.program));
+        for arg in cmd.args {
+            arg_strings.push(CString.from_string(arg));
+        }
+        let c_args: Vec[*U8] = Vec.new();
+        for s in arg_strings {
+            c_args.push(transmute(s.as_ptr()));
+        }
+        c_args.push(get_null_ptr());
+        let env_strings: Vec[CString] = Vec.new();
+        for env in cmd.envs {
+            env_strings.push(CString.from_string(env));
+        }
+        let c_envs: Vec[*U8] = Vec.new();
+        for env in env_strings {
+            c_envs.push(transmute(env.as_ptr()));
+        }
+        let existing = get_environ();
+        let i = 0;
+        loop {
+            let env_ptr = *offset_of(existing, i);
+            if is_null_ptr(env_ptr) { break; }
+            c_envs.push(env_ptr);
+            i += 1;
+        }
+        c_envs.push(get_null_ptr());
+        if cmd.use_path {
+            Unistd.execvp(transmute(c_path.as_ptr()), transmute(c_args.as_ptr()));
+        } else {
+            Unistd.execve(transmute(c_path.as_ptr()), transmute(c_args.as_ptr()), transmute(c_envs.as_ptr()));
+        }
+        exit(1.as_i32())
+    }
+
+    pub fn run(cmd: Command) -> Command {
+        let child = cmd.spawn();
+        if cmd.stdin_pipe {
+            child.close_stdin();
+        }
+        let result = child.wait();
+        cmd.status = result.status;
+        cmd.captured_stdout = result.captured_stdout;
+        cmd
+    }
+}
+
+}

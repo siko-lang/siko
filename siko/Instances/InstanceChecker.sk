@@ -1,0 +1,111 @@
+module Siko.Instances.InstanceChecker {
+
+import Siko.AST.Type
+import Siko.Format.Utils
+import Siko.HIR.Program
+import Siko.Location
+import Siko.AST.QualifiedName
+import Siko.Interner as I
+import Std.Set
+
+pub enum InstanceError {
+    SpecializedCanonicalInstance(String, String, String),
+    MissingRequiredMethod(String, String, String, Location),
+    UnknownTraitMethod(String, String, String, Location),
+}
+
+fn find_specialized(ty: TypeDef) -> Option[TypeDef] {
+    match ty {
+        TypeDef.Var(_) => None,
+        TypeDef.Named(_, args) => {
+            for arg in args {
+                match arg {
+                    TypeDef.Var(TypeVar.Named(_)) => {}
+                    _ => return Some(arg),
+                }
+            }
+            None
+        }
+        TypeDef.Tuple(elems) => {
+            for elem in elems {
+                if let Some(bad) = find_specialized(elem) {
+                    return Some(bad);
+                }
+            }
+            None
+        }
+        TypeDef.Paren(inner) => find_specialized(inner),
+        TypeDef.Array(_, _) | TypeDef.Numeric(_) | TypeDef.Ptr(_) | TypeDef.Fn(_, _) | TypeDef.FnPtr(_, _) | TypeDef.Never(_) | TypeDef.Wildcard | TypeDef.Void | TypeDef.VoidPtr => Some(ty),
+    }
+}
+
+fn format_args(args: Vec[TypeDef]) -> String {
+    let parts: Vec[_] = args.iter().map(|a| format_type(a)).collect();
+    let s = "";
+    let i = 0;
+    for part in parts {
+        if i > 0 {
+            s = s + ", ";
+        }
+        s = s + part;
+        i = i + 1;
+    }
+    "[${s}]"
+}
+
+pub fn check_canonical_instances(program: Program) -> Result[(), InstanceError] {
+    for instance_def in program.canonical_instances {
+        let trait_name = I.resolve(instance_def.trait_name.name());
+        for arg in instance_def.args {
+            if let Some(bad) = find_specialized(arg) {
+                return Err(InstanceError.SpecializedCanonicalInstance(
+                    trait_name,
+                    format_type(arg),
+                    format_type(bad),
+                ));
+            }
+        }
+    }
+
+    for instance_def in program.canonical_instances.iter().chain(program.named_instances.values()) {
+        let trait_qname = QualifiedName.new(instance_def.trait_name.name());
+        let trait_def = program.traits.get(trait_qname).unwrap();
+
+        let instance_method_names: Set[_] = instance_def
+            .method_names
+            .iter()
+            .map(|id| id.name)
+            .collect();
+
+        let instance_name = match instance_def.name {
+            Some(n) => I.resolve(n.name),
+            None => format_args(instance_def.args),
+        };
+
+        for required in trait_def.required_method_names {
+            if !instance_method_names.contains(required.name) {
+                return Err(InstanceError.MissingRequiredMethod(
+                    I.resolve(trait_def.name.name),
+                    I.resolve(required.name),
+                    instance_name,
+                    instance_def.location,
+                ));
+            }
+        }
+
+        for method_id in instance_def.method_names {
+            if !trait_def.method_map.names.contains_key(method_id.name) {
+                return Err(InstanceError.UnknownTraitMethod(
+                    I.resolve(trait_def.name.name),
+                    I.resolve(method_id.name),
+                    instance_name,
+                    instance_def.location,
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+}

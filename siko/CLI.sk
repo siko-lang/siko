@@ -1,0 +1,106 @@
+module Siko.CLI {
+
+import Std.Sys.Process as Sys
+import Std.Fs.Directory
+import Siko.Config
+
+pub fn parse_cli_args() -> Option[Config] {
+    let args = Sys.get_args();
+    if args.len() < 2 {
+        println("usage: siko build|check [--pass <resolve|normalize>] <path> [path ...]");
+        return None;
+    }
+    let check_only = False;
+    let cmd = args[1];
+    let test = False;
+    match cmd {
+        "build" => {}
+        "check" => {
+            check_only = True;
+        }
+        "test" => {
+            test = True;
+        }
+        _ => {
+            println("unknown command: " + cmd);
+            println("usage: siko build|check|test [--pass <resolve|normalize>] <path> [path ...]");
+            return None;
+        }
+    }
+    let pass = None;
+    let debug_typecheck = False;
+    let debug_mono = False;
+    let closure_ptr = False;
+    let trace = False;
+    let paths = Vec.new();
+    let check_safety = True;
+    let output = None;
+    let optimize = False;
+    let san = False;
+    let tsan = False;
+    let no_std = False;
+    let i = 2;
+    while i < args.len() {
+        if args[i] == "--pass" {
+            i += 1;
+            if i >= args.len() {
+                println("error: --pass requires an argument");
+                return None;
+            }
+            pass = Some(args[i]);
+        } else if args[i] == "-o" {
+            i += 1;
+            if i >= args.len() {
+                println("error: -o requires an argument");
+                return None;
+            }
+            output = Some(args[i]);
+        } else {
+            match args[i] {
+                "--debug-typecheck" => { debug_typecheck = True; }
+                "--debug-mono"      => { debug_mono = True; }
+                "--trace"           => { trace = True; }
+                "--closure-ptr"     => { closure_ptr = True; }
+                "--no-check-safety" => { check_safety = False; }
+                "-O"                => { optimize = True; }
+                "--san"             => { san = True; }
+                "--tsan"            => { tsan = True; }
+                "--no-std"          => { no_std = True; }
+                _                   => { paths.push(args[i]); }
+            }
+        }
+        i += 1;
+    }
+    let std_path = if no_std {
+        None
+    } else {
+        Sys.getenv("SIKO_ROOT").map(|root| root + "/std")
+    };
+    if paths.is_empty() {
+        match Std.Fs.Directory.get_current_dir() {
+            Ok(cwd) => paths.push(cwd),
+            Err(e) => {
+                println("error: no input paths given and could not get current directory: ${e}");
+                return None;
+            }
+        }
+    }
+    Some(Config(
+        check_only: check_only,
+        pass: pass,
+        debug_typecheck: debug_typecheck,
+        debug_mono: debug_mono,
+        closure_ptr: closure_ptr,
+        trace: trace,
+        paths: paths,
+        check_safety: check_safety,
+        output: output,
+        optimize: optimize,
+        san: san,
+        tsan: tsan,
+        no_std: no_std,
+        std_path: std_path,
+        test: test))
+}
+
+}

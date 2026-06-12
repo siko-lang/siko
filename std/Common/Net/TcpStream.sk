@@ -1,0 +1,33 @@
+module Std.Net.TcpStream {
+
+import Std.IO.Error
+import Std.IO.Buffer
+import Std.IO.Reader
+import Std.IO.Writer
+import Std.Libc.FileDescriptor
+
+pub struct TcpStream {
+    fd: FileDescriptor,
+
+    pub fn new(fd: I32) -> TcpStream {
+        TcpStream(FileDescriptor.new(fd))
+    }
+
+    pub fn close(s: TcpStream) -> Result[(), Error] {
+        s.fd.close()
+    }
+}
+
+pub instance Reader[TcpStream] {
+    fn read(s: TcpStream, buffer: WriteBuffer) -> Result[Int, Error] {
+        s.fd.read(buffer)
+    }
+}
+
+pub instance Writer[TcpStream] {
+    fn write(s: TcpStream, buffer: ReadBuffer) -> Result[Int, Error] {
+        s.fd.write(buffer)
+    }
+}
+
+}

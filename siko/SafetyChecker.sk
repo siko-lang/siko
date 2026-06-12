@@ -1,0 +1,151 @@
+module Siko.SafetyChecker {
+
+import Std.Set
+import Siko.AST.Expr as E
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.Pattern
+import Siko.AST.QualifiedName
+import Siko.AST.Statement as S
+import Siko.AST.Type
+import Siko.HIR.Program
+import Siko.Interner as I
+import Siko.Location
+import Siko.Constants.Builtins as B
+
+pub enum SafetyError {
+    UnsafeFunctionNotAnnotated(location: Location), // unsafe ops but no @safe/@unsafe
+    SafeFunctionAnnotated(location: Location),      // no unsafe ops but has @safe/@unsafe
+}
+
+trait Check[T] {
+    fn check(t: T, checker: SafetyChecker)
+}
+
+instance Check[Location]              = auto(Fold, =)
+instance Check[TypeDef]               = auto(Fold, =)
+instance Check[I.String]              = auto(Fold, =)
+instance Check[String]                = auto(Fold, =)
+instance Check[Int]                   = auto(Fold, =)
+instance Check[U8]                    = auto(Fold, =)
+instance Check[Bool]                  = auto(Fold, =)
+instance Check[QualifiedName]         = auto(Fold, =)
+instance Check[E.VariableName]        = auto(Fold, =)
+instance Check[Name]                  = auto(Fold, =)
+instance Check[Identifier]            = auto(Fold, =)
+instance Check[E.WitnessInfo]         = auto(Fold, =)
+instance Check[E.FunctionKind]        = auto(Fold, =)
+instance Check[E.BinaryOp]            = auto(Fold, =)
+instance Check[E.UnaryOp]             = auto(Fold, =)
+instance Check[E.HandlerSelection]    = auto(Fold, =)
+instance Check[E.LambdaArg]           = auto(Fold, =)
+instance Check[E.ImplicitRefInfo]     = auto(Fold, =)
+instance Check[E.CreateClosureInfo]   = auto(Fold, =)
+instance Check[E.FunctionPtrInfo]     = auto(Fold, =)
+instance Check[E.NamedArgument]       = auto(Fold, =)
+instance Check[NamedPatternArg]       = auto(Fold, =)
+instance Check[NamedPatternInfo]      = auto(Fold)
+instance Check[E.FunctionCallInfo]    = auto(Fold)
+instance Check[E.MethodCallInfo]      = auto(Fold)
+instance Check[E.CallInfo]            = auto(Fold)
+instance Check[E.WithInfo]            = auto(Fold)
+instance Check[E.MatchArm]            = auto(Fold)
+instance Check[E.MatchInfo]           = auto(Fold)
+instance Check[E.ExprKind]            = auto(Fold)
+instance Check[S.LetInfo]             = auto(Fold)
+instance Check[S.DeclareInfo]         = auto(Fold)
+instance Check[S.Statement]           = auto(Fold)
+instance Check[Pattern]               = auto(Fold)
+instance Check[PatternKind]           = auto(Fold)
+
+instance[T: Check[T]] Check[Option[T]] {
+    fn check(opt: Option[T], checker: SafetyChecker) {
+        if let Some(t) = opt {
+            check(t, checker);
+        }
+    }
+}
+
+instance[T: Check[T]] Check[Vec[T]] {
+    fn check(vec: Vec[T], checker: SafetyChecker) {
+        for t in vec {
+            check(t, checker);
+        }
+    }
+}
+
+fn is_callee_unsafe(qname: QualifiedName, checker: SafetyChecker) -> Bool {
+    if qname.base_name() == B.get_util_discriminator() {
+        return False;
+    }
+    let unsafe = match checker.program.functions.get(qname) {
+        Some(fndef) => fndef.is_extern() || fndef.is_unsafe(),
+        None => False,
+    };
+    if unsafe {
+        checker.unsafe_reasons.insert(qname);
+    }
+    unsafe
+}
+
+instance Check[E.Expr] {
+    fn check(expr: E.Expr, checker: SafetyChecker) {
+        match expr.kind {
+            E.ExprKind.Transmute(_) |
+            E.ExprKind.SizeOf(_) |
+            E.ExprKind.Deref(_) |
+            E.ExprKind.AddrOf(_) |
+            E.ExprKind.FunctionPtr(_) |
+            E.ExprKind.FunctionPtrCall(_, _) => {
+                checker.is_unsafe = True;
+            }
+            E.ExprKind.FunctionCall(info) => {
+                if is_callee_unsafe(info.qname, checker) {
+                    checker.is_unsafe = True;
+                }
+            }
+            E.ExprKind.CreateClosure(info) => {
+                if is_callee_unsafe(info.name, checker) {
+                    checker.is_unsafe = True;
+                }
+            }
+            _ => {}
+        }
+        check(expr.kind, checker);
+    }
+}
+
+pub struct SafetyChecker {
+    program: Program,
+    errors: Vec[SafetyError],
+    is_unsafe: Bool,
+    unsafe_reasons: Set[QualifiedName],
+}
+
+pub fn check_safety(program: Program) -> Vec[SafetyError] {
+    let checker = SafetyChecker(program, Vec.new(), False, Set.new());
+    for (_, func) in program.functions {
+        if func.is_builtin() {
+            continue;
+        }
+        checker.unsafe_reasons.clear();
+        checker.is_unsafe = False;
+        if let Some(body) = func.body {
+            check(body, checker);
+        }
+        let fn_is_unsafe = checker.is_unsafe;
+        let has_annotation = func.is_safe() || func.is_unsafe();
+        if fn_is_unsafe && !has_annotation {
+            for reason in checker.unsafe_reasons {
+                println("Unsafe call ${reason.name()}");
+            }
+            checker.errors.push(SafetyError.UnsafeFunctionNotAnnotated(location: func.name.location));
+        }
+        if !fn_is_unsafe && has_annotation {
+            checker.errors.push(SafetyError.SafeFunctionAnnotated(location: func.name.location));
+        }
+    }
+    checker.errors
+}
+
+}

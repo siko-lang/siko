@@ -1,0 +1,45 @@
+module Std.Sys.Process {
+
+import Std.Libc.Env
+import Std.Libc.Process
+import Std.Libc.Stdlib as S
+import Std.Libc.String as LC
+import Std.Ptr
+
+@safe
+pub fn exit(code: I32) -> ! {
+    S.exit(code)
+}
+
+@safe
+pub fn abort() -> ! {
+    S.abort()
+}
+
+pub fn get_args() -> Vec[String] {
+    return Std.Libc.Process.get_args();
+}
+
+pub fn set_exit_code(code: I32) {
+    Std.Libc.Process.set_exit_code(code);
+}
+
+@safe
+pub fn getenv(name: String) -> Option[String] {
+    let prefix = name + "=";
+    let environ = Std.Libc.Env.get_environ();
+    let i = 0;
+    loop {
+        let entry_ptr = *offset_of(environ, i);
+        if is_null_ptr(entry_ptr) {
+            return None;
+        }
+        let entry = LC.from_cstring(entry_ptr);
+        if entry.starts_with(prefix) {
+            return Some(entry.substring(prefix.len(), entry.len()));
+        }
+        i = i + 1;
+    }
+}
+
+}

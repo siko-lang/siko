@@ -1,0 +1,213 @@
+module Std.Fs.Directory {
+
+import Std.Arch.Dirent
+import Std.Arch.Errno
+import Std.Array
+import Std.IO.Error
+import Std.Libc.Dir
+import Std.Libc.String
+import Std.Libc.Unistd
+import Std.Ptr
+import Std.Intrinsics
+
+pub struct Directory {
+    dir: void*,
+
+    @safe
+    pub fn open(path: String) -> Result[Directory, Error] {
+        let c_path = CString.from_string(path.clone());
+        let dir_ptr = Std.Libc.Dir.opendir(c_path.as_ptr());
+        if is_null_voidptr(dir_ptr) {
+            return Err(Error.with_message(Std.Arch.Errno.get_errno(), path));
+        }
+        let dir = Std.Fs.Directory.Directory(dir_ptr);
+        Ok(dir)
+    }
+
+    @safe
+    pub fn read(d: Directory) -> Result[Option[DirEntry], Error] {
+        set_errno_code(0);
+        let entry_ptr = Std.Libc.Dir.readdir(d.dir);
+        if is_null_ptr(entry_ptr) {
+            let errno = Std.Arch.Errno.get_errno();
+            if errno == Std.Arch.Errno.Errno.OK {
+                return Ok(None);
+            }
+            return Err(Error.new(errno));
+        }
+        // DirEnt is a struct with reference semantics,
+        // so internally a ptr, transmute works here
+        let entry_ptr = transmute(entry_ptr);
+        Ok(Some(DirEntry.from_dirent(entry_ptr)))
+    }
+
+    @safe
+    pub fn close(d: Directory) -> Result[(), Error] {
+        if is_null_voidptr(d.dir) {
+            return Ok(());
+        }
+        let res = Std.Libc.Dir.closedir(d.dir);
+        d.dir = get_null_voidptr();
+        if res < 0.as_i32() {
+            return Err(Error.new(Std.Arch.Errno.get_errno()));
+        }
+        Ok(())
+    }
+}
+
+@derive(PartialEq, Eq, PartialOrd, Ord, Clone)
+pub enum FileType {
+    Unknown
+    Fifo,
+    CharDevice,
+    Directory,
+    BlockDevice,
+    RegularFile,
+    Symlink,
+    Socket,
+    Whiteout,
+
+    fn from_u8(value: U8) -> FileType {
+        match value.as_int() {
+            0 => Unknown,
+            1 => Fifo,
+            2 => CharDevice,
+            4 => FileType.Directory,
+            6 => BlockDevice,
+            8 => RegularFile,
+            10 => Symlink,
+            12 => Socket,
+            14 => Whiteout,
+            _ => Unknown,
+        }
+    }
+}
+
+instance ToString[FileType] {
+    fn to_string(f: FileType) -> String {
+        match f {
+            Unknown => "Unknown",
+            Fifo => "Fifo",
+            CharDevice => "CharDevice",
+            FileType.Directory => "Directory",
+            BlockDevice => "BlockDevice",
+            RegularFile => "RegularFile",
+            Symlink => "Symlink",
+            Socket => "Socket",
+            Whiteout => "Whiteout",
+        }
+    }
+}
+
+pub struct DirEntry {
+    name: String,
+    ty: U8,
+    inode: U64,
+
+    @unsafe
+    pub fn from_dirent(entry: Dirent) -> DirEntry {
+        DirEntry(
+            entry.name(),
+            entry.entry_type(),
+            entry.inode(),
+        )
+    }
+
+    pub fn name(d: DirEntry) -> String {
+        d.name
+    }
+
+    pub fn file_type(d: DirEntry) -> FileType {
+        FileType.from_u8(d.ty)
+    }
+
+    pub fn inode(d: DirEntry) -> U64 {
+        d.inode
+    }
+
+    pub fn is_directory(d: DirEntry) -> Bool {
+        d.file_type() == FileType.Directory
+    }
+
+    pub fn is_file(d: DirEntry) -> Bool {
+        d.file_type() == FileType.RegularFile
+    }
+}
+
+pub struct DirEntryIterator {
+    dir: Directory,
+    done: Bool,
+
+    pub fn new(path: String) -> Result[DirEntryIterator, Error] {
+        let dir = Directory.open(path)?;
+        Ok(DirEntryIterator(dir, False))
+    }
+}
+
+pub instance Iterator[DirEntryIterator] {
+    type Item = Result[DirEntry, Error]
+
+    fn next(i: DirEntryIterator) -> Option[Result[DirEntry, Error]] {
+        if i.done {
+            i.dir.close();
+            return None;
+        }
+        let entry = match i.dir.read() {
+            Ok(Some(entry)) => Some(Ok(entry)),
+            Ok(None) => {
+                i.done = True;
+                None
+            }
+            Err(err) => {
+                i.done = True;
+                Some(Err(err))
+            }
+        };
+        entry
+    }
+}
+
+@safe
+pub fn create_dir(path: String) -> Result[(), Error] {
+    let c_path = CString.from_string(path.clone());
+    let mode = 0o755.as_i32();
+    let result = Std.Libc.Unistd.mkdir(c_path.as_ptr(), mode);
+    if result < 0.as_i32() {
+        let errno = Std.Arch.Errno.get_errno();
+        if errno == Std.Arch.Errno.Errno.EEXIST {
+            return Ok(());
+        }
+        return Err(Error.with_message(errno, path));
+    }
+    Ok(())
+}
+
+pub fn create_dir_all(path: String) -> Result[(), Error] {
+    let current = "";
+    for part in path.split("/") {
+        if part.is_empty() { continue; }
+        if current.is_empty() {
+            current = part;
+        } else {
+            current = "${current}/${part}";
+        }
+        create_dir(current)?;
+    }
+    Ok(())
+}
+
+pub fn list_dir(path: String) -> Result[DirEntryIterator, Error] {
+    DirEntryIterator.new(path)
+}
+
+@safe
+pub fn get_current_dir() -> Result[String, Error] {
+    let buf: [U8; 4096] = uninitialized();
+    let ptr = Std.Libc.Unistd.getcwd(Std.Array.as_ptr(&buf), 4096.as_u64());
+    if is_null_ptr(ptr) {
+        return Err(Error.new(Std.Arch.Errno.get_errno()));
+    }
+    Ok(Std.Libc.String.from_cstring(ptr))
+}
+
+}

@@ -1,0 +1,89 @@
+module Std.Fs.File {
+
+import Std.Libc.FileDescriptor
+import Std.Libc.Fcntl
+import Std.IO.Reader
+import Std.IO.Writer
+import Std.IO.Buffer
+import Std.IO.Error
+import Std.Arch.Fs
+import Std.Fs.Stat
+import Std.StringBuilder
+
+pub struct File {
+    fd: FileDescriptor,
+
+    pub fn new(fd: FileDescriptor) -> File {
+        File(fd)
+    }
+
+    pub fn get_fd(f: File) -> I32 {
+        f.fd.get_fd()
+    }
+
+    pub fn create(path: String) -> Result[File, Error] {
+        let flags = O_CREAT | O_RDWR | O_TRUNC;
+        let mode = 0644.as_i32(); // rw-r--r--
+        let fd = Std.Libc.Fcntl.open_file(path, flags, mode)?;
+        Ok(File(fd))
+    }
+
+    pub fn open(path: String) -> Result[File, Error] {
+        let flags = O_RDWR;
+        let mode = 0.as_i32();
+        let fd = Std.Libc.Fcntl.open_file(path, flags, mode)?;
+        Ok(File(fd))
+    }
+
+    pub fn stat(f: File) -> Result[StatResult, Error] {
+        Std.Fs.Stat.fstat(f.fd.get_fd())
+    }
+
+    fn close(f: File) -> Result[(), Error] {
+        f.fd.close()
+    }
+}
+
+instance Reader[File] {
+    fn read(f: File, buffer: WriteBuffer) -> Result[Int, Error] {
+        f.fd.read(buffer)
+    }
+}
+
+instance Writer[File] {
+    fn write(f: File, buffer: ReadBuffer) -> Result[Int, Error] {
+        f.fd.write(buffer)
+    }
+}
+
+pub fn write_file(path: String, content: String) -> Result[(), Error] {
+    let file = File.create(path)?;
+    file.write_string(content)?;
+    Ok(())
+}
+
+pub fn read_file(path: String) -> Result[String, Error] {
+    let file = File.open(path)?;
+    let file_size = match file.stat() {
+        Ok(s) if s.size > 0.as_i64() => s.size.as_int(),
+        _ => 8192,
+    };
+    let sb = StringBuilder.new();
+    let buffer = ByteBuffer.new(file_size);
+    loop {
+        let write_buffer = buffer.as_write_buffer();
+        let n = match file.read(write_buffer) {
+            Ok(n) => n,
+            Err(e) => {
+                return Err(e);
+            }
+        };
+        if n == 0 {
+            break;
+        }
+        sb.push(String.from_slice(buffer.as_slice(n.as_u64())));
+    }
+    Ok(sb.to_string())
+}
+
+}

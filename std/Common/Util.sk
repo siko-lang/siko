@@ -1,0 +1,43 @@
+@prelude
+module Std.Util {
+
+import Std.Sys.Process
+
+pub fn panic(s: String) -> ! {
+    println("PANIC:" + s);
+    abort();
+}
+
+pub fn assert(condition: Bool) -> () {
+    if condition {
+    } else {
+        panic("assertion failed")
+    }
+}
+
+pub fn bytes_to_hex(bytes: Vec[U8]) -> String {
+    let hex_chars = "0123456789abcdef".as_slice();
+    let result = "";
+    for b in bytes {
+        let hi = b.as_int().shr(4).band(0xf);
+        let lo = b.as_int().band(0xf);
+        result = result + String.from_byte(hex_chars[hi]) + String.from_byte(hex_chars[lo]);
+    }
+    result
+}
+
+pub fn unreachable() -> ! {
+    panic("unreachable code")
+}
+
+pub fn unimplemented() -> ! {
+    panic("unimplemented")
+}
+
+@extern
+pub fn discriminator[T](v: T) -> Int
+
+@extern
+pub fn uninitialized[T]() -> T
+
+}

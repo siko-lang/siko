@@ -1,0 +1,29 @@
+module Siko.Resolver.Annotations {
+
+import Siko.Resolver
+import Siko.Resolver.Error
+import Siko.AST.Name
+import Siko.AST.Annotations
+
+instance Resolvable[DeriveAnnotation] {
+    fn resolve(d: DeriveAnnotation, ctx: ResolverContext) -> Result[DeriveAnnotation, ResolveError] {
+        let name = d.trait_name.unresolved();
+        let item = ctx.module_resolver().resolve(name)?;
+        if !item.kind.is_trait() {
+            return Err(ResolveError.NotATrait(name));
+        }
+        Ok(DeriveAnnotation(Name.Resolved(item.qualified_name)))
+    }
+}
+
+instance Resolvable[Annotation] {
+    fn resolve(a: Annotation, ctx: ResolverContext) -> Result[Annotation, ResolveError] {
+        let ann = match a {
+            Annotation.Derive(d) => Annotation.Derive(d.resolve(ctx)?),
+            _ => a,
+        };
+        Ok(ann)
+    }
+}
+
+}

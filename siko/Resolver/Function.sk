@@ -1,0 +1,72 @@
+module Siko.Resolver.Function {
+
+import Siko.Resolver
+import Siko.Resolver.Error
+import Siko.Resolver.ExprResolver
+import Siko.Resolver.Env
+import Siko.AST.Function
+import Siko.AST.Type
+
+instance Resolvable[FunctionArg] {
+    fn resolve(f: FunctionArg, ctx: ResolverContext) -> Result[FunctionArg, ResolveError] {
+        Ok(FunctionArg(
+            f.name,
+            f.type_def.resolve(ctx)?,
+            None,
+        ))
+    }
+}
+
+instance Resolvable[FunctionDef] {
+    fn resolve(f: FunctionDef, ctx: ResolverContext) -> Result[FunctionDef, ResolveError] {
+        ctx.type_resolver.add_args(f.type_arg_defs);
+        //println("Processing function ${f.name.name()}");
+
+        let resolved_args = f.args.resolve(ctx)?;
+        let resolved_result_type = f.result_type.resolve(ctx)?;
+        if resolved_result_type.is_none() {
+            resolved_result_type = Some(TypeDef.Tuple(Vec.new()));
+        }
+
+        let (resolved_body, resolved_args) = if let Some(body) = f.body {
+            let expr_resolver =
+                ExprResolver.new(f.var_allocator, ctx.type_resolver, ctx.global_ctx);
+            let env = Environment.new();
+            for arg in resolved_args {
+                let new_arg = expr_resolver.add_to_env(env, arg.name);
+                arg.name = new_arg;
+            }
+            let resolved_body = Some(expr_resolver.resolve_expr(body, env)?);
+            (resolved_body, resolved_args)
+        } else {
+            (None, resolved_args)
+        };
+
+        let kind = f.kind;
+        if f.is_extern() {
+            kind = FunctionDefKind.Extern;
+        }
+        if f.is_builtin() {
+            kind = FunctionDefKind.Builtin;
+        }
+
+        Ok(FunctionDef(
+            annotations: f.annotations,
+            public: f.public,
+            name: f.name.with_prefix(ctx.module_name()),
+            qualified_name: f.qualified_name,
+            kind: kind,
+            type_arg_defs: f.type_arg_defs.resolve(ctx)?,
+            args: resolved_args,
+            result_type: resolved_result_type,
+            body: resolved_body,
+            module_name: ctx.module_name(),
+            var_allocator: f.var_allocator,
+            is_varargs: f.is_varargs,
+            default_value_names: Vec.new(),
+            source_package: f.source_package,
+        ))
+    }
+}
+
+}

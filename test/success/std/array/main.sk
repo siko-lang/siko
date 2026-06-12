@@ -1,0 +1,38 @@
+module Main {
+
+struct MyStruct {
+   stuff: String,
+   data: [U8; 100],
+}
+
+struct MyStruct2 {
+   stuff: String,
+   s: MyStruct,
+}
+
+@safe
+fn main() {
+   // basic array field write on heap struct
+   let a : [U8; 100] = uninitialized();
+   let b = MyStruct("hello", a);
+   let c = MyStruct("hello", uninitialized());
+   b.data[0] = 8.as_u8();
+   assert(b.data[0] == 8.as_u8());
+
+   // multi-level field access: d.s.data requires lower_lvalue to recurse
+   let d = MyStruct2("hello", b);
+   d.s.data[1] = 9.as_u8();
+   assert(d.s.data[0] == 8.as_u8());
+   assert(d.s.data[1] == 9.as_u8());
+
+   // 2D array: matrix[i][j] — requires lower_lvalue to handle Index nodes
+   // without the Index case in lower_lvalue, matrix[i] creates a copy and
+   // the write to matrix[i][j] is silently discarded
+   let matrix : [[U8; 10]; 5] = uninitialized();
+   matrix[2][3] = 42.as_u8();
+   matrix[0][0] = 1.as_u8();
+   assert(matrix[2][3] == 42.as_u8());
+   assert(matrix[0][0] == 1.as_u8());
+}
+
+}

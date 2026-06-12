@@ -1,0 +1,28 @@
+module Std.IO.Error {
+
+import Std.Arch.Errno
+
+pub struct Error {
+    code: Errno,
+    msg: String,
+
+    pub fn new(code: Errno) -> Error {
+        Error(code, "")
+    }
+
+    pub fn with_message(code: Errno, msg: String) -> Error {
+        Error(code, msg)
+    }
+}
+
+instance ToString[Error] {
+    fn to_string(e: Error) -> String {
+        if e.msg.len() > 0 {
+            "${e.code}: ${e.msg}"
+        } else {
+            "${e.code}"
+        }
+    }
+}
+
+}

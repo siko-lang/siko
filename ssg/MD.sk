@@ -1,0 +1,151 @@
+module SSG.MD {
+
+import Std.Map
+
+pub struct Metadata {
+    pub fields: Map[String, String],
+}
+
+pub struct Document {
+    pub metadata: Metadata,
+    pub body: String,
+}
+
+fn parse_metadata(lines: Vec[String]) -> (Metadata, Int) {
+    let fields = Map.new();
+    let i = 0;
+    while i < lines.len() {
+        let line = lines[i];
+        if line.is_empty() {
+            return (Metadata(fields), i + 1);
+        }
+        match line.find(":") {
+            Some(colon) => {
+                let key = line.substring(0, colon);
+                let value = line.substring(colon + 1, line.len()).trim_start_matches(" ");
+                fields.insert(key, value);
+            }
+            None => {
+                return (Metadata(fields), i);
+            }
+        }
+        i += 1;
+    }
+    (Metadata(fields), i)
+}
+
+fn inline(s: String) -> String {
+    let s = inline_code(s);
+    let s = inline_bold(s);
+    s
+}
+
+fn inline_code(s: String) -> String {
+    let result = "";
+    let rest = s;
+    loop {
+        match rest.find("`") {
+            Some(open) => {
+                let before = rest.substring(0, open);
+                let after_open = rest.substring(open + 1, rest.len());
+                match after_open.find("`") {
+                    Some(close) => {
+                        let code = after_open.substring(0, close);
+                        result = result + before + "<code>" + code + "</code>";
+                        rest = after_open.substring(close + 1, after_open.len());
+                    }
+                    None => {
+                        result = result + rest;
+                        break;
+                    }
+                }
+            }
+            None => {
+                result = result + rest;
+                break;
+            }
+        }
+    }
+    result
+}
+
+fn inline_bold(s: String) -> String {
+    let result = "";
+    let rest = s;
+    loop {
+        match rest.find("**") {
+            Some(start) => {
+                let before = rest.substring(0, start);
+                let after_start = rest.substring(start + 2, rest.len());
+                match after_start.find("**") {
+                    Some(end) => {
+                        let bold = after_start.substring(0, end);
+                        let after_end = after_start.substring(end + 2, after_start.len());
+                        result = result + before + "<strong>" + bold + "</strong>";
+                        rest = after_end;
+                    }
+                    None => {
+                        result = result + rest;
+                        break;
+                    }
+                }
+            }
+            None => {
+                result = result + rest;
+                break;
+            }
+        }
+    }
+    result
+}
+
+fn parse_body(lines: Vec[String], start: Int) -> String {
+    let out = "";
+    let i = start;
+    let in_code_block = False;
+    let in_list = False;
+    while i < lines.len() {
+        let line = lines[i];
+        if line.starts_with("```") {
+            if in_code_block {
+                out = out + "</code></pre>\n";
+                in_code_block = False;
+            } else {
+                out = out + "<pre><code>";
+                in_code_block = True;
+            }
+        } else if in_code_block {
+            let escaped = line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+            out = out + escaped + "\n";
+        } else if line.starts_with("### ") {
+            if in_list { out = out + "</ul>\n"; in_list = False; }
+            out = out + "<h3>" + inline(line.substring(4, line.len())) + "</h3>\n";
+        } else if line.starts_with("## ") {
+            if in_list { out = out + "</ul>\n"; in_list = False; }
+            out = out + "<h2>" + inline(line.substring(3, line.len())) + "</h2>\n";
+        } else if line.starts_with("# ") {
+            if in_list { out = out + "</ul>\n"; in_list = False; }
+            out = out + "<h1>" + inline(line.substring(2, line.len())) + "</h1>\n";
+        } else if line.starts_with("- ") {
+            if !in_list { out = out + "<ul>\n"; in_list = True; }
+            out = out + "<li>" + inline(line.substring(2, line.len())) + "</li>\n";
+        } else if line.is_empty() {
+            if in_list { out = out + "</ul>\n"; in_list = False; }
+        } else {
+            if in_list { out = out + "</ul>\n"; in_list = False; }
+            out = out + "<p>" + inline(line) + "</p>\n";
+        }
+        i += 1;
+    }
+    if in_list { out = out + "</ul>\n"; }
+    out
+}
+
+pub fn parse(src: String) -> Document {
+    let lines: Vec[String] = src.split("\n").collect();
+    let (metadata, content_start) = parse_metadata(lines);
+    let body = parse_body(lines, content_start);
+    Document(metadata, body)
+}
+
+}

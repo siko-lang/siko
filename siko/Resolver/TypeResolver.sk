@@ -1,0 +1,114 @@
+module Siko.Resolver.TypeResolver {
+
+import Siko.Resolver.ModuleResolver
+import Siko.Resolver.Error
+import Siko.Resolver.ModuleItem
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.Type
+import Siko.AST.Generics
+import Siko.Interner as I
+import Std.Set
+
+pub struct TypeResolver {
+    module_resolver: ModuleResolver,
+    type_args: Set[I.String],
+
+    pub fn new(module_resolver: ModuleResolver) -> TypeResolver {
+        TypeResolver(
+            module_resolver,
+            Set.new(),
+        )
+    }
+
+    pub fn add_args(tr: TypeResolver, type_args: Option[TypeArgDefs]) {
+        if let Some(args) = type_args {
+            for arg in args.type_args {
+                tr.type_args.insert(arg.name());
+            }
+        }
+    }
+
+    pub fn add_type_args(tr: TypeResolver, type_args: Vec[Identifier]) {
+        for arg in type_args {
+            tr.type_args.insert(arg.name());
+        }
+    }
+
+    pub fn add_assoc_type_names(tr: TypeResolver, names: Vec[I.String]) {
+        for name in names {
+            tr.type_args.insert(name);
+        }
+    }
+
+    pub fn resolve_name(
+        tr: TypeResolver,
+        name: Identifier,
+        resolved_args: Vec[TypeDef],
+    ) -> Result[TypeDef, ResolveError] {
+        if tr.type_args.contains(name.name()) {
+            if resolved_args.len() > 0 {
+                return Err(ResolveError.HigherKindedTypeNotSupported(name));
+            }
+            return Ok(TypeDef.Var(TypeVar.Named(name.name())));
+        }
+        let item = tr.module_resolver.resolve_type_name(name)?;
+        if item.kind.is_type() {
+            let type_arg_count = item.kind.get_type_arg_count();
+            if type_arg_count != resolved_args.len() {
+                return Err(ResolveError.InvalidTypeArgCount(
+                    name,
+                    type_arg_count,
+                    resolved_args.len(),
+                ));
+            }
+            let name = Name.Resolved(item.qualified_name);
+            return Ok(TypeDef.Named(name, resolved_args));
+        }
+        return Err(ResolveError.NotAType(name));
+    }
+
+    pub fn resolve_trait_name(
+        tr: TypeResolver,
+        name: Name,
+        provided_arg_count: Int,
+    ) -> Result[(Name, Vec[I.String]), ResolveError] {
+        let ident = name.unresolved();
+        let item = tr.module_resolver.resolve(ident)?;
+        match item.kind {
+            ModuleItemKind.Trait(_, expected_count, associated_types) => {
+                if expected_count != provided_arg_count {
+                    return Err(ResolveError.InvalidTraitArgCount(
+                        ident,
+                        expected_count,
+                        provided_arg_count,
+                    ));
+                }
+                Ok((
+                    Name.Resolved(item.qualified_name),
+                    associated_types,
+                ))
+            }
+            _ => Err(ResolveError.NotATrait(ident)),
+        }
+    }
+
+    pub fn module_resolver(tr: TypeResolver) -> ModuleResolver {
+        tr.module_resolver
+    }
+
+    pub fn module_name(tr: TypeResolver) -> I.String {
+        tr.module_resolver.module_name()
+    }
+}
+
+instance Clone[TypeResolver] {
+    fn clone(tr: TypeResolver) -> TypeResolver {
+        TypeResolver(
+            module_resolver: tr.module_resolver,
+            type_args: tr.type_args.clone(),
+        )
+    }
+}
+
+}

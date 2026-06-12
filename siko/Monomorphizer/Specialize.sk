@@ -1,0 +1,326 @@
+module Siko.Monomorphizer.Specialize {
+
+import Siko.Unification.Sub
+import Siko.Unification.Apply
+import Siko.Monomorphizer
+import Siko.Monomorphizer.Types
+import Siko.Monomorphizer.Expr
+import Siko.Instances.FunctionInstanceResolver
+import Siko.Utils.TypeVarAllocator
+import Siko.Monomorphizer.Error
+import Siko.AST.Data
+import Siko.AST.Function
+import Siko.AST.Expr
+import Siko.AST.Pattern
+import Siko.AST.Statement as S
+import Siko.AST.Type
+import Siko.AST.Generics
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.QualifiedName
+import Siko.Location
+import Siko.Interner as I
+
+pub trait Specialize[T] {
+    fn specialize(t: T, mono: Monomorphizer) -> T
+}
+
+instance[T: Specialize[T]] Specialize[Vec[T]] {
+    fn specialize(v: Vec[T], mono: Monomorphizer) -> Vec[T] {
+        v.into_iter().map(|t| t.specialize(mono)).collect()
+    }
+}
+
+instance[T: Specialize[T]] Specialize[Option[T]] {
+    fn specialize(opt: Option[T], mono: Monomorphizer) -> Option[T] {
+        opt.map(|t| t.specialize(mono))
+    }
+}
+
+instance Specialize[Location]         = auto(Map, =)
+instance Specialize[I.String]         = auto(Map, =)
+instance Specialize[String]           = auto(Map, =)
+instance Specialize[Int]              = auto(Map, =)
+instance Specialize[U8]               = auto(Map, =)
+instance Specialize[Bool]             = auto(Map, =)
+instance Specialize[QualifiedName]    = auto(Map, =)
+instance Specialize[VariableName]     = auto(Map, =)
+instance Specialize[Name]             = auto(Map, =)
+instance Specialize[Identifier]       = auto(Map, =)
+instance Specialize[FunctionKind]     = auto(Map, =)
+instance Specialize[BinaryOp]         = auto(Map, =)
+instance Specialize[UnaryOp]          = auto(Map, =)
+instance Specialize[WitnessInfo]      = auto(Map, =)
+instance Specialize[HandlerSelection] = auto(Map, =)
+
+instance Specialize[MatchArm]         = auto(Map)
+
+instance Specialize[LambdaArg]        = auto(Map, =)
+instance Specialize[PatternKind]      = auto(Map)
+
+instance Specialize[ExprKind] = auto(Map)
+
+instance Specialize[S.LetInfo]        = auto(Map)
+instance Specialize[S.DeclareInfo]    = auto(Map)
+instance Specialize[S.Statement]      = auto(Map)
+
+instance Specialize[ImplicitRefInfo] {
+    fn specialize(info: ImplicitRefInfo, mono: Monomorphizer) -> ImplicitRefInfo {
+        if !mono.current_implicit_ctx.contains(info.name) {
+            mono.errors.push(MonoError.UnsetImplicit(info.name.name(), mono.current_location.unwrap()));
+        }
+        info
+    }
+}
+
+instance Specialize[FunctionPtrInfo] {
+    fn specialize(info: FunctionPtrInfo, mono: Monomorphizer) -> FunctionPtrInfo {
+        let func = mono.source.functions.get(info.name).unwrap();
+        let generic_params = func.type_arg_defs.type_params();
+        let param_ann_tys: Vec[TypeDef] = func.args.iter().map(|a| a.type_def).collect();
+        let result_ann_ty = func.result_type;
+        let callee_bounds = func.type_arg_defs.map(|tad| tad.bounds).unwrap_or_else(|| Vec.new());
+
+        let concrete_ty = mono.current_expr_ty.apply(mono.sub).unwrap();
+        let (concrete_params, concrete_ret) = match concrete_ty {
+            TypeDef.FnPtr(ps, r) => (ps, r),
+            _ => panic("specialize FunctionPtrInfo: current_expr_ty is not FnPtr"),
+        };
+
+        let inst_map = Substitution.new();
+        for (p, a) in param_ann_tys.iter().zip(concrete_params.iter()) {
+            extract_named_bindings(p, a, inst_map);
+        }
+        if let Some(rt) = result_ann_ty {
+            extract_named_bindings(rt, concrete_ret, inst_map);
+        }
+
+        let witness_list = info.witnesses.witnesses;
+        for (bound_idx, bound) in callee_bounds.iter().enumerate() {
+            if bound.constraints.is_empty() { continue; }
+            let witness = match witness_list.get_opt(bound_idx) {
+                Some(w) => w,
+                None => { continue; }
+            };
+            let primary_args = bound_args(bound, inst_map, Substitution.new());
+            let module_name = mono.resolve_witness_to_module(witness);
+            if let Some(module_resolver) = mono.instance_resolver.for_module(module_name) {
+                let func_resolver = FunctionInstanceResolver.new(
+                    module_name.clone(),
+                    module_resolver,
+                    [],
+                    TypeVarAllocator.new(),
+                );
+                func_resolver.resolve_and_extract(
+                    bound.trait_name.name(),
+                    primary_args,
+                    bound.constraints,
+                    Substitution.new(),
+                    inst_map,
+                );
+            }
+        }
+
+        let callee_type_args: Vec[TypeDef] = generic_params.iter()
+            .map(|p| inst_map.lookup_named(p).unwrap().clone())
+            .collect();
+        let callee_witnesses: Vec[I.String] = witness_list.iter()
+            .map(|w| mono.resolve_witness_to_module(w))
+            .collect();
+
+        let is_extern = func.is_extern();
+        let is_c_callback = func.is_c_callback();
+        let effect_ctx = if is_extern { EffectCtx.new() } else { mono.current_effect_ctx.clone() };
+        let implicit_ctx = if is_extern || is_c_callback { ImplicitCtx.new() } else { mono.current_implicit_ctx.clone() };
+        let mono_key = fn_mono_key(info.name.name(), callee_type_args, callee_witnesses, effect_ctx.clone(), implicit_ctx.clone());
+        if !mono.fn_done.contains(mono_key.name()) {
+            mono.fn_queue.push_back(FnWork(
+                info.name,
+                callee_type_args,
+                callee_witnesses,
+                effect_ctx,
+                implicit_ctx,
+            ));
+        }
+        FunctionPtrInfo(mono_key, WitnessInfo.new())
+    }
+}
+
+instance Specialize[CreateClosureInfo] {
+    fn specialize(info: CreateClosureInfo, mono: Monomorphizer) -> CreateClosureInfo {
+        let lambda_func = mono.source.functions.get(info.name).unwrap();
+        let generic_params = lambda_func.type_arg_defs.type_params();
+        let callee_type_args: Vec[TypeDef] = generic_params
+            .iter()
+            .map(|p| mono.sub.lookup_named(p).unwrap().clone())
+            .collect();
+        let callee_witnesses: Vec[I.String] = info.witnesses.witnesses
+            .iter()
+            .map(|w| mono.resolve_witness_to_module(w))
+            .collect();
+        let mono_callee = fn_mono_key(
+            info.name.name(),
+            callee_type_args,
+            callee_witnesses,
+            mono.current_effect_ctx.clone(),
+            mono.current_implicit_ctx.clone(),
+        );
+        if !mono.fn_done.contains(mono_callee.name()) {
+            mono.fn_queue.push_back(FnWork(
+                info.name.clone(),
+                callee_type_args,
+                callee_witnesses,
+                mono.current_effect_ctx.clone(),
+                mono.current_implicit_ctx.clone(),
+            ));
+        }
+        CreateClosureInfo(mono_callee, info.params.clone(), WitnessInfo.new())
+    }
+}
+
+instance Specialize[NamedArgument]    = auto(Map, =)
+instance Specialize[NamedPatternArg]  = auto(Map, =)
+instance Specialize[NamedPatternInfo] = auto(Map)
+instance Specialize[MethodCallInfo] = auto(Map)
+instance Specialize[CallInfo]      = auto(Map)
+
+instance Specialize[FunctionCallInfo] {
+    fn specialize(info: FunctionCallInfo, mono: Monomorphizer) -> FunctionCallInfo {
+        match info.kind {
+            FunctionKind.UserDefined => process_user_defined_fn(info.qname, info.args, mono, info.witnesses),
+            FunctionKind.Extern(_)     => process_extern_fn(info.qname, info.args, info.kind, mono),
+            FunctionKind.StructCtor => process_struct_ctor(info.qname, info.args, mono),
+            FunctionKind.VariantCtor => process_variant_ctor(info.qname, info.args, mono),
+            FunctionKind.Builtin => process_builtin_fn(info.qname, info.args, mono),
+        }
+    }
+}
+
+instance Specialize[WithInfo] {
+    fn specialize(info: WithInfo, mono: Monomorphizer) -> WithInfo {
+        let saved_effect_ctx = mono.current_effect_ctx.clone();
+        let saved_implicit_ctx = mono.current_implicit_ctx.clone();
+        let implicit_selections = [];
+        for sel in info.selections {
+            match sel {
+                HandlerSelection.EffectFunction(method, handler) => {
+                    mono.current_effect_ctx.insert(method.clone(), handler.clone());
+                }
+                HandlerSelection.Implicit(implicit_qn, var) => {
+                    mono.current_implicit_ctx.insert(implicit_qn.clone());
+                    implicit_selections.push(HandlerSelection.Implicit(implicit_qn.clone(), var.clone()));
+                }
+                HandlerSelection.Unresolved(_, _) => panic("mono: unresolved HandlerSelection")
+            }
+        }
+        let spec_body = info.body.specialize(mono);
+        mono.current_effect_ctx = saved_effect_ctx;
+        mono.current_implicit_ctx = saved_implicit_ctx;
+        WithInfo(implicit_selections, spec_body)
+    }
+}
+
+instance Specialize[MatchInfo] = auto(Map)
+
+instance Specialize[Pattern] {
+    fn specialize(pattern: Pattern, mono: Monomorphizer) -> Pattern {
+        let spec_ty = pattern.ty.specialize(mono);
+        match pattern.kind {
+            PatternKind.Named(info) => {
+                let qn = info.name.resolved();
+                let type_args: Vec[TypeDef] = match pattern.ty {
+                    Some(TypeDef.Named(_, args)) => args.specialize(mono),
+                    _ => [],
+                };
+                let kind = if mono.source.variant_enum_map.contains_key(qn) {
+                    let (enum_qname, item_ann_types, generic_params) = mono.source.find_variant(qn);
+                    let mono_enum = data_mono_key(enum_qname.name(), type_args);
+                    let v = mono.source.variant(qn);
+                    let mono_variant = Name.Resolved(QualifiedName.new(I.intern("${I.resolve(mono_enum.name())}.${I.resolve(v.name.name())}")));
+                    PatternKind.Named(NamedPatternInfo(name: mono_variant, args: info.args.specialize(mono), named_args: info.named_args, has_rest: False))
+                } else {
+                    let struct_def = mono.source.structs.get(qn).unwrap();
+                    let mono_struct = data_mono_key(qn.name(), type_args);
+                    if !mono.struct_done.contains(mono_struct.name()) {
+                        mono.struct_queue.push_back(DataWork(qn.clone(), type_args));
+                    }
+                    PatternKind.Named(NamedPatternInfo(name: Name.Resolved(mono_struct), args: info.args.specialize(mono), named_args: info.named_args, has_rest: False))
+                };
+                Pattern(kind, pattern.location.clone(), spec_ty)
+            }
+            PatternKind.Typed(_, _) => panic("typed pattern in mono"),
+            kind => Pattern(kind.specialize(mono), pattern.location.clone(), spec_ty)
+        }
+    }
+}
+
+instance Specialize[FieldDef] {
+    fn specialize(field: FieldDef, mono: Monomorphizer) -> FieldDef {
+        FieldDef(
+            public: field.public,
+            name: field.name.clone(),
+            ty: field.ty.specialize(mono),
+            default_value: None,
+        )
+    }
+}
+
+instance Specialize[TypeDef] {
+    fn specialize(ty: TypeDef, mono: Monomorphizer) -> TypeDef {
+        let t = specialize_type(ty, mono.sub);
+        mono.enqueue_named_types(t);
+        t
+    }
+}
+
+instance Specialize[ItemInfo] {
+    fn specialize(item: ItemInfo, mono: Monomorphizer) -> ItemInfo {
+        ItemInfo(name: item.name.clone(), ty: item.ty.specialize(mono))
+    }
+}
+
+instance Specialize[VariantDef] {
+    fn specialize(variant: VariantDef, mono: Monomorphizer) -> VariantDef {
+        VariantDef(
+            variant.name.clone(),
+            variant.qualified_name.clone(),
+            variant.items.specialize(mono),
+        )
+    }
+}
+
+instance Specialize[FunctionArg] {
+    fn specialize(arg: FunctionArg, mono: Monomorphizer) -> FunctionArg {
+        FunctionArg(
+            arg.name.clone(),
+            arg.type_def.specialize(mono),
+            None,
+        )
+    }
+}
+
+instance Specialize[Expr] {
+    fn specialize(expr: Expr, mono: Monomorphizer) -> Expr {
+        mono.current_location = Some(expr.location.clone());
+        mono.current_expr_ty = expr.ty.clone();
+        Expr(expr.kind.specialize(mono), expr.location.clone(), expr.ty.specialize(mono))
+    }
+}
+
+pub trait TypeParams[T] {
+    fn type_params(t: T) -> Vec[I.String]
+}
+
+instance TypeParams[TypeArgDefs] {
+    fn type_params(def: TypeArgDefs) -> Vec[I.String] {
+        def.type_args.iter().map(|id| id.name.clone()).collect()
+    }
+}
+
+instance[T: TypeParams[T]] TypeParams[Option[T]] {
+    fn type_params(o: Option[T]) -> Vec[I.String] {
+        o.map(|t| t.type_params()).unwrap_or_else(|| Vec.new())
+    }
+}
+
+}

@@ -1,0 +1,123 @@
+module Siko.Typechecker.Constraints {
+
+import Siko.AST.Expr as E
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.Format.Utils
+import Siko.Interner as I
+import Siko.Location
+import Siko.Unification.Sub
+
+@derive(PartialEq, Std.Ops.Eq, PartialOrd, Ord, Clone)
+pub struct WitnessKey {
+    pub call_result_var: Int,
+    pub bound_index: Int,
+}
+
+@derive(Clone)
+pub enum ConstraintKind {
+    Unify(TypeDef, TypeDef),
+    HasField(TypeDef, I.String, TypeDef),
+    HasTupleIndex(TypeDef, Int, TypeDef),
+    CallMethod(TypeDef, I.String, Vec[TypeDef], TypeDef),
+    CallFunction(QualifiedName, E.FunctionKind, Vec[TypeDef], TypeDef),
+    DynamicCall(TypeDef, Vec[TypeDef], TypeDef),
+    HasInstance(I.String, Vec[TypeDef], Vec[(TypeDef, I.String)], Option[WitnessKey]),
+    MatchVariant(TypeDef, QualifiedName, Vec[TypeDef]),
+    MatchStruct(TypeDef, QualifiedName, Vec[TypeDef]),
+    ResolveImplicit(QualifiedName, TypeDef),
+    HasIndex(TypeDef, TypeDef, TypeDef),                    // container, idx, result
+    HasIndexAssign(TypeDef, TypeDef, TypeDef, TypeDef),     // container, idx, value, assign_result_ty
+    GetFunctionPtrType(QualifiedName, TypeDef),             // function name, result FnPtr var
+
+    pub fn apply(kind: ConstraintKind, sub: Substitution) -> ConstraintKind {
+        match kind {
+            ConstraintKind.Unify(a, b) =>
+                ConstraintKind.Unify(sub.apply(a), sub.apply(b)),
+            ConstraintKind.HasField(receiver, field, result) =>
+                ConstraintKind.HasField(sub.apply(receiver), field, sub.apply(result)),
+            ConstraintKind.HasTupleIndex(receiver, index, result) =>
+                ConstraintKind.HasTupleIndex(sub.apply(receiver), index, sub.apply(result)),
+            ConstraintKind.CallMethod(receiver, method, args, result) =>
+                ConstraintKind.CallMethod(sub.apply(receiver), method, sub.apply_all(args), sub.apply(result)),
+            ConstraintKind.CallFunction(qname, kind, args, result) =>
+                ConstraintKind.CallFunction(qname, kind, sub.apply_all(args), sub.apply(result)),
+            ConstraintKind.DynamicCall(callee, args, result) =>
+                ConstraintKind.DynamicCall(sub.apply(callee), sub.apply_all(args), sub.apply(result)),
+            ConstraintKind.HasInstance(trait_name, args, assoc_constraints, witness_key) => {
+                let new_assoc = assoc_constraints.iter().map(|(t, n)| (sub.apply(t), n)).collect();
+                ConstraintKind.HasInstance(trait_name, sub.apply_all(args), new_assoc, witness_key)
+            }
+            ConstraintKind.MatchVariant(scrutinee, variant, item_types) =>
+                ConstraintKind.MatchVariant(sub.apply(scrutinee), variant, sub.apply_all(item_types)),
+            ConstraintKind.MatchStruct(scrutinee, struct_qname, item_types) =>
+                ConstraintKind.MatchStruct(sub.apply(scrutinee), struct_qname, sub.apply_all(item_types)),
+            ConstraintKind.ResolveImplicit(qname, result) =>
+                ConstraintKind.ResolveImplicit(qname, sub.apply(result)),
+            ConstraintKind.HasIndex(container, idx, result) =>
+                ConstraintKind.HasIndex(sub.apply(container), sub.apply(idx), sub.apply(result)),
+            ConstraintKind.HasIndexAssign(container, idx, value, assign_result_ty) =>
+                ConstraintKind.HasIndexAssign(sub.apply(container), sub.apply(idx), sub.apply(value), sub.apply(assign_result_ty)),
+            ConstraintKind.GetFunctionPtrType(qname, result) =>
+                ConstraintKind.GetFunctionPtrType(qname, sub.apply(result)),
+        }
+    }
+
+    pub fn describe(kind: ConstraintKind) -> String {
+        match kind {
+            ConstraintKind.Unify(t1, t2) =>
+                "Unify(${format_type(t1)} = ${format_type(t2)})",
+            ConstraintKind.HasField(receiver, field, result) =>
+                "HasField(${format_type(receiver)}.${field} -> ${format_type(result)})",
+            ConstraintKind.HasTupleIndex(receiver, index, result) =>
+                "HasTupleIndex(${format_type(receiver)}.${index} -> ${format_type(result)})",
+            ConstraintKind.CallMethod(receiver, method, args, result) =>
+                "CallMethod(${format_type(receiver)}.${method}(${format_types(args)}) -> ${format_type(result)})",
+            ConstraintKind.CallFunction(qname, kind, args, result) =>
+                "CallFunction[${kind.to_string()}] ${qname.name()}(${format_types(args)}) -> ${format_type(result)}",
+            ConstraintKind.DynamicCall(callee, args, result) =>
+                "DynamicCall(${format_type(callee)}(${format_types(args)}) -> ${format_type(result)})",
+            ConstraintKind.HasInstance(trait_name, args, _, _) =>
+                "HasInstance(${I.resolve(trait_name)}[${format_types(args)}])",
+            ConstraintKind.MatchVariant(scrutinee, variant, item_types) =>
+                "MatchVariant(${format_type(scrutinee)} ~ ${variant.name()}(${format_types(item_types)}))",
+            ConstraintKind.MatchStruct(scrutinee, struct_qname, item_types) =>
+                "MatchStruct(${format_type(scrutinee)} ~ ${struct_qname.name()}(${format_types(item_types)}))",
+            ConstraintKind.ResolveImplicit(qname, result) =>
+                "ResolveImplicit(${qname.name()} -> ${format_type(result)})",
+            ConstraintKind.HasIndex(container, idx, result) =>
+                "HasIndex(${format_type(container)}[${format_type(idx)}] -> ${format_type(result)})",
+            ConstraintKind.HasIndexAssign(container, idx, value, _) =>
+                "HasIndexAssign(${format_type(container)}[${format_type(idx)}] = ${format_type(value)})",
+            ConstraintKind.GetFunctionPtrType(qname, result) =>
+                "GetFunctionPtrType(${qname.name()} -> ${format_type(result)})",
+        }
+    }
+}
+
+instance Apply[ConstraintKind] {
+    fn apply(kind: ConstraintKind, sub: Substitution) -> ConstraintKind {
+        kind.apply(sub)
+    }
+}
+
+@derive(Clone, PartialEq, Eq)
+pub enum ConstraintState {
+    Pending,
+    Satisfied,
+}
+
+@derive(Clone)
+pub struct Constraint {
+    pub id: Int,
+    pub kind: ConstraintKind,
+    pub state: ConstraintState,
+    pub has_spawned: Bool,
+    pub location: Location,
+
+    pub fn new(id: Int, kind: ConstraintKind, location: Location) -> Constraint {
+        Constraint(id, kind, ConstraintState.Pending, False, location)
+    }
+}
+
+}

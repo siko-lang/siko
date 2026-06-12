@@ -1,0 +1,22 @@
+module Std.Array {
+
+import Std.Ptr
+import Std.Intrinsics
+
+@builtin
+pub struct Array[T, N] {}
+
+@unsafe
+pub fn as_ptr[T, N](a: *Array[T, N]) -> *T {
+    transmute(a)
+}
+
+@unsafe
+pub fn fill[T, N](a: *Array[T, N], v: T, count: U64) {
+    let ptr = as_ptr(a);
+    for i in 0..count.as_int() {
+        *offset_of(ptr, i) = v;
+    }
+}
+
+}

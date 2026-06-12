@@ -1,0 +1,101 @@
+module Siko.Format.Types {
+
+import Siko.AST.Type
+import Siko.Format.Formatter
+import Siko.Interner as I
+
+pub fn format_type_def(f: Formatter, ty: TypeDef) {
+    match ty {
+        TypeDef.Named(name, args) => {
+            f.push(I.resolve(name.name()));
+            if !args.is_empty() {
+                f.push("[");
+                let i = 0;
+                for arg in args {
+                    if i > 0 {
+                        f.push(", ");
+                    }
+                    format_type_def(f, arg);
+                    i = i + 1;
+                }
+                f.push("]");
+            }
+        }
+        TypeDef.Tuple(types) => {
+            f.push("(");
+            let i = 0;
+            for ty in types {
+                if i > 0 {
+                    f.push(", ");
+                }
+                format_type_def(f, ty);
+                i = i + 1;
+            }
+            f.push(")");
+        }
+        TypeDef.Paren(inner) => {
+            f.push("(");
+            format_type_def(f, inner);
+            f.push(")");
+        }
+        TypeDef.Var(TypeVar.Named(s)) => {
+            f.push(I.resolve(s));
+        }
+        TypeDef.Var(TypeVar.Var(n)) => {
+            f.push("$");
+            f.push(n.to_string());
+        }
+        TypeDef.Fn(args, result) => {
+            f.push("fn(");
+            let i = 0;
+            for arg in args {
+                if i > 0 {
+                    f.push(", ");
+                }
+                format_type_def(f, arg);
+                i = i + 1;
+            }
+            f.push(") -> ");
+            format_type_def(f, result);
+        }
+        TypeDef.FnPtr(args, result) => {
+            f.push("fn*(");
+            let i = 0;
+            for arg in args {
+                if i > 0 {
+                    f.push(", ");
+                }
+                format_type_def(f, arg);
+                i = i + 1;
+            }
+            f.push(") -> ");
+            format_type_def(f, result);
+        }
+        TypeDef.Ptr(inner) => {
+            f.push("*");
+            format_type_def(f, inner);
+        }
+        TypeDef.Never(_) => {
+            f.push("!");
+        }
+        TypeDef.Wildcard => {
+            f.push("_");
+        }
+        TypeDef.Void => {
+            f.push("void");
+        }
+        TypeDef.VoidPtr => {
+            f.push("void*");
+        }
+        TypeDef.Array(inner, n) => {
+            f.push("[");
+            format_type_def(f, inner);
+            f.push("; ${n}]");
+        }
+        TypeDef.Numeric(n) => {
+            f.push("${n}");
+        }
+    }
+}
+
+}

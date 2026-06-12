@@ -1,0 +1,672 @@
+module Siko.Resolver.ExprResolver {
+
+import Std.Map
+import Std.Set
+import Siko.Resolver.TypeResolver
+import Siko.Resolver.Env
+import Siko.Resolver
+import Siko.Resolver.Error
+import Siko.Resolver.ModuleItem
+import Siko.Resolver.Desugar
+import Siko.AST.Expr
+import Siko.AST.Name
+import Siko.AST.Pattern
+import Siko.AST.Statement as S
+import Siko.Utils.VarAllocator
+import Siko.Interner as I
+import Siko.Location
+import Siko.AST.Identifier
+
+pub struct ExprResolver {
+    pub var_allocator: VarAllocator,
+    type_resolver: TypeResolver,
+    global_ctx: GlobalResolverContext,
+
+    pub fn new(var_allocator: VarAllocator, type_resolver: TypeResolver, global_ctx: GlobalResolverContext) -> ExprResolver {
+        ExprResolver(
+            var_allocator,
+            type_resolver,
+            global_ctx,
+        )
+    }
+
+    fn struct_fields_accessible(expr_resolver: ExprResolver, item: ModuleItem) -> Bool {
+        // Struct may not be in global_ctx yet when resolving methods of structs defined
+        // later in the same module (process_data_items processes structs sequentially).
+        // In that case the call site is in the same module, so access is always allowed.
+        let struct_def = match expr_resolver.global_ctx.get_struct(item.qualified_name) {
+            None => return True,
+            Some(s) => s,
+        };
+        if struct_def.all_fields_public {
+            return True;
+        }
+        expr_resolver.type_resolver.module_name() == struct_def.module_name
+    }
+
+    pub fn add_to_env(
+        expr_resolver: ExprResolver,
+        env: Environment,
+        name: VariableName,
+    ) -> VariableName {
+        let v = expr_resolver.var_allocator.allocate_user(name.unresolved().name());
+        env.add(v);
+        v
+    }
+
+    pub fn resolve_expr(
+        expr_resolver: ExprResolver,
+        expr: Expr,
+        env: Environment,
+    ) -> Result[Expr, ResolveError] {
+        let kind = match expr.kind {
+            ExprKind.IntLiteral(s) => ExprKind.IntLiteral(s),
+            ExprKind.StringLiteral(s) => ExprKind.StringLiteral(s),
+            ExprKind.CharLiteral(b) => ExprKind.CharLiteral(b),
+            ExprKind.Var(name) => match env.lookup(name.get_user_name()) {
+                Some(v) => ExprKind.Var(v),
+                None => {
+                    let ident = name.unresolved();
+                    // Implicits look like local variables (lowercase) but live at module
+                    // scope. Fall through to the module resolver before giving up.
+                    let item = expr_resolver.type_resolver.module_resolver().resolve(ident)?;
+                    match item.kind {
+                        ModuleItemKind.Function(_, _) => ExprKind.FunctionPtr(FunctionPtrInfo(item.qualified_name, WitnessInfo.new())),
+                        ModuleItemKind.Implicit(_) => ExprKind.ImplicitRef(ImplicitRefInfo(item.qualified_name)),
+                        _ => return Err(ResolveError.NameNotFound(ident)),
+                    }
+                }
+            }
+            ExprKind.Name(name) => {
+                let ident = name.unresolved();
+                let item = expr_resolver.type_resolver.module_resolver().resolve(ident)?;
+                match item.kind {
+                    ModuleItemKind.Variant(_, _, _) => ExprKind.FunctionCall(
+                        FunctionCallInfo(
+                            item.qualified_name,
+                            FunctionKind.VariantCtor,
+                            Vec.new(),
+                            WitnessInfo.new(),
+                            Vec.new(),
+                        )
+                    ),
+                    ModuleItemKind.Global(_) => ExprKind.FunctionCall(
+                        FunctionCallInfo(
+                            item.qualified_name,
+                            FunctionKind.UserDefined,
+                            Vec.new(),
+                            WitnessInfo.new(),
+                            Vec.new(),
+                        )
+                    ),
+                    _ => return Err(ResolveError.NotAVariant(ident)),
+                }
+            }
+            ExprKind.FieldAccess(receiver, field) => {
+                let receiver = expr_resolver.resolve_expr(receiver, env)?;
+                ExprKind.FieldAccess(receiver, field)
+            }
+            ExprKind.TupleIndex(receiver, index) => {
+                let receiver = expr_resolver.resolve_expr(receiver, env)?;
+                ExprKind.TupleIndex(receiver, index)
+            }
+            ExprKind.MethodCall(MethodCallInfo(receiver, name, args, named_args)) => {
+                let receiver = expr_resolver.resolve_expr(receiver, env)?;
+                let args: Vec[_] = args
+                    .iter()
+                    .map(|a| expr_resolver.resolve_expr(a, env))
+                    .collect();
+                let args = Result.collect(args)?;
+                ExprKind.MethodCall(MethodCallInfo(receiver, name, args, named_args))
+            }
+            ExprKind.BinaryOp(op, lhs, rhs) => {
+                let lhs = expr_resolver.resolve_expr(lhs, env)?;
+                let rhs = expr_resolver.resolve_expr(rhs, env)?;
+                desugar_binary_op(op, lhs, rhs)
+            }
+            ExprKind.UnaryOp(op, operand) => {
+                let operand = expr_resolver.resolve_expr(operand, env)?;
+                desugar_unary_op(op, operand)
+            }
+            ExprKind.Call(CallInfo(func, args, named_args)) => {
+                let resolved_args = args
+                    .iter()
+                    .map(|a| expr_resolver.resolve_expr(a, env))
+                    .collect();
+                let resolved_args = Result.collect(resolved_args)?;
+                match func.kind {
+                    ExprKind.Var(name) => {
+                        // Local variable takes priority — it's a dynamic call.
+                        if env.lookup(name.get_user_name()).is_some() {
+                            if !named_args.is_empty() {
+                                return Err(ResolveError.NamedArgOnDynamicCall(expr.location));
+                            }
+                            let callee = expr_resolver.resolve_expr(func, env)?;
+                            ExprKind.DynamicCall(callee, resolved_args)
+                        } else {
+                            let item = expr_resolver
+                                .type_resolver
+                                .module_resolver()
+                                .resolve(name.unresolved())?;
+                            match item.kind {
+                                ModuleItemKind.Function(_, kind) => ExprKind.FunctionCall(
+                                    FunctionCallInfo(
+                                        item.qualified_name,
+                                        kind,
+                                        resolved_args,
+                                        WitnessInfo.new(),
+                                        named_args,
+                                    )
+                                ),
+                                _ => panic("Illegal item in named function call"),
+                            }
+                        }
+                    }
+                    ExprKind.Name(name) => {
+                        let ident = name.unresolved();
+                        let item = expr_resolver
+                            .type_resolver
+                            .module_resolver()
+                            .resolve(ident)?;
+                        match item.kind {
+                            ModuleItemKind.Struct(_, _, _) => {
+                                if !expr_resolver.struct_fields_accessible(item) {
+                                    return Err(ResolveError.StructCtorPrivateFields(ident));
+                                }
+                                ExprKind.FunctionCall(
+                                    FunctionCallInfo(
+                                        item.qualified_name,
+                                        FunctionKind.StructCtor,
+                                        resolved_args,
+                                        WitnessInfo.new(),
+                                        named_args,
+                                    )
+                                )
+                            }
+                            ModuleItemKind.Variant(_, _, _) => ExprKind.FunctionCall(
+                                FunctionCallInfo(
+                                    item.qualified_name,
+                                    FunctionKind.VariantCtor,
+                                    resolved_args,
+                                    WitnessInfo.new(),
+                                    named_args,
+                                )
+                            ),
+                            ModuleItemKind.Function(_, kind) => ExprKind.FunctionCall(
+                                FunctionCallInfo(
+                                    item.qualified_name,
+                                    kind,
+                                    resolved_args,
+                                    WitnessInfo.new(),
+                                    named_args,
+                                )
+                            ),
+                            i => panic("Illegal item in named ctor function call, ${i}"),
+                        }
+                    }
+                    _ => {
+                        // Any other callee expression (field access, method call result, etc.)
+                        if !named_args.is_empty() {
+                            return Err(ResolveError.NamedArgOnDynamicCall(expr.location));
+                        }
+                        let callee = expr_resolver.resolve_expr(func, env)?;
+                        ExprKind.DynamicCall(callee, resolved_args)
+                    }
+                }
+            }
+            ExprKind.FunctionCall(_) => panic("Function call found in expr resolver"),
+            ExprKind.If(cond, then, else_expr) => {
+                let cond = expr_resolver.resolve_expr(cond, env)?;
+                let then = expr_resolver.resolve_expr(then, env)?;
+                let else_expr = match else_expr {
+                    Some(e) => Some(expr_resolver.resolve_expr(e, env)?),
+                    None => None,
+                };
+                ExprKind.If(cond, then, else_expr)
+            }
+            ExprKind.IfLet(pattern, cond, then, else_expr) => {
+                let resolved = desugar_if_let(expr_resolver, pattern, cond, then, else_expr, expr.location, env)?;
+                resolved.kind
+            }
+            ExprKind.Block(stmts) => {
+                let child = env.child();
+                let resolved = expr_resolver.resolve_stmts(stmts, child)?;
+                ExprKind.Block(resolved)
+            }
+            ExprKind.Tuple(exprs) => {
+                let exprs: Vec[_] = exprs
+                    .iter()
+                    .map(|e| expr_resolver.resolve_expr(e, env))
+                    .collect();
+                let exprs = Result.collect(exprs)?;
+                ExprKind.Tuple(exprs)
+            }
+            ExprKind.Paren(inner) => {
+                let inner = expr_resolver.resolve_expr(inner, env)?;
+                ExprKind.Paren(inner)
+            }
+            ExprKind.Transmute(inner) => {
+                let inner = expr_resolver.resolve_expr(inner, env)?;
+                ExprKind.Transmute(inner)
+            }
+            ExprKind.Return(inner) => {
+                let inner = expr_resolver.resolve_expr(inner, env)?;
+                ExprKind.Return(inner)
+            }
+            ExprKind.Match(MatchInfo(scrutinee, arms)) => {
+                let scrutinee = expr_resolver.resolve_expr(scrutinee, env)?;
+                let resolved_arms = Vec.new();
+                for arm in arms {
+                    let arm_env = env.child();
+                    let pattern = expr_resolver.resolve_pattern(arm.pattern, arm_env)?;
+                    let body = expr_resolver.resolve_expr(arm.body, arm_env)?;
+                    resolved_arms.push(MatchArm(pattern, body));
+                }
+                ExprKind.Match(MatchInfo(scrutinee, resolved_arms))
+            }
+            ExprKind.With(WithInfo(selections, body)) => {
+                let body = expr_resolver.resolve_expr(body, env)?;
+                let resolved_selections = Vec.new();
+                for selection in selections {
+                    let (method_ident, handler_ident) = if let HandlerSelection.Unresolved(method_ident, handler_ident) = selection {
+                        (method_ident, handler_ident)
+                    } else {
+                        panic("non-Unresolved HandlerSelection found during resolution")
+                    };
+                    let method_item = expr_resolver.type_resolver.module_resolver().resolve(method_ident)?;
+                    let resolved = if method_item.kind.is_implicit() {
+                        let var = match env.lookup(handler_ident.name) {
+                            Some(v) => v,
+                            None => { return Err(ResolveError.NameNotFound(handler_ident)); }
+                        }
+                        HandlerSelection.Implicit(method_item.qualified_name, var)
+                    } else if method_item.kind.is_function() {
+                        let handler_item = expr_resolver
+                            .type_resolver
+                            .module_resolver()
+                            .resolve(handler_ident)?;
+                        if !handler_item.kind.is_function() {
+                            return Err(ResolveError.InvalidEffectHandler(handler_ident));
+                        }
+                         HandlerSelection.EffectFunction(
+                            method_item.qualified_name,
+                            handler_item.qualified_name,
+                        )
+                    } else {
+                        return Err(ResolveError.InvalidEffectHandler(method_ident));
+                    };
+                    resolved_selections.push(resolved);
+                }
+                ExprKind.With(WithInfo(resolved_selections, body))
+            }
+            ExprKind.ImplicitRef(_) => panic("Implicit ref found during resolution"),
+            ExprKind.Index(container, idx) => {
+                let resolved_container = expr_resolver.resolve_expr(container, env)?;
+                let resolved_idx = expr_resolver.resolve_expr(idx, env)?;
+                ExprKind.Index(resolved_container, resolved_idx)
+            }
+            ExprKind.List(items) => {
+                let loc = expr.location;
+                let resolved_items: Vec[_] =
+                    items.iter().map(|e| expr_resolver.resolve_expr(e, env)).collect();
+                let resolved_items = Result.collect(resolved_items)?;
+                desugar_list(expr_resolver, resolved_items, loc)
+            }
+            ExprKind.UnresolvedLambda(patterns, body) => {
+                let loc = expr.location;
+                // Allocate one fresh arg variable per user pattern.
+                let user_arg_vars: Vec[VariableName] = patterns
+                    .iter()
+                    .map(|_| expr_resolver.var_allocator.allocate_temp())
+                    .collect();
+                // Scrutinee covers only the user args.
+                let scrutinee = Expr.new(
+                    ExprKind.Tuple(
+                        user_arg_vars
+                            .iter()
+                            .map(|v| Expr.new(ExprKind.Var(v), loc))
+                            .collect(),
+                    ),
+                    loc,
+                );
+                // Lambda child: fn_id incremented so lookups crossing this boundary are captures.
+                let arm_env = env.lambda_child();
+                let tuple_pat = Pattern (
+                    PatternKind.Tuple(patterns),
+                    loc,
+                    None,
+                );
+                let resolved_pat = expr_resolver.resolve_pattern(tuple_pat, arm_env)?;
+                let resolved_body = expr_resolver.resolve_expr(body, arm_env)?;
+                // Captures are prepended to the arg list; user args follow.
+                let captures = arm_env.get_captures();
+                let capture_count = captures.len();
+                let all_args: Vec[LambdaArg] =
+                    captures.into_iter().chain(user_arg_vars.iter()).map(|v| LambdaArg(v, None)).collect();
+                let match_expr = Expr.new(
+                    ExprKind.Match(MatchInfo(
+                        scrutinee,
+                        [MatchArm(resolved_pat,resolved_body)],
+                    )),
+                    loc,
+                );
+                ExprKind.ResolvedLambda(all_args, match_expr, capture_count)
+            }
+            ExprKind.Try(inner) => {
+                let loc = expr.location;
+                let resolved_inner = expr_resolver.resolve_expr(inner, env)?;
+                desugar_try(expr_resolver, resolved_inner, loc)
+            }
+            ExprKind.ResolvedLambda(_, _, _) => {
+                panic("resolver: ResolvedLambda found before resolution")
+            }
+            ExprKind.DynamicCall(_, _) => panic("resolver: DynamicCall found before resolution"),
+            ExprKind.FunctionPtr(_) => panic("resolver: FunctionPtr found before resolution"),
+            ExprKind.FunctionPtrCall(_, _) => panic("resolver: FunctionPtrCall found before resolution"),
+            ExprKind.CreateClosure(_) => panic("resolver: CreateClosure found before lambda lift"),
+            ExprKind.SizeOf(ty) => {
+                let ctx = ResolverContext.new(expr_resolver.type_resolver, expr_resolver.global_ctx);
+                let ty = ty.resolve(ctx)?;
+                ExprKind.SizeOf(ty)
+            }
+            ExprKind.Deref(inner) => {
+                let inner = expr_resolver.resolve_expr(inner, env)?;
+                ExprKind.Deref(inner)
+            }
+            ExprKind.AddrOf(inner) => {
+                let inner = expr_resolver.resolve_expr(inner, env)?;
+                ExprKind.AddrOf(inner)
+            }
+        };
+        Ok(Expr (
+            kind,
+            expr.location,
+            None,
+        ))
+    }
+
+    fn resolve_named_pattern(
+        expr_resolver: ExprResolver,
+        info: NamedPatternInfo,
+        loc: Location,
+        env: Environment,
+    ) -> Result[PatternKind, ResolveError] {
+        let ident = info.name.unresolved();
+        let item = expr_resolver.type_resolver.module_resolver().resolve(ident)?;
+        let item_count = match item.kind {
+            ModuleItemKind.Variant(_, _, count) => count,
+            ModuleItemKind.Struct(_, _, count) => {
+                if !expr_resolver.struct_fields_accessible(item) {
+                    return Err(ResolveError.StructPatternPrivateFields(ident));
+                }
+                count
+            }
+            _ => return Err(ResolveError.NotAVariant(ident)),
+        };
+        let resolved_name = Name.Resolved(item.qualified_name);
+        if info.has_rest {
+            expr_resolver.resolve_named_pattern_rest(info, item, item_count, resolved_name, loc, env)
+        } else {
+            expr_resolver.resolve_named_pattern_positional(info, item, item_count, resolved_name, env)
+        }
+    }
+
+    fn get_field_names(
+        expr_resolver: ExprResolver,
+        item: ModuleItem,
+        ident: Identifier,
+    ) -> Result[Vec[I.String], ResolveError] {
+        match item.kind {
+            ModuleItemKind.Variant(_, _, _) => {
+                let enum_def = expr_resolver.global_ctx.get_enum_for_variant(item.qualified_name).unwrap();
+                let variant_def = enum_def.variants.iter().find(|v| v.qualified_name == item.qualified_name).unwrap();
+                let names = Vec.new();
+                for it in variant_def.items {
+                    match it.name {
+                        Some(n) => names.push(n.name()),
+                        None => return Err(ResolveError.PatternItemNotNamed(ident, I.intern(""))),
+                    }
+                }
+                Ok(names)
+            }
+            ModuleItemKind.Struct(_, _, _) => {
+                let struct_def = expr_resolver.global_ctx.get_struct(item.qualified_name).unwrap();
+                Ok(struct_def.fields.iter().map(|f| f.name.name()).collect())
+            }
+            _ => Err(ResolveError.NotAVariant(ident)),
+        }
+    }
+
+    fn resolve_named_pattern_rest(
+        expr_resolver: ExprResolver,
+        info: NamedPatternInfo,
+        item: ModuleItem,
+        item_count: Int,
+        resolved_name: Name,
+        loc: Location,
+        env: Environment,
+    ) -> Result[PatternKind, ResolveError] {
+        let ident = info.name.unresolved();
+        if info.args.len() != info.named_args.len() {
+            return Err(ResolveError.PositionalArgWithRest(ident));
+        }
+        let seen: Set[I.String] = Set.new();
+        for na in info.named_args {
+            if seen.contains(na.name) {
+                return Err(ResolveError.DuplicateNamedPatternArg(ident, na.name));
+            }
+            seen.insert(na.name);
+        }
+        let field_names = expr_resolver.get_field_names(item, ident)?;
+        for na in info.named_args {
+            if !field_names.iter().any(|fname| fname == na.name) {
+                return Err(ResolveError.WrongNamedPatternArg(ident, na.name, I.intern("(no such field)")));
+            }
+        }
+        if info.named_args.len() == item_count {
+            return Err(ResolveError.RedundantRestPattern(ident));
+        }
+        let name_to_pat: Map[I.String, Pattern] = Map.new();
+        for na in info.named_args {
+            name_to_pat.insert(na.name, info.args[na.index]);
+        }
+        let full_args: Vec[Pattern] = Vec.new();
+        for field_name in field_names {
+            let pat = match name_to_pat.get(field_name) {
+                Some(p) => expr_resolver.resolve_pattern(p, env)?,
+                None => Pattern(PatternKind.Wildcard, loc, None),
+            };
+            full_args.push(pat);
+        }
+        Ok(PatternKind.Named(NamedPatternInfo(name: resolved_name, args: full_args, named_args: Vec.new(), has_rest: False)))
+    }
+
+    fn resolve_named_pattern_positional(
+        expr_resolver: ExprResolver,
+        info: NamedPatternInfo,
+        item: ModuleItem,
+        item_count: Int,
+        resolved_name: Name,
+        env: Environment,
+    ) -> Result[PatternKind, ResolveError] {
+        let ident = info.name.unresolved();
+        if info.args.len() != item_count {
+            return Err(ResolveError.WrongPatternArgCount(ident, item_count, info.args.len()));
+        }
+        for na in info.named_args {
+            let expected_name = match item.kind {
+                ModuleItemKind.Variant(_, _, _) => {
+                    let enum_def = expr_resolver.global_ctx.get_enum_for_variant(item.qualified_name).unwrap();
+                    let variant_def = enum_def.variants.iter().find(|v| v.qualified_name == item.qualified_name).unwrap();
+                    match variant_def.items[na.index].name {
+                        Some(n) => n.name(),
+                        None => return Err(ResolveError.PatternItemNotNamed(ident, na.name)),
+                    }
+                }
+                ModuleItemKind.Struct(_, _, _) => {
+                    let struct_def = expr_resolver.global_ctx.get_struct(item.qualified_name).unwrap();
+                    struct_def.fields[na.index].name.name()
+                }
+                _ => return Err(ResolveError.NotAVariant(ident)),
+            };
+            if na.name != expected_name {
+                return Err(ResolveError.WrongNamedPatternArg(ident, na.name, expected_name));
+            }
+        }
+        let resolved_args: Vec[_] = info.args
+            .iter()
+            .map(|p| expr_resolver.resolve_pattern(p, env))
+            .collect();
+        let resolved_args = Result.collect(resolved_args)?;
+        Ok(PatternKind.Named(NamedPatternInfo(name: resolved_name, args: resolved_args, named_args: Vec.new(), has_rest: False)))
+    }
+
+    pub fn resolve_pattern(
+        expr_resolver: ExprResolver,
+        pattern: Pattern,
+        env: Environment,
+    ) -> Result[Pattern, ResolveError] {
+        let kind = match pattern.kind {
+            PatternKind.Wildcard => PatternKind.Wildcard,
+            PatternKind.StringLiteral(s) => PatternKind.StringLiteral(s),
+            PatternKind.IntLiteral(s) => PatternKind.IntLiteral(s),
+            PatternKind.CharLiteral(b) => PatternKind.CharLiteral(b),
+            PatternKind.Guard(inner_pat, guard_expr, _) => {
+                let resolved_pat = expr_resolver.resolve_pattern(inner_pat, env)?;
+                let resolved_guard = expr_resolver.resolve_expr(guard_expr, env)?;
+                PatternKind.Guard(resolved_pat, resolved_guard, None)
+            }
+            PatternKind.Typed(p, ty) => {
+                let resolved_pat = expr_resolver.resolve_pattern(p, env)?;
+                let ctx = ResolverContext.new(expr_resolver.type_resolver, expr_resolver.global_ctx);
+                let resolved_ty = ty.resolve(ctx)?;
+                PatternKind.Typed(resolved_pat, resolved_ty)
+            }
+            PatternKind.Binding(name) => {
+                let v = expr_resolver.var_allocator.allocate_user(name.get_user_name());
+                env.add(v);
+                PatternKind.Binding(v)
+            }
+            PatternKind.Named(info) => expr_resolver.resolve_named_pattern(info, pattern.location, env)?
+            PatternKind.Tuple(pats) => {
+                let resolved: Vec[_]= pats
+                    .iter()
+                    .map(|p| expr_resolver.resolve_pattern(p, env))
+                    .collect();
+                let resolved = Result.collect(resolved)?;
+                PatternKind.Tuple(resolved)
+            }
+        };
+        Ok(Pattern (
+            kind,
+            pattern.location,
+            None,
+        ))
+    }
+
+    pub fn resolve_stmts(
+        expr_resolver: ExprResolver,
+        stmts: Vec[S.Statement],
+        env: Environment,
+    ) -> Result[Vec[S.Statement], ResolveError] {
+        let result = Vec.new();
+        let i = 0;
+        while i < stmts.len() {
+            let stmt = stmts[i];
+            let resolved = match stmt {
+                S.Statement.UnresolvedLet(pattern, type_annotation, rhs) => {
+                    if let PatternKind.Binding(name) = pattern.kind {
+                        let resolved_annotation = match type_annotation {
+                            Some(ty) => {
+                                let ctx = ResolverContext.new(expr_resolver.type_resolver, expr_resolver.global_ctx);
+                                let ty = ty.resolve(ctx)?;
+                                Some(ty)
+                            }
+                            None => None,
+                        };
+                        let resolved_rhs = expr_resolver.resolve_expr(rhs, env)?;
+                        let v = expr_resolver.var_allocator.allocate_user(name.get_user_name());
+                        env.add(v);
+                        S.Statement.Let(S.LetInfo(v, resolved_annotation, resolved_rhs))
+                    } else {
+                        let resolved_rhs = expr_resolver.resolve_expr(rhs, env)?;
+                        let location = resolved_rhs.location;
+                        let arm_pattern = if let Some(ty) = type_annotation {
+                            Pattern (
+                                PatternKind.Typed(pattern, ty),
+                                pattern.location,
+                                None,
+                            )
+                        } else {
+                            pattern
+                        };
+                        let resolved_pattern = expr_resolver.resolve_pattern(arm_pattern, env)?;
+                        let resolved_rest = expr_resolver.resolve_stmts(stmts.sub(i + 1, stmts.len()), env)?;
+                        let body = Expr.new(ExprKind.Block(resolved_rest), location);
+                        let arm = MatchArm (
+                            resolved_pattern,
+                            body,
+                        );
+                        let match_expr =
+                            Expr.new(ExprKind.Match(MatchInfo(resolved_rhs, [arm])), location);
+                        result.push(S.Statement.TrailingExpr(match_expr));
+                        return Ok(result);
+                    }
+                }
+                S.Statement.Let(S.LetInfo(name, type_annotation, rhs)) => {
+                    let resolved_annotation = match type_annotation {
+                        Some(ty) => {
+                            let ctx = ResolverContext.new(expr_resolver.type_resolver, expr_resolver.global_ctx);
+                            let ty = ty.resolve(ctx)?;
+                            Some(ty)
+                        }
+                        None => None,
+                    };
+                    let resolved_rhs = expr_resolver.resolve_expr(rhs, env)?;
+                    let v = expr_resolver.var_allocator.allocate_user(name.get_user_name());
+                    env.add(v);
+                    S.Statement.Let(S.LetInfo(v, resolved_annotation, resolved_rhs))
+                }
+                S.Statement.Loop(body) => {
+                    let resolved = expr_resolver.resolve_stmts(body, env)?;
+                    S.Statement.Loop(resolved)
+                }
+                S.Statement.ForLoop(pattern, iterable, body) => {
+                    desugar_for_loop(expr_resolver, env, result, pattern, iterable, body)?
+                }
+                S.Statement.WhileLoop(cond, body) => desugar_while_loop(expr_resolver, env, cond, body)?,
+                S.Statement.Break => S.Statement.Break,
+                S.Statement.Continue => S.Statement.Continue,
+                S.Statement.Declare(_) => panic("Declare statement found in resolver"),
+                S.Statement.Assign(lhs, rhs) => {
+                    if let ExprKind.Index(container, idx) = lhs.kind {
+                        let loc = lhs.location;
+                        let resolved_container = expr_resolver.resolve_expr(container, env)?;
+                        let resolved_idx = expr_resolver.resolve_expr(idx, env)?;
+                        let resolved_rhs = expr_resolver.resolve_expr(rhs, env)?;
+                        let new_lhs = Expr(ExprKind.Index(resolved_container, resolved_idx), loc, None);
+                        S.Statement.Assign(new_lhs, resolved_rhs)
+                    } else {
+                        let resolved_lhs = expr_resolver.resolve_expr(lhs, env)?;
+                        S.Statement.Assign(resolved_lhs, expr_resolver.resolve_expr(rhs, env)?)
+                    }
+                }
+                S.Statement.Expr(expr) => S.Statement.Expr(expr_resolver.resolve_expr(expr, env)?),
+                S.Statement.TrailingExpr(expr) => {
+                    let resolved = expr_resolver.resolve_expr(expr, env)?;
+                    if i + 1 < stmts.len() {
+                        S.Statement.Expr(resolved)
+                    } else {
+                        S.Statement.TrailingExpr(resolved)
+                    }
+                }
+            };
+            result.push(resolved);
+            i += 1;
+        }
+        Ok(result)
+    }
+
+}
+
+}

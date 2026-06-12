@@ -1,0 +1,371 @@
+@prelude
+module Std.Vec {
+
+import Std.Slice
+import Std.Ptr
+
+pub struct Vec[T] {
+    data: *T,
+    size: Int,
+    capacity: Int,
+
+    @safe
+    pub fn new(capacity: Int = 0) -> Vec[T] {
+        if capacity == 0 {
+            Vec(get_null_ptr(), 0, 0)
+        } else {
+            Vec(gc_allocate_array(capacity), 0, capacity)
+        }
+    }
+
+    @safe
+    pub fn with_value(cap: Int, value: T) -> Vec[T] {
+        let data = gc_allocate_array(cap);
+        for i in 0..cap {
+            *offset_of(data, i) = value;
+        }
+        Vec(data, cap, cap)
+    }
+
+    @safe
+    pub fn from_slice(s: Slice[T]) -> Vec[T] {
+        let new = gc_allocate_array(s.len());
+        Std.Ptr.copy(new, s.data(), 0, 0, s.len());
+        Vec(new, s.len(), s.len())
+    }
+
+    @safe
+    pub fn push(v: Vec[T], item: T) {
+        if v.size == v.capacity {
+            v.grow();
+        }
+        *offset_of(v.data, v.size) = item;
+        v.size = v.size + 1;
+    }
+
+    pub fn len(v: Vec[T]) -> Int {
+        v.size
+    }
+
+    @safe
+    pub fn get(v: Vec[T], index: Int) -> T {
+        if index >= v.size {
+            panic("Index out of bounds");
+        }
+        *offset_of(v.data, index)
+    }
+
+    @safe
+    pub fn get_opt(v: Vec[T], index: Int) -> Option[T] {
+        if index >= v.size {
+            return None;
+        }
+        Some(*offset_of(v.data, index))
+    }
+
+    @safe
+    pub fn first(v: Vec[T]) -> Option[T] {
+        if v.size == 0 {
+            None
+        } else {
+            Some(*offset_of(v.data, 0))
+        }
+    }
+
+    @safe
+    pub fn last(v: Vec[T]) -> Option[T] {
+        if v.size == 0 {
+            None
+        } else {
+            Some(*offset_of(v.data, v.size - 1))
+        }
+    }
+
+    @unsafe
+    fn grow(v: Vec[T]) {
+        if v.capacity == 0 {
+            v.capacity = 1;
+        } else {
+            v.capacity = v.capacity * 2;
+        }
+        let new_data = gc_allocate_array(v.capacity);
+        Std.Ptr.copy(new_data, v.data, 0, 0, v.size);
+        v.data = new_data;
+    }
+
+    @safe
+    pub fn ensure_capacity(v: Vec[T], needed: Int) {
+        if needed <= v.capacity {
+            return;
+        }
+        let new_cap = if v.capacity == 0 { 1 } else { v.capacity };
+        while new_cap < needed {
+            new_cap = new_cap * 2;
+        }
+        let new_data = gc_allocate_array(new_cap);
+        Std.Ptr.copy(new_data, v.data, 0, 0, v.size);
+        v.data = new_data;
+        v.capacity = new_cap;
+    }
+
+    @safe
+    pub fn insert(v: Vec[T], index: Int, item: T) {
+        if v.size == v.capacity {
+            v.grow();
+        }
+        Std.Ptr.copy(v.data, v.data, index, index + 1, v.size - index);
+        *offset_of(v.data, index) = item;
+        v.size = v.size + 1;
+    }
+
+    @safe
+    pub fn remove(v: Vec[T], index: Int) -> T {
+        if index >= v.size {
+            panic("Index out of bounds");
+        }
+        let item = *offset_of(v.data, index);
+        Std.Ptr.copy(v.data, v.data, index + 1, index, v.size - index - 1);
+        v.size = v.size - 1;
+        item
+    }
+
+    pub fn iter(v: Vec[T]) -> VecIterator[T] {
+        VecIterator(v, 0)
+    }
+
+    pub fn slice(v: Vec[T]) -> Slice[T] {
+        Slice.from_raw(v.data, v.size)
+    }
+
+    pub fn sub_slice(v: Vec[T], start: Int, end: Int) -> Slice[T] {
+        v.slice().sub(start, end)
+    }
+
+    pub fn sub(v: Vec[T], start: Int, end: Int) -> Vec[T] {
+        Vec.from_slice(v.slice().sub(start, end))
+    }
+
+    pub fn swap(v: Vec[T], a: Int, b: Int) {
+        v.slice().swap(a, b);
+    }
+
+    pub fn sort[T: Ord[T]](v: Vec[T]) {
+        v.slice().sort();
+    }
+
+    pub fn reverse(v: Vec[T]) {
+        v.slice().reverse();
+    }
+
+    pub fn contains[T: PartialEq[T]](v: Vec[T], item: T) -> Bool {
+        v.slice().contains(item)
+    }
+
+    pub fn is_empty(v: Vec[T]) -> Bool {
+        v.size == 0
+    }
+
+    pub fn extend(v: Vec[T], other: Vec[T]) {
+        for i in other {
+            v.push(i);
+        }
+    }
+
+    @safe
+    pub fn extend_from_slice(v: Vec[T], s: Slice[T]) {
+        v.ensure_capacity(v.size + s.len());
+        Std.Ptr.copy(v.data, s.as_ptr(), 0, v.size, s.len());
+        v.size = v.size + s.len();
+    }
+
+    @safe
+    pub fn dedup[T: PartialEq[T]](v: Vec[T]) {
+        if v.size == 0 {
+            return;
+        }
+        let write = 1;
+        let read = 1;
+        while read < v.size {
+            if !(*offset_of(v.data, read) == *offset_of(v.data, write - 1)) {
+                *offset_of(v.data, write) = *offset_of(v.data, read);
+                write = write + 1;
+            }
+            read = read + 1;
+        }
+        v.size = write;
+    }
+
+    @safe
+    pub fn pop(v: Vec[T]) -> Option[T] {
+        if v.size == 0 {
+            None
+        } else {
+            let item = *offset_of(v.data, v.size - 1);
+            v.size = v.size - 1;
+            Some(item)
+        }
+    }
+
+    @safe
+    pub fn clear(v: Vec[T]) {
+        v.data = get_null_ptr();
+        v.size = 0;
+        v.capacity = 0;
+    }
+
+    pub fn truncate(v: Vec[T], size: Int) {
+        if size < v.size {
+            v.size = size;
+        }
+    }
+
+    pub fn as_ptr(v: Vec[T]) -> *T {
+        v.data
+    }
+}
+
+pub struct VecIterator[T] {
+    vec: Vec[T],
+    index: Int
+}
+
+instance[T] Iterator[VecIterator[T]] {
+    type Item = T
+
+    @safe
+    fn next(a: VecIterator[T]) -> Option[T] {
+        if a.index < a.vec.size {
+            let item = *offset_of(a.vec.data, a.index);
+            a.index = a.index + 1;
+            Some(item)
+        } else {
+            None
+        }
+    }
+}
+
+instance[T] IntoIterator[Vec[T]] {
+    type Item = T
+    type IntoIter = VecIterator[T]
+
+    fn into_iter(a: Vec[T]) -> VecIterator[T] {
+        VecIterator(a, 0)
+    }
+}
+
+instance[T: PartialEq[T]] PartialEq[Vec[T]] {
+
+    @safe
+    fn eq(a: Vec[T], b: Vec[T]) -> Bool {
+        if a.size != b.size {
+            return False;
+        }
+        let i = 0;
+        while i < a.size {
+            if (*offset_of(a.data, i)).not_eq(*offset_of(b.data, i)) {
+                return False;
+            }
+            i = i + 1;
+        }
+        True
+    }
+}
+
+instance[T: Eq[T]] Eq[Vec[T]] {}
+
+instance[T: Ord[T]] PartialOrd[Vec[T]] {
+    fn partial_cmp(a: Vec[T], b: Vec[T]) -> Option[Ordering] {
+        Some(a.cmp(b))
+    }
+}
+
+instance[T: Ord[T]] Ord[Vec[T]] {
+
+    @safe
+    fn cmp(a: Vec[T], b: Vec[T]) -> Ordering {
+        let len = if a.size < b.size { a.size } else { b.size };
+        let i = 0;
+        while i < len {
+            match (*offset_of(a.data, i)).cmp(*offset_of(b.data, i)) {
+                Ordering.Less => { return Ordering.Less; }
+                Ordering.Greater => { return Ordering.Greater; }
+                Ordering.Equal => {}
+            }
+            i = i + 1;
+        }
+        a.size.cmp(b.size)
+    }
+}
+
+instance[T] Index[Vec[T]] {
+    type Key = Int
+    type Output = T
+    fn index(a: Vec[T], index: Int) -> T {
+        a.get(index)
+    }
+}
+
+instance[T] IndexAssign[Vec[T]] {
+    type Key = Int
+    type Value = T
+
+    @safe
+    fn index_assign(a: Vec[T], index: Int, value: T) {
+        *offset_of(a.data, index) = value;
+    }
+}
+
+instance[A] FromIterator[Vec[A]] {
+    type Item = A
+    fn from_iter[I: Iterator[I, Item=A]](iter: I) -> Vec[A] {
+        let v = Vec.new();
+        loop {
+            match iter.next() {
+                Some(x) => v.push(x),
+                None => { return v; }
+            }
+        }
+    }
+}
+
+instance[T: Clone[T]] Clone[Vec[T]] {
+    fn clone(a: Vec[T]) -> Vec[T] {
+        let v = Vec.new();
+        for i in a {
+            v.push(i.clone());
+        }
+        v
+    }
+}
+
+// HACK: FIXME: real join
+pub fn join(v: Vec[String], sep: String) -> String {
+    let s = "";
+    let first = True;
+    for i in v {
+        if !first {
+            s = s + sep;
+        }
+        s = s + i;
+        first = False;
+    }
+    s
+}
+
+instance[T: ToString[T]] ToString[Vec[T]] {
+    fn to_string(v: Vec[T]) -> String {
+        let s = "[";
+        let first = True;
+        for i in v {
+            if !first {
+                s = s + ", ";
+            }
+            s = s + i.to_string();
+            first = False;
+        }
+        s = s + "]";
+        s
+    }
+}
+
+}

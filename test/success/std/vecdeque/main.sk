@@ -1,0 +1,60 @@
+module Main {
+
+import Std.VecDeque
+
+fn main() {
+    let numbers = VecDeque.new();
+
+    // 1. Test initial state
+    assert(numbers.is_empty());
+    assert(numbers.len() == 0);
+
+    // 2. Test push_back
+    numbers.push_back(1);
+    numbers.push_back(2);
+    assert(numbers.len() == 2);
+    assert(numbers.get(0) == 1);
+    assert(numbers.get(1) == 2);
+
+    // 3. Test push_front (forces ring buffer wrap-around)
+    numbers.push_front(0);
+    numbers.push_front(-1);
+
+    // Expected order: [-1, 0, 1, 2]
+    assert(numbers.len() == 4);
+    assert(numbers.get(0) == -1);
+    assert(numbers.get(1) == 0);
+    assert(numbers.get(2) == 1);
+    assert(numbers.get(3) == 2);
+
+    // 4. Test pop_front
+    match numbers.pop_front() {
+        Some(val) => assert(val == -1),
+        None => panic("Expected Some(-1)")
+    }
+    assert(numbers.len() == 3);
+    assert(numbers.get(0) == 0);
+
+    // 5. Test pop_back
+    match numbers.pop_back() {
+        Some(val) => assert(val == 2),
+        None => panic("Expected Some(2)")
+    }
+    assert(numbers.len() == 2);
+    assert(numbers.get(1) == 1);
+
+    // 6. Test Iterator instance
+    let sum = 0;
+    for i in numbers {
+        sum = sum + i;
+    }
+    // remaining: 0 + 1 = 1
+    assert(sum == 1);
+
+    // 7. Test clear
+    numbers.clear();
+    assert(numbers.is_empty());
+    assert(numbers.len() == 0);
+}
+
+}

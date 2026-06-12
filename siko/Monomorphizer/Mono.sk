@@ -1,0 +1,299 @@
+module Siko.Monomorphizer {
+
+import Siko.Monomorphizer.Error
+import Siko.Monomorphizer.Function
+import Siko.Monomorphizer.Data
+import Siko.Monomorphizer.Types
+import Siko.AST.Type
+import Siko.AST.QualifiedName
+import Siko.AST.Name
+import Siko.AST.Expr
+import Siko.Location
+import Siko.HIR.Program
+import Siko.Instances.InstanceResolver
+import Siko.Instances.FunctionInstanceResolver
+import Siko.Unification.Sub
+import Siko.Unification.Apply
+import Std.Map
+import Std.Set
+import Std.VecDeque
+import Siko.Interner as I
+
+@derive(Clone)
+pub struct EffectCtx {
+    pub resolution: Map[QualifiedName, QualifiedName],
+
+    pub fn new() -> EffectCtx {
+        EffectCtx(Map.new())
+    }
+
+    pub fn get(ctx: EffectCtx, key: QualifiedName) -> Option[QualifiedName] {
+        ctx.resolution.get(key)
+    }
+
+    pub fn insert(ctx: EffectCtx, key: QualifiedName, value: QualifiedName) {
+        ctx.resolution.insert(key, value);
+    }
+}
+
+@derive(Clone)
+pub struct ImplicitCtx {
+    pub set: Set[QualifiedName],
+
+    pub fn new() -> ImplicitCtx {
+        ImplicitCtx(Set.new())
+    }
+
+    pub fn insert(ctx: ImplicitCtx, value: QualifiedName) {
+        ctx.set.insert(value);
+    }
+
+    pub fn contains(ctx: ImplicitCtx, value: QualifiedName) -> Bool {
+        ctx.set.contains(value)
+    }
+}
+
+pub struct DataWork {
+    pub qname: QualifiedName,
+    pub type_args: Vec[TypeDef],
+}
+
+pub struct FnWork {
+    pub qname: QualifiedName,
+    pub type_args: Vec[TypeDef],
+    pub witnesses: Vec[I.String],
+    pub effect_ctx: EffectCtx,
+    pub implicit_ctx: ImplicitCtx,
+}
+
+pub fn fn_mono_key(
+    base: I.String,
+    type_args: Vec[TypeDef],
+    witnesses: Vec[I.String],
+    effect_ctx: EffectCtx,
+    implicit_ctx: ImplicitCtx,
+) -> QualifiedName {
+    let implicit_list: Vec[QualifiedName] = implicit_ctx.set.iter().cloned().collect();
+    QualifiedName.new_mono(
+        base,
+        type_args.clone(),
+        witnesses.clone(),
+        effect_ctx.resolution.clone(),
+        implicit_list,
+    )
+}
+
+pub fn data_mono_key(base: I.String, type_args: Vec[TypeDef]) -> QualifiedName {
+    QualifiedName.new_mono(
+        base,
+        type_args.clone(),
+        [],
+        Map.new(),
+        [],
+    )
+}
+
+pub struct Monomorphizer {
+    pub source: Program,
+    pub instance_resolver: InstanceResolver,
+    pub output: Program,
+    pub fn_queue: VecDeque[FnWork],
+    pub struct_queue: VecDeque[DataWork],
+    pub enum_queue: VecDeque[DataWork],
+    pub fn_done: Set[I.String],
+    pub struct_done: Set[I.String],
+    pub enum_done: Set[I.String],
+    pub current_module: I.String,
+    pub current_fn_witnesses: Vec[I.String],
+    pub current_effect_ctx: EffectCtx,
+    pub current_implicit_ctx: ImplicitCtx,
+    pub errors: Vec[MonoError],
+    pub sub: Substitution,
+    pub current_location: Option[Location],
+    pub current_expr_ty: Option[TypeDef],
+
+    fn new(source: Program, instance_resolver: InstanceResolver) -> Monomorphizer {
+        Monomorphizer(
+            source,
+            instance_resolver,
+            Program.new(),
+            VecDeque.new(),
+            VecDeque.new(),
+            VecDeque.new(),
+            Set.new(),
+            Set.new(),
+            Set.new(),
+            I.intern(""),
+            [],
+            EffectCtx.new(),
+            ImplicitCtx.new(),
+            [],
+            Substitution.new(),
+            None,
+            None,
+        )
+    }
+
+    pub fn enqueue_named_types(mono: Monomorphizer, ty: TypeDef) {
+        match ty {
+            TypeDef.Named(
+                Name.Resolved(QualifiedName.Mono(mono_name)),
+                _,
+            ) => {
+                let base = mono_name.name;
+                let args = mono_name.args;
+                let qname = QualifiedName.new(base.clone());
+                let mono_key = data_mono_key(base, args);
+                if mono.source.structs.contains_key(qname)
+                    && !mono.struct_done.contains(mono_key.name())
+                {
+                    mono.struct_queue.push_back(DataWork(qname, args.clone()));
+                } else if mono.source.enums.contains_key(qname)
+                    && !mono.enum_done.contains(mono_key.name())
+                {
+                    mono.enum_queue.push_back(DataWork(qname, args.clone()));
+                }
+                for arg in args {
+                    mono.enqueue_named_types(arg);
+                }
+            }
+            TypeDef.Tuple(elems) => {
+                for e in elems {
+                    mono.enqueue_named_types(e);
+                }
+            }
+            TypeDef.Paren(inner) => mono.enqueue_named_types(inner),
+            TypeDef.Fn(args, result) | TypeDef.FnPtr(args, result) => {
+                for a in args {
+                    mono.enqueue_named_types(a);
+                }
+                mono.enqueue_named_types(result);
+            }
+            _ => {}
+        }
+    }
+
+    pub fn extract_type_args(
+        param_types: Vec[TypeDef],
+        arg_types: Vec[TypeDef],
+        generic_params: Vec[I.String],
+    ) -> Vec[TypeDef] {
+        if generic_params.is_empty() {
+            return [];
+        }
+        let mapping = Substitution.new();
+        for (p, a) in param_types.iter().zip(arg_types.iter()) {
+            extract_named_bindings(p, a, mapping);
+        }
+        generic_params
+            .iter()
+            .map(|p| mapping.lookup_named(p).unwrap().clone())
+            .collect()
+    }
+
+    pub fn resolve_witness_to_module(mono: Monomorphizer, witness: BoundWitness) -> I.String {
+        match witness {
+            BoundWitness.FunctionBound(idx) =>
+                mono.current_fn_witnesses
+                .get_opt(idx)
+                .unwrap_or_else(|| mono.current_module),
+            // FIXME: find out why this is written like idx can be out of bounds..
+            // this sounds like a hack
+            BoundWitness.Instance(module_name) => module_name.clone(),
+        }
+    }
+
+    pub fn expr_ty(mono: Monomorphizer, expr: Expr) -> TypeDef {
+        mono.sub.apply(expr.ty.unwrap())
+    }
+
+    fn run(mono: Monomorphizer) {
+        let main_key = QualifiedName.new(I.intern("Main.main"));
+        if !mono.source.functions.contains_key(main_key) {
+            panic("mono: `Main.main` not found in program");
+        }
+        mono.fn_queue.push_back(FnWork(
+            main_key,
+            [],
+            [],
+            EffectCtx.new(),
+            ImplicitCtx.new(),
+        ));
+
+        loop {
+            if let Some(work) = mono.fn_queue.pop_front() {
+                let mono_name = fn_mono_key(
+                    work.qname.name(),
+                    work.type_args,
+                    work.witnesses,
+                    work.effect_ctx,
+                    work.implicit_ctx,
+                );
+                if mono.fn_done.insert(mono_name.name()) {
+                    process_function(
+                        work.qname,
+                        work.type_args,
+                        work.witnesses,
+                        work.effect_ctx,
+                        work.implicit_ctx,
+                        mono_name,
+                        mono,
+                    );
+                }
+            } else if let Some(work) = mono.struct_queue.pop_front() {
+                let mono_name = data_mono_key(work.qname.name(), work.type_args);
+                if mono.struct_done.insert(mono_name.name()) {
+                    process_struct(work.qname, work.type_args, mono_name, mono);
+                }
+            } else if let Some(work) = mono.enum_queue.pop_front() {
+                let mono_name = data_mono_key(work.qname.name(), work.type_args);
+                if mono.enum_done.insert(mono_name.name()) {
+                    process_enum(work.qname, work.type_args, mono_name, mono);
+                }
+            } else {
+                break;
+            }
+        }
+    }
+}
+
+pub fn monomorphize(
+    source: Program,
+    instance_resolver: InstanceResolver,
+) -> Result[Program, Vec[MonoError]] {
+    let mono = Monomorphizer.new(source, instance_resolver);
+    mono.run();
+    if !mono.errors.is_empty() {
+        return Err(mono.errors);
+    }
+    let empty_inst = Substitution.new();
+    mono.output.implicits = source
+        .implicits
+        .iter()
+        .map(|(k, v)| {
+            let def = v.clone();
+            def.ty = specialize_type(def.ty, empty_inst);
+            (k.clone(), def)
+        })
+        .collect();
+    fixup_variant_enum_map(mono.output);
+    Ok(mono.output)
+}
+
+fn fixup_variant_enum_map(program: Program) {
+    program.variant_enum_map = Map.new();
+    let enum_keys: Vec[QualifiedName] = program.enums.keys().cloned().collect();
+    for enum_qname in enum_keys {
+        let edef = program.enums.get(enum_qname).unwrap();
+        for variant in edef.variants.iter() {
+            let variant_base = I.resolve(variant.qualified_name.base_name());
+            let simple_name = variant_base.split(".").last().unwrap_or(variant_base);
+            let variant_mono_name = I.intern(I.resolve(enum_qname.name()) + "." + simple_name);
+            let variant_mono_qname = QualifiedName.new(variant_mono_name);
+            variant.qualified_name = variant_mono_qname;
+            program.variant_enum_map.insert(variant_mono_qname, enum_qname);
+        }
+    }
+}
+
+}

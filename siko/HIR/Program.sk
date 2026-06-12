@@ -1,0 +1,118 @@
+module Siko.HIR.Program {
+
+import Std.Map
+import Std.Set
+import Siko.AST.QualifiedName
+import Siko.AST.Data
+import Siko.AST.Traits
+import Siko.AST.Function
+import Siko.AST.Effects
+import Siko.AST.Implicits
+import Siko.AST.Type
+import Siko.Format.Utils
+import Siko.Interner as I
+
+pub struct Program {
+    pub structs: Map[QualifiedName, StructDef],
+    pub enums: Map[QualifiedName, EnumDef],
+    pub variant_enum_map: Map[QualifiedName, QualifiedName],
+    pub traits: Map[QualifiedName, TraitDef],
+    pub named_instances: Map[QualifiedName, InstanceDef],
+    pub canonical_instances: Vec[InstanceDef],
+    pub functions: Map[QualifiedName, FunctionDef],
+    pub effects: Map[QualifiedName, EffectDef],
+    pub implicits: Map[QualifiedName, ImplicitDef],
+    pub module_names: Vec[I.String],
+    pub module_instance_imports: Map[I.String, Vec[QualifiedName]],
+    pub module_trait_method_map: Map[I.String, Map[I.String, Vec[QualifiedName]]],
+
+    pub fn new() -> Program {
+        Program(
+            structs: Map.new(),
+            enums: Map.new(),
+            variant_enum_map: Map.new(),
+            traits: Map.new(),
+            named_instances: Map.new(),
+            canonical_instances: Vec.new(),
+            functions: Map.new(),
+            effects: Map.new(),
+            implicits: Map.new(),
+            module_names: Vec.new(),
+            module_instance_imports: Map.new(),
+            module_trait_method_map: Map.new(),
+        )
+    }
+
+    pub fn struct_def(program: Program, qname: QualifiedName) -> StructDef {
+        program.structs.get(qname).unwrap()
+    }
+
+    pub fn enum_def(program: Program, qname: QualifiedName) -> EnumDef {
+        program.enums.get(qname).unwrap()
+    }
+
+    pub fn variant(program: Program, variant_qname: QualifiedName) -> VariantDef {
+        let enum_qname = program.variant_enum_map.get(variant_qname).expect("variant enum not found");
+        let enum_def = program.enums.get(enum_qname).expect("enum not found");
+        for variant in enum_def.variants {
+            if variant.qualified_name == variant_qname {
+                return variant;
+            }
+        }
+        panic("variant not found")
+    }
+
+    pub fn find_variant(program: Program, variant_qname: QualifiedName) -> (QualifiedName, Vec[TypeDef], Vec[I.String]) {
+        let enum_qname = program.variant_enum_map.get(variant_qname).expect("variant enum not found");
+        let enum_def = program.enums.get(enum_qname).expect("enum not found");
+        let type_params = match enum_def.type_arg_defs {
+            Some(tad) => tad.type_params(),
+            None => Vec.new(),
+        };
+        for variant in enum_def.variants {
+            if variant.qualified_name == variant_qname {
+                return (enum_qname, variant.items.iter().map(|i| i.ty).collect(), type_params);
+            }
+        }
+        panic("variant not found")
+    }
+
+    pub fn format(program: Program) -> String {
+        let out = "";
+        for def in program.structs.values() {
+            out = out + format_struct(def) + "\n";
+        }
+        for def in program.enums.values() {
+            out = out + format_enum(def) + "\n";
+        }
+        for def in program.traits.values() {
+            out = out + format_trait(def) + "\n";
+        }
+        for def in program.named_instances.values() {
+            out = out + format_instance(def) + "\n";
+        }
+        for def in program.canonical_instances {
+            out = out + format_instance(def) + "\n";
+        }
+        for def in program.functions.values() {
+            out = out + format_fn(def) + "\n";
+        }
+        for def in program.effects.values() {
+            out = out + format_effect(def) + "\n";
+        }
+        out
+    }
+
+    pub fn get_divergent_functions(program: Program) -> Set[QualifiedName] {
+        let div_fns: Set[QualifiedName] = Set.new();
+        for (name, func) in program.functions {
+            match func.result_type {
+                Some(TypeDef.Never(_)) => { div_fns.insert(name); }
+                _ => {}
+            }
+        }
+        div_fns
+    }
+}
+
+}
