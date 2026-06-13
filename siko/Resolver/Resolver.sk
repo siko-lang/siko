@@ -96,10 +96,36 @@ pub struct Resolver {
         )
     }
 
-    pub fn resolve(resolver: Resolver, modules: Vec[M.Module]) -> Result[Program, ResolveError] {
+    fn build_module_visibility(
+        resolver: Resolver,
+        modules: Vec[M.Module],
+        pkg_reachability: Map[String, Set[String]],
+    ) -> Map[I.String, Set[I.String]] {
+        let pkg_to_modules: Map[String, Vec[I.String]] = Map.new();
+        for m in modules {
+            let pkg_name = m.source_package.info.name;
+            pkg_to_modules.entry(pkg_name).or_insert_with(|| Vec.new()).push(m.name.name());
+        }
+        let module_visibility: Map[I.String, Set[I.String]] = Map.new();
+        for m in modules {
+            let pkg_name = m.source_package.info.name;
+            let visible: Set[I.String] = Set.new();
+            let reachable_pkgs = pkg_reachability.get(pkg_name).unwrap_or(Set.new());
+            for rp in reachable_pkgs {
+                for mod_name in pkg_to_modules.get(rp).unwrap_or([]) {
+                    visible.insert(mod_name);
+                }
+            }
+            module_visibility.insert(m.name.name(), visible);
+        }
+        module_visibility
+    }
+
+    pub fn resolve(resolver: Resolver, modules: Vec[M.Module], pkg_reachability: Map[String, Set[String]]) -> Result[Program, ResolveError] {
         //println("Resolving...");
         add_preludes(modules);
 
+        let module_visibility = resolver.build_module_visibility(modules, pkg_reachability);
         let groups = create_module_groups(modules)?;
         for group in groups {
             //println("processing module group..");
@@ -119,7 +145,7 @@ pub struct Resolver {
 
             for module_name in group {
                 //println("Initializing module ${module_name}");
-                resolver.init_module(modules, module_name)?;
+                resolver.init_module(modules, module_name, module_visibility)?;
                 //println("Initialized module ${module_name}");
             }
 
@@ -175,6 +201,7 @@ pub struct Resolver {
         resolver: Resolver,
         modules: Vec[M.Module],
         module_name: I.String,
+        module_visibility: Map[I.String, Set[I.String]],
     ) -> Result[(), ResolveError] {
         //println("Initializing module ${module_name}");
         let module_def = modules
@@ -184,9 +211,23 @@ pub struct Resolver {
         let local_items = get_local_items(module_def);
         let import_items = Vec.new();
         let implicit_items = Vec.new();
+        let visible = module_visibility.get(module_name).unwrap();
         //println("Found ${local_items.len()} local items")
         for item in module_def.items {
             if let M.ModuleItem.Import(import_def) = item {
+                if !import_def.is_implicit && !visible.contains(import_def.module_name.name()) {
+                    let importing_pkg = module_def.source_package.info.name;
+                    let imported_pkg = modules
+                        .iter()
+                        .find(|m| m.name.name() == import_def.module_name.name())
+                        .unwrap()
+                        .source_package.info.name;
+                    return Err(ResolveError.ImportNotVisible(
+                        name: import_def.module_name,
+                        importing_pkg: importing_pkg,
+                        imported_pkg: imported_pkg,
+                    ));
+                }
                 match process_import(import_def, resolver.ctx) {
                     Ok(items) => {
                         if import_def.is_implicit {

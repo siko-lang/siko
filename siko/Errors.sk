@@ -89,6 +89,8 @@ pub fn report_resolve_error(e: ResolveError) {
             report("positional pattern args cannot be mixed with `..` in " + I.resolve(ident.name()), Some(ident.location)),
         ResolveError.UnsafeInstanceMethod(ident) =>
             report("instance method `" + I.resolve(ident.name()) + "` must not be marked @unsafe", Some(ident.location)),
+        ResolveError.ImportNotVisible(name: ident, importing_pkg: importing_pkg, imported_pkg: imported_pkg) =>
+            report("module `${I.resolve(ident.name())}` belongs to package `${imported_pkg}` which is not a dependency of `${importing_pkg}`", Some(ident.location)),
     }
 }
 

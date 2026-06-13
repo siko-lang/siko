@@ -6,6 +6,7 @@ import Siko.Package.Parser as P
 import Std.Fs.Directory
 import Std.Fs.Stat as S
 import Std.Map
+import Std.Set
 
 pub enum CollectorError {
     IOError(IO.Error),
@@ -202,6 +203,27 @@ pub struct Collector {
 
         Ok(result)
     }
+}
+
+// Returns a map from package name to the set of all package names it can reach
+// (itself plus all transitive dependencies). Relies on `packages` being in
+// dependency-first order, as produced by `Collector.collect`.
+pub fn build_package_reachability(packages: Vec[SourcePackage]) -> Map[String, Set[String]] {
+    let reachable: Map[String, Set[String]] = Map.new();
+    for pkg in packages {
+        let r: Set[String] = Set.new();
+        r.insert(pkg.info.name);
+        for dep in pkg.info.dependencies {
+            r.insert(dep.name);
+            if let Some(dep_r) = reachable.get(dep.name) {
+                for name in dep_r {
+                    r.insert(name);
+                }
+            }
+        }
+        reachable.insert(pkg.info.name, r);
+    }
+    reachable
 }
 
 }
