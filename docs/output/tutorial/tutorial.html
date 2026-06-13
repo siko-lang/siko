@@ -32,16 +32,48 @@
 </code></pre>
 <p>Module names are dotted identifiers. Dots are just part of the name — they are not directory separators. Multiple modules can live in one file.</p>
 <h2>2. Types at a glance</h2>
-<p>| Category | Types |</p>
-<p>|||</p>
-<p>| Integers | <code>Int</code>, <code>I8</code>, <code>I16</code>, <code>I32</code>, <code>I64</code>, <code>U8</code>, <code>U16</code>, <code>U32</code>, <code>U64</code> |</p>
-<p>| Text | <code>String</code>, <code>U8</code> (char) |</p>
-<p>| Boolean | <code>Bool</code> (<code>True</code> / <code>False</code>) |</p>
-<p>| Containers | <code>Vec[T]</code>, <code>Map[K, V]</code>, <code>Set[T]</code>, <code>VecDeque[T]</code>, <code>Slice[T]</code> |</p>
-<p>| Sum types | <code>Option[T]</code> (<code>Some(T)</code> / <code>None</code>), <code>Result[T, E]</code> (<code>Ok(T)</code> / <code>Err(E)</code>) |</p>
-<p>| Tuples | <code>(A, B)</code>, <code>(A, B, C)</code>, … |</p>
-<p>| Unit | <code>()</code> — the empty tuple |</p>
-<p>| Functions | <code>fn(A, B) -> C</code> |</p>
+<table>
+<thead>
+<tr>
+<th>Category</th>
+<th>Types</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Integers</td>
+<td><code>Int</code>, <code>I8</code>, <code>I16</code>, <code>I32</code>, <code>I64</code>, <code>U8</code>, <code>U16</code>, <code>U32</code>, <code>U64</code></td>
+</tr>
+<tr>
+<td>Text</td>
+<td><code>String</code>, <code>U8</code> (char)</td>
+</tr>
+<tr>
+<td>Boolean</td>
+<td><code>Bool</code> (<code>True</code> / <code>False</code>)</td>
+</tr>
+<tr>
+<td>Containers</td>
+<td><code>Vec[T]</code>, <code>Map[K, V]</code>, <code>Set[T]</code>, <code>VecDeque[T]</code>, <code>Slice[T]</code></td>
+</tr>
+<tr>
+<td>Sum types</td>
+<td><code>Option[T]</code> (<code>Some(T)</code> / <code>None</code>), <code>Result[T, E]</code> (<code>Ok(T)</code> / <code>Err(E)</code>)</td>
+</tr>
+<tr>
+<td>Tuples</td>
+<td><code>(A, B)</code>, <code>(A, B, C)</code>, …</td>
+</tr>
+<tr>
+<td>Unit</td>
+<td><code>()</code> — the empty tuple</td>
+</tr>
+<tr>
+<td>Functions</td>
+<td><code>fn(A, B) -> C</code></td>
+</tr>
+</tbody>
+</table>
 <p>Most of these come from the standard library. <code>Option</code>, <code>Result</code>, <code>Vec</code>, <code>String</code>, <code>Bool</code>, and the numeric types are <code>@prelude</code> — available everywhere with no import. <code>Map</code>, <code>Set</code>, <code>VecDeque</code>, and <code>Slice</code> are <strong>not</strong> prelude and require an explicit import:</p>
 <pre><code>import Std.Map
 import Std.Set
@@ -127,15 +159,44 @@ let d = Direction.North;
 }
 </code></pre>
 <h3>Patterns you can use</h3>
-<p>| Pattern | Example |</p>
-<p>|||</p>
-<p>| Wildcard | <code>_</code> |</p>
-<p>| Binding | <code>x</code> |</p>
-<p>| Literal | <code>42</code>, <code>"hello"</code>, <code>'A'</code> |</p>
-<p>| Enum variant | <code>Some(v)</code>, <code>Ok(x)</code>, <code>None</code> |</p>
-<p>| Struct/variant named fields | <code>Point(x: px, y: py)</code> |</p>
-<p>| Tuple | <code>(a, b)</code> |</p>
-<p>| Guard | <code>n if n > 0</code> |</p>
+<table>
+<thead>
+<tr>
+<th>Pattern</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Wildcard</td>
+<td><code>_</code></td>
+</tr>
+<tr>
+<td>Binding</td>
+<td><code>x</code></td>
+</tr>
+<tr>
+<td>Literal</td>
+<td><code>42</code>, <code>"hello"</code>, <code>'A'</code></td>
+</tr>
+<tr>
+<td>Enum variant</td>
+<td><code>Some(v)</code>, <code>Ok(x)</code>, <code>None</code></td>
+</tr>
+<tr>
+<td>Struct/variant named fields</td>
+<td><code>Point(x: px, y: py)</code></td>
+</tr>
+<tr>
+<td>Tuple</td>
+<td><code>(a, b)</code></td>
+</tr>
+<tr>
+<td>Guard</td>
+<td><code>n if n > 0</code></td>
+</tr>
+</tbody>
+</table>
 <h3><code>if let</code></h3>
 <p>Match a single pattern and branch:</p>
 <pre><code>if let Some(v) = maybe_value {
@@ -381,14 +442,40 @@ fn raw_copy(dst: Ptr[U8], src: Ptr[U8], n: Int) {
 <p>Trait instance methods and effect handlers must be either fully safe or explicitly marked <code>@safe</code> — you cannot smuggle unsafe behavior through a generic safe abstraction.</p>
 <h2>17. Annotations</h2>
 <p>Annotations are <code>@name</code> or <code>@name(args)</code> placed before a declaration.</p>
-<p>| Annotation | Effect |</p>
-<p>|||</p>
-<p>| <code>@prelude</code> | Module is auto-imported everywhere |</p>
-<p>| <code>@derive(...)</code> | Auto-generate trait instances |</p>
-<p>| <code>@unsafe</code> | Mark function as unsafe |</p>
-<p>| <code>@safe</code> | Mark function as safe |</p>
-<p>| <code>@extern("C")</code> | Declare a C-compatible extern function |</p>
-<p>| <code>@extern("C", "foo.h")</code> | Declare a C-compatible extern function and signals that foo.h needs to be imported |</p>
+<table>
+<thead>
+<tr>
+<th>Annotation</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>@prelude</code></td>
+<td>Module is auto-imported everywhere</td>
+</tr>
+<tr>
+<td><code>@derive(...)</code></td>
+<td>Auto-generate trait instances</td>
+</tr>
+<tr>
+<td><code>@unsafe</code></td>
+<td>Mark function as unsafe</td>
+</tr>
+<tr>
+<td><code>@safe</code></td>
+<td>Mark function as safe</td>
+</tr>
+<tr>
+<td><code>@extern("C")</code></td>
+<td>Declare a C-compatible extern function</td>
+</tr>
+<tr>
+<td><code>@extern("C", "foo.h")</code></td>
+<td>Declare a C-compatible extern function and signals that foo.h needs to be imported</td>
+</tr>
+</tbody>
+</table>
 <h2>18. Key things that differ from Rust/Haskell</h2>
 <ul>
 <li><strong>No implicit self.</strong> Trait methods always take the receiver as an explicit first parameter with any name you choose.</li>

@@ -99,6 +99,33 @@ fn inline_bold(s: String) -> String {
     result
 }
 
+fn is_table_separator(line: String) -> Bool {
+    if !line.starts_with("|") { return False; }
+    let parts: Vec[String] = line.split("|").collect();
+    for part in parts {
+        let t = part.trim();
+        // each cell must be empty or consist only of dashes and colons
+        for i in 0..t.len() {
+            let b = t.as_slice()[i];
+            if b != '-' && b != ':' {
+                return False;
+            }
+        }
+    }
+    True
+}
+
+fn split_cells(line: String) -> Vec[String] {
+    let parts: Vec[String] = line.split("|").collect();
+    let cells = Vec.new();
+    let i = 1;
+    while i < parts.len() - 1 {
+        cells.push(parts[i].trim());
+        i += 1;
+    }
+    cells
+}
+
 fn parse_body(lines: Vec[String], start: Int) -> String {
     let out = "";
     let i = start;
@@ -129,6 +156,24 @@ fn parse_body(lines: Vec[String], start: Int) -> String {
         } else if line.starts_with("- ") {
             if !in_list { out = out + "<ul>\n"; in_list = True; }
             out = out + "<li>" + inline(line.substring(2, line.len())) + "</li>\n";
+        } else if line.starts_with("|") && i + 1 < lines.len() && is_table_separator(lines[i + 1]) {
+            if in_list { out = out + "</ul>\n"; in_list = False; }
+            out = out + "<table>\n<thead>\n<tr>\n";
+            for cell in split_cells(line) {
+                out = out + "<th>" + inline(cell) + "</th>\n";
+            }
+            out = out + "</tr>\n</thead>\n<tbody>\n";
+            i += 2; // skip header and separator
+            while i < lines.len() && lines[i].starts_with("|") {
+                out = out + "<tr>\n";
+                for cell in split_cells(lines[i]) {
+                    out = out + "<td>" + inline(cell) + "</td>\n";
+                }
+                out = out + "</tr>\n";
+                i += 1;
+            }
+            out = out + "</tbody>\n</table>\n";
+            i -= 1; // compensate for the i += 1 at the bottom of the outer loop
         } else if line.is_empty() {
             if in_list { out = out + "</ul>\n"; in_list = False; }
         } else {
