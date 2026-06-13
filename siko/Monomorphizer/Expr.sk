@@ -15,7 +15,7 @@ import Siko.Utils.TypeVarAllocator
 import Siko.Interner as I
 
 pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monomorphizer, witness_info: WitnessInfo) -> FunctionCallInfo {
-    let concrete_result_ty: TypeDef = mono.current_expr_ty.apply(mono.sub).unwrap();
+    let concrete_result_ty: TypeDef = mono.current_expr_ty.apply(mono.sub).expect("process_user_defined_fn: current_expr_ty is None for ${name.name()}");
     let witness_info = witness_info.clone();
 
     let func_kind = mono
@@ -35,9 +35,9 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
         };
         let spec_args: Vec[Expr] = args.specialize(mono);
         let arg_types: Vec[TypeDef] = args.iter().map(|a| Monomorphizer.expr_ty(mono, a)).collect();
-        let concrete_result_ty: TypeDef = mono.current_expr_ty.apply(mono.sub).unwrap();
+        let concrete_result_ty: TypeDef = mono.current_expr_ty.apply(mono.sub).expect("process_user_defined_fn: current_expr_ty is None for ${name.name()}");
         let handler_type_args = {
-            let hf = mono.source.functions.get(handler_name).unwrap();
+            let hf = mono.source.functions.get(handler_name).expect("process_user_defined_fn: handler function ${handler_name.name()} not found in program");
             let generic_params = hf.type_arg_defs.type_params();
             let param_types: Vec[TypeDef] = hf.args.iter().map(|a| a.type_def.clone()).collect();
             let all_arg_types = arg_types.clone();
@@ -82,7 +82,7 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
             .source
             .functions
             .get(name)
-            .unwrap();
+            .expect("process_user_defined_fn: function ${name.name()} not found in program");
         let gp = f.type_arg_defs.type_params();
         let pt: Vec[TypeDef] = f.args.iter().map(|a| a.type_def.clone()).collect();
         let is_trait = f.kind == FunctionDefKind.TraitMethod;
@@ -95,7 +95,7 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
 
     let (final_callee, callee_type_args, callee_witnesses) = if is_trait_method {
         let witness_list = witness_info.witnesses;
-        assert(!witness_list.is_empty());
+        assert(!witness_list.is_empty(), "process_user_defined_fn: TraitMethod ${name.name()} has empty witness list");
         let (c, ta) =
             dispatch_trait_call(name, witness_list[0], arg_types, Some(concrete_result_ty), mono);
         let wl: Vec[I.String] = if c == name {
@@ -146,7 +146,7 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
         }
         let ct: Vec[TypeDef] = generic_params
             .iter()
-            .map(|p| inst_map.lookup_named(p).unwrap().clone())
+            .map(|p| inst_map.lookup_named(p).expect("process_user_defined_fn: type var ${p} not resolved in inst_map for ${name.name()}").clone())
             .collect();
         let wl: Vec[I.String] = witness_list
             .iter()

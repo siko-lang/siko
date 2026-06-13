@@ -13,12 +13,12 @@ import Siko.Interner as I
 @derive(Clone)
 pub enum BoundWitness {
     FunctionBound(Int),
-    Instance(I.String),
+    Instance(module_name: I.String, instance_qname: I.String),
 
     pub fn format(w: BoundWitness) -> String {
         match w {
             BoundWitness.FunctionBound(index) => "#${index}",
-            BoundWitness.Instance(module_name) => I.resolve(module_name),
+            BoundWitness.Instance(module_name, _) => I.resolve(module_name),
         }
     }
 }
@@ -35,7 +35,7 @@ pub struct BoundResolution {
     }
 
     fn from_instance(module_name: I.String, assoc_types: Map[I.String, TypeDef], primary_args: Vec[TypeDef], instance_qname: Option[I.String], type_witness: Substitution) -> BoundResolution {
-        BoundResolution(BoundWitness.Instance(module_name), assoc_types, primary_args, instance_qname, type_witness)
+        BoundResolution(BoundWitness.Instance(module_name: module_name, instance_qname: instance_qname.unwrap()), assoc_types, primary_args, instance_qname, type_witness)
     }
 
     pub fn into_witness(r: BoundResolution) -> BoundWitness {

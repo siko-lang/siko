@@ -229,6 +229,36 @@ pub struct Finalizer {
         args
     }
 
+    fn try_resolve_trait_call(f: Finalizer, qname: QualifiedName, witnesses: WitnessInfo) -> (QualifiedName, WitnessInfo) {
+        if witnesses.witnesses.is_empty() {
+            return (qname, witnesses);
+        }
+        let func = match f.program.functions.get(qname) {
+            Some(func) => func,
+            None => return (qname, witnesses),
+        };
+        if func.kind != FunctionDefKind.TraitMethod {
+            return (qname, witnesses);
+        }
+        if let BoundWitness.Instance(_, instance_qname) = witnesses.witnesses[0] {
+            let tad = func.type_arg_defs.unwrap();
+            let trait_name_str = I.resolve(tad.bounds[0].trait_name.name());
+            let full_method_str = I.resolve(qname.base_name());
+            let method_name = full_method_str.strip_prefix(trait_name_str + ".").unwrap();
+            let concrete_qname = QualifiedName.new(I.intern(I.resolve(instance_qname) + "." + method_name));
+            if f.program.functions.get(concrete_qname).is_some() {
+                // concrete method — rewrite and consume witnesses[0]
+                let remaining = WitnessInfo(witnesses.witnesses.into_iter().skip(1).collect());
+                (concrete_qname, remaining)
+            } else {
+                // instance uses the trait's default body — leave everything intact for the monomorphizer
+                (qname, witnesses)
+            }
+        } else {
+            (qname, witnesses)
+        }
+    }
+
     fn finalize_expr(f: Finalizer, expr: Expr) -> Expr {
         let ty = f.apply_ty(expr.ty);
         let loc = expr.location;
@@ -256,6 +286,7 @@ pub struct Finalizer {
                         let new_args = f.inject_default_args(qname, new_args, loc);
                         let result_var = f.result_var(expr);
                         let witnesses = f.build_witnesses(result_var);
+                        let (qname, witnesses) = f.try_resolve_trait_call(qname, witnesses);
                         let call_ty = match f.never_return_ty(qname) {
                             Some(t) => Some(t),
                             None => ty,
