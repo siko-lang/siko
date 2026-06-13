@@ -128,6 +128,11 @@ pub struct FunctionInstanceResolver {
     }
 
     pub fn resolve(r: FunctionInstanceResolver, trait_name: I.String, query_args: Vec[TypeDef], sub: Substitution) -> BoundResult {
+        // A query arg that is still an unbound flex var (e.g. resolving Iterator[$49]
+        // before $49 is known to be RangeIterator) must not commit to a function bound:
+        // doing so locks in the bound's associated types before the real receiver type
+        // is determined. Defer until the flex vars resolve, matching the instance path below.
+        let query_has_flex = query_args.iter().any(|a| sub.apply(a).has_flex_var());
         let i = 0;
         for entry in r.function_bounds {
             if entry.trait_name == trait_name && entry.args.len() == query_args.len() {
@@ -144,6 +149,9 @@ pub struct FunctionInstanceResolver {
                     j += 1;
                 }
                 if compatible {
+                    if query_has_flex {
+                        return BoundResult.Ambiguous([entry.trait_name]);
+                    }
                     return BoundResult.Satisfied(BoundResolution.from_function_bound(i, entry.assoc_types));
                 }
             }

@@ -338,20 +338,19 @@ pub struct SkipIterator[A] {
     skip: Int,
 }
 
-// FIXME:
-// instance[Item, A: Iterator[A, Item = Item]] Iterator[SkipIterator[A]] {
-//     type Item = Item
-//     fn next(s: SkipIterator[A]) -> Option[Item] {
-//         for _ in range(0, s.skip) {
-//             match s.iter.next() {
-//                 Some(_) => {}
-//                 None => return None,
-//             }
-//         }
-//         s.skip = 0;
-//         s.iter.next()
-//     }
-// }
+instance[Item, A: Iterator[A, Item = Item]] Iterator[SkipIterator[A]] {
+    type Item = Item
+    fn next(s: SkipIterator[A]) -> Option[Item] {
+        for _ in 0..s.skip {
+            match s.iter.next() {
+                Some(_) => {}
+                None => return None,
+            }
+        }
+        s.skip = 0;
+        s.iter.next()
+    }
+}
 
 // FIXME: unzip should be a method on Iterator with Item=(A,B) constraint,
 // but associated-type equality in method bounds is not yet supported.

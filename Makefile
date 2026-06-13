@@ -32,7 +32,8 @@ base.bin: $(BOOTSTRAP_SOURCE)
 	cat $(BOOTSTRAP_SOURCE) | ./link.sh -O -o base.bin
 
 refresh:
-	./siko.bin build siko --pass c > $(BOOTSTRAP_SOURCE)
+	SIKO_TARGET_OS=linux ./siko.bin build siko --pass c > bootstrap/source_linux.c
+	SIKO_TARGET_OS=macos ./siko.bin build siko --pass c > bootstrap/source_macos.c
 
 SSG_SK := $(shell find ssg -name '*.sk')
 

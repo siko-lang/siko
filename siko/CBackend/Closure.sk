@@ -25,10 +25,7 @@ pub fn emit_closure_forward_declarations(emitter: Emitter) {
         emitter.append(" ");
         emitter.append(wrap);
         emitter.append("(void* _siko_env_ptr");
-        // FIXME: use skip
-        let iter = fdef.args.iter();
-        for _ in 0..capture_count { iter.next(); }
-        for arg in iter {
+        for arg in fdef.args.iter().skip(capture_count) {
             emitter.append(", ");
             emitter.emit_type(arg.type_def);
             emitter.append(" ");
@@ -66,10 +63,7 @@ pub fn emit_closure_definitions(emitter: Emitter) {
         emitter.append(" ");
         emitter.append(wrap);
         emitter.append("(void* _siko_env_ptr");
-        // FIXME: use skip
-        let iter = fdef.args.iter();
-        for _ in 0..capture_count { iter.next(); }
-        let user_args: Vec[_] = iter.collect();
+        let user_args: Vec[_] = fdef.args.iter().skip(capture_count).collect();
         for arg in user_args.iter() {
             emitter.append(", ");
             emitter.emit_type(arg.type_def);
