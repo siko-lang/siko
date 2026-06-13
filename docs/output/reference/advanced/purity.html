@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Purity — Siko</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:ital,wght@0,400;0,700;1,400&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+
+<body>
+  <div class="container">
+
+    <p class="post-meta"><a href="../../index.html">Siko Language</a> · <a href="../../reference.html">Reference</a> · <a href="../advanced.html">Advanced Topics</a> · Purity</p>
+
+    <h1>Purity in Siko</h1>
+<p>Purity in Siko means that a function has no builtin side effects. This is not the same as purity in Haskell or other traditional pure functional languages.</p>
+<pre><code>effect DbQuery {
+    fn query(s: SQL) -&gt; Result
+}
+
+fn execute_query(q: SQL) {
+    DbQuery.query(q);
+}
+
+fn main() {
+    let q = SQL("SELECT * FROM users");
+    execute_query(q);
+}
+</code></pre>
+<p><code>execute_query</code> is pure in Siko's sense — it calls no function with builtin side effects. The fact that it invokes an effect method is fine: effect methods are holes whose implementation is supplied by the caller, so the callee makes no commitment about what they do.</p>
+<h2>Purity is a pre-monomorphization concept</h2>
+<p>Like safety, purity is reasoned about before monomorphization. It is entirely possible that an effect handler injected at the call site introduces side effects — but that is the caller's business, not the library's. A package can be declared pure before you know anything about how its effects will be handled.</p>
+<h2>What a pure package guarantees</h2>
+<p>A package deemed pure by the compiler satisfies all of the following:</p>
+<ul>
+<li>Every function in the package is truly safe — not merely marked <code>@safe</code>, but containing no unsafe code anywhere.</li>
+<li>It only calls functions marked <code>@pure</code>, which covers pure functions from the standard library (even if those contain internal unsafe code) and from any other package.</li>
+<li>It may call effect methods — these are resolved by the caller, so they carry no purity commitment of their own.</li>
+</ul>
+<p>Note that a pure package cannot define <code>@safe</code> functions, because <code>@safe</code> requires unsafe code inside, and pure packages have none.</p>
+<h2>Why this matters</h2>
+<p>This system makes it possible to statically audit a package. A package deemed pure by the compiler is guaranteed to have no builtin side effects and to call nothing that does. Any side effects that appear at runtime are entirely in the hands of whoever supplies the effect handlers — and the supplier has full, unrestricted control over what those handlers do.</p>
+<p>For example, a <code>TcpConnect</code> effect could be handled by a function that only connects to a specific host, or one that limits the number of connections, or one that enforces a maximum duration. The library being called has no say in any of this. The caller decides the rules, and the pure library operates within whatever boundaries the caller imposes — without knowing or caring what they are.</p>
+<p>Siko's lightweight effect and implicit system supports library authors so they never have to reach for dependency injection frameworks or other workarounds. They call effectful functions and write straightforward, seemingly synchronous code without caring how the caller will actually instantiate their library. Because mocking is trivial with effects and implicits, a pure library can be developed and tested using only pure functions throughout.</p>
+
+
+  </div>
+  <script src="../../siko-highlight.js"></script>
+</body>
+
+</html>

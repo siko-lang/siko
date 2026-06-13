@@ -12,6 +12,7 @@ import Siko.Instances.InstanceResolver
 import Siko.Typechecker.Checker
 import Siko.Monomorphizer
 import Siko.MatchValidation as MV
+import Siko.PurityCheck.Checker as PC
 import Siko.SafetyChecker as SC
 import Siko.LambdaLift.Pass as LL
 import Siko.ImplicitPropagation.Function as IP
@@ -201,6 +202,11 @@ struct Compiler {
             let safety_errors = SC.check_safety(program);
             if !safety_errors.is_empty() {
                 report_safety_errors(safety_errors);
+            }
+            if trace { println("Checking purity annotations..."); }
+            let purity_errors = PC.check_purity(program);
+            if !purity_errors.is_empty() {
+                report_purity_errors(purity_errors);
             }
         }
         if check_only {

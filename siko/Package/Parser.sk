@@ -37,6 +37,13 @@ struct Table {
             _ => Err(Error.ContentError),
         }
     }
+
+    fn get_bool_opt(t: Table, name: String) -> Option[Bool] {
+        match t.m.get(name) {
+            Some(T.TomlValue.Boolean(b)) => Some(b),
+            _ => None,
+        }
+    }
 }
 
 fn as_table(v: T.TomlValue) -> Result[Table, Error] {
@@ -70,10 +77,12 @@ pub fn parse(f: String) -> Result[PackageInfo, Error] {
                             dependencies.push(dep);
                         }
                     }
+                    let pure = root.get_bool_opt("pure").unwrap_or(False);
                     let info = PackageInfo(
                         name: name,
                         version: version,
-                        dependencies: dependencies);
+                        dependencies: dependencies,
+                        pure: pure);
                     Ok(info)
                 }
                 Err(_) => {

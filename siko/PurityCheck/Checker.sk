@@ -1,0 +1,138 @@
+module Siko.PurityCheck.Checker {
+
+import Std.Map
+import Std.Set
+import Siko.AST.Function
+import Siko.AST.QualifiedName
+import Siko.HIR.Program
+import Siko.Location
+import Siko.Config
+import Siko.Package.Info
+import Siko.PurityCheck.GroupBuilder as GB
+
+pub enum PurityError {
+    PureInMixedCycle(Location),
+    PackageClaimsPure(String),
+}
+
+pub fn check_purity(program: Program) -> Vec[PurityError] {
+    let (sccs, dep_map) = GB.build_groups(program);
+
+    let errors: Vec[PurityError] = Vec.new();
+    let purity_map: Map[QualifiedName, Bool] = Map.new();
+
+    for scc in sccs {
+        let scc_set: Set[QualifiedName] = Set.new();
+        for q in scc {
+            scc_set.insert(q);
+        }
+
+        // a @pure function in a mixed cycle is a contradiction — fail early
+        if scc.len() > 1 {
+            let has_pure = False;
+            let all_pure = True;
+            for q in scc {
+                let func = program.functions.get(q).unwrap();
+                if func.is_pure() {
+                    has_pure = True;
+                } else {
+                    all_pure = False;
+                }
+            }
+            if has_pure && !all_pure {
+                for q in scc {
+                    let func = program.functions.get(q).unwrap();
+                    if func.is_pure() {
+                        errors.push(PurityError.PureInMixedCycle(func.name.location));
+                    }
+                }
+                for q in scc {
+                    purity_map.insert(q, False);
+                }
+                continue;
+            }
+        }
+
+        let scc_pure = True;
+
+        for qname in scc {
+            let func = program.functions.get(qname).unwrap();
+
+            if func.is_pure() {
+                purity_map.insert(qname, True);
+                continue;
+            }
+
+            if func.is_unsafe() || func.is_safe() || func.is_extern() || func.is_builtin() {
+                scc_pure = False;
+                continue;
+            }
+
+            let deps = dep_map.get(qname).unwrap_or([]);
+            for dep in deps {
+                if scc_set.contains(dep) {
+                    continue;
+                }
+                if let Some(dep_func) = program.functions.get(dep) {
+                    if dep_func.kind == FunctionDefKind.EffectMethod {
+                        continue;
+                    }
+                }
+                if !purity_map.get(dep).unwrap_or(False) {
+                    scc_pure = False;
+                }
+            }
+        }
+
+        for qname in scc {
+            let func = program.functions.get(qname).unwrap();
+            if !func.is_pure() {
+                purity_map.insert(qname, scc_pure);
+            }
+        }
+    }
+
+    // aggregate by package — a package is pure only if every function in it is pure
+    let package_purity: Map[String, Bool] = Map.new();
+    let package_info: Map[String, PackageInfo] = Map.new();
+
+    for (qname, _) in program.functions {
+        let func = program.functions.get(qname).unwrap();
+        let pkg = match func.source_package {
+            Some(p) => p,
+            None => continue,
+        };
+        let pkg_name = pkg.info.name;
+        package_info.insert(pkg_name, pkg.info);
+        let fn_pure = purity_map.get(qname).unwrap_or(False);
+        match package_purity.get(pkg_name) {
+            Some(_) => {
+                if !fn_pure {
+                    package_purity.insert(pkg_name, False);
+                }
+            }
+            None => {
+                package_purity.insert(pkg_name, fn_pure);
+            }
+        }
+    }
+
+    let dump = get_config().dump_package_purity;
+    for (pkg_name, is_pure) in package_purity {
+        if dump {
+            let verdict = if is_pure { "PURE" } else { "IMPURE" };
+            println("${verdict}: ${pkg_name}");
+        }
+        let advertised = match package_info.get(pkg_name) {
+            Some(info) => info.pure,
+            None => False,
+        };
+        if advertised && !is_pure {
+            errors.push(PurityError.PackageClaimsPure(pkg_name));
+        }
+    }
+
+    errors
+}
+
+}
