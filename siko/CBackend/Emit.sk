@@ -401,6 +401,12 @@ pub struct Emitter {
                 emitter.emit_expr(expr);
                 emitter.append(";");
             }
+            ExprKind.Break => {
+                emitter.append("goto loop_${emitter.current_loop_id}_break;");
+            }
+            ExprKind.Continue => {
+                emitter.append("goto loop_${emitter.current_loop_id}_continue;");
+            }
             ExprKind.Match(MatchInfo(scrutinee, arms)) => {
                 let ty = scrutinee.ty.unwrap();
                 let ty_str = format_type(ty);
@@ -598,14 +604,6 @@ pub struct Emitter {
             }
             S.Statement.ForLoop(_, _, _) => panic("emit_statement: invalid statement"),
             S.Statement.WhileLoop(_, _) => panic("emit_statement: invalid statement"),
-            S.Statement.Break => {
-                emitter.emit_indent();
-                emitter.append("goto loop_${emitter.current_loop_id}_break;\n");
-            }
-            S.Statement.Continue => {
-                emitter.emit_indent();
-                emitter.append("goto loop_${emitter.current_loop_id}_continue;\n");
-            }
         }
     }
 

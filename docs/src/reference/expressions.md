@@ -213,3 +213,61 @@ loop {
     process(line);
 }
 ```
+
+### break
+
+Exits the innermost `loop`. The most common use is as the arm of a `match` or `if`:
+
+```
+loop {
+    match next_event() {
+        Event.Quit => break,
+        Event.Key(k) => handle_key(k),
+    }
+}
+```
+
+### continue
+
+Skips the rest of the current loop body and starts the next iteration. Like `break`, it is an expression:
+
+```
+for item in items {
+    if item.is_skip() { continue; }
+    process(item);
+}
+```
+
+### Try (`?`)
+
+The postfix `?` operator propagates errors from a `Result`. Applied to an expression of type `Result[T, E]`, it desugars to:
+
+```
+match expr {
+    Ok(v)  => v,
+    Err(e) => return Err(e.into()),
+}
+```
+
+On success the `Ok` value is unwrapped and becomes the result of the expression. On failure the error is converted (via `into()`) and returned immediately from the enclosing function, which must itself return a compatible `Result`.
+
+```
+fn read_config(path: String) -> Result[Config, Error] {
+    let text = read_file(path)?;   // returns early on Err
+    let cfg  = parse(text)?;       // same
+    Ok(cfg)
+}
+```
+
+### return
+
+Returns a value from the current function early. `return` is an expression, so it can appear inside any expression context:
+
+```
+fn find(items: Vec[Int], target: Int) -> Option[Int] {
+    for item in items {
+        if item == target { return Some(item); }
+    }
+    None
+}
+```

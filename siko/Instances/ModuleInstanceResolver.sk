@@ -18,7 +18,7 @@ pub struct ModuleInstanceResolver {
         for tier in [r.local, r.imported, r.canonical] {
             let candidates = match tier.get(trait_name) {
                 Some(v) => v,
-                None => { continue; }
+                None => continue,
             };
             let matches: Vec[_] = candidates.iter()
                 .filter_map(|inst_def| match try_match(inst_def, query_args, allocator) {
@@ -27,7 +27,7 @@ pub struct ModuleInstanceResolver {
                 })
                 .collect();
             match matches.len() {
-                0 => { continue; }
+                0 => continue,
                 1 => {
                     let (inst_def, witness) = matches[0];
                     return InstanceLookupResult.Found(inst_def, witness);

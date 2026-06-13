@@ -253,6 +253,8 @@ pub struct ExprResolver {
                 let inner = expr_resolver.resolve_expr(inner, env)?;
                 ExprKind.Return(inner)
             }
+            ExprKind.Break    => ExprKind.Break,
+            ExprKind.Continue => ExprKind.Continue,
             ExprKind.Match(MatchInfo(scrutinee, arms)) => {
                 let scrutinee = expr_resolver.resolve_expr(scrutinee, env)?;
                 let resolved_arms = Vec.new();
@@ -636,8 +638,6 @@ pub struct ExprResolver {
                     desugar_for_loop(expr_resolver, env, result, pattern, iterable, body)?
                 }
                 S.Statement.WhileLoop(cond, body) => desugar_while_loop(expr_resolver, env, cond, body)?,
-                S.Statement.Break => S.Statement.Break,
-                S.Statement.Continue => S.Statement.Continue,
                 S.Statement.Declare(_) => panic("Declare statement found in resolver"),
                 S.Statement.Assign(lhs, rhs) => {
                     if let ExprKind.Index(container, idx) = lhs.kind {

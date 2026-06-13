@@ -79,7 +79,7 @@ instance ExprParser[Parser] {
         loop {
             let op = match parser.peek() {
                 TokenKind.Pipe => BinaryOp.BitOr
-                _              => { break; }
+                _              => break,
             };
             let location = lhs.location;
             parser.advance();
@@ -94,7 +94,7 @@ instance ExprParser[Parser] {
         loop {
             let op = match parser.peek() {
                 TokenKind.Caret => BinaryOp.Xor
-                _               => { break; }
+                _               => break,
             };
             let location = lhs.location;
             parser.advance();
@@ -109,7 +109,7 @@ instance ExprParser[Parser] {
         loop {
             let op = match parser.peek() {
                 TokenKind.Amp => BinaryOp.BitAnd
-                _             => { break; }
+                _             => break,
             };
             let location = lhs.location;
             parser.advance();
@@ -129,7 +129,7 @@ instance ExprParser[Parser] {
                 TokenKind.Gt     => BinaryOp.Greater
                 TokenKind.LtEq   => BinaryOp.LessEq
                 TokenKind.GtEq   => BinaryOp.GreaterEq
-                _                => { break; }
+                _                => break,
             };
             let location = lhs.location;
             parser.advance();
@@ -145,7 +145,7 @@ instance ExprParser[Parser] {
             let op = match parser.peek() {
                 TokenKind.LtLt => BinaryOp.Shl
                 TokenKind.GtGt => BinaryOp.Shr
-                _              => { break; }
+                _              => break,
             };
             let location = lhs.location;
             parser.advance();
@@ -161,7 +161,7 @@ instance ExprParser[Parser] {
             let op = match parser.peek() {
                 TokenKind.Plus  => BinaryOp.Add
                 TokenKind.Minus => BinaryOp.Sub
-                _               => { break; }
+                _               => break,
             };
             let location = lhs.location;
             parser.advance();
@@ -178,7 +178,7 @@ instance ExprParser[Parser] {
                 TokenKind.Star    => BinaryOp.Mul
                 TokenKind.Slash   => BinaryOp.Div
                 TokenKind.Percent => BinaryOp.Mod
-                _                 => { break; }
+                _                 => break,
             };
             let location = lhs.location;
             parser.advance();
@@ -339,6 +339,16 @@ instance ExprParser[Parser] {
                 };
                 let location = parser.loc(start, parser.cur_pos());
                 Ok(Expr(ExprKind.Return(inner), location, None))
+            }
+            TokenKind.KwBreak => {
+                parser.advance();
+                let location = parser.loc(start, parser.cur_pos());
+                Ok(Expr(ExprKind.Break, location, None))
+            }
+            TokenKind.KwContinue => {
+                parser.advance();
+                let location = parser.loc(start, parser.cur_pos());
+                Ok(Expr(ExprKind.Continue, location, None))
             }
             TokenKind.KwIf    => parser.parse_if_expr()
             TokenKind.KwMatch => parser.parse_match_expr()
@@ -706,20 +716,6 @@ instance ExprParser[Parser] {
             }
             parser.expect(TokenKind.RBrace)?;
             return Ok(S.Loop(body));
-        }
-        if parser.peek() == TokenKind.KwBreak {
-            parser.advance();
-            if parser.peek() == TokenKind.Semicolon {
-                parser.advance();
-            }
-            return Ok(S.Break);
-        }
-        if parser.peek() == TokenKind.KwContinue {
-            parser.advance();
-            if parser.peek() == TokenKind.Semicolon {
-                parser.advance();
-            }
-            return Ok(S.Continue);
         }
         if parser.peek() == TokenKind.KwLet {
             parser.advance();

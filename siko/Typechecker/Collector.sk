@@ -159,6 +159,15 @@ pub struct Collector {
                 ExprKind.Return(new_inner)
             }
 
+            ExprKind.Break => {
+                c.emit(C.ConstraintKind.Unify(ty, unit()), loc);
+                ExprKind.Break
+            }
+            ExprKind.Continue => {
+                c.emit(C.ConstraintKind.Unify(ty, unit()), loc);
+                ExprKind.Continue
+            }
+
             ExprKind.If(cond, then, else_expr) => {
                 let (cond_ty, new_cond) = c.collect_expr(cond, env);
                 c.emit(C.ConstraintKind.Unify(cond_ty, std_bool()), loc);
@@ -410,9 +419,6 @@ pub struct Collector {
                 let (_, new_stmts) = c.collect_block(stmts, env);
                 (unit(), S.Loop(new_stmts))
             }
-
-            S.Break => (TypeDef.Never(False), S.Break),
-            S.Continue => (TypeDef.Never(False), S.Continue),
 
             S.UnresolvedLet(_, _, _) => panic("collector: UnresolvedLet"),
             S.ForLoop(_, _, _) => panic("collector: ForLoop should be desugared"),

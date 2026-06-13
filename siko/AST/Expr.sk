@@ -31,13 +31,11 @@ pub struct Expr {
 
     fn is_divergent(expr: Expr) -> Bool {
         match expr.kind {
-            Return(_) => True,
+            Return(_) | Break | Continue => True,
             Block(stmts) => {
                 match stmts.last() {
                     Some(S.TrailingExpr(e)) => e.is_divergent(),
                     Some(S.Expr(e)) => e.is_divergent(),
-                    Some(S.Break)           => True,
-                    Some(S.Continue)        => True,
                     _                       => False,
                 }
             }
@@ -181,6 +179,8 @@ pub enum ExprKind {
     Tuple(Vec[Expr]),
     Paren(Expr),
     Return(Expr),
+    Break,
+    Continue,
     Match(MatchInfo),
     With(WithInfo),
     ImplicitRef(ImplicitRefInfo),

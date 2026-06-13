@@ -110,6 +110,16 @@ struct Normalizer {
                 None
             }
 
+            ExprKind.Break => {
+                out.push(S.Statement.Expr(Expr(ExprKind.Break, loc, None)));
+                None
+            }
+
+            ExprKind.Continue => {
+                out.push(S.Statement.Expr(Expr(ExprKind.Continue, loc, None)));
+                None
+            }
+
             ExprKind.FunctionCall(FunctionCallInfo(name, kind, args, wi, named_args)) => {
                 let atom_args = match norm.lower_args(args, out) {
                     None => return None,
@@ -360,14 +370,6 @@ struct Normalizer {
                     norm.lower_stmts(body, loop_out, loc);
                     out.push(S.Statement.Loop(loop_out));
                 }
-                S.Statement.Break => {
-                    out.push(S.Statement.Break);
-                    return None;
-                }
-                S.Statement.Continue => {
-                    out.push(S.Statement.Continue);
-                    return None;
-                }
                 S.Statement.UnresolvedLet(_, _, _) => panic("normalizer: UnresolvedLet"),
                 S.Statement.ForLoop(_, _, _) => panic("normalizer: ForLoop must be desugared"),
                 S.Statement.WhileLoop(_, _) => panic("normalizer: WhileLoop must be desugared"),
@@ -592,11 +594,10 @@ struct Normalizer {
 
 fn is_divergent_with_fns(expr: Expr, div_fns: Set[QualifiedName]) -> Bool {
     match expr.kind {
-        ExprKind.Return(_) => True,
+        ExprKind.Return(_) | ExprKind.Break | ExprKind.Continue => True,
         ExprKind.Block(stmts) => match stmts.last() {
             Some(S.Statement.TrailingExpr(e)) => is_divergent_with_fns(e, div_fns),
             Some(S.Statement.Expr(e)) => is_divergent_with_fns(e, div_fns),
-            Some(S.Statement.Break) | Some(S.Statement.Continue) => True,
             _ => False,
         }
         ExprKind.If(_, then_branch, else_branch) => {
@@ -627,7 +628,6 @@ fn loop_body_has_break(stmts: Vec[S.Statement]) -> Bool {
 
 fn stmt_has_break(stmt: S.Statement) -> Bool {
     match stmt {
-        S.Statement.Break => True,
         S.Statement.Loop(_) => False,
         S.Statement.Expr(e) | S.Statement.TrailingExpr(e) => expr_has_break(e),
         S.Statement.Let(S.LetInfo(_, _, rhs)) => expr_has_break(rhs),
@@ -638,6 +638,7 @@ fn stmt_has_break(stmt: S.Statement) -> Bool {
 
 fn expr_has_break(expr: Expr) -> Bool {
     match expr.kind {
+        ExprKind.Break => True,
         ExprKind.Block(stmts) => loop_body_has_break(stmts),
         ExprKind.If(_, then_branch, else_branch) => {
             expr_has_break(then_branch) || match else_branch {

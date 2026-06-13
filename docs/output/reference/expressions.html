@@ -155,6 +155,45 @@ let Point(x: px, y: py) = point;
     process(line);
 }
 </code></pre>
+<h3>break</h3>
+<p>Exits the innermost <code>loop</code>. The most common use is as the arm of a <code>match</code> or <code>if</code>:</p>
+<pre><code>loop {
+    match next_event() {
+        Event.Quit =&gt; break,
+        Event.Key(k) =&gt; handle_key(k),
+    }
+}
+</code></pre>
+<h3>continue</h3>
+<p>Skips the rest of the current loop body and starts the next iteration. Like <code>break</code>, it is an expression:</p>
+<pre><code>for item in items {
+    if item.is_skip() { continue; }
+    process(item);
+}
+</code></pre>
+<h3>Try (<code>?</code>)</h3>
+<p>The postfix <code>?</code> operator propagates errors from a <code>Result</code>. Applied to an expression of type <code>Result[T, E]</code>, it desugars to:</p>
+<pre><code>match expr {
+    Ok(v)  =&gt; v,
+    Err(e) =&gt; return Err(e.into()),
+}
+</code></pre>
+<p>On success the <code>Ok</code> value is unwrapped and becomes the result of the expression. On failure the error is converted (via <code>into()</code>) and returned immediately from the enclosing function, which must itself return a compatible <code>Result</code>.</p>
+<pre><code>fn read_config(path: String) -&gt; Result[Config, Error] {
+    let text = read_file(path)?;   // returns early on Err
+    let cfg  = parse(text)?;       // same
+    Ok(cfg)
+}
+</code></pre>
+<h3>return</h3>
+<p>Returns a value from the current function early. <code>return</code> is an expression, so it can appear inside any expression context:</p>
+<pre><code>fn find(items: Vec[Int], target: Int) -&gt; Option[Int] {
+    for item in items {
+        if item == target { return Some(item); }
+    }
+    None
+}
+</code></pre>
 
 
   </div>
