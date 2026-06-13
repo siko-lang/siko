@@ -411,7 +411,11 @@ fn invoke_success(compiler: &Path, args: &[&str], cwd: &Path, valgrind: bool) ->
     // --suppressions: silences Boehm GC false positives (conservative stack scan).
     let mut child = if valgrind {
         let mut c = Command::new("valgrind");
-        c.args(["--error-exitcode=1", "--leak-check=no", "--suppressions=.github/valgrind.supp"]);
+        let supp = std::env::current_dir()
+            .unwrap()
+            .join(".github/valgrind.supp");
+        c.args(["--error-exitcode=1", "--leak-check=no"]);
+        c.arg(format!("--suppressions={}", supp.display()));
         c.arg(compiler);
         c.args(args);
         c
