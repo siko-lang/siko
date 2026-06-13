@@ -15,10 +15,11 @@ fn main() {
     let siko_bin = Path::new(COMPILER);
 
     let bless = std::env::args().any(|a| a == "--bless");
+    let valgrind = std::env::args().any(|a| a == "--valgrind");
 
     let filters: Vec<String> = std::env::args()
         .skip(1)
-        .filter(|a| a != "--bless" && a != "--re")
+        .filter(|a| a != "--bless" && a != "--re" && a != "--valgrind")
         .collect();
 
     if bless {
@@ -51,6 +52,7 @@ fn main() {
                 &mut failed,
                 &mut failed_names,
                 true,
+                valgrind,
             );
         }
     }
@@ -73,6 +75,7 @@ fn main() {
                 &mut failed,
                 &mut failed_names,
                 false,
+                valgrind,
             );
         }
     }
@@ -164,6 +167,7 @@ fn build_run_selfhost(
     source: &Path,
     nostd: bool,
     bless: bool,
+    valgrind: bool,
 ) -> Result<(Duration, Duration), String> {
     let bin = case.join("test_selfhost.bin");
     let bin_str = bin.to_str().unwrap();
@@ -194,7 +198,7 @@ fn build_run_selfhost(
 
     let exec_start = Instant::now();
     let abs_bin = fs::canonicalize(&bin).map_err(|e| format!("binary not found {}: {e}", bin.display()))?;
-    let actual = invoke_success(&abs_bin, &[], case);
+    let actual = invoke_success(&abs_bin, &[], case, valgrind);
     let exec_dur = exec_start.elapsed();
     let _ = fs::remove_file(&bin);
     let actual = actual?;
@@ -226,7 +230,7 @@ fn bless_success_case(compiler: &Path, case: &Path, nostd: bool) {
     std::io::stdout().flush().ok();
 
     let mut ok = true;
-    if let Err(msg) = build_run_selfhost(compiler, case, &source, nostd, true) {
+    if let Err(msg) = build_run_selfhost(compiler, case, &source, nostd, true, false) {
         eprintln!("  [build] failed for {label}:\n{msg}");
         ok = false;
     }
@@ -271,6 +275,7 @@ fn run_success_case(
     failed: &mut usize,
     failed_names: &mut Vec<String>,
     nostd: bool,
+    valgrind: bool,
 ) {
     *total += 1;
     let label = case.to_string_lossy();
@@ -284,7 +289,7 @@ fn run_success_case(
     let mut exec = Duration::ZERO;
 
     if siko_bin.exists() {
-        match build_run_selfhost(siko_bin, case, &source, nostd, false) {
+        match build_run_selfhost(siko_bin, case, &source, nostd, false, valgrind) {
             Ok((b, e)) => {
                 build = b;
                 exec = e;
@@ -398,11 +403,23 @@ fn write_if_changed(path: &Path, content: &str) -> Result<(), std::io::Error> {
 
 // ─── Invocation helpers ───────────────────────────────────────────────────────
 
-fn invoke_success(compiler: &Path, args: &[&str], cwd: &Path) -> Result<String, String> {
+fn invoke_success(compiler: &Path, args: &[&str], cwd: &Path, valgrind: bool) -> Result<String, String> {
     use std::io::Read as _;
 
-    let mut child = Command::new(compiler)
-        .args(args)
+    // --leak-check=no: Boehm GC holds memory intentionally in ways valgrind
+    // would flag as leaks. We care about invalid accesses, not GC-held memory.
+    let mut child = if valgrind {
+        let mut c = Command::new("valgrind");
+        c.args(["--error-exitcode=1", "--leak-check=no"]);
+        c.arg(compiler);
+        c.args(args);
+        c
+    } else {
+        let mut c = Command::new(compiler);
+        c.args(args);
+        c
+    };
+    let mut child = child
         .current_dir(cwd)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

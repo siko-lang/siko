@@ -15,6 +15,9 @@ build:
 test: build
 	./$(TESTRUNNER)
 
+test-valgrind: build
+	./$(TESTRUNNER) --valgrind
+
 siko.bin: base.bin $(SIKO_SK)
 	./base.bin build siko -O -o siko.bin
 
