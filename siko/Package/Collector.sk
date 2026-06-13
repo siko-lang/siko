@@ -11,7 +11,7 @@ pub enum CollectorError {
     IOError(IO.Error),
     ParseError(P.Error),
     MultipleRootPackages,
-    MissingDependency(String),
+    MissingDependency(dep: String, requester: String, toml: String),
 }
 
 instance ToString[CollectorError] {
@@ -20,7 +20,8 @@ instance ToString[CollectorError] {
             CollectorError.IOError(io) => "io error: ${io}",
             CollectorError.ParseError(pe) => "parse error: ${pe}",
             CollectorError.MultipleRootPackages => "multiple root packages given, at most one is allowed",
-            CollectorError.MissingDependency(name) => "dependency not found: ${name}",
+            CollectorError.MissingDependency(dep: dep, requester: requester, toml: toml) =>
+                "dependency not found: `${dep}` (required by `${requester}` in ${toml})",
         }
     }
 }
@@ -66,11 +67,19 @@ fn select_packages(
         return Ok(());
     }
     visited.insert(name, True);
-    let pkg = match by_name.get(name) {
-        Some(p) => p,
-        None => return Err(CollectorError.MissingDependency(name)),
+    let pkg = by_name.get(name).unwrap();
+    let toml = match pkg.root {
+        Some(r) => r + "/package.toml",
+        None => "<unknown>",
     };
     for dep in pkg.info.dependencies {
+        if !by_name.contains_key(dep.name) {
+            return Err(CollectorError.MissingDependency(
+                dep: dep.name,
+                requester: pkg.info.name,
+                toml: toml,
+            ));
+        }
         select_packages(dep.name, by_name, visited, result)?;
     }
     result.push(pkg);

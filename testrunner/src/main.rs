@@ -129,6 +129,18 @@ fn format_duration(d: Duration) -> String {
     }
 }
 
+// ─── Case input path ─────────────────────────────────────────────────────────
+
+/// Returns the path to pass to the compiler for a test case.
+/// Package tests (those with a package.toml) pass the folder; others pass main.sk.
+fn case_input(case: &Path) -> PathBuf {
+    if case.join("package.toml").exists() {
+        case.to_path_buf()
+    } else {
+        case.join("main.sk")
+    }
+}
+
 // ─── Discovery ────────────────────────────────────────────────────────────────
 
 fn discover_cases(root: &Path, filters: &Vec<String>) -> Vec<PathBuf> {
@@ -161,23 +173,23 @@ fn collect_cases(dir: &Path, out: &mut Vec<PathBuf>, filters: &Vec<String>) {
 
 // ─── Bless ────────────────────────────────────────────────────────────────────
 
-fn build_run_selfhost(
+fn build_run(
     siko_bin: &Path,
     case: &Path,
-    source: &Path,
     nostd: bool,
     bless: bool,
     valgrind: bool,
 ) -> Result<(Duration, Duration), String> {
     let bin = case.join("test_selfhost.bin");
     let bin_str = bin.to_str().unwrap();
-    let source_str = source.to_str().unwrap();
+    let input = case_input(case);
+    let input_str = input.to_str().unwrap();
 
     let mut siko_args = vec!["build"];
-    if nostd {
+    if nostd && !case.join("package.toml").exists() {
         siko_args.push("--no-std");
     }
-    siko_args.push(source_str);
+    siko_args.push(input_str);
     siko_args.push("-o");
     siko_args.push(bin_str);
 
@@ -197,7 +209,8 @@ fn build_run_selfhost(
     }
 
     let exec_start = Instant::now();
-    let abs_bin = fs::canonicalize(&bin).map_err(|e| format!("binary not found {}: {e}", bin.display()))?;
+    let abs_bin =
+        fs::canonicalize(&bin).map_err(|e| format!("binary not found {}: {e}", bin.display()))?;
     let actual = invoke_success(&abs_bin, &[], case, valgrind);
     let exec_dur = exec_start.elapsed();
     let _ = fs::remove_file(&bin);
@@ -224,13 +237,12 @@ fn build_run_selfhost(
 
 fn bless_success_case(compiler: &Path, case: &Path, nostd: bool) {
     let label = case.to_string_lossy();
-    let source = case.join("main.sk");
 
     print!("  {label} ...");
     std::io::stdout().flush().ok();
 
     let mut ok = true;
-    if let Err(msg) = build_run_selfhost(compiler, case, &source, nostd, true, false) {
+    if let Err(msg) = build_run(compiler, case, nostd, true, false) {
         eprintln!("  [build] failed for {label}:\n{msg}");
         ok = false;
     }
@@ -244,12 +256,12 @@ fn bless_success_case(compiler: &Path, case: &Path, nostd: bool) {
 
 fn bless_failure_case(compiler: &Path, case: &Path) {
     let label = case.to_string_lossy();
-    let source = case.join("main.sk");
 
     print!("  {label} ...");
     std::io::stdout().flush().ok();
 
-    match invoke_failure_stdout(compiler, &["build", source.to_str().unwrap()]) {
+    let input = case_input(case);
+    match invoke_failure(compiler, &["build", input.to_str().unwrap()]) {
         Ok(output) => {
             let path = case.join("output.txt");
             if let Err(e) = write_if_changed(&path, &output) {
@@ -279,7 +291,6 @@ fn run_success_case(
 ) {
     *total += 1;
     let label = case.to_string_lossy();
-    let source = case.join("main.sk");
 
     print!("  {label} ...");
     std::io::stdout().flush().ok();
@@ -289,7 +300,7 @@ fn run_success_case(
     let mut exec = Duration::ZERO;
 
     if siko_bin.exists() {
-        match build_run_selfhost(siko_bin, case, &source, nostd, false, valgrind) {
+        match build_run(siko_bin, case, nostd, false, valgrind) {
             Ok((b, e)) => {
                 build = b;
                 exec = e;
@@ -329,21 +340,19 @@ fn run_failure_case(
 ) {
     *total += 1;
     let label = case.to_string_lossy();
-    let source = case.join("main.sk");
     let snapshot = case.join("output.txt");
 
     print!("  {label} ...");
     std::io::stdout().flush().ok();
 
     let mut failures: Vec<(&str, String)> = Vec::new();
+    let input = case_input(case);
     let self_dur;
     if siko_bin.exists() {
         let self_start = Instant::now();
-        if let Err(msg) = failure_snapshot_test_stdout(
-            siko_bin,
-            &["build", source.to_str().unwrap()],
-            &snapshot,
-        ) {
+        if let Err(msg) =
+            failure_snapshot_test(siko_bin, &["build", input.to_str().unwrap()], &snapshot)
+        {
             failures.push(("self", msg));
         }
         self_dur = self_start.elapsed();
@@ -367,12 +376,8 @@ fn run_failure_case(
     }
 }
 
-fn failure_snapshot_test_stdout(
-    compiler: &Path,
-    args: &[&str],
-    snapshot: &Path,
-) -> Result<(), String> {
-    failure_snapshot_test_impl(invoke_failure_stdout(compiler, args)?, snapshot)
+fn failure_snapshot_test(compiler: &Path, args: &[&str], snapshot: &Path) -> Result<(), String> {
+    failure_snapshot_test_impl(invoke_failure(compiler, args)?, snapshot)
 }
 
 fn failure_snapshot_test_impl(actual: String, snapshot: &Path) -> Result<(), String> {
@@ -403,7 +408,12 @@ fn write_if_changed(path: &Path, content: &str) -> Result<(), std::io::Error> {
 
 // ─── Invocation helpers ───────────────────────────────────────────────────────
 
-fn invoke_success(compiler: &Path, args: &[&str], cwd: &Path, valgrind: bool) -> Result<String, String> {
+fn invoke_success(
+    compiler: &Path,
+    args: &[&str],
+    cwd: &Path,
+    valgrind: bool,
+) -> Result<String, String> {
     use std::io::Read as _;
 
     // --leak-check=no: Boehm GC holds memory intentionally in ways valgrind
@@ -477,11 +487,7 @@ fn invoke_success(compiler: &Path, args: &[&str], cwd: &Path, valgrind: bool) ->
     Ok(String::from_utf8_lossy(&stdout_bytes).into_owned())
 }
 
-fn invoke_failure_stdout(compiler: &Path, args: &[&str]) -> Result<String, String> {
-    invoke_failure_impl(compiler, args, true)
-}
-
-fn invoke_failure_impl(compiler: &Path, args: &[&str], use_stdout: bool) -> Result<String, String> {
+fn invoke_failure(compiler: &Path, args: &[&str]) -> Result<String, String> {
     let out = Command::new(compiler)
         .args(args)
         .output()
@@ -494,7 +500,8 @@ fn invoke_failure_impl(compiler: &Path, args: &[&str], use_stdout: bool) -> Resu
         ));
     }
 
-    if use_stdout {
+    if true {
+        // FIXME: put errs into stdout
         Ok(String::from_utf8_lossy(&out.stdout).into_owned())
     } else {
         Ok(String::from_utf8_lossy(&out.stderr).into_owned())
