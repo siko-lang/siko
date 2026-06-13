@@ -519,6 +519,9 @@ pub struct Resolver {
         instance_name: Identifier,
     ) -> Result[(), ResolveError] {
         for method in instance_def.methods {
+            if method.is_unsafe() {
+                return Err(ResolveError.UnsafeInstanceMethod(method.name));
+            }
             let method_ctx = ResolverContext.new(base_type_resolver, resolver.ctx);
             let resolved_method = method.resolve(method_ctx)?;
             let full_name = method.name.with_prefix(instance_name.name());

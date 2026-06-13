@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Safety — Siko</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:ital,wght@0,400;0,700;1,400&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+
+<body>
+  <div class="container">
+
+    <p class="post-meta"><a href="../../index.html">Siko Language</a> · <a href="../../reference.html">Reference</a> · <a href="../advanced.html">Advanced Topics</a> · Safety</p>
+
+    <h1>Safety in Siko</h1>
+<p>Siko uses a garbage collector but it also has an FFI layer so it can call C code or write/read memory using raw pointers. Siko uses the now traditional safe/unsafe split to mark section of code that break the usual safety guarantees. The unit of safety is a function. By default, a function is safe. You must explicitly mark it as <code>@unsafe</code> to use any unsafe features of the language. It is not possible to mark a function as  <code>@safe</code> or <code>@unsafe</code> if it does not use any of the unsafe operations.</p>
+<p>We want to be able to talk about safety of a code pre monomorphization. Due to this design decision, there are some restrictions regarding where you can use or define unsafe functions. A trait instance method must be either fully safe or marked as <code>@safe</code>. Meaning it is not possible to "inject" an unsafe functionality into an otherwise safe code during monomorphization.</p>
+<p>The same is true for effect handlers, an effect handler is either fully safe or marked as <code>@safe</code>.</p>
+<p>A function is considered to be unsafe if it uses any of the following operations:</p>
+<ul>
+<li>has any expression that has pointer type</li>
+<li>calls an unsafe function</li>
+<li>calls an extern function</li>
+<li>dereferences a pointer</li>
+<li>takes the address of something</li>
+<li>calls sizeof</li>
+<li>creates a raw function pointer</li>
+<li>calls a raw function pointer</li>
+<li>transmutes a value into another type.</li>
+</ul>
+<p>The design philosophy is that anything that reveals platform specific details and does not fit into a java/python esque feel of the language needs to be explicitly marked as unsafe.</p>
+<p>The language must guarantee that literally everything you can do in safe mode is safe.</p>
+
+
+  </div>
+  <script src="../../siko-highlight.js"></script>
+</body>
+
+</html>

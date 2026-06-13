@@ -1,7 +1,12 @@
 module Siko.SafetyChecker {
 
 import Std.Set
+import Siko.AST.Annotations
 import Siko.AST.Expr as E
+import Siko.AST.Function
+import Siko.AST.Generics
+import Siko.Package.Collector as PC
+import Siko.Utils.VarAllocator
 import Siko.AST.Identifier
 import Siko.AST.Name
 import Siko.AST.Pattern
@@ -16,6 +21,7 @@ import Siko.Constants.Builtins as B
 pub enum SafetyError {
     UnsafeFunctionNotAnnotated(location: Location), // unsafe ops but no @safe/@unsafe
     SafeFunctionAnnotated(location: Location),      // no unsafe ops but has @safe/@unsafe
+    UnsafeEffectHandler(location: Location),        // effect handler marked @unsafe (must be @safe or plain safe)
 }
 
 trait Check[T] {
@@ -23,7 +29,13 @@ trait Check[T] {
 }
 
 instance Check[Location]              = auto(Fold, =)
-instance Check[TypeDef]               = auto(Fold, =)
+instance Check[TypeDef] {
+    fn check(ty: TypeDef, checker: SafetyChecker) {
+        if ty.has_ptr() {
+            checker.is_unsafe = True;
+        }
+    }
+}
 instance Check[I.String]              = auto(Fold, =)
 instance Check[String]                = auto(Fold, =)
 instance Check[Int]                   = auto(Fold, =)
@@ -37,7 +49,16 @@ instance Check[E.WitnessInfo]         = auto(Fold, =)
 instance Check[E.FunctionKind]        = auto(Fold, =)
 instance Check[E.BinaryOp]            = auto(Fold, =)
 instance Check[E.UnaryOp]             = auto(Fold, =)
-instance Check[E.HandlerSelection]    = auto(Fold, =)
+instance Check[E.HandlerSelection] {
+    fn check(sel: E.HandlerSelection, checker: SafetyChecker) {
+        if let E.HandlerSelection.EffectFunction(_, handler, location) = sel {
+            let handler_fn = checker.program.functions.get(handler).unwrap();
+            if handler_fn.is_unsafe() {
+                checker.errors.push(SafetyError.UnsafeEffectHandler(location));
+            }
+        }
+    }
+}
 instance Check[E.LambdaArg]           = auto(Fold, =)
 instance Check[E.ImplicitRefInfo]     = auto(Fold, =)
 instance Check[E.CreateClosureInfo]   = auto(Fold, =)
@@ -57,6 +78,14 @@ instance Check[S.DeclareInfo]         = auto(Fold)
 instance Check[S.Statement]           = auto(Fold)
 instance Check[Pattern]               = auto(Fold)
 instance Check[PatternKind]           = auto(Fold)
+instance Check[FunctionArg]           = auto(Fold)
+instance Check[FunctionDef]           = auto(Fold)
+instance Check[Annotation]            = auto(Fold, =)
+instance Check[FunctionDefKind]       = auto(Fold, =)
+instance Check[TypeArgDefs]           = auto(Fold, =)
+instance Check[VarAllocator]          = auto(Fold, =)
+instance Check[DefaultValueInfo]      = auto(Fold, =)
+instance Check[PC.SourcePackage]      = auto(Fold, =)
 
 instance[T: Check[T]] Check[Option[T]] {
     fn check(opt: Option[T], checker: SafetyChecker) {
@@ -130,15 +159,16 @@ pub fn check_safety(program: Program) -> Vec[SafetyError] {
         }
         checker.unsafe_reasons.clear();
         checker.is_unsafe = False;
-        if let Some(body) = func.body {
-            check(body, checker);
-        }
+        check(func, checker);
         let fn_is_unsafe = checker.is_unsafe;
         let has_annotation = func.is_safe() || func.is_unsafe();
         if fn_is_unsafe && !has_annotation {
-            for reason in checker.unsafe_reasons {
-                println("Unsafe call ${reason.name()}");
+            if func.is_extern() {
+                continue;
             }
+            // for reason in checker.unsafe_reasons {
+            //     println("Unsafe call ${reason.name()}");
+            // }
             checker.errors.push(SafetyError.UnsafeFunctionNotAnnotated(location: func.name.location));
         }
         if !fn_is_unsafe && has_annotation {

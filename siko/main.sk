@@ -196,6 +196,13 @@ struct Compiler {
         if !mv_errors.is_empty() {
             report_match_validation_errors(mv_errors);
         }
+        if check_safety {
+            if trace { println("Checking safety annotations..."); }
+            let safety_errors = SC.check_safety(program);
+            if !safety_errors.is_empty() {
+                report_safety_errors(safety_errors);
+            }
+        }
         if check_only {
             return;
         }
@@ -213,13 +220,6 @@ struct Compiler {
             }
         };
         c.check_pass("mono", program);
-        if check_safety {
-            if trace { println("Checking safety annotations..."); }
-            let safety_errors = SC.check_safety(program);
-            if !safety_errors.is_empty() {
-                report_safety_errors(safety_errors);
-            }
-        }
         if trace { println("Propagating implicit arguments..."); }
         IP.propagate_implicits(program);
         c.check_pass("propagate-implicits", program);

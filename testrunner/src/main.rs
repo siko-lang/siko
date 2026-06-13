@@ -408,9 +408,10 @@ fn invoke_success(compiler: &Path, args: &[&str], cwd: &Path, valgrind: bool) ->
 
     // --leak-check=no: Boehm GC holds memory intentionally in ways valgrind
     // would flag as leaks. We care about invalid accesses, not GC-held memory.
+    // --suppressions: silences Boehm GC false positives (conservative stack scan).
     let mut child = if valgrind {
         let mut c = Command::new("valgrind");
-        c.args(["--error-exitcode=1", "--leak-check=no"]);
+        c.args(["--error-exitcode=1", "--leak-check=no", "--suppressions=.github/valgrind.supp"]);
         c.arg(compiler);
         c.args(args);
         c

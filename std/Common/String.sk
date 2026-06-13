@@ -26,6 +26,7 @@ pub struct String {
         s.len.as_int()
     }
 
+    @unsafe
     pub fn as_ptr(s: String) -> *U8 {
         s.value
     }
@@ -58,6 +59,10 @@ pub struct String {
         True
     }
 
+    // FIXME: need to figure out what to do with this
+    // giving slice access to string means the caller may WRITE into it
+    // which is technically safe but probably not what they want
+    @safe
     pub fn as_slice(s: String) -> Slice[U8] {
         Slice.from_raw(s.as_ptr(), s.len())
     }

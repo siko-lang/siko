@@ -75,6 +75,18 @@ pub enum TypeDef {
         }
     }
 
+    pub fn has_ptr(ty: TypeDef) -> Bool {
+        match ty {
+            TypeDef.Ptr(_) | TypeDef.VoidPtr | TypeDef.FnPtr(_, _) => True,
+            TypeDef.Named(_, args) => args.iter().any(|a| a.has_ptr()),
+            TypeDef.Tuple(args) => args.iter().any(|a| a.has_ptr()),
+            TypeDef.Paren(inner) => inner.has_ptr(),
+            TypeDef.Fn(params, ret) => params.iter().any(|a| a.has_ptr()) || ret.has_ptr(),
+            TypeDef.Array(inner, _) => inner.has_ptr(),
+            TypeDef.Var(_) | TypeDef.Never(_) | TypeDef.Wildcard | TypeDef.Void | TypeDef.Numeric(_) => False,
+        }
+    }
+
     pub fn has_flex_var(ty: TypeDef) -> Bool {
         match ty {
             TypeDef.Var(TypeVar.Var(_)) => True,

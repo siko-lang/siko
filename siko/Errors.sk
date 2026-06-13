@@ -86,6 +86,8 @@ pub fn report_resolve_error(e: ResolveError) {
             report("duplicate named pattern arg `" + I.resolve(name) + "` in " + I.resolve(ident.name()), Some(ident.location)),
         ResolveError.PositionalArgWithRest(ident) =>
             report("positional pattern args cannot be mixed with `..` in " + I.resolve(ident.name()), Some(ident.location)),
+        ResolveError.UnsafeInstanceMethod(ident) =>
+            report("instance method `" + I.resolve(ident.name()) + "` must not be marked @unsafe", Some(ident.location)),
     }
 }
 
@@ -174,6 +176,8 @@ pub fn report_safety_error(e: SC.SafetyError) {
             report("Unsafe function must be annotated with @safe or @unsafe", Some(location)),
         SC.SafetyError.SafeFunctionAnnotated(location) =>
             report("Safe function must not be annotated with @safe or @unsafe", Some(location)),
+        SC.SafetyError.UnsafeEffectHandler(location) =>
+            report("Effect handler must not be marked @unsafe", Some(location)),
     }
 }
 
