@@ -61,7 +61,13 @@ instance Collect[Pattern]            = auto(Fold)
 instance Collect[PatternKind]        = auto(Fold)
 instance Collect[FunctionArg]        = auto(Fold)
 instance Collect[FunctionDef]        = auto(Fold)
-instance Collect[E.HandlerSelection] = auto(Fold, =)
+instance Collect[E.HandlerSelection] {
+    fn walk(sel: E.HandlerSelection, c: CallCollector) {
+        if let E.HandlerSelection.EffectFunction(handler: handler, ..) = sel {
+            c.deps.push(handler);
+        }
+    }
+}
 instance Collect[Annotation]         = auto(Fold, =)
 instance Collect[FunctionDefKind]    = auto(Fold, =)
 instance Collect[TypeArgDefs]        = auto(Fold, =)
