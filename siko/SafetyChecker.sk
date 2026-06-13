@@ -22,6 +22,7 @@ pub enum SafetyError {
     UnsafeFunctionNotAnnotated(location: Location), // unsafe ops but no @safe/@unsafe
     SafeFunctionAnnotated(location: Location),      // no unsafe ops but has @safe/@unsafe
     UnsafeEffectHandler(location: Location),        // effect handler marked @unsafe (must be @safe or plain safe)
+    PureWithoutSafe(location: Location),            // @pure requires @safe
 }
 
 trait Check[T] {
@@ -173,6 +174,9 @@ pub fn check_safety(program: Program) -> Vec[SafetyError] {
         }
         if !fn_is_unsafe && has_annotation {
             checker.errors.push(SafetyError.SafeFunctionAnnotated(location: func.name.location));
+        }
+        if func.is_pure() && !func.is_safe() {
+            checker.errors.push(SafetyError.PureWithoutSafe(location: func.name.location));
         }
     }
     checker.errors

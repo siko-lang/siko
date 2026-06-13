@@ -26,15 +26,65 @@ fn main() {
 
 Like safety, purity is reasoned about before monomorphization. It is entirely possible that an effect handler injected at the call site introduces side effects — but that is the caller's business, not the library's. A package can be declared pure before you know anything about how its effects will be handled.
 
+## Declaring a package as pure
+
+Add `pure = true` to the package's `package.toml`:
+
+```toml
+name = "MyLib"
+version = "1.0.0"
+pure = true
+
+[dependencies]
+Std = "0.1.0"
+```
+
+The compiler will verify this claim. If any function in the package is impure the build fails with an error.
+
+## The `@pure` annotation
+
+A function marked `@safe` contains internal unsafe code but promises callers that it is safe to call. Sometimes such a function also makes a purity promise — it performs no observable side effects despite its internal mechanics. In that case it can be additionally annotated `@pure`:
+
+```siko
+@safe
+@pure
+pub fn fast_copy(dst: Ptr, src: Ptr, len: Int) {
+    // unsafe memory copy internally, but no side effects visible outside
+    ...
+}
+```
+
+`@pure` is only valid on `@safe` functions. The compiler enforces this: annotating a function `@pure` without `@safe` is an error.
+
+The annotation acts as an unconditional trust boundary for the purity analysis: callers treat the function as pure without inspecting its body. This is what allows `Vec.new()` and `Vec.push()` — which internally call unsafe code — to be treated as pure by code that uses them.
+
 ## What a pure package guarantees
 
 A package deemed pure by the compiler satisfies all of the following:
 
-- Every function in the package is truly safe — not merely marked `@safe`, but containing no unsafe code anywhere.
-- It only calls functions marked `@pure`, which covers pure functions from the standard library (even if those contain internal unsafe code) and from any other package.
-- It may call effect methods — these are resolved by the caller, so they carry no purity commitment of their own.
+- Every function in the package contains no unsafe code — no `@safe` or `@unsafe` annotations, no extern or builtin calls — unless it is also annotated `@pure`, in which case it is trusted.
+- It only calls functions that are themselves computed to be pure (or explicitly annotated `@pure`).
+- It may call effect methods freely — these are resolved by the caller, so they carry no purity commitment of their own.
 
-Note that a pure package cannot define `@safe` functions, because `@safe` requires unsafe code inside, and pure packages have none.
+## Handlers and purity
+
+While *calling* an effect method is always pure, *supplying an impure function as a handler* is not. The handler runs inside the caller's scope, so its side effects belong to the caller:
+
+```siko
+// LibA — not pure: greet calls println
+pub fn greet(msg: String) {
+    println(msg);
+}
+
+// MyApp — also not pure: it supplies an impure handler
+fn main() {
+    with Logger.log = LibA.greet {
+        do_work();
+    }
+}
+```
+
+If `MyApp` declared `pure = true` the compiler would reject it, because `LibA.greet` is impure and `main` uses it as a handler.
 
 ## Why this matters
 
@@ -44,3 +94,13 @@ For example, a `TcpConnect` effect could be handled by a function that only conn
 
 Siko's lightweight effect and implicit system supports library authors so they never have to reach for dependency injection frameworks or other workarounds. They call effectful functions and write straightforward, seemingly synchronous code without caring how the caller will actually instantiate their library. Because mocking is trivial with effects and implicits, a pure library can be developed and tested using only pure functions throughout.
 
+## Inspecting purity verdicts
+
+Pass `--dump-package-purity` to print the computed verdict for every package in the build:
+
+```
+PURE: MyLib
+IMPURE: MyApp
+```
+
+This is useful when tracking down why a package that should be pure is not.
