@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Traits & Instances — Siko</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:ital,wght@0,400;0,700;1,400&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="../style.css">
+</head>
+
+<body>
+  <div class="container">
+
+    <p class="post-meta"><a href="../index.html">Siko Language</a> · <a href="../reference.html">Reference</a> · Traits & Instances</p>
+
+    <h1>Traits & Instances</h1>
+<p>How Siko does polymorphism.</p>
+<p>---</p>
+<h2>Traits</h2>
+<p>A trait declares a named interface — a set of methods that any type can implement. There is no implicit self type; you must explicitly declare the type parameter and pass it to each method.</p>
+<pre><code>trait Greet[T] {
+    fn greet(t: T)
+}
+</code></pre>
+<p>The type parameter in <code>[...]</code> is the type the trait is implemented for. Multiple type parameters are allowed:</p>
+<pre><code>trait Into[T, U] {
+    fn into(value: T) -&gt; U
+}
+</code></pre>
+<h3>Required and default methods</h3>
+<p>A method with no body is <strong>required</strong> — every instance must provide it. A method with a body is a <strong>default</strong> — instances inherit it and can optionally override it.</p>
+<pre><code>trait Iterator[T] {
+    type Item
+
+    fn next(i: T) -&gt; Option[Item]           // required
+
+    fn enumerate(i: T) -&gt; EnumerateIterator[T] {   // default
+        EnumerateIterator(i)
+    }
+}
+</code></pre>
+<h3>Associated types</h3>
+<p>Use <code>type Name</code> inside a trait to declare an associated type — a type that each instance fills in:</p>
+<pre><code>trait Add[T] {
+    type Output
+    fn add(a: T, b: T) -&gt; Output
+}
+</code></pre>
+<p>Instances assign it with <code>type Output = ...</code>.</p>
+<p>---</p>
+<h2>Instances</h2>
+<p>An <code>instance</code> provides the implementation of a trait for a specific type:</p>
+<pre><code>struct Point { x: Int, y: Int }
+
+instance Greet[Point] {
+    fn greet(t: Point) {
+        println("hi from ${t.x}, ${t.y}")
+    }
+}
+</code></pre>
+<h3>Canonical vs named instances</h3>
+<p>The presence or absence of a name controls scoping and coherence.</p>
+<p><strong>Canonical (unnamed) instances</strong> are always in scope everywhere in the program — you never have to import them. This gives global coherence: one implementation of a trait for a given type, visible to all code.</p>
+<pre><code>instance ToString[Int] {
+    fn to_string(a: Int) -&gt; String { ... }
+}
+</code></pre>
+<p><strong>Named instances</strong> are only in scope where they are explicitly imported (or in the module that defines them). They allow specialization — a more specific implementation for a particular type that would otherwise be covered by a generic canonical instance. For example, you might have a canonical <code>ToString[Vec[T]]</code> that works for any element type, and a named <code>ToString[Vec[MyFoo]]</code> that formats <code>MyFoo</code> elements differently:</p>
+<pre><code>// canonical — covers all Vec[T], always in scope
+instance ToString[Vec[T]] {
+    fn to_string(v: Vec[T]) -&gt; String { ... }
+}
+
+// named — specialized for Vec[MyFoo], only in scope when imported
+instance MyFooVecToString ToString[Vec[MyFoo]] {
+    fn to_string(v: Vec[MyFoo]) -&gt; String { ... }
+}
+</code></pre>
+<p>When <code>MyFooVecToString</code> is in scope it takes priority over the canonical instance for <code>Vec[MyFoo]</code>. Where it isn't imported, the canonical instance is used. You control where the specialization applies through the import system.</p>
+<h3>Instance resolution order</h3>
+<p>When the compiler resolves which instance to use, it tries three levels in order, stopping as soon as it finds a match:</p>
+<p>1. <strong>Local instances</strong> — defined in the current module. Ambiguous → error.</p>
+<p>2. <strong>Imported named instances</strong> — brought in explicitly. Ambiguous → error.</p>
+<p>3. <strong>Canonical instances</strong> — unnamed, globally available. Ambiguous → error.</p>
+<p>If nothing is found at any level, it's a compile error. Local always beats imported, which always beats canonical.</p>
+<h3>Generic instances</h3>
+<p>Instances can be generic — they implement a trait for all types that satisfy some bounds:</p>
+<pre><code>instance[T] Into[T, T] {
+    fn into(value: T) -&gt; T { value }
+}
+</code></pre>
+<p>Bounds on type parameters are written after the colon. Multiple bounds are separated by commas:</p>
+<pre><code>instance[T: Foo[T], Bar[T]] MyFooForQ Foo[Q[T]] {
+    fn foo(q: Q[T]) {
+        bar(q.t);
+    }
+}
+</code></pre>
+<h3>Assigning associated types</h3>
+<p>When a trait has an associated type, instances assign it with <code>type Name = ConcreteType</code>:</p>
+<pre><code>instance Add[Int] {
+    type Output = Int
+    fn add(a: Int, b: Int) -&gt; Int { a + b }
+}
+</code></pre>
+<p>---</p>
+<h2>Using trait methods</h2>
+<p>Once a trait is in scope (either defined locally or imported), you can call trait methods directly — no qualifying needed:</p>
+<pre><code>fn main() {
+    let p = Point(x: 1, y: 2);
+    greet(p);       // calls Greet.greet
+}
+</code></pre>
+<p>The compiler resolves which instance to use based on the argument or result types.</p>
+<h3>Trait bounds on functions</h3>
+<p>To write a function that works for any type with a given trait, add a bound in <code>[...]</code>:</p>
+<pre><code>fn print_all[T: ToString[T]](items: Vec[T]) {
+    for item in items {
+        println(item.to_string());
+    }
+}
+</code></pre>
+<p>Multiple bounds:</p>
+<pre><code>fn stuff[T: Foo[T], Bar[T]](t: T) {
+    foo(t);
+    bar(t);
+}
+</code></pre>
+<p>---</p>
+<h2><code>@derive</code></h2>
+<p>Common traits can be auto-derived with the <code>@derive</code> annotation instead of writing the instance manually:</p>
+<pre><code>@derive(Clone, PartialEq)
+struct Point {
+    x: Int,
+    y: Int,
+}
+</code></pre>
+<p>The compiler generates the instance for you. Currently the derive implementations are hardcoded in the compiler.</p>
+<p>---</p>
+<h2>Instances and imports</h2>
+<p>Canonical (unnamed) instances need no importing — they're always available. Named instances must be imported to be in scope. Importing a module also pulls in all named instances from that module, so you generally get the instances you need automatically when you import a module.</p>
+
+
+  </div>
+  <script src="../siko-highlight.js"></script>
+</body>
+
+</html>

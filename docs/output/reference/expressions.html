@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Expressions & Statements — Siko</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:ital,wght@0,400;0,700;1,400&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="../style.css">
+</head>
+
+<body>
+  <div class="container">
+
+    <p class="post-meta"><a href="../index.html">Siko Language</a> · <a href="../reference.html">Reference</a> · Expressions & Statements</p>
+
+    <h1>Expressions & Statements</h1>
+<p>A quick tour of every expression and statement form in Siko. Each section shows the syntax and a small self-contained example.</p>
+<h2>Literals</h2>
+<p>The three primitive literal forms.</p>
+<pre><code>let i = 42;          // integer
+let s = "hello";     // string
+let c = 'A';         // char (a single byte)
+</code></pre>
+<p>String literals support interpolation with <code>${}</code>:</p>
+<pre><code>let name = "world";
+let msg = "hello ${name}!";  // "hello world!"
+</code></pre>
+<h2>Variables</h2>
+<p>Lowercase identifiers refer to local variables and function parameters.</p>
+<pre><code>let x = 10;
+let y = x + 1;
+</code></pre>
+<h2>Enum Variants and Globals</h2>
+<p>Capitalized names refer to enum variants or module-level globals when used as values.</p>
+<pre><code>let b = True;
+let o = None;
+</code></pre>
+<h2>Blocks</h2>
+<p>A block is a sequence of statements wrapped in <code>{}</code>. Its value is the last expression if it isn't followed by a semicolon, or <code>()</code> if there is none.</p>
+<pre><code>let result = {
+    let a = 1;
+    let b = 2;
+    a + b      // the block evaluates to 3
+};
+</code></pre>
+<h2>Arithmetic & Logic</h2>
+<p>Standard two-operand operators: <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>, <code>%</code>, <code>==</code>, <code>!=</code>, <code><</code>, <code>></code>, <code><=</code>, <code>>=</code>, <code>&</code>, <code>|</code>, <code>^</code>, <code><<</code>, <code>>></code>.</p>
+<p><code>&&</code> and <code>||</code> are short-circuit — the right-hand side is only evaluated if needed.</p>
+<h2>Function Calls</h2>
+<pre><code>let n = add(1, 2);
+</code></pre>
+<p>Named arguments make calls with many parameters easier to read:</p>
+<pre><code>let p = Point(x: 1, y: 2);
+</code></pre>
+<p>Method call syntax works for methods defined inside a struct, enum, or trait:</p>
+<pre><code>let upper = s.to_upper();
+let n = v.len();
+</code></pre>
+<h2>If / Else</h2>
+<p>The else branch is optional. <code>if</code> is an expression:</p>
+<pre><code>if x &gt; 0 {
+    println("positive");
+} else {
+    println("non-positive");
+}
+
+let label = if x &gt; 0 { "pos" } else { "neg" };
+</code></pre>
+<h2>If Let</h2>
+<p>Match a single pattern and branch:</p>
+<pre><code>if let Some(v) = maybe_value {
+    println("got ${v}");
+} else {
+    println("nothing");
+}
+</code></pre>
+<h2>Match</h2>
+<p>Full pattern matching. Arms are tried top-to-bottom; the first match wins. <code>match</code> is an expression:</p>
+<pre><code>match color {
+    Color.Red   =&gt; println("red"),
+    Color.Green =&gt; println("green"),
+    Color.Blue  =&gt; println("blue"),
+}
+</code></pre>
+<p>Guards let you add extra conditions to an arm:</p>
+<pre><code>match x {
+    n if n &lt; 0 =&gt; println("negative"),
+    n if n &gt; 0 =&gt; println("positive"),
+    _          =&gt; println("zero"),
+}
+</code></pre>
+<h2>With</h2>
+<p><code>with</code> binds <strong>implicits</strong> and <strong>effect handlers</strong>.</p>
+<p>An <code>implicit</code> declares a module-level variable slot that functions can read and write without it appearing in their signatures. The actual instance of the implicit is provided by <code>with</code> and is propagated through function calls automatically. Functions can also override the implicit for a scope or provide a completely new instance of the same type.</p>
+<pre><code>implicit counter : Int
+
+fn increment() {
+    counter = counter + 1;
+}
+
+fn main() {
+    let n = 0;
+    with counter = n {
+        increment();   // n becomes 1
+        increment();   // n becomes 2
+    }
+    println(n.to_string());   // prints 2
+}
+</code></pre>
+<p>An <code>effect</code> declares a set of operations whose implementation is pluggable:</p>
+<pre><code>effect Logger {
+    fn log(msg: String)
+}
+
+fn console_log(msg: String) { println("console: ${msg}") }
+
+fn main() {
+    with log = console_log { Logger.log("started"); }
+}
+</code></pre>
+<h2>Lambdas</h2>
+<p>Anonymous functions — argument types are inferred:</p>
+<pre><code>let double = |x| x * 2;
+let doubled = [1, 2, 3].iter().map(|x| x * 2).collect();
+</code></pre>
+<h2>Statements</h2>
+<h3>let</h3>
+<p>Bind a value to a name. Type annotation is optional. Pattern destructuring works too:</p>
+<pre><code>let x = 42;
+let s: String = "hello";
+let (a, b) = (1, 2);
+let Point(x: px, y: py) = point;
+</code></pre>
+<h3>for Loop</h3>
+<p>Iterates over anything that implements <code>IntoIterator</code>:</p>
+<pre><code>for item in collection {
+    println("${item}");
+}
+</code></pre>
+<h3>while Loop</h3>
+<pre><code>while i &lt; 10 {
+    i += 1;
+}
+</code></pre>
+<h3>loop</h3>
+<p>Infinite loop — use <code>break</code> to exit:</p>
+<pre><code>loop {
+    let line = read_line();
+    if line == "quit" { break; }
+    process(line);
+}
+</code></pre>
+
+
+  </div>
+  <script src="../siko-highlight.js"></script>
+</body>
+
+</html>

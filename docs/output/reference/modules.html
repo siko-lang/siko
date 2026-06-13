@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Modules & Imports — Siko</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:ital,wght@0,400;0,700;1,400&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="../style.css">
+</head>
+
+<body>
+  <div class="container">
+
+    <p class="post-meta"><a href="../index.html">Siko Language</a> · <a href="../reference.html">Reference</a> · Modules & Imports</p>
+
+    <h1>Modules & Imports</h1>
+<p>How Siko organizes code into modules and how they talk to each other.</p>
+<p>---</p>
+<h2>Modules</h2>
+<p>A <code>.sk</code> file contains one or more modules, written one after another:</p>
+<pre><code>module My.Cool.Module {
+    // ...
+}
+
+module My.Other.Module {
+    // ...
+}
+</code></pre>
+<p>Module names are dotted identifiers — the dots are just part of the name, not directory separators. How you group modules into files is entirely up to you.</p>
+<h3>What can go inside a module</h3>
+<ul>
+<li><code>fn</code> — free functions</li>
+<li><code>struct</code> / <code>enum</code> — data types (with their methods)</li>
+<li><code>trait</code> / <code>instance</code> — type class definitions and implementations</li>
+<li><code>effect</code> — effect interfaces</li>
+<li><code>implicit</code> — module-level implicit variables</li>
+<li><code>let</code> — module-level global constants</li>
+<li><code>import</code> — imports from other modules</li>
+</ul>
+<p>Everything except <code>import</code> can be prefixed with <code>pub</code> to make it visible outside the module. Without <code>pub</code> a name is private and only usable inside its own module.</p>
+<p>---</p>
+<h2>Imports</h2>
+<p>To use something from another module, import it:</p>
+<pre><code>import Std.Map
+</code></pre>
+<p>After this, every <code>pub</code> name exported by <code>Std.Map</code> becomes available in three forms. For a method like <code>insert</code> on the <code>Map</code> struct:</p>
+<ul>
+<li><code>Std.Map.insert</code> — fully qualified</li>
+<li><code>Map.insert</code> — type-prefixed</li>
+<li><code>insert</code> — bare short name</li>
+</ul>
+<p>All three work as long as the name isn't ambiguous with something else in scope. Short names are convenient; qualified names are always unambiguous.</p>
+<p>Enum variants are available with the following name forms:</p>
+<ul>
+<li><code>My.Module.Enum.Variant</code> — fully qualified</li>
+<li><code>My.Module.Variant</code> — type-prefixed</li>
+<li><code>Variant</code> — short name</li>
+</ul>
+<h3>Aliases</h3>
+<p>Give a module a local prefix with <code>as</code>:</p>
+<pre><code>import Siko.Interner as I
+</code></pre>
+<p>When aliased, the module's names are <strong>only</strong> available through the alias — <code>I.intern</code>, <code>I.resolve</code>, etc. The bare short names and the original qualified names are not in scope.</p>
+<p>This is the main point of aliases: if two modules export the same short name, import at least one with an alias to eliminate the ambiguity. Each name then lives behind its own prefix and there's no clash.</p>
+<p>---</p>
+<h2>Name resolution order</h2>
+<p>When a name is used inside a module, the resolver looks it up in this order:</p>
+<p>1. <strong>Local items</strong> — defined in the current module itself</p>
+<p>2. <strong>Imported items</strong> — brought in via <code>import</code></p>
+<p>3. <strong>Implicit items</strong> — automatically available (see Preludes below)</p>
+<p>Local always wins. If the same short name appears in more than one imported module the compiler reports an ambiguous name error — resolve the error by using the qualified (or aliased) form instead.</p>
+<p>---</p>
+<h2>Preludes</h2>
+<p>Modules annotated with <code>@prelude</code> are automatically imported into every other module in the program — you never have to write those imports yourself. The standard library uses this to make core types like <code>String</code>, <code>Vec</code>, <code>Option</code>, <code>Result</code>, <code>Bool</code>, and the numeric types available everywhere.</p>
+<p>If you're writing a library or application and want some module to be universally available, annotate it:</p>
+<pre><code>@prelude
+module My.Core {
+    // ...
+}
+</code></pre>
+<p>Prelude imports are implicit and never produce unused-import warnings.</p>
+<p>---</p>
+<h2>Visibility</h2>
+<p>The <code>pub</code> keyword controls what a module exports:</p>
+<pre><code>module Geometry {
+    pub struct Point {
+        pub x: Int,
+        pub y: Int,
+    }
+
+    pub fn distance(a: Point, b: Point) -&gt; Int { ... }
+
+    fn helper() -&gt; Int { ... }   // private — not importable
+}
+</code></pre>
+<p>Fields of structs have their own <code>pub</code> — mark only the fields you want to expose.</p>
+<p>Methods on structs and enums follow the same rule: <code>pub fn</code> is exported, <code>fn</code> is module-private.</p>
+<p>---</p>
+<h2>Instances and imports</h2>
+<p><code>instance</code> declarations are special: importing any name from a module pulls in all of that module's instances too.</p>
+
+
+  </div>
+  <script src="../siko-highlight.js"></script>
+</body>
+
+</html>

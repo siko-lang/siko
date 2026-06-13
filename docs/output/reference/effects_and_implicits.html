@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Effects & Implicits — Siko</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:ital,wght@0,400;0,700;1,400&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="../style.css">
+</head>
+
+<body>
+  <div class="container">
+
+    <p class="post-meta"><a href="../index.html">Siko Language</a> · <a href="../reference.html">Reference</a> · Effects & Implicits</p>
+
+    <h1>Effects & Implicits</h1>
+<p>Two related features for threading context through a call chain without explicit parameter passing.</p>
+<p>---</p>
+<h2>Implicits</h2>
+<p>An implicit is a module-level variable slot that any function in the call chain can read or write — without it appearing in any function signature. You declare it at module scope with <code>implicit</code>, and bind it to a local variable with <code>with</code>. This feels like a scoped global variable.</p>
+<pre><code>implicit counter : Int
+
+fn increment() {
+    counter = counter + 1;
+}
+
+fn main() {
+    let n = 0;
+    with counter = n {
+        increment();
+    }
+    println(n.to_string());   // 1
+}
+</code></pre>
+<p>The compiler passes the bound value as a hidden context parameter throughout the call tree — every function that uses the implicit receives it automatically, without it appearing in any written signature. Mutations made anywhere in the call tree are visible in the bound variable.</p>
+<h3>The call chain sees it automatically</h3>
+<p>Every function called inside the <code>with</code> block — and every function those call — automatically has access to the implicit:</p>
+<pre><code>implicit config : Config
+
+fn baz() { println(config.name) }
+fn bar() { baz() }
+fn foo() { bar() }
+
+fn main() {
+    let c = Config("prod");
+    with config = c {
+        foo();   // baz() deep inside the chain reads config
+    }
+}
+</code></pre>
+<h3>Multiple implicits at once</h3>
+<p>Bind several implicits in one <code>with</code>:</p>
+<pre><code>implicit x : Int
+implicit y : Int
+
+fn swap() {
+    let tmp = x;
+    x = y;
+    y = tmp;
+}
+
+fn main() {
+    let a = 1;
+    let b = 2;
+    with x = a, y = b {
+        swap();
+    }
+    // a == 2, b == 1
+}
+</code></pre>
+<p>Or nest <code>with</code> blocks:</p>
+<pre><code>with x = a {
+    with y = b {
+        sum();
+    }
+}
+</code></pre>
+<h3>Shadowing</h3>
+<p>An inner <code>with</code> block can rebind an implicit for its scope. The outer binding is unaffected:</p>
+<pre><code>let n = 0;
+with counter = n {
+    increment();          // n = 1
+    let local = 0;
+    with counter = local {
+        increment();      // local = 1, n stays 1
+    }
+    increment();          // n = 2
+}
+</code></pre>
+<h3>Implicits and closures</h3>
+<p>A closure created inside a <code>with</code> block captures the implicit binding. When the closure is later called, it still uses the correct context:</p>
+<pre><code>implicit config : Config
+
+fn foo() { println(config.name) }
+
+fn main() {
+    let c = Config("myconfig");
+    let f: fn() -&gt; () = with config = c {
+        || { foo() }
+    };
+    f();   // prints "myconfig"
+}
+</code></pre>
+<p>---</p>
+<h2>Effects</h2>
+<p>An effect declares a named interface of operations whose implementation is pluggable at the call site. You can use <code>with</code> to provide the concrete handler.</p>
+<pre><code>effect Logger {
+    fn log(msg: String)
+}
+
+fn console_log(msg: String) { println("console: ${msg}") }
+fn file_log(msg: String)    { println("file: ${msg}") }
+
+fn do_work() {
+    Logger.log("started");
+}
+
+fn main() {
+    with log = console_log { do_work() }   // calls console_log
+    with log = file_log    { do_work() }   // calls file_log
+}
+</code></pre>
+<p><code>Logger.log(...)</code> inside <code>do_work</code> is a hole — it dispatches to whatever handler is in scope at the call site. The same function can run under completely different implementations without any changes to its code.</p>
+<h3>Effects thread through the call chain</h3>
+<p>Like implicits, effect handlers are visible to the entire call chain inside the <code>with</code> block:</p>
+<pre><code>fn baz() { Logger.log("deep") }
+fn bar() { baz() }
+fn foo() { bar() }
+
+fn main() {
+    with log = console_log {
+        foo()   // baz() deep down still dispatches to console_log
+    }
+}
+</code></pre>
+<h3>Multiple effects</h3>
+<p>Bind several effects at once or in separate <code>with</code> blocks. Inner blocks can override a specific effect while leaving others unchanged:</p>
+<pre><code>effect Logger { fn log(msg: String) }
+effect Alarm  { fn alert(msg: String) }
+
+fn bar() {
+    Logger.log("hello");
+    Alarm.alert("world");
+}
+
+fn foo() {
+    with alert = another_alert {   // override just Alarm inside foo
+        bar()
+    }
+}
+
+fn main() {
+    with log = console_log, alert = system_alert {
+        foo()   // foo overrides alert; Logger still uses console_log
+    }
+}
+</code></pre>
+<h3>A handler can call other effects</h3>
+<p>Handlers are plain functions, so they can call other effects. Those are resolved against whatever handlers are in scope at the point the handler runs:</p>
+<pre><code>fn my_log(msg: String) {
+    Alarm.alert(msg)   // delegates to the Alarm handler in scope
+}
+
+fn main() {
+    with log = my_log, alert = system_alert {
+        Logger.log("hello")   // → my_log → system_alert
+    }
+}
+</code></pre>
+
+
+  </div>
+  <script src="../siko-highlight.js"></script>
+</body>
+
+</html>

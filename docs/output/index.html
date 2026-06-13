@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Siko</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:ital,wght@0,400;0,700;1,400&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <div class="container">
+
+    <p class="post-meta">Siko Language</p>
+    <h1>Siko</h1>
+    <p>A statically typed programming language.</p>
+
+    <div class="split">
+      <div class="split-left">
+        <p>Siko is a statically typed programming language. It features an effect system for pluggable
+          behaviour, implicits for threading context without cluttering signatures, and a trait system with both global
+          canonical instances (for coherence) and locally-scoped named ones (for scoped specialization).</p>
+        <div id="site-nav"></div>
+      </div>
+      <div class="split-right">
+        <pre><code>module TeleType {
+
+pub effect TeleType {
+    fn read_line() -&gt; String
+    fn println(input: String)
+}
+
+pub fn run() {
+    while True {
+        let input = read_line();
+        if input == "exit" {
+            break;
+        }
+        println("You said: ${input}");
+    }
+}
+
+}
+
+module Main {
+
+import TeleType as T
+
+implicit state: Int
+
+fn mock_read_line() -&gt; String {
+    if state &lt; 3 {
+        state = state + 1;
+        "mocked: ${state}"
+    } else {
+        "exit"
+    }
+}
+
+fn mock_println(input: String) {
+    let expected_string = "You said: mocked: ${state}";
+    assert(expected_string == input);
+}
+
+@test
+fn test_teletype() {
+    let state = 0;
+    with T.println = mock_println,
+         T.read_line = mock_read_line,
+         state = state {
+        T.run();
+    }
+}
+
+fn real_teletype() {
+    with T.println = println,
+         T.read_line = read_line {
+        T.run();
+    }
+}
+
+fn main() {
+    real_teletype();
+}
+
+}</code></pre>
+      </div>
+    </div>
+
+  </div>
+  <script src="siko-highlight.js"></script>
+  <script>fetch('site-nav.html').then(r => r.text()).then(h => document.getElementById('site-nav').innerHTML = h);</script>
+</body>
+
+</html>
