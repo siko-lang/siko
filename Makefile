@@ -2,6 +2,9 @@ TESTRUNNER = testrunner/target/debug/testrunner
 
 SIKO_SK := $(shell find siko std -name '*.sk')
 
+SIKO_TARGET_OS ?= darwin
+BOOTSTRAP_SOURCE = bootstrap/source_$(SIKO_TARGET_OS).c
+
 .PHONY: build test all
 
 all: build
@@ -25,11 +28,11 @@ siko2.bin: siko.bin
 siko3.bin: siko2.bin
 	./siko2.bin build siko -O -o siko3.bin
 
-base.bin: bootstrap/source_darwin.c
-	cat bootstrap/source_darwin.c | ./link.sh -O -o base.bin
+base.bin: $(BOOTSTRAP_SOURCE)
+	cat $(BOOTSTRAP_SOURCE) | ./link.sh -O -o base.bin
 
 refresh:
-	./siko.bin build siko --pass c > bootstrap/source_darwin.c
+	./siko.bin build siko --pass c > $(BOOTSTRAP_SOURCE)
 
 SSG_SK := $(shell find ssg -name '*.sk')
 
