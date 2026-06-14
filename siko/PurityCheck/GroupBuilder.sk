@@ -1,6 +1,7 @@
 module Siko.PurityCheck.GroupBuilder {
 
 import Std.Map
+import Std.Set
 import Siko.AST.Annotations
 import Siko.AST.Expr as E
 import Siko.AST.Function
@@ -19,7 +20,8 @@ import Siko.Utils.SCC as SCC
 import Siko.Utils.VarAllocator
 
 pub struct CallCollector {
-    pub deps: Vec[QualifiedName],
+    pub deps: Set[QualifiedName],
+    pub handler_deps: Set[QualifiedName],
 }
 
 trait Collect[T] {
@@ -64,7 +66,8 @@ instance Collect[FunctionDef]        = auto(Fold)
 instance Collect[E.HandlerSelection] {
     fn walk(sel: E.HandlerSelection, c: CallCollector) {
         if let E.HandlerSelection.EffectFunction(handler: handler, ..) = sel {
-            c.deps.push(handler);
+            c.deps.insert(handler);
+            c.handler_deps.insert(handler);
         }
     }
 }
@@ -96,7 +99,7 @@ instance[T: Collect[T]] Collect[Vec[T]] {
 // Record the callee and recurse into arguments
 instance Collect[E.FunctionCallInfo] {
     fn walk(info: E.FunctionCallInfo, c: CallCollector) {
-        c.deps.push(info.qname);
+        c.deps.insert(info.qname);
         walk(info.args, c);
         walk(info.witnesses, c);
         walk(info.named_args, c);
@@ -106,25 +109,28 @@ instance Collect[E.FunctionCallInfo] {
 // Lifted closures are real callees — record them
 instance Collect[E.CreateClosureInfo] {
     fn walk(info: E.CreateClosureInfo, c: CallCollector) {
-        c.deps.push(info.name);
+        c.deps.insert(info.name);
     }
 }
 
-pub fn build_groups(program: Program) -> (Vec[Vec[QualifiedName]], Map[QualifiedName, Vec[QualifiedName]]) {
+pub fn build_groups(program: Program) -> (Vec[Vec[QualifiedName]], Map[QualifiedName, Vec[QualifiedName]], Map[QualifiedName, Set[QualifiedName]]) {
     let graph: Map[QualifiedName, Vec[QualifiedName]] = Map.new();
+    let handler_map: Map[QualifiedName, Set[QualifiedName]] = Map.new();
 
     for (qname, func) in program.functions {
-        let collector = CallCollector(Vec.new());
+        let collector = CallCollector(Set.new(), Set.new());
         walk(func, collector);
-        collector.deps.dedup();
         let deps: Vec[QualifiedName] = collector.deps
             .into_iter()
             .filter(|d| program.functions.contains_key(d))
             .collect();
         graph.insert(qname, deps);
+        if !collector.handler_deps.is_empty() {
+            handler_map.insert(qname, collector.handler_deps);
+        }
     }
 
-    (SCC.compute(graph), graph)
+    (SCC.compute(graph), graph, handler_map)
 }
 
 }

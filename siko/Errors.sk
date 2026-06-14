@@ -195,8 +195,17 @@ pub fn report_purity_error(e: PC.PurityError) {
     match e {
         PC.PurityError.PureInMixedCycle(location) =>
             report("@pure function is in a mutual recursion cycle with non-pure functions", Some(location)),
-        PC.PurityError.PackageClaimsPure(pkg_name) =>
-            report("package `${pkg_name}` declares `pure = true` but contains impure functions", None),
+        PC.PurityError.PackageClaimsPure(pkg_name: pkg_name, impure_fns: impure_fns) => {
+            report("package `${pkg_name}` declares `pure = true` but contains impure functions", None);
+            for impure_fn in impure_fns {
+                let reason_str = match impure_fn.reason {
+                    PC.ImpurityReason.DirectlyUnsafe => "directly unsafe/extern",
+                    PC.ImpurityReason.CallsImpure(dep) => "calls impure `${dep.name()}`",
+                    PC.ImpurityReason.UsesImpureHandler(dep) => "uses impure effect handler `${dep.name()}`",
+                };
+                println("  impure: `${impure_fn.name.name()}`: ${reason_str}");
+            }
+        }
     }
 }
 

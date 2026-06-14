@@ -10,16 +10,28 @@ import Siko.Config
 import Siko.Package.Info
 import Siko.PurityCheck.GroupBuilder as GB
 
+pub enum ImpurityReason {
+    DirectlyUnsafe,
+    CallsImpure(QualifiedName),
+    UsesImpureHandler(QualifiedName),
+}
+
+pub struct ImpureFn {
+    pub name: QualifiedName,
+    pub reason: ImpurityReason,
+}
+
 pub enum PurityError {
     PureInMixedCycle(Location),
-    PackageClaimsPure(String),
+    PackageClaimsPure(pkg_name: String, impure_fns: Vec[ImpureFn]),
 }
 
 pub fn check_purity(program: Program) -> Vec[PurityError] {
-    let (sccs, dep_map) = GB.build_groups(program);
+    let (sccs, dep_map, handler_map) = GB.build_groups(program);
 
     let errors: Vec[PurityError] = Vec.new();
     let purity_map: Map[QualifiedName, Bool] = Map.new();
+    let impurity_reason_map: Map[QualifiedName, ImpurityReason] = Map.new();
 
     for scc in sccs {
         let scc_set: Set[QualifiedName] = Set.new();
@@ -64,6 +76,7 @@ pub fn check_purity(program: Program) -> Vec[PurityError] {
             }
 
             if func.is_unsafe() || func.is_safe() || func.is_extern() || func.is_builtin() {
+                impurity_reason_map.insert(qname, ImpurityReason.DirectlyUnsafe);
                 scc_pure = False;
                 continue;
             }
@@ -79,6 +92,17 @@ pub fn check_purity(program: Program) -> Vec[PurityError] {
                     }
                 }
                 if !purity_map.get(dep).unwrap_or(False) {
+                    if !impurity_reason_map.contains_key(qname) {
+                        let is_handler = handler_map.get(qname)
+                            .map(|handlers| handlers.contains(dep))
+                            .unwrap_or(False);
+                        let reason = if is_handler {
+                            ImpurityReason.UsesImpureHandler(dep)
+                        } else {
+                            ImpurityReason.CallsImpure(dep)
+                        };
+                        impurity_reason_map.insert(qname, reason);
+                    }
                     scc_pure = False;
                 }
             }
@@ -95,6 +119,7 @@ pub fn check_purity(program: Program) -> Vec[PurityError] {
     // aggregate by package — a package is pure only if every function in it is pure
     let package_purity: Map[String, Bool] = Map.new();
     let package_info: Map[String, PackageInfo] = Map.new();
+    let package_impure_fns: Map[String, Vec[ImpureFn]] = Map.new();
 
     for (qname, _) in program.functions {
         let func = program.functions.get(qname).unwrap();
@@ -105,6 +130,12 @@ pub fn check_purity(program: Program) -> Vec[PurityError] {
         let pkg_name = pkg.info.name;
         package_info.insert(pkg_name, pkg.info);
         let fn_pure = purity_map.get(qname).unwrap_or(False);
+        if !fn_pure {
+            if let Some(reason) = impurity_reason_map.get(qname) {
+                let impure_fns = package_impure_fns.entry(pkg_name).or_insert_with(|| Vec.new());
+                impure_fns.push(ImpureFn(name: qname, reason: reason));
+            }
+        }
         match package_purity.get(pkg_name) {
             Some(_) => {
                 if !fn_pure {
@@ -128,7 +159,8 @@ pub fn check_purity(program: Program) -> Vec[PurityError] {
             None => False,
         };
         if advertised && !is_pure {
-            errors.push(PurityError.PackageClaimsPure(pkg_name));
+            let impure_fns = package_impure_fns.get(pkg_name).unwrap_or([]);
+            errors.push(PurityError.PackageClaimsPure(pkg_name: pkg_name, impure_fns: impure_fns));
         }
     }
 
