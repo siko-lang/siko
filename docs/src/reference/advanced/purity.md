@@ -86,6 +86,42 @@ fn main() {
 
 If `MyApp` declared `pure = true` the compiler would reject it, because `LibA.greet` is impure and `main` uses it as a handler.
 
+## Trait calls and purity
+
+The purity checker fully tracks trait method calls. When a trait method is called on a concrete type, the checker resolves it to the specific instance and checks that instance's method directly. If the instance does not override the trait's default method body, the default body is checked instead.
+
+### Generic functions and trait instances
+
+When you call a generic function that has a trait bound, you are implicitly passing the trait instance for the concrete type you supply. The purity checker treats this conservatively: it assumes the generic function may call **any** method of that instance.
+
+If the instance contains an impure method, the call is considered impure — even if the generic function's body does not happen to call it in this specialization.
+
+```siko
+// LibA
+pub trait Action[T] {
+    fn act(t: T)
+}
+
+pub struct Foo {}
+
+instance Action[Foo] {
+    fn act(t: Foo) {
+        println("side effect");
+    }
+}
+
+pub fn do_action[T: Action[T]](t: T) {
+    Action.act(t);
+}
+
+// MyApp — pure = true
+fn main() {
+    A.do_action(A.Foo()); // rejected: Action[Foo].act is impure
+}
+```
+
+This mirrors the handler rule: by calling `do_action` with `Foo`, `MyApp` grants `do_action` the capability to perform whatever `Action[Foo]` does. A pure package must not grant impure capabilities.
+
 ## Why this matters
 
 This system makes it possible to statically audit a package. A package deemed pure by the compiler is guaranteed to have no builtin side effects and to call nothing that does. Any side effects that appear at runtime are entirely in the hands of whoever supplies the effect handlers — and the supplier has full, unrestricted control over what those handlers do.

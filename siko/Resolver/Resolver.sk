@@ -44,6 +44,7 @@ pub struct GlobalResolverContext {
     traits: Map[QualifiedName, TraitDef],
     named_instances: Map[QualifiedName, InstanceDef],
     canonical_instances: Vec[InstanceDef],
+    all_instances: Map[QualifiedName, InstanceDef],
     functions: Map[QualifiedName, FunctionDef],
     effects: Map[QualifiedName, Eff.EffectDef],
     implicits: Map[QualifiedName, ImplicitDef],
@@ -60,6 +61,7 @@ pub struct GlobalResolverContext {
             traits: Map.new(),
             named_instances: Map.new(),
             canonical_instances: Vec.new(),
+            all_instances: Map.new(),
             functions: Map.new(),
             effects: Map.new(),
             implicits: Map.new(),
@@ -170,6 +172,7 @@ pub struct Resolver {
             traits: resolver.ctx.traits,
             named_instances: resolver.ctx.named_instances,
             canonical_instances: resolver.ctx.canonical_instances,
+            all_instances: resolver.ctx.all_instances,
             functions: resolver.ctx.functions,
             effects: resolver.ctx.effects,
             implicits: resolver.ctx.implicits,
@@ -482,6 +485,7 @@ pub struct Resolver {
         instance_def.methods = Vec.new();
         instance_def.name = Some(synth);
         resolver.ctx.canonical_instances.push(instance_def);
+        resolver.ctx.all_instances.insert(QualifiedName.new(synth.name()), instance_def);
     }
 
     fn process_instance(
@@ -521,9 +525,8 @@ pub struct Resolver {
                     instance_prefix,
                 )?;
             }
-            resolver.ctx
-                .named_instances
-                .insert(qualified_name, resolved_instance_def);
+            resolver.ctx.named_instances.insert(qualified_name, resolved_instance_def);
+            resolver.ctx.all_instances.insert(qualified_name, resolved_instance_def);
         } else {
             let loc = instance_def.trait_name.unresolved().location;
             let synth_ident = instance_synth_name(
@@ -547,7 +550,9 @@ pub struct Resolver {
                 )?;
             }
             resolved_instance_def.name = Some(synth_ident);
+            let synth_qname = QualifiedName.new(synth_ident.name());
             resolver.ctx.canonical_instances.push(resolved_instance_def);
+            resolver.ctx.all_instances.insert(synth_qname, resolved_instance_def);
         })
     }
 

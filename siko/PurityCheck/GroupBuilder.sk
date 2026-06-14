@@ -4,6 +4,7 @@ import Std.Map
 import Std.Set
 import Siko.AST.Annotations
 import Siko.AST.Expr as E
+import Siko.Instances.FunctionInstanceResolver
 import Siko.AST.Function
 import Siko.AST.Generics
 import Siko.AST.Identifier
@@ -22,6 +23,7 @@ import Siko.Utils.VarAllocator
 pub struct CallCollector {
     pub deps: Set[QualifiedName],
     pub handler_deps: Set[QualifiedName],
+    pub program: Program,
 }
 
 trait Collect[T] {
@@ -39,7 +41,27 @@ instance Collect[QualifiedName]      = auto(Fold, =)
 instance Collect[E.VariableName]     = auto(Fold, =)
 instance Collect[Name]               = auto(Fold, =)
 instance Collect[Identifier]         = auto(Fold, =)
-instance Collect[E.WitnessInfo]      = auto(Fold, =)
+instance Collect[E.WitnessInfo]      = auto(Fold)
+instance Collect[BoundWitness] {
+    fn walk(w: BoundWitness, c: CallCollector) {
+        if let BoundWitness.Instance(instance_qname: instance_qname, ..) = w {
+            let instance_key = QualifiedName.new(instance_qname);
+            let instance_def = c.program.all_instances.get(instance_key)
+                .expect("Collect[BoundWitness]: instance ${instance_qname} not found in program");
+            let trait_key = QualifiedName.new(instance_def.trait_name.name());
+            let trait_def = c.program.traits.get(trait_key)
+                .expect("Collect[BoundWitness]: trait ${trait_key.name()} not found in program");
+            for (short_name, abstract_qname) in trait_def.method_map.names {
+                let provides = instance_def.method_names.iter().any(|mn| mn.name() == short_name);
+                if provides {
+                    c.deps.insert(QualifiedName.new(I.intern(I.resolve(instance_qname) + "." + I.resolve(short_name))));
+                } else {
+                    c.deps.insert(abstract_qname);
+                }
+            }
+        }
+    }
+}
 instance Collect[E.FunctionKind]     = auto(Fold, =)
 instance Collect[E.BinaryOp]         = auto(Fold, =)
 instance Collect[E.UnaryOp]          = auto(Fold, =)
@@ -118,7 +140,7 @@ pub fn build_groups(program: Program) -> (Vec[Vec[QualifiedName]], Map[Qualified
     let handler_map: Map[QualifiedName, Set[QualifiedName]] = Map.new();
 
     for (qname, func) in program.functions {
-        let collector = CallCollector(Set.new(), Set.new());
+        let collector = CallCollector(Set.new(), Set.new(), program);
         walk(func, collector);
         let deps: Vec[QualifiedName] = collector.deps
             .into_iter()

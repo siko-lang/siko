@@ -36,18 +36,87 @@ fn main() {
 <p><code>execute_query</code> is pure in Siko's sense — it calls no function with builtin side effects. The fact that it invokes an effect method is fine: effect methods are holes whose implementation is supplied by the caller, so the callee makes no commitment about what they do.</p>
 <h2>Purity is a pre-monomorphization concept</h2>
 <p>Like safety, purity is reasoned about before monomorphization. It is entirely possible that an effect handler injected at the call site introduces side effects — but that is the caller's business, not the library's. A package can be declared pure before you know anything about how its effects will be handled.</p>
+<h2>Declaring a package as pure</h2>
+<p>Add <code>pure = true</code> to the package's <code>package.toml</code>:</p>
+<pre><code>name = "MyLib"
+version = "1.0.0"
+pure = true
+
+[dependencies]
+Std = "0.1.0"
+</code></pre>
+<p>The compiler will verify this claim. If any function in the package is impure the build fails with an error.</p>
+<h2>The <code>@pure</code> annotation</h2>
+<p>A function marked <code>@safe</code> contains internal unsafe code but promises callers that it is safe to call. Sometimes such a function also makes a purity promise — it performs no observable side effects despite its internal mechanics. In that case it can be additionally annotated <code>@pure</code>:</p>
+<pre><code>@safe
+@pure
+pub fn fast_copy(dst: Ptr, src: Ptr, len: Int) {
+    // unsafe memory copy internally, but no side effects visible outside
+    ...
+}
+</code></pre>
+<p><code>@pure</code> is only valid on <code>@safe</code> functions. The compiler enforces this: annotating a function <code>@pure</code> without <code>@safe</code> is an error.</p>
+<p>The annotation acts as an unconditional trust boundary for the purity analysis: callers treat the function as pure without inspecting its body. This is what allows <code>Vec.new()</code> and <code>Vec.push()</code> — which internally call unsafe code — to be treated as pure by code that uses them.</p>
 <h2>What a pure package guarantees</h2>
 <p>A package deemed pure by the compiler satisfies all of the following:</p>
 <ul>
-<li>Every function in the package is truly safe — not merely marked <code>@safe</code>, but containing no unsafe code anywhere.</li>
-<li>It only calls functions marked <code>@pure</code>, which covers pure functions from the standard library (even if those contain internal unsafe code) and from any other package.</li>
-<li>It may call effect methods — these are resolved by the caller, so they carry no purity commitment of their own.</li>
+<li>Every function in the package contains no unsafe code — no <code>@safe</code> or <code>@unsafe</code> annotations, no extern or builtin calls — unless it is also annotated <code>@pure</code>, in which case it is trusted.</li>
+<li>It only calls functions that are themselves computed to be pure (or explicitly annotated <code>@pure</code>).</li>
+<li>It may call effect methods freely — these are resolved by the caller, so they carry no purity commitment of their own.</li>
 </ul>
-<p>Note that a pure package cannot define <code>@safe</code> functions, because <code>@safe</code> requires unsafe code inside, and pure packages have none.</p>
+<h2>Handlers and purity</h2>
+<p>While *calling* an effect method is always pure, *supplying an impure function as a handler* is not. The handler runs inside the caller's scope, so its side effects belong to the caller:</p>
+<pre><code>// LibA — not pure: greet calls println
+pub fn greet(msg: String) {
+    println(msg);
+}
+
+// MyApp — also not pure: it supplies an impure handler
+fn main() {
+    with Logger.log = LibA.greet {
+        do_work();
+    }
+}
+</code></pre>
+<p>If <code>MyApp</code> declared <code>pure = true</code> the compiler would reject it, because <code>LibA.greet</code> is impure and <code>main</code> uses it as a handler.</p>
+<h2>Trait calls and purity</h2>
+<p>The purity checker fully tracks trait method calls. When a trait method is called on a concrete type, the checker resolves it to the specific instance and checks that instance's method directly. If the instance does not override the trait's default method body, the default body is checked instead.</p>
+<h3>Generic functions and trait instances</h3>
+<p>When you call a generic function that has a trait bound, you are implicitly passing the trait instance for the concrete type you supply. The purity checker treats this conservatively: it assumes the generic function may call <strong>any</strong> method of that instance.</p>
+<p>If the instance contains an impure method, the call is considered impure — even if the generic function's body does not happen to call it in this specialization.</p>
+<pre><code>// LibA
+pub trait Action[T] {
+    fn act(t: T)
+}
+
+pub struct Foo {}
+
+instance Action[Foo] {
+    fn act(t: Foo) {
+        println("side effect");
+    }
+}
+
+pub fn do_action[T: Action[T]](t: T) {
+    Action.act(t);
+}
+
+// MyApp — pure = true
+fn main() {
+    A.do_action(A.Foo()); // rejected: Action[Foo].act is impure
+}
+</code></pre>
+<p>This mirrors the handler rule: by calling <code>do_action</code> with <code>Foo</code>, <code>MyApp</code> grants <code>do_action</code> the capability to perform whatever <code>Action[Foo]</code> does. A pure package must not grant impure capabilities.</p>
 <h2>Why this matters</h2>
 <p>This system makes it possible to statically audit a package. A package deemed pure by the compiler is guaranteed to have no builtin side effects and to call nothing that does. Any side effects that appear at runtime are entirely in the hands of whoever supplies the effect handlers — and the supplier has full, unrestricted control over what those handlers do.</p>
 <p>For example, a <code>TcpConnect</code> effect could be handled by a function that only connects to a specific host, or one that limits the number of connections, or one that enforces a maximum duration. The library being called has no say in any of this. The caller decides the rules, and the pure library operates within whatever boundaries the caller imposes — without knowing or caring what they are.</p>
 <p>Siko's lightweight effect and implicit system supports library authors so they never have to reach for dependency injection frameworks or other workarounds. They call effectful functions and write straightforward, seemingly synchronous code without caring how the caller will actually instantiate their library. Because mocking is trivial with effects and implicits, a pure library can be developed and tested using only pure functions throughout.</p>
+<h2>Inspecting purity verdicts</h2>
+<p>Pass <code>--dump-package-purity</code> to print the computed verdict for every package in the build:</p>
+<pre><code>PURE: MyLib
+IMPURE: MyApp
+</code></pre>
+<p>This is useful when tracking down why a package that should be pure is not.</p>
 
 
   </div>
