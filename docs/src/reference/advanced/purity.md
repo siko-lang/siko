@@ -46,12 +46,15 @@ The compiler will verify this claim. If any function in the package is impure th
 A function marked `@safe` contains internal unsafe code but promises callers that it is safe to call. Sometimes such a function also makes a purity promise — it performs no observable side effects despite its internal mechanics. In that case it can be additionally annotated `@pure`:
 
 ```siko
-@safe
-@pure
-pub fn fast_copy(dst: Ptr, src: Ptr, len: Int) {
-    // unsafe memory copy internally, but no side effects visible outside
-    ...
-}
+    @pure
+    @safe
+    pub fn push(v: Vec[T], item: T) {
+        if v.size == v.capacity {
+            v.grow();
+        }
+        *offset_of(v.data, v.size) = item;
+        v.size = v.size + 1;
+    }
 ```
 
 `@pure` is only valid on `@safe` functions. The compiler enforces this: annotating a function `@pure` without `@safe` is an error.

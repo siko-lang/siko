@@ -48,12 +48,15 @@ Std = "0.1.0"
 <p>The compiler will verify this claim. If any function in the package is impure the build fails with an error.</p>
 <h2>The <code>@pure</code> annotation</h2>
 <p>A function marked <code>@safe</code> contains internal unsafe code but promises callers that it is safe to call. Sometimes such a function also makes a purity promise — it performs no observable side effects despite its internal mechanics. In that case it can be additionally annotated <code>@pure</code>:</p>
-<pre><code>@safe
-@pure
-pub fn fast_copy(dst: Ptr, src: Ptr, len: Int) {
-    // unsafe memory copy internally, but no side effects visible outside
-    ...
-}
+<pre><code>    @pure
+    @safe
+    pub fn push(v: Vec[T], item: T) {
+        if v.size == v.capacity {
+            v.grow();
+        }
+        *offset_of(v.data, v.size) = item;
+        v.size = v.size + 1;
+    }
 </code></pre>
 <p><code>@pure</code> is only valid on <code>@safe</code> functions. The compiler enforces this: annotating a function <code>@pure</code> without <code>@safe</code> is an error.</p>
 <p>The annotation acts as an unconditional trust boundary for the purity analysis: callers treat the function as pure without inspecting its body. This is what allows <code>Vec.new()</code> and <code>Vec.push()</code> — which internally call unsafe code — to be treated as pure by code that uses them.</p>

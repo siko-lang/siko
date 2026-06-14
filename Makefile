@@ -49,3 +49,8 @@ site: ssg.bin
 
 web: site
 	python3 docs/output/server.py
+
+HTTPD_SK := $(shell find httpd -name '*.sk')
+
+httpd: siko.bin $(HTTPD_SK)
+	./siko.bin build httpd -o httpd.bin
