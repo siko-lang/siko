@@ -1,6 +1,7 @@
 module Siko.Resolver.ModuleResolver {
 
 import Siko.AST.Identifier
+import Siko.AST.Name
 import Siko.Resolver.ModuleItem
 import Siko.Resolver.Error
 import Siko.Interner as I
@@ -107,6 +108,56 @@ pub struct ModuleResolver {
             }
         }
         return Err(ResolveError.NameNotFound(name));
+    }
+
+    pub fn resolve_trait_name(
+        m: ModuleResolver,
+        name: Name,
+        provided_arg_count: Int,
+    ) -> Result[(Name, Vec[I.String]), ResolveError] {
+        let ident = name.unresolved();
+        let item = m.resolve(ident)?;
+        match item.kind {
+            ModuleItemKind.Trait(_, expected_count, associated_types) => {
+                if expected_count != provided_arg_count {
+                    return Err(ResolveError.InvalidTraitArgCount(
+                        ident,
+                        expected_count,
+                        provided_arg_count,
+                    ));
+                }
+                Ok((
+                    Name.Resolved(item.qualified_name),
+                    associated_types,
+                ))
+            }
+            _ => Err(ResolveError.NotATrait(ident)),
+        }
+    }
+
+    pub fn resolve_subject_name(
+        m: ModuleResolver,
+        name: Name,
+        provided_arg_count: Int,
+    ) -> Result[(Name, Vec[I.String]), ResolveError] {
+        let ident = name.unresolved();
+        let item = m.resolve(ident)?;
+        match item.kind {
+            ModuleItemKind.Trait(_, expected_count, associated_types) => {
+                if expected_count != provided_arg_count {
+                    return Err(ResolveError.InvalidTraitArgCount(
+                        ident,
+                        expected_count,
+                        provided_arg_count,
+                    ));
+                }
+                Ok((Name.Resolved(item.qualified_name), associated_types))
+            }
+            ModuleItemKind.Effect(_, associated_types) => {
+                Ok((Name.Resolved(item.qualified_name), associated_types))
+            }
+            _ => Err(ResolveError.NotATrait(ident)),
+        }
     }
 
     pub fn module_name(m: ModuleResolver) -> I.String {

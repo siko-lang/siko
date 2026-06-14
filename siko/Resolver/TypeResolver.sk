@@ -2,7 +2,6 @@ module Siko.Resolver.TypeResolver {
 
 import Siko.Resolver.ModuleResolver
 import Siko.Resolver.Error
-import Siko.Resolver.ModuleItem
 import Siko.AST.Identifier
 import Siko.AST.Name
 import Siko.AST.Type
@@ -66,31 +65,6 @@ pub struct TypeResolver {
             return Ok(TypeDef.Named(name, resolved_args));
         }
         return Err(ResolveError.NotAType(name));
-    }
-
-    pub fn resolve_trait_name(
-        tr: TypeResolver,
-        name: Name,
-        provided_arg_count: Int,
-    ) -> Result[(Name, Vec[I.String]), ResolveError] {
-        let ident = name.unresolved();
-        let item = tr.module_resolver.resolve(ident)?;
-        match item.kind {
-            ModuleItemKind.Trait(_, expected_count, associated_types) => {
-                if expected_count != provided_arg_count {
-                    return Err(ResolveError.InvalidTraitArgCount(
-                        ident,
-                        expected_count,
-                        provided_arg_count,
-                    ));
-                }
-                Ok((
-                    Name.Resolved(item.qualified_name),
-                    associated_types,
-                ))
-            }
-            _ => Err(ResolveError.NotATrait(ident)),
-        }
     }
 
     pub fn module_resolver(tr: TypeResolver) -> ModuleResolver {

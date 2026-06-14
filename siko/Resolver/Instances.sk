@@ -1,0 +1,42 @@
+module Siko.Resolver.Instance {
+
+import Siko.Resolver
+import Siko.Resolver.Error
+import Siko.AST.Instances
+
+instance Resolvable[InstanceDef] {
+    fn resolve(i: InstanceDef, ctx: ResolverContext) -> Result[InstanceDef, ResolveError] {
+        ctx.type_resolver.add_args(i.type_arg_defs);
+        let name = match i.name {
+            Some(name) => Some(name.with_prefix(ctx.module_name())),
+            None => None,
+        };
+        let (resolved_subject_name, assoc_names) = ctx
+            .type_resolver
+            .module_resolver()
+            .resolve_subject_name(i.subject, i.args.len())?;
+        ctx.type_resolver.add_assoc_type_names(assoc_names);
+        let type_assignments: Vec[_] = i
+            .type_assignments
+            .iter()
+            .map(|ta| Ok(TypeAssignment(ta.name, ta.ty.resolve(ctx)?)))
+            .collect();
+        let type_assignments = Result.collect(type_assignments)?;
+        Ok(InstanceDef(
+            annotations: i.annotations,
+            public: i.public,
+            name: name,
+            type_arg_defs: i.type_arg_defs.resolve(ctx)?,
+            subject: resolved_subject_name,
+            args: i.args.resolve(ctx)?,
+            type_assignments: type_assignments,
+            methods: Vec.new(),
+            module_name: ctx.module_name(),
+            method_names: Vec.new(),
+            location: i.location,
+            external_derived_instance_info: i.external_derived_instance_info,
+        ))
+    }
+}
+
+}

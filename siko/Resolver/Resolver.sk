@@ -21,6 +21,7 @@ import Siko.AST.QualifiedName
 import Siko.AST.Data
 import Siko.AST.Generics
 import Siko.AST.Traits
+import Siko.AST.Instances
 import Siko.AST.Function
 import Siko.AST.Effects as Eff
 import Siko.AST.Globals
@@ -476,7 +477,7 @@ pub struct Resolver {
     }
 
     fn register_derived_instance(resolver: Resolver, instance_def: InstanceDef) {
-        let synth = instance_synth_name(instance_def.trait_name, instance_def.args, instance_def.location);
+        let synth = instance_synth_name(instance_def.subject, instance_def.args, instance_def.location);
         for method in instance_def.methods {
             resolver.ctx
                 .functions
@@ -528,9 +529,9 @@ pub struct Resolver {
             resolver.ctx.named_instances.insert(qualified_name, resolved_instance_def);
             resolver.ctx.all_instances.insert(qualified_name, resolved_instance_def);
         } else {
-            let loc = instance_def.trait_name.unresolved().location;
+            let loc = instance_def.subject.unresolved().location;
             let synth_ident = instance_synth_name(
-                resolved_instance_def.trait_name,
+                resolved_instance_def.subject,
                 resolved_instance_def.args,
                 loc,
             );
@@ -592,7 +593,7 @@ pub struct Resolver {
         let type_qname = resolved_instance_def.args[0].name();
         let self_type = resolved_instance_def.args[0];
         let type_arg_defs = resolved_instance_def.type_arg_defs;
-        let trait_name_str = resolved_instance_def.trait_name.name();
+        let trait_name_str = resolved_instance_def.subject.name();
         let external_info = resolved_instance_def
             .external_derived_instance_info
 
@@ -650,7 +651,7 @@ pub struct Resolver {
                 _ => None,
             }
             Some(params) => {
-                let trait_qname = resolved_instance_def.trait_name.resolved();
+                let trait_qname = resolved_instance_def.subject.resolved();
                 let trait_def = if let Some(trait_def) = resolver.ctx.traits.get(trait_qname) {
                     trait_def
                 } else {
