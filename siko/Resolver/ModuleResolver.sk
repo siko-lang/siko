@@ -2,6 +2,7 @@ module Siko.Resolver.ModuleResolver {
 
 import Siko.AST.Identifier
 import Siko.AST.Name
+import Siko.AST.Instances
 import Siko.Resolver.ModuleItem
 import Siko.Resolver.Error
 import Siko.Interner as I
@@ -139,7 +140,7 @@ pub struct ModuleResolver {
         m: ModuleResolver,
         name: Name,
         provided_arg_count: Int,
-    ) -> Result[(Name, Vec[I.String]), ResolveError] {
+    ) -> Result[(Name, Vec[I.String], InstanceKind), ResolveError] {
         let ident = name.unresolved();
         let item = m.resolve(ident)?;
         match item.kind {
@@ -151,10 +152,10 @@ pub struct ModuleResolver {
                         provided_arg_count,
                     ));
                 }
-                Ok((Name.Resolved(item.qualified_name), associated_types))
+                Ok((Name.Resolved(item.qualified_name), associated_types, InstanceKind.Trait))
             }
             ModuleItemKind.Effect(_, associated_types) => {
-                Ok((Name.Resolved(item.qualified_name), associated_types))
+                Ok((Name.Resolved(item.qualified_name), associated_types, InstanceKind.Effect))
             }
             _ => Err(ResolveError.NotATrait(ident)),
         }

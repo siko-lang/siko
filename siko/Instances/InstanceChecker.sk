@@ -1,6 +1,7 @@
 module Siko.Instances.InstanceChecker {
 
 import Siko.AST.Type
+import Siko.AST.Instances
 import Siko.Format.Utils
 import Siko.HIR.Program
 import Siko.Location
@@ -68,6 +69,9 @@ pub fn check_canonical_instances(program: Program) -> Result[(), InstanceError] 
     }
 
     for instance_def in program.canonical_instances.iter().chain(program.named_instances.values()) {
+        if let InstanceKind.Effect = instance_def.kind {
+            continue;
+        }
         let trait_qname = QualifiedName.new(instance_def.subject.name());
         let trait_def = program.traits.get(trait_qname).unwrap();
 

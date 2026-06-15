@@ -36,6 +36,11 @@ import Std.Map
 import Std.Set
 import Siko.Interner as I
 
+pub struct EffectInstanceInfo {
+    pub effect_qname: QualifiedName,
+    pub method_pairs: Vec[(QualifiedName, QualifiedName)],
+}
+
 pub struct GlobalResolverContext {
     exported_items: Map[I.String, Vec[ModuleItem]],
     module_resolvers: Map[I.String, ModuleResolver],
@@ -51,6 +56,7 @@ pub struct GlobalResolverContext {
     implicits: Map[QualifiedName, ImplicitDef],
     module_names: Vec[I.String],
     module_instance_imports: Map[I.String, Vec[QualifiedName]],
+    effect_instance_infos: Map[QualifiedName, EffectInstanceInfo],
 
     pub fn new() -> GlobalResolverContext {
         GlobalResolverContext(
@@ -68,7 +74,12 @@ pub struct GlobalResolverContext {
             implicits: Map.new(),
             module_names: Vec.new(),
             module_instance_imports: Map.new(),
+            effect_instance_infos: Map.new(),
         )
+    }
+
+    pub fn get_effect_instance_info(ctx: GlobalResolverContext, qname: QualifiedName) -> Option[EffectInstanceInfo] {
+        ctx.effect_instance_infos.get(qname)
     }
 
     pub fn get_exported_items_by_module(ctx: GlobalResolverContext, module_name: I.String) -> Option[Vec[ModuleItem]] {
@@ -150,6 +161,10 @@ pub struct Resolver {
                 //println("Initializing module ${module_name}");
                 resolver.init_module(modules, module_name, module_visibility)?;
                 //println("Initialized module ${module_name}");
+            }
+
+            for module_name in group {
+                resolver.pre_resolve_effect_instances(modules, module_name)?;
             }
 
             for module_name in group {
@@ -308,6 +323,44 @@ pub struct Resolver {
                     resolver.process_enum(module_name, module_def, enum_def)?;
                 }
                 _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn pre_resolve_effect_instances(
+        resolver: Resolver,
+        modules: Vec[M.Module],
+        module_name: I.String,
+    ) -> Result[(), ResolveError] {
+        let module_def = modules
+            .iter()
+            .find(|m| m.name.name() == module_name)
+            .unwrap();
+        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        for item in module_def.items {
+            if let M.ModuleItem.Instance(instance_def) = item {
+                let instance_name = match instance_def.name {
+                    Some(n) => n,
+                    None => continue,
+                };
+                let subject_ident = instance_def.subject.unresolved();
+                let subject_item = match module_resolver.resolve(subject_ident) {
+                    Ok(item) => item,
+                    Err(_) => continue,
+                };
+                if let ModuleItemKind.Effect(_, _) = subject_item.kind {
+                    let effect_qname = subject_item.qualified_name;
+                    let instance_qname = QualifiedName.new(module_def.name.merge(instance_name).name);
+                    let method_pairs = Vec.new();
+                    for method in instance_def.methods {
+                        let short_name = method.name.name;
+                        let effect_method = QualifiedName.new(I.intern(I.resolve(effect_qname.name()) + "." + I.resolve(short_name)));
+                        let instance_method = QualifiedName.new(I.intern(I.resolve(instance_qname.name()) + "." + I.resolve(short_name)));
+                        method_pairs.push((effect_method, instance_method));
+                    }
+                    resolver.ctx.effect_instance_infos.insert(instance_qname, EffectInstanceInfo(effect_qname, method_pairs));
+                }
             }
         }
         Ok(())

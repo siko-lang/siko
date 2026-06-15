@@ -276,12 +276,33 @@ pub struct ExprResolver {
                         panic("non-Unresolved HandlerSelection found during resolution")
                     };
                     let method_item = expr_resolver.type_resolver.module_resolver().resolve(method_ident)?;
-                    let resolved = if method_item.kind.is_implicit() {
+                    if method_item.kind.is_implicit() {
                         let var = match env.lookup(handler_ident.name) {
                             Some(v) => v,
                             None => { return Err(ResolveError.NameNotFound(handler_ident)); }
                         }
-                        HandlerSelection.Implicit(method_item.qualified_name, var)
+                        resolved_selections.push(HandlerSelection.Implicit(method_item.qualified_name, var));
+                    } else if method_item.kind.is_effect() {
+                        let instance_item = expr_resolver
+                            .type_resolver
+                            .module_resolver()
+                            .resolve(handler_ident)?;
+                        if !instance_item.kind.is_instance() {
+                            return Err(ResolveError.InvalidEffectHandler(handler_ident));
+                        }
+                        let info = expr_resolver.global_ctx
+                            .get_effect_instance_info(instance_item.qualified_name)
+                            .expect("effect instance not pre-resolved: ${handler_ident.name}");
+                        if info.effect_qname != method_item.qualified_name {
+                            return Err(ResolveError.InvalidEffectHandler(handler_ident));
+                        }
+                        for (effect_method, instance_method) in info.method_pairs {
+                            resolved_selections.push(HandlerSelection.EffectFunction(
+                                effect_method,
+                                instance_method,
+                                handler_ident.location,
+                            ));
+                        }
                     } else if method_item.kind.is_function() {
                         let handler_item = expr_resolver
                             .type_resolver
@@ -290,15 +311,14 @@ pub struct ExprResolver {
                         if !handler_item.kind.is_function() {
                             return Err(ResolveError.InvalidEffectHandler(handler_ident));
                         }
-                        HandlerSelection.EffectFunction(
+                        resolved_selections.push(HandlerSelection.EffectFunction(
                             method_item.qualified_name,
                             handler_item.qualified_name,
                             handler_ident.location,
-                        )
+                        ));
                     } else {
                         return Err(ResolveError.InvalidEffectHandler(method_ident));
                     };
-                    resolved_selections.push(resolved);
                 }
                 ExprKind.With(WithInfo(resolved_selections, body))
             }
