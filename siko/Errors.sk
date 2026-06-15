@@ -63,8 +63,6 @@ pub fn report_resolve_error(e: ResolveError) {
             report("not a variant: " + I.resolve(ident.name()), Some(ident.location)),
         ResolveError.WrongPatternArgCount(ident, expected, got) =>
             report("wrong pattern arg count for " + I.resolve(ident.name()) + ": expected " + expected.to_string() + ", got " + got.to_string(), Some(ident.location)),
-        ResolveError.WrongVariantArgCount(ident, expected, got) =>
-            report("wrong argument count for variant " + I.resolve(ident.name()) + ": expected " + expected.to_string() + ", got " + got.to_string(), Some(ident.location)),
         ResolveError.InvalidEffectHandler(ident) =>
             report("invalid effect handler: " + I.resolve(ident.name()), Some(ident.location)),
         ResolveError.NamedArgOnDynamicCall(location) =>
@@ -167,6 +165,8 @@ pub fn report_type_error(e: TypeError) {
             report("Wrong named argument `${arg_name}` for function `${fn_name}`: expected `${expected_name}`", Some(location)),
         TypeError.VariantItemNotNamed(variant_name, arg_name, location) =>
             report("Variant item `${arg_name}` in `${variant_name}` has no name", Some(location)),
+        TypeError.TooManyNamedArgs(fn_name, expected, got, location) =>
+            report("Too many arguments for `${fn_name}`: expected ${expected}, got ${got}", Some(location)),
     }
 }
 

@@ -16,6 +16,14 @@ import Siko.Typechecker.Error
 import Siko.Utils.TypeVarAllocator
 import Siko.HIR.Program
 
+fn check_named_arg_count(named_args: Vec[NamedArgument], expected: Int) -> Bool {
+    if named_args.len() > expected { return True; }
+    for na in named_args {
+        if na.index >= expected { return True; }
+    }
+    False
+}
+
 fn builtin_type(name: I.String) -> TypeDef {
     TypeDef.Named(Name.Resolved(QualifiedName.new(name)), Vec.new())
 }
@@ -195,35 +203,47 @@ pub struct Collector {
                     match kind {
                         FunctionKind.UserDefined | FunctionKind.Extern(_) | FunctionKind.Builtin => {
                             if let Some(fndef) = c.program.functions.get(qname) {
-                                for na in named_args {
-                                    let expected = fndef.args[na.index].name.get_user_name();
-                                    if expected != na.name {
-                                        c.errors.push(TypeError.WrongNamedArgument(qname.name(), na.name, expected, loc));
+                                if check_named_arg_count(named_args, fndef.args.len()) {
+                                    c.errors.push(TypeError.TooManyNamedArgs(qname.name(), fndef.args.len(), named_args.len(), loc));
+                                } else {
+                                    for na in named_args {
+                                        let expected = fndef.args[na.index].name.get_user_name();
+                                        if expected != na.name {
+                                            c.errors.push(TypeError.WrongNamedArgument(qname.name(), na.name, expected, loc));
+                                        }
                                     }
                                 }
                             }
                         }
                         FunctionKind.StructCtor => {
                             if let Some(sdef) = c.program.structs.get(qname) {
-                                for na in named_args {
-                                    let expected = sdef.fields[na.index].name.name;
-                                    if expected != na.name {
-                                        c.errors.push(TypeError.WrongNamedArgument(qname.name(), na.name, expected, loc));
+                                if check_named_arg_count(named_args, sdef.fields.len()) {
+                                    c.errors.push(TypeError.TooManyNamedArgs(qname.name(), sdef.fields.len(), named_args.len(), loc));
+                                } else {
+                                    for na in named_args {
+                                        let expected = sdef.fields[na.index].name.name;
+                                        if expected != na.name {
+                                            c.errors.push(TypeError.WrongNamedArgument(qname.name(), na.name, expected, loc));
+                                        }
                                     }
                                 }
                             }
                         }
                         FunctionKind.VariantCtor => {
                             let vdef = c.program.variant(qname);
-                            for na in named_args {
-                                match vdef.items[na.index].name {
-                                    Some(item_name) => {
-                                        if item_name.name != na.name {
-                                            c.errors.push(TypeError.WrongNamedArgument(qname.name(), na.name, item_name.name, loc));
+                            if check_named_arg_count(named_args, vdef.items.len()) {
+                                c.errors.push(TypeError.TooManyNamedArgs(qname.name(), vdef.items.len(), named_args.len(), loc));
+                            } else {
+                                for na in named_args {
+                                    match vdef.items[na.index].name {
+                                        Some(item_name) => {
+                                            if item_name.name != na.name {
+                                                c.errors.push(TypeError.WrongNamedArgument(qname.name(), na.name, item_name.name, loc));
+                                            }
                                         }
-                                    }
-                                    None => {
-                                        c.errors.push(TypeError.VariantItemNotNamed(qname.name(), na.name, loc));
+                                        None => {
+                                            c.errors.push(TypeError.VariantItemNotNamed(qname.name(), na.name, loc));
+                                        }
                                     }
                                 }
                             }
