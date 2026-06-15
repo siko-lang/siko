@@ -183,15 +183,21 @@ pub struct ExprResolver {
                                     )
                                 )
                             }
-                            ModuleItemKind.Variant(_, _, _) => ExprKind.FunctionCall(
-                                FunctionCallInfo(
-                                    item.qualified_name,
-                                    FunctionKind.VariantCtor,
-                                    resolved_args,
-                                    WitnessInfo.new(),
-                                    named_args,
+                            ModuleItemKind.Variant(variant_name, _, item_count) => {
+                                let call_arg_count = resolved_args.len();
+                                if call_arg_count > item_count {
+                                    return Err(ResolveError.WrongVariantArgCount(variant_name, item_count, call_arg_count));
+                                }
+                                ExprKind.FunctionCall(
+                                    FunctionCallInfo(
+                                        item.qualified_name,
+                                        FunctionKind.VariantCtor,
+                                        resolved_args,
+                                        WitnessInfo.new(),
+                                        named_args,
+                                    )
                                 )
-                            ),
+                            }
                             ModuleItemKind.Function(_, kind) => ExprKind.FunctionCall(
                                 FunctionCallInfo(
                                     item.qualified_name,
