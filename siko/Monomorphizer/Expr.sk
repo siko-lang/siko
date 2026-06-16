@@ -10,6 +10,7 @@ import Siko.Monomorphizer
 import Siko.Monomorphizer.Error
 import Siko.Monomorphizer.TraitDispatch
 import Siko.Monomorphizer.Specialize
+import Siko.Monomorphizer.Types
 import Siko.Instances.FunctionInstanceResolver
 import Siko.Utils.TypeVarAllocator
 import Siko.Interner as I
@@ -228,6 +229,110 @@ pub fn process_extern_fn(name: QualifiedName, args: Vec[Expr], kind: FunctionKin
         mono.fn_queue.push_back(FnWork(name.clone(), ct, [], EffectCtx.new(), ImplicitCtx.new()));
     }
     FunctionCallInfo(mono_callee, kind, spec_args, WitnessInfo.new(), Vec.new())
+}
+
+pub fn process_type_associated_call(info: TypeAssociatedCallInfo, mono: Monomorphizer) -> FunctionCallInfo {
+    let spec_args: Vec[Expr] = info.args.specialize(mono);
+    let arg_types: Vec[TypeDef] = info.args.iter().map(|a| Monomorphizer.expr_ty(mono, a)).collect();
+    let concrete_result_ty = mono.current_expr_ty.apply(mono.sub);
+
+    let concrete_type = specialize_type(info.type_def, mono.sub);
+    mono.enqueue_named_types(concrete_type);
+
+    let func = mono.source.functions.get(info.fn_name).unwrap();
+    let tad = func.type_arg_defs.unwrap();
+    let self_bound = tad.bounds[0];
+    let generic_params = tad.type_params();
+    let param_types: Vec[TypeDef] = func.args.iter().map(|a| a.type_def.clone()).collect();
+
+    let callee_inst = Substitution.new();
+    callee_inst.bind_named(generic_params[0], concrete_type);
+
+    for (p, a) in param_types.iter().zip(arg_types.iter()) {
+        extract_named_bindings(p, a, callee_inst);
+    }
+    if let (Some(decl), Some(actual)) = (func.result_type.clone(), concrete_result_ty) {
+        extract_named_bindings(decl, actual, callee_inst);
+    }
+
+    let sb_type_arg_names: Vec[I.String] = self_bound.type_args.iter().map(|n| n.name()).collect();
+    let query_args: Vec[TypeDef] = sb_type_arg_names.iter().map(|var_name| {
+        callee_inst.lookup_named(var_name).clone().unwrap_or_else(|| TypeDef.Var(TypeVar.Named(var_name.clone())))
+    }).collect();
+
+    let witness = info.witnesses.witnesses[0];
+    let module_name = mono.resolve_witness_to_module(witness);
+    let module_resolver = mono.instance_resolver.for_module(module_name).unwrap();
+    let func_resolver = FunctionInstanceResolver.new(module_name.clone(), module_resolver, [], TypeVarAllocator.new());
+
+    let resolution = match func_resolver.resolve_and_extract(
+        self_bound.trait_name.name(),
+        query_args,
+        self_bound.constraints.clone(),
+        Substitution.new(),
+        callee_inst,
+    ) {
+        BoundResult.Satisfied(r) => r,
+        _ => panic("mono: TypeAssociatedCall: instance not found for ${info.fn_name.name()}"),
+    };
+
+    let instance_qname = resolution.instance_qname.unwrap();
+    let sb_trait_str = I.resolve(self_bound.trait_name.name());
+    let fn_name_str = I.resolve(info.fn_name.name());
+    let method_str = fn_name_str.strip_prefix(sb_trait_str + ".").unwrap();
+    let concrete_method = QualifiedName.new(I.intern("${I.resolve(instance_qname)}.${method_str}"));
+
+    let (final_callee, callee_type_args) = match mono.source.functions.get(concrete_method) {
+        Some(mf) => {
+            let method_type_args = match mf.type_arg_defs {
+                Some(method_tad) => {
+                    let mp: Vec[I.String] = method_tad.type_args.iter().map(|id| id.name).collect();
+                    let mpt: Vec[TypeDef] = mf.args.iter().map(|a| a.type_def.clone()).collect();
+                    let mapping = Substitution.new();
+                    for (p, a) in mpt.iter().zip(arg_types.iter()) {
+                        extract_named_bindings(p, a, mapping);
+                    }
+                    mp.iter().map(|p| {
+                        mapping.lookup_named(p)
+                            .or_else(|| resolution.type_witness.lookup_named(p))
+                            .or_else(|| callee_inst.lookup_named(p))
+                            .clone()
+                            .unwrap()
+                    }).collect()
+                }
+                None => Vec.new()
+            };
+            (concrete_method, method_type_args)
+        }
+        None => {
+            if func.body.is_some() {
+                let ct: Vec[TypeDef] = generic_params.iter()
+                    .map(|p| callee_inst.lookup_named(p).clone().unwrap_or(TypeDef.Wildcard))
+                    .collect();
+                (info.fn_name.clone(), ct)
+            } else {
+                panic("mono: TypeAssociatedCall: no concrete method for ${concrete_method.name()}")
+            }
+        }
+    };
+
+    let remaining_witnesses: Vec[I.String] = {
+        let i = info.witnesses.witnesses.iter();
+        i.next();
+        i.map(|w| mono.resolve_witness_to_module(w)).collect()
+    };
+
+    let is_extern_or_callback = mono.source.functions.get(final_callee)
+        .map(|f| f.is_extern() || f.is_c_callback())
+        .unwrap_or(False);
+    let callee_effect_ctx = if is_extern_or_callback { EffectCtx.new() } else { mono.current_effect_ctx.clone() };
+    let callee_implicit_ctx = if is_extern_or_callback { ImplicitCtx.new() } else { mono.current_implicit_ctx.clone() };
+
+    let mono_callee = fn_mono_key(final_callee.name(), callee_type_args, remaining_witnesses, callee_effect_ctx.clone(), callee_implicit_ctx.clone());
+    if !mono.fn_done.contains(mono_callee.name()) {
+        mono.fn_queue.push_back(FnWork(final_callee, callee_type_args, remaining_witnesses, callee_effect_ctx, callee_implicit_ctx));
+    }
+    FunctionCallInfo(mono_callee, FunctionKind.UserDefined, spec_args, WitnessInfo.new(), Vec.new())
 }
 
 pub fn process_builtin_fn(name: QualifiedName, args: Vec[Expr], mono: Monomorphizer) -> FunctionCallInfo {

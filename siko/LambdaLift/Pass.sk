@@ -48,8 +48,9 @@ instance Lift[E.FunctionPtrInfo]   = auto(Map, =)
 instance Lift[Pattern]             = auto(Map, =)
 instance Lift[PatternKind]         = auto(Map, =)
 
-instance Lift[E.FunctionCallInfo]  = auto(Map)
-instance Lift[E.NamedArgument]     = auto(Map, =)
+instance Lift[E.FunctionCallInfo]          = auto(Map)
+instance Lift[E.TypeAssociatedCallInfo]    = auto(Map)
+instance Lift[E.NamedArgument]             = auto(Map, =)
 instance Lift[E.MethodCallInfo]    = auto(Map)
 instance Lift[E.CallInfo]          = auto(Map)
 instance Lift[E.MatchInfo]         = auto(Map)
@@ -94,7 +95,7 @@ instance CollectBounds[E.VariableName]      = auto(Fold, =)
 instance CollectBounds[QualifiedName]       = auto(Fold, =)
 instance CollectBounds[Name]                = auto(Fold, =)
 instance CollectBounds[Identifier]          = auto(Fold, =)
-instance CollectBounds[E.WitnessInfo]       = auto(Fold, =)
+instance CollectBounds[E.WitnessInfo]       = auto(Fold)
 instance CollectBounds[E.FunctionKind]      = auto(Fold, =)
 instance CollectBounds[E.BinaryOp]          = auto(Fold, =)
 instance CollectBounds[E.UnaryOp]           = auto(Fold, =)
@@ -119,17 +120,17 @@ instance CollectBounds[E.NamedArgument] = auto(Fold, =)
 instance CollectBounds[E.MethodCallInfo] = auto(Fold)
 instance CollectBounds[E.CallInfo] = auto(Fold)
 
-instance CollectBounds[E.FunctionCallInfo] {
-    fn collect_bounds(info: E.FunctionCallInfo, out: Set[Int]) {
-        for w in info.witnesses.witnesses {
-            match w {
-                BoundWitness.FunctionBound(idx) => { out.insert(idx); },
-                _ => {},
-            }
+instance CollectBounds[BoundWitness] {
+    fn collect_bounds(w: BoundWitness, out: Set[Int]) {
+        match w {
+            BoundWitness.FunctionBound(idx) => { out.insert(idx); },
+            _ => {},
         }
-        collect_bounds(info.args, out);
     }
 }
+
+instance CollectBounds[E.FunctionCallInfo]        = auto(Fold)
+instance CollectBounds[E.TypeAssociatedCallInfo]  = auto(Fold)
 
 instance[T: CollectBounds[T]] CollectBounds[Option[T]] {
     fn collect_bounds(opt: Option[T], out: Set[Int]) {
@@ -159,7 +160,7 @@ instance RemapWitnesses[E.VariableName]      = auto(Fold, =)
 instance RemapWitnesses[QualifiedName]       = auto(Fold, =)
 instance RemapWitnesses[Name]                = auto(Fold, =)
 instance RemapWitnesses[Identifier]          = auto(Fold, =)
-instance RemapWitnesses[E.WitnessInfo]       = auto(Fold, =)
+instance RemapWitnesses[E.WitnessInfo]       = auto(Fold)
 instance RemapWitnesses[E.FunctionKind]      = auto(Fold, =)
 instance RemapWitnesses[E.BinaryOp]          = auto(Fold, =)
 instance RemapWitnesses[E.UnaryOp]           = auto(Fold, =)
@@ -184,15 +185,17 @@ instance RemapWitnesses[E.NamedArgument] = auto(Fold, =)
 instance RemapWitnesses[E.MethodCallInfo] = auto(Fold)
 instance RemapWitnesses[E.CallInfo] = auto(Fold)
 
-instance RemapWitnesses[E.FunctionCallInfo] {
-    fn remap_witnesses(info: E.FunctionCallInfo, remap: Map[Int, Int]) {
-        info.witnesses.witnesses = info.witnesses.witnesses.iter().map(|w| match w {
-            BoundWitness.FunctionBound(idx) => BoundWitness.FunctionBound(remap.get(idx).unwrap()),
-            other => other,
-        }).collect();
-        remap_witnesses(info.args, remap);
+instance RemapWitnesses[BoundWitness] {
+    fn remap_witnesses(w: BoundWitness, remap: Map[Int, Int]) {
+        match w {
+            BoundWitness.FunctionBound(idx) => { w = BoundWitness.FunctionBound(remap.get(idx).unwrap()); },
+            _ => {},
+        }
     }
 }
+
+instance RemapWitnesses[E.FunctionCallInfo]        = auto(Fold)
+instance RemapWitnesses[E.TypeAssociatedCallInfo]  = auto(Fold)
 
 instance[T: RemapWitnesses[T]] RemapWitnesses[Option[T]] {
     fn remap_witnesses(opt: Option[T], remap: Map[Int, Int]) {

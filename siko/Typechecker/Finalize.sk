@@ -54,8 +54,9 @@ instance Finalize[CreateClosureInfo] = auto(Map, =)
 instance Finalize[FunctionPtrInfo]   = auto(Map, =)
 
 instance Finalize[LambdaArg]    = auto(Map)
-instance Finalize[FunctionCallInfo] = auto(Map)
-instance Finalize[NamedArgument]     = auto(Map, =)
+instance Finalize[FunctionCallInfo]        = auto(Map)
+instance Finalize[TypeAssociatedCallInfo]  = auto(Map)
+instance Finalize[NamedArgument]           = auto(Map, =)
 instance Finalize[Bool]              = auto(Map, =)
 instance Finalize[NamedPatternArg]   = auto(Map, =)
 instance Finalize[NamedPatternInfo]  = auto(Map)
@@ -341,6 +342,16 @@ pub struct Finalizer {
                     _ =>
                         Expr(ExprKind.DynamicCall(new_callee, new_args), loc, ty),
                 }
+            }
+
+            ExprKind.TypeAssociatedCall(TypeAssociatedCallInfo(type_def, fn_name, args, _, named_args)) => {
+                let result_var = f.result_var(expr);
+                let witnesses = f.build_witnesses(result_var);
+                let new_args = Vec.new();
+                for a in args { new_args.push(f.finalize_expr(a)); }
+                let new_args = f.inject_default_args(fn_name, new_args, loc);
+                let type_def = finalize(type_def, f);
+                Expr(ExprKind.TypeAssociatedCall(TypeAssociatedCallInfo(type_def, fn_name, new_args, witnesses, named_args)), loc, ty)
             }
 
             kind => Expr(kind.finalize(f), loc, ty),

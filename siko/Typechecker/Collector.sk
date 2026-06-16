@@ -356,6 +356,25 @@ pub struct Collector {
             ExprKind.IfLet(_, _, _, _) => panic("collector: IfLet must be desugared"),
             ExprKind.Try(_) => panic("collector: Try must be lowered"),
             ExprKind.Call(_) => panic("collector: unresolved Call"),
+            ExprKind.TypeAssociatedCall(TypeAssociatedCallInfo(type_def, fn_name, args, witnesses, named_args)) => {
+                let (arg_tys, new_args) = c.collect_exprs(args, env);
+                c.emit(C.ConstraintKind.CallTypeAssociated(type_def, fn_name, arg_tys, ty), loc);
+                if !named_args.is_empty() {
+                    if let Some(fndef) = c.program.functions.get(fn_name) {
+                        if check_named_arg_count(named_args, fndef.args.len()) {
+                            c.errors.push(TypeError.TooManyNamedArgs(fn_name.name(), fndef.args.len(), named_args.len(), loc));
+                        } else {
+                            for na in named_args {
+                                let expected = fndef.args[na.index].name.get_user_name();
+                                if expected != na.name {
+                                    c.errors.push(TypeError.WrongNamedArgument(fn_name.name(), na.name, expected, loc));
+                                }
+                            }
+                        }
+                    }
+                }
+                ExprKind.TypeAssociatedCall(TypeAssociatedCallInfo(type_def, fn_name, new_args, witnesses, named_args))
+            }
         };
 
         (ty, Expr(new_kind, loc, Some(ty)))

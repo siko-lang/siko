@@ -21,6 +21,7 @@ pub enum ConstraintKind {
     HasTupleIndex(TypeDef, Int, TypeDef),
     CallMethod(TypeDef, I.String, Vec[TypeDef], TypeDef),
     CallFunction(QualifiedName, E.FunctionKind, Vec[TypeDef], TypeDef),
+    CallTypeAssociated(TypeDef, QualifiedName, Vec[TypeDef], TypeDef),
     DynamicCall(TypeDef, Vec[TypeDef], TypeDef),
     HasInstance(I.String, Vec[TypeDef], Vec[(TypeDef, I.String)], Option[WitnessKey]),
     MatchVariant(TypeDef, QualifiedName, Vec[TypeDef]),
@@ -42,6 +43,8 @@ pub enum ConstraintKind {
                 ConstraintKind.CallMethod(sub.apply(receiver), method, sub.apply_all(args), sub.apply(result)),
             ConstraintKind.CallFunction(qname, kind, args, result) =>
                 ConstraintKind.CallFunction(qname, kind, sub.apply_all(args), sub.apply(result)),
+            ConstraintKind.CallTypeAssociated(ty, qname, args, result) =>
+                ConstraintKind.CallTypeAssociated(sub.apply(ty), qname, sub.apply_all(args), sub.apply(result)),
             ConstraintKind.DynamicCall(callee, args, result) =>
                 ConstraintKind.DynamicCall(sub.apply(callee), sub.apply_all(args), sub.apply(result)),
             ConstraintKind.HasInstance(trait_name, args, assoc_constraints, witness_key) => {
@@ -75,6 +78,8 @@ pub enum ConstraintKind {
                 "CallMethod(${format_type(receiver)}.${method}(${format_types(args)}) -> ${format_type(result)})",
             ConstraintKind.CallFunction(qname, kind, args, result) =>
                 "CallFunction[${kind.to_string()}] ${qname.name()}(${format_types(args)}) -> ${format_type(result)}",
+            ConstraintKind.CallTypeAssociated(ty, qname, args, result) =>
+                "CallTypeAssociated(${format_type(ty)}.${qname.name()}(${format_types(args)}) -> ${format_type(result)})",
             ConstraintKind.DynamicCall(callee, args, result) =>
                 "DynamicCall(${format_type(callee)}(${format_types(args)}) -> ${format_type(result)})",
             ConstraintKind.HasInstance(trait_name, args, _, _) =>

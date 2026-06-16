@@ -181,8 +181,9 @@ instance Specialize[CreateClosureInfo] {
 instance Specialize[NamedArgument]    = auto(Map, =)
 instance Specialize[NamedPatternArg]  = auto(Map, =)
 instance Specialize[NamedPatternInfo] = auto(Map)
-instance Specialize[MethodCallInfo] = auto(Map)
-instance Specialize[CallInfo]      = auto(Map)
+instance Specialize[MethodCallInfo]          = auto(Map)
+instance Specialize[CallInfo]                = auto(Map)
+instance Specialize[TypeAssociatedCallInfo]  = auto(Map, !)
 
 instance Specialize[FunctionCallInfo] {
     fn specialize(info: FunctionCallInfo, mono: Monomorphizer) -> FunctionCallInfo {
@@ -303,7 +304,13 @@ instance Specialize[Expr] {
     fn specialize(expr: Expr, mono: Monomorphizer) -> Expr {
         mono.current_location = Some(expr.location.clone());
         mono.current_expr_ty = expr.ty.clone();
-        Expr(expr.kind.specialize(mono), expr.location.clone(), expr.ty.specialize(mono))
+        match expr.kind {
+            ExprKind.TypeAssociatedCall(info) => {
+                let fn_call_info = process_type_associated_call(info, mono);
+                Expr(ExprKind.FunctionCall(fn_call_info), expr.location.clone(), expr.ty.specialize(mono))
+            }
+            kind => Expr(kind.specialize(mono), expr.location.clone(), expr.ty.specialize(mono))
+        }
     }
 }
 

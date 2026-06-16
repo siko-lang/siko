@@ -164,10 +164,18 @@ pub struct ExprResolver {
                     }
                     ExprKind.Name(name) => {
                         let ident = name.unresolved();
-                        let item = expr_resolver
+                        let item = match expr_resolver
                             .type_resolver
                             .module_resolver()
-                            .resolve(ident)?;
+                            .resolve(ident)
+                        {
+                            Ok(item) => item,
+                            Err(ResolveError.NameNotFound(_)) => {
+                                let kind = expr_resolver.resolve_type_associated_call(ident, resolved_args, named_args)?;
+                                return Ok(Expr(kind, expr.location, None));
+                            }
+                            Err(e) => return Err(e),
+                        };
                         match item.kind {
                             ModuleItemKind.Struct(_, _, _) => {
                                 if !expr_resolver.struct_fields_accessible(item) {
@@ -347,6 +355,7 @@ pub struct ExprResolver {
                 let inner = expr_resolver.resolve_expr(inner, env)?;
                 ExprKind.AddrOf(inner)
             }
+            ExprKind.TypeAssociatedCall(_) => panic("resolver: TypeAssociatedCall already resolved"),
         };
         Ok(Expr (
             kind,
@@ -421,6 +430,42 @@ pub struct ExprResolver {
             };
         }
         Ok(ExprKind.With(WithInfo(resolved_selections, body)))
+    }
+
+    fn resolve_type_associated_call(
+        expr_resolver: ExprResolver,
+        ident: Identifier,
+        resolved_args: Vec[Expr],
+        named_args: Vec[NamedArgument],
+    ) -> Result[ExprKind, ResolveError] {
+        let name_str = I.resolve(ident.name);
+        let last_dot = match name_str.rfind('.') {
+            Some(i) => i,
+            None => return Err(ResolveError.NameNotFound(ident)),
+        };
+        let type_str = name_str.sub(0, last_dot);
+        let fn_str = name_str.sub(last_dot + 1, name_str.len());
+        let type_ident = Identifier.new(I.intern(type_str), ident.location);
+        let fn_ident = Identifier.new(I.intern(fn_str), ident.location);
+        let type_def = match expr_resolver.type_resolver.resolve_name(type_ident, Vec.new()) {
+            Ok(td) => td,
+            Err(_) => return Err(ResolveError.NameNotFound(ident)),
+        };
+        let fn_item = match expr_resolver.type_resolver.module_resolver().resolve(fn_ident) {
+            Ok(item) => item,
+            Err(_) => return Err(ResolveError.NameNotFound(ident)),
+        };
+        match fn_item.kind {
+            ModuleItemKind.Function(_, _) => {},
+            _ => return Err(ResolveError.NameNotFound(ident)),
+        }
+        Ok(ExprKind.TypeAssociatedCall(TypeAssociatedCallInfo(
+            type_def,
+            fn_item.qualified_name,
+            resolved_args,
+            WitnessInfo.new(),
+            named_args,
+        )))
     }
 
     fn resolve_named_pattern(

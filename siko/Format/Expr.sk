@@ -307,6 +307,19 @@ fn format_expr_inner(f: Formatter, expr: Expr) {
             }
             f.push(")");
         }
+        ExprKind.TypeAssociatedCall(info) => {
+            f.push(I.resolve(info.fn_name.name()));
+            f.push("[");
+            format_type_def(f, info.type_def);
+            f.push("](");
+            let i = 0;
+            for arg in info.args {
+                if i > 0 { f.push(", "); }
+                format_expr(f, arg);
+                i = i + 1;
+            }
+            f.push(")");
+        }
     }
 }
 

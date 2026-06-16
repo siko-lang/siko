@@ -128,6 +128,15 @@ instance Collect[E.FunctionCallInfo] {
     }
 }
 
+instance Collect[E.TypeAssociatedCallInfo] {
+    fn walk(info: E.TypeAssociatedCallInfo, c: CallCollector) {
+        c.deps.insert(info.fn_name);
+        walk(info.args, c);
+        walk(info.witnesses, c);
+        walk(info.named_args, c);
+    }
+}
+
 // Lifted closures are real callees — record them
 instance Collect[E.CreateClosureInfo] {
     fn walk(info: E.CreateClosureInfo, c: CallCollector) {
