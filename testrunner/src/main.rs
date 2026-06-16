@@ -3,6 +3,8 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
+#[cfg(unix)]
+use std::os::unix::process::ExitStatusExt as _;
 
 const COMPILER: &str = "./siko.bin";
 
@@ -12,15 +14,25 @@ const RESET: &str = "\x1b[0m";
 const TIMEOUT_SECS: u64 = 45;
 
 fn main() {
-    let siko_bin = Path::new(COMPILER);
+    let mut bless = false;
+    let mut valgrind = false;
+    let mut compiler = COMPILER.to_string();
+    let mut filters: Vec<String> = Vec::new();
 
-    let bless = std::env::args().any(|a| a == "--bless");
-    let valgrind = std::env::args().any(|a| a == "--valgrind");
+    let mut args = std::env::args().skip(1);
+    while let Some(a) = args.next() {
+        match a.as_str() {
+            "--bless" => bless = true,
+            "--valgrind" => valgrind = true,
+            "--re" => {}
+            // --c <path> overrides the compiler binary (default ./siko.bin).
+            "--c" => compiler = args.next().expect("--c requires a path argument"),
+            _ => filters.push(a),
+        }
+    }
 
-    let filters: Vec<String> = std::env::args()
-        .skip(1)
-        .filter(|a| a != "--bless" && a != "--re" && a != "--valgrind")
-        .collect();
+    let siko_bin = Path::new(&compiler);
+    println!("compiler: {}", siko_bin.display());
 
     if bless {
         println!("blessing snapshots...");
@@ -203,6 +215,10 @@ fn build_run(
     let build_dur = build_start.elapsed();
 
     if !out.status.success() {
+        #[cfg(unix)]
+        if let Some(sig) = out.status.signal() {
+            return Err(format!("SEGFAULT (signal {sig})"));
+        }
         let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
         let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
         return Err(format!("siko.bin exited non-zero:\n{stdout}{stderr}"));
@@ -319,15 +335,24 @@ fn run_success_case(
     } else {
         *failed += 1;
         failed_names.push(label.into_owned());
-        println!(" {RED}FAIL{RESET} {timing}");
+        let is_segfault = failures.iter().any(|(_, msg)| msg.starts_with("SEGFAULT"));
+        if is_segfault {
+            println!(" {RED}FAIL - SEGFAULT{RESET} {timing}");
+        } else {
+            println!(" {RED}FAIL{RESET} {timing}");
+        }
         for (name, msg) in &failures {
-            println!("        [{name}]");
-            for line in msg.lines() {
-                println!("          {line}");
+            if !msg.starts_with("SEGFAULT") {
+                println!("        [{name}]");
+                for line in msg.lines() {
+                    println!("          {line}");
+                }
             }
         }
     }
 }
+
+
 
 // ─── Failure cases ────────────────────────────────────────────────────────────
 
@@ -366,11 +391,18 @@ fn run_failure_case(
     } else {
         *failed += 1;
         failed_names.push(label.into_owned());
-        println!(" {RED}FAIL{RESET} {timing}");
+        let is_segfault = failures.iter().any(|(_, msg)| msg.starts_with("SEGFAULT"));
+        if is_segfault {
+            println!(" {RED}FAIL - SEGFAULT{RESET} {timing}");
+        } else {
+            println!(" {RED}FAIL{RESET} {timing}");
+        }
         for (name, msg) in &failures {
-            println!("        [{name}]");
-            for line in msg.lines() {
-                println!("          {line}");
+            if !msg.starts_with("SEGFAULT") {
+                println!("        [{name}]");
+                for line in msg.lines() {
+                    println!("          {line}");
+                }
             }
         }
     }
@@ -500,10 +532,11 @@ fn invoke_failure(compiler: &Path, args: &[&str]) -> Result<String, String> {
         ));
     }
 
-    if true {
-        // FIXME: put errs into stdout
-        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
-    } else {
-        Ok(String::from_utf8_lossy(&out.stderr).into_owned())
+    #[cfg(unix)]
+    if let Some(sig) = out.status.signal() {
+        return Err(format!("SEGFAULT (signal {sig})"));
     }
+
+    // FIXME: put errs into stdout
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
