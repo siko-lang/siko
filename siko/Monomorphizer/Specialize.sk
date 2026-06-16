@@ -236,7 +236,7 @@ instance Specialize[Pattern] {
                     let (enum_qname, item_ann_types, generic_params) = mono.source.find_variant(qn);
                     let mono_enum = data_mono_key(enum_qname.name(), type_args);
                     let v = mono.source.variant(qn);
-                    let mono_variant = Name.Resolved(QualifiedName.new(I.intern("${I.resolve(mono_enum.name())}.${I.resolve(v.name.name())}")));
+                    let mono_variant = Name.inner(QualifiedName.new(I.intern("${I.resolve(mono_enum.name())}.${I.resolve(v.name.name())}")));
                     PatternKind.Named(NamedPatternInfo(name: mono_variant, args: info.args.specialize(mono), named_args: info.named_args, has_rest: False))
                 } else {
                     let struct_def = mono.source.structs.get(qn).unwrap();
@@ -244,7 +244,7 @@ instance Specialize[Pattern] {
                     if !mono.struct_done.contains(mono_struct.name()) {
                         mono.struct_queue.push_back(DataWork(qn.clone(), type_args));
                     }
-                    PatternKind.Named(NamedPatternInfo(name: Name.Resolved(mono_struct), args: info.args.specialize(mono), named_args: info.named_args, has_rest: False))
+                    PatternKind.Named(NamedPatternInfo(name: Name.inner(mono_struct), args: info.args.specialize(mono), named_args: info.named_args, has_rest: False))
                 };
                 Pattern(kind, pattern.location.clone(), spec_ty)
             }

@@ -308,7 +308,7 @@ pub struct Finalizer {
                 let finalized_idx = f.finalize_expr(idx);
                 let container_ty = finalized_container.ty.unwrap();
                 match container_ty {
-                    TypeDef.Named(Name.Resolved(qname), type_args) if qname.base_name() == B.get_array_type() => {
+                    TypeDef.Named(Name.Resolved(name: qname, ..), type_args) if qname.base_name() == B.get_array_type() => {
                         let elem_ty = type_args[0];
                         let ptr = build_array_elem_ptr(finalized_container, finalized_idx, container_ty, elem_ty);
                         Expr(ExprKind.Deref(ptr), loc, Some(elem_ty))
@@ -363,7 +363,7 @@ pub struct Finalizer {
                         let finalized_rhs = f.finalize_expr(rhs);
                         let container_ty = finalized_container.ty.unwrap();
                         match container_ty {
-                            TypeDef.Named(Name.Resolved(qname), type_args) if qname.base_name() == B.get_array_type() => {
+                            TypeDef.Named(Name.Resolved(name: qname, ..), type_args) if qname.base_name() == B.get_array_type() => {
                                 let elem_ty = type_args[0];
                                 let ptr = build_array_elem_ptr(finalized_container, finalized_idx, container_ty, elem_ty);
                                 S.Assign(Expr(ExprKind.Deref(ptr), lhs.location, Some(elem_ty)), finalized_rhs)

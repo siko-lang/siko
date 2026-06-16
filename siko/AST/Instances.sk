@@ -8,10 +8,27 @@ import Siko.AST.Name
 import Siko.AST.Type
 import Siko.AST.Annotations
 import Siko.Interner as I
+import Siko.Resolver.Error
 
 pub enum InstanceKind {
-    Trait,
-    Effect,
+    Unresolved(Name),
+    Trait(Name),
+    Effect(Name),
+
+    pub fn trait_name(kind: InstanceKind) -> Name {
+        match kind {
+            InstanceKind.Trait(name) => name,
+            _ => panic("expected Trait InstanceKind"),
+        }
+    }
+
+    pub fn try_trait_name(kind: InstanceKind) -> Result[Name, ResolveError] {
+        match kind {
+            InstanceKind.Trait(name) => Ok(name),
+            InstanceKind.Effect(name) => Err(ResolveError.NotATraitInstance(name.name(), name.location())),
+            InstanceKind.Unresolved(name) => Err(ResolveError.NotATraitInstance(name.name(), name.location())),
+        }
+    }
 }
 
 pub struct TypeAssignment {
@@ -50,7 +67,7 @@ pub struct InstanceDef {
     pub public: Bool,
     pub name: Option[Identifier],
     pub type_arg_defs: Option[TypeArgDefs],
-    pub subject: Name,
+    pub subject: InstanceKind,
     pub args: Vec[TypeDef],
     pub type_assignments: Vec[TypeAssignment],
     pub methods: Vec[FunctionDef],
@@ -58,7 +75,6 @@ pub struct InstanceDef {
     pub method_names: Vec[Identifier],
     pub location: Location,
     pub external_derived_instance_info: Option[ExternalDerivedInstanceInfo],
-    pub kind: InstanceKind,
 }
 
 }

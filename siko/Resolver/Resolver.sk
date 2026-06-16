@@ -344,7 +344,10 @@ pub struct Resolver {
                     Some(n) => n,
                     None => continue,
                 };
-                let subject_ident = instance_def.subject.unresolved();
+                let subject_ident = match instance_def.subject {
+                    InstanceKind.Unresolved(name) => name.unresolved(),
+                    _ => continue,
+                };
                 let subject_item = match module_resolver.resolve(subject_ident) {
                     Ok(item) => item,
                     Err(_) => continue,
@@ -451,7 +454,7 @@ pub struct Resolver {
         }
         let ctor_default_value_names = resolver.process_default_value_fields(module_name, qualified_name.name(), struct_def)?;
         resolved_struct_def.default_value_names = ctor_default_value_names;
-        resolver.process_struct_derives(module_name, resolved_struct_def);
+        resolver.process_struct_derives(module_name, resolved_struct_def)?;
         Ok(())
     }
 
@@ -493,12 +496,12 @@ pub struct Resolver {
                 .functions
                 .insert(QualifiedName.new(full_name.name), resolved_method);
         }
-        resolver.process_derives(module_name, resolved_enum_def);
+        resolver.process_derives(module_name, resolved_enum_def)?;
         resolver.ctx.enums.insert(qualified_name, resolved_enum_def);
         Ok(())
     }
 
-    fn process_struct_derives(resolver: Resolver, module_name: I.String, resolved_struct_def: StructDef) {
+    fn process_struct_derives(resolver: Resolver, module_name: I.String, resolved_struct_def: StructDef) -> Result[(), ResolveError] {
         for derived in [
             derive_partialeq_struct(resolved_struct_def, module_name),
             derive_eq_struct(resolved_struct_def, module_name),
@@ -508,12 +511,13 @@ pub struct Resolver {
         ]
         {
             if let Some(derived) = derived {
-                resolver.register_derived_instance(derived);
+                resolver.register_derived_instance(derived)?;
             }
         }
+        Ok(())
     }
 
-    fn process_derives(resolver: Resolver, module_name: I.String, resolved_enum_def: EnumDef) {
+    fn process_derives(resolver: Resolver, module_name: I.String, resolved_enum_def: EnumDef) -> Result[(), ResolveError] {
         for derived in [
             derive_partialeq_enum(resolved_enum_def, module_name),
             derive_eq_enum(resolved_enum_def, module_name),
@@ -524,13 +528,15 @@ pub struct Resolver {
         ]
         {
             if let Some(derived) = derived {
-                resolver.register_derived_instance(derived);
+                resolver.register_derived_instance(derived)?;
             }
         }
+        Ok(())
     }
 
-    fn register_derived_instance(resolver: Resolver, instance_def: InstanceDef) {
-        let synth = instance_synth_name(instance_def.subject, instance_def.args, instance_def.location);
+    fn register_derived_instance(resolver: Resolver, instance_def: InstanceDef) -> Result[(), ResolveError] {
+        let trait_name = instance_def.subject.try_trait_name()?;
+        let synth = instance_synth_name(trait_name, instance_def.args, instance_def.location);
         for method in instance_def.methods {
             resolver.ctx
                 .functions
@@ -540,6 +546,7 @@ pub struct Resolver {
         instance_def.name = Some(synth);
         resolver.ctx.canonical_instances.push(instance_def);
         resolver.ctx.all_instances.insert(QualifiedName.new(synth.name()), instance_def);
+        Ok(())
     }
 
     fn process_instance(
@@ -569,7 +576,7 @@ pub struct Resolver {
                     resolved_instance_def,
                     instance_prefix,
                     module_name,
-                );
+                )?;
             } else {
                 resolver.process_instance_methods(
                     module_name,
@@ -582,18 +589,17 @@ pub struct Resolver {
             resolver.ctx.named_instances.insert(qualified_name, resolved_instance_def);
             resolver.ctx.all_instances.insert(qualified_name, resolved_instance_def);
         } else {
-            let loc = instance_def.subject.unresolved().location;
             let synth_ident = instance_synth_name(
-                resolved_instance_def.subject,
+                resolved_instance_def.subject.try_trait_name()?,
                 resolved_instance_def.args,
-                loc,
+                instance_def.location,
             );
             if resolved_instance_def.external_derived_instance_info.is_some() {
                 resolver.derive_instance_methods(
                     resolved_instance_def,
                     synth_ident,
                     module_name,
-                );
+                )?;
             } else {
                 resolver.process_instance_methods(
                     module_name,
@@ -642,11 +648,11 @@ pub struct Resolver {
         resolved_instance_def: InstanceDef,
         instance_prefix: Identifier,
         module_name: I.String,
-    ) {
+    ) -> Result[(), ResolveError] {
         let type_qname = resolved_instance_def.args[0].name();
         let self_type = resolved_instance_def.args[0];
         let type_arg_defs = resolved_instance_def.type_arg_defs;
-        let trait_name_str = resolved_instance_def.subject.name();
+        let trait_name_str = resolved_instance_def.subject.try_trait_name()?.name();
         let external_info = resolved_instance_def
             .external_derived_instance_info
 
@@ -658,7 +664,7 @@ pub struct Resolver {
         } else if let Some(s) = resolver.ctx.structs.get(type_qname) {
             TypeData.Struct(s)
         } else {
-            return;
+            return Ok(());
         };
 
         let maybe_method = match external_info.params {
@@ -704,18 +710,18 @@ pub struct Resolver {
                 _ => None,
             }
             Some(params) => {
-                let trait_qname = resolved_instance_def.subject.resolved();
+                let trait_qname = resolved_instance_def.subject.try_trait_name()?.resolved();
                 let trait_def = if let Some(trait_def) = resolver.ctx.traits.get(trait_qname) {
                     trait_def
                 } else {
-                    return;
+                    return Ok(());
                 };
                 let mode = params.mode;
                 let body_strategy = params.body;
                 let (short_ident, fn_qname) = match params.fn_name {
                     FnName.Inferred => {
                         if trait_def.method_map.names.len() != 1 {
-                            return;
+                            return Ok(());
                         }
                         let (short, qname) = trait_def.method_map.names.iter().next().unwrap();
                         (Identifier.new(short, instance_prefix.location), qname)
@@ -725,7 +731,7 @@ pub struct Resolver {
                         let qname = if let Some(qname) = trait_def.method_map.names.get(short) {
                             qname
                         } else {
-                            return;
+                            return Ok(());
                         };
                         (Identifier.new(short, instance_prefix.location), qname)
                     }
@@ -769,6 +775,7 @@ pub struct Resolver {
                 .functions
                 .insert(QualifiedName.new(method.name.name), method);
         }
+        Ok(())
     }
 
     fn process_trait(
@@ -1145,7 +1152,7 @@ fn update_type_arg_def(module_def: M.Module, trait_def: TraitDef, resolved_metho
         ))
         .collect();
     let self_bound = Bound(
-        Name.Resolved(trait_qname.clone()),
+        Name.inner(trait_qname.clone()),
         trait_def
             .type_args
             .iter()

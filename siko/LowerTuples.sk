@@ -35,7 +35,7 @@ instance Rewrite[TypeDef] {
                     .map(|e| rewrite(e, ctx))
                     .collect();
                 let name = format_type(TypeDef.Named(
-                    Name.Resolved(QualifiedName.Simple(B.get_siko_tuple())),
+                    Name.inner(QualifiedName.Simple(B.get_siko_tuple())),
                     rewritten.clone(),
                 ));
                 let qname = QualifiedName.new_mono(
@@ -73,7 +73,7 @@ instance Rewrite[TypeDef] {
                         ),
                     );
                 }
-                TypeDef.Named(Name.Resolved(qname), [])
+                TypeDef.Named(Name.inner(qname), [])
             }
             TypeDef.Named(n, args) => TypeDef.Named(n, args),
             TypeDef.Paren(inner) => TypeDef.Paren(rewrite(inner, ctx)),
@@ -225,7 +225,7 @@ fn lower_tuple_match(
     loc: Location,
 ) -> Expr {
     let elem_types: Vec[TypeDef] = match scrutinee.ty.unwrap() {
-        TypeDef.Named(Name.Resolved(qn), _) => match qn {
+        TypeDef.Named(Name.Resolved(name: qn, ..), _) => match qn {
             QualifiedName.Mono(mono_name) => mono_name.args.clone(),
             _ => panic("lower_tuple_match: scrutinee type is not a mono siko_tuple"),
         },

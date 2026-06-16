@@ -65,7 +65,7 @@ instance Rewrite[TypeDef] {
                 let ret = rewrite(ret, ctx);
                 let fn_type = TypeDef.Fn(args, ret);
                 let info = ctx.get_or_create_enum(fn_type);
-                TypeDef.Named(Name.Resolved(info.enum_qname), [])
+                TypeDef.Named(Name.inner(info.enum_qname), [])
             }
             TypeDef.FnPtr(args, ret) => TypeDef.FnPtr(
                 args.into_iter().map(|a| rewrite(a, ctx)).collect(),
@@ -201,7 +201,7 @@ struct ClosureLowerer {
                     .map(|(i, v)| Expr(ExprKind.Var(v.clone()), loc.clone(), Some(capture_types[i].clone())))
                     .collect();
 
-                let enum_ty = Some(TypeDef.Named(Name.Resolved(info.enum_qname), []));
+                let enum_ty = Some(TypeDef.Named(Name.inner(info.enum_qname), []));
                 Expr(ExprKind.FunctionCall(FunctionCallInfo(
                     variant_qname,
                     FunctionKind.VariantCtor,
@@ -266,7 +266,7 @@ fn generate_handler(info: ClosureEnumInfo, repr_loc: Location) -> FunctionDef {
         .map(|_| var_alloc.allocate_temp())
         .collect();
 
-    let enum_ty = TypeDef.Named(Name.Resolved(info.enum_qname.clone()), []);
+    let enum_ty = TypeDef.Named(Name.inner(info.enum_qname.clone()), []);
 
     let fn_args: Vec[FunctionArg] = Vec.new();
     fn_args.push(FunctionArg(closure_var.clone(), enum_ty.clone(), None));
@@ -292,7 +292,7 @@ fn generate_handler(info: ClosureEnumInfo, repr_loc: Location) -> FunctionDef {
 
         let pat = Pattern(
             PatternKind.Named(NamedPatternInfo(
-                name: Name.Resolved(vi.variant_qname.clone()),
+                name: Name.inner(vi.variant_qname.clone()),
                 args: sub_pats,
                 named_args: Vec.new(),
                 has_rest: False,

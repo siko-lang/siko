@@ -13,7 +13,7 @@ pub struct InstanceResolver {
     pub fn build(program: Program) -> InstanceResolver {
         let canonical: Map[I.String, Vec[InstanceDef]] = Map.new();
         for instance_def in program.canonical_instances {
-            canonical.entry(instance_def.subject.name()).or_insert_with(|| Vec.new()).push(instance_def);
+            canonical.entry(instance_def.subject.trait_name().name()).or_insert_with(|| Vec.new()).push(instance_def);
         }
 
         let modules: Map[I.String, ModuleInstanceResolver] = Map.new();
@@ -22,7 +22,9 @@ pub struct InstanceResolver {
             let local: Map[I.String, Vec[InstanceDef]] = Map.new();
             for instance_def in program.named_instances.values() {
                 if instance_def.module_name == module_name {
-                    local.entry(instance_def.subject.name()).or_insert_with(|| Vec.new()).push(instance_def);
+                    if let Ok(trait_name) = instance_def.subject.try_trait_name() {
+                        local.entry(trait_name.name()).or_insert_with(|| Vec.new()).push(instance_def);
+                    }
                 }
             }
 
@@ -30,7 +32,9 @@ pub struct InstanceResolver {
             if let Some(imports) = program.module_instance_imports.get(module_name) {
                 for qname in imports {
                     if let Some(instance_def) = program.named_instances.get(qname) {
-                        imported.entry(instance_def.subject.name()).or_insert_with(|| Vec.new()).push(instance_def);
+                        if let Ok(trait_name) = instance_def.subject.try_trait_name() {
+                            imported.entry(trait_name.name()).or_insert_with(|| Vec.new()).push(instance_def);
+                        }
                     }
                 }
             }
@@ -68,7 +72,8 @@ fn format_instance_short(instance_def: InstanceDef) -> String {
         args_s = args_s + arg;
         i = i + 1;
     }
-    let head = "${I.resolve(instance_def.subject.name())}[${args_s}]";
+    let subject_name_str = instance_def.subject.trait_name().name();
+    let head = "${I.resolve(subject_name_str)}[${args_s}]";
     match instance_def.name {
         Some(name) => "instance ${I.resolve(name.name)} ${head}",
         None => "instance ${head}",

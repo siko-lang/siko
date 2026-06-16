@@ -1,21 +1,59 @@
 module Std.StringBuilder {
 
-import Std.Vec
+import Std.Ptr
 import Std.String
 
 pub struct StringBuilder {
-    bytes: Vec[U8],
+    data: *U8,
+    size: Int,
+    capacity: Int,
 
+    @pure
+    @safe
     pub fn new() -> StringBuilder {
-        StringBuilder(Vec.new())
+        StringBuilder(get_null_ptr(), 0, 0)
     }
 
+    @unsafe
+    fn grow(sb: StringBuilder) {
+        if sb.capacity == 0 {
+            sb.capacity = 8;
+        } else {
+            sb.capacity = sb.capacity * 2;
+        }
+        let new_data: *U8 = gc_allocate_atomic(sb.capacity);
+        Std.Ptr.copy(new_data, sb.data, 0, 0, sb.size);
+        sb.data = new_data;
+    }
+
+    @safe
+    fn ensure_capacity(sb: StringBuilder, needed: Int) {
+        if needed <= sb.capacity {
+            return;
+        }
+        let new_cap = if sb.capacity == 0 { 8 } else { sb.capacity };
+        while new_cap < needed {
+            new_cap = new_cap * 2;
+        }
+        let new_data: *U8 = gc_allocate_atomic(new_cap);
+        Std.Ptr.copy(new_data, sb.data, 0, 0, sb.size);
+        sb.data = new_data;
+        sb.capacity = new_cap;
+    }
+
+    @pure
+    @safe
     pub fn push(sb: StringBuilder, s: String) {
-        sb.bytes.extend_from_slice(s.as_slice());
+        let slen = s.len();
+        sb.ensure_capacity(sb.size + slen);
+        Std.Ptr.copy(sb.data, s.as_ptr(), 0, sb.size, slen);
+        sb.size = sb.size + slen;
     }
 
+    @pure
+    @safe
     pub fn to_string(sb: StringBuilder) -> String {
-        String.from_slice(sb.bytes.slice())
+        String.from_bytes(sb.data, sb.size)
     }
 }
 

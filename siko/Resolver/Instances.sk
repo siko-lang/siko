@@ -11,10 +11,14 @@ instance Resolvable[InstanceDef] {
             Some(name) => Some(name.with_prefix(ctx.module_name())),
             None => None,
         };
-        let (resolved_subject_name, assoc_names, kind) = ctx
+        let unresolved_name = match i.subject {
+            InstanceKind.Unresolved(n) => n,
+            _ => panic("instance subject must be unresolved at resolve time"),
+        };
+        let (kind, assoc_names) = ctx
             .type_resolver
             .module_resolver()
-            .resolve_subject_name(i.subject, i.args.len())?;
+            .resolve_subject_name(unresolved_name, i.args.len())?;
         ctx.type_resolver.add_assoc_type_names(assoc_names);
         let type_assignments: Vec[_] = i
             .type_assignments
@@ -27,7 +31,7 @@ instance Resolvable[InstanceDef] {
             public: i.public,
             name: name,
             type_arg_defs: i.type_arg_defs.resolve(ctx)?,
-            subject: resolved_subject_name,
+            subject: kind,
             args: i.args.resolve(ctx)?,
             type_assignments: type_assignments,
             methods: Vec.new(),
@@ -35,7 +39,6 @@ instance Resolvable[InstanceDef] {
             method_names: Vec.new(),
             location: i.location,
             external_derived_instance_info: i.external_derived_instance_info,
-            kind: kind,
         ))
     }
 }

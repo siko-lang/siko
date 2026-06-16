@@ -16,7 +16,7 @@ pub struct String {
         let alen = a.len();
         let blen = b.len();
         let total = alen + blen;
-        let data: *U8 = gc_allocate_array(total);
+        let data: *U8 = gc_allocate_atomic(total);
         Std.Ptr.copy(data, a.value, 0, 0, alen);
         Std.Ptr.copy(data, b.value, 0, alen, blen);
         String(data, total.as_u64())
@@ -38,7 +38,7 @@ pub struct String {
 
     @unsafe
     pub fn from_bytes(s: *U8, size: Int) -> String {
-        let data: *U8 = gc_allocate_array(size);
+        let data: *U8 = gc_allocate_atomic(size);
         Std.Ptr.copy(data, transmute(s), 0, 0, size);
         String(data, size.as_u64())
     }
@@ -311,7 +311,7 @@ pub struct String {
 
     @safe
     pub fn from_byte(b: U8) -> String {
-        let data = gc_allocate_array(1);
+        let data = gc_allocate_atomic(1);
         *offset_of(data, 0) = b;
         String.from_bytes(data, 1)
     }

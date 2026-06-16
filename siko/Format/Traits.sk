@@ -57,7 +57,12 @@ pub fn format_instance_def(f: Formatter, def: InstanceDef) {
         }
         None => {}
     }
-    f.push(I.resolve(def.subject.name()));
+    let subject_name = match def.subject {
+        InstanceKind.Trait(name) => name.name(),
+        InstanceKind.Effect(name) => name.name(),
+        InstanceKind.Unresolved(name) => name.name(),
+    };
+    f.push(I.resolve(subject_name));
     f.push("[");
     let i = 0;
     for arg in def.args {

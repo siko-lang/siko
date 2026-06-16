@@ -3,31 +3,63 @@ module Siko.AST.Name {
 import Siko.Interner as I
 import Siko.AST.Identifier
 import Siko.AST.QualifiedName
+import Siko.Location
 
-@derive(PartialEq, Eq, PartialOrd, Ord, Clone)
+@derive(Clone)
 pub enum Name {
     Unresolved(Identifier),
-    Resolved(QualifiedName),
+    Resolved(name: QualifiedName, location: Location),
 
     pub fn name(n: Name) -> I.String {
         match n {
-            Unresolved(id) => id.name,
-            Resolved(qn)   => qn.name(),
+            Unresolved(id)    => id.name,
+            Resolved(qn, _)   => qn.name(),
+        }
+    }
+
+    pub fn location(n: Name) -> Location {
+        match n {
+            Unresolved(id)    => id.location,
+            Resolved(_, loc)  => loc,
         }
     }
 
     pub fn unresolved(n: Name) -> Identifier {
         match n {
-            Unresolved(id) => id,
-            Resolved(_)    => panic("Not unresolved"),
+            Unresolved(id)  => id,
+            Resolved(_, _)  => panic("Not unresolved"),
         }
     }
 
     pub fn resolved(n: Name) -> QualifiedName {
         match n {
-            Unresolved(_)  => panic("Not resolved"),
-            Resolved(qn)   => qn,
+            Unresolved(_)      => panic("Not resolved"),
+            Resolved(qn, _)    => qn,
         }
+    }
+
+    pub fn inner(qn: QualifiedName) -> Name {
+        Resolved(qn, Location.empty())
+    }
+}
+
+instance PartialEq[Name] {
+    fn eq(a: Name, b: Name) -> Bool {
+        a.name() == b.name()
+    }
+}
+
+instance Eq[Name] {}
+
+instance PartialOrd[Name] {
+    fn partial_cmp(a: Name, b: Name) -> Option[Ordering] {
+        Some(a.name().cmp(b.name()))
+    }
+}
+
+instance Ord[Name] {
+    fn cmp(a: Name, b: Name) -> Ordering {
+        a.name().cmp(b.name())
     }
 }
 

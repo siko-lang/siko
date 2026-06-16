@@ -23,7 +23,7 @@ pub fn build_eq_enum(enum_def: EnumDef, module_name: I.String) -> InstanceDef {
     let enum_qname = QualifiedName.new(enum_def.name.name);
     let (type_arg_defs, enum_type_args) =
         build_type_arg_defs(enum_def.type_arg_defs, trait_name, loc);
-    let enum_type = TypeDef.Named(Name.Resolved(enum_qname), enum_type_args);
+    let enum_type = TypeDef.Named(Name.inner(enum_qname), enum_type_args);
     make_instance(trait_name, type_arg_defs, enum_type, [], [], module_name, loc)
 }
 
@@ -36,12 +36,12 @@ pub fn derive_eq_struct(struct_def: StructDef, module_name: I.String) -> Option[
     let struct_qname = QualifiedName.new(struct_def.name.name);
     let (type_arg_defs, struct_type_args) =
         build_type_arg_defs(struct_def.type_arg_defs, trait_name, loc);
-    let struct_type = TypeDef.Named(Name.Resolved(struct_qname), struct_type_args);
+    let struct_type = TypeDef.Named(Name.inner(struct_qname), struct_type_args);
     Some(make_instance(trait_name, type_arg_defs, struct_type, [], [], module_name, loc))
 }
 
 fn get_resolved_trait_name() -> Name {
-    Name.Resolved(QualifiedName.new(B.get_trait_eq()))
+    Name.inner(QualifiedName.new(B.get_trait_eq()))
 }
 
 }

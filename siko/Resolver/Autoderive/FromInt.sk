@@ -35,7 +35,7 @@ fn build_from_int_enum(enum_def: EnumDef, module_name: I.String) -> InstanceDef 
     let trait_name = get_resolved_trait_name();
     let loc = enum_def.name.location;
     let enum_qname = QualifiedName.new(enum_def.name.name);
-    let enum_type = TypeDef.Named(Name.Resolved(enum_qname), []);
+    let enum_type = TypeDef.Named(Name.inner(enum_qname), []);
     let prefix = instance_synth_name(trait_name, [enum_type], loc);
     let (method_fn, method_short) = build_from_int_method(enum_def, prefix, enum_type, module_name);
     make_instance(trait_name, None, enum_type, [method_fn], [method_short], module_name, loc)
@@ -123,15 +123,15 @@ fn build_body(enum_def: EnumDef, var_a: VariableName, enum_type: TypeDef, loc: L
 }
 
 fn get_resolved_trait_name() -> Name {
-    Name.Resolved(QualifiedName.new(B.get_trait_from_int()))
+    Name.inner(QualifiedName.new(B.get_trait_from_int()))
 }
 
 fn int_type() -> TypeDef {
-    TypeDef.Named(Name.Resolved(QualifiedName.new(B.get_int_type())), [])
+    TypeDef.Named(Name.inner(QualifiedName.new(B.get_int_type())), [])
 }
 
 fn option_type(inner: TypeDef) -> TypeDef {
-    TypeDef.Named(Name.Resolved(QualifiedName.new(B.get_option_type())), [inner])
+    TypeDef.Named(Name.inner(QualifiedName.new(B.get_option_type())), [inner])
 }
 
 }

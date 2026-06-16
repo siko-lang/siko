@@ -25,7 +25,7 @@ fn check_named_arg_count(named_args: Vec[NamedArgument], expected: Int) -> Bool 
 }
 
 fn builtin_type(name: I.String) -> TypeDef {
-    TypeDef.Named(Name.Resolved(QualifiedName.new(name)), Vec.new())
+    TypeDef.Named(Name.inner(QualifiedName.new(name)), Vec.new())
 }
 
 fn std_bool() -> TypeDef { builtin_type(B.get_bool_type()) }
@@ -509,7 +509,7 @@ pub struct Collector {
 
             PatternKind.Named(info) => {
                 let qn = match info.name {
-                    Name.Resolved(qn) => qn,
+                    Name.Resolved(name: qn, ..) => qn,
                     _ => panic("collector: unresolved name in Named pattern"),
                 };
                 let item_types = Vec.new();

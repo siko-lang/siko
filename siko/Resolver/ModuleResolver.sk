@@ -128,7 +128,7 @@ pub struct ModuleResolver {
                     ));
                 }
                 Ok((
-                    Name.Resolved(item.qualified_name),
+                    Name.Resolved(name: item.qualified_name, location: ident.location),
                     associated_types,
                 ))
             }
@@ -140,7 +140,7 @@ pub struct ModuleResolver {
         m: ModuleResolver,
         name: Name,
         provided_arg_count: Int,
-    ) -> Result[(Name, Vec[I.String], InstanceKind), ResolveError] {
+    ) -> Result[(InstanceKind, Vec[I.String]), ResolveError] {
         let ident = name.unresolved();
         let item = m.resolve(ident)?;
         match item.kind {
@@ -152,10 +152,10 @@ pub struct ModuleResolver {
                         provided_arg_count,
                     ));
                 }
-                Ok((Name.Resolved(item.qualified_name), associated_types, InstanceKind.Trait))
+                Ok((InstanceKind.Trait(Name.Resolved(name: item.qualified_name, location: ident.location)), associated_types))
             }
             ModuleItemKind.Effect(_, associated_types) => {
-                Ok((Name.Resolved(item.qualified_name), associated_types, InstanceKind.Effect))
+                Ok((InstanceKind.Effect(Name.Resolved(name: item.qualified_name, location: ident.location)), associated_types))
             }
             _ => Err(ResolveError.NotATrait(ident)),
         }

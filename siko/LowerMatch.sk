@@ -143,8 +143,8 @@ pub struct MatchLowerer {
         let scrutinee_ty = path_ty_env.get(switch.data_path);
         let scrutinee_expr = Expr(ExprKind.Var(scrutinee_var), loc.clone(), scrutinee_ty);
 
-        let string_ty = TypeDef.Named(Name.Resolved(QualifiedName.new(B.get_string_type())), []);
-        let bool_ty   = TypeDef.Named(Name.Resolved(QualifiedName.new(B.get_bool_type())), []);
+        let string_ty = TypeDef.Named(Name.inner(QualifiedName.new(B.get_string_type())), []);
+        let bool_ty   = TypeDef.Named(Name.inner(QualifiedName.new(B.get_bool_type())), []);
 
         let string_cases: Vec[(I.String, Expr)] = [];
         let default_body: Option[Expr] = None;
@@ -243,7 +243,7 @@ pub struct MatchLowerer {
             )),
             PatternKind.Named(info) => {
                 match info.name {
-                    Name.Resolved(qn) => {
+                    Name.Resolved(name: qn, ..) => {
                         let mc_sub = info.args.iter().map(|p| lowerer.to_mc_pat(p)).collect();
                         if lowerer.program.variant_enum_map.contains_key(qn) {
                             let enum_qname = lowerer.program.variant_enum_map.get(qn).unwrap();
@@ -345,7 +345,7 @@ pub struct MatchLowerer {
                         .map(|(i, t)| Pattern(PatternKind.Binding(t), loc.clone(), Some(item_types[i])))
                         .collect();
                     let pattern = Pattern(
-                        PatternKind.Named(NamedPatternInfo(name: Name.Resolved(variant_qname), args: sub_pats, named_args: Vec.new(), has_rest: False)),
+                        PatternKind.Named(NamedPatternInfo(name: Name.inner(variant_qname), args: sub_pats, named_args: Vec.new(), has_rest: False)),
                         loc.clone(),
                         scrutinee_ty,
                     );

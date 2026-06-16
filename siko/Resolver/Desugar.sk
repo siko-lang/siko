@@ -19,7 +19,7 @@ pub fn desugar_try(expr_resolver: ExprResolver, resolved_inner: Expr, loc: Locat
     let err_var = expr_resolver.var_allocator.allocate_temp();
     let ok_pat = Pattern(
         PatternKind.Named(NamedPatternInfo(
-            name: Name.Resolved(QualifiedName.new(B.get_result_ok())),
+            name: Name.inner(QualifiedName.new(B.get_result_ok())),
             args: [Pattern(PatternKind.Binding(ok_var), loc, None)],
             named_args: Vec.new(),
             has_rest: False,
@@ -30,7 +30,7 @@ pub fn desugar_try(expr_resolver: ExprResolver, resolved_inner: Expr, loc: Locat
     let ok_body = Expr(ExprKind.Var(ok_var), loc, None);
     let err_pat = Pattern(
         PatternKind.Named(NamedPatternInfo(
-            name: Name.Resolved(QualifiedName.new(B.get_result_err())),
+            name: Name.inner(QualifiedName.new(B.get_result_err())),
             args: [Pattern(PatternKind.Binding(err_var), loc, None)],
             named_args: Vec.new(),
             has_rest: False,
@@ -240,7 +240,7 @@ pub fn desugar_for_loop(
     let resolved_pattern = expr_resolver.resolve_pattern(pattern, arm_env)?;
     let some_pattern = Pattern(
         PatternKind.Named(NamedPatternInfo(
-            name: Name.Resolved(QualifiedName.new(B.get_option_some())),
+            name: Name.inner(QualifiedName.new(B.get_option_some())),
             args: [resolved_pattern],
             named_args: Vec.new(),
             has_rest: False,
@@ -251,7 +251,7 @@ pub fn desugar_for_loop(
     let resolved_body = expr_resolver.resolve_stmts(body, arm_env)?;
     let none_pattern = Pattern(
         PatternKind.Named(NamedPatternInfo(
-            name: Name.Resolved(QualifiedName.new(B.get_option_none())),
+            name: Name.inner(QualifiedName.new(B.get_option_none())),
             args: Vec.new(),
             named_args: Vec.new(),
             has_rest: False,

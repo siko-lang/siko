@@ -56,7 +56,7 @@ fn format_args(args: Vec[TypeDef]) -> String {
 
 pub fn check_canonical_instances(program: Program) -> Result[(), InstanceError] {
     for instance_def in program.canonical_instances {
-        let trait_name = I.resolve(instance_def.subject.name());
+        let trait_name = I.resolve(instance_def.subject.trait_name().name());
         for arg in instance_def.args {
             if let Some(bad) = find_specialized(arg) {
                 return Err(InstanceError.SpecializedCanonicalInstance(
@@ -69,10 +69,12 @@ pub fn check_canonical_instances(program: Program) -> Result[(), InstanceError] 
     }
 
     for instance_def in program.canonical_instances.iter().chain(program.named_instances.values()) {
-        if let InstanceKind.Effect = instance_def.kind {
-            continue;
-        }
-        let trait_qname = QualifiedName.new(instance_def.subject.name());
+        let trait_name = match instance_def.subject {
+            InstanceKind.Trait(name) => name,
+            InstanceKind.Effect(_) => continue,
+            InstanceKind.Unresolved(_) => panic("unresolved instance subject in checker"),
+        };
+        let trait_qname = QualifiedName.new(trait_name.resolved().name());
         let trait_def = program.traits.get(trait_qname).unwrap();
 
         let instance_method_names: Set[_] = instance_def
