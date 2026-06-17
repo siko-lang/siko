@@ -217,7 +217,10 @@ fn build_run(
     if !out.status.success() {
         #[cfg(unix)]
         if let Some(sig) = out.status.signal() {
-            return Err(format!("SEGFAULT (signal {sig})"));
+            if sig == 11 {
+                return Err(format!("SEGFAULT (signal {sig})"));
+            }
+            return Err(format!("killed by signal {sig}"));
         }
         let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
         let stdout = String::from_utf8_lossy(&out.stdout).into_owned();

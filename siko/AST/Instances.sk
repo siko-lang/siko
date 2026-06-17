@@ -9,6 +9,7 @@ import Siko.AST.Type
 import Siko.AST.Annotations
 import Siko.Interner as I
 import Siko.Resolver.Error
+import Siko.Format.Utils
 
 pub enum InstanceKind {
     Unresolved(Name),
@@ -27,6 +28,13 @@ pub enum InstanceKind {
             InstanceKind.Trait(name) => Ok(name),
             InstanceKind.Effect(name) => Err(ResolveError.NotATraitInstance(name.name(), name.location())),
             InstanceKind.Unresolved(name) => Err(ResolveError.NotATraitInstance(name.name(), name.location())),
+        }
+    }
+
+    pub fn try_effect_name(kind: InstanceKind) -> Option[Name] {
+        match kind {
+            InstanceKind.Effect(name) => Some(name),
+            _ => None,
         }
     }
 }
@@ -75,6 +83,20 @@ pub struct InstanceDef {
     pub method_names: Vec[Identifier],
     pub location: Location,
     pub external_derived_instance_info: Option[ExternalDerivedInstanceInfo],
+
+    pub fn synth_name(instance_def: InstanceDef) -> Result[Identifier, ResolveError] {
+        let trait_name = instance_def.subject.try_trait_name()?;
+        let trait_fqn = trait_name.name();
+        let args_rendered = format_types(instance_def.args);
+        Ok(Identifier.new(I.intern("${trait_fqn}#[${args_rendered}]"), instance_def.location))
+    }
+
+    pub fn get_instance_name(instance_def: InstanceDef) -> Result[Identifier, ResolveError] {
+        match instance_def.name {
+            Some(name) => Ok(name),
+            None => instance_def.synth_name(),
+        }
+    }
 }
 
 }
