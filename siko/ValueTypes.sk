@@ -1,12 +1,10 @@
-module Siko.CBackend.ValueTypes {
+module Siko.ValueTypes {
 
 import Std.Map
-import Std.Set
 import Siko.AST.QualifiedName
 import Siko.AST.Type
 import Siko.HIR.Program
 import Siko.Utils.SCC as SCC
-import Siko.Constants.Builtins as B
 
 fn collect_type_deps(ty: TypeDef, deps: Vec[QualifiedName]) {
     match ty {
@@ -31,7 +29,7 @@ fn collect_type_deps(ty: TypeDef, deps: Vec[QualifiedName]) {
     }
 }
 
-pub fn compute_value_types(program: Program) -> (Set[QualifiedName], Vec[QualifiedName]) {
+pub fn calculate_value_types(program: Program) -> Vec[QualifiedName] {
     let graph: Map[QualifiedName, Vec[QualifiedName]] = Map.new();
 
     for (qname, edef) in program.enums.iter() {
@@ -48,10 +46,6 @@ pub fn compute_value_types(program: Program) -> (Set[QualifiedName], Vec[Qualifi
     let ordered: Vec[QualifiedName] = Vec.new();
 
     for (qname, sdef) in program.structs.iter() {
-        if qname.name() == B.get_string_type() {
-            ordered.push(qname);
-            continue
-        }
         let deps: Vec[QualifiedName] = Vec.new();
         for field in sdef.fields.iter() {
             collect_type_deps(field.ty, deps);
@@ -62,14 +56,13 @@ pub fn compute_value_types(program: Program) -> (Set[QualifiedName], Vec[Qualifi
 
     let sccs = SCC.compute(graph);
 
-    let value_types: Set[QualifiedName] = Set.new();
-
     for scc in sccs {
         if scc.len() == 1 {
             let node = scc[0];
             if let Some(s) = program.structs.get(node) {
                 if s.is_value_type() || s.fields.len() == 0 {
-                    value_types.insert(node);
+                    s.value_type = True;
+                    program.structs.insert(node, s);
                     ordered.push(node);
                     continue;
                 }
@@ -80,13 +73,15 @@ pub fn compute_value_types(program: Program) -> (Set[QualifiedName], Vec[Qualifi
             let deps = graph.get(node).unwrap_or([]);
             let has_self_loop = deps.iter().any(|d| d == node);
             if !has_self_loop {
-                value_types.insert(node);
+                let e = program.enums.get(node).unwrap();
+                e.value_type = True;
+                program.enums.insert(node, e);
                 ordered.push(node);
             }
         }
     }
 
-    (value_types, ordered)
+    ordered
 }
 
 }

@@ -22,6 +22,7 @@ import Siko.LowerBuiltins
 import Siko.HIR.Program
 import Siko.ClosureLowering
 import Siko.CBackend.Emit
+import Siko.ValueTypes
 import Siko.CLI as CLI
 import Siko.Errors
 import Siko.Constants.Builtins as B
@@ -241,8 +242,10 @@ struct Compiler {
         if trace { println("Lowering builtins..."); }
         lower_builtins(program);
         c.check_pass("lower-builtins", program);
+        if trace { println("Computing value types..."); }
+        let value_types_ordered = calculate_value_types(program);
         if trace { println("Emitting C..."); }
-        let c_source = emit_c(program, closure_ptr);
+        let c_source = emit_c(program, closure_ptr, value_types_ordered);
         if c.pass == Some("c") {
             println(c_source);
             return;

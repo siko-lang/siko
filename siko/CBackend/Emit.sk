@@ -10,7 +10,6 @@ import Siko.CBackend.Closure
 import Siko.CBackend.Ctor
 import Siko.CBackend.Switch
 import Siko.CBackend.Util
-import Siko.CBackend.ValueTypes
 import Siko.Constants.Builtins as B
 import Siko.HIR.Program
 import Siko.Interner as I
@@ -20,7 +19,6 @@ import Std.Set
 
 pub struct Emitter {
     pub program: Program,
-    pub value_types: Set[QualifiedName],
     pub value_types_ordered: Vec[QualifiedName],
     buffer: StringBuilder,
     pub indent: Int,
@@ -28,16 +26,18 @@ pub struct Emitter {
     current_loop_id: Int,
     closure_ptr: Bool,
 
-    fn new(program: Program, closure_ptr: Bool) -> Emitter {
-        let (value_types, value_types_ordered) = compute_value_types(program);
-        Emitter(program, value_types, value_types_ordered, StringBuilder.new(), 0, 0, 0, closure_ptr)
+    fn new(program: Program, closure_ptr: Bool, value_types_ordered: Vec[QualifiedName]) -> Emitter {
+        Emitter(program, value_types_ordered, StringBuilder.new(), 0, 0, 0, closure_ptr)
     }
 
     pub fn is_value_type(emitter: Emitter, qname: QualifiedName) -> Bool {
-        if qname.base_name() == B.get_string_type() {
-            return True;
+        if let Some(s) = emitter.program.structs.get(qname) {
+            return s.value_type;
         }
-        emitter.value_types.contains(qname)
+        if let Some(e) = emitter.program.enums.get(qname) {
+            return e.value_type;
+        }
+        False
     }
 
     pub fn is_value_type_ty(emitter: Emitter, ty: TypeDef) -> Bool {
@@ -874,8 +874,8 @@ pub struct Emitter {
     }
 }
 
-pub fn emit_c(program: Program, closure_ptr: Bool) -> String {
-    let emitter = Emitter.new(program, closure_ptr);
+pub fn emit_c(program: Program, closure_ptr: Bool, value_types_ordered: Vec[QualifiedName]) -> String {
+    let emitter = Emitter.new(program, closure_ptr, value_types_ordered);
     emitter.append("#include <stdio.h>\n");
     emitter.append("#include <stdlib.h>\n");
     emitter.append("#include <stdint.h>\n");
