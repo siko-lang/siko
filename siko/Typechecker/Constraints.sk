@@ -30,6 +30,7 @@ pub enum ConstraintKind {
     HasIndex(TypeDef, TypeDef, TypeDef),                    // container, idx, result
     HasIndexAssign(TypeDef, TypeDef, TypeDef, TypeDef),     // container, idx, value, assign_result_ty
     GetFunctionPtrType(QualifiedName, TypeDef),             // function name, result FnPtr var
+    ValidateEffectHandler(QualifiedName, QualifiedName),   // effect method, instance method
 
     pub fn apply(kind: ConstraintKind, sub: Substitution) -> ConstraintKind {
         match kind {
@@ -63,6 +64,8 @@ pub enum ConstraintKind {
                 ConstraintKind.HasIndexAssign(sub.apply(container), sub.apply(idx), sub.apply(value), sub.apply(assign_result_ty)),
             ConstraintKind.GetFunctionPtrType(qname, result) =>
                 ConstraintKind.GetFunctionPtrType(qname, sub.apply(result)),
+            ConstraintKind.ValidateEffectHandler(effect_method, instance_method) =>
+                ConstraintKind.ValidateEffectHandler(effect_method, instance_method),
         }
     }
 
@@ -96,6 +99,8 @@ pub enum ConstraintKind {
                 "HasIndexAssign(${format_type(container)}[${format_type(idx)}] = ${format_type(value)})",
             ConstraintKind.GetFunctionPtrType(qname, result) =>
                 "GetFunctionPtrType(${qname.name()} -> ${format_type(result)})",
+            ConstraintKind.ValidateEffectHandler(effect_method, instance_method) =>
+                "ValidateEffectHandler(${effect_method.name()} ~ ${instance_method.name()})",
         }
     }
 }

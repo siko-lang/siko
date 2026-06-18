@@ -727,6 +727,40 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
             let implicit_def = ctx.program.implicits.get(qname).unwrap();
             ok_satisfied([(C.ConstraintKind.Unify(result, implicit_def.ty), location)])
         }
+
+        C.ConstraintKind.ValidateEffectHandler(effect_method, instance_method) => {
+            let effect_fn = ctx.program.functions.get(effect_method).unwrap();
+            let effect_param_tys: Vec[TypeDef] = effect_fn.args.iter().map(|a| a.type_def).collect();
+            let effect_ret_ty = match effect_fn.result_type {
+                Some(ty) => ty,
+                None => TypeDef.Tuple(Vec.new()),
+            };
+            let effect_ty = TypeDef.Fn(effect_param_tys, effect_ret_ty);
+
+            let instance_fn = ctx.program.functions.get(instance_method).unwrap();
+            let instance_param_ann_tys: Vec[TypeDef] = instance_fn.args.iter().map(|a| a.type_def).collect();
+            let instance_result_ann_ty = instance_fn.result_type;
+            let type_params = match instance_fn.type_arg_defs {
+                Some(tad) => tad.type_params(),
+                None => Vec.new(),
+            };
+            let all_named: Set[I.String] = Set.new();
+            for name in type_params { all_named.insert(name); }
+            for ty in instance_param_ann_tys { collect_named_vars(ty, all_named); }
+            match instance_result_ann_ty {
+                Some(ty) => collect_named_vars(ty, all_named),
+                None => {}
+            }
+            let generic_inst = instantiate(all_named.iter().collect(), ctx.allocator);
+            let instance_param_tys: Vec[TypeDef] = instance_param_ann_tys.iter().map(|t| generic_inst.apply(t)).collect();
+            let instance_ret_ty = match instance_result_ann_ty {
+                Some(ty) => generic_inst.apply(ty),
+                None => TypeDef.Tuple(Vec.new()),
+            };
+            let instance_ty = TypeDef.Fn(instance_param_tys, instance_ret_ty);
+
+            ok_satisfied([(C.ConstraintKind.Unify(effect_ty, instance_ty), location)])
+        }
     }
 }
 

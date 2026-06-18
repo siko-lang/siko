@@ -24,7 +24,10 @@ pub struct Unifier {
     pub fn unify_types(u: Unifier, t1: TypeDef, t2: TypeDef) -> Result[(), UnifyError] {
         let t1 = u.sub.apply(t1);
         let t2 = u.sub.apply(t2);
-        u.unify_resolved(t1, t2)
+        match u.unify_resolved(t1, t2) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(UnifyError.Mismatch(t1, t2))
+        }
     }
 
     fn unify_resolved(u: Unifier, t1: TypeDef, t2: TypeDef) -> Result[(), UnifyError] {

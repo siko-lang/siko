@@ -268,6 +268,11 @@ pub struct Collector {
             ExprKind.With(WithInfo(handlers, body)) => {
                 let (body_ty, new_body) = c.collect_expr(body, env);
                 c.emit(C.ConstraintKind.Unify(ty, body_ty), loc);
+                for handler in handlers {
+                    if let HandlerSelection.EffectFunction(effect_method, instance_method, handler_loc) = handler {
+                        c.emit(C.ConstraintKind.ValidateEffectHandler(effect_method, instance_method), handler_loc);
+                    }
+                }
                 ExprKind.With(WithInfo(handlers, new_body))
             }
 
