@@ -28,12 +28,12 @@ pub fn build_partialeq_enum(enum_def: EnumDef, module_name: I.String) -> Instanc
     let trait_name = get_resolved_trait_name();
     let loc = enum_def.name.location;
 
-    let enum_qname = QualifiedName.new(enum_def.name.name);
+    let enum_qname = enum_def.qualified_name.unwrap();
     let (type_arg_defs, enum_type_args) =
         build_type_arg_defs(enum_def.type_arg_defs, trait_name, loc);
     let enum_type = TypeDef.Named(Name.inner(enum_qname), enum_type_args);
 
-    let prefix = instance_synth_name(trait_name, [enum_type], loc);
+    let prefix = instance_synth_qn(trait_name, [enum_type]);
     let (method_fn, method_short) =
         build_partialeq_method(enum_def, prefix, type_arg_defs, enum_type, module_name);
 
@@ -50,7 +50,7 @@ pub fn build_partialeq_enum(enum_def: EnumDef, module_name: I.String) -> Instanc
 
 pub fn build_partialeq_method(
     enum_def: EnumDef,
-    instance_prefix: Identifier,
+    parent_qn: QualifiedName,
     type_arg_defs: Option[TypeArgDefs],
     self_type: TypeDef,
     module_name: I.String,
@@ -64,7 +64,7 @@ pub fn build_partialeq_method(
 
     let method_short = Identifier.new(I.intern("eq"), loc);
     let method_fn = make_binary_method(
-        instance_prefix,
+        parent_qn,
         method_short,
         type_arg_defs,
         self_type,
@@ -81,12 +81,12 @@ pub fn build_partialeq_method(
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 fn get_resolved_trait_name() -> Name {
-    Name.inner(QualifiedName.new(B.get_trait_partial_eq()))
+    Name.inner(B.get_trait_partial_eq_qn())
 }
 
 fn bool_type() -> TypeDef {
     TypeDef.Named(
-        Name.inner(QualifiedName.new(B.get_bool_type())),
+        Name.inner(B.get_bool_type_qn()),
         [],
     )
 }
@@ -95,7 +95,7 @@ fn true_expr(loc: Location) -> Expr {
     Expr(
         ExprKind.FunctionCall(
             FunctionCallInfo(
-                QualifiedName.new(B.get_bool_true()),
+                B.get_bool_true_qn(),
                 FunctionKind.VariantCtor,
                 [],
                 WitnessInfo.new(),
@@ -111,7 +111,7 @@ fn false_expr(loc: Location) -> Expr {
     Expr(
         ExprKind.FunctionCall(
             FunctionCallInfo(
-                QualifiedName.new(B.get_bool_false()),
+                B.get_bool_false_qn(),
                 FunctionKind.VariantCtor,
                 [],
                 WitnessInfo.new(),
@@ -127,7 +127,7 @@ fn call_partialeq(a: Expr, lhs: Expr, loc: Location) -> Expr {
     Expr(
         ExprKind.FunctionCall(
             FunctionCallInfo(
-                QualifiedName.new(B.get_op_eq()),
+                B.get_op_eq_qn(),
                 FunctionKind.UserDefined,
                 [a, lhs],
                 WitnessInfo.new(),
@@ -158,9 +158,7 @@ fn build_eq_body(
             let a_vars = allocate_vars(n, I.intern("a"), var_alloc);
             let b_vars = allocate_vars(n, I.intern("b"), var_alloc);
 
-            let variant_name = Name.inner(QualifiedName.new(
-                I.intern("${enum_def.name.name}.${variant.name.name}")
-            ));
+            let variant_name = Name.inner(variant.qualified_name.unwrap());
 
             let pattern = Pattern(
                 PatternKind.Tuple([
@@ -248,7 +246,7 @@ fn build_nested_ifs(
 
 pub fn build_partialeq_struct_method(
     struct_def: StructDef,
-    instance_prefix: Identifier,
+    parent_qn: QualifiedName,
     type_arg_defs: Option[TypeArgDefs],
     self_type: TypeDef,
     module_name: I.String,
@@ -260,7 +258,7 @@ pub fn build_partialeq_struct_method(
     let body = build_struct_eq_body(struct_def.fields, var_a, var_b, loc);
     let method_short = Identifier.new(I.intern("eq"), loc);
     let method_fn = make_binary_method(
-        instance_prefix,
+        parent_qn,
         method_short,
         type_arg_defs,
         self_type,
@@ -320,11 +318,11 @@ pub fn derive_partialeq_struct(struct_def: StructDef, module_name: I.String) -> 
         return None;
     }
     let loc = struct_def.name.location;
-    let struct_qname = QualifiedName.new(struct_def.name.name);
+    let struct_qname = struct_def.qualified_name.unwrap();
     let (type_arg_defs, struct_type_args) =
         build_type_arg_defs(struct_def.type_arg_defs, trait_name, loc);
     let struct_type = TypeDef.Named(Name.inner(struct_qname), struct_type_args);
-    let prefix = instance_synth_name(trait_name, [struct_type], loc);
+    let prefix = instance_synth_qn(trait_name, [struct_type]);
     let (method_fn, method_short) =
         build_partialeq_struct_method(struct_def, prefix, type_arg_defs, struct_type, module_name);
     Some(make_instance(trait_name, type_arg_defs, struct_type, [method_fn], [method_short], module_name, loc))

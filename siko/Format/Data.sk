@@ -15,10 +15,13 @@ pub fn format_struct_def(f: Formatter, def: StructDef) {
         f.push("pub ");
     }
     f.push("struct ");
-    if def.qualified_name.is_simple() {
-        f.push(I.resolve(def.name.name));
-    } else {
-        f.push(I.resolve(def.qualified_name.name()));
+    match def.qualified_name {
+        None => f.push(I.resolve(def.name.name)),
+        Some(qn) => if qn.is_simple() {
+            f.push(I.resolve(def.name.name));
+        } else {
+            f.push(I.resolve(qn.name()));
+        },
     }
     match def.type_arg_defs {
         Some(tad) => format_type_arg_defs(f, tad),
@@ -55,10 +58,13 @@ pub fn format_enum_def(f: Formatter, def: EnumDef) {
         f.push("pub ");
     }
     f.push("enum ");
-    if def.qualified_name.is_simple() {
-        f.push(I.resolve(def.name.name));
-    } else {
-        f.push(I.resolve(def.qualified_name.name()));
+    match def.qualified_name {
+        None => f.push(I.resolve(def.name.name)),
+        Some(qn) => if qn.is_simple() {
+            f.push(I.resolve(def.name.name));
+        } else {
+            f.push(I.resolve(qn.name()));
+        },
     }
     match def.type_arg_defs {
         Some(tad) => format_type_arg_defs(f, tad),

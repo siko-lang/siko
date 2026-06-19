@@ -11,8 +11,12 @@ import Siko.HIR.Program
 import Siko.Location
 import Siko.Utils.VarAllocator
 
+fn unit_type() -> Option[TypeDef] {
+    Some(TypeDef.Tuple([]))
+}
+
 fn unit_expr(loc: Location) -> Expr {
-    Expr(ExprKind.Tuple([]), loc, Some(TypeDef.Tuple([])))
+    Expr(ExprKind.Tuple([]), loc, unit_type())
 }
 
 fn is_atom(expr: Expr) -> Bool {
@@ -29,7 +33,7 @@ fn finish_block(stmts: Vec[S.Statement], val: Option[Expr], loc: Location) -> Ex
     if let Some(v) = val {
         stmts.push(S.Statement.TrailingExpr(v));
     }
-    Expr(ExprKind.Block(stmts), loc, None)
+    Expr(ExprKind.Block(stmts), loc, unit_type())
 }
 
 fn wrap_branch(stmts: Vec[S.Statement], val: Option[Expr], assign_to: Option[VariableName], loc: Location) -> Expr {
@@ -41,7 +45,7 @@ fn wrap_branch(stmts: Vec[S.Statement], val: Option[Expr], assign_to: Option[Var
             ));
         }
     }
-    Expr(ExprKind.Block(stmts), loc, None)
+    Expr(ExprKind.Block(stmts), loc, unit_type())
 }
 
 struct Normalizer {
@@ -106,17 +110,17 @@ struct Normalizer {
                     None => return None,
                     Some(v) => v,
                 };
-                out.push(S.Statement.Expr(Expr(ExprKind.Return(atom), loc, None)));
+                out.push(S.Statement.Expr(Expr(ExprKind.Return(atom), loc, unit_type())));
                 None
             }
 
             ExprKind.Break => {
-                out.push(S.Statement.Expr(Expr(ExprKind.Break, loc, None)));
+                out.push(S.Statement.Expr(Expr(ExprKind.Break, loc, unit_type())));
                 None
             }
 
             ExprKind.Continue => {
-                out.push(S.Statement.Expr(Expr(ExprKind.Continue, loc, None)));
+                out.push(S.Statement.Expr(Expr(ExprKind.Continue, loc, unit_type())));
                 None
             }
 
@@ -439,7 +443,7 @@ struct Normalizer {
             out.push(S.Statement.Expr(Expr(
                 ExprKind.If(cond_atom, then_branch, Some(else_branch)),
                 loc,
-                None,
+                unit_type(),
             )));
 
             if both_diverge {
@@ -455,7 +459,7 @@ struct Normalizer {
             out.push(S.Statement.Expr(Expr(
                 ExprKind.If(cond_atom, then_branch, None),
                 loc,
-                None,
+                unit_type(),
             )));
             Some(unit_expr(loc))
         }
@@ -574,7 +578,7 @@ struct Normalizer {
                             ExprKind.Block(stmts) => stmts,
                             _ => panic("normalizer: guard setup is not a block on re-normalization"),
                         }, guard_out, loc);
-                        let setup = Expr(ExprKind.Block(guard_out), loc, None);
+                        let setup = Expr(ExprKind.Block(guard_out), loc, unit_type());
                         pattern.kind = PatternKind.Guard(inner, setup, Some(var_expr));
                         pattern
                     }
@@ -588,7 +592,7 @@ struct Normalizer {
                                 val,
                             ));
                         }
-                        let setup = Expr(ExprKind.Block(guard_out), loc, None);
+                        let setup = Expr(ExprKind.Block(guard_out), loc, unit_type());
                         let var_expr = Expr(ExprKind.Var(tmp), loc, None);
                         pattern.kind = PatternKind.Guard(inner, setup, Some(var_expr));
                         pattern
@@ -713,7 +717,7 @@ pub fn add_explicit_return(body: Expr, divergent_fns: Set[QualifiedName]) -> Exp
             match stmts.last() {
                 Some(S.Statement.Loop(loop_body)) => {
                     if !loop_body_has_break(loop_body) {
-                        return Expr(ExprKind.Block(stmts), loc, None);
+                        return Expr(ExprKind.Block(stmts), loc, unit_type());
                     }
                 }
                 _ => (),
@@ -727,11 +731,11 @@ pub fn add_explicit_return(body: Expr, divergent_fns: Set[QualifiedName]) -> Exp
                 }
                 _ => unit_expr(loc),
             };
-            stmts.push(S.Statement.Expr(Expr(ExprKind.Return(return_expr), loc, None)));
-            Expr(ExprKind.Block(stmts), loc, None)
+            stmts.push(S.Statement.Expr(Expr(ExprKind.Return(return_expr), loc, unit_type())));
+            Expr(ExprKind.Block(stmts), loc, unit_type())
         }
         other_kind => Expr(
-            ExprKind.Return(Expr(other_kind, loc, None)),
+            ExprKind.Return(Expr(other_kind, loc, unit_type())),
             loc,
             None,
         ),

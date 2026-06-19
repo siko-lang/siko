@@ -18,10 +18,10 @@ import Siko.Location
 
 fn rewrite_function(
     func: FunctionDef,
-    fn_implicits: Vec[String],
-    ctx_struct_map: Map[Vec[String], QualifiedName],
-    fn_implicit_ctx: Map[String, Vec[String]],
-    implicit_types: Map[String, TypeDef],
+    fn_implicits: Vec[QualifiedName],
+    ctx_struct_map: Map[Vec[QualifiedName], QualifiedName],
+    fn_implicit_ctx: Map[QualifiedName, Vec[QualifiedName]],
+    implicit_types: Map[QualifiedName, TypeDef],
     is_entrypoint: Bool,
     div_fns: Set[QualifiedName],
 ) -> FunctionDef {
@@ -29,7 +29,7 @@ fn rewrite_function(
 
     if is_entrypoint {
         let zero_qname = ctx_struct_map.get(fn_implicits).unwrap().clone();
-        let zero_ty = named_ty(zero_qname.name());
+        let zero_ty = named_ty(zero_qname);
         let ctx_local = func.var_allocator.allocate_user(I.intern("_ctx"));
         let ctx_local_expr = typed_var_expr(ctx_local, Some(zero_ty.clone()), loc);
         let ctor_expr = Expr(
@@ -79,7 +79,7 @@ fn rewrite_function(
     }
 
     let ctx_struct_qname = ctx_struct_map.get(fn_implicits).unwrap().clone();
-    let ctx_struct_ty = named_ty(ctx_struct_qname.name());
+    let ctx_struct_ty = named_ty(ctx_struct_qname);
 
     let ctx_param = func.var_allocator.allocate_user(I.intern("_ctx"));
     func.args.insert(
@@ -92,7 +92,7 @@ fn rewrite_function(
 
     let ctx_param_expr = typed_var_expr(ctx_param, Some(ctx_struct_ty.clone()), loc);
 
-    let initial_implicits: Map[String, Expr] = Map.new();
+    let initial_implicits: Map[QualifiedName, Expr] = Map.new();
     for imp in fn_implicits {
         let field = ctx_field_name(imp);
         let wrapper_ty = named_ty(wrapper_struct_name(imp));
@@ -120,10 +120,10 @@ fn rewrite_function(
 }
 
 pub fn propagate_implicits(program: Program) {
-    let implicit_types: Map[String, TypeDef] = program
+    let implicit_types: Map[QualifiedName, TypeDef] = program
         .implicits
         .iter()
-        .map(|(k, v)| (I.resolve(k.name()), v.ty.clone()))
+        .map(|(k, v)| (k, v.ty.clone()))
         .collect();
 
     let div_fns = program.get_divergent_functions();
@@ -143,14 +143,13 @@ pub fn propagate_implicits(program: Program) {
         .expect("propagate_implicits: empty program");
 
     for (imp_name, imp_ty) in implicit_types.iter() {
-        let struct_name = wrapper_struct_name(imp_name);
-        let struct_qname = QualifiedName.new(struct_name.clone());
+        let struct_qname = wrapper_struct_name(imp_name);
         if !program.structs.contains_key(struct_qname) {
             let struct_def = StructDef(
                 annotations: [],
                 public: False,
-                name: Identifier.new(struct_name, any_loc.clone()),
-                qualified_name: struct_qname.clone(),
+                name: Identifier.new(struct_qname.name(), any_loc.clone()),
+                qualified_name: Some(struct_qname.clone()),
                 type_arg_defs: None,
                 fields: [FieldDef(False, Identifier.new(I.intern("value"), any_loc.clone()), imp_ty.clone(), None)],
                 all_fields_public: False,
@@ -164,18 +163,18 @@ pub fn propagate_implicits(program: Program) {
         }
     }
 
-    let fn_implicit_ctx: Map[String, Vec[String]] = program
+    let fn_implicit_ctx: Map[QualifiedName, Vec[QualifiedName]] = program
         .functions
         .iter()
         .filter(|(_, f)| !f.is_extern())
-        .map(|(k, _)| (I.resolve(k.name()), k.implicit_ctx().iter().map(|q| I.resolve(q.name())).collect()))
+        .map(|(k, _)| (k, k.implicit_ctx()))
         .collect();
 
-    let ctx_struct_map: Map[Vec[String], QualifiedName] = Map.new();
+    let ctx_struct_map: Map[Vec[QualifiedName], QualifiedName] = Map.new();
     for implicits in fn_implicit_ctx.values() {
         ctx_struct_map
             .entry(implicits.clone())
-            .or_insert_with(|| QualifiedName.new(ctx_struct_name(implicits)));
+            .or_insert_with(|| ctx_struct_name(implicits));
     }
 
     for (implicits, struct_qname) in ctx_struct_map.iter() {
@@ -192,7 +191,7 @@ pub fn propagate_implicits(program: Program) {
             annotations: [],
             public: False,
             name: Identifier.new(struct_qname.name(), any_loc.clone()),
-            qualified_name: struct_qname.clone(),
+            qualified_name: Some(struct_qname.clone()),
             type_arg_defs: None,
             fields: fields,
             all_fields_public: False,
@@ -212,11 +211,10 @@ pub fn propagate_implicits(program: Program) {
             program.functions.insert(key, func);
             continue;
         }
-        let implicits: Vec[String] = key.implicit_ctx().iter().map(|q| I.resolve(q.name())).collect();
         let is_entrypoint = I.resolve(key.name()) == "Main.main" || func.is_c_callback();
         let rewritten = rewrite_function(
             func,
-            implicits,
+            key.implicit_ctx(),
             ctx_struct_map,
             fn_implicit_ctx,
             implicit_types,

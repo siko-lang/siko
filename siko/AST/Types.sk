@@ -34,44 +34,44 @@ pub enum TypeDef {
         }
     }
 
-    pub fn is_mono(ty: TypeDef) -> Bool {
+    pub fn is_mono(ty: TypeDef, default: Bool) -> Bool {
         match ty {
             TypeDef.Named(n, args) => {
                 if !n.resolved().is_mono() {
                     return False;
                 }
                 for a in args {
-                    if !a.is_mono() {
+                    if !a.is_mono(default) {
                         return False;
                     }
                 }
-                True
+                default
             }
             TypeDef.Tuple(args) => {
                 for a in args {
-                    if !a.is_mono() {
+                    if !a.is_mono(default) {
                         return False;
                     }
                 }
-                True
+                default
             }
-            TypeDef.Paren(arg) => arg.is_mono(),
+            TypeDef.Paren(arg) => arg.is_mono(default),
             TypeDef.Fn(args, r) | TypeDef.FnPtr(args, r) => {
                 for a in args {
-                    if !a.is_mono() {
+                    if !a.is_mono(default) {
                         return False;
                     }
                 }
-                r.is_mono()
+                r.is_mono(default)
             }
-            TypeDef.Ptr(inner) => inner.is_mono(),
-            TypeDef.Array(inner, _) => inner.is_mono(),
-            TypeDef.Var(_) => True,
-            TypeDef.Never(_) => True,
-            TypeDef.Wildcard => True,
-            TypeDef.Void => True,
-            TypeDef.VoidPtr => True,
-            TypeDef.Numeric(_) => True,
+            TypeDef.Ptr(inner) => inner.is_mono(default),
+            TypeDef.Array(inner, _) => inner.is_mono(default),
+            TypeDef.Var(_) => default,
+            TypeDef.Never(_) => default,
+            TypeDef.Wildcard => default,
+            TypeDef.Void => default,
+            TypeDef.VoidPtr => default,
+            TypeDef.Numeric(_) => default,
         }
     }
 

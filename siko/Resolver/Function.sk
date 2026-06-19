@@ -6,6 +6,7 @@ import Siko.Resolver.ExprResolver
 import Siko.Resolver.Env
 import Siko.AST.Function
 import Siko.AST.Type
+import Siko.AST.QualifiedName
 
 instance Resolvable[FunctionArg] {
     fn resolve(f: FunctionArg, ctx: ResolverContext) -> Result[FunctionArg, ResolveError] {
@@ -54,7 +55,7 @@ instance Resolvable[FunctionDef] {
             annotations: f.annotations,
             public: f.public,
             name: f.name.with_prefix(ctx.module_name()),
-            qualified_name: f.qualified_name,
+            qualified_name: Some(QualifiedName.new_function(ctx.module_name(), f.name.name())),
             kind: kind,
             type_arg_defs: f.type_arg_defs.resolve(ctx)?,
             args: resolved_args,

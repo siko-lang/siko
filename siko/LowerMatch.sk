@@ -61,6 +61,10 @@ instance Lower[Pattern] = auto(Map)
 instance Lower[PatternKind] = auto(Map)
 instance Lower[ExprKind] = auto(Map)
 
+fn unit_type() -> Option[TypeDef] {
+    Some(TypeDef.Tuple([]))
+}
+
 instance[T: Lower[T]] Lower[Option[T]] {
     fn lower(opt: Option[T], lowerer: MatchLowerer) -> Option[T] {
         opt.map(|t| lower(t, lowerer))
@@ -103,7 +107,7 @@ fn build_enum_info(program: Program) -> Map[QualifiedName, EnumInfo] {
     for (qname, def) in program.enums.iter() {
         let variants: Vec[VariantInfo] = def.variants
             .iter()
-            .map(|v| VariantInfo(v.qualified_name, v.items.len()))
+            .map(|v| VariantInfo(v.qualified_name.unwrap(), v.items.len()))
             .collect();
         enum_info.insert(qname, EnumInfo(variants));
     }
@@ -129,7 +133,7 @@ pub struct MatchLowerer {
     }
 
     fn stmt_block(lowerer: MatchLowerer, body: Expr, loc: Location) -> Expr {
-        Expr(ExprKind.Block([S.Statement.Expr(body)]), loc, None)
+        Expr(ExprKind.Block([S.Statement.Expr(body)]), loc, unit_type())
     }
 
     fn lower_string_switch(
@@ -144,8 +148,8 @@ pub struct MatchLowerer {
         let scrutinee_ty = path_ty_env.get(switch.data_path);
         let scrutinee_expr = Expr(ExprKind.Var(scrutinee_var), loc.clone(), scrutinee_ty);
 
-        let string_ty = TypeDef.Named(Name.inner(QualifiedName.new(B.get_string_type())), []);
-        let bool_ty   = TypeDef.Named(Name.inner(QualifiedName.new(B.get_bool_type())), []);
+        let string_ty = TypeDef.Named(Name.inner(B.get_string_type_qn()), []);
+        let bool_ty   = TypeDef.Named(Name.inner(B.get_bool_type_qn()), []);
 
         let string_cases: Vec[(I.String, Expr)] = [];
         let default_body: Option[Expr] = None;
@@ -163,13 +167,13 @@ pub struct MatchLowerer {
         string_cases.reverse();
         let result: Expr = match default_body {
             Some(d) => d,
-            None    => Expr(ExprKind.Tuple([]), loc.clone(), Some(TypeDef.Tuple([]))),
+            None    => Expr(ExprKind.Tuple([]), loc.clone(), unit_type()),
         };
         for (s, body) in string_cases {
             let literal = Expr(ExprKind.StringLiteral(I.resolve(s)), loc.clone(), Some(string_ty.clone()));
             let cond = Expr(
                 ExprKind.FunctionCall(FunctionCallInfo(
-                    QualifiedName.new(B.get_string_eq()),
+                    B.get_string_eq_qn(),
                     FunctionKind.UserDefined,
                     [scrutinee_expr.clone(), literal],
                     WitnessInfo.new(),
@@ -178,7 +182,7 @@ pub struct MatchLowerer {
                 loc.clone(),
                 Some(bool_ty.clone()),
             );
-            result = Expr(ExprKind.If(cond, body, Some(lowerer.stmt_block(result, loc))), loc.clone(), None);
+            result = Expr(ExprKind.If(cond, body, Some(lowerer.stmt_block(result, loc))), loc.clone(), unit_type());
         }
         result
     }
@@ -228,7 +232,7 @@ pub struct MatchLowerer {
                 S.Statement.Expr(tree_expr),
             ]),
             loc,
-            None,
+            unit_type(),
         )
     }
 
@@ -303,7 +307,7 @@ pub struct MatchLowerer {
                     let raw_item_types: Vec[TypeDef] = enum_def
                         .variants
                         .iter()
-                        .find(|v| v.qualified_name == variant_qname)
+                        .find(|v| v.qualified_name.unwrap() == variant_qname)
                         .unwrap()
                         .items
                         .iter()
@@ -373,7 +377,7 @@ pub struct MatchLowerer {
             })
             .collect();
 
-        Expr(ExprKind.Match(MatchInfo(scrutinee_expr, flat_arms)), loc.clone(), None)
+        Expr(ExprKind.Match(MatchInfo(scrutinee_expr, flat_arms)), loc.clone(), unit_type())
     }
 
     fn lower_tuple(
@@ -409,7 +413,7 @@ pub struct MatchLowerer {
 
         let body = lowerer.lower_node(tuple.next, new_env, new_ty_env, arms, loc);
         stmts.push(S.Statement.Expr(body));
-        Expr(ExprKind.Block(stmts), loc.clone(), None)
+        Expr(ExprKind.Block(stmts), loc.clone(), unit_type())
     }
 
     fn lower_struct(
@@ -444,7 +448,7 @@ pub struct MatchLowerer {
 
         let body = lowerer.lower_node(sn.next, new_env, new_ty_env, arms, loc);
         stmts.push(S.Statement.Expr(body));
-        Expr(ExprKind.Block(stmts), loc.clone(), None)
+        Expr(ExprKind.Block(stmts), loc.clone(), unit_type())
     }
 
     fn lower_leaf(
@@ -479,7 +483,7 @@ pub struct MatchLowerer {
             let if_expr = Expr(
                 ExprKind.If(guard_cond, guard_body, Some(result)),
                 loc.clone(),
-                None,
+                unit_type(),
             );
 
             let stmts = binding_stmts;
@@ -493,7 +497,7 @@ pub struct MatchLowerer {
                 if_expr
             } else {
                 stmts.push(S.Statement.Expr(if_expr));
-                Expr(ExprKind.Block(stmts), loc.clone(), None)
+                Expr(ExprKind.Block(stmts), loc.clone(), unit_type())
             };
         }
 
@@ -539,7 +543,7 @@ fn make_arm_block(
         body
     } else {
         stmts.push(S.Statement.Expr(body));
-        Expr(ExprKind.Block(stmts), loc.clone(), None)
+        Expr(ExprKind.Block(stmts), loc.clone(), unit_type())
     }
 }
 

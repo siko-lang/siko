@@ -6,6 +6,7 @@ import Siko.AST.Generics
 import Siko.AST.Identifier
 import Siko.AST.Name
 import Siko.AST.Type
+import Siko.AST.QualifiedName
 import Siko.AST.Annotations
 import Siko.Interner as I
 import Siko.Resolver.Error
@@ -74,6 +75,7 @@ pub struct InstanceDef {
     pub annotations: Vec[Annotation],
     pub public: Bool,
     pub name: Option[Identifier],
+    pub qualified_name: Option[QualifiedName],
     pub type_arg_defs: Option[TypeArgDefs],
     pub subject: InstanceKind,
     pub args: Vec[TypeDef],
@@ -86,7 +88,7 @@ pub struct InstanceDef {
 
     pub fn synth_name(instance_def: InstanceDef) -> Result[Identifier, ResolveError] {
         let trait_name = instance_def.subject.try_trait_name()?;
-        let trait_fqn = trait_name.name();
+        let trait_fqn = I.resolve(trait_name.name());
         let args_rendered = format_types(instance_def.args);
         Ok(Identifier.new(I.intern("${trait_fqn}#[${args_rendered}]"), instance_def.location))
     }

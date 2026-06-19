@@ -199,15 +199,15 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
             let resolved = ctx.sub.apply(container_ty);
             match resolved {
                 TypeDef.Var(TypeVar.Var(n)) => ProcessResult.Pending([n]),
-                TypeDef.Named(Name.Resolved(name: qname, ..), type_args) if qname.base_name() == B.get_array_type() => {
+                TypeDef.Named(Name.Resolved(name: qname, ..), type_args) if qname.base_name() == B.get_array_type_qn() => {
                     let elem_ty = type_args[0];
                     ok_satisfied([
-                        (C.ConstraintKind.Unify(idx_ty, TypeDef.Named(Name.inner(QualifiedName.new(B.get_int_type())), [])), location),
+                        (C.ConstraintKind.Unify(idx_ty, TypeDef.Named(Name.inner(B.get_int_type_qn()), [])), location),
                         (C.ConstraintKind.Unify(result_ty, elem_ty), location),
                     ])
                 }
                 _ => ok_satisfied([(C.ConstraintKind.CallFunction(
-                    QualifiedName.new(B.get_index_index()),
+                    B.get_index_index_qn(),
                     FunctionKind.UserDefined,
                     [resolved, idx_ty],
                     result_ty,
@@ -219,16 +219,16 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
             let resolved = ctx.sub.apply(container_ty);
             match resolved {
                 TypeDef.Var(TypeVar.Var(n)) => ProcessResult.Pending([n]),
-                TypeDef.Named(Name.Resolved(name: qname, ..), type_args) if qname.base_name() == B.get_array_type() => {
+                TypeDef.Named(Name.Resolved(name: qname, ..), type_args) if qname.base_name() == B.get_array_type_qn() => {
                     let elem_ty = type_args[0];
                     ok_satisfied([
-                        (C.ConstraintKind.Unify(idx_ty, TypeDef.Named(Name.inner(QualifiedName.new(B.get_int_type())), [])), location),
+                        (C.ConstraintKind.Unify(idx_ty, TypeDef.Named(Name.inner(B.get_int_type_qn()), [])), location),
                         (C.ConstraintKind.Unify(value_ty, elem_ty), location),
                         (C.ConstraintKind.Unify(assign_result_ty, TypeDef.Tuple(Vec.new())), location),
                     ])
                 }
                 _ => ok_satisfied([(C.ConstraintKind.CallFunction(
-                    QualifiedName.new(B.get_index_assign_index_assign()),
+                    B.get_index_assign_index_assign_qn(),
                     FunctionKind.UserDefined,
                     [resolved, idx_ty, value_ty],
                     assign_result_ty,

@@ -3,6 +3,7 @@ module Siko.Resolver.Data {
 import Siko.Resolver
 import Siko.Resolver.Error
 import Siko.AST.Data
+import Siko.AST.QualifiedName
 
 instance Resolvable[StructDef] {
     fn resolve(s: StructDef, ctx: ResolverContext) -> Result[StructDef, ResolveError] {
@@ -11,7 +12,7 @@ instance Resolvable[StructDef] {
             annotations: s.annotations.resolve(ctx)?,
             public: s.public,
             name: s.name.with_prefix(ctx.module_name()),
-            qualified_name: s.qualified_name,
+            qualified_name: Some(QualifiedName.new_struct(ctx.module_name(), s.name.name())),
             type_arg_defs: s.type_arg_defs.resolve(ctx)?,
             fields: s.fields.resolve(ctx)?,
             all_fields_public: s.all_fields_public,
@@ -42,7 +43,7 @@ instance Resolvable[EnumDef] {
             annotations: e.annotations.resolve(ctx)?,
             public: e.public,
             name: e.name.with_prefix(ctx.module_name()),
-            qualified_name: e.qualified_name,
+            qualified_name: Some(QualifiedName.new_enum(ctx.module_name(), e.name.name())),
             type_arg_defs: e.type_arg_defs.resolve(ctx)?,
             variants: e.variants.resolve(ctx)?,
             methods: Vec.new(),

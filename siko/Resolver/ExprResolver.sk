@@ -502,7 +502,7 @@ pub struct ExprResolver {
         match item.kind {
             ModuleItemKind.Variant(_, _, _) => {
                 let enum_def = expr_resolver.global_ctx.get_enum_for_variant(item.qualified_name).unwrap();
-                let variant_def = enum_def.variants.iter().find(|v| v.qualified_name == item.qualified_name).unwrap();
+                let variant_def = enum_def.variants.iter().find(|v| v.qualified_name.unwrap() == item.qualified_name).unwrap();
                 let names = Vec.new();
                 for it in variant_def.items {
                     match it.name {
@@ -580,7 +580,7 @@ pub struct ExprResolver {
             let expected_name = match item.kind {
                 ModuleItemKind.Variant(_, _, _) => {
                     let enum_def = expr_resolver.global_ctx.get_enum_for_variant(item.qualified_name).unwrap();
-                    let variant_def = enum_def.variants.iter().find(|v| v.qualified_name == item.qualified_name).unwrap();
+                    let variant_def = enum_def.variants.iter().find(|v| v.qualified_name.unwrap() == item.qualified_name).unwrap();
                     match variant_def.items[na.index].name {
                         Some(n) => n.name(),
                         None => return Err(ResolveError.PatternItemNotNamed(ident, na.name)),

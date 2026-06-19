@@ -223,13 +223,11 @@ pub fn lift_lambdas(program: Program) {
             Some(tad) => tad.bounds.clone(),
             None => [],
         };
-        let parent_name = I.resolve(func.name.name());
-        let module_name = func.module_name;
         let parent_safety_annotations = func.annotations.iter().filter(|a| a.is_safe() || a.is_unsafe()).collect();
         let lifter = LambdaLifter(
             counter: 0,
-            parent_name: parent_name,
-            module_name: module_name,
+            parent_qn: func.qualified_name.unwrap(),
+            module_name: func.module_name,
             parent_bounds: parent_bounds,
             parent_var_allocator: func.var_allocator.clone(),
             new_functions: [],
@@ -240,14 +238,14 @@ pub fn lift_lambdas(program: Program) {
         let lifted_func = lift_function(lifter, func);
         program.functions.insert(key, lifted_func);
         for new_func in lifter.new_functions {
-            program.functions.insert(new_func.qualified_name.clone(), new_func);
+            program.functions.insert(new_func.qualified_name.unwrap(), new_func);
         }
     }
 }
 
 struct LambdaLifter {
     counter: Int,
-    parent_name: String,
+    parent_qn: QualifiedName,
     module_name: I.String,
     parent_bounds: Vec[Bound],
     parent_var_allocator: VarAllocator,
@@ -268,8 +266,8 @@ fn lift_function(lifter: LambdaLifter, func: FunctionDef) -> FunctionDef {
 fn fresh_lambda_qname(lifter: LambdaLifter) -> (QualifiedName, String) {
     let n = lifter.counter;
     lifter.counter = lifter.counter + 1;
-    let name = "${lifter.parent_name}_lambda_${n.to_string()}";
-    (QualifiedName.new(I.intern(name)), name)
+    let qn = QualifiedName.new_lambda(lifter.parent_qn.name(), n);
+    (qn, I.resolve(qn.name()))
 }
 
 fn lift_expr(lifter: LambdaLifter, expr: E.Expr) -> E.Expr {
@@ -330,7 +328,7 @@ fn lift_expr(lifter: LambdaLifter, expr: E.Expr) -> E.Expr {
                 annotations: lifter.parent_safety_annotations.clone(),
                 public: False,
                 name: lambda_ident,
-                qualified_name: lambda_qname.clone(),
+                qualified_name: Some(lambda_qname.clone()),
                 kind: FunctionDefKind.Closure(capture_vars.len()),
                 type_arg_defs: type_arg_defs,
                 args: all_args,
@@ -375,3 +373,4 @@ fn collect_referenced_bound_indices(expr: E.Expr) -> Set[Int] {
 }
 
 }
+

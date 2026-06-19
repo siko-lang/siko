@@ -12,7 +12,6 @@ import Siko.AST.QualifiedName
 import Siko.AST.Instances
 import Siko.AST.Annotations
 import Siko.Utils.VarAllocator
-import Siko.Format.Utils
 import Siko.Location
 import Siko.Interner as I
 import Siko.Constants.Builtins as B
@@ -39,14 +38,13 @@ pub fn field_exprs(fields: Vec[FieldDef], var: VariableName, loc: Location) -> V
         .collect()
 }
 
+pub fn instance_synth_qn(trait_name: Name, args: Vec[TypeDef]) -> QualifiedName {
+    QualifiedName.new_unnamed_instance(trait_name.name(), args)
+}
+
 pub fn instance_synth_name(trait_name: Name, args: Vec[TypeDef], loc: Location) -> Identifier {
-    let trait_fqn = trait_name.name();
-    let args_rendered: Vec[String] = args
-        .iter()
-        .map(|a| format_type(a))
-        .collect();
-    let args_rendered: String = join(args_rendered, ", ");
-    Identifier.new(I.intern("${trait_fqn}#[${args_rendered}]"), loc)
+    let qn = instance_synth_qn(trait_name, args);
+    Identifier.new(qn.name(), loc)
 }
 
 pub fn has_derive(derives: Vec[DeriveAnnotation], trait_name: Name) -> Bool {
@@ -120,7 +118,7 @@ pub fn tuple_scrutinee(var_a: VariableName, var_b: VariableName, loc: Location) 
 }
 
 pub fn make_binary_method(
-    instance_prefix: Identifier,
+    parent_qn: QualifiedName,
     short_name: Identifier,
     type_arg_defs: Option[TypeArgDefs],
     self_type: TypeDef,
@@ -131,13 +129,13 @@ pub fn make_binary_method(
     module_name: I.String,
     var_alloc: VarAllocator,
 ) -> FunctionDef {
-    let full_name = instance_prefix.merge(short_name);
-    let qualified_name = QualifiedName.new(full_name.name());
+    let full_name = Identifier.new(I.intern(I.resolve(parent_qn.name()) + "." + I.resolve(short_name.name())), short_name.location);
+    let qualified_name = QualifiedName.new_method(parent_qn.name(), short_name.name());
     FunctionDef(
         annotations: [],
         public: False,
         name: full_name,
-        qualified_name: qualified_name,
+        qualified_name: Some(qualified_name),
         kind: FunctionDefKind.Regular,
         type_arg_defs: type_arg_defs,
         args: [
@@ -155,7 +153,7 @@ pub fn make_binary_method(
 }
 
 pub fn make_unary_method(
-    instance_prefix: Identifier,
+    parent_qn: QualifiedName,
     short_name: Identifier,
     type_arg_defs: Option[TypeArgDefs],
     self_type: TypeDef,
@@ -166,8 +164,8 @@ pub fn make_unary_method(
     module_name: I.String,
     var_alloc: VarAllocator,
 ) -> FunctionDef {
-    let full_name = instance_prefix.merge(short_name);
-    let qualified_name = QualifiedName.new(full_name.name());
+    let full_name = Identifier.new(I.intern(I.resolve(parent_qn.name()) + "." + I.resolve(short_name.name())), short_name.location);
+    let qualified_name = QualifiedName.new_method(parent_qn.name(), short_name.name());
     let args: Vec[FunctionArg] = [FunctionArg(var_a, self_type, None)];
     for extra in extra_arg_defs {
         args.push(extra);
@@ -176,7 +174,7 @@ pub fn make_unary_method(
         annotations: [],
         public: False,
         name: full_name,
-        qualified_name: qualified_name,
+        qualified_name: Some(qualified_name),
         kind: FunctionDefKind.Regular,
         type_arg_defs: type_arg_defs,
         args: args,
@@ -193,7 +191,7 @@ pub fn make_unary_method(
 pub fn call_discriminator(var: VariableName, loc: Location) -> Expr {
     Expr(
         ExprKind.FunctionCall(FunctionCallInfo(
-            QualifiedName.new(B.get_util_discriminator()),
+            B.get_util_discriminator_qn(),
             FunctionKind.Extern(None),
             [Expr(ExprKind.Var(var), loc, None)],
             WitnessInfo.new(),
@@ -205,7 +203,7 @@ pub fn call_discriminator(var: VariableName, loc: Location) -> Expr {
 }
 
 pub fn build_unreachable(loc: Location) -> Expr {
-    let panic_qname = QualifiedName.new(B.get_util_panic());
+    let panic_qname = B.get_util_panic_qn();
     let msg = Expr(ExprKind.StringLiteral("unreachable"), loc, None);
     Expr(
         ExprKind.FunctionCall(FunctionCallInfo(panic_qname, FunctionKind.UserDefined, [msg], WitnessInfo.new(), Vec.new())),
@@ -227,6 +225,7 @@ pub fn make_instance(
         annotations: [],
         public: False,
         name: None,
+        qualified_name: None,
         type_arg_defs: type_arg_defs,
         subject: InstanceKind.Trait(trait_name),
         args: [self_type],
@@ -240,3 +239,6 @@ pub fn make_instance(
 }
 
 }
+
+
+

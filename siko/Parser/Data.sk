@@ -1,7 +1,6 @@
 module Siko.Parser.Data {
 
 import Siko.AST.Data
-import Siko.AST.QualifiedName
 import Siko.AST.Annotations
 import Siko.Interner as I
 import Siko.Parser.Expr
@@ -50,12 +49,11 @@ instance DataParser[Parser] {
             }
         }
         parser.expect(TokenKind.RBrace)?;
-        let qualified_name = QualifiedName.new(name.name);
         Ok(StructDef(
             annotations: annotations,
             public: public,
             name: name,
-            qualified_name: qualified_name,
+            qualified_name: None,
             type_arg_defs: type_arg_defs,
             fields: fields,
             all_fields_public: fields.iter().all(|f| f.public),
@@ -114,12 +112,11 @@ instance DataParser[Parser] {
             }
         }
         parser.expect(TokenKind.RBrace)?;
-        let qualified_name = QualifiedName.new(name.name);
         Ok(EnumDef(
             annotations: annotations,
             public: public,
             name: name,
-            qualified_name: qualified_name,
+            qualified_name: None,
             type_arg_defs: type_arg_defs,
             variants: variants,
             methods: methods,
@@ -155,7 +152,7 @@ instance DataParser[Parser] {
         };
         Ok(VariantDef(
             name: name,
-            qualified_name: QualifiedName.new(I.intern("")),
+            qualified_name: None,
             items: items,
         ))
     }

@@ -5,7 +5,6 @@ import Siko.AST.Instances
 import Siko.Format.Utils
 import Siko.HIR.Program
 import Siko.Location
-import Siko.AST.QualifiedName
 import Siko.Interner as I
 import Std.Set
 
@@ -74,7 +73,7 @@ pub fn check_canonical_instances(program: Program) -> Result[(), InstanceError] 
             InstanceKind.Effect(_) => continue,
             InstanceKind.Unresolved(_) => panic("unresolved instance subject in checker"),
         };
-        let trait_qname = QualifiedName.new(trait_name.resolved().name());
+        let trait_qname = trait_name.resolved();
         let trait_def = program.traits.get(trait_qname).unwrap();
 
         let instance_method_names: Set[_] = instance_def

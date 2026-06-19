@@ -75,7 +75,7 @@ fn rewrite_function_call(info: FunctionCallInfo, rewriter: Rewriter, loc: Locati
     let FunctionCallInfo(callee, kind, args, witnesses, named_args) = info;
     let callee_implicits = rewriter
         .fn_implicit_ctx
-        .get(I.resolve(callee.name()))
+        .get(callee)
         .unwrap_or(Vec.new());
     let (stmts, ctx_var, ctx_ty) =
         rewriter.ensure_ctx_var(callee_implicits, loc);
@@ -103,22 +103,20 @@ fn rewrite_with(wi: WithInfo, rewriter: Rewriter, loc: Location) -> Expr {
     let WithInfo(selections, body) = wi;
     let saved = rewriter.current_implicits.clone();
     let stmts: Vec[S.Statement] = [];
-    let back: Vec[(VariableName, VariableName, String)] = [];
+    let back: Vec[(VariableName, VariableName, QualifiedName)] = [];
 
     for sel in selections {
         if let HandlerSelection.Implicit(qname, orig_var) = sel {
-            let qname_str = I.resolve(qname.name());
-            let wrapper_name = wrapper_struct_name(qname_str);
+            let wrapper_name = wrapper_struct_name(qname);
             let wrapper_ty = named_ty(wrapper_name);
-            let val_ty = rewriter.implicit_types.get(qname_str);
-            let wrap_struct = QualifiedName.new(wrapper_name);
+            let val_ty = rewriter.implicit_types.get(qname);
             let wrap_var = rewriter.var_alloc.allocate_temp();
 
             let orig_var_expr = typed_var_expr(orig_var, val_ty, loc);
             let ctor_expr = Expr(
                 ExprKind.FunctionCall(
                     FunctionCallInfo(
-                        wrap_struct,
+                        wrapper_name,
                         FunctionKind.StructCtor,
                         [orig_var_expr],
                         WitnessInfo.new(),
@@ -131,17 +129,17 @@ fn rewrite_with(wi: WithInfo, rewriter: Rewriter, loc: Location) -> Expr {
             stmts.push(S.Statement.Let(S.LetInfo(wrap_var.clone(), None, ctor_expr)));
 
             let wrap_var_expr = typed_var_expr(wrap_var, Some(wrapper_ty), loc);
-            rewriter.current_implicits.insert(qname_str.clone(), wrap_var_expr);
-            back.push((orig_var, wrap_var, qname_str));
+            rewriter.current_implicits.insert(qname, wrap_var_expr);
+            back.push((orig_var, wrap_var, qname));
         }
     }
 
-    for (_, _, qname_str) in back.iter() {
-        rewriter.active_overrides.entry(qname_str).apply(0, |v| v + 1);
+    for (_, _, qname) in back.iter() {
+        rewriter.active_overrides.entry(qname).apply(0, |v| v + 1);
     }
     let body_rw = body.rewrite(rewriter);
-    for (_, _, qname_str) in back.iter() {
-        rewriter.active_overrides.entry(qname_str).apply(0, |v| v - 1);
+    for (_, _, qname) in back.iter() {
+        rewriter.active_overrides.entry(qname).apply(0, |v| v - 1);
     }
 
     match body_rw.kind {
@@ -167,7 +165,7 @@ fn rewrite_closure(info: CreateClosureInfo, rewriter: Rewriter, loc: Location, e
     let CreateClosureInfo(lambda_qname, captures, witnesses) = info;
     let lambda_implicits = rewriter
         .fn_implicit_ctx
-        .get(I.resolve(lambda_qname.name()))
+        .get(lambda_qname)
         .unwrap_or(Vec.new());
     let (stmts, ctx_var, _) = rewriter.ensure_ctx_var(lambda_implicits, loc);
     let new_captures = [ctx_var];
@@ -182,16 +180,16 @@ fn rewrite_closure(info: CreateClosureInfo, rewriter: Rewriter, loc: Location, e
 }
 
 pub struct Rewriter {
-    pub current_implicits: Map[String, Expr],
-    pub fn_implicit_ctx: Map[String, Vec[String]],
-    pub ctx_struct_map: Map[Vec[String], QualifiedName],
-    pub implicit_types: Map[String, TypeDef],
+    pub current_implicits: Map[QualifiedName, Expr],
+    pub fn_implicit_ctx: Map[QualifiedName, Vec[QualifiedName]],
+    pub ctx_struct_map: Map[Vec[QualifiedName], QualifiedName],
+    pub implicit_types: Map[QualifiedName, TypeDef],
     pub var_alloc: VarAllocator,
-    pub fn_implicits: Vec[String],
+    pub fn_implicits: Vec[QualifiedName],
     pub ctx_param_expr: Option[Expr],
-    pub active_overrides: Map[String, Int],
+    pub active_overrides: Map[QualifiedName, Int],
 
-    fn build_ctx_arg(rewriter: Rewriter, callee_implicits: Vec[String], loc: Location) -> Expr {
+    fn build_ctx_arg(rewriter: Rewriter, callee_implicits: Vec[QualifiedName], loc: Location) -> Expr {
         if callee_implicits == rewriter.fn_implicits
             && callee_implicits
                 .iter()
@@ -224,13 +222,13 @@ pub struct Rewriter {
                 )
             ),
             loc.clone(),
-            Some(named_ty(struct_qname.name())),
+            Some(named_ty(struct_qname)),
         )
     }
 
     fn ensure_ctx_var(
         rewriter: Rewriter,
-        callee_implicits: Vec[String],
+        callee_implicits: Vec[QualifiedName],
         loc: Location,
     ) -> (Vec[S.Statement], VariableName, Option[TypeDef]) {
         let ctx_expr = rewriter.build_ctx_arg(callee_implicits, loc);
@@ -250,11 +248,10 @@ pub struct Rewriter {
         let orig_ty = expr.ty.clone();
         match expr.kind {
             ExprKind.ImplicitRef(ImplicitRefInfo(qname)) => {
-                let qname_str = I.resolve(qname.name());
-                let val_ty = rewriter.implicit_types.get(qname_str);
+                let val_ty = rewriter.implicit_types.get(qname);
                 let wrapper = rewriter
                     .current_implicits
-                    .get(qname_str)
+                    .get(qname)
                     .unwrap()
                     .clone();
                 typed_field_expr(wrapper, I.intern("value"),val_ty, loc)

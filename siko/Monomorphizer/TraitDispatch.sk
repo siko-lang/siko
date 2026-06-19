@@ -97,8 +97,7 @@ pub fn dispatch_trait_call(
     let method_name = method_name
         .strip_prefix(trait_prefix)
         .unwrap();
-    let concrete_method = "${instance_qname}.${method_name}"
-    let concrete_method = QualifiedName.new(I.intern(concrete_method));
+    let concrete_method = QualifiedName.new_method(instance_qname.name(), I.intern(method_name));
 
     match mono.source.functions.get(concrete_method) {
         Some(mf) => {
@@ -134,10 +133,11 @@ pub fn dispatch_trait_call(
             if trait_func.body.is_some() {
                 (callee.clone(), concrete_type_args)
             } else {
-                panic("mono: instance `${instance_qname}` is missing required method `${method_name}` — should have been caught by instance checker")
+                panic("mono: instance `${I.resolve(instance_qname.name())}` is missing required method `${method_name}` — should have been caught by instance checker")
             }
         }
     }
 }
 
 }
+

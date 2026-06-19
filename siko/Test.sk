@@ -10,6 +10,7 @@ import Siko.HIR.Program
 import Siko.Interner as I
 import Siko.Location
 import Siko.Utils.VarAllocator
+import Siko.Constants.Builtins as B
 
 pub fn build_test_main(program: Program) {
     let test_fns: Vec[(QualifiedName, FunctionDef)] = Vec.new();
@@ -23,9 +24,9 @@ pub fn build_test_main(program: Program) {
         }
     }
 
-    let print_str_qname = QualifiedName.new(I.intern("Std.Console.print"));
-    let println_str_qname = QualifiedName.new(I.intern("Std.Console.println"));
-    let flush_qname = QualifiedName.new(I.intern("Std.Console.flush"));
+    let print_str_qname = B.get_console_print_qn();
+    let println_str_qname = B.get_console_println_qn();
+    let flush_qname = B.get_console_flush_qn();
 
     let stmts: Vec[S.Statement] = Vec.new();
     for (key, f) in test_fns {
@@ -91,12 +92,12 @@ pub fn build_test_main(program: Program) {
 
     let loc = Location.new(0, Span(0, 0));
     let body = E.Expr.new(E.ExprKind.Block(stmts), loc);
-    let main_qname = QualifiedName.new(I.intern("Main.main"));
+    let main_qname = B.get_main_entry_qn();
     let main_fn = FunctionDef(
         annotations: Vec.new(),
         public: True,
         name: Identifier.new(I.intern("Main.main"), loc),
-        qualified_name: main_qname,
+        qualified_name: Some(main_qname),
         kind: FunctionDefKind.Regular,
         type_arg_defs: None,
         args: Vec.new(),

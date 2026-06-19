@@ -45,16 +45,15 @@ instance Collect[E.WitnessInfo]      = auto(Fold)
 instance Collect[BoundWitness] {
     fn walk(w: BoundWitness, c: CallCollector) {
         if let BoundWitness.Instance(instance_qname: instance_qname, ..) = w {
-            let instance_key = QualifiedName.new(instance_qname);
-            let instance_def = c.program.all_instances.get(instance_key)
-                .expect("Collect[BoundWitness]: instance ${instance_qname} not found in program");
-            let trait_key = QualifiedName.new(instance_def.subject.trait_name().name());
+            let instance_def = c.program.all_instances.get(instance_qname)
+                .expect("Collect[BoundWitness]: instance ${I.resolve(instance_qname.name())} not found in program");
+            let trait_key = instance_def.subject.trait_name().resolved();
             let trait_def = c.program.traits.get(trait_key)
                 .expect("Collect[BoundWitness]: trait ${trait_key.name()} not found in program");
             for (short_name, abstract_qname) in trait_def.method_map.names {
                 let provides = instance_def.method_names.iter().any(|mn| mn.name() == short_name);
                 if provides {
-                    c.deps.insert(QualifiedName.new(I.intern(I.resolve(instance_qname) + "." + I.resolve(short_name))));
+                    c.deps.insert(QualifiedName.new_method(instance_qname.name(), short_name));
                 } else {
                     c.deps.insert(abstract_qname);
                 }
@@ -165,3 +164,5 @@ pub fn build_groups(program: Program) -> (Vec[Vec[QualifiedName]], Map[Qualified
 }
 
 }
+
+

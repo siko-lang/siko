@@ -34,16 +34,16 @@ pub fn derive_from_int_enum(enum_def: EnumDef, module_name: I.String) -> Option[
 fn build_from_int_enum(enum_def: EnumDef, module_name: I.String) -> InstanceDef {
     let trait_name = get_resolved_trait_name();
     let loc = enum_def.name.location;
-    let enum_qname = QualifiedName.new(enum_def.name.name);
+    let enum_qname = enum_def.qualified_name.unwrap();
     let enum_type = TypeDef.Named(Name.inner(enum_qname), []);
-    let prefix = instance_synth_name(trait_name, [enum_type], loc);
+    let prefix = instance_synth_qn(trait_name, [enum_type]);
     let (method_fn, method_short) = build_from_int_method(enum_def, prefix, enum_type, module_name);
     make_instance(trait_name, None, enum_type, [method_fn], [method_short], module_name, loc)
 }
 
 pub fn build_from_int_method(
     enum_def: EnumDef,
-    instance_prefix: Identifier,
+    parent_qn: QualifiedName,
     enum_type: TypeDef,
     module_name: I.String,
 ) -> (FunctionDef, Identifier) {
@@ -55,7 +55,7 @@ pub fn build_from_int_method(
     let body = build_body(enum_def, var_a, enum_type, loc);
 
     let method_fn = make_unary_method(
-        instance_prefix,
+        parent_qn,
         short_name,
         None,
         int_type(),
@@ -74,9 +74,7 @@ fn build_body(enum_def: EnumDef, var_a: VariableName, enum_type: TypeDef, loc: L
 
     for (i, variant) in enum_def.variants.iter().enumerate() {
         let pattern = Pattern(PatternKind.IntLiteral(I.intern("${i}")), loc, None);
-        let variant_qname = QualifiedName.new(
-            I.intern("${enum_def.name.name}.${variant.name.name}")
-        );
+        let variant_qname = variant.qualified_name.unwrap();
         let variant_expr = Expr(
             ExprKind.FunctionCall(FunctionCallInfo(
                 variant_qname,
@@ -90,7 +88,7 @@ fn build_body(enum_def: EnumDef, var_a: VariableName, enum_type: TypeDef, loc: L
         );
         let some_expr = Expr(
             ExprKind.FunctionCall(FunctionCallInfo(
-                QualifiedName.new(B.get_option_some()),
+                B.get_option_some_qn(),
                 FunctionKind.VariantCtor,
                 [variant_expr],
                 WitnessInfo.new(),
@@ -104,7 +102,7 @@ fn build_body(enum_def: EnumDef, var_a: VariableName, enum_type: TypeDef, loc: L
 
     let none_expr = Expr(
         ExprKind.FunctionCall(FunctionCallInfo(
-            QualifiedName.new(B.get_option_none()),
+            B.get_option_none_qn(),
             FunctionKind.VariantCtor,
             [],
             WitnessInfo.new(),
@@ -123,15 +121,15 @@ fn build_body(enum_def: EnumDef, var_a: VariableName, enum_type: TypeDef, loc: L
 }
 
 fn get_resolved_trait_name() -> Name {
-    Name.inner(QualifiedName.new(B.get_trait_from_int()))
+    Name.inner(B.get_trait_from_int_qn())
 }
 
 fn int_type() -> TypeDef {
-    TypeDef.Named(Name.inner(QualifiedName.new(B.get_int_type())), [])
+    TypeDef.Named(Name.inner(B.get_int_type_qn()), [])
 }
 
 fn option_type(inner: TypeDef) -> TypeDef {
-    TypeDef.Named(Name.inner(QualifiedName.new(B.get_option_type())), [inner])
+    TypeDef.Named(Name.inner(B.get_option_type_qn()), [inner])
 }
 
 }

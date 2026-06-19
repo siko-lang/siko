@@ -17,7 +17,7 @@ import Siko.Interner as I
 
 pub fn build_map_method(
     enum_def: EnumDef,
-    instance_prefix: Identifier,
+    parent_qn: QualifiedName,
     type_arg_defs: Option[TypeArgDefs],
     self_type: TypeDef,
     fn_qname: QualifiedName,
@@ -40,7 +40,7 @@ pub fn build_map_method(
         BodyStrategy.Generate => build_map_body(enum_def, var_a, fn_qname, extra_arg_vars, var_alloc, loc),
     };
     let method = make_unary_method(
-        instance_prefix,
+        parent_qn,
         short_name,
         type_arg_defs,
         self_type,
@@ -74,9 +74,7 @@ fn build_map_body(
         .map(|variant| {
             let n = variant.items.len();
             let field_vars = allocate_vars(n, I.intern("f"), var_alloc);
-            let variant_qname = QualifiedName.new(
-                I.intern("${enum_def.name.name}.${variant.name.name}")
-            );
+            let variant_qname = variant.qualified_name.unwrap();
             let pattern = Pattern(
                 PatternKind.Named(NamedPatternInfo(
                     name: Name.inner(variant_qname),
@@ -137,7 +135,7 @@ fn var_expr(v: VariableName, loc: Location) -> Expr {
 
 pub fn build_map_method_struct(
     struct_def: StructDef,
-    instance_prefix: Identifier,
+    parent_qn: QualifiedName,
     type_arg_defs: Option[TypeArgDefs],
     self_type: TypeDef,
     fn_qname: QualifiedName,
@@ -158,7 +156,7 @@ pub fn build_map_method_struct(
         BodyStrategy.Identity => Expr(ExprKind.Var(var_a), loc, None),
         BodyStrategy.Unreachable => build_unreachable(loc),
         BodyStrategy.Generate => {
-            let struct_qname = QualifiedName.new(struct_def.name.name);
+            let struct_qname = struct_def.qualified_name.unwrap();
             let mapped: Vec[Expr] = field_exprs(struct_def.fields, var_a, loc)
                 .into_iter()
                 .map(|e| call_fn(fn_qname, e, extra_arg_vars, loc))
@@ -171,7 +169,7 @@ pub fn build_map_method_struct(
         }
     };
     let method = make_unary_method(
-        instance_prefix,
+        parent_qn,
         short_name,
         type_arg_defs,
         self_type,

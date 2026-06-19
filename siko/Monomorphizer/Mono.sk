@@ -3,10 +3,10 @@ module Siko.Monomorphizer {
 import Siko.Monomorphizer.Error
 import Siko.Monomorphizer.Function
 import Siko.Monomorphizer.Data
-import Siko.Monomorphizer.Types
+import Siko.Monomorphizer.Specialize
 import Siko.AST.Type
 import Siko.AST.QualifiedName
-import Siko.AST.Name
+import Siko.Constants.Builtins as B
 import Siko.AST.Expr
 import Siko.Location
 import Siko.HIR.Program
@@ -18,6 +18,7 @@ import Std.Map
 import Std.Set
 import Std.VecDeque
 import Siko.Interner as I
+import Siko.Format.Utils
 
 @derive(Clone)
 pub struct EffectCtx {
@@ -67,12 +68,19 @@ pub struct FnWork {
 }
 
 pub fn fn_mono_key(
-    base: I.String,
+    base: QualifiedName,
     type_args: Vec[TypeDef],
     witnesses: Vec[I.String],
     effect_ctx: EffectCtx,
     implicit_ctx: ImplicitCtx,
 ) -> QualifiedName {
+    for ty in type_args {
+        if ty.is_mono(False) {
+            println("Mono type in fn_mono_key args ${format_types(type_args)}");
+            println("base ${base.name()}");
+            panic("Mono type in fn_mono_key");
+        }
+    }
     let implicit_list: Vec[QualifiedName] = implicit_ctx.set.iter().cloned().collect();
     QualifiedName.new_mono(
         base,
@@ -83,7 +91,14 @@ pub fn fn_mono_key(
     )
 }
 
-pub fn data_mono_key(base: I.String, type_args: Vec[TypeDef]) -> QualifiedName {
+pub fn data_mono_key(base: QualifiedName, type_args: Vec[TypeDef]) -> QualifiedName {
+    for ty in type_args {
+        if ty.is_mono(False) {
+            println("Mono type in data_mono_key args ${format_types(type_args)}");
+            println("base ${base.name()}");
+            panic("Mono type in data_mono_key");
+        }
+    }
     QualifiedName.new_mono(
         base,
         type_args.clone(),
@@ -100,9 +115,9 @@ pub struct Monomorphizer {
     pub fn_queue: VecDeque[FnWork],
     pub struct_queue: VecDeque[DataWork],
     pub enum_queue: VecDeque[DataWork],
-    pub fn_done: Set[I.String],
-    pub struct_done: Set[I.String],
-    pub enum_done: Set[I.String],
+    pub fn_done: Set[QualifiedName],
+    pub struct_done: Set[QualifiedName],
+    pub enum_done: Set[QualifiedName],
     pub current_module: I.String,
     pub current_fn_witnesses: Vec[I.String],
     pub current_effect_ctx: EffectCtx,
@@ -134,42 +149,16 @@ pub struct Monomorphizer {
         )
     }
 
-    pub fn enqueue_named_types(mono: Monomorphizer, ty: TypeDef) {
-        match ty {
-            TypeDef.Named(
-                Name.Resolved(name: QualifiedName.Mono(mono_name), ..),
-                _,
-            ) => {
-                let base = mono_name.name;
-                let args = mono_name.args;
-                let qname = QualifiedName.new(base.clone());
-                let mono_key = data_mono_key(base, args);
-                if mono.source.structs.contains_key(qname)
-                    && !mono.struct_done.contains(mono_key.name())
-                {
-                    mono.struct_queue.push_back(DataWork(qname, args.clone()));
-                } else if mono.source.enums.contains_key(qname)
-                    && !mono.enum_done.contains(mono_key.name())
-                {
-                    mono.enum_queue.push_back(DataWork(qname, args.clone()));
-                }
-                for arg in args {
-                    mono.enqueue_named_types(arg);
-                }
-            }
-            TypeDef.Tuple(elems) => {
-                for e in elems {
-                    mono.enqueue_named_types(e);
-                }
-            }
-            TypeDef.Paren(inner) => mono.enqueue_named_types(inner),
-            TypeDef.Fn(args, result) | TypeDef.FnPtr(args, result) => {
-                for a in args {
-                    mono.enqueue_named_types(a);
-                }
-                mono.enqueue_named_types(result);
-            }
-            _ => {}
+    pub fn enqueue_named_types(mono: Monomorphizer, name: QualifiedName, args: Vec[TypeDef]) {
+        let mono_key = data_mono_key(name, args);
+        if mono.source.structs.contains_key(name)
+            && !mono.struct_done.contains(mono_key)
+        {
+            mono.struct_queue.push_back(DataWork(name, args.clone()));
+        } else if mono.source.enums.contains_key(name)
+            && !mono.enum_done.contains(mono_key)
+        {
+            mono.enum_queue.push_back(DataWork(name, args.clone()));
         }
     }
 
@@ -208,7 +197,7 @@ pub struct Monomorphizer {
     }
 
     fn run(mono: Monomorphizer) {
-        let main_key = QualifiedName.new(I.intern("Main.main"));
+        let main_key = B.get_main_entry_qn();
         if !mono.source.functions.contains_key(main_key) {
             panic("mono: `Main.main` not found in program");
         }
@@ -223,13 +212,13 @@ pub struct Monomorphizer {
         loop {
             if let Some(work) = mono.fn_queue.pop_front() {
                 let mono_name = fn_mono_key(
-                    work.qname.name(),
+                    work.qname,
                     work.type_args,
                     work.witnesses,
                     work.effect_ctx,
                     work.implicit_ctx,
                 );
-                if mono.fn_done.insert(mono_name.name()) {
+                if mono.fn_done.insert(mono_name) {
                     process_function(
                         work.qname,
                         work.type_args,
@@ -241,13 +230,13 @@ pub struct Monomorphizer {
                     );
                 }
             } else if let Some(work) = mono.struct_queue.pop_front() {
-                let mono_name = data_mono_key(work.qname.name(), work.type_args);
-                if mono.struct_done.insert(mono_name.name()) {
+                let mono_name = data_mono_key(work.qname, work.type_args);
+                if mono.struct_done.insert(mono_name) {
                     process_struct(work.qname, work.type_args, mono_name, mono);
                 }
             } else if let Some(work) = mono.enum_queue.pop_front() {
-                let mono_name = data_mono_key(work.qname.name(), work.type_args);
-                if mono.enum_done.insert(mono_name.name()) {
+                let mono_name = data_mono_key(work.qname, work.type_args);
+                if mono.enum_done.insert(mono_name) {
                     process_enum(work.qname, work.type_args, mono_name, mono);
                 }
             } else {
@@ -266,13 +255,12 @@ pub fn monomorphize(
     if !mono.errors.is_empty() {
         return Err(mono.errors);
     }
-    let empty_inst = Substitution.new();
     mono.output.implicits = source
         .implicits
         .iter()
         .map(|(k, v)| {
             let def = v.clone();
-            def.ty = specialize_type(def.ty, empty_inst);
+            def.ty = def.ty.specialize(mono);
             (k.clone(), def)
         })
         .collect();
@@ -286,14 +274,35 @@ fn fixup_variant_enum_map(program: Program) {
     for enum_qname in enum_keys {
         let edef = program.enums.get(enum_qname).unwrap();
         for variant in edef.variants.iter() {
-            let variant_base = I.resolve(variant.qualified_name.base_name());
-            let simple_name = variant_base.split(".").last().unwrap_or(variant_base);
-            let variant_mono_name = I.intern(I.resolve(enum_qname.name()) + "." + simple_name);
-            let variant_mono_qname = QualifiedName.new(variant_mono_name);
-            variant.qualified_name = variant_mono_qname;
+            let variant_mono_qname = get_mono_variant_qn(edef.qualified_name.unwrap(), variant.qualified_name.unwrap());
+            variant.qualified_name = Some(variant_mono_qname);
             program.variant_enum_map.insert(variant_mono_qname, enum_qname);
         }
     }
 }
 
+pub fn get_mono_variant_qn(enum_qn: QualifiedName, variant_qn: QualifiedName) -> QualifiedName {
+    match enum_qn {
+        QualifiedName.Mono(m) => {
+            let (module_name, enum_name) = match m.name.base() {
+                BaseName.Enum(module_name, enum_name) => (module_name, enum_name),
+                _ => panic("enum qname is not enum!"),
+            };
+            let variant_base = match variant_qn.base() {
+                BaseName.Variant(_, _, variant_base) => variant_base,
+                _ => panic("variant qname is not variant!"),
+            };
+            let base = BaseName.Variant(module_name, enum_name, variant_base);
+            let m = m.clone();
+            // FIXME: maybe we should rebuild the mono qn by copying the args and then we dont have to rehash?
+            m.name = BaseNameInfo.new(base);
+            let qn = QualifiedName.Mono(m);
+            qn.rehash();
+            qn
+        }
+        _ => panic("get_mono_variant_qn enum name is not mono"),
+    }
 }
+
+}
+

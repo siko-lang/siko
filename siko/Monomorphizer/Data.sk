@@ -5,6 +5,7 @@ import Siko.AST.QualifiedName
 import Siko.Unification.Sub
 import Siko.Monomorphizer
 import Siko.Monomorphizer.Specialize
+import Siko.Format.Utils
 import Siko.Config
 
 pub fn process_struct(
@@ -16,6 +17,7 @@ pub fn process_struct(
     let struct_def = mono.source.struct_def(qname).clone();
     if get_config().debug_mono {
         println("Processing ${mono_name.name()}");
+        println("Type args ${format_types(type_args)}");
     }
     mono.sub = struct_def
         .type_arg_defs
@@ -27,11 +29,14 @@ pub fn process_struct(
                 .collect()
         })
         .unwrap_or_else(|| Substitution.new());
+    if get_config().debug_mono {
+        println("Sub ${mono.sub.format()}");
+    }
 
     let spec_fields = struct_def.fields.specialize(mono);
 
     let mono_struct = struct_def;
-    mono_struct.qualified_name = mono_name.clone();
+    mono_struct.qualified_name = Some(mono_name.clone());
     mono_struct.type_arg_defs = None;
     mono_struct.fields = spec_fields;
 
@@ -62,7 +67,7 @@ pub fn process_enum(
     let spec_variants = enum_def.variants.specialize(mono);
 
     let mono_enum = enum_def;
-    mono_enum.qualified_name = mono_name.clone();
+    mono_enum.qualified_name = Some(mono_name.clone());
     mono_enum.type_arg_defs = None;
     mono_enum.variants = spec_variants;
 

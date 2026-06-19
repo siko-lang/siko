@@ -63,7 +63,7 @@ pub struct Emitter {
     }
 
     fn is_array_struct(emitter: Emitter, qname: QualifiedName) -> Bool {
-        qname.base_name() == B.get_array_type()
+        qname.base_name() == B.get_array_type_qn()
     }
 
     fn emit_array_struct_definition(emitter: Emitter, qname: QualifiedName) {
@@ -84,15 +84,15 @@ pub struct Emitter {
     fn emit_struct_forward_declarations(emitter: Emitter) {
         for sdef in emitter.program.structs.values() {
             if sdef.is_builtin() {
-                if emitter.is_array_struct(sdef.qualified_name) {
-                    let name = mangle(sdef.qualified_name.hashed());
+                if emitter.is_array_struct(sdef.qualified_name.unwrap()) {
+                    let name = mangle(sdef.qualified_name.unwrap().hashed());
                     emitter.append("struct ");
                     emitter.append(name);
                     emitter.append(";\n");
                 }
                 continue;
             }
-            let name = mangle(sdef.qualified_name.hashed());
+            let name = mangle(sdef.qualified_name.unwrap().hashed());
             emitter.append("struct ");
             emitter.append(name);
             emitter.append(";\n");
@@ -101,7 +101,7 @@ pub struct Emitter {
 
     fn emit_enum_forward_declarations(emitter: Emitter) {
         for edef in emitter.program.enums.values() {
-            let name = mangle(edef.qualified_name.hashed());
+            let name = mangle(edef.qualified_name.unwrap().hashed());
             emitter.append("struct ");
             emitter.append(name);
             emitter.append(";\n");
@@ -136,7 +136,7 @@ pub struct Emitter {
                     emitter.emit_empty_line();
                 }
 
-                let cname = mangle(edef.qualified_name.hashed());
+                let cname = mangle(edef.qualified_name.unwrap().hashed());
                 emitter.append("struct ");
                 emitter.append(cname);
                 emitter.append(" {\n");
@@ -155,12 +155,12 @@ pub struct Emitter {
             }
             if let Some(sdef) = emitter.program.structs.get(qname) {
                 if sdef.is_builtin() {
-                    if emitter.is_array_struct(sdef.qualified_name) {
-                        emitter.emit_array_struct_definition(sdef.qualified_name);
+                    if emitter.is_array_struct(sdef.qualified_name.unwrap()) {
+                        emitter.emit_array_struct_definition(sdef.qualified_name.unwrap());
                     }
                     continue;
                 }
-                let name = mangle(sdef.qualified_name.hashed());
+                let name = mangle(sdef.qualified_name.unwrap().hashed());
                 emitter.append("struct ");
                 emitter.append(name);
                 emitter.append(" {\n");
@@ -179,16 +179,16 @@ pub struct Emitter {
 
     fn emit_struct_definition(emitter: Emitter) {
         for sdef in emitter.program.structs.values() {
-            if emitter.is_value_type(sdef.qualified_name) {
+            if emitter.is_value_type(sdef.qualified_name.unwrap()) {
                 continue;
             }
             if sdef.is_builtin() {
-                if emitter.is_array_struct(sdef.qualified_name) {
-                    emitter.emit_array_struct_definition(sdef.qualified_name);
+                if emitter.is_array_struct(sdef.qualified_name.unwrap()) {
+                    emitter.emit_array_struct_definition(sdef.qualified_name.unwrap());
                 }
                 continue;
             }
-            let name = mangle(sdef.qualified_name.hashed());
+            let name = mangle(sdef.qualified_name.unwrap().hashed());
             emitter.append("struct ");
             emitter.append(name);
             emitter.append(" {\n");
@@ -206,10 +206,10 @@ pub struct Emitter {
 
     fn emit_enum_definition(emitter: Emitter) {
         for edef in emitter.program.enums.values() {
-            if emitter.is_value_type(edef.qualified_name) {
+            if emitter.is_value_type(edef.qualified_name.unwrap()) {
                 continue;
             }
-            let name = mangle(edef.qualified_name.hashed());
+            let name = mangle(edef.qualified_name.unwrap().hashed());
             emitter.append("struct ");
             emitter.append(name);
             emitter.append(" {\n");
@@ -227,7 +227,7 @@ pub struct Emitter {
             emitter.emit_empty_line();
         }
         for edef in emitter.program.enums.values() {
-            if emitter.is_value_type(edef.qualified_name) {
+            if emitter.is_value_type(edef.qualified_name.unwrap()) {
                 continue;
             }
             for variant in edef.variants.iter() {
@@ -621,11 +621,10 @@ pub struct Emitter {
             let index = match arm.pattern.kind {
                 PatternKind.Named(info) => {
                     let qn = info.name.resolved();
-                    let variant_local = I.resolve(qn.base_name()).split(".").last().unwrap_or("");
                     let idx = enum_def
                         .variants
                         .iter()
-                        .position(|v| I.resolve(v.name.name()) == variant_local)
+                        .position(|v| v.qualified_name.unwrap() == qn)
                         .unwrap();
                     Some(idx)
                 }
@@ -660,27 +659,12 @@ pub struct Emitter {
             PatternKind.Named(info) if !info.args.is_empty() => (info.name.resolved(), info.args),
             _ => { return; }
         };
-        let qn_name = I.resolve(qn.name());
-        let dot_pos = qn_name.rfind('.').unwrap();
-        let enum_name_str = qn_name.sub(0, dot_pos);
-        let variant_name_str = qn_name.sub(dot_pos + 1, qn_name.len());
-        let (edef, vdef) = emitter
-            .program
-            .enums
-            .iter()
-            .find_map(|(k, e)| {
-                if I.resolve(k.name()) == enum_name_str {
-                    e.variants
-                        .iter()
-                        .find(|v| I.resolve(v.name.name()) == variant_name_str)
-                        .map(|v| (e, v))
-                } else {
-                    None
-                }
-            })
-            .unwrap();
+        let enum_qname = emitter.program.variant_enum_map.get(qn).expect("variant enum not found");
+        let edef = emitter.program.enums.get(enum_qname).unwrap();
+        let vdef = edef.variants.iter().find(|v| v.qualified_name.unwrap() == qn).unwrap();
         let is_vt = scrutinee.ty.map_or(False, |t| emitter.is_value_type_ty(t));
         let vname = variant_struct_name(edef, vdef);
+        let variant_name_str = variant_payload_name(vdef);
         let payload_var = "_payload_${variant_name_str}";
         emitter.emit_indent();
         emitter.append("struct ");
@@ -693,7 +677,7 @@ pub struct Emitter {
         emitter.append(" = ");
         emitter.emit_expr(scrutinee);
         emitter.append(if is_vt { ".payload." } else { "->payload." });
-        emitter.append("v_${variant_name_str}");
+        emitter.append(variant_name_str);
         emitter.append(";\n");
         let field_access = if is_vt { "." } else { "->" };
         for (i, sub_pat) in sub_pats.iter().enumerate() {
@@ -746,7 +730,7 @@ pub struct Emitter {
             }
             emitter.emit_type(ty);
             emitter.append(" ");
-            emitter.append(fn_name(fdef.qualified_name));
+            emitter.append(fn_name(fdef.qualified_name.unwrap()));
             emitter.append("(");
             for (index, arg) in fdef.args.iter().enumerate() {
                 if index > 0 {
@@ -852,11 +836,11 @@ pub struct Emitter {
                     continue;
                 }
             };
-            //println("Emitting fn ${fdef.qualified_name.name()}");
+            //println("Emitting fn ${fdef.qualified_name.unwrap().name()}");
             let ty = fdef.result_type.unwrap();
             emitter.emit_type(ty);
             emitter.append(" ");
-            emitter.append(fn_name(fdef.qualified_name));
+            emitter.append(fn_name(fdef.qualified_name.unwrap()));
             emitter.append("(");
             for (index, arg) in fdef.args.iter().enumerate() {
                 if index > 0 {

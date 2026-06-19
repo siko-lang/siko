@@ -17,7 +17,6 @@ import Siko.Location
 import Siko.Utils.VarAllocator
 import Siko.Format.Utils
 import Siko.Interner as I
-import Siko.Constants.Builtins as B
 
 // ── Rewrite trait ─────────────────────────────────────────────────────────────
 
@@ -27,20 +26,21 @@ trait Rewrite[T] {
 
 instance Rewrite[TypeDef] {
     fn rewrite(ty: TypeDef, ctx: TupleLowerer) -> TypeDef {
-        assert(ty.is_mono());
+        if !ty.is_mono(True) {
+            println("${format_type(ty)}");
+            panic("Type in lower types is NOT mono'd type!");
+        }
         match ty {
             TypeDef.Tuple(elems) => {
                 let rewritten: Vec[TypeDef] = elems
                     .into_iter()
                     .map(|e| rewrite(e, ctx))
                     .collect();
-                let name = format_type(TypeDef.Named(
-                    Name.inner(QualifiedName.Simple(B.get_siko_tuple())),
-                    rewritten.clone(),
-                ));
+                let pre_mono_qname = QualifiedName.new_tuple(rewritten);
+                let name = format_type(TypeDef.Named(Name.inner(pre_mono_qname), []));
                 let qname = QualifiedName.new_mono(
-                    B.get_siko_tuple(),
-                    rewritten.clone(),
+                    pre_mono_qname,
+                    [],
                     [],
                     Map.new(),
                     [],
@@ -62,7 +62,7 @@ instance Rewrite[TypeDef] {
                             annotations: [],
                             public: False,
                             name: Identifier.new(I.intern(name), ctx.repr_loc.clone()),
-                            qualified_name: qname.clone(),
+                            qualified_name: Some(qname.clone()),
                             type_arg_defs: None,
                             fields: fields,
                             all_fields_public: False,
@@ -181,11 +181,11 @@ struct TupleLowerer {
         match expr.kind {
             ExprKind.Tuple(elems) => {
                 let struct_name = match ty {
-                    Some(TypeDef.Named(qn, _)) => qn.name(),
+                    Some(TypeDef.Named(qn, _)) => qn.resolved(),
                     _ => panic("lower_tuples: cannot determine monomorphic struct name for Tuple expression"),
                 };
                 Expr(ExprKind.FunctionCall(FunctionCallInfo(
-                    QualifiedName.Simple(struct_name),
+                    struct_name,
                     FunctionKind.StructCtor,
                     elems.rewrite(ctx),
                     WitnessInfo.new(),
@@ -277,26 +277,26 @@ pub fn lower_tuples(program: Program) {
     let new_structs: Map[QualifiedName, StructDef] = Map.new();
     let ctx = TupleLowerer(VarAllocator.new(), repr_loc, new_structs);
 
-    let unit_qname = QualifiedName.Simple(B.get_siko_tuple());
-    if !program.structs.contains_key(unit_qname) {
-        program.structs.insert(
-            unit_qname.clone(),
-            StructDef(
-                annotations: [],
-                public: False,
-                name: Identifier.new(B.get_siko_tuple(), repr_loc.clone()),
-                qualified_name: unit_qname,
-                type_arg_defs: None,
-                fields: [],
-                all_fields_public: True,
-                methods: [],
-                method_map: MethodMap.new(),
-                module_name: I.intern(""),
-                default_value_names: Vec.new(),
-                value_type: False,
-            ),
-        );
-    }
+    // let unit_qname = QualifiedName.Simple(B.get_siko_tuple());
+    // if !program.structs.contains_key(unit_qname) {
+    //     program.structs.insert(
+    //         unit_qname.clone(),
+    //         StructDef(
+    //             annotations: [],
+    //             public: False,
+    //             name: Identifier.new(B.get_siko_tuple(), repr_loc.clone()),
+    //             qualified_name: Some(unit_qname),
+    //             type_arg_defs: None,
+    //             fields: [],
+    //             all_fields_public: True,
+    //             methods: [],
+    //             method_map: MethodMap.new(),
+    //             module_name: I.intern(""),
+    //             default_value_names: Vec.new(),
+    //             value_type: False,
+    //         ),
+    //     );
+    // }
 
     let struct_keys: Vec[QualifiedName] = program.structs.keys().cloned().collect();
     for key in struct_keys {
@@ -336,3 +336,4 @@ fn any_location(program: Program) -> Location {
 }
 
 }
+

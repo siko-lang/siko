@@ -1,6 +1,7 @@
 module Siko.Constants.Builtins {
 
 import Siko.Interner as I
+import Siko.AST.QualifiedName
 
 pub struct BuiltinNameCache {
     bool_type: I.String,
@@ -69,9 +70,90 @@ pub struct BuiltinNameCache {
     op_from_int: I.String,
     range_range: I.String,
     convert_into: I.String,
+    // QualifiedName cache
+    bool_type_qn: QualifiedName,
+    bool_true_qn: QualifiedName,
+    bool_false_qn: QualifiedName,
+    int_type_qn: QualifiedName,
+    i8_type_qn: QualifiedName,
+    i16_type_qn: QualifiedName,
+    i32_type_qn: QualifiedName,
+    i64_type_qn: QualifiedName,
+    u8_type_qn: QualifiedName,
+    u16_type_qn: QualifiedName,
+    u32_type_qn: QualifiedName,
+    u64_type_qn: QualifiedName,
+    string_type_qn: QualifiedName,
+    array_type_qn: QualifiedName,
+    option_type_qn: QualifiedName,
+    option_some_qn: QualifiedName,
+    option_none_qn: QualifiedName,
+    result_type_qn: QualifiedName,
+    result_ok_qn: QualifiedName,
+    result_err_qn: QualifiedName,
+    ordering_type_qn: QualifiedName,
+    ordering_less_qn: QualifiedName,
+    ordering_equal_qn: QualifiedName,
+    ordering_greater_qn: QualifiedName,
+    trait_partial_eq_qn: QualifiedName,
+    trait_eq_qn: QualifiedName,
+    trait_partial_ord_qn: QualifiedName,
+    trait_ord_qn: QualifiedName,
+    trait_clone_qn: QualifiedName,
+    trait_from_int_qn: QualifiedName,
+    op_eq_qn: QualifiedName,
+    op_not_eq_qn: QualifiedName,
+    op_partial_cmp_qn: QualifiedName,
+    op_less_qn: QualifiedName,
+    op_greater_qn: QualifiedName,
+    op_less_eq_qn: QualifiedName,
+    op_greater_eq_qn: QualifiedName,
+    op_cmp_qn: QualifiedName,
+    op_clone_qn: QualifiedName,
+    op_from_int_qn: QualifiedName,
+    op_add_qn: QualifiedName,
+    op_sub_qn: QualifiedName,
+    op_mul_qn: QualifiedName,
+    op_div_qn: QualifiedName,
+    op_neg_qn: QualifiedName,
+    op_not_qn: QualifiedName,
+    op_mod_qn: QualifiedName,
+    op_band_qn: QualifiedName,
+    op_bor_qn: QualifiedName,
+    op_bxor_qn: QualifiedName,
+    op_bnot_qn: QualifiedName,
+    op_shl_qn: QualifiedName,
+    op_shr_qn: QualifiedName,
+    index_index_qn: QualifiedName,
+    index_assign_index_assign_qn: QualifiedName,
+    convert_into_qn: QualifiedName,
+    string_eq_qn: QualifiedName,
+    vec_new_qn: QualifiedName,
+    vec_push_qn: QualifiedName,
+    range_range_qn: QualifiedName,
+    util_panic_qn: QualifiedName,
+    util_discriminator_qn: QualifiedName,
+    util_uninitialized_qn: QualifiedName,
+    transmute_qn: QualifiedName,
+    array_as_ptr_qn: QualifiedName,
+    ptr_offset_of_qn: QualifiedName,
+    main_entry_qn: QualifiedName,
+    console_print_qn: QualifiedName,
+    console_println_qn: QualifiedName,
+    console_flush_qn: QualifiedName,
 }
 
+fn m(s: String) -> I.String { I.intern(s) }
+
 pub fn build_cache() -> BuiltinNameCache {
+    let n_partial_eq = m("Std.Ops.PartialEq");
+    let n_partial_ord = m("Std.Ops.PartialOrd");
+    let n_ord = m("Std.Ops.Ord");
+    let n_clone = m("Std.Ops.Clone");
+    let n_from_int = m("Std.Ops.FromInt");
+    let n_string = m("Std.String.String");
+    let n_vec = m("Std.Vec.Vec");
+
     BuiltinNameCache(
         bool_type: I.intern(get_bool_type_str()),
         bool_true: I.intern(get_bool_true_str()),
@@ -139,6 +221,77 @@ pub fn build_cache() -> BuiltinNameCache {
         op_from_int: I.intern(get_op_from_int_str()),
         range_range: I.intern(get_range_range_str()),
         convert_into: I.intern(get_convert_into_str()),
+        // QualifiedName fields
+        bool_type_qn: QualifiedName.new_enum(m("Std.Bool"), m("Bool")),
+        bool_true_qn: QualifiedName.new_variant(m("Std.Bool"), m("Bool"), m("True")),
+        bool_false_qn: QualifiedName.new_variant(m("Std.Bool"), m("Bool"), m("False")),
+        int_type_qn: QualifiedName.new_struct(m("Std.Int"), m("Int")),
+        i8_type_qn: QualifiedName.new_struct(m("Std.Int.I8"), m("I8")),
+        i16_type_qn: QualifiedName.new_struct(m("Std.Int.I16"), m("I16")),
+        i32_type_qn: QualifiedName.new_struct(m("Std.Int.I32"), m("I32")),
+        i64_type_qn: QualifiedName.new_struct(m("Std.Int.I64"), m("I64")),
+        u8_type_qn: QualifiedName.new_struct(m("Std.Int.U8"), m("U8")),
+        u16_type_qn: QualifiedName.new_struct(m("Std.Int.U16"), m("U16")),
+        u32_type_qn: QualifiedName.new_struct(m("Std.Int.U32"), m("U32")),
+        u64_type_qn: QualifiedName.new_struct(m("Std.Int.U64"), m("U64")),
+        string_type_qn: QualifiedName.new_struct(m("Std.String"), m("String")),
+        array_type_qn: QualifiedName.new_struct(m("Std.Array"), m("Array")),
+        option_type_qn: QualifiedName.new_enum(m("Std.Option"), m("Option")),
+        option_some_qn: QualifiedName.new_variant(m("Std.Option"), m("Option"), m("Some")),
+        option_none_qn: QualifiedName.new_variant(m("Std.Option"), m("Option"), m("None")),
+        result_type_qn: QualifiedName.new_enum(m("Std.Result"), m("Result")),
+        result_ok_qn: QualifiedName.new_variant(m("Std.Result"), m("Result"), m("Ok")),
+        result_err_qn: QualifiedName.new_variant(m("Std.Result"), m("Result"), m("Err")),
+        ordering_type_qn: QualifiedName.new_enum(m("Std.Ordering"), m("Ordering")),
+        ordering_less_qn: QualifiedName.new_variant(m("Std.Ordering"), m("Ordering"), m("Less")),
+        ordering_equal_qn: QualifiedName.new_variant(m("Std.Ordering"), m("Ordering"), m("Equal")),
+        ordering_greater_qn: QualifiedName.new_variant(m("Std.Ordering"), m("Ordering"), m("Greater")),
+        trait_partial_eq_qn: QualifiedName.new_trait(m("Std.Ops"), m("PartialEq")),
+        trait_eq_qn: QualifiedName.new_trait(m("Std.Ops"), m("Eq")),
+        trait_partial_ord_qn: QualifiedName.new_trait(m("Std.Ops"), m("PartialOrd")),
+        trait_ord_qn: QualifiedName.new_trait(m("Std.Ops"), m("Ord")),
+        trait_clone_qn: QualifiedName.new_trait(m("Std.Ops"), m("Clone")),
+        trait_from_int_qn: QualifiedName.new_trait(m("Std.Ops"), m("FromInt")),
+        op_eq_qn: QualifiedName.new_method(n_partial_eq, m("eq")),
+        op_not_eq_qn: QualifiedName.new_method(n_partial_eq, m("not_eq")),
+        op_partial_cmp_qn: QualifiedName.new_method(n_partial_ord, m("partial_cmp")),
+        op_less_qn: QualifiedName.new_method(n_partial_ord, m("less_than")),
+        op_greater_qn: QualifiedName.new_method(n_partial_ord, m("greater_than")),
+        op_less_eq_qn: QualifiedName.new_method(n_partial_ord, m("less_than_or_equal")),
+        op_greater_eq_qn: QualifiedName.new_method(n_partial_ord, m("greater_than_or_equal")),
+        op_cmp_qn: QualifiedName.new_method(n_ord, m("cmp")),
+        op_clone_qn: QualifiedName.new_method(n_clone, m("clone")),
+        op_from_int_qn: QualifiedName.new_method(n_from_int, m("from_int")),
+        op_add_qn: QualifiedName.new_method(m("Std.Ops.Add"), m("add")),
+        op_sub_qn: QualifiedName.new_method(m("Std.Ops.Sub"), m("sub")),
+        op_mul_qn: QualifiedName.new_method(m("Std.Ops.Mul"), m("mul")),
+        op_div_qn: QualifiedName.new_method(m("Std.Ops.Div"), m("div")),
+        op_neg_qn: QualifiedName.new_method(m("Std.Ops.Neg"), m("neg")),
+        op_not_qn: QualifiedName.new_method(m("Std.Ops.Not"), m("not")),
+        op_mod_qn: QualifiedName.new_method(m("Std.Ops.Mod"), m("mod")),
+        op_band_qn: QualifiedName.new_method(m("Std.Ops.BitAnd"), m("band")),
+        op_bor_qn: QualifiedName.new_method(m("Std.Ops.BitOr"), m("bor")),
+        op_bxor_qn: QualifiedName.new_method(m("Std.Ops.BitXor"), m("bxor")),
+        op_bnot_qn: QualifiedName.new_method(m("Std.Ops.BNot"), m("bnot")),
+        op_shl_qn: QualifiedName.new_method(m("Std.Ops.Shl"), m("shl")),
+        op_shr_qn: QualifiedName.new_method(m("Std.Ops.Shr"), m("shr")),
+        index_index_qn: QualifiedName.new_method(m("Std.Ops.Index"), m("index")),
+        index_assign_index_assign_qn: QualifiedName.new_method(m("Std.Ops.IndexAssign"), m("index_assign")),
+        convert_into_qn: QualifiedName.new_method(m("Std.Convert.Into"), m("into")),
+        string_eq_qn: QualifiedName.new_method(n_string, m("eq")),
+        vec_new_qn: QualifiedName.new_method(n_vec, m("new")),
+        vec_push_qn: QualifiedName.new_method(n_vec, m("push")),
+        range_range_qn: QualifiedName.new_method(m("Std.Range.Range"), m("range")),
+        util_panic_qn: QualifiedName.new_function(m("Std.Util"), m("panic")),
+        util_discriminator_qn: QualifiedName.new_function(m("Std.Util"), m("discriminator")),
+        util_uninitialized_qn: QualifiedName.new_function(m("Std.Util"), m("uninitialized")),
+        transmute_qn: QualifiedName.new_function(m("Std.Intrinsics"), m("transmute")),
+        array_as_ptr_qn: QualifiedName.new_function(m("Std.Array"), m("as_ptr")),
+        ptr_offset_of_qn: QualifiedName.new_function(m("Std.Ptr"), m("offset_of")),
+        main_entry_qn: QualifiedName.new_function(m("Main"), m("main")),
+        console_print_qn: QualifiedName.new_function(m("Std.Console"), m("print")),
+        console_println_qn: QualifiedName.new_function(m("Std.Console"), m("println")),
+        console_flush_qn: QualifiedName.new_function(m("Std.Console"), m("flush")),
     )
 }
 
@@ -326,4 +479,118 @@ pub fn get_range_range() -> I.String { name_cache.range_range }
 pub fn get_convert_into_str() -> String { "Std.Convert.Into.into" }
 pub fn get_convert_into() -> I.String { name_cache.convert_into }
 
+// ── Typed QualifiedName constructors (cached) ─────────────────────────────────
+
+// Primitive types
+pub fn get_bool_type_qn() -> QualifiedName { name_cache.bool_type_qn }
+pub fn get_bool_true_qn() -> QualifiedName { name_cache.bool_true_qn }
+pub fn get_bool_false_qn() -> QualifiedName { name_cache.bool_false_qn }
+pub fn get_int_type_qn() -> QualifiedName { name_cache.int_type_qn }
+pub fn get_i8_type_qn() -> QualifiedName { name_cache.i8_type_qn }
+pub fn get_i16_type_qn() -> QualifiedName { name_cache.i16_type_qn }
+pub fn get_i32_type_qn() -> QualifiedName { name_cache.i32_type_qn }
+pub fn get_i64_type_qn() -> QualifiedName { name_cache.i64_type_qn }
+pub fn get_u8_type_qn() -> QualifiedName { name_cache.u8_type_qn }
+pub fn get_u16_type_qn() -> QualifiedName { name_cache.u16_type_qn }
+pub fn get_u32_type_qn() -> QualifiedName { name_cache.u32_type_qn }
+pub fn get_u64_type_qn() -> QualifiedName { name_cache.u64_type_qn }
+pub fn get_string_type_qn() -> QualifiedName { name_cache.string_type_qn }
+pub fn get_array_type_qn() -> QualifiedName { name_cache.array_type_qn }
+
+// Option
+pub fn get_option_type_qn() -> QualifiedName { name_cache.option_type_qn }
+pub fn get_option_some_qn() -> QualifiedName { name_cache.option_some_qn }
+pub fn get_option_none_qn() -> QualifiedName { name_cache.option_none_qn }
+
+// Result
+pub fn get_result_type_qn() -> QualifiedName { name_cache.result_type_qn }
+pub fn get_result_ok_qn() -> QualifiedName { name_cache.result_ok_qn }
+pub fn get_result_err_qn() -> QualifiedName { name_cache.result_err_qn }
+
+// Ordering
+pub fn get_ordering_type_qn() -> QualifiedName { name_cache.ordering_type_qn }
+pub fn get_ordering_less_qn() -> QualifiedName { name_cache.ordering_less_qn }
+pub fn get_ordering_equal_qn() -> QualifiedName { name_cache.ordering_equal_qn }
+pub fn get_ordering_greater_qn() -> QualifiedName { name_cache.ordering_greater_qn }
+
+// Traits
+pub fn get_trait_partial_eq_qn() -> QualifiedName { name_cache.trait_partial_eq_qn }
+pub fn get_trait_eq_qn() -> QualifiedName { name_cache.trait_eq_qn }
+pub fn get_trait_partial_ord_qn() -> QualifiedName { name_cache.trait_partial_ord_qn }
+pub fn get_trait_ord_qn() -> QualifiedName { name_cache.trait_ord_qn }
+pub fn get_trait_clone_qn() -> QualifiedName { name_cache.trait_clone_qn }
+pub fn get_trait_from_int_qn() -> QualifiedName { name_cache.trait_from_int_qn }
+
+// Trait methods — comparison
+pub fn get_op_eq_qn() -> QualifiedName { name_cache.op_eq_qn }
+pub fn get_op_not_eq_qn() -> QualifiedName { name_cache.op_not_eq_qn }
+pub fn get_op_partial_cmp_qn() -> QualifiedName { name_cache.op_partial_cmp_qn }
+pub fn get_op_less_qn() -> QualifiedName { name_cache.op_less_qn }
+pub fn get_op_greater_qn() -> QualifiedName { name_cache.op_greater_qn }
+pub fn get_op_less_eq_qn() -> QualifiedName { name_cache.op_less_eq_qn }
+pub fn get_op_greater_eq_qn() -> QualifiedName { name_cache.op_greater_eq_qn }
+pub fn get_op_cmp_qn() -> QualifiedName { name_cache.op_cmp_qn }
+pub fn get_op_clone_qn() -> QualifiedName { name_cache.op_clone_qn }
+pub fn get_op_from_int_qn() -> QualifiedName { name_cache.op_from_int_qn }
+
+// Trait methods — arithmetic / bitwise
+pub fn get_op_add_qn() -> QualifiedName { name_cache.op_add_qn }
+pub fn get_op_sub_qn() -> QualifiedName { name_cache.op_sub_qn }
+pub fn get_op_mul_qn() -> QualifiedName { name_cache.op_mul_qn }
+pub fn get_op_div_qn() -> QualifiedName { name_cache.op_div_qn }
+pub fn get_op_neg_qn() -> QualifiedName { name_cache.op_neg_qn }
+pub fn get_op_not_qn() -> QualifiedName { name_cache.op_not_qn }
+pub fn get_op_mod_qn() -> QualifiedName { name_cache.op_mod_qn }
+pub fn get_op_band_qn() -> QualifiedName { name_cache.op_band_qn }
+pub fn get_op_bor_qn() -> QualifiedName { name_cache.op_bor_qn }
+pub fn get_op_bxor_qn() -> QualifiedName { name_cache.op_bxor_qn }
+pub fn get_op_bnot_qn() -> QualifiedName { name_cache.op_bnot_qn }
+pub fn get_op_shl_qn() -> QualifiedName { name_cache.op_shl_qn }
+pub fn get_op_shr_qn() -> QualifiedName { name_cache.op_shr_qn }
+
+// Trait methods — index
+pub fn get_index_index_qn() -> QualifiedName { name_cache.index_index_qn }
+pub fn get_index_assign_index_assign_qn() -> QualifiedName { name_cache.index_assign_index_assign_qn }
+
+// Trait methods — convert
+pub fn get_convert_into_qn() -> QualifiedName { name_cache.convert_into_qn }
+
+// Struct methods
+pub fn get_string_eq_qn() -> QualifiedName { name_cache.string_eq_qn }
+pub fn get_vec_new_qn() -> QualifiedName { name_cache.vec_new_qn }
+pub fn get_vec_push_qn() -> QualifiedName { name_cache.vec_push_qn }
+pub fn get_range_range_qn() -> QualifiedName { name_cache.range_range_qn }
+
+// Free functions
+pub fn get_util_panic_qn() -> QualifiedName { name_cache.util_panic_qn }
+pub fn get_util_discriminator_qn() -> QualifiedName { name_cache.util_discriminator_qn }
+pub fn get_util_uninitialized_qn() -> QualifiedName { name_cache.util_uninitialized_qn }
+pub fn get_transmute_qn() -> QualifiedName { name_cache.transmute_qn }
+pub fn get_array_as_ptr_qn() -> QualifiedName { name_cache.array_as_ptr_qn }
+pub fn get_ptr_offset_of_qn() -> QualifiedName { name_cache.ptr_offset_of_qn }
+pub fn get_main_entry_qn() -> QualifiedName { name_cache.main_entry_qn }
+pub fn get_console_print_qn() -> QualifiedName { name_cache.console_print_qn }
+pub fn get_console_println_qn() -> QualifiedName { name_cache.console_println_qn }
+pub fn get_console_flush_qn() -> QualifiedName { name_cache.console_flush_qn }
+
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

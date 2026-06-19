@@ -3,6 +3,7 @@ module Siko.Instances.FunctionInstanceResolver {
 import Std.Map
 import Siko.AST.Generics
 import Siko.AST.Instances
+import Siko.AST.QualifiedName
 import Siko.AST.Type
 import Siko.Instances.ModuleInstanceResolver
 import Siko.Unification.Apply
@@ -13,7 +14,7 @@ import Siko.Interner as I
 @derive(Clone)
 pub enum BoundWitness {
     FunctionBound(Int),
-    Instance(module_name: I.String, instance_qname: I.String),
+    Instance(module_name: I.String, instance_qname: QualifiedName),
 
     pub fn format(w: BoundWitness) -> String {
         match w {
@@ -27,14 +28,14 @@ pub struct BoundResolution {
     pub witness: BoundWitness,
     pub assoc_types: Map[I.String, TypeDef],
     pub primary_args: Vec[TypeDef],
-    pub instance_qname: Option[I.String],
+    pub instance_qname: Option[QualifiedName],
     pub type_witness: Substitution,
 
     fn from_function_bound(idx: Int, assoc_types: Map[I.String, TypeDef]) -> BoundResolution {
         BoundResolution(BoundWitness.FunctionBound(idx), assoc_types, [], None, Substitution.new())
     }
 
-    fn from_instance(module_name: I.String, assoc_types: Map[I.String, TypeDef], primary_args: Vec[TypeDef], instance_qname: Option[I.String], type_witness: Substitution) -> BoundResolution {
+    fn from_instance(module_name: I.String, assoc_types: Map[I.String, TypeDef], primary_args: Vec[TypeDef], instance_qname: Option[QualifiedName], type_witness: Substitution) -> BoundResolution {
         BoundResolution(BoundWitness.Instance(module_name: module_name, instance_qname: instance_qname.unwrap()), assoc_types, primary_args, instance_qname, type_witness)
     }
 
@@ -100,10 +101,7 @@ pub struct FunctionInstanceResolver {
             assoc_types.insert(ta.name.name, type_witness.apply(ta.ty));
         }
         let primary_args = instance_def.args.apply(type_witness);
-        let instance_qname = match instance_def.name {
-            Some(n) => Some(n.name),
-            None => None,
-        };
+        let instance_qname = instance_def.qualified_name;
         BoundResult.Satisfied(BoundResolution.from_instance(
             r.module_name,
             assoc_types,

@@ -5,7 +5,6 @@ import Siko.Monomorphizer.Specialize
 import Siko.Unification.Sub
 import Siko.AST.QualifiedName
 import Siko.AST.Type
-import Siko.AST.Expr
 import Siko.Interner as I
 import Siko.Config
 
@@ -44,21 +43,9 @@ pub fn process_function(
 
     let spec_args = func.args.specialize(mono);
     let spec_result = func.result_type.specialize(mono);
-
-    let spec_body = match func.body {
-        Some(body) => match body.kind {
-            ExprKind.Block(stmts) => Some(Expr(
-                ExprKind.Block(stmts.specialize(mono)),
-                body.location.clone(),
-                body.ty.specialize(mono),
-            )),
-            _ => Some(body.specialize(mono)),
-        }
-        None => None,
-    };
-
+    let spec_body = func.body.specialize(mono);
     let mono_func = func;
-    mono_func.qualified_name = mono_name.clone();
+    mono_func.qualified_name = Some(mono_name.clone());
     mono_func.type_arg_defs = None;
     mono_func.args = spec_args;
     mono_func.result_type = spec_result;

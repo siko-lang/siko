@@ -7,9 +7,9 @@ import Siko.Interner as I
 
 pub fn emit_struct_ctor_declarations(emitter: Emitter) {
     // for sdef in emitter.program.structs.values() {
-    //     let name = sdef.qualified_name.name();
+    //     let name = sdef.qualified_name.unwrap().name();
     //     if name == B.get_string_type() {
-    //         let cname = mangle(sdef.qualified_name.hashed());
+    //         let cname = mangle(sdef.qualified_name.unwrap().hashed());
     //         emitter.append("struct ");
     //         emitter.append(cname);
     //         emitter.append(" ctor_");
@@ -22,11 +22,11 @@ pub fn emit_struct_ctor_declarations(emitter: Emitter) {
         if sdef.is_builtin() {
             continue;
         }
-        let cname = mangle(sdef.qualified_name.hashed());
+        let cname = mangle(sdef.qualified_name.unwrap().hashed());
         emitter.append("struct ");
         emitter.append(cname);
-        if emitter.is_value_type(sdef.qualified_name) {
-            if sdef.qualified_name.name() == B.get_string_type() {
+        if emitter.is_value_type(sdef.qualified_name.unwrap()) {
+            if sdef.qualified_name.unwrap().name() == B.get_string_type() {
                 emitter.append(" ctor_");
                 emitter.append(cname);
                 emitter.append("(");
@@ -77,9 +77,9 @@ pub fn emit_struct_ctor_declarations(emitter: Emitter) {
 
 pub fn emit_struct_ctor_definitions(emitter: Emitter) {
     // for sdef in emitter.program.structs.values() {
-    //     let name = sdef.qualified_name.name();
+    //     let name = sdef.qualified_name.unwrap().name();
     //     if name == B.get_string_type() {
-    //         let cname = mangle(sdef.qualified_name.hashed());
+    //         let cname = mangle(sdef.qualified_name.unwrap().hashed());
     //         emitter.append("struct ");
     //         emitter.append(cname);
     //         emitter.append(" ctor_");
@@ -101,11 +101,11 @@ pub fn emit_struct_ctor_definitions(emitter: Emitter) {
         if sdef.is_builtin() {
             continue;
         }
-        let cname = mangle(sdef.qualified_name.hashed());
+        let cname = mangle(sdef.qualified_name.unwrap().hashed());
         emitter.append("struct ");
         emitter.append(cname);
-        if emitter.is_value_type(sdef.qualified_name) {
-            if sdef.qualified_name.name() == B.get_string_type() {
+        if emitter.is_value_type(sdef.qualified_name.unwrap()) {
+            if sdef.qualified_name.unwrap().name() == B.get_string_type() {
                 emitter.append(" ctor_");
                 emitter.append(cname);
                 emitter.append("(");
@@ -196,8 +196,8 @@ pub fn emit_struct_ctor_definitions(emitter: Emitter) {
 
 pub fn emit_variant_ctor_declarations(emitter: Emitter) {
     for edef in emitter.program.enums.values() {
-        let enum_name = mangle(edef.qualified_name.hashed());
-        let is_vt = emitter.is_value_type(edef.qualified_name);
+        let enum_name = mangle(edef.qualified_name.unwrap().hashed());
+        let is_vt = emitter.is_value_type(edef.qualified_name.unwrap());
         for variant in edef.variants.iter() {
             emitter.append("struct ");
             emitter.append(enum_name);
@@ -205,7 +205,7 @@ pub fn emit_variant_ctor_declarations(emitter: Emitter) {
                 emitter.append("*");
             }
             emitter.append(" ctor_");
-            emitter.append(variant_struct_name(edef, variant));
+            emitter.append(fn_name(variant.qualified_name.unwrap()));
             emitter.append("(");
             for (index, item) in variant.items.iter().enumerate() {
                 if index > 0 {
@@ -223,8 +223,8 @@ pub fn emit_variant_ctor_declarations(emitter: Emitter) {
 
 pub fn emit_variant_ctor_definitions(emitter: Emitter) {
     for edef in emitter.program.enums.values() {
-        let enum_name = mangle(edef.qualified_name.hashed());
-        let is_vt = emitter.is_value_type(edef.qualified_name);
+        let enum_name = mangle(edef.qualified_name.unwrap().hashed());
+        let is_vt = emitter.is_value_type(edef.qualified_name.unwrap());
         for (tag, variant) in edef.variants.iter().enumerate() {
             let vname = variant_struct_name(edef, variant);
             emitter.append("struct ");
@@ -233,7 +233,7 @@ pub fn emit_variant_ctor_definitions(emitter: Emitter) {
                 emitter.append("*");
             }
             emitter.append(" ctor_");
-            emitter.append(vname);
+            emitter.append(fn_name(variant.qualified_name.unwrap()));
             emitter.append("(");
             for (index, item) in variant.items.iter().enumerate() {
                 if index > 0 {

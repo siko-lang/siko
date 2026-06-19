@@ -1,6 +1,5 @@
 module Siko.ImplicitPropagation.Util {
 
-import Std.Map
 import Siko.AST.Type
 import Siko.AST.Expr
 import Siko.AST.Name
@@ -8,32 +7,22 @@ import Siko.AST.QualifiedName
 import Siko.AST.Identifier
 import Siko.Interner as I
 import Siko.Location
+import Std.Map
 
-pub fn wrapper_struct_name(implicit_name: String) -> I.String {
-    I.intern("_siko_ctx_value_${implicit_name.replace(".", "_")}")
+pub fn wrapper_struct_name(implicit_name: QualifiedName) -> QualifiedName {
+    QualifiedName.new_mono(QualifiedName.new_implicit_wrap(implicit_name.name()), [], [], Map.new(), [])
 }
 
-pub fn ctx_field_name(implicit_name: String) -> I.String {
-    I.intern(implicit_name.replace(".", "_"))
+pub fn ctx_field_name(implicit_name: QualifiedName) -> I.String {
+    I.intern(I.resolve(implicit_name.name()).replace(".", "_"))
 }
 
-pub fn ctx_struct_name(implicits: Vec[String]) -> I.String {
-    if implicits.is_empty() {
-        I.intern("_siko_ctx_0")
-    } else {
-        let parts: Vec[String] = implicits
-            .iter()
-            .map(|s| s.replace(".", "_"))
-            .collect();
-        I.intern("_siko_ctx_${join(parts, "_")}")
-    }
+pub fn ctx_struct_name(implicits: Vec[QualifiedName]) -> QualifiedName {
+    QualifiedName.new_mono(QualifiedName.new_implicit_context(implicits.iter().map(|q| q.name()).collect()), [], [], Map.new(), [])
 }
 
-pub fn named_ty(name: I.String) -> TypeDef {
-    TypeDef.Named(
-        Name.inner(QualifiedName.new_mono(name, [], [], Map.new(), [])),
-        [],
-    )
+pub fn named_ty(name: QualifiedName) -> TypeDef {
+    TypeDef.Named(Name.inner(name), [])
 }
 
 pub fn typed_var_expr(v: VariableName, ty: Option[TypeDef], loc: Location) -> Expr {
@@ -52,3 +41,5 @@ pub fn typed_field_expr(base: Expr, field: I.String, ty: Option[TypeDef], loc: L
 }
 
 }
+
+

@@ -110,14 +110,14 @@ fn build_array_elem_ptr(container: Expr, idx: Expr, container_ty: TypeDef, elem_
     let ptr_elem_ty = TypeDef.Ptr(elem_ty);
     let addr_of = Expr(ExprKind.AddrOf(container), loc, Some(ptr_array_ty));
     let as_ptr_call = Expr(ExprKind.FunctionCall(FunctionCallInfo(
-        QualifiedName.new(I.intern("Std.Array.as_ptr")),
+        B.get_array_as_ptr_qn(),
         FunctionKind.UserDefined,
         [addr_of],
         WitnessInfo.new(),
         Vec.new(),
     )), loc, Some(ptr_elem_ty));
     Expr(ExprKind.FunctionCall(FunctionCallInfo(
-        QualifiedName.new(I.intern("Std.Ptr.offset_of")),
+        B.get_ptr_offset_of_qn(),
         FunctionKind.UserDefined,
         [as_ptr_call, idx],
         WitnessInfo.new(),
@@ -243,10 +243,11 @@ pub struct Finalizer {
         }
         if let BoundWitness.Instance(_, instance_qname) = witnesses.witnesses[0] {
             let tad = func.type_arg_defs.unwrap();
+            // FIXME: no string split cut magic
             let trait_name_str = I.resolve(tad.bounds[0].trait_name.name());
-            let full_method_str = I.resolve(qname.base_name());
+            let full_method_str = I.resolve(qname.base_name().name());
             let method_name = full_method_str.strip_prefix(trait_name_str + ".").unwrap();
-            let concrete_qname = QualifiedName.new(I.intern(I.resolve(instance_qname) + "." + method_name));
+            let concrete_qname = QualifiedName.new_method(instance_qname.name(), I.intern(method_name));
             if f.program.functions.get(concrete_qname).is_some() {
                 // concrete method — rewrite and consume witnesses[0]
                 let remaining = WitnessInfo(witnesses.witnesses.into_iter().skip(1).collect());
@@ -309,7 +310,7 @@ pub struct Finalizer {
                 let finalized_idx = f.finalize_expr(idx);
                 let container_ty = finalized_container.ty.unwrap();
                 match container_ty {
-                    TypeDef.Named(Name.Resolved(name: qname, ..), type_args) if qname.base_name() == B.get_array_type() => {
+                    TypeDef.Named(Name.Resolved(name: qname, ..), type_args) if qname.base_name() == B.get_array_type_qn() => {
                         let elem_ty = type_args[0];
                         let ptr = build_array_elem_ptr(finalized_container, finalized_idx, container_ty, elem_ty);
                         Expr(ExprKind.Deref(ptr), loc, Some(elem_ty))
@@ -317,7 +318,7 @@ pub struct Finalizer {
                     _ => {
                         let witnesses = f.build_witnesses(result_var);
                         Expr(ExprKind.FunctionCall(FunctionCallInfo(
-                            QualifiedName.new(B.get_index_index()),
+                            B.get_index_index_qn(),
                             FunctionKind.UserDefined,
                             [finalized_container, finalized_idx],
                             witnesses,
@@ -374,7 +375,7 @@ pub struct Finalizer {
                         let finalized_rhs = f.finalize_expr(rhs);
                         let container_ty = finalized_container.ty.unwrap();
                         match container_ty {
-                            TypeDef.Named(Name.Resolved(name: qname, ..), type_args) if qname.base_name() == B.get_array_type() => {
+                            TypeDef.Named(Name.Resolved(name: qname, ..), type_args) if qname.base_name() == B.get_array_type_qn() => {
                                 let elem_ty = type_args[0];
                                 let ptr = build_array_elem_ptr(finalized_container, finalized_idx, container_ty, elem_ty);
                                 S.Assign(Expr(ExprKind.Deref(ptr), lhs.location, Some(elem_ty)), finalized_rhs)
@@ -382,7 +383,7 @@ pub struct Finalizer {
                             _ => {
                                 let witnesses = f.build_witnesses(assign_var);
                                 S.Expr(Expr(ExprKind.FunctionCall(FunctionCallInfo(
-                                    QualifiedName.new(B.get_index_assign_index_assign()),
+                                    B.get_index_assign_index_assign_qn(),
                                     FunctionKind.UserDefined,
                                     [finalized_container, finalized_idx, finalized_rhs],
                                     witnesses,
@@ -403,3 +404,4 @@ pub struct Finalizer {
 }
 
 }
+

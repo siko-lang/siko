@@ -20,6 +20,7 @@ import Siko.AST.Name
 import Siko.AST.QualifiedName
 import Siko.Location
 import Siko.Interner as I
+import Siko.Format.Utils
 
 pub trait Specialize[T] {
     fn specialize(t: T, mono: Monomorphizer) -> T
@@ -132,8 +133,8 @@ instance Specialize[FunctionPtrInfo] {
         let is_c_callback = func.is_c_callback();
         let effect_ctx = if is_extern { EffectCtx.new() } else { mono.current_effect_ctx.clone() };
         let implicit_ctx = if is_extern || is_c_callback { ImplicitCtx.new() } else { mono.current_implicit_ctx.clone() };
-        let mono_key = fn_mono_key(info.name.name(), callee_type_args, callee_witnesses, effect_ctx.clone(), implicit_ctx.clone());
-        if !mono.fn_done.contains(mono_key.name()) {
+        let mono_key = fn_mono_key(info.name, callee_type_args, callee_witnesses, effect_ctx.clone(), implicit_ctx.clone());
+        if !mono.fn_done.contains(mono_key) {
             mono.fn_queue.push_back(FnWork(
                 info.name,
                 callee_type_args,
@@ -159,13 +160,13 @@ instance Specialize[CreateClosureInfo] {
             .map(|w| mono.resolve_witness_to_module(w))
             .collect();
         let mono_callee = fn_mono_key(
-            info.name.name(),
+            info.name,
             callee_type_args,
             callee_witnesses,
             mono.current_effect_ctx.clone(),
             mono.current_implicit_ctx.clone(),
         );
-        if !mono.fn_done.contains(mono_callee.name()) {
+        if !mono.fn_done.contains(mono_callee) {
             mono.fn_queue.push_back(FnWork(
                 info.name.clone(),
                 callee_type_args,
@@ -230,21 +231,18 @@ instance Specialize[Pattern] {
             PatternKind.Named(info) => {
                 let qn = info.name.resolved();
                 let type_args: Vec[TypeDef] = match pattern.ty {
-                    Some(TypeDef.Named(_, args)) => args.specialize(mono),
+                    Some(TypeDef.Named(_, args)) => args.apply(mono.sub),
                     _ => [],
                 };
                 let kind = if mono.source.variant_enum_map.contains_key(qn) {
                     let (enum_qname, item_ann_types, generic_params) = mono.source.find_variant(qn);
-                    let mono_enum = data_mono_key(enum_qname.name(), type_args);
+                    let mono_enum = data_mono_key(enum_qname, type_args);
                     let v = mono.source.variant(qn);
-                    let mono_variant = Name.inner(QualifiedName.new(I.intern("${I.resolve(mono_enum.name())}.${I.resolve(v.name.name())}")));
+                    let mono_variant = Name.Resolved(get_mono_variant_qn(mono_enum, v.qualified_name.unwrap()), info.name.location());
                     PatternKind.Named(NamedPatternInfo(name: mono_variant, args: info.args.specialize(mono), named_args: info.named_args, has_rest: False))
                 } else {
                     let struct_def = mono.source.structs.get(qn).unwrap();
-                    let mono_struct = data_mono_key(qn.name(), type_args);
-                    if !mono.struct_done.contains(mono_struct.name()) {
-                        mono.struct_queue.push_back(DataWork(qn.clone(), type_args));
-                    }
+                    let mono_struct = data_mono_key(qn, type_args);
                     PatternKind.Named(NamedPatternInfo(name: Name.inner(mono_struct), args: info.args.specialize(mono), named_args: info.named_args, has_rest: False))
                 };
                 Pattern(kind, pattern.location.clone(), spec_ty)
@@ -268,9 +266,7 @@ instance Specialize[FieldDef] {
 
 instance Specialize[TypeDef] {
     fn specialize(ty: TypeDef, mono: Monomorphizer) -> TypeDef {
-        let t = specialize_type(ty, mono.sub);
-        mono.enqueue_named_types(t);
-        t
+        specialize_type(ty, mono)
     }
 }
 
@@ -304,6 +300,17 @@ instance Specialize[Expr] {
     fn specialize(expr: Expr, mono: Monomorphizer) -> Expr {
         mono.current_location = Some(expr.location.clone());
         mono.current_expr_ty = expr.ty.clone();
+        match mono.current_expr_ty {
+            Some(ty) if ty.is_mono(False) => {
+                println("expr ${format_expr(expr)}");
+                panic("current expr ty in Specialize[Expr] is not mono");
+            }
+            None => {
+                println("expr ${format_expr(expr)}");
+                panic("current expr ty is empty!");
+            }
+            _ => {}
+        }
         match expr.kind {
             ExprKind.TypeAssociatedCall(info) => {
                 let fn_call_info = process_type_associated_call(info, mono);

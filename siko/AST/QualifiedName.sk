@@ -6,43 +6,193 @@ import Std.MD5 as MD5
 import Siko.Interner as I
 import Siko.AST.Type
 import Siko.Format.Utils
+import Siko.Constants.Builtins as B
 
 @derive(PartialEq, Eq, PartialOrd, Ord, Clone)
-pub struct MonoName2 {
-    pub name: I.String,
+pub enum BaseName {
+    Struct(module_name: I.String, struct_name: I.String),
+    Enum(module_name: I.String, enum_name: I.String),
+    Variant(module_name: I.String, enum_name: I.String, variant_name: I.String),
+    Trait(module_name: I.String, trait_name: I.String),
+    Effect(module_name: I.String, effect_name: I.String),
+    Global(module_name: I.String, global_name: I.String),
+    Implicit(module_name: I.String, implicit_name: I.String),
+    Function(module_name: I.String, fn_name: I.String),
+    Lambda(parent_name: I.String, index: Int),
+    ClosureEnum(index: Int),
+    ClosureVariant(enum_index: Int, variant_index: Int),
+    ClosureHandler(index: Int),
+    UnnamedInstance(trait_name: I.String, args: Vec[TypeDef]),
+    NamedInstance(module_name: I.String, instance_name: I.String),
+    Method(parent_name: I.String, method_name: I.String),
+    DefaultArg(parent_name: I.String, index: Int),
+    ImplicitWrap(parent_name: I.String),
+    ImplicitContext(implicits: Vec[I.String]),
+    Tuple(args: Vec[TypeDef]),
+
+    pub fn name(bn: BaseName) -> I.String {
+        match bn {
+            Struct(m, n)
+            | Enum(m, n)
+            | Trait(m, n)
+            | Effect(m, n)
+            | Global(m, n)
+            | Implicit(m, n)
+            | Function(m, n)
+            | NamedInstance(m, n) => I.intern(I.resolve(m) + "." + I.resolve(n)),
+            Variant(m, e, v) => I.intern(I.resolve(m) + "." + I.resolve(e) + "." + I.resolve(v)),
+            Lambda(parent, i) => I.intern(I.resolve(parent) + "_lambda_" + i.to_string()),
+            ClosureEnum(i) => I.intern(B.get_siko_closure_str() + i.to_string()),
+            ClosureVariant(ei, vi) => I.intern(B.get_siko_closure_str() + ei.to_string() + ".Variant" + vi.to_string()),
+            ClosureHandler(i) => I.intern(B.get_siko_closure_str() + i.to_string() + "_handler"),
+            UnnamedInstance(t, args) => I.intern(I.resolve(t) + "#[" + format_types(args) + "]"),
+            Method(parent, m) => I.intern(I.resolve(parent) + "." + I.resolve(m)),
+            DefaultArg(parent, i) => I.intern(I.resolve(parent) + "def_arg_" + i.to_string()),
+            ImplicitWrap(parent) => I.intern(I.resolve(parent) + "__implicit_wrap"),
+            ImplicitContext(implicits) => I.intern("__implicit_context_" + join(implicits.iter().map(|n| I.resolve(n)).collect(), "_")),
+            Tuple(args) => I.intern("__tuple_" + format_types(args) + "_"),
+        }
+    }
+}
+
+@derive(PartialEq, Eq, PartialOrd, Ord, Clone)
+pub struct BaseNameInfo {
+    base_name: BaseName,
+    name: I.String,
+
+    pub fn new(n: BaseName) -> BaseNameInfo {
+        BaseNameInfo(n, n.name())
+    }
+
+    pub fn name(n: BaseNameInfo) -> I.String {
+        n.name
+    }
+
+    pub fn base(n: BaseNameInfo) -> BaseName {
+        n.base_name
+    }
+}
+
+@derive(PartialEq, Eq, PartialOrd, Ord, Clone)
+pub struct MonoName {
+    pub name: BaseNameInfo,
     pub args: Vec[TypeDef],
     pub witnesses: Vec[I.String],
-    pub effect_ctx: Map[QualifiedName, QualifiedName],
+    pub effect_ctx: Map[I.String, I.String],
     pub implicit_ctx: Vec[QualifiedName],
     hashed: String,
 }
 
 @derive(Clone)
 pub enum QualifiedName {
-    Simple(I.String),
-    Mono(MonoName2),
-
-    pub fn new(name: I.String) -> QualifiedName {
-        Simple(name)
-    }
+    Base(BaseNameInfo),
+    Mono(MonoName),
 
     pub fn new_mono(
-            name: I.String,
+            name: QualifiedName,
             args: Vec[TypeDef],
             witnesses: Vec[I.String],
             effect_ctx: Map[QualifiedName, QualifiedName],
             implicit_ctx: Vec[QualifiedName]) -> QualifiedName {
-        let qn = Mono(MonoName2(name, args, witnesses, effect_ctx, implicit_ctx, ""));
+        let base = match name {
+            Base(bn) => bn,
+            Mono(_) => {
+                println("Already mono qn ${name.name()}, args: ${format_types(args)}");
+                panic("new_mono: cannot mono a Mono")
+            }
+        };
+        let effect_ctx_str: Map[I.String, I.String] = effect_ctx.into_iter().map(|(k, v)| (k.name(), v.name())).collect();
+        let qn = Mono(MonoName(base, args, witnesses, effect_ctx_str, implicit_ctx, ""));
+        qn.rehash();
+        qn
+    }
+
+    pub fn new_struct(module_name: I.String, struct_name: I.String) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.Struct(module_name, struct_name)))
+    }
+
+    pub fn new_enum(module_name: I.String, enum_name: I.String) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.Enum(module_name, enum_name)))
+    }
+
+    pub fn new_variant(module_name: I.String, enum_name: I.String, variant_name: I.String) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.Variant(module_name, enum_name, variant_name)))
+    }
+
+    pub fn new_trait(module_name: I.String, trait_name: I.String) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.Trait(module_name, trait_name)))
+    }
+
+    pub fn new_effect(module_name: I.String, effect_name: I.String) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.Effect(module_name, effect_name)))
+    }
+
+    pub fn new_global(module_name: I.String, global_name: I.String) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.Global(module_name, global_name)))
+    }
+
+    pub fn new_implicit(module_name: I.String, implicit_name: I.String) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.Implicit(module_name, implicit_name)))
+    }
+
+    pub fn new_function(module_name: I.String, fn_name: I.String) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.Function(module_name, fn_name)))
+    }
+
+    pub fn new_lambda(parent_name: I.String, index: Int) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.Lambda(parent_name, index)))
+    }
+
+    pub fn new_closure_enum(index: Int) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.ClosureEnum(index)))
+    }
+
+    pub fn new_closure_variant(enum_index: Int, variant_index: Int) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.ClosureVariant(enum_index, variant_index)))
+    }
+
+    pub fn new_closure_handler(index: Int) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.ClosureHandler(index)))
+    }
+
+    pub fn new_unnamed_instance(trait_name: I.String, args: Vec[TypeDef]) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.UnnamedInstance(trait_name, args)))
+    }
+
+    pub fn new_named_instance(module_name: I.String, instance_name: I.String) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.NamedInstance(module_name, instance_name)))
+    }
+
+    pub fn new_method(parent_name: I.String, method_name: I.String) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.Method(parent_name, method_name)))
+    }
+
+    pub fn new_default_arg(parent_name: I.String, index: Int) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.DefaultArg(parent_name, index)))
+    }
+
+    pub fn new_implicit_wrap(parent_name: I.String) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.ImplicitWrap(parent_name)))
+    }
+
+    pub fn new_implicit_context(implicits: Vec[I.String]) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.ImplicitContext(implicits)))
+    }
+
+    pub fn new_tuple(args: Vec[TypeDef]) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.Tuple(args)))
+    }
+
+    pub fn rehash(qn: QualifiedName) {
         let h = qn.get_hashed();
         qn.save_hashed(h);
-        qn
     }
 
     pub fn name(qn: QualifiedName) -> I.String {
         match qn {
-            Simple(s) => s,
+            Base(bn) => bn.name(),
             Mono(m) => {
-                let base = I.resolve(m.name);
+                let base = I.resolve(m.name.name());
                 let (args_str, extras) = qn.extra();
                 I.intern(base + args_str + extras)
             }
@@ -51,7 +201,7 @@ pub enum QualifiedName {
 
     pub fn extra(qn: QualifiedName) -> (String, String) {
         match qn {
-            Simple(_) => ("", ""),
+            Base(_) => ("", ""),
             Mono(m) => {
                 let args_str = if m.args.is_empty() {
                     ""
@@ -69,7 +219,7 @@ pub enum QualifiedName {
                     ""
                 } else {
                     let entries: Vec[String] = m.effect_ctx.iter()
-                        .map(|(k, v)| I.resolve(k.name()) + "->" + I.resolve(v.name()))
+                        .map(|(k, v)| I.resolve(k) + "->" + I.resolve(v))
                         .collect();
                     "{" + join(entries, ",") + "}"
                 };
@@ -84,37 +234,44 @@ pub enum QualifiedName {
         }
     }
 
-    pub fn base_name(qn: QualifiedName) -> I.String {
+    pub fn base(qn: QualifiedName) -> BaseName {
         match qn {
-            Simple(s) => s,
-            Mono(m) => m.name,
+            Base(bn) => bn.base_name,
+            Mono(m) => m.name.base_name,
+        }
+    }
+
+    pub fn base_name(qn: QualifiedName) -> QualifiedName {
+        match qn {
+            Base(bn) => Base(bn),
+            Mono(m) => Base(m.name),
         }
     }
 
     pub fn is_simple(qn: QualifiedName) -> Bool {
         match qn {
-            Simple(_) => True,
+            Base(_) => True,
             Mono(_) => False,
         }
     }
 
     pub fn is_mono(qn: QualifiedName) -> Bool {
         match qn {
-            Simple(_) => False,
+            Base(_) => False,
             Mono(_) => True,
         }
     }
 
     pub fn type_args(qn: QualifiedName) -> Vec[TypeDef] {
         match qn {
-            Simple(_) => Vec.new(),
+            Base(_) => Vec.new(),
             Mono(m) => m.args,
         }
     }
 
     pub fn implicit_ctx(qn: QualifiedName) -> Vec[QualifiedName] {
         match qn {
-            Simple(_) => Vec.new(),
+            Base(_) => Vec.new(),
             Mono(m) => m.implicit_ctx,
         }
     }
@@ -127,22 +284,22 @@ pub enum QualifiedName {
         let digest = MD5.compute(extra.to_bytes());
         let hash = bytes_to_hex(digest);
         let simple_name = match qn {
-            Simple(s) => s,
-            Mono(name) => name.name,
+            Base(bn) => bn.name(),
+            Mono(m) => m.name.name(),
         };
         "${simple_name}${type_args}_${hash}"
     }
 
     fn save_hashed(qn: QualifiedName, hashed: String) {
         match qn {
-            Simple(_) => (),
+            Base(_) => (),
             Mono(m) => { m.hashed = hashed; }
         }
     }
 
     pub fn hashed(qn: QualifiedName) -> String {
         match qn {
-            Simple(_) => I.resolve(qn.name()),
+            Base(bn) => I.resolve(bn.name()),
             Mono(m) => m.hashed,
         }
     }

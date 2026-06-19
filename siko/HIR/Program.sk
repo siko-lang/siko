@@ -58,7 +58,7 @@ pub struct Program {
         let enum_qname = program.variant_enum_map.get(variant_qname).expect("variant enum not found");
         let enum_def = program.enums.get(enum_qname).expect("enum not found");
         for variant in enum_def.variants {
-            if variant.qualified_name == variant_qname {
+            if variant.qualified_name.unwrap() == variant_qname {
                 return variant;
             }
         }
@@ -73,7 +73,7 @@ pub struct Program {
             None => Vec.new(),
         };
         for variant in enum_def.variants {
-            if variant.qualified_name == variant_qname {
+            if variant.qualified_name.unwrap() == variant_qname {
                 return (enum_qname, variant.items.iter().map(|i| i.ty).collect(), type_params);
             }
         }

@@ -18,7 +18,6 @@ import Siko.Location
 import Siko.Utils.VarAllocator
 import Siko.Normalizer
 import Siko.Interner as I
-import Siko.Constants.Builtins as B
 
 // ── Data structures ────────────────────────────────────────────────────────────
 
@@ -155,10 +154,8 @@ struct ClosureLowerer {
         }
         let idx = ctx.enum_index;
         ctx.enum_index += 1;
-        let base = I.intern("${B.get_siko_closure_str()}${idx}");
-        let handler_name = I.intern("${B.get_siko_closure_str()}${idx}_handler");
-        let enum_qname = QualifiedName.Simple(base);
-        let handler_qname = QualifiedName.Simple(handler_name);
+        let enum_qname = QualifiedName.new_closure_enum(idx);
+        let handler_qname = QualifiedName.new_closure_handler(idx);
         let (param_types, ret_type) = match fn_type {
             TypeDef.Fn(params, ret) => (params, ret),
             _ => panic("get_or_create_enum: not a Fn type"),
@@ -191,7 +188,11 @@ struct ClosureLowerer {
 
                 let variant_idx = info.variants.len();
                 let variant_short_name = I.intern("Variant${variant_idx}");
-                let variant_qname = QualifiedName.Simple(I.intern("${I.resolve(info.enum_qname.name())}.Variant${variant_idx}"));
+                let enum_idx = match info.enum_qname.base() {
+                    BaseName.ClosureEnum(i) => i,
+                    _ => panic("expected ClosureEnum qn"),
+                };
+                let variant_qname = QualifiedName.new_closure_variant(enum_idx, variant_idx);
 
                 info.variants.push(VariantInfo(variant_short_name, variant_qname.clone(), lambda_qname, capture_types.clone()));
                 ctx.fn_type_to_enum.insert(fn_type, info.clone());
@@ -240,7 +241,7 @@ fn generate_enum(info: ClosureEnumInfo, repr_loc: Location) -> EnumDef {
     let variants: Vec[VariantDef] = info.variants.iter().map(|vi| {
         VariantDef(
             Identifier.new(vi.variant_short_name, repr_loc.clone()),
-            vi.variant_qname.clone(),
+            Some(vi.variant_qname.clone()),
             vi.capture_types.iter().map(|t| ItemInfo(name: None, ty: t.clone())).collect(),
         )
     }).collect();
@@ -249,7 +250,7 @@ fn generate_enum(info: ClosureEnumInfo, repr_loc: Location) -> EnumDef {
         [],
         False,
         Identifier.new(info.enum_qname.name(), repr_loc.clone()),
-        info.enum_qname,
+        Some(info.enum_qname),
         None,
         variants,
         [],
@@ -338,7 +339,7 @@ fn generate_handler(info: ClosureEnumInfo, repr_loc: Location) -> FunctionDef {
         annotations: [],
         public: False,
         name: Identifier.new(info.handler_qname.name(), repr_loc.clone()),
-        qualified_name: info.handler_qname,
+        qualified_name: Some(info.handler_qname),
         kind: FunctionDefKind.Regular,
         type_arg_defs: None,
         args: fn_args,
@@ -389,7 +390,7 @@ pub fn lower_closures(program: Program) {
 
         let handler = generate_handler(info, repr_loc.clone());
         normalize_function(handler, Set.new());
-        program.functions.insert(handler.qualified_name.clone(), handler);
+        program.functions.insert(handler.qualified_name.unwrap(), handler);
     }
 }
 
@@ -406,3 +407,7 @@ fn any_location(program: Program) -> Location {
 }
 
 }
+
+
+
+

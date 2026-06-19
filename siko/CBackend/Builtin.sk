@@ -15,7 +15,7 @@ fn emit_builtin_sig(emitter: Emitter, fdef: FunctionDef) {
     }
     emitter.emit_type(ty);
     emitter.append(" ");
-    emitter.append(fn_name(fdef.qualified_name));
+    emitter.append(fn_name(fdef.qualified_name.unwrap()));
     emitter.append("(");
     for (i, arg) in fdef.args.iter().enumerate() {
         if i > 0 {
@@ -59,9 +59,9 @@ fn emit_uninitialized(emitter: Emitter, fdef: FunctionDef) {
 }
 
 pub fn try_emit_builtin(emitter: Emitter, fdef: FunctionDef) -> Bool {
-    let base = fdef.qualified_name.base_name();
-    if base == B.get_util_discriminator() { emit_discriminator(emitter, fdef); }
-    else if base == B.get_util_uninitialized() { emit_uninitialized(emitter, fdef); }
+    let base = fdef.qualified_name.unwrap().base_name();
+    if base == B.get_util_discriminator_qn() { emit_discriminator(emitter, fdef); }
+    else if base == B.get_util_uninitialized_qn() { emit_uninitialized(emitter, fdef); }
     else { return False; }
     True
 }
