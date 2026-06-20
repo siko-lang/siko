@@ -2,22 +2,9 @@ module Siko.CBackend.Ctor {
 
 import Siko.CBackend.Emit
 import Siko.CBackend.Util
-import Siko.Constants.Builtins as B
 import Siko.Interner as I
 
 pub fn emit_struct_ctor_declarations(emitter: Emitter) {
-    // for sdef in emitter.program.structs.values() {
-    //     let name = sdef.qualified_name.unwrap().name();
-    //     if name == B.get_string_type() {
-    //         let cname = mangle(sdef.qualified_name.unwrap().hashed());
-    //         emitter.append("struct ");
-    //         emitter.append(cname);
-    //         emitter.append(" ctor_");
-    //         emitter.append(cname);
-    //         emitter.append("(char* value, size_t len);\n");
-    //         emitter.emit_empty_line();
-    //     }
-    // }
     for sdef in emitter.program.structs.values() {
         if sdef.is_builtin() {
             continue;
@@ -26,20 +13,7 @@ pub fn emit_struct_ctor_declarations(emitter: Emitter) {
         emitter.append("struct ");
         emitter.append(cname);
         if emitter.is_value_type(sdef.qualified_name.unwrap()) {
-            if sdef.qualified_name.unwrap().name() == B.get_string_type() {
-                emitter.append(" ctor_");
-                emitter.append(cname);
-                emitter.append("(");
-                for (index, field) in sdef.fields.iter().enumerate() {
-                    if index > 0 {
-                        emitter.append(", ");
-                    }
-                    emitter.emit_type(field.ty);
-                    emitter.append(" ");
-                    emitter.append(I.resolve(field.name.name()));
-                }
-                emitter.append(");\n");
-            } else if sdef.fields.len() > 0 {
+            if sdef.fields.len() > 0 {
                 emitter.append(" ctor_");
                 emitter.append(cname);
                 emitter.append("(");
@@ -76,27 +50,6 @@ pub fn emit_struct_ctor_declarations(emitter: Emitter) {
 }
 
 pub fn emit_struct_ctor_definitions(emitter: Emitter) {
-    // for sdef in emitter.program.structs.values() {
-    //     let name = sdef.qualified_name.unwrap().name();
-    //     if name == B.get_string_type() {
-    //         let cname = mangle(sdef.qualified_name.unwrap().hashed());
-    //         emitter.append("struct ");
-    //         emitter.append(cname);
-    //         emitter.append(" ctor_");
-    //         emitter.append(cname);
-    //         emitter.append("(char* value, size_t len) {\n");
-    //         emitter.append("  char* buf = SIKO_GC_MALLOC(len);\n");
-    //         emitter.append("  memcpy(buf, value, len);\n");
-    //         emitter.append("  struct ");
-    //         emitter.append(cname);
-    //         emitter.append(" result;\n");
-    //         emitter.append("  result.value = buf;\n");
-    //         emitter.append("  result.len = len;\n");
-    //         emitter.append("  return result;\n");
-    //         emitter.append("}\n");
-    //         emitter.emit_empty_line();
-    //     }
-    // }
     for sdef in emitter.program.structs.values() {
         if sdef.is_builtin() {
             continue;
@@ -105,29 +58,7 @@ pub fn emit_struct_ctor_definitions(emitter: Emitter) {
         emitter.append("struct ");
         emitter.append(cname);
         if emitter.is_value_type(sdef.qualified_name.unwrap()) {
-            if sdef.qualified_name.unwrap().name() == B.get_string_type() {
-                emitter.append(" ctor_");
-                emitter.append(cname);
-                emitter.append("(");
-                for (index, field) in sdef.fields.iter().enumerate() {
-                    if index > 0 {
-                        emitter.append(", ");
-                    }
-                    emitter.emit_type(field.ty);
-                    emitter.append(" ");
-                    emitter.append(I.resolve(field.name.name()));
-                }
-                emitter.append(") {\n");
-                emitter.append("  struct ");
-                emitter.append(cname);
-                emitter.append(" result;\n");
-                emitter.append("  char* buf = SIKO_GC_MALLOC(len);\n");
-                emitter.append("  memcpy(buf, value, len);\n");
-                emitter.append("  result.value = buf;\n");
-                emitter.append("  result.len = len;\n");
-                emitter.append("  return result;\n");
-                emitter.append("}\n");
-            } else if sdef.fields.len() > 0 {
+            if sdef.fields.len() > 0 {
                 emitter.append(" ctor_");
                 emitter.append(cname);
                 emitter.append("(");

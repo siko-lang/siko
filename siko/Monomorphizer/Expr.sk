@@ -278,10 +278,11 @@ pub fn process_type_associated_call(info: TypeAssociatedCallInfo, mono: Monomorp
     };
 
     let instance_qname = resolution.instance_qname.unwrap();
-    let sb_trait_str = I.resolve(self_bound.trait_name.name());
-    let fn_name_str = I.resolve(info.fn_name.name());
-    let method_str = fn_name_str.strip_prefix(sb_trait_str + ".").unwrap();
-    let concrete_method = QualifiedName.new_method(instance_qname.name(), I.intern(method_str));
+    let method_name = match info.fn_name.base() {
+        BaseName.Method(_, m) => m,
+        _ => panic("mono: TypeAssociatedCall: fn_name is not a Method QN"),
+    };
+    let concrete_method = QualifiedName.new_method(instance_qname.name(), method_name);
 
     let (final_callee, callee_type_args) = match mono.source.functions.get(concrete_method) {
         Some(mf) => {

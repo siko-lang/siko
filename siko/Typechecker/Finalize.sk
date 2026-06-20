@@ -242,12 +242,11 @@ pub struct Finalizer {
             return (qname, witnesses);
         }
         if let BoundWitness.Instance(_, instance_qname) = witnesses.witnesses[0] {
-            let tad = func.type_arg_defs.unwrap();
-            // FIXME: no string split cut magic
-            let trait_name_str = I.resolve(tad.bounds[0].trait_name.name());
-            let full_method_str = I.resolve(qname.base_name().name());
-            let method_name = full_method_str.strip_prefix(trait_name_str + ".").unwrap();
-            let concrete_qname = QualifiedName.new_method(instance_qname.name(), I.intern(method_name));
+            let method_name = match qname.base() {
+                BaseName.Method(_, m) => m,
+                _ => panic("finalize: TypeAssociatedCall qname is not a Method QN"),
+            };
+            let concrete_qname = QualifiedName.new_method(instance_qname.name(), method_name);
             if f.program.functions.get(concrete_qname).is_some() {
                 // concrete method — rewrite and consume witnesses[0]
                 let remaining = WitnessInfo(witnesses.witnesses.into_iter().skip(1).collect());

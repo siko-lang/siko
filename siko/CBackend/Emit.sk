@@ -14,6 +14,7 @@ import Siko.Constants.Builtins as B
 import Siko.HIR.Program
 import Siko.Interner as I
 import Siko.Format.Utils
+import Std.Map
 import Std.StringBuilder
 import Std.Set
 
@@ -25,9 +26,20 @@ pub struct Emitter {
     loop_counter: Int,
     current_loop_id: Int,
     closure_ptr: Bool,
+    builtin_int_types: Map[QualifiedName, String],
 
     fn new(program: Program, closure_ptr: Bool, value_types_ordered: Vec[QualifiedName]) -> Emitter {
-        Emitter(program, value_types_ordered, StringBuilder.new(), 0, 0, 0, closure_ptr)
+        let builtin_int_types: Map[QualifiedName, String] = Map.new();
+        builtin_int_types.insert(B.get_int_type_qn().as_mono(), "int64_t");
+        builtin_int_types.insert(B.get_i8_type_qn().as_mono(),  "int8_t");
+        builtin_int_types.insert(B.get_i16_type_qn().as_mono(), "int16_t");
+        builtin_int_types.insert(B.get_i32_type_qn().as_mono(), "int32_t");
+        builtin_int_types.insert(B.get_i64_type_qn().as_mono(), "int64_t");
+        builtin_int_types.insert(B.get_u8_type_qn().as_mono(),  "uint8_t");
+        builtin_int_types.insert(B.get_u16_type_qn().as_mono(), "uint16_t");
+        builtin_int_types.insert(B.get_u32_type_qn().as_mono(), "uint32_t");
+        builtin_int_types.insert(B.get_u64_type_qn().as_mono(), "uint64_t");
+        Emitter(program, value_types_ordered, StringBuilder.new(), 0, 0, 0, closure_ptr, builtin_int_types)
     }
 
     pub fn is_value_type(emitter: Emitter, qname: QualifiedName) -> Bool {
@@ -258,7 +270,8 @@ pub struct Emitter {
                 emitter.append("((uint8_t)${b})");
             }
             ExprKind.StringLiteral(s) => {
-                let cname = mangle(B.get_string_type_str());
+                // FIXME: stringliteral should not create anything here, should b *U8
+                let cname = mangle(I.resolve(B.get_string_type_qn().name()));
                 let len = s.len();
                 emitter.append("((struct ${cname}){ .value = (char*)\"");
                 emitter.append(escape_c_string(s));
@@ -287,8 +300,8 @@ pub struct Emitter {
                     _ => panic("emit_expr: unexpected BinaryOp"),
                 };
                 if is_cmp {
-                    let ctor_true  = "ctor_${mangle(B.get_bool_true_str())}";
-                    let ctor_false = "ctor_${mangle(B.get_bool_false_str())}";
+                    let ctor_true  = "ctor_${mangle(I.resolve(B.get_bool_true_qn().name()))}";
+                    let ctor_false = "ctor_${mangle(I.resolve(B.get_bool_false_qn().name()))}";
                     emitter.append("((");
                     emitter.emit_expr(lhs);
                     emitter.append(" ${op_str} ");
@@ -409,29 +422,14 @@ pub struct Emitter {
             }
             ExprKind.Match(MatchInfo(scrutinee, arms)) => {
                 let ty = scrutinee.ty.unwrap();
-                let ty_str = format_type(ty);
-                if emitter.program.enums.iter().any(|(k, _)| I.resolve(k.name()) == ty_str) {
-                    emitter.emit_match_enum(scrutinee, arms);
-                } else if ty_str == B.get_int_type_str() {
-                    emit_match_int(emitter, scrutinee, arms);
-                } else if ty_str == B.get_i8_type_str() {
-                    emit_match_int(emitter, scrutinee, arms);
-                } else if ty_str == B.get_i16_type_str() {
-                    emit_match_int(emitter, scrutinee, arms);
-                } else if ty_str == B.get_i32_type_str() {
-                    emit_match_int(emitter, scrutinee, arms);
-                } else if ty_str == B.get_i64_type_str() {
-                    emit_match_int(emitter, scrutinee, arms);
-                } else if ty_str == B.get_u8_type_str() {
-                    emit_match_int(emitter, scrutinee, arms);
-                } else if ty_str == B.get_u16_type_str() {
-                    emit_match_int(emitter, scrutinee, arms);
-                } else if ty_str == B.get_u32_type_str() {
-                    emit_match_int(emitter, scrutinee, arms);
-                } else if ty_str == B.get_u64_type_str() {
-                    emit_match_int(emitter, scrutinee, arms);
-                } else {
-                    emit_match_struct(emitter, scrutinee, arms);
+                if let Some(name) = ty.name_opt() {
+                    if emitter.program.enums.contains_key(name) {
+                        emitter.emit_match_enum(scrutinee, arms);
+                    } else if emitter.builtin_int_types.contains_key(name) {
+                        emit_match_int(emitter, scrutinee, arms);
+                    } else {
+                        emit_match_struct(emitter, scrutinee, arms);
+                    }
                 }
             }
             ExprKind.With(_) => panic("emit_expr: With not implemented"),
@@ -464,6 +462,7 @@ pub struct Emitter {
             ExprKind.List(_) => panic("emit_expr: List must be desugared by resolver"),
             ExprKind.Index(_, _) => panic("emit_expr: Index must be desugared by resolver"),
             ExprKind.IfLet(_, _, _, _) => panic("emit_expr: IfLet must be desugared by resolver"),
+            ExprKind.Range(_, _) => panic("emit_expr: Range must be desugared by resolver"),
             ExprKind.Try(_) => panic("emit_expr: Try must be lowered by resolver"),
             ExprKind.SizeOf(ty) => {
                 emitter.append("sizeof(");
@@ -754,27 +753,9 @@ pub struct Emitter {
             TypeDef.Never(_) => emitter.append("void"),
             TypeDef.Fn(_, _) | TypeDef.FnPtr(_, _) => emitter.append("void*"),
             TypeDef.Named(name, _) => {
-                if format_type(ty) == B.get_int_type_str() {
-                    emitter.append("int64_t");
-                } else if format_type(ty) == B.get_i8_type_str() {
-                    emitter.append("int8_t");
-                } else if format_type(ty) == B.get_i16_type_str() {
-                    emitter.append("int16_t");
-                } else if format_type(ty) == B.get_i32_type_str() {
-                    emitter.append("int32_t");
-                } else if format_type(ty) == B.get_i64_type_str() {
-                    emitter.append("int64_t");
-                } else if format_type(ty) == B.get_u8_type_str() {
-                    emitter.append("uint8_t");
-                } else if format_type(ty) == B.get_u16_type_str() {
-                    emitter.append("uint16_t");
-                } else if format_type(ty) == B.get_u32_type_str() {
-                    emitter.append("uint32_t");
-                } else if format_type(ty) == B.get_u64_type_str() {
-                    emitter.append("uint64_t");
-                } else if format_type(ty) == B.get_string_type_str() {
-                    emitter.append("struct ");
-                    emitter.append(mangle(format_type(ty)));
+                let name = name.resolved();
+                if let Some(c_type) = emitter.builtin_int_types.get(name) {
+                    emitter.append(c_type);
                 } else {
                     emitter.append("struct ");
                     emitter.append(mangle(format_type(ty)));
@@ -793,33 +774,8 @@ pub struct Emitter {
             TypeDef.VoidPtr => {
                 emitter.append("void*");
             }
-            _ => {
-                if format_type(ty) == B.get_int_type_str() {
-                    emitter.append("int64_t");
-                } else if format_type(ty) == B.get_i8_type_str() {
-                    emitter.append("int8_t");
-                } else if format_type(ty) == B.get_i16_type_str() {
-                    emitter.append("int16_t");
-                } else if format_type(ty) == B.get_i32_type_str() {
-                    emitter.append("int32_t");
-                } else if format_type(ty) == B.get_i64_type_str() {
-                    emitter.append("int64_t");
-                } else if format_type(ty) == B.get_u8_type_str() {
-                    emitter.append("uint8_t");
-                } else if format_type(ty) == B.get_u16_type_str() {
-                    emitter.append("uint16_t");
-                } else if format_type(ty) == B.get_u32_type_str() {
-                    emitter.append("uint32_t");
-                } else if format_type(ty) == B.get_u64_type_str() {
-                    emitter.append("uint64_t");
-                } else if format_type(ty) == B.get_string_type_str() {
-                    emitter.append("struct ");
-                    emitter.append(mangle(format_type(ty)));
-                } else {
-                    emitter.append("struct ");
-                    emitter.append(mangle(format_type(ty)));
-                    emitter.append("*");
-                }
+            ty => {
+                panic("unexpected type in emitter ${format_type(ty)}");
             }
         }
     }

@@ -6,7 +6,6 @@ import Std.MD5 as MD5
 import Siko.Interner as I
 import Siko.AST.Type
 import Siko.Format.Utils
-import Siko.Constants.Builtins as B
 
 @derive(PartialEq, Eq, PartialOrd, Ord, Clone)
 pub enum BaseName {
@@ -42,9 +41,9 @@ pub enum BaseName {
             | NamedInstance(m, n) => I.intern(I.resolve(m) + "." + I.resolve(n)),
             Variant(m, e, v) => I.intern(I.resolve(m) + "." + I.resolve(e) + "." + I.resolve(v)),
             Lambda(parent, i) => I.intern(I.resolve(parent) + "_lambda_" + i.to_string()),
-            ClosureEnum(i) => I.intern(B.get_siko_closure_str() + i.to_string()),
-            ClosureVariant(ei, vi) => I.intern(B.get_siko_closure_str() + ei.to_string() + ".Variant" + vi.to_string()),
-            ClosureHandler(i) => I.intern(B.get_siko_closure_str() + i.to_string() + "_handler"),
+            ClosureEnum(i) => I.intern("closure_" + i.to_string()),
+            ClosureVariant(ei, vi) => I.intern("closure_" + ei.to_string() + ".Variant" + vi.to_string()),
+            ClosureHandler(i) => I.intern("closure_" + i.to_string() + "_handler"),
             UnnamedInstance(t, args) => I.intern(I.resolve(t) + "#[" + format_types(args) + "]"),
             Method(parent, m) => I.intern(I.resolve(parent) + "." + I.resolve(m)),
             DefaultArg(parent, i) => I.intern(I.resolve(parent) + "def_arg_" + i.to_string()),
@@ -302,6 +301,10 @@ pub enum QualifiedName {
             Base(bn) => I.resolve(bn.name()),
             Mono(m) => m.hashed,
         }
+    }
+
+    pub fn as_mono(qn: QualifiedName) -> QualifiedName {
+        new_mono(qn, [], [], Map.new(), [])
     }
 }
 

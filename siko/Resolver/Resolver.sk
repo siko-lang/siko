@@ -731,7 +731,7 @@ pub struct Resolver {
         let type_qname = resolved_instance_def.args[0].name();
         let self_type = resolved_instance_def.args[0];
         let type_arg_defs = resolved_instance_def.type_arg_defs;
-        let trait_name_str = resolved_instance_def.subject.try_trait_name()?.name();
+        let trait_name_qn = resolved_instance_def.subject.try_trait_name()?.resolved();
         let external_info = resolved_instance_def
             .external_derived_instance_info
 
@@ -747,8 +747,8 @@ pub struct Resolver {
         };
 
         let maybe_method = match external_info.params {
-            None => match trait_name_str {
-                s if s == B.get_trait_partial_eq() => Some(match type_data {
+            None => match trait_name_qn {
+                s if s == B.get_trait_partial_eq_qn() => Some(match type_data {
                     TypeData.Enum(e) => build_partialeq_method(
                         e, parent_qn, type_arg_defs, self_type, module_name,
                     ),
@@ -756,7 +756,7 @@ pub struct Resolver {
                         s, parent_qn, type_arg_defs, self_type, module_name,
                     ),
                 }),
-                s if s == B.get_trait_partial_ord() => Some(match type_data {
+                s if s == B.get_trait_partial_ord_qn() => Some(match type_data {
                     TypeData.Enum(e) => build_partialord_method(
                         e, parent_qn, type_arg_defs, self_type, module_name,
                     ),
@@ -764,7 +764,7 @@ pub struct Resolver {
                         s, parent_qn, type_arg_defs, self_type, module_name,
                     ),
                 }),
-                s if s == B.get_trait_ord() => Some(match type_data {
+                s if s == B.get_trait_ord_qn() => Some(match type_data {
                     TypeData.Enum(e) => build_ord_method(
                         e, parent_qn, type_arg_defs, self_type, module_name,
                     ),
@@ -772,7 +772,7 @@ pub struct Resolver {
                         s, parent_qn, type_arg_defs, self_type, module_name,
                     ),
                 }),
-                s if s == B.get_trait_clone() => Some(match type_data {
+                s if s == B.get_trait_clone_qn() => Some(match type_data {
                     TypeData.Enum(e) => build_clone_method_enum(
                         e, parent_qn, type_arg_defs, self_type, module_name,
                     ),
@@ -780,7 +780,7 @@ pub struct Resolver {
                         s, parent_qn, type_arg_defs, self_type, module_name,
                     ),
                 }),
-                s if s == B.get_trait_from_int() => match type_data {
+                s if s == B.get_trait_from_int_qn() => match type_data {
                     TypeData.Enum(e) => Some(build_from_int_method(
                         e, parent_qn, self_type, module_name,
                     )),

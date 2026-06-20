@@ -5,7 +5,6 @@ import Siko.AST.Identifier
 import Siko.AST.Name
 import Siko.AST.Pattern
 import Siko.AST.Statement as S
-import Siko.Constants.Builtins as B
 import Siko.Interner as I
 import Siko.Parser.Parser
 import Siko.Parser.Token
@@ -46,8 +45,7 @@ instance ExprParser[Parser] {
             let location = lhs.location;
             parser.advance();
             let rhs = parser.parse_or_expr()?;
-            let callee = Expr(ExprKind.Name(Name.Unresolved(Identifier(B.get_range_range(), location))), location, None);
-            return Ok(Expr(ExprKind.Call(CallInfo(callee, [lhs, rhs], Vec.new())), location, None));
+            return Ok(Expr(ExprKind.Range(lhs, rhs), location, None));
         }
         Ok(lhs)
     }

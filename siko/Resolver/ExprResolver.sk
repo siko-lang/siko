@@ -236,6 +236,11 @@ pub struct ExprResolver {
                 let resolved = desugar_if_let(expr_resolver, pattern, cond, then, else_expr, expr.location, env)?;
                 resolved.kind
             }
+            ExprKind.Range(lhs, rhs) => {
+                let lhs = expr_resolver.resolve_expr(lhs, env)?;
+                let rhs = expr_resolver.resolve_expr(rhs, env)?;
+                desugar_range(lhs, rhs)
+            }
             ExprKind.Block(stmts) => {
                 let child = env.child();
                 let resolved = expr_resolver.resolve_stmts(stmts, child)?;
