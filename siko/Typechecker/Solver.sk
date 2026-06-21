@@ -21,6 +21,7 @@ import Siko.Unification.Sub
 import Siko.Unification.Unify
 import Siko.Utils.TypeVarAllocator
 import Siko.Constants.Builtins as B
+import Siko.AST.Effects
 
 pub struct SolverContext {
     pub sub: Substitution,
@@ -51,6 +52,54 @@ fn collect_named_vars(ty: TypeDef, out: Set[I.String]) {
         }
         TypeDef.Paren(inner) => collect_named_vars(inner, out),
         _ => {}
+    }
+}
+
+fn freshen_effect_assoc(
+    ty: TypeDef,
+    fresh_map: Map[I.String, TypeDef],
+    allocator: TypeVarAllocator,
+    effect_assoc_types: Map[QualifiedName, AssociatedTypeDef],
+) -> TypeDef {
+    match ty {
+        TypeDef.Named(name, args) => {
+            match name {
+                Name.Resolved(qn, _) => {
+                    if effect_assoc_types.get(qn).is_some() {
+                        let key = qn.name();
+                        match fresh_map.get(key) {
+                            Some(v) => v,
+                            None => {
+                                let v = allocator.allocate();
+                                fresh_map.insert(key, v);
+                                v
+                            }
+                        }
+                    } else {
+                        let new_args = args.iter().map(|a| freshen_effect_assoc(a, fresh_map, allocator, effect_assoc_types)).collect();
+                        TypeDef.Named(name, new_args)
+                    }
+                }
+                _ => TypeDef.Named(name, args),
+            }
+        }
+        TypeDef.Tuple(elems) =>
+            TypeDef.Tuple(elems.iter().map(|e| freshen_effect_assoc(e, fresh_map, allocator, effect_assoc_types)).collect()),
+        TypeDef.Paren(inner) =>
+            TypeDef.Paren(freshen_effect_assoc(inner, fresh_map, allocator, effect_assoc_types)),
+        TypeDef.Fn(params, ret) =>
+            TypeDef.Fn(
+                params.iter().map(|p| freshen_effect_assoc(p, fresh_map, allocator, effect_assoc_types)).collect(),
+                freshen_effect_assoc(ret, fresh_map, allocator, effect_assoc_types),
+            ),
+        TypeDef.FnPtr(params, ret) =>
+            TypeDef.FnPtr(
+                params.iter().map(|p| freshen_effect_assoc(p, fresh_map, allocator, effect_assoc_types)).collect(),
+                freshen_effect_assoc(ret, fresh_map, allocator, effect_assoc_types),
+            ),
+        TypeDef.Ptr(inner) =>
+            TypeDef.Ptr(freshen_effect_assoc(inner, fresh_map, allocator, effect_assoc_types)),
+        _ => ty,
     }
 }
 
@@ -735,7 +784,8 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
                 Some(ty) => ty,
                 None => TypeDef.Tuple(Vec.new()),
             };
-            let effect_ty = TypeDef.Fn(effect_param_tys, effect_ret_ty);
+            let fresh_map: Map[I.String, TypeDef] = Map.new();
+            let effect_ty = freshen_effect_assoc(TypeDef.Fn(effect_param_tys, effect_ret_ty), fresh_map, ctx.allocator, ctx.program.effect_associated_types);
 
             let instance_fn = ctx.program.functions.get(instance_method).unwrap();
             let instance_param_ann_tys: Vec[TypeDef] = instance_fn.args.iter().map(|a| a.type_def).collect();
