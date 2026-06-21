@@ -1,13 +1,12 @@
 module Siko.Monomorphizer.Types {
 
-import Std.Map
 import Siko.AST.Type
 import Siko.AST.Name
 import Siko.Unification.Sub
-import Siko.AST.QualifiedName
 import Siko.Interner as I
 import Siko.Monomorphizer
 import Siko.Monomorphizer.Specialize
+import Siko.Monomorphizer.Error
 
 pub fn specialize_type(ty: TypeDef, mono: Monomorphizer) -> TypeDef {
     match ty {
@@ -19,16 +18,23 @@ pub fn specialize_type(ty: TypeDef, mono: Monomorphizer) -> TypeDef {
             t.specialize(mono)
         }
         TypeDef.Var(TypeVar.Var(_)) => panic("type var in mono"),
+        TypeDef.Named(NamedInfo(name, args)) if mono.source.effect_associated_types.contains_key(name.resolved()) => {
+            match mono.current_effect_associated_type_ctx.get(name.resolved()) {
+                Some(concrete_ty) => concrete_ty,
+                None => {
+                    mono.errors.push(MonoError.UnboundEffectAssociatedType(name.resolved().name(), mono.current_location.unwrap()));
+                    TypeDef.Never(False)
+                }
+            }
+        }
         TypeDef.Named(NamedInfo(name, args)) => {
             let spec_args: Vec[TypeDef] = args.specialize(mono)
             mono.enqueue_named_types(name.resolved(), args.apply(mono.sub));
             TypeDef.Named(NamedInfo(
-                Name.inner(QualifiedName.new_mono(
+                Name.inner(mono.data_mono_key(
                     name.resolved(),
                     spec_args,
-                    [],
-                    Map.new(),
-                    [],
+                    mono.current_effect_associated_type_ctx.clone(),
                 )),
                 [],
             ))

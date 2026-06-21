@@ -75,12 +75,18 @@ pub struct BaseNameInfo {
 }
 
 @derive(PartialEq, Eq, PartialOrd, Ord, Clone)
+pub struct MonoContext {
+    pub witnesses: Vec[I.String],
+    pub effect_ctx: Map[QualifiedName, QualifiedName],
+    pub effect_associated_type_ctx: Map[QualifiedName, TypeDef],
+    pub implicit_ctx: Vec[QualifiedName],
+}
+
+@derive(PartialEq, Eq, PartialOrd, Ord, Clone)
 pub struct MonoName {
     pub name: BaseNameInfo,
     pub args: Vec[TypeDef],
-    pub witnesses: Vec[I.String],
-    pub effect_ctx: Map[I.String, I.String],
-    pub implicit_ctx: Vec[QualifiedName],
+    pub ctx: MonoContext,
     hashed: String,
 }
 
@@ -92,9 +98,7 @@ pub enum QualifiedName {
     pub fn new_mono(
             name: QualifiedName,
             args: Vec[TypeDef],
-            witnesses: Vec[I.String],
-            effect_ctx: Map[QualifiedName, QualifiedName],
-            implicit_ctx: Vec[QualifiedName]) -> QualifiedName {
+            mono_ctx: MonoContext) -> QualifiedName {
         let base = match name {
             Base(bn) => bn,
             Mono(_) => {
@@ -102,8 +106,7 @@ pub enum QualifiedName {
                 panic("new_mono: cannot mono a Mono")
             }
         };
-        let effect_ctx_str: Map[I.String, I.String] = effect_ctx.into_iter().map(|(k, v)| (k.name(), v.name())).collect();
-        let qn = Mono(MonoName(base, args, witnesses, effect_ctx_str, implicit_ctx, ""));
+        let qn = Mono(MonoName(base, args, mono_ctx, ""));
         qn.rehash();
         qn
     }
@@ -214,27 +217,35 @@ pub enum QualifiedName {
                     let parts: Vec[String] = m.args.iter().map(|a| format_type(a)).collect();
                     "[" + join(parts, ", ") + "]"
                 };
-                let witness_str = if m.witnesses.is_empty() {
+                let witness_str = if m.ctx.witnesses.is_empty() {
                     ""
                 } else {
-                    let parts: Vec[String] = m.witnesses.iter().map(|w| I.resolve(w)).collect();
+                    let parts: Vec[String] = m.ctx.witnesses.iter().map(|w| I.resolve(w)).collect();
                     "(" + join(parts, ", ") + ")"
                 };
-                let effect_str = if m.effect_ctx.is_empty() {
+                let effect_str = if m.ctx.effect_ctx.is_empty() {
                     ""
                 } else {
-                    let entries: Vec[String] = m.effect_ctx.iter()
-                        .map(|(k, v)| I.resolve(k) + "->" + I.resolve(v))
+                    let entries: Vec[String] = m.ctx.effect_ctx.iter()
+                        .map(|(k, v)| I.resolve(k.name()) + "->" + I.resolve(v.name()))
                         .collect();
                     "{" + join(entries, ",") + "}"
                 };
-                let implicit_str = if m.implicit_ctx.is_empty() {
+                let effect_associated_type_str = if m.ctx.effect_associated_type_ctx.is_empty() {
                     ""
                 } else {
-                    let parts: Vec[String] = m.implicit_ctx.iter().map(|q| I.resolve(q.name())).collect();
+                    let entries: Vec[String] = m.ctx.effect_associated_type_ctx.iter()
+                        .map(|(k, v)| I.resolve(k.name()) + "->" + format_type(v))
+                        .collect();
+                    "{" + join(entries, ",") + "}"
+                };
+                let implicit_str = if m.ctx.implicit_ctx.is_empty() {
+                    ""
+                } else {
+                    let parts: Vec[String] = m.ctx.implicit_ctx.iter().map(|q| I.resolve(q.name())).collect();
                     "{" + join(parts, ",") + "}"
                 };
-                (args_str, witness_str + effect_str + implicit_str)
+                (args_str, witness_str + effect_str + effect_associated_type_str + implicit_str)
             }
         }
     }
@@ -277,7 +288,7 @@ pub enum QualifiedName {
     pub fn implicit_ctx(qn: QualifiedName) -> Vec[QualifiedName] {
         match qn {
             Base(_) => Vec.new(),
-            Mono(m) => m.implicit_ctx,
+            Mono(m) => m.ctx.implicit_ctx,
         }
     }
 
@@ -310,7 +321,7 @@ pub enum QualifiedName {
     }
 
     pub fn as_mono(qn: QualifiedName) -> QualifiedName {
-        new_mono(qn, [], [], Map.new(), [])
+        new_mono(qn, [], MonoContext([], Map.new(), Map.new(), []))
     }
 }
 

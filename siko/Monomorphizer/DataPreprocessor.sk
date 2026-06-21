@@ -1,0 +1,94 @@
+module Siko.Monomorphizer.DataPreprocessor {
+
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.HIR.Program
+import Siko.Unification.Utils
+import Siko.Utils.SCC as SCC
+import Std.Map
+import Std.Set
+
+pub struct DataEATDeps {
+    pub deps: Map[QualifiedName, Set[QualifiedName]],
+
+    pub fn new() -> DataEATDeps {
+        DataEATDeps(Map.new())
+    }
+
+    pub fn get(d: DataEATDeps, name: QualifiedName) -> Set[QualifiedName] {
+        match d.deps.get(name) {
+            Some(s) => s,
+            None => Set.new(),
+        }
+    }
+}
+
+fn collect_direct_deps(ty: TypeDef, eat_set: Set[QualifiedName], data_deps: Vec[QualifiedName], program: Program) {
+    let names = Vec.new();
+    ty.collect_names(names);
+    for name in names {
+        if program.effect_associated_types.contains_key(name) {
+            eat_set.insert(name);
+        } else if program.structs.contains_key(name) || program.enums.contains_key(name) {
+            data_deps.push(name);
+        }
+    }
+}
+
+pub fn preprocess_data_eat_deps(program: Program) -> DataEATDeps {
+    let graph: Map[QualifiedName, Vec[QualifiedName]] = Map.new();
+    let direct_eats: Map[QualifiedName, Set[QualifiedName]] = Map.new();
+
+    for (qname, sdef) in program.structs.iter() {
+        let eat_set: Set[QualifiedName] = Set.new();
+        let data_deps: Vec[QualifiedName] = Vec.new();
+        for field in sdef.fields.iter() {
+            collect_direct_deps(field.ty, eat_set, data_deps, program);
+        }
+        data_deps.dedup();
+        direct_eats.insert(qname, eat_set);
+        graph.insert(qname, data_deps);
+    }
+
+    for (qname, edef) in program.enums.iter() {
+        let eat_set: Set[QualifiedName] = Set.new();
+        let data_deps: Vec[QualifiedName] = Vec.new();
+        for variant in edef.variants.iter() {
+            for item in variant.items.iter() {
+                collect_direct_deps(item.ty, eat_set, data_deps, program);
+            }
+        }
+        data_deps.dedup();
+        direct_eats.insert(qname, eat_set);
+        graph.insert(qname, data_deps);
+    }
+
+    let sccs = SCC.compute(graph);
+
+    let transitive: Map[QualifiedName, Set[QualifiedName]] = Map.new();
+
+    for scc in sccs {
+        let scc_eats: Set[QualifiedName] = Set.new();
+
+        for node in scc {
+            for eat in direct_eats.get(node).unwrap_or(Set.new()) {
+                scc_eats.insert(eat);
+            }
+            for dep in graph.get(node).unwrap_or([]) {
+                if !scc.iter().any(|n| n == dep) {
+                    for eat in transitive.get(dep).unwrap_or(Set.new()) {
+                        scc_eats.insert(eat);
+                    }
+                }
+            }
+        }
+
+        for node in scc {
+            transitive.insert(node, scc_eats.clone());
+        }
+    }
+
+    DataEATDeps(transitive)
+}
+
+}

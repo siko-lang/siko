@@ -4,6 +4,7 @@ import Siko.Monomorphizer.Error
 import Siko.Monomorphizer.Function
 import Siko.Monomorphizer.Data
 import Siko.Monomorphizer.Specialize
+import Siko.Monomorphizer.DataPreprocessor
 import Siko.AST.Type
 import Siko.AST.QualifiedName
 import Siko.Constants.Builtins as B
@@ -38,6 +39,23 @@ pub struct EffectCtx {
 }
 
 @derive(Clone)
+pub struct EffectAssociatedTypeCtx {
+    pub resolution: Map[QualifiedName, TypeDef],
+
+    pub fn new() -> EffectAssociatedTypeCtx {
+        EffectAssociatedTypeCtx(Map.new())
+    }
+
+    pub fn get(ctx: EffectAssociatedTypeCtx, key: QualifiedName) -> Option[TypeDef] {
+        ctx.resolution.get(key)
+    }
+
+    pub fn insert(ctx: EffectAssociatedTypeCtx, key: QualifiedName, value: TypeDef) {
+        ctx.resolution.insert(key, value);
+    }
+}
+
+@derive(Clone)
 pub struct ImplicitCtx {
     pub set: Set[QualifiedName],
 
@@ -57,6 +75,7 @@ pub struct ImplicitCtx {
 pub struct DataWork {
     pub qname: QualifiedName,
     pub type_args: Vec[TypeDef],
+    pub effect_associated_type_ctx: EffectAssociatedTypeCtx,
 }
 
 pub struct FnWork {
@@ -64,6 +83,7 @@ pub struct FnWork {
     pub type_args: Vec[TypeDef],
     pub witnesses: Vec[I.String],
     pub effect_ctx: EffectCtx,
+    pub effect_associated_type_ctx: EffectAssociatedTypeCtx,
     pub implicit_ctx: ImplicitCtx,
 }
 
@@ -72,6 +92,7 @@ pub fn fn_mono_key(
     type_args: Vec[TypeDef],
     witnesses: Vec[I.String],
     effect_ctx: EffectCtx,
+    effect_associated_type_ctx: EffectAssociatedTypeCtx,
     implicit_ctx: ImplicitCtx,
 ) -> QualifiedName {
     for ty in type_args {
@@ -82,31 +103,18 @@ pub fn fn_mono_key(
         }
     }
     let implicit_list: Vec[QualifiedName] = implicit_ctx.set.iter().cloned().collect();
+    let ctx = MonoContext(
+        witnesses.clone(),
+        effect_ctx.resolution.clone(),
+        effect_associated_type_ctx.resolution.clone(),
+        implicit_list);
     QualifiedName.new_mono(
         base,
         type_args.clone(),
-        witnesses.clone(),
-        effect_ctx.resolution.clone(),
-        implicit_list,
+        ctx,
     )
 }
 
-pub fn data_mono_key(base: QualifiedName, type_args: Vec[TypeDef]) -> QualifiedName {
-    for ty in type_args {
-        if ty.is_mono(False) {
-            println("Mono type in data_mono_key args ${format_types(type_args)}");
-            println("base ${base.name()}");
-            panic("Mono type in data_mono_key");
-        }
-    }
-    QualifiedName.new_mono(
-        base,
-        type_args.clone(),
-        [],
-        Map.new(),
-        [],
-    )
-}
 
 pub struct Monomorphizer {
     pub source: Program,
@@ -121,11 +129,13 @@ pub struct Monomorphizer {
     pub current_module: I.String,
     pub current_fn_witnesses: Vec[I.String],
     pub current_effect_ctx: EffectCtx,
+    pub current_effect_associated_type_ctx: EffectAssociatedTypeCtx,
     pub current_implicit_ctx: ImplicitCtx,
     pub errors: Vec[MonoError],
     pub sub: Substitution,
     pub current_location: Option[Location],
     pub current_expr_ty: Option[TypeDef],
+    pub data_eat_deps: DataEATDeps,
 
     fn new(source: Program, instance_resolver: InstanceResolver) -> Monomorphizer {
         Monomorphizer(
@@ -141,24 +151,50 @@ pub struct Monomorphizer {
             I.intern(""),
             [],
             EffectCtx.new(),
+            EffectAssociatedTypeCtx.new(),
             ImplicitCtx.new(),
             [],
             Substitution.new(),
             None,
             None,
+            DataEATDeps.new(),
         )
     }
 
+    pub fn data_mono_key(mono: Monomorphizer, base: QualifiedName, type_args: Vec[TypeDef], eat_ctx: EffectAssociatedTypeCtx) -> QualifiedName {
+        for ty in type_args {
+            if ty.is_mono(False) {
+                println("Mono type in data_mono_key args ${format_types(type_args)}");
+                println("base ${base.name()}");
+                panic("Mono type in data_mono_key");
+            }
+        }
+        let relevant_eats = mono.data_eat_deps.get(base);
+        for type_arg in type_args {
+            if let Some(arg_name) = type_arg.name_opt() {
+                for eat in mono.data_eat_deps.get(arg_name) {
+                    relevant_eats.insert(eat);
+                }
+            }
+        }
+        let filtered: Map[QualifiedName, TypeDef] = eat_ctx.resolution.iter()
+            .filter(|(k, _)| relevant_eats.contains(k))
+            .map(|(k, v)| (k, v))
+            .collect();
+        let ctx = MonoContext([], Map.new(), filtered, []);
+        QualifiedName.new_mono(base, type_args.clone(), ctx)
+    }
+
     pub fn enqueue_named_types(mono: Monomorphizer, name: QualifiedName, args: Vec[TypeDef]) {
-        let mono_key = data_mono_key(name, args);
+        let mono_key = mono.data_mono_key(name, args, mono.current_effect_associated_type_ctx.clone());
         if mono.source.structs.contains_key(name)
             && !mono.struct_done.contains(mono_key)
         {
-            mono.struct_queue.push_back(DataWork(name, args.clone()));
+            mono.struct_queue.push_back(DataWork(name, args.clone(), mono.current_effect_associated_type_ctx.clone()));
         } else if mono.source.enums.contains_key(name)
             && !mono.enum_done.contains(mono_key)
         {
-            mono.enum_queue.push_back(DataWork(name, args.clone()));
+            mono.enum_queue.push_back(DataWork(name, args.clone(), mono.current_effect_associated_type_ctx.clone()));
         }
     }
 
@@ -197,6 +233,7 @@ pub struct Monomorphizer {
     }
 
     fn run(mono: Monomorphizer) {
+        mono.data_eat_deps = preprocess_data_eat_deps(mono.source);
         let main_key = B.get_main_entry_qn();
         if !mono.source.functions.contains_key(main_key) {
             panic("mono: `Main.main` not found in program");
@@ -206,6 +243,7 @@ pub struct Monomorphizer {
             [],
             [],
             EffectCtx.new(),
+            EffectAssociatedTypeCtx.new(),
             ImplicitCtx.new(),
         ));
 
@@ -216,6 +254,7 @@ pub struct Monomorphizer {
                     work.type_args,
                     work.witnesses,
                     work.effect_ctx,
+                    work.effect_associated_type_ctx,
                     work.implicit_ctx,
                 );
                 if mono.fn_done.insert(mono_name) {
@@ -224,20 +263,21 @@ pub struct Monomorphizer {
                         work.type_args,
                         work.witnesses,
                         work.effect_ctx,
+                        work.effect_associated_type_ctx,
                         work.implicit_ctx,
                         mono_name,
                         mono,
                     );
                 }
             } else if let Some(work) = mono.struct_queue.pop_front() {
-                let mono_name = data_mono_key(work.qname, work.type_args);
+                let mono_name = mono.data_mono_key(work.qname, work.type_args, work.effect_associated_type_ctx);
                 if mono.struct_done.insert(mono_name) {
-                    process_struct(work.qname, work.type_args, mono_name, mono);
+                    process_struct(work.qname, work.type_args, work.effect_associated_type_ctx, mono_name, mono);
                 }
             } else if let Some(work) = mono.enum_queue.pop_front() {
-                let mono_name = data_mono_key(work.qname, work.type_args);
+                let mono_name = mono.data_mono_key(work.qname, work.type_args, work.effect_associated_type_ctx);
                 if mono.enum_done.insert(mono_name) {
-                    process_enum(work.qname, work.type_args, mono_name, mono);
+                    process_enum(work.qname, work.type_args, work.effect_associated_type_ctx, mono_name, mono);
                 }
             } else {
                 break;

@@ -134,13 +134,21 @@ instance Specialize[FunctionPtrInfo] {
         let is_c_callback = func.is_c_callback();
         let effect_ctx = if is_extern { EffectCtx.new() } else { mono.current_effect_ctx.clone() };
         let implicit_ctx = if is_extern || is_c_callback { ImplicitCtx.new() } else { mono.current_implicit_ctx.clone() };
-        let mono_key = fn_mono_key(info.name, callee_type_args, callee_witnesses, effect_ctx.clone(), implicit_ctx.clone());
+        let effect_associated_type_ctx = if is_extern { EffectAssociatedTypeCtx.new() } else { mono.current_effect_associated_type_ctx.clone() };
+        let mono_key = fn_mono_key(
+            info.name,
+            callee_type_args,
+            callee_witnesses,
+            effect_ctx.clone(),
+            effect_associated_type_ctx.clone(),
+            implicit_ctx.clone());
         if !mono.fn_done.contains(mono_key) {
             mono.fn_queue.push_back(FnWork(
                 info.name,
                 callee_type_args,
                 callee_witnesses,
                 effect_ctx,
+                effect_associated_type_ctx,
                 implicit_ctx,
             ));
         }
@@ -165,6 +173,7 @@ instance Specialize[CreateClosureInfo] {
             callee_type_args,
             callee_witnesses,
             mono.current_effect_ctx.clone(),
+            mono.current_effect_associated_type_ctx.clone(),
             mono.current_implicit_ctx.clone(),
         );
         if !mono.fn_done.contains(mono_callee) {
@@ -173,6 +182,7 @@ instance Specialize[CreateClosureInfo] {
                 callee_type_args,
                 callee_witnesses,
                 mono.current_effect_ctx.clone(),
+                mono.current_effect_associated_type_ctx.clone(),
                 mono.current_implicit_ctx.clone(),
             ));
         }
@@ -202,6 +212,7 @@ instance Specialize[FunctionCallInfo] {
 instance Specialize[WithInfo] {
     fn specialize(info: WithInfo, mono: Monomorphizer) -> WithInfo {
         let saved_effect_ctx = mono.current_effect_ctx.clone();
+        let saved_effect_associated_type_ctx = mono.current_effect_associated_type_ctx.clone();
         let saved_implicit_ctx = mono.current_implicit_ctx.clone();
         let implicit_selections = [];
         for sel in info.selections {
@@ -213,8 +224,9 @@ instance Specialize[WithInfo] {
                     mono.current_implicit_ctx.insert(implicit_qn.clone());
                     implicit_selections.push(HandlerSelection.Implicit(implicit_qn.clone(), var.clone()));
                 }
-                HandlerSelection.TypeAssociation(_, _, _) => {
-                    panic("HandlerSelection.TypeAssociation is not yet implemented in mono")
+                HandlerSelection.TypeAssociation(assoc_qname, handler_type, _) => {
+                    let spec_handler_type = handler_type.specialize(mono);
+                    mono.current_effect_associated_type_ctx.insert(assoc_qname.clone(), spec_handler_type);
                 }
                 HandlerSelection.Unresolved(_, _) |
                 HandlerSelection.UnresolvedType(_, _) => panic("mono: unresolved HandlerSelection")
@@ -222,6 +234,7 @@ instance Specialize[WithInfo] {
         }
         let spec_body = info.body.specialize(mono);
         mono.current_effect_ctx = saved_effect_ctx;
+        mono.current_effect_associated_type_ctx = saved_effect_associated_type_ctx;
         mono.current_implicit_ctx = saved_implicit_ctx;
         WithInfo(implicit_selections, spec_body)
     }
@@ -241,13 +254,13 @@ instance Specialize[Pattern] {
                 };
                 let kind = if mono.source.variant_enum_map.contains_key(qn) {
                     let (enum_qname, item_ann_types, generic_params) = mono.source.find_variant(qn);
-                    let mono_enum = data_mono_key(enum_qname, type_args);
+                    let mono_enum = mono.data_mono_key(enum_qname, type_args, mono.current_effect_associated_type_ctx);
                     let v = mono.source.variant(qn);
                     let mono_variant = Name.Resolved(get_mono_variant_qn(mono_enum, v.qualified_name.unwrap()), info.name.location());
                     PatternKind.Named(NamedPatternInfo(name: mono_variant, args: info.args.specialize(mono), named_args: info.named_args, has_rest: False))
                 } else {
                     let struct_def = mono.source.structs.get(qn).unwrap();
-                    let mono_struct = data_mono_key(qn, type_args);
+                    let mono_struct = mono.data_mono_key(qn, type_args, mono.current_effect_associated_type_ctx);
                     PatternKind.Named(NamedPatternInfo(name: Name.inner(mono_struct), args: info.args.specialize(mono), named_args: info.named_args, has_rest: False))
                 };
                 Pattern(kind, pattern.location.clone(), spec_ty)
@@ -260,6 +273,7 @@ instance Specialize[Pattern] {
 
 instance Specialize[FieldDef] {
     fn specialize(field: FieldDef, mono: Monomorphizer) -> FieldDef {
+        mono.current_location = Some(field.name.location.clone());
         FieldDef(
             public: field.public,
             name: field.name.clone(),
@@ -277,12 +291,16 @@ instance Specialize[TypeDef] {
 
 instance Specialize[ItemInfo] {
     fn specialize(item: ItemInfo, mono: Monomorphizer) -> ItemInfo {
+        if let Some(name) = item.name {
+            mono.current_location = Some(name.location.clone());
+        }
         ItemInfo(name: item.name.clone(), ty: item.ty.specialize(mono))
     }
 }
 
 instance Specialize[VariantDef] {
     fn specialize(variant: VariantDef, mono: Monomorphizer) -> VariantDef {
+        mono.current_location = Some(variant.name.location.clone());
         VariantDef(
             variant.name.clone(),
             variant.qualified_name.clone(),
