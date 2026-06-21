@@ -101,7 +101,7 @@ pub fn desugar_list(expr_resolver: ExprResolver, resolved_items: Vec[Expr], loc:
         stmts.push(S.Statement.Expr(push_call));
     }
     stmts.push(S.Statement.TrailingExpr(Expr(ExprKind.Var(tmp), loc, None)));
-    ExprKind.Block(stmts)
+    ExprKind.Block(BlockInfo(stmts))
 }
 
 pub fn desugar_binary_op(op: BinaryOp, lhs: Expr, rhs: Expr) -> ExprKind {
@@ -193,7 +193,7 @@ pub fn desugar_while_loop(
     let if_expr = Expr(
         ExprKind.If(
             resolved_cond,
-            Expr(ExprKind.Block(loop_body), loc, None),
+            Expr(ExprKind.Block(BlockInfo(loop_body)), loc, None),
             Some(Expr(ExprKind.Break, loc, None)),
         ),
         loc,
@@ -262,7 +262,7 @@ pub fn desugar_for_loop(
         ExprKind.Match(MatchInfo(
             next_call,
             [
-                MatchArm(some_pattern, Expr(ExprKind.Block(resolved_body), loc, None)),
+                MatchArm(some_pattern, Expr(ExprKind.Block(BlockInfo(resolved_body)), loc, None)),
                 MatchArm(none_pattern, Expr(ExprKind.Break, loc, None)),
             ],
         )),

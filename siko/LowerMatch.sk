@@ -57,6 +57,7 @@ instance Lower[CallInfo]         = auto(Map)
 instance Lower[WithInfo] = auto(Map)
 instance Lower[MatchArm] = auto(Map)
 instance Lower[S.Statement] = auto(Map)
+instance Lower[BlockInfo] = auto(Map)
 instance Lower[Pattern] = auto(Map)
 instance Lower[PatternKind] = auto(Map)
 instance Lower[ExprKind] = auto(Map)
@@ -133,7 +134,7 @@ pub struct MatchLowerer {
     }
 
     fn stmt_block(lowerer: MatchLowerer, body: Expr, loc: Location) -> Expr {
-        Expr(ExprKind.Block([S.Statement.Expr(body)]), loc, unit_type())
+        Expr(ExprKind.Block(BlockInfo([S.Statement.Expr(body)])), loc, unit_type())
     }
 
     fn lower_string_switch(
@@ -227,10 +228,10 @@ pub struct MatchLowerer {
         let tree_expr = lowerer.lower_node(tree, path_env, path_ty_env, arms, loc);
 
         Expr(
-            ExprKind.Block([
+            ExprKind.Block(BlockInfo([
                 S.Statement.Let(S.LetInfo(scrutinee_var, None, scrutinee)),
                 S.Statement.Expr(tree_expr),
-            ]),
+            ])),
             loc,
             unit_type(),
         )
@@ -413,7 +414,7 @@ pub struct MatchLowerer {
 
         let body = lowerer.lower_node(tuple.next, new_env, new_ty_env, arms, loc);
         stmts.push(S.Statement.Expr(body));
-        Expr(ExprKind.Block(stmts), loc.clone(), unit_type())
+        Expr(ExprKind.Block(BlockInfo(stmts)), loc.clone(), unit_type())
     }
 
     fn lower_struct(
@@ -448,7 +449,7 @@ pub struct MatchLowerer {
 
         let body = lowerer.lower_node(sn.next, new_env, new_ty_env, arms, loc);
         stmts.push(S.Statement.Expr(body));
-        Expr(ExprKind.Block(stmts), loc.clone(), unit_type())
+        Expr(ExprKind.Block(BlockInfo(stmts)), loc.clone(), unit_type())
     }
 
     fn lower_leaf(
@@ -489,7 +490,7 @@ pub struct MatchLowerer {
             let stmts = binding_stmts;
             if let Some(setup) = guard_setup {
                 match setup.kind {
-                    ExprKind.Block(setup_stmts) => stmts.extend(setup_stmts),
+                    ExprKind.Block(BlockInfo(setup_stmts)) => stmts.extend(setup_stmts),
                     _ => stmts.push(S.Statement.Expr(setup)),
                 }
             }
@@ -497,7 +498,7 @@ pub struct MatchLowerer {
                 if_expr
             } else {
                 stmts.push(S.Statement.Expr(if_expr));
-                Expr(ExprKind.Block(stmts), loc.clone(), unit_type())
+                Expr(ExprKind.Block(BlockInfo(stmts)), loc.clone(), unit_type())
             };
         }
 
@@ -543,7 +544,7 @@ fn make_arm_block(
         body
     } else {
         stmts.push(S.Statement.Expr(body));
-        Expr(ExprKind.Block(stmts), loc.clone(), unit_type())
+        Expr(ExprKind.Block(BlockInfo(stmts)), loc.clone(), unit_type())
     }
 }
 

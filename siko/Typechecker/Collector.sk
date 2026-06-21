@@ -189,10 +189,10 @@ pub struct Collector {
                 }
             }
 
-            ExprKind.Block(stmts) => {
+            ExprKind.Block(BlockInfo(stmts)) => {
                 let (_, new_stmts) = c.collect_block(stmts, env);
                 c.emit(C.ConstraintKind.Unify(ty, unit()), loc);
-                ExprKind.Block(new_stmts)
+                ExprKind.Block(BlockInfo(new_stmts))
             }
 
             ExprKind.FunctionCall(FunctionCallInfo(qname, kind, args, witnesses, named_args)) => {
@@ -333,6 +333,12 @@ pub struct Collector {
             ExprKind.SizeOf(inner_ty) => {
                 c.emit(C.ConstraintKind.Unify(ty, std_u64()), loc);
                 ExprKind.SizeOf(inner_ty)
+            }
+
+            ExprKind.Discriminator(inner) => {
+                let (_, new_inner) = c.collect_expr(inner, env);
+                c.emit(C.ConstraintKind.Unify(ty, std_int()), loc);
+                ExprKind.Discriminator(new_inner)
             }
 
             ExprKind.Deref(inner) => {

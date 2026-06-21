@@ -139,7 +139,6 @@ struct Compiler {
         let test = config.test;
         let check_only = config.check_only;
         c.pass = config.pass;
-        let closure_ptr = config.closure_ptr;
         let trace = config.trace;
         let paths = config.paths;
         let check_safety = config.check_safety;
@@ -234,18 +233,16 @@ struct Compiler {
         if trace { println("Lowering tuples..."); }
         lower_tuples(program);
         c.check_pass("lower-tuples", program);
-        if !closure_ptr {
-            if trace { println("Lowering closures..."); }
-            lower_closures(program);
-            c.check_pass("lower-closures", program);
-        }
+        if trace { println("Lowering closures..."); }
+        lower_closures(program);
+        c.check_pass("lower-closures", program);
         if trace { println("Lowering builtins..."); }
         lower_builtins(program);
         c.check_pass("lower-builtins", program);
         if trace { println("Computing value types..."); }
         let value_types_ordered = calculate_value_types(program);
         if trace { println("Emitting C..."); }
-        let c_source = emit_c(program, closure_ptr, value_types_ordered);
+        let c_source = emit_c(program, value_types_ordered);
         if c.pass == Some("c") {
             println(c_source);
             return;

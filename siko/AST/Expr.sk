@@ -32,7 +32,7 @@ pub struct Expr {
     fn is_divergent(expr: Expr) -> Bool {
         match expr.kind {
             Return(_) | Break | Continue => True,
-            Block(stmts) => {
+            Block(BlockInfo(stmts)) => {
                 match stmts.last() {
                     Some(S.TrailingExpr(e)) => e.is_divergent(),
                     Some(S.Expr(e)) => e.is_divergent(),
@@ -166,6 +166,11 @@ pub struct TypeAssociatedCallInfo {
 }
 
 @derive(Clone)
+pub struct BlockInfo {
+    pub stmts: Vec[S.Statement],
+}
+
+@derive(Clone)
 pub enum ExprKind {
     IntLiteral(String),
     StringLiteral(String),
@@ -185,7 +190,7 @@ pub enum ExprKind {
     If(Expr, Expr, Option[Expr]),
     IfLet(Pattern, Expr, Expr, Option[Expr]),
     Range(Expr, Expr),
-    Block(Vec[S.Statement]),
+    Block(BlockInfo),
     Tuple(Vec[Expr]),
     Paren(Expr),
     Return(Expr),
@@ -202,6 +207,7 @@ pub enum ExprKind {
     Try(Expr),
     Transmute(Expr),
     SizeOf(TypeDef),
+    Discriminator(Expr),
     Deref(Expr),
     AddrOf(Expr),
     TypeAssociatedCall(TypeAssociatedCallInfo),

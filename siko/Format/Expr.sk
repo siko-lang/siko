@@ -171,7 +171,7 @@ fn format_expr_inner(f: Formatter, expr: Expr) {
             f.push("..");
             format_expr(f, rhs);
         }
-        ExprKind.Block(stmts) => format_stmts(f, stmts),
+        ExprKind.Block(BlockInfo(stmts)) => format_stmts(f, stmts),
         ExprKind.Tuple(exprs) => {
             f.push("(");
             let i = 0;
@@ -286,6 +286,11 @@ fn format_expr_inner(f: Formatter, expr: Expr) {
             format_type_def(f, ty);
             f.push(")");
         }
+        ExprKind.Discriminator(inner) => {
+            f.push("discriminator(");
+            format_expr(f, inner);
+            f.push(")");
+        }
         ExprKind.Deref(base) => {
             f.push("*(");
             format_expr(f, base);
@@ -350,7 +355,7 @@ fn format_handler_selection(f: Formatter, handler: HandlerSelection) {
 
 fn format_block_expr(f: Formatter, expr: Expr) {
     match expr.kind {
-        ExprKind.Block(stmts) => format_stmts(f, stmts),
+        ExprKind.Block(BlockInfo(stmts)) => format_stmts(f, stmts),
         _ => format_expr(f, expr),
     }
 }

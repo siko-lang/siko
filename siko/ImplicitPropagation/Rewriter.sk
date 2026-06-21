@@ -42,6 +42,7 @@ instance Rewrite[UnaryOp] = auto(Map)
 instance Rewrite[MatchArm] = auto(Map)
 instance Rewrite[S.LetInfo] = auto(Map)
 instance Rewrite[S.DeclareInfo] = auto(Map)
+instance Rewrite[BlockInfo] = auto(Map)
 instance Rewrite[S.Statement] = auto(Map)
 instance Rewrite[Pattern] = auto(Map)
 instance Rewrite[PatternKind] = auto(Map)
@@ -96,7 +97,7 @@ fn rewrite_function_call(info: FunctionCallInfo, rewriter: Rewriter, loc: Locati
         e_ty.clone(),
     );
     stmts.push(S.Statement.TrailingExpr(new_call));
-    Expr(ExprKind.Block(stmts), loc, e_ty)
+    Expr(ExprKind.Block(BlockInfo(stmts)), loc, e_ty)
 }
 
 fn rewrite_with(wi: WithInfo, rewriter: Rewriter, loc: Location) -> Expr {
@@ -143,7 +144,7 @@ fn rewrite_with(wi: WithInfo, rewriter: Rewriter, loc: Location) -> Expr {
     }
 
     match body_rw.kind {
-        ExprKind.Block(body_stmts) => stmts.extend(body_stmts),
+        ExprKind.Block(BlockInfo(body_stmts)) => stmts.extend(body_stmts),
         _ => stmts.push(S.Statement.Expr(body_rw)),
     }
 
@@ -158,7 +159,7 @@ fn rewrite_with(wi: WithInfo, rewriter: Rewriter, loc: Location) -> Expr {
 
     rewriter.current_implicits = saved;
 
-    Expr(ExprKind.Block(stmts), loc, None)
+    Expr(ExprKind.Block(BlockInfo(stmts)), loc, None)
 }
 
 fn rewrite_closure(info: CreateClosureInfo, rewriter: Rewriter, loc: Location, e_ty: Option[TypeDef]) -> Expr {
@@ -176,7 +177,7 @@ fn rewrite_closure(info: CreateClosureInfo, rewriter: Rewriter, loc: Location, e
         e_ty,
     );
     stmts.push(S.Statement.TrailingExpr(new_closure));
-    Expr(ExprKind.Block(stmts), loc, None)
+    Expr(ExprKind.Block(BlockInfo(stmts)), loc, None)
 }
 
 pub struct Rewriter {

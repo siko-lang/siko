@@ -5,8 +5,6 @@ import Siko.AST.Statement as S
 import Siko.AST.Pattern
 import Siko.AST.QualifiedName
 import Siko.AST.Type
-import Siko.CBackend.Builtin
-import Siko.CBackend.Closure
 import Siko.CBackend.Ctor
 import Siko.CBackend.Switch
 import Siko.CBackend.Util
@@ -25,10 +23,9 @@ pub struct Emitter {
     pub indent: Int,
     loop_counter: Int,
     current_loop_id: Int,
-    closure_ptr: Bool,
     builtin_int_types: Map[QualifiedName, String],
 
-    fn new(program: Program, closure_ptr: Bool, value_types_ordered: Vec[QualifiedName]) -> Emitter {
+    fn new(program: Program, value_types_ordered: Vec[QualifiedName]) -> Emitter {
         let builtin_int_types: Map[QualifiedName, String] = Map.new();
         builtin_int_types.insert(B.get_int_type_qn().as_mono(), "int64_t");
         builtin_int_types.insert(B.get_i8_type_qn().as_mono(),  "int8_t");
@@ -39,7 +36,7 @@ pub struct Emitter {
         builtin_int_types.insert(B.get_u16_type_qn().as_mono(), "uint16_t");
         builtin_int_types.insert(B.get_u32_type_qn().as_mono(), "uint32_t");
         builtin_int_types.insert(B.get_u64_type_qn().as_mono(), "uint64_t");
-        Emitter(program, value_types_ordered, StringBuilder.new(), 0, 0, 0, closure_ptr, builtin_int_types)
+        Emitter(program, value_types_ordered, StringBuilder.new(), 0, 0, 0, builtin_int_types)
     }
 
     pub fn is_value_type(emitter: Emitter, qname: QualifiedName) -> Bool {
@@ -366,7 +363,7 @@ pub struct Emitter {
                 let cond_is_vt = cond.ty.map_or(False, |t| emitter.is_value_type_ty(t));
                 let tag_access = if cond_is_vt { ".tag == 0) " } else { "->tag == 0) " };
                 emitter.append("if (");
-                if let ExprKind.Block(stmts) = cond.kind {
+                if let ExprKind.Block(BlockInfo(stmts)) = cond.kind {
                     emitter.append("({\n");
                     emitter.indent = emitter.indent + 1;
                     for stmt in stmts {
@@ -385,7 +382,7 @@ pub struct Emitter {
                     emitter.emit_expr(else_expr);
                 }
             }
-            ExprKind.Block(stmts) => {
+            ExprKind.Block(BlockInfo(stmts)) => {
                 emitter.append("{\n");
                 emitter.indent = emitter.indent + 1;
                 for stmt in stmts {
@@ -432,33 +429,12 @@ pub struct Emitter {
                     }
                 }
             }
-            ExprKind.With(_) => panic("emit_expr: With not implemented"),
-            ExprKind.ImplicitRef(_) => panic("emit_expr: ImplicitRef not implemented"),
+            ExprKind.With(_) => panic("emit_expr: With in emitter"),
+            ExprKind.ImplicitRef(_) => panic("emit_expr: ImplicitRef in emitter"),
             ExprKind.UnresolvedLambda(_, _) => panic("emit_expr: UnresolvedLambda must be resolved"),
             ExprKind.ResolvedLambda(_, _, _) => panic("emit_expr: ResolvedLambda must be lifted before emit"),
-            ExprKind.DynamicCall(callee, args) => {
-                let ret_ty = expr.ty.unwrap();
-                emitter.append("((");
-                emitter.emit_type(ret_ty);
-                emitter.append("(*)(void*");
-                for arg in args.iter() {
-                    emitter.append(", ");
-                    let arg_ty = arg.ty.unwrap();
-                    emitter.emit_type(arg_ty);
-                }
-                emitter.append("))(((struct _siko_base_closure*)(");
-                emitter.emit_expr(callee);
-                emitter.append("))->fn_ptr))(");
-                emitter.emit_expr(callee);
-                for arg in args.iter() {
-                    emitter.append(", ");
-                    emitter.emit_expr(arg);
-                }
-                emitter.append(")");
-            }
-            ExprKind.CreateClosure(_) => {
-                panic("emit_expr: CreateClosure must appear only in Let statements")
-            }
+            ExprKind.DynamicCall(callee, args) => panic("emit_expr: DynamicCall in emitter"),
+            ExprKind.CreateClosure(_) => panic("emit_expr: CreateClosure in emitter"),
             ExprKind.List(_) => panic("emit_expr: List must be desugared by resolver"),
             ExprKind.Index(_, _) => panic("emit_expr: Index must be desugared by resolver"),
             ExprKind.IfLet(_, _, _, _) => panic("emit_expr: IfLet must be desugared by resolver"),
@@ -468,6 +444,21 @@ pub struct Emitter {
                 emitter.append("sizeof(");
                 emitter.emit_type(ty);
                 emitter.append(")");
+            }
+            ExprKind.Discriminator(inner) => {
+                let is_enum = match inner.ty {
+                    Some(TypeDef.Named(name, _)) => emitter.program.enums.get(name.resolved()).is_some(),
+                    _ => False,
+                };
+                if is_enum {
+                    let is_vt = inner.ty.map_or(False, |t| emitter.is_value_type_ty(t));
+                    let access = if is_vt { "." } else { "->" };
+                    emitter.append("(int64_t)");
+                    emitter.emit_expr(inner);
+                    emitter.append("${access}tag");
+                } else {
+                    emitter.append("(int64_t)0");
+                }
             }
             ExprKind.Deref(inner) => {
                 emitter.append("(*");
@@ -517,54 +508,21 @@ pub struct Emitter {
         }
     }
 
-    fn emit_create_closure_let(
-        emitter: Emitter,
-        var: VariableName,
-        lambda_qname: QualifiedName,
-        captures: Vec[VariableName],
-    ) {
-        let fdef = emitter
-            .program
-            .functions
-            .get(lambda_qname)
-            .unwrap();
-        let env = closure_env_name(fdef);
-        let wrap = closure_wrap_name(fdef);
-        let tmp = "_siko_env_tmp_${var_name(var)}";
-
-        emitter.emit_indent();
-        emitter.append("struct ${env}* ${tmp} = (struct ${env}*) SIKO_GC_MALLOC(sizeof(struct ${env}));\n");
-        emitter.emit_indent();
-        emitter.append("${tmp}->fn_ptr = (void*)${wrap};\n");
-        for (i, cap) in captures.iter().enumerate() {
-            emitter.emit_indent();
-            emitter.append("${tmp}->cap_${i} = ${var_name(cap)};\n");
-        }
-        emitter.emit_indent();
-        emitter.append("void* ");
-        emitter.append(var_name(var));
-        emitter.append(" = (void*)${tmp};\n");
-    }
-
     fn emit_statement(emitter: Emitter, stmt: S.Statement) {
         match stmt {
             S.Statement.UnresolvedLet(_, _, _) => panic("emit_statement: unresolved let"),
             S.Statement.Let(S.LetInfo(name, ann, expr)) => {
-                if let ExprKind.CreateClosure(CreateClosureInfo(lambda_qname, captures, _)) = expr.kind {
-                    emitter.emit_create_closure_let(name, lambda_qname, captures);
-                } else {
-                    let ty = expr.ty.or(ann).expect("expr has no type in let in emitter");
-                    emitter.emit_indent();
-                    emitter.emit_type(ty);
-                    emitter.append(" ");
-                    emitter.append(var_name(name));
-                    emitter.append(";\n");
-                    emitter.emit_indent();
-                    emitter.append(var_name(name));
-                    emitter.append(" = ");
-                    emitter.emit_expr(expr);
-                    emitter.append(";\n");
-                }
+                let ty = expr.ty.or(ann).expect("expr has no type in let in emitter");
+                emitter.emit_indent();
+                emitter.emit_type(ty);
+                emitter.append(" ");
+                emitter.append(var_name(name));
+                emitter.append(";\n");
+                emitter.emit_indent();
+                emitter.append(var_name(name));
+                emitter.append(" = ");
+                emitter.emit_expr(expr);
+                emitter.append(";\n");
             }
             S.Statement.Declare(S.DeclareInfo(name, ty)) => {
                 let ty = ty.expect("expr has no type in declare in emitter");
@@ -787,10 +745,7 @@ pub struct Emitter {
             }
             let body = match fdef.body {
                 Some(b) => b,
-                None => {
-                    try_emit_builtin(emitter, fdef);
-                    continue;
-                }
+                None => continue,
             };
             //println("Emitting fn ${fdef.qualified_name.unwrap().name()}");
             let ty = fdef.result_type.unwrap();
@@ -814,8 +769,8 @@ pub struct Emitter {
     }
 }
 
-pub fn emit_c(program: Program, closure_ptr: Bool, value_types_ordered: Vec[QualifiedName]) -> String {
-    let emitter = Emitter.new(program, closure_ptr, value_types_ordered);
+pub fn emit_c(program: Program, value_types_ordered: Vec[QualifiedName]) -> String {
+    let emitter = Emitter.new(program, value_types_ordered);
     emitter.append("#include <stdio.h>\n");
     emitter.append("#include <stdlib.h>\n");
     emitter.append("#include <stdint.h>\n");
@@ -863,10 +818,6 @@ pub fn emit_c(program: Program, closure_ptr: Bool, value_types_ordered: Vec[Qual
     emitter.append("static inline uint8_t** get_environ(void) { return (uint8_t**)environ; }\n");
     emitter.append("static inline void set_program_result(int result) { _siko_result = result; }\n");
     emitter.emit_fn_forward_declarations();
-    if closure_ptr {
-        emit_closure_forward_declarations(emitter);
-        emit_closure_definitions(emitter);
-    }
     emitter.emit_fn_definitions();
     emitter.append("int main(int argc, char** argv) {\n");
     emitter.append("  _siko_argc = argc;\n");

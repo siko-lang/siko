@@ -59,14 +59,14 @@ fn rewrite_function(
             let body_rw = rewriter.rewrite_expr(body);
             let let_stmt = S.Statement.Let(S.LetInfo(ctx_local, None, ctor_expr));
             let new_body = match body_rw.kind {
-                ExprKind.Block(stmts) => {
+                ExprKind.Block(BlockInfo(stmts)) => {
                     stmts.insert(0, let_stmt);
-                    Expr(ExprKind.Block(stmts), loc, body_rw.ty)
+                    Expr(ExprKind.Block(BlockInfo(stmts)), loc, body_rw.ty)
                 }
                 _ => {
                     let ty = body_rw.ty.clone();
                     Expr(
-                        ExprKind.Block([let_stmt, S.Statement.TrailingExpr(body_rw)]),
+                        ExprKind.Block(BlockInfo([let_stmt, S.Statement.TrailingExpr(body_rw)])),
                         loc,
                         ty,
                     )

@@ -62,7 +62,24 @@ instance Rewrite[WithInfo]      = auto(Map)
 instance Rewrite[MatchArm]      = auto(Map)
 instance Rewrite[S.LetInfo]     = auto(Map)
 instance Rewrite[S.DeclareInfo] = auto(Map)
+
 instance Rewrite[S.Statement]   = auto(Map)
+
+instance Rewrite[BlockInfo] {
+    fn rewrite(block: BlockInfo, ctx: BuiltinLowerer) -> BlockInfo {
+        let out = Vec.new();
+        for stmt in block.stmts {
+            if let S.Statement.Let(S.LetInfo(name, ty, Expr(ExprKind.FunctionCall(FunctionCallInfo(qn, FunctionKind.Builtin, _, _, _)), _, expr_ty))) = stmt {
+                if qn.base_name() == B.get_util_uninitialized_qn() {
+                    out.push(S.Statement.Declare(S.DeclareInfo(name, ty.or(expr_ty))));
+                    continue;
+                }
+            }
+            out.push(stmt.rewrite(ctx));
+        }
+        BlockInfo(out)
+    }
+}
 instance Rewrite[MatchInfo]     = auto(Map)
 
 instance[T: Rewrite[T]] Rewrite[Option[T]] {
@@ -89,6 +106,11 @@ instance Rewrite[Expr] {
                     let args = args.rewrite(ctx);
                     let arg = args[0];
                     return Expr(ExprKind.Transmute(arg), loc, ty);
+                }
+                if qn.base_name() == B.get_util_discriminator_qn() {
+                    let args = args.rewrite(ctx);
+                    let arg = args[0];
+                    return Expr(ExprKind.Discriminator(arg), loc, ty);
                 }
                 if let Some(fdef) = ctx.program.functions.get(qn) {
                     if let Some(op) = fdef.is_binary_op() {

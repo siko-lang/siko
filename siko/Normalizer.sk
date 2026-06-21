@@ -33,7 +33,7 @@ fn finish_block(stmts: Vec[S.Statement], val: Option[Expr], loc: Location) -> Ex
     if let Some(v) = val {
         stmts.push(S.Statement.TrailingExpr(v));
     }
-    Expr(ExprKind.Block(stmts), loc, unit_type())
+    Expr(ExprKind.Block(BlockInfo(stmts)), loc, unit_type())
 }
 
 fn wrap_branch(stmts: Vec[S.Statement], val: Option[Expr], assign_to: Option[VariableName], loc: Location) -> Expr {
@@ -45,7 +45,7 @@ fn wrap_branch(stmts: Vec[S.Statement], val: Option[Expr], assign_to: Option[Var
             ));
         }
     }
-    Expr(ExprKind.Block(stmts), loc, unit_type())
+    Expr(ExprKind.Block(BlockInfo(stmts)), loc, unit_type())
 }
 
 struct Normalizer {
@@ -69,6 +69,13 @@ struct Normalizer {
             ExprKind.Name(_) | ExprKind.Var(_) | ExprKind.ImplicitRef(_) |
             ExprKind.CreateClosure(_) | ExprKind.SizeOf(_) => Some(expr),
 
+            ExprKind.Discriminator(inner) => {
+                let lowered = match norm.lower_expr(inner, out) {
+                    None => return None,
+                    Some(v) => v,
+                };
+                Some(Expr(ExprKind.Discriminator(lowered), loc, ty))
+            }
             ExprKind.Deref(inner) => {
                 let lowered = match norm.lower_expr(inner, out) {
                     None => return None,
@@ -201,7 +208,7 @@ struct Normalizer {
                 Some(Expr(ExprKind.Tuple(atom_args), loc, ty))
             }
 
-            ExprKind.Block(inner_stmts) => norm.lower_stmts(inner_stmts, out, loc),
+            ExprKind.Block(BlockInfo(inner_stmts)) => norm.lower_stmts(inner_stmts, out, loc),
 
             ExprKind.If(cond, then_body, else_opt) => {
                 norm.lower_if(cond, then_body, else_opt, loc, ty, out)
@@ -406,7 +413,7 @@ struct Normalizer {
         };
 
         let then_implicit_unit = match then_body.kind {
-            ExprKind.Block(stmts) => match stmts.last() {
+            ExprKind.Block(BlockInfo(stmts)) => match stmts.last() {
                 Some(S.Statement.TrailingExpr(_)) => False,
                 _ => True,
             },
@@ -418,7 +425,7 @@ struct Normalizer {
 
         if let Some(else_body) = else_opt {
             let else_implicit_unit = match else_body.kind {
-                ExprKind.Block(stmts) => match stmts.last() {
+                ExprKind.Block(BlockInfo(stmts)) => match stmts.last() {
                     Some(S.Statement.TrailingExpr(_)) => False,
                     _ => True,
                 },
@@ -480,7 +487,7 @@ struct Normalizer {
         };
 
         let all_arms_implicit_unit = arms.iter().all(|arm| match arm.body.kind {
-            ExprKind.Block(stmts) => match stmts.last() {
+            ExprKind.Block(BlockInfo(stmts)) => match stmts.last() {
                 Some(S.Statement.TrailingExpr(_)) => False,
                 _ => True,
             },
@@ -576,10 +583,10 @@ struct Normalizer {
                         // already normalized: just re-lower the setup block contents in case
                         // a prior pass injected new non-atomic exprs, keep the existing var ref
                         norm.lower_stmts(match guard_expr.kind {
-                            ExprKind.Block(stmts) => stmts,
+                            ExprKind.Block(BlockInfo(stmts)) => stmts,
                             _ => panic("normalizer: guard setup is not a block on re-normalization"),
                         }, guard_out, loc);
-                        let setup = Expr(ExprKind.Block(guard_out), loc, unit_type());
+                        let setup = Expr(ExprKind.Block(BlockInfo(guard_out)), loc, unit_type());
                         pattern.kind = PatternKind.Guard(inner, setup, Some(var_expr));
                         pattern
                     }
@@ -593,7 +600,7 @@ struct Normalizer {
                                 val,
                             ));
                         }
-                        let setup = Expr(ExprKind.Block(guard_out), loc, unit_type());
+                        let setup = Expr(ExprKind.Block(BlockInfo(guard_out)), loc, unit_type());
                         let var_expr = Expr(ExprKind.Var(tmp), loc, None);
                         pattern.kind = PatternKind.Guard(inner, setup, Some(var_expr));
                         pattern
@@ -608,7 +615,7 @@ struct Normalizer {
 fn is_divergent_with_fns(expr: Expr, div_fns: Set[QualifiedName]) -> Bool {
     match expr.kind {
         ExprKind.Return(_) | ExprKind.Break | ExprKind.Continue => True,
-        ExprKind.Block(stmts) => match stmts.last() {
+        ExprKind.Block(BlockInfo(stmts)) => match stmts.last() {
             Some(S.Statement.TrailingExpr(e)) => is_divergent_with_fns(e, div_fns),
             Some(S.Statement.Expr(e)) => is_divergent_with_fns(e, div_fns),
             _ => False,
@@ -652,7 +659,7 @@ fn stmt_has_break(stmt: S.Statement) -> Bool {
 fn expr_has_break(expr: Expr) -> Bool {
     match expr.kind {
         ExprKind.Break => True,
-        ExprKind.Block(stmts) => loop_body_has_break(stmts),
+        ExprKind.Block(BlockInfo(stmts)) => loop_body_has_break(stmts),
         ExprKind.If(_, then_branch, else_branch) => {
             expr_has_break(then_branch) || match else_branch {
                 Some(e) => expr_has_break(e),
@@ -698,7 +705,7 @@ pub fn add_explicit_return(body: Expr, divergent_fns: Set[QualifiedName]) -> Exp
     }
     let loc = body.location;
     match body.kind {
-        ExprKind.Block(stmts) => {
+        ExprKind.Block(BlockInfo(stmts)) => {
             let n = stmts.len();
             if n >= 2 {
                 match stmts[n - 1] {
@@ -718,7 +725,7 @@ pub fn add_explicit_return(body: Expr, divergent_fns: Set[QualifiedName]) -> Exp
             match stmts.last() {
                 Some(S.Statement.Loop(loop_body)) => {
                     if !loop_body_has_break(loop_body) {
-                        return Expr(ExprKind.Block(stmts), loc, unit_type());
+                        return Expr(ExprKind.Block(BlockInfo(stmts)), loc, unit_type());
                     }
                 }
                 _ => (),
@@ -733,7 +740,7 @@ pub fn add_explicit_return(body: Expr, divergent_fns: Set[QualifiedName]) -> Exp
                 _ => unit_expr(loc),
             };
             stmts.push(S.Statement.Expr(Expr(ExprKind.Return(return_expr), loc, unit_type())));
-            Expr(ExprKind.Block(stmts), loc, unit_type())
+            Expr(ExprKind.Block(BlockInfo(stmts)), loc, unit_type())
         }
         other_kind => Expr(
             ExprKind.Return(Expr(other_kind, loc, unit_type())),

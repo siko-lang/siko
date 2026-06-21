@@ -241,10 +241,10 @@ pub struct ExprResolver {
                 let rhs = expr_resolver.resolve_expr(rhs, env)?;
                 desugar_range(lhs, rhs)
             }
-            ExprKind.Block(stmts) => {
+            ExprKind.Block(BlockInfo(stmts)) => {
                 let child = env.child();
                 let resolved = expr_resolver.resolve_stmts(stmts, child)?;
-                ExprKind.Block(resolved)
+                ExprKind.Block(BlockInfo(resolved))
             }
             ExprKind.Tuple(exprs) => {
                 let exprs: Vec[_] = exprs
@@ -361,6 +361,7 @@ pub struct ExprResolver {
                 ExprKind.AddrOf(inner)
             }
             ExprKind.TypeAssociatedCall(_) => panic("resolver: TypeAssociatedCall already resolved"),
+            ExprKind.Discriminator(_) => panic("resolver: Discriminator in expr resolver"),
         };
         Ok(Expr (
             kind,
@@ -690,7 +691,7 @@ pub struct ExprResolver {
                         };
                         let resolved_pattern = expr_resolver.resolve_pattern(arm_pattern, env)?;
                         let resolved_rest = expr_resolver.resolve_stmts(stmts.sub(i + 1, stmts.len()), env)?;
-                        let body = Expr.new(ExprKind.Block(resolved_rest), location);
+                        let body = Expr.new(ExprKind.Block(BlockInfo(resolved_rest)), location);
                         let arm = MatchArm (
                             resolved_pattern,
                             body,
