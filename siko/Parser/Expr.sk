@@ -489,10 +489,18 @@ instance ExprParser[Parser] {
     }
 
     fn parse_handler_selection(parser: Parser) -> Result[HandlerSelection, ParseError] {
-        let method = parser.parse_expr_dotted_name()?;
-        parser.expect(TokenKind.Assign)?;
-        let handler = parser.parse_expr_dotted_name()?;
-        Ok(HandlerSelection.Unresolved(method, handler))
+        if parser.peek() == TokenKind.KwType {
+            parser.advance();
+            let method = parser.parse_expr_dotted_name()?;
+            parser.expect(TokenKind.Assign)?;
+            let handler_type = parser.parse_type_def()?;
+            Ok(HandlerSelection.UnresolvedType(method, handler_type))
+        } else {
+            let method = parser.parse_expr_dotted_name()?;
+            parser.expect(TokenKind.Assign)?;
+            let handler = parser.parse_expr_dotted_name()?;
+            Ok(HandlerSelection.Unresolved(method, handler))
+        }
     }
 
     fn parse_block_expr(parser: Parser) -> Result[Expr, ParseError] {

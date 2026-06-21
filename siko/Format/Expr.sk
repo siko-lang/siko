@@ -340,6 +340,11 @@ fn format_handler_selection(f: Formatter, handler: HandlerSelection) {
             f.push(" = ");
             f.push(I.resolve(h.name));
         }
+        HandlerSelection.UnresolvedType(method, ty) => {
+            f.push(I.resolve(method.name));
+            f.push(" = ");
+            format_type_def(f, ty);
+        }
         HandlerSelection.EffectFunction(method, h, _) => {
             f.push(I.resolve(method.name()));
             f.push(" = ");
@@ -349,6 +354,11 @@ fn format_handler_selection(f: Formatter, handler: HandlerSelection) {
             f.push(I.resolve(implicit_def.name()));
             f.push(" = ");
             f.push(var.format());
+        }
+        HandlerSelection.TypeAssociation(assoc, ty, _) => {
+            f.push(I.resolve(assoc.name()));
+            f.push(" = ");
+            format_type_def(f, ty);
         }
     }
 }

@@ -38,6 +38,7 @@ import Siko.Interner as I
 pub struct EffectInstanceInfo {
     pub effect_qname: QualifiedName,
     pub method_pairs: Vec[(QualifiedName, QualifiedName)],
+    pub assoc_type_pairs: Vec[(QualifiedName, TypeDef)],
 }
 
 pub struct GlobalResolverContext {
@@ -52,6 +53,7 @@ pub struct GlobalResolverContext {
     all_instances: Map[QualifiedName, InstanceDef],
     functions: Map[QualifiedName, FunctionDef],
     effects: Map[QualifiedName, Eff.EffectDef],
+    effect_associated_types: Map[QualifiedName, Eff.AssociatedTypeDef],
     implicits: Map[QualifiedName, ImplicitDef],
     module_names: Vec[I.String],
     module_instance_imports: Map[I.String, Vec[QualifiedName]],
@@ -70,6 +72,7 @@ pub struct GlobalResolverContext {
             all_instances: Map.new(),
             functions: Map.new(),
             effects: Map.new(),
+            effect_associated_types: Map.new(),
             implicits: Map.new(),
             module_names: Vec.new(),
             module_instance_imports: Map.new(),
@@ -197,6 +200,7 @@ pub struct Resolver {
             all_instances: resolver.ctx.all_instances,
             functions: resolver.ctx.functions,
             effects: resolver.ctx.effects,
+            effect_associated_types: resolver.ctx.effect_associated_types,
             implicits: resolver.ctx.implicits,
             module_names: resolver.ctx.module_names,
             module_instance_imports: resolver.ctx.module_instance_imports,
@@ -638,7 +642,26 @@ pub struct Resolver {
                 let instance_method = QualifiedName.new_method(qualified_name.name(), short_name);
                 method_pairs.push((effect_method, instance_method));
             }
-            resolver.ctx.effect_instance_infos.insert(qualified_name, EffectInstanceInfo(effect_qname, method_pairs));
+            let assoc_type_pairs = Vec.new();
+            let (effect_module, effect_short) = match effect_qname {
+                QualifiedName.Base(bni) => match bni.base() {
+                    BaseName.Effect(m, e) => (m, e),
+                    _ => panic("expected Effect baseName"),
+                },
+                _ => panic("expected Base qname for effect"),
+            };
+            for ta in resolved_instance_def.type_assignments {
+                let assoc_qname = QualifiedName.new_effect_associated_type(
+                    effect_module,
+                    effect_short,
+                    ta.name.name,
+                );
+                if resolver.ctx.effect_associated_types.get(assoc_qname).is_none() {
+                    return Err(ResolveError.UnknownAssociatedType(ta.name));
+                }
+                assoc_type_pairs.push((assoc_qname, ta.ty));
+            }
+            resolver.ctx.effect_instance_infos.insert(qualified_name, EffectInstanceInfo(effect_qname, method_pairs, assoc_type_pairs));
         }
         Ok(())
     }
@@ -933,6 +956,10 @@ pub struct Resolver {
             resolved_effect_def.method_map.names.insert(method.name.name(), QualifiedName.new_method(qualified_name.name(), method.name.name()));
         }
         resolver.ctx.effects.insert(qualified_name, resolved_effect_def);
+        for assoc_type in effect_def.associated_types {
+            let assoc_qname = QualifiedName.new_effect_associated_type(module_def.name.name(), effect_def.name.name(), assoc_type.name.name());
+            resolver.ctx.effect_associated_types.insert(assoc_qname, Eff.AssociatedTypeDef(effect_name: qualified_name));
+        }
         Ok(())
     }
 
@@ -946,14 +973,8 @@ pub struct Resolver {
         let type_resolver = TypeResolver.new(module_resolver);
         let ctx = ResolverContext.new(type_resolver, resolver.ctx);
         let resolved_effect_def = effect_def.resolve(ctx)?;
-        let assoc_names: Vec[I.String] = effect_def
-            .associated_types
-            .iter()
-            .map(|at| at.name.name)
-            .collect();
         let base_effect_resolver = TypeResolver.new(module_resolver);
         base_effect_resolver.add_args(effect_def.type_arg_defs);
-        base_effect_resolver.add_assoc_type_names(assoc_names);
         for method in effect_def.methods {
             let method_ctx = ResolverContext.new(base_effect_resolver, resolver.ctx);
             let resolved_method = method.resolve(method_ctx)?;

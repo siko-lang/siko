@@ -23,12 +23,15 @@ pub enum ModuleItemKind {
     Trait(trait_name: Identifier, type_arg_count: Int, associated_types: Vec[I.String]),
     Instance(instance_name: Identifier),
     Effect(effect_name: Identifier, associated_types: Vec[I.String]),
+    EffectAssociatedType(name: Identifier),
     Implicit(implicit_name: Identifier),
     Global(global_name: Identifier),
 
     pub fn is_type(kind: ModuleItemKind) -> Bool {
         match kind {
-            ModuleItemKind.Struct(_, _, _) | ModuleItemKind.Enum(_, _) => True,
+            ModuleItemKind.Struct(_, _, _) |
+            ModuleItemKind.Enum(_, _) |
+            ModuleItemKind.EffectAssociatedType(_) => True,
             _ => False,
         }
     }
@@ -101,6 +104,7 @@ instance ToString[ModuleItemKind] {
             ModuleItemKind.Trait(_, _, _) => "trait",
             ModuleItemKind.Instance(_) => "instance",
             ModuleItemKind.Effect(_, _) => "effect",
+            ModuleItemKind.EffectAssociatedType(_) => "effect associated type",
             ModuleItemKind.Implicit(_) => "implicit",
             ModuleItemKind.Global(_) => "global",
         }

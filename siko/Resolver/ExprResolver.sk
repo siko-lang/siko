@@ -9,6 +9,7 @@ import Siko.Resolver.Error
 import Siko.Resolver.ModuleItem
 import Siko.Resolver.Desugar
 import Siko.AST.Expr
+import Siko.AST.Type
 import Siko.AST.Name
 import Siko.AST.Pattern
 import Siko.AST.Statement as S
@@ -379,21 +380,31 @@ pub struct ExprResolver {
         let body = expr_resolver.resolve_expr(body, env)?;
         let resolved_selections = Vec.new();
         for selection in selections {
-            let (method_ident, handler_ident) = if let HandlerSelection.Unresolved(method_ident, handler_ident) = selection {
-                (method_ident, handler_ident)
-            } else {
-                panic("non-Unresolved HandlerSelection found during resolution")
+            let method_ident = match selection {
+                HandlerSelection.Unresolved(m, _) => m,
+                HandlerSelection.UnresolvedType(m, _) => m,
+                _ => panic("non-Unresolved HandlerSelection found during resolution"),
             };
             let method_item = expr_resolver.type_resolver.module_resolver().resolve(method_ident)?;
             match method_item.kind {
                 ModuleItemKind.Implicit(_) => {
+                    let handler_ident = if let HandlerSelection.Unresolved(_, h) = selection {
+                        h
+                    } else {
+                        return Err(ResolveError.InvalidEffectHandler(method_ident));
+                    };
                     let var = match env.lookup(handler_ident.name) {
                         Some(v) => v,
                         None => { return Err(ResolveError.NameNotFound(handler_ident)); }
-                    }
+                    };
                     resolved_selections.push(HandlerSelection.Implicit(method_item.qualified_name, var));
                 }
                 ModuleItemKind.Effect(_, _) => {
+                    let handler_ident = match selection {
+                        HandlerSelection.Unresolved(_, h) => h,
+                        HandlerSelection.UnresolvedType(_, TypeDef.Named(name, _)) => name.unresolved(),
+                        _ => return Err(ResolveError.InvalidEffectHandler(method_ident)),
+                    };
                     let instance_item = expr_resolver
                         .type_resolver
                         .module_resolver()
@@ -417,8 +428,20 @@ pub struct ExprResolver {
                             handler_ident.location,
                         ));
                     }
+                    for (assoc_qname, concrete_type) in info.assoc_type_pairs {
+                        resolved_selections.push(HandlerSelection.TypeAssociation(
+                            assoc_qname,
+                            concrete_type,
+                            handler_ident.location,
+                        ));
+                    }
                 }
                 ModuleItemKind.Function(_, _) => {
+                    let handler_ident = match selection {
+                        HandlerSelection.Unresolved(_, h) => h,
+                        HandlerSelection.UnresolvedType(_, TypeDef.Named(name, _)) => name.unresolved(),
+                        _ => return Err(ResolveError.InvalidEffectHandler(method_ident)),
+                    };
                     let handler_item = expr_resolver
                         .type_resolver
                         .module_resolver()
@@ -430,6 +453,19 @@ pub struct ExprResolver {
                         method_item.qualified_name,
                         handler_item.qualified_name,
                         handler_ident.location,
+                    ));
+                }
+                ModuleItemKind.EffectAssociatedType(_) => {
+                    let handler_type = match selection {
+                        HandlerSelection.UnresolvedType(_, ty) => ty,
+                        _ => return Err(ResolveError.InvalidEffectHandler(method_ident)),
+                    };
+                    let ctx = ResolverContext.new(expr_resolver.type_resolver, expr_resolver.global_ctx);
+                    let resolved_type = handler_type.resolve(ctx)?;
+                    resolved_selections.push(HandlerSelection.TypeAssociation(
+                        method_item.qualified_name,
+                        resolved_type,
+                        method_ident.location,
                     ));
                 }
                 _ => return Err(ResolveError.InvalidEffectHandler(method_ident)),

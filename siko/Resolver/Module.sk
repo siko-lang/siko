@@ -180,9 +180,11 @@ pub fn get_items(item: M.ModuleItem, module_name: Identifier) -> Vec[ModuleItem]
         }
         M.ModuleItem.Effect(def) => {
             let effect_name = module_name.merge(def.name);
-            let associated_types: Vec[_] =
+            let associated_types_string: Vec[_] =
                 def.associated_types.iter().map(|a| a.name.name()).collect();
-            let kind = ModuleItemKind.Effect(def.name, associated_types);
+            let associated_types_ids: Vec[_] =
+                def.associated_types.iter().map(|a| a.name).collect();
+            let kind = ModuleItemKind.Effect(def.name, associated_types_string);
             let items =
                 two_name_items(
                     public: def.public,
@@ -191,6 +193,27 @@ pub fn get_items(item: M.ModuleItem, module_name: Identifier) -> Vec[ModuleItem]
                     qn: QualifiedName.new_effect(module_name.name(), def.name.name()),
                     kind: kind,
                 );
+            for ty_id in associated_types_ids {
+                let qualified_name = QualifiedName.new_effect_associated_type(module_name.name(), def.name.name(), ty_id.name());
+                let kind = ModuleItemKind.EffectAssociatedType(
+                    ty_id,
+                );
+                let names = [
+                    (True, ty_id),
+                    (True, def.name.merge(ty_id)),
+                    (False, effect_name.merge(ty_id)),
+                ];
+                for (aliasable, name) in names {
+                    items.push(ModuleItem(
+                        public: def.public,
+                        aliasable: aliasable,
+                        name: name,
+                        qualified_name: qualified_name,
+                        kind: kind,
+                        import_def: None,
+                    ));
+                }
+            }
             for mdef in def.methods {
                 push_method_items(items, def.public, QualifiedName.new_effect(module_name.name(), def.name.name()), effect_name, def.name, mdef);
             }

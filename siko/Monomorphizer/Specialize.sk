@@ -213,7 +213,11 @@ instance Specialize[WithInfo] {
                     mono.current_implicit_ctx.insert(implicit_qn.clone());
                     implicit_selections.push(HandlerSelection.Implicit(implicit_qn.clone(), var.clone()));
                 }
-                HandlerSelection.Unresolved(_, _) => panic("mono: unresolved HandlerSelection")
+                HandlerSelection.TypeAssociation(_, _, _) => {
+                    panic("HandlerSelection.TypeAssociation is not yet implemented in mono")
+                }
+                HandlerSelection.Unresolved(_, _) |
+                HandlerSelection.UnresolvedType(_, _) => panic("mono: unresolved HandlerSelection")
             }
         }
         let spec_body = info.body.specialize(mono);

@@ -14,6 +14,7 @@ pub enum BaseName {
     Variant(module_name: I.String, enum_name: I.String, variant_name: I.String),
     Trait(module_name: I.String, trait_name: I.String),
     Effect(module_name: I.String, effect_name: I.String),
+    EffectAssociatedType(module_name: I.String, effect_name: I.String, name: I.String),
     Global(module_name: I.String, global_name: I.String),
     Implicit(module_name: I.String, implicit_name: I.String),
     Function(module_name: I.String, fn_name: I.String),
@@ -50,6 +51,7 @@ pub enum BaseName {
             ImplicitWrap(parent) => I.intern(I.resolve(parent) + "__implicit_wrap"),
             ImplicitContext(implicits) => I.intern("__implicit_context_" + join(implicits.iter().map(|n| I.resolve(n)).collect(), "_")),
             Tuple(args) => I.intern("__tuple_" + format_types(args) + "_"),
+            EffectAssociatedType(m, e, t) => I.intern(I.resolve(m) + "." + I.resolve(e) + "." + I.resolve(t)),
         }
     }
 }
@@ -124,6 +126,10 @@ pub enum QualifiedName {
 
     pub fn new_effect(module_name: I.String, effect_name: I.String) -> QualifiedName {
         Base(BaseNameInfo.new(BaseName.Effect(module_name, effect_name)))
+    }
+
+    pub fn new_effect_associated_type(module_name: I.String, effect_name: I.String, name: I.String) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.EffectAssociatedType(module_name, effect_name, name)))
     }
 
     pub fn new_global(module_name: I.String, global_name: I.String) -> QualifiedName {
