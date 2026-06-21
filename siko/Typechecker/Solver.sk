@@ -19,6 +19,7 @@ import Siko.Format.Utils
 import Siko.Unification.Instantiate
 import Siko.Unification.Sub
 import Siko.Unification.Unify
+import Siko.Unification.Utils
 import Siko.Utils.TypeVarAllocator
 import Siko.Constants.Builtins as B
 import Siko.AST.Effects
@@ -35,24 +36,6 @@ pub enum ProcessResult {
     Satisfied(Vec[Int], Vec[(C.ConstraintKind, Location)], Option[CallResolution], Option[(C.WitnessKey, BoundWitness)]),
     Pending(Vec[Int]),
     Failed(TypeError),
-}
-
-fn collect_named_vars(ty: TypeDef, out: Set[I.String]) {
-    match ty {
-        TypeDef.Var(TypeVar.Named(n)) => { out.insert(n); }
-        TypeDef.Named(NamedInfo(_, args)) => {
-            for a in args { collect_named_vars(a, out); }
-        }
-        TypeDef.Tuple(elems) => {
-            for a in elems { collect_named_vars(a, out); }
-        }
-        TypeDef.Fn(params, ret) | TypeDef.FnPtr(params, ret) => {
-            for p in params { collect_named_vars(p, out); }
-            collect_named_vars(ret, out);
-        }
-        TypeDef.Paren(inner) => collect_named_vars(inner, out),
-        _ => {}
-    }
 }
 
 fn freshen_effect_assoc(
@@ -100,30 +83,6 @@ fn freshen_effect_assoc(
         TypeDef.Ptr(inner) =>
             TypeDef.Ptr(freshen_effect_assoc(inner, fresh_map, allocator, effect_assoc_types)),
         _ => ty,
-    }
-}
-
-fn collect_flex_vars(ty: TypeDef) -> Vec[Int] {
-    match ty {
-        TypeDef.Var(TypeVar.Var(n)) => [n],
-        TypeDef.Named(NamedInfo(_, args)) => {
-            let v = Vec.new();
-            for a in args { v.extend(collect_flex_vars(a)); }
-            v
-        }
-        TypeDef.Tuple(elems) => {
-            let v = Vec.new();
-            for a in elems { v.extend(collect_flex_vars(a)); }
-            v
-        }
-        TypeDef.Fn(params, ret) | TypeDef.FnPtr(params, ret) => {
-            let v = Vec.new();
-            for p in params { v.extend(collect_flex_vars(p)); }
-            v.extend(collect_flex_vars(ret));
-            v
-        }
-        TypeDef.Paren(inner) => collect_flex_vars(inner),
-        _ => [],
     }
 }
 
@@ -788,8 +747,11 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
                 None => TypeDef.Tuple(Vec.new()),
             };
             let fresh_map: Map[I.String, TypeDef] = Map.new();
-            let effect_ty = freshen_effect_assoc(TypeDef.Fn(effect_param_tys, effect_ret_ty), fresh_map, ctx.allocator, ctx.program.effect_associated_types);
-
+            let effect_ty = TypeDef.Fn(effect_param_tys, effect_ret_ty);
+            let effect_ty = freshen_effect_assoc(effect_ty,
+                                                 fresh_map,
+                                                 ctx.allocator,
+                                                 ctx.program.effect_associated_types);
             let instance_fn = ctx.program.functions.get(instance_method).unwrap();
             let instance_param_ann_tys: Vec[TypeDef] = instance_fn.args.iter().map(|a| a.type_def).collect();
             let instance_result_ann_ty = instance_fn.result_type;

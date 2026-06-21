@@ -4,6 +4,7 @@ import Siko.AST.Type
 import Siko.AST.Instances
 import Siko.Format.Utils
 import Siko.HIR.Program
+import Siko.AST.Name
 import Siko.Location
 import Siko.Interner as I
 import Std.Set
@@ -14,29 +15,39 @@ pub enum InstanceError {
     UnknownTraitMethod(String, String, String, Location),
 }
 
-fn find_specialized(ty: TypeDef) -> Option[TypeDef] {
-    match ty {
-        TypeDef.Var(_) => None,
-        TypeDef.Named(NamedInfo(_, args)) => {
-            for arg in args {
-                match arg {
-                    TypeDef.Var(TypeVar.Named(_)) => {}
-                    _ => return Some(arg),
-                }
-            }
-            None
+trait CollectSpecialized[T] {
+    fn collect_specialized(t: T, out: Vec[TypeDef])
+}
+
+instance CollectSpecialized[TypeDef]  = auto(Fold)
+instance CollectSpecialized[TypeVar]  = auto(Fold, =)
+instance CollectSpecialized[Name]     = auto(Fold, =)
+instance CollectSpecialized[Bool]     = auto(Fold, =)
+instance CollectSpecialized[Int]      = auto(Fold, =)
+
+instance[T: CollectSpecialized[T]] CollectSpecialized[Vec[T]] {
+    fn collect_specialized(v: Vec[T], out: Vec[TypeDef]) {
+        for t in v {
+            t.collect_specialized(out);
         }
-        TypeDef.Tuple(elems) => {
-            for elem in elems {
-                if let Some(bad) = find_specialized(elem) {
-                    return Some(bad);
-                }
-            }
-            None
-        }
-        TypeDef.Paren(inner) => find_specialized(inner),
-        TypeDef.Array(_, _) | TypeDef.Numeric(_) | TypeDef.Ptr(_) | TypeDef.Fn(_, _) | TypeDef.FnPtr(_, _) | TypeDef.Never(_) | TypeDef.Wildcard | TypeDef.Void | TypeDef.VoidPtr => Some(ty),
     }
+}
+
+instance CollectSpecialized[NamedInfo] {
+    fn collect_specialized(n: NamedInfo, out: Vec[TypeDef]) {
+        for arg in n.args {
+            match arg {
+                TypeDef.Var(TypeVar.Named(_)) => {}
+                _ => out.push(arg),
+            }
+        }
+    }
+}
+
+fn find_specialized(ty: TypeDef) -> Option[TypeDef] {
+    let out = Vec.new();
+    ty.collect_specialized(out);
+    out.first()
 }
 
 fn format_args(args: Vec[TypeDef]) -> String {

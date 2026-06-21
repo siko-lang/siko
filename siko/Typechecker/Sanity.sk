@@ -12,6 +12,7 @@ import Siko.AST.Type
 import Siko.Interner as I
 import Siko.Location
 import Siko.Typechecker.Error
+import Siko.Unification.Utils
 
 // ── Check trait ───────────────────────────────────────────────────────────────
 
@@ -115,32 +116,23 @@ struct SanityChecker {
     fallback_loc: Location,
 
     fn check_ty(ctx: SanityChecker, ty: TypeDef, loc: Location) {
-        let strays = Vec.new();
-        collect_stray_vars(ty, ctx.valid, strays);
-        for _ in strays {
-            ctx.errors.push(TypeError.AmbiguousType(loc));
-        }
-    }
-}
-
-fn collect_stray_vars(ty: TypeDef, valid: Set[I.String], out: Vec[String]) {
-    match ty {
-        TypeDef.Var(TypeVar.Named(name)) => {
-            if !valid.contains(name) {
-                out.push(I.resolve(name));
+        let fail = False;
+        let vars = collect_type_vars(ty);
+        for v in vars {
+            match v {
+                TypeVar.Named(n) => {
+                    if !ctx.valid.contains(n) {
+                        fail = True;
+                    }
+                }
+                TypeVar.Var(_) => {
+                    fail = True;
+                }
             }
         }
-        TypeDef.Var(TypeVar.Var(n)) => out.push("$${n}"),
-        TypeDef.Named(NamedInfo(_, args)) => { for arg in args { collect_stray_vars(arg, valid, out); } }
-        TypeDef.Tuple(elems)   => { for e in elems  { collect_stray_vars(e, valid, out); } }
-        TypeDef.Paren(inner)   => collect_stray_vars(inner, valid, out),
-        TypeDef.Ptr(inner)     => collect_stray_vars(inner, valid, out),
-        TypeDef.Array(inner, _) => collect_stray_vars(inner, valid, out),
-        TypeDef.Fn(args, result) | TypeDef.FnPtr(args, result) => {
-            for a in args { collect_stray_vars(a, valid, out); }
-            collect_stray_vars(result, valid, out);
+        if fail {
+            ctx.errors.push(TypeError.AmbiguousType(loc));
         }
-        TypeDef.Never(_) | TypeDef.Wildcard | TypeDef.Void | TypeDef.VoidPtr | TypeDef.Numeric(_) => {}
     }
 }
 

@@ -1,0 +1,79 @@
+module Siko.Unification.Utils {
+
+import Siko.AST.Name
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Std.Set
+import Siko.Interner as I
+
+trait CollectTypeVars[T] {
+    fn collect_typevars(t: T, vars: Vec[TypeVar])
+}
+
+instance CollectTypeVars[TypeDef] = auto(Fold)
+instance CollectTypeVars[Name] = auto(Fold, =)
+instance CollectTypeVars[Bool] = auto(Fold, =)
+instance CollectTypeVars[Int] = auto(Fold, =)
+instance CollectTypeVars[NamedInfo] = auto(Fold)
+
+instance[T: CollectTypeVars[T]] CollectTypeVars[Vec[T]] {
+    fn collect_typevars(v: Vec[T], vars: Vec[TypeVar]) {
+        for t in v {
+            t.collect_typevars(vars);
+        }
+    }
+}
+
+instance CollectTypeVars[TypeVar] {
+    fn collect_typevars(t: TypeVar, vars: Vec[TypeVar]) {
+        vars.push(t);
+    }
+}
+
+pub fn collect_type_vars(t: TypeDef) -> Vec[TypeVar] {
+    let vars = Vec.new();
+    collect_typevars(t, vars)
+    vars
+}
+
+pub fn collect_flex_vars(t: TypeDef) -> Vec[Int] {
+    let vars = Vec.new();
+    collect_typevars(t, vars)
+    let vars = vars.iter().filter_map(|v| v.flex_var()).collect();
+    vars
+}
+
+pub fn collect_named_vars(t: TypeDef, vars: Set[I.String]) {
+    let names = Vec.new();
+    collect_typevars(t, names)
+    let names: Set[I.String] = names.iter().filter_map(|v| v.name()).collect();
+    for n in names {
+        vars.insert(n);
+    }
+}
+
+pub trait CollectNames[T] {
+    fn collect_names(t: T, names: Vec[QualifiedName])
+}
+
+instance CollectNames[TypeDef] = auto(Fold)
+instance CollectNames[Name] = auto(Fold, =)
+instance CollectNames[TypeVar] = auto(Fold, =)
+instance CollectNames[Bool] = auto(Fold, =)
+instance CollectNames[Int] = auto(Fold, =)
+
+instance CollectNames[NamedInfo] {
+    fn collect_names(n: NamedInfo, names: Vec[QualifiedName]) {
+        names.push(n.name.resolved());
+    }
+}
+
+instance[T: CollectNames[T]] CollectNames[Vec[T]] {
+    fn collect_names(v: Vec[T], names: Vec[QualifiedName]) {
+        for t in v {
+            t.collect_names(names);
+        }
+    }
+}
+
+}

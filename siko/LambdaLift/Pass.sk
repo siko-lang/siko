@@ -14,6 +14,7 @@ import Siko.AST.QualifiedName
 import Siko.AST.Statement as S
 import Siko.AST.Type
 import Siko.HIR.Program
+import Siko.Unification.Utils
 import Siko.Instances.FunctionInstanceResolver
 import Siko.Interner as I
 import Siko.Location
@@ -301,9 +302,9 @@ fn lift_expr(lifter: LambdaLifter, expr: E.Expr) -> E.Expr {
 
             let named_vars: Set[I.String] = Set.new();
             for arg in all_args {
-                collect_named_type_vars(arg.type_def, named_vars);
+                collect_named_vars(arg.type_def, named_vars);
             }
-            collect_named_type_vars(result_type, named_vars);
+            collect_named_vars(result_type, named_vars);
 
             let referenced_indices: Vec[Int] = collect_referenced_bound_indices(lifted_body).iter().collect();
             let index_remap: Map[Int, Int] = Map.new();
@@ -352,20 +353,6 @@ fn lift_expr(lifter: LambdaLifter, expr: E.Expr) -> E.Expr {
             E.Expr(E.ExprKind.CreateClosure(E.CreateClosureInfo(lambda_qname, capture_vars, closure_witnesses)), loc, ty)
         },
         kind => E.Expr(kind.lift(lifter), loc, ty),
-    }
-}
-
-fn collect_named_type_vars(ty: TypeDef, out: Set[I.String]) {
-    match ty {
-        TypeDef.Var(TypeVar.Named(name)) => { out.insert(name); },
-        TypeDef.Named(NamedInfo(_, args)) => { for a in args { collect_named_type_vars(a, out); } },
-        TypeDef.Tuple(elems) => { for e in elems { collect_named_type_vars(e, out); } },
-        TypeDef.Fn(args, result) | TypeDef.FnPtr(args, result) => {
-            for a in args { collect_named_type_vars(a, out); }
-            collect_named_type_vars(result, out);
-        },
-        TypeDef.Paren(inner) => collect_named_type_vars(inner, out),
-        _ => {},
     }
 }
 

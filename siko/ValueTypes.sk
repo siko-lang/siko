@@ -2,32 +2,9 @@ module Siko.ValueTypes {
 
 import Std.Map
 import Siko.AST.QualifiedName
-import Siko.AST.Type
 import Siko.HIR.Program
+import Siko.Unification.Utils
 import Siko.Utils.SCC as SCC
-
-fn collect_type_deps(ty: TypeDef, deps: Vec[QualifiedName]) {
-    match ty {
-        TypeDef.Named(NamedInfo(name, args)) => {
-            deps.push(name.resolved());
-            for arg in args {
-                collect_type_deps(arg, deps);
-            }
-        }
-        TypeDef.Tuple(elems) => {
-            for e in elems {
-                collect_type_deps(e, deps);
-            }
-        }
-        TypeDef.Fn(args, ret) | TypeDef.FnPtr(args, ret) => {
-            for a in args {
-                collect_type_deps(a, deps);
-            }
-            collect_type_deps(ret, deps);
-        }
-        _ => {}
-    }
-}
 
 pub fn calculate_value_types(program: Program) -> Vec[QualifiedName] {
     let graph: Map[QualifiedName, Vec[QualifiedName]] = Map.new();
@@ -36,7 +13,7 @@ pub fn calculate_value_types(program: Program) -> Vec[QualifiedName] {
         let deps: Vec[QualifiedName] = Vec.new();
         for variant in edef.variants.iter() {
             for item in variant.items.iter() {
-                collect_type_deps(item.ty, deps);
+                collect_names(item.ty, deps);
             }
         }
         deps.dedup();
@@ -48,7 +25,7 @@ pub fn calculate_value_types(program: Program) -> Vec[QualifiedName] {
     for (qname, sdef) in program.structs.iter() {
         let deps: Vec[QualifiedName] = Vec.new();
         for field in sdef.fields.iter() {
-            collect_type_deps(field.ty, deps);
+            collect_names(field.ty, deps);
         }
         deps.dedup();
         graph.insert(qname, deps);
