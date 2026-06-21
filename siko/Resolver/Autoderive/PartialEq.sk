@@ -31,7 +31,7 @@ pub fn build_partialeq_enum(enum_def: EnumDef, module_name: I.String) -> Instanc
     let enum_qname = enum_def.qualified_name.unwrap();
     let (type_arg_defs, enum_type_args) =
         build_type_arg_defs(enum_def.type_arg_defs, trait_name, loc);
-    let enum_type = TypeDef.Named(Name.inner(enum_qname), enum_type_args);
+    let enum_type = TypeDef.Named(NamedInfo(Name.inner(enum_qname), enum_type_args));
 
     let prefix = instance_synth_qn(trait_name, [enum_type]);
     let (method_fn, method_short) =
@@ -85,10 +85,10 @@ fn get_resolved_trait_name() -> Name {
 }
 
 fn bool_type() -> TypeDef {
-    TypeDef.Named(
+    TypeDef.Named(NamedInfo(
         Name.inner(B.get_bool_type_qn()),
         [],
-    )
+    ))
 }
 
 fn true_expr(loc: Location) -> Expr {
@@ -321,7 +321,7 @@ pub fn derive_partialeq_struct(struct_def: StructDef, module_name: I.String) -> 
     let struct_qname = struct_def.qualified_name.unwrap();
     let (type_arg_defs, struct_type_args) =
         build_type_arg_defs(struct_def.type_arg_defs, trait_name, loc);
-    let struct_type = TypeDef.Named(Name.inner(struct_qname), struct_type_args);
+    let struct_type = TypeDef.Named(NamedInfo(Name.inner(struct_qname), struct_type_args));
     let prefix = instance_synth_qn(trait_name, [struct_type]);
     let (method_fn, method_short) =
         build_partialeq_struct_method(struct_def, prefix, type_arg_defs, struct_type, module_name);

@@ -37,7 +37,7 @@ instance Rewrite[TypeDef] {
                     .map(|e| rewrite(e, ctx))
                     .collect();
                 let pre_mono_qname = QualifiedName.new_tuple(rewritten);
-                let name = format_type(TypeDef.Named(Name.inner(pre_mono_qname), []));
+                let name = format_type(TypeDef.Named(NamedInfo(Name.inner(pre_mono_qname), [])));
                 let qname = QualifiedName.new_mono(
                     pre_mono_qname,
                     [],
@@ -74,9 +74,9 @@ instance Rewrite[TypeDef] {
                         ),
                     );
                 }
-                TypeDef.Named(Name.inner(qname), [])
+                TypeDef.Named(NamedInfo(Name.inner(qname), []))
             }
-            TypeDef.Named(n, args) => TypeDef.Named(n, args),
+            TypeDef.Named(NamedInfo(n, args)) => TypeDef.Named(NamedInfo(n, args)),
             TypeDef.Paren(inner) => TypeDef.Paren(rewrite(inner, ctx)),
             TypeDef.Fn(args, result) => TypeDef.Fn(
                 args.into_iter().map(|a| rewrite(a, ctx)).collect(),
@@ -182,7 +182,7 @@ struct TupleLowerer {
         match expr.kind {
             ExprKind.Tuple(elems) => {
                 let struct_name = match ty {
-                    Some(TypeDef.Named(qn, _)) => qn.resolved(),
+                    Some(TypeDef.Named(NamedInfo(qn, _))) => qn.resolved(),
                     _ => panic("lower_tuples: cannot determine monomorphic struct name for Tuple expression"),
                 };
                 Expr(ExprKind.FunctionCall(FunctionCallInfo(
@@ -228,7 +228,7 @@ fn lower_tuple_match(
     loc: Location,
 ) -> Expr {
     let elem_types: Vec[TypeDef] = match scrutinee.ty.unwrap() {
-        TypeDef.Named(Name.Resolved(name: qn, ..), _) => match qn {
+        TypeDef.Named(NamedInfo(Name.Resolved(name: qn, ..), _)) => match qn {
             QualifiedName.Mono(mono_name) => mono_name.args.clone(),
             _ => panic("lower_tuple_match: scrutinee type is not a mono siko_tuple"),
         },

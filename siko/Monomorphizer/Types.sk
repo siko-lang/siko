@@ -19,10 +19,10 @@ pub fn specialize_type(ty: TypeDef, mono: Monomorphizer) -> TypeDef {
             t.specialize(mono)
         }
         TypeDef.Var(TypeVar.Var(_)) => panic("type var in mono"),
-        TypeDef.Named(name, args) => {
+        TypeDef.Named(NamedInfo(name, args)) => {
             let spec_args: Vec[TypeDef] = args.specialize(mono)
             mono.enqueue_named_types(name.resolved(), args.apply(mono.sub));
-            TypeDef.Named(
+            TypeDef.Named(NamedInfo(
                 Name.inner(QualifiedName.new_mono(
                     name.resolved(),
                     spec_args,
@@ -31,7 +31,7 @@ pub fn specialize_type(ty: TypeDef, mono: Monomorphizer) -> TypeDef {
                     [],
                 )),
                 [],
-            )
+            ))
         }
         TypeDef.Tuple(args) => TypeDef.Tuple(args.specialize(mono)),
         TypeDef.Fn(args, result) => TypeDef.Fn(

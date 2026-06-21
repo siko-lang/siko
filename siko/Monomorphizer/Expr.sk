@@ -185,7 +185,7 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
 pub fn process_struct_ctor(name: QualifiedName, args: Vec[Expr], mono: Monomorphizer) -> FunctionCallInfo {
     assert(!mono.current_expr_ty.unwrap().is_mono(False), "process_struct_ctor current expr ty is not mono");
     let callee_type_args = match mono.current_expr_ty.apply(mono.sub).unwrap() {
-        TypeDef.Named(_, targs) => targs,
+        TypeDef.Named(NamedInfo(_, targs)) => targs,
         t => panic("StructCtor expr has non-Named type:"),
     };
     let spec_args: Vec[Expr] = args.specialize(mono);
@@ -201,7 +201,7 @@ pub fn process_struct_ctor(name: QualifiedName, args: Vec[Expr], mono: Monomorph
 
 pub fn process_variant_ctor(name: QualifiedName, args: Vec[Expr], mono: Monomorphizer) -> FunctionCallInfo {
     let callee_type_args = match mono.current_expr_ty.apply(mono.sub).unwrap() {
-        TypeDef.Named(_, targs) => targs,
+        TypeDef.Named(NamedInfo(_, targs)) => targs,
         t => panic("VariantCtor expr has non-Named type:"),
     };
     let spec_args: Vec[Expr] = args.specialize(mono);

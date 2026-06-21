@@ -72,7 +72,7 @@ pub struct Unifier {
                 }
             }
 
-            (TypeDef.Named(n1, a1), TypeDef.Named(n2, a2)) => {
+            (TypeDef.Named(NamedInfo(n1, a1)), TypeDef.Named(NamedInfo(n2, a2))) => {
                 if n1.name() != n2.name() || a1.len() != a2.len() {
                     return Err(UnifyError.Mismatch(t1, t2));
                 }
@@ -153,7 +153,7 @@ fn occurs_check(var: Int, ty: TypeDef) {
             panic("occurs check: $${var} would create a recursive type — compiler bug");
         }
         TypeDef.Var(_) => {}
-        TypeDef.Named(_, args) => args.iter().for_each(|a| occurs_check(var, a)),
+        TypeDef.Named(NamedInfo(_, args)) => args.iter().for_each(|a| occurs_check(var, a)),
         TypeDef.Tuple(elems) => elems.iter().for_each(|e| occurs_check(var, e)),
         TypeDef.Fn(params, ret) | TypeDef.FnPtr(params, ret) => {
             params.iter().for_each(|p| occurs_check(var, p));

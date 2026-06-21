@@ -50,7 +50,7 @@ pub struct Emitter {
     }
 
     pub fn is_value_type_ty(emitter: Emitter, ty: TypeDef) -> Bool {
-        if let TypeDef.Named(name, _) = ty {
+        if let TypeDef.Named(NamedInfo(name, _)) = ty {
             emitter.is_value_type(name.resolved())
         } else {
             False
@@ -447,7 +447,7 @@ pub struct Emitter {
             }
             ExprKind.Discriminator(inner) => {
                 let is_enum = match inner.ty {
-                    Some(TypeDef.Named(name, _)) => emitter.program.enums.get(name.resolved()).is_some(),
+                    Some(TypeDef.Named(NamedInfo(name, _))) => emitter.program.enums.get(name.resolved()).is_some(),
                     _ => False,
                 };
                 if is_enum {
@@ -710,7 +710,7 @@ pub struct Emitter {
         match ty {
             TypeDef.Never(_) => emitter.append("void"),
             TypeDef.Fn(_, _) | TypeDef.FnPtr(_, _) => emitter.append("void*"),
-            TypeDef.Named(name, _) => {
+            TypeDef.Named(NamedInfo(name, _)) => {
                 let name = name.resolved();
                 if let Some(c_type) = emitter.builtin_int_types.get(name) {
                     emitter.append(c_type);

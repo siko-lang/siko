@@ -24,7 +24,7 @@ fn check_named_arg_count(named_args: Vec[NamedArgument], expected: Int) -> Bool 
 }
 
 fn builtin_type(qn: QualifiedName) -> TypeDef {
-    TypeDef.Named(Name.inner(qn), Vec.new())
+    TypeDef.Named(NamedInfo(Name.inner(qn), Vec.new()))
 }
 
 fn std_bool() -> TypeDef { builtin_type(B.get_bool_type_qn()) }
@@ -52,7 +52,7 @@ pub struct Collector {
     fn fill_wildcards(c: Collector, ty: TypeDef) -> TypeDef {
         match ty {
             TypeDef.Wildcard => c.fresh(),
-            TypeDef.Named(n, args) => TypeDef.Named(n, args.iter().map(|a| c.fill_wildcards(a)).collect()),
+            TypeDef.Named(NamedInfo(n, args)) => TypeDef.Named(NamedInfo(n, args.iter().map(|a| c.fill_wildcards(a)).collect())),
             TypeDef.Tuple(elems) => TypeDef.Tuple(elems.iter().map(|e| c.fill_wildcards(e)).collect()),
             TypeDef.Paren(inner) => TypeDef.Paren(c.fill_wildcards(inner)),
             TypeDef.Fn(params, ret) => TypeDef.Fn(params.iter().map(|p| c.fill_wildcards(p)).collect(), c.fill_wildcards(ret)),

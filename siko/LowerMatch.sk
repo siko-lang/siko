@@ -149,8 +149,8 @@ pub struct MatchLowerer {
         let scrutinee_ty = path_ty_env.get(switch.data_path);
         let scrutinee_expr = Expr(ExprKind.Var(scrutinee_var), loc.clone(), scrutinee_ty);
 
-        let string_ty = TypeDef.Named(Name.inner(B.get_string_type_qn()), []);
-        let bool_ty   = TypeDef.Named(Name.inner(B.get_bool_type_qn()), []);
+        let string_ty = TypeDef.Named(NamedInfo(Name.inner(B.get_string_type_qn()), []));
+        let bool_ty   = TypeDef.Named(NamedInfo(Name.inner(B.get_bool_type_qn()), []));
 
         let string_cases: Vec[(I.String, Expr)] = [];
         let default_body: Option[Expr] = None;
@@ -320,7 +320,7 @@ pub struct MatchLowerer {
                     };
                     let item_types: Vec[TypeDef] = if type_params.is_empty() {
                         raw_item_types
-                    } else if let Some(TypeDef.Named(_, concrete_args)) = scrutinee_ty {
+                    } else if let Some(TypeDef.Named(NamedInfo(_, concrete_args))) = scrutinee_ty {
                         let sub = Substitution.new();
                         for (param, concrete) in type_params.iter().zip(concrete_args.iter()) {
                             sub.bind_named(param, concrete);

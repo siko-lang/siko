@@ -9,7 +9,7 @@ import Siko.Constants.Builtins as B
 instance Resolvable[TypeDef] {
     fn resolve(t: TypeDef, ctx: ResolverContext) -> Result[TypeDef, ResolveError] {
         match t {
-            TypeDef.Named(name, args) => {
+            TypeDef.Named(NamedInfo(name, args)) => {
                 let unresolved_name = name.unresolved();
                 let resolved_args: Vec[_]= args
                     .iter()
@@ -55,10 +55,10 @@ instance Resolvable[TypeDef] {
             }
             TypeDef.Array(inner, n) => {
                 let resolved_inner = inner.resolve(ctx)?;
-                Ok(TypeDef.Named(
+                Ok(TypeDef.Named(NamedInfo(
                     Name.inner(B.get_array_type_qn()),
                     [resolved_inner, TypeDef.Numeric(n)],
-                ))
+                )))
             }
             TypeDef.Numeric(n) => Ok(TypeDef.Numeric(n)),
             TypeDef.Var(_) => panic("Var in unresolved type"),

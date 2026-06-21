@@ -12,8 +12,14 @@ pub enum TypeVar {
 }
 
 @derive(PartialEq, Std.Ops.Eq, PartialOrd, Ord, Clone)
+pub struct NamedInfo {
+    pub name: Name,
+    pub args: Vec[TypeDef]
+}
+
+@derive(PartialEq, Std.Ops.Eq, PartialOrd, Ord, Clone)
 pub enum TypeDef {
-    Named(Name, Vec[TypeDef]),
+    Named(NamedInfo),
     Tuple(Vec[TypeDef]),
     Paren(TypeDef),
     Fn(Vec[TypeDef], TypeDef),
@@ -29,21 +35,21 @@ pub enum TypeDef {
 
     pub fn name(ty: TypeDef) -> QualifiedName {
         match ty {
-            TypeDef.Named(n, _) => n.resolved(),
+            TypeDef.Named(NamedInfo(n, _)) => n.resolved(),
             _ => panic("not a named type"),
         }
     }
 
     pub fn name_opt(ty: TypeDef) -> Option[QualifiedName] {
         match ty {
-            TypeDef.Named(n, _) => Some(n.resolved()),
+            TypeDef.Named(NamedInfo(n, _)) => Some(n.resolved()),
             _ => None,
         }
     }
 
     pub fn is_mono(ty: TypeDef, default: Bool) -> Bool {
         match ty {
-            TypeDef.Named(n, args) => {
+            TypeDef.Named(NamedInfo(n, args)) => {
                 if !n.resolved().is_mono() {
                     return False;
                 }
@@ -85,7 +91,7 @@ pub enum TypeDef {
     pub fn has_ptr(ty: TypeDef) -> Bool {
         match ty {
             TypeDef.Ptr(_) | TypeDef.VoidPtr | TypeDef.FnPtr(_, _) => True,
-            TypeDef.Named(_, args) => args.iter().any(|a| a.has_ptr()),
+            TypeDef.Named(NamedInfo(_, args)) => args.iter().any(|a| a.has_ptr()),
             TypeDef.Tuple(args) => args.iter().any(|a| a.has_ptr()),
             TypeDef.Paren(inner) => inner.has_ptr(),
             TypeDef.Fn(params, ret) => params.iter().any(|a| a.has_ptr()) || ret.has_ptr(),
@@ -97,7 +103,7 @@ pub enum TypeDef {
     pub fn has_flex_var(ty: TypeDef) -> Bool {
         match ty {
             TypeDef.Var(TypeVar.Var(_)) => True,
-            TypeDef.Named(_, args) => args.iter().any(|a| a.has_flex_var()),
+            TypeDef.Named(NamedInfo(_, args)) => args.iter().any(|a| a.has_flex_var()),
             TypeDef.Tuple(args) => args.iter().any(|a| a.has_flex_var()),
             TypeDef.Paren(inner) => inner.has_flex_var(),
             TypeDef.Fn(params, ret) | TypeDef.FnPtr(params, ret) => params.iter().any(|a| a.has_flex_var()) || ret.has_flex_var(),

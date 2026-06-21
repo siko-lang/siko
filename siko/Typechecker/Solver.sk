@@ -40,7 +40,7 @@ pub enum ProcessResult {
 fn collect_named_vars(ty: TypeDef, out: Set[I.String]) {
     match ty {
         TypeDef.Var(TypeVar.Named(n)) => { out.insert(n); }
-        TypeDef.Named(_, args) => {
+        TypeDef.Named(NamedInfo(_, args)) => {
             for a in args { collect_named_vars(a, out); }
         }
         TypeDef.Tuple(elems) => {
@@ -62,7 +62,7 @@ fn freshen_effect_assoc(
     effect_assoc_types: Map[QualifiedName, AssociatedTypeDef],
 ) -> TypeDef {
     match ty {
-        TypeDef.Named(name, args) => {
+        TypeDef.Named(NamedInfo(name, args)) => {
             match name {
                 Name.Resolved(qn, _) => {
                     if effect_assoc_types.get(qn).is_some() {
@@ -77,10 +77,10 @@ fn freshen_effect_assoc(
                         }
                     } else {
                         let new_args = args.iter().map(|a| freshen_effect_assoc(a, fresh_map, allocator, effect_assoc_types)).collect();
-                        TypeDef.Named(name, new_args)
+                        TypeDef.Named(NamedInfo(name, new_args))
                     }
                 }
-                _ => TypeDef.Named(name, args),
+                _ => TypeDef.Named(NamedInfo(name, args)),
             }
         }
         TypeDef.Tuple(elems) =>
@@ -106,7 +106,7 @@ fn freshen_effect_assoc(
 fn collect_flex_vars(ty: TypeDef) -> Vec[Int] {
     match ty {
         TypeDef.Var(TypeVar.Var(n)) => [n],
-        TypeDef.Named(_, args) => {
+        TypeDef.Named(NamedInfo(_, args)) => {
             let v = Vec.new();
             for a in args { v.extend(collect_flex_vars(a)); }
             v
@@ -158,7 +158,10 @@ fn resolve_method(type_qname: QualifiedName, method: I.String, caller_module: I.
                     }
                 }
                 None => {
-                    return Err(TypeError.InvalidReceiverType(TypeDef.Named(Name.inner(type_qname), Vec.new()), location));
+                    return Err(TypeError.InvalidReceiverType(
+                        TypeDef.Named(NamedInfo(
+                            Name.inner(type_qname),
+                            Vec.new())), location));
                 }
             }
         }
@@ -189,7 +192,7 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
             let resolved = ctx.sub.apply(receiver);
             match resolved {
                 TypeDef.Var(TypeVar.Var(n)) => ProcessResult.Pending([n]),
-                TypeDef.Named(Name.Resolved(name: qname, ..), type_args) => {
+                TypeDef.Named(NamedInfo(Name.Resolved(name: qname, ..), type_args)) => {
                     match ctx.program.structs.get(qname) {
                         None => ProcessResult.Failed(TypeError.NotAStruct(resolved, location)),
                         Some(struct_def) => {
@@ -248,10 +251,10 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
             let resolved = ctx.sub.apply(container_ty);
             match resolved {
                 TypeDef.Var(TypeVar.Var(n)) => ProcessResult.Pending([n]),
-                TypeDef.Named(Name.Resolved(name: qname, ..), type_args) if qname.base_name() == B.get_array_type_qn() => {
+                TypeDef.Named(NamedInfo(Name.Resolved(name: qname, ..), type_args)) if qname.base_name() == B.get_array_type_qn() => {
                     let elem_ty = type_args[0];
                     ok_satisfied([
-                        (C.ConstraintKind.Unify(idx_ty, TypeDef.Named(Name.inner(B.get_int_type_qn()), [])), location),
+                        (C.ConstraintKind.Unify(idx_ty, TypeDef.Named(NamedInfo(Name.inner(B.get_int_type_qn()), []))), location),
                         (C.ConstraintKind.Unify(result_ty, elem_ty), location),
                     ])
                 }
@@ -268,10 +271,10 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
             let resolved = ctx.sub.apply(container_ty);
             match resolved {
                 TypeDef.Var(TypeVar.Var(n)) => ProcessResult.Pending([n]),
-                TypeDef.Named(Name.Resolved(name: qname, ..), type_args) if qname.base_name() == B.get_array_type_qn() => {
+                TypeDef.Named(NamedInfo(Name.Resolved(name: qname, ..), type_args)) if qname.base_name() == B.get_array_type_qn() => {
                     let elem_ty = type_args[0];
                     ok_satisfied([
-                        (C.ConstraintKind.Unify(idx_ty, TypeDef.Named(Name.inner(B.get_int_type_qn()), [])), location),
+                        (C.ConstraintKind.Unify(idx_ty, TypeDef.Named(NamedInfo(Name.inner(B.get_int_type_qn()), []))), location),
                         (C.ConstraintKind.Unify(value_ty, elem_ty), location),
                         (C.ConstraintKind.Unify(assign_result_ty, TypeDef.Tuple(Vec.new())), location),
                     ])
@@ -289,7 +292,7 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
             let resolved = ctx.sub.apply(receiver);
             let method_qname = match resolved {
                 TypeDef.Var(TypeVar.Var(n)) => return ProcessResult.Pending([n]),
-                TypeDef.Named(Name.Resolved(name: qname, ..), _) => {
+                TypeDef.Named(NamedInfo(Name.Resolved(name: qname, ..), _)) => {
                     match resolve_method(qname, method, ctx.module_name, ctx.program, location) {
                         Ok(mq) => mq,
                         Err(TypeError.MethodNotFound(_, _, _)) => {
@@ -484,7 +487,7 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
                         spawn.push((C.ConstraintKind.CallFunction(dv.name, FunctionKind.UserDefined, Vec.new(), fresh), location));
                         spawn.push((C.ConstraintKind.Unify(fresh, generic_inst.apply(field_ann_tys[i])), location));
                     }
-                    let struct_ty = TypeDef.Named(Name.inner(qname), type_args);
+                    let struct_ty = TypeDef.Named(NamedInfo(Name.inner(qname), type_args));
                     spawn.push((C.ConstraintKind.Unify(result, struct_ty), location));
                     ok_satisfied(spawn)
                 }
@@ -506,7 +509,7 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
                         spawn.push((C.ConstraintKind.Unify(arg_ty, item_ty), location));
                         i = i + 1;
                     }
-                    let enum_ty = TypeDef.Named(Name.inner(enum_qname), type_args);
+                    let enum_ty = TypeDef.Named(NamedInfo(Name.inner(enum_qname), type_args));
                     spawn.push((C.ConstraintKind.Unify(result, enum_ty), location));
                     ok_satisfied(spawn)
                 }
@@ -640,7 +643,7 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
             let (enum_qname, item_ann_tys, type_params) = ctx.program.find_variant(variant);
             let generic_inst = instantiate(type_params, ctx.allocator);
             let type_args: Vec[TypeDef] = type_params.iter().map(|n| generic_inst.lookup_named(n).unwrap()).collect();
-            let enum_ty = TypeDef.Named(Name.inner(enum_qname), type_args);
+            let enum_ty = TypeDef.Named(NamedInfo(Name.inner(enum_qname), type_args));
 
             let spawn: Vec[(C.ConstraintKind, Location)] = Vec.new();
             spawn.push((C.ConstraintKind.Unify(scrutinee, enum_ty), location));
@@ -661,7 +664,7 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
             };
             let generic_inst = instantiate(type_params, ctx.allocator);
             let type_args: Vec[TypeDef] = type_params.iter().map(|n| generic_inst.lookup_named(n).unwrap()).collect();
-            let struct_ty = TypeDef.Named(Name.inner(struct_qname), type_args);
+            let struct_ty = TypeDef.Named(NamedInfo(Name.inner(struct_qname), type_args));
 
             let spawn: Vec[(C.ConstraintKind, Location)] = Vec.new();
             spawn.push((C.ConstraintKind.Unify(scrutinee, struct_ty), location));
