@@ -1,0 +1,564 @@
+module Siko.CBackend2.MiniC.Format {
+
+import Siko.CBackend2.MiniC.AST
+import Siko.Utils.SCC as SCC
+import Std.Map
+import Std.StringBuilder
+
+// ─── Formatter state ─────────────────────────────────────────────────────────
+
+struct Formatter {
+    buf: StringBuilder,
+    indent: Int,
+
+    fn new() -> Formatter {
+        Formatter(StringBuilder.new(), 0)
+    }
+
+    fn push(f: Formatter, s: String) {
+        f.buf.push(s)
+    }
+
+    fn emit_indent(f: Formatter) {
+        for _ in 0..f.indent {
+            f.buf.push("  ")
+        }
+    }
+
+    fn to_string(f: Formatter) -> String {
+        f.buf.to_string()
+    }
+}
+
+// ─── Escaping ────────────────────────────────────────────────────────────────
+
+// Escape a string for emission inside C double quotes. Escaping is a printing
+// concern, so it lives here rather than in the lowering.
+fn escape_c_string(s: String) -> String {
+    let out = "";
+    for c in s.chars() {
+        match c {
+            '"'  => { out = out + "\\\""; }
+            '\\' => { out = out + "\\\\"; }
+            '\n' => { out = out + "\\n"; }
+            '\t' => { out = out + "\\t"; }
+            '\r' => { out = out + "\\r"; }
+            '\0' => { out = out + "\\0"; }
+            c    => { out = out + String.from_byte(c); }
+        }
+    }
+    out
+}
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+fn format_type(f: Formatter, ty: CType) {
+    match ty {
+        CType.Void    => f.push("void"),
+        CType.CInt    => f.push("int"),
+        CType.Char    => f.push("char"),
+        CType.Int8    => f.push("int8_t"),
+        CType.Int16   => f.push("int16_t"),
+        CType.Int32   => f.push("int32_t"),
+        CType.Int64   => f.push("int64_t"),
+        CType.UInt8   => f.push("uint8_t"),
+        CType.UInt16  => f.push("uint16_t"),
+        CType.UInt32  => f.push("uint32_t"),
+        CType.UInt64  => f.push("uint64_t"),
+        CType.Named(s) => {
+            f.push("struct ");
+            f.push(s);
+        }
+        CType.Typedef(s) => f.push(s),
+        CType.Ptr(inner) => {
+            format_type(f, inner);
+            f.push("*");
+        }
+        CType.Array(elem, n) => {
+            // Only valid in a type-only position (sizeof, cast). Named
+            // declarations go through format_named_decl, which places the [N].
+            format_type(f, elem);
+            f.push("[${n}]");
+        }
+        CType.Union(fields) => {
+            f.push("union {\n");
+            f.indent = f.indent + 1;
+            for field in fields {
+                f.emit_indent();
+                format_named_decl(f, field.ty, field.name);
+                f.push(";\n");
+            }
+            f.indent = f.indent - 1;
+            f.emit_indent();
+            f.push("}");
+        }
+    }
+}
+
+// Print `TYPE name`, honouring C declarator syntax where the name sits inside
+// the type (arrays put `[N]` after the name). Callers handle indentation.
+fn format_named_decl(f: Formatter, ty: CType, name: String) {
+    match ty {
+        CType.Array(elem, n) => {
+            format_type(f, elem);
+            f.push(" ");
+            f.push(name);
+            f.push("[${n}]");
+        }
+        _ => {
+            format_type(f, ty);
+            f.push(" ");
+            f.push(name);
+        }
+    }
+}
+
+// ─── Expressions ─────────────────────────────────────────────────────────────
+
+fn format_expr(f: Formatter, expr: CExpr) {
+    match expr {
+        CExpr.IntLiteral(s) => f.push(s),
+        CExpr.CharLiteral(b) => {
+            f.push("((uint8_t)");
+            f.push("${b}");
+            f.push(")");
+        }
+        CExpr.StringLiteral(s) => {
+            f.push("\"");
+            f.push(escape_c_string(s));
+            f.push("\"");
+        }
+        CExpr.Var(name) => f.push(name),
+        CExpr.BinaryOp(op, lhs, rhs) => {
+            let op_str = match op {
+                CBinOp.Add    => "+",
+                CBinOp.Sub    => "-",
+                CBinOp.Mul    => "*",
+                CBinOp.Div    => "/",
+                CBinOp.Mod    => "%",
+                CBinOp.BitAnd => "&",
+                CBinOp.BitOr  => "|",
+                CBinOp.Xor    => "^",
+                CBinOp.Shl    => "<<",
+                CBinOp.Shr    => ">>",
+                CBinOp.Eq     => "==",
+                CBinOp.Ne     => "!=",
+                CBinOp.Lt     => "<",
+                CBinOp.Le     => "<=",
+                CBinOp.Gt     => ">",
+                CBinOp.Ge     => ">=",
+            };
+            f.push("(");
+            format_expr(f, lhs);
+            f.push(" ${op_str} ");
+            format_expr(f, rhs);
+            f.push(")");
+        }
+        CExpr.UnaryOp(op, inner) => {
+            let op_str = match op {
+                CUnaryOp.Neg    => "-",
+                CUnaryOp.BitNot => "~",
+                CUnaryOp.LogNot => "!",
+            };
+            f.push("(${op_str}");
+            format_expr(f, inner);
+            f.push(")");
+        }
+        CExpr.Call(name, args) => {
+            f.push(name);
+            f.push("(");
+            for (i, arg) in args.iter().enumerate() {
+                if i > 0 { f.push(", "); }
+                format_expr(f, arg);
+            }
+            f.push(")");
+        }
+        CExpr.FnPtrCall(callee, ret_ty, param_tys, args) => {
+            f.push("((");
+            format_type(f, ret_ty);
+            f.push("(*)(");
+            for (i, pt) in param_tys.iter().enumerate() {
+                if i > 0 { f.push(", "); }
+                format_type(f, pt);
+            }
+            f.push("))(");
+            format_expr(f, callee);
+            f.push("))");
+            f.push("(");
+            for (i, arg) in args.iter().enumerate() {
+                if i > 0 { f.push(", "); }
+                format_expr(f, arg);
+            }
+            f.push(")");
+        }
+        CExpr.FieldDot(inner, field) => {
+            format_expr(f, inner);
+            f.push(".");
+            f.push(field);
+        }
+        CExpr.FieldArrow(inner, field) => {
+            format_expr(f, inner);
+            f.push("->");
+            f.push(field);
+        }
+        CExpr.Cast(ty, inner) => {
+            f.push("((");
+            format_type(f, ty);
+            f.push(")(");
+            format_expr(f, inner);
+            f.push("))");
+        }
+        CExpr.Ternary(cond, then_expr, else_expr) => {
+            f.push("(");
+            format_expr(f, cond);
+            f.push(" ? ");
+            format_expr(f, then_expr);
+            f.push(" : ");
+            format_expr(f, else_expr);
+            f.push(")");
+        }
+        CExpr.SizeOf(ty) => {
+            f.push("sizeof(");
+            format_type(f, ty);
+            f.push(")");
+        }
+        CExpr.AddrOf(inner) => {
+            f.push("(&");
+            format_expr(f, inner);
+            f.push(")");
+        }
+        CExpr.Deref(inner) => {
+            f.push("(*");
+            format_expr(f, inner);
+            f.push(")");
+        }
+        CExpr.Index(arr, idx) => {
+            format_expr(f, arr);
+            f.push("[");
+            format_expr(f, idx);
+            f.push("]");
+        }
+        CExpr.CompoundLiteral(struct_name, inits) => {
+            f.push("((struct ");
+            f.push(struct_name);
+            f.push("){");
+            for (i, init) in inits.iter().enumerate() {
+                if i > 0 { f.push(","); }
+                f.push(" .");
+                f.push(init.name);
+                f.push(" = ");
+                format_expr(f, init.value);
+            }
+            f.push(" })");
+        }
+        CExpr.StmtExpr(stmts) => {
+            f.push("({\n");
+            f.indent = f.indent + 1;
+            for stmt in stmts {
+                format_stmt(f, stmt);
+            }
+            f.indent = f.indent - 1;
+            f.emit_indent();
+            f.push("})");
+        }
+    }
+}
+
+// ─── Statements ──────────────────────────────────────────────────────────────
+
+fn format_stmt(f: Formatter, stmt: CStmt) {
+    match stmt {
+        CStmt.Decl(ty, name) => {
+            f.emit_indent();
+            format_named_decl(f, ty, name);
+            f.push(";\n");
+        }
+        CStmt.Assign(lhs, rhs) => {
+            f.emit_indent();
+            format_expr(f, lhs);
+            f.push(" = ");
+            format_expr(f, rhs);
+            f.push(";\n");
+        }
+        CStmt.ExprStmt(expr) => {
+            f.emit_indent();
+            format_expr(f, expr);
+            f.push(";\n");
+        }
+        CStmt.Return(expr) => {
+            f.emit_indent();
+            f.push("return ");
+            format_expr(f, expr);
+            f.push(";\n");
+        }
+        CStmt.ReturnVoid => {
+            f.emit_indent();
+            f.push("return;\n");
+        }
+        CStmt.If(cond, then_stmts, else_stmts) => {
+            f.emit_indent();
+            f.push("if (");
+            format_expr(f, cond);
+            f.push(") {\n");
+            f.indent = f.indent + 1;
+            for s in then_stmts {
+                format_stmt(f, s);
+            }
+            f.indent = f.indent - 1;
+            f.emit_indent();
+            f.push("}");
+            if let Some(else_body) = else_stmts {
+                f.push(" else {\n");
+                f.indent = f.indent + 1;
+                for s in else_body {
+                    format_stmt(f, s);
+                }
+                f.indent = f.indent - 1;
+                f.emit_indent();
+                f.push("}");
+            }
+            f.push("\n");
+        }
+        CStmt.Switch(scrutinee, cases) => {
+            f.emit_indent();
+            f.push("switch (");
+            format_expr(f, scrutinee);
+            f.push(") {\n");
+            f.indent = f.indent + 1;
+            for case in cases {
+                f.emit_indent();
+                match case.label {
+                    Some(n) => f.push("case ${n}: {\n"),
+                    None    => f.push("default: {\n"),
+                }
+                f.indent = f.indent + 1;
+                for s in case.body {
+                    format_stmt(f, s);
+                }
+                f.emit_indent();
+                f.push("break;\n");
+                f.indent = f.indent - 1;
+                f.emit_indent();
+                f.push("}\n");
+            }
+            f.indent = f.indent - 1;
+            f.emit_indent();
+            f.push("}\n");
+        }
+        CStmt.WhileTrue(body) => {
+            f.emit_indent();
+            f.push("while (1) {\n");
+            f.indent = f.indent + 1;
+            for s in body {
+                format_stmt(f, s);
+            }
+            f.indent = f.indent - 1;
+            f.emit_indent();
+            f.push("}\n");
+        }
+        CStmt.Goto(label) => {
+            f.emit_indent();
+            f.push("goto ");
+            f.push(label);
+            f.push(";\n");
+        }
+        CStmt.Label(label) => {
+            // Labels go at the enclosing indent level (one less than body)
+            let saved = f.indent;
+            f.indent = if saved > 0 { saved - 1 } else { 0 };
+            f.emit_indent();
+            f.indent = saved;
+            f.push(label);
+            f.push(":;\n");
+        }
+        CStmt.Block(stmts) => {
+            f.emit_indent();
+            f.push("{\n");
+            f.indent = f.indent + 1;
+            for s in stmts {
+                format_stmt(f, s);
+            }
+            f.indent = f.indent - 1;
+            f.emit_indent();
+            f.push("}\n");
+        }
+    }
+}
+
+// ─── Function signatures ─────────────────────────────────────────────────────
+
+fn format_fn_sig(f: Formatter, sig: CFnSig) {
+    if sig.is_noreturn {
+        f.push("__attribute__((noreturn)) ");
+    }
+    if sig.is_static_inline {
+        f.push("static inline ");
+    }
+    format_type(f, sig.ret);
+    f.push(" ");
+    f.push(sig.name);
+    f.push("(");
+    if sig.params.is_empty() {
+        f.push("void");
+    } else {
+        for (i, param) in sig.params.iter().enumerate() {
+            if i > 0 { f.push(", "); }
+            format_named_decl(f, param.ty, param.name);
+        }
+    }
+    f.push(")");
+}
+
+// ─── Struct ordering via SCC ─────────────────────────────────────────────────
+
+// Walk a CType and push every struct name that appears as a directly embedded
+// value (not behind a pointer).  These are hard ordering dependencies.
+fn collect_hard_deps(ty: CType, deps: Vec[String]) {
+    match ty {
+        CType.Named(s)        => deps.push(s),
+        CType.Ptr(_)          => {},
+        CType.Array(elem, _)  => collect_hard_deps(elem, deps),
+        CType.Union(fields)   => {
+            for field in fields {
+                collect_hard_deps(field.ty, deps);
+            }
+        }
+        _ => {},
+    }
+}
+
+fn format_structs(f: Formatter, structs: Vec[CStructDef]) {
+    // Index by name for later lookup
+    let by_name: Map[String, CStructDef] = Map.new();
+    for sdef in structs {
+        by_name.insert(sdef.name, sdef);
+    }
+
+    // Forward-declare every struct up front so pointer fields always resolve
+    for sdef in structs {
+        f.push("struct ");
+        f.push(sdef.name);
+        f.push(";\n");
+    }
+    f.push("\n");
+
+    // Build the hard-dependency graph (embedded value fields only)
+    let graph: Map[String, Vec[String]] = Map.new();
+    for sdef in structs {
+        let deps: Vec[String] = Vec.new();
+        for field in sdef.fields {
+            collect_hard_deps(field.ty, deps);
+        }
+        graph.insert(sdef.name, deps);
+    }
+
+    // SCC.compute returns SCCs in topological order (dependencies first)
+    let sccs = SCC.compute(graph);
+    for scc in sccs {
+        for name in scc {
+            if let Some(sdef) = by_name.get(name) {
+                f.push("struct ");
+                f.push(sdef.name);
+                f.push(" {\n");
+                f.indent = 1;
+                for field in sdef.fields {
+                    f.emit_indent();
+                    format_named_decl(f, field.ty, field.name);
+                    f.push(";\n");
+                }
+                f.indent = 0;
+                f.push("};\n\n");
+            }
+        }
+    }
+}
+
+// ─── Global variables ────────────────────────────────────────────────────────
+
+fn format_globals(f: Formatter, globals: Vec[CGlobalVar]) {
+    for gvar in globals {
+        match gvar.linkage {
+            CVarLinkage.Static => f.push("static "),
+            CVarLinkage.Extern => f.push("extern "),
+            CVarLinkage.Plain  => {},
+        }
+        format_named_decl(f, gvar.ty, gvar.name);
+        if let Some(init) = gvar.init {
+            f.push(" = ");
+            format_expr(f, init);
+        }
+        f.push(";\n");
+    }
+}
+
+// ─── Entry point ─────────────────────────────────────────────────────────────
+
+pub fn format(program: CProgram) -> String {
+    let f = Formatter.new();
+
+    for directive in program.directives {
+        match directive {
+            CDirective.Include(header) => {
+                f.push("#include <");
+                f.push(header);
+                f.push(">\n");
+            }
+            CDirective.Define(name, value) => {
+                f.push("#define ");
+                f.push(name);
+                if let Some(v) = value {
+                    f.push(" ");
+                    f.push(v);
+                }
+                f.push("\n");
+            }
+        }
+    }
+    f.push("\n");
+
+    format_structs(f, program.structs);
+
+    format_globals(f, program.globals);
+    if !program.globals.is_empty() {
+        f.push("\n");
+    }
+
+    // Forward-declare all functions so mutual recursion is never a problem
+    for fdef in program.functions {
+        if !fdef.sig.is_static_inline {
+            format_fn_sig(f, fdef.sig);
+            f.push(";\n\n");
+        }
+    }
+
+    // Definitions: static-inline first (they may be called by other fns),
+    // then all regular definitions
+    for fdef in program.functions {
+        if fdef.sig.is_static_inline {
+            format_fn_sig(f, fdef.sig);
+            f.push(" {\n");
+            f.indent = 1;
+            for stmt in fdef.body {
+                format_stmt(f, stmt);
+            }
+            f.indent = 0;
+            f.push("}\n\n");
+        }
+    }
+    for fdef in program.functions {
+        if !fdef.sig.is_static_inline {
+            format_fn_sig(f, fdef.sig);
+            f.push(" {\n");
+            f.indent = 1;
+            for stmt in fdef.body {
+                format_stmt(f, stmt);
+            }
+            f.indent = 0;
+            f.push("}\n\n");
+        }
+    }
+
+    f.to_string()
+}
+
+}

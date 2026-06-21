@@ -1,0 +1,814 @@
+module Siko.CBackend2.Lower {
+
+import Siko.AST.Expr
+import Siko.AST.Statement as S
+import Siko.AST.Pattern
+import Siko.AST.Type
+import Siko.AST.QualifiedName
+import Siko.AST.Data
+import Siko.CBackend2.MiniC.AST as C
+import Siko.CBackend.Util
+import Siko.Constants.Builtins as B
+import Siko.HIR.Program
+import Siko.Interner as I
+import Siko.Format.Utils
+import Std.Map
+import Std.Set
+
+// Lowers the post-monomorphization, fully-desugared AST into MiniC.
+// Only the expression/statement kinds that actually reach codegen are handled;
+// everything the old emitter panics on is panicked on here too, since those
+// kinds are removed by earlier passes.
+struct Lowerer {
+    program: Program,
+    // Maps a builtin integer type's qualified name to its MiniC type.
+    builtin_int_types: Map[QualifiedName, C.CType],
+    loop_counter: Int,
+    current_loop_id: Int,
+
+    fn new(program: Program) -> Lowerer {
+        let builtin_int_types: Map[QualifiedName, C.CType] = Map.new();
+        builtin_int_types.insert(B.get_int_type_qn().as_mono(), C.CType.Int64);
+        builtin_int_types.insert(B.get_i8_type_qn().as_mono(),  C.CType.Int8);
+        builtin_int_types.insert(B.get_i16_type_qn().as_mono(), C.CType.Int16);
+        builtin_int_types.insert(B.get_i32_type_qn().as_mono(), C.CType.Int32);
+        builtin_int_types.insert(B.get_i64_type_qn().as_mono(), C.CType.Int64);
+        builtin_int_types.insert(B.get_u8_type_qn().as_mono(),  C.CType.UInt8);
+        builtin_int_types.insert(B.get_u16_type_qn().as_mono(), C.CType.UInt16);
+        builtin_int_types.insert(B.get_u32_type_qn().as_mono(), C.CType.UInt32);
+        builtin_int_types.insert(B.get_u64_type_qn().as_mono(), C.CType.UInt64);
+        Lowerer(program, builtin_int_types, 0, 0)
+    }
+
+    // ─── Value-type queries (mirror the old emitter) ──────────────────────────
+
+    fn is_value_type(l: Lowerer, qname: QualifiedName) -> Bool {
+        if let Some(s) = l.program.structs.get(qname) {
+            return s.value_type;
+        }
+        if let Some(e) = l.program.enums.get(qname) {
+            return e.value_type;
+        }
+        False
+    }
+
+    fn is_value_type_ty(l: Lowerer, ty: TypeDef) -> Bool {
+        if let TypeDef.Named(NamedInfo(name, _)) = ty {
+            l.is_value_type(name.resolved())
+        } else {
+            False
+        }
+    }
+
+    fn is_array_struct(l: Lowerer, qname: QualifiedName) -> Bool {
+        qname.base_name() == B.get_array_type_qn()
+    }
+
+    // ─── Types ────────────────────────────────────────────────────────────────
+
+    fn lower_type(l: Lowerer, ty: TypeDef) -> C.CType {
+        match ty {
+            TypeDef.Never(_) => C.CType.Void,
+            TypeDef.Fn(_, _) | TypeDef.FnPtr(_, _) => C.CType.Ptr(C.CType.Void),
+            TypeDef.Named(NamedInfo(name, _)) => {
+                let resolved = name.resolved();
+                if let Some(c_type) = l.builtin_int_types.get(resolved) {
+                    c_type
+                } else {
+                    let named = C.CType.Named(mangle(resolved.hashed()));
+                    if l.is_value_type_ty(ty) {
+                        named
+                    } else {
+                        C.CType.Ptr(named)
+                    }
+                }
+            }
+            TypeDef.Ptr(inner) => C.CType.Ptr(l.lower_type(inner)),
+            TypeDef.Void => C.CType.Void,
+            TypeDef.VoidPtr => C.CType.Ptr(C.CType.Void),
+            ty => panic("unexpected type in lowering ${format_type(ty)}"),
+        }
+    }
+
+    // ─── Expressions (value position) ─────────────────────────────────────────
+
+    fn lower_expr(l: Lowerer, expr: Expr) -> C.CExpr {
+        match expr.kind {
+            ExprKind.IntLiteral(v) => C.CExpr.Cast(C.CType.Int64, C.CExpr.IntLiteral(v)),
+            ExprKind.CharLiteral(b) => C.CExpr.CharLiteral(b.as_int()),
+            ExprKind.StringLiteral(s) => {
+                let cname = mangle(I.resolve(B.get_string_type_qn().name()));
+                let fields: Vec[C.CFieldInit] = Vec.new();
+                fields.push(C.CFieldInit("value", C.CExpr.Cast(C.CType.Ptr(C.CType.Char), C.CExpr.StringLiteral(s))));
+                fields.push(C.CFieldInit("len", C.CExpr.IntLiteral("${s.len()}")));
+                C.CExpr.CompoundLiteral(cname, fields)
+            }
+            ExprKind.Var(name) => C.CExpr.Var(var_name(name)),
+            ExprKind.BinaryOp(op, lhs, rhs) => l.lower_binary_op(op, lhs, rhs),
+            ExprKind.UnaryOp(op, operand) => {
+                let cop = match op {
+                    UnaryOp.Neg  => C.CUnaryOp.Neg,
+                    UnaryOp.Not  => C.CUnaryOp.BitNot,
+                    UnaryOp.BNot => C.CUnaryOp.BitNot,
+                };
+                C.CExpr.UnaryOp(cop, l.lower_expr(operand))
+            }
+            ExprKind.FieldAccess(receiver, field) => {
+                let recv = l.lower_expr(receiver);
+                let fname = I.resolve(field.name());
+                if l.is_value_type_ty(receiver.ty.unwrap()) {
+                    C.CExpr.FieldDot(recv, fname)
+                } else {
+                    C.CExpr.FieldArrow(recv, fname)
+                }
+            }
+            ExprKind.FunctionCall(FunctionCallInfo(qn, kind, args, _, _)) => {
+                let name = match kind {
+                    FunctionKind.StructCtor | FunctionKind.VariantCtor => "ctor_${fn_name(qn)}",
+                    FunctionKind.UserDefined => fn_name(qn),
+                    FunctionKind.Extern(Some(c_name)) => I.resolve(c_name),
+                    FunctionKind.Extern(None) => fn_name(qn),
+                    FunctionKind.Builtin => panic("Builtin function in lowering"),
+                };
+                C.CExpr.Call(name, l.lower_args(args))
+            }
+            ExprKind.Paren(p) => l.lower_expr(p),
+            ExprKind.Transmute(inner) => C.CExpr.Cast(l.lower_type(expr.ty.unwrap()), l.lower_expr(inner)),
+            ExprKind.SizeOf(ty) => C.CExpr.SizeOf(l.lower_type(ty)),
+            ExprKind.Discriminator(inner) => {
+                let is_enum = match inner.ty {
+                    Some(TypeDef.Named(NamedInfo(name, _))) => l.program.enums.get(name.resolved()).is_some(),
+                    _ => False,
+                };
+                if is_enum {
+                    let inner_c = l.lower_expr(inner);
+                    let tag = if l.is_value_type_ty(inner.ty.unwrap()) {
+                        C.CExpr.FieldDot(inner_c, "tag")
+                    } else {
+                        C.CExpr.FieldArrow(inner_c, "tag")
+                    };
+                    C.CExpr.Cast(C.CType.Int64, tag)
+                } else {
+                    C.CExpr.Cast(C.CType.Int64, C.CExpr.IntLiteral("0"))
+                }
+            }
+            ExprKind.Deref(inner) => C.CExpr.Deref(l.lower_expr(inner)),
+            ExprKind.AddrOf(inner) => C.CExpr.AddrOf(l.lower_expr(inner)),
+            ExprKind.FunctionPtr(info) => C.CExpr.Cast(C.CType.Ptr(C.CType.Void), C.CExpr.Var(fn_name(info.name))),
+            ExprKind.FunctionPtrCall(callee, args) => {
+                let ret_ty = l.lower_type(expr.ty.unwrap());
+                let param_tys: Vec[C.CType] = Vec.new();
+                match callee.ty.unwrap() {
+                    TypeDef.FnPtr(pts, _) => {
+                        for pt in pts {
+                            param_tys.push(l.lower_type(pt));
+                        }
+                    }
+                    _ => panic("lower: FunctionPtrCall callee is not FnPtr"),
+                }
+                C.CExpr.FnPtrCall(l.lower_expr(callee), ret_ty, param_tys, l.lower_args(args))
+            }
+            _ => panic("lower_expr: unexpected expr kind in value position"),
+        }
+    }
+
+    fn lower_args(l: Lowerer, args: Vec[Expr]) -> Vec[C.CExpr] {
+        let out: Vec[C.CExpr] = Vec.new();
+        for arg in args {
+            out.push(l.lower_expr(arg));
+        }
+        out
+    }
+
+    fn lower_binary_op(l: Lowerer, op: BinaryOp, lhs: Expr, rhs: Expr) -> C.CExpr {
+        let clhs = l.lower_expr(lhs);
+        let crhs = l.lower_expr(rhs);
+        match op {
+            // Comparisons produce a Siko Bool, so wrap the C comparison in a
+            // ternary selecting the Bool constructors.
+            BinaryOp.Eq   => l.wrap_bool(C.CExpr.BinaryOp(C.CBinOp.Eq, clhs, crhs)),
+            BinaryOp.Less => l.wrap_bool(C.CExpr.BinaryOp(C.CBinOp.Lt, clhs, crhs)),
+            BinaryOp.Add    => C.CExpr.BinaryOp(C.CBinOp.Add, clhs, crhs),
+            BinaryOp.Sub    => C.CExpr.BinaryOp(C.CBinOp.Sub, clhs, crhs),
+            BinaryOp.Mul    => C.CExpr.BinaryOp(C.CBinOp.Mul, clhs, crhs),
+            BinaryOp.Div    => C.CExpr.BinaryOp(C.CBinOp.Div, clhs, crhs),
+            BinaryOp.Mod    => C.CExpr.BinaryOp(C.CBinOp.Mod, clhs, crhs),
+            BinaryOp.BitAnd => C.CExpr.BinaryOp(C.CBinOp.BitAnd, clhs, crhs),
+            BinaryOp.BitOr  => C.CExpr.BinaryOp(C.CBinOp.BitOr, clhs, crhs),
+            BinaryOp.Xor    => C.CExpr.BinaryOp(C.CBinOp.Xor, clhs, crhs),
+            BinaryOp.Shl    => C.CExpr.BinaryOp(C.CBinOp.Shl, clhs, crhs),
+            BinaryOp.Shr    => C.CExpr.BinaryOp(C.CBinOp.Shr, clhs, crhs),
+            _ => panic("lower: unexpected BinaryOp (should be lowered earlier)"),
+        }
+    }
+
+    fn wrap_bool(l: Lowerer, cmp: C.CExpr) -> C.CExpr {
+        let ctor_true = "ctor_${mangle(I.resolve(B.get_bool_true_qn().name()))}";
+        let ctor_false = "ctor_${mangle(I.resolve(B.get_bool_false_qn().name()))}";
+        C.CExpr.Ternary(cmp, C.CExpr.Call(ctor_true, Vec.new()), C.CExpr.Call(ctor_false, Vec.new()))
+    }
+
+    // The condition of an `if`/`while`: a Siko Bool whose tag 0 means True.
+    // Lowers to `<cond>.tag == 0` (or `->tag` for heap Bools).
+    fn lower_cond(l: Lowerer, cond: Expr) -> C.CExpr {
+        let base = if let ExprKind.Block(BlockInfo(stmts)) = cond.kind {
+            C.CExpr.StmtExpr(l.lower_stmts(stmts))
+        } else {
+            l.lower_expr(cond)
+        };
+        let is_vt = match cond.ty {
+            Some(t) => l.is_value_type_ty(t),
+            None => False,
+        };
+        let tag = if is_vt {
+            C.CExpr.FieldDot(base, "tag")
+        } else {
+            C.CExpr.FieldArrow(base, "tag")
+        };
+        C.CExpr.BinaryOp(C.CBinOp.Eq, tag, C.CExpr.IntLiteral("0"))
+    }
+
+    // ─── Statements ───────────────────────────────────────────────────────────
+
+    fn lower_stmts(l: Lowerer, stmts: Vec[S.Statement]) -> Vec[C.CStmt] {
+        let out: Vec[C.CStmt] = Vec.new();
+        for stmt in stmts {
+            for cs in l.lower_stmt(stmt) {
+                out.push(cs);
+            }
+        }
+        out
+    }
+
+    fn lower_stmt(l: Lowerer, stmt: S.Statement) -> Vec[C.CStmt] {
+        match stmt {
+            S.Statement.UnresolvedLet(_, _, _) => panic("lower_stmt: unresolved let"),
+            S.Statement.Let(S.LetInfo(name, ann, rhs)) => {
+                let ty = rhs.ty.or(ann).expect("let rhs has no type in lowering");
+                let vname = var_name(name);
+                let out: Vec[C.CStmt] = Vec.new();
+                out.push(C.CStmt.Decl(l.lower_type(ty), vname));
+                out.push(C.CStmt.Assign(C.CExpr.Var(vname), l.lower_expr(rhs)));
+                out
+            }
+            S.Statement.Declare(S.DeclareInfo(name, ty)) => {
+                let ty = ty.expect("declare has no type in lowering");
+                let out: Vec[C.CStmt] = Vec.new();
+                out.push(C.CStmt.Decl(l.lower_type(ty), var_name(name)));
+                out
+            }
+            S.Statement.Assign(lhs, rhs) => {
+                let out: Vec[C.CStmt] = Vec.new();
+                out.push(C.CStmt.Assign(l.lower_expr(lhs), l.lower_expr(rhs)));
+                out
+            }
+            S.Statement.Expr(e) => l.lower_stmt_expr(e),
+            S.Statement.TrailingExpr(e) => l.lower_stmt_expr(e),
+            S.Statement.Loop(body) => l.lower_loop(body),
+            S.Statement.ForLoop(_, _, _) => panic("lower_stmt: ForLoop must be desugared"),
+            S.Statement.WhileLoop(_, _) => panic("lower_stmt: WhileLoop must be desugared"),
+        }
+    }
+
+    // An expression used in statement position: control-flow becomes real
+    // statements, everything else becomes an expression statement.
+    fn lower_stmt_expr(l: Lowerer, expr: Expr) -> Vec[C.CStmt] {
+        let out: Vec[C.CStmt] = Vec.new();
+        match expr.kind {
+            ExprKind.If(cond, then_branch, else_branch) => {
+                let c = l.lower_cond(cond);
+                let then_stmts = l.lower_branch(then_branch);
+                let else_stmts = match else_branch {
+                    Some(e) => Some(l.lower_branch(e)),
+                    None => None,
+                };
+                out.push(C.CStmt.If(c, then_stmts, else_stmts));
+            }
+            ExprKind.Match(MatchInfo(scrutinee, arms)) => {
+                for s in l.lower_match(scrutinee, arms) {
+                    out.push(s);
+                }
+            }
+            ExprKind.Block(BlockInfo(stmts)) => out.push(C.CStmt.Block(l.lower_stmts(stmts))),
+            ExprKind.Return(e) => out.push(C.CStmt.Return(l.lower_expr(e))),
+            ExprKind.Break => out.push(C.CStmt.Goto("loop_${l.current_loop_id}_break")),
+            ExprKind.Continue => out.push(C.CStmt.Goto("loop_${l.current_loop_id}_continue")),
+            _ => out.push(C.CStmt.ExprStmt(l.lower_expr(expr))),
+        }
+        out
+    }
+
+    // An expression used as a statement block (function body, if/else branch,
+    // match arm). A Block is flattened to its statements; anything else is
+    // lowered as a single statement expression.
+    fn lower_branch(l: Lowerer, expr: Expr) -> Vec[C.CStmt] {
+        if let ExprKind.Block(BlockInfo(stmts)) = expr.kind {
+            l.lower_stmts(stmts)
+        } else {
+            l.lower_stmt_expr(expr)
+        }
+    }
+
+    fn lower_loop(l: Lowerer, body: Vec[S.Statement]) -> Vec[C.CStmt] {
+        l.loop_counter = l.loop_counter + 1;
+        let loop_id = l.loop_counter;
+        let prev = l.current_loop_id;
+        l.current_loop_id = loop_id;
+        let inner = l.lower_stmts(body);
+        inner.push(C.CStmt.Label("loop_${loop_id}_continue"));
+        l.current_loop_id = prev;
+        let out: Vec[C.CStmt] = Vec.new();
+        out.push(C.CStmt.WhileTrue(inner));
+        out.push(C.CStmt.Label("loop_${loop_id}_break"));
+        out
+    }
+
+    // ─── Match ────────────────────────────────────────────────────────────────
+
+    fn lower_match(l: Lowerer, scrutinee: Expr, arms: Vec[MatchArm]) -> Vec[C.CStmt] {
+        let ty = scrutinee.ty.unwrap();
+        let name = ty.name_opt().expect("lower_match: scrutinee has no named type");
+        if l.program.enums.contains_key(name) {
+            l.lower_match_enum(scrutinee, arms)
+        } else if l.builtin_int_types.contains_key(name) {
+            l.lower_match_int(scrutinee, arms)
+        } else {
+            l.lower_match_struct(scrutinee, arms)
+        }
+    }
+
+    fn lower_match_enum(l: Lowerer, scrutinee: Expr, arms: Vec[MatchArm]) -> Vec[C.CStmt] {
+        let is_vt = match scrutinee.ty {
+            Some(t) => l.is_value_type_ty(t),
+            None => False,
+        };
+        let tag = if is_vt {
+            C.CExpr.FieldDot(l.lower_expr(scrutinee), "tag")
+        } else {
+            C.CExpr.FieldArrow(l.lower_expr(scrutinee), "tag")
+        };
+        let enum_name = scrutinee.ty.expect("lower_match_enum: scrutinee without ty").name();
+        let enum_def = l.program.enum_def(enum_name);
+        let cases: Vec[C.CSwitchCase] = Vec.new();
+        for arm in arms {
+            let label = match arm.pattern.kind {
+                PatternKind.Named(info) => {
+                    let qn = info.name.resolved();
+                    let idx = enum_def
+                        .variants
+                        .iter()
+                        .position(|v| v.qualified_name.unwrap() == qn)
+                        .unwrap();
+                    Some(idx)
+                }
+                PatternKind.Wildcard => None,
+                _ => panic("unexpected pattern in enum match"),
+            };
+            let body: Vec[C.CStmt] = Vec.new();
+            for s in l.lower_variant_bindings(scrutinee, arm.pattern) {
+                body.push(s);
+            }
+            for s in l.lower_branch(arm.body) {
+                body.push(s);
+            }
+            cases.push(C.CSwitchCase(label, body));
+        }
+        let out: Vec[C.CStmt] = Vec.new();
+        out.push(C.CStmt.Switch(tag, cases));
+        out
+    }
+
+    // Extracts the payload struct and binds the variant's sub-fields.
+    fn lower_variant_bindings(l: Lowerer, scrutinee: Expr, pattern: Pattern) -> Vec[C.CStmt] {
+        let out: Vec[C.CStmt] = Vec.new();
+        let (qn, sub_pats) = match pattern.kind {
+            PatternKind.Named(info) if !info.args.is_empty() => (info.name.resolved(), info.args),
+            _ => { return out; }
+        };
+        let enum_qname = l.program.variant_enum_map.get(qn).expect("variant enum not found");
+        let edef = l.program.enums.get(enum_qname).unwrap();
+        let vdef = l.program.variant(qn);
+        let is_vt = match scrutinee.ty {
+            Some(t) => l.is_value_type_ty(t),
+            None => False,
+        };
+        let vname = variant_struct_name(edef, vdef);
+        let variant_name_str = variant_payload_name(vdef);
+        let payload_var = "_payload_${variant_name_str}";
+        let payload_ty = if is_vt { C.CType.Named(vname) } else { C.CType.Ptr(C.CType.Named(vname)) };
+        let payload_base = if is_vt {
+            C.CExpr.FieldDot(l.lower_expr(scrutinee), "payload")
+        } else {
+            C.CExpr.FieldArrow(l.lower_expr(scrutinee), "payload")
+        };
+        out.push(C.CStmt.Decl(payload_ty, payload_var));
+        out.push(C.CStmt.Assign(C.CExpr.Var(payload_var), C.CExpr.FieldDot(payload_base, variant_name_str)));
+        for (i, sub_pat) in sub_pats.iter().enumerate() {
+            if let PatternKind.Binding(var) = sub_pat.kind {
+                let field_ty = l.lower_type(vdef.items[i].ty);
+                let access = if is_vt {
+                    C.CExpr.FieldDot(C.CExpr.Var(payload_var), variant_field_name(i))
+                } else {
+                    C.CExpr.FieldArrow(C.CExpr.Var(payload_var), variant_field_name(i))
+                };
+                out.push(C.CStmt.Decl(field_ty, var_name(var)));
+                out.push(C.CStmt.Assign(C.CExpr.Var(var_name(var)), access));
+            }
+        }
+        out
+    }
+
+    // Integer/char match becomes an if/else-if chain.
+    fn lower_match_int(l: Lowerer, scrutinee: Expr, arms: Vec[MatchArm]) -> Vec[C.CStmt] {
+        l.lower_int_arms(scrutinee, arms, 0)
+    }
+
+    fn lower_int_arms(l: Lowerer, scrutinee: Expr, arms: Vec[MatchArm], index: Int) -> Vec[C.CStmt] {
+        let out: Vec[C.CStmt] = Vec.new();
+        if index >= arms.len() {
+            return out;
+        }
+        let arm = arms[index];
+        match arm.pattern.kind {
+            PatternKind.IntLiteral(n) => {
+                let cond = C.CExpr.BinaryOp(C.CBinOp.Eq, l.lower_expr(scrutinee), C.CExpr.IntLiteral(I.resolve(n)));
+                let rest = l.lower_int_arms(scrutinee, arms, index + 1);
+                let else_branch = if rest.is_empty() { None } else { Some(rest) };
+                out.push(C.CStmt.If(cond, l.lower_branch(arm.body), else_branch));
+            }
+            PatternKind.CharLiteral(b) => {
+                let cond = C.CExpr.BinaryOp(C.CBinOp.Eq, l.lower_expr(scrutinee), C.CExpr.CharLiteral(b.as_int()));
+                let rest = l.lower_int_arms(scrutinee, arms, index + 1);
+                let else_branch = if rest.is_empty() { None } else { Some(rest) };
+                out.push(C.CStmt.If(cond, l.lower_branch(arm.body), else_branch));
+            }
+            PatternKind.Wildcard | PatternKind.Binding(_) => {
+                // The final, unconditional arm.
+                for s in l.lower_branch(arm.body) {
+                    out.push(s);
+                }
+            }
+            _ => panic("unexpected pattern in int match"),
+        }
+        out
+    }
+
+    // Single-arm struct destructure.
+    fn lower_match_struct(l: Lowerer, scrutinee: Expr, arms: Vec[MatchArm]) -> Vec[C.CStmt] {
+        assert(arms.len() == 1);
+        let arm = arms[0];
+        let body: Vec[C.CStmt] = Vec.new();
+        if let PatternKind.Named(info) = arm.pattern.kind {
+            let struct_name = info.name.resolved().name();
+            let sub_pats = info.args;
+            let sdef = l
+                .program
+                .structs
+                .iter()
+                .find(|(k, _)| k.name() == struct_name)
+                .map(|(_, s)| s)
+                .unwrap();
+            for (i, sub_pat) in sub_pats.iter().enumerate() {
+                if let PatternKind.Binding(var) = sub_pat.kind {
+                    let field_ty = l.lower_type(sdef.fields[i].ty);
+                    let fname = I.resolve(sdef.fields[i].name.name());
+                    body.push(C.CStmt.Decl(field_ty, var_name(var)));
+                    body.push(C.CStmt.Assign(C.CExpr.Var(var_name(var)), C.CExpr.FieldArrow(l.lower_expr(scrutinee), fname)));
+                }
+            }
+        }
+        for s in l.lower_branch(arm.body) {
+            body.push(s);
+        }
+        let out: Vec[C.CStmt] = Vec.new();
+        out.push(C.CStmt.Block(body));
+        out
+    }
+
+    // ─── Data definitions ─────────────────────────────────────────────────────
+
+    // Produces every struct definition: plain structs, array structs, enum
+    // containers and their per-variant payload structs. The MiniC formatter
+    // sorts them into a valid declaration order, so order here is irrelevant.
+    fn lower_structs(l: Lowerer) -> Vec[C.CStructDef] {
+        let defs: Vec[C.CStructDef] = Vec.new();
+        for sdef in l.program.structs.values() {
+            let qname = sdef.qualified_name.unwrap();
+            if sdef.is_builtin() {
+                if l.is_array_struct(qname) {
+                    defs.push(l.lower_array_struct(qname));
+                }
+                continue;
+            }
+            let fields: Vec[C.CField] = Vec.new();
+            for field in sdef.fields.iter() {
+                fields.push(C.CField(l.lower_type(field.ty), I.resolve(field.name.name())));
+            }
+            defs.push(C.CStructDef(mangle(qname.hashed()), fields));
+        }
+        for edef in l.program.enums.values() {
+            l.lower_enum(edef, defs);
+        }
+        defs
+    }
+
+    fn lower_array_struct(l: Lowerer, qname: QualifiedName) -> C.CStructDef {
+        let args = qname.type_args();
+        let elem_ty = l.lower_type(args[0]);
+        let n = match args[1] {
+            TypeDef.Numeric(n) => n,
+            _ => panic("Array second type arg is not Numeric"),
+        };
+        let fields: Vec[C.CField] = Vec.new();
+        fields.push(C.CField(C.CType.Array(elem_ty, n), "data"));
+        C.CStructDef(mangle(qname.hashed()), fields)
+    }
+
+    fn lower_enum(l: Lowerer, edef: EnumDef, defs: Vec[C.CStructDef]) {
+        let enum_name = mangle(edef.qualified_name.unwrap().hashed());
+        let is_vt = l.is_value_type(edef.qualified_name.unwrap());
+        // Container struct: { uint32_t tag; union { ...variants } payload; }
+        let members: Vec[C.CField] = Vec.new();
+        for variant in edef.variants.iter() {
+            let vname = variant_struct_name(edef, variant);
+            let member_ty = if is_vt { C.CType.Named(vname) } else { C.CType.Ptr(C.CType.Named(vname)) };
+            members.push(C.CField(member_ty, variant_payload_name(variant)));
+        }
+        let container_fields: Vec[C.CField] = Vec.new();
+        container_fields.push(C.CField(C.CType.UInt32, "tag"));
+        container_fields.push(C.CField(C.CType.Union(members), "payload"));
+        defs.push(C.CStructDef(enum_name, container_fields));
+        // Per-variant payload structs.
+        for variant in edef.variants.iter() {
+            let fields: Vec[C.CField] = Vec.new();
+            for (index, item) in variant.items.iter().enumerate() {
+                fields.push(C.CField(l.lower_type(item.ty), variant_field_name(index)));
+            }
+            defs.push(C.CStructDef(variant_struct_name(edef, variant), fields));
+        }
+    }
+
+    // ─── Constructors ─────────────────────────────────────────────────────────
+
+    fn lower_ctors(l: Lowerer, fns: Vec[C.CFnDef]) {
+        for sdef in l.program.structs.values() {
+            if sdef.is_builtin() {
+                continue;
+            }
+            fns.push(l.lower_struct_ctor(sdef));
+        }
+        for edef in l.program.enums.values() {
+            for (tag, variant) in edef.variants.iter().enumerate() {
+                fns.push(l.lower_variant_ctor(edef, variant, tag));
+            }
+        }
+    }
+
+    fn lower_struct_ctor(l: Lowerer, sdef: StructDef) -> C.CFnDef {
+        let cname = mangle(sdef.qualified_name.unwrap().hashed());
+        let is_vt = l.is_value_type(sdef.qualified_name.unwrap());
+        let params: Vec[C.CFnParam] = Vec.new();
+        for field in sdef.fields.iter() {
+            params.push(C.CFnParam(l.lower_type(field.ty), I.resolve(field.name.name())));
+        }
+        let body: Vec[C.CStmt] = Vec.new();
+        if is_vt {
+            // struct cname result; result.f = f; ...; return result;
+            body.push(C.CStmt.Decl(C.CType.Named(cname), "result"));
+            for field in sdef.fields.iter() {
+                let fname = I.resolve(field.name.name());
+                body.push(C.CStmt.Assign(C.CExpr.FieldDot(C.CExpr.Var("result"), fname), C.CExpr.Var(fname)));
+            }
+            body.push(C.CStmt.Return(C.CExpr.Var("result")));
+            C.CFnDef(C.CFnSig(C.CType.Named(cname), "ctor_${cname}", params, False, False), body)
+        } else {
+            // struct cname* result = siko_malloc(sizeof(struct cname));
+            // result->f = f; ...; return result;
+            body.push(C.CStmt.Decl(C.CType.Ptr(C.CType.Named(cname)), "result"));
+            body.push(l.malloc_assign("result", cname));
+            for field in sdef.fields.iter() {
+                let fname = I.resolve(field.name.name());
+                body.push(C.CStmt.Assign(C.CExpr.FieldArrow(C.CExpr.Var("result"), fname), C.CExpr.Var(fname)));
+            }
+            body.push(C.CStmt.Return(C.CExpr.Var("result")));
+            C.CFnDef(C.CFnSig(C.CType.Ptr(C.CType.Named(cname)), "ctor_${cname}", params, False, False), body)
+        }
+    }
+
+    fn lower_variant_ctor(l: Lowerer, edef: EnumDef, variant: VariantDef, tag: Int) -> C.CFnDef {
+        let enum_name = mangle(edef.qualified_name.unwrap().hashed());
+        let is_vt = l.is_value_type(edef.qualified_name.unwrap());
+        let vname = variant_struct_name(edef, variant);
+        let ret_ty = if is_vt { C.CType.Named(enum_name) } else { C.CType.Ptr(C.CType.Named(enum_name)) };
+        let params: Vec[C.CFnParam] = Vec.new();
+        for (index, item) in variant.items.iter().enumerate() {
+            params.push(C.CFnParam(l.lower_type(item.ty), variant_field_name(index)));
+        }
+        let body: Vec[C.CStmt] = Vec.new();
+        let payload_field = variant_payload_name(variant);
+        if is_vt {
+            body.push(C.CStmt.Decl(C.CType.Named(vname), "variant"));
+            for (index, _) in variant.items.iter().enumerate() {
+                body.push(C.CStmt.Assign(C.CExpr.FieldDot(C.CExpr.Var("variant"), variant_field_name(index)), C.CExpr.Var(variant_field_name(index))));
+            }
+            body.push(C.CStmt.Decl(C.CType.Named(enum_name), "result"));
+            body.push(C.CStmt.Assign(C.CExpr.FieldDot(C.CExpr.Var("result"), "tag"), C.CExpr.IntLiteral("${tag}")));
+            body.push(C.CStmt.Assign(C.CExpr.FieldDot(C.CExpr.FieldDot(C.CExpr.Var("result"), "payload"), payload_field), C.CExpr.Var("variant")));
+            body.push(C.CStmt.Return(C.CExpr.Var("result")));
+        } else {
+            body.push(C.CStmt.Decl(C.CType.Ptr(C.CType.Named(vname)), "variant"));
+            body.push(l.malloc_assign("variant", vname));
+            for (index, _) in variant.items.iter().enumerate() {
+                body.push(C.CStmt.Assign(C.CExpr.FieldArrow(C.CExpr.Var("variant"), variant_field_name(index)), C.CExpr.Var(variant_field_name(index))));
+            }
+            body.push(C.CStmt.Decl(C.CType.Ptr(C.CType.Named(enum_name)), "result"));
+            body.push(l.malloc_assign("result", enum_name));
+            body.push(C.CStmt.Assign(C.CExpr.FieldArrow(C.CExpr.Var("result"), "tag"), C.CExpr.IntLiteral("${tag}")));
+            body.push(C.CStmt.Assign(C.CExpr.FieldDot(C.CExpr.FieldArrow(C.CExpr.Var("result"), "payload"), payload_field), C.CExpr.Var("variant")));
+            body.push(C.CStmt.Return(C.CExpr.Var("result")));
+        }
+        C.CFnDef(C.CFnSig(ret_ty, "ctor_${fn_name(variant.qualified_name.unwrap())}", params, False, False), body)
+    }
+
+    // `var = siko_malloc(sizeof(struct struct_name));`
+    fn malloc_assign(l: Lowerer, var: String, struct_name: String) -> C.CStmt {
+        let args: Vec[C.CExpr] = Vec.new();
+        args.push(C.CExpr.SizeOf(C.CType.Named(struct_name)));
+        C.CStmt.Assign(C.CExpr.Var(var), C.CExpr.Call("siko_malloc", args))
+    }
+
+    // ─── Functions ────────────────────────────────────────────────────────────
+
+    fn lower_functions(l: Lowerer, fns: Vec[C.CFnDef]) {
+        for fdef in l.program.functions.values() {
+            if fdef.is_builtin() {
+                continue;
+            }
+            let body = match fdef.body {
+                Some(b) => b,
+                None => continue, // extern / no body: provided elsewhere
+            };
+            let ret_ty = fdef.result_type.unwrap();
+            let is_noreturn = match ret_ty {
+                TypeDef.Never(_) => True,
+                _ => False,
+            };
+            let params: Vec[C.CFnParam] = Vec.new();
+            for arg in fdef.args.iter() {
+                params.push(C.CFnParam(l.lower_type(arg.type_def), var_name(arg.name)));
+            }
+            let sig = C.CFnSig(l.lower_type(ret_ty), fn_name(fdef.qualified_name.unwrap()), params, is_noreturn, False);
+            fns.push(C.CFnDef(sig, l.lower_branch(body)));
+        }
+    }
+}
+
+// ─── Runtime scaffolding ─────────────────────────────────────────────────────
+//
+// The fixed C runtime (preprocessor directives, GC/pthread shims, argv/result
+// globals and main). It is not derived from the AST, but is still expressed in
+// MiniC so the whole program flows through one printer with no raw escape hatch.
+
+fn build_directives(program: Program) -> Vec[C.CDirective] {
+    let out: Vec[C.CDirective] = Vec.new();
+    out.push(C.CDirective.Include("stdio.h"));
+    out.push(C.CDirective.Include("stdlib.h"));
+    out.push(C.CDirective.Include("stdint.h"));
+    out.push(C.CDirective.Include("string.h"));
+    out.push(C.CDirective.Include("unistd.h"));
+    out.push(C.CDirective.Include("dirent.h"));
+    out.push(C.CDirective.Include("fcntl.h"));
+    out.push(C.CDirective.Include("sys/stat.h"));
+    out.push(C.CDirective.Define("GC_THREADS", None));
+    out.push(C.CDirective.Include("gc.h"));
+    out.push(C.CDirective.Include("errno.h"));
+    out.push(C.CDirective.Include("pthread.h"));
+    let seen: Set[I.String] = Set.new();
+    for fdef in program.functions.values() {
+        if let Some(header) = fdef.extern_c_header() {
+            let h = I.resolve(header);
+            if !h.is_empty() && seen.insert(header) {
+                out.push(C.CDirective.Include(h));
+            }
+        }
+    }
+    out
+}
+
+fn build_globals() -> Vec[C.CGlobalVar] {
+    let char_pp = C.CType.Ptr(C.CType.Ptr(C.CType.Char));
+    let out: Vec[C.CGlobalVar] = Vec.new();
+    out.push(C.CGlobalVar(C.CVarLinkage.Static, C.CType.CInt, "_siko_argc", Some(C.CExpr.IntLiteral("0"))));
+    out.push(C.CGlobalVar(C.CVarLinkage.Static, char_pp, "_siko_argv", Some(C.CExpr.Var("NULL"))));
+    out.push(C.CGlobalVar(C.CVarLinkage.Static, C.CType.CInt, "_siko_result", Some(C.CExpr.IntLiteral("0"))));
+    out.push(C.CGlobalVar(C.CVarLinkage.Extern, char_pp, "environ", None));
+    out
+}
+
+// Helper that builds a `static inline` function definition.
+fn static_inline_fn(ret: C.CType, name: String, params: Vec[C.CFnParam], body: Vec[C.CStmt]) -> C.CFnDef {
+    C.CFnDef(C.CFnSig(ret, name, params, False, True), body)
+}
+
+fn build_runtime_helpers() -> Vec[C.CFnDef] {
+    let out: Vec[C.CFnDef] = Vec.new();
+
+    // static inline int siko_pthread_join(uint64_t t, void** r) {
+    //   return pthread_join((pthread_t)(uintptr_t)t, r);
+    // }
+    let join_params: Vec[C.CFnParam] = Vec.new();
+    join_params.push(C.CFnParam(C.CType.UInt64, "t"));
+    join_params.push(C.CFnParam(C.CType.Ptr(C.CType.Ptr(C.CType.Void)), "r"));
+    let join_args: Vec[C.CExpr] = Vec.new();
+    join_args.push(C.CExpr.Cast(C.CType.Typedef("pthread_t"), C.CExpr.Cast(C.CType.Typedef("uintptr_t"), C.CExpr.Var("t"))));
+    join_args.push(C.CExpr.Var("r"));
+    let join_body: Vec[C.CStmt] = Vec.new();
+    join_body.push(C.CStmt.Return(C.CExpr.Call("pthread_join", join_args)));
+    out.push(static_inline_fn(C.CType.CInt, "siko_pthread_join", join_params, join_body));
+
+    // static inline void* siko_malloc(size_t size) {
+    //   void* p = GC_malloc(size);
+    //   if (!p) { fprintf(stderr, "siko_malloc: NULL from malloc(%zu)\n", size); abort(); }
+    //   return p;
+    // }
+    let malloc_params: Vec[C.CFnParam] = Vec.new();
+    malloc_params.push(C.CFnParam(C.CType.Typedef("size_t"), "size"));
+    let gc_args: Vec[C.CExpr] = Vec.new();
+    gc_args.push(C.CExpr.Var("size"));
+    let fprintf_args: Vec[C.CExpr] = Vec.new();
+    fprintf_args.push(C.CExpr.Var("stderr"));
+    fprintf_args.push(C.CExpr.StringLiteral("siko_malloc: NULL from malloc(%zu)\n"));
+    fprintf_args.push(C.CExpr.Var("size"));
+    let fail_body: Vec[C.CStmt] = Vec.new();
+    fail_body.push(C.CStmt.ExprStmt(C.CExpr.Call("fprintf", fprintf_args)));
+    fail_body.push(C.CStmt.ExprStmt(C.CExpr.Call("abort", Vec.new())));
+    let malloc_body: Vec[C.CStmt] = Vec.new();
+    malloc_body.push(C.CStmt.Decl(C.CType.Ptr(C.CType.Void), "p"));
+    malloc_body.push(C.CStmt.Assign(C.CExpr.Var("p"), C.CExpr.Call("GC_malloc", gc_args)));
+    malloc_body.push(C.CStmt.If(C.CExpr.UnaryOp(C.CUnaryOp.LogNot, C.CExpr.Var("p")), fail_body, None));
+    malloc_body.push(C.CStmt.Return(C.CExpr.Var("p")));
+    out.push(static_inline_fn(C.CType.Ptr(C.CType.Void), "siko_malloc", malloc_params, malloc_body));
+
+    // static inline int get_saved_argc(void) { return _siko_argc; }
+    let argc_body: Vec[C.CStmt] = Vec.new();
+    argc_body.push(C.CStmt.Return(C.CExpr.Var("_siko_argc")));
+    out.push(static_inline_fn(C.CType.CInt, "get_saved_argc", Vec.new(), argc_body));
+
+    // static inline char* get_saved_arg(int index) { return _siko_argv[index]; }
+    let arg_params: Vec[C.CFnParam] = Vec.new();
+    arg_params.push(C.CFnParam(C.CType.CInt, "index"));
+    let arg_body: Vec[C.CStmt] = Vec.new();
+    arg_body.push(C.CStmt.Return(C.CExpr.Index(C.CExpr.Var("_siko_argv"), C.CExpr.Var("index"))));
+    out.push(static_inline_fn(C.CType.Ptr(C.CType.Char), "get_saved_arg", arg_params, arg_body));
+
+    // static inline uint8_t** get_environ(void) { return (uint8_t**)environ; }
+    let env_ty = C.CType.Ptr(C.CType.Ptr(C.CType.UInt8));
+    let env_body: Vec[C.CStmt] = Vec.new();
+    env_body.push(C.CStmt.Return(C.CExpr.Cast(env_ty, C.CExpr.Var("environ"))));
+    out.push(static_inline_fn(env_ty, "get_environ", Vec.new(), env_body));
+
+    // static inline void set_program_result(int result) { _siko_result = result; }
+    let res_params: Vec[C.CFnParam] = Vec.new();
+    res_params.push(C.CFnParam(C.CType.CInt, "result"));
+    let res_body: Vec[C.CStmt] = Vec.new();
+    res_body.push(C.CStmt.Assign(C.CExpr.Var("_siko_result"), C.CExpr.Var("result")));
+    out.push(static_inline_fn(C.CType.Void, "set_program_result", res_params, res_body));
+
+    out
+}
+
+// int main(int argc, char** argv) {
+//   _siko_argc = argc; _siko_argv = argv; GC_INIT(); Main_main(); return _siko_result;
+// }
+fn build_main() -> C.CFnDef {
+    let params: Vec[C.CFnParam] = Vec.new();
+    params.push(C.CFnParam(C.CType.CInt, "argc"));
+    params.push(C.CFnParam(C.CType.Ptr(C.CType.Ptr(C.CType.Char)), "argv"));
+    let body: Vec[C.CStmt] = Vec.new();
+    body.push(C.CStmt.Assign(C.CExpr.Var("_siko_argc"), C.CExpr.Var("argc")));
+    body.push(C.CStmt.Assign(C.CExpr.Var("_siko_argv"), C.CExpr.Var("argv")));
+    body.push(C.CStmt.ExprStmt(C.CExpr.Call("GC_INIT", Vec.new())));
+    body.push(C.CStmt.ExprStmt(C.CExpr.Call("Main_main", Vec.new())));
+    body.push(C.CStmt.Return(C.CExpr.Var("_siko_result")));
+    C.CFnDef(C.CFnSig(C.CType.CInt, "main", params, False, False), body)
+}
+
+// ─── Entry point ─────────────────────────────────────────────────────────────
+
+pub fn lower(program: Program) -> C.CProgram {
+    let l = Lowerer.new(program);
+
+    let functions: Vec[C.CFnDef] = build_runtime_helpers();
+    l.lower_ctors(functions);
+    l.lower_functions(functions);
+    functions.push(build_main());
+
+    C.CProgram(
+        build_directives(program),
+        l.lower_structs(),
+        build_globals(),
+        functions,
+    )
+}
+
+}
