@@ -117,6 +117,13 @@ fn resolve_method(type_qname: QualifiedName, method: I.String, caller_module: I.
                     }
                 }
                 None => {
+                    if let Some(assoc_def) = program.effect_associated_types.get(type_qname) {
+                        let effect_def = program.effects.get(assoc_def.effect_name).unwrap();
+                        match effect_def.method_map.names.get(method) {
+                            Some(mq) => return Ok(mq),
+                            None => {}
+                        }
+                    }
                     return Err(TypeError.InvalidReceiverType(
                         TypeDef.Named(NamedInfo(
                             Name.inner(type_qname),
