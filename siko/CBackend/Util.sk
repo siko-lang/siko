@@ -1,26 +1,9 @@
 module Siko.CBackend.Util {
 
-import Siko.AST.Data
 import Siko.AST.Expr
-import Siko.AST.Function
 import Siko.AST.QualifiedName
+import Siko.AST.Data
 import Siko.Interner as I
-
-pub fn escape_c_string(s: String) -> String {
-    let out = "";
-    for c in s.chars() {
-        match c {
-            '"' => { out = out + "\\\""; }
-            '\\' => { out = out + "\\\\"; }
-            '\n' => { out = out + "\\n"; }
-            '\t' => { out = out + "\\t"; }
-            '\r' => { out = out + "\\r"; }
-            '\0' => { out = out + "\\0"; }
-            c => { out = out + String.from_byte(c); }
-        }
-    }
-    out
-}
 
 pub fn mangle(name: String) -> String {
     let s = name.trim_start_matches("$");
@@ -61,32 +44,24 @@ pub fn mangle(name: String) -> String {
     result
 }
 
-pub fn variant_struct_name(edef: EnumDef, variant: VariantDef) -> String {
-    mangle("${edef.qualified_name.unwrap().hashed()}.${variant.name.name()}")
-}
-
-pub fn variant_field_name(index: Int) -> String {
-    "field_${index}"
-}
-
-pub fn variant_payload_name(variant: VariantDef) -> String {
-    "v_${I.resolve(variant.name.name())}"
+pub fn var_name(n: VariableName) -> String {
+    mangle(n.format())
 }
 
 pub fn fn_name(qualified_name: QualifiedName) -> String {
     mangle(qualified_name.hashed())
 }
 
-pub fn var_name(n: VariableName) -> String {
-    mangle(n.format())
+pub fn variant_struct_name(edef: EnumDef, variant: VariantDef) -> String {
+    mangle("${edef.qualified_name.unwrap().hashed()}.${variant.name.name()}")
 }
 
-pub fn closure_env_name(fdef: FunctionDef) -> String {
-    "_siko_env_${fn_name(fdef.qualified_name.unwrap())}"
+pub fn variant_payload_name(variant: VariantDef) -> String {
+    "v_${I.resolve(variant.name.name())}"
 }
 
-pub fn closure_wrap_name(fdef: FunctionDef) -> String {
-    "_siko_wrap_${fn_name(fdef.qualified_name.unwrap())}"
+pub fn variant_field_name(index: Int) -> String {
+    "field_${index}"
 }
 
 }

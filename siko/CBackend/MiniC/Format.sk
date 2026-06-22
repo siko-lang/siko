@@ -1,6 +1,6 @@
-module Siko.CBackend2.MiniC.Format {
+module Siko.CBackend.MiniC.Format {
 
-import Siko.CBackend2.MiniC.AST
+import Siko.CBackend.MiniC.AST
 import Siko.Utils.SCC as SCC
 import Std.Map
 import Std.StringBuilder
@@ -115,6 +115,42 @@ fn format_named_decl(f: Formatter, ty: CType, name: String) {
 
 // ─── Expressions ─────────────────────────────────────────────────────────────
 
+fn binop_str(op: CBinOp) -> String {
+    match op {
+        CBinOp.Add    => "+",
+        CBinOp.Sub    => "-",
+        CBinOp.Mul    => "*",
+        CBinOp.Div    => "/",
+        CBinOp.Mod    => "%",
+        CBinOp.BitAnd => "&",
+        CBinOp.BitOr  => "|",
+        CBinOp.Xor    => "^",
+        CBinOp.Shl    => "<<",
+        CBinOp.Shr    => ">>",
+        CBinOp.Eq     => "==",
+        CBinOp.Ne     => "!=",
+        CBinOp.Lt     => "<",
+        CBinOp.Le     => "<=",
+        CBinOp.Gt     => ">",
+        CBinOp.Ge     => ">=",
+    }
+}
+
+// Format an expression used as an `if`/`while` condition. The enclosing
+// `if (...)` already supplies the outer parens, so a top-level BinaryOp drops
+// its own wrap — this avoids `if ((x == 0))` and the -Wparentheses-equality
+// noise. (The only BinaryOp reaching here is the synthesized Bool tag check.)
+fn format_condition(f: Formatter, expr: CExpr) {
+    match expr {
+        CExpr.BinaryOp(op, lhs, rhs) => {
+            format_expr(f, lhs);
+            f.push(" ${binop_str(op)} ");
+            format_expr(f, rhs);
+        }
+        _ => format_expr(f, expr),
+    }
+}
+
 fn format_expr(f: Formatter, expr: CExpr) {
     match expr {
         CExpr.IntLiteral(s) => f.push(s),
@@ -130,27 +166,9 @@ fn format_expr(f: Formatter, expr: CExpr) {
         }
         CExpr.Var(name) => f.push(name),
         CExpr.BinaryOp(op, lhs, rhs) => {
-            let op_str = match op {
-                CBinOp.Add    => "+",
-                CBinOp.Sub    => "-",
-                CBinOp.Mul    => "*",
-                CBinOp.Div    => "/",
-                CBinOp.Mod    => "%",
-                CBinOp.BitAnd => "&",
-                CBinOp.BitOr  => "|",
-                CBinOp.Xor    => "^",
-                CBinOp.Shl    => "<<",
-                CBinOp.Shr    => ">>",
-                CBinOp.Eq     => "==",
-                CBinOp.Ne     => "!=",
-                CBinOp.Lt     => "<",
-                CBinOp.Le     => "<=",
-                CBinOp.Gt     => ">",
-                CBinOp.Ge     => ">=",
-            };
             f.push("(");
             format_expr(f, lhs);
-            f.push(" ${op_str} ");
+            f.push(" ${binop_str(op)} ");
             format_expr(f, rhs);
             f.push(")");
         }
@@ -298,7 +316,7 @@ fn format_stmt(f: Formatter, stmt: CStmt) {
         CStmt.If(cond, then_stmts, else_stmts) => {
             f.emit_indent();
             f.push("if (");
-            format_expr(f, cond);
+            format_condition(f, cond);
             f.push(") {\n");
             f.indent = f.indent + 1;
             for s in then_stmts {

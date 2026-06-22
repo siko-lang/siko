@@ -21,9 +21,8 @@ import Siko.LowerTuples
 import Siko.LowerBuiltins
 import Siko.HIR.Program
 import Siko.ClosureLowering
-import Siko.CBackend.Emit
-import Siko.CBackend2.Lower as CB2
-import Siko.CBackend2.MiniC.Format as MiniC
+import Siko.CBackend.Lower as CBackend
+import Siko.CBackend.MiniC.Format as MiniC
 import Siko.ValueTypes
 import Siko.CLI as CLI
 import Siko.Errors
@@ -243,14 +242,9 @@ struct Compiler {
         c.check_pass("lower-builtins", program);
         if trace { println("Computing value types..."); }
         let value_types_ordered = calculate_value_types(program);
-        if c.pass == Some("c2") {
-            if trace { println("Emitting C (CBackend2)..."); }
-            let cprogram = CB2.lower(program);
-            println(MiniC.format(cprogram));
-            return;
-        }
         if trace { println("Emitting C..."); }
-        let c_source = emit_c(program, value_types_ordered);
+        let cprogram = CBackend.lower(program);
+        let c_source = MiniC.format(cprogram)
         if c.pass == Some("c") {
             println(c_source);
             return;
