@@ -1,0 +1,129 @@
+module Std.IO.Buffered {
+
+import Std.IO.Error
+import Std.IO.Reader as R
+import Std.IO.Writer as W
+import Std.Slice
+import Std.Vec
+
+// Wraps a Reader and accumulates incoming bytes in a growable buffer.
+// Call fill() to pull bytes from the inner reader into the buffer.
+// Call read() to consume bytes from the buffer.
+// The buffer grows as needed; consumed bytes are discarded on each read.
+pub struct Reader[T] {
+    inner: T,
+    data: Vec[U8],
+    chunk_size: Int,
+
+    pub fn new[T](inner: T, chunk_size: Int) -> Reader[T] {
+        Reader(inner, Vec.new(), chunk_size)
+    }
+
+    // Pull up to chunk_size bytes from the inner reader into the buffer.
+    // Returns how many bytes were received (0 means the inner reader is empty for now).
+    pub fn fill[T: R.Reader[T]](r: Reader[T]) -> Result[Int, Error] {
+        let chunk: Vec[U8] = Vec.with_value(r.chunk_size, 0.as_u8());
+        let n = r.inner.read(chunk.slice())?;
+        if n > 0 {
+            r.data.extend_from_slice(chunk.slice().sub(0, n));
+        }
+        Ok(n)
+    }
+
+    // Consume up to buf.len() bytes from the buffer into buf.
+    // If the buffer doesn't have enough data, fill is called first.
+    // Returns how many bytes were copied (0 means the inner reader has nothing right now).
+    pub fn read[T: R.Reader[T]](r: Reader[T], buf: Slice[U8]) -> Result[Int, Error] {
+        if r.data.len() < buf.len() {
+            r.fill()?;
+        }
+        let n = if buf.len() < r.data.len() { buf.len() } else { r.data.len() };
+        if n == 0 {
+            return Ok(0);
+        }
+        buf.copy(r.data.slice(), 0, 0, n);
+        let remaining = r.data.slice().sub(n, r.data.len());
+        r.data.clear();
+        r.data.extend_from_slice(remaining);
+        Ok(n)
+    }
+
+    // Read until buf is completely filled or the inner reader returns 0.
+    // Returns how many bytes were read in total.
+    pub fn read_full[T: R.Reader[T]](r: Reader[T], buf: Slice[U8]) -> Result[Int, Error] {
+        let total = 0;
+        while total < buf.len() {
+            let n = r.read(buf.sub(total, buf.len()))?;
+            if n == 0 {
+                return Ok(total);
+            }
+            total = total + n;
+        }
+        Ok(total)
+    }
+
+    // Read until EOF and return all bytes, or the first error.
+    pub fn read_all[T: R.Reader[T]](r: Reader[T]) -> Result[Vec[U8], Error] {
+        loop {
+            let n = r.fill()?;
+            if n == 0 {
+                return Ok(r.data);
+            }
+        }
+    }
+
+    pub fn is_empty(r: Reader[T]) -> Bool {
+        r.data.is_empty()
+    }
+
+    pub fn len(r: Reader[T]) -> Int {
+        r.data.len()
+    }
+}
+
+// Wraps a Writer and accumulates outgoing bytes in a growable buffer.
+// Call write() to append bytes to the buffer (always succeeds).
+// Call flush() to push as many bytes as the inner writer accepts.
+// Any bytes the inner writer did not accept remain in the buffer.
+pub struct Writer[T] {
+    inner: T,
+    data: Vec[U8],
+    flush_threshold: Int,
+
+    pub fn new[T](inner: T, flush_threshold: Int = 8192) -> Writer[T] {
+        Writer(inner, Vec.new(), flush_threshold)
+    }
+
+    // Append buf to the internal buffer.
+    // Flushes automatically if the buffer reaches the flush threshold.
+    pub fn write[T: W.Writer[T]](w: Writer[T], buf: Slice[U8]) -> Result[(), Error] {
+        w.data.extend_from_slice(buf);
+        if w.data.len() >= w.flush_threshold {
+            w.flush()?;
+        }
+        Ok(())
+    }
+
+    // Push as much of the buffer as the inner writer accepts.
+    // Bytes that were not accepted remain in the buffer for the next flush.
+    pub fn flush[T: W.Writer[T]](w: Writer[T]) -> Result[(), Error] {
+        if w.data.is_empty() {
+            return Ok(());
+        }
+        let n = w.inner.write(w.data.slice())?;
+        let remaining = w.data.slice().sub(n, w.data.len());
+        w.data.clear();
+        w.data.extend_from_slice(remaining);
+        Ok(())
+    }
+
+    pub fn is_empty(w: Writer[T]) -> Bool {
+        w.data.is_empty()
+    }
+
+    pub fn len(w: Writer[T]) -> Int {
+        w.data.len()
+    }
+}
+
+}

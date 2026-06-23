@@ -3,21 +3,19 @@ module Std.Console {
 
 import Std.Libc.Unistd as Unistd
 import Std.Libc.FileDescriptor as FD
-import Std.IO.Buffer
 import Std.Vec
 
 @safe
 pub fn read_line() -> String {
     let fd = FD.get_stdin().get_fd();
-    let buf = ByteBuffer.new(1);
-    let write_buf = buf.as_write_buffer();
+    let buf: Vec[U8] = Vec.with_value(1, 0.as_u8());
     let bytes: Vec[U8] = Vec.new();
     loop {
-        let n = Unistd.read(fd, write_buf.as_ptr(), 1.as_u64());
+        let n = Unistd.read(fd, buf.slice().as_ptr(), 1.as_u64());
         if n <= 0 {
             break;
         }
-        let byte = buf.as_slice(1.as_u64())[0];
+        let byte = buf.slice()[0];
         if byte == 10.as_u8() {
             break;
         }
@@ -45,12 +43,12 @@ pub fn println[T: ToString[T]](value: T) -> () {
 
 @safe
 pub fn eprint(v: String) {
-    Unistd.write(FD.get_stdout().get_fd(), v.as_ptr(), v.len().as_u64());
+    Unistd.write(FD.get_stderr().get_fd(), v.as_ptr(), v.len().as_u64());
 }
 
 @safe
 pub fn eprintln_str(v: String) {
-    let fd = FD.get_stdout().get_fd();
+    let fd = FD.get_stderr().get_fd();
     Unistd.write(fd, v.as_ptr(), v.len().as_u64());
     Unistd.write(fd, "\n".as_ptr(), 1.as_u64());
     Unistd.fsync(fd);

@@ -1,0 +1,103 @@
+module Httpd.Server {
+
+import Std.Net.TcpListener
+import Std.Net.TcpStream
+import Std.IO.Buffered as Buffered
+import Std.IO.Reader
+import Std.IO.Writer
+import Std.Fs.File as FsFile
+import Std.Sys.Process as Sys
+
+fn content_type(path: String) -> String {
+    if path.ends_with(".html") {
+        "text/html; charset=utf-8"
+    } else if path.ends_with(".css") {
+        "text/css"
+    } else if path.ends_with(".js") {
+        "application/javascript"
+    } else if path.ends_with(".png") {
+        "image/png"
+    } else if path.ends_with(".ico") {
+        "image/x-icon"
+    } else {
+        "application/octet-stream"
+    }
+}
+
+fn read_request(stream: TcpStream) -> String {
+    let reader = Buffered.Reader.new(stream, chunk_size: 4096);
+    match reader.read_all() {
+        Ok(bytes) => String.from_slice(bytes.slice()),
+        Err(_) => "",
+    }
+}
+
+fn parse_path(request: String) -> Option[String] {
+    // request starts with "GET /path HTTP/1.x\r\n..."
+    let space1 = match request.find(" ") {
+        Some(i) => i,
+        None => return None,
+    };
+    let rest = request.substring(space1 + 1, request.len());
+    let space2 = match rest.find(" ") {
+        Some(i) => i,
+        None => return None,
+    };
+    Some(rest.substring(0, space2))
+}
+
+fn send_response(stream: TcpStream, status: String, ct: String, body: String) {
+    let header = "HTTP/1.0 ${status}\r\nContent-Type: ${ct}\r\nContent-Length: ${body.len()}\r\nConnection: close\r\n\r\n";
+    let response = header + body;
+    stream.write(response.as_slice()).unwrap();
+}
+
+fn serve(stream: TcpStream, root: String) {
+    let request = read_request(stream);
+    let path = match parse_path(request) {
+        Some(p) => p,
+        None => {
+            send_response(stream, "400 Bad Request", "text/plain", "Bad Request");
+            stream.close();
+            return;
+        }
+    };
+    let file_path = if path == "/" {
+        "${root}/index.html"
+    } else {
+        "${root}${path}"
+    };
+    println("${path}");
+    match FsFile.read_file(file_path) {
+        Ok(body) => {
+            send_response(stream, "200 OK", content_type(file_path), body);
+        }
+        Err(_) => {
+            send_response(stream, "404 Not Found", "text/html; charset=utf-8", "<h1>404 Not Found</h1>");
+        }
+    }
+    stream.close();
+}
+
+pub fn run(root: String, port: U16) {
+    let listener = match TcpListener.bind(port) {
+        Ok(l) => l,
+        Err(e) => {
+            println("error: ${e}");
+            Sys.exit(1.as_i32());
+        }
+    };
+    println("Serving ${root} on http://localhost:${port}");
+    loop {
+        let stream = match listener.accept() {
+            Ok(s) => s,
+            Err(e) => {
+                println("accept error: ${e}");
+                continue;
+            }
+        };
+        serve(stream, root);
+    }
+}
+
+}

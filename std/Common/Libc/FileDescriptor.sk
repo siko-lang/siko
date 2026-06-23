@@ -2,10 +2,10 @@ module Std.Libc.FileDescriptor {
 
 import Std.Libc.Unistd
 import Std.IO.Error
-import Std.IO.Buffer
 import Std.IO.Reader
 import Std.IO.Writer
 import Std.Arch.Errno
+import Std.Slice
 
 pub struct FileDescriptor {
     fd: I32,
@@ -39,8 +39,8 @@ pub struct FileDescriptor {
 
 instance Reader[FileDescriptor] {
     @safe
-    fn read(f: FileDescriptor, buffer: WriteBuffer) -> Result[Int, Error] {
-        let bytes_read = Std.Libc.Unistd.read(f.fd, buffer.as_ptr(), buffer.len().as_u64());
+    fn read(f: FileDescriptor, buf: Slice[U8]) -> Result[Int, Error] {
+        let bytes_read = Std.Libc.Unistd.read(f.fd, buf.as_ptr(), buf.len().as_u64());
         if bytes_read < 0 {
             return Err(Error.new(Std.Arch.Errno.get_errno()));
         }
@@ -50,8 +50,8 @@ instance Reader[FileDescriptor] {
 
 instance Writer[FileDescriptor] {
     @safe
-    fn write(f: FileDescriptor, buffer: ReadBuffer) -> Result[Int, Error] {
-        let bytes_written = Std.Libc.Unistd.write(f.fd, buffer.as_ptr(), buffer.len().as_u64());
+    fn write(f: FileDescriptor, buf: Slice[U8]) -> Result[Int, Error] {
+        let bytes_written = Std.Libc.Unistd.write(f.fd, buf.as_ptr(), buf.len().as_u64());
         if bytes_written < 0 {
             return Err(Error.new(Std.Arch.Errno.get_errno()));
         }

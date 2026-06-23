@@ -4,11 +4,12 @@ import Std.Libc.FileDescriptor
 import Std.Libc.Fcntl
 import Std.IO.Reader
 import Std.IO.Writer
-import Std.IO.Buffer
 import Std.IO.Error
 import Std.Arch.Fs
 import Std.Fs.Stat
 import Std.StringBuilder
+import Std.Slice
+import Std.Vec
 
 pub struct File {
     fd: FileDescriptor,
@@ -23,7 +24,7 @@ pub struct File {
 
     pub fn create(path: String) -> Result[File, Error] {
         let flags = O_CREAT | O_RDWR | O_TRUNC;
-        let mode = 0644.as_i32(); // rw-r--r--
+        let mode = 0644.as_i32();
         let fd = Std.Libc.Fcntl.open_file(path, flags, mode)?;
         Ok(File(fd))
     }
@@ -45,20 +46,20 @@ pub struct File {
 }
 
 instance Reader[File] {
-    fn read(f: File, buffer: WriteBuffer) -> Result[Int, Error] {
-        f.fd.read(buffer)
+    fn read(f: File, buf: Slice[U8]) -> Result[Int, Error] {
+        f.fd.read(buf)
     }
 }
 
 instance Writer[File] {
-    fn write(f: File, buffer: ReadBuffer) -> Result[Int, Error] {
-        f.fd.write(buffer)
+    fn write(f: File, buf: Slice[U8]) -> Result[Int, Error] {
+        f.fd.write(buf)
     }
 }
 
 pub fn write_file(path: String, content: String) -> Result[(), Error] {
     let file = File.create(path)?;
-    file.write_string(content)?;
+    file.write(content.as_slice())?;
     Ok(())
 }
 
@@ -69,19 +70,16 @@ pub fn read_file(path: String) -> Result[String, Error] {
         _ => 8192,
     };
     let sb = StringBuilder.new();
-    let buffer = ByteBuffer.new(file_size);
+    let buf: Vec[U8] = Vec.with_value(file_size, 0.as_u8());
     loop {
-        let write_buffer = buffer.as_write_buffer();
-        let n = match file.read(write_buffer) {
+        let n = match file.read(buf.slice()) {
             Ok(n) => n,
-            Err(e) => {
-                return Err(e);
-            }
+            Err(e) => return Err(e),
         };
         if n == 0 {
             break;
         }
-        sb.push(String.from_slice(buffer.as_slice(n.as_u64())));
+        sb.push(String.from_slice(buf.slice().sub(0, n)));
     }
     Ok(sb.to_string())
 }

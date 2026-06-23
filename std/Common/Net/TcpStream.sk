@@ -1,10 +1,10 @@
 module Std.Net.TcpStream {
 
 import Std.IO.Error
-import Std.IO.Buffer
 import Std.IO.Reader
 import Std.IO.Writer
 import Std.Libc.FileDescriptor
+import Std.Slice
 
 pub struct TcpStream {
     fd: FileDescriptor,
@@ -19,14 +19,14 @@ pub struct TcpStream {
 }
 
 pub instance Reader[TcpStream] {
-    fn read(s: TcpStream, buffer: WriteBuffer) -> Result[Int, Error] {
-        s.fd.read(buffer)
+    fn read(s: TcpStream, buf: Slice[U8]) -> Result[Int, Error] {
+        s.fd.read(buf)
     }
 }
 
 pub instance Writer[TcpStream] {
-    fn write(s: TcpStream, buffer: ReadBuffer) -> Result[Int, Error] {
-        s.fd.write(buffer)
+    fn write(s: TcpStream, buf: Slice[U8]) -> Result[Int, Error] {
+        s.fd.write(buf)
     }
 }
 

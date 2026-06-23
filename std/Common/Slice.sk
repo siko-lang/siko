@@ -97,6 +97,15 @@ pub struct Slice[T] {
     pub fn as_ptr(s: Slice[T]) -> *T {
         s.data
     }
+
+    @safe
+    pub fn copy(dest: Slice[T], src: Slice[T], src_index: Int, dest_index: Int, size: Int) {
+        assert(src_index >= 0, "src_index out of bounds");
+        assert(src_index + size <= src.size, "src range out of bounds");
+        assert(dest_index >= 0, "dest_index out of bounds");
+        assert(dest_index + size <= dest.size, "dest range out of bounds");
+        Std.Ptr.copy(dest.data, src.data, src_index, dest_index, size);
+    }
 }
 
 instance[T] Index[Slice[T]] {

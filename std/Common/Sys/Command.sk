@@ -8,7 +8,6 @@ import Std.Libc.Stdlib
 import Std.Libc.String
 import Std.Libc.Unistd as Unistd
 import Std.Libc.Wait
-import Std.IO.Buffer
 import Std.IO.Reader
 import Std.IO.Writer
 import Std.IO.Error
@@ -45,8 +44,7 @@ pub struct ChildProcess {
 
     pub fn write_stdin(child: ChildProcess, data: String) -> Result[(), Error] {
         let fd = FileDescriptor.new(child.stdin_fd);
-        let buf = ByteBuffer.from_vec(data.to_bytes());
-        fd.write(buf.as_read_buffer())?;
+        fd.write(data.as_slice())?;
         Ok(())
     }
 
@@ -208,15 +206,15 @@ pub struct Command {
             let capture_thread = if cmd.capture_stdout {
                 let t = T.spawn(|| {
                     let fd = FileDescriptor.new(stdout_read);
-                    let buffer = ByteBuffer.new(4096);
+                    let buf: Vec[U8] = Vec.with_value(4096, 0.as_u8());
                     let bytes: Vec[U8] = Vec.new();
                     loop {
-                        let n = match fd.read(buffer.as_write_buffer()) {
+                        let n = match fd.read(buf.slice()) {
                             Ok(n) => n,
                             Err(_) => break,
                         };
                         if n == 0 { break; }
-                        let chunk = buffer.as_slice(n.as_u64());
+                        let chunk = buf.slice().sub(0, n);
                         for i in 0..n {
                             bytes.push(chunk[i]);
                         }
