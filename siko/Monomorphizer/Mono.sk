@@ -21,19 +21,30 @@ import Std.VecDeque
 import Siko.Interner as I
 import Siko.Format.Utils
 
+// A bound handler: the (pre-mono) handler function plus the witnesses for its
+// bounds, computed at typecheck. This is the monomorphizer's working state; only
+// the handler `name` is projected into the mono key (see fn_mono_key), since the
+// witnesses are fully determined by the handler identity (effect methods are
+// concrete) and would be redundant — provenance, not identity — in the QN.
+@derive(Clone)
+pub struct HandlerInfo {
+    pub name: QualifiedName,
+    pub witnesses: WitnessInfo,
+}
+
 @derive(Clone)
 pub struct EffectCtx {
-    pub resolution: Map[QualifiedName, QualifiedName],
+    pub resolution: Map[QualifiedName, HandlerInfo],
 
     pub fn new() -> EffectCtx {
         EffectCtx(Map.new())
     }
 
-    pub fn get(ctx: EffectCtx, key: QualifiedName) -> Option[QualifiedName] {
+    pub fn get(ctx: EffectCtx, key: QualifiedName) -> Option[HandlerInfo] {
         ctx.resolution.get(key)
     }
 
-    pub fn insert(ctx: EffectCtx, key: QualifiedName, value: QualifiedName) {
+    pub fn insert(ctx: EffectCtx, key: QualifiedName, value: HandlerInfo) {
         ctx.resolution.insert(key, value);
     }
 }
@@ -103,9 +114,15 @@ pub fn fn_mono_key(
         }
     }
     let implicit_list: Vec[QualifiedName] = implicit_ctx.set.iter().cloned().collect();
+    // Project handler bindings down to just the handler name for the mono key:
+    // the bind witnesses are determined by the handler identity and must not
+    // become part of the generated QualifiedName.
+    let effect_resolution: Map[QualifiedName, QualifiedName] = effect_ctx.resolution.iter()
+        .map(|(method, hi)| (method, hi.name.clone()))
+        .collect();
     let ctx = MonoContext(
         witnesses.clone(),
-        effect_ctx.resolution.clone(),
+        effect_resolution,
         effect_associated_type_ctx.resolution.clone(),
         implicit_list);
     QualifiedName.new_mono(
@@ -221,9 +238,7 @@ pub struct Monomorphizer {
             BoundWitness.FunctionBound(idx) =>
                 mono.current_fn_witnesses
                 .get_opt(idx)
-                .unwrap_or_else(|| mono.current_module),
-            // FIXME: find out why this is written like idx can be out of bounds..
-            // this sounds like a hack
+                .expect("bound index not found: idx=${idx} in ${mono.current_module} witnesses=${mono.current_fn_witnesses}"),
             BoundWitness.Instance(module_name, _) => module_name.clone(),
         }
     }

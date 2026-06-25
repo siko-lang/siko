@@ -1240,8 +1240,20 @@ fn inject_bounds(
     if s.type_args.is_empty() && s.bounds.is_empty() {
         return target;
     }
+    // The injected (container) bounds come from the instance/struct/enum, so
+    // they are context bounds: marked InstanceContext so the monomorphizer fills
+    // their witnesses from the dispatch module rather than forwarding them.
+    let context_bounds: Vec[Bound] = s.bounds.iter().map(|b| {
+        let b = b.clone();
+        b.origin = BoundOrigin.InstanceContext;
+        b
+    }).collect();
     Some(match target {
-        None => s.clone(),
+        None => {
+            let marked = s.clone();
+            marked.bounds = context_bounds;
+            marked
+        }
         Some(existing) => {
             let existing_names: Vec[I.String] =
                 existing.type_args.iter().map(|a| a.name).collect();
@@ -1250,13 +1262,25 @@ fn inject_bounds(
                 .iter()
                 .filter(|a| !existing_names.contains(a.name))
                 .collect();
+            let combined_bounds = context_bounds;
+            for b in existing.bounds {
+                // Dedup ignoring origin: a bound repeated on the method keeps the
+                // context entry already injected from the container.
+                let already = combined_bounds.iter().any(|cb|
+                    cb.trait_name == b.trait_name
+                    && cb.type_args == b.type_args
+                    && cb.constraints == b.constraints);
+                if !already {
+                    combined_bounds.push(b);
+                }
+            }
             TypeArgDefs(
                 existing
                     .type_args
                     .iter()
                     .chain(extra_from_struct.iter())
                     .collect(),
-                s.bounds.iter().chain(existing.bounds.iter()).collect(),
+                combined_bounds,
             )
         }
     })
@@ -1277,6 +1301,8 @@ fn update_type_arg_def(module_def: M.Module, trait_def: TraitDef, resolved_metho
             TypeDef.Var(TypeVar.Named(at.name.name.clone())),
         ))
         .collect();
+    // The trait self-bound is the dispatch bound (consumed at dispatch, never
+    // filled as an instance-method context bound), so it is MethodOwn.
     let self_bound = Bound(
         Name.inner(trait_qname.clone()),
         trait_def
@@ -1285,6 +1311,7 @@ fn update_type_arg_def(module_def: M.Module, trait_def: TraitDef, resolved_metho
             .map(|id| Name.Unresolved(id.clone()))
             .collect(),
         assoc_constraints,
+        BoundOrigin.MethodOwn,
     );
     // assoc type names become proper type params on every trait method
     let assoc_type_args: Vec[Identifier] = trait_def

@@ -131,7 +131,8 @@ fn expand_one(bound: Bound, program: Program, loc: Location, allocator: TypeVarA
                 .map(|ta| Name.Unresolved(Identifier.new(subst_name(combined_subst, ta.name()), loc)))
                 .collect();
             let new_cstrs = hbound.constraints.apply(combined_subst);
-            new_bounds.push(Bound(hbound.trait_name, new_type_args, new_cstrs));
+            // Expanded super-bounds inherit the origin of the bound they came from.
+            new_bounds.push(Bound(hbound.trait_name, new_type_args, new_cstrs, bound.origin.clone()));
         }
     }
 

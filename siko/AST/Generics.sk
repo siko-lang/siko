@@ -15,11 +15,26 @@ pub struct TypeArgDefs {
     }
 }
 
+// Where a bound originates, which decides how its witness is provided when
+// dispatching to a concrete instance method:
+//   - InstanceContext: came from the instance declaration (e.g. the `T: Ord[T]`
+//     in `instance[T: Ord[T]] FromIterator[Set[T]]`). Its witness is re-resolved
+//     from the dispatch module (which certified it at typecheck time).
+//   - MethodOwn: came from the function/method itself (or is forwarded by a
+//     caller). Its witness flows from the caller.
+// Bound expansion propagates the origin from a bound to its expanded super-bounds.
+@derive(Clone, PartialEq, Eq)
+pub enum BoundOrigin {
+    InstanceContext,
+    MethodOwn,
+}
+
 @derive(Clone, PartialEq, Eq)
 pub struct Bound {
     pub trait_name: Name,
     pub type_args: Vec[Name],
     pub constraints: Vec[Constraint],
+    pub origin: BoundOrigin,
 }
 
 @derive(Clone, PartialEq, Eq)

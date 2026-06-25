@@ -52,7 +52,7 @@ instance Check[E.BinaryOp]            = auto(Fold, =)
 instance Check[E.UnaryOp]             = auto(Fold, =)
 instance Check[E.HandlerSelection] {
     fn check(sel: E.HandlerSelection, checker: SafetyChecker) {
-        if let E.HandlerSelection.EffectFunction(_, handler, location) = sel {
+        if let E.HandlerSelection.EffectFunction(_, handler, location, _) = sel {
             let handler_fn = checker.program.functions.get(handler).unwrap();
             if handler_fn.is_unsafe() {
                 checker.errors.push(SafetyError.UnsafeEffectHandler(location));

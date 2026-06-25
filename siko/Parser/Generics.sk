@@ -48,7 +48,9 @@ instance GenericsParser[Parser] {
                     } else {
                         (Vec.new(), Vec.new())
                     };
-                    bounds.push(Bound(trait_name, bound_type_args, constraints));
+                    // Provenance is assigned later: instance bounds are remarked
+                    // InstanceContext in inject_bounds; everything else stays MethodOwn.
+                    bounds.push(Bound(trait_name, bound_type_args, constraints, BoundOrigin.MethodOwn));
                     if parser.peek() == TokenKind.Comma {
                         parser.advance();
                     } else {

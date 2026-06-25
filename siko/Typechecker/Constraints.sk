@@ -9,9 +9,12 @@ import Siko.Location
 import Siko.Unification.Sub
 
 @derive(PartialEq, Std.Ops.Eq, PartialOrd, Ord, Clone)
-pub struct WitnessKey {
-    pub call_result_var: Int,
-    pub bound_index: Int,
+pub enum WitnessKey {
+    // Witnesses for a call's bounds, anchored to the call's result var.
+    Call(call_result_var: Int, bound_index: Int),
+    // Witnesses for an effect handler's bounds, anchored to the handler's
+    // location in the `with` block (no fresh anchor var leaks into the AST).
+    Handler(location: Location, bound_index: Int),
 }
 
 @derive(Clone)

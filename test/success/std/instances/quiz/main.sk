@@ -1,0 +1,53 @@
+
+module Qux {
+
+import Foo
+
+pub instance F1 F[Int] {
+    fn f(i: Int) {
+        println("this one");
+    }
+}
+
+}
+
+module Foo {
+
+pub trait F[T] {
+    fn f(t: T)
+}
+
+pub fn foo[T1, T2: F[T1], F[T2]](t1: T1, t2: T2) {
+    t1.f();
+    t2.f();
+}
+
+}
+
+module Boo {
+
+import Foo
+import Qux
+
+pub fn bar[T: F[T]](t: T) {
+    foo(5, t);
+}
+
+}
+
+module Main {
+
+import Foo
+import Boo
+
+instance F2 F[Int] {
+    fn f(i: Int) {
+        println("or another");
+    }
+}
+
+fn main() {
+    bar(5);
+}
+
+}

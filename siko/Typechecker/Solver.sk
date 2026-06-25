@@ -412,7 +412,7 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
                             bound.trait_name.name(),
                             bound_args,
                             assoc_constraints,
-                            Some(C.WitnessKey(call_result_var, bound_index))
+                            Some(C.WitnessKey.Call(call_result_var, bound_index))
                         ), location));
                         bound_index = bound_index + 1;
                     }
@@ -554,7 +554,7 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
                     bound.trait_name.name(),
                     bound_args,
                     assoc_constraints,
-                    Some(C.WitnessKey(call_result_var, bound_index))
+                    Some(C.WitnessKey.Call(call_result_var, bound_index))
                 ), location));
                 bound_index = bound_index + 1;
             }
@@ -728,7 +728,7 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
                     bound.trait_name.name(),
                     bound_args,
                     assoc_constraints,
-                    Some(C.WitnessKey(call_result_var, bound_index))
+                    Some(C.WitnessKey.Call(call_result_var, bound_index))
                 ), location));
                 bound_index = bound_index + 1;
             }
@@ -781,7 +781,36 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
             };
             let instance_ty = TypeDef.Fn(instance_param_tys, instance_ret_ty);
 
-            ok_satisfied([(C.ConstraintKind.Unify(effect_ty, instance_ty), location)])
+            // Unify the handler's signature with the effect method's, which makes
+            // the handler's type params concrete. Then spawn an instance lookup
+            // for each of the handler's bounds, anchored to this handler's
+            // location so the finalizer can attach the resolved witnesses to the
+            // EffectFunction selection.
+            let spawn: Vec[(C.ConstraintKind, Location)] = [(C.ConstraintKind.Unify(effect_ty, instance_ty), location)];
+            let handler_bounds = match instance_fn.type_arg_defs {
+                Some(tad) => tad.bounds,
+                None => Vec.new(),
+            };
+            let bound_index = 0;
+            for bound in handler_bounds {
+                let bound_args: Vec[TypeDef] = bound.type_args.iter().map(|name| {
+                    match generic_inst.lookup_named(name.name()) {
+                        Some(ty) => ty,
+                        None => TypeDef.Var(TypeVar.Named(name.name())),
+                    }
+                }).collect();
+                let assoc_constraints: Vec[(TypeDef, I.String)] = bound.constraints.iter()
+                    .map(|c| (generic_inst.apply(c.rhs), c.lhs.name()))
+                    .collect();
+                spawn.push((C.ConstraintKind.HasInstance(
+                    bound.trait_name.name(),
+                    bound_args,
+                    assoc_constraints,
+                    Some(C.WitnessKey.Handler(location, bound_index))
+                ), location));
+                bound_index = bound_index + 1;
+            }
+            ok_satisfied(spawn)
         }
     }
 }

@@ -2,6 +2,7 @@ module Siko.Monomorphizer.Expr {
 
 import Siko.AST.Expr
 import Siko.AST.Function
+import Siko.AST.Generics
 import Siko.AST.QualifiedName
 import Siko.AST.Type
 import Siko.Unification.Sub
@@ -26,13 +27,18 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
         .unwrap_or(FunctionDefKind.Regular);
 
     if func_kind == FunctionDefKind.EffectMethod {
-        let handler_name : QualifiedName = match mono.current_effect_ctx.get(name) {
-            Some(h) => h.clone(),
+        let handler_info = match mono.current_effect_ctx.get(name) {
+            Some(hi) => hi.clone(),
             None => {
                 mono.errors.push(MonoError.UnresolvedEffectHandler(name.name(), mono.current_location.unwrap()));
                 return FunctionCallInfo(name, FunctionKind.UserDefined, args, witness_info, Vec.new());
             }
         };
+        let handler_name = handler_info.name;
+        // The handler's bound witnesses were resolved at typecheck and are always
+        // concrete instances (effect methods are concrete), so resolving them to
+        // modules here — at the call site — is frame-independent.
+        let handler_witnesses: Vec[I.String] = handler_info.witnesses.witnesses.iter().map(|w| mono.resolve_witness_to_module(w)).collect();
         let spec_args: Vec[Expr] = args.specialize(mono);
         let arg_types: Vec[TypeDef] = args.iter().map(|a| Monomorphizer.expr_ty(mono, a)).collect();
         let concrete_result_ty: TypeDef = mono.current_expr_ty.apply(mono.sub).expect("process_user_defined_fn: current_expr_ty is None for ${name.name()}");
@@ -50,7 +56,7 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
         let mono_handler = fn_mono_key(
             handler_name,
             handler_type_args,
-            [],
+            handler_witnesses,
             mono.current_effect_ctx,
             mono.current_effect_associated_type_ctx,
             mono.current_implicit_ctx,
@@ -59,7 +65,7 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
             mono.fn_queue.push_back(FnWork(
                 handler_name,
                 handler_type_args,
-                [],
+                handler_witnesses,
                 mono.current_effect_ctx.clone(),
                 mono.current_effect_associated_type_ctx.clone(),
                 mono.current_implicit_ctx.clone(),
@@ -106,9 +112,33 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
                 .map(|w| mono.resolve_witness_to_module(w))
                 .collect()
         } else {
-            let i = witness_list.iter();
-            i.next();
-            i.map(|w| mono.resolve_witness_to_module(w)).collect()
+            // Dispatched to a concrete instance method. Each of its bounds is
+            // tagged with an origin (set in inject_bounds, propagated by bound
+            // expansion):
+            //  - InstanceContext: the dropped witness #0 (trait self-bound)
+            //    resolved to a module that certified — transitively, at typecheck
+            //    time — that every bound the instance needs has an instance.
+            //    Re-resolve the context bound from that dispatch module.
+            //  - MethodOwn: genuinely flows from the caller. Forward the caller's
+            //    remaining witnesses (#1..) in order. Expanded trait-level
+            //    witnesses sitting past the method-own ones are simply unused.
+            let dispatch_module = mono.resolve_witness_to_module(witness_list[0]);
+            let method_bounds = {
+                let f = mono.source.functions.get(c).expect("process_user_defined_fn: instance method ${c.name()} not found in program");
+                f.type_arg_defs.map(|tad| tad.bounds.clone()).unwrap_or_else(|| Vec.new())
+            };
+            let result: Vec[I.String] = Vec.new();
+            let next_forward = 1;
+            for bound in method_bounds {
+                match bound.origin {
+                    BoundOrigin.InstanceContext => result.push(dispatch_module.clone()),
+                    BoundOrigin.MethodOwn => {
+                        result.push(mono.resolve_witness_to_module(witness_list[next_forward]));
+                        next_forward = next_forward + 1;
+                    }
+                }
+            }
+            result
         };
         (c, ta, wl)
     } else {

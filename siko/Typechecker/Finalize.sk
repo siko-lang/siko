@@ -48,7 +48,6 @@ instance Finalize[FunctionKind]  = auto(Map, =)
 instance Finalize[BinaryOp]      = auto(Map, =)
 instance Finalize[UnaryOp]       = auto(Map, =)
 instance Finalize[WitnessInfo]   = auto(Map, =)
-instance Finalize[HandlerSelection] = auto(Map, =)
 instance Finalize[ImplicitRefInfo]  = auto(Map, =)
 instance Finalize[CreateClosureInfo] = auto(Map, =)
 instance Finalize[FunctionPtrInfo]   = auto(Map, =)
@@ -73,6 +72,20 @@ instance Finalize[ExprKind]     = auto(Map)
 instance Finalize[Expr] {
     fn finalize(expr: Expr, f: Finalizer) -> Expr {
         f.finalize_expr(expr)
+    }
+}
+
+instance Finalize[HandlerSelection] {
+    fn finalize(sel: HandlerSelection, f: Finalizer) -> HandlerSelection {
+        match sel {
+            // Attach the witnesses resolved at typecheck for the handler's
+            // bounds (anchored to the handler's location).
+            HandlerSelection.EffectFunction(method, handler, location, _) => {
+                let witnesses = f.collect_witnesses(WitnessKey.Handler(location, 0));
+                HandlerSelection.EffectFunction(method, handler, location, witnesses)
+            }
+            other => other,
+        }
     }
 }
 
@@ -173,10 +186,20 @@ pub struct Finalizer {
     }
 
     fn build_witnesses(f: Finalizer, result_var: Int) -> WitnessInfo {
+        f.collect_witnesses(WitnessKey.Call(result_var, 0))
+    }
+
+    // Collect the consecutive witnesses for a key, starting at bound_index 0.
+    // `start` supplies the key shape (Call or Handler); we walk bound_index up.
+    fn collect_witnesses(f: Finalizer, start: WitnessKey) -> WitnessInfo {
         let witnesses = Vec.new();
         let idx = 0;
         while True {
-            match f.witness_map.get(WitnessKey(result_var, idx)) {
+            let key = match start {
+                WitnessKey.Call(v, _) => WitnessKey.Call(v, idx),
+                WitnessKey.Handler(loc, _) => WitnessKey.Handler(loc, idx),
+            };
+            match f.witness_map.get(key) {
                 Some(bw) => {
                     witnesses.push(bw);
                     idx = idx + 1;
@@ -231,36 +254,6 @@ pub struct Finalizer {
         args
     }
 
-    fn try_resolve_trait_call(f: Finalizer, qname: QualifiedName, witnesses: WitnessInfo) -> (QualifiedName, WitnessInfo) {
-        if witnesses.witnesses.is_empty() {
-            return (qname, witnesses);
-        }
-        let func = match f.program.functions.get(qname) {
-            Some(func) => func,
-            None => return (qname, witnesses),
-        };
-        if func.kind != FunctionDefKind.TraitMethod {
-            return (qname, witnesses);
-        }
-        if let BoundWitness.Instance(_, instance_qname) = witnesses.witnesses[0] {
-            let method_name = match qname.base() {
-                BaseName.Method(_, m) => m,
-                _ => panic("finalize: TypeAssociatedCall qname is not a Method QN"),
-            };
-            let concrete_qname = QualifiedName.new_method(instance_qname.name(), method_name);
-            if f.program.functions.get(concrete_qname).is_some() {
-                // concrete method — rewrite and consume witnesses[0]
-                let remaining = WitnessInfo(witnesses.witnesses.into_iter().skip(1).collect());
-                (concrete_qname, remaining)
-            } else {
-                // instance uses the trait's default body — leave everything intact for the monomorphizer
-                (qname, witnesses)
-            }
-        } else {
-            (qname, witnesses)
-        }
-    }
-
     fn finalize_expr(f: Finalizer, expr: Expr) -> Expr {
         let ty = f.apply_ty(expr.ty);
         let loc = expr.location;
@@ -288,7 +281,9 @@ pub struct Finalizer {
                         let new_args = f.inject_default_args(qname, new_args, loc);
                         let result_var = f.result_var(expr);
                         let witnesses = f.build_witnesses(result_var);
-                        let (qname, witnesses) = f.try_resolve_trait_call(qname, witnesses);
+                        // Trait calls are left intact for the monomorphizer, which
+                        // performs trait -> concrete instance dispatch uniformly
+                        // (and fills the instance's context-bound witnesses).
                         let call_ty = match f.never_return_ty(qname) {
                             Some(t) => Some(t),
                             None => ty,
