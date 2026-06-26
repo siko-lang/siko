@@ -974,7 +974,10 @@ pub struct Resolver {
         let ctx = ResolverContext.new(type_resolver, resolver.ctx);
         let resolved_effect_def = effect_def.resolve(ctx)?;
         let base_effect_resolver = TypeResolver.new(module_resolver);
-        base_effect_resolver.add_args(effect_def.type_arg_defs);
+        // The effect's bracket params (`[Foo: MyTrait[Foo]]`) are bounds on the
+        // effect's associated types, not real type variables. They must NOT be
+        // added to the type-var scope: their names are associated types and have
+        // to resolve to EATs (e.g. Main.MyEff.Foo) in the method signatures.
         for method in effect_def.methods {
             let method_ctx = ResolverContext.new(base_effect_resolver, resolver.ctx);
             let resolved_method = method.resolve(method_ctx)?;

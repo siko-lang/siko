@@ -2,6 +2,7 @@ module Siko.BoundExpansion {
 
 import Std.Set
 import Siko.AST.Function
+import Siko.AST.Effects
 import Siko.AST.Generics
 import Siko.AST.Identifier
 import Siko.AST.Name
@@ -19,21 +20,26 @@ pub fn expand_program(program: Program) {
         let expanded = expand_function(func, program);
         program.functions.insert(key, expanded);
     }
+    let effect_keys: Vec[_] = program.effects.keys().collect();
+    for key in effect_keys {
+        let effect_def = program.effects.get(key).unwrap();
+        let expanded = expand_effect(effect_def, program);
+        program.effects.insert(key, expanded);
+    }
 }
 
-fn expand_function(func: FunctionDef, program: Program) -> FunctionDef {
-    let tad = match func.type_arg_defs {
-        None => return func,
+fn expand_bounds(type_arg_defs: Option[TypeArgDefs], program: Program, fallback: Location) -> Option[TypeArgDefs] {
+    let tad = match type_arg_defs {
+        None => return None,
         Some(t) => t,
     };
-    func.type_arg_defs = None;
 
     let allocator = TypeVarAllocator.new();
     let bounds = tad.bounds.clone();
     let i = 0;
     while i < bounds.len() {
         let bound = bounds[i];
-        let loc = synth_loc(bound, func);
+        let loc = synth_loc(bound, fallback);
         let (new_constraints, new_bounds, new_type_params) =
             expand_one(bound, program, loc, allocator);
 
@@ -57,8 +63,17 @@ fn expand_function(func: FunctionDef, program: Program) -> FunctionDef {
         i += 1;
     }
 
-    func.type_arg_defs = Some(TypeArgDefs(tad.type_args, bounds));
+    Some(TypeArgDefs(tad.type_args, bounds))
+}
+
+fn expand_function(func: FunctionDef, program: Program) -> FunctionDef {
+    func.type_arg_defs = expand_bounds(func.type_arg_defs, program, func.name.location);
     func
+}
+
+fn expand_effect(effect_def: EffectDef, program: Program) -> EffectDef {
+    effect_def.type_arg_defs = expand_bounds(effect_def.type_arg_defs, program, effect_def.name.location);
+    effect_def
 }
 
 fn expand_one(bound: Bound, program: Program, loc: Location, allocator: TypeVarAllocator) -> (Vec[Constraint], Vec[Bound], Vec[I.String]) {
@@ -171,13 +186,13 @@ fn subst_name(subst: Substitution, name: I.String) -> I.String {
     }
 }
 
-fn synth_loc(bound: Bound, func: FunctionDef) -> Location {
+fn synth_loc(bound: Bound, fallback: Location) -> Location {
     for ta in bound.type_args {
         if let Name.Unresolved(id) = ta {
             return id.location;
         }
     }
-    func.name.location
+    fallback
 }
 
 }
