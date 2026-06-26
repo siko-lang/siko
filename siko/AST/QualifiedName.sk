@@ -74,10 +74,22 @@ pub struct BaseNameInfo {
     }
 }
 
+// A resolved effect handler: the (pre-mono) handler function plus the modules
+// that witness its bounds, resolved at the `with` site. Part of MonoContext so
+// that the full effect resolution — handler AND witnesses — is structurally part
+// of a function's mono identity. Two `with` sites binding the same handler with
+// different witnesses produce distinct keys for any function in their dynamic
+// extent, so each specializes separately instead of collapsing onto the first.
+@derive(PartialEq, Eq, PartialOrd, Ord, Clone)
+pub struct HandlerInfo {
+    pub name: QualifiedName,
+    pub witnesses: Vec[I.String],
+}
+
 @derive(PartialEq, Eq, PartialOrd, Ord, Clone)
 pub struct MonoContext {
     pub witnesses: Vec[I.String],
-    pub effect_ctx: Map[QualifiedName, QualifiedName],
+    pub effect_ctx: Map[QualifiedName, HandlerInfo],
     pub effect_associated_type_ctx: Map[QualifiedName, TypeDef],
     pub implicit_ctx: Vec[QualifiedName],
 }
@@ -227,7 +239,14 @@ pub enum QualifiedName {
                     ""
                 } else {
                     let entries: Vec[String] = m.ctx.effect_ctx.iter()
-                        .map(|(k, v)| I.resolve(k.name()) + "->" + I.resolve(v.name()))
+                        .map(|(k, v)| {
+                            let wit = if v.witnesses.is_empty() {
+                                ""
+                            } else {
+                                "(" + join(v.witnesses.iter().map(|w| I.resolve(w)).collect(), ", ") + ")"
+                            };
+                            I.resolve(k.name()) + "->" + I.resolve(v.name.name()) + wit
+                        })
                         .collect();
                     "{" + join(entries, ",") + "}"
                 };

@@ -1,0 +1,63 @@
+module I1 {
+
+import M1
+
+instance F1 ToString[Q] {
+    fn to_string(q: Q) -> String {
+        "this one"
+    }
+}
+
+pub fn foo() {
+    with print_value = generic_handler {
+        Printer.print_value(Q())
+    }
+}
+
+}
+
+module I2 {
+
+import M1
+
+instance F2 ToString[Q] {
+    fn to_string(q: Q) -> String {
+        "or another"
+    }
+}
+
+pub fn foo() {
+    with print_value = generic_handler {
+        Printer.print_value(Q())
+    }
+}
+
+}
+
+module M1 {
+
+pub struct Q {
+
+}
+
+pub effect Printer {
+    fn print_value(s: Q)
+}
+
+pub fn generic_handler[T: ToString[T]](value: T) {
+    println(value.to_string())
+}
+
+}
+
+module Main {
+
+import I1
+import I2
+
+fn main() {
+    I1.foo();
+    I2.foo();
+}
+
+}

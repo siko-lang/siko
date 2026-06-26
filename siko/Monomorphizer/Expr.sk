@@ -35,10 +35,8 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
             }
         };
         let handler_name = handler_info.name;
-        // The handler's bound witnesses were resolved at typecheck and are always
-        // concrete instances (effect methods are concrete), so resolving them to
-        // modules here — at the call site — is frame-independent.
-        let handler_witnesses: Vec[I.String] = handler_info.witnesses.witnesses.iter().map(|w| mono.resolve_witness_to_module(w)).collect();
+        // Already resolved to modules at the `with` site (see Specialize[WithInfo]).
+        let handler_witnesses: Vec[I.String] = handler_info.witnesses.clone();
         let spec_args: Vec[Expr] = args.specialize(mono);
         let arg_types: Vec[TypeDef] = args.iter().map(|a| Monomorphizer.expr_ty(mono, a)).collect();
         let concrete_result_ty: TypeDef = mono.current_expr_ty.apply(mono.sub).expect("process_user_defined_fn: current_expr_ty is None for ${name.name()}");

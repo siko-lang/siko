@@ -219,10 +219,13 @@ instance Specialize[WithInfo] {
             match sel {
                 HandlerSelection.EffectFunction(method, handler, _, witness_info) => {
                     // Record the handler together with the witnesses for its bounds
-                    // (computed at typecheck). The handler is monomorphized later,
-                    // at the effect call site, so it runs in the call-site dynamic
-                    // context; the witnesses ride along as working state.
-                    mono.current_effect_ctx.insert(method.clone(), HandlerInfo(handler.clone(), witness_info.clone()));
+                    // (computed at typecheck). Resolve those witnesses to modules
+                    // here, at the `with` site, where the enclosing frame is known —
+                    // a FunctionBound witness indexes the with-site's witness list,
+                    // not the call site's. The handler itself is monomorphized later,
+                    // at the effect call site, in the call-site dynamic context.
+                    let handler_witnesses: Vec[I.String] = witness_info.witnesses.iter().map(|w| mono.resolve_witness_to_module(w)).collect();
+                    mono.current_effect_ctx.insert(method.clone(), HandlerInfo(handler.clone(), handler_witnesses));
                 }
                 HandlerSelection.Implicit(implicit_qn, var) => {
                     mono.current_implicit_ctx.insert(implicit_qn.clone());
