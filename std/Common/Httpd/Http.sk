@@ -1,0 +1,169 @@
+module Std.Httpd.Http {
+
+pub struct HeaderInfo {
+    name: String,
+    value: String,
+
+    pub fn name(h: HeaderInfo) -> String {
+        h.name
+    }
+
+    pub fn value(h: HeaderInfo) -> String {
+        h.value
+    }
+}
+
+fn parse_headers(lines: Vec[String], start: Int) -> Vec[HeaderInfo] {
+    let headers: Vec[HeaderInfo] = Vec.new();
+    for i in start..lines.len() {
+        let line = lines[i];
+        match line.find(": ") {
+            Some(j) => headers.push(HeaderInfo(
+                name: line.substring(0, j),
+                value: line.substring(j + 2, line.len()),
+            )),
+            None => {},
+        }
+    }
+    headers
+}
+
+pub struct Request {
+    method: String,
+    path: String,
+    query: String,
+    version: String,
+    headers: Vec[HeaderInfo],
+    body: String,
+
+    pub fn parse(raw: String) -> Option[Request] {
+        let parts: Vec[String] = raw.split("\r\n\r\n").collect();
+        let body = if parts.len() > 1 { parts[1] } else { "" };
+        let lines: Vec[String] = parts[0].split("\r\n").collect();
+        if lines.is_empty() {
+            return None;
+        }
+        let request_parts: Vec[String] = lines[0].split(" ").collect();
+        if request_parts.len() < 3 {
+            return None;
+        }
+        if !request_parts[2].starts_with("HTTP/") {
+            return None;
+        }
+        let (path, query) = match request_parts[1].find("?") {
+            Some(i) => (request_parts[1].substring(0, i), request_parts[1].substring(i + 1, request_parts[1].len())),
+            None => (request_parts[1], ""),
+        };
+        Some(Request(
+            method: request_parts[0],
+            path: path,
+            query: query,
+            version: request_parts[2],
+            headers: parse_headers(lines, 1),
+            body: body,
+        ))
+    }
+
+    pub fn method(r: Request) -> String {
+        r.method
+    }
+
+    pub fn path(r: Request) -> String {
+        r.path
+    }
+
+    pub fn query(r: Request) -> String {
+        r.query
+    }
+
+    pub fn body(r: Request) -> String {
+        r.body
+    }
+
+    pub fn version(r: Request) -> String {
+        r.version
+    }
+
+    pub fn header(r: Request, name: String) -> Option[String] {
+        for h in r.headers {
+            if h.name == name {
+                return Some(h.value);
+            }
+        }
+        None
+    }
+}
+
+pub struct Response {
+    version: String,
+    status: String,
+    headers: Vec[HeaderInfo],
+    body: String,
+
+    pub fn new(status: String, ct: String, body: String) -> Response {
+        Response(
+            version: "",
+            status: status,
+            headers: [HeaderInfo(name: "Content-Type", value: ct)],
+            body: body,
+        )
+    }
+
+    pub fn redirect(location: String) -> Response {
+        Response(
+            version: "",
+            status: "302 Found",
+            headers: [HeaderInfo(name: "Location", value: location)],
+            body: "",
+        )
+    }
+
+    pub fn with_header(r: Response, name: String, value: String) -> Response {
+        r.headers.push(HeaderInfo(name: name, value: value));
+        r
+    }
+
+    pub fn parse(raw: String) -> Response {
+        let parts: Vec[String] = raw.split("\r\n\r\n").collect();
+        let body = if parts.len() > 1 { parts[1] } else { "" };
+        let header_lines: Vec[String] = parts[0].split("\r\n").collect();
+        let first = header_lines[0];
+        let (version, status) = match first.find(" ") {
+            Some(i) => (first.substring(0, i), first.substring(i + 1, first.len())),
+            None => ("", first),
+        };
+        Response(
+            version: version,
+            status: status,
+            headers: parse_headers(header_lines, 1),
+            body: body,
+        )
+    }
+
+    pub fn version(r: Response) -> String {
+        r.version
+    }
+
+    pub fn status(r: Response) -> String {
+        r.status
+    }
+
+    pub fn headers(r: Response) -> Vec[HeaderInfo] {
+        r.headers
+    }
+
+    pub fn body(r: Response) -> String {
+        r.body
+    }
+
+    pub fn header(r: Response, name: String) -> Option[String] {
+        for h in r.headers {
+            if h.name == name {
+                return Some(h.value);
+            }
+        }
+        None
+    }
+}
+
+}

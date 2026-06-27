@@ -1,0 +1,50 @@
+module Std.Httpd.FileServer {
+
+import Std.Effects.Filesystem
+import Std.Effects.Console
+import Std.Httpd.Http
+
+fn content_type(path: String) -> String {
+    if path.ends_with(".html") {
+        "text/html; charset=utf-8"
+    } else if path.ends_with(".css") {
+        "text/css"
+    } else if path.ends_with(".js") {
+        "application/javascript"
+    } else if path.ends_with(".png") {
+        "image/png"
+    } else if path.ends_with(".ico") {
+        "image/x-icon"
+    } else {
+        "application/octet-stream"
+    }
+}
+
+pub fn make_handler(root: String) -> fn(Request) -> Response {
+    |req| {
+        if req.method() == "OPTIONS" {
+            return Response.new("200 OK", "text/plain", "")
+                .with_header("Allow", "GET, HEAD, OPTIONS");
+        }
+        if req.method() != "GET" && req.method() != "HEAD" {
+            return Response.new("405 Method Not Allowed", "text/plain", "Method Not Allowed")
+                .with_header("Allow", "GET, HEAD, OPTIONS");
+        }
+        let path = req.path();
+        if path != "/" && path.ends_with("/") {
+            return Response.redirect(path.substring(0, path.len() - 1));
+        }
+        let file_path = if path == "/" {
+            "${root}/index.html"
+        } else {
+            "${root}${path}"
+        };
+        println("${path}");
+        match FileSystem.read_file(file_path) {
+            Ok(body) => Response.new("200 OK", content_type(file_path), body),
+            Err(_) => Response.new("404 Not Found", "text/html; charset=utf-8", "<h1>404 Not Found</h1>"),
+        }
+    }
+}
+
+}

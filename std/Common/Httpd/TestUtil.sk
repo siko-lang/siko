@@ -1,0 +1,41 @@
+module Std.Httpd.TestUtil {
+
+pub struct RequestBuilder {
+    method: String,
+    path: String,
+    version: String,
+    headers: Vec[String],
+    body: String,
+
+    pub fn new(path: String) -> RequestBuilder {
+        RequestBuilder(method: "GET", path: path, version: "HTTP/1.0", headers: Vec.new(), body: "")
+    }
+
+    pub fn method(b: RequestBuilder, method: String) -> RequestBuilder {
+        RequestBuilder(method: method, path: b.path, version: b.version, headers: b.headers, body: b.body)
+    }
+
+    pub fn version(b: RequestBuilder, version: String) -> RequestBuilder {
+        RequestBuilder(method: b.method, path: b.path, version: version, headers: b.headers, body: b.body)
+    }
+
+    pub fn header(b: RequestBuilder, name: String, value: String) -> RequestBuilder {
+        b.headers.push("${name}: ${value}");
+        b
+    }
+
+    pub fn body(b: RequestBuilder, body: String) -> RequestBuilder {
+        b.headers.push("Content-Length: ${body.len()}");
+        RequestBuilder(method: b.method, path: b.path, version: b.version, headers: b.headers, body: body)
+    }
+
+    pub fn build(b: RequestBuilder) -> String {
+        let raw = "${b.method} ${b.path} ${b.version}";
+        for h in b.headers {
+            raw = raw + "\r\n${h}";
+        }
+        raw + "\r\n\r\n" + b.body
+    }
+}
+
+}

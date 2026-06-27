@@ -1,89 +1,80 @@
 module Std.Httpd.Server {
 
 import Std.Effects.Network
-import Std.Effects.Filesystem
 import Std.Effects.Console
 import Std.IO.Buffered as Buffered
 import Std.IO.Reader
 import Std.IO.Writer
 import Std.IO.Closer
 import Std.Sys.Process as Sys
+import Std.Httpd.Http
 
-fn content_type(path: String) -> String {
-    if path.ends_with(".html") {
-        "text/html; charset=utf-8"
-    } else if path.ends_with(".css") {
-        "text/css"
-    } else if path.ends_with(".js") {
-        "application/javascript"
-    } else if path.ends_with(".png") {
-        "image/png"
-    } else if path.ends_with(".ico") {
-        "image/x-icon"
-    } else {
-        "application/octet-stream"
-    }
-}
-
-// Read the request line. A real client keeps the connection open waiting for the
-// response, so reading to EOF would deadlock — the request line carries the path,
-// which is all a static file server needs.
+// Read headers then body (if Content-Length is present).
 fn read_request(socket: TcpNetwork.Socket) -> String {
     let reader = Buffered.Reader.new(socket, chunk_size: 4096);
-    match reader.read_line() {
-        Ok(Some(line)) => line,
-        _ => "",
+    let lines: Vec[String] = Vec.new();
+    loop {
+        match reader.read_line() {
+            Ok(Some(line)) => {
+                if line == "" {
+                    break;
+                }
+                lines.push(line);
+            }
+            _ => break,
+        }
+    }
+    let headers = join(lines, "\r\n");
+    let body_len = 0;
+    for line in lines {
+        if line.starts_with("Content-Length: ") {
+            match line.substring(16, line.len()).parse_int(10) {
+                Ok(n) => { body_len = n; }
+                _ => {}
+            }
+        }
+    }
+    if body_len > 0 {
+        let buf: Vec[U8] = Vec.with_value(body_len, 0.as_u8());
+        reader.read_full(buf.slice()).unwrap();
+        headers + "\r\n\r\n" + String.from_slice(buf.slice())
+    } else {
+        headers
     }
 }
 
-fn parse_path(request: String) -> Option[String] {
-    // request starts with "GET /path HTTP/1.x\r\n..."
-    let space1 = match request.find(" ") {
-        Some(i) => i,
-        None => return None,
-    };
-    let rest = request.substring(space1 + 1, request.len());
-    let space2 = match rest.find(" ") {
-        Some(i) => i,
-        None => return None,
-    };
-    Some(rest.substring(0, space2))
+fn send_response(socket: TcpNetwork.Socket, version: String, response: Response, is_head: Bool) {
+    let out = "${version} ${response.status()}\r\nDate: Thu, 01 Jan 1970 00:00:00 GMT\r\n";
+    for h in response.headers() {
+        out = out + "${h.name()}: ${h.value()}\r\n";
+    }
+    out = out + "Content-Length: ${response.body().len()}\r\nConnection: close\r\n\r\n";
+    if !is_head {
+        out = out + response.body();
+    }
+    socket.write(out.as_slice()).unwrap();
 }
 
-fn send_response(socket: TcpNetwork.Socket, status: String, ct: String, body: String) {
-    let header = "HTTP/1.0 ${status}\r\nContent-Type: ${ct}\r\nContent-Length: ${body.len()}\r\nConnection: close\r\n\r\n";
-    let response = header + body;
-    socket.write(response.as_slice()).unwrap();
-}
-
-pub fn serve(socket: TcpNetwork.Socket, root: String) {
-    let request = read_request(socket);
-    let path = match parse_path(request) {
-        Some(p) => p,
+pub fn serve(socket: TcpNetwork.Socket, handler: fn(Request) -> Response) {
+    let raw = read_request(socket);
+    let req = match Request.parse(raw) {
+        Some(r) => r,
         None => {
-            send_response(socket, "400 Bad Request", "text/plain", "Bad Request");
+            send_response(socket, "HTTP/1.0", Response.new(
+                "400 Bad Request", "text/plain", "Bad Request"),
+                is_head: False);
             socket.close();
             return;
         }
     };
-    let file_path = if path == "/" {
-        "${root}/index.html"
-    } else {
-        "${root}${path}"
-    };
-    println("${path}");
-    match FileSystem.read_file(file_path) {
-        Ok(body) => {
-            send_response(socket, "200 OK", content_type(file_path), body);
-        }
-        Err(_) => {
-            send_response(socket, "404 Not Found", "text/html; charset=utf-8", "<h1>404 Not Found</h1>");
-        }
-    }
+    let version = req.version();
+    let is_head = req.method() == "HEAD";
+    let response = handler(req);
+    send_response(socket, version, response, is_head);
     socket.close();
 }
 
-pub fn run(root: String, port: U16) {
+pub fn run(handler: fn(Request) -> Response, port: U16) {
     let listener = match TcpNetwork.listen(port) {
         Ok(l) => l,
         Err(e) => {
@@ -91,7 +82,7 @@ pub fn run(root: String, port: U16) {
             Sys.exit(1.as_i32());
         }
     };
-    println("Serving ${root} on http://localhost:${port}");
+    println("Listening on http://localhost:${port}");
     loop {
         let socket = match TcpNetwork.accept(listener) {
             Ok(s) => s,
@@ -100,7 +91,7 @@ pub fn run(root: String, port: U16) {
                 continue;
             }
         };
-        serve(socket, root);
+        serve(socket, handler);
     }
 }
 
