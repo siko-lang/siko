@@ -1,7 +1,6 @@
 module Httpd.Server {
 
-import Std.Net.TcpListener
-import Std.Net.TcpStream
+import Httpd.Network
 import Std.IO.Buffered as Buffered
 import Std.IO.Reader
 import Std.IO.Writer
@@ -24,11 +23,14 @@ fn content_type(path: String) -> String {
     }
 }
 
-fn read_request(stream: TcpStream) -> String {
-    let reader = Buffered.Reader.new(stream, chunk_size: 4096);
-    match reader.read_all() {
-        Ok(bytes) => String.from_slice(bytes.slice()),
-        Err(_) => "",
+// Read the request line. A real client keeps the connection open waiting for the
+// response, so reading to EOF would deadlock — the request line carries the path,
+// which is all a static file server needs.
+fn read_request(socket: TcpNetwork.Socket) -> String {
+    let reader = Buffered.Reader.new(socket, chunk_size: 4096);
+    match reader.read_line() {
+        Ok(Some(line)) => line,
+        _ => "",
     }
 }
 
@@ -46,19 +48,19 @@ fn parse_path(request: String) -> Option[String] {
     Some(rest.substring(0, space2))
 }
 
-fn send_response(stream: TcpStream, status: String, ct: String, body: String) {
+fn send_response(socket: TcpNetwork.Socket, status: String, ct: String, body: String) {
     let header = "HTTP/1.0 ${status}\r\nContent-Type: ${ct}\r\nContent-Length: ${body.len()}\r\nConnection: close\r\n\r\n";
     let response = header + body;
-    stream.write(response.as_slice()).unwrap();
+    socket.write(response.as_slice()).unwrap();
 }
 
-fn serve(stream: TcpStream, root: String) {
-    let request = read_request(stream);
+fn serve(socket: TcpNetwork.Socket, root: String) {
+    let request = read_request(socket);
     let path = match parse_path(request) {
         Some(p) => p,
         None => {
-            send_response(stream, "400 Bad Request", "text/plain", "Bad Request");
-            stream.close();
+            send_response(socket, "400 Bad Request", "text/plain", "Bad Request");
+            TcpNetwork.close(socket);
             return;
         }
     };
@@ -70,17 +72,17 @@ fn serve(stream: TcpStream, root: String) {
     println("${path}");
     match FsFile.read_file(file_path) {
         Ok(body) => {
-            send_response(stream, "200 OK", content_type(file_path), body);
+            send_response(socket, "200 OK", content_type(file_path), body);
         }
         Err(_) => {
-            send_response(stream, "404 Not Found", "text/html; charset=utf-8", "<h1>404 Not Found</h1>");
+            send_response(socket, "404 Not Found", "text/html; charset=utf-8", "<h1>404 Not Found</h1>");
         }
     }
-    stream.close();
+    TcpNetwork.close(socket);
 }
 
 pub fn run(root: String, port: U16) {
-    let listener = match TcpListener.bind(port) {
+    let listener = match TcpNetwork.listen(port) {
         Ok(l) => l,
         Err(e) => {
             println("error: ${e}");
@@ -89,14 +91,14 @@ pub fn run(root: String, port: U16) {
     };
     println("Serving ${root} on http://localhost:${port}");
     loop {
-        let stream = match listener.accept() {
+        let socket = match TcpNetwork.accept(listener) {
             Ok(s) => s,
             Err(e) => {
                 println("accept error: ${e}");
                 continue;
             }
         };
-        serve(stream, root);
+        serve(socket, root);
     }
 }
 

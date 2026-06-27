@@ -72,12 +72,51 @@ pub struct Reader[T] {
         }
     }
 
+    // Read up to and including the next '\n', returning the line with the trailing
+    // '\n' (and a preceding '\r', if any) stripped. Returns None at EOF with no
+    // pending data; a final unterminated line is returned as-is.
+    pub fn read_line[T: R.Reader[T]](r: Reader[T]) -> Result[Option[String], Error] {
+        loop {
+            match r.data.iter().position(|b| b == 10.as_u8()) {
+                Some(i) => {
+                    let line = line_string(r.data.slice().sub(0, i));
+                    let remaining = r.data.slice().sub(i + 1, r.data.len());
+                    r.data.clear();
+                    r.data.extend_from_slice(remaining);
+                    return Ok(Some(line));
+                }
+                None => {
+                    let n = r.fill()?;
+                    if n == 0 {
+                        if r.data.is_empty() {
+                            return Ok(None);
+                        }
+                        let line = line_string(r.data.slice());
+                        r.data.clear();
+                        return Ok(Some(line));
+                    }
+                }
+            }
+        }
+    }
+
     pub fn is_empty(r: Reader[T]) -> Bool {
         r.data.is_empty()
     }
 
     pub fn len(r: Reader[T]) -> Int {
         r.data.len()
+    }
+}
+
+// Decode a line's bytes to a String, stripping a trailing '\r' (so CRLF-delimited
+// input yields clean lines).
+fn line_string(bytes: Slice[U8]) -> String {
+    let s = String.from_slice(bytes);
+    if s.ends_with("\r") {
+        s.substring(0, s.len() - 1)
+    } else {
+        s
     }
 }
 

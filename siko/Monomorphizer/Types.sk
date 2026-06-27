@@ -20,7 +20,7 @@ pub fn specialize_type(ty: TypeDef, mono: Monomorphizer) -> TypeDef {
         TypeDef.Var(TypeVar.Var(_)) => panic("type var in mono"),
         TypeDef.Named(NamedInfo(name, args)) if mono.source.effect_associated_types.contains_key(name.resolved()) => {
             match mono.current_effect_associated_type_ctx.get(name.resolved()) {
-                Some(info) => info.ty,
+                Some(info) => info.ty.specialize(mono),
                 None => {
                     mono.errors.push(MonoError.UnboundEffectAssociatedType(name.resolved().name(), mono.current_location.unwrap()));
                     TypeDef.Never(False)
@@ -29,7 +29,10 @@ pub fn specialize_type(ty: TypeDef, mono: Monomorphizer) -> TypeDef {
         }
         TypeDef.Named(NamedInfo(name, args)) => {
             let spec_args: Vec[TypeDef] = args.specialize(mono)
-            mono.enqueue_named_types(name.resolved(), args.apply(mono.sub));
+            // Register the data type under EAT-resolved (but otherwise source-level)
+            // args, so it lands under the same mono name it is referenced by — the
+            // reference goes through spec_args, which renders identically.
+            mono.enqueue_named_types(name.resolved(), eat_specialize_args(args.apply(mono.sub), mono));
             TypeDef.Named(NamedInfo(
                 Name.inner(mono.data_mono_key(
                     name.resolved(),
@@ -56,6 +59,39 @@ pub fn specialize_type(ty: TypeDef, mono: Monomorphizer) -> TypeDef {
         TypeDef.Void => TypeDef.Void,
         TypeDef.VoidPtr => TypeDef.VoidPtr,
         TypeDef.Wildcard => panic("Wildcard in specialize_type"),
+    }
+}
+
+pub fn eat_specialize_args(args: Vec[TypeDef], mono: Monomorphizer) -> Vec[TypeDef] {
+    args.iter().map(|a| eat_specialize(a, mono)).collect()
+}
+
+// Resolve effect associated types to their bound concrete type, recursing through
+// type arguments, without otherwise monomorphizing. Used to build data type args
+// that are EAT-resolved yet still source-level — so a type registered for an EAT
+// lands under the same mono name it is referenced by, while staying re-specializable
+// by process_struct/enum. A nominal type that merely *contains* an EAT in a field
+// (e.g. `struct Blah { f: Foo }`) is left as-is; its eat ctx rides along via
+// data_eat_deps.
+pub fn eat_specialize(ty: TypeDef, mono: Monomorphizer) -> TypeDef {
+    match ty {
+        TypeDef.Named(NamedInfo(name, _)) if mono.source.effect_associated_types.contains_key(name.resolved()) => {
+            match mono.current_effect_associated_type_ctx.get(name.resolved()) {
+                Some(info) => eat_specialize(info.ty, mono),
+                None => {
+                    mono.errors.push(MonoError.UnboundEffectAssociatedType(name.resolved().name(), mono.current_location.unwrap()));
+                    TypeDef.Never(False)
+                }
+            }
+        }
+        TypeDef.Named(NamedInfo(name, args)) => TypeDef.Named(NamedInfo(name, eat_specialize_args(args, mono))),
+        TypeDef.Tuple(args) => TypeDef.Tuple(eat_specialize_args(args, mono)),
+        TypeDef.Fn(args, result) => TypeDef.Fn(eat_specialize_args(args, mono), eat_specialize(result, mono)),
+        TypeDef.FnPtr(args, result) => TypeDef.FnPtr(eat_specialize_args(args, mono), eat_specialize(result, mono)),
+        TypeDef.Paren(inner) => TypeDef.Paren(eat_specialize(inner, mono)),
+        TypeDef.Ptr(inner) => TypeDef.Ptr(eat_specialize(inner, mono)),
+        TypeDef.Array(inner, n) => TypeDef.Array(eat_specialize(inner, mono), n),
+        _ => ty,
     }
 }
 

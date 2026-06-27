@@ -11,6 +11,7 @@ import Siko.Monomorphizer
 import Siko.Monomorphizer.Error
 import Siko.Monomorphizer.TraitDispatch
 import Siko.Monomorphizer.Specialize
+import Siko.Monomorphizer.Types
 import Siko.Instances.FunctionInstanceResolver
 import Siko.Utils.TypeVarAllocator
 import Siko.Interner as I
@@ -215,10 +216,11 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
 
 pub fn process_struct_ctor(name: QualifiedName, args: Vec[Expr], mono: Monomorphizer) -> FunctionCallInfo {
     assert(!mono.current_expr_ty.unwrap().is_mono(False), "process_struct_ctor current expr ty is not mono");
-    let callee_type_args = match mono.current_expr_ty.apply(mono.sub).unwrap() {
+    let raw_type_args = match mono.current_expr_ty.apply(mono.sub).unwrap() {
         TypeDef.Named(NamedInfo(_, targs)) => targs,
         t => panic("StructCtor expr has non-Named type:"),
     };
+    let callee_type_args = eat_specialize_args(raw_type_args, mono);
     let spec_args: Vec[Expr] = args.specialize(mono);
     for ty in callee_type_args {
         assert(!ty.is_mono(False), "data_mono_key arg in process_struct_ctor is not mono");
@@ -231,10 +233,11 @@ pub fn process_struct_ctor(name: QualifiedName, args: Vec[Expr], mono: Monomorph
 }
 
 pub fn process_variant_ctor(name: QualifiedName, args: Vec[Expr], mono: Monomorphizer) -> FunctionCallInfo {
-    let callee_type_args = match mono.current_expr_ty.apply(mono.sub).unwrap() {
+    let raw_type_args = match mono.current_expr_ty.apply(mono.sub).unwrap() {
         TypeDef.Named(NamedInfo(_, targs)) => targs,
         t => panic("VariantCtor expr has non-Named type:"),
     };
+    let callee_type_args = eat_specialize_args(raw_type_args, mono);
     let spec_args: Vec[Expr] = args.specialize(mono);
     let (enum_qname, _, _) = mono.source.find_variant(name);
     let mono_enum = mono.data_mono_key(enum_qname, callee_type_args, mono.current_effect_associated_type_ctx);

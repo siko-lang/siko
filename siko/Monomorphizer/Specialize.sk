@@ -226,11 +226,14 @@ instance Specialize[WithInfo] {
                     implicit_selections.push(HandlerSelection.Implicit(implicit_qn.clone(), var.clone()));
                 }
                 HandlerSelection.TypeAssociation(assoc_qname, handler_type, _, witness_info) => {
-                    let spec_handler_type = handler_type.specialize(mono);
-                    // Resolve the EAT's bound witnesses here, at the `with` site, so an
-                    // EffectAssociatedTypeBound can later fetch them from this ctx.
+                    // Store the bound type source-level (un-specialized). eat_specialize
+                    // substitutes it into data type args, where it must stay source-level
+                    // so process_struct can re-specialize fields and data_eat_deps lookups
+                    // (keyed by source qname) still hit. specialize_type specializes it on
+                    // read. Resolve the EAT's bound witnesses here, at the `with` site, so
+                    // an EffectAssociatedTypeBound can later fetch them from this ctx.
                     let resolved: Vec[ResolvedWitness] = witness_info.witnesses.iter().map(|w| mono.resolve_witness(w)).collect();
-                    mono.current_effect_associated_type_ctx.insert(assoc_qname.clone(), TypeHandlerInfo(spec_handler_type, resolved));
+                    mono.current_effect_associated_type_ctx.insert(assoc_qname.clone(), TypeHandlerInfo(handler_type, resolved));
                 }
                 HandlerSelection.Unresolved(_, _) |
                 HandlerSelection.UnresolvedType(_, _) => panic("mono: unresolved HandlerSelection")
@@ -252,20 +255,20 @@ instance Specialize[Pattern] {
         match pattern.kind {
             PatternKind.Named(info) => {
                 let qn = info.name.resolved();
-                let type_args: Vec[TypeDef] = match pattern.ty {
-                    Some(TypeDef.Named(NamedInfo(_, args))) => args.apply(mono.sub),
-                    _ => [],
+                // Build the variant/struct mono name from the pattern's own specialized
+                // type, so it can't diverge from the scrutinee (whose type is specialized
+                // the same way). Recomputing from raw args would leave effect associated
+                // types in the args unresolved and land on a parallel, unmatchable enum.
+                let mono_data = match spec_ty {
+                    Some(TypeDef.Named(NamedInfo(name, _))) => name.resolved(),
+                    _ => panic("Specialize[Pattern]: named pattern without a Named type"),
                 };
                 let kind = if mono.source.variant_enum_map.contains_key(qn) {
-                    let (enum_qname, item_ann_types, generic_params) = mono.source.find_variant(qn);
-                    let mono_enum = mono.data_mono_key(enum_qname, type_args, mono.current_effect_associated_type_ctx);
                     let v = mono.source.variant(qn);
-                    let mono_variant = Name.Resolved(get_mono_variant_qn(mono_enum, v.qualified_name.unwrap()), info.name.location());
+                    let mono_variant = Name.Resolved(get_mono_variant_qn(mono_data, v.qualified_name.unwrap()), info.name.location());
                     PatternKind.Named(NamedPatternInfo(name: mono_variant, args: info.args.specialize(mono), named_args: info.named_args, has_rest: False))
                 } else {
-                    let struct_def = mono.source.structs.get(qn).unwrap();
-                    let mono_struct = mono.data_mono_key(qn, type_args, mono.current_effect_associated_type_ctx);
-                    PatternKind.Named(NamedPatternInfo(name: Name.inner(mono_struct), args: info.args.specialize(mono), named_args: info.named_args, has_rest: False))
+                    PatternKind.Named(NamedPatternInfo(name: Name.inner(mono_data), args: info.args.specialize(mono), named_args: info.named_args, has_rest: False))
                 };
                 Pattern(kind, pattern.location.clone(), spec_ty)
             }
