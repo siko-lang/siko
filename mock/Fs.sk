@@ -1,0 +1,35 @@
+module Mock.Fs {
+
+import Std.Effects.Filesystem
+import Std.IO.Error
+import Std.Arch.Errno
+import Std.Map
+
+// An in-memory filesystem: a map of path -> contents. The backdoor the test fills in
+// and the FileSystem handler reads from, carried by the `mock_files` implicit.
+pub struct MockFiles {
+    files: Map[String, String],
+
+    pub fn new() -> MockFiles {
+        MockFiles(Map.new())
+    }
+
+    pub fn add(m: MockFiles, path: String, contents: String) {
+        m.files.insert(path, contents);
+    }
+}
+
+pub implicit mock_files: MockFiles
+
+// Mock handler for the filesystem effect, backed by the map in the `mock_files`
+// implicit. Set it with `with mock_files = files, FileSystem = MockFs { ... }`.
+pub instance MockFs FileSystem {
+    fn read_file(path: String) -> Result[String, Error] {
+        match mock_files.files.get(path) {
+            Some(contents) => Ok(contents),
+            None => Err(Error.with_message(Errno.ENOENT, "mock: no such file: ${path}")),
+        }
+    }
+}
+
+}

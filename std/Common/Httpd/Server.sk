@@ -1,11 +1,12 @@
-module Httpd.Server {
+module Std.Httpd.Server {
 
 import Std.Effects.Network
+import Std.Effects.Filesystem
+import Std.Effects.Console
 import Std.IO.Buffered as Buffered
 import Std.IO.Reader
 import Std.IO.Writer
 import Std.IO.Closer
-import Std.Fs.File as FsFile
 import Std.Sys.Process as Sys
 
 fn content_type(path: String) -> String {
@@ -55,7 +56,7 @@ fn send_response(socket: TcpNetwork.Socket, status: String, ct: String, body: St
     socket.write(response.as_slice()).unwrap();
 }
 
-fn serve(socket: TcpNetwork.Socket, root: String) {
+pub fn serve(socket: TcpNetwork.Socket, root: String) {
     let request = read_request(socket);
     let path = match parse_path(request) {
         Some(p) => p,
@@ -71,7 +72,7 @@ fn serve(socket: TcpNetwork.Socket, root: String) {
         "${root}${path}"
     };
     println("${path}");
-    match FsFile.read_file(file_path) {
+    match FileSystem.read_file(file_path) {
         Ok(body) => {
             send_response(socket, "200 OK", content_type(file_path), body);
         }

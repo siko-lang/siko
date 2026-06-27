@@ -1,0 +1,92 @@
+module Mock.Wire {
+
+import Std.IO.Error
+import Std.IO.Reader
+import Std.IO.Writer
+import Std.Slice
+import Std.VecDeque
+
+pub struct Packet {
+    data: Vec[U8],
+
+    pub fn new(size: Int) -> Packet {
+        Packet(Vec.with_value(size, 0.as_u8()))
+    }
+
+    pub fn size(p: Packet) -> Int {
+        p.data.len()
+    }
+}
+
+pub struct Config {
+    incoming_capacity: Int,
+    outgoing_capacity: Int,
+    packet_size: Int,
+
+    pub fn new(incoming_capacity: Int, outgoing_capacity: Int, packet_size: Int) -> Config {
+        Config(incoming_capacity, outgoing_capacity, packet_size)
+    }
+}
+
+pub struct Wire {
+    queue: VecDeque[Packet],
+    capacity: Int,
+    packet_size: Int,
+
+    pub fn new(config: Config) -> (WireReader, WireWriter) {
+        let wire = Wire(VecDeque.new(), config.incoming_capacity, config.packet_size);
+        (WireReader(wire, None, 0), WireWriter(wire))
+    }
+}
+
+pub struct WireReader {
+    wire: Wire,
+    current: Option[Packet],
+    pos: Int,
+}
+
+pub struct WireWriter {
+    wire: Wire,
+}
+
+instance Reader[WireReader] {
+    fn read(r: WireReader, buf: Slice[U8]) -> Result[Int, Error] {
+        if r.current.is_none() {
+            match r.wire.queue.pop_front() {
+                None => return Ok(0),
+                Some(p) => {
+                    r.current = Some(p);
+                    r.pos = 0;
+                }
+            }
+        }
+        match r.current {
+            None => Ok(0),
+            Some(p) => {
+                let remaining = p.data.len() - r.pos;
+                let n = if buf.len() < remaining { buf.len() } else { remaining };
+                buf.copy(p.data.slice(), r.pos, 0, n);
+                r.pos = r.pos + n;
+                if r.pos >= p.data.len() {
+                    r.current = None;
+                }
+                Ok(n)
+            }
+        }
+    }
+}
+
+instance Writer[WireWriter] {
+    fn write(w: WireWriter, buf: Slice[U8]) -> Result[Int, Error] {
+        if w.wire.queue.len() >= w.wire.capacity {
+            return Ok(0);
+        }
+        let n = if buf.len() < w.wire.packet_size { buf.len() } else { w.wire.packet_size };
+        let p = Packet.new(n);
+        p.data.slice().copy(buf, 0, 0, n);
+        w.wire.queue.push_back(p);
+        Ok(n)
+    }
+}
+
+}

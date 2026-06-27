@@ -1,0 +1,33 @@
+module Mock.Console {
+
+import Std.Effects.Console
+
+// Captures the lines a server would have printed, instead of writing to stdout. The
+// backdoor the test inspects after the run, carried by the `mock_console` implicit.
+pub struct ConsoleLog {
+    entries: Vec[String],
+
+    pub fn new() -> ConsoleLog {
+        ConsoleLog(Vec.new())
+    }
+
+    pub fn lines(c: ConsoleLog) -> Vec[String] {
+        c.entries
+    }
+
+    pub fn count(c: ConsoleLog) -> Int {
+        c.entries.len()
+    }
+}
+
+pub implicit mock_console: ConsoleLog
+
+// Mock handler for the console effect, capturing each line into the ConsoleLog in
+// the `mock_console` implicit. Set it with `with mock_console = log, Console = MockConsole { ... }`.
+pub instance MockConsole Console {
+    fn println(line: String) {
+        mock_console.entries.push(line)
+    }
+}
+
+}

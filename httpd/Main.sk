@@ -1,25 +1,27 @@
 module Main {
 
-import Httpd.Server
+import Std.Httpd.Server
 import Std.Effects.Network
+import Std.Effects.Filesystem
+import Std.Effects.Console
 import Std.Sys.Process as Sys
 
 fn main() {
-    let args = Sys.get_args();
-    if args.len() < 3 {
-        println("usage: httpd <root-dir> <port>");
-        Sys.exit(1.as_i32());
-    }
-    let root = args[1];
-    let port_str = args[2];
-    let port = match port_str.parse_int(10) {
-        Ok(p) => p.as_u16(),
-        Err(_) => {
-            println("error: invalid port: ${port_str}");
+    with TcpNetwork = Tcp, FileSystem = RealFs, Console = StdConsole {
+        let args = Sys.get_args();
+        if args.len() < 3 {
+            println("usage: httpd <root-dir> <port>");
             Sys.exit(1.as_i32());
         }
-    };
-    with TcpNetwork = Tcp {
+        let root = args[1];
+        let port_str = args[2];
+        let port = match port_str.parse_int(10) {
+            Ok(p) => p.as_u16(),
+            Err(_) => {
+                println("error: invalid port: ${port_str}");
+                Sys.exit(1.as_i32());
+            }
+        };
         run(root, port);
     }
 }

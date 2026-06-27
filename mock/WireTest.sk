@@ -1,0 +1,89 @@
+module Mock.WireTest {
+
+import Std.IO.Buffered as Buffered
+import Std.Rand
+import Mock.Wire
+import Mock.Lorem
+
+fn run(rng: Rand,
+       incoming_capacity: Int,
+       outgoing_capacity: Int,
+       packet_size: Int,
+       flush_threshold: Int,
+       chunk_size: Int,
+       read_buf_size: Int,
+       lorem_chunk: Int,
+       total: Int,
+       write_chance: Int,
+       read_chance: Int) {
+    let (wire_reader, wire_writer) = Wire.new(Config.new(incoming_capacity, outgoing_capacity, packet_size));
+    let lorem = Lorem.new();
+
+    let writer = Buffered.Writer.new(wire_writer, flush_threshold: flush_threshold);
+    let reader = Buffered.Reader.new(wire_reader, chunk_size: chunk_size);
+
+    let read_buf: Vec[U8] = Vec.with_value(read_buf_size, 0.as_u8());
+    let input: Vec[U8] = Vec.new();
+    let output: Vec[U8] = Vec.new();
+
+    let iter = 0;
+    while input.len() < total || !writer.is_empty() || output.len() < input.len() {
+        if input.len() < total {
+            if rng.between(1, 100) <= write_chance {
+                let bytes = lorem.read(lorem_chunk);
+                writer.write(bytes.slice()).unwrap();
+                input.extend(bytes);
+            }
+        } else {
+            writer.flush().unwrap();
+        }
+
+        if rng.between(1, 100) <= read_chance {
+            let n = reader.read(read_buf.slice()).unwrap();
+            output.extend(read_buf.sub(0, n));
+        }
+
+        iter = iter + 1;
+        if iter > total * 1000 {
+            panic("STUCK after ${iter} iterations: input=${input.len()} output=${output.len()} writer_buf=${writer.len()}");
+        }
+    }
+
+    assert(input == output);
+}
+
+@test
+fn test_wire_lorem() {
+    let rng = Rand.new(42);
+
+    for _ in 0..10000 {
+        let incoming_capacity = rng.between(1, 8);
+        let outgoing_capacity = rng.between(1, 8);
+        let packet_size      = rng.between(16, 256);
+        let flush_threshold  = rng.between(50, 500);
+        let chunk_size       = rng.between(16, 256);
+        let read_buf_size    = rng.between(16, 2560);
+        let lorem_chunk      = rng.between(16, 256);
+        let total            = rng.between(500, 2000);
+        let write_chance     = rng.between(1, 100);
+        let read_chance      = rng.between(1, 100);
+
+        println("run: incoming=${incoming_capacity} outgoing=${outgoing_capacity} packet=${packet_size} flush=${flush_threshold} chunk=${chunk_size} read_buf=${read_buf_size} lorem=${lorem_chunk} total=${total} write_chance=${write_chance} read_chance=${read_chance}");
+
+        run(
+            rng: rng,
+            incoming_capacity: incoming_capacity,
+            outgoing_capacity: outgoing_capacity,
+            packet_size: packet_size,
+            flush_threshold: flush_threshold,
+            chunk_size: chunk_size,
+            read_buf_size: read_buf_size,
+            lorem_chunk: lorem_chunk,
+            total: total,
+            write_chance: write_chance,
+            read_chance: read_chance,
+        );
+    }
+}
+
+}

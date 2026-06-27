@@ -1,0 +1,113 @@
+module Mock.Network {
+
+import Std.Effects.Network
+import Std.IO.Reader
+import Std.IO.Writer
+import Std.IO.Closer
+import Std.IO.Error
+import Std.Slice
+import Std.VecDeque
+import Mock.Wire
+
+// A duplex in-memory socket made of two wires: the server reads from the inbound
+// wire and writes to the outbound wire. The peer (test side) gets the other ends.
+pub struct MockSocket {
+    inbound: WireReader,
+    outbound: WireWriter,
+}
+
+// The test-side handle for a MockSocket: write a request into the socket's inbound
+// wire, read the response back from its outbound wire.
+pub struct MockPeer {
+    to_server: WireWriter,
+    from_server: WireReader,
+
+    pub fn send(p: MockPeer, bytes: Slice[U8]) -> Result[Int, Error] {
+        p.to_server.write(bytes)
+    }
+
+    pub fn recv(p: MockPeer, buf: Slice[U8]) -> Result[Int, Error] {
+        p.from_server.read(buf)
+    }
+}
+
+// Create a connected MockSocket / MockPeer pair over two fresh wires.
+pub fn connect(config: Config) -> (MockSocket, MockPeer) {
+    let (server_in, client_out) = Wire.new(config);
+    let (client_in, server_out) = Wire.new(config);
+    (MockSocket(server_in, server_out), MockPeer(client_out, client_in))
+}
+
+instance Reader[MockSocket] {
+    fn read(s: MockSocket, buf: Slice[U8]) -> Result[Int, Error] {
+        s.inbound.read(buf)
+    }
+}
+
+instance Writer[MockSocket] {
+    fn write(s: MockSocket, buf: Slice[U8]) -> Result[Int, Error] {
+        s.outbound.write(buf)
+    }
+}
+
+instance Closer[MockSocket] {
+    fn close(s: MockSocket) -> Result[(), Error] {
+        Ok(())
+    }
+}
+
+// The backdoor that bridges the concrete test side and the pure-EAT server side: it
+// holds the connections the server is about to accept. The test opens connections on
+// it (keeping the client handles); `listen` reads it from the `mock_gateway` implicit
+// and `accept` hands the queued server sockets out in order.
+pub struct Gateway {
+    pending: VecDeque[MockSocket],
+
+    pub fn new() -> Gateway {
+        Gateway(VecDeque.new())
+    }
+
+    // Open a connection: queue the server-side socket for the next accept, and return
+    // the client handle for driving the request and reading the response.
+    pub fn open(g: Gateway, config: Config) -> MockPeer {
+        let (socket, peer) = connect(config);
+        g.pending.push_back(socket);
+        peer
+    }
+
+    fn take(g: Gateway) -> Option[MockSocket] {
+        g.pending.pop_front()
+    }
+}
+
+pub implicit mock_gateway: Gateway
+
+pub struct MockListener {
+    gateway: Gateway,
+}
+
+instance Closer[MockListener] {
+    fn close(l: MockListener) -> Result[(), Error] {
+        Ok(())
+    }
+}
+
+// Mock handler for the network effect, backed by the gateway in the `mock_gateway`
+// implicit. Set it with `with mock_gateway = g, TcpNetwork = MockNet { ... }`.
+pub instance MockNet TcpNetwork {
+    type Listener = MockListener
+    type Socket = MockSocket
+
+    fn listen(port: U16) -> Result[MockListener, Error] {
+        Ok(MockListener(mock_gateway))
+    }
+
+    fn accept(listener: MockListener) -> Result[MockSocket, Error] {
+        match listener.gateway.take() {
+            Some(s) => Ok(s),
+            None => panic("MockNet.accept: no pending connections"),
+        }
+    }
+}
+
+}

@@ -1,0 +1,72 @@
+module Mock.ServerTest {
+
+import Std.Effects.Network
+import Std.Effects.Filesystem
+import Std.Effects.Console
+import Std.Httpd.Server
+import Mock.Network
+import Mock.Fs
+import Mock.Console
+import Mock.Wire
+
+// Drain everything the server wrote back to the peer into a String.
+fn drain(peer: MockPeer) -> String {
+    let buf: Vec[U8] = Vec.with_value(1024, 0.as_u8());
+    let out: Vec[U8] = Vec.new();
+    loop {
+        let n = peer.recv(buf.slice()).unwrap();
+        if n == 0 {
+            break;
+        }
+        out.extend_from_slice(buf.slice().sub(0, n));
+    }
+    String.from_slice(out.slice())
+}
+
+// Drive one request through the fully mocked network, filesystem and console, and
+// return the response. Everything inside the `with` block is pure EAT: the socket
+// comes from accept, the file contents from the FileSystem effect, the log lines into
+// the ConsoleLog — no real sockets, no real disk, no stdout.
+fn request(files: MockFiles, log: ConsoleLog, root: String, line: String) -> String {
+    let gateway = Gateway.new();
+    let peer = gateway.open(Config.new(64, 64, 1024));
+    peer.send(line.as_slice()).unwrap();
+
+    with mock_gateway = gateway, mock_files = files, mock_console = log, TcpNetwork = MockNet, FileSystem = MockFs, Console = MockConsole {
+        let listener = TcpNetwork.listen(8080.as_u16()).unwrap();
+        let socket = TcpNetwork.accept(listener).unwrap();
+        serve(socket, root);
+    }
+
+    drain(peer)
+}
+
+@test
+fn test_serve_200() {
+    let files = MockFiles.new();
+    files.add("/site/index.html", "<h1>mock home</h1>");
+    let log = ConsoleLog.new();
+
+    let response = request(files, log, "/site", "GET / HTTP/1.0\r\n\r\n");
+    assert(response.find("HTTP/1.0 200 OK").is_some());
+    assert(response.find("Content-Type: text/html").is_some());
+    assert(response.find("<h1>mock home</h1>").is_some());
+
+    // The server logged the requested path, captured instead of printed.
+    assert(log.count() == 1);
+    assert(log.lines()[0] == "/");
+}
+
+@test
+fn test_serve_404() {
+    let files = MockFiles.new();
+    let log = ConsoleLog.new();
+
+    let response = request(files, log, "/site", "GET /missing.html HTTP/1.0\r\n\r\n");
+    assert(response.find("HTTP/1.0 404 Not Found").is_some());
+    assert(response.find("<h1>404 Not Found</h1>").is_some());
+
+    assert(log.lines()[0] == "/missing.html");
+}
+
+}
