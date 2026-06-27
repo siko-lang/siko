@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Effect Associated Types — Siko</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:ital,wght@0,400;0,700;1,400&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="../style.css">
+</head>
+
+<body>
+  <div class="container">
+
+    <p class="post-meta"><a href="../index.html">Siko Language</a> · <a href="../reference.html">Reference</a> · Effect Associated Types</p>
+
+    <h1>Effect Associated Types</h1>
+<p>An effect can declare a type that is left open and chosen by the handler. TheniIts</p>
+<p>operations may be written against that abstract type; the concrete type is fixed at</p>
+<p>the <code>with</code> site, alongside the handlers.</p>
+<pre><code>effect MyEff {
+    type Foo
+
+    fn create() -&gt; Foo
+    fn do(f: Foo)
+}
+</code></pre>
+<p><code>Foo</code> has no definition inside the effect. <code>create</code> produces a <code>Foo</code> and <code>do</code></p>
+<p>consumes one, but neither says what <code>Foo</code> actually is. Code that uses the effect</p>
+<p>only knows that whatever <code>create</code> returns is the same type <code>do</code> accepts.</p>
+<p>---</p>
+<h2>Binding the type</h2>
+<p>The associated type is part of the handler, so it is supplied where the handlers</p>
+<p>are supplied. There are two ways to do that.</p>
+<h3>With individual handlers</h3>
+<p>Bind the type with <code>with type</code>, next to the function handlers:</p>
+<pre><code>struct Boo {}
+
+fn create_handler() -&gt; Boo { Boo() }
+fn do_handler(f: Boo) {}
+
+fn main() {
+    with type MyEff.Foo = Boo,
+        MyEff.create = create_handler,
+        do = do_handler {
+        let a = create();   // a : Boo
+        do(a);
+    }
+}
+</code></pre>
+<p>Inside the block, <code>Foo</code> *is* <code>Boo</code>. <code>create()</code> returns a <code>Boo</code>, and you can pass</p>
+<p>it back to <code>do</code>. The handler signatures must agree with the bound type — here</p>
+<p>both handlers work in terms of <code>Boo</code>.</p>
+<h3>With an instance</h3>
+<p>An effect instance bundles the type assignment with the handlers in one place:</p>
+<pre><code>instance I MyEff {
+    type Foo = Boo
+
+    fn create() -&gt; Boo { Boo() }
+    fn do(f: Boo) {}
+}
+
+fn main() {
+    with MyEff = I {
+        let a = create();
+        do(a);
+    }
+}
+</code></pre>
+<p>The instance's <code>type Foo = Boo</code> provides the binding, so the <code>with</code> block only</p>
+<p>needs to name the instance.</p>
+<p>---</p>
+<h2>Using the type</h2>
+<p>A value of the associated type behaves like any other value inside the block.</p>
+<p>You can store it in a struct or enum whose field is declared as the effect's</p>
+<p>type:</p>
+<pre><code>struct Q {
+    a: Foo,
+}
+
+fn main() {
+    with MyEff = I {
+        let a = create();
+        let q = Q(a);
+        do(q.a);
+    }
+}
+</code></pre>
+<p>Effect operations can be called in either form — as a free call or as a method</p>
+<p>on a value of the associated type:</p>
+<pre><code>with MyEff = I {
+    let a = create();
+    a.do();        // same as do(a)
+}
+</code></pre>
+<p>---</p>
+<h2>Requiring operations on the type</h2>
+<p>Sometimes the effect's code needs to *do* something with a value of the abstract</p>
+<p>type — compare it, clone it, call a trait method on it. Since the concrete type</p>
+<p>is unknown inside the effect, you state up front which traits it must implement.</p>
+<p>The bound goes in brackets on the effect:</p>
+<pre><code>trait MyTrait[T] {
+    fn some_func(t: T)
+}
+
+effect[Foo: MyTrait[Foo]] MyEff {
+    type Foo
+
+    fn create() -&gt; Foo
+    fn do(f: Foo)
+}
+</code></pre>
+<p><code>Foo: MyTrait[Foo]</code> means the type chosen for <code>Foo</code> must have a <code>MyTrait</code></p>
+<p>instance. With that bound in place, <code>MyTrait</code>'s methods are available on any</p>
+<p><code>Foo</code> value, in both call forms:</p>
+<pre><code>fn main() {
+    with type MyEff.Foo = Boo,
+        MyEff.create = create_handler,
+        do = do_handler {
+        let a = create();
+        some_func(a);   // free call
+        a.some_func();  // method call
+        do(a);
+    }
+}
+</code></pre>
+<p>The bound is checked where the type is bound. If the chosen type does not satisfy</p>
+<p>it, the <code>with</code> block is rejected:</p>
+<pre><code>// with type MyEff.Foo = Boo, ...   where Boo has no MyTrait instance
+ERROR: No instance of `Main.MyTrait` found for `[Main.Boo]`
+</code></pre>
+<p>When the type needs more than one trait, separate the bounds with commas, the</p>
+<p>same as on a function or trait:</p>
+<pre><code>effect[Foo: MyTrait[Foo], ToString[Foo]] MyEff {
+    type Foo
+    ...
+}
+</code></pre>
+
+
+  </div>
+  <script src="../siko-highlight.js"></script>
+</body>
+
+</html>

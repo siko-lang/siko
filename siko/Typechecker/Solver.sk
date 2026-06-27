@@ -121,7 +121,10 @@ fn resolve_method(type_qname: QualifiedName, method: I.String, caller_module: I.
                         let effect_def = program.effects.get(assoc_def.effect_name).unwrap();
                         match effect_def.method_map.names.get(method) {
                             Some(mq) => return Ok(mq),
-                            None => {}
+                            // Not an effect method, but the EAT may carry a trait bound
+                            // that provides it. Report MethodNotFound so CallMethod falls
+                            // back to trait-method resolution via module_trait_method_map.
+                            None => return Err(TypeError.MethodNotFound(type_qname.name(), method, location)),
                         }
                     }
                     return Err(TypeError.InvalidReceiverType(
