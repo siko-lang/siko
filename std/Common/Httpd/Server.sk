@@ -6,7 +6,7 @@ import Std.IO.Buffered as Buffered
 import Std.IO.Reader
 import Std.IO.Writer
 import Std.IO.Closer
-import Std.Sys.Process as Sys
+import Std.IO.Error
 import Std.Httpd.Http
 
 // Read headers then body (if Content-Length is present).
@@ -74,14 +74,8 @@ pub fn serve(socket: TcpNetwork.Socket, handler: fn(Request) -> Response) {
     socket.close();
 }
 
-pub fn run(handler: fn(Request) -> Response, port: U16) {
-    let listener = match TcpNetwork.listen(port) {
-        Ok(l) => l,
-        Err(e) => {
-            println("error: ${e}");
-            Sys.exit(1.as_i32());
-        }
-    };
+pub fn run(handler: fn(Request) -> Response, port: U16) -> Result[(), Error] {
+    let listener = TcpNetwork.listen(port)?;
     println("Listening on http://localhost:${port}");
     loop {
         let socket = match TcpNetwork.accept(listener) {
@@ -93,6 +87,7 @@ pub fn run(handler: fn(Request) -> Response, port: U16) {
         };
         serve(socket, handler);
     }
+    Ok(())
 }
 
 }

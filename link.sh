@@ -43,4 +43,4 @@ elif [[ $tsan -eq 1 ]]; then
     san_flags="-fsanitize=thread -fno-omit-frame-pointer -g"
 fi
 
-exec clang -Wno-unused-value -Wno-pointer-sign -Wno-incompatible-pointer-types -x c - -o "$output" $opt_flag $san_flags $gc_flags
+exec clang -fno-optimize-sibling-calls -Wno-unused-value -Wno-pointer-sign -Wno-incompatible-pointer-types -x c - -o "$output" $opt_flag $san_flags $gc_flags
