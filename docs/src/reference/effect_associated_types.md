@@ -4,7 +4,7 @@ priority: 95
 
 # Effect Associated Types
 
-An effect can declare a type that is left open and chosen by the handler. TheniIts
+An effect can declare a type that is left open and chosen by the handler. Then its
 operations may be written against that abstract type; the concrete type is fixed at
 the `with` site, alongside the handlers.
 
