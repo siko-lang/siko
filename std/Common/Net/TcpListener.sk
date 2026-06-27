@@ -1,6 +1,7 @@
 module Std.Net.TcpListener {
 
 import Std.IO.Error
+import Std.IO.Closer
 import Std.Arch.Errno
 import Std.Arch.SockaddrIn
 import Std.Libc.Socket
@@ -38,6 +39,16 @@ pub struct TcpListener {
             return Err(Error.new(Std.Arch.Errno.get_errno()));
         }
         Ok(TcpStream.new(client))
+    }
+
+    pub fn close(l: TcpListener) -> Result[(), Error] {
+        l.fd.close()
+    }
+}
+
+instance Closer[TcpListener] {
+    fn close(l: TcpListener) -> Result[(), Error] {
+        l.close()
     }
 }
 

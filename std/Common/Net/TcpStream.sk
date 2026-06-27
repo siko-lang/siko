@@ -3,6 +3,7 @@ module Std.Net.TcpStream {
 import Std.IO.Error
 import Std.IO.Reader
 import Std.IO.Writer
+import Std.IO.Closer
 import Std.Libc.FileDescriptor
 import Std.Slice
 
@@ -18,15 +19,21 @@ pub struct TcpStream {
     }
 }
 
-pub instance Reader[TcpStream] {
+instance Reader[TcpStream] {
     fn read(s: TcpStream, buf: Slice[U8]) -> Result[Int, Error] {
         s.fd.read(buf)
     }
 }
 
-pub instance Writer[TcpStream] {
+instance Writer[TcpStream] {
     fn write(s: TcpStream, buf: Slice[U8]) -> Result[Int, Error] {
         s.fd.write(buf)
+    }
+}
+
+instance Closer[TcpStream] {
+    fn close(l: TcpStream) -> Result[(), Error] {
+        l.close()
     }
 }
 

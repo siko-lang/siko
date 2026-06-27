@@ -1,9 +1,10 @@
 module Httpd.Server {
 
-import Httpd.Network
+import Std.Effects.Network
 import Std.IO.Buffered as Buffered
 import Std.IO.Reader
 import Std.IO.Writer
+import Std.IO.Closer
 import Std.Fs.File as FsFile
 import Std.Sys.Process as Sys
 
@@ -60,7 +61,7 @@ fn serve(socket: TcpNetwork.Socket, root: String) {
         Some(p) => p,
         None => {
             send_response(socket, "400 Bad Request", "text/plain", "Bad Request");
-            TcpNetwork.close(socket);
+            socket.close();
             return;
         }
     };
@@ -78,7 +79,7 @@ fn serve(socket: TcpNetwork.Socket, root: String) {
             send_response(socket, "404 Not Found", "text/html; charset=utf-8", "<h1>404 Not Found</h1>");
         }
     }
-    TcpNetwork.close(socket);
+    socket.close();
 }
 
 pub fn run(root: String, port: U16) {

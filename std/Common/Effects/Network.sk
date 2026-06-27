@@ -1,25 +1,26 @@
-module Httpd.Network {
+module Std.Effects.Network {
 
 import Std.Net.TcpListener
 import Std.Net.TcpStream
 import Std.IO.Reader
 import Std.IO.Writer
+import Std.IO.Closer
 import Std.IO.Error
 
 // The network layer the server runs against. `Socket` is left abstract, but it is
 // required to be both readable and writable — so server code can do byte IO on a
 // connection without ever naming the concrete socket type.
-pub effect[Socket: Reader[Socket], Writer[Socket]] TcpNetwork {
+pub effect[Socket, Listener: Reader[Socket], Writer[Socket], Closer[Socket], Closer[Listener]] TcpNetwork {
     type Listener
     type Socket
 
     fn listen(port: U16) -> Result[Listener, Error]
     fn accept(listener: Listener) -> Result[Socket, Error]
-    fn close(socket: Socket)
 }
 
 // Production handler, backed by the OS TCP stack. TcpStream already has Reader and
-// Writer instances, which is what satisfies the effect's bounds on `Socket`.
+// Writer instances and both TcpListener and TcpStream has Closer instances,
+// which is what satisfies the effect's bounds.
 pub instance Tcp TcpNetwork {
     type Listener = TcpListener
     type Socket = TcpStream
@@ -30,10 +31,6 @@ pub instance Tcp TcpNetwork {
 
     fn accept(listener: TcpListener) -> Result[TcpStream, Error] {
         listener.accept()
-    }
-
-    fn close(socket: TcpStream) {
-        socket.close();
     }
 }
 
