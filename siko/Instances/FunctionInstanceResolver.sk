@@ -3,23 +3,39 @@ module Siko.Instances.FunctionInstanceResolver {
 import Std.Map
 import Siko.AST.Generics
 import Siko.AST.Instances
+import Siko.AST.Name
 import Siko.AST.QualifiedName
 import Siko.AST.Type
+import Siko.HIR.Program
 import Siko.Instances.ModuleInstanceResolver
 import Siko.Unification.Apply
 import Siko.Unification.Sub
 import Siko.Utils.TypeVarAllocator
 import Siko.Interner as I
 
-@derive(Clone)
+@derive(Clone, PartialEq, Eq, PartialOrd, Ord)
 pub enum BoundWitness {
     FunctionBound(Int),
-    Instance(module_name: I.String, instance_qname: QualifiedName),
+    // The witnesses for the instance's own (context) bounds, captured when the
+    // instance was resolved — i.e. the sub-dictionaries this instance closes over.
+    Instance(module_name: I.String, instance_qname: QualifiedName, children: Vec[BoundWitness]),
+    // A bound on an effect associated type. The instance is unknown here; it is
+    // resolved at the `with` site and fetched from the effect-associated-type ctx
+    // at mono. `index` selects which of the EAT's bounds this is.
+    EffectAssociatedTypeBound(assoc_qname: QualifiedName, index: Int),
 
     pub fn format(w: BoundWitness) -> String {
         match w {
             BoundWitness.FunctionBound(index) => "#${index}",
-            BoundWitness.Instance(module_name, _) => I.resolve(module_name),
+            BoundWitness.Instance(module_name, _, children) => {
+                if children.is_empty() {
+                    I.resolve(module_name)
+                } else {
+                    let cs: Vec[String] = children.iter().map(|c| c.format()).collect();
+                    I.resolve(module_name) + "<" + join(cs, ",") + ">"
+                }
+            }
+            BoundWitness.EffectAssociatedTypeBound(assoc_qname, index) => "eat:${assoc_qname.name()}#${index}",
         }
     }
 }
@@ -35,8 +51,12 @@ pub struct BoundResolution {
         BoundResolution(BoundWitness.FunctionBound(idx), assoc_types, [], None, Substitution.new())
     }
 
-    fn from_instance(module_name: I.String, assoc_types: Map[I.String, TypeDef], primary_args: Vec[TypeDef], instance_qname: Option[QualifiedName], type_witness: Substitution) -> BoundResolution {
-        BoundResolution(BoundWitness.Instance(module_name: module_name, instance_qname: instance_qname.unwrap()), assoc_types, primary_args, instance_qname, type_witness)
+    fn from_instance(module_name: I.String, assoc_types: Map[I.String, TypeDef], primary_args: Vec[TypeDef], instance_qname: Option[QualifiedName], type_witness: Substitution, children: Vec[BoundWitness]) -> BoundResolution {
+        BoundResolution(BoundWitness.Instance(module_name: module_name, instance_qname: instance_qname.unwrap(), children: children), assoc_types, primary_args, instance_qname, type_witness)
+    }
+
+    fn from_eat_bound(assoc_qname: QualifiedName, index: Int) -> BoundResolution {
+        BoundResolution(BoundWitness.EffectAssociatedTypeBound(assoc_qname, index), Map.new(), [], None, Substitution.new())
     }
 
     pub fn into_witness(r: BoundResolution) -> BoundWitness {
@@ -65,9 +85,10 @@ pub struct FunctionInstanceResolver {
     pub module_resolver: ModuleInstanceResolver,
     pub function_bounds: Vec[FunctionBoundEntry],
     pub allocator: TypeVarAllocator,
+    pub program: Program,
 
-    pub fn new(module_name: I.String, module_resolver: ModuleInstanceResolver, function_bounds: Vec[FunctionBoundEntry], allocator: TypeVarAllocator) -> FunctionInstanceResolver {
-        FunctionInstanceResolver(module_name, module_resolver, function_bounds, allocator)
+    pub fn new(module_name: I.String, module_resolver: ModuleInstanceResolver, function_bounds: Vec[FunctionBoundEntry], allocator: TypeVarAllocator, program: Program) -> FunctionInstanceResolver {
+        FunctionInstanceResolver(module_name, module_resolver, function_bounds, allocator, program)
     }
 
     fn check_sub_bounds(r: FunctionInstanceResolver, instance_def: InstanceDef, type_witness: Substitution, sub: Substitution) -> Bool {
@@ -86,12 +107,16 @@ pub struct FunctionInstanceResolver {
     }
 
     fn finish_instance(r: FunctionInstanceResolver, instance_def: InstanceDef, type_witness: Substitution, sub: Substitution) -> BoundResult {
+        // Resolve the instance's own bounds and keep each as a child witness — the
+        // sub-dictionaries this instance closes over. A trait call later peels them
+        // back off (see the monomorphizer) instead of re-resolving from scratch.
+        let children: Vec[BoundWitness] = Vec.new();
         if let Some(tad) = instance_def.type_arg_defs {
             for bound in tad.bounds {
                 let sub_args = bound_args(bound, type_witness, sub);
                 let result = r.resolve_and_extract(bound.trait_name.name(), sub_args, bound.constraints, sub, type_witness);
                 match result {
-                    BoundResult.Satisfied(_) => {}
+                    BoundResult.Satisfied(child) => children.push(child.into_witness()),
                     _ => return result,
                 }
             }
@@ -108,6 +133,7 @@ pub struct FunctionInstanceResolver {
             primary_args,
             instance_qname,
             type_witness,
+            children,
         ))
     }
 
@@ -126,6 +152,12 @@ pub struct FunctionInstanceResolver {
     }
 
     pub fn resolve(r: FunctionInstanceResolver, trait_name: I.String, query_args: Vec[TypeDef], sub: Substitution) -> BoundResult {
+        // An effect associated type doesn't have a concrete instance here; if its
+        // effect declares this bound, satisfy it lazily (resolved at the with site).
+        let applied_args: Vec[TypeDef] = query_args.iter().map(|a| sub.apply(a)).collect();
+        if let Some((assoc_qname, index)) = match_eat_bound(r.program, trait_name, applied_args) {
+            return BoundResult.Satisfied(BoundResolution.from_eat_bound(assoc_qname, index));
+        }
         // A query arg that is still an unbound flex var (e.g. resolving Iterator[$49]
         // before $49 is known to be RangeIterator) must not commit to a function bound:
         // doing so locks in the bound's associated types before the real receiver type
@@ -200,6 +232,43 @@ pub fn bound_args(bound: Bound, type_witness: Substitution, sub: Substitution) -
         let raw = type_witness.lookup_named(var_name).unwrap_or(TypeDef.Var(TypeVar.Named(var_name)));
         sub.apply(raw)
     }).collect()
+}
+
+pub fn eat_short_name(assoc_qname: QualifiedName) -> I.String {
+    match assoc_qname.base() {
+        BaseName.EffectAssociatedType(_, _, name) => name,
+        _ => panic("eat_short_name: ${assoc_qname.name()} is not an effect associated type"),
+    }
+}
+
+// The effect's bounds that mention this EAT, in declaration order. A bound's
+// position here is the index shared by validation (WitnessKey.Handler) and
+// EffectAssociatedTypeBound.
+pub fn effect_bounds_for_eat(program: Program, assoc_qname: QualifiedName) -> Vec[Bound] {
+    let assoc_def = program.effect_associated_types.get(assoc_qname).unwrap();
+    let effect_def = program.effects.get(assoc_def.effect_name).unwrap();
+    let short = eat_short_name(assoc_qname);
+    let bounds = effect_def.type_arg_defs.map(|tad| tad.bounds).unwrap_or_else(|| Vec.new());
+    bounds.into_iter().filter(|b| b.type_args.iter().any(|n| n.name() == short)).collect()
+}
+
+// If a query arg is an EAT whose effect declares a bound for this trait, return
+// the EAT and the bound's index.
+fn match_eat_bound(program: Program, trait_name: I.String, args: Vec[TypeDef]) -> Option[(QualifiedName, Int)] {
+    for arg in args {
+        if let TypeDef.Named(NamedInfo(Name.Resolved(name: qname, ..), _)) = arg {
+            if program.effect_associated_types.get(qname).is_some() {
+                let idx = 0;
+                for bound in effect_bounds_for_eat(program, qname) {
+                    if bound.trait_name.name() == trait_name {
+                        return Some((qname, idx));
+                    }
+                    idx = idx + 1;
+                }
+            }
+        }
+    }
+    None
 }
 
 }

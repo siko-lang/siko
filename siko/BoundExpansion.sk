@@ -26,6 +26,15 @@ pub fn expand_program(program: Program) {
         let expanded = expand_effect(effect_def, program);
         program.effects.insert(key, expanded);
     }
+    // Expand instance bounds in place. The InstanceResolver holds the same
+    // InstanceDef objects, so this is seen at typecheck — and it keeps an
+    // instance's captured context witnesses aligned with the (also expanded)
+    // InstanceContext bounds of its methods. all_instances is the de-duped union.
+    let instance_keys: Vec[_] = program.all_instances.keys().collect();
+    for key in instance_keys {
+        let inst = program.all_instances.get(key).unwrap();
+        inst.type_arg_defs = expand_bounds(inst.type_arg_defs, program, inst.location);
+    }
 }
 
 fn expand_bounds(type_arg_defs: Option[TypeArgDefs], program: Program, fallback: Location) -> Option[TypeArgDefs] {

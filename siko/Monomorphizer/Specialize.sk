@@ -112,6 +112,7 @@ instance Specialize[FunctionPtrInfo] {
                     module_resolver,
                     [],
                     TypeVarAllocator.new(),
+                    mono.source,
                 );
                 func_resolver.resolve_and_extract(
                     bound.trait_name.name(),
@@ -126,8 +127,8 @@ instance Specialize[FunctionPtrInfo] {
         let callee_type_args: Vec[TypeDef] = generic_params.iter()
             .map(|p| inst_map.lookup_named(p).unwrap().clone())
             .collect();
-        let callee_witnesses: Vec[I.String] = witness_list.iter()
-            .map(|w| mono.resolve_witness_to_module(w))
+        let callee_witnesses: Vec[ResolvedWitness] = witness_list.iter()
+            .map(|w| mono.resolve_witness(w))
             .collect();
 
         let is_extern = func.is_extern();
@@ -164,9 +165,9 @@ instance Specialize[CreateClosureInfo] {
             .iter()
             .map(|p| mono.sub.lookup_named(p).unwrap().clone())
             .collect();
-        let callee_witnesses: Vec[I.String] = info.witnesses.witnesses
+        let callee_witnesses: Vec[ResolvedWitness] = info.witnesses.witnesses
             .iter()
-            .map(|w| mono.resolve_witness_to_module(w))
+            .map(|w| mono.resolve_witness(w))
             .collect();
         let mono_callee = fn_mono_key(
             info.name,
@@ -224,16 +225,19 @@ instance Specialize[WithInfo] {
                     // a FunctionBound witness indexes the with-site's witness list,
                     // not the call site's. The handler itself is monomorphized later,
                     // at the effect call site, in the call-site dynamic context.
-                    let handler_witnesses: Vec[I.String] = witness_info.witnesses.iter().map(|w| mono.resolve_witness_to_module(w)).collect();
+                    let handler_witnesses: Vec[ResolvedWitness] = witness_info.witnesses.iter().map(|w| mono.resolve_witness(w)).collect();
                     mono.current_effect_ctx.insert(method.clone(), HandlerInfo(handler.clone(), handler_witnesses));
                 }
                 HandlerSelection.Implicit(implicit_qn, var) => {
                     mono.current_implicit_ctx.insert(implicit_qn.clone());
                     implicit_selections.push(HandlerSelection.Implicit(implicit_qn.clone(), var.clone()));
                 }
-                HandlerSelection.TypeAssociation(assoc_qname, handler_type, _) => {
+                HandlerSelection.TypeAssociation(assoc_qname, handler_type, _, witness_info) => {
                     let spec_handler_type = handler_type.specialize(mono);
-                    mono.current_effect_associated_type_ctx.insert(assoc_qname.clone(), spec_handler_type);
+                    // Resolve the EAT's bound witnesses here, at the `with` site, so an
+                    // EffectAssociatedTypeBound can later fetch them from this ctx.
+                    let resolved: Vec[ResolvedWitness] = witness_info.witnesses.iter().map(|w| mono.resolve_witness(w)).collect();
+                    mono.current_effect_associated_type_ctx.insert(assoc_qname.clone(), TypeHandlerInfo(spec_handler_type, resolved));
                 }
                 HandlerSelection.Unresolved(_, _) |
                 HandlerSelection.UnresolvedType(_, _) => panic("mono: unresolved HandlerSelection")

@@ -74,23 +74,53 @@ pub struct BaseNameInfo {
     }
 }
 
-// A resolved effect handler: the (pre-mono) handler function plus the modules
-// that witness its bounds, resolved at the `with` site. Part of MonoContext so
-// that the full effect resolution — handler AND witnesses — is structurally part
-// of a function's mono identity. Two `with` sites binding the same handler with
+// A fully resolved witness (a monomorphized dictionary): the instance, the
+// module that certifies it, and the sub-dictionaries it closes over. The pre-mono
+// BoundWitness can still be a FunctionBound; resolving against a frame turns it
+// into one of these, which never contains an unresolved forward.
+@derive(PartialEq, Eq, PartialOrd, Ord, Clone)
+pub struct ResolvedWitness {
+    pub module_name: I.String,
+    pub instance_qname: QualifiedName,
+    pub children: Vec[ResolvedWitness],
+
+    pub fn format(w: ResolvedWitness) -> String {
+        if w.children.is_empty() {
+            I.resolve(w.module_name)
+        } else {
+            let cs: Vec[String] = w.children.iter().map(|c| c.format()).collect();
+            I.resolve(w.module_name) + "<" + join(cs, ",") + ">"
+        }
+    }
+}
+
+// A resolved effect handler: the (pre-mono) handler function plus the witnesses
+// for its bounds, resolved at the `with` site. Part of MonoContext so that the
+// full effect resolution — handler AND witnesses — is structurally part of a
+// function's mono identity. Two `with` sites binding the same handler with
 // different witnesses produce distinct keys for any function in their dynamic
 // extent, so each specializes separately instead of collapsing onto the first.
 @derive(PartialEq, Eq, PartialOrd, Ord, Clone)
 pub struct HandlerInfo {
     pub name: QualifiedName,
-    pub witnesses: Vec[I.String],
+    pub witnesses: Vec[ResolvedWitness],
+}
+
+// An effect associated type binding: the concrete type chosen at the `with` site
+// plus the witnesses for the EAT's bounds, resolved there. In MonoContext so the
+// witnesses are part of mono identity (two `with`s binding the same EAT to the
+// same type but resolving its bounds in different modules must not collapse).
+@derive(PartialEq, Eq, PartialOrd, Ord, Clone)
+pub struct TypeHandlerInfo {
+    pub ty: TypeDef,
+    pub witnesses: Vec[ResolvedWitness],
 }
 
 @derive(PartialEq, Eq, PartialOrd, Ord, Clone)
 pub struct MonoContext {
-    pub witnesses: Vec[I.String],
+    pub witnesses: Vec[ResolvedWitness],
     pub effect_ctx: Map[QualifiedName, HandlerInfo],
-    pub effect_associated_type_ctx: Map[QualifiedName, TypeDef],
+    pub effect_associated_type_ctx: Map[QualifiedName, TypeHandlerInfo],
     pub implicit_ctx: Vec[QualifiedName],
 }
 
@@ -232,7 +262,7 @@ pub enum QualifiedName {
                 let witness_str = if m.ctx.witnesses.is_empty() {
                     ""
                 } else {
-                    let parts: Vec[String] = m.ctx.witnesses.iter().map(|w| I.resolve(w)).collect();
+                    let parts: Vec[String] = m.ctx.witnesses.iter().map(|w| w.format()).collect();
                     "(" + join(parts, ", ") + ")"
                 };
                 let effect_str = if m.ctx.effect_ctx.is_empty() {
@@ -243,7 +273,7 @@ pub enum QualifiedName {
                             let wit = if v.witnesses.is_empty() {
                                 ""
                             } else {
-                                "(" + join(v.witnesses.iter().map(|w| I.resolve(w)).collect(), ", ") + ")"
+                                "(" + join(v.witnesses.iter().map(|w| w.format()).collect(), ", ") + ")"
                             };
                             I.resolve(k.name()) + "->" + I.resolve(v.name.name()) + wit
                         })
@@ -254,7 +284,14 @@ pub enum QualifiedName {
                     ""
                 } else {
                     let entries: Vec[String] = m.ctx.effect_associated_type_ctx.iter()
-                        .map(|(k, v)| I.resolve(k.name()) + "->" + format_type(v))
+                        .map(|(k, v)| {
+                            let wit = if v.witnesses.is_empty() {
+                                ""
+                            } else {
+                                "(" + join(v.witnesses.iter().map(|w| w.format()).collect(), ", ") + ")"
+                            };
+                            I.resolve(k.name()) + "->" + format_type(v.ty) + wit
+                        })
                         .collect();
                     "{" + join(entries, ",") + "}"
                 };

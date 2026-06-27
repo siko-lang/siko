@@ -1,0 +1,43 @@
+module Main {
+
+trait MyTrait[T] {
+    fn some_func(t: T)
+}
+
+effect[Foo: MyTrait[Foo]] MyEff {
+    type Foo
+
+    fn create() -> Foo
+
+    fn do(f: Foo)
+}
+
+struct Boo {
+
+}
+
+instance MyTrait[Boo] {
+    fn some_func(b: Boo) {
+    }
+}
+
+fn create_handler() -> Boo {
+    Boo()
+}
+
+fn do_handler(f: Boo) {
+
+}
+
+fn main() {
+    with type MyEff.Foo = Boo,
+        MyEff.create = create_handler,
+        do = do_handler {
+        let a = create();
+        some_func(a);
+        //a.some_func();
+        do(a);
+    }
+}
+
+}

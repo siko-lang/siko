@@ -40,17 +40,17 @@ pub struct EffectCtx {
 
 @derive(Clone)
 pub struct EffectAssociatedTypeCtx {
-    pub resolution: Map[QualifiedName, TypeDef],
+    pub resolution: Map[QualifiedName, TypeHandlerInfo],
 
     pub fn new() -> EffectAssociatedTypeCtx {
         EffectAssociatedTypeCtx(Map.new())
     }
 
-    pub fn get(ctx: EffectAssociatedTypeCtx, key: QualifiedName) -> Option[TypeDef] {
+    pub fn get(ctx: EffectAssociatedTypeCtx, key: QualifiedName) -> Option[TypeHandlerInfo] {
         ctx.resolution.get(key)
     }
 
-    pub fn insert(ctx: EffectAssociatedTypeCtx, key: QualifiedName, value: TypeDef) {
+    pub fn insert(ctx: EffectAssociatedTypeCtx, key: QualifiedName, value: TypeHandlerInfo) {
         ctx.resolution.insert(key, value);
     }
 }
@@ -81,7 +81,7 @@ pub struct DataWork {
 pub struct FnWork {
     pub qname: QualifiedName,
     pub type_args: Vec[TypeDef],
-    pub witnesses: Vec[I.String],
+    pub witnesses: Vec[ResolvedWitness],
     pub effect_ctx: EffectCtx,
     pub effect_associated_type_ctx: EffectAssociatedTypeCtx,
     pub implicit_ctx: ImplicitCtx,
@@ -90,7 +90,7 @@ pub struct FnWork {
 pub fn fn_mono_key(
     base: QualifiedName,
     type_args: Vec[TypeDef],
-    witnesses: Vec[I.String],
+    witnesses: Vec[ResolvedWitness],
     effect_ctx: EffectCtx,
     effect_associated_type_ctx: EffectAssociatedTypeCtx,
     implicit_ctx: ImplicitCtx,
@@ -127,7 +127,7 @@ pub struct Monomorphizer {
     pub struct_done: Set[QualifiedName],
     pub enum_done: Set[QualifiedName],
     pub current_module: I.String,
-    pub current_fn_witnesses: Vec[I.String],
+    pub current_fn_witnesses: Vec[ResolvedWitness],
     pub current_effect_ctx: EffectCtx,
     pub current_effect_associated_type_ctx: EffectAssociatedTypeCtx,
     pub current_implicit_ctx: ImplicitCtx,
@@ -177,7 +177,7 @@ pub struct Monomorphizer {
                 }
             }
         }
-        let filtered: Map[QualifiedName, TypeDef] = eat_ctx.resolution.iter()
+        let filtered: Map[QualifiedName, TypeHandlerInfo] = eat_ctx.resolution.iter()
             .filter(|(k, _)| relevant_eats.contains(k))
             .map(|(k, v)| (k, v))
             .collect();
@@ -216,14 +216,28 @@ pub struct Monomorphizer {
             .collect()
     }
 
-    pub fn resolve_witness_to_module(mono: Monomorphizer, witness: BoundWitness) -> I.String {
+    // Resolve a witness against the current frame into a fully concrete dictionary:
+    // a FunctionBound forwards to the caller-provided witness at that index (which
+    // is already resolved), an Instance keeps its module/qname and resolves each
+    // child. The ResolvedWitness type guarantees no FunctionBound survives.
+    pub fn resolve_witness(mono: Monomorphizer, witness: BoundWitness) -> ResolvedWitness {
         match witness {
             BoundWitness.FunctionBound(idx) =>
                 mono.current_fn_witnesses
                 .get_opt(idx)
-                .expect("bound index not found: idx=${idx} in ${mono.current_module} witnesses=${mono.current_fn_witnesses}"),
-            BoundWitness.Instance(module_name, _) => module_name.clone(),
+                .expect("bound index not found: idx=${idx} in ${mono.current_module}"),
+            BoundWitness.Instance(module_name, qname, children) =>
+                ResolvedWitness(module_name, qname, children.iter().map(|c| mono.resolve_witness(c)).collect()),
+            BoundWitness.EffectAssociatedTypeBound(assoc_qname, index) => {
+                let info = mono.current_effect_associated_type_ctx.get(assoc_qname)
+                    .expect("resolve_witness: EAT ${assoc_qname.name()} not in effect-associated-type ctx");
+                info.witnesses[index].clone()
+            }
         }
+    }
+
+    pub fn resolve_witness_to_module(mono: Monomorphizer, witness: BoundWitness) -> I.String {
+        mono.resolve_witness(witness).module_name
     }
 
     pub fn expr_ty(mono: Monomorphizer, expr: Expr) -> TypeDef {

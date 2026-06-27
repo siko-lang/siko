@@ -36,7 +36,7 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
         };
         let handler_name = handler_info.name;
         // Already resolved to modules at the `with` site (see Specialize[WithInfo]).
-        let handler_witnesses: Vec[I.String] = handler_info.witnesses.clone();
+        let handler_witnesses: Vec[ResolvedWitness] = handler_info.witnesses.clone();
         let spec_args: Vec[Expr] = args.specialize(mono);
         let arg_types: Vec[TypeDef] = args.iter().map(|a| Monomorphizer.expr_ty(mono, a)).collect();
         let concrete_result_ty: TypeDef = mono.current_expr_ty.apply(mono.sub).expect("process_user_defined_fn: current_expr_ty is None for ${name.name()}");
@@ -104,36 +104,40 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
         assert(!witness_list.is_empty(), "process_user_defined_fn: TraitMethod ${name.name()} has empty witness list");
         let (c, ta) =
             dispatch_trait_call(name, witness_list[0], arg_types, Some(concrete_result_ty), mono);
-        let wl: Vec[I.String] = if c == name {
+        let wl: Vec[ResolvedWitness] = if c == name {
             witness_list
                 .iter()
-                .map(|w| mono.resolve_witness_to_module(w))
+                .map(|w| mono.resolve_witness(w))
                 .collect()
         } else {
-            // Dispatched to a concrete instance method. Each of its bounds is
-            // tagged with an origin (set in inject_bounds, propagated by bound
-            // expansion):
-            //  - InstanceContext: the dropped witness #0 (trait self-bound)
-            //    resolved to a module that certified — transitively, at typecheck
-            //    time — that every bound the instance needs has an instance.
-            //    Re-resolve the context bound from that dispatch module.
+            // Dispatched to a concrete instance method. Each of its bounds carries
+            // an origin:
+            //  - InstanceContext: a bound the instance closes over. Take the next
+            //    child captured inside the self-bound witness when the instance was
+            //    resolved — no re-resolution.
             //  - MethodOwn: genuinely flows from the caller. Forward the caller's
-            //    remaining witnesses (#1..) in order. Expanded trait-level
-            //    witnesses sitting past the method-own ones are simply unused.
-            let dispatch_module = mono.resolve_witness_to_module(witness_list[0]);
+            //    remaining witnesses (#1..) in order.
+            // Bound expansion appends super-bounds, interleaving the two kinds, so
+            // we demux by origin. children come pre-expanded (instance bounds are
+            // expanded too) and line up with the InstanceContext bounds in order.
+            let children = mono.resolve_witness(witness_list[0]).children;
             let method_bounds = {
                 let f = mono.source.functions.get(c).expect("process_user_defined_fn: instance method ${c.name()} not found in program");
                 f.type_arg_defs.map(|tad| tad.bounds.clone()).unwrap_or_else(|| Vec.new())
             };
-            let result: Vec[I.String] = Vec.new();
+            let result: Vec[ResolvedWitness] = Vec.new();
+            let child_idx = 0;
             let next_forward = 1;
             for bound in method_bounds {
                 match bound.origin {
-                    BoundOrigin.InstanceContext => result.push(dispatch_module.clone()),
+                    BoundOrigin.InstanceContext => {
+                        result.push(children[child_idx]);
+                        child_idx = child_idx + 1;
+                    },
                     BoundOrigin.MethodOwn => {
-                        result.push(mono.resolve_witness_to_module(witness_list[next_forward]));
+                        result.push(mono.resolve_witness(witness_list[next_forward]));
                         next_forward = next_forward + 1;
-                    }
+                    },
                 }
             }
             result
@@ -164,6 +168,7 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
                     module_resolver,
                     [],
                     TypeVarAllocator.new(),
+                    mono.source,
                 );
                 func_resolver.resolve_and_extract(
                     bound.trait_name.name(),
@@ -178,9 +183,9 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
             .iter()
             .map(|p| inst_map.lookup_named(p).expect("process_user_defined_fn: type var ${p} not resolved in inst_map for ${name.name()}").clone())
             .collect();
-        let wl: Vec[I.String] = witness_list
+        let wl: Vec[ResolvedWitness] = witness_list
             .iter()
-            .map(|w| mono.resolve_witness_to_module(w))
+            .map(|w| mono.resolve_witness(w))
             .collect();
         (name.clone(), ct, wl)
     };
@@ -304,7 +309,7 @@ pub fn process_type_associated_call(info: TypeAssociatedCallInfo, mono: Monomorp
     let witness = info.witnesses.witnesses[0];
     let module_name = mono.resolve_witness_to_module(witness);
     let module_resolver = mono.instance_resolver.for_module(module_name).unwrap();
-    let func_resolver = FunctionInstanceResolver.new(module_name.clone(), module_resolver, [], TypeVarAllocator.new());
+    let func_resolver = FunctionInstanceResolver.new(module_name.clone(), module_resolver, [], TypeVarAllocator.new(), mono.source);
 
     let resolution = match func_resolver.resolve_and_extract(
         self_bound.trait_name.name(),
@@ -358,10 +363,10 @@ pub fn process_type_associated_call(info: TypeAssociatedCallInfo, mono: Monomorp
         }
     };
 
-    let remaining_witnesses: Vec[I.String] = {
+    let remaining_witnesses: Vec[ResolvedWitness] = {
         let i = info.witnesses.witnesses.iter();
         i.next();
-        i.map(|w| mono.resolve_witness_to_module(w)).collect()
+        i.map(|w| mono.resolve_witness(w)).collect()
     };
 
     let final_callee_def = mono

@@ -20,7 +20,7 @@ pub fn specialize_type(ty: TypeDef, mono: Monomorphizer) -> TypeDef {
         TypeDef.Var(TypeVar.Var(_)) => panic("type var in mono"),
         TypeDef.Named(NamedInfo(name, args)) if mono.source.effect_associated_types.contains_key(name.resolved()) => {
             match mono.current_effect_associated_type_ctx.get(name.resolved()) {
-                Some(concrete_ty) => concrete_ty,
+                Some(info) => info.ty,
                 None => {
                     mono.errors.push(MonoError.UnboundEffectAssociatedType(name.resolved().name(), mono.current_location.unwrap()));
                     TypeDef.Never(False)

@@ -366,10 +366,21 @@ fn format_handler_selection(f: Formatter, handler: HandlerSelection) {
             f.push(" = ");
             f.push(var.format());
         }
-        HandlerSelection.TypeAssociation(assoc, ty, _) => {
+        HandlerSelection.TypeAssociation(assoc, ty, _, witness_info) => {
             f.push(I.resolve(assoc.name()));
             f.push(" = ");
             format_type_def(f, ty);
+            let witnesses = witness_info.witnesses;
+            if !witnesses.is_empty() {
+                f.push("{");
+                let i = 0;
+                for w in witnesses {
+                    if i > 0 { f.push(", "); }
+                    f.push(w.format());
+                    i = i + 1;
+                }
+                f.push("}");
+            }
         }
     }
 }

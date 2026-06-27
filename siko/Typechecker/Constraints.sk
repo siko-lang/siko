@@ -34,6 +34,7 @@ pub enum ConstraintKind {
     HasIndexAssign(TypeDef, TypeDef, TypeDef, TypeDef),     // container, idx, value, assign_result_ty
     GetFunctionPtrType(QualifiedName, TypeDef),             // function name, result FnPtr var
     ValidateEffectHandler(QualifiedName, QualifiedName),   // effect method, instance method
+    ValidateEffectTypeAssociation(QualifiedName, TypeDef), // EAT qname, chosen concrete type
 
     pub fn apply(kind: ConstraintKind, sub: Substitution) -> ConstraintKind {
         match kind {
@@ -69,6 +70,8 @@ pub enum ConstraintKind {
                 ConstraintKind.GetFunctionPtrType(qname, sub.apply(result)),
             ConstraintKind.ValidateEffectHandler(effect_method, instance_method) =>
                 ConstraintKind.ValidateEffectHandler(effect_method, instance_method),
+            ConstraintKind.ValidateEffectTypeAssociation(assoc, ty) =>
+                ConstraintKind.ValidateEffectTypeAssociation(assoc, sub.apply(ty)),
         }
     }
 
@@ -104,6 +107,8 @@ pub enum ConstraintKind {
                 "GetFunctionPtrType(${qname.name()} -> ${format_type(result)})",
             ConstraintKind.ValidateEffectHandler(effect_method, instance_method) =>
                 "ValidateEffectHandler(${effect_method.name()} ~ ${instance_method.name()})",
+            ConstraintKind.ValidateEffectTypeAssociation(assoc, ty) =>
+                "ValidateEffectTypeAssociation(${assoc.name()} = ${format_type(ty)})",
         }
     }
 }

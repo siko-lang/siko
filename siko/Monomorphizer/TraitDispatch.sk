@@ -60,36 +60,46 @@ pub fn dispatch_trait_call(
         })
         .collect();
 
-    let module_name = mono.resolve_witness_to_module(witness);
-
-    let module_resolver = mono
-        .instance_resolver
-        .for_module(module_name)
-        .unwrap();
-
-    let func_resolver = FunctionInstanceResolver.new(
-        module_name.clone(),
-        module_resolver,
-        [],
-        TypeVarAllocator.new(),
-    );
-    let resolution = match func_resolver.resolve_and_extract(
-        self_bound_trait,
-        query_args,
-        self_bound_constraints,
-        Substitution.new(),
-        callee_inst,
-    ) {
-        BoundResult.Satisfied(r) => r,
-        _ => panic("mono: instance `${self_bound_trait}[...]` not found or ambiguous"),
+    let (instance_qname, type_witness) = match witness {
+        BoundWitness.EffectAssociatedTypeBound(_, _) => {
+            // The receiver is an effect associated type: its concrete instance was
+            // fixed at the `with` site, so take it straight from the resolved witness
+            // rather than re-resolving against the (still abstract) EAT type. The
+            // instance is concrete, so there are no instance type-vars to recover.
+            let rw = mono.resolve_witness(witness);
+            (rw.instance_qname, Substitution.new())
+        }
+        _ => {
+            let module_name = mono.resolve_witness_to_module(witness);
+            let module_resolver = mono
+                .instance_resolver
+                .for_module(module_name)
+                .unwrap();
+            let func_resolver = FunctionInstanceResolver.new(
+                module_name.clone(),
+                module_resolver,
+                [],
+                TypeVarAllocator.new(),
+                mono.source,
+            );
+            let resolution = match func_resolver.resolve_and_extract(
+                self_bound_trait,
+                query_args,
+                self_bound_constraints,
+                Substitution.new(),
+                callee_inst,
+            ) {
+                BoundResult.Satisfied(r) => r,
+                _ => panic("mono: instance `${self_bound_trait}[...]` not found or ambiguous"),
+            };
+            (resolution.instance_qname.unwrap(), resolution.type_witness)
+        }
     };
 
     let concrete_type_args: Vec[TypeDef] = generic_params
         .iter()
         .map(|p| callee_inst.lookup_named(p).clone().unwrap_or(TypeDef.Wildcard))
         .collect();
-
-    let instance_qname = resolution.instance_qname.unwrap();
     let method_name = match callee.base() {
         BaseName.Method(_, m) => m,
         _ => panic("mono: TraitDispatch: callee is not a Method QN"),
@@ -110,7 +120,7 @@ pub fn dispatch_trait_call(
                         .map(|p| {
                             mapping
                                 .lookup_named(p)
-                                .or_else(|| resolution.type_witness.lookup_named(p))
+                                .or_else(|| type_witness.lookup_named(p))
                                 .or_else(|| callee_inst.lookup_named(p))
                                 .clone()
                                 .unwrap()

@@ -812,6 +812,29 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
             }
             ok_satisfied(spawn)
         }
+
+        C.ConstraintKind.ValidateEffectTypeAssociation(assoc_qname, concrete_type) => {
+            // Check the chosen type satisfies the EAT's bounds, recording a witness
+            // per bound (anchored to this selection's location) for the finalizer to
+            // attach to the TypeAssociation.
+            let resolved_type = ctx.sub.apply(concrete_type);
+            let short = eat_short_name(assoc_qname);
+            let spawn: Vec[(C.ConstraintKind, Location)] = Vec.new();
+            let idx = 0;
+            for bound in effect_bounds_for_eat(ctx.program, assoc_qname) {
+                let query_args: Vec[TypeDef] = bound.type_args.iter().map(|n| {
+                    if n.name() == short { resolved_type } else { TypeDef.Var(TypeVar.Named(n.name())) }
+                }).collect();
+                spawn.push((C.ConstraintKind.HasInstance(
+                    bound.trait_name.name(),
+                    query_args,
+                    Vec.new(),
+                    Some(C.WitnessKey.Handler(location, idx))
+                ), location));
+                idx = idx + 1;
+            }
+            ok_satisfied(spawn)
+        }
     }
 }
 
@@ -846,7 +869,7 @@ pub struct Solver {
             Some(r) => r,
             None => panic("no resolver for module `${I.resolve(func.module_name)}`"),
         };
-        let func_resolver = FunctionInstanceResolver.new(func.module_name, module_resolver, function_bounds, allocator);
+        let func_resolver = FunctionInstanceResolver.new(func.module_name, module_resolver, function_bounds, allocator, program);
 
         let active: Vec[Int] = Vec.new();
         let i = 0;
