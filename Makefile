@@ -13,6 +13,7 @@ build:
 	cd testrunner; cargo build --workspace
 
 test: build
+	./siko.bin test std/Common
 	./$(TESTRUNNER)
 
 test-valgrind: build
