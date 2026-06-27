@@ -20,7 +20,6 @@ pub fn dispatch_trait_call(
         generic_params,
         param_types,
         declared_result_type,
-        self_bound_trait,
         self_bound_type_args,
         self_bound_constraints,
     ) = {
@@ -33,10 +32,9 @@ pub fn dispatch_trait_call(
         let self_bound = tad.bounds[0];
         let gp = tad.type_params();
         let pt: Vec[TypeDef] = func.args.iter().map(|a| a.type_def.clone()).collect();
-        let sb_trait = self_bound.trait_name.name();
         let sb_args: Vec[I.String] = self_bound.type_args.iter().map(|n| n.name()).collect();
         let sb_constraints = self_bound.constraints.clone();
-        (gp, pt, func.result_type.clone(), sb_trait, sb_args, sb_constraints)
+        (gp, pt, func.result_type.clone(), sb_args, sb_constraints)
     };
 
     let callee_inst = Substitution.new();
@@ -60,41 +58,20 @@ pub fn dispatch_trait_call(
         })
         .collect();
 
-    let (instance_qname, type_witness) = match witness {
-        BoundWitness.EffectAssociatedTypeBound(_, _) => {
-            // The receiver is an effect associated type: its concrete instance was
-            // fixed at the `with` site, so take it straight from the resolved witness
-            // rather than re-resolving against the (still abstract) EAT type. The
-            // instance is concrete, so there are no instance type-vars to recover.
-            let rw = mono.resolve_witness(witness);
-            (rw.instance_qname, Substitution.new())
-        }
-        _ => {
-            let module_name = mono.resolve_witness_to_module(witness);
-            let module_resolver = mono
-                .instance_resolver
-                .for_module(module_name)
-                .unwrap();
-            let func_resolver = FunctionInstanceResolver.new(
-                module_name.clone(),
-                module_resolver,
-                [],
-                TypeVarAllocator.new(),
-                mono.source,
-            );
-            let resolution = match func_resolver.resolve_and_extract(
-                self_bound_trait,
-                query_args,
-                self_bound_constraints,
-                Substitution.new(),
-                callee_inst,
-            ) {
-                BoundResult.Satisfied(r) => r,
-                _ => panic("mono: instance `${self_bound_trait}[...]` not found or ambiguous"),
-            };
-            (resolution.instance_qname.unwrap(), resolution.type_witness)
-        }
-    };
+    // The witness already names the concrete instance; resolve it by qname instead
+    // of searching the module's instance tables. For a generic instance this also
+    // recovers its type-var bindings from the concrete query args, and binds the
+    // self-bound's associated-type constraints into callee_inst.
+    let resolution = extract_from_known_instance(
+        mono.source,
+        mono.resolve_witness(witness),
+        query_args,
+        self_bound_constraints,
+        callee_inst,
+        TypeVarAllocator.new(),
+    );
+    let instance_qname = resolution.instance_qname.unwrap();
+    let type_witness = resolution.type_witness;
 
     let concrete_type_args: Vec[TypeDef] = generic_params
         .iter()

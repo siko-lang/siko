@@ -9,7 +9,9 @@ import Siko.AST.Type
 import Siko.HIR.Program
 import Siko.Instances.ModuleInstanceResolver
 import Siko.Unification.Apply
+import Siko.Unification.Instantiate
 import Siko.Unification.Sub
+import Siko.Unification.Unify
 import Siko.Utils.TypeVarAllocator
 import Siko.Interner as I
 
@@ -250,6 +252,72 @@ pub fn effect_bounds_for_eat(program: Program, assoc_qname: QualifiedName) -> Ve
     let short = eat_short_name(assoc_qname);
     let bounds = effect_def.type_arg_defs.map(|tad| tad.bounds).unwrap_or_else(|| Vec.new());
     bounds.into_iter().filter(|b| b.type_args.iter().any(|n| n.name() == short)).collect()
+}
+
+// Resolve an instance already identified by a witness (which carries the instance
+// qname plus the child dictionaries it closed over) against concrete query args,
+// recovering the instance's type-var bindings and associated types directly — no
+// module-table search needed since we know which instance it is.
+pub fn resolve_known_instance(program: Program, witness: ResolvedWitness, query_args: Vec[TypeDef], allocator: TypeVarAllocator) -> BoundResolution {
+    let instance_qname = witness.instance_qname;
+    let instance_def = program.all_instances.get(instance_qname).expect("resolve_known_instance: instance ${instance_qname.name()} not found");
+    let params = match instance_def.type_arg_defs {
+        Some(tad) => tad.type_params(),
+        None => Vec.new(),
+    };
+    // A monomorphic instance has no type-vars to recover, so there is nothing to
+    // unify — and skipping it lets callers pass still-abstract query args (an EAT
+    // dispatches onto a concrete instance whose args won't match the EAT type).
+    let type_witness = Substitution.new();
+    if !params.is_empty() {
+        let inst_map = instantiate(params, allocator);
+        let inst_args = instance_def.args.apply(inst_map);
+        let sub = Substitution.new();
+        for (ia, qa) in inst_args.iter().zip(query_args.iter()) {
+            match unify(ia, qa, sub) {
+                Ok(_) => {}
+                Err(_) => panic("resolve_known_instance: unify failed for ${instance_qname.name()}"),
+            }
+        }
+        for p in params {
+            type_witness.bind_named(p, sub.apply(inst_map.lookup_named(p).unwrap()));
+        }
+    }
+    // Some instance params are pinned only indirectly, through the associated types
+    // of the instance's own context bounds (e.g. `instance[Item, T: Iterator[T, Item=Item]]`
+    // fixes Item via T's Iterator instance). Thread those bounds using the witness's
+    // captured child dictionaries to bind such params into type_witness.
+    if let Some(tad) = instance_def.type_arg_defs {
+        for (bound, child) in tad.bounds.iter().zip(witness.children.iter()) {
+            let sub_args = bound_args(bound, type_witness, Substitution.new());
+            extract_from_known_instance(program, child, sub_args, bound.constraints, type_witness, allocator);
+        }
+    }
+    let assoc_types = Map.new();
+    for ta in instance_def.type_assignments {
+        assoc_types.insert(ta.name.name, type_witness.apply(ta.ty));
+    }
+    let primary_args = instance_def.args.apply(type_witness);
+    BoundResolution.from_instance(
+        instance_def.module_name,
+        assoc_types,
+        primary_args,
+        instance_def.qualified_name,
+        type_witness,
+        [],
+    )
+}
+
+// Drive associated-type binding extraction from a known instance into `out`,
+// the way resolve_and_extract does, but without re-resolving the instance.
+pub fn extract_from_known_instance(program: Program, witness: ResolvedWitness, query_args: Vec[TypeDef], constraints: Vec[Constraint], out: Substitution, allocator: TypeVarAllocator) -> BoundResolution {
+    let resolution = resolve_known_instance(program, witness, query_args, allocator);
+    for constraint in constraints {
+        if let Some(concrete) = resolution.assoc_types.get(constraint.lhs.name) {
+            extract_named_bindings(constraint.rhs, concrete, out);
+        }
+    }
+    resolution
 }
 
 // If a query arg is an EAT whose effect declares a bound for this trait, return

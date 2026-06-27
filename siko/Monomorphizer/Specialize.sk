@@ -105,23 +105,16 @@ instance Specialize[FunctionPtrInfo] {
                 None => continue,
             };
             let primary_args = bound_args(bound, inst_map, Substitution.new());
-            let module_name = mono.resolve_witness_to_module(witness);
-            if let Some(module_resolver) = mono.instance_resolver.for_module(module_name) {
-                let func_resolver = FunctionInstanceResolver.new(
-                    module_name.clone(),
-                    module_resolver,
-                    [],
-                    TypeVarAllocator.new(),
-                    mono.source,
-                );
-                func_resolver.resolve_and_extract(
-                    bound.trait_name.name(),
-                    primary_args,
-                    bound.constraints,
-                    Substitution.new(),
-                    inst_map,
-                );
-            }
+            // The witness already names the instance; bind its associated types
+            // into inst_map without re-resolving.
+            extract_from_known_instance(
+                mono.source,
+                mono.resolve_witness(witness),
+                primary_args,
+                bound.constraints,
+                inst_map,
+                TypeVarAllocator.new(),
+            );
         }
 
         let callee_type_args: Vec[TypeDef] = generic_params.iter()

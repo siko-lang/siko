@@ -161,23 +161,16 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
                 None => continue,
             };
             let primary_args = bound_args(bound, inst_map, Substitution.new());
-            let module_name = mono.resolve_witness_to_module(witness);
-            if let Some(module_resolver) = mono.instance_resolver.for_module(module_name) {
-                let func_resolver = FunctionInstanceResolver.new(
-                    module_name.clone(),
-                    module_resolver,
-                    [],
-                    TypeVarAllocator.new(),
-                    mono.source,
-                );
-                func_resolver.resolve_and_extract(
-                    bound.trait_name.name(),
-                    primary_args,
-                    bound.constraints,
-                    Substitution.new(),
-                    inst_map,
-                );
-            }
+            // The witness already names the instance; bind its associated types
+            // into inst_map without re-resolving.
+            extract_from_known_instance(
+                mono.source,
+                mono.resolve_witness(witness),
+                primary_args,
+                bound.constraints,
+                inst_map,
+                TypeVarAllocator.new(),
+            );
         }
         let ct: Vec[TypeDef] = generic_params
             .iter()
@@ -307,20 +300,16 @@ pub fn process_type_associated_call(info: TypeAssociatedCallInfo, mono: Monomorp
     }).collect();
 
     let witness = info.witnesses.witnesses[0];
-    let module_name = mono.resolve_witness_to_module(witness);
-    let module_resolver = mono.instance_resolver.for_module(module_name).unwrap();
-    let func_resolver = FunctionInstanceResolver.new(module_name.clone(), module_resolver, [], TypeVarAllocator.new(), mono.source);
-
-    let resolution = match func_resolver.resolve_and_extract(
-        self_bound.trait_name.name(),
+    // The witness already names the concrete instance; resolve it by qname and bind
+    // the self-bound's associated-type constraints into callee_inst.
+    let resolution = extract_from_known_instance(
+        mono.source,
+        mono.resolve_witness(witness),
         query_args,
         self_bound.constraints.clone(),
-        Substitution.new(),
         callee_inst,
-    ) {
-        BoundResult.Satisfied(r) => r,
-        _ => panic("mono: TypeAssociatedCall: instance not found for ${info.fn_name.name()}"),
-    };
+        TypeVarAllocator.new(),
+    );
 
     let instance_qname = resolution.instance_qname.unwrap();
     let method_name = match info.fn_name.base() {
