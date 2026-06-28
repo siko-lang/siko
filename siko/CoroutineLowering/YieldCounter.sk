@@ -1,0 +1,101 @@
+module Siko.CoroutineLowering.YieldCounter {
+
+import Siko.AST.Expr
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.Pattern
+import Siko.AST.Statement as S
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.Location
+import Siko.Interner as I
+
+pub fn get_yield_count[T: YieldCounter[T]](v: T) -> Int {
+    let c = YieldCount(0);
+    v.count_yields(c);
+    c.count
+}
+
+struct YieldCount {
+    count: Int
+}
+
+pub trait YieldCounter[T] {
+    fn count_yields(t: T, ctx: YieldCount)
+}
+
+instance YieldCounter[Location]          = auto(Fold, =)
+instance YieldCounter[I.String]          = auto(Fold, =)
+instance YieldCounter[String]            = auto(Fold, =)
+instance YieldCounter[Int]               = auto(Fold, =)
+instance YieldCounter[U8]                = auto(Fold, =)
+instance YieldCounter[Bool]              = auto(Fold, =)
+instance YieldCounter[QualifiedName]     = auto(Fold, =)
+instance YieldCounter[VariableName]      = auto(Fold, =)
+instance YieldCounter[Name]              = auto(Fold, =)
+instance YieldCounter[Identifier]        = auto(Fold, =)
+instance YieldCounter[FunctionKind]      = auto(Fold, =)
+instance YieldCounter[BinaryOp]          = auto(Fold, =)
+instance YieldCounter[UnaryOp]           = auto(Fold, =)
+instance YieldCounter[WitnessInfo]       = auto(Fold, =)
+instance YieldCounter[HandlerSelection]  = auto(Fold, =)
+instance YieldCounter[ImplicitRefInfo]   = auto(Fold, =)
+instance YieldCounter[CreateClosureInfo] = auto(Fold, =)
+instance YieldCounter[FunctionPtrInfo]   = auto(Fold, =)
+instance YieldCounter[LambdaArg]         = auto(Fold, =)
+instance YieldCounter[Pattern]           = auto(Fold)
+instance YieldCounter[PatternKind]       = auto(Fold)
+instance YieldCounter[FunctionCallInfo]  = auto(Fold)
+instance YieldCounter[TypeAssociatedCallInfo] = auto(Fold, !)
+instance YieldCounter[NamedArgument]     = auto(Fold, =)
+instance YieldCounter[NamedPatternArg]   = auto(Fold, =)
+instance YieldCounter[NamedPatternInfo]  = auto(Fold)
+instance YieldCounter[MethodCallInfo]    = auto(Fold)
+instance YieldCounter[CallInfo]          = auto(Fold)
+instance YieldCounter[WithInfo]          = auto(Fold)
+instance YieldCounter[MatchArm]          = auto(Fold)
+instance YieldCounter[S.LetInfo]         = auto(Fold)
+instance YieldCounter[S.DeclareInfo]     = auto(Fold)
+instance YieldCounter[BlockInfo]         = auto(Fold)
+instance YieldCounter[S.Statement]       = auto(Fold)
+instance YieldCounter[ExprKind]          = auto(Fold)
+instance YieldCounter[MatchInfo]         = auto(Fold)
+instance YieldCounter[NamedInfo]         = auto(Fold)
+instance YieldCounter[TypeDef]           = auto(Fold)
+instance YieldCounter[TypeVar]           = auto(Fold)
+instance YieldCounter[CoroutineInfo]     = auto(Fold)
+
+instance YieldCounter[YieldInfo] {
+    fn count_yields(info: YieldInfo, ctx: YieldCount) {
+        ctx.count += 1
+        info.arg.count_yields(ctx);
+    }
+}
+
+
+
+instance[T: YieldCounter[T]] YieldCounter[Option[T]] {
+    fn count_yields(opt: Option[T], ctx: YieldCount) {
+        if let Some(v) = opt {
+            v.count_yields(ctx);
+        }
+    }
+}
+
+instance[T: YieldCounter[T]] YieldCounter[Vec[T]] {
+    fn count_yields(vec: Vec[T], ctx: YieldCount) {
+        for v in vec {
+            v.count_yields(ctx);
+        }
+    }
+}
+
+// instance[K, V: YieldCounter[V], Ord[K]] YieldCounter[Map[K, V]] {
+//     fn count_yields(m: Map[K, V], ctx: YieldCount) -> Map[K, V] {
+//         m.iter().map(|(k, v)| (k, count_yields(v, ctx))).collect()
+//     }
+// }
+
+instance YieldCounter[Expr] = auto(Fold)
+
+}

@@ -53,18 +53,22 @@ instance Specialize[BinaryOp]         = auto(Map, =)
 instance Specialize[UnaryOp]          = auto(Map, =)
 instance Specialize[WitnessInfo]      = auto(Map, =)
 instance Specialize[HandlerSelection] = auto(Map, =)
-
 instance Specialize[MatchArm]         = auto(Map)
-
 instance Specialize[LambdaArg]        = auto(Map, =)
 instance Specialize[PatternKind]      = auto(Map)
-
 instance Specialize[ExprKind] = auto(Map)
-
 instance Specialize[S.LetInfo]        = auto(Map)
 instance Specialize[S.DeclareInfo]    = auto(Map)
 instance Specialize[BlockInfo]        = auto(Map)
 instance Specialize[S.Statement]      = auto(Map)
+instance Specialize[NamedArgument]    = auto(Map, =)
+instance Specialize[NamedPatternArg]  = auto(Map, =)
+instance Specialize[NamedPatternInfo] = auto(Map)
+instance Specialize[MethodCallInfo]          = auto(Map)
+instance Specialize[CallInfo]                = auto(Map)
+instance Specialize[TypeAssociatedCallInfo]  = auto(Map, !)
+instance Specialize[MatchInfo] = auto(Map)
+instance Specialize[YieldInfo] = auto(Map)
 
 instance Specialize[ImplicitRefInfo] {
     fn specialize(info: ImplicitRefInfo, mono: Monomorphizer) -> ImplicitRefInfo {
@@ -184,13 +188,6 @@ instance Specialize[CreateClosureInfo] {
     }
 }
 
-instance Specialize[NamedArgument]    = auto(Map, =)
-instance Specialize[NamedPatternArg]  = auto(Map, =)
-instance Specialize[NamedPatternInfo] = auto(Map)
-instance Specialize[MethodCallInfo]          = auto(Map)
-instance Specialize[CallInfo]                = auto(Map)
-instance Specialize[TypeAssociatedCallInfo]  = auto(Map, !)
-
 instance Specialize[FunctionCallInfo] {
     fn specialize(info: FunctionCallInfo, mono: Monomorphizer) -> FunctionCallInfo {
         let is_co = info.is_coroutine_create;
@@ -247,8 +244,6 @@ instance Specialize[WithInfo] {
         WithInfo(implicit_selections, spec_body)
     }
 }
-
-instance Specialize[MatchInfo] = auto(Map)
 
 instance Specialize[Pattern] {
     fn specialize(pattern: Pattern, mono: Monomorphizer) -> Pattern {

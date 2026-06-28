@@ -319,7 +319,7 @@ fn format_expr_inner(f: Formatter, expr: Expr) {
             }
             f.push(")");
         }
-        ExprKind.Yield(inner) => {
+        ExprKind.Yield(YieldInfo(inner)) => {
             f.push("yield ");
             format_expr(f, inner);
         }
@@ -336,6 +336,8 @@ fn format_expr_inner(f: Formatter, expr: Expr) {
             }
             f.push(")");
         }
+        ExprKind.Goto(label) => f.push("goto " + label),
+        ExprKind.Label(label) => f.push(label + ":"),
     }
 }
 

@@ -1,0 +1,128 @@
+module Siko.CoroutineLowering.Rewrite {
+
+import Std.Map
+import Siko.AST.Data
+import Siko.AST.Function
+import Siko.AST.Generics
+import Siko.AST.Expr
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.Pattern
+import Siko.AST.Statement as S
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.AST.Annotations
+import Siko.Location
+import Siko.Interner as I
+import Siko.CoroutineLowering
+
+pub trait Rewrite[T] {
+    fn rewrite_co(t: T, ctx: CoroutineLowerer) -> T
+}
+
+instance Rewrite[Location]          = auto(Map, =)
+instance Rewrite[I.String]          = auto(Map, =)
+instance Rewrite[String]            = auto(Map, =)
+instance Rewrite[Int]               = auto(Map, =)
+instance Rewrite[U8]                = auto(Map, =)
+instance Rewrite[Bool]              = auto(Map, =)
+instance Rewrite[QualifiedName]     = auto(Map, =)
+instance Rewrite[VariableName]      = auto(Map, =)
+instance Rewrite[Name]              = auto(Map, =)
+instance Rewrite[Identifier]        = auto(Map, =)
+instance Rewrite[FunctionKind]      = auto(Map, =)
+instance Rewrite[BinaryOp]          = auto(Map, =)
+instance Rewrite[UnaryOp]           = auto(Map, =)
+instance Rewrite[WitnessInfo]       = auto(Map, =)
+instance Rewrite[HandlerSelection]  = auto(Map, =)
+instance Rewrite[ImplicitRefInfo]   = auto(Map, =)
+instance Rewrite[CreateClosureInfo] = auto(Map, =)
+instance Rewrite[FunctionPtrInfo]   = auto(Map, =)
+instance Rewrite[LambdaArg]         = auto(Map, =)
+instance Rewrite[Pattern]           = auto(Map)
+instance Rewrite[PatternKind]       = auto(Map)
+instance Rewrite[DefaultValueInfo]  = auto(Map, =)
+instance Rewrite[Annotation]        = auto(Map, =)
+instance Rewrite[TypeArgDefs]       = auto(Map, =)
+instance Rewrite[MethodMap]         = auto(Map, =)
+instance Rewrite[FunctionDef]       = auto(Map, =)
+instance Rewrite[FunctionArg]       = auto(Map)
+instance Rewrite[FieldDef]          = auto(Map)
+instance Rewrite[ItemInfo]          = auto(Map)
+instance Rewrite[VariantDef]        = auto(Map)
+instance Rewrite[StructDef]         = auto(Map)
+instance Rewrite[EnumDef]           = auto(Map)
+instance Rewrite[FunctionCallInfo]  = auto(Map)
+instance Rewrite[TypeAssociatedCallInfo] = auto(Map, !)
+instance Rewrite[NamedArgument]     = auto(Map, =)
+instance Rewrite[NamedPatternArg]   = auto(Map, =)
+instance Rewrite[NamedPatternInfo]  = auto(Map)
+instance Rewrite[MethodCallInfo]    = auto(Map)
+instance Rewrite[CallInfo]          = auto(Map)
+instance Rewrite[WithInfo]          = auto(Map)
+instance Rewrite[MatchArm]          = auto(Map)
+instance Rewrite[S.LetInfo]         = auto(Map)
+instance Rewrite[S.DeclareInfo]     = auto(Map)
+instance Rewrite[BlockInfo]         = auto(Map)
+instance Rewrite[S.Statement]       = auto(Map)
+instance Rewrite[ExprKind]          = auto(Map)
+instance Rewrite[MatchInfo]         = auto(Map)
+instance Rewrite[YieldInfo]         = auto(Map)
+
+instance Rewrite[TypeDef] {
+    fn rewrite_co(ty: TypeDef, ctx: CoroutineLowerer) -> TypeDef {
+        match ty {
+            TypeDef.Co(CoroutineInfo(yield_ty, return_ty)) => {
+                let yield_ty = rewrite_co(yield_ty, ctx);
+                let return_ty = rewrite_co(return_ty, ctx);
+                let info = ctx.get_or_create_co_enum(yield_ty, return_ty);
+                TypeDef.Named(NamedInfo(Name.inner(info.wrap_qname), []))
+            }
+            TypeDef.Fn(args, ret) => TypeDef.Fn(
+                args.into_iter().map(|a| rewrite_co(a, ctx)).collect(),
+                rewrite_co(ret, ctx),
+            ),
+            TypeDef.FnPtr(args, ret) => TypeDef.FnPtr(
+                args.into_iter().map(|a| rewrite_co(a, ctx)).collect(),
+                rewrite_co(ret, ctx),
+            ),
+            TypeDef.Named(NamedInfo(n, args)) => TypeDef.Named(NamedInfo(n, args)),
+            TypeDef.Paren(inner)    => TypeDef.Paren(rewrite_co(inner, ctx)),
+            TypeDef.Ptr(inner)      => TypeDef.Ptr(rewrite_co(inner, ctx)),
+            TypeDef.Array(inner, n) => TypeDef.Array(rewrite_co(inner, ctx), n),
+            TypeDef.Numeric(n)      => TypeDef.Numeric(n),
+            TypeDef.Var(_)          => ty,
+            TypeDef.Never(t)        => TypeDef.Never(t),
+            TypeDef.Void            => TypeDef.Void,
+            TypeDef.VoidPtr         => TypeDef.VoidPtr,
+            TypeDef.Tuple(_)        => panic("lower_coroutines: unexpected Tuple type"),
+            TypeDef.Wildcard        => panic("lower_coroutines: unexpected Wildcard type"),
+        }
+    }
+}
+
+instance[T: Rewrite[T]] Rewrite[Option[T]] {
+    fn rewrite_co(opt: Option[T], ctx: CoroutineLowerer) -> Option[T] {
+        opt.map(|t| rewrite_co(t, ctx))
+    }
+}
+
+instance[T: Rewrite[T]] Rewrite[Vec[T]] {
+    fn rewrite_co(vec: Vec[T], ctx: CoroutineLowerer) -> Vec[T] {
+        vec.into_iter().map(|t| rewrite_co(t, ctx)).collect()
+    }
+}
+
+instance[K, V: Rewrite[V], Ord[K]] Rewrite[Map[K, V]] {
+    fn rewrite_co(m: Map[K, V], ctx: CoroutineLowerer) -> Map[K, V] {
+        m.iter().map(|(k, v)| (k, rewrite_co(v, ctx))).collect()
+    }
+}
+
+instance Rewrite[Expr] {
+    fn rewrite_co(expr: Expr, ctx: CoroutineLowerer) -> Expr {
+        ctx.rewrite_expr(expr)
+    }
+}
+
+}

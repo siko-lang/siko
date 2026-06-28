@@ -1,0 +1,204 @@
+module Siko.CoroutineLowering.Gen {
+
+import Siko.AST.Data
+import Siko.AST.Function
+import Siko.AST.Expr
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.Pattern
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.Location
+import Siko.Utils.VarAllocator
+import Siko.Interner as I
+import Siko.CoroutineLowering.Utils
+import Siko.CoroutineLowering.Data
+
+// ── Declaration generators ────────────────────────────────────────────────────
+
+pub fn generate_frame_state_enum(vi: CoVariantInfo, repr_loc: Location) -> EnumDef {
+    let yield_count = vi.yield_count;
+    let variants: Vec[VariantDef] = Vec.new();
+
+    let start_qn = QualifiedName.new_coroutine_frame_state_variant(vi.co_index, vi.variant_index, 0);
+    variants.push(VariantDef(Identifier.new(I.intern("Start"), repr_loc.clone()), Some(start_qn), Vec.new()));
+
+    let i = 0;
+    while i < yield_count {
+        let qn = QualifiedName.new_coroutine_frame_state_variant(vi.co_index, vi.variant_index, i + 1);
+        variants.push(VariantDef(Identifier.new(I.intern("AfterYield_" + i.to_string()), repr_loc.clone()), Some(qn), Vec.new()));
+        i += 1;
+    }
+
+    let completed_qn = QualifiedName.new_coroutine_frame_state_variant(vi.co_index, vi.variant_index, yield_count + 1);
+    variants.push(VariantDef(Identifier.new(I.intern("Completed"), repr_loc.clone()), Some(completed_qn), Vec.new()));
+
+    let frame_state_qn = QualifiedName.new_coroutine_frame_state(vi.co_index, vi.variant_index);
+    EnumDef(
+        annotations: [],
+        public: False,
+        name: Identifier.new(frame_state_qn.name(), repr_loc.clone()),
+        qualified_name: Some(frame_state_qn),
+        type_arg_defs: None,
+        variants: variants,
+        methods: Vec.new(),
+        method_map: MethodMap.new(),
+        module_name: I.intern(""),
+        value_type: True,
+    )
+}
+
+pub fn generate_frame_struct(vi: CoVariantInfo, frame_state_ty: TypeDef, repr_loc: Location) -> StructDef {
+    let fields: Vec[FieldDef] = Vec.new();
+    fields.push(FieldDef(
+        public: False,
+        name: Identifier.new(I.intern("state"), repr_loc.clone()),
+        ty: frame_state_ty,
+        default_value: None,
+    ));
+
+    let i = 0;
+    while i < vi.arg_names.len() {
+        fields.push(FieldDef(
+            public: False,
+            name: Identifier.new(vi.arg_names[i], repr_loc.clone()),
+            ty: vi.arg_types[i],
+            default_value: None,
+        ));
+        i += 1;
+    }
+
+    let frame_qn = QualifiedName.new_coroutine_frame(vi.co_index, vi.variant_index);
+    StructDef(
+        annotations: [],
+        public: False,
+        name: Identifier.new(frame_qn.name(), repr_loc.clone()),
+        qualified_name: Some(frame_qn),
+        type_arg_defs: None,
+        fields: fields,
+        all_fields_public: False,
+        methods: Vec.new(),
+        method_map: MethodMap.new(),
+        module_name: I.intern(""),
+        default_value_names: Vec.new(),
+        value_type: False,
+    )
+}
+
+pub fn generate_co_state_enum(info: CoEnumInfo, frame_tys: Vec[TypeDef], repr_loc: Location) -> EnumDef {
+    let variants: Vec[VariantDef] = Vec.new();
+    let i = 0;
+    while i < info.variants.len() {
+        let vi = info.variants[i].clone();
+        let state_var_qn = QualifiedName.new_coroutine_state_variant(info.co_index, vi.variant_index);
+        variants.push(VariantDef(
+            Identifier.new(I.intern("Variant" + vi.variant_index.to_string()), repr_loc.clone()),
+            Some(state_var_qn),
+            [ItemInfo(name: None, ty: frame_tys[i])],
+        ));
+        i += 1;
+    }
+
+    EnumDef(
+        annotations: [],
+        public: False,
+        name: Identifier.new(info.state_qname.name(), repr_loc.clone()),
+        qualified_name: Some(info.state_qname),
+        type_arg_defs: None,
+        variants: variants,
+        methods: Vec.new(),
+        method_map: MethodMap.new(),
+        module_name: I.intern(""),
+        value_type: False,
+    )
+}
+
+pub fn generate_co_wrap_struct(info: CoEnumInfo, state_ty: TypeDef, repr_loc: Location) -> StructDef {
+    let fields: Vec[FieldDef] = Vec.new();
+    fields.push(FieldDef(
+        public: False,
+        name: Identifier.new(I.intern("state"), repr_loc.clone()),
+        ty: state_ty,
+        default_value: None,
+    ));
+
+    StructDef(
+        annotations: [],
+        public: False,
+        name: Identifier.new(info.wrap_qname.name(), repr_loc.clone()),
+        qualified_name: Some(info.wrap_qname),
+        type_arg_defs: None,
+        fields: fields,
+        all_fields_public: False,
+        methods: Vec.new(),
+        method_map: MethodMap.new(),
+        module_name: I.intern(""),
+        default_value_names: Vec.new(),
+        value_type: False,
+    )
+}
+
+// ── Resume body generation ────────────────────────────────────────────────────
+
+pub fn generate_resume_body(resume_func: FunctionDef, info: CoEnumInfo, repr_loc: Location) -> FunctionDef {
+    let coroutine_param = resume_func.args[0].name.clone();
+    let co_result = build_co_result_ty(info);
+    let state_ty  = TypeDef.Named(NamedInfo(Name.inner(info.state_qname.clone()), []));
+    let wrap_ty   = TypeDef.Named(NamedInfo(Name.inner(info.wrap_qname.clone()), []));
+
+    let scrutinee = field_access(
+        Expr(ExprKind.Var(coroutine_param), repr_loc.clone(), Some(wrap_ty)),
+        I.intern("state"),
+        state_ty.clone(),
+        repr_loc.clone(),
+    );
+
+    let var_alloc = VarAllocator.new();
+    let arms: Vec[MatchArm] = Vec.new();
+
+    for vi in info.variants.iter() {
+        let frame_qn     = QualifiedName.new_coroutine_frame(info.co_index, vi.variant_index);
+        let handler_qn   = QualifiedName.new_coroutine_handler(info.co_index, vi.variant_index);
+        let state_var_qn = QualifiedName.new_coroutine_state_variant(info.co_index, vi.variant_index);
+        let frame_ty     = TypeDef.Named(NamedInfo(Name.inner(frame_qn), []));
+        let frame_cap    = var_alloc.allocate_temp();
+
+        let sub_pat = Pattern(PatternKind.Binding(frame_cap.clone()), repr_loc.clone(), Some(frame_ty.clone()));
+        let pat = Pattern(
+            PatternKind.Named(NamedPatternInfo(
+                name: Name.inner(state_var_qn),
+                args: [sub_pat],
+                named_args: Vec.new(),
+                has_rest: False,
+            )),
+            repr_loc.clone(),
+            Some(state_ty.clone()),
+        );
+
+        let body = make_fn_call(
+            handler_qn,
+            [Expr(ExprKind.Var(frame_cap), repr_loc.clone(), Some(frame_ty))],
+            co_result.clone(),
+            repr_loc.clone(),
+        );
+
+        arms.push(MatchArm(pat, body));
+    }
+
+    let match_body = Expr(
+        ExprKind.Match(MatchInfo(scrutinee, arms)),
+        repr_loc.clone(),
+        Some(co_result.clone()),
+    );
+
+    let new_func = resume_func.clone();
+    new_func.annotations = new_func.annotations.into_iter().filter(|a| !a.is_builtin()).collect();
+    new_func.kind = FunctionDefKind.Regular;
+    new_func.body = Some(match_body);
+    new_func.result_type = Some(co_result);
+    new_func.var_allocator = var_alloc;
+    new_func
+}
+
+
+}

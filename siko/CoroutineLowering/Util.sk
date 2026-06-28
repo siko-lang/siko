@@ -1,0 +1,87 @@
+module Siko.CoroutineLowering.Utils {
+
+import Siko.AST.Expr
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.Pattern
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.HIR.Program
+import Siko.Location
+import Siko.Interner as I
+import Siko.Constants.Builtins as B
+import Siko.CoroutineLowering.Data
+
+pub fn any_location(program: Program) -> Location {
+    for func in program.functions.values() {
+        if let Some(body) = func.body {
+            return body.location.clone();
+        }
+    }
+    for def in program.structs.values() {
+        return def.name.location.clone();
+    }
+    panic("lower_coroutines: program has no declarations to borrow a location from")
+}
+
+// ── Expr helpers ──────────────────────────────────────────────────────────────
+
+pub fn make_struct_call(qname: QualifiedName, args: Vec[Expr], ty: TypeDef, loc: Location) -> Expr {
+    Expr(ExprKind.FunctionCall(FunctionCallInfo(
+        qname: qname,
+        kind: FunctionKind.StructCtor,
+        args: args,
+    )), loc, Some(ty))
+}
+
+pub fn make_variant_call(qname: QualifiedName, args: Vec[Expr], ty: TypeDef, loc: Location) -> Expr {
+    Expr(ExprKind.FunctionCall(FunctionCallInfo(
+        qname: qname,
+        kind: FunctionKind.VariantCtor,
+        args: args,
+    )), loc, Some(ty))
+}
+
+pub fn make_fn_call(qname: QualifiedName, args: Vec[Expr], ty: TypeDef, loc: Location) -> Expr {
+    Expr(ExprKind.FunctionCall(FunctionCallInfo(
+        qname: qname,
+        kind: FunctionKind.UserDefined,
+        args: args,
+    )), loc, Some(ty))
+}
+
+pub fn make_goto(label: String, loc: Location) -> Expr {
+    Expr(ExprKind.Goto(label), loc, Some(TypeDef.Void))
+}
+
+pub fn make_label(label: String, loc: Location) -> Expr {
+    Expr(ExprKind.Label(label), loc, Some(TypeDef.Void))
+}
+
+pub fn seg_label(co_idx: Int, v_idx: Int, seg: Int) -> String {
+    "co_" + co_idx.to_string() + "_" + v_idx.to_string() + "_seg_" + seg.to_string()
+}
+
+pub fn make_no_payload_pattern(qn: QualifiedName, ty: TypeDef, loc: Location) -> Pattern {
+    Pattern(
+        PatternKind.Named(NamedPatternInfo(
+            name: Name.inner(qn),
+            args: Vec.new(),
+            named_args: Vec.new(),
+            has_rest: False,
+        )),
+        loc,
+        Some(ty),
+    )
+}
+
+pub fn field_access(recv: Expr, field_name: I.String, field_ty: TypeDef, loc: Location) -> Expr {
+    Expr(ExprKind.FieldAccess(recv, Identifier.new(field_name, loc.clone())), loc, Some(field_ty))
+}
+
+pub fn build_co_result_ty(info: CoEnumInfo) -> TypeDef {
+    let qn = B.get_co_result_type_qn().as_mono([info.yield_ty, info.return_ty]);
+    TypeDef.Named(NamedInfo(Name.inner(qn), []))
+}
+
+}

@@ -361,12 +361,13 @@ pub struct ExprResolver {
                 let inner = expr_resolver.resolve_expr(inner, env)?;
                 ExprKind.AddrOf(inner)
             }
-            ExprKind.Yield(inner) => {
+            ExprKind.Yield(YieldInfo(inner)) => {
                 let inner = expr_resolver.resolve_expr(inner, env)?;
-                ExprKind.Yield(inner)
+                ExprKind.Yield(YieldInfo(inner))
             }
             ExprKind.TypeAssociatedCall(_) => panic("resolver: TypeAssociatedCall already resolved"),
             ExprKind.Discriminator(_) => panic("resolver: Discriminator in expr resolver"),
+            ExprKind.Goto(_) | ExprKind.Label(_) => panic("resolver: Goto/Label before coroutine lowering"),
         };
         Ok(Expr (
             kind,

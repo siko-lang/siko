@@ -22,6 +22,13 @@ pub enum BaseName {
     ClosureEnum(index: Int),
     ClosureVariant(enum_index: Int, variant_index: Int),
     ClosureHandler(index: Int),
+    CoroutineWrap(co_index: Int),
+    CoroutineState(co_index: Int),
+    CoroutineStateVariant(co_index: Int, variant_index: Int),
+    CoroutineFrame(co_index: Int, variant_index: Int),
+    CoroutineHandler(co_index: Int, variant_index: Int),
+    CoroutineFrameState(co_index: Int, variant_index: Int),
+    CoroutineFrameStateVariant(co_index: Int, variant_index: Int, state_index: Int),
     UnnamedInstance(trait_name: I.String, args: Vec[TypeDef]),
     NamedInstance(module_name: I.String, instance_name: I.String),
     Method(parent_name: I.String, method_name: I.String),
@@ -45,6 +52,13 @@ pub enum BaseName {
             ClosureEnum(i) => I.intern("closure_" + i.to_string()),
             ClosureVariant(ei, vi) => I.intern("closure_" + ei.to_string() + ".Variant" + vi.to_string()),
             ClosureHandler(i) => I.intern("closure_" + i.to_string() + "_handler"),
+            CoroutineWrap(i) => I.intern("co_wrap_" + i.to_string()),
+            CoroutineState(i) => I.intern("co_state_" + i.to_string()),
+            CoroutineStateVariant(ci, vi) => I.intern("co_state_" + ci.to_string() + ".Variant" + vi.to_string()),
+            CoroutineFrame(ci, vi) => I.intern("co_frame_" + ci.to_string() + "_" + vi.to_string()),
+            CoroutineHandler(ci, vi) => I.intern("co_handler_" + ci.to_string() + "_" + vi.to_string()),
+            CoroutineFrameState(ci, vi) => I.intern("co_fstate_" + ci.to_string() + "_" + vi.to_string()),
+            CoroutineFrameStateVariant(ci, vi, si) => I.intern("co_fstate_" + ci.to_string() + "_" + vi.to_string() + ".V" + si.to_string()),
             UnnamedInstance(t, args) => I.intern(I.resolve(t) + "#[" + format_types(args) + "]"),
             Method(parent, m) => I.intern(I.resolve(parent) + "." + I.resolve(m)),
             DefaultArg(parent, i) => I.intern(I.resolve(parent) + "def_arg_" + i.to_string()),
@@ -207,6 +221,34 @@ pub enum QualifiedName {
 
     pub fn new_closure_handler(index: Int) -> QualifiedName {
         Base(BaseNameInfo.new(BaseName.ClosureHandler(index)))
+    }
+
+    pub fn new_coroutine_wrap(co_index: Int) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.CoroutineWrap(co_index)))
+    }
+
+    pub fn new_coroutine_state(co_index: Int) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.CoroutineState(co_index)))
+    }
+
+    pub fn new_coroutine_state_variant(co_index: Int, variant_index: Int) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.CoroutineStateVariant(co_index, variant_index)))
+    }
+
+    pub fn new_coroutine_frame(co_index: Int, variant_index: Int) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.CoroutineFrame(co_index, variant_index)))
+    }
+
+    pub fn new_coroutine_handler(co_index: Int, variant_index: Int) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.CoroutineHandler(co_index, variant_index)))
+    }
+
+    pub fn new_coroutine_frame_state(co_index: Int, variant_index: Int) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.CoroutineFrameState(co_index, variant_index)))
+    }
+
+    pub fn new_coroutine_frame_state_variant(co_index: Int, variant_index: Int, state_index: Int) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.CoroutineFrameStateVariant(co_index, variant_index, state_index)))
     }
 
     pub fn new_unnamed_instance(trait_name: I.String, args: Vec[TypeDef]) -> QualifiedName {

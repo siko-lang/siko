@@ -62,8 +62,10 @@ instance Rewrite[WithInfo]      = auto(Map)
 instance Rewrite[MatchArm]      = auto(Map)
 instance Rewrite[S.LetInfo]     = auto(Map)
 instance Rewrite[S.DeclareInfo] = auto(Map)
-
 instance Rewrite[S.Statement]   = auto(Map)
+instance Rewrite[MatchInfo]     = auto(Map)
+instance Rewrite[YieldInfo]     = auto(Map)
+instance Rewrite[ExprKind]      = auto(Map)
 
 instance Rewrite[BlockInfo] {
     fn rewrite(block: BlockInfo, ctx: BuiltinLowerer) -> BlockInfo {
@@ -80,7 +82,7 @@ instance Rewrite[BlockInfo] {
         BlockInfo(out)
     }
 }
-instance Rewrite[MatchInfo]     = auto(Map)
+
 
 instance[T: Rewrite[T]] Rewrite[Option[T]] {
     fn rewrite(opt: Option[T], ctx: BuiltinLowerer) -> Option[T] {
@@ -93,8 +95,6 @@ instance[T: Rewrite[T]] Rewrite[Vec[T]] {
         vec.into_iter().map(|t| rewrite(t, ctx)).collect()
     }
 }
-
-instance Rewrite[ExprKind] = auto(Map)
 
 instance Rewrite[Expr] {
     fn rewrite(expr: Expr, ctx: BuiltinLowerer) -> Expr {

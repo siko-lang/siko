@@ -293,6 +293,8 @@ struct Lowerer {
             ExprKind.Return(e) => out.push(C.CStmt.Return(l.lower_expr(e))),
             ExprKind.Break => out.push(C.CStmt.Goto("loop_${l.current_loop_id}_break")),
             ExprKind.Continue => out.push(C.CStmt.Goto("loop_${l.current_loop_id}_continue")),
+            ExprKind.Goto(label) => out.push(C.CStmt.Goto(label)),
+            ExprKind.Label(label) => out.push(C.CStmt.Label(label)),
             _ => out.push(C.CStmt.ExprStmt(l.lower_expr(expr))),
         }
         out

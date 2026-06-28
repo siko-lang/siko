@@ -123,6 +123,7 @@ instance Rewrite[BlockInfo]         = auto(Map)
 instance Rewrite[S.Statement]       = auto(Map)
 instance Rewrite[ExprKind]          = auto(Map)
 instance Rewrite[MatchInfo]         = auto(Map)
+instance Rewrite[YieldInfo]         = auto(Map)
 
 instance Rewrite[Expr] {
     fn rewrite(expr: Expr, ctx: ClosureLowerer) -> Expr {
@@ -386,7 +387,7 @@ pub fn lower_closures(program: Program) {
         }
 
         let handler = generate_handler(info, repr_loc.clone());
-        normalize_function(handler, Set.new());
+        normalize_function(handler, Set.new(), unit_type: TypeDef.Void);
         program.functions.insert(handler.qualified_name.unwrap(), handler);
     }
 }

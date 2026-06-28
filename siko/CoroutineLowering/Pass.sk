@@ -1,0 +1,237 @@
+module Siko.CoroutineLowering {
+
+import Std.Map
+import Siko.AST.Function
+import Siko.AST.Expr
+import Siko.AST.Name
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.HIR.Program
+import Siko.Location
+import Siko.Normalizer
+import Siko.Interner as I
+import Siko.Format.Utils
+import Siko.Constants.Builtins as B
+import Siko.CoroutineLowering.Utils
+import Siko.CoroutineLowering.Data
+import Siko.CoroutineLowering.Handler
+import Siko.CoroutineLowering.Gen
+import Siko.CoroutineLowering.Rewrite
+import Siko.CoroutineLowering.YieldCounter
+
+// ── CoroutineLowerer ─────────────────────────────────────────────────────────
+
+pub struct CoroutineLowerer {
+    repr_loc: Location,
+    functions: Map[QualifiedName, FunctionDef],
+    co_enums: Vec[CoEnumInfo],
+    sig_to_co_index: Map[String, Int],
+    fn_to_co_index: Map[QualifiedName, Int],
+    fn_to_variant_idx: Map[QualifiedName, Int],
+    co_count: Int,
+
+    pub fn get_or_create_co_enum(ctx: CoroutineLowerer, yield_ty: TypeDef, return_ty: TypeDef) -> CoEnumInfo {
+        let key = format_type(yield_ty) + "##" + format_type(return_ty);
+        if let Some(idx) = ctx.sig_to_co_index.get(key) {
+            return ctx.co_enums[idx].clone();
+        }
+        let idx = ctx.co_count;
+        ctx.co_count += 1;
+        let info = CoEnumInfo(
+            co_index: idx,
+            wrap_qname: QualifiedName.new_coroutine_wrap(idx),
+            state_qname: QualifiedName.new_coroutine_state(idx),
+            yield_ty: yield_ty,
+            return_ty: return_ty,
+            variants: Vec.new(),
+        );
+        ctx.co_enums.push(info.clone());
+        ctx.sig_to_co_index.insert(key, idx);
+        info
+    }
+
+    pub fn rewrite_expr(ctx: CoroutineLowerer, expr: Expr) -> Expr {
+        let loc = expr.location.clone();
+        let rewritten_ty = expr.ty.rewrite_co(ctx);
+        match expr.kind {
+            ExprKind.FunctionCall(FunctionCallInfo(qname, _, args, _, _, True)) =>
+                ctx.lower_co_create(qname, args, rewritten_ty, loc),
+            kind => Expr(kind.rewrite_co(ctx), loc, rewritten_ty),
+        }
+    }
+
+    fn lower_co_create(ctx: CoroutineLowerer, fn_qname: QualifiedName, args: Vec[Expr], expr_ty: Option[TypeDef], loc: Location) -> Expr {
+        let co_idx = ctx.fn_to_co_index.get(fn_qname).unwrap();
+        let v_idx  = ctx.fn_to_variant_idx.get(fn_qname).unwrap();
+        let info   = ctx.co_enums[co_idx].clone();
+
+        let frame_qn       = QualifiedName.new_coroutine_frame(co_idx, v_idx);
+        let frame_state_qn = QualifiedName.new_coroutine_frame_state(co_idx, v_idx);
+        let start_qn       = QualifiedName.new_coroutine_frame_state_variant(co_idx, v_idx, 0);
+        let state_var_qn   = QualifiedName.new_coroutine_state_variant(co_idx, v_idx);
+
+        let frame_ty       = TypeDef.Named(NamedInfo(Name.inner(frame_qn), []));
+        let frame_state_ty = TypeDef.Named(NamedInfo(Name.inner(frame_state_qn), []));
+        let state_ty       = TypeDef.Named(NamedInfo(Name.inner(info.state_qname), []));
+
+        let start_expr = make_variant_call(start_qn, Vec.new(), frame_state_ty, loc.clone());
+
+        let frame_args: Vec[Expr] = Vec.new();
+        frame_args.push(start_expr);
+        for arg in args {
+            frame_args.push(rewrite_co(arg, ctx));
+        }
+        let frame_expr = make_struct_call(frame_qn, frame_args, frame_ty, loc.clone());
+        let state_expr = make_variant_call(state_var_qn, [frame_expr], state_ty, loc.clone());
+        make_struct_call(info.wrap_qname, [state_expr], expr_ty.unwrap(), loc)
+    }
+}
+
+// ── Entry point ───────────────────────────────────────────────────────────────
+
+pub fn lower_coroutines(program: Program) {
+    let repr_loc = any_location(program);
+    let ctx = CoroutineLowerer(
+        repr_loc: repr_loc.clone(),
+        functions: program.functions.clone(),
+        co_enums: Vec.new(),
+        sig_to_co_index: Map.new(),
+        fn_to_co_index: Map.new(),
+        fn_to_variant_idx: Map.new(),
+        co_count: 0,
+    );
+
+    // ── Step 1: collect coroutine functions ───────────────────────────────────
+
+    let co_fn_keys: Vec[QualifiedName] = Vec.new();
+    for (key, func) in program.functions.iter() {
+        if func.yield_type.is_some() && func.body.is_some() {
+            co_fn_keys.push(key.clone());
+        }
+    }
+
+    for key in co_fn_keys.iter() {
+        let func      = program.functions.get(key).unwrap();
+        let yield_ty  = func.yield_type.unwrap();
+        let return_ty = func.result_type.unwrap_or_else(|| TypeDef.Void);
+
+        let info  = ctx.get_or_create_co_enum(yield_ty, return_ty);
+        let v_idx = info.variants.len();
+
+        let arg_types: Vec[TypeDef]         = func.args.iter().map(|a| a.type_def).collect();
+        let arg_names: Vec[I.String]         = func.args.iter().map(|a| a.name.get_user_name()).collect();
+        let arg_var_names: Vec[VariableName] = func.args.iter().map(|a| a.name.clone()).collect();
+
+        let vi = CoVariantInfo(
+            co_index: info.co_index,
+            variant_index: v_idx,
+            fn_qname: key.clone(),
+            arg_types: arg_types,
+            arg_names: arg_names,
+            arg_var_names: arg_var_names,
+            yield_count: 0,
+        );
+
+        ctx.co_enums[info.co_index].variants.push(vi);
+        ctx.fn_to_co_index.insert(key.clone(), info.co_index);
+        ctx.fn_to_variant_idx.insert(key.clone(), v_idx);
+    }
+
+    // ── Step 2: rewrite types and co-create call sites in all decls ───────────
+
+    program.structs = program.structs.rewrite_co(ctx);
+    program.enums = program.enums.rewrite_co(ctx);
+    program.functions = program.functions.rewrite_co(ctx);
+
+    // ── Step 3: build handlers, fill yield_count, remove original fns ─────────
+
+    let div_fns = program.get_divergent_functions();
+    let handlers: Vec[FunctionDef] = Vec.new();
+
+    for key in co_fn_keys.iter() {
+        let func   = program.functions.remove(key).unwrap();
+        let co_idx = ctx.fn_to_co_index.get(key).unwrap();
+        let v_idx  = ctx.fn_to_variant_idx.get(key).unwrap();
+
+        ctx.co_enums[co_idx].variants[v_idx].yield_count = get_yield_count(func.body);
+
+        let vi   = ctx.co_enums[co_idx].variants[v_idx].clone();
+        let info = ctx.co_enums[co_idx].clone();
+
+        let handler = build_handler(vi, info, func, repr_loc.clone());
+        normalize_function(handler, div_fns.clone());
+        handlers.push(handler);
+    }
+
+    for handler in handlers {
+        program.functions.insert(handler.qualified_name.unwrap(), handler);
+    }
+
+    // ── Step 4: insert generated types ────────────────────────────────────────
+
+    for info in ctx.co_enums.iter() {
+        let frame_tys: Vec[TypeDef] = Vec.new();
+
+        for vi in info.variants.iter() {
+            let fse = generate_frame_state_enum(vi, repr_loc.clone());
+            let fse_qn = fse.qualified_name.unwrap();
+            for v in fse.variants.iter() {
+                program.variant_enum_map.insert(v.qualified_name.unwrap(), fse_qn.clone());
+            }
+            program.enums.insert(fse_qn, fse);
+
+            let frame_state_qn = QualifiedName.new_coroutine_frame_state(vi.co_index, vi.variant_index);
+            let frame_state_ty = TypeDef.Named(NamedInfo(Name.inner(frame_state_qn), []));
+            let fs = generate_frame_struct(vi, frame_state_ty, repr_loc.clone());
+            let frame_qn = fs.qualified_name.unwrap();
+            let frame_ty = TypeDef.Named(NamedInfo(Name.inner(frame_qn), []));
+            program.structs.insert(frame_qn, fs);
+
+            frame_tys.push(frame_ty);
+        }
+
+        let co_state = generate_co_state_enum(info.clone(), frame_tys, repr_loc.clone());
+        for v in co_state.variants.iter() {
+            program.variant_enum_map.insert(v.qualified_name.unwrap(), info.state_qname.clone());
+        }
+        program.enums.insert(info.state_qname.clone(), co_state);
+
+        let state_ty = TypeDef.Named(NamedInfo(Name.inner(info.state_qname.clone()), []));
+        let co_wrap  = generate_co_wrap_struct(info.clone(), state_ty, repr_loc.clone());
+        program.structs.insert(info.wrap_qname.clone(), co_wrap);
+    }
+
+    // ── Step 5: replace resume function bodies ────────────────────────────────
+
+    let resume_base = B.get_resume_qn().base();
+    let resume_keys: Vec[QualifiedName] = Vec.new();
+    for (key, _) in program.functions.iter() {
+        if key.base() == resume_base {
+            resume_keys.push(key.clone());
+        }
+    }
+
+    for key in resume_keys {
+        let func   = program.functions.remove(key).unwrap();
+        let arg_ty = func.args[0].type_def;
+
+        let matched_info: Option[CoEnumInfo] = None;
+        for info in ctx.co_enums.iter() {
+            let wrap_ty = TypeDef.Named(NamedInfo(Name.inner(info.wrap_qname.clone()), []));
+            if arg_ty == wrap_ty {
+                matched_info = Some(info.clone());
+                break;
+            }
+        }
+
+        match matched_info {
+            Some(info) => {
+                let new_func = generate_resume_body(func, info, repr_loc.clone());
+                program.functions.insert(key, new_func);
+            }
+            None => { program.functions.insert(key, func); },
+        }
+    }
+}
+
+}

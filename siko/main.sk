@@ -21,6 +21,7 @@ import Siko.LowerTuples
 import Siko.LowerBuiltins
 import Siko.HIR.Program
 import Siko.ClosureLowering
+import Siko.CoroutineLowering
 import Siko.CBackend.Lower as CBackend
 import Siko.CBackend.MiniC.Format as MiniC
 import Siko.ValueTypes
@@ -238,6 +239,9 @@ struct Compiler {
         if trace { println("Lowering closures..."); }
         lower_closures(program);
         c.check_pass("lower-closures", program);
+        if trace { println("Lowering coroutines..."); }
+        lower_coroutines(program);
+        c.check_pass("lower-coroutines", program);
         if trace { println("Lowering builtins..."); }
         lower_builtins(program);
         c.check_pass("lower-builtins", program);

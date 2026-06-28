@@ -372,14 +372,14 @@ pub struct Collector {
                 ExprKind.AddrOf(new_inner)
             }
 
-            ExprKind.Yield(inner) => {
+            ExprKind.Yield(YieldInfo(inner)) => {
                 let (inner_ty, new_inner) = c.collect_expr(inner, env);
                 c.emit(C.ConstraintKind.Unify(lhs: ty, rhs: unit()), loc);
                 match c.yield_type {
                     Some(yt) => { c.emit(C.ConstraintKind.Unify(lhs: inner_ty, rhs: yt), new_inner.location); }
                     None => c.errors.push(TypeError.NotACoroutine(loc)),
                 }
-                ExprKind.Yield(new_inner)
+                ExprKind.Yield(YieldInfo(new_inner))
             }
 
             ExprKind.Name(_) => panic("collector: unresolved Name in expr"),
@@ -421,6 +421,7 @@ pub struct Collector {
                 }
                 ExprKind.TypeAssociatedCall(TypeAssociatedCallInfo(type_def, fn_name, new_args, witnesses, named_args))
             }
+            ExprKind.Goto(_) | ExprKind.Label(_) => panic("collector: Goto/Label before coroutine lowering"),
         };
 
         (ty, Expr(new_kind, loc, Some(ty)))
