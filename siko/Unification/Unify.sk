@@ -131,6 +131,10 @@ pub struct Unifier {
             (other, TypeDef.Paren(inner)) => {
                 u.unify_resolved(inner, other)
             }
+            (TypeDef.Co(CoroutineInfo(y1, r1)), TypeDef.Co(CoroutineInfo(y2, r2))) => {
+                u.unify_types(y1, y2)?;
+                u.unify_types(r1, r2)
+            }
             (TypeDef.VoidPtr, TypeDef.VoidPtr) => Ok(()),
             (TypeDef.Void, TypeDef.Void) => Ok(()),
             (TypeDef.Numeric(a), TypeDef.Numeric(b)) => {
@@ -162,6 +166,10 @@ fn occurs_check(var: Int, ty: TypeDef) {
         TypeDef.Paren(inner) => occurs_check(var, inner),
         TypeDef.Ptr(inner) => occurs_check(var, inner),
         TypeDef.Array(inner, _) => occurs_check(var, inner),
+        TypeDef.Co(CoroutineInfo(yield_ty, return_ty)) => {
+            occurs_check(var, yield_ty);
+            occurs_check(var, return_ty);
+        }
         TypeDef.Never(_) | TypeDef.Wildcard | TypeDef.Void | TypeDef.VoidPtr | TypeDef.Numeric(_) => {}
     }
 }

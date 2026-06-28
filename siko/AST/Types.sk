@@ -40,6 +40,12 @@ pub struct NamedInfo {
 }
 
 @derive(PartialEq, Std.Ops.Eq, PartialOrd, Ord, Clone)
+pub struct CoroutineInfo {
+    pub yield_ty: TypeDef,
+    pub return_ty: TypeDef,
+}
+
+@derive(PartialEq, Std.Ops.Eq, PartialOrd, Ord, Clone)
 pub enum TypeDef {
     Named(NamedInfo),
     Tuple(Vec[TypeDef]),
@@ -54,6 +60,7 @@ pub enum TypeDef {
     VoidPtr,
     Array(TypeDef, Int),
     Numeric(Int),
+    Co(CoroutineInfo),
 
     pub fn name(ty: TypeDef) -> QualifiedName {
         match ty {
@@ -101,6 +108,7 @@ pub enum TypeDef {
             }
             TypeDef.Ptr(inner) => inner.is_mono(default),
             TypeDef.Array(inner, _) => inner.is_mono(default),
+            TypeDef.Co(CoroutineInfo(yield_ty, return_ty)) => yield_ty.is_mono(default) && return_ty.is_mono(default),
             TypeDef.Var(_) => default,
             TypeDef.Never(_) => default,
             TypeDef.Wildcard => default,
@@ -118,7 +126,12 @@ pub enum TypeDef {
             TypeDef.Paren(inner) => inner.has_ptr(),
             TypeDef.Fn(params, ret) => params.iter().any(|a| a.has_ptr()) || ret.has_ptr(),
             TypeDef.Array(inner, _) => inner.has_ptr(),
-            TypeDef.Var(_) | TypeDef.Never(_) | TypeDef.Wildcard | TypeDef.Void | TypeDef.Numeric(_) => False,
+            TypeDef.Co(CoroutineInfo(yield_ty, return_ty)) => yield_ty.has_ptr() || return_ty.has_ptr(),
+            TypeDef.Var(_) |
+            TypeDef.Never(_) |
+            TypeDef.Wildcard |
+            TypeDef.Void |
+            TypeDef.Numeric(_) => False,
         }
     }
 
@@ -131,7 +144,13 @@ pub enum TypeDef {
             TypeDef.Fn(params, ret) | TypeDef.FnPtr(params, ret) => params.iter().any(|a| a.has_flex_var()) || ret.has_flex_var(),
             TypeDef.Ptr(inner) => inner.has_flex_var(),
             TypeDef.Array(inner, _) => inner.has_flex_var(),
-            TypeDef.Var(TypeVar.Named(_)) | TypeDef.Never(_) | TypeDef.Wildcard | TypeDef.Void | TypeDef.VoidPtr | TypeDef.Numeric(_) => False,
+            TypeDef.Co(CoroutineInfo(yield_ty, return_ty)) => yield_ty.has_flex_var() || return_ty.has_flex_var(),
+            TypeDef.Var(TypeVar.Named(_)) |
+             TypeDef.Never(_) |
+             TypeDef.Wildcard |
+             TypeDef.Void |
+             TypeDef.VoidPtr |
+             TypeDef.Numeric(_) => False,
         }
     }
 }

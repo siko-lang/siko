@@ -24,6 +24,7 @@ instance Resolvable[FunctionDef] {
         //println("Processing function ${f.name.name()}");
 
         let resolved_args = f.args.resolve(ctx)?;
+        let resolved_yield_type = f.yield_type.resolve(ctx)?;
         let resolved_result_type = f.result_type.resolve(ctx)?;
         if resolved_result_type.is_none() {
             resolved_result_type = Some(TypeDef.Tuple(Vec.new()));
@@ -59,6 +60,7 @@ instance Resolvable[FunctionDef] {
             kind: kind,
             type_arg_defs: f.type_arg_defs.resolve(ctx)?,
             args: resolved_args,
+            yield_type: resolved_yield_type,
             result_type: resolved_result_type,
             body: resolved_body,
             module_name: ctx.module_name(),

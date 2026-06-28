@@ -79,6 +79,7 @@ instance Rewrite[TypeDef] {
             TypeDef.Never(t)       => TypeDef.Never(t),
             TypeDef.Void           => TypeDef.Void,
             TypeDef.VoidPtr        => TypeDef.VoidPtr,
+            TypeDef.Co(CoroutineInfo(yield_ty, return_ty)) => TypeDef.Co(CoroutineInfo(rewrite(yield_ty, ctx), rewrite(return_ty, ctx))),
             TypeDef.Tuple(_)       => panic("lower_closures: unexpected Tuple type (should be lowered already)"),
             TypeDef.Wildcard       => panic("lower_closures: unexpected Wildcard type"),
         }
@@ -344,6 +345,7 @@ fn generate_handler(info: ClosureEnumInfo, repr_loc: Location) -> FunctionDef {
         kind: FunctionDefKind.Regular,
         type_arg_defs: None,
         args: fn_args,
+        yield_type: None,
         result_type: Some(info.ret_type),
         body: Some(body),
         module_name: I.intern(""),

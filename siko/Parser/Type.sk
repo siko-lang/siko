@@ -11,6 +11,7 @@ pub trait TypeParser[T] {
     fn parse_type_annotation(p: T) -> Result[TypeDef, ParseError]
     fn parse_type_def_inner(p: T, allow_wildcard: Bool) -> Result[TypeDef, ParseError]
     fn parse_fn_type(p: T, allow_wildcard: Bool) -> Result[TypeDef, ParseError]
+    fn parse_co_type(p: T, allow_wildcard: Bool) -> Result[TypeDef, ParseError]
     fn parse_paren_or_tuple_type(p: T, allow_wildcard: Bool) -> Result[TypeDef, ParseError]
     fn parse_named_type(p: T, allow_wildcard: Bool) -> Result[TypeDef, ParseError]
 }
@@ -32,6 +33,7 @@ instance TypeParser[Parser] {
                 Ok(TypeDef.Never(True))
             }
             TokenKind.KwFn => parser.parse_fn_type(allow_wildcard),
+            TokenKind.KwCo => parser.parse_co_type(allow_wildcard),
             TokenKind.Wildcard if allow_wildcard => {
                 parser.advance();
                 Ok(TypeDef.Wildcard)
@@ -94,6 +96,16 @@ instance TypeParser[Parser] {
         } else {
             Ok(TypeDef.Fn(args, result))
         }
+    }
+
+    fn parse_co_type(parser: Parser, allow_wildcard: Bool) -> Result[TypeDef, ParseError] {
+        parser.expect(TokenKind.KwCo)?;
+        parser.expect(TokenKind.LParen)?;
+        let yield_ty = parser.parse_type_def_inner(allow_wildcard)?;
+        parser.expect(TokenKind.RParen)?;
+        parser.expect(TokenKind.Arrow)?;
+        let return_ty = parser.parse_type_def_inner(allow_wildcard)?;
+        Ok(TypeDef.Co(CoroutineInfo(yield_ty, return_ty)))
     }
 
     fn parse_paren_or_tuple_type(parser: Parser, allow_wildcard: Bool) -> Result[TypeDef, ParseError] {

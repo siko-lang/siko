@@ -36,6 +36,15 @@ instance FunctionParser[Parser] {
             }
         }
         parser.expect(TokenKind.RParen)?;
+        let yield_type = if parser.peek() == TokenKind.KwCo {
+            parser.advance();
+            parser.expect(TokenKind.LParen)?;
+            let yt = parser.parse_type_def()?;
+            parser.expect(TokenKind.RParen)?;
+            Some(yt)
+        } else {
+            None
+        };
         let result_type = if parser.peek() == TokenKind.Arrow {
             parser.advance();
             Some(parser.parse_type_def()?)
@@ -55,6 +64,7 @@ instance FunctionParser[Parser] {
             kind: FunctionDefKind.Regular,
             type_arg_defs: type_arg_defs,
             args: args,
+            yield_type: yield_type,
             result_type: result_type,
             body: body,
             module_name: I.intern(""),

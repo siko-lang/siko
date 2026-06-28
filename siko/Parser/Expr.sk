@@ -338,6 +338,12 @@ instance ExprParser[Parser] {
                 let location = parser.loc(start, parser.cur_pos());
                 Ok(Expr(ExprKind.Return(inner), location, None))
             }
+            TokenKind.KwYield => {
+                parser.advance();
+                let inner = parser.parse_expr()?;
+                let location = parser.loc(start, parser.cur_pos());
+                Ok(Expr(ExprKind.Yield(inner), location, None))
+            }
             TokenKind.KwBreak => {
                 parser.advance();
                 let location = parser.loc(start, parser.cur_pos());

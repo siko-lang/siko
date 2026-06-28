@@ -38,11 +38,12 @@ pub struct Collector {
     pub constraints: Vec[C.Constraint],
     pub allocator: TypeVarAllocator,
     pub return_type: TypeDef,
+    pub yield_type: Option[TypeDef],
     pub program: Program,
     pub errors: Vec[TypeError],
 
     pub fn new(program: Program) -> Collector {
-        Collector(Vec.new(), TypeVarAllocator.new(), unit(), program, Vec.new())
+        Collector(Vec.new(), TypeVarAllocator.new(), unit(), None, program, Vec.new())
     }
 
     fn fresh(c: Collector) -> TypeDef {
@@ -91,6 +92,7 @@ pub struct Collector {
             Some(ty) => ty,
             None => unit(),
         };
+        c.yield_type = func.yield_type;
 
         let (_, new_body) = c.collect_expr(body, env);
 
@@ -353,6 +355,16 @@ pub struct Collector {
                 let (inner_ty, new_inner) = c.collect_expr(inner, env);
                 c.emit(C.ConstraintKind.Unify(ty, TypeDef.Ptr(inner_ty)), loc);
                 ExprKind.AddrOf(new_inner)
+            }
+
+            ExprKind.Yield(inner) => {
+                let (inner_ty, new_inner) = c.collect_expr(inner, env);
+                c.emit(C.ConstraintKind.Unify(ty, unit()), loc);
+                match c.yield_type {
+                    Some(yt) => { c.emit(C.ConstraintKind.Unify(inner_ty, yt), new_inner.location); }
+                    None => c.errors.push(TypeError.NotACoroutine(loc)),
+                }
+                ExprKind.Yield(new_inner)
             }
 
             ExprKind.Name(_) => panic("collector: unresolved Name in expr"),

@@ -66,6 +66,11 @@ instance Resolvable[TypeDef] {
             TypeDef.Wildcard => Ok(TypeDef.Wildcard),
             TypeDef.Void => Ok(TypeDef.Void),
             TypeDef.VoidPtr => Ok(TypeDef.VoidPtr),
+            TypeDef.Co(CoroutineInfo(yield_ty, return_ty)) => {
+                let resolved_yield = yield_ty.resolve(ctx)?;
+                let resolved_return = return_ty.resolve(ctx)?;
+                Ok(TypeDef.Co(CoroutineInfo(resolved_yield, resolved_return)))
+            }
         }
     }
 }

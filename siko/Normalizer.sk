@@ -264,6 +264,14 @@ struct Normalizer {
                 Some(Expr(ExprKind.TypeAssociatedCall(TypeAssociatedCallInfo(type_def, fn_name, atom_args, wi, named_args)), loc, ty))
             }
 
+            ExprKind.Yield(inner) => {
+                let lowered = match norm.lower_expr(inner, out) {
+                    None => return None,
+                    Some(v) => v,
+                };
+                Some(Expr(ExprKind.Yield(lowered), loc, ty))
+            }
+
             ExprKind.BinaryOp(_, _, _) | ExprKind.UnaryOp(_, _) =>
                 panic("normalizer: BinaryOp/UnaryOp must be desugared"),
         }
