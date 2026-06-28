@@ -122,6 +122,10 @@ pub struct MonoContext {
     pub effect_ctx: Map[QualifiedName, HandlerInfo],
     pub effect_associated_type_ctx: Map[QualifiedName, TypeHandlerInfo],
     pub implicit_ctx: Vec[QualifiedName],
+
+    pub fn new() -> MonoContext {
+        MonoContext(Vec.new(), Map.new(), Map.new(), Vec.new())
+    }
 }
 
 @derive(PartialEq, Eq, PartialOrd, Ord, Clone)
@@ -137,15 +141,15 @@ pub enum QualifiedName {
     Base(BaseNameInfo),
     Mono(MonoName),
 
-    pub fn new_mono(
+    pub fn as_mono(
             name: QualifiedName,
-            args: Vec[TypeDef],
-            mono_ctx: MonoContext) -> QualifiedName {
+            args: Vec[TypeDef] = Vec.new(),
+            mono_ctx: MonoContext = MonoContext.new()) -> QualifiedName {
         let base = match name {
             Base(bn) => bn,
             Mono(_) => {
                 println("Already mono qn ${name.name()}, args: ${format_types(args)}");
-                panic("new_mono: cannot mono a Mono")
+                panic("as_mono: cannot mono a Mono")
             }
         };
         let qn = Mono(MonoName(base, args, mono_ctx, ""));
@@ -374,10 +378,6 @@ pub enum QualifiedName {
             Base(bn) => I.resolve(bn.name()),
             Mono(m) => m.hashed,
         }
-    }
-
-    pub fn as_mono(qn: QualifiedName) -> QualifiedName {
-        new_mono(qn, [], MonoContext([], Map.new(), Map.new(), []))
     }
 }
 
