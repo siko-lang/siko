@@ -1,6 +1,7 @@
 SIKO_SK := $(shell find siko std -name '*.sk')
 HTTPD_SK := $(shell find httpd -name '*.sk')
-TESTRUNNER_SK := $(shell find testrunner2 -name '*.sk')
+TESTRUNNER_SK := $(shell find testrunner -name '*.sk')
+SSG_SK := $(shell find ssg -name '*.sk')
 
 SIKO_TARGET_OS ?= darwin
 BOOTSTRAP_SOURCE = bootstrap/source_$(SIKO_TARGET_OS).c
@@ -34,8 +35,6 @@ refresh:
 	SIKO_TARGET_OS=linux ./siko.bin build siko --pass c > bootstrap/source_linux.c
 	SIKO_TARGET_OS=macos ./siko.bin build siko --pass c > bootstrap/source_macos.c
 
-SSG_SK := $(shell find ssg -name '*.sk')
-
 ssg.bin: siko.bin $(SSG_SK)
 	./siko.bin build ssg -o ssg.bin
 
@@ -47,7 +46,7 @@ web: site
 	python3 docs/output/server.py
 
 runner.bin: siko.bin ${TESTRUNNER_SK}
-	./siko.bin build testrunner2 -o runner.bin
+	./siko.bin build testrunner -o runner.bin
 
 httpd: siko.bin $(HTTPD_SK)
 	./siko.bin build httpd -o httpd.bin
