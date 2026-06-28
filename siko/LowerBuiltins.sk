@@ -69,7 +69,7 @@ instance Rewrite[BlockInfo] {
     fn rewrite(block: BlockInfo, ctx: BuiltinLowerer) -> BlockInfo {
         let out = Vec.new();
         for stmt in block.stmts {
-            if let S.Statement.Let(S.LetInfo(name, ty, Expr(ExprKind.FunctionCall(FunctionCallInfo(qn, FunctionKind.Builtin, _, _, _)), _, expr_ty))) = stmt {
+            if let S.Statement.Let(S.LetInfo(name, ty, Expr(ExprKind.FunctionCall(FunctionCallInfo(qn, FunctionKind.Builtin, _, _, _, _)), _, expr_ty))) = stmt {
                 if qn.base_name() == B.get_util_uninitialized_qn() {
                     out.push(S.Statement.Declare(S.DeclareInfo(name, ty.or(expr_ty))));
                     continue;
@@ -101,7 +101,7 @@ instance Rewrite[Expr] {
         let loc = expr.location.clone();
         let ty = expr.ty.clone();
         match expr.kind {
-            ExprKind.FunctionCall(FunctionCallInfo(qn, FunctionKind.Builtin, args, _, _)) => {
+            ExprKind.FunctionCall(FunctionCallInfo(qn, FunctionKind.Builtin, args, _, _, is_co)) => {
                 if qn.base_name() == B.get_transmute_qn() {
                     let args = args.rewrite(ctx);
                     let arg = args[0];
@@ -125,7 +125,14 @@ instance Rewrite[Expr] {
                         return Expr(ExprKind.UnaryOp(op, operand), loc, ty);
                     }
                 }
-                Expr(ExprKind.FunctionCall(FunctionCallInfo(qn, FunctionKind.Builtin, args.rewrite(ctx), WitnessInfo.new(), Vec.new())), loc, ty)
+                Expr(ExprKind.FunctionCall(FunctionCallInfo(
+                    qname: qn,
+                    kind: FunctionKind.Builtin,
+                    args: args.rewrite(ctx),
+                    witnesses: WitnessInfo.new(),
+                    named_args: Vec.new(),
+                    is_coroutine_create: is_co,
+                )), loc, ty)
             }
             kind => Expr(kind.rewrite(ctx), loc, ty)
         }

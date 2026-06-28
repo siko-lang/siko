@@ -92,11 +92,12 @@ fn build_map_body(
             let body = Expr(
                 ExprKind.FunctionCall(
                     FunctionCallInfo(
-                        variant_qname,
-                        FunctionKind.VariantCtor,
-                        mapped_args,
-                        WitnessInfo.new(),
-                        Vec.new(),
+                        qname: variant_qname,
+                        kind: FunctionKind.VariantCtor,
+                        args: mapped_args,
+                        witnesses: WitnessInfo.new(),
+                        named_args: Vec.new(),
+                        is_coroutine_create: False,
                     )
                 ),
                 loc,
@@ -119,7 +120,14 @@ fn call_fn(fn_qname: QualifiedName, arg: Expr, extra_arg_vars: Vec[VariableName]
         args.push(Expr(ExprKind.Var(ev), loc, None));
     }
     Expr(
-        ExprKind.FunctionCall(FunctionCallInfo(fn_qname, FunctionKind.UserDefined, args, WitnessInfo.new(), Vec.new())),
+        ExprKind.FunctionCall(FunctionCallInfo(
+            qname: fn_qname,
+            kind: FunctionKind.UserDefined,
+            args: args,
+            witnesses: WitnessInfo.new(),
+            named_args: Vec.new(),
+            is_coroutine_create: False,
+        )),
         loc,
         None,
     )
@@ -162,7 +170,14 @@ pub fn build_map_method_struct(
                 .map(|e| call_fn(fn_qname, e, extra_arg_vars, loc))
                 .collect();
             Expr(
-                ExprKind.FunctionCall(FunctionCallInfo(struct_qname, FunctionKind.StructCtor, mapped, WitnessInfo.new(), Vec.new())),
+                ExprKind.FunctionCall(FunctionCallInfo(
+                    qname: struct_qname,
+                    kind: FunctionKind.StructCtor,
+                    args: mapped,
+                    witnesses: WitnessInfo.new(),
+                    named_args: Vec.new(),
+                    is_coroutine_create: False,
+                )),
                 loc,
                 None,
             )

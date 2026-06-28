@@ -19,59 +19,97 @@ pub enum WitnessKey {
 
 @derive(Clone)
 pub enum ConstraintKind {
-    Unify(TypeDef, TypeDef),
-    HasField(TypeDef, I.String, TypeDef),
-    HasTupleIndex(TypeDef, Int, TypeDef),
-    CallMethod(TypeDef, I.String, Vec[TypeDef], TypeDef),
-    CallFunction(QualifiedName, E.FunctionKind, Vec[TypeDef], TypeDef),
-    CallTypeAssociated(TypeDef, QualifiedName, Vec[TypeDef], TypeDef),
-    DynamicCall(TypeDef, Vec[TypeDef], TypeDef),
-    HasInstance(I.String, Vec[TypeDef], Vec[(TypeDef, I.String)], Option[WitnessKey]),
-    MatchVariant(TypeDef, QualifiedName, Vec[TypeDef]),
-    MatchStruct(TypeDef, QualifiedName, Vec[TypeDef]),
-    ResolveImplicit(QualifiedName, TypeDef),
-    HasIndex(TypeDef, TypeDef, TypeDef),                    // container, idx, result
-    HasIndexAssign(TypeDef, TypeDef, TypeDef, TypeDef),     // container, idx, value, assign_result_ty
-    GetFunctionPtrType(QualifiedName, TypeDef),             // function name, result FnPtr var
-    ValidateEffectHandler(QualifiedName, QualifiedName),   // effect method, instance method
-    ValidateEffectTypeAssociation(QualifiedName, TypeDef), // EAT qname, chosen concrete type
+    Unify(lhs: TypeDef, rhs: TypeDef),
+    HasField(receiver: TypeDef, field: I.String, result: TypeDef),
+    HasTupleIndex(receiver: TypeDef, index: Int, result: TypeDef),
+    CallMethod(receiver: TypeDef, method: I.String, args: Vec[TypeDef], result: TypeDef),
+    CallFunction(qname: QualifiedName, kind: E.FunctionKind, args: Vec[TypeDef], result: TypeDef, is_coroutine_create: Bool),
+    CallTypeAssociated(ty: TypeDef, qname: QualifiedName, args: Vec[TypeDef], result: TypeDef),
+    DynamicCall(callee: TypeDef, args: Vec[TypeDef], result: TypeDef),
+    HasInstance(trait_name: I.String, args: Vec[TypeDef], assoc_constraints: Vec[(TypeDef, I.String)], witness_key: Option[WitnessKey]),
+    MatchVariant(scrutinee: TypeDef, variant: QualifiedName, item_types: Vec[TypeDef]),
+    MatchStruct(scrutinee: TypeDef, struct_qname: QualifiedName, item_types: Vec[TypeDef]),
+    ResolveImplicit(qname: QualifiedName, result: TypeDef),
+    HasIndex(container: TypeDef, idx: TypeDef, result: TypeDef),
+    HasIndexAssign(container: TypeDef, idx: TypeDef, value: TypeDef, assign_result_ty: TypeDef),
+    GetFunctionPtrType(qname: QualifiedName, result: TypeDef),
+    ValidateEffectHandler(effect_method: QualifiedName, instance_method: QualifiedName),
+    ValidateEffectTypeAssociation(assoc: QualifiedName, ty: TypeDef),
 
     pub fn apply(kind: ConstraintKind, sub: Substitution) -> ConstraintKind {
         match kind {
-            ConstraintKind.Unify(a, b) =>
-                ConstraintKind.Unify(sub.apply(a), sub.apply(b)),
+            ConstraintKind.Unify(lhs, rhs) =>
+                ConstraintKind.Unify(lhs: sub.apply(lhs), rhs: sub.apply(rhs)),
             ConstraintKind.HasField(receiver, field, result) =>
-                ConstraintKind.HasField(sub.apply(receiver), field, sub.apply(result)),
+                ConstraintKind.HasField(receiver: sub.apply(receiver), field: field, result: sub.apply(result)),
             ConstraintKind.HasTupleIndex(receiver, index, result) =>
-                ConstraintKind.HasTupleIndex(sub.apply(receiver), index, sub.apply(result)),
+                ConstraintKind.HasTupleIndex(receiver: sub.apply(receiver), index: index, result: sub.apply(result)),
             ConstraintKind.CallMethod(receiver, method, args, result) =>
-                ConstraintKind.CallMethod(sub.apply(receiver), method, sub.apply_all(args), sub.apply(result)),
-            ConstraintKind.CallFunction(qname, kind, args, result) =>
-                ConstraintKind.CallFunction(qname, kind, sub.apply_all(args), sub.apply(result)),
+                ConstraintKind.CallMethod(
+                    receiver: sub.apply(receiver),
+                    method: method,
+                    args: sub.apply_all(args),
+                    result: sub.apply(result),
+                ),
+            ConstraintKind.CallFunction(qname, kind, args, result, is_co) =>
+                ConstraintKind.CallFunction(
+                    qname: qname,
+                    kind: kind,
+                    args: sub.apply_all(args),
+                    result: sub.apply(result),
+                    is_coroutine_create: is_co,
+                ),
             ConstraintKind.CallTypeAssociated(ty, qname, args, result) =>
-                ConstraintKind.CallTypeAssociated(sub.apply(ty), qname, sub.apply_all(args), sub.apply(result)),
+                ConstraintKind.CallTypeAssociated(
+                    ty: sub.apply(ty),
+                    qname: qname,
+                    args: sub.apply_all(args),
+                    result: sub.apply(result),
+                ),
             ConstraintKind.DynamicCall(callee, args, result) =>
-                ConstraintKind.DynamicCall(sub.apply(callee), sub.apply_all(args), sub.apply(result)),
+                ConstraintKind.DynamicCall(
+                    callee: sub.apply(callee),
+                    args: sub.apply_all(args),
+                    result: sub.apply(result),
+                ),
             ConstraintKind.HasInstance(trait_name, args, assoc_constraints, witness_key) => {
                 let new_assoc = assoc_constraints.iter().map(|(t, n)| (sub.apply(t), n)).collect();
-                ConstraintKind.HasInstance(trait_name, sub.apply_all(args), new_assoc, witness_key)
+                ConstraintKind.HasInstance(
+                    trait_name: trait_name,
+                    args: sub.apply_all(args),
+                    assoc_constraints: new_assoc,
+                    witness_key: witness_key,
+                )
             }
             ConstraintKind.MatchVariant(scrutinee, variant, item_types) =>
-                ConstraintKind.MatchVariant(sub.apply(scrutinee), variant, sub.apply_all(item_types)),
+                ConstraintKind.MatchVariant(
+                    scrutinee: sub.apply(scrutinee),
+                    variant: variant,
+                    item_types: sub.apply_all(item_types),
+                ),
             ConstraintKind.MatchStruct(scrutinee, struct_qname, item_types) =>
-                ConstraintKind.MatchStruct(sub.apply(scrutinee), struct_qname, sub.apply_all(item_types)),
+                ConstraintKind.MatchStruct(
+                    scrutinee: sub.apply(scrutinee),
+                    struct_qname: struct_qname,
+                    item_types: sub.apply_all(item_types),
+                ),
             ConstraintKind.ResolveImplicit(qname, result) =>
-                ConstraintKind.ResolveImplicit(qname, sub.apply(result)),
+                ConstraintKind.ResolveImplicit(qname: qname, result: sub.apply(result)),
             ConstraintKind.HasIndex(container, idx, result) =>
-                ConstraintKind.HasIndex(sub.apply(container), sub.apply(idx), sub.apply(result)),
+                ConstraintKind.HasIndex(container: sub.apply(container), idx: sub.apply(idx), result: sub.apply(result)),
             ConstraintKind.HasIndexAssign(container, idx, value, assign_result_ty) =>
-                ConstraintKind.HasIndexAssign(sub.apply(container), sub.apply(idx), sub.apply(value), sub.apply(assign_result_ty)),
+                ConstraintKind.HasIndexAssign(
+                    container: sub.apply(container),
+                    idx: sub.apply(idx),
+                    value: sub.apply(value),
+                    assign_result_ty: sub.apply(assign_result_ty),
+                ),
             ConstraintKind.GetFunctionPtrType(qname, result) =>
-                ConstraintKind.GetFunctionPtrType(qname, sub.apply(result)),
+                ConstraintKind.GetFunctionPtrType(qname: qname, result: sub.apply(result)),
             ConstraintKind.ValidateEffectHandler(effect_method, instance_method) =>
-                ConstraintKind.ValidateEffectHandler(effect_method, instance_method),
+                ConstraintKind.ValidateEffectHandler(effect_method: effect_method, instance_method: instance_method),
             ConstraintKind.ValidateEffectTypeAssociation(assoc, ty) =>
-                ConstraintKind.ValidateEffectTypeAssociation(assoc, sub.apply(ty)),
+                ConstraintKind.ValidateEffectTypeAssociation(assoc: assoc, ty: sub.apply(ty)),
         }
     }
 
@@ -85,8 +123,8 @@ pub enum ConstraintKind {
                 "HasTupleIndex(${format_type(receiver)}.${index} -> ${format_type(result)})",
             ConstraintKind.CallMethod(receiver, method, args, result) =>
                 "CallMethod(${format_type(receiver)}.${method}(${format_types(args)}) -> ${format_type(result)})",
-            ConstraintKind.CallFunction(qname, kind, args, result) =>
-                "CallFunction[${kind.to_string()}] ${qname.name()}(${format_types(args)}) -> ${format_type(result)}",
+            ConstraintKind.CallFunction(qname, kind, args, result, is_co) =>
+                "CallFunction[${kind.to_string()}] ${qname.name()}(${format_types(args)}) -> ${format_type(result)}${if is_co { " [co]" } else { "" }}",
             ConstraintKind.CallTypeAssociated(ty, qname, args, result) =>
                 "CallTypeAssociated(${format_type(ty)}.${qname.name()}(${format_types(args)}) -> ${format_type(result)})",
             ConstraintKind.DynamicCall(callee, args, result) =>

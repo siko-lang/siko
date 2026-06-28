@@ -107,15 +107,15 @@ pub struct Collector {
 
         let new_kind = match expr.kind {
             ExprKind.IntLiteral(v) => {
-                c.emit(C.ConstraintKind.Unify(ty, std_int()), loc);
+                c.emit(C.ConstraintKind.Unify(lhs: ty, rhs: std_int()), loc);
                 ExprKind.IntLiteral(v)
             }
             ExprKind.StringLiteral(v) => {
-                c.emit(C.ConstraintKind.Unify(ty, std_string()), loc);
+                c.emit(C.ConstraintKind.Unify(lhs: ty, rhs: std_string()), loc);
                 ExprKind.StringLiteral(v)
             }
             ExprKind.CharLiteral(v) => {
-                c.emit(C.ConstraintKind.Unify(ty, std_u8()), loc);
+                c.emit(C.ConstraintKind.Unify(lhs: ty, rhs: std_u8()), loc);
                 ExprKind.CharLiteral(v)
             }
 
@@ -125,63 +125,68 @@ pub struct Collector {
                     Some(t) => t,
                     None => panic("collector: variable `${key}` not found in env"),
                 };
-                c.emit(C.ConstraintKind.Unify(ty, var_ty), loc);
+                c.emit(C.ConstraintKind.Unify(lhs: ty, rhs: var_ty), loc);
                 ExprKind.Var(name)
             }
 
             ExprKind.Tuple(args) => {
                 let (sub_tys, new_args) = c.collect_exprs(args, env);
-                c.emit(C.ConstraintKind.Unify(ty, TypeDef.Tuple(sub_tys)), loc);
+                c.emit(C.ConstraintKind.Unify(lhs: ty, rhs: TypeDef.Tuple(sub_tys)), loc);
                 ExprKind.Tuple(new_args)
             }
 
             ExprKind.Paren(inner) => {
                 let (inner_ty, new_inner) = c.collect_expr(inner, env);
-                c.emit(C.ConstraintKind.Unify(ty, inner_ty), loc);
+                c.emit(C.ConstraintKind.Unify(lhs: ty, rhs: inner_ty), loc);
                 ExprKind.Paren(new_inner)
             }
 
             ExprKind.TupleIndex(receiver, index) => {
                 let (recv_ty, new_receiver) = c.collect_expr(receiver, env);
-                c.emit(C.ConstraintKind.HasTupleIndex(recv_ty, index, ty), loc);
+                c.emit(C.ConstraintKind.HasTupleIndex(receiver: recv_ty, index: index, result: ty), loc);
                 ExprKind.TupleIndex(new_receiver, index)
             }
 
             ExprKind.FieldAccess(receiver, field) => {
                 let (recv_ty, new_receiver) = c.collect_expr(receiver, env);
-                c.emit(C.ConstraintKind.HasField(recv_ty, field.name(), ty), loc);
+                c.emit(C.ConstraintKind.HasField(receiver: recv_ty, field: field.name(), result: ty), loc);
                 ExprKind.FieldAccess(new_receiver, field)
             }
 
             ExprKind.MethodCall(MethodCallInfo(receiver, method_name, args, named_args)) => {
                 let (recv_ty, new_receiver) = c.collect_expr(receiver, env);
                 let (arg_tys, new_args) = c.collect_exprs(args, env);
-                c.emit(C.ConstraintKind.CallMethod(recv_ty, method_name.name(), arg_tys, ty), loc);
+                c.emit(C.ConstraintKind.CallMethod(
+                    receiver: recv_ty,
+                    method: method_name.name(),
+                    args: arg_tys,
+                    result: ty,
+                ), loc);
                 ExprKind.MethodCall(MethodCallInfo(new_receiver, method_name, new_args, named_args))
             }
 
             ExprKind.Return(inner) => {
                 let (inner_ty, new_inner) = c.collect_expr(inner, env);
                 let ret = c.return_type;
-                c.emit(C.ConstraintKind.Unify(inner_ty, ret), loc);
-                c.emit(C.ConstraintKind.Unify(ty, unit()), loc);
+                c.emit(C.ConstraintKind.Unify(lhs: inner_ty, rhs: ret), loc);
+                c.emit(C.ConstraintKind.Unify(lhs: ty, rhs: unit()), loc);
                 ExprKind.Return(new_inner)
             }
 
             ExprKind.Break => {
-                c.emit(C.ConstraintKind.Unify(ty, unit()), loc);
+                c.emit(C.ConstraintKind.Unify(lhs: ty, rhs: unit()), loc);
                 ExprKind.Break
             }
             ExprKind.Continue => {
-                c.emit(C.ConstraintKind.Unify(ty, unit()), loc);
+                c.emit(C.ConstraintKind.Unify(lhs: ty, rhs: unit()), loc);
                 ExprKind.Continue
             }
 
             ExprKind.If(cond, then, else_expr) => {
                 let (cond_ty, new_cond) = c.collect_expr(cond, env);
-                c.emit(C.ConstraintKind.Unify(cond_ty, std_bool()), loc);
+                c.emit(C.ConstraintKind.Unify(lhs: cond_ty, rhs: std_bool()), loc);
                 let (_, new_then) = c.collect_expr(then, env);
-                c.emit(C.ConstraintKind.Unify(ty, unit()), loc);
+                c.emit(C.ConstraintKind.Unify(lhs: ty, rhs: unit()), loc);
                 match else_expr {
                     Some(else_) => {
                         let (_, new_else) = c.collect_expr(else_, env);
@@ -193,13 +198,19 @@ pub struct Collector {
 
             ExprKind.Block(BlockInfo(stmts)) => {
                 let (_, new_stmts) = c.collect_block(stmts, env);
-                c.emit(C.ConstraintKind.Unify(ty, unit()), loc);
+                c.emit(C.ConstraintKind.Unify(lhs: ty, rhs: unit()), loc);
                 ExprKind.Block(BlockInfo(new_stmts))
             }
 
-            ExprKind.FunctionCall(FunctionCallInfo(qname, kind, args, witnesses, named_args)) => {
+            ExprKind.FunctionCall(FunctionCallInfo(qname, kind, args, witnesses, named_args, is_co)) => {
                 let (arg_tys, new_args) = c.collect_exprs(args, env);
-                c.emit(C.ConstraintKind.CallFunction(qname, kind, arg_tys, ty), loc);
+                c.emit(C.ConstraintKind.CallFunction(
+                    qname: qname,
+                    kind: kind,
+                    args: arg_tys,
+                    result: ty,
+                    is_coroutine_create: is_co,
+                ), loc);
                 if !named_args.is_empty() {
                     match kind {
                         FunctionKind.UserDefined | FunctionKind.Extern(_) | FunctionKind.Builtin => {
@@ -251,12 +262,12 @@ pub struct Collector {
                         }
                     }
                 }
-                ExprKind.FunctionCall(FunctionCallInfo(qname, kind, new_args, witnesses, named_args))
+                ExprKind.FunctionCall(FunctionCallInfo(qname, kind, new_args, witnesses, named_args, is_co))
             }
 
             ExprKind.Match(MatchInfo(scrutinee, arms)) => {
                 let (scrutinee_ty, new_scrutinee) = c.collect_expr(scrutinee, env);
-                c.emit(C.ConstraintKind.Unify(ty, unit()), loc);
+                c.emit(C.ConstraintKind.Unify(lhs: ty, rhs: unit()), loc);
                 let new_arms = Vec.new();
                 for arm in arms {
                     let new_pattern = c.collect_pattern(arm.pattern, scrutinee_ty, env);
@@ -268,20 +279,20 @@ pub struct Collector {
 
             ExprKind.With(WithInfo(handlers, body)) => {
                 let (body_ty, new_body) = c.collect_expr(body, env);
-                c.emit(C.ConstraintKind.Unify(ty, body_ty), loc);
+                c.emit(C.ConstraintKind.Unify(lhs: ty, rhs: body_ty), loc);
                 for handler in handlers {
                     if let HandlerSelection.EffectFunction(effect_method, instance_method, handler_loc, _) = handler {
-                        c.emit(C.ConstraintKind.ValidateEffectHandler(effect_method, instance_method), handler_loc);
+                        c.emit(C.ConstraintKind.ValidateEffectHandler(effect_method: effect_method, instance_method: instance_method), handler_loc);
                     }
                     if let HandlerSelection.TypeAssociation(assoc_qname, concrete_type, assoc_loc, _) = handler {
-                        c.emit(C.ConstraintKind.ValidateEffectTypeAssociation(assoc_qname, concrete_type), assoc_loc);
+                        c.emit(C.ConstraintKind.ValidateEffectTypeAssociation(assoc: assoc_qname, ty: concrete_type), assoc_loc);
                     }
                 }
                 ExprKind.With(WithInfo(handlers, new_body))
             }
 
             ExprKind.ImplicitRef(ImplicitRefInfo(qname)) => {
-                c.emit(C.ConstraintKind.ResolveImplicit(qname, ty), loc);
+                c.emit(C.ConstraintKind.ResolveImplicit(qname: qname, result: ty), loc);
                 ExprKind.ImplicitRef(ImplicitRefInfo(qname))
             }
 
@@ -312,12 +323,12 @@ pub struct Collector {
                 let (_, new_body) = c.collect_expr(body, env);
                 c.return_type = saved_return;
                 let fn_ty = TypeDef.Fn(user_arg_tys, lambda_ret);
-                c.emit(C.ConstraintKind.Unify(ty, fn_ty), loc);
+                c.emit(C.ConstraintKind.Unify(lhs: ty, rhs: fn_ty), loc);
                 ExprKind.ResolvedLambda(new_args, new_body, capture_count)
             }
 
             ExprKind.FunctionPtr(info) => {
-                c.emit(C.ConstraintKind.GetFunctionPtrType(info.name, ty), loc);
+                c.emit(C.ConstraintKind.GetFunctionPtrType(qname: info.name, result: ty), loc);
                 ExprKind.FunctionPtr(info)
             }
 
@@ -326,7 +337,11 @@ pub struct Collector {
             ExprKind.DynamicCall(callee, args) => {
                 let (callee_ty, new_callee) = c.collect_expr(callee, env);
                 let (arg_tys, new_args) = c.collect_exprs(args, env);
-                c.emit(C.ConstraintKind.DynamicCall(callee_ty, arg_tys, ty), loc);
+                c.emit(C.ConstraintKind.DynamicCall(
+                    callee: callee_ty,
+                    args: arg_tys,
+                    result: ty,
+                ), loc);
                 ExprKind.DynamicCall(new_callee, new_args)
             }
 
@@ -336,32 +351,32 @@ pub struct Collector {
             }
 
             ExprKind.SizeOf(inner_ty) => {
-                c.emit(C.ConstraintKind.Unify(ty, std_u64()), loc);
+                c.emit(C.ConstraintKind.Unify(lhs: ty, rhs: std_u64()), loc);
                 ExprKind.SizeOf(inner_ty)
             }
 
             ExprKind.Discriminator(inner) => {
                 let (_, new_inner) = c.collect_expr(inner, env);
-                c.emit(C.ConstraintKind.Unify(ty, std_int()), loc);
+                c.emit(C.ConstraintKind.Unify(lhs: ty, rhs: std_int()), loc);
                 ExprKind.Discriminator(new_inner)
             }
 
             ExprKind.Deref(inner) => {
                 let (inner_ty, new_inner) = c.collect_expr(inner, env);
-                c.emit(C.ConstraintKind.Unify(TypeDef.Ptr(ty), inner_ty), loc);
+                c.emit(C.ConstraintKind.Unify(lhs: TypeDef.Ptr(ty), rhs: inner_ty), loc);
                 ExprKind.Deref(new_inner)
             }
             ExprKind.AddrOf(inner) => {
                 let (inner_ty, new_inner) = c.collect_expr(inner, env);
-                c.emit(C.ConstraintKind.Unify(ty, TypeDef.Ptr(inner_ty)), loc);
+                c.emit(C.ConstraintKind.Unify(lhs: ty, rhs: TypeDef.Ptr(inner_ty)), loc);
                 ExprKind.AddrOf(new_inner)
             }
 
             ExprKind.Yield(inner) => {
                 let (inner_ty, new_inner) = c.collect_expr(inner, env);
-                c.emit(C.ConstraintKind.Unify(ty, unit()), loc);
+                c.emit(C.ConstraintKind.Unify(lhs: ty, rhs: unit()), loc);
                 match c.yield_type {
-                    Some(yt) => { c.emit(C.ConstraintKind.Unify(inner_ty, yt), new_inner.location); }
+                    Some(yt) => { c.emit(C.ConstraintKind.Unify(lhs: inner_ty, rhs: yt), new_inner.location); }
                     None => c.errors.push(TypeError.NotACoroutine(loc)),
                 }
                 ExprKind.Yield(new_inner)
@@ -375,7 +390,7 @@ pub struct Collector {
             ExprKind.Index(container, idx) => {
                 let (container_ty, new_container) = c.collect_expr(container, env);
                 let (idx_ty, new_idx) = c.collect_expr(idx, env);
-                c.emit(C.ConstraintKind.HasIndex(container_ty, idx_ty, ty), loc);
+                c.emit(C.ConstraintKind.HasIndex(container: container_ty, idx: idx_ty, result: ty), loc);
                 ExprKind.Index(new_container, new_idx)
             }
             ExprKind.IfLet(_, _, _, _) => panic("collector: IfLet must be desugared"),
@@ -384,7 +399,12 @@ pub struct Collector {
             ExprKind.Call(_) => panic("collector: unresolved Call"),
             ExprKind.TypeAssociatedCall(TypeAssociatedCallInfo(type_def, fn_name, args, witnesses, named_args)) => {
                 let (arg_tys, new_args) = c.collect_exprs(args, env);
-                c.emit(C.ConstraintKind.CallTypeAssociated(type_def, fn_name, arg_tys, ty), loc);
+                c.emit(C.ConstraintKind.CallTypeAssociated(
+                    ty: type_def,
+                    qname: fn_name,
+                    args: arg_tys,
+                    result: ty,
+                ), loc);
                 if !named_args.is_empty() {
                     if let Some(fndef) = c.program.functions.get(fn_name) {
                         if check_named_arg_count(named_args, fndef.args.len()) {
@@ -435,7 +455,7 @@ pub struct Collector {
                 match ann {
                     Some(ann_ty) => {
                         let ann_ty = c.fill_wildcards(ann_ty);
-                        c.emit(C.ConstraintKind.Unify(rhs_ty, ann_ty), new_rhs.location);
+                        c.emit(C.ConstraintKind.Unify(lhs: rhs_ty, rhs: ann_ty), new_rhs.location);
                     }
                     None => {}
                 }
@@ -457,14 +477,19 @@ pub struct Collector {
                         let (container_ty, new_container) = c.collect_expr(container, env);
                         let (idx_ty, new_idx) = c.collect_expr(idx, env);
                         let assign_ty = c.fresh();
-                        c.emit(C.ConstraintKind.HasIndexAssign(container_ty, idx_ty, rhs_ty, assign_ty), assign_loc);
+                        c.emit(C.ConstraintKind.HasIndexAssign(
+                            container: container_ty,
+                            idx: idx_ty,
+                            value: rhs_ty,
+                            assign_result_ty: assign_ty,
+                        ), assign_loc);
                         let new_lhs = Expr(ExprKind.Index(new_container, new_idx), assign_loc, Some(assign_ty));
                         (unit(), S.Assign(new_lhs, new_rhs))
                     }
                     _ => {
                         let (rhs_ty, new_rhs) = c.collect_expr(rhs, env);
                         let (lhs_ty, new_lhs) = c.collect_expr(lhs, env);
-                        c.emit(C.ConstraintKind.Unify(lhs_ty, rhs_ty), new_rhs.location);
+                        c.emit(C.ConstraintKind.Unify(lhs: lhs_ty, rhs: rhs_ty), new_rhs.location);
                         (unit(), S.Assign(new_lhs, new_rhs))
                     }
                 }
@@ -498,15 +523,15 @@ pub struct Collector {
             PatternKind.Wildcard => PatternKind.Wildcard,
 
             PatternKind.StringLiteral(s) => {
-                c.emit(C.ConstraintKind.Unify(scrutinee_ty, std_string()), loc);
+                c.emit(C.ConstraintKind.Unify(lhs: scrutinee_ty, rhs: std_string()), loc);
                 PatternKind.StringLiteral(s)
             }
             PatternKind.IntLiteral(s) => {
-                c.emit(C.ConstraintKind.Unify(scrutinee_ty, std_int()), loc);
+                c.emit(C.ConstraintKind.Unify(lhs: scrutinee_ty, rhs: std_int()), loc);
                 PatternKind.IntLiteral(s)
             }
             PatternKind.CharLiteral(b) => {
-                c.emit(C.ConstraintKind.Unify(scrutinee_ty, std_u8()), loc);
+                c.emit(C.ConstraintKind.Unify(lhs: scrutinee_ty, rhs: std_u8()), loc);
                 PatternKind.CharLiteral(b)
             }
 
@@ -516,7 +541,7 @@ pub struct Collector {
             }
 
             PatternKind.Typed(inner, ann_ty) => {
-                c.emit(C.ConstraintKind.Unify(scrutinee_ty, ann_ty), loc);
+                c.emit(C.ConstraintKind.Unify(lhs: scrutinee_ty, rhs: ann_ty), loc);
                 let new_inner = c.collect_pattern(inner, scrutinee_ty, env);
                 PatternKind.Typed(new_inner, ann_ty)
             }
@@ -527,7 +552,7 @@ pub struct Collector {
                 let new_var = match guard_var {
                     Some(var_expr) => {
                         let (var_ty, new_var_expr) = c.collect_expr(var_expr, env);
-                        c.emit(C.ConstraintKind.Unify(var_ty, std_bool()), loc);
+                        c.emit(C.ConstraintKind.Unify(lhs: var_ty, rhs: std_bool()), loc);
                         Some(new_var_expr)
                     }
                     None => None,
@@ -542,7 +567,7 @@ pub struct Collector {
                     elem_tys.push(c.fresh());
                     i = i + 1;
                 }
-                c.emit(C.ConstraintKind.Unify(scrutinee_ty, TypeDef.Tuple(elem_tys)), loc);
+                c.emit(C.ConstraintKind.Unify(lhs: scrutinee_ty, rhs: TypeDef.Tuple(elem_tys)), loc);
                 let new_pats = Vec.new();
                 let j = 0;
                 for p in pats {
@@ -564,9 +589,17 @@ pub struct Collector {
                     i = i + 1;
                 }
                 if c.program.variant_enum_map.contains_key(qn) {
-                    c.emit(C.ConstraintKind.MatchVariant(scrutinee_ty, qn, item_types), loc);
+                    c.emit(C.ConstraintKind.MatchVariant(
+                        scrutinee: scrutinee_ty,
+                        variant: qn,
+                        item_types: item_types,
+                    ), loc);
                 } else {
-                    c.emit(C.ConstraintKind.MatchStruct(scrutinee_ty, qn, item_types), loc);
+                    c.emit(C.ConstraintKind.MatchStruct(
+                        scrutinee: scrutinee_ty,
+                        struct_qname: qn,
+                        item_types: item_types,
+                    ), loc);
                 }
                 let new_pats = Vec.new();
                 let j = 0;

@@ -46,7 +46,8 @@ fn format_expr_inner(f: Formatter, expr: Expr) {
             }
             format_expr(f, operand);
         }
-        ExprKind.Call(CallInfo(callee, args, named_args)) => {
+        ExprKind.Call(CallInfo(callee, args, named_args, is_co)) => {
+            if is_co { f.push("co "); }
             format_expr(f, callee);
             f.push("(");
             let i = 0;
@@ -108,7 +109,8 @@ fn format_expr_inner(f: Formatter, expr: Expr) {
             }
             f.push(")");
         }
-        ExprKind.FunctionCall(FunctionCallInfo(name, kind, args, witness_info, _)) => {
+        ExprKind.FunctionCall(FunctionCallInfo(name, kind, args, witness_info, _, is_co)) => {
+            if is_co { f.push("co "); }
             f.push(I.resolve(name.name()));
             match kind {
                 FunctionKind.VariantCtor => {

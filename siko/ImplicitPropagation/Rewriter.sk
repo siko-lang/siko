@@ -73,7 +73,7 @@ instance Rewrite[Expr] {
 }
 
 fn rewrite_function_call(info: FunctionCallInfo, rewriter: Rewriter, loc: Location, e_ty: Option[TypeDef]) -> Expr {
-    let FunctionCallInfo(callee, kind, args, witnesses, named_args) = info;
+    let FunctionCallInfo(callee, kind, args, witnesses, named_args, is_co) = info;
     let callee_implicits = rewriter
         .fn_implicit_ctx
         .get(callee)
@@ -91,6 +91,7 @@ fn rewrite_function_call(info: FunctionCallInfo, rewriter: Rewriter, loc: Locati
                 new_args,
                 witnesses,
                 named_args,
+                is_co,
             )
         ),
         loc,
@@ -122,6 +123,7 @@ fn rewrite_with(wi: WithInfo, rewriter: Rewriter, loc: Location) -> Expr {
                         [orig_var_expr],
                         WitnessInfo.new(),
                         Vec.new(),
+                        False,
                     )
                 ),
                 loc.clone(),
@@ -220,6 +222,7 @@ pub struct Rewriter {
                     fields,
                     WitnessInfo.new(),
                     Vec.new(),
+                    False,
                 )
             ),
             loc.clone(),

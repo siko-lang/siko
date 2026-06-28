@@ -194,11 +194,12 @@ pub fn make_unary_method(
 pub fn call_discriminator(var: VariableName, loc: Location) -> Expr {
     Expr(
         ExprKind.FunctionCall(FunctionCallInfo(
-            B.get_util_discriminator_qn(),
-            FunctionKind.Builtin,
-            [Expr(ExprKind.Var(var), loc, None)],
-            WitnessInfo.new(),
-            Vec.new(),
+            qname: B.get_util_discriminator_qn(),
+            kind: FunctionKind.Builtin,
+            args: [Expr(ExprKind.Var(var), loc, None)],
+            witnesses: WitnessInfo.new(),
+            named_args: Vec.new(),
+            is_coroutine_create: False,
         )),
         loc,
         None,
@@ -209,7 +210,14 @@ pub fn build_unreachable(loc: Location) -> Expr {
     let panic_qname = B.get_util_panic_qn();
     let msg = Expr(ExprKind.StringLiteral("unreachable"), loc, None);
     Expr(
-        ExprKind.FunctionCall(FunctionCallInfo(panic_qname, FunctionKind.UserDefined, [msg], WitnessInfo.new(), Vec.new())),
+        ExprKind.FunctionCall(FunctionCallInfo(
+            qname: panic_qname,
+            kind: FunctionKind.UserDefined,
+            args: [msg],
+            witnesses: WitnessInfo.new(),
+            named_args: Vec.new(),
+            is_coroutine_create: False,
+        )),
         loc,
         None,
     )

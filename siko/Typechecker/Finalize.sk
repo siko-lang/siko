@@ -134,6 +134,7 @@ fn build_array_elem_ptr(container: Expr, idx: Expr, container_ty: TypeDef, elem_
         [addr_of],
         WitnessInfo.new(),
         Vec.new(),
+        False,
     )), loc, Some(ptr_elem_ty));
     Expr(ExprKind.FunctionCall(FunctionCallInfo(
         B.get_ptr_offset_of_qn(),
@@ -141,6 +142,7 @@ fn build_array_elem_ptr(container: Expr, idx: Expr, container_ty: TypeDef, elem_
         [as_ptr_call, idx],
         WitnessInfo.new(),
         Vec.new(),
+        False,
     )), loc, Some(ptr_elem_ty))
 }
 
@@ -228,6 +230,7 @@ pub struct Finalizer {
                         Vec.new(),
                         WitnessInfo.new(),
                         Vec.new(),
+                        False,
                     )),
                     loc,
                     Some(default_ty),
@@ -250,6 +253,7 @@ pub struct Finalizer {
                         Vec.new(),
                         WitnessInfo.new(),
                         Vec.new(),
+                        False,
                     )),
                     loc,
                     Some(default_ty),
@@ -276,10 +280,10 @@ pub struct Finalizer {
                     Some(t) => Some(t),
                     None => ty,
                 };
-                Expr(ExprKind.FunctionCall(FunctionCallInfo(cr.qname, cr.kind, new_args, witnesses, Vec.new())), loc, call_ty)
+                Expr(ExprKind.FunctionCall(FunctionCallInfo(cr.qname, cr.kind, new_args, witnesses, Vec.new(), False)), loc, call_ty)
             }
 
-            ExprKind.FunctionCall(FunctionCallInfo(qname, kind, args, _, named_args)) => {
+            ExprKind.FunctionCall(FunctionCallInfo(qname, kind, args, _, named_args, is_co)) => {
                 let new_args = finalize(args, f);
                 match kind {
                     FunctionKind.UserDefined | FunctionKind.Extern(_) | FunctionKind.Builtin => {
@@ -293,14 +297,14 @@ pub struct Finalizer {
                             Some(t) => Some(t),
                             None => ty,
                         };
-                        Expr(ExprKind.FunctionCall(FunctionCallInfo(qname, kind, new_args, witnesses, named_args)), loc, call_ty)
+                        Expr(ExprKind.FunctionCall(FunctionCallInfo(qname, kind, new_args, witnesses, named_args, is_co)), loc, call_ty)
                     }
                     FunctionKind.StructCtor => {
                         let new_args = f.inject_ctor_default_args(qname, new_args, loc);
-                        Expr(ExprKind.FunctionCall(FunctionCallInfo(qname, kind, new_args, WitnessInfo.new(), named_args)), loc, ty)
+                        Expr(ExprKind.FunctionCall(FunctionCallInfo(qname, kind, new_args, WitnessInfo.new(), named_args, is_co)), loc, ty)
                     }
                     FunctionKind.VariantCtor =>
-                        Expr(ExprKind.FunctionCall(FunctionCallInfo(qname, kind, new_args, WitnessInfo.new(), named_args)), loc, ty),
+                        Expr(ExprKind.FunctionCall(FunctionCallInfo(qname, kind, new_args, WitnessInfo.new(), named_args, is_co)), loc, ty),
                 }
             }
 
@@ -323,6 +327,7 @@ pub struct Finalizer {
                             [finalized_container, finalized_idx],
                             witnesses,
                             Vec.new(),
+                            False,
                         )), loc, ty)
                     }
                 }
@@ -388,6 +393,7 @@ pub struct Finalizer {
                                     [finalized_container, finalized_idx, finalized_rhs],
                                     witnesses,
                                     Vec.new(),
+                                    False,
                                 )), lhs.location, Some(TypeDef.Tuple(Vec.new()))))
                             }
                         }

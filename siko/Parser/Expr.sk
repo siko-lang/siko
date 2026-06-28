@@ -253,7 +253,7 @@ instance ExprParser[Parser] {
                     }
                 }
                 parser.expect(TokenKind.RParen)?;
-                expr = Expr(ExprKind.Call(CallInfo(expr, args, named_args)), location, None);
+                expr = Expr(ExprKind.Call(CallInfo(expr, args, named_args, False)), location, None);
             } else if parser.peek() == TokenKind.Dot {
                 parser.advance();
                 match parser.peek() {
@@ -343,6 +343,17 @@ instance ExprParser[Parser] {
                 let inner = parser.parse_expr()?;
                 let location = parser.loc(start, parser.cur_pos());
                 Ok(Expr(ExprKind.Yield(inner), location, None))
+            }
+            TokenKind.KwCo => {
+                parser.advance();
+                let inner = parser.parse_call_expr()?;
+                let location = parser.loc(start, parser.cur_pos());
+                match inner.kind {
+                    ExprKind.Call(info) => {
+                        Ok(Expr(ExprKind.Call(CallInfo(info.callee, info.args, info.named_args, True)), location, None))
+                    }
+                    _ => Err(ParseError.new("co requires a function call", start))
+                }
             }
             TokenKind.KwBreak => {
                 parser.advance();

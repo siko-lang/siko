@@ -193,12 +193,13 @@ instance Specialize[TypeAssociatedCallInfo]  = auto(Map, !)
 
 instance Specialize[FunctionCallInfo] {
     fn specialize(info: FunctionCallInfo, mono: Monomorphizer) -> FunctionCallInfo {
+        let is_co = info.is_coroutine_create;
         match info.kind {
-            FunctionKind.UserDefined => process_user_defined_fn(info.qname, info.args, mono, info.witnesses),
-            FunctionKind.Extern(_)     => process_extern_fn(info.qname, info.args, info.kind, mono),
-            FunctionKind.StructCtor => process_struct_ctor(info.qname, info.args, mono),
-            FunctionKind.VariantCtor => process_variant_ctor(info.qname, info.args, mono),
-            FunctionKind.Builtin => process_builtin_fn(info.qname, info.args, mono),
+            FunctionKind.UserDefined => process_user_defined_fn(info.qname, info.args, mono, info.witnesses, is_co),
+            FunctionKind.Extern(_)   => process_extern_fn(info.qname, info.args, info.kind, mono, is_co),
+            FunctionKind.StructCtor  => process_struct_ctor(info.qname, info.args, mono, is_co),
+            FunctionKind.VariantCtor => process_variant_ctor(info.qname, info.args, mono, is_co),
+            FunctionKind.Builtin     => process_builtin_fn(info.qname, info.args, mono, is_co),
         }
     }
 }

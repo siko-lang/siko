@@ -207,11 +207,12 @@ struct ClosureLowerer {
 
                 let enum_ty = Some(TypeDef.Named(NamedInfo(Name.inner(info.enum_qname), [])));
                 Expr(ExprKind.FunctionCall(FunctionCallInfo(
-                    variant_qname,
-                    FunctionKind.VariantCtor,
-                    args,
-                    WitnessInfo.new(),
-                    Vec.new(),
+                    qname: variant_qname,
+                    kind: FunctionKind.VariantCtor,
+                    args: args,
+                    witnesses: WitnessInfo.new(),
+                    named_args: Vec.new(),
+                    is_coroutine_create: False,
                 )), loc, enum_ty)
             }
 
@@ -224,11 +225,12 @@ struct ClosureLowerer {
                 call_args.push(callee);
                 call_args.extend(args);
                 Expr(ExprKind.FunctionCall(FunctionCallInfo(
-                    info.handler_qname,
-                    FunctionKind.UserDefined,
-                    call_args,
-                    WitnessInfo.new(),
-                    Vec.new(),
+                    qname: info.handler_qname,
+                    kind: FunctionKind.UserDefined,
+                    args: call_args,
+                    witnesses: WitnessInfo.new(),
+                    named_args: Vec.new(),
+                    is_coroutine_create: False,
                 )), loc, rewritten_ty)
             }
 
@@ -315,11 +317,12 @@ fn generate_handler(info: ClosureEnumInfo, repr_loc: Location) -> FunctionDef {
         }
 
         let body = Expr(ExprKind.FunctionCall(FunctionCallInfo(
-            vi.lambda_qname.clone(),
-            FunctionKind.UserDefined,
-            call_args,
-            WitnessInfo.new(),
-            Vec.new(),
+            qname: vi.lambda_qname.clone(),
+            kind: FunctionKind.UserDefined,
+            args: call_args,
+            witnesses: WitnessInfo.new(),
+            named_args: Vec.new(),
+            is_coroutine_create: False,
         )), repr_loc.clone(), Some(info.ret_type.clone()));
 
         MatchArm(pat, body)

@@ -82,7 +82,19 @@ fn freshen_effect_assoc(
             ),
         TypeDef.Ptr(inner) =>
             TypeDef.Ptr(freshen_effect_assoc(inner, fresh_map, allocator, effect_assoc_types)),
-        _ => ty,
+        TypeDef.Array(inner, n) =>
+            TypeDef.Array(freshen_effect_assoc(inner, fresh_map, allocator, effect_assoc_types), n),
+        TypeDef.Co(CoroutineInfo(yield_ty, return_ty)) =>
+            TypeDef.Co(CoroutineInfo(
+                freshen_effect_assoc(yield_ty, fresh_map, allocator, effect_assoc_types),
+                freshen_effect_assoc(return_ty, fresh_map, allocator, effect_assoc_types),
+            )),
+        TypeDef.Var(_) |
+        TypeDef.Never(_) |
+        TypeDef.Wildcard |
+        TypeDef.Void |
+        TypeDef.VoidPtr |
+        TypeDef.Numeric(_) => ty,
     }
 }
 
@@ -188,7 +200,7 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
                                             i = i + 1;
                                         }
                                         let field_ty = sub.apply(f.ty);
-                                        ok_satisfied([(C.ConstraintKind.Unify(result, field_ty), location)])
+                                        ok_satisfied([(C.ConstraintKind.Unify(lhs: result, rhs: field_ty), location)])
                                     } else {
                                         ProcessResult.Failed(TypeError.FieldNotPublic(qname.name(), field, location))
                                     }
@@ -207,7 +219,7 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
                 TypeDef.Var(TypeVar.Var(n)) => ProcessResult.Pending([n]),
                 TypeDef.Tuple(tys) => {
                     if tys.len() > index {
-                        ok_satisfied([(C.ConstraintKind.Unify(result, tys[index]), location)])
+                        ok_satisfied([(C.ConstraintKind.Unify(lhs: result, rhs: tys[index]), location)])
                     } else {
                         ProcessResult.Failed(TypeError.IncorrectTupleIndex(resolved, index, location))
                     }
@@ -223,15 +235,16 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
                 TypeDef.Named(NamedInfo(Name.Resolved(name: qname, ..), type_args)) if qname.base_name() == B.get_array_type_qn() => {
                     let elem_ty = type_args[0];
                     ok_satisfied([
-                        (C.ConstraintKind.Unify(idx_ty, TypeDef.Named(NamedInfo(Name.inner(B.get_int_type_qn()), []))), location),
-                        (C.ConstraintKind.Unify(result_ty, elem_ty), location),
+                        (C.ConstraintKind.Unify(lhs: idx_ty, rhs: TypeDef.Named(NamedInfo(Name.inner(B.get_int_type_qn()), []))), location),
+                        (C.ConstraintKind.Unify(lhs: result_ty, rhs: elem_ty), location),
                     ])
                 }
                 _ => ok_satisfied([(C.ConstraintKind.CallFunction(
-                    B.get_index_index_qn(),
-                    FunctionKind.UserDefined,
-                    [resolved, idx_ty],
-                    result_ty,
+                    qname: B.get_index_index_qn(),
+                    kind: FunctionKind.UserDefined,
+                    args: [resolved, idx_ty],
+                    result: result_ty,
+                    is_coroutine_create: False,
                 ), location)])
             }
         }
@@ -243,16 +256,17 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
                 TypeDef.Named(NamedInfo(Name.Resolved(name: qname, ..), type_args)) if qname.base_name() == B.get_array_type_qn() => {
                     let elem_ty = type_args[0];
                     ok_satisfied([
-                        (C.ConstraintKind.Unify(idx_ty, TypeDef.Named(NamedInfo(Name.inner(B.get_int_type_qn()), []))), location),
-                        (C.ConstraintKind.Unify(value_ty, elem_ty), location),
-                        (C.ConstraintKind.Unify(assign_result_ty, TypeDef.Tuple(Vec.new())), location),
+                        (C.ConstraintKind.Unify(lhs: idx_ty, rhs: TypeDef.Named(NamedInfo(Name.inner(B.get_int_type_qn()), []))), location),
+                        (C.ConstraintKind.Unify(lhs: value_ty, rhs: elem_ty), location),
+                        (C.ConstraintKind.Unify(lhs: assign_result_ty, rhs: TypeDef.Tuple(Vec.new())), location),
                     ])
                 }
                 _ => ok_satisfied([(C.ConstraintKind.CallFunction(
-                    B.get_index_assign_index_assign_qn(),
-                    FunctionKind.UserDefined,
-                    [resolved, idx_ty, value_ty],
-                    assign_result_ty,
+                    qname: B.get_index_assign_index_assign_qn(),
+                    kind: FunctionKind.UserDefined,
+                    args: [resolved, idx_ty, value_ty],
+                    result: assign_result_ty,
+                    is_coroutine_create: False,
                 ), location)])
             }
         }
@@ -318,18 +332,25 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
 
             ProcessResult.Satisfied(
                 Vec.new(),
-                [(C.ConstraintKind.CallFunction(method_qname, kind, full_args, result), location)],
+                [(C.ConstraintKind.CallFunction(
+                    qname: method_qname,
+                    kind: kind,
+                    args: full_args,
+                    result: result,
+                    is_coroutine_create: False,
+                ), location)],
                 Some(CallResolution(result_var, method_qname, kind)),
                 None
             )
         }
 
-        C.ConstraintKind.CallFunction(qname, kind, args, result) => {
+        C.ConstraintKind.CallFunction(qname, kind, args, result, is_co) => {
             match kind {
                 FunctionKind.UserDefined | FunctionKind.Extern(_) | FunctionKind.Builtin => {
                     let func = ctx.program.functions.get(qname).unwrap();
                     let param_ann_tys: Vec[TypeDef] = func.args.iter().map(|a| a.type_def).collect();
                     let result_ann_ty = func.result_type;
+                    let yield_ann_ty = func.yield_type;
                     let type_params = match func.type_arg_defs {
                         Some(tad) => tad.type_params(),
                         None => Vec.new(),
@@ -364,6 +385,10 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
                         Some(ty) => collect_named_vars(ty, all_named),
                         None => {}
                     }
+                    match yield_ann_ty {
+                        Some(ty) => collect_named_vars(ty, all_named),
+                        None => {}
+                    }
                     for bound in bounds {
                         for ta in bound.type_args {
                             all_named.insert(ta.name());
@@ -384,16 +409,31 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
                     let spawn: Vec[(C.ConstraintKind, Location)] = Vec.new();
                     let i = 0;
                     for arg_ty in args {
-                        spawn.push((C.ConstraintKind.Unify(arg_ty, param_tys[i]), location));
+                        spawn.push((C.ConstraintKind.Unify(lhs: arg_ty, rhs: param_tys[i]), location));
                         i = i + 1;
                     }
                     for i in args.len() .. func.args.len() {
                         let dv = func.default_value_names.iter().find(|dv| dv.index == i).unwrap();
                         let fresh = ctx.allocator.allocate();
-                        spawn.push((C.ConstraintKind.CallFunction(dv.name, FunctionKind.UserDefined, Vec.new(), fresh), location));
-                        spawn.push((C.ConstraintKind.Unify(fresh, param_tys[i]), location));
+                        spawn.push((C.ConstraintKind.CallFunction(
+                            qname: dv.name,
+                            kind: FunctionKind.UserDefined,
+                            args: Vec.new(),
+                            result: fresh,
+                            is_coroutine_create: False,
+                        ), location));
+                        spawn.push((C.ConstraintKind.Unify(lhs: fresh, rhs: param_tys[i]), location));
                     }
-                    spawn.push((C.ConstraintKind.Unify(result, ret_ty), location));
+                    let expr_ty = if is_co {
+                        let yield_ty = match yield_ann_ty {
+                            Some(ty) => generic_inst.apply(ty),
+                            None => TypeDef.Tuple(Vec.new()),
+                        };
+                        TypeDef.Co(CoroutineInfo(yield_ty, ret_ty))
+                    } else {
+                        ret_ty
+                    };
+                    spawn.push((C.ConstraintKind.Unify(lhs: result, rhs: expr_ty), location));
 
                     let call_result_var = match result {
                         TypeDef.Var(TypeVar.Var(n)) => n,
@@ -412,10 +452,10 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
                             .map(|c| (generic_inst.apply(c.rhs), c.lhs.name()))
                             .collect();
                         spawn.push((C.ConstraintKind.HasInstance(
-                            bound.trait_name.name(),
-                            bound_args,
-                            assoc_constraints,
-                            Some(C.WitnessKey.Call(call_result_var, bound_index))
+                            trait_name: bound.trait_name.name(),
+                            args: bound_args,
+                            assoc_constraints: assoc_constraints,
+                            witness_key: Some(C.WitnessKey.Call(call_result_var, bound_index)),
                         ), location));
                         bound_index = bound_index + 1;
                     }
@@ -447,17 +487,23 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
                     let i = 0;
                     for arg_ty in args {
                         let field_ty = generic_inst.apply(field_ann_tys[i]);
-                        spawn.push((C.ConstraintKind.Unify(arg_ty, field_ty), location));
+                        spawn.push((C.ConstraintKind.Unify(lhs: arg_ty, rhs: field_ty), location));
                         i = i + 1;
                     }
                     for i in args.len() .. struct_def.fields.len() {
                         let dv = struct_def.default_value_names.iter().find(|dv| dv.index == i).unwrap();
                         let fresh = ctx.allocator.allocate();
-                        spawn.push((C.ConstraintKind.CallFunction(dv.name, FunctionKind.UserDefined, Vec.new(), fresh), location));
-                        spawn.push((C.ConstraintKind.Unify(fresh, generic_inst.apply(field_ann_tys[i])), location));
+                        spawn.push((C.ConstraintKind.CallFunction(
+                            qname: dv.name,
+                            kind: FunctionKind.UserDefined,
+                            args: Vec.new(),
+                            result: fresh,
+                            is_coroutine_create: False,
+                        ), location));
+                        spawn.push((C.ConstraintKind.Unify(lhs: fresh, rhs: generic_inst.apply(field_ann_tys[i])), location));
                     }
                     let struct_ty = TypeDef.Named(NamedInfo(Name.inner(qname), type_args));
-                    spawn.push((C.ConstraintKind.Unify(result, struct_ty), location));
+                    spawn.push((C.ConstraintKind.Unify(lhs: result, rhs: struct_ty), location));
                     ok_satisfied(spawn)
                 }
 
@@ -475,11 +521,11 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
                     let i = 0;
                     for arg_ty in args {
                         let item_ty = generic_inst.apply(item_ann_tys[i]);
-                        spawn.push((C.ConstraintKind.Unify(arg_ty, item_ty), location));
+                        spawn.push((C.ConstraintKind.Unify(lhs: arg_ty, rhs: item_ty), location));
                         i = i + 1;
                     }
                     let enum_ty = TypeDef.Named(NamedInfo(Name.inner(enum_qname), type_args));
-                    spawn.push((C.ConstraintKind.Unify(result, enum_ty), location));
+                    spawn.push((C.ConstraintKind.Unify(lhs: result, rhs: enum_ty), location));
                     ok_satisfied(spawn)
                 }
             }
@@ -496,10 +542,10 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
                     let spawn: Vec[(C.ConstraintKind, Location)] = Vec.new();
                     let i = 0;
                     for arg_ty in args {
-                        spawn.push((C.ConstraintKind.Unify(arg_ty, param_tys[i]), location));
+                        spawn.push((C.ConstraintKind.Unify(lhs: arg_ty, rhs: param_tys[i]), location));
                         i = i + 1;
                     }
-                    spawn.push((C.ConstraintKind.Unify(result, ret_ty), location));
+                    spawn.push((C.ConstraintKind.Unify(lhs: result, rhs: ret_ty), location));
                     ok_satisfied(spawn)
                 }
                 other => ProcessResult.Failed(TypeError.InvalidReceiverType(other, location)),
@@ -540,7 +586,7 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
             };
 
             let spawn: Vec[(C.ConstraintKind, Location)] = Vec.new();
-            spawn.push((C.ConstraintKind.Unify(result, TypeDef.FnPtr(param_tys, ret_ty)), location));
+            spawn.push((C.ConstraintKind.Unify(lhs: result, rhs: TypeDef.FnPtr(param_tys, ret_ty)), location));
 
             let bound_index = 0;
             for bound in bounds {
@@ -576,7 +622,7 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
                     let spawn: Vec[(C.ConstraintKind, Location)] = Vec.new();
                     for (flex_var, assoc_name) in assoc_constraints {
                         match resolution.assoc_types.get(assoc_name) {
-                            Some(concrete) => spawn.push((C.ConstraintKind.Unify(flex_var, concrete), location)),
+                            Some(concrete) => spawn.push((C.ConstraintKind.Unify(lhs: flex_var, rhs: concrete), location)),
                             None => {}
                         }
                     }
@@ -585,7 +631,7 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
                         if i < resolution.primary_args.len() {
                             match arg {
                                 TypeDef.Var(TypeVar.Var(_)) =>
-                                    spawn.push((C.ConstraintKind.Unify(arg, resolution.primary_args[i]), location)),
+                                    spawn.push((C.ConstraintKind.Unify(lhs: arg, rhs: resolution.primary_args[i]), location)),
                                 _ => {}
                             }
                         }
@@ -615,11 +661,11 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
             let enum_ty = TypeDef.Named(NamedInfo(Name.inner(enum_qname), type_args));
 
             let spawn: Vec[(C.ConstraintKind, Location)] = Vec.new();
-            spawn.push((C.ConstraintKind.Unify(scrutinee, enum_ty), location));
+            spawn.push((C.ConstraintKind.Unify(lhs: scrutinee, rhs: enum_ty), location));
             let i = 0;
             for item_var in item_types {
                 let item_ty = generic_inst.apply(item_ann_tys[i]);
-                spawn.push((C.ConstraintKind.Unify(item_var, item_ty), location));
+                spawn.push((C.ConstraintKind.Unify(lhs: item_var, rhs: item_ty), location));
                 i = i + 1;
             }
             ok_satisfied(spawn)
@@ -636,11 +682,11 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
             let struct_ty = TypeDef.Named(NamedInfo(Name.inner(struct_qname), type_args));
 
             let spawn: Vec[(C.ConstraintKind, Location)] = Vec.new();
-            spawn.push((C.ConstraintKind.Unify(scrutinee, struct_ty), location));
+            spawn.push((C.ConstraintKind.Unify(lhs: scrutinee, rhs: struct_ty), location));
             let i = 0;
             for item_var in item_types {
                 let field_ty = generic_inst.apply(struct_def.fields[i].ty);
-                spawn.push((C.ConstraintKind.Unify(item_var, field_ty), location));
+                spawn.push((C.ConstraintKind.Unify(lhs: item_var, rhs: field_ty), location));
                 i = i + 1;
             }
             ok_satisfied(spawn)
@@ -698,7 +744,7 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
             // Pin the implementing type to the first type param's fresh var
             if !type_params.is_empty() {
                 match generic_inst.lookup_named(type_params[0]) {
-                    Some(self_ty) => spawn.push((C.ConstraintKind.Unify(self_ty, type_def), location)),
+                    Some(self_ty) => spawn.push((C.ConstraintKind.Unify(lhs: self_ty, rhs: type_def), location)),
                     None => {}
                 }
             }
@@ -711,7 +757,13 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
             for i in args.len() .. func.args.len() {
                 let dv = func.default_value_names.iter().find(|dv| dv.index == i).unwrap();
                 let fresh = ctx.allocator.allocate();
-                spawn.push((C.ConstraintKind.CallFunction(dv.name, FunctionKind.UserDefined, Vec.new(), fresh), location));
+                spawn.push((C.ConstraintKind.CallFunction(
+                    qname: dv.name,
+                    kind: FunctionKind.UserDefined,
+                    args: Vec.new(),
+                    result: fresh,
+                    is_coroutine_create: False,
+                ), location));
                 spawn.push((C.ConstraintKind.Unify(fresh, param_tys[i]), location));
             }
             spawn.push((C.ConstraintKind.Unify(result, ret_ty), location));
@@ -746,7 +798,7 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
 
         C.ConstraintKind.ResolveImplicit(qname, result) => {
             let implicit_def = ctx.program.implicits.get(qname).unwrap();
-            ok_satisfied([(C.ConstraintKind.Unify(result, implicit_def.ty), location)])
+            ok_satisfied([(C.ConstraintKind.Unify(lhs: result, rhs: implicit_def.ty), location)])
         }
 
         C.ConstraintKind.ValidateEffectHandler(effect_method, instance_method) => {
@@ -789,7 +841,7 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
             // for each of the handler's bounds, anchored to this handler's
             // location so the finalizer can attach the resolved witnesses to the
             // EffectFunction selection.
-            let spawn: Vec[(C.ConstraintKind, Location)] = [(C.ConstraintKind.Unify(effect_ty, instance_ty), location)];
+            let spawn: Vec[(C.ConstraintKind, Location)] = [(C.ConstraintKind.Unify(lhs: effect_ty, rhs: instance_ty), location)];
             let handler_bounds = match instance_fn.type_arg_defs {
                 Some(tad) => tad.bounds,
                 None => Vec.new(),
@@ -806,10 +858,10 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
                     .map(|c| (generic_inst.apply(c.rhs), c.lhs.name()))
                     .collect();
                 spawn.push((C.ConstraintKind.HasInstance(
-                    bound.trait_name.name(),
-                    bound_args,
-                    assoc_constraints,
-                    Some(C.WitnessKey.Handler(location, bound_index))
+                    trait_name: bound.trait_name.name(),
+                    args: bound_args,
+                    assoc_constraints: assoc_constraints,
+                    witness_key: Some(C.WitnessKey.Handler(location, bound_index)),
                 ), location));
                 bound_index = bound_index + 1;
             }
@@ -829,10 +881,10 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
                     if n.name() == short { resolved_type } else { TypeDef.Var(TypeVar.Named(n.name())) }
                 }).collect();
                 spawn.push((C.ConstraintKind.HasInstance(
-                    bound.trait_name.name(),
-                    query_args,
-                    Vec.new(),
-                    Some(C.WitnessKey.Handler(location, idx))
+                    trait_name: bound.trait_name.name(),
+                    args: query_args,
+                    assoc_constraints: Vec.new(),
+                    witness_key: Some(C.WitnessKey.Handler(location, idx)),
                 ), location));
                 idx = idx + 1;
             }

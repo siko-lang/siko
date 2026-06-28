@@ -131,12 +131,12 @@ struct Normalizer {
                 None
             }
 
-            ExprKind.FunctionCall(FunctionCallInfo(name, kind, args, wi, named_args)) => {
+            ExprKind.FunctionCall(FunctionCallInfo(name, kind, args, wi, named_args, is_co)) => {
                 let atom_args = match norm.lower_args(args, out) {
                     None => return None,
                     Some(v) => v,
                 };
-                let call = Expr(ExprKind.FunctionCall(FunctionCallInfo(name, kind, atom_args, wi, named_args)), loc, ty);
+                let call = Expr(ExprKind.FunctionCall(FunctionCallInfo(name, kind, atom_args, wi, named_args, is_co)), loc, ty);
                 if norm.div_fns.contains(name) {
                     out.push(S.Statement.Expr(call));
                     None
@@ -157,7 +157,7 @@ struct Normalizer {
                 Some(Expr(ExprKind.DynamicCall(callee_atom, atom_args), loc, ty))
             }
 
-            ExprKind.Call(CallInfo(callee, args, named_args)) => {
+            ExprKind.Call(CallInfo(callee, args, named_args, is_co)) => {
                 let callee_atom = match norm.to_atom(callee, out) {
                     None => return None,
                     Some(v) => v,
@@ -166,7 +166,7 @@ struct Normalizer {
                     None => return None,
                     Some(v) => v,
                 };
-                Some(Expr(ExprKind.Call(CallInfo(callee_atom, atom_args, named_args)), loc, ty))
+                Some(Expr(ExprKind.Call(CallInfo(callee_atom, atom_args, named_args, is_co)), loc, ty))
             }
 
             ExprKind.MethodCall(MethodCallInfo(recv, name, args, named_args)) => {
@@ -640,7 +640,7 @@ fn is_divergent_with_fns(expr: Expr, div_fns: Set[QualifiedName]) -> Bool {
                 None => False,
             }
         }
-        ExprKind.FunctionCall(FunctionCallInfo(name, _, _, _, _)) => div_fns.contains(name),
+        ExprKind.FunctionCall(FunctionCallInfo(name, _, _, _, _, _)) => div_fns.contains(name),
         _ => False,
     }
 }

@@ -84,20 +84,22 @@ pub struct ExprResolver {
                 match item.kind {
                     ModuleItemKind.Variant(_, _, _) => ExprKind.FunctionCall(
                         FunctionCallInfo(
-                            item.qualified_name,
-                            FunctionKind.VariantCtor,
-                            Vec.new(),
-                            WitnessInfo.new(),
-                            Vec.new(),
+                            qname: item.qualified_name,
+                            kind: FunctionKind.VariantCtor,
+                            args: Vec.new(),
+                            witnesses: WitnessInfo.new(),
+                            named_args: Vec.new(),
+                            is_coroutine_create: False,
                         )
                     ),
                     ModuleItemKind.Global(_) => ExprKind.FunctionCall(
                         FunctionCallInfo(
-                            item.qualified_name,
-                            FunctionKind.UserDefined,
-                            Vec.new(),
-                            WitnessInfo.new(),
-                            Vec.new(),
+                            qname: item.qualified_name,
+                            kind: FunctionKind.UserDefined,
+                            args: Vec.new(),
+                            witnesses: WitnessInfo.new(),
+                            named_args: Vec.new(),
+                            is_coroutine_create: False,
                         )
                     ),
                     _ => return Err(ResolveError.NotAVariant(ident)),
@@ -129,7 +131,7 @@ pub struct ExprResolver {
                 let operand = expr_resolver.resolve_expr(operand, env)?;
                 desugar_unary_op(op, operand)
             }
-            ExprKind.Call(CallInfo(func, args, named_args)) => {
+            ExprKind.Call(CallInfo(func, args, named_args, is_co)) => {
                 let resolved_args = args
                     .iter()
                     .map(|a| expr_resolver.resolve_expr(a, env))
@@ -157,6 +159,7 @@ pub struct ExprResolver {
                                         resolved_args,
                                         WitnessInfo.new(),
                                         named_args,
+                                        is_co,
                                     )
                                 ),
                                 _ => panic("Illegal item in named function call"),
@@ -189,6 +192,7 @@ pub struct ExprResolver {
                                         resolved_args,
                                         WitnessInfo.new(),
                                         named_args,
+                                        is_co,
                                     )
                                 )
                             }
@@ -199,6 +203,7 @@ pub struct ExprResolver {
                                     resolved_args,
                                     WitnessInfo.new(),
                                     named_args,
+                                    is_co,
                                 )
                             ),
                             ModuleItemKind.Function(_, kind) => ExprKind.FunctionCall(
@@ -208,6 +213,7 @@ pub struct ExprResolver {
                                     resolved_args,
                                     WitnessInfo.new(),
                                     named_args,
+                                    is_co,
                                 )
                             ),
                             _ => return Err(ResolveError.NotAVariant(ident)),
