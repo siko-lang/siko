@@ -1,0 +1,70 @@
+module Main {
+
+struct N {}
+
+struct Box[T] {
+    value: T,
+}
+
+struct Pair[A, B] {
+    first: A,
+    second: B,
+}
+
+enum Choice[T] {
+    First(T),
+    Second,
+}
+
+fn make_box(x: ()) -> Box[()] {
+    Box(x)
+}
+
+fn unbox(b: Box[()]) -> () {
+    b.value
+}
+
+fn make_pair(a: (), b: N) -> Pair[(), N] {
+    Pair(a, b)
+}
+
+fn pair_unit(p: Pair[(), N]) -> () {
+    p.first
+}
+
+fn make_choice() -> Choice[()] {
+    Choice.First(())
+}
+
+fn use_choice(c: Choice[()]) -> () {
+    match c {
+        Choice.First(x) => x,
+        Choice.Second => (),
+    }
+}
+
+fn id_box(b: Box[()]) -> Box[()] {
+    b
+}
+
+fn main() {
+    let u : () = ();
+
+    let b : Box[()] = make_box(u);
+    let b2 : Box[()] = Box(());
+    let b3 : Box[()] = id_box(b2);
+    let inner : () = unbox(b);
+    let field : () = b3.value;
+
+    let p : Pair[(), N] = make_pair((), N());
+    let pf : () = pair_unit(p);
+
+    let c1 : Choice[()] = make_choice();
+    let c2 : Choice[()] = Choice.Second;
+    let c3 : Choice[()] = Choice.First(());
+    let r1 : () = use_choice(c1);
+    let r2 : () = use_choice(c2);
+    let r3 : () = use_choice(c3);
+}
+
+}

@@ -13,6 +13,8 @@ import Siko.AST.QualifiedName
 import Siko.AST.Type
 import Siko.AST.Annotations
 import Siko.Location
+import Siko.Utils.VarAllocator
+import Siko.Package.Collector
 import Siko.Interner as I
 import Siko.CoroutineLowering
 
@@ -45,7 +47,11 @@ instance Rewrite[DefaultValueInfo]  = auto(Map, =)
 instance Rewrite[Annotation]        = auto(Map, =)
 instance Rewrite[TypeArgDefs]       = auto(Map, =)
 instance Rewrite[MethodMap]         = auto(Map, =)
-instance Rewrite[FunctionDef]       = auto(Map, =)
+instance Rewrite[VarAllocator]      = auto(Map, =)
+instance Rewrite[FunctionDefKind]   = auto(Map, =)
+instance Rewrite[SourcePackage]     = auto(Map, =)
+instance Rewrite[ExternConfig]      = auto(Map, =)
+instance Rewrite[FunctionDef]       = auto(Map)
 instance Rewrite[FunctionArg]       = auto(Map)
 instance Rewrite[FieldDef]          = auto(Map)
 instance Rewrite[ItemInfo]          = auto(Map)
@@ -95,7 +101,7 @@ instance Rewrite[TypeDef] {
             TypeDef.Never(t)        => TypeDef.Never(t),
             TypeDef.Void            => TypeDef.Void,
             TypeDef.VoidPtr         => TypeDef.VoidPtr,
-            TypeDef.Tuple(_)        => panic("lower_coroutines: unexpected Tuple type"),
+            TypeDef.Tuple(elems)    => TypeDef.Tuple(elems.into_iter().map(|e| rewrite_co(e, ctx)).collect()),
             TypeDef.Wildcard        => panic("lower_coroutines: unexpected Wildcard type"),
         }
     }

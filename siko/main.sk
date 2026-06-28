@@ -233,15 +233,15 @@ struct Compiler {
         if trace { println("Propagating implicit arguments..."); }
         IP.propagate_implicits(program);
         c.check_pass("propagate-implicits", program);
+        if trace { println("Lowering coroutines..."); }
+        lower_coroutines(program);
+        c.check_pass("lower-coroutines", program);
         if trace { println("Lowering tuples..."); }
         lower_tuples(program);
         c.check_pass("lower-tuples", program);
         if trace { println("Lowering closures..."); }
         lower_closures(program);
         c.check_pass("lower-closures", program);
-        if trace { println("Lowering coroutines..."); }
-        lower_coroutines(program);
-        c.check_pass("lower-coroutines", program);
         if trace { println("Lowering builtins..."); }
         lower_builtins(program);
         c.check_pass("lower-builtins", program);

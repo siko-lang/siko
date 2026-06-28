@@ -1,0 +1,223 @@
+module Siko.CoroutineLowering.HandlerLower {
+
+import Std.Map
+import Std.Set
+import Siko.AST.Expr
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.Pattern
+import Siko.AST.Statement as S
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.Location
+import Siko.Interner as I
+import Siko.CoroutineLowering.Utils
+
+// Lowers a coroutine body into its handler body in a single auto(Map) pass.
+// Two independent concerns, on disjoint node kinds:
+//   - frame substitution:  Var(arg/local) -> frame.field,  Let(local) -> Assign(frame.field, rhs)
+//   - yield/return expansion:
+//       yield v   -> { frame.state = AfterYield_i ; return Yielded(v) ; resume_i: }
+//       return v  -> { frame.state = Completed   ; return Returned(v) }
+// They never interleave: a yield value is frame-substituted simply by recursing
+// into it. The normalizer later flattens the produced blocks and (with sticky
+// fell-through) keeps the code reachable through the dispatch gotos.
+
+pub struct HandlerLowerer {
+    pub frame_var: VariableName,
+    pub frame_ty: TypeDef,
+    pub frame_state_ty: TypeDef,
+    pub co_result: TypeDef,
+    pub co_index: Int,
+    pub variant_index: Int,
+    pub yield_count: Int,
+    pub yielded_qn: QualifiedName,
+    pub returned_qn: QualifiedName,
+    pub var_map: Map[VariableName, I.String],
+    pub local_set: Set[VariableName],
+    pub repr_loc: Location,
+    pub yield_counter: Int,
+
+    fn frame_expr(ctx: HandlerLowerer, loc: Location) -> Expr {
+        Expr(ExprKind.Var(ctx.frame_var.clone()), loc, Some(ctx.frame_ty.clone()))
+    }
+
+    fn state_lhs(ctx: HandlerLowerer, loc: Location) -> Expr {
+        field_access(ctx.frame_expr(loc.clone()), I.intern("state"), ctx.frame_state_ty.clone(), loc)
+    }
+
+    fn set_state(ctx: HandlerLowerer, state_index: Int, loc: Location) -> S.Statement {
+        let qn = QualifiedName.new_coroutine_frame_state_variant(ctx.co_index, ctx.variant_index, state_index).as_mono();
+        let variant = make_variant_call(qn, Vec.new(), ctx.frame_state_ty.clone(), loc.clone());
+        S.Statement.Assign(ctx.state_lhs(loc), variant)
+    }
+
+    // yield v -> { frame.state = AfterYield_i ; return Yielded(v) ; resume_i: }
+    fn expand_yield(ctx: HandlerLowerer, i: Int, v: Expr, ty: Option[TypeDef], loc: Location) -> Expr {
+        let set = ctx.set_state(i + 1, loc.clone());
+        let yielded = make_variant_call(ctx.yielded_qn.clone(), [v], ctx.co_result.clone(), loc.clone());
+        let ret = S.Statement.Expr(Expr(ExprKind.Return(yielded), loc.clone(), Some(TypeDef.Never(False))));
+        let label = S.Statement.Expr(make_label(seg_label(ctx.co_index, ctx.variant_index, i + 1), loc.clone()));
+        Expr(ExprKind.Block(BlockInfo([set, ret, label])), loc, ty)
+    }
+
+    // return v -> { frame.state = Completed ; return Returned(v) }
+    fn expand_return(ctx: HandlerLowerer, v: Expr, ty: Option[TypeDef], loc: Location) -> Expr {
+        let set = ctx.set_state(ctx.yield_count + 1, loc.clone());
+        let returned = make_variant_call(ctx.returned_qn.clone(), [v], ctx.co_result.clone(), loc.clone());
+        let ret = S.Statement.Expr(Expr(ExprKind.Return(returned), loc.clone(), Some(TypeDef.Never(False))));
+        Expr(ExprKind.Block(BlockInfo([set, ret])), loc, ty)
+    }
+}
+
+pub trait HandlerLower[T] {
+    fn lower(t: T, ctx: HandlerLowerer) -> T
+}
+
+instance HandlerLower[Location]          = auto(Map, =)
+instance HandlerLower[I.String]          = auto(Map, =)
+instance HandlerLower[String]            = auto(Map, =)
+instance HandlerLower[Int]               = auto(Map, =)
+instance HandlerLower[U8]                = auto(Map, =)
+instance HandlerLower[Bool]              = auto(Map, =)
+instance HandlerLower[QualifiedName]     = auto(Map, =)
+instance HandlerLower[VariableName]      = auto(Map, =)
+instance HandlerLower[Name]              = auto(Map, =)
+instance HandlerLower[Identifier]        = auto(Map, =)
+instance HandlerLower[FunctionKind]      = auto(Map, =)
+instance HandlerLower[BinaryOp]          = auto(Map, =)
+instance HandlerLower[UnaryOp]           = auto(Map, =)
+instance HandlerLower[WitnessInfo]       = auto(Map, =)
+instance HandlerLower[HandlerSelection]  = auto(Map, =)
+instance HandlerLower[ImplicitRefInfo]   = auto(Map, =)
+instance HandlerLower[CreateClosureInfo] = auto(Map, =)
+instance HandlerLower[FunctionPtrInfo]   = auto(Map, =)
+instance HandlerLower[LambdaArg]         = auto(Map, =)
+instance HandlerLower[Pattern]           = auto(Map)
+instance HandlerLower[PatternKind]       = auto(Map)
+instance HandlerLower[FunctionCallInfo]  = auto(Map)
+instance HandlerLower[TypeAssociatedCallInfo] = auto(Map, !)
+instance HandlerLower[NamedArgument]     = auto(Map, =)
+instance HandlerLower[NamedPatternArg]   = auto(Map, =)
+instance HandlerLower[NamedPatternInfo]  = auto(Map)
+instance HandlerLower[MethodCallInfo]    = auto(Map)
+instance HandlerLower[CallInfo]          = auto(Map)
+instance HandlerLower[WithInfo]          = auto(Map)
+instance HandlerLower[MatchArm]          = auto(Map)
+instance HandlerLower[S.LetInfo]         = auto(Map)
+instance HandlerLower[S.DeclareInfo]     = auto(Map)
+instance HandlerLower[BlockInfo]         = auto(Map)
+instance HandlerLower[ExprKind]          = auto(Map)
+instance HandlerLower[MatchInfo]         = auto(Map)
+instance HandlerLower[YieldInfo]         = auto(Map)
+instance HandlerLower[TypeDef]           = auto(Map, =)
+
+instance[T: HandlerLower[T]] HandlerLower[Option[T]] {
+    fn lower(opt: Option[T], ctx: HandlerLowerer) -> Option[T] {
+        opt.map(|t| lower(t, ctx))
+    }
+}
+
+instance[T: HandlerLower[T]] HandlerLower[Vec[T]] {
+    fn lower(vec: Vec[T], ctx: HandlerLowerer) -> Vec[T] {
+        vec.into_iter().map(|t| lower(t, ctx)).collect()
+    }
+}
+
+instance HandlerLower[Expr] {
+    fn lower(expr: Expr, ctx: HandlerLowerer) -> Expr {
+        let loc = expr.location.clone();
+        let ty  = expr.ty.clone();
+        match expr.kind {
+            ExprKind.Var(vn) => {
+                match ctx.var_map.get(vn) {
+                    Some(field_name) => {
+                        let field_ty = ty.unwrap_or_else(|| TypeDef.Void);
+                        field_access(ctx.frame_expr(loc.clone()), field_name, field_ty, loc)
+                    }
+                    None => Expr(expr.kind.lower(ctx), loc, ty),
+                }
+            }
+            ExprKind.Yield(YieldInfo(v)) => {
+                let i = ctx.yield_counter;
+                ctx.yield_counter = i + 1;
+                ctx.expand_yield(i, lower(v, ctx), ty, loc)
+            }
+            ExprKind.Return(v) => ctx.expand_return(lower(v, ctx), ty, loc),
+            kind => Expr(kind.lower(ctx), loc, ty),
+        }
+    }
+}
+
+instance HandlerLower[S.Statement] {
+    fn lower(stmt: S.Statement, ctx: HandlerLowerer) -> S.Statement {
+        match stmt {
+            S.Statement.Let(S.LetInfo(name, ty, rhs)) => {
+                if ctx.local_set.contains(name) {
+                    let new_rhs = lower(rhs, ctx);
+                    let field_name = ctx.var_map.get(name).unwrap();
+                    let field_ty = new_rhs.ty.unwrap_or_else(|| ty.unwrap_or(TypeDef.Void));
+                    let lhs = field_access(ctx.frame_expr(ctx.repr_loc.clone()), field_name, field_ty, ctx.repr_loc.clone());
+                    S.Statement.Assign(lhs, new_rhs)
+                } else {
+                    S.Statement.Let(S.LetInfo(name, ty, lower(rhs, ctx)))
+                }
+            }
+            S.Statement.Declare(d)             => S.Statement.Declare(d),
+            S.Statement.Assign(lhs, rhs)       => S.Statement.Assign(lower(lhs, ctx), lower(rhs, ctx)),
+            S.Statement.Expr(e)                => S.Statement.Expr(lower(e, ctx)),
+            S.Statement.Loop(stmts)            => S.Statement.Loop(lower(stmts, ctx)),
+            S.Statement.UnresolvedLet(_, _, _) => panic("HandlerLower: UnresolvedLet in coroutine body"),
+            S.Statement.TrailingExpr(_)        => panic("HandlerLower: TrailingExpr in coroutine body"),
+            S.Statement.ForLoop(_, _, _)       => panic("HandlerLower: ForLoop in coroutine body"),
+            S.Statement.WhileLoop(_, _)        => panic("HandlerLower: WhileLoop in coroutine body"),
+        }
+    }
+}
+
+pub fn make_handler_lowerer(
+    frame_var: VariableName,
+    frame_ty: TypeDef,
+    frame_state_ty: TypeDef,
+    co_result: TypeDef,
+    co_index: Int,
+    variant_index: Int,
+    yield_count: Int,
+    yielded_qn: QualifiedName,
+    returned_qn: QualifiedName,
+    arg_var_names: Vec[VariableName],
+    arg_names: Vec[I.String],
+    local_var_names: Vec[VariableName],
+    local_names: Vec[I.String],
+    repr_loc: Location,
+) -> HandlerLowerer {
+    let var_map: Map[VariableName, I.String] = Map.new();
+    let local_set: Set[VariableName] = Set.new();
+
+    for i in 0..arg_var_names.len() {
+        var_map.insert(arg_var_names[i].clone(), arg_names[i]);
+    }
+
+    for i in 0..local_var_names.len() {
+        var_map.insert(local_var_names[i].clone(), local_names[i]);
+        local_set.insert(local_var_names[i].clone());
+    }
+
+    HandlerLowerer(
+        frame_var: frame_var,
+        frame_ty: frame_ty,
+        frame_state_ty: frame_state_ty,
+        co_result: co_result,
+        co_index: co_index,
+        variant_index: variant_index,
+        yield_count: yield_count,
+        yielded_qn: yielded_qn,
+        returned_qn: returned_qn,
+        var_map: var_map,
+        local_set: local_set,
+        repr_loc: repr_loc,
+        yield_counter: 0,
+    )
+}
+
+}

@@ -273,7 +273,14 @@ struct Normalizer {
                 Some(Expr(ExprKind.Yield(YieldInfo(lowered)), loc, ty))
             }
 
-            ExprKind.Goto(_) | ExprKind.Label(_) => Some(expr),
+            // goto is an unconditional jump: divergent, like break/continue, so it
+            // never lands in value position (e.g. as a match-arm result temp).
+            ExprKind.Goto(label) => {
+                out.push(S.Statement.Expr(Expr(ExprKind.Goto(label), loc, norm.unit_type())));
+                None
+            }
+            // a label is just a marker; control flows past it, value is unit.
+            ExprKind.Label(_) => Some(expr),
 
             ExprKind.BinaryOp(_, _, _) | ExprKind.UnaryOp(_, _) =>
                 panic("normalizer: BinaryOp/UnaryOp must be desugared"),
@@ -362,30 +369,36 @@ struct Normalizer {
             }
         }
 
+        // Whether control can fall through to the end of this block. A divergent
+        // statement (one whose lowering produced no value) flips this off, but we
+        // keep lowering the remaining statements rather than dropping them: they may
+        // be reachable through goto/label, and even if dead, emitting them is the
+        // normalizer's job, not deciding reachability. `fell_through` is sticky and
+        // only governs the block's *value*.
+        let fell_through = True;
         for stmt in stmts {
             match stmt {
                 S.Statement.Let(S.LetInfo(name, ty, rhs)) => {
-                    let e = match norm.lower_expr(rhs, out) {
-                        None => return None,
-                        Some(v) => v,
-                    };
-                    out.push(S.Statement.Let(S.LetInfo(name, ty, e)));
+                    match norm.lower_expr(rhs, out) {
+                        None => { fell_through = False; }
+                        Some(e) => out.push(S.Statement.Let(S.LetInfo(name, ty, e))),
+                    }
                 }
                 S.Statement.Declare(_) => out.push(stmt),
                 S.Statement.Assign(lhs, rhs) => {
-                    let rhs_atom = match norm.to_atom(rhs, out) {
-                        None => return None,
-                        Some(v) => v,
-                    };
-                    let lhs_expr = match norm.lower_expr(lhs, out) {
-                        None => return None,
-                        Some(v) => v,
-                    };
-                    out.push(S.Statement.Assign(lhs_expr, rhs_atom));
+                    match norm.to_atom(rhs, out) {
+                        None => { fell_through = False; }
+                        Some(rhs_atom) => {
+                            match norm.lower_expr(lhs, out) {
+                                None => { fell_through = False; }
+                                Some(lhs_expr) => out.push(S.Statement.Assign(lhs_expr, rhs_atom)),
+                            }
+                        }
+                    }
                 }
                 S.Statement.Expr(e) => {
                     match norm.lower_expr(e, out) {
-                        None => return None,
+                        None => { fell_through = False; }
                         Some(expr) => {
                             if !is_atom(expr) {
                                 out.push(S.Statement.Expr(expr));
@@ -394,7 +407,13 @@ struct Normalizer {
                     }
                 }
                 S.Statement.TrailingExpr(e) => {
-                    return norm.to_atom(e, out);
+                    // Trailing is always the last statement; its value is the block's
+                    // value unless something earlier already diverged.
+                    let v = norm.to_atom(e, out);
+                    if fell_through {
+                        return v;
+                    }
+                    return None;
                 }
                 S.Statement.Loop(body) => {
                     let loop_out = Vec.new();
@@ -406,7 +425,11 @@ struct Normalizer {
                 S.Statement.WhileLoop(_, _) => panic("normalizer: WhileLoop must be desugared"),
             }
         }
-        Some(norm.unit_expr(loc))
+        if fell_through {
+            Some(norm.unit_expr(loc))
+        } else {
+            None
+        }
     }
 
     fn lower_if(

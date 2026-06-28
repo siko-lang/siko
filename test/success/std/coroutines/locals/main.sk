@@ -1,0 +1,26 @@
+module Main {
+
+import Std.Coroutine
+
+fn counter(start: Int) co(Int) -> Int {
+    let n = start;
+    yield n;
+    n = n + 1;
+    yield n;
+    n = n + 1;
+    return n;
+}
+
+fn main() {
+    let c : co(Int) -> Int = co counter(10);
+    let r = resume(c);
+    assert(r == CoResult.Yielded(10));
+    let r = resume(c);
+    assert(r == CoResult.Yielded(11));
+    let r = resume(c);
+    assert(r == CoResult.Returned(12));
+    let r = resume(c);
+    assert(r == CoResult.Completed);
+}
+
+}

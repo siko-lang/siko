@@ -12,75 +12,42 @@ import Siko.Interner as I
 import Siko.Constants.Builtins as B
 import Siko.CoroutineLowering.Utils
 import Siko.CoroutineLowering.Data
+import Siko.CoroutineLowering.HandlerLower
 
-// ── Arg-var rewriting ─────────────────────────────────────────────────────────
+// match frame.state {
+//     Start        => goto co_C_V_seg_0          (start label, at body top)
+//     AfterYield_i => goto co_C_V_seg_{i+1}      (resume label, after yield i)
+//     Completed    => return Completed
+// }
+fn build_dispatch(vi: CoVariantInfo, info: CoEnumInfo, frame_var: VariableName, frame_ty: TypeDef, frame_state_ty: TypeDef, co_result: TypeDef, loc: Location) -> Expr {
+    let frame_var_expr = Expr(ExprKind.Var(frame_var), loc.clone(), Some(frame_ty));
+    let scrutinee = field_access(frame_var_expr, I.intern("state"), frame_state_ty.clone(), loc.clone());
 
-fn replace_arg_vars(
-    expr: Expr,
-    arg_var_names: Vec[VariableName],
-    arg_names: Vec[I.String],
-    frame_var: VariableName,
-    frame_ty: TypeDef,
-    loc: Location,
-) -> Expr {
-    let frame_expr = Expr(ExprKind.Var(frame_var.clone()), loc.clone(), Some(frame_ty.clone()));
-    let new_kind = match expr.kind {
-        ExprKind.Var(vn) => {
-            let i = 0;
-            let replaced: Option[I.String] = None;
-            while i < arg_var_names.len() {
-                if arg_var_names[i] == vn {
-                    replaced = Some(arg_names[i]);
-                    break;
-                }
-                i += 1;
-            }
-            match replaced {
-                Some(field_name) =>
-                    ExprKind.FieldAccess(frame_expr, Identifier.new(field_name, loc.clone())),
-                None => ExprKind.Var(vn),
-            }
-        }
-        ExprKind.FunctionCall(FunctionCallInfo(qname, kind, args, witnesses, named_args, is_co)) => {
-            let new_args = args.into_iter()
-                .map(|a| replace_arg_vars(a, arg_var_names, arg_names, frame_var, frame_ty.clone(), loc.clone()))
-                .collect();
-            ExprKind.FunctionCall(FunctionCallInfo(
-                qname: qname,
-                kind: kind,
-                args: new_args,
-                witnesses: witnesses,
-                named_args: named_args,
-                is_coroutine_create: is_co,
-            ))
-        }
-        ExprKind.FieldAccess(recv, field) =>
-            ExprKind.FieldAccess(replace_arg_vars(recv, arg_var_names, arg_names, frame_var, frame_ty, loc), field),
-        ExprKind.Return(inner) =>
-            ExprKind.Return(replace_arg_vars(inner, arg_var_names, arg_names, frame_var, frame_ty, loc)),
-        ExprKind.Paren(inner) =>
-            ExprKind.Paren(replace_arg_vars(inner, arg_var_names, arg_names, frame_var, frame_ty, loc)),
-        other => other,
-    };
-    Expr(new_kind, expr.location, expr.ty)
-}
+    let arms: Vec[MatchArm] = Vec.new();
 
-fn replace_args_in_stmt(
-    stmt: S.Statement,
-    arg_var_names: Vec[VariableName],
-    arg_names: Vec[I.String],
-    frame_var: VariableName,
-    frame_ty: TypeDef,
-    loc: Location,
-) -> S.Statement {
-    let rw = |e| replace_arg_vars(e, arg_var_names, arg_names, frame_var, frame_ty.clone(), loc.clone());
-    match stmt {
-        S.Statement.Let(S.LetInfo(name, ty, rhs)) => S.Statement.Let(S.LetInfo(name, ty, rw(rhs))),
-        S.Statement.Assign(lhs, rhs) => S.Statement.Assign(rw(lhs), rw(rhs)),
-        S.Statement.Expr(e)          => S.Statement.Expr(rw(e)),
-        S.Statement.TrailingExpr(e)  => S.Statement.TrailingExpr(rw(e)),
-        other => other,
+    let start_qn = QualifiedName.new_coroutine_frame_state_variant(vi.co_index, vi.variant_index, 0).as_mono();
+    arms.push(MatchArm(
+        make_no_payload_pattern(start_qn, frame_state_ty.clone(), loc.clone()),
+        make_goto(seg_label(vi.co_index, vi.variant_index, 0), loc.clone()),
+    ));
+
+    for i in 0..vi.yield_count {
+        let after_qn = QualifiedName.new_coroutine_frame_state_variant(vi.co_index, vi.variant_index, i + 1).as_mono();
+        arms.push(MatchArm(
+            make_no_payload_pattern(after_qn, frame_state_ty.clone(), loc.clone()),
+            make_goto(seg_label(vi.co_index, vi.variant_index, i + 1), loc.clone()),
+        ));
     }
+
+    let completed_qn = QualifiedName.new_coroutine_frame_state_variant(vi.co_index, vi.variant_index, vi.yield_count + 1).as_mono();
+    let completed_variant_qn = B.get_co_result_completed_qn().as_mono([info.yield_ty, info.return_ty]);
+    let co_result_completed = make_variant_call(completed_variant_qn, Vec.new(), co_result.clone(), loc.clone());
+    arms.push(MatchArm(
+        make_no_payload_pattern(completed_qn, frame_state_ty.clone(), loc.clone()),
+        Expr(ExprKind.Return(co_result_completed), loc.clone(), Some(TypeDef.Never(False))),
+    ));
+
+    Expr(ExprKind.Match(MatchInfo(scrutinee, arms)), loc, Some(TypeDef.Void))
 }
 
 pub fn build_handler(
@@ -92,153 +59,38 @@ pub fn build_handler(
     let var_alloc = func.var_allocator.clone();
     let frame_var = var_alloc.allocate_temp();
 
-    let handler_qn     = QualifiedName.new_coroutine_handler(vi.co_index, vi.variant_index);
-    let frame_qn       = QualifiedName.new_coroutine_frame(vi.co_index, vi.variant_index);
-    let frame_state_qn = QualifiedName.new_coroutine_frame_state(vi.co_index, vi.variant_index);
+    let handler_qn     = QualifiedName.new_coroutine_handler(vi.co_index, vi.variant_index).as_mono();
+    let frame_qn       = QualifiedName.new_coroutine_frame(vi.co_index, vi.variant_index).as_mono();
+    let frame_state_qn = QualifiedName.new_coroutine_frame_state(vi.co_index, vi.variant_index).as_mono();
 
     let frame_ty       = TypeDef.Named(NamedInfo(Name.inner(frame_qn), []));
     let frame_state_ty = TypeDef.Named(NamedInfo(Name.inner(frame_state_qn), []));
     let co_result      = build_co_result_ty(info);
-    let never_ty       = TypeDef.Never(False);
-    let state_id       = I.intern("state");
 
-    let frame_var_expr = Expr(ExprKind.Var(frame_var.clone()), repr_loc.clone(), Some(frame_ty.clone()));
+    let yielded_qn  = B.get_co_result_yielded_qn().as_mono([info.yield_ty, info.return_ty]);
+    let returned_qn = B.get_co_result_returned_qn().as_mono([info.yield_ty, info.return_ty]);
 
-    let body_stmts: Vec[S.Statement] = match func.body.unwrap().kind {
-        ExprKind.Block(BlockInfo(stmts)) => stmts,
-        _ => panic("coroutine body is not a block"),
-    };
-
-    let segments: Vec[Vec[S.Statement]] = Vec.new();
-    let yield_values: Vec[Expr] = Vec.new();
-    let current: Vec[S.Statement] = Vec.new();
-    let final_return: Option[Expr] = None;
-
-    for stmt in body_stmts.into_iter() {
-        match stmt {
-            S.Statement.Expr(Expr(ExprKind.Yield(YieldInfo(v)), _, _)) => {
-                segments.push(current.clone());
-                yield_values.push(v);
-                current = Vec.new();
-            }
-            S.Statement.Expr(Expr(ExprKind.Return(v), _, _)) => {
-                segments.push(current.clone());
-                final_return = Some(v);
-                current = Vec.new();
-                break;
-            }
-            other => current.push(other),
-        }
-    }
-    if !current.is_empty() || final_return.is_none() {
-        segments.push(current);
-    }
-
-    let yield_count = yield_values.len();
-    let completed_si = yield_count + 1;
-
-    let completed_qn = QualifiedName.new_coroutine_frame_state_variant(vi.co_index, vi.variant_index, completed_si);
-    let completed_state_expr = make_variant_call(completed_qn.clone(), Vec.new(), frame_state_ty.clone(), repr_loc.clone());
-
-    let yielded_qn   = B.get_co_result_yielded_qn().as_mono([info.yield_ty, info.return_ty]);
-    let returned_qn  = B.get_co_result_returned_qn().as_mono([info.yield_ty, info.return_ty]);
-    let completed_variant_qn = B.get_co_result_completed_qn().as_mono([info.yield_ty, info.return_ty]);
-    let co_result_completed  = make_variant_call(completed_variant_qn, Vec.new(), co_result.clone(), repr_loc.clone());
-
-    // ── Dispatch match ───────────────────────────────────────────────────────
-
-    let frame_state_expr = field_access(
-        frame_var_expr.clone(), state_id, frame_state_ty.clone(), repr_loc.clone(),
-    );
-
-    let dispatch_arms: Vec[MatchArm] = Vec.new();
-
-    let start_qn = QualifiedName.new_coroutine_frame_state_variant(vi.co_index, vi.variant_index, 0);
-    dispatch_arms.push(MatchArm(
-        make_no_payload_pattern(start_qn, frame_state_ty.clone(), repr_loc.clone()),
-        make_goto(seg_label(vi.co_index, vi.variant_index, 0), repr_loc.clone()),
-    ));
-
-    let i = 0;
-    while i < yield_count {
-        let after_qn = QualifiedName.new_coroutine_frame_state_variant(vi.co_index, vi.variant_index, i + 1);
-        dispatch_arms.push(MatchArm(
-            make_no_payload_pattern(after_qn, frame_state_ty.clone(), repr_loc.clone()),
-            make_goto(seg_label(vi.co_index, vi.variant_index, i + 1), repr_loc.clone()),
-        ));
-        i += 1;
-    }
-
-    dispatch_arms.push(MatchArm(
-        make_no_payload_pattern(completed_qn, frame_state_ty.clone(), repr_loc.clone()),
-        Expr(ExprKind.Return(co_result_completed.clone()), repr_loc.clone(), Some(never_ty.clone())),
-    ));
-
-    let dispatch_stmt = S.Statement.Expr(Expr(
-        ExprKind.Match(MatchInfo(frame_state_expr, dispatch_arms)),
+    // One pass: arg/local refs -> frame fields, lets -> assigns, yields/returns ->
+    // state transitions + labelled returns. Yields are numbered in walk order, which
+    // matches the dispatch's AfterYield_i arms.
+    let lowerer = make_handler_lowerer(
+        frame_var.clone(), frame_ty.clone(), frame_state_ty.clone(), co_result.clone(),
+        vi.co_index, vi.variant_index, vi.yield_count,
+        yielded_qn, returned_qn,
+        vi.arg_var_names, vi.arg_names, vi.local_var_names, vi.local_names,
         repr_loc.clone(),
-        Some(TypeDef.Void),
-    ));
+    );
+    let lowered = lower(func.body.unwrap(), lowerer);
 
-    // ── Segment body ─────────────────────────────────────────────────────────
-
-    let body_out: Vec[S.Statement] = Vec.new();
-    body_out.push(dispatch_stmt);
-
-    let seg_idx = 0;
-    while seg_idx < segments.len() {
-        body_out.push(S.Statement.Expr(make_label(
-            seg_label(vi.co_index, vi.variant_index, seg_idx),
-            repr_loc.clone(),
-        )));
-
-        for stmt in segments[seg_idx].iter() {
-            body_out.push(replace_args_in_stmt(
-                stmt,
-                vi.arg_var_names,
-                vi.arg_names,
-                frame_var,
-                frame_ty.clone(),
-                repr_loc.clone(),
-            ));
-        }
-
-        if seg_idx < yield_count {
-            let next_state_qn = QualifiedName.new_coroutine_frame_state_variant(vi.co_index, vi.variant_index, seg_idx + 1);
-            let next_state_expr = make_variant_call(next_state_qn, Vec.new(), frame_state_ty.clone(), repr_loc.clone());
-            body_out.push(S.Statement.Assign(
-                field_access(frame_var_expr.clone(), state_id, frame_state_ty.clone(), repr_loc.clone()),
-                next_state_expr,
-            ));
-
-            let yv = replace_arg_vars(
-                yield_values[seg_idx],
-                vi.arg_var_names, vi.arg_names,
-                frame_var, frame_ty.clone(), repr_loc.clone(),
-            );
-            let yielded = make_variant_call(yielded_qn.clone(), [yv], co_result.clone(), repr_loc.clone());
-            body_out.push(S.Statement.Expr(Expr(ExprKind.Return(yielded), repr_loc.clone(), Some(never_ty.clone()))));
-        } else {
-            body_out.push(S.Statement.Assign(
-                field_access(frame_var_expr.clone(), state_id, frame_state_ty.clone(), repr_loc.clone()),
-                completed_state_expr.clone(),
-            ));
-            match final_return {
-                Some(rv) => {
-                    let rv2 = replace_arg_vars(rv, vi.arg_var_names, vi.arg_names, frame_var, frame_ty.clone(), repr_loc.clone());
-                    let returned = make_variant_call(returned_qn.clone(), [rv2], co_result.clone(), repr_loc.clone());
-                    body_out.push(S.Statement.Expr(Expr(ExprKind.Return(returned), repr_loc.clone(), Some(never_ty.clone()))));
-                }
-                None => {
-                    body_out.push(S.Statement.Expr(Expr(ExprKind.Return(co_result_completed.clone()), repr_loc.clone(), Some(never_ty.clone()))));
-                }
-            }
-        }
-
-        seg_idx += 1;
+    // Prepend the dispatch and the start label; the dispatch gotos into the body.
+    let out: Vec[S.Statement] = Vec.new();
+    out.push(S.Statement.Expr(build_dispatch(vi, info, frame_var.clone(), frame_ty.clone(), frame_state_ty, co_result.clone(), repr_loc.clone())));
+    out.push(S.Statement.Expr(make_label(seg_label(vi.co_index, vi.variant_index, 0), repr_loc.clone())));
+    match lowered.kind {
+        ExprKind.Block(BlockInfo(stmts)) => out.extend(stmts),
+        _ => out.push(S.Statement.TrailingExpr(lowered)),
     }
-
-    let handler_body = Expr(ExprKind.Block(BlockInfo(body_out)), repr_loc.clone(), Some(co_result.clone()));
+    let handler_body = Expr(ExprKind.Block(BlockInfo(out)), repr_loc.clone(), Some(co_result.clone()));
 
     FunctionDef(
         annotations: [],

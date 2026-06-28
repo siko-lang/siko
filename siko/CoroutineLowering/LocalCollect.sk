@@ -1,0 +1,99 @@
+module Siko.CoroutineLowering.LocalCollect {
+
+import Siko.AST.Expr
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.Pattern
+import Siko.AST.Statement as S
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.Location
+import Siko.Interner as I
+
+// Folds over the body and collects every S.Let binding (name, type).
+// Type is taken from rhs.ty — filled in by the typechecker.
+
+struct LocalAccum {
+    locals: Vec[(VariableName, TypeDef)],
+}
+
+trait LocalCollector[T] {
+    fn collect_locals(t: T, ctx: LocalAccum)
+}
+
+instance LocalCollector[Location]          = auto(Fold, =)
+instance LocalCollector[I.String]          = auto(Fold, =)
+instance LocalCollector[String]            = auto(Fold, =)
+instance LocalCollector[Int]               = auto(Fold, =)
+instance LocalCollector[U8]               = auto(Fold, =)
+instance LocalCollector[Bool]              = auto(Fold, =)
+instance LocalCollector[QualifiedName]     = auto(Fold, =)
+instance LocalCollector[VariableName]      = auto(Fold, =)
+instance LocalCollector[Name]              = auto(Fold, =)
+instance LocalCollector[Identifier]        = auto(Fold, =)
+instance LocalCollector[FunctionKind]      = auto(Fold, =)
+instance LocalCollector[BinaryOp]          = auto(Fold, =)
+instance LocalCollector[UnaryOp]           = auto(Fold, =)
+instance LocalCollector[WitnessInfo]       = auto(Fold, =)
+instance LocalCollector[HandlerSelection]  = auto(Fold, =)
+instance LocalCollector[ImplicitRefInfo]   = auto(Fold, =)
+instance LocalCollector[CreateClosureInfo] = auto(Fold, =)
+instance LocalCollector[FunctionPtrInfo]   = auto(Fold, =)
+instance LocalCollector[LambdaArg]         = auto(Fold, =)
+instance LocalCollector[Pattern]           = auto(Fold)
+instance LocalCollector[PatternKind]       = auto(Fold)
+instance LocalCollector[FunctionCallInfo]  = auto(Fold)
+instance LocalCollector[TypeAssociatedCallInfo] = auto(Fold, !)
+instance LocalCollector[NamedArgument]     = auto(Fold, =)
+instance LocalCollector[NamedPatternArg]   = auto(Fold, =)
+instance LocalCollector[NamedPatternInfo]  = auto(Fold)
+instance LocalCollector[MethodCallInfo]    = auto(Fold)
+instance LocalCollector[CallInfo]          = auto(Fold)
+instance LocalCollector[WithInfo]          = auto(Fold)
+instance LocalCollector[MatchArm]          = auto(Fold)
+instance LocalCollector[S.DeclareInfo]     = auto(Fold)
+instance LocalCollector[BlockInfo]         = auto(Fold)
+instance LocalCollector[S.Statement]       = auto(Fold)
+instance LocalCollector[ExprKind]          = auto(Fold)
+instance LocalCollector[MatchInfo]         = auto(Fold)
+instance LocalCollector[YieldInfo]         = auto(Fold)
+instance LocalCollector[NamedInfo]         = auto(Fold)
+instance LocalCollector[TypeDef]           = auto(Fold)
+instance LocalCollector[TypeVar]           = auto(Fold)
+instance LocalCollector[CoroutineInfo]     = auto(Fold)
+
+// Intercept S.LetInfo to record the binding, then recurse into rhs.
+instance LocalCollector[S.LetInfo] {
+    fn collect_locals(info: S.LetInfo, ctx: LocalAccum) {
+        if let Some(ty) = info.rhs.ty {
+            ctx.locals.push((info.name.clone(), ty));
+        }
+        info.rhs.collect_locals(ctx);
+    }
+}
+
+instance[T: LocalCollector[T]] LocalCollector[Option[T]] {
+    fn collect_locals(opt: Option[T], ctx: LocalAccum) {
+        if let Some(v) = opt {
+            v.collect_locals(ctx);
+        }
+    }
+}
+
+instance[T: LocalCollector[T]] LocalCollector[Vec[T]] {
+    fn collect_locals(vec: Vec[T], ctx: LocalAccum) {
+        for v in vec {
+            v.collect_locals(ctx);
+        }
+    }
+}
+
+instance LocalCollector[Expr] = auto(Fold)
+
+pub fn collect_locals(body: Option[Expr]) -> Vec[(VariableName, TypeDef)] {
+    let ctx = LocalAccum(Vec.new());
+    body.collect_locals(ctx);
+    ctx.locals
+}
+
+}

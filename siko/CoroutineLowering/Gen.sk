@@ -20,20 +20,18 @@ pub fn generate_frame_state_enum(vi: CoVariantInfo, repr_loc: Location) -> EnumD
     let yield_count = vi.yield_count;
     let variants: Vec[VariantDef] = Vec.new();
 
-    let start_qn = QualifiedName.new_coroutine_frame_state_variant(vi.co_index, vi.variant_index, 0);
+    let start_qn = QualifiedName.new_coroutine_frame_state_variant(vi.co_index, vi.variant_index, 0).as_mono();
     variants.push(VariantDef(Identifier.new(I.intern("Start"), repr_loc.clone()), Some(start_qn), Vec.new()));
 
-    let i = 0;
-    while i < yield_count {
-        let qn = QualifiedName.new_coroutine_frame_state_variant(vi.co_index, vi.variant_index, i + 1);
+    for i in 0..yield_count {
+        let qn = QualifiedName.new_coroutine_frame_state_variant(vi.co_index, vi.variant_index, i + 1).as_mono();
         variants.push(VariantDef(Identifier.new(I.intern("AfterYield_" + i.to_string()), repr_loc.clone()), Some(qn), Vec.new()));
-        i += 1;
     }
 
-    let completed_qn = QualifiedName.new_coroutine_frame_state_variant(vi.co_index, vi.variant_index, yield_count + 1);
+    let completed_qn = QualifiedName.new_coroutine_frame_state_variant(vi.co_index, vi.variant_index, yield_count + 1).as_mono();
     variants.push(VariantDef(Identifier.new(I.intern("Completed"), repr_loc.clone()), Some(completed_qn), Vec.new()));
 
-    let frame_state_qn = QualifiedName.new_coroutine_frame_state(vi.co_index, vi.variant_index);
+    let frame_state_qn = QualifiedName.new_coroutine_frame_state(vi.co_index, vi.variant_index).as_mono();
     EnumDef(
         annotations: [],
         public: False,
@@ -57,18 +55,25 @@ pub fn generate_frame_struct(vi: CoVariantInfo, frame_state_ty: TypeDef, repr_lo
         default_value: None,
     ));
 
-    let i = 0;
-    while i < vi.arg_names.len() {
+    for i in 0..vi.arg_names.len() {
         fields.push(FieldDef(
             public: False,
             name: Identifier.new(vi.arg_names[i], repr_loc.clone()),
             ty: vi.arg_types[i],
             default_value: None,
         ));
-        i += 1;
     }
 
-    let frame_qn = QualifiedName.new_coroutine_frame(vi.co_index, vi.variant_index);
+    for i in 0..vi.local_names.len() {
+        fields.push(FieldDef(
+            public: False,
+            name: Identifier.new(vi.local_names[i], repr_loc.clone()),
+            ty: vi.local_types[i],
+            default_value: None,
+        ));
+    }
+
+    let frame_qn = QualifiedName.new_coroutine_frame(vi.co_index, vi.variant_index).as_mono();
     StructDef(
         annotations: [],
         public: False,
@@ -87,16 +92,14 @@ pub fn generate_frame_struct(vi: CoVariantInfo, frame_state_ty: TypeDef, repr_lo
 
 pub fn generate_co_state_enum(info: CoEnumInfo, frame_tys: Vec[TypeDef], repr_loc: Location) -> EnumDef {
     let variants: Vec[VariantDef] = Vec.new();
-    let i = 0;
-    while i < info.variants.len() {
+    for i in 0..info.variants.len() {
         let vi = info.variants[i].clone();
-        let state_var_qn = QualifiedName.new_coroutine_state_variant(info.co_index, vi.variant_index);
+        let state_var_qn = QualifiedName.new_coroutine_state_variant(info.co_index, vi.variant_index).as_mono();
         variants.push(VariantDef(
             Identifier.new(I.intern("Variant" + vi.variant_index.to_string()), repr_loc.clone()),
             Some(state_var_qn),
             [ItemInfo(name: None, ty: frame_tys[i])],
         ));
-        i += 1;
     }
 
     EnumDef(
@@ -140,8 +143,7 @@ pub fn generate_co_wrap_struct(info: CoEnumInfo, state_ty: TypeDef, repr_loc: Lo
 
 // ── Resume body generation ────────────────────────────────────────────────────
 
-pub fn generate_resume_body(resume_func: FunctionDef, info: CoEnumInfo, repr_loc: Location) -> FunctionDef {
-    let coroutine_param = resume_func.args[0].name.clone();
+pub fn generate_resume_body(resume_func: FunctionDef, info: CoEnumInfo, coroutine_param: VariableName, repr_loc: Location) -> FunctionDef {
     let co_result = build_co_result_ty(info);
     let state_ty  = TypeDef.Named(NamedInfo(Name.inner(info.state_qname.clone()), []));
     let wrap_ty   = TypeDef.Named(NamedInfo(Name.inner(info.wrap_qname.clone()), []));
@@ -157,9 +159,9 @@ pub fn generate_resume_body(resume_func: FunctionDef, info: CoEnumInfo, repr_loc
     let arms: Vec[MatchArm] = Vec.new();
 
     for vi in info.variants.iter() {
-        let frame_qn     = QualifiedName.new_coroutine_frame(info.co_index, vi.variant_index);
-        let handler_qn   = QualifiedName.new_coroutine_handler(info.co_index, vi.variant_index);
-        let state_var_qn = QualifiedName.new_coroutine_state_variant(info.co_index, vi.variant_index);
+        let frame_qn     = QualifiedName.new_coroutine_frame(info.co_index, vi.variant_index).as_mono();
+        let handler_qn   = QualifiedName.new_coroutine_handler(info.co_index, vi.variant_index).as_mono();
+        let state_var_qn = QualifiedName.new_coroutine_state_variant(info.co_index, vi.variant_index).as_mono();
         let frame_ty     = TypeDef.Named(NamedInfo(Name.inner(frame_qn), []));
         let frame_cap    = var_alloc.allocate_temp();
 

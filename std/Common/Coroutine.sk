@@ -10,4 +10,16 @@ pub enum CoResult[Y, R] {
 @builtin
 pub fn resume[Y, R](coroutine: co(Y) -> R) -> CoResult[Y, R]
 
+instance[Y, R] Iterator[co(Y) -> R] {
+    type Item = Y
+
+    fn next(c: co(Y) -> R) -> Option[Y] {
+        match resume(c) {
+            Yielded(v) => Some(v),
+            Returned(_) => None,
+            Completed => None,
+        }
+    }
+}
+
 }

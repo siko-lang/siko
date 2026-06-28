@@ -18,6 +18,7 @@ import Siko.CoroutineLowering.Handler
 import Siko.CoroutineLowering.Gen
 import Siko.CoroutineLowering.Rewrite
 import Siko.CoroutineLowering.YieldCounter
+import Siko.CoroutineLowering.LocalCollect
 
 // ── CoroutineLowerer ─────────────────────────────────────────────────────────
 
@@ -29,6 +30,9 @@ pub struct CoroutineLowerer {
     fn_to_co_index: Map[QualifiedName, Int],
     fn_to_variant_idx: Map[QualifiedName, Int],
     co_count: Int,
+    // Set whenever lower_co_create runs; used to re-normalize only the functions
+    // that gained an un-normalized co-create expression tree.
+    co_create_lowered: Bool,
 
     pub fn get_or_create_co_enum(ctx: CoroutineLowerer, yield_ty: TypeDef, return_ty: TypeDef) -> CoEnumInfo {
         let key = format_type(yield_ty) + "##" + format_type(return_ty);
@@ -39,8 +43,8 @@ pub struct CoroutineLowerer {
         ctx.co_count += 1;
         let info = CoEnumInfo(
             co_index: idx,
-            wrap_qname: QualifiedName.new_coroutine_wrap(idx),
-            state_qname: QualifiedName.new_coroutine_state(idx),
+            wrap_qname: QualifiedName.new_coroutine_wrap(idx).as_mono(),
+            state_qname: QualifiedName.new_coroutine_state(idx).as_mono(),
             yield_ty: yield_ty,
             return_ty: return_ty,
             variants: Vec.new(),
@@ -54,21 +58,40 @@ pub struct CoroutineLowerer {
         let loc = expr.location.clone();
         let rewritten_ty = expr.ty.rewrite_co(ctx);
         match expr.kind {
-            ExprKind.FunctionCall(FunctionCallInfo(qname, _, args, _, _, True)) =>
-                ctx.lower_co_create(qname, args, rewritten_ty, loc),
+            ExprKind.FunctionCall(FunctionCallInfo(qname, kind, args, witnesses, named_args, is_coroutine_create)) => {
+                if is_coroutine_create {
+                    return ctx.lower_co_create(qname, args, rewritten_ty, loc);
+                }
+                // resume stays @builtin (kind = Builtin at every call site) until step 5
+                // turns it into a real function; retarget its callers to UserDefined.
+                let new_kind = if qname.base() == B.get_resume_qn().base() {
+                    FunctionKind.UserDefined
+                } else {
+                    kind
+                };
+                Expr(ExprKind.FunctionCall(FunctionCallInfo(
+                    qname: qname,
+                    kind: new_kind,
+                    args: args.into_iter().map(|a| rewrite_co(a, ctx)).collect(),
+                    witnesses: witnesses.rewrite_co(ctx),
+                    named_args: named_args.rewrite_co(ctx),
+                    is_coroutine_create: False,
+                )), loc, rewritten_ty)
+            }
             kind => Expr(kind.rewrite_co(ctx), loc, rewritten_ty),
         }
     }
 
     fn lower_co_create(ctx: CoroutineLowerer, fn_qname: QualifiedName, args: Vec[Expr], expr_ty: Option[TypeDef], loc: Location) -> Expr {
+        ctx.co_create_lowered = True;
         let co_idx = ctx.fn_to_co_index.get(fn_qname).unwrap();
         let v_idx  = ctx.fn_to_variant_idx.get(fn_qname).unwrap();
         let info   = ctx.co_enums[co_idx].clone();
 
-        let frame_qn       = QualifiedName.new_coroutine_frame(co_idx, v_idx);
-        let frame_state_qn = QualifiedName.new_coroutine_frame_state(co_idx, v_idx);
-        let start_qn       = QualifiedName.new_coroutine_frame_state_variant(co_idx, v_idx, 0);
-        let state_var_qn   = QualifiedName.new_coroutine_state_variant(co_idx, v_idx);
+        let frame_qn       = QualifiedName.new_coroutine_frame(co_idx, v_idx).as_mono();
+        let frame_state_qn = QualifiedName.new_coroutine_frame_state(co_idx, v_idx).as_mono();
+        let start_qn       = QualifiedName.new_coroutine_frame_state_variant(co_idx, v_idx, 0).as_mono();
+        let state_var_qn   = QualifiedName.new_coroutine_state_variant(co_idx, v_idx).as_mono();
 
         let frame_ty       = TypeDef.Named(NamedInfo(Name.inner(frame_qn), []));
         let frame_state_ty = TypeDef.Named(NamedInfo(Name.inner(frame_state_qn), []));
@@ -76,10 +99,21 @@ pub struct CoroutineLowerer {
 
         let start_expr = make_variant_call(start_qn, Vec.new(), frame_state_ty, loc.clone());
 
+        let vi = ctx.co_enums[co_idx].variants[v_idx].clone();
+
         let frame_args: Vec[Expr] = Vec.new();
         frame_args.push(start_expr);
         for arg in args {
             frame_args.push(rewrite_co(arg, ctx));
+        }
+        for local_ty in vi.local_types.iter() {
+            let rewritten_local_ty = rewrite_co(local_ty, ctx);
+            let uninit_qn = B.get_util_uninitialized_qn().as_mono([rewritten_local_ty]);
+            frame_args.push(Expr(ExprKind.FunctionCall(FunctionCallInfo(
+                qname: uninit_qn,
+                kind: FunctionKind.Builtin,
+                args: Vec.new(),
+            )), loc.clone(), Some(rewritten_local_ty)));
         }
         let frame_expr = make_struct_call(frame_qn, frame_args, frame_ty, loc.clone());
         let state_expr = make_variant_call(state_var_qn, [frame_expr], state_ty, loc.clone());
@@ -99,6 +133,7 @@ pub fn lower_coroutines(program: Program) {
         fn_to_co_index: Map.new(),
         fn_to_variant_idx: Map.new(),
         co_count: 0,
+        co_create_lowered: False,
     );
 
     // ── Step 1: collect coroutine functions ───────────────────────────────────
@@ -122,6 +157,11 @@ pub fn lower_coroutines(program: Program) {
         let arg_names: Vec[I.String]         = func.args.iter().map(|a| a.name.get_user_name()).collect();
         let arg_var_names: Vec[VariableName] = func.args.iter().map(|a| a.name.clone()).collect();
 
+        let raw_locals = collect_locals(func.body);
+        let local_types: Vec[TypeDef]         = raw_locals.iter().map(|(_, ty)| ty).collect();
+        let local_names: Vec[I.String]         = raw_locals.iter().map(|(vn, _)| I.intern(vn.format())).collect();
+        let local_var_names: Vec[VariableName] = raw_locals.iter().map(|(vn, _)| vn.clone()).collect();
+
         let vi = CoVariantInfo(
             co_index: info.co_index,
             variant_index: v_idx,
@@ -130,6 +170,9 @@ pub fn lower_coroutines(program: Program) {
             arg_names: arg_names,
             arg_var_names: arg_var_names,
             yield_count: 0,
+            local_types: local_types,
+            local_names: local_names,
+            local_var_names: local_var_names,
         );
 
         ctx.co_enums[info.co_index].variants.push(vi);
@@ -141,11 +184,25 @@ pub fn lower_coroutines(program: Program) {
 
     program.structs = program.structs.rewrite_co(ctx);
     program.enums = program.enums.rewrite_co(ctx);
-    program.functions = program.functions.rewrite_co(ctx);
+
+    let div_fns = program.get_divergent_functions();
+
+    // Rewrite functions one at a time so we can re-normalize exactly those that
+    // gained a co-create expression tree (nested ctor + uninitialized() in expr
+    // position, which only lower-builtins-via-let can handle).
+    let fn_keys: Vec[QualifiedName] = program.functions.keys().collect();
+    for key in fn_keys {
+        let func = program.functions.get(key).unwrap();
+        ctx.co_create_lowered = False;
+        let new_func = func.rewrite_co(ctx);
+        if ctx.co_create_lowered {
+            normalize_function(new_func, div_fns.clone());
+        }
+        program.functions.insert(key, new_func);
+    }
 
     // ── Step 3: build handlers, fill yield_count, remove original fns ─────────
 
-    let div_fns = program.get_divergent_functions();
     let handlers: Vec[FunctionDef] = Vec.new();
 
     for key in co_fn_keys.iter() {
@@ -180,7 +237,7 @@ pub fn lower_coroutines(program: Program) {
             }
             program.enums.insert(fse_qn, fse);
 
-            let frame_state_qn = QualifiedName.new_coroutine_frame_state(vi.co_index, vi.variant_index);
+            let frame_state_qn = QualifiedName.new_coroutine_frame_state(vi.co_index, vi.variant_index).as_mono();
             let frame_state_ty = TypeDef.Named(NamedInfo(Name.inner(frame_state_qn), []));
             let fs = generate_frame_struct(vi, frame_state_ty, repr_loc.clone());
             let frame_qn = fs.qualified_name.unwrap();
@@ -213,7 +270,10 @@ pub fn lower_coroutines(program: Program) {
 
     for key in resume_keys {
         let func   = program.functions.remove(key).unwrap();
-        let arg_ty = func.args[0].type_def;
+        // resume is not implicit-threaded, so the coroutine is args[0].
+        // Its type must be one of our generated co_wraps.
+        let co_arg = func.args[0].clone();
+        let arg_ty = co_arg.type_def;
 
         let matched_info: Option[CoEnumInfo] = None;
         for info in ctx.co_enums.iter() {
@@ -226,10 +286,11 @@ pub fn lower_coroutines(program: Program) {
 
         match matched_info {
             Some(info) => {
-                let new_func = generate_resume_body(func, info, repr_loc.clone());
+                let new_func = generate_resume_body(func, info, co_arg.name.clone(), repr_loc.clone());
+                normalize_function(new_func, div_fns.clone());
                 program.functions.insert(key, new_func);
             }
-            None => { program.functions.insert(key, func); },
+            None => panic("lower_coroutines: resume arg[0] is not a known coroutine wrap type"),
         }
     }
 }

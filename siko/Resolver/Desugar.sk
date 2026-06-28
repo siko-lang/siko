@@ -6,12 +6,10 @@ import Siko.Resolver.Error
 import Siko.Location
 import Siko.Resolver
 import Siko.AST.Expr
-import Siko.AST.Identifier
 import Siko.AST.Name
 import Siko.AST.Pattern
 import Siko.AST.Statement as S
 import Siko.Constants.Builtins as B
-import Siko.Interner as I
 
 pub fn desugar_try(expr_resolver: ExprResolver, resolved_inner: Expr, loc: Location) -> ExprKind {
     let ok_var = expr_resolver.var_allocator.allocate_temp();
@@ -199,22 +197,20 @@ pub fn desugar_for_loop(
     let iter_var = expr_resolver.var_allocator.allocate_temp();
     env.add(iter_var);
     let into_iter_call = Expr(
-        ExprKind.MethodCall(MethodCallInfo(
-            resolved_iterable,
-            Identifier.new(I.intern("into_iter"), loc),
-            Vec.new(),
-            Vec.new(),
+        ExprKind.FunctionCall(FunctionCallInfo(
+            qname: B.get_into_iter_qn(),
+            kind: FunctionKind.UserDefined,
+            args: [resolved_iterable],
         )),
         loc,
         None,
     );
     result.push(S.Statement.Let(S.LetInfo(iter_var, None, into_iter_call)));
     let next_call = Expr(
-        ExprKind.MethodCall(MethodCallInfo(
-            Expr(ExprKind.Var(iter_var), loc, None),
-            Identifier.new(I.intern("next"), loc),
-            Vec.new(),
-            Vec.new(),
+        ExprKind.FunctionCall(FunctionCallInfo(
+            qname: B.get_iterator_next_qn(),
+            kind: FunctionKind.UserDefined,
+            args: [Expr(ExprKind.Var(iter_var), loc, None)],
         )),
         loc,
         None,
