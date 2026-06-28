@@ -1,0 +1,95 @@
+module Std.Time {
+
+import Std.Libc.Time
+import Std.Libc.Unistd as Unistd
+
+pub struct Duration {
+    pub seconds: I64,
+    pub nanoseconds: I64,
+
+    pub fn to_millis(d: Duration) -> I64 {
+        d.seconds * 1000.as_i64() + d.nanoseconds / 1000000.as_i64()
+    }
+
+    pub fn to_seconds(d: Duration) -> I64 {
+        d.seconds
+    }
+
+    pub fn to_minutes(d: Duration) -> I64 {
+        d.seconds / 60.as_i64()
+    }
+
+    pub fn to_hours(d: Duration) -> I64 {
+        d.seconds / 3600.as_i64()
+    }
+
+    pub fn to_microseconds(d: Duration) -> I64 {
+        d.seconds * 1000000.as_i64() + d.nanoseconds / 1000.as_i64()
+    }
+}
+
+pub struct Instant {
+    pub seconds: I64,
+    pub nanoseconds: I64,
+
+    pub fn now() -> Instant {
+        let ts = get_monotonic_clock().expect("Failed to get monotonic clock");
+        Instant(ts.tv_sec, ts.tv_nsec)
+    }
+
+    pub fn elapsed(instant: Instant) -> Duration {
+        let now = Instant.now();
+        let sec = now.seconds - instant.seconds;
+        let nsec = now.nanoseconds - instant.nanoseconds;
+        if nsec < 0.as_i64() {
+            Duration(sec - 1.as_i64(), nsec + 1000000000.as_i64())
+        } else {
+            Duration(sec, nsec)
+        }
+    }
+}
+
+@safe
+pub fn sleep(d: Duration) {
+    Unistd.usleep(d.to_microseconds().as_int().as_u32());
+}
+
+pub fn minutes(m: Int) -> Duration {
+    Duration((m * 60).as_i64(), 0.as_i64())
+}
+
+pub fn seconds(s: Int) -> Duration {
+    Duration(s.as_i64(), 0.as_i64())
+}
+
+pub fn milliseconds(s: Int) -> Duration {
+    Duration(s.as_i64() / 1000.as_i64(), (s.as_i64() % 1000.as_i64()) * 1000000.as_i64())
+}
+
+instance Add[Duration] {
+    type Output = Duration
+    fn add(a: Duration, b: Duration) -> Duration {
+        let sec = a.seconds + b.seconds;
+        let nsec = a.nanoseconds + b.nanoseconds;
+        if nsec >= 1000000000.as_i64() {
+            Duration(sec + 1.as_i64(), nsec - 1000000000.as_i64())
+        } else {
+            Duration(sec, nsec)
+        }
+    }
+}
+
+instance Sub[Duration] {
+    type Output = Duration
+    fn sub(a: Duration, b: Duration) -> Duration {
+        let sec = a.seconds - b.seconds;
+        let nsec = a.nanoseconds - b.nanoseconds;
+        if nsec < 0.as_i64() {
+            Duration(sec - 1.as_i64(), nsec + 1000000000.as_i64())
+        } else {
+            Duration(sec, nsec)
+        }
+    }
+}
+
+}

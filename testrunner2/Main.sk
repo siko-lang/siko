@@ -1,0 +1,524 @@
+module Main {
+
+import Std.Sys.Process as Sys
+import Std.Sys.Command
+import Std.Fs.Directory
+import Std.Fs.File
+import Std.Fs.Stat
+import Std.Time
+import Std.Console
+
+let TIMEOUT_SECS: Int = 45;
+let GREEN: String = "\x1b[32m";
+let RED: String = "\x1b[31m";
+let RESET: String = "\x1b[0m";
+
+pub enum Error {
+    Signal(I32),
+    Timeout,
+    BuildFailed(String),
+    ProgramFailed(String),
+    ExpectedFailureSucceeded(String),
+    SnapshotMismatch(String, String, String),
+    IoError(String, String),
+
+    pub fn is_segfault(e: Error) -> Bool {
+        match e {
+            Signal(sig) => sig == 11.as_i32(),
+            _ => False,
+        }
+    }
+}
+
+instance ToString[Error] {
+    fn to_string(e: Error) -> String {
+        match e {
+            Signal(sig) => {
+                if sig == 11.as_i32() {
+                    "SEGFAULT (signal 11)"
+                } else {
+                    "killed by signal ${sig.as_int()}"
+                }
+            }
+            Timeout => {
+                // FIXME: global method call
+                let t = TIMEOUT_SECS;
+                "timed out after ${t}s"
+            }
+            BuildFailed(out) => "siko.bin exited non-zero:\n${out}",
+            ProgramFailed(out) => "program exited non-zero:\n${out}",
+            ExpectedFailureSucceeded(out) => "expected compiler to fail but it succeeded\nstdout:\n${out}",
+            SnapshotMismatch(path, expected, actual) => "output differs from snapshot (${path})\n--- expected ---\n${expected}--- actual ---\n${actual}",
+            IoError(ctx, msg) => "${ctx}: ${msg}",
+        }
+    }
+}
+
+pub struct Stats {
+    total: Int,
+    failed: Int,
+    failed_names: Vec[String],
+
+    pub fn new() -> Stats {
+        Stats(0, 0, Vec.new())
+    }
+}
+
+fn file_exists(path: String) -> Bool {
+    match Std.Fs.Stat.stat(path) {
+        Ok(_) => True,
+        Err(_) => False,
+    }
+}
+
+fn case_input(case: String) -> String {
+    if file_exists("${case}/package.toml") {
+        case
+    } else {
+        "${case}/main.sk"
+    }
+}
+
+fn any_filter_matches(path: String, filters: Vec[String]) -> Bool {
+    for f in filters {
+        if path.contains(f) {
+            return True;
+        }
+    }
+    False
+}
+
+fn collect_cases(dir: String, out: Vec[String], filters: Vec[String]) {
+    let subdirs: Vec[String] = Vec.new();
+    let iter = match Std.Fs.Directory.list_dir(dir) {
+        Ok(it) => it,
+        Err(_) => return,
+    };
+    for entry_result in iter {
+        match entry_result {
+            Ok(entry) => {
+                if entry.is_directory() {
+                    let name = entry.name();
+                    if name != "." && name != ".." {
+                        subdirs.push("${dir}/${name}");
+                    }
+                }
+            }
+            Err(_) => {}
+        }
+    }
+    subdirs.sort();
+    for subdir in subdirs {
+        if file_exists("${subdir}/main.sk") {
+            if filters.is_empty() || any_filter_matches(subdir, filters) {
+                out.push(subdir);
+            }
+        } else {
+            collect_cases(subdir, out, filters);
+        }
+    }
+}
+
+fn discover_cases(root: String, filters: Vec[String]) -> Vec[String] {
+    let cases: Vec[String] = Vec.new();
+    collect_cases(root, cases, filters);
+    cases
+}
+
+fn format_duration(ms: I64) -> String {
+    let mins = ms / 60000.as_i64();
+    let secs = (ms % 60000.as_i64()) / 1000.as_i64();
+    let millis = ms % 1000.as_i64();
+    if mins > 0.as_i64() {
+        "${mins}m ${secs}s ${millis}ms"
+    } else {
+        if secs > 0.as_i64() {
+            "${secs}s ${millis}ms"
+        } else {
+            "${millis}ms"
+        }
+    }
+}
+
+fn write_if_changed(path: String, content: String) -> Result[(), Error] {
+    match Std.Fs.File.read_file(path) {
+        Ok(existing) => {
+            if existing == content {
+                return Ok(());
+            }
+        }
+        Err(_) => {}
+    }
+    match Std.Fs.File.write_file(path, content) {
+        Ok(_) => Ok(()),
+        Err(e) => Err(IoError("cannot write ${path}", e.to_string())),
+    }
+}
+
+fn wait_with_timeout(child: ChildProcess) -> Result[CommandResult, Error] {
+    let start = Instant.now();
+    loop {
+        match child.try_wait() {
+            Some(r) => return Ok(r),
+            None => {
+                // FIXME: global method call
+                let t = TIMEOUT_SECS;
+                if start.elapsed().to_seconds() >= t.as_i64() {
+                    child.kill(9.as_i32());
+                    child.wait();
+                    return Err(Timeout);
+                }
+                sleep(milliseconds(50));
+            }
+        }
+    }
+}
+
+fn invoke_success(compiler: String, cwd: String, valgrind: Bool) -> Result[String, Error] {
+    let cmd = if valgrind {
+        let cwd_abs = match Std.Fs.Directory.get_current_dir() {
+            Ok(d) => d,
+            Err(e) => return Err(IoError("cannot get cwd", e.to_string())),
+        };
+        let supp = "${cwd_abs}/.github/valgrind.supp";
+        Command.new("valgrind")
+            .with_path()
+            .arg("--error-exitcode=1")
+            .arg("--leak-check=no")
+            .arg("--suppressions=${supp}")
+            .arg(compiler)
+            .work_dir(cwd)
+            .with_capture_stdout()
+    } else {
+        Command.new(compiler)
+            .work_dir(cwd)
+            .with_capture_stdout()
+    };
+
+    let result = match wait_with_timeout(cmd.spawn()) {
+        Ok(r) => r,
+        Err(e) => return Err(e),
+    };
+
+    if !result.success() {
+        return Err(ProgramFailed(result.captured_stdout()));
+    }
+    Ok(result.captured_stdout())
+}
+
+fn invoke_failure(compiler: String, args: Vec[String]) -> Result[String, Error] {
+    let cmd = Command.new(compiler).args(args).with_capture_stdout().run();
+    if cmd.success() {
+        return Err(ExpectedFailureSucceeded(cmd.captured_stdout()));
+    }
+    match cmd.status().signal() {
+        Some(sig) => return Err(Signal(sig)),
+        None => {}
+    }
+    Ok(cmd.captured_stdout())
+}
+
+fn build_run(
+    compiler: String,
+    case: String,
+    nostd: Bool,
+    bless: Bool,
+    valgrind: Bool,
+    cwd: String,
+) -> Result[String, Error] {
+    let bin = "${case}/test_selfhost.bin";
+    let abs_bin = "${cwd}/${bin}";
+    let input = case_input(case);
+
+    let build_args: Vec[String] = Vec.new();
+    build_args.push("build");
+    if nostd && !file_exists("${case}/package.toml") {
+        build_args.push("--no-std");
+    }
+    build_args.push(input);
+    build_args.push("-o");
+    build_args.push(bin);
+
+    let build_start = Instant.now();
+    let build_cmd = Command.new(compiler).args(build_args).with_capture_stdout().run();
+    let build_ms = build_start.elapsed().to_millis();
+
+    if !build_cmd.success() {
+        match build_cmd.status().signal() {
+            Some(sig) => return Err(Signal(sig)),
+            None => {}
+        }
+        return Err(BuildFailed(build_cmd.captured_stdout()));
+    }
+
+    let exec_start = Instant.now();
+    let actual = match invoke_success(abs_bin, case, valgrind) {
+        Ok(s) => s,
+        Err(e) => return Err(e),
+    };
+    let exec_ms = exec_start.elapsed().to_millis();
+
+    let snapshot = "${case}/output.txt";
+    if bless {
+        match write_if_changed(snapshot, actual) {
+            Ok(_) => {}
+            Err(e) => return Err(e),
+        }
+    } else {
+        let expected = match Std.Fs.File.read_file(snapshot) {
+            Ok(s) => s,
+            Err(e) => return Err(IoError("cannot read ${snapshot}", e.to_string())),
+        };
+        if actual != expected {
+            return Err(SnapshotMismatch(snapshot, expected, actual));
+        }
+    }
+
+    Ok("build: ${format_duration(build_ms)} exec: ${format_duration(exec_ms)}")
+}
+
+fn print_indented(msg: String) {
+    for line in msg.split("\n") {
+        println("          ${line}");
+    }
+}
+
+fn bless_success_case(compiler: String, case: String, nostd: Bool, cwd: String) {
+    print("  ${case} ...");
+    flush();
+    match build_run(compiler, case, nostd, True, False, cwd) {
+        Ok(_) => println(" ${GREEN}BLESSED${RESET}"),
+        Err(e) => {
+            eprintln_str("  [build] failed for ${case}:\n${e}");
+            println(" ${RED}FAILED${RESET}");
+        }
+    }
+}
+
+fn bless_failure_case(compiler: String, case: String) {
+    print("  ${case} ...");
+    flush();
+    let input = case_input(case);
+    let args: Vec[String] = Vec.new();
+    args.push("build");
+    args.push(input);
+    match invoke_failure(compiler, args) {
+        Ok(output) => {
+            let path = "${case}/output.txt";
+            match write_if_changed(path, output) {
+                Ok(_) => println(" ${GREEN}BLESSED${RESET}"),
+                Err(e) => {
+                    eprintln_str("  ${e}");
+                    println(" ${RED}FAILED${RESET}");
+                }
+            }
+        }
+        Err(e) => {
+            eprintln_str("  [build] failed for ${case}:\n${e}");
+            println(" ${RED}FAILED${RESET}");
+        }
+    }
+}
+
+fn run_success_case(
+    compiler: String,
+    case: String,
+    stats: Stats,
+    nostd: Bool,
+    valgrind: Bool,
+    cwd: String,
+) {
+    stats.total = stats.total + 1;
+    print("  ${case} ...");
+    flush();
+
+    if !file_exists(compiler) {
+        println(" ${RED}FAIL${RESET} (compiler not found)");
+        stats.failed = stats.failed + 1;
+        stats.failed_names.push(case);
+        return;
+    }
+
+    match build_run(compiler, case, nostd, False, valgrind, cwd) {
+        Ok(timing) => {
+            println(" ${GREEN}PASS${RESET} (${timing})");
+        }
+        Err(e) => {
+            stats.failed = stats.failed + 1;
+            stats.failed_names.push(case);
+            if e.is_segfault() {
+                println(" ${RED}FAIL - SEGFAULT${RESET}");
+            } else {
+                println(" ${RED}FAIL${RESET}");
+                print_indented(e.to_string());
+            }
+        }
+    }
+}
+
+fn failure_snapshot_test(compiler: String, args: Vec[String], snapshot: String) -> Result[(), Error] {
+    let actual = match invoke_failure(compiler, args) {
+        Ok(s) => s,
+        Err(e) => return Err(e),
+    };
+    let expected = match Std.Fs.File.read_file(snapshot) {
+        Ok(s) => s,
+        Err(e) => return Err(IoError("cannot read ${snapshot}", e.to_string())),
+    };
+    if actual != expected {
+        return Err(SnapshotMismatch(snapshot, expected, actual));
+    }
+    Ok(())
+}
+
+fn run_failure_case(compiler: String, case: String, stats: Stats) {
+    stats.total = stats.total + 1;
+    print("  ${case} ...");
+    flush();
+
+    let snapshot = "${case}/output.txt";
+    let input = case_input(case);
+    let args: Vec[String] = Vec.new();
+    args.push("build");
+    args.push(input);
+
+    let self_start = Instant.now();
+    let result = failure_snapshot_test(compiler, args, snapshot);
+    let timing = format_duration(self_start.elapsed().to_millis());
+
+    match result {
+        Ok(_) => {
+            println(" ${GREEN}PASS${RESET} (${timing})");
+        }
+        Err(e) => {
+            stats.failed = stats.failed + 1;
+            stats.failed_names.push(case);
+            if e.is_segfault() {
+                println(" ${RED}FAIL - SEGFAULT${RESET} (${timing})");
+            } else {
+                println(" ${RED}FAIL${RESET} (${timing})");
+                print_indented(e.to_string());
+            }
+        }
+    }
+}
+
+fn main() {
+    let args = Sys.get_args();
+    let bless = False;
+    let valgrind = False;
+    let compiler = "./siko.bin";
+    let filters: Vec[String] = Vec.new();
+
+    let i = 1;
+    loop {
+        if i >= args.len() {
+            break;
+        }
+        let arg = args[i];
+        if arg == "--bless" {
+            bless = True;
+        } else {
+            if arg == "--valgrind" {
+                valgrind = True;
+            } else {
+                if arg == "--re" {
+                    // consumed but ignored
+                } else {
+                    if arg == "--c" {
+                        i = i + 1;
+                        if i < args.len() {
+                            compiler = args[i];
+                        }
+                    } else {
+                        filters.push(arg);
+                    }
+                }
+            }
+        }
+        i = i + 1;
+    }
+
+    let cwd = match Std.Fs.Directory.get_current_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln_str("cannot get working directory: ${e}");
+            Sys.exit(1.as_i32());
+        }
+    };
+
+    println("compiler: ${compiler}");
+    if bless {
+        println("blessing snapshots...");
+    }
+
+    let stats = Stats.new();
+    let skipped = 0;
+
+    // nostd success cases
+    let nostd_cases = discover_cases("test/success/nostd", filters);
+    println("=== success (${nostd_cases.len()} cases) nostd ===");
+    for case in nostd_cases {
+        if file_exists("${case}/SKIP") {
+            println("  SKIP  ${case} (SKIP file present)");
+            skipped = skipped + 1;
+            continue;
+        }
+        if bless {
+            bless_success_case(compiler, case, True, cwd);
+        } else {
+            run_success_case(compiler, case, stats, True, valgrind, cwd);
+        }
+    }
+
+    // std success cases
+    let std_cases = discover_cases("test/success/std", filters);
+    println("=== success (${std_cases.len()} cases) std ===");
+    for case in std_cases {
+        if file_exists("${case}/SKIP") {
+            println("  SKIP  ${case} (SKIP file present)");
+            skipped = skipped + 1;
+            continue;
+        }
+        if bless {
+            bless_success_case(compiler, case, False, cwd);
+        } else {
+            run_success_case(compiler, case, stats, False, valgrind, cwd);
+        }
+    }
+
+    // failure cases
+    if file_exists("test/failure") {
+        let failure_cases = discover_cases("test/failure", filters);
+        println("\n=== failure (${failure_cases.len()} cases) ===");
+        for case in failure_cases {
+            if file_exists("${case}/SKIP") {
+                println("  SKIP  ${case} (SKIP file present)");
+                skipped = skipped + 1;
+                continue;
+            }
+            if bless {
+                bless_failure_case(compiler, case);
+            } else {
+                run_failure_case(compiler, case, stats);
+            }
+        }
+    }
+
+    if !bless {
+        let passed = stats.total - stats.failed;
+        if skipped > 0 {
+            println("\n${skipped} skipped");
+        }
+        println("${passed}/${stats.total} passed");
+        if stats.failed > 0 {
+            println("\nfailed tests:");
+            for name in stats.failed_names {
+                println("  ${name}");
+            }
+            Sys.exit(1.as_i32());
+        }
+    }
+}
+
+}

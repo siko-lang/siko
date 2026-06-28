@@ -15,20 +15,40 @@ import Std.Arch.Wait
 import Std.Ptr
 import Std.Sync.Thread as T
 
+pub struct Status {
+    raw: I32,
+
+    pub fn success(s: Status) -> Bool {
+        w_exited(s.raw) && w_exit_status(s.raw) == 0.as_i32()
+    }
+
+    pub fn exit_code(s: Status) -> Option[I32] {
+        if w_exited(s.raw) {
+            Some(w_exit_status(s.raw))
+        } else {
+            None
+        }
+    }
+
+    pub fn signal(s: Status) -> Option[I32] {
+        if w_signaled(s.raw) {
+            Some(w_status(s.raw))
+        } else {
+            None
+        }
+    }
+}
+
 pub struct CommandResult {
     status: I32,
     captured_stdout: String,
 
     pub fn success(r: CommandResult) -> Bool {
-        if w_exited(r.status) {
-            w_exit_status(r.status) == 0.as_i32()
-        } else {
-            False
-        }
+        Status(r.status).success()
     }
 
-    pub fn status(r: CommandResult) -> I32 {
-        r.status
+    pub fn status(r: CommandResult) -> Status {
+        Status(r.status)
     }
 
     pub fn captured_stdout(r: CommandResult) -> String {
@@ -65,6 +85,29 @@ pub struct ChildProcess {
             None => {}
         }
         CommandResult(status: status, captured_stdout: *child.captured_stdout)
+    }
+
+    @safe
+    pub fn try_wait(child: ChildProcess) -> Option[CommandResult] {
+        let status = 0.as_i32();
+        let ret = waitpid(child.pid, &status, WNOHANG);
+        if ret == 0.as_i32() {
+            None
+        } else {
+            match child.capture_thread {
+                Some(t) => {
+                    t.join();
+                    child.capture_thread = None;
+                }
+                None => {}
+            }
+            Some(CommandResult(status: status, captured_stdout: *child.captured_stdout))
+        }
+    }
+
+    @safe
+    pub fn kill(child: ChildProcess, sig: I32) {
+        Unistd.kill(child.pid.as_int().as_i32(), sig);
     }
 }
 
@@ -126,11 +169,11 @@ pub struct Command {
     }
 
     pub fn success(cmd: Command) -> Bool {
-        if w_exited(cmd.status) {
-            w_exit_status(cmd.status) == 0.as_i32()
-        } else {
-            False
-        }
+        Status(cmd.status).success()
+    }
+
+    pub fn status(cmd: Command) -> Status {
+        Status(cmd.status)
     }
 
     pub fn add_env(cmd: Command, env: String, value: String) -> Command {
@@ -140,10 +183,6 @@ pub struct Command {
 
     pub fn captured_stdout(cmd: Command) -> String {
         cmd.captured_stdout
-    }
-
-    pub fn status(cmd: Command) -> I32 {
-        cmd.status
     }
 
     @safe

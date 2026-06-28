@@ -1,23 +1,18 @@
-TESTRUNNER = testrunner/target/debug/testrunner
-
 SIKO_SK := $(shell find siko std -name '*.sk')
+HTTPD_SK := $(shell find httpd -name '*.sk')
+TESTRUNNER_SK := $(shell find testrunner2 -name '*.sk')
 
 SIKO_TARGET_OS ?= darwin
 BOOTSTRAP_SOURCE = bootstrap/source_$(SIKO_TARGET_OS).c
 
-.PHONY: build test all
+.PHONY: test
 
-all: build
-
-build:
-	cd testrunner; cargo build --workspace
-
-test: build
+test: siko.bin runner.bin
 	./siko.bin test std/Common
-	./$(TESTRUNNER)
+	./runner.bin
 
-test-valgrind: build
-	./$(TESTRUNNER) --valgrind
+test-valgrind: runner.bin
+	./runner.bin --valgrind
 
 siko.bin: base.bin $(SIKO_SK)
 	./base.bin build siko -O -o siko.bin
@@ -51,7 +46,8 @@ site: ssg.bin
 web: site
 	python3 docs/output/server.py
 
-HTTPD_SK := $(shell find httpd -name '*.sk')
+runner.bin: siko.bin ${TESTRUNNER_SK}
+	./siko.bin build testrunner2 -o runner.bin
 
 httpd: siko.bin $(HTTPD_SK)
 	./siko.bin build httpd -o httpd.bin
