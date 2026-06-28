@@ -369,63 +369,77 @@ struct Normalizer {
             }
         }
 
-        // Whether control can fall through to the end of this block. A divergent
-        // statement (one whose lowering produced no value) flips this off, but we
-        // keep lowering the remaining statements rather than dropping them: they may
-        // be reachable through goto/label, and even if dead, emitting them is the
-        // normalizer's job, not deciding reachability. `fell_through` is sticky and
-        // only governs the block's *value*.
-        let fell_through = True;
+        // Reachability-based dead-code elimination. A divergent statement turns
+        // `reachable` off (subsequent straight-line code is dead and is dropped),
+        // but a `label` is a goto join point, so it turns reachability back on —
+        // that is what keeps a coroutine handler's segments (which sit after the
+        // `return`s but are reached through the dispatch's gotos) while still
+        // dropping genuinely-dead code (e.g. a `let x = diverges(); use(x)` whose
+        // binding could not even be formed).
+        let reachable = True;
         for stmt in stmts {
             match stmt {
-                S.Statement.Let(S.LetInfo(name, ty, rhs)) => {
-                    match norm.lower_expr(rhs, out) {
-                        None => { fell_through = False; }
-                        Some(e) => out.push(S.Statement.Let(S.LetInfo(name, ty, e))),
-                    }
-                }
-                S.Statement.Declare(_) => out.push(stmt),
-                S.Statement.Assign(lhs, rhs) => {
-                    match norm.to_atom(rhs, out) {
-                        None => { fell_through = False; }
-                        Some(rhs_atom) => {
-                            match norm.lower_expr(lhs, out) {
-                                None => { fell_through = False; }
-                                Some(lhs_expr) => out.push(S.Statement.Assign(lhs_expr, rhs_atom)),
+                S.Statement.Expr(e) => {
+                    match e.kind {
+                        ExprKind.Label(_) => {
+                            reachable = True;
+                            out.push(S.Statement.Expr(e));
+                        }
+                        _ => {
+                            if reachable {
+                                match norm.lower_expr(e, out) {
+                                    None => { reachable = False; }
+                                    Some(expr) => {
+                                        if !is_atom(expr) {
+                                            out.push(S.Statement.Expr(expr));
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
                 }
-                S.Statement.Expr(e) => {
-                    match norm.lower_expr(e, out) {
-                        None => { fell_through = False; }
-                        Some(expr) => {
-                            if !is_atom(expr) {
-                                out.push(S.Statement.Expr(expr));
+                S.Statement.Let(S.LetInfo(name, ty, rhs)) => {
+                    if reachable {
+                        match norm.lower_expr(rhs, out) {
+                            None => { reachable = False; }
+                            Some(e) => out.push(S.Statement.Let(S.LetInfo(name, ty, e))),
+                        }
+                    }
+                }
+                S.Statement.Declare(_) => { if reachable { out.push(stmt); } }
+                S.Statement.Assign(lhs, rhs) => {
+                    if reachable {
+                        match norm.to_atom(rhs, out) {
+                            None => { reachable = False; }
+                            Some(rhs_atom) => {
+                                match norm.lower_expr(lhs, out) {
+                                    None => { reachable = False; }
+                                    Some(lhs_expr) => out.push(S.Statement.Assign(lhs_expr, rhs_atom)),
+                                }
                             }
                         }
                     }
                 }
                 S.Statement.TrailingExpr(e) => {
-                    // Trailing is always the last statement; its value is the block's
-                    // value unless something earlier already diverged.
-                    let v = norm.to_atom(e, out);
-                    if fell_through {
-                        return v;
+                    if reachable {
+                        return norm.to_atom(e, out);
                     }
                     return None;
                 }
                 S.Statement.Loop(body) => {
-                    let loop_out = Vec.new();
-                    norm.lower_stmts(body, loop_out, loc);
-                    out.push(S.Statement.Loop(loop_out));
+                    if reachable {
+                        let loop_out = Vec.new();
+                        norm.lower_stmts(body, loop_out, loc);
+                        out.push(S.Statement.Loop(loop_out));
+                    }
                 }
                 S.Statement.UnresolvedLet(_, _, _) => panic("normalizer: UnresolvedLet"),
                 S.Statement.ForLoop(_, _, _) => panic("normalizer: ForLoop must be desugared"),
                 S.Statement.WhileLoop(_, _) => panic("normalizer: WhileLoop must be desugared"),
             }
         }
-        if fell_through {
+        if reachable {
             Some(norm.unit_expr(loc))
         } else {
             None
