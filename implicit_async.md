@@ -1,497 +1,371 @@
 # Implicit Async in Siko
 
 > Design investigation. Goal: transparent sync/async I/O with **no `async`/`await`
-> keywords**, built on the coroutine + effect primitives the language already has.
-> The scheduler/executor lives entirely in userspace; the language only provides
-> primitives.
+> keywords and no changes to the coroutine protocol**, built on the coroutine and
+> effect primitives the language already has. The scheduler/executor lives entirely in
+> userspace; the language only supplies primitives.
 
-This document assumes familiarity with two existing mechanisms and builds on them.
-It is a research/design doc, not an implementation plan only — but it ends with a
-staged plan.
+The model is essentially Rust's `Future`/`poll`, but with the two things Rust spells
+explicitly — `.await` and the `Context`/`Waker` parameter — supplied implicitly by
+features Siko already has (monomorphization-resolved effects, and implicits).
 
 ---
 
-## 0. The two primitives we already have
+## 0. The two primitives we build on
 
-### 0.1 Coroutines (built, working)
+### 0.1 Coroutines
 
-`co f(args)` reifies a call to a coroutine function as a heap value; `resume`
-drives it one step:
+`co f(args)` reifies a call to a coroutine function as a heap value; `resume` drives
+it one step:
 
 ```
-co_wrap_N        ::= struct { state: co_state_N }                    // the handle (reference type)
-co_state_N       ::= enum { Variant0(co_frame_N_0), Variant1(...), ... }  // one variant per co-fn of signature (Y,R)
-co_frame_N_v     ::= struct { state: co_fstate_N_v, _ctx, <args...>, <locals...> }
-co_fstate_N_v    ::= enum { Start, AfterYield_0, ..., AfterYield_k, Completed }   // value type
+co_wrap_N      ::= struct { state: co_state_N }                           // the handle (reference type)
+co_state_N     ::= enum { Variant0(co_frame_N_0), ... }                   // one variant per co-fn of signature (Y,R)
+co_frame_N_v   ::= struct { state: co_fstate_N_v, _ctx, <args...>, <locals...> }
+co_fstate_N_v  ::= enum { Start, AfterYield_0, ..., AfterYield_k, Completed }
 resume(c: co_wrap_N) -> CoResult[Y,R]    where CoResult = { Yielded(Y), Returned(R), Completed }
 ```
 
-The handler is a **state machine**: it `match`es `frame.state`, `goto`s the resume
-point, runs a segment, then either `frame.state = AfterYield_i; return Yielded(v)`
-or `frame.state = Completed; return Returned(v)`. **All locals live in the frame**,
-so they survive across suspension points. The frame is a GC'd reference type, mutated
+The handler is a **state machine**: it `match`es `frame.state`, `goto`s the current
+suspension point, runs a segment, then either `frame.state = AfterYield_i; return
+Yielded(v)` or `frame.state = Completed; return Returned(v)`. **All locals live in the
+frame**, so they survive across suspensions. The frame is a GC'd reference type, mutated
 through `resume`.
+
+This is exactly Rust's `poll`: **`resume` ≙ `poll`**, **`Yielded` ≙ `Pending`**,
+**`Returned(v)` ≙ `Ready(v)`**. We use it as-is; nothing about the protocol changes.
 
 Two facts that matter below:
 
-- **The lowering is a tree walk** (`HandlerLower`, an `auto(Map)` pass): every
-  `yield` *anywhere in the body* — including nested in `if`/`match`/loops — is
-  rewritten in place into `set-state / return Yielded / resume-label`. The dispatch
-  `goto`s into the middle of nested structures. So **any expression position can
-  become a suspension point.** This is the hook the async transform needs.
-- It runs **before `lower_tuples`**, so it sees pre-lowering, monomorphized types.
+- **The lowering is a tree walk** (`HandlerLower`, an `auto(Map)` pass): every suspension
+  point — anywhere in the body, nested in `if`/`match`/loops — is rewritten in place into
+  `set-state / return / resume-label`, and the dispatch `goto`s into the middle of nested
+  structures. The dispatch jumps **straight to the current suspension point**, never
+  re-running completed segments.
+- It runs after monomorphization **and after closure lowering** — closures must
+  already be gone, so the transform never meets a `CreateClosure` (an indirect call it
+  could neither color nor rewrite, §9.2). It works on the per-context monomorphic bodies.
 
-Today's coroutines are **asymmetric generators**: `yield` carries a value *up*;
-`resume` carries *nothing back down*. Async will need to relax this (see §5).
+### 0.2 Effects
 
-### 0.2 Effects (working, mono-resolved)
+An `effect` declares operations whose implementation is chosen at the call site with
+`with op = handler { ... }`. The detail that matters:
 
-An `effect` is a named set of operations. `with op = handler { ... }` binds a
-handler for the dynamic extent of the block. The crucial implementation detail:
+- **Effect operations are resolved during monomorphization.** The monomorphizer carries
+  an effect context (operation → chosen handler); at an effect call it emits a direct
+  call to that handler.
+- So **the same source function is specialized per effect context.** `do_work` under
+  `with read = blocking_read` and under `with read = async_read` becomes two distinct
+  monomorphic functions.
+- **Handlers are ordinary functions that run at the effect call site**, threaded like
+  implicits. Effects are not stack-unwinding continuations.
 
-- **Effect operation calls are resolved during monomorphization.** `Monomorphizer/Expr.sk`
-  carries a `current_effect_ctx` (operation → chosen handler). At an `EffectMethod`
-  call it looks up the handler in that context and emits a direct call.
-- Therefore **the same source function is specialized per effect context.** `do_work`
-  called under `with log = console_log` and under `with log = file_log` becomes *two
-  different monomorphic functions*, each with the handler baked in.
-- **Handlers are plain functions that execute at the effect call site** (in the
-  callee's activation), threaded like implicits. Effects are *not* stack-unwinding
-  delimited continuations.
-
-This last point is the whole game: **a handler is ordinary code running at the
-operation site. If that code suspends, the suspension happens exactly where the I/O
-conceptually happens — at the bottom of the call chain.**
+A handler is therefore normal code executing where the I/O conceptually happens — at the
+bottom of the call chain. If that code suspends, it suspends exactly there.
 
 ---
 
-## 1. The vision
+## 1. The idea
 
 ```
-effect Net { fn read(s: Socket, buf: Slice) -> Int  ;  fn accept(l: Listener) -> Socket ; ... }
+effect Net { fn read(s: Socket, buf: Slice) -> Int ; fn accept(l: Listener) -> Socket ; ... }
 
-fn handle(req)            { ... Net.read(sock, buf) ... }    // no async anything
-fn serve(listener)        { let s = Net.accept(listener); handle(read_request(s)) }
-fn main()                 { serve(open(8080)) }
+fn handle(req)      { ... Net.read(sock, buf) ... }     // no async anything
+fn serve(listener)  { let s = Net.accept(listener); handle(read_request(s)) }
+fn main()           { serve(open(8080)) }
 ```
 
-Run it two ways, **same source**:
+Run the *same source* two ways:
 
-- **Sync:** `with Net = blocking_net { main() }` — `Net.read` is a blocking
-  syscall, returns directly. Nothing is a coroutine. Zero overhead.
-- **Async:** `Scheduler.run(|| with Net = async_net { main() })` — `Net.read`
-  registers interest with a reactor and *suspends*; the scheduler multiplexes many
-  such `main()`-like tasks over one thread.
+- **Sync:** `with Net = blocking_net { main() }` — `Net.read` is a blocking syscall that
+  returns directly. Nothing is a coroutine. Zero overhead.
+- **Async:** `Executor.run(|| with Net = async_net { main() })` — `Net.read` registers
+  interest with a reactor and suspends; one thread multiplexes many such tasks.
 
-No keyword distinguishes the two. The difference is **which handler is in scope**,
-and that is resolved by monomorphization.
+No keyword distinguishes them. The difference is **which handler is in scope**, resolved
+by monomorphization. The mechanism is three parts:
 
-The three ingredients:
-
-1. **Auto-coroutine coloring** — a function that (transitively, *in this mono
-   context*) might suspend is compiled as a coroutine; a call to such a function
-   becomes a suspension point in the caller. (§3, §4)
-2. **Effect-injected yields** — the async I/O handler is the *leaf* that actually
-   suspends; it registers with the reactor and yields. (§2, §6)
-3. **A userspace scheduler** — `co`'s the top, drives the leaf directly on wakeup,
-   walks completions up the chain. (§6, §7)
+1. **Coloring** (§2, §3) — a monomorphic function that might suspend is compiled as a
+   coroutine.
+2. **The call-site transform** (§4) — *calling* a coroutine-colored function is the
+   suspension point; the compiler injects the drive logic. (This is what Rust writes as
+   `.await`; here it is implicit — an ordinary call.)
+3. **A userspace executor** (§5–§7) — `co`s the top of a task, re-polls it on its
+   wakeup, and re-descends cheaply to wherever it left off.
 
 ---
 
-## 2. Why mono-resolved effects make this work (the key insight)
+## 2. Why mono-resolved effects make this work
 
-"Is this function async?" is normally undecidable without an `async` annotation,
-because it depends on what the callees *do*, which depends on runtime handlers. In
-Siko it **is** decidable — *after monomorphization* — because effect handlers are
-chosen per mono context.
+"Is this function async?" is normally undecidable without an `async` annotation, because
+it depends on what callees do, which depends on runtime handlers. In Siko it is decidable
+**after monomorphization**, because handlers are chosen per mono context.
 
-Define a monomorphic function as **suspending** if:
+Call a monomorphic function **suspending** if it `yield`s, or calls an effect operation
+whose chosen handler (in this mono context) is suspending, or calls another suspending
+monomorphic function. This is a least-fixed-point over the **post-mono call graph**, with
+handlers as ordinary edges. Compute it once; every monomorphic function's color is known.
 
-- it performs a `yield` (explicit generator), **or**
-- it calls an effect operation whose *chosen handler in this mono context* is
-  suspending, **or**
-- it calls another monomorphic function that is suspending.
+`handle` is suspending under `async_net` and non-suspending under `blocking_net` — and
+those are genuinely different monomorphic functions, so nothing conflicts and no color is
+lost to dynamic dispatch (modulo indirection, §9.2).
 
-This is a least-fixed-point over the **post-mono call graph** (handlers included as
-ordinary edges). Compute it once after mono; the "color" of every monomorphic
-function is known. `handle` is suspending under `async_net` and *not* suspending
-under `blocking_net` — and those are genuinely different mono instances, so there is
-no conflict and no coloring lost to dynamic dispatch (modulo §8.1 indirection).
-
-> This is the property that buys us keyword-free async: **the async/sync split is
-> just the suspending/non-suspending partition of the monomorphized program, and
-> monomorphization already split the program by handler.**
-
-The coroutine lowering pass already runs right after mono/implicit-propagation, with
-exactly the per-context monomorphic bodies in hand. The coloring analysis slots in
-just before it.
+> The async/sync split is just the **suspending partition of the monomorphized program**,
+> and monomorphization already split the program by handler. That is what buys
+> keyword-free async with zero-cost sync.
 
 ---
 
 ## 3. Coloring: who becomes a coroutine
 
-After mono + the suspending-analysis:
+After mono + the suspending analysis:
 
-- A **suspending** monomorphic function is lowered as a coroutine (gets a frame,
-  handler state machine), even if it contains no explicit `yield`. Its suspension
-  points are: explicit `yield`s **and** every call to a suspending callee (§4).
-- A **non-suspending** function is left exactly as today — a plain C function, no
-  frame, no overhead.
+- A **suspending** monomorphic function is lowered as a coroutine, even with no explicit
+  `yield`. Its suspension points are explicit `yield`s and every call to a suspending
+  callee (§4).
+- A **non-suspending** function is left exactly as today — a plain C function, no frame,
+  no overhead.
 
-Note the signature consequence: a suspending function `f : A -> R` is *invoked* as a
-coroutine `co f(a) : co(Suspend) -> R` rather than called directly. The compiler
-rewrites call sites (§4); the user never writes `co` for these (that stays the
-explicit-generator surface syntax).
+An async coroutine yields `()` (a "pending" signal with no payload — *what* it waits on is
+registered as a side effect, §6) and returns its real `R`. So its type is `co(()) -> R`,
+and a whole task — entered at `main : () -> ()` — is `co(()) -> ()` (§7).
 
-The "yield type" of an implicitly-async coroutine is **not** the user's choice; it's
-the scheduler's suspension protocol type (§5.3), fixed by the runtime library.
+A suspending `f : A -> R` is therefore invoked as `co f(a)` and driven; the compiler
+rewrites the call sites. The user never writes `co` for this — that stays the surface
+syntax for explicit generators.
 
 ---
 
-## 4. The call-site transform ("yield at the call site")
+## 4. The call-site transform (no `await` — it's just a call)
 
-This is the heart of "every function that calls a coroutine becomes a coroutine and
-yields at the call site." In a suspending function, a call `r = g(args)` to a
-suspending callee `g` is rewritten to a drive-once-then-maybe-suspend sequence:
+There is no `await`. A plain call `r = g(args)` to a coroutine-colored `g` is the
+suspension point; the compiler turns it into "reify the callee, drive it, and if it's
+pending, suspend here and propagate":
 
 ```
-let child = co g(args);              // reify callee as a coroutine frame, parent-linked to self
+// state AwaitG, entered on the first poll that reaches the call AND on every re-poll:
+let child = co g(args);            // (first time) reify callee; saved in the frame thereafter
 match resume(child) {
-    Returned(r)  => r                // g completed synchronously (never actually suspended): continue inline
-    Yielded(sig) => {
-        // g suspended somewhere below. Record child as our active child,
-        // save our state, and propagate the suspension upward.
-        self.frame.awaiting = child;
-        self.frame.state    = AfterCall_i;       // resume point is *right here*
-        return Yielded(sig);                     // bubble up to our resumer
-        // ---- resume point AfterCall_i ----
-        // We are re-entered only when `child` has fully RETURNED.
-        // Its return value is delivered to us (see §5):
-        deliver_child_result()                   // == r
-    }
-    Completed => unreachable
+    Returned(r) => r               // Ready: continue inline with r
+    Yielded(()) => { yield () }    // Pending: suspend here; re-polled later, re-enters AwaitG
+    Completed   => unreachable
 }
 ```
 
-Observations:
+This is structurally the same as the explicit-`yield` expansion already in `HandlerLower`
+(set state, return, drop a resume label) — and the existing tree-walk handles it in any
+expression position, for multiple calls and early returns, for free. On re-poll the
+dispatch jumps straight back to `AwaitG` and re-`resume`s the saved child; the child's own
+dispatch jumps to *its* current point; and so on down to the leaf. Completed segments are
+never re-run.
 
-- This is **structurally identical to the `yield` expansion** I already implemented
-  in `HandlerLower` (set state, return, drop a resume label) — just with the extra
-  "reify child + resume once + on-return read child result" wrapping. The existing
-  tree-walk handles it in any expression position, including nested in `if`/loops.
-- The **fast path is fast**: a suspending function whose callee *doesn't actually
-  suspend this time* (`Returned` on the first `resume`) pays one frame alloc + one
-  `resume` and continues inline. (Optimizable further — §8.6.)
-- The resume point `AfterCall_i` is a real state in the caller's `co_fstate`. So a
-  co-call site is an await point, exactly like a `yield`.
+`Net.read` under `async_net` is, after mono, a call to a suspending handler — so the
+user's plain `Net.read(...)` *is* one of these suspension points, with zero syntax.
 
-The effect operation `Net.read(...)` is, after mono, a call to the chosen handler
-function. Under `async_net` that handler is suspending, so the call to it is colored
-and transformed exactly as above. **The user's `Net.read(...)` becomes an await
-point with zero syntax.**
+The value flows **up** through `resume`'s `Returned(v)` (= `Ready(v)`); there is no
+down-channel and no "future" object for results.
 
 ---
 
-## 5. The missing primitive: passing values *down* on resume
+## 5. Wakeup: re-poll the task from the top
 
-Today `resume` returns a value (`Yielded`/`Returned`) but accepts none. Async needs
-to deliver two kinds of values *into* a suspended frame:
+We wake at **task** granularity, like Rust — not by poking individual frames.
 
-1. the **I/O result** when the reactor wakes the leaf (`read` returns N bytes), and
-2. the **child's return value** when a parent is resumed after its child completed
-   (§4's `deliver_child_result`).
+A task is the chain of coroutine frames rooted at one `co main()`-style top. The executor
+holds **only the top handle** per task. On a wakeup it does `resume(top)`, which
+re-descends through the §4 call sites (each `resume(child)` jumps to that child's current
+suspension point) until it reaches the frame that was blocked. That frame re-attempts its
+operation; if it's now ready it returns, and values cascade back up through `Returned`
+until the task suspends again or the top returns.
 
-Two ways to provide this:
+Re-descent is O(depth), but each step is a state-machine dispatch + a `resume` that jumps
+to the saved point — no completed work is re-run, no sibling is touched. The "idle chain"
+between the top and the blocked frame costs ~nothing to re-enter. This is exactly Rust's
+re-poll, and it is why none of the frame-addressing machinery (per-frame handles,
+continuation links, wrappers, type-erasure of inner frames) is needed: the executor never
+addresses anything but the top.
 
-### 5.1 Option A — bidirectional `resume` (symmetric-ish coroutines)
-
-Change the ABI to `resume(c, v: Resume) -> CoResult[Yield, Return]`. The value `v`
-becomes the result of the suspension expression in the resumed frame. Signature
-grows from `co(Y) -> R` to `co(Yield, Resume) -> R`. Clean and general; this is the
-"real" coroutine. Cost: ABI change, an extra type parameter, every yield/await site
-must type the down-value.
-
-### 5.2 Option B — side-channel slot in the frame
-
-Keep `resume` value-less. Before resuming a frame, the scheduler writes the incoming
-value into a well-known frame slot (`frame.resume_slot`); the resumed code reads it.
-This is just Option A implemented by hand, and it keeps the generator ABI intact.
-Likely the pragmatic first step.
-
-Either way, the **return value of a completed child** must be retrievable. Simplest:
-when a coroutine hits `Completed`, its `Returned(r)` was the *previous* `resume`
-result; the scheduler caches `r` and hands it to the parent (slot or down-value).
-(Today `resume` yields `Returned(r)` once then `Completed`; we either keep `r` in the
-frame after return, or the scheduler stashes it on the transition.)
-
-### 5.3 The up-value: the suspension signal
-
-What does an implicit-async `yield` carry *up*? Minimal design: a single
-`Pending` marker (unit-like). The *actual* wait description (which fd, readable vs
-writable) is **registered as a side effect** by the leaf handler before it yields —
-"the bottom coroutine registers itself." So the signal up the chain carries no
-payload; it only means "a leaf below has parked itself; return control."
-
-This keeps the propagated type trivial and uniform across the whole chain (every
-frame yields the same `Pending`), which matters because the chain is heterogeneous
-(different `R` per frame, but the same suspension protocol).
-
-If we later want richer cooperative scheduling (priorities, yield-to-scheduler
-without I/O, cancellation tokens) the up-value can grow into a small enum; start with
-`Pending`.
+The only thing woken on an event is the *one task* whose handle the reactor holds; every
+other task is untouched.
 
 ---
 
-## 6. Direct leaf wakeup — the property you actually care about
+## 6. The wakeup capability is an ordinary implicit
 
-The requirement: **on an I/O event, wake only the bottom coroutine; leave the rest
-of the chain idle. Wake the next frame up only when its callee returns.**
+To re-poll a task, the blocked leaf must register "wake *this task*" with the reactor.
+That capability — call it `current_task` — is **constant for the whole task** (it always
+means `resume(top)`), so it is a textbook implicit: bound once at the top, threaded down
+the chain, read at the bottom. (This is Rust's `Waker`; Rust threads it as an explicit
+`Context` parameter through every `poll`, but "context threaded down a call chain" is what
+implicits *are*, so we get it for free.)
 
-### 6.1 The shape of a suspended task
-
-A suspended task is a **linked stack of frames** (a "cactus stack" if tasks fork):
-
-```
-top(main)  ──child──▶ serve ──child──▶ handle ──child──▶ async_net.read   ← LEAF (registered with reactor)
-   ▲ parent             ▲ parent          ▲ parent
-```
-
-Each frame stores a **parent link** (set when the parent reified it in §4) and its
-own saved state. Exactly one frame per task is the **active leaf**.
-
-The scheduler holds:
-
-- a **ready queue** of leaves to run,
-- the **reactor** map `fd → leaf` (populated by leaf handlers at registration),
-- (implicitly, via parent links) the chain above each leaf.
-
-### 6.2 First descent (establishes the suspension — O(depth), once)
-
-`Scheduler.run`: `let t = co main(); resume(t)`. Control flows *down* through the
-auto-coroutine call-site transforms until `async_net.read` runs at the bottom. The
-leaf handler:
+The executor binds it; registration is an ordinary library function reading it:
 
 ```
+with current_task = task {        // ordinary implicit, set once at the top
+    resume(top)
+}
+
+fn park_on(fd, interest) {        // library; itself suspending, hence a coroutine
+    loop {
+        if reactor.ready(fd, interest) { return; }      // re-checked on every (re-)poll
+        reactor.register(fd, interest, current_task);   // "re-poll this task" when ready
+        yield ();                                        // Pending
+    }
+}
+
 fn async_read(s, buf) -> Int {
-    reactor.register(s.fd, READABLE, current_coroutine());   // register SELF directly
-    yield Pending;                                            // suspend
-    // resumed here when readable:
+    park_on(s.fd, READABLE);
     nonblocking_read(s.fd, buf)
 }
 ```
 
-`yield Pending` returns control to the leaf's resumer (its parent's §4 drive code),
-which sees `Yielded(Pending)`, records the child and **re-yields `Pending`**. This
-bubbles up the chain once and returns control to `Scheduler.run`, which parks the
-task and goes back to its event loop. The whole chain is now suspended in memory; the
-reactor holds `fd → leaf`.
+Because implicits are captured into each frame's `_ctx` at `co`-creation, every frame in
+the task — down to the deepest leaf — sees the same `current_task` the executor bound, and
+sees it again on re-poll. It is a normal implicit: bound by a `with`, lowered by the
+existing implicit-propagation pass, no per-frame variation, no ordering problem, no
+thread-local.
 
-`current_coroutine()` is a new runtime primitive: the innermost frame currently being
-resumed. `resume` sets a thread-local "current frame" around the dispatch so any code
-(including handlers) can obtain its own handle. (Implementation: push/pop on the
-resume boundary.)
-
-### 6.3 Wakeup (the fast path — does NOT walk the chain)
-
-Reactor reports `fd` readable → look up `leaf` → push to ready queue → scheduler
-`resume(leaf, io_ready)`. The leaf resumes **directly** at its post-`yield` point,
-does the nonblocking read, and:
-
-- **yields again** (needs more I/O): re-register, stays the leaf. The chain above is
-  never touched.
-- **returns `r`**: the leaf is done. Now — and only now — the scheduler resumes the
-  **parent** (`leaf.parent`), delivering `r` (§5). The parent re-enters at its
-  `AfterCall_i`, continues, and either:
-  - calls another coroutine → pushes a new child → new leaf descends, or
-  - hits its own I/O → becomes the new registered leaf, or
-  - returns → scheduler pops to *its* parent, delivering *its* value, … and so on up.
-
-So a single I/O event resumes exactly one frame. Returns walk up **one frame per
-actual completion**, not per I/O event. A task blocked deep in a loop doing thousands
-of reads touches only its leaf frame thousands of times; the frames above it are
-inert until the leaf's function finally returns. **This is the idle-chain property.**
-
-Contrast with the naive "re-drive from the top" model (scheduler always resumes
-`main`, which re-drives down to the leaf): that is O(depth) per I/O event and keeps
-re-walking dormant frames. We explicitly avoid it via the `fd → leaf` registration +
-parent links.
-
-### 6.4 Why parent links and not a re-walk
-
-The parent link is what lets the scheduler resume the *parent* when a child returns
-without re-running the grandparents. It's set for free during §4: when a frame reifies
-its child (`co g(args)`), it records `child.parent = self` (and `self.awaiting =
-child`). The scheduler never needs the full chain at once — only "who do I resume when
-*this* frame returns," which is one hop.
+Setup wrinkle (solved the normal way): `current_task` wants the top handle, created in the
+same breath, so it closes over a small mutable `Task` cell whose `.top` is filled right
+after `co main()`. Ordinary value, ordinary implicit.
 
 ---
 
-## 7. The top and the scheduler
+## 7. The schedulable type, the executor, the reactor
 
-- The runtime entry does `let root = co user_main()` and runs the loop. `co
-  user_main()` type-checks because `user_main` is colored suspending in the async
-  handler context (§2).
-- The **reactor** (epoll/kqueue/io_uring wrapper) is exposed to leaf handlers as an
-  effect or implicit (`reactor.register(fd, interest, leaf)`), made available by the
-  scheduler's `with`.
-- The scheduler is **plain Siko**: a ready queue, the reactor, and the resume/return
-  bookkeeping of §6. Spawning another task is `let t = co some_fn(args);
-  scheduler.spawn(t)` — i.e. `co` of any suspending function yields a schedulable
-  object, as you wanted. Multiple independent chains = multiple cactus stacks the
-  scheduler multiplexes.
+- **Schedulable = `co(()) -> ()`, enforced by the ordinary typechecker.** `Executor.spawn`
+  and `Executor.run` take `co(()) -> ()`. `co main()` (where `main : () -> ()`) is one.
+  Intermediate frames keep their real `co(()) -> R_i` types and are driven by §4; the
+  executor never holds them. Trying to schedule something that returns a value is a *type
+  error* — results leave a task through channels/join-handles (§9.5), not the executor.
+  "What is schedulable" is answered entirely by a type, with no special compiler support.
+- **Executor** (plain Siko): a ready queue of tasks. `run` resumes a ready task's top;
+  `Yielded(())` → leave it parked (it has registered itself with the reactor); `Returned`
+  → the task is done. A wakeup pushes a task back onto the ready queue.
+- **Reactor** (epoll/kqueue/io_uring wrapper): `fd → current_task`. On an event it enqueues
+  the task. Handed to suspending handlers via the scheduler's `with`.
 
-Everything above the `co`/`resume`/`current_coroutine`/`resume-with-value`
-primitives is library code.
-
----
-
-## 8. Hard problems & open questions
-
-### 8.1 Indirection erases color (the real hazard)
-`fn(A) -> R` pointers, closures, trait/dynamic dispatch, and effect *handlers passed
-as runtime values* break static coloring: at an indirect call the compiler can't know
-if the target is suspending. Options:
-- **Color the function type.** A pointer to a suspending fn has type `co-fn`, and an
-  indirect call through it is always an await point (drive code emitted
-  unconditionally). Non-suspending pointers stay plain. This splits fn-pointer types
-  by color (a form of the "what color is your function" tax, but inferred).
-- **Uniform suspending ABI for all indirect calls** — every indirect call site emits
-  drive code; the callee, if non-suspending, returns `Returned` on the first
-  `resume`. Simpler, costs a frame per indirect call.
-- **Forbid** taking a coroutine fn as a plain pointer (diagnostic). Least pleasant.
-Closures capturing across suspension already work (frames are heap), but the *call*
-through the closure has the same coloring question.
-
-### 8.2 `resume`-with-value ABI (§5)
-Decide A vs B. Recommendation: ship B (frame slot) first to avoid an ABI/type-param
-change, migrate to A if symmetric coroutines prove generally useful.
-
-### 8.3 Cancellation + resource cleanup (no destructors)
-Siko is GC'd with no dtors. Dropping a task = dropping its frame tree (GC reclaims
-memory). But a **registered fd must be deregistered** from the reactor, and any
-half-done I/O resource released. Without dtors there is no automatic unwinding of a
-suspended chain. Options: an explicit `cancel(task)` that the scheduler routes to the
-leaf to run cleanup (requires a cleanup/`defer`-like effect, or a "cancel" resume
-mode that drives finalizers); or model resources via an effect whose handler the
-scheduler can finalize. **This is the biggest open design question.**
-
-### 8.4 Errors / panics across frames
-A panic in a leaf must propagate to the awaiting parent and up. With value-passing
-resume, errors are just `Result` returns and flow naturally through §4's
-`deliver_child_result`. Hard panics (abort) bypass the chain — probably fine
-(process dies), but a recoverable-error effect is cleaner. Decide whether the chain
-participates in `try`/`?`.
-
-### 8.5 Structured concurrency: spawn / join / select
-`co f()` gives one schedulable chain. Real async needs: spawn N, await any/all,
-timeouts, channels. These are **library** constructs over the primitive: a `join`
-parks the current leaf and registers it to be woken when child tasks complete
-(children get their own reactor-less completion notifications). `select` registers
-interest in several leaves/fds. Worth prototyping early to validate the primitive set
-(esp. whether the up-signal must carry more than `Pending`).
-
-### 8.6 Cost of the synchronous fast path
-Every suspending→suspending call allocates a child frame even when it completes
-without ever suspending. Mitigations: (a) only color a call site if the callee can
-*actually* suspend in this context (the FLP already gives this — a callee that's
-non-suspending in this mono context is called directly, no frame); (b) inline
-trivial suspending callees; (c) arena/pool frames per task; (d) a "may suspend but
-usually doesn't" fast-return path that avoids heap alloc until the first real
-suspend. (a) is the big one and the analysis already provides it.
-
-### 8.7 Generators + async together
-Explicit `yield` (generator, user-chosen `Y`) and implicit async (`Pending`) share
-the yield channel. A function that is both an async task and a value-generator needs
-a combined up-type, e.g. `Yield = enum { Value(Y), Pending }`, with the scheduler
-ignoring `Value` (or it being illegal at the top). Cleanest first cut: **disallow
-explicit `yield` in implicitly-async functions**; revisit if needed.
-
-### 8.8 Blocking calls inside async (the footgun)
-If async code calls a genuinely blocking syscall (a non-effect one, or an effect
-under the blocking handler), it stalls the scheduler thread. No keyword means no
-compiler warning by default. Possible mitigation: a purity/effect annotation marking
-"blocking" so the scheduler context can flag it. Ties into §8.1's effect-as-value
-question.
-
-### 8.9 Multithreading / work-stealing
-Frames are heap objects; a task chain can in principle migrate threads between
-suspensions if the scheduler is multi-threaded. Requires frames to be `Send`-safe and
-the reactor to be shared/sharded. Out of scope for v1 (single-threaded loop), but the
-frame model doesn't preclude it.
-
-### 8.10 Debuggability
-A logical stack trace is now a parent-link chain of frames, not a C stack. The
-runtime can walk parent links to reconstruct an async backtrace — worth designing the
-frame to keep enough info (the source location / state tag is already there via
-`co_fstate`).
-
-### 8.11 Interaction with implicits across suspension
-Implicits are threaded as a hidden `_ctx` parameter and **already captured into the
-coroutine frame** (`co_frame._ctx`). So an implicit bound with `with` outside an
-await is correctly preserved across suspension — this already works in the current
-lowering. Good. But the *scheduler's* implicits (reactor) must be in scope at the
-leaf; verify the `with` discipline composes (the reactor `with` wraps `co main()`).
+Everything above `co` / `resume` / coloring / the §4 transform is library code.
 
 ---
 
-## 9. Worked example (trace)
+## 8. Worked example (trace)
 
 ```
-Scheduler.run(|| with Net = async_net { serve(listener) })
+Executor.run(|| with Net = async_net { serve(listener) })
 ```
 
-1. `co serve` reified; `resume(serve)`.
-2. `serve` calls `accept` (suspending) → reifies child `accept`, `resume`s it.
-3. `async_accept` registers `listener.fd` READABLE with `current_coroutine()`,
-   `yield Pending`. Bubbles up: `serve` records child, `yield Pending`. Scheduler
-   parks task, loops.
-4. Connection arrives → reactor: `fd → accept-leaf` → `resume(accept-leaf,
-   ready)`. `accept` does nonblocking `accept(2)`, **returns** `socket`.
-5. Leaf returned → scheduler resumes `serve` (parent) delivering `socket`. `serve`
-   continues, calls `handle(...)` → new child → descends → `async_read` registers
-   `socket.fd`, `yield Pending` → bubbles to `serve` → parks.
-6. Data arrives → `resume(read-leaf, ready)` directly; read returns bytes; leaf
-   returns; parent (`handle`/`read_request`) resumed with bytes; … and so on.
+1. The executor `co`s the task top and `resume`s it under `with current_task = task`.
+2. `serve` calls `accept` (suspending) → §4 reifies the child and `resume`s it; down to
+   `async_accept` → `park_on(listener.fd, READABLE)` registers `current_task`, `yield ()`.
+   `Yielded` cascades up the §4 sites to the top; the executor parks the task and loops.
+3. Connection arrives → reactor enqueues the task → executor `resume(top)`. The dispatch
+   re-descends to `park_on`, which now sees `ready`, returns; `async_accept` does the
+   nonblocking `accept(2)` and `Returned(socket)`; that cascades up through the §4 sites,
+   `serve` continues with `socket`, calls `handle(...)`, descends to `async_read`, parks
+   on `socket.fd`, `Yielded` to the top, parked again.
+4. Data arrives → re-poll → re-descend to the read → `Returned(bytes)` up the chain → …
 
-At no point between steps 4 and 6 is `serve` or any frame above the active leaf
-touched until the leaf's function actually returns.
+Each event wakes exactly one task; within it, re-descent only ever dispatches to the saved
+suspension point at each level.
 
 ---
 
-## 10. Primitive surface (what the language must add)
+## 9. Open questions
 
-1. **Coloring analysis** — least-fixed-point "suspending" over the post-mono call
-   graph (handlers as edges). New pass, just before coroutine lowering.
-2. **Call-site transform** — in suspending functions, rewrite calls to suspending
-   callees into the §4 drive sequence. Extends `HandlerLower` (same tree-walk that
-   already expands `yield`).
-3. **`resume` with a down-value** (§5) — ABI change or frame slot.
-4. **`current_coroutine()`** — handle to the innermost resuming frame.
-5. **Parent link + `awaiting` slot** in frames; scheduler-visible.
-6. Everything else — reactor, scheduler, async I/O effect handlers, spawn/join/
-   select — is **library code** in std.
+### 9.1 Cancellation + resource cleanup (no destructors) — the big one
+Siko is GC'd with no destructors. Dropping a task frees its frame tree via GC, but a
+registered fd must be **deregistered** from the reactor and half-open resources released,
+and there is no automatic unwinding of a parked chain. Needs an explicit `cancel(task)`
+routed so the parked frames run cleanup (a `defer`/cleanup effect, or a "cancel" resume
+mode that runs finalizers) — or resources modeled as an effect the executor can finalize.
+No clean answer yet.
+
+### 9.2 Indirection erases color
+`fn`-pointers, closures, trait/dynamic dispatch, and effect handlers passed as runtime
+values defeat static coloring: at an indirect call the compiler can't tell if the target
+suspends, so it can't know whether to inject the §4 drive code. Options: color the
+function *type* (a pointer to a suspending fn is a distinct type; calls through it always
+drive); or a uniform "drive every indirect call" ABI (a non-suspending target just
+`Returned`s on the first `resume`); or forbid taking a coroutine fn as a plain pointer.
+
+### 9.3 Blocking calls inside async (footgun)
+Async code that calls a genuinely blocking syscall (or an effect under the blocking
+handler) stalls the executor thread, with no keyword to warn. Mitigation: a "blocking"
+annotation the executor context can flag.
+
+### 9.4 Generators + async share the yield channel
+Explicit `yield` (generator, user `Y`) and async (`Y = ()`, pending) share `resume`'s
+yield channel. A function that is both needs a combined up-type. First cut: forbid explicit
+`yield` in implicitly-async functions.
+
+### 9.5 Structured concurrency
+A task is `co(()) -> ()`, so results and coordination (spawn-N, join, select, timeouts,
+channels) are **library** constructs over the same primitives: a parked task registers on a
+channel/join the way the leaf registers on an fd; completing the producer enqueues the
+waiter. Worth prototyping early to confirm the primitive set is sufficient.
+
+### 9.6 Cost, and the zero-cost version
+Re-poll is O(depth) cheap dispatches per event — the same trade Rust makes. Rust's truly
+zero-cost form comes from *nesting* each child future inline into its parent (one flat
+struct, inlined polls) instead of heap-linking frames. Siko heap-links frames today; the
+nesting optimization is a separate, much larger change and explicitly not now.
+
+### 9.7 Multithreading
+Heap frames could migrate threads between suspensions if the executor is multi-threaded
+(work-stealing); needs `Send`-safe frames and a shared/sharded reactor. Out of scope for a
+single-threaded v1, but the model doesn't preclude it.
+
+### 9.8 Debuggability
+The logical stack is the re-poll path, not the C stack. The runtime can reconstruct an
+async backtrace from the chain of saved `co_fstate` tags (each records its suspension
+point).
+
+### 9.9 Implicits across suspension
+Implicits are threaded as a hidden `_ctx` and already captured into the coroutine frame, so
+a `with`-bound implicit (including `current_task` and the reactor) survives suspension and
+re-poll. This already works in the current lowering; the design relies on it.
+
+---
+
+## 10. What the language must add
+
+1. **Coloring analysis** — least-fixed-point "suspending" over the post-mono call graph
+   (handlers as edges). New pass, just before coroutine lowering.
+2. **The call-site transform** — in suspending functions, rewrite calls to suspending
+   callees into the §4 drive sequence. Extends `HandlerLower` (the same tree-walk that
+   expands `yield`).
+
+Unchanged: `co`, `resume`, `yield`, the `CoResult` protocol, the implicit mechanism.
+Library: the `Task`/`current_task` capability, the reactor, the executor, async I/O effect
+handlers, channels/join/select.
+
+---
 
 ## 11. Suggested staging
 
-1. **Bidirectional resume / down-value** (§5 B) on the existing generator coroutines.
-   Unblocks everything; testable in isolation.
-2. **`current_coroutine()` + a trivial reactor** (single fd, `select(2)`), and a
-   hand-written async read that registers + `yield`s. Prove the leaf-direct-wakeup
-   loop with a *manually* coroutine-ized chain (no auto-coloring yet).
-3. **Coloring analysis** (read-only: just compute + print colors) to validate the FLP
-   against real programs (esp. effect handlers and indirection §8.1).
-4. **Call-site transform** behind the analysis; run the http server async with the
-   same source as sync.
-5. **Cancellation** (§8.3) and **structured concurrency** (§8.5) once the core loop
-   is solid.
+1. **Manual proof-of-runtime, zero compiler changes.** With today's coroutines, hand-write
+   an `async_read`/`park_on` using `current_task` (a normal implicit) and a trivial reactor
+   (`select(2)`), and an executor that `resume`s a `co(()) -> ()` top and re-polls on
+   wakeup. Manually coroutine-ize a small chain by writing the §4 drive code by hand. This
+   validates the entire runtime shape — re-poll-from-top, the implicit waker, the reactor —
+   before any compiler work.
+2. **Coloring analysis**, read-only (compute + print), validated against real programs
+   (effects and indirection, §9.2).
+3. **The call-site transform** behind the analysis; run the http server async with the same
+   source as sync.
+4. **Cancellation** (§9.1) and **structured concurrency** (§9.5) once the core loop is
+   solid.
 
 ---
 
 ### One-line summary
 
-Because effects are resolved by monomorphization, "async" is just the suspending
-partition of the monomorphized program; coroutines already give us per-frame
-suspension with frame-saved locals and tree-walk suspension points; add a down-value
-to `resume`, a `current_coroutine()` handle, and parent links, and a *userspace*
-scheduler can drive the bottom frame directly on I/O and walk completions up one hop
-at a time — transparent sync/async with no keywords.
+`resume`/`Yielded`/`Returned` already *are* `poll`/`Pending`/`Ready`; calling a
+coroutine-colored function (no keyword) is the suspension point; the executor wakes a task
+and re-polls it from the top, re-descending cheaply via the dispatch that jumps straight to
+each saved point; and the only "context" needed — "wake this task" — is an ordinary
+implicit, the thing Rust bolts onto its ABI as `Waker` and Siko already has. Coloring falls
+out of monomorphization, so it's transparent sync/async with no keywords, no protocol
+change, and no per-frame scheduling machinery.

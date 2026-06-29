@@ -80,7 +80,7 @@ instance Rewrite[TypeDef] {
             TypeDef.Void           => TypeDef.Void,
             TypeDef.VoidPtr        => TypeDef.VoidPtr,
             TypeDef.Co(CoroutineInfo(yield_ty, return_ty)) => TypeDef.Co(CoroutineInfo(rewrite(yield_ty, ctx), rewrite(return_ty, ctx))),
-            TypeDef.Tuple(_)       => panic("lower_closures: unexpected Tuple type (should be lowered already)"),
+            TypeDef.Tuple(elems)   => TypeDef.Tuple(elems.into_iter().map(|e| rewrite(e, ctx)).collect()),
             TypeDef.Wildcard       => panic("lower_closures: unexpected Wildcard type"),
         }
     }
@@ -157,8 +157,8 @@ struct ClosureLowerer {
         }
         let idx = ctx.enum_index;
         ctx.enum_index += 1;
-        let enum_qname = QualifiedName.new_closure_enum(idx);
-        let handler_qname = QualifiedName.new_closure_handler(idx);
+        let enum_qname = QualifiedName.new_closure_enum(idx).as_mono();
+        let handler_qname = QualifiedName.new_closure_handler(idx).as_mono();
         let (param_types, ret_type) = match fn_type {
             TypeDef.Fn(params, ret) => (params, ret),
             _ => panic("get_or_create_enum: not a Fn type"),
@@ -195,7 +195,7 @@ struct ClosureLowerer {
                     BaseName.ClosureEnum(i) => i,
                     _ => panic("expected ClosureEnum qn"),
                 };
-                let variant_qname = QualifiedName.new_closure_variant(enum_idx, variant_idx);
+                let variant_qname = QualifiedName.new_closure_variant(enum_idx, variant_idx).as_mono();
 
                 info.variants.push(VariantInfo(variant_short_name, variant_qname.clone(), lambda_qname, capture_types.clone()));
                 ctx.fn_type_to_enum.insert(fn_type, info.clone());
@@ -387,7 +387,7 @@ pub fn lower_closures(program: Program) {
         }
 
         let handler = generate_handler(info, repr_loc.clone());
-        normalize_function(handler, Set.new(), unit_type: TypeDef.Void);
+        normalize_function(handler, Set.new());
         program.functions.insert(handler.qualified_name.unwrap(), handler);
     }
 }
