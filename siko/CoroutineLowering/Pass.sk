@@ -19,6 +19,10 @@ import Siko.CoroutineLowering.Gen
 import Siko.CoroutineLowering.Rewrite
 import Siko.CoroutineLowering.YieldCounter
 import Siko.CoroutineLowering.LocalCollect
+import Siko.CoroutineLowering.FunctionGroupBuilder as FGB
+import Siko.CoroutineLowering.TransitiveLower as TL
+import Siko.AST.Identifier
+import Siko.Utils.VarAllocator
 
 // ── CoroutineLowerer ─────────────────────────────────────────────────────────
 
@@ -124,6 +128,8 @@ pub struct CoroutineLowerer {
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 pub fn lower_coroutines(program: Program) {
+    let is_co_map = FGB.build_coroutine_map(program);
+    TL.transform_transitive(program, is_co_map);
     let repr_loc = any_location(program);
     let ctx = CoroutineLowerer(
         repr_loc: repr_loc.clone(),
@@ -239,6 +245,7 @@ pub fn lower_coroutines(program: Program) {
 
             let frame_state_qn = QualifiedName.new_coroutine_frame_state(vi.co_index, vi.variant_index).as_mono();
             let frame_state_ty = TypeDef.Named(NamedInfo(Name.inner(frame_state_qn), []));
+            vi.local_types = vi.local_types.into_iter().map(|ty| rewrite_co(ty, ctx)).collect();
             let fs = generate_frame_struct(vi, frame_state_ty, repr_loc.clone());
             let frame_qn = fs.qualified_name.unwrap();
             let frame_ty = TypeDef.Named(NamedInfo(Name.inner(frame_qn), []));
@@ -256,6 +263,44 @@ pub fn lower_coroutines(program: Program) {
         let state_ty = TypeDef.Named(NamedInfo(Name.inner(info.state_qname.clone()), []));
         let co_wrap  = generate_co_wrap_struct(info.clone(), state_ty, repr_loc.clone());
         program.structs.insert(info.wrap_qname.clone(), co_wrap);
+    }
+
+    // ── Step 4.5: ensure every co_enum has a resume function ─────────────────
+    // Transitive coroutines drive loops call resume() on types that mono never
+    // saw an explicit resume() call for. Synthesize a minimal FunctionDef so
+    // that step 5 can fill in its body via generate_resume_body.
+
+    for info in ctx.co_enums.iter() {
+        let wrap_ty = TypeDef.Named(NamedInfo(Name.inner(info.wrap_qname.clone()), []));
+        // Use the same key format mono would produce: resume[yield_ty, return_ty].
+        let resume_key = B.get_resume_qn().as_mono([info.yield_ty.clone(), info.return_ty.clone()]);
+        if !program.functions.contains_key(resume_key) {
+            let co_result_ty = build_co_result_ty(info.clone());
+            let var_alloc = VarAllocator.new();
+            let co_arg_var = var_alloc.allocate_temp();
+            let synthetic = FunctionDef(
+                annotations: Vec.new(),
+                public: False,
+                name: Identifier.new(I.intern("resume"), repr_loc.clone()),
+                qualified_name: Some(resume_key.clone()),
+                kind: FunctionDefKind.Regular,
+                type_arg_defs: None,
+                args: [FunctionArg(
+                    name: co_arg_var,
+                    type_def: wrap_ty,
+                    default_value: None,
+                )],
+                yield_type: None,
+                result_type: Some(co_result_ty),
+                body: None,
+                module_name: I.intern("Std.Coroutine"),
+                var_allocator: var_alloc,
+                is_varargs: False,
+                default_value_names: Vec.new(),
+                source_package: None,
+            );
+            program.functions.insert(resume_key, synthetic);
+        }
     }
 
     // ── Step 5: replace resume function bodies ────────────────────────────────

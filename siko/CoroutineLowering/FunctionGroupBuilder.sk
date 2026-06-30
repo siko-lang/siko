@@ -1,4 +1,4 @@
-module Siko.PurityCheck.GroupBuilder {
+module Siko.CoroutineLowering.FunctionGroupBuilder {
 
 import Std.Map
 import Std.Set
@@ -42,27 +42,7 @@ instance Collect[E.VariableName]     = auto(Fold, =)
 instance Collect[Name]               = auto(Fold, =)
 instance Collect[Identifier]         = auto(Fold, =)
 instance Collect[E.WitnessInfo]      = auto(Fold)
-
-instance Collect[BoundWitness] {
-    fn walk(w: BoundWitness, c: CallCollector) {
-        if let BoundWitness.Instance(instance_qname: instance_qname, ..) = w {
-            let instance_def = c.program.all_instances.get(instance_qname)
-                .expect("Collect[BoundWitness]: instance ${I.resolve(instance_qname.name())} not found in program");
-            let trait_key = instance_def.subject.trait_name().resolved();
-            let trait_def = c.program.traits.get(trait_key)
-                .expect("Collect[BoundWitness]: trait ${trait_key.name()} not found in program");
-            for (short_name, abstract_qname) in trait_def.method_map.names {
-                let provides = instance_def.method_names.iter().any(|mn| mn.name() == short_name);
-                if provides {
-                    c.deps.insert(QualifiedName.new_method(instance_qname.name(), short_name));
-                } else {
-                    c.deps.insert(abstract_qname);
-                }
-            }
-        }
-    }
-}
-
+instance Collect[BoundWitness]       = auto(Fold)
 instance Collect[E.FunctionKind]     = auto(Fold, =)
 instance Collect[E.BinaryOp]         = auto(Fold, =)
 instance Collect[E.UnaryOp]          = auto(Fold, =)
@@ -88,22 +68,15 @@ instance Collect[Pattern]            = auto(Fold)
 instance Collect[PatternKind]        = auto(Fold)
 instance Collect[FunctionArg]        = auto(Fold)
 instance Collect[FunctionDef]        = auto(Fold)
-
-instance Collect[E.HandlerSelection] {
-    fn walk(sel: E.HandlerSelection, c: CallCollector) {
-        if let E.HandlerSelection.EffectFunction(handler: handler, ..) = sel {
-            c.deps.insert(handler);
-            c.handler_deps.insert(handler);
-        }
-    }
-}
-
+instance Collect[E.HandlerSelection] = auto(Fold, !)
 instance Collect[Annotation]         = auto(Fold, =)
 instance Collect[FunctionDefKind]    = auto(Fold, =)
 instance Collect[TypeArgDefs]        = auto(Fold, =)
 instance Collect[VarAllocator]       = auto(Fold, =)
 instance Collect[DefaultValueInfo]   = auto(Fold, =)
 instance Collect[PC.SourcePackage]   = auto(Fold, =)
+instance Collect[E.TypeAssociatedCallInfo] = auto(Fold, !)
+instance Collect[E.CreateClosureInfo] = auto(Fold, !)
 
 instance[T: Collect[T]] Collect[Option[T]] {
     fn walk(opt: Option[T], c: CallCollector) {
@@ -123,26 +96,57 @@ instance[T: Collect[T]] Collect[Vec[T]] {
 
 instance Collect[E.FunctionCallInfo] {
     fn walk(info: E.FunctionCallInfo, c: CallCollector) {
-        c.deps.insert(info.qname);
+        // Exclude co-create calls: those only construct a coroutine object and
+        // do not cause the caller to become a coroutine.
+        if !info.is_coroutine_create {
+            c.deps.insert(info.qname);
+        }
         walk(info.args, c);
         walk(info.witnesses, c);
         walk(info.named_args, c);
     }
 }
 
-instance Collect[E.TypeAssociatedCallInfo] {
-    fn walk(info: E.TypeAssociatedCallInfo, c: CallCollector) {
-        c.deps.insert(info.fn_name);
-        walk(info.args, c);
-        walk(info.witnesses, c);
-        walk(info.named_args, c);
-    }
-}
+// Prepass: classify every function as coroutine or not, propagating along the
+// call graph. Tarjan emits SCCs in reverse topological order (callees before
+// callers), so by the time we reach an SCC all of its dependencies already have
+// their final classification. An SCC is a coroutine if any of its members is an
+// intrinsic coroutine (has a yield type) or depends on a function already known
+// to be a coroutine.
+pub fn build_coroutine_map(program: Program) -> Map[QualifiedName, Bool] {
+    let (sccs, graph, _) = build_groups(program);
 
-instance Collect[E.CreateClosureInfo] {
-    fn walk(info: E.CreateClosureInfo, c: CallCollector) {
-        c.deps.insert(info.name);
+    let is_coroutine: Map[QualifiedName, Bool] = Map.new();
+
+    for scc in sccs {
+        let group_is_co = False;
+        for qname in scc.iter() {
+            let func = program.functions.get(qname).unwrap();
+            if func.yield_type.is_some() && func.body.is_some() {
+                group_is_co = True;
+            }
+        }
+        if !group_is_co {
+            for qname in scc.iter() {
+                let deps = graph.get(qname).unwrap_or([]);
+                for d in deps {
+                    if is_coroutine.get(d).unwrap_or(False) {
+                        group_is_co = True;
+                    }
+                }
+            }
+        }
+        for qname in scc {
+            is_coroutine.insert(qname, group_is_co);
+        }
     }
+
+    // for (qname, is_co) in is_coroutine.iter() {
+    //     let tag = if is_co { "coroutine" } else { "plain" };
+    //     println("${I.resolve(qname.name())} -> ${tag}");
+    // }
+
+    is_coroutine
 }
 
 pub fn build_groups(program: Program) -> (Vec[Vec[QualifiedName]], Map[QualifiedName, Vec[QualifiedName]], Map[QualifiedName, Set[QualifiedName]]) {

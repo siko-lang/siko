@@ -279,6 +279,27 @@ pub enum QualifiedName {
         Base(BaseNameInfo.new(BaseName.Tuple(args)))
     }
 
+    // Returns the short identifier name: the last component of the base name
+    // (e.g. "CoResult" from Enum, "Yielded" from Variant, "String" from Struct).
+    pub fn short_name(qn: QualifiedName) -> I.String {
+        let base_name = match qn {
+            Base(bn) => bn.base(),
+            Mono(m) => m.name.base(),
+        };
+        match base_name {
+            BaseName.Struct(_, n)
+            | BaseName.Enum(_, n)
+            | BaseName.Trait(_, n)
+            | BaseName.Effect(_, n)
+            | BaseName.Global(_, n)
+            | BaseName.Implicit(_, n)
+            | BaseName.Function(_, n)
+            | BaseName.NamedInstance(_, n) => n,
+            BaseName.Variant(_, _, v) => v,
+            _ => panic("short_name: unsupported base name kind"),
+        }
+    }
+
     pub fn rehash(qn: QualifiedName) {
         let h = qn.get_hashed();
         qn.save_hashed(h);

@@ -1,0 +1,443 @@
+module Siko.CoroutineLowering.TransitiveLower {
+
+import Std.Map
+import Siko.AST.Data
+import Siko.AST.Expr
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.Pattern
+import Siko.AST.QualifiedName
+import Siko.AST.Statement as S
+import Siko.AST.Type
+import Siko.Constants.Builtins as B
+import Siko.HIR.Program
+import Siko.Interner as I
+import Siko.Location
+import Siko.Normalizer
+import Siko.Utils.VarAllocator
+import Siko.Format.Utils
+import Siko.CoroutineLowering.Utils
+
+pub struct TransitiveLowerer {
+    pub program: Program,
+    pub var_alloc: VarAllocator,
+    pub is_co_map: Map[QualifiedName, Bool],
+}
+
+pub trait TransitiveLower[T] {
+    fn lower_transitive(t: T, ctx: TransitiveLowerer) -> T
+}
+
+instance TransitiveLower[Location]          = auto(Map, =)
+instance TransitiveLower[I.String]          = auto(Map, =)
+instance TransitiveLower[String]            = auto(Map, =)
+instance TransitiveLower[Int]               = auto(Map, =)
+instance TransitiveLower[U8]                = auto(Map, =)
+instance TransitiveLower[Bool]              = auto(Map, =)
+instance TransitiveLower[QualifiedName]     = auto(Map, =)
+instance TransitiveLower[VariableName]      = auto(Map, =)
+instance TransitiveLower[Name]              = auto(Map, =)
+instance TransitiveLower[Identifier]        = auto(Map, =)
+instance TransitiveLower[FunctionKind]      = auto(Map, =)
+instance TransitiveLower[BinaryOp]          = auto(Map, =)
+instance TransitiveLower[UnaryOp]           = auto(Map, =)
+instance TransitiveLower[WitnessInfo]       = auto(Map, =)
+instance TransitiveLower[HandlerSelection]  = auto(Map, =)
+instance TransitiveLower[ImplicitRefInfo]   = auto(Map, =)
+instance TransitiveLower[CreateClosureInfo] = auto(Map, =)
+instance TransitiveLower[FunctionPtrInfo]   = auto(Map, =)
+instance TransitiveLower[LambdaArg]         = auto(Map, =)
+instance TransitiveLower[TypeDef]           = auto(Map, =)
+instance TransitiveLower[Pattern]           = auto(Map)
+instance TransitiveLower[PatternKind]       = auto(Map)
+instance TransitiveLower[FunctionCallInfo]  = auto(Map)
+instance TransitiveLower[TypeAssociatedCallInfo] = auto(Map, !)
+instance TransitiveLower[NamedArgument]     = auto(Map, =)
+instance TransitiveLower[NamedPatternArg]   = auto(Map, =)
+instance TransitiveLower[NamedPatternInfo]  = auto(Map)
+instance TransitiveLower[MethodCallInfo]    = auto(Map)
+instance TransitiveLower[CallInfo]          = auto(Map)
+instance TransitiveLower[WithInfo]          = auto(Map)
+instance TransitiveLower[MatchArm]          = auto(Map)
+instance TransitiveLower[S.LetInfo]         = auto(Map)
+instance TransitiveLower[S.DeclareInfo]     = auto(Map)
+instance TransitiveLower[BlockInfo]         = auto(Map)
+instance TransitiveLower[ExprKind]          = auto(Map)
+instance TransitiveLower[MatchInfo]         = auto(Map)
+instance TransitiveLower[YieldInfo]         = auto(Map)
+instance TransitiveLower[Expr]              = auto(Map)
+
+instance[T: TransitiveLower[T]] TransitiveLower[Option[T]] {
+    fn lower_transitive(opt: Option[T], ctx: TransitiveLowerer) -> Option[T] {
+        opt.map(|t| lower_transitive(t, ctx))
+    }
+}
+
+instance[T: TransitiveLower[T]] TransitiveLower[Vec[T]] {
+    fn lower_transitive(vec: Vec[T], ctx: TransitiveLowerer) -> Vec[T] {
+        vec.into_iter().map(|t| lower_transitive(t, ctx)).collect()
+    }
+}
+
+// The only interesting node: a Let/Assign whose RHS is a direct coroutine call
+// gets replaced with a Statement.Expr(Block(...)) that the normalizer will flatten.
+// The block contains:
+//   declare result_var (for the Let case)
+//   declare co_tmp
+//   co_tmp = co_create_call
+//   loop { match resume(co_tmp) {
+//       Yielded(_) => { yield (); continue; }
+//       Returned(v) => { result_var = v; break; }
+//       Completed   => panic("...")
+//   }}
+instance TransitiveLower[S.Statement] {
+    fn lower_transitive(stmt: S.Statement, ctx: TransitiveLowerer) -> S.Statement {
+        match stmt {
+            S.Statement.Let(S.LetInfo(name, ty, rhs)) => {
+                match classify_co_create(rhs, ctx.program, ctx.is_co_map) {
+                    Some((co_ty, return_ty)) => {
+                        let loc = rhs.location.clone();
+                        let co_tmp = ctx.var_alloc.allocate_temp();
+                        let result_lhs = Expr(ExprKind.Var(name.clone()), loc.clone(), ty.clone());
+                        let block = build_expansion_block(name, ty, co_tmp, rhs, co_ty, return_ty, result_lhs, ctx.var_alloc, loc);
+                        S.Statement.Expr(block)
+                    }
+                    None => S.Statement.Let(S.LetInfo(name, ty, lower_transitive(rhs, ctx))),
+                }
+            }
+
+            S.Statement.Assign(lhs, rhs) => {
+                match classify_co_create(rhs, ctx.program, ctx.is_co_map) {
+                    Some((co_ty, return_ty)) => {
+                        let loc = rhs.location.clone();
+                        let co_tmp = ctx.var_alloc.allocate_temp();
+                        let block = build_expansion_block_assign(co_tmp, rhs, co_ty, return_ty, lhs, ctx.var_alloc, loc);
+                        S.Statement.Expr(block)
+                    }
+                    None => S.Statement.Assign(lower_transitive(lhs, ctx), lower_transitive(rhs, ctx)),
+                }
+            }
+
+            S.Statement.Declare(d)             => S.Statement.Declare(d),
+            S.Statement.Expr(e)                => S.Statement.Expr(lower_transitive(e, ctx)),
+            S.Statement.Loop(stmts)            => S.Statement.Loop(lower_transitive(stmts, ctx)),
+            S.Statement.UnresolvedLet(_, _, _) => panic("TransitiveLower: UnresolvedLet"),
+            S.Statement.TrailingExpr(_)        => panic("TransitiveLower: TrailingExpr"),
+            S.Statement.ForLoop(_, _, _)       => panic("TransitiveLower: ForLoop"),
+            S.Statement.WhileLoop(_, _)        => panic("TransitiveLower: WhileLoop"),
+        }
+    }
+}
+
+// ── Entry point ───────────────────────────────────────────────────────────────
+
+pub fn transform_transitive(program: Program, is_co_map: Map[QualifiedName, Bool]) {
+    let div_fns = program.get_divergent_functions();
+    let keys: Vec[QualifiedName] = program.functions.keys().collect();
+    let repr_loc = any_location(program);
+
+    // Pre-scan: collect all CoResult[(), return_ty] instantiations we will generate,
+    // keyed by format_type(return_ty) to deduplicate.
+    let needed: Map[String, TypeDef] = Map.new();
+    for key in keys.iter() {
+        if !is_co_map.get(key).unwrap_or(False) { continue; }
+        let func = program.functions.get(key).unwrap();
+        if func.yield_type.is_some() { continue; }
+        let body = match func.body { None => continue, Some(b) => b };
+        collect_needed_co_results(body, program, is_co_map, needed);
+    }
+
+    // Register any CoResult enum instantiation that mono never saw.
+    for (_, return_ty) in needed {
+        ensure_co_result_enum(program, TypeDef.Tuple([]), return_ty, repr_loc.clone());
+    }
+
+    // Main pass: rewrite each transitive-coroutine function body.
+    for key in keys {
+        if !is_co_map.get(key).unwrap_or(False) { continue; }
+        let func = program.functions.get(key).unwrap();
+        if func.yield_type.is_some() { continue; }
+        //println("Pre transitive transformed fn ${format_fn(func)}");
+        let body = match func.body { None => continue, Some(b) => b };
+
+        let ctx = TransitiveLowerer(program: program, var_alloc: func.var_allocator, is_co_map: is_co_map);
+        let new_body = lower_transitive(body, ctx);
+        func.body = Some(new_body);
+        func.yield_type = Some(TypeDef.Tuple([]));
+        normalize_function(func, div_fns.clone());
+        //println("transitive transformed fn ${format_fn(func)}");
+    }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+// Scan a function body and collect all (return_ty) values for CoResult enums we will need.
+// Uses the same logic as classify_co_create to identify which calls will be expanded.
+fn collect_needed_co_results(expr: Expr, program: Program, is_co_map: Map[QualifiedName, Bool], needed: Map[String, TypeDef]) {
+    match expr.kind {
+        ExprKind.FunctionCall(FunctionCallInfo(qname, _, args, _, _, False)) => {
+            if is_co_map.get(qname).unwrap_or(False) {
+                if let Some(callee) = program.functions.get(qname) {
+                    if callee.yield_type.is_some() {
+                        let return_ty = callee.result_type.unwrap_or(TypeDef.Void);
+                        needed.insert(format_type(return_ty), return_ty);
+                    }
+                }
+            }
+            for arg in args { collect_needed_co_results(arg, program, is_co_map, needed); }
+        }
+        ExprKind.FunctionCall(FunctionCallInfo(_, _, args, _, _, _)) => {
+            for arg in args { collect_needed_co_results(arg, program, is_co_map, needed); }
+        }
+        ExprKind.Block(BlockInfo(stmts)) => {
+            for stmt in stmts { collect_needed_co_results_stmt(stmt, program, is_co_map, needed); }
+        }
+        ExprKind.Match(MatchInfo(scrutinee, arms)) => {
+            collect_needed_co_results(scrutinee, program, is_co_map, needed);
+            for arm in arms { collect_needed_co_results(arm.body, program, is_co_map, needed); }
+        }
+        _ => {}
+    }
+}
+
+fn collect_needed_co_results_stmt(stmt: S.Statement, program: Program, is_co_map: Map[QualifiedName, Bool], needed: Map[String, TypeDef]) {
+    match stmt {
+        S.Statement.Let(S.LetInfo(_, _, rhs)) => collect_needed_co_results(rhs, program, is_co_map, needed),
+        S.Statement.Assign(lhs, rhs) => {
+            collect_needed_co_results(lhs, program, is_co_map, needed);
+            collect_needed_co_results(rhs, program, is_co_map, needed);
+        }
+        S.Statement.Expr(e) => collect_needed_co_results(e, program, is_co_map, needed),
+        S.Statement.Loop(stmts) => {
+            for s in stmts { collect_needed_co_results_stmt(s, program, is_co_map, needed); }
+        }
+        S.Statement.Declare(_) => {}
+        _ => {}
+    }
+}
+
+// Register CoResult[unit_ty, return_ty] in program.enums and variant_enum_map if not present.
+// The mono pass never saw this instantiation (drive loops are generated post-mono), so we
+// must create the enum entry exactly as mono would.
+fn ensure_co_result_enum(program: Program, unit_ty: TypeDef, return_ty: TypeDef, loc: Location) {
+    let co_result_qn = B.get_co_result_type_qn().as_mono([unit_ty.clone(), return_ty.clone()]);
+    if program.enums.contains_key(co_result_qn) {
+        return;
+    }
+    let yielded_qn  = B.get_co_result_yielded_qn().as_mono([unit_ty.clone(), return_ty.clone()]);
+    let returned_qn = B.get_co_result_returned_qn().as_mono([unit_ty.clone(), return_ty.clone()]);
+    let completed_qn = B.get_co_result_completed_qn().as_mono([unit_ty.clone(), return_ty.clone()]);
+
+    let yielded_v = VariantDef(
+        Identifier.new(B.get_co_result_yielded_qn().short_name(), loc.clone()),
+        Some(yielded_qn.clone()),
+        [ItemInfo(name: None, ty: unit_ty)],
+    );
+    let returned_v = VariantDef(
+        Identifier.new(B.get_co_result_returned_qn().short_name(), loc.clone()),
+        Some(returned_qn.clone()),
+        [ItemInfo(name: None, ty: return_ty)],
+    );
+    let completed_v = VariantDef(
+        Identifier.new(B.get_co_result_completed_qn().short_name(), loc.clone()),
+        Some(completed_qn.clone()),
+        [],
+    );
+
+    let enum_def = EnumDef(
+        annotations: [],
+        public: True,
+        name: Identifier.new(B.get_co_result_type_qn().short_name(), loc.clone()),
+        qualified_name: Some(co_result_qn.clone()),
+        type_arg_defs: None,
+        variants: [yielded_v, returned_v, completed_v],
+        methods: Vec.new(),
+        method_map: MethodMap.new(),
+        module_name: I.intern("Std.Coroutine"),
+        value_type: False,
+    );
+
+    program.enums.insert(co_result_qn.clone(), enum_def);
+    program.variant_enum_map.insert(yielded_qn, co_result_qn.clone());
+    program.variant_enum_map.insert(returned_qn, co_result_qn.clone());
+    program.variant_enum_map.insert(completed_qn, co_result_qn.clone());
+}
+
+// A transitive coroutine call is a normal function call (is_coroutine_create=False)
+// whose callee is classified as a coroutine by the prepass.
+// Yield type is always unit — transitive coroutines only propagate suspension.
+fn classify_co_create(expr: Expr, program: Program, is_co_map: Map[QualifiedName, Bool]) -> Option[(TypeDef, TypeDef)] {
+    match expr.kind {
+        ExprKind.FunctionCall(FunctionCallInfo(qname, _, _, _, _, False)) => {
+            if !is_co_map.get(qname).unwrap_or(False) {
+                return None;
+            }
+            let callee = match program.functions.get(qname) {
+                None => return None,
+                Some(f) => f,
+            };
+            if callee.yield_type.is_none() {
+                return None;
+            }
+            let return_ty = callee.result_type.unwrap_or(TypeDef.Void);
+            let co_ty = TypeDef.Co(CoroutineInfo(yield_ty: TypeDef.Tuple([]), return_ty: return_ty.clone()));
+            Some((co_ty, return_ty))
+        }
+        _ => None,
+    }
+}
+
+// For the Let case: we also need to declare the result variable since we're
+// turning the Let into a bare Expr(Block(...)).
+fn build_expansion_block(
+    name: VariableName,
+    ty: Option[TypeDef],
+    co_tmp: VariableName,
+    rhs: Expr,
+    co_ty: TypeDef,
+    return_ty: TypeDef,
+    result_lhs: Expr,
+    var_alloc: VarAllocator,
+    loc: Location,
+) -> Expr {
+    let decl_result = S.Statement.Declare(S.DeclareInfo(name, ty));
+    let rest = build_expansion_stmts(co_tmp, rhs, co_ty, return_ty, result_lhs, var_alloc, loc.clone());
+    let all_stmts: Vec[S.Statement] = Vec.new();
+    all_stmts.push(decl_result);
+    for s in rest { all_stmts.push(s); }
+    Expr(ExprKind.Block(BlockInfo(all_stmts)), loc, Some(TypeDef.Tuple([])))
+}
+
+fn build_expansion_block_assign(
+    co_tmp: VariableName,
+    rhs: Expr,
+    co_ty: TypeDef,
+    return_ty: TypeDef,
+    result_lhs: Expr,
+    var_alloc: VarAllocator,
+    loc: Location,
+) -> Expr {
+    let stmts = build_expansion_stmts(co_tmp, rhs, co_ty, return_ty, result_lhs, var_alloc, loc.clone());
+    Expr(ExprKind.Block(BlockInfo(stmts)), loc, Some(TypeDef.Tuple([])))
+}
+
+fn build_expansion_stmts(
+    co_tmp: VariableName,
+    rhs: Expr,
+    co_ty: TypeDef,
+    return_ty: TypeDef,
+    result_lhs: Expr,
+    var_alloc: VarAllocator,
+    loc: Location,
+) -> Vec[S.Statement] {
+    // Mark is_coroutine_create=True so step 2 of lower_coroutines calls lower_co_create
+    // and generates the frame struct construction instead of a plain function call.
+    let co_create_kind = match rhs.kind {
+        ExprKind.FunctionCall(FunctionCallInfo(qname, kind, args, witnesses, named_args, _)) =>
+            ExprKind.FunctionCall(FunctionCallInfo(
+                qname: qname,
+                kind: kind,
+                args: args,
+                witnesses: witnesses,
+                named_args: named_args,
+                is_coroutine_create: True,
+            )),
+        _ => panic("build_expansion_stmts: expected FunctionCall"),
+    };
+    let co_create_expr = Expr(co_create_kind, loc.clone(), Some(co_ty.clone()));
+    let co_tmp_expr = Expr(ExprKind.Var(co_tmp.clone()), loc.clone(), Some(co_ty.clone()));
+
+    let stmts: Vec[S.Statement] = Vec.new();
+    stmts.push(S.Statement.Declare(S.DeclareInfo(co_tmp, Some(co_ty))));
+    stmts.push(S.Statement.Assign(co_tmp_expr.clone(), co_create_expr));
+    stmts.push(S.Statement.Loop(build_drive_loop(co_tmp_expr, result_lhs, return_ty, var_alloc, loc)));
+    stmts
+}
+
+fn build_drive_loop(
+    co_tmp_expr: Expr,
+    result_lhs: Expr,
+    return_ty: TypeDef,
+    var_alloc: VarAllocator,
+    loc: Location,
+) -> Vec[S.Statement] {
+    let unit_ty = TypeDef.Tuple([]);
+    let co_result_qn = B.get_co_result_type_qn().as_mono([unit_ty.clone(), return_ty.clone()]);
+    let co_result_ty = TypeDef.Named(NamedInfo(Name.inner(co_result_qn), []));
+
+    // Use the same mono key that the mono pass would have produced for resume[Y, R].
+    let resume_mono_qn = B.get_resume_qn().as_mono([unit_ty.clone(), return_ty.clone()]);
+    let resume_call = Expr(
+        ExprKind.FunctionCall(FunctionCallInfo(
+            qname: resume_mono_qn,
+            kind: FunctionKind.UserDefined,
+            args: [co_tmp_expr],
+        )),
+        loc.clone(),
+        Some(co_result_ty.clone()),
+    );
+
+    // Yielded(_) => { yield (); continue; }
+    let yielded_qn = B.get_co_result_yielded_qn().as_mono([unit_ty.clone(), return_ty.clone()]);
+    let yielded_pat = Pattern(
+        PatternKind.Named(NamedPatternInfo(
+            name: Name.inner(yielded_qn),
+            args: [Pattern(PatternKind.Wildcard, loc.clone(), Some(unit_ty.clone()))],
+            named_args: Vec.new(),
+            has_rest: False,
+        )),
+        loc.clone(),
+        Some(co_result_ty.clone()),
+    );
+    let yielded_body = Expr(ExprKind.Block(BlockInfo([
+        S.Statement.Expr(Expr(ExprKind.Yield(YieldInfo(arg: Expr(ExprKind.Tuple([]), loc.clone(), Some(unit_ty.clone())))), loc.clone(), Some(unit_ty.clone()))),
+        S.Statement.Expr(Expr(ExprKind.Continue, loc.clone(), Some(unit_ty.clone()))),
+    ])), loc.clone(), Some(unit_ty.clone()));
+
+    // Returned(v) => { result_lhs = v; break; }
+    let returned_qn = B.get_co_result_returned_qn().as_mono([unit_ty.clone(), return_ty.clone()]);
+    let v_var = var_alloc.allocate_temp();
+    let v_expr = Expr(ExprKind.Var(v_var.clone()), loc.clone(), Some(return_ty.clone()));
+    let returned_pat = Pattern(
+        PatternKind.Named(NamedPatternInfo(
+            name: Name.inner(returned_qn),
+            args: [Pattern(PatternKind.Binding(v_var), loc.clone(), Some(return_ty.clone()))],
+            named_args: Vec.new(),
+            has_rest: False,
+        )),
+        loc.clone(),
+        Some(co_result_ty.clone()),
+    );
+    let returned_body = Expr(ExprKind.Block(BlockInfo([
+        S.Statement.Assign(result_lhs, v_expr),
+        S.Statement.Expr(Expr(ExprKind.Break, loc.clone(), Some(unit_ty.clone()))),
+    ])), loc.clone(), Some(unit_ty.clone()));
+
+    // Completed => abort()
+    let completed_qn = B.get_co_result_completed_qn().as_mono([unit_ty.clone(), return_ty]);
+    let completed_pat = Pattern(
+        PatternKind.Named(NamedPatternInfo(
+            name: Name.inner(completed_qn),
+            args: Vec.new(),
+            named_args: Vec.new(),
+            has_rest: False,
+        )),
+        loc.clone(),
+        Some(co_result_ty.clone()),
+    );
+    let panic_expr = Expr(ExprKind.Continue, loc.clone(), Some(unit_ty.clone()));
+
+    let match_expr = Expr(
+        ExprKind.Match(MatchInfo(scrutinee: resume_call, arms: [
+            MatchArm(yielded_pat, yielded_body),
+            MatchArm(returned_pat, returned_body),
+            MatchArm(completed_pat, panic_expr),
+        ])),
+        loc.clone(),
+        Some(unit_ty),
+    );
+
+    [S.Statement.Expr(match_expr)]
+}
+
+}

@@ -1,0 +1,31 @@
+module Main {
+
+import Std.Coroutine
+
+// foo is a coroutine
+fn foo(a: Int) co(()) -> Int {
+    println("before yield");
+    yield ();
+    println("after yield");
+    return 5;
+}
+
+// bar calls foo, bar is a transitive coroutine
+fn bar() -> Int {
+    let a = foo(4);
+    println("after foo");
+    a
+}
+
+// baz calls bar, baz is also a transitive coroutine
+fn baz() -> Int {
+    bar()
+}
+
+fn main() {
+    // the chain is broken here with the explicit co call
+    let c = co baz();
+    complete(c);
+}
+
+}

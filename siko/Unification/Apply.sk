@@ -30,6 +30,14 @@ pub fn extract_named_bindings(pattern: TypeDef, concrete: TypeDef, out: Substitu
                 extract_named_bindings(presult, cresult, out);
             }
         }
+        TypeDef.FnPtr(pargs, presult) => {
+            if let TypeDef.FnPtr(cargs, cresult) = concrete {
+                for (p, c) in pargs.iter().zip(cargs.iter()) {
+                    extract_named_bindings(p, c, out);
+                }
+                extract_named_bindings(presult, cresult, out);
+            }
+        }
         TypeDef.Paren(inner) => extract_named_bindings(inner, concrete, out),
         TypeDef.Ptr(inner) => {
             if let TypeDef.Ptr(cinner) = concrete {
@@ -41,8 +49,18 @@ pub fn extract_named_bindings(pattern: TypeDef, concrete: TypeDef, out: Substitu
                 extract_named_bindings(inner, cinner, out);
             }
         }
+        TypeDef.Co(CoroutineInfo(pyield, preturn)) => {
+            if let TypeDef.Co(CoroutineInfo(cyield, creturn)) = concrete {
+                extract_named_bindings(pyield, cyield, out);
+                extract_named_bindings(preturn, creturn, out);
+            }
+        }
+        TypeDef.Var(TypeVar.Var(_)) => {}
+        TypeDef.Never(_) => {}
         TypeDef.Numeric(_) => {}
-        _ => {}
+        TypeDef.Void => {}
+        TypeDef.VoidPtr => {}
+        TypeDef.Wildcard => {}
     }
 }
 
