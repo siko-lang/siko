@@ -1,0 +1,97 @@
+module Siko.CoroutineLowering.CoResultCollect {
+
+import Std.Map
+import Siko.AST.Expr
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.Pattern
+import Siko.AST.QualifiedName
+import Siko.AST.Statement as S
+import Siko.AST.Type
+import Siko.HIR.Program
+import Siko.Interner as I
+import Siko.Location
+import Siko.Format.Utils
+
+struct CoResultCollector {
+    program: Program,
+    is_co_map: Map[QualifiedName, Bool],
+    needed: Map[String, TypeDef],
+}
+
+trait CollectCoResults[T] {
+    fn walk(t: T, c: CoResultCollector)
+}
+
+instance CollectCoResults[Location]              = auto(Fold, =)
+instance CollectCoResults[I.String]              = auto(Fold, =)
+instance CollectCoResults[String]                = auto(Fold, =)
+instance CollectCoResults[Int]                   = auto(Fold, =)
+instance CollectCoResults[U8]                    = auto(Fold, =)
+instance CollectCoResults[Bool]                  = auto(Fold, =)
+instance CollectCoResults[QualifiedName]         = auto(Fold, =)
+instance CollectCoResults[VariableName]          = auto(Fold, =)
+instance CollectCoResults[Name]                  = auto(Fold, =)
+instance CollectCoResults[Identifier]            = auto(Fold, =)
+instance CollectCoResults[FunctionKind]          = auto(Fold, =)
+instance CollectCoResults[BinaryOp]              = auto(Fold, =)
+instance CollectCoResults[UnaryOp]               = auto(Fold, =)
+instance CollectCoResults[TypeDef]               = auto(Fold, =)
+instance CollectCoResults[WitnessInfo]           = auto(Fold, =)
+instance CollectCoResults[HandlerSelection]      = auto(Fold, !)
+instance CollectCoResults[ImplicitRefInfo]       = auto(Fold, =)
+instance CollectCoResults[CreateClosureInfo]     = auto(Fold, !)
+instance CollectCoResults[FunctionPtrInfo]       = auto(Fold, =)
+instance CollectCoResults[LambdaArg]             = auto(Fold, =)
+instance CollectCoResults[Pattern]               = auto(Fold)
+instance CollectCoResults[PatternKind]           = auto(Fold)
+instance CollectCoResults[NamedArgument]         = auto(Fold, =)
+instance CollectCoResults[NamedPatternArg]       = auto(Fold, =)
+instance CollectCoResults[NamedPatternInfo]      = auto(Fold)
+instance CollectCoResults[MethodCallInfo]        = auto(Fold)
+instance CollectCoResults[CallInfo]              = auto(Fold)
+instance CollectCoResults[WithInfo]              = auto(Fold)
+instance CollectCoResults[MatchArm]              = auto(Fold)
+instance CollectCoResults[MatchInfo]             = auto(Fold)
+instance CollectCoResults[YieldInfo]             = auto(Fold)
+instance CollectCoResults[S.LetInfo]             = auto(Fold)
+instance CollectCoResults[S.DeclareInfo]         = auto(Fold)
+instance CollectCoResults[BlockInfo]             = auto(Fold)
+instance CollectCoResults[ExprKind]              = auto(Fold)
+instance CollectCoResults[Expr]                  = auto(Fold)
+instance CollectCoResults[S.Statement]           = auto(Fold)
+instance CollectCoResults[TypeAssociatedCallInfo] = auto(Fold, !)
+
+instance[T: CollectCoResults[T]] CollectCoResults[Option[T]] {
+    fn walk(opt: Option[T], c: CoResultCollector) {
+        if let Some(t) = opt { walk(t, c); }
+    }
+}
+
+instance[T: CollectCoResults[T]] CollectCoResults[Vec[T]] {
+    fn walk(vec: Vec[T], c: CoResultCollector) {
+        for t in vec { walk(t, c); }
+    }
+}
+
+instance CollectCoResults[FunctionCallInfo] {
+    fn walk(info: FunctionCallInfo, c: CoResultCollector) {
+        if !info.is_coroutine_create && c.is_co_map.get(info.qname).unwrap_or(False) {
+            if let Some(callee) = c.program.functions.get(info.qname) {
+                let return_ty = callee.result_type.unwrap_or(TypeDef.Void);
+                c.needed.insert(format_type(return_ty), return_ty);
+            }
+        }
+        walk(info.args, c);
+        walk(info.witnesses, c);
+        walk(info.named_args, c);
+    }
+}
+
+pub fn collect_needed_co_results(body: Expr, program: Program, is_co_map: Map[QualifiedName, Bool]) -> Map[String, TypeDef] {
+    let c = CoResultCollector(program: program, is_co_map: is_co_map, needed: Map.new());
+    walk(body, c);
+    c.needed
+}
+
+}

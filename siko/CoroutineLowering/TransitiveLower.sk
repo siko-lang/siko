@@ -15,8 +15,8 @@ import Siko.Interner as I
 import Siko.Location
 import Siko.Normalizer
 import Siko.Utils.VarAllocator
-import Siko.Format.Utils
 import Siko.CoroutineLowering.Utils
+import Siko.CoroutineLowering.CoResultCollect as CRC
 
 pub struct TransitiveLowerer {
     pub program: Program,
@@ -144,7 +144,9 @@ pub fn transform_transitive(program: Program, is_co_map: Map[QualifiedName, Bool
         let func = program.functions.get(key).unwrap();
         if func.yield_type.is_some() { continue; }
         let body = match func.body { None => continue, Some(b) => b };
-        collect_needed_co_results(body, program, is_co_map, needed);
+        for (k, v) in CRC.collect_needed_co_results(body, program, is_co_map) {
+            needed.insert(k, v);
+        }
     }
 
     // Register any CoResult enum instantiation that mono never saw.
@@ -173,46 +175,6 @@ pub fn transform_transitive(program: Program, is_co_map: Map[QualifiedName, Bool
 
 // Scan a function body and collect all (return_ty) values for CoResult enums we will need.
 // Uses the same logic as classify_co_create to identify which calls will be expanded.
-fn collect_needed_co_results(expr: Expr, program: Program, is_co_map: Map[QualifiedName, Bool], needed: Map[String, TypeDef]) {
-    match expr.kind {
-        ExprKind.FunctionCall(FunctionCallInfo(qname, _, args, _, _, False)) => {
-            if is_co_map.get(qname).unwrap_or(False) {
-                if let Some(callee) = program.functions.get(qname) {
-                    let return_ty = callee.result_type.unwrap_or(TypeDef.Void);
-                    needed.insert(format_type(return_ty), return_ty);
-                }
-            }
-            for arg in args { collect_needed_co_results(arg, program, is_co_map, needed); }
-        }
-        ExprKind.FunctionCall(FunctionCallInfo(_, _, args, _, _, _)) => {
-            for arg in args { collect_needed_co_results(arg, program, is_co_map, needed); }
-        }
-        ExprKind.Block(BlockInfo(stmts)) => {
-            for stmt in stmts { collect_needed_co_results_stmt(stmt, program, is_co_map, needed); }
-        }
-        ExprKind.Match(MatchInfo(scrutinee, arms)) => {
-            collect_needed_co_results(scrutinee, program, is_co_map, needed);
-            for arm in arms { collect_needed_co_results(arm.body, program, is_co_map, needed); }
-        }
-        _ => {}
-    }
-}
-
-fn collect_needed_co_results_stmt(stmt: S.Statement, program: Program, is_co_map: Map[QualifiedName, Bool], needed: Map[String, TypeDef]) {
-    match stmt {
-        S.Statement.Let(S.LetInfo(_, _, rhs)) => collect_needed_co_results(rhs, program, is_co_map, needed),
-        S.Statement.Assign(lhs, rhs) => {
-            collect_needed_co_results(lhs, program, is_co_map, needed);
-            collect_needed_co_results(rhs, program, is_co_map, needed);
-        }
-        S.Statement.Expr(e) => collect_needed_co_results(e, program, is_co_map, needed),
-        S.Statement.Loop(stmts) => {
-            for s in stmts { collect_needed_co_results_stmt(s, program, is_co_map, needed); }
-        }
-        S.Statement.Declare(_) => {}
-        _ => {}
-    }
-}
 
 // Register CoResult[unit_ty, return_ty] in program.enums and variant_enum_map if not present.
 // The mono pass never saw this instantiation (drive loops are generated post-mono), so we
