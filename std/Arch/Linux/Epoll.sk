@@ -1,0 +1,52 @@
+module Std.Arch.Epoll {
+
+import Std.Libc.Time
+
+pub let EPOLLIN:  U32 = 0x001.as_u32();
+pub let EPOLLOUT: U32 = 0x004.as_u32();
+pub let EPOLLERR: U32 = 0x008.as_u32();
+pub let EPOLLHUP: U32 = 0x010.as_u32();
+
+pub let EPOLL_CTL_ADD: I32 = 1.as_i32();
+pub let EPOLL_CTL_DEL: I32 = 2.as_i32();
+pub let EPOLL_CTL_MOD: I32 = 3.as_i32();
+
+pub let EPOLL_CLOEXEC: I32 = 0x80000.as_i32();
+
+pub let TFD_CLOEXEC: I32 = 0x80000.as_i32();
+
+pub let CLOCK_MONOTONIC: I32 = 1.as_i32();
+
+// struct epoll_event on x86_64 Linux is __attribute__((packed)) = 12 bytes:
+//   uint32_t events  (offset 0)
+//   uint64_t data    (offset 4, no alignment padding)
+@value_type
+@packed
+pub struct EpollEvent {
+    pub events: U32,
+    pub data:   U64,
+}
+
+// struct itimerspec { struct timespec it_interval; struct timespec it_value; }
+@value_type
+pub struct ItimerSpec {
+    pub it_interval: TimeSpec,
+    pub it_value:    TimeSpec,
+}
+
+@extern("C", "sys/epoll.h")
+pub fn epoll_create1(flags: I32) -> I32
+
+@extern("C", "sys/epoll.h")
+pub fn epoll_ctl(epfd: I32, op: I32, fd: I32, event: *EpollEvent) -> I32
+
+@extern("C", "sys/epoll.h")
+pub fn epoll_wait(epfd: I32, events: *EpollEvent, maxevents: I32, timeout: I32) -> I32
+
+@extern("C", "sys/timerfd.h")
+pub fn timerfd_create(clockid: I32, flags: I32) -> I32
+
+@extern("C", "sys/timerfd.h")
+pub fn timerfd_settime(fd: I32, flags: I32, new_value: *ItimerSpec, old_value: *ItimerSpec) -> I32
+
+}

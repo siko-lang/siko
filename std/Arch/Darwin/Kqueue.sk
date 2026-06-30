@@ -1,0 +1,34 @@
+module Std.Arch.Kqueue {
+
+import Std.Libc.Time
+
+pub let EVFILT_READ: I16  = (-1).as_i16();
+pub let EVFILT_WRITE: I16 = (-2).as_i16();
+pub let EVFILT_TIMER: I16 = (-7).as_i16();
+
+pub let EV_ADD:     U16 = 0x0001.as_u16();
+pub let EV_DELETE:  U16 = 0x0002.as_u16();
+pub let EV_ONESHOT: U16 = 0x0010.as_u16();
+pub let EV_ERROR:   U16 = 0x4000.as_u16();
+
+// Matches Darwin's struct kevent (64-bit layout):
+//   uintptr_t ident, int16_t filter, uint16_t flags,
+//   uint32_t fflags, intptr_t data, void *udata
+@value_type
+pub struct Kevent {
+    pub ident:  U64,
+    pub filter: I16,
+    pub flags:  U16,
+    pub fflags: U32,
+    pub data:   I64,
+    pub udata:  void*,
+}
+
+@extern("C", "sys/event.h")
+pub fn kqueue() -> I32
+
+@extern("C", "sys/event.h")
+pub fn kevent(kq: I32, changelist: *Kevent, nchanges: I32,
+              eventlist: *Kevent, nevents: I32, timeout: *TimeSpec) -> I32
+
+}

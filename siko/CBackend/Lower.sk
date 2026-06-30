@@ -506,7 +506,7 @@ struct Lowerer {
             for field in sdef.fields.iter() {
                 fields.push(C.CField(l.lower_type(field.ty), I.resolve(field.name.name())));
             }
-            defs.push(C.CStructDef(mangle(qname.hashed()), fields));
+            defs.push(C.CStructDef(mangle(qname.hashed()), fields, sdef.is_packed()));
         }
         for edef in l.program.enums.values() {
             l.lower_enum(edef, defs);
@@ -523,7 +523,7 @@ struct Lowerer {
         };
         let fields: Vec[C.CField] = Vec.new();
         fields.push(C.CField(C.CType.Array(elem_ty, n), "data"));
-        C.CStructDef(mangle(qname.hashed()), fields)
+        C.CStructDef(mangle(qname.hashed()), fields, False)
     }
 
     fn lower_enum(l: Lowerer, edef: EnumDef, defs: Vec[C.CStructDef]) {
@@ -539,14 +539,14 @@ struct Lowerer {
         let container_fields: Vec[C.CField] = Vec.new();
         container_fields.push(C.CField(C.CType.UInt32, "tag"));
         container_fields.push(C.CField(C.CType.Union(members), "payload"));
-        defs.push(C.CStructDef(enum_name, container_fields));
+        defs.push(C.CStructDef(enum_name, container_fields, False));
         // Per-variant payload structs.
         for variant in edef.variants.iter() {
             let fields: Vec[C.CField] = Vec.new();
             for (index, item) in variant.items.iter().enumerate() {
                 fields.push(C.CField(l.lower_type(item.ty), variant_field_name(index)));
             }
-            defs.push(C.CStructDef(variant_struct_name(edef, variant), fields));
+            defs.push(C.CStructDef(variant_struct_name(edef, variant), fields, False));
         }
     }
 

@@ -1,0 +1,176 @@
+module Std.Arch.EventLoop {
+
+import Std.Arch.Kqueue
+import Std.Arch.Errno
+import Std.Libc.Time
+import Std.Map
+import Std.Time
+import Std.Ptr
+
+pub enum IoEvent {
+    Read,
+    Write,
+}
+
+pub enum Interest {
+    Read,
+    Write,
+    ReadWrite,
+}
+
+pub struct EventLoop {
+    kq_fd: I32,
+    fd_callbacks: Map[I32, (Interest, fn(IoEvent) -> ())],
+    timer_callbacks: Map[Int, fn() -> ()],
+    next_timer_id: Int,
+
+    @safe
+    pub fn new() -> EventLoop {
+        let kq = kqueue();
+        if kq < 0.as_i32() {
+            panic("kqueue() failed");
+        }
+        EventLoop(kq, Map.new(), Map.new(), 0)
+    }
+
+    @safe
+    pub fn register(el: EventLoop, fd: I32, interest: Interest, callback: fn(IoEvent) -> ()) {
+        el.fd_callbacks.insert(fd, (interest, callback));
+        apply_fd_change(el.kq_fd, fd, interest, EV_ADD);
+    }
+
+    @safe
+    pub fn deregister(el: EventLoop, fd: I32) {
+        match el.fd_callbacks.remove(fd) {
+            None => {}
+            Some((interest, _)) => {
+                apply_fd_change(el.kq_fd, fd, interest, EV_DELETE);
+            }
+        }
+    }
+
+    @safe
+    pub fn add_timer(el: EventLoop, timeout: Duration, callback: fn() -> ()) -> Int {
+        let id = el.next_timer_id;
+        el.next_timer_id = id + 1;
+        el.timer_callbacks.insert(id, callback);
+        let ev = Kevent(
+            ident:  id.as_u64(),
+            filter: EVFILT_TIMER,
+            flags:  EV_ADD | EV_ONESHOT,
+            fflags: 0.as_u32(),
+            data:   timeout.to_millis(),
+            udata:  get_null_voidptr(),
+        );
+        let ret = kevent(el.kq_fd, &ev, 1.as_i32(), get_null_ptr(), 0.as_i32(), get_null_ptr());
+        if ret < 0.as_i32() {
+            panic("kevent add_timer failed");
+        }
+        id
+    }
+
+    @safe
+    pub fn cancel_timer(el: EventLoop, id: Int) {
+        match el.timer_callbacks.remove(id) {
+            None => {}
+            Some(_) => {
+                let ev = Kevent(
+                    ident:  id.as_u64(),
+                    filter: EVFILT_TIMER,
+                    flags:  EV_DELETE,
+                    fflags: 0.as_u32(),
+                    data:   0.as_i64(),
+                    udata:  get_null_voidptr(),
+                );
+                kevent(el.kq_fd, &ev, 1.as_i32(), get_null_ptr(), 0.as_i32(), get_null_ptr());
+            }
+        }
+    }
+
+    @safe
+    pub fn run_once(el: EventLoop, timeout: Duration) {
+        let ts = TimeSpec(timeout.seconds, timeout.nanoseconds);
+        let batch_size = 64;
+        let null_kevent = Kevent(
+            ident:  0.as_u64(),
+            filter: 0.as_i16(),
+            flags:  0.as_u16(),
+            fflags: 0.as_u32(),
+            data:   0.as_i64(),
+            udata:  get_null_voidptr(),
+        );
+        let events = Vec.with_value(batch_size, null_kevent);
+        let event_num = 0.as_i32();
+        loop {
+            event_num = kevent(el.kq_fd, get_null_ptr(), 0.as_i32(),
+                               events.as_ptr(), batch_size.as_i32(), &ts);
+            if event_num < 0.as_i32() {
+                let errno = Std.Arch.Errno.get_errno();
+                if errno == Std.Arch.Errno.Errno.EINTR {
+                    continue;
+                }
+                panic("kevent run_once failed: ${errno}");
+            }
+            break;
+        }
+        for i in 0..event_num.as_int() {
+            let ev = events.get(i);
+            if (ev.flags & EV_ERROR) != 0.as_u16() {
+                continue;
+            }
+            if ev.filter == EVFILT_TIMER {
+                let id = ev.ident.as_int();
+                match el.timer_callbacks.remove(id) {
+                    None => {}
+                    Some(cb) => cb(),
+                }
+            } else if ev.filter == EVFILT_READ {
+                let fd = ev.ident.as_int().as_i32();
+                match el.fd_callbacks.get(fd) {
+                    None => {}
+                    Some((_, cb)) => cb(IoEvent.Read),
+                }
+            } else if ev.filter == EVFILT_WRITE {
+                let fd = ev.ident.as_int().as_i32();
+                match el.fd_callbacks.get(fd) {
+                    None => {}
+                    Some((_, cb)) => cb(IoEvent.Write),
+                }
+            }
+        }
+    }
+}
+
+@unsafe
+fn apply_fd_change(kq_fd: I32, fd: I32, interest: Interest, flags: U16) {
+    match interest {
+        Interest.Read => {
+            change_filter(kq_fd, fd.as_int().as_u64(), EVFILT_READ, flags);
+        }
+        Interest.Write => {
+            change_filter(kq_fd, fd.as_int().as_u64(), EVFILT_WRITE, flags);
+        }
+        Interest.ReadWrite => {
+            change_filter(kq_fd, fd.as_int().as_u64(), EVFILT_READ, flags);
+            change_filter(kq_fd, fd.as_int().as_u64(), EVFILT_WRITE, flags);
+        }
+    }
+}
+
+@unsafe
+fn change_filter(kq_fd: I32, ident: U64, filter: I16, flags: U16) {
+    let ev = Kevent(
+        ident:  ident,
+        filter: filter,
+        flags:  flags,
+        fflags: 0.as_u32(),
+        data:   0.as_i64(),
+        udata:  get_null_voidptr(),
+    );
+    let ret = kevent(kq_fd, &ev, 1.as_i32(), get_null_ptr(), 0.as_i32(), get_null_ptr());
+    if ret < 0.as_i32() {
+        panic("kevent change_filter failed");
+    }
+}
+
+}

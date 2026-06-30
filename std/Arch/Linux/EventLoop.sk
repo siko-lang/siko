@@ -1,0 +1,168 @@
+module Std.Arch.EventLoop {
+
+import Std.Arch.Epoll
+import Std.Arch.Errno
+import Std.Libc.Time as T
+import Std.Libc.Unistd
+import Std.Map
+import Std.Time
+import Std.Ptr
+
+pub enum IoEvent {
+    Read,
+    Write,
+}
+
+pub enum Interest {
+    Read,
+    Write,
+    ReadWrite,
+}
+
+pub struct EventLoop {
+    epoll_fd: I32,
+    fd_callbacks: Map[I32, (Interest, fn(IoEvent) -> ())],
+    timer_callbacks: Map[Int, fn() -> ()],
+    timer_to_fd: Map[Int, I32],
+    fd_to_timer: Map[I32, Int],
+    next_timer_id: Int,
+
+    @safe
+    pub fn new() -> EventLoop {
+        let efd = epoll_create1(EPOLL_CLOEXEC);
+        if efd < 0.as_i32() {
+            panic("epoll_create1() failed");
+        }
+        EventLoop(efd, Map.new(), Map.new(), Map.new(), Map.new(), 0)
+    }
+
+    @safe
+    pub fn register(el: EventLoop, fd: I32, interest: Interest, callback: fn(IoEvent) -> ()) {
+        el.fd_callbacks.insert(fd, (interest, callback));
+        let ev = EpollEvent(
+            events: interest_to_flags(interest),
+            data:   fd.as_int().as_u64(),
+        );
+        let ret = epoll_ctl(el.epoll_fd, EPOLL_CTL_ADD, fd, &ev);
+        if ret < 0.as_i32() {
+            panic("epoll_ctl register failed");
+        }
+    }
+
+    @safe
+    pub fn deregister(el: EventLoop, fd: I32) {
+        match el.fd_callbacks.remove(fd) {
+            None => {}
+            Some(_) => {
+                let dummy = EpollEvent(events: 0.as_u32(), data: 0.as_u64());
+                epoll_ctl(el.epoll_fd, EPOLL_CTL_DEL, fd, &dummy);
+            }
+        }
+    }
+
+    @safe
+    pub fn add_timer(el: EventLoop, timeout: Duration, callback: fn() -> ()) -> Int {
+        let id = el.next_timer_id;
+        el.next_timer_id = id + 1;
+        let tfd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC);
+        if tfd < 0.as_i32() {
+            panic("timerfd_create failed");
+        }
+        let spec = ItimerSpec(
+            it_interval: T.TimeSpec(0.as_i64(), 0.as_i64()),
+            it_value:    T.TimeSpec(timeout.seconds, timeout.nanoseconds),
+        );
+        let ret = timerfd_settime(tfd, 0.as_i32(), &spec, get_null_ptr());
+        if ret < 0.as_i32() {
+            panic("timerfd_settime failed");
+        }
+        let ev = EpollEvent(
+            events: EPOLLIN,
+            data:   tfd.as_int().as_u64(),
+        );
+        let ret2 = epoll_ctl(el.epoll_fd, EPOLL_CTL_ADD, tfd, &ev);
+        if ret2 < 0.as_i32() {
+            panic("epoll_ctl add_timer failed");
+        }
+        el.timer_callbacks.insert(id, callback);
+        el.timer_to_fd.insert(id, tfd);
+        el.fd_to_timer.insert(tfd, id);
+        id
+    }
+
+    @safe
+    pub fn cancel_timer(el: EventLoop, id: Int) {
+        match el.timer_to_fd.remove(id) {
+            None => {}
+            Some(tfd) => {
+                el.fd_to_timer.remove(tfd);
+                el.timer_callbacks.remove(id);
+                let dummy = EpollEvent(events: 0.as_u32(), data: 0.as_u64());
+                epoll_ctl(el.epoll_fd, EPOLL_CTL_DEL, tfd, &dummy);
+                Std.Libc.Unistd.close(tfd);
+            }
+        }
+    }
+
+    @safe
+    pub fn run_once(el: EventLoop, timeout: Duration) {
+        let timeout_ms = timeout.to_millis().as_int().as_i32();
+        let batch_size = 64;
+        let null_ev = EpollEvent(events: 0.as_u32(), data: 0.as_u64());
+        let events = Vec.with_value(batch_size, null_ev);
+        let event_num = 0.as_i32();
+        loop {
+            event_num = epoll_wait(el.epoll_fd, events.as_ptr(), batch_size.as_i32(), timeout_ms);
+            if event_num < 0.as_i32() {
+                let errno = Std.Arch.Errno.get_errno();
+                if errno == Std.Arch.Errno.Errno.EINTR {
+                    continue;
+                }
+                panic("epoll_wait failed: ${errno}");
+            }
+            break;
+        }
+        for i in 0..event_num.as_int() {
+            let ev = events.get(i);
+            let fd = ev.data.as_int().as_i32();
+            match el.fd_to_timer.get(fd) {
+                Some(id) => {
+                    // drain the timerfd (must read 8 bytes to re-arm)
+                    let buf = Vec.with_value(8, 0.as_u8());
+                    Std.Libc.Unistd.read(fd, buf.as_ptr(), 8.as_u64());
+                    el.fd_to_timer.remove(fd);
+                    el.timer_to_fd.remove(id);
+                    let dummy = EpollEvent(events: 0.as_u32(), data: 0.as_u64());
+                    epoll_ctl(el.epoll_fd, EPOLL_CTL_DEL, fd, &dummy);
+                    Std.Libc.Unistd.close(fd);
+                    match el.timer_callbacks.remove(id) {
+                        None => {}
+                        Some(cb) => cb(),
+                    }
+                }
+                None => {
+                    match el.fd_callbacks.get(fd) {
+                        None => {}
+                        Some((_, cb)) => {
+                            if (ev.events & EPOLLIN) != 0.as_u32() {
+                                cb(IoEvent.Read);
+                            } else if (ev.events & EPOLLOUT) != 0.as_u32() {
+                                cb(IoEvent.Write);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn interest_to_flags(interest: Interest) -> U32 {
+    match interest {
+        Interest.Read      => EPOLLIN,
+        Interest.Write     => EPOLLOUT,
+        Interest.ReadWrite => EPOLLIN | EPOLLOUT,
+    }
+}
+
+}

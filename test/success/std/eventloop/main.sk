@@ -1,0 +1,35 @@
+module Main {
+
+import Std.IO.EventLoop
+import Std.Time
+
+struct State {
+    count: Int,
+    eventloop: EventLoop,
+    stop: Bool,
+}
+
+implicit current: State
+
+fn callback() {
+    println("hello world");
+    current.count += 1;
+    if current.count < 10 {
+        current.eventloop.add_timer(milliseconds(10), || callback());
+    } else {
+        current.stop = True;
+    }
+}
+
+fn main() {
+    let eventloop = EventLoop.new();
+    let s = State(0, eventloop, False);
+    with current = s {
+        callback();
+        while !current.stop {
+            eventloop.run_once(seconds(10));
+        }
+    }
+}
+
+}
