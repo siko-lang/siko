@@ -178,10 +178,8 @@ fn collect_needed_co_results(expr: Expr, program: Program, is_co_map: Map[Qualif
         ExprKind.FunctionCall(FunctionCallInfo(qname, _, args, _, _, False)) => {
             if is_co_map.get(qname).unwrap_or(False) {
                 if let Some(callee) = program.functions.get(qname) {
-                    if callee.yield_type.is_some() {
-                        let return_ty = callee.result_type.unwrap_or(TypeDef.Void);
-                        needed.insert(format_type(return_ty), return_ty);
-                    }
+                    let return_ty = callee.result_type.unwrap_or(TypeDef.Void);
+                    needed.insert(format_type(return_ty), return_ty);
                 }
             }
             for arg in args { collect_needed_co_results(arg, program, is_co_map, needed); }
@@ -276,9 +274,6 @@ fn classify_co_create(expr: Expr, program: Program, is_co_map: Map[QualifiedName
                 None => return None,
                 Some(f) => f,
             };
-            if callee.yield_type.is_none() {
-                return None;
-            }
             let return_ty = callee.result_type.unwrap_or(TypeDef.Void);
             let co_ty = TypeDef.Co(CoroutineInfo(yield_ty: TypeDef.Tuple([]), return_ty: return_ty.clone()));
             Some((co_ty, return_ty))

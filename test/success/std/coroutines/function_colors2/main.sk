@@ -1,0 +1,66 @@
+module App {
+
+import IO
+
+pub fn app_func() {
+    some_io();
+}
+
+}
+
+module IO {
+
+pub effect IO {
+    fn some_io()
+}
+
+}
+
+module Sync.IO {
+
+import IO
+
+pub instance SyncIO IO {
+    fn some_io() {
+        println("Sync!");
+    }
+}
+
+}
+
+module Async.IO {
+
+import IO
+
+fn some_io_helper() co(()) -> () {
+    println("async!");
+    yield ();
+    println("async woo!");
+}
+
+pub instance AsyncIO IO {
+    fn some_io() {
+        some_io_helper();
+    }
+}
+
+}
+
+module Main {
+
+import App
+import IO
+import Sync.IO
+import Async.IO
+import Std.Coroutine
+
+fn main() {
+    with IO = SyncIO {
+        app_func();
+    }
+    with IO = AsyncIO {
+        complete(co app_func());
+    }
+}
+
+}
