@@ -6,6 +6,13 @@ pub fn htons(value: U16) -> U16 {
     ((value & 0xFF.as_u16()) << 8.as_u16()) | ((value >> 8.as_u16()) & 0xFF.as_u16())
 }
 
+pub fn htonl(value: U32) -> U32 {
+    ((value & 0xFF.as_u32()) << 24.as_u32()) |
+    (((value >> 8.as_u32()) & 0xFF.as_u32()) << 16.as_u32()) |
+    (((value >> 16.as_u32()) & 0xFF.as_u32()) << 8.as_u32()) |
+    ((value >> 24.as_u32()) & 0xFF.as_u32())
+}
+
 @derive(Clone, PartialEq, Eq)
 pub enum Domain {
     AF_UNSPEC,
@@ -53,7 +60,7 @@ pub fn accept(sockfd: I32, addr: void*, addrlen: void*) -> I32
 pub fn setsockopt(sockfd: I32, level: I32, optname: I32, optval: *I32, optlen: I32) -> I32
 
 @extern("C", "arpa/inet.h")
-pub fn inet_pton(af: I32, src: *U8, dst: *InAddr) -> I32
+pub fn inet_pton(af: I32, src: *I8, dst: *InAddr) -> I32
 
 @extern("C", "sys/socket.h")
 pub fn connect(sockfd: I32, addr: *SockaddrIn, addrlen: I32) -> I32

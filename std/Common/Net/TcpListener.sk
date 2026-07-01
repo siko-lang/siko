@@ -12,6 +12,10 @@ import Std.Net.TcpStream
 pub struct TcpListener {
     fd: FileDescriptor,
 
+    pub fn get_fd(l: TcpListener) -> FileDescriptor {
+        l.fd
+    }
+
     @safe
     pub fn bind(port: U16) -> Result[TcpListener, Error] {
         let sock = Std.Libc.Socket.socket(Domain.code(Domain.AF_INET), SockType.code(SockType.SOCK_STREAM), 0.as_i32());
@@ -43,6 +47,10 @@ pub struct TcpListener {
 
     pub fn close(l: TcpListener) -> Result[(), Error] {
         l.fd.close()
+    }
+
+    pub fn set_nonblocking(l: TcpListener, nonblocking: Bool) -> Result[(), Error] {
+        l.fd.set_nonblocking(nonblocking)
     }
 }
 

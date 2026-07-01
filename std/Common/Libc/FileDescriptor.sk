@@ -1,10 +1,12 @@
 module Std.Libc.FileDescriptor {
 
 import Std.Libc.Unistd
+import Std.Libc.Fcntl
 import Std.IO.Error
 import Std.IO.Reader
 import Std.IO.Writer
 import Std.Arch.Errno
+import Std.Arch.Fs
 import Std.Slice
 
 pub struct FileDescriptor {
@@ -34,6 +36,24 @@ pub struct FileDescriptor {
             return Err(Error.new(Std.Arch.Errno.get_errno()));
         }
         Ok(result != 0.as_i32())
+    }
+
+    @safe
+    pub fn set_nonblocking(f: FileDescriptor, nonblocking: Bool) -> Result[(), Error] {
+        let flags = Std.Libc.Fcntl.fcntl(f.fd, Std.Arch.Fs.F_GETFL);
+        if flags < 0.as_i32() {
+            return Err(Error.new(Std.Arch.Errno.get_errno()));
+        }
+        let new_flags = if nonblocking {
+            flags | Std.Arch.Fs.O_NONBLOCK
+        } else {
+            flags & ~(Std.Arch.Fs.O_NONBLOCK)
+        };
+        let result = Std.Libc.Fcntl.fcntl(f.fd, Std.Arch.Fs.F_SETFL, new_flags);
+        if result < 0.as_i32() {
+            return Err(Error.new(Std.Arch.Errno.get_errno()));
+        }
+        Ok(())
     }
 }
 

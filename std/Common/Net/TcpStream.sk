@@ -5,6 +5,10 @@ import Std.IO.Reader
 import Std.IO.Writer
 import Std.IO.Closer
 import Std.Libc.FileDescriptor
+import Std.Arch.Errno
+import Std.Arch.SockaddrIn
+import Std.Libc.Socket
+import Std.Net.Utils
 import Std.Slice
 
 pub struct TcpStream {
@@ -14,8 +18,51 @@ pub struct TcpStream {
         TcpStream(FileDescriptor.new(fd))
     }
 
+    pub fn get_fd(s: TcpStream) -> FileDescriptor {
+        s.fd
+    }
+
+    @safe
+    pub fn connect(host: String, port: U16) -> Result[TcpStream, Error] {
+        let addr = parse_address(host)?;
+        let sock = Std.Libc.Socket.socket(Domain.code(Domain.AF_INET), SockType.code(SockType.SOCK_STREAM), 0.as_i32());
+        if sock < 0.as_i32() {
+            return Err(Error.new(Std.Arch.Errno.get_errno()));
+        }
+        let sockaddr = SockaddrIn.new(Domain.AF_INET, port, addr);
+        let ret = Std.Libc.Socket.connect(sock, &sockaddr, sockaddr.len().as_int().as_i32());
+        if ret < 0.as_i32() {
+            return Err(Error.new(Std.Arch.Errno.get_errno()));
+        }
+        Ok(TcpStream.new(sock))
+    }
+
+    @safe
+    pub fn connect_async(host: String, port: U16) -> Result[TcpStream, Error] {
+        let addr = parse_address(host)?;
+        let sock = Std.Libc.Socket.socket(Domain.code(Domain.AF_INET), SockType.code(SockType.SOCK_STREAM), 0.as_i32());
+        if sock < 0.as_i32() {
+            return Err(Error.new(Std.Arch.Errno.get_errno()));
+        }
+        let s = FileDescriptor.new(sock);
+        s.set_nonblocking(True);
+        let sockaddr = SockaddrIn.new(Domain.AF_INET, port, addr);
+        let ret = Std.Libc.Socket.connect(sock, &sockaddr, sockaddr.len().as_int().as_i32());
+        if ret < 0.as_i32() {
+            let errno = Std.Arch.Errno.get_errno();
+            if errno != Std.Arch.Errno.Errno.EINPROGRESS {
+                return Err(Error.new(errno));
+            }
+        }
+        Ok(TcpStream.new(sock))
+    }
+
     pub fn close(s: TcpStream) -> Result[(), Error] {
         s.fd.close()
+    }
+
+    pub fn set_nonblocking(s: TcpStream, nonblocking: Bool) -> Result[(), Error] {
+        s.fd.set_nonblocking(nonblocking)
     }
 }
 
