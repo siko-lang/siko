@@ -103,18 +103,17 @@ fn server(port: U16) -> Result[(), Error] {
     Ok(())
 }
 
+fn client(port: U16) {
+    let _ = TcpStream.connect_async("127.0.0.1", port).unwrap();
+}
+
 fn main() {
     let port = 19876.as_u16();
     let s = State.new();
     with current = s {
         spawn(|_| server(port).unwrap());
-        s.run_ready_queue();
-        let client = match TcpStream.connect_async("127.0.0.1", port) {
-            Ok(stream) => stream,
-            Err(e) => panic("connect failed: ${e}"),
-        };
+        spawn(|_| client(port));
         s.run_tasks();
-        let _ = client.close();
     }
 }
 
