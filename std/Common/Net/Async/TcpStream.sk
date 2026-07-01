@@ -1,0 +1,71 @@
+module Std.Net.Async.TcpStream {
+
+import Std.IO.Error
+import Std.IO.Reader
+import Std.IO.Writer
+import Std.IO.Closer
+import Std.IO.Async.Scheduler as Async
+import Std.Net.TcpStream as Base
+import Std.Slice
+
+pub struct TcpStream {
+    inner: Base.TcpStream,
+
+    pub fn new(s: Base.TcpStream) -> TcpStream {
+        TcpStream(s)
+    }
+
+    pub fn connect(host: String, port: U16) -> Result[TcpStream, Error] {
+        let stream = Base.TcpStream.connect_async(host, port)?;
+        let fd = stream.get_fd().get_fd();
+        Async.await_writable(fd);
+        Ok(TcpStream(stream))
+    }
+
+    pub fn get_fd(s: TcpStream) -> I32 {
+        s.inner.get_fd().get_fd()
+    }
+}
+
+instance Reader[TcpStream] {
+    fn read(s: TcpStream, buf: Slice[U8]) -> Result[Int, Error] {
+        loop {
+            match s.inner.read(buf) {
+                Ok(n) => return Ok(n),
+                Err(e) => {
+                    if e.is_eagain() {
+                        Async.await_readable(s.inner.get_fd().get_fd());
+                    } else {
+                        return Err(e);
+                    }
+                }
+            }
+        }
+    }
+}
+
+instance Writer[TcpStream] {
+    fn write(s: TcpStream, buf: Slice[U8]) -> Result[Int, Error] {
+        loop {
+            match s.inner.write(buf) {
+                Ok(n) => return Ok(n),
+                Err(e) => {
+                    if e.is_eagain() {
+                        Async.await_writable(s.inner.get_fd().get_fd());
+                    } else {
+                        return Err(e);
+                    }
+                }
+            }
+        }
+    }
+}
+
+instance Closer[TcpStream] {
+    fn close(s: TcpStream) -> Result[(), Error] {
+        s.inner.close()
+    }
+}
+
+
+}

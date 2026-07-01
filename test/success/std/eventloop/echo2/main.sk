@@ -1,0 +1,55 @@
+module Main {
+
+import Std.IO.Writer
+import Std.IO.Reader
+import Std.IO.Error
+import Std.IO.Async.Scheduler as Async
+import Std.Net.TcpListener
+import Std.Net.TcpStream
+
+fn listen(port: U16) -> Result[TcpListener, Error] {
+    let listener = TcpListener.bind(port)?;
+    listener.set_nonblocking(True)?;
+    Ok(listener)
+}
+
+fn handler(conn: TcpStream) {
+    let fd = conn.get_fd().get_fd();
+    Async.await_readable(fd);
+    let buf = Vec.with_value(1024, 0.as_u8());
+    let n = conn.read(buf.slice()).unwrap();
+    conn.write(buf.sub_slice(0, n)).unwrap();
+}
+
+fn server(port: U16) {
+    let listener = listen(port).unwrap();
+    let fd = listener.get_fd().get_fd();
+    Async.await_readable(fd);
+    let conn = listener.accept().unwrap();
+    conn.set_nonblocking(True).unwrap();
+    Async.spawn(|_| handler(conn));
+}
+
+fn client(port: U16) {
+    let stream = TcpStream.connect_async("127.0.0.1", port).unwrap();
+    let fd = stream.get_fd().get_fd();
+    Async.await_writable(fd);
+    stream.write("hello".as_slice()).unwrap();
+    Async.await_readable(fd);
+    let buf = Vec.with_value(1024, 0.as_u8());
+    let n = stream.read(buf.slice()).unwrap();
+    println(String.from_slice(buf.sub_slice(0, n)));
+    Async.stop()
+}
+
+fn main() {
+    let port = 19877.as_u16();
+    let s = Async.Scheduler.new();
+    with Async.current = s {
+        Async.spawn(|_| server(port));
+        Async.spawn(|_| client(port));
+        s.run_tasks();
+    }
+}
+
+}

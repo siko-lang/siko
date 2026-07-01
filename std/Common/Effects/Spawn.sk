@@ -1,0 +1,22 @@
+module Std.Effects.Spawn {
+
+import Std.Sync.Thread as Thread
+import Std.IO.Async.Scheduler as Async
+
+pub effect Spawn {
+    fn spawn(f: fn() -> ())
+}
+
+pub instance ThreadSpawn Spawn {
+    fn spawn(f: fn() -> ()) {
+        let _ = Thread.spawn(f);
+    }
+}
+
+pub instance AsyncSpawn Spawn {
+    fn spawn(f: fn() -> ()) {
+        Async.spawn(|_| f());
+    }
+}
+
+}

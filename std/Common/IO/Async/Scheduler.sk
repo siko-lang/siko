@@ -1,0 +1,95 @@
+module Std.IO.Async.Scheduler {
+
+import Std.IO.EventLoop
+import Std.IO.Writer
+import Std.IO.Reader
+import Std.Time
+import Std.VecDeque
+import Std.Coroutine
+
+struct Scheduler {
+    eventloop: EventLoop,
+    current_task: Option[Task],
+    stop: Bool,
+    ready_queue: VecDeque[Task],
+
+    pub fn new() -> Scheduler {
+        Scheduler(eventloop: EventLoop.new(),
+              current_task: None,
+              stop: False,
+              ready_queue: VecDeque.new())
+    }
+
+    fn run_ready_queue(s: Scheduler) {
+        while True {
+            match s.ready_queue.pop_front() {
+                Some(task) => {
+                        s.current_task = Some(task);
+                        resume(task.coroutine.unwrap());
+                        s.current_task = None;
+                    }
+                None => break,
+            }
+        }
+    }
+
+    fn add_ready(s: Scheduler, task: Task) {
+        s.ready_queue.push_back(task);
+    }
+
+    fn spawn_task(s: Scheduler, f: fn(Int) -> ()) {
+        let task = Task(None);
+        let task_co = co run(f);
+        task.coroutine = Some(task_co);
+        s.add_ready(task);
+    }
+
+    pub fn run_tasks(s: Scheduler) {
+        while !s.stop {
+            s.run_ready_queue();
+            s.eventloop.run_once(milliseconds(10));
+        }
+    }
+}
+
+fn run(f: fn(Int) -> ()) {
+    f(5);
+}
+
+struct Task {
+    coroutine: Option[co(()) -> ()]
+}
+
+pub implicit current: Scheduler
+
+pub fn spawn(f: fn(Int) -> ()) {
+    current.spawn_task(f);
+}
+
+pub fn stop() {
+    current.stop = True;
+}
+
+fn get_current_task() -> Task {
+    current.current_task.unwrap()
+}
+
+pub fn await_readable(fd: I32) co(()) -> () {
+    let task = get_current_task();
+    current.eventloop.register(fd, Interest.Read, |_| {
+        current.eventloop.deregister(fd);
+        current.add_ready(task);
+    });
+    yield ();
+}
+
+pub fn await_writable(fd: I32) co(()) -> () {
+    let task = get_current_task();
+    current.eventloop.register(fd, Interest.Write, |_| {
+        current.eventloop.deregister(fd);
+        current.add_ready(task);
+    });
+    yield ();
+}
+
+}

@@ -1,0 +1,47 @@
+module Main {
+
+import Std.IO.Async.Scheduler as Async
+import Std.IO.Buffered as Buffered
+import Std.Net.Async.TcpListener
+import Std.Net.Async.TcpStream
+
+fn handler(conn: TcpStream) {
+    let reader = Buffered.Reader.new(conn, 1024);
+    let writer = Buffered.Writer.new(conn);
+    for _ in 0..3 {
+        let line = reader.read_line().unwrap().unwrap();
+        writer.write("${line}\n".as_slice()).unwrap();
+        writer.flush().unwrap();
+    }
+}
+
+fn server(port: U16) {
+    let listener = TcpListener.bind(port).unwrap();
+    let conn = listener.accept().unwrap();
+    Async.spawn(|_| handler(conn));
+}
+
+fn client(port: U16) {
+    let stream = TcpStream.connect("127.0.0.1", port).unwrap();
+    let reader = Buffered.Reader.new(stream, 1024);
+    let writer = Buffered.Writer.new(stream);
+    for i in 0..3 {
+        writer.write("hello ${i}\n".as_slice()).unwrap();
+        writer.flush().unwrap();
+        let line = reader.read_line().unwrap().unwrap();
+        println(line);
+    }
+    Async.stop()
+}
+
+fn main() {
+    let port = 19878.as_u16();
+    let s = Async.Scheduler.new();
+    with Async.current = s {
+        Async.spawn(|_| server(port));
+        Async.spawn(|_| client(port));
+        s.run_tasks();
+    }
+}
+
+}

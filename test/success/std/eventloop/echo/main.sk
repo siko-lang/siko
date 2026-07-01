@@ -1,0 +1,139 @@
+module Main {
+
+import Std.IO.EventLoop
+import Std.IO.Writer
+import Std.IO.Reader
+import Std.IO.Error
+import Std.Net.TcpListener
+import Std.Net.TcpStream
+import Std.Time
+import Std.VecDeque
+import Std.Coroutine
+
+struct State {
+    eventloop: EventLoop,
+    current_task: Option[Task],
+    stop: Bool,
+    ready_queue: VecDeque[Task],
+
+    fn new() -> State {
+        State(eventloop: EventLoop.new(),
+              current_task: None,
+              stop: False,
+              ready_queue: VecDeque.new())
+    }
+
+    fn run_ready_queue(s: State) {
+        while True {
+            match s.ready_queue.pop_front() {
+                Some(task) => {
+                        s.current_task = Some(task);
+                        resume(task.coroutine.unwrap());
+                        s.current_task = None;
+                    }
+                None => break,
+            }
+        }
+    }
+
+    fn add_ready(s: State, task: Task) {
+        s.ready_queue.push_back(task);
+    }
+
+    fn spawn_task(s: State, f: fn(Int) -> ()) {
+        let task = Task(None);
+        let task_co = co run(f);
+        task.coroutine = Some(task_co);
+        s.add_ready(task);
+    }
+
+    fn run_tasks(s: State) {
+        while !s.stop {
+            s.run_ready_queue();
+            s.eventloop.run_once(milliseconds(10));
+        }
+    }
+}
+
+fn run(f: fn(Int) -> ()) {
+    f(5);
+}
+
+implicit current: State
+
+struct Task {
+    coroutine: Option[co(()) -> ()]
+}
+
+fn spawn(f: fn(Int) -> ()) {
+    current.spawn_task(f);
+}
+
+fn get_current_task() -> Task {
+    current.current_task.unwrap()
+}
+
+fn await_readable(fd: I32) co(()) -> () {
+    let task = get_current_task();
+    current.eventloop.register(fd, Interest.Read, |_| {
+        current.eventloop.deregister(fd);
+        current.add_ready(task);
+    });
+    yield ();
+}
+
+fn await_writable(fd: I32) co(()) -> () {
+    let task = get_current_task();
+    current.eventloop.register(fd, Interest.Write, |_| {
+        current.eventloop.deregister(fd);
+        current.add_ready(task);
+    });
+    yield ();
+}
+
+fn listen(port: U16) -> Result[TcpListener, Error] {
+    let listener = TcpListener.bind(port)?;
+    listener.set_nonblocking(True)?;
+    Ok(listener)
+}
+
+fn handler(conn: TcpStream) {
+    let fd = conn.get_fd().get_fd();
+    await_readable(fd);
+    let buf = Vec.with_value(1024, 0.as_u8());
+    let n = conn.read(buf.slice()).unwrap();
+    conn.write(buf.sub_slice(0, n)).unwrap();
+}
+
+fn server(port: U16) {
+    let listener = listen(port).unwrap();
+    let fd = listener.get_fd().get_fd();
+    await_readable(fd);
+    let conn = listener.accept().unwrap();
+    conn.set_nonblocking(True).unwrap();
+    spawn(|_| handler(conn));
+}
+
+fn client(port: U16) {
+    let stream = TcpStream.connect_async("127.0.0.1", port).unwrap();
+    let fd = stream.get_fd().get_fd();
+    await_writable(fd);
+    stream.write("hello".as_slice()).unwrap();
+    await_readable(fd);
+    let buf = Vec.with_value(1024, 0.as_u8());
+    let n = stream.read(buf.slice()).unwrap();
+    println(String.from_slice(buf.sub_slice(0, n)));
+    current.stop = True;
+}
+
+fn main() {
+    let port = 19877.as_u16();
+    let s = State.new();
+    with current = s {
+        spawn(|_| server(port));
+        spawn(|_| client(port));
+        s.run_tasks();
+    }
+}
+
+}

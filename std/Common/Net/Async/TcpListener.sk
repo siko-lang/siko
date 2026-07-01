@@ -1,0 +1,43 @@
+module Std.Net.Async.TcpListener {
+
+import Std.IO.Error
+import Std.IO.Closer
+import Std.IO.Async.Scheduler as Async
+import Std.Net.TcpListener as Base
+import Std.Net.Async.TcpStream
+
+pub struct TcpListener {
+    inner: Base.TcpListener,
+
+    pub fn bind(port: U16) -> Result[TcpListener, Error] {
+        let listener = Base.TcpListener.bind(port)?;
+        listener.set_nonblocking(True)?;
+        Ok(TcpListener(listener))
+    }
+
+    pub fn accept(l: TcpListener) -> Result[TcpStream, Error] {
+        loop {
+            match l.inner.accept() {
+                Ok(stream) => {
+                    stream.set_nonblocking(True)?;
+                    return Ok(TcpStream.new(stream));
+                }
+                Err(e) => {
+                    if e.is_eagain() {
+                        Async.await_readable(l.inner.get_fd().get_fd());
+                    } else {
+                        return Err(e);
+                    }
+                }
+            }
+        }
+    }
+}
+
+instance Closer[TcpListener] {
+    fn close(l: TcpListener) -> Result[(), Error] {
+        l.inner.close()
+    }
+}
+
+}

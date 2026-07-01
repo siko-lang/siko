@@ -1,7 +1,9 @@
 module Std.Effects.Network {
 
-import Std.Net.TcpListener
-import Std.Net.TcpStream
+import Std.Net.TcpListener as S
+import Std.Net.TcpStream as S
+import Std.Net.Async.TcpListener as A
+import Std.Net.Async.TcpStream as A
 import Std.IO.Reader
 import Std.IO.Writer
 import Std.IO.Closer
@@ -18,18 +20,28 @@ pub effect[Socket, Listener: Reader[Socket], Writer[Socket], Closer[Socket], Clo
     fn accept(listener: Listener) -> Result[Socket, Error]
 }
 
-// Production handler, backed by the OS TCP stack. TcpStream already has Reader and
-// Writer instances and both TcpListener and TcpStream has Closer instances,
-// which is what satisfies the effect's bounds.
 pub instance Tcp TcpNetwork {
-    type Listener = TcpListener
-    type Socket = TcpStream
+    type Listener = S.TcpListener
+    type Socket = S.TcpStream
 
-    fn listen(port: U16) -> Result[TcpListener, Error] {
-        TcpListener.bind(port)
+    fn listen(port: U16) -> Result[S.TcpListener, Error] {
+        S.TcpListener.bind(port)
     }
 
-    fn accept(listener: TcpListener) -> Result[TcpStream, Error] {
+    fn accept(listener: S.TcpListener) -> Result[S.TcpStream, Error] {
+        listener.accept()
+    }
+}
+
+pub instance AsyncTcp TcpNetwork {
+    type Listener = A.TcpListener
+    type Socket = A.TcpStream
+
+    fn listen(port: U16) -> Result[A.TcpListener, Error] {
+        A.TcpListener.bind(port)
+    }
+
+    fn accept(listener: A.TcpListener) -> Result[A.TcpStream, Error] {
         listener.accept()
     }
 }
