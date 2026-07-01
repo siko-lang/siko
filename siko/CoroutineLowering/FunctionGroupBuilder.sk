@@ -19,6 +19,7 @@ import Siko.Location
 import Siko.Package.Collector as PC
 import Siko.Utils.SCC as SCC
 import Siko.Utils.VarAllocator
+import Siko.Config
 
 pub struct CallCollector {
     pub deps: Set[QualifiedName],
@@ -117,13 +118,16 @@ pub fn build_coroutine_map(program: Program) -> Map[QualifiedName, Bool] {
     let (sccs, graph, _) = build_groups(program);
 
     let is_coroutine: Map[QualifiedName, Bool] = Map.new();
+    let co_reason: Map[QualifiedName, String] = Map.new();
 
     for scc in sccs {
         let group_is_co = False;
+        let reason = "";
         for qname in scc.iter() {
             let func = program.functions.get(qname).unwrap();
             if func.yield_type.is_some() && func.body.is_some() {
                 group_is_co = True;
+                reason = "intrinsic yield";
             }
         }
         if !group_is_co {
@@ -132,21 +136,48 @@ pub fn build_coroutine_map(program: Program) -> Map[QualifiedName, Bool] {
                 for d in deps {
                     if is_coroutine.get(d).unwrap_or(False) {
                         group_is_co = True;
+                        reason = "calls coroutine ${I.resolve(d.name())} [was: ${co_reason.get(d).unwrap_or("?")}]";
                     }
                 }
             }
         }
         for qname in scc {
             is_coroutine.insert(qname, group_is_co);
+            if group_is_co {
+                co_reason.insert(qname, reason);
+            }
         }
     }
-
-    // for (qname, is_co) in is_coroutine.iter() {
-    //     let tag = if is_co { "coroutine" } else { "plain" };
-    //     println("${I.resolve(qname.name())} -> ${tag}");
-    // }
-
+    if get_config().debug_co {
+        for (qname, is_co) in is_coroutine.iter() {
+            let tag = if is_co { "coroutine" } else { "plain" };
+            let why = if is_co { " [${co_reason.get(qname).unwrap_or("?")}]" } else { "" };
+            println("${I.resolve(qname.name())} -> ${tag}${why}");
+        }
+    }
     is_coroutine
+}
+
+fn print_dep_tree(qname: QualifiedName, graph: Map[QualifiedName, Vec[QualifiedName]], visited: Set[QualifiedName], prefix: String, is_last: Bool) {
+    let connector = if is_last { "└─ " } else { "├─ " };
+    if visited.contains(qname) {
+        println("${prefix}${connector}${I.resolve(qname.name())} (cycle)");
+        return;
+    }
+    println("${prefix}${connector}${I.resolve(qname.name())}");
+    visited.insert(qname);
+    let deps = match graph.get(qname) {
+        Some(d) => d,
+        None => return,
+    };
+    let n = deps.len();
+    let idx = 0;
+    let child_prefix = prefix + if is_last { "   " } else { "│  " };
+    for d in deps {
+        let is_last_child = idx == n - 1;
+        idx += 1;
+        print_dep_tree(d, graph, visited, child_prefix, is_last_child);
+    }
 }
 
 pub fn build_groups(program: Program) -> (Vec[Vec[QualifiedName]], Map[QualifiedName, Vec[QualifiedName]], Map[QualifiedName, Set[QualifiedName]]) {
@@ -163,6 +194,23 @@ pub fn build_groups(program: Program) -> (Vec[Vec[QualifiedName]], Map[Qualified
         graph.insert(qname, deps);
         if !collector.handler_deps.is_empty() {
             handler_map.insert(qname, collector.handler_deps);
+        }
+    }
+
+    if get_config().debug_co {
+        for (qname, deps) in graph.iter() {
+            if !deps.is_empty() {
+                println("${I.resolve(qname.name())}");
+                let n = deps.len();
+                let idx = 0;
+                for d in deps {
+                    let is_last = idx == n - 1;
+                    idx += 1;
+                    let visited: Set[QualifiedName] = Set.new();
+                    visited.insert(qname);
+                    print_dep_tree(d, graph, visited, "  ", is_last);
+                }
+            }
         }
     }
 

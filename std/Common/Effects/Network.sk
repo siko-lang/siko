@@ -18,6 +18,7 @@ pub effect[Socket, Listener: Reader[Socket], Writer[Socket], Closer[Socket], Clo
 
     fn listen(port: U16) -> Result[Listener, Error]
     fn accept(listener: Listener) -> Result[Socket, Error]
+    fn connect(host: String, port: U16) -> Result[Socket, Error]
 }
 
 pub instance Tcp TcpNetwork {
@@ -31,6 +32,10 @@ pub instance Tcp TcpNetwork {
     fn accept(listener: S.TcpListener) -> Result[S.TcpStream, Error] {
         listener.accept()
     }
+
+    fn connect(host: String, port: U16) -> Result[S.TcpStream, Error] {
+        S.TcpStream.connect(host, port)
+    }
 }
 
 pub instance AsyncTcp TcpNetwork {
@@ -43,6 +48,10 @@ pub instance AsyncTcp TcpNetwork {
 
     fn accept(listener: A.TcpListener) -> Result[A.TcpStream, Error] {
         listener.accept()
+    }
+
+    fn connect(host: String, port: U16) -> Result[A.TcpStream, Error] {
+        A.TcpStream.connect(host, port)
     }
 }
 

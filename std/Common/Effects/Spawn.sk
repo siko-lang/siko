@@ -4,18 +4,18 @@ import Std.Sync.Thread as Thread
 import Std.IO.Async.Scheduler as Async
 
 pub effect Spawn {
-    fn spawn(f: fn() -> ())
+    fn spawn(f: fn(Int) -> ())
 }
 
 pub instance ThreadSpawn Spawn {
-    fn spawn(f: fn() -> ()) {
-        let _ = Thread.spawn(f);
+    fn spawn(f: fn(Int) -> ()) {
+        let _ = Thread.spawn(|| f(0));
     }
 }
 
 pub instance AsyncSpawn Spawn {
-    fn spawn(f: fn() -> ()) {
-        Async.spawn(|_| f());
+    fn spawn(f: fn(Int) -> ()) {
+        Async.spawn(f);
     }
 }
 

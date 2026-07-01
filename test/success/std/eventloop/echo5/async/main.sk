@@ -3,14 +3,13 @@ module Main {
 import Std.IO.Buffered as Buffered
 import Std.Effects.Network
 import Std.Effects.Spawn
-import Std.Net.TcpStream
 import Std.Time
 import Std.IO.Async.Scheduler as Async
 
 fn handler(conn: Socket) {
     let reader = Buffered.Reader.new(conn, 1024);
     let writer = Buffered.Writer.new(conn);
-    for _ in 0..3 {
+    for i in 0..3 {
         let line = reader.read_line().unwrap().unwrap();
         writer.write("${line}\n".as_slice()).unwrap();
         writer.flush().unwrap();
@@ -20,11 +19,11 @@ fn handler(conn: Socket) {
 fn server(port: U16) {
     let listener = listen(port).unwrap();
     let conn = accept(listener).unwrap();
-    spawn(|| handler(conn));
+    spawn(|_| handler(conn));
 }
 
 fn client(port: U16) {
-    let stream = TcpStream.connect("127.0.0.1", port).unwrap();
+    let stream = connect("127.0.0.1", port).unwrap();
     let reader = Buffered.Reader.new(stream, 1024);
     let writer = Buffered.Writer.new(stream);
     for i in 0..3 {
@@ -35,21 +34,22 @@ fn client(port: U16) {
     }
 }
 
+fn stopper() {
+    Async.sleep(seconds(2));
+    Async.stop();
+}
+
 fn main() {
     let port = 19878.as_u16();
-    with TcpNetwork = Tcp, Spawn = ThreadSpawn {
-        spawn(|| server(port));
-        spawn(|| client(port));
-        sleep(seconds(1));
+    let s = Async.Scheduler.new();
+    with Async.current = s,
+         TcpNetwork = AsyncTcp,
+         Spawn = AsyncSpawn {
+        spawn(|_| server(port));
+        spawn(|_| client(port));
+        spawn(|_| stopper());
+        s.run_tasks();
     }
-    // let s = Async.Scheduler.new();
-    // with Async.current = s,
-    //      TcpNetwork = AsyncTcp,
-    //      Spawn = AsyncSpawn {
-    //     spawn(|| server(port));
-    //     spawn(|| client(port));
-    //     s.run_tasks();
-    // }
 }
 
 }

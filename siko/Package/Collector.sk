@@ -109,7 +109,17 @@ pub struct Collector {
                 continue;
             }
             let path = dir + "/" + entry.name();
-            if entry.is_directory() {
+            let is_dir = if entry.is_directory() {
+                True
+            } else if entry.file_type() == FileType.Symlink {
+                match S.stat(path) {
+                    Ok(s) => s.is_directory(),
+                    Err(_) => False,
+                }
+            } else {
+                False
+            };
+            if is_dir {
                 subdirs.push(path);
             } else if entry.name() == "package.toml" {
                 has_toml = True;

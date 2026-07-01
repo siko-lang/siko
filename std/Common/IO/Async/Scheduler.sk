@@ -92,4 +92,12 @@ pub fn await_writable(fd: I32) co(()) -> () {
     yield ();
 }
 
+pub fn sleep(duration: Duration) co(()) -> () {
+    let task = get_current_task();
+    current.eventloop.add_timer(duration, || {
+        current.add_ready(task);
+    });
+    yield ();
+}
+
 }
