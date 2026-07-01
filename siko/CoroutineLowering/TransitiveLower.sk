@@ -119,7 +119,19 @@ instance TransitiveLower[S.Statement] {
             }
 
             S.Statement.Declare(d)             => S.Statement.Declare(d),
-            S.Statement.Expr(e)                => S.Statement.Expr(lower_transitive(e, ctx)),
+            S.Statement.Expr(e)                => {
+                match classify_co_create(e, ctx.program, ctx.is_co_map) {
+                    Some((co_ty, return_ty)) => {
+                        let loc = e.location.clone();
+                        let co_tmp = ctx.var_alloc.allocate_temp();
+                        let result_var = ctx.var_alloc.allocate_temp();
+                        let result_lhs = Expr(ExprKind.Var(result_var.clone()), loc.clone(), Some(return_ty.clone()));
+                        let block = build_expansion_block(result_var, Some(return_ty), co_tmp, e, co_ty, return_ty, result_lhs, ctx.var_alloc, loc);
+                        S.Statement.Expr(block)
+                    }
+                    None => S.Statement.Expr(lower_transitive(e, ctx)),
+                }
+            }
             S.Statement.Loop(stmts)            => S.Statement.Loop(lower_transitive(stmts, ctx)),
             S.Statement.UnresolvedLet(_, _, _) => panic("TransitiveLower: UnresolvedLet"),
             S.Statement.TrailingExpr(_)        => panic("TransitiveLower: TrailingExpr"),
@@ -142,7 +154,6 @@ pub fn transform_transitive(program: Program, is_co_map: Map[QualifiedName, Bool
     for key in keys.iter() {
         if !is_co_map.get(key).unwrap_or(False) { continue; }
         let func = program.functions.get(key).unwrap();
-        if func.yield_type.is_some() { continue; }
         let body = match func.body { None => continue, Some(b) => b };
         for (k, v) in CRC.collect_needed_co_results(body, program, is_co_map) {
             needed.insert(k, v);
@@ -155,19 +166,20 @@ pub fn transform_transitive(program: Program, is_co_map: Map[QualifiedName, Bool
     }
 
     // Main pass: rewrite each transitive-coroutine function body.
+    // Intrinsic coroutines (yield_type already set) are NOT skipped — they may
+    // call transitive coroutines that need expanding into drive loops.
     for key in keys {
         if !is_co_map.get(key).unwrap_or(False) { continue; }
         let func = program.functions.get(key).unwrap();
-        if func.yield_type.is_some() { continue; }
-        //println("Pre transitive transformed fn ${format_fn(func)}");
         let body = match func.body { None => continue, Some(b) => b };
 
         let ctx = TransitiveLowerer(program: program, var_alloc: func.var_allocator, is_co_map: is_co_map);
         let new_body = lower_transitive(body, ctx);
         func.body = Some(new_body);
-        func.yield_type = Some(TypeDef.Tuple([]));
+        if func.yield_type.is_none() {
+            func.yield_type = Some(TypeDef.Tuple([]));
+        }
         normalize_function(func, div_fns.clone());
-        //println("transitive transformed fn ${format_fn(func)}");
     }
 }
 
@@ -304,9 +316,12 @@ fn build_expansion_stmts(
     let co_create_expr = Expr(co_create_kind, loc.clone(), Some(co_ty.clone()));
     let co_tmp_expr = Expr(ExprKind.Var(co_tmp.clone()), loc.clone(), Some(co_ty.clone()));
 
+    // Use Let (not Declare+Assign) so collect_locals picks up co_tmp and promotes it
+    // to a coroutine frame field.  That way every Var(co_tmp) — including reads inside
+    // the drive loop after a yield/resume — becomes a direct frame-field read rather
+    // than a stale C-local alias.
     let stmts: Vec[S.Statement] = Vec.new();
-    stmts.push(S.Statement.Declare(S.DeclareInfo(co_tmp, Some(co_ty))));
-    stmts.push(S.Statement.Assign(co_tmp_expr.clone(), co_create_expr));
+    stmts.push(S.Statement.Let(S.LetInfo(co_tmp, Some(co_ty), co_create_expr)));
     stmts.push(S.Statement.Loop(build_drive_loop(co_tmp_expr, result_lhs, return_ty, var_alloc, loc)));
     stmts
 }

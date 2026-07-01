@@ -51,7 +51,13 @@ instance LocalCollector[MethodCallInfo]    = auto(Fold)
 instance LocalCollector[CallInfo]          = auto(Fold)
 instance LocalCollector[WithInfo]          = auto(Fold)
 instance LocalCollector[MatchArm]          = auto(Fold)
-instance LocalCollector[S.DeclareInfo]     = auto(Fold)
+instance LocalCollector[S.DeclareInfo] {
+    fn collect_locals(info: S.DeclareInfo, ctx: LocalAccum) {
+        if let Some(ty) = info.ty {
+            ctx.locals.push((info.name.clone(), ty));
+        }
+    }
+}
 instance LocalCollector[BlockInfo]         = auto(Fold)
 instance LocalCollector[S.Statement]       = auto(Fold)
 instance LocalCollector[ExprKind]          = auto(Fold)
