@@ -1,0 +1,113 @@
+module Siko.Driver {
+
+import Siko.Driver.Passes
+import Siko.Parser.Module
+import Siko.AST.Module
+import Siko.CLI as CLI
+import Siko.Errors
+import Std.Sys.Process as Sys
+import Std.Sys.Command
+import Siko.Config
+import Siko.HIR.Program
+import Std.Time
+import Std.Map
+import Std.Set
+
+pub struct Driver {
+    pass: Option[String],
+    pub program: Program,
+    pub all_modules: Vec[Module],
+    pub pkg_reachability: Map[String, Set[String]],
+    pub c_source: String,
+
+    pub fn new() -> Driver {
+        Driver(
+            pass: None,
+            program: Program.new(),
+            all_modules: Vec.new(),
+            pkg_reachability: Map.new(),
+            c_source: "",
+        )
+    }
+
+    fn run_passes(d: Driver, passes: Vec[Pass]) {
+        let trace = get_config().trace;
+        for pass in passes {
+            let start = Instant.now();
+            (pass.run)(d);
+            if trace { println("${pass.label} (${start.elapsed().to_millis()}ms)"); }
+            if d.pass == Some(pass.name) {
+                match pass.dump {
+                    Some(dump_fn) => (dump_fn)(d),
+                    None => println(d.program.format()),
+                }
+                Sys.exit(0.as_i32());
+            }
+        }
+    }
+
+    pub fn link(d: Driver, output: String, optimize: Bool, san: Bool, tsan: Bool) {
+        let pkg_args: Vec[String] = ["--cflags", "--libs", "bdw-gc"];
+        let pkg_result = Command.new("pkg-config").with_path().with_capture_stdout().args(pkg_args).run();
+        let gc_flags_raw = if pkg_result.success() { pkg_result.captured_stdout() } else { "-lgc" };
+        let gc_flags: Vec[String] = gc_flags_raw.replace("\n", "").split(" ").filter(|s| !s.is_empty()).collect();
+        let args: Vec[String] = Vec.new();
+        args.push("-Wno-unused-value");
+        args.push("-Wno-pointer-sign");
+        args.push("-Wno-incompatible-pointer-types");
+        args.push("-fno-optimize-sibling-calls");
+        args.push("-x"); args.push("c");
+        args.push("-");
+        args.push("-o");
+        args.push(output);
+        if optimize {
+            args.push("-O3");
+        }
+        if san {
+            args.push("-fsanitize=address,undefined");
+            args.push("-fno-sanitize=leak");
+            args.push("-fno-omit-frame-pointer");
+            args.push("-g");
+        } else if tsan {
+            args.push("-fsanitize=thread");
+            args.push("-fno-omit-frame-pointer");
+            args.push("-g");
+        }
+        for flag in gc_flags {
+            args.push(flag);
+        }
+        let clang = Command.new("clang").with_path().with_stdin_pipe();
+        for arg in args {
+            clang = clang.arg(arg);
+        }
+        let child = clang.spawn();
+        match child.write_stdin(d.c_source) {
+            Err(e) => {
+                println("error: failed to write to clang stdin: ${e}");
+                exit_with_error();
+            }
+            Ok(_) => {}
+        }
+        child.close_stdin();
+        let result = child.wait();
+        if !result.success() {
+            println("clang failed");
+            exit_with_error();
+        }
+    }
+
+    pub fn compile(d: Driver) {
+        let config = match CLI.parse_cli_args() {
+            None => {
+                exit_with_error();
+            }
+            Some(config) => config,
+        };
+        set_config(config);
+        d.pass = config.pass;
+        let passes = build_passes(d);
+        d.run_passes(passes);
+    }
+}
+
+}

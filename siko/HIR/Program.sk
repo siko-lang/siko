@@ -12,6 +12,7 @@ import Siko.AST.Implicits
 import Siko.AST.Type
 import Siko.Format.Utils
 import Siko.Interner as I
+import Siko.Instances.InstanceResolver
 
 @derive(Clone)
 pub struct Program {
@@ -29,6 +30,7 @@ pub struct Program {
     pub module_names: Vec[I.String],
     pub module_instance_imports: Map[I.String, Vec[QualifiedName]],
     pub module_trait_method_map: Map[I.String, Map[I.String, Vec[QualifiedName]]],
+    pub instance_resolver: InstanceResolver,
 
     pub fn new() -> Program {
         Program(
@@ -46,6 +48,7 @@ pub struct Program {
             module_names: Vec.new(),
             module_instance_imports: Map.new(),
             module_trait_method_map: Map.new(),
+            instance_resolver: InstanceResolver.empty(),
         )
     }
 
@@ -106,6 +109,7 @@ pub struct Program {
         for def in program.effects.values() {
             out = out + format_effect(def) + "\n";
         }
+        out = out + program.instance_resolver.format();
         out
     }
 

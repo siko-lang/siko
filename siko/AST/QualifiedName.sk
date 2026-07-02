@@ -148,6 +148,11 @@ pub struct MonoName {
     pub args: Vec[TypeDef],
     pub ctx: MonoContext,
     hashed: String,
+    // Cached result of QualifiedName.name(): computing it involves recursively
+    // formatting args/witnesses/effect ctx and interning the result, which is
+    // too expensive to redo on every Ord/PartialEq comparison (the hot path for
+    // every Map[QualifiedName, _] operation during monomorphization).
+    interned_name: I.String,
 }
 
 @derive(Clone)
@@ -166,7 +171,7 @@ pub enum QualifiedName {
                 panic("as_mono: cannot mono a Mono")
             }
         };
-        let qn = Mono(MonoName(base, args, mono_ctx, ""));
+        let qn = Mono(MonoName(base, args, mono_ctx, "", I.intern("")));
         qn.rehash();
         qn
     }
@@ -303,9 +308,11 @@ pub enum QualifiedName {
     pub fn rehash(qn: QualifiedName) {
         let h = qn.get_hashed();
         qn.save_hashed(h);
+        let n = qn.compute_name();
+        qn.save_name(n);
     }
 
-    pub fn name(qn: QualifiedName) -> I.String {
+    fn compute_name(qn: QualifiedName) -> I.String {
         match qn {
             Base(bn) => bn.name(),
             Mono(m) => {
@@ -313,6 +320,13 @@ pub enum QualifiedName {
                 let (args_str, extras) = qn.extra();
                 I.intern(base + args_str + extras)
             }
+        }
+    }
+
+    pub fn name(qn: QualifiedName) -> I.String {
+        match qn {
+            Base(bn) => bn.name(),
+            Mono(m) => m.interned_name,
         }
     }
 
@@ -418,7 +432,7 @@ pub enum QualifiedName {
     fn get_hashed(qn: QualifiedName) -> String {
         let (type_args, extra) = qn.extra();
         if extra.is_empty() {
-            return I.resolve(qn.name());
+            return I.resolve(qn.compute_name());
         }
         let digest = MD5.compute(extra.to_bytes());
         let hash = bytes_to_hex(digest);
@@ -433,6 +447,13 @@ pub enum QualifiedName {
         match qn {
             Base(_) => (),
             Mono(m) => { m.hashed = hashed; }
+        }
+    }
+
+    fn save_name(qn: QualifiedName, name: I.String) {
+        match qn {
+            Base(_) => (),
+            Mono(m) => { m.interned_name = name; }
         }
     }
 

@@ -36,11 +36,11 @@ pub fn typecheck_function(key: QualifiedName, program: Program, instance_resolve
     Ok(())
 }
 
-pub fn typecheck_program(program: Program, instance_resolver: InstanceResolver) -> Result[(), Vec[TypeError]] {
+pub fn typecheck_program(program: Program) -> Result[(), Vec[TypeError]] {
     let keys: Vec[QualifiedName] = program.functions.keys().collect();
     let errors: Vec[TypeError] = Vec.new();
     for key in keys {
-        if let Err(errs) = typecheck_function(key, program, instance_resolver) {
+        if let Err(errs) = typecheck_function(key, program, program.instance_resolver) {
             for e in errs {
                 errors.push(e);
             }

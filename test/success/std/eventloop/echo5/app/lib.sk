@@ -8,27 +8,64 @@ pub fn handler(conn: Socket) {
     let reader = Buffered.Reader.new(conn, 1024);
     let writer = Buffered.Writer.new(conn);
     for i in 0..3 {
-        let line = reader.read_line().unwrap().unwrap();
-        writer.write("${line}\n".as_slice()).unwrap();
-        writer.flush().unwrap();
+        let line = match reader.read_line() {
+            Ok(Some(l)) => {
+                println("received line: ${l}");
+                l
+            }
+            Ok(None) => {
+                println("no line received");
+                continue;
+            }
+            Err(e) => {
+                println("read_line error: ${e}");
+                continue;
+            }
+        };
+        match writer.write("${line}\n".as_slice()) {
+            Ok(_) => println("wrote line: ${line}"),
+            Err(e) => println("write error: ${e}"),
+        }
+        match writer.flush() {
+            Ok(_) => println("flushed"),
+            Err(e) => println("flush error: ${e}"),
+        }
     }
 }
 
 pub fn server(port: U16) {
-    let listener = listen(port).unwrap();
-    let conn = accept(listener).unwrap();
+    let listener = match listen(port) {
+        Ok(l) => l,
+        Err(e) => panic("listen error: ${e}"),
+    };
+    let conn = match accept(listener) {
+        Ok(c) => c,
+        Err(e) => panic("accept error: ${e}"),
+    };
     spawn(|_| handler(conn));
 }
 
 pub fn client(port: U16) {
-    let stream = connect("127.0.0.1", port).unwrap();
+    let stream = match connect("127.0.0.1", port) {
+        Ok(s) => s,
+        Err(e) => panic("connect error: ${e}"),
+    };
     let reader = Buffered.Reader.new(stream, 1024);
     let writer = Buffered.Writer.new(stream);
     for i in 0..3 {
-        writer.write("hello ${i}\n".as_slice()).unwrap();
-        writer.flush().unwrap();
-        let line = reader.read_line().unwrap().unwrap();
-        println(line);
+        match writer.write("hello ${i}\n".as_slice()) {
+            Ok(_) => println("wrote: hello ${i}"),
+            Err(e) => println("write error: ${e}"),
+        }
+        match writer.flush() {
+            Ok(_) => println("flushed"),
+            Err(e) => println("flush error: ${e}"),
+        }
+        match reader.read_line() {
+            Ok(Some(line)) => println("received line: ${line}"),
+            Ok(None) => println("no line received"),
+            Err(e) => println("read_line error: ${e}"),
+        }
     }
 }
 

@@ -1,38 +1,10 @@
 module Main {
 
-import Std.IO.Buffered as Buffered
+import App
 import Std.Effects.Network
 import Std.Effects.Spawn
-import Std.Time
 import Std.IO.Async.Scheduler as Async
-
-fn handler(conn: Socket) {
-    let reader = Buffered.Reader.new(conn, 1024);
-    let writer = Buffered.Writer.new(conn);
-    for i in 0..3 {
-        let line = reader.read_line().unwrap().unwrap();
-        writer.write("${line}\n".as_slice()).unwrap();
-        writer.flush().unwrap();
-    }
-}
-
-fn server(port: U16) {
-    let listener = listen(port).unwrap();
-    let conn = accept(listener).unwrap();
-    spawn(|_| handler(conn));
-}
-
-fn client(port: U16) {
-    let stream = connect("127.0.0.1", port).unwrap();
-    let reader = Buffered.Reader.new(stream, 1024);
-    let writer = Buffered.Writer.new(stream);
-    for i in 0..3 {
-        writer.write("hello ${i}\n".as_slice()).unwrap();
-        writer.flush().unwrap();
-        let line = reader.read_line().unwrap().unwrap();
-        println(line);
-    }
-}
+import Std.Time
 
 fn stopper() {
     Async.sleep(seconds(2));
