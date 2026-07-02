@@ -72,10 +72,11 @@ instance Rewrite[TypeDef] {
             }
             TypeDef.Named(NamedInfo(n, args)) => TypeDef.Named(NamedInfo(n, args)),
             TypeDef.Paren(inner) => TypeDef.Paren(rewrite(inner, ctx)),
-            TypeDef.Fn(args, result) => TypeDef.Fn(
+            TypeDef.Fn(ClosureInfo(args, result, var)) => TypeDef.Fn(ClosureInfo(
                 args.into_iter().map(|a| rewrite(a, ctx)).collect(),
                 rewrite(result, ctx),
-            ),
+                var
+            )),
             TypeDef.FnPtr(args, result) => TypeDef.FnPtr(
                 args.into_iter().map(|a| rewrite(a, ctx)).collect(),
                 rewrite(result, ctx),

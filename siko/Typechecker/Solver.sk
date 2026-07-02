@@ -70,11 +70,12 @@ fn freshen_effect_assoc(
             TypeDef.Tuple(elems.iter().map(|e| freshen_effect_assoc(e, fresh_map, allocator, effect_assoc_types)).collect()),
         TypeDef.Paren(inner) =>
             TypeDef.Paren(freshen_effect_assoc(inner, fresh_map, allocator, effect_assoc_types)),
-        TypeDef.Fn(params, ret) =>
-            TypeDef.Fn(
+        TypeDef.Fn(ClosureInfo(params, ret, var)) =>
+            TypeDef.Fn(ClosureInfo(
                 params.iter().map(|p| freshen_effect_assoc(p, fresh_map, allocator, effect_assoc_types)).collect(),
                 freshen_effect_assoc(ret, fresh_map, allocator, effect_assoc_types),
-            ),
+                var,
+            )),
         TypeDef.FnPtr(params, ret) =>
             TypeDef.FnPtr(
                 params.iter().map(|p| freshen_effect_assoc(p, fresh_map, allocator, effect_assoc_types)).collect(),
@@ -535,7 +536,7 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
             let resolved = ctx.sub.apply(callee);
             match resolved {
                 TypeDef.Var(TypeVar.Var(n)) => ProcessResult.Pending([n]),
-                TypeDef.Fn(param_tys, ret_ty) | TypeDef.FnPtr(param_tys, ret_ty) => {
+                TypeDef.Fn(ClosureInfo(param_tys, ret_ty, _)) | TypeDef.FnPtr(param_tys, ret_ty) => {
                     if param_tys.len() != args.len() {
                         return ProcessResult.Failed(TypeError.ArgCountMismatch(I.intern("<fn>"), param_tys.len(), args.len(), location));
                     }
@@ -809,7 +810,7 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
                 None => TypeDef.Tuple(Vec.new()),
             };
             let fresh_map: Map[I.String, TypeDef] = Map.new();
-            let effect_ty = TypeDef.Fn(effect_param_tys, effect_ret_ty);
+            let effect_ty = TypeDef.Fn(ClosureInfo(effect_param_tys, effect_ret_ty, None));
             let effect_ty = freshen_effect_assoc(effect_ty,
                                                  fresh_map,
                                                  ctx.allocator,
@@ -834,7 +835,7 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
                 Some(ty) => generic_inst.apply(ty),
                 None => TypeDef.Tuple(Vec.new()),
             };
-            let instance_ty = TypeDef.Fn(instance_param_tys, instance_ret_ty);
+            let instance_ty = TypeDef.Fn(ClosureInfo(instance_param_tys, instance_ret_ty, None));
 
             // Unify the handler's signature with the effect method's, which makes
             // the handler's type params concrete. Then spawn an instance lookup

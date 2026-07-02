@@ -46,11 +46,18 @@ pub struct CoroutineInfo {
 }
 
 @derive(PartialEq, Std.Ops.Eq, PartialOrd, Ord, Clone)
+pub struct ClosureInfo {
+    pub args: Vec[TypeDef],
+    pub return_ty: TypeDef,
+    pub closure_infer_var: Option[TypeVar],
+}
+
+@derive(PartialEq, Std.Ops.Eq, PartialOrd, Ord, Clone)
 pub enum TypeDef {
     Named(NamedInfo),
     Tuple(Vec[TypeDef]),
     Paren(TypeDef),
-    Fn(Vec[TypeDef], TypeDef),
+    Fn(ClosureInfo),
     FnPtr(Vec[TypeDef], TypeDef),
     Var(TypeVar),
     Never(Bool),
@@ -98,7 +105,7 @@ pub enum TypeDef {
                 default
             }
             TypeDef.Paren(arg) => arg.is_mono(default),
-            TypeDef.Fn(args, r) | TypeDef.FnPtr(args, r) => {
+            TypeDef.Fn(ClosureInfo(args, r, _)) | TypeDef.FnPtr(args, r) => {
                 for a in args {
                     if !a.is_mono(default) {
                         return False;
@@ -124,7 +131,7 @@ pub enum TypeDef {
             TypeDef.Named(NamedInfo(_, args)) => args.iter().any(|a| a.has_ptr()),
             TypeDef.Tuple(args) => args.iter().any(|a| a.has_ptr()),
             TypeDef.Paren(inner) => inner.has_ptr(),
-            TypeDef.Fn(params, ret) => params.iter().any(|a| a.has_ptr()) || ret.has_ptr(),
+            TypeDef.Fn(ClosureInfo(params, ret, _)) => params.iter().any(|a| a.has_ptr()) || ret.has_ptr(),
             TypeDef.Array(inner, _) => inner.has_ptr(),
             TypeDef.Co(CoroutineInfo(yield_ty, return_ty)) => yield_ty.has_ptr() || return_ty.has_ptr(),
             TypeDef.Var(_) |
@@ -141,7 +148,7 @@ pub enum TypeDef {
             TypeDef.Named(NamedInfo(_, args)) => args.iter().any(|a| a.has_flex_var()),
             TypeDef.Tuple(args) => args.iter().any(|a| a.has_flex_var()),
             TypeDef.Paren(inner) => inner.has_flex_var(),
-            TypeDef.Fn(params, ret) | TypeDef.FnPtr(params, ret) => params.iter().any(|a| a.has_flex_var()) || ret.has_flex_var(),
+            TypeDef.Fn(ClosureInfo(params, ret, _)) | TypeDef.FnPtr(params, ret) => params.iter().any(|a| a.has_flex_var()) || ret.has_flex_var(),
             TypeDef.Ptr(inner) => inner.has_flex_var(),
             TypeDef.Array(inner, _) => inner.has_flex_var(),
             TypeDef.Co(CoroutineInfo(yield_ty, return_ty)) => yield_ty.has_flex_var() || return_ty.has_flex_var(),

@@ -15,12 +15,21 @@ instance CollectTypeVars[Name] = auto(Fold, =)
 instance CollectTypeVars[Bool] = auto(Fold, =)
 instance CollectTypeVars[Int] = auto(Fold, =)
 instance CollectTypeVars[NamedInfo] = auto(Fold)
+instance CollectTypeVars[ClosureInfo] = auto(Fold)
 instance CollectTypeVars[CoroutineInfo] = auto(Fold)
 
 instance[T: CollectTypeVars[T]] CollectTypeVars[Vec[T]] {
     fn collect_typevars(v: Vec[T], vars: Vec[TypeVar]) {
         for t in v {
             t.collect_typevars(vars);
+        }
+    }
+}
+
+instance[T: CollectTypeVars[T]] CollectTypeVars[Option[T]] {
+    fn collect_typevars(o: Option[T], vars: Vec[TypeVar]) {
+        if let Some(v) = o {
+            v.collect_typevars(vars);
         }
     }
 }
@@ -62,6 +71,7 @@ instance CollectNames[Name] = auto(Fold, =)
 instance CollectNames[TypeVar] = auto(Fold, =)
 instance CollectNames[Bool] = auto(Fold, =)
 instance CollectNames[Int] = auto(Fold, =)
+instance CollectNames[ClosureInfo] = auto(Fold)
 instance CollectNames[CoroutineInfo] = auto(Fold)
 
 instance CollectNames[NamedInfo] {
@@ -74,6 +84,14 @@ instance[T: CollectNames[T]] CollectNames[Vec[T]] {
     fn collect_names(v: Vec[T], names: Vec[QualifiedName]) {
         for t in v {
             t.collect_names(names);
+        }
+    }
+}
+
+instance[T: CollectNames[T]] CollectNames[Option[T]] {
+    fn collect_names(o: Option[T], names: Vec[QualifiedName]) {
+        if let Some(v) = o {
+            v.collect_names(names);
         }
     }
 }

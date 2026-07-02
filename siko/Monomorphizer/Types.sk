@@ -43,10 +43,11 @@ pub fn specialize_type(ty: TypeDef, mono: Monomorphizer) -> TypeDef {
             ))
         }
         TypeDef.Tuple(args) => TypeDef.Tuple(args.specialize(mono)),
-        TypeDef.Fn(args, result) => TypeDef.Fn(
+        TypeDef.Fn(ClosureInfo(args, result, var)) => TypeDef.Fn(ClosureInfo(
             args.specialize(mono),
             result.specialize(mono),
-        ),
+            var,
+        )),
         TypeDef.FnPtr(args, result) => TypeDef.FnPtr(
             args.specialize(mono),
             result.specialize(mono),
@@ -87,12 +88,18 @@ pub fn eat_specialize(ty: TypeDef, mono: Monomorphizer) -> TypeDef {
         }
         TypeDef.Named(NamedInfo(name, args)) => TypeDef.Named(NamedInfo(name, eat_specialize_args(args, mono))),
         TypeDef.Tuple(args) => TypeDef.Tuple(eat_specialize_args(args, mono)),
-        TypeDef.Fn(args, result) => TypeDef.Fn(eat_specialize_args(args, mono), eat_specialize(result, mono)),
+        TypeDef.Fn(ClosureInfo(args, result, var)) => TypeDef.Fn(ClosureInfo(eat_specialize_args(args, mono), eat_specialize(result, mono), var)),
+        TypeDef.Co(CoroutineInfo(yield_ty, result)) => TypeDef.Co(CoroutineInfo(eat_specialize(yield_ty, mono), eat_specialize(result, mono))),
         TypeDef.FnPtr(args, result) => TypeDef.FnPtr(eat_specialize_args(args, mono), eat_specialize(result, mono)),
         TypeDef.Paren(inner) => TypeDef.Paren(eat_specialize(inner, mono)),
         TypeDef.Ptr(inner) => TypeDef.Ptr(eat_specialize(inner, mono)),
         TypeDef.Array(inner, n) => TypeDef.Array(eat_specialize(inner, mono), n),
-        _ => ty,
+        TypeDef.Never(_) => ty,
+        TypeDef.Void => ty,
+        TypeDef.VoidPtr => ty,
+        TypeDef.Wildcard => ty,
+        TypeDef.Numeric(_) => ty,
+        TypeDef.Var(_) => ty,
     }
 }
 

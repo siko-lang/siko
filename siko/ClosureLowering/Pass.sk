@@ -59,10 +59,10 @@ instance Rewrite[UnaryOp]           = auto(Map, =)
 instance Rewrite[TypeDef] {
     fn rewrite(ty: TypeDef, ctx: ClosureLowerer) -> TypeDef {
         match ty {
-            TypeDef.Fn(args, ret) => {
+            TypeDef.Fn(ClosureInfo(args, ret, var)) => {
                 let args = args.into_iter().map(|a| rewrite(a, ctx)).collect();
                 let ret = rewrite(ret, ctx);
-                let fn_type = TypeDef.Fn(args, ret);
+                let fn_type = TypeDef.Fn(ClosureInfo(args, ret, var));
                 let info = ctx.get_or_create_enum(fn_type);
                 TypeDef.Named(NamedInfo(Name.inner(info.enum_qname), []))
             }
@@ -160,7 +160,7 @@ struct ClosureLowerer {
         let enum_qname = QualifiedName.new_closure_enum(idx).as_mono();
         let handler_qname = QualifiedName.new_closure_handler(idx).as_mono();
         let (param_types, ret_type) = match fn_type {
-            TypeDef.Fn(params, ret) => (params, ret),
+            TypeDef.Fn(ClosureInfo(params, ret, _)) => (params, ret),
             _ => panic("get_or_create_enum: not a Fn type"),
         };
         let info = ClosureEnumInfo(enum_qname, handler_qname, param_types, ret_type, Vec.new());

@@ -21,6 +21,7 @@ import Siko.LowerTuples
 import Siko.LowerBuiltins
 import Siko.HIR.Program
 import Siko.ClosureLowering
+import Siko.ClosureMerge.GeneralizeDataTypes as ClosureMergeGeneralizeDataTypes
 import Siko.CoroutineLowering
 import Siko.CBackend.Lower as CBackend
 import Siko.CBackend.MiniC.Format as MiniC
@@ -233,6 +234,13 @@ struct Compiler {
         if trace { println("Propagating implicit arguments..."); }
         IP.propagate_implicits(program);
         c.check_pass("propagate-implicits", program);
+        if get_config().debug_closure {
+            if trace { println("Closure merge (Phase A: datatype variablization)..."); }
+            let cloned = program.clone();
+            ClosureMergeGeneralizeDataTypes.generalize_datatypes(cloned);
+            println("=== ClosureMerge Phase A: generalized program ===");
+            println(cloned.format());
+        }
         if trace { println("Lowering closures..."); }
         lower_closures(program);
         c.check_pass("lower-closures", program);

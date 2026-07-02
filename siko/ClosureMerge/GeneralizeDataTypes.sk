@@ -1,0 +1,248 @@
+module Siko.ClosureMerge.GeneralizeDataTypes {
+
+import Std.Map
+import Std.Set
+import Siko.AST.Annotations
+import Siko.AST.Data
+import Siko.AST.Expr
+import Siko.AST.Function
+import Siko.AST.Generics
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.HIR.Program
+import Siko.Interner as I
+import Siko.Location
+import Siko.Unification.Utils
+import Siko.Utils.SCC as SCC
+import Siko.Utils.TypeVarAllocator
+
+// One instance of this context is shared by every member of a single SCC.
+// Variable names (and therefore `pool`) are scoped to that SCC: numbering
+// restarts at ?0 for the next SCC. `finalize` gates the two passes over the
+// SCC's members (see `generalize_datatypes`): pass 1 discovers the pool by
+// tagging direct closure fields and threading through references to
+// already-finished (outside-SCC) datatypes; pass 2 re-runs the same walk
+// with `finalize = True` so intra-SCC references (only resolvable once the
+// whole SCC's pool is final) get patched to the finished pool.
+struct Generalizer {
+    alloc: TypeVarAllocator,
+    scc_members: Set[QualifiedName],
+    finished: Map[QualifiedName, Vec[TypeVar]],
+    pool: Vec[TypeVar],
+    finalize: Bool,
+
+    // A fresh var, whether for a directly closure-typed field or threaded
+    // through as a type argument on a reference to another (already-
+    // finished) datatype.
+    fn allocate_var(v: Generalizer) -> TypeVar {
+        let var = TypeVar.Named(v.alloc.allocate_name());
+        v.pool.push(var);
+        var
+    }
+}
+
+// ── Generalize trait ────────────────────────────────────────────────────────
+// Field types are the only surface Phase A touches: it never looks at
+// function bodies, call sites, or lambda creation sites. Every TypeDef
+// variant recurses structurally via the derive; there are exactly two
+// hand-written interceptions:
+//   - ClosureInfo: tags a fresh closure infer variable into
+//     closure_infer_var, without recursing into args/return_ty (those
+//     describe the closure's call signature, not a separate field
+//     position). Idempotent: a field already tagged (from pass 1) is left
+//     alone when the walk runs again in pass 2.
+//   - NamedInfo: a reference to another datatype. A reference to a datatype
+//     outside the current SCC is instantiated with fresh vars matching that
+//     datatype's already-finished arity ("threading through"). A reference
+//     to a datatype inside the current SCC can't be resolved until the
+//     whole SCC's pool is final, so pass 1 leaves it untouched and pass 2
+//     (finalize = True) instantiates it with the SCC's full, final pool.
+
+trait Generalize[T] {
+    fn generalize(t: T, ctx: Generalizer) -> T
+}
+
+instance Generalize[Bool]              = auto(Map, =)
+instance Generalize[Int]               = auto(Map, =)
+instance Generalize[Name]              = auto(Map, =)
+instance Generalize[TypeVar]           = auto(Map, =)
+instance Generalize[CoroutineInfo]     = auto(Map)
+instance Generalize[TypeDef]           = auto(Map)
+
+// Everything below this line is opaque to Phase A: identity instances so
+// the StructDef/EnumDef derive below can recurse through them without
+// touching function bodies, annotations, or anything else that isn't a
+// field type.
+instance Generalize[Identifier]        = auto(Map, =)
+instance Generalize[QualifiedName]     = auto(Map, =)
+instance Generalize[Annotation]        = auto(Map, =)
+instance Generalize[TypeArgDefs]       = auto(Map, =)
+instance Generalize[FunctionDef]       = auto(Map, =)
+instance Generalize[MethodMap]         = auto(Map, =)
+instance Generalize[DefaultValueInfo]  = auto(Map, =)
+instance Generalize[Expr]              = auto(Map, =)
+instance Generalize[I.String]          = auto(Map, =)
+
+instance Generalize[FieldDef]          = auto(Map)
+instance Generalize[VariantDef]        = auto(Map)
+instance Generalize[ItemInfo]          = auto(Map)
+instance Generalize[StructDef]         = auto(Map)
+instance Generalize[EnumDef]           = auto(Map)
+
+instance Generalize[ClosureInfo] {
+    fn generalize(info: ClosureInfo, ctx: Generalizer) -> ClosureInfo {
+        let ClosureInfo(args, ret, existing_var) = info;
+        if existing_var.is_some() {
+            return ClosureInfo(args, ret, existing_var);
+        }
+        ClosureInfo(args, ret, Some(ctx.allocate_var()))
+    }
+}
+
+instance Generalize[NamedInfo] {
+    fn generalize(info: NamedInfo, ctx: Generalizer) -> NamedInfo {
+        let NamedInfo(name, args) = info;
+        let qname = name.resolved();
+        if ctx.scc_members.contains(qname) {
+            if ctx.finalize {
+                NamedInfo(name, ctx.pool.iter().map(|v| TypeDef.Var(v)).collect())
+            } else {
+                NamedInfo(name, args)
+            }
+        } else if !args.is_empty() {
+            NamedInfo(name, args)
+        } else {
+            match ctx.finished.get(qname) {
+                Some(vars) if !vars.is_empty() => {
+                    let fresh: Vec[TypeDef] = vars.iter().map(|_| TypeDef.Var(ctx.allocate_var())).collect();
+                    NamedInfo(name, fresh)
+                }
+                _ => NamedInfo(name, args),
+            }
+        }
+    }
+}
+
+instance[T: Generalize[T]] Generalize[Vec[T]] {
+    fn generalize(vec: Vec[T], ctx: Generalizer) -> Vec[T] {
+        vec.into_iter().map(|t| generalize(t, ctx)).collect()
+    }
+}
+
+instance[T: Generalize[T]] Generalize[Option[T]] {
+    fn generalize(opt: Option[T], ctx: Generalizer) -> Option[T] {
+        opt.map(|t| generalize(t, ctx))
+    }
+}
+
+// ── Datatype dependency graph ────────────────────────────────────────────────
+
+fn direct_deps(ty: TypeDef, program: Program) -> Vec[QualifiedName] {
+    let names: Vec[QualifiedName] = Vec.new();
+    ty.collect_names(names);
+    names.into_iter().filter(|n| program.structs.contains_key(n) || program.enums.contains_key(n)).collect()
+}
+
+// An edge D -> E means D has a field (at any nesting depth reachable through
+// the type tree, including inside fn signatures) that names E. SCC.compute
+// yields SCCs in reverse topological order (dependencies before
+// dependents), so processing them in that order guarantees that by the time
+// a datatype is generalized, every datatype it refers to by name outside
+// its own SCC has already been generalized (and its arity finalized) too.
+fn build_dep_graph(program: Program) -> Map[QualifiedName, Vec[QualifiedName]] {
+    let graph: Map[QualifiedName, Vec[QualifiedName]] = Map.new();
+
+    for (qname, sdef) in program.structs.iter() {
+        let deps: Vec[QualifiedName] = Vec.new();
+        for field in sdef.fields.iter() {
+            deps.extend(direct_deps(field.ty.clone(), program));
+        }
+        deps.dedup();
+        graph.insert(qname, deps);
+    }
+
+    for (qname, edef) in program.enums.iter() {
+        let deps: Vec[QualifiedName] = Vec.new();
+        for variant in edef.variants.iter() {
+            for item in variant.items.iter() {
+                deps.extend(direct_deps(item.ty.clone(), program));
+            }
+        }
+        deps.dedup();
+        graph.insert(qname, deps);
+    }
+
+    graph
+}
+
+fn type_arg_defs_for(pool: Vec[TypeVar], loc: Location) -> Option[TypeArgDefs] {
+    if pool.is_empty() {
+        return None;
+    }
+    let type_args: Vec[Identifier] = pool.iter().map(|v| Identifier.new(v.name().unwrap(), loc.clone())).collect();
+    Some(TypeArgDefs(type_args, Vec.new()))
+}
+
+// Phase A of the data-flow driven closure merge: tag every closure/
+// function-typed field (or field that transitively contains one) with a
+// fresh closure infer variable, processing datatypes in bottom-up SCC order
+// over the datatype dependency graph. Variable numbering is scoped per SCC
+// (mutually recursive datatypes are treated as one unit and share a single
+// pool of variables, published as every member's own type_arg_defs);
+// references to datatypes outside the SCC are instantiated with fresh vars
+// matching that datatype's own already-finished arity. Mutates `program` in
+// place: struct/enum defs are rewritten (and their type_arg_defs set) as
+// they're processed.
+pub fn generalize_datatypes(program: Program) {
+    let graph = build_dep_graph(program);
+    let sccs = SCC.compute(graph);
+
+    let finished: Map[QualifiedName, Vec[TypeVar]] = Map.new();
+
+    for scc in sccs {
+        let scc_members: Set[QualifiedName] = Set.new();
+        for m in scc.iter() {
+            scc_members.insert(m);
+        }
+
+        let ctx = Generalizer(TypeVarAllocator.new(), scc_members, finished, Vec.new(), False);
+
+        // Pass 1: allocate vars for direct closure fields and thread
+        // through references to already-finished, outside-SCC datatypes.
+        // Intra-SCC references are left untouched for now.
+        let scc_structs: Map[QualifiedName, StructDef] = Map.new();
+        let scc_enums: Map[QualifiedName, EnumDef] = Map.new();
+        for qname in scc.iter() {
+            if let Some(sdef) = program.structs.get(qname) {
+                scc_structs.insert(qname, generalize(sdef.clone(), ctx));
+            } else if let Some(edef) = program.enums.get(qname) {
+                scc_enums.insert(qname, generalize(edef.clone(), ctx));
+            } else {
+                panic("generalize_datatypes: SCC member is neither a struct nor an enum");
+            }
+        }
+
+        // Pass 2: the SCC's pool is now final. Patch intra-SCC references to
+        // it and publish it as every member's own type_arg_defs.
+        ctx.finalize = True;
+        for qname in scc.iter() {
+            if let Some(sdef) = scc_structs.get(qname) {
+                let sdef = generalize(sdef.clone(), ctx);
+                sdef.type_arg_defs = type_arg_defs_for(ctx.pool, sdef.name.location);
+                program.structs.insert(qname, sdef);
+            } else if let Some(edef) = scc_enums.get(qname) {
+                let edef = generalize(edef.clone(), ctx);
+                edef.type_arg_defs = type_arg_defs_for(ctx.pool, edef.name.location);
+                program.enums.insert(qname, edef);
+            }
+        }
+
+        for m in scc.iter() {
+            finished.insert(m, ctx.pool.clone());
+        }
+    }
+}
+
+}

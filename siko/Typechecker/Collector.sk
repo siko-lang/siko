@@ -53,12 +53,27 @@ pub struct Collector {
     fn fill_wildcards(c: Collector, ty: TypeDef) -> TypeDef {
         match ty {
             TypeDef.Wildcard => c.fresh(),
-            TypeDef.Named(NamedInfo(n, args)) => TypeDef.Named(NamedInfo(n, args.iter().map(|a| c.fill_wildcards(a)).collect())),
-            TypeDef.Tuple(elems) => TypeDef.Tuple(elems.iter().map(|e| c.fill_wildcards(e)).collect()),
+            TypeDef.Named(NamedInfo(n, args)) => TypeDef.Named(NamedInfo(
+                n, args.iter().map(|a| c.fill_wildcards(a)).collect())),
+            TypeDef.Tuple(elems) => TypeDef.Tuple(
+                elems.iter().map(|e| c.fill_wildcards(e)).collect()),
             TypeDef.Paren(inner) => TypeDef.Paren(c.fill_wildcards(inner)),
-            TypeDef.Fn(params, ret) => TypeDef.Fn(params.iter().map(|p| c.fill_wildcards(p)).collect(), c.fill_wildcards(ret)),
-            TypeDef.FnPtr(params, ret) => TypeDef.FnPtr(params.iter().map(|p| c.fill_wildcards(p)).collect(), c.fill_wildcards(ret)),
-            other => other,
+            TypeDef.Fn(ClosureInfo(params, ret, var)) => TypeDef.Fn(ClosureInfo(
+                params.iter().map(|p| c.fill_wildcards(p)).collect(),
+                c.fill_wildcards(ret),
+                var)),
+            TypeDef.FnPtr(params, ret) => TypeDef.FnPtr(
+                params.iter().map(|p| c.fill_wildcards(p)).collect(),
+                c.fill_wildcards(ret)),
+            TypeDef.Co(CoroutineInfo(yield_ty, ret)) => TypeDef.Co(CoroutineInfo(
+                c.fill_wildcards(yield_ty), c.fill_wildcards(ret))),
+            TypeDef.Array(inner, n) => TypeDef.Array(c.fill_wildcards(inner), n),
+            TypeDef.Ptr(inner) => TypeDef.Ptr(c.fill_wildcards(inner)),
+            TypeDef.Never(_) => ty,
+            TypeDef.Void => ty,
+            TypeDef.VoidPtr => ty,
+            TypeDef.Numeric(_) => ty,
+            TypeDef.Var(_) => ty,
         }
     }
 
@@ -322,7 +337,7 @@ pub struct Collector {
                 c.return_type = lambda_ret;
                 let (_, new_body) = c.collect_expr(body, env);
                 c.return_type = saved_return;
-                let fn_ty = TypeDef.Fn(user_arg_tys, lambda_ret);
+                let fn_ty = TypeDef.Fn(ClosureInfo(user_arg_tys, lambda_ret, None));
                 c.emit(C.ConstraintKind.Unify(lhs: ty, rhs: fn_ty), loc);
                 ExprKind.ResolvedLambda(new_args, new_body, capture_count)
             }

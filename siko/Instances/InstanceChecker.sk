@@ -33,6 +33,15 @@ instance[T: CollectSpecialized[T]] CollectSpecialized[Vec[T]] {
     }
 }
 
+instance[T: CollectSpecialized[T]] CollectSpecialized[Option[T]] {
+    fn collect_specialized(o: Option[T], out: Vec[TypeDef]) {
+        if let Some(v) = o {
+            v.collect_specialized(out);
+        }
+    }
+}
+
+instance CollectSpecialized[ClosureInfo] = auto(Fold)
 instance CollectSpecialized[CoroutineInfo] = auto(Fold)
 
 instance CollectSpecialized[NamedInfo] {

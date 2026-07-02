@@ -69,7 +69,8 @@ struct Lowerer {
     fn lower_type(l: Lowerer, ty: TypeDef) -> C.CType {
         match ty {
             TypeDef.Never(_) => C.CType.Void,
-            TypeDef.Fn(_, _) | TypeDef.FnPtr(_, _) => C.CType.Ptr(C.CType.Void),
+            TypeDef.Fn(_) => panic("closure ty in cbackend"),
+            TypeDef.FnPtr(_, _) => C.CType.Ptr(C.CType.Void),
             TypeDef.Named(NamedInfo(name, _)) => {
                 let resolved = name.resolved();
                 if let Some(c_type) = l.builtin_int_types.get(resolved) {

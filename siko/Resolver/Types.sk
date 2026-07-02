@@ -31,14 +31,14 @@ instance Resolvable[TypeDef] {
                 let resolved_inner = inner.resolve(ctx)?;
                 Ok(TypeDef.Paren(resolved_inner))
             }
-            TypeDef.Fn(args, result) => {
+            TypeDef.Fn(ClosureInfo(args, result, var)) => {
                 let resolved_args: Vec[_] = args
                     .iter()
                     .map(|a| a.resolve(ctx))
                     .collect();
                 let resolved_args = Result.collect(resolved_args)?;
                 let resolved_result = result.resolve(ctx)?;
-                Ok(TypeDef.Fn(resolved_args, resolved_result))
+                Ok(TypeDef.Fn(ClosureInfo(resolved_args, resolved_result, var)))
             }
             TypeDef.FnPtr(args, result) => {
                 let resolved_args: Vec[_] = args

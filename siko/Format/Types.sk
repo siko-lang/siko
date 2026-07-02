@@ -4,6 +4,16 @@ import Siko.AST.Type
 import Siko.Format.Formatter
 import Siko.Interner as I
 
+pub fn format_type_var(f: Formatter, var: TypeVar) {
+    match var {
+        TypeVar.Named(n) => f.push(I.resolve(n)),
+        TypeVar.Var(n) => {
+            f.push("$");
+            f.push(n.to_string());
+        }
+    }
+}
+
 pub fn format_type_def(f: Formatter, ty: TypeDef) {
     match ty {
         TypeDef.Named(NamedInfo(name, args)) => {
@@ -38,14 +48,10 @@ pub fn format_type_def(f: Formatter, ty: TypeDef) {
             format_type_def(f, inner);
             f.push(")");
         }
-        TypeDef.Var(TypeVar.Named(s)) => {
-            f.push(I.resolve(s));
+        TypeDef.Var(v) => {
+            format_type_var(f, v);
         }
-        TypeDef.Var(TypeVar.Var(n)) => {
-            f.push("$");
-            f.push(n.to_string());
-        }
-        TypeDef.Fn(args, result) => {
+        TypeDef.Fn(ClosureInfo(args, result, var)) => {
             f.push("fn(");
             let i = 0;
             for arg in args {
@@ -57,6 +63,10 @@ pub fn format_type_def(f: Formatter, ty: TypeDef) {
             }
             f.push(") -> ");
             format_type_def(f, result);
+            if let Some(var) = var {
+                f.push("/");
+                format_type_var(f, var);
+            }
         }
         TypeDef.FnPtr(args, result) => {
             f.push("fn*(");

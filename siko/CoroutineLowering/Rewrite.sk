@@ -84,10 +84,11 @@ instance Rewrite[TypeDef] {
                 let info = ctx.get_or_create_co_enum(yield_ty, return_ty);
                 TypeDef.Named(NamedInfo(Name.inner(info.wrap_qname), []))
             }
-            TypeDef.Fn(args, ret) => TypeDef.Fn(
+            TypeDef.Fn(ClosureInfo(args, ret, var)) => TypeDef.Fn(ClosureInfo(
                 args.into_iter().map(|a| rewrite_co(a, ctx)).collect(),
                 rewrite_co(ret, ctx),
-            ),
+                var,
+            )),
             TypeDef.FnPtr(args, ret) => TypeDef.FnPtr(
                 args.into_iter().map(|a| rewrite_co(a, ctx)).collect(),
                 rewrite_co(ret, ctx),

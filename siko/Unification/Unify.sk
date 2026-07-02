@@ -94,7 +94,7 @@ pub struct Unifier {
                 Ok(())
             }
 
-            (TypeDef.Fn(p1, r1), TypeDef.Fn(p2, r2)) => {
+            (TypeDef.Fn(ClosureInfo(p1, r1, _)), TypeDef.Fn(ClosureInfo(p2, r2, _))) => {
                 if p1.len() != p2.len() {
                     return Err(UnifyError.Mismatch(t1, t2));
                 }
@@ -159,7 +159,7 @@ fn occurs_check(var: Int, ty: TypeDef) {
         TypeDef.Var(_) => {}
         TypeDef.Named(NamedInfo(_, args)) => args.iter().for_each(|a| occurs_check(var, a)),
         TypeDef.Tuple(elems) => elems.iter().for_each(|e| occurs_check(var, e)),
-        TypeDef.Fn(params, ret) | TypeDef.FnPtr(params, ret) => {
+        TypeDef.Fn(ClosureInfo(params, ret, _)) | TypeDef.FnPtr(params, ret) => {
             params.iter().for_each(|p| occurs_check(var, p));
             occurs_check(var, ret);
         }

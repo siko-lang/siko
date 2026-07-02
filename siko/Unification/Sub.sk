@@ -51,10 +51,11 @@ pub struct Substitution {
                 TypeDef.Named(NamedInfo(name, args.iter().map(|a| sub.apply(a)).collect()))
             }
             TypeDef.Tuple(elems) => TypeDef.Tuple(elems.iter().map(|e| sub.apply(e)).collect()),
-            TypeDef.Fn(params, ret) => TypeDef.Fn(
+            TypeDef.Fn(ClosureInfo(params, ret, var)) => TypeDef.Fn(ClosureInfo(
                 params.iter().map(|p| sub.apply(p)).collect(),
                 sub.apply(ret),
-            ),
+                var,
+            )),
             TypeDef.FnPtr(params, ret) => TypeDef.FnPtr(
                 params.iter().map(|p| sub.apply(p)).collect(),
                 sub.apply(ret),
