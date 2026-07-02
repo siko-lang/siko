@@ -13,12 +13,11 @@ struct State {
 
 implicit current: State
 
-fn on_listener_ready(ev: IoEvent) {
+fn on_listener_ready() {
     match current.listener.accept() {
         Ok(_) => println("accepted connection"),
         Err(e) => panic("accept failed: ${e}"),
     }
-    current.eventloop.deregister(current.listener.get_fd().get_fd());
     current.stop = True;
 }
 
@@ -33,7 +32,7 @@ fn main() {
     let s = State(listener, eventloop, False);
     with current = s {
         let fd = current.listener.get_fd().get_fd();
-        eventloop.register(fd, Interest.Read, |ev| on_listener_ready(ev));
+        eventloop.register_read(fd, || on_listener_ready());
         let client = match TcpStream.connect_async("127.0.0.1", port) {
             Ok(stream) => stream,
             Err(e) => panic("connect failed: ${e}"),

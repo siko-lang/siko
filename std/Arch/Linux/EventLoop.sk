@@ -8,20 +8,17 @@ import Std.Map
 import Std.Time
 import Std.Ptr
 
-pub enum IoEvent {
-    Read,
-    Write,
-}
-
-pub enum Interest {
-    Read,
-    Write,
-    ReadWrite,
+pub struct IoRegistration {
+    fd: I32,
+    read_waiter: Option[fn() -> ()],
+    write_waiter: Option[fn() -> ()],
+    armed_read: Bool,
+    armed_write: Bool,
 }
 
 pub struct EventLoop {
     epoll_fd: I32,
-    fd_callbacks: Map[I32, (Interest, fn(IoEvent) -> ())],
+    registrations: Map[I32, IoRegistration],
     timer_callbacks: Map[Int, fn() -> ()],
     timer_to_fd: Map[Int, I32],
     fd_to_timer: Map[I32, Int],
@@ -36,27 +33,65 @@ pub struct EventLoop {
         EventLoop(efd, Map.new(), Map.new(), Map.new(), Map.new(), 0)
     }
 
-    @safe
-    pub fn register(el: EventLoop, fd: I32, interest: Interest, callback: fn(IoEvent) -> ()) {
-        el.fd_callbacks.insert(fd, (interest, callback));
-        let ev = EpollEvent(
-            events: interest_to_flags(interest),
-            data:   fd.as_int().as_u64(),
-        );
-        let ret = epoll_ctl(el.epoll_fd, EPOLL_CTL_ADD, fd, &ev);
-        if ret < 0.as_i32() {
-            panic("epoll_ctl register failed");
+    fn get_or_create(el: EventLoop, fd: I32) -> IoRegistration {
+        match el.registrations.get(fd) {
+            Some(r) => r,
+            None => {
+                let r = IoRegistration(fd: fd, read_waiter: None, write_waiter: None,
+                                        armed_read: False, armed_write: False);
+                el.registrations.insert(fd, r);
+                r
+            }
         }
     }
 
     @safe
-    pub fn deregister(el: EventLoop, fd: I32) {
-        match el.fd_callbacks.remove(fd) {
-            None => {}
-            Some(_) => {
-                let dummy = EpollEvent(events: 0.as_u32(), data: 0.as_u64());
-                epoll_ctl(el.epoll_fd, EPOLL_CTL_DEL, fd, &dummy);
+    pub fn register_read(el: EventLoop, fd: I32, callback: fn() -> ()) {
+        let r = el.get_or_create(fd);
+        r.read_waiter = Some(callback);
+        el.sync_registration(fd, r);
+    }
+
+    @safe
+    pub fn register_write(el: EventLoop, fd: I32, callback: fn() -> ()) {
+        let r = el.get_or_create(fd);
+        r.write_waiter = Some(callback);
+        el.sync_registration(fd, r);
+    }
+
+    // Diffs the desired interest (union of read/write waiters) against what's
+    // currently armed at the OS level and issues ADD/MOD/DEL accordingly, so a
+    // fd already in the epoll set never gets a second ADD (which fails EEXIST).
+    @safe
+    fn sync_registration(el: EventLoop, fd: I32, r: IoRegistration) {
+        let want_read = r.read_waiter.is_some();
+        let want_write = r.write_waiter.is_some();
+        if want_read == r.armed_read && want_write == r.armed_write {
+            if !want_read && !want_write {
+                el.registrations.remove(fd);
             }
+            return;
+        }
+        if !r.armed_read && !r.armed_write {
+            let ev = EpollEvent(events: flags_for(want_read, want_write), data: fd.as_int().as_u64());
+            let ret = epoll_ctl(el.epoll_fd, EPOLL_CTL_ADD, fd, &ev);
+            if ret < 0.as_i32() {
+                panic("epoll_ctl register failed");
+            }
+        } else if !want_read && !want_write {
+            let dummy = EpollEvent(events: 0.as_u32(), data: 0.as_u64());
+            epoll_ctl(el.epoll_fd, EPOLL_CTL_DEL, fd, &dummy);
+        } else {
+            let ev = EpollEvent(events: flags_for(want_read, want_write), data: fd.as_int().as_u64());
+            let ret = epoll_ctl(el.epoll_fd, EPOLL_CTL_MOD, fd, &ev);
+            if ret < 0.as_i32() {
+                panic("epoll_ctl modify failed");
+            }
+        }
+        r.armed_read = want_read;
+        r.armed_write = want_write;
+        if !want_read && !want_write {
+            el.registrations.remove(fd);
         }
     }
 
@@ -141,13 +176,32 @@ pub struct EventLoop {
                     }
                 }
                 None => {
-                    match el.fd_callbacks.get(fd) {
+                    match el.registrations.get(fd) {
                         None => {}
-                        Some((_, cb)) => {
-                            if (ev.events & EPOLLIN) != 0.as_u32() {
-                                cb(IoEvent.Read);
-                            } else if (ev.events & EPOLLOUT) != 0.as_u32() {
-                                cb(IoEvent.Write);
+                        Some(r) => {
+                            // epoll always reports HUP/ERR/RDHUP regardless of the
+                            // requested mask, so a dropped/reset peer must wake
+                            // whichever waiter is present, not just the one whose
+                            // bit literally fired.
+                            let hup = (ev.events & (EPOLLHUP | EPOLLERR | EPOLLRDHUP)) != 0.as_u32();
+                            let readable = ((ev.events & EPOLLIN) != 0.as_u32()) || hup;
+                            let writable = ((ev.events & EPOLLOUT) != 0.as_u32()) || hup;
+                            let read_cb = if readable { r.read_waiter } else { None };
+                            let write_cb = if writable { r.write_waiter } else { None };
+                            if read_cb.is_some() {
+                                r.read_waiter = None;
+                            }
+                            if write_cb.is_some() {
+                                r.write_waiter = None;
+                            }
+                            el.sync_registration(fd, r);
+                            match read_cb {
+                                Some(cb) => cb(),
+                                None => {}
+                            }
+                            match write_cb {
+                                Some(cb) => cb(),
+                                None => {}
                             }
                         }
                     }
@@ -157,12 +211,15 @@ pub struct EventLoop {
     }
 }
 
-fn interest_to_flags(interest: Interest) -> U32 {
-    match interest {
-        Interest.Read      => EPOLLIN,
-        Interest.Write     => EPOLLOUT,
-        Interest.ReadWrite => EPOLLIN | EPOLLOUT,
+fn flags_for(want_read: Bool, want_write: Bool) -> U32 {
+    let flags = 0.as_u32();
+    if want_read {
+        flags = flags | EPOLLIN;
     }
+    if want_write {
+        flags = flags | EPOLLOUT;
+    }
+    flags
 }
 
 }

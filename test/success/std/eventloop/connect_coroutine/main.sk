@@ -83,7 +83,7 @@ fn listen(port: U16) -> Result[TcpListener, Error] {
 fn accept(listener: TcpListener) co(()) -> () {
     let fd = listener.get_fd().get_fd();
     let task = get_current_task();
-    current.eventloop.register(fd, Interest.Read, |_| {
+    current.eventloop.register_read(fd, || {
         current.add_ready(task);
     });
     yield ();

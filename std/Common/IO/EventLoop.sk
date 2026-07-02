@@ -3,17 +3,6 @@ module Std.IO.EventLoop {
 import Std.Arch.EventLoop as AS
 import Std.Time
 
-pub enum IoEvent {
-    Read,
-    Write,
-}
-
-pub enum Interest {
-    Read,
-    Write,
-    ReadWrite,
-}
-
 pub struct EventLoop {
     inner: AS.EventLoop,
 
@@ -21,12 +10,12 @@ pub struct EventLoop {
         EventLoop(AS.EventLoop.new())
     }
 
-    pub fn register(s: EventLoop, fd: I32, interest: Interest, callback: fn(IoEvent) -> ()) {
-        s.inner.register(fd, toArchInterest(interest), |ev| callback(fromArchEvent(ev)))
+    pub fn register_read(s: EventLoop, fd: I32, callback: fn() -> ()) {
+        s.inner.register_read(fd, callback)
     }
 
-    pub fn deregister(s: EventLoop, fd: I32) {
-        s.inner.deregister(fd)
+    pub fn register_write(s: EventLoop, fd: I32, callback: fn() -> ()) {
+        s.inner.register_write(fd, callback)
     }
 
     pub fn add_timer(s: EventLoop, timeout: Duration, callback: fn() -> ()) -> Int {
@@ -39,21 +28,6 @@ pub struct EventLoop {
 
     pub fn run_once(s: EventLoop, timeout: Duration) {
         s.inner.run_once(timeout)
-    }
-}
-
-fn toArchInterest(i: Interest) -> AS.Interest {
-    match i {
-        Interest.Read      => AS.Interest.Read,
-        Interest.Write     => AS.Interest.Write,
-        Interest.ReadWrite => AS.Interest.ReadWrite,
-    }
-}
-
-fn fromArchEvent(ev: AS.IoEvent) -> IoEvent {
-    match ev {
-        AS.IoEvent.Read  => IoEvent.Read,
-        AS.IoEvent.Write => IoEvent.Write,
     }
 }
 

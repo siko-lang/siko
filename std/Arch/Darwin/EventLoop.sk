@@ -7,20 +7,17 @@ import Std.Map
 import Std.Time
 import Std.Ptr
 
-pub enum IoEvent {
-    Read,
-    Write,
-}
-
-pub enum Interest {
-    Read,
-    Write,
-    ReadWrite,
+pub struct IoRegistration {
+    fd: I32,
+    read_waiter: Option[fn() -> ()],
+    write_waiter: Option[fn() -> ()],
+    armed_read: Bool,
+    armed_write: Bool,
 }
 
 pub struct EventLoop {
     kq_fd: I32,
-    fd_callbacks: Map[I32, (Interest, fn(IoEvent) -> ())],
+    registrations: Map[I32, IoRegistration],
     timer_callbacks: Map[Int, fn() -> ()],
     next_timer_id: Int,
 
@@ -33,20 +30,59 @@ pub struct EventLoop {
         EventLoop(kq, Map.new(), Map.new(), 0)
     }
 
+    fn get_or_create(el: EventLoop, fd: I32) -> IoRegistration {
+        match el.registrations.get(fd) {
+            Some(r) => r,
+            None => {
+                let r = IoRegistration(fd: fd, read_waiter: None, write_waiter: None,
+                                        armed_read: False, armed_write: False);
+                el.registrations.insert(fd, r);
+                r
+            }
+        }
+    }
+
+    // kqueue filters are independent per (fd, filter), so unlike epoll each
+    // waiter can be armed/disarmed with its own EV_ADD/EV_DELETE without
+    // touching the other filter.
     @safe
-    pub fn register(el: EventLoop, fd: I32, interest: Interest, callback: fn(IoEvent) -> ()) {
-        el.fd_callbacks.insert(fd, (interest, callback));
-        apply_fd_change(el.kq_fd, fd, interest, EV_ADD);
+    fn sync_read(el: EventLoop, fd: I32, r: IoRegistration) {
+        let want = r.read_waiter.is_some();
+        if want != r.armed_read {
+            let flags = if want { EV_ADD } else { EV_DELETE };
+            change_filter(el.kq_fd, fd.as_int().as_u64(), EVFILT_READ, flags);
+            r.armed_read = want;
+        }
+        el.maybe_forget(fd, r);
     }
 
     @safe
-    pub fn deregister(el: EventLoop, fd: I32) {
-        match el.fd_callbacks.remove(fd) {
-            None => {}
-            Some((interest, _)) => {
-                apply_fd_change(el.kq_fd, fd, interest, EV_DELETE);
-            }
+    fn sync_write(el: EventLoop, fd: I32, r: IoRegistration) {
+        let want = r.write_waiter.is_some();
+        if want != r.armed_write {
+            let flags = if want { EV_ADD } else { EV_DELETE };
+            change_filter(el.kq_fd, fd.as_int().as_u64(), EVFILT_WRITE, flags);
+            r.armed_write = want;
         }
+        el.maybe_forget(fd, r);
+    }
+
+    fn maybe_forget(el: EventLoop, fd: I32, r: IoRegistration) {
+        if !r.armed_read && !r.armed_write {
+            el.registrations.remove(fd);
+        }
+    }
+
+    pub fn register_read(el: EventLoop, fd: I32, callback: fn() -> ()) {
+        let r = el.get_or_create(fd);
+        r.read_waiter = Some(callback);
+        el.sync_read(fd, r);
+    }
+
+    pub fn register_write(el: EventLoop, fd: I32, callback: fn() -> ()) {
+        let r = el.get_or_create(fd);
+        r.write_waiter = Some(callback);
+        el.sync_write(fd, r);
     }
 
     @safe
@@ -126,33 +162,35 @@ pub struct EventLoop {
                 }
             } else if ev.filter == EVFILT_READ {
                 let fd = ev.ident.as_int().as_i32();
-                match el.fd_callbacks.get(fd) {
+                match el.registrations.get(fd) {
                     None => {}
-                    Some((_, cb)) => cb(IoEvent.Read),
+                    Some(r) => {
+                        match r.read_waiter {
+                            None => {}
+                            Some(cb) => {
+                                r.read_waiter = None;
+                                el.sync_read(fd, r);
+                                cb();
+                            }
+                        }
+                    }
                 }
             } else if ev.filter == EVFILT_WRITE {
                 let fd = ev.ident.as_int().as_i32();
-                match el.fd_callbacks.get(fd) {
+                match el.registrations.get(fd) {
                     None => {}
-                    Some((_, cb)) => cb(IoEvent.Write),
+                    Some(r) => {
+                        match r.write_waiter {
+                            None => {}
+                            Some(cb) => {
+                                r.write_waiter = None;
+                                el.sync_write(fd, r);
+                                cb();
+                            }
+                        }
+                    }
                 }
             }
-        }
-    }
-}
-
-@unsafe
-fn apply_fd_change(kq_fd: I32, fd: I32, interest: Interest, flags: U16) {
-    match interest {
-        Interest.Read => {
-            change_filter(kq_fd, fd.as_int().as_u64(), EVFILT_READ, flags);
-        }
-        Interest.Write => {
-            change_filter(kq_fd, fd.as_int().as_u64(), EVFILT_WRITE, flags);
-        }
-        Interest.ReadWrite => {
-            change_filter(kq_fd, fd.as_int().as_u64(), EVFILT_READ, flags);
-            change_filter(kq_fd, fd.as_int().as_u64(), EVFILT_WRITE, flags);
         }
     }
 }
