@@ -212,8 +212,8 @@ struct Lowerer {
     // The condition of an `if`/`while`: a Siko Bool whose tag 0 means True.
     // Lowers to `<cond>.tag == 0` (or `->tag` for heap Bools).
     fn lower_cond(l: Lowerer, cond: Expr) -> C.CExpr {
-        let base = if let ExprKind.Block(BlockInfo(stmts)) = cond.kind {
-            C.CExpr.StmtExpr(l.lower_stmts(stmts))
+        let base = if let ExprKind.Block(_) = cond.kind {
+            panic("lower_cond: block condition reached C backend; normalizer should have lifted it")
         } else {
             l.lower_expr(cond)
         };
@@ -303,7 +303,7 @@ struct Lowerer {
 
     // An expression used as a statement block (function body, if/else branch,
     // match arm). A Block is flattened to its statements; anything else is
-    // lowered as a single statement expression.
+    // lowered as a single statement.
     fn lower_branch(l: Lowerer, expr: Expr) -> Vec[C.CStmt] {
         if let ExprKind.Block(BlockInfo(stmts)) = expr.kind {
             l.lower_stmts(stmts)
