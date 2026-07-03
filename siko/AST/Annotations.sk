@@ -36,6 +36,10 @@ pub enum Annotation {
     Pure,
     CCallback,
     Test,
+    // The function's signature types that are structurally identical alias
+    // each other's closure content (used for functions whose bodies launder
+    // pointers through integers, where closure flow is uninferable).
+    ClosureAlias,
 
     pub fn has_derive(a: Annotation, trait_name: Name) -> Bool {
         match a {
@@ -124,6 +128,13 @@ pub enum Annotation {
     pub fn is_test(a: Annotation) -> Bool {
         match a {
             Annotation.Test => True,
+            _ => False,
+        }
+    }
+
+    pub fn is_closure_alias(a: Annotation) -> Bool {
+        match a {
+            Annotation.ClosureAlias => True,
             _ => False,
         }
     }

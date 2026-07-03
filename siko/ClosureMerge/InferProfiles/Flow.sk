@@ -1,0 +1,877 @@
+module Siko.ClosureMerge.InferProfiles.Flow {
+
+import Std.Map
+import Std.Set
+import Siko.AST.Expr as E
+import Siko.AST.Function
+import Siko.AST.Generics
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.Pattern
+import Siko.AST.QualifiedName
+import Siko.AST.Statement as S
+import Siko.AST.Type
+import Siko.ClosureMerge.InferProfiles.Profile
+import Siko.Constants.Builtins as B
+import Siko.HIR.Program
+import Siko.Interner as I
+
+// ── Closure var collection ───────────────────────────────────────────────────
+// The closure infer vars of a type, in deterministic structural order. Two
+// structurally equal types (up to var names) always yield lists of the same
+// length, which is what makes positional zipping between related types
+// valid. ClosureInfo contributes its own tag var only — its args/return
+// describe the closure's call signature, not separate slots.
+
+struct VarAcc {
+    vars: Vec[TypeVar],
+}
+
+trait VarCollect[T] {
+    fn var_collect(t: T, acc: VarAcc)
+}
+
+instance VarCollect[Bool]          = auto(Fold, =)
+instance VarCollect[Int]           = auto(Fold, =)
+instance VarCollect[Name]          = auto(Fold, =)
+instance VarCollect[NamedInfo]     = auto(Fold)
+instance VarCollect[CoroutineInfo] = auto(Fold)
+instance VarCollect[TypeDef]       = auto(Fold)
+
+instance VarCollect[TypeVar] {
+    fn var_collect(v: TypeVar, acc: VarAcc) {
+        acc.vars.push(v);
+    }
+}
+
+instance VarCollect[ClosureInfo] {
+    fn var_collect(info: ClosureInfo, acc: VarAcc) {
+        if let Some(v) = info.closure_infer_var {
+            acc.vars.push(v);
+        }
+    }
+}
+
+instance[T: VarCollect[T]] VarCollect[Vec[T]] {
+    fn var_collect(vec: Vec[T], acc: VarAcc) {
+        for t in vec {
+            var_collect(t, acc);
+        }
+    }
+}
+
+pub fn ty_vars(ty: TypeDef) -> Vec[TypeVar] {
+    let acc = VarAcc(Vec.new());
+    var_collect(ty, acc);
+    acc.vars
+}
+
+pub fn opt_ty_vars(ty: Option[TypeDef]) -> Vec[TypeVar] {
+    match ty {
+        Some(t) => ty_vars(t),
+        None => Vec.new(),
+    }
+}
+
+pub fn evars(e: E.Expr) -> Vec[TypeVar] {
+    opt_ty_vars(e.ty)
+}
+
+// Peel wrappers off a type down to a datatype reference.
+pub fn peel_named(ty: TypeDef) -> Option[NamedInfo] {
+    match ty {
+        TypeDef.Named(info) => Some(info),
+        TypeDef.Paren(inner) => peel_named(inner),
+        TypeDef.Ptr(inner) => peel_named(inner),
+        _ => None,
+    }
+}
+
+// The closure infer vars appearing in a function's arg/result/yield types —
+// the vocabulary its profile is allowed to speak about.
+pub fn boundary_vars(func: FunctionDef) -> Vec[TypeVar] {
+    let vars: Vec[TypeVar] = Vec.new();
+    for arg in func.args.iter() {
+        vars.extend(ty_vars(arg.type_def.clone()));
+    }
+    vars.extend(opt_ty_vars(func.result_type.clone()));
+    vars.extend(opt_ty_vars(func.yield_type.clone()));
+    vars
+}
+
+// ── Datatype slot tables ─────────────────────────────────────────────────────
+// For every struct field / enum variant item: at which positions of the
+// owner's var pool (= its type_arg_defs, as published by
+// GeneralizeDataTypes) do the field's own vars sit. Construction,
+// destructuring, and field access all zip through these tables.
+
+pub struct DataTables {
+    struct_fields: Map[QualifiedName, Vec[Vec[Int]]],
+    struct_field_index: Map[QualifiedName, Map[I.String, Int]],
+    variant_items: Map[QualifiedName, Vec[Vec[Int]]],
+}
+
+fn pool_positions(pool_index: Map[TypeVar, Int], ty: TypeDef) -> Vec[Int] {
+    ty_vars(ty).iter().filter_map(|v| pool_index.get(v)).collect()
+}
+
+fn pool_index_of(tad: Option[TypeArgDefs]) -> Map[TypeVar, Int] {
+    let pool_index: Map[TypeVar, Int] = Map.new();
+    match tad {
+        Some(tad) => {
+            for (i, id) in tad.type_args.iter().enumerate() {
+                pool_index.insert(TypeVar.Named(id.name), i);
+            }
+        }
+        None => {}
+    }
+    pool_index
+}
+
+pub fn build_tables(program: Program) -> DataTables {
+    let struct_fields: Map[QualifiedName, Vec[Vec[Int]]] = Map.new();
+    let struct_field_index: Map[QualifiedName, Map[I.String, Int]] = Map.new();
+    let variant_items: Map[QualifiedName, Vec[Vec[Int]]] = Map.new();
+
+    for (qname, sdef) in program.structs.iter() {
+        let pool_index = pool_index_of(sdef.type_arg_defs.clone());
+        let fields: Vec[Vec[Int]] = Vec.new();
+        let index: Map[I.String, Int] = Map.new();
+        for (i, field) in sdef.fields.iter().enumerate() {
+            fields.push(pool_positions(pool_index, field.ty.clone()));
+            index.insert(field.name.name, i);
+        }
+        struct_fields.insert(qname, fields);
+        struct_field_index.insert(qname, index);
+    }
+
+    for (_, edef) in program.enums.iter() {
+        let pool_index = pool_index_of(edef.type_arg_defs.clone());
+        for variant in edef.variants.iter() {
+            let items: Vec[Vec[Int]] = Vec.new();
+            for item in variant.items.iter() {
+                items.push(pool_positions(pool_index, item.ty.clone()));
+            }
+            variant_items.insert(variant.qualified_name.unwrap(), items);
+        }
+    }
+
+    DataTables(struct_fields, struct_field_index, variant_items)
+}
+
+// ── Residual records ─────────────────────────────────────────────────────────
+
+// A dynamic call site (closure application). The callee's lambda set is not
+// known symbolically, so the flow through the call cannot be resolved in
+// this pass; the record is summarized into the profile as a residual for
+// later resolution against concrete sets.
+pub struct ApplyRecord {
+    pub owner: QualifiedName,
+    pub callee: Vec[FlowNode],
+    pub args: Vec[Vec[FlowNode]],
+    pub result: Vec[FlowNode],
+}
+
+// A closure creation site: which lambda, and the flow nodes of each
+// captured variable. Also residual: captures matter when the closure is
+// eventually applied.
+pub struct CreationRecord {
+    pub owner: QualifiedName,
+    pub lambda: QualifiedName,
+    pub captures: Vec[Vec[FlowNode]],
+}
+
+// ── Union-find over flow nodes ───────────────────────────────────────────────
+// Every value copy in Siko is an alias (structs are mutable references), so
+// a write through either side reaches the other: slot relationships are
+// equivalences, not directed flows. The analysis is therefore plain
+// unification — a partition of flow nodes, with the lambda literals known
+// to inhabit each class stored at the class root.
+
+pub struct UnionFind {
+    pub parent: Map[FlowNode, FlowNode],
+    pub lambdas: Map[FlowNode, Set[QualifiedName]],
+
+    pub fn new() -> UnionFind {
+        UnionFind(Map.new(), Map.new())
+    }
+
+    pub fn find(uf: UnionFind, n: FlowNode) -> FlowNode {
+        match uf.parent.get(n) {
+            None => n,
+            Some(p) => {
+                let root = uf.find(p);
+                uf.parent.insert(n, root.clone());
+                root
+            }
+        }
+    }
+
+    pub fn union(uf: UnionFind, a: FlowNode, b: FlowNode) {
+        let ra = uf.find(a);
+        let rb = uf.find(b);
+        if ra == rb {
+            return;
+        }
+        uf.parent.insert(ra.clone(), rb.clone());
+        if let Some(la) = uf.lambdas.remove(ra) {
+            let lb = uf.lambdas.get(rb).unwrap_or(Set.new());
+            for l in la {
+                lb.insert(l);
+            }
+            uf.lambdas.insert(rb, lb);
+        }
+    }
+
+    pub fn add_lambda(uf: UnionFind, n: FlowNode, lambda: QualifiedName) {
+        let root = uf.find(n);
+        let set = uf.lambdas.get(root).unwrap_or(Set.new());
+        set.insert(lambda);
+        uf.lambdas.insert(root, set);
+    }
+
+    pub fn lambdas_of(uf: UnionFind, n: FlowNode) -> Set[QualifiedName] {
+        uf.lambdas.get(uf.find(n)).unwrap_or(Set.new())
+    }
+}
+
+// ── Flow context ─────────────────────────────────────────────────────────────
+
+pub struct FlowCtx {
+    pub program: Program,
+    pub tables: DataTables,
+    pub scc_members: Set[QualifiedName],
+    pub profiles: Map[QualifiedName, Profile],
+    // per-SCC graph state
+    pub uf: UnionFind,
+    pub applies: Vec[ApplyRecord],
+    pub creations: Vec[CreationRecord],
+    // per-function state
+    pub current_fn: QualifiedName,
+    pub env: Map[E.VariableName, Vec[TypeVar]],
+    pub result_vars: Vec[TypeVar],
+    pub yield_vars: Vec[TypeVar],
+
+    pub fn nodes(ctx: FlowCtx, vars: Vec[TypeVar]) -> Vec[FlowNode] {
+        vars.iter().map(|v| FlowNode(ctx.current_fn.clone(), v.clone())).collect()
+    }
+
+    pub fn nodes_for(ctx: FlowCtx, owner: QualifiedName, vars: Vec[TypeVar]) -> Vec[FlowNode] {
+        vars.iter().map(|v| FlowNode(owner.clone(), v.clone())).collect()
+    }
+
+    // Positional zip when the lists correspond structurally; conservative
+    // full cross product when they don't (lossy constructs like transmute).
+    pub fn unify(ctx: FlowCtx, src: Vec[FlowNode], dst: Vec[FlowNode]) {
+        if src.len() == dst.len() {
+            for (i, s) in src.iter().enumerate() {
+                ctx.uf.union(s.clone(), dst[i].clone());
+            }
+        } else {
+            for s in src.iter() {
+                for d in dst.iter() {
+                    ctx.uf.union(s.clone(), d.clone());
+                }
+            }
+        }
+    }
+
+    pub fn add_seed(ctx: FlowCtx, node: FlowNode, lambda: QualifiedName) {
+        ctx.uf.add_lambda(node, lambda);
+    }
+
+    pub fn env_nodes(ctx: FlowCtx, v: E.VariableName) -> Vec[FlowNode] {
+        ctx.nodes(ctx.env.get(v).unwrap_or(Vec.new()))
+    }
+}
+
+// ── Flow walk ────────────────────────────────────────────────────────────────
+// Emits unifications by zipping the closure vars of related expression
+// types. The Expr/Statement/Pattern instances are hand-written because
+// that's where flow rules are decided; everything else defers to the
+// derives. The (!) instances mark node kinds that the hand-written Expr
+// instance intercepts before the derived ExprKind recursion could reach
+// them, or that cannot exist post-monomorphization.
+
+pub trait Flow[T] {
+    fn flow(t: T, ctx: FlowCtx)
+}
+
+instance Flow[String]                  = auto(Fold, =)
+instance Flow[I.String]                = auto(Fold, =)
+instance Flow[Int]                     = auto(Fold, =)
+instance Flow[U8]                      = auto(Fold, =)
+instance Flow[Bool]                    = auto(Fold, =)
+instance Flow[Name]                    = auto(Fold, =)
+instance Flow[Identifier]              = auto(Fold, =)
+instance Flow[E.VariableName]          = auto(Fold, =)
+instance Flow[E.BinaryOp]              = auto(Fold, =)
+instance Flow[E.UnaryOp]               = auto(Fold, =)
+instance Flow[E.FunctionPtrInfo]       = auto(Fold, =)
+instance Flow[E.ImplicitRefInfo]       = auto(Fold, =)
+instance Flow[E.LambdaArg]             = auto(Fold, =)
+instance Flow[TypeDef]                 = auto(Fold, =)
+instance Flow[E.CallInfo]              = auto(Fold, !)
+instance Flow[E.MethodCallInfo]        = auto(Fold, !)
+instance Flow[E.FunctionCallInfo]      = auto(Fold, !)
+instance Flow[E.BlockInfo]             = auto(Fold, !)
+instance Flow[E.MatchInfo]             = auto(Fold, !)
+instance Flow[E.WithInfo]              = auto(Fold, !)
+instance Flow[E.CreateClosureInfo]     = auto(Fold, !)
+instance Flow[E.TypeAssociatedCallInfo] = auto(Fold, !)
+instance Flow[E.YieldInfo]             = auto(Fold, !)
+instance Flow[E.ExprKind]              = auto(Fold)
+
+instance[T: Flow[T]] Flow[Option[T]] {
+    fn flow(opt: Option[T], ctx: FlowCtx) {
+        if let Some(t) = opt {
+            flow(t, ctx);
+        }
+    }
+}
+
+instance[T: Flow[T]] Flow[Vec[T]] {
+    fn flow(vec: Vec[T], ctx: FlowCtx) {
+        for t in vec {
+            flow(t, ctx);
+        }
+    }
+}
+
+instance Flow[E.Expr] {
+    fn flow(expr: E.Expr, ctx: FlowCtx) {
+        let out = ctx.nodes(evars(expr));
+        match expr.kind {
+            E.ExprKind.Var(v) => {
+                ctx.unify(ctx.env_nodes(v), out);
+            }
+            E.ExprKind.FieldAccess(recv, fname) => {
+                flow(recv, ctx);
+                field_access_edges(ctx, recv, fname.name, out);
+            }
+            E.ExprKind.TupleIndex(recv, idx) => {
+                flow(recv, ctx);
+                let recv_ty = recv.ty.clone().unwrap();
+                match recv_ty {
+                    TypeDef.Tuple(elems) if idx < elems.len() => {
+                        ctx.unify(ctx.nodes(ty_vars(elems[idx].clone())), out);
+                    }
+                    _ => ctx.unify(ctx.nodes(evars(recv)), out),
+                }
+            }
+            E.ExprKind.FunctionCall(info) => {
+                function_call_edges(ctx, info, expr.ty.clone(), out);
+            }
+            E.ExprKind.DynamicCall(callee, args) => {
+                flow(callee, ctx);
+                flow(args, ctx);
+                let arg_nodes: Vec[Vec[FlowNode]] = args.iter().map(|a| ctx.nodes(evars(a))).collect();
+                ctx.applies.push(ApplyRecord(ctx.current_fn.clone(), ctx.nodes(evars(callee)), arg_nodes, out));
+            }
+            E.ExprKind.CreateClosure(info) => {
+                for n in out.iter() {
+                    ctx.add_seed(n.clone(), info.name.clone());
+                }
+                let captures: Vec[Vec[FlowNode]] = info.params.iter().map(|p| ctx.env_nodes(p.clone())).collect();
+                ctx.creations.push(CreationRecord(ctx.current_fn.clone(), info.name, captures));
+            }
+            E.ExprKind.If(cond, then_branch, else_branch) => {
+                flow(cond, ctx);
+                flow(then_branch, ctx);
+                ctx.unify(ctx.nodes(evars(then_branch)), out.clone());
+                if let Some(e) = else_branch {
+                    flow(e, ctx);
+                    ctx.unify(ctx.nodes(evars(e)), out);
+                }
+            }
+            E.ExprKind.IfLet(pat, scrutinee, then_branch, else_branch) => {
+                flow(scrutinee, ctx);
+                ctx.unify(ctx.nodes(evars(scrutinee)), ctx.nodes(opt_ty_vars(pat.ty.clone())));
+                flow(pat, ctx);
+                flow(then_branch, ctx);
+                ctx.unify(ctx.nodes(evars(then_branch)), out.clone());
+                if let Some(e) = else_branch {
+                    flow(e, ctx);
+                    ctx.unify(ctx.nodes(evars(e)), out);
+                }
+            }
+            E.ExprKind.Match(E.MatchInfo(scrutinee, arms)) => {
+                flow(scrutinee, ctx);
+                let scrut_vars = evars(scrutinee);
+                for arm in arms {
+                    ctx.unify(ctx.nodes(scrut_vars.clone()), ctx.nodes(opt_ty_vars(arm.pattern.ty.clone())));
+                    flow(arm.pattern, ctx);
+                    flow(arm.body, ctx);
+                    ctx.unify(ctx.nodes(evars(arm.body)), out.clone());
+                }
+            }
+            E.ExprKind.Block(E.BlockInfo(stmts)) => {
+                flow(stmts, ctx);
+                match stmts.last() {
+                    Some(S.TrailingExpr(e)) => ctx.unify(ctx.nodes(evars(e)), out),
+                    _ => {}
+                }
+            }
+            E.ExprKind.Tuple(exprs) => {
+                flow(exprs, ctx);
+                let elem_vars: Vec[TypeVar] = Vec.new();
+                for e in exprs.iter() {
+                    elem_vars.extend(evars(e));
+                }
+                ctx.unify(ctx.nodes(elem_vars), out);
+            }
+            E.ExprKind.Paren(e) => {
+                flow(e, ctx);
+                ctx.unify(ctx.nodes(evars(e)), out);
+            }
+            E.ExprKind.Return(e) => {
+                flow(e, ctx);
+                ctx.unify(ctx.nodes(evars(e)), ctx.nodes(ctx.result_vars.clone()));
+            }
+            E.ExprKind.Yield(E.YieldInfo(arg)) => {
+                flow(arg, ctx);
+                ctx.unify(ctx.nodes(evars(arg)), ctx.nodes(ctx.yield_vars.clone()));
+            }
+            E.ExprKind.Try(e) => {
+                flow(e, ctx);
+                ctx.unify(ctx.nodes(evars(e)), out);
+            }
+            E.ExprKind.Transmute(e) => {
+                flow(e, ctx);
+                ctx.unify(ctx.nodes(evars(e)), out);
+            }
+            E.ExprKind.Deref(e) => {
+                flow(e, ctx);
+                ctx.unify(ctx.nodes(evars(e)), out);
+            }
+            E.ExprKind.AddrOf(e) => {
+                flow(e, ctx);
+                ctx.unify(ctx.nodes(evars(e)), out);
+            }
+            E.ExprKind.Index(recv, idx) => {
+                flow(recv, ctx);
+                flow(idx, ctx);
+                ctx.unify(ctx.nodes(evars(recv)), out);
+            }
+            E.ExprKind.List(exprs) => {
+                flow(exprs, ctx);
+                for e in exprs.iter() {
+                    ctx.unify(ctx.nodes(evars(e)), out.clone());
+                }
+            }
+            E.ExprKind.With(E.WithInfo(_, body)) => {
+                flow(body, ctx);
+                ctx.unify(ctx.nodes(evars(body)), out);
+            }
+            E.ExprKind.FunctionPtrCall(callee, args) => {
+                flow(callee, ctx);
+                flow(args, ctx);
+                let arg_vars: Vec[TypeVar] = Vec.new();
+                for a in args.iter() {
+                    arg_vars.extend(evars(a));
+                }
+                ctx.unify(ctx.nodes(arg_vars), out);
+            }
+            E.ExprKind.Call(_) => panic("infer_profiles: unexpected Call"),
+            E.ExprKind.MethodCall(_) => panic("infer_profiles: unexpected MethodCall"),
+            E.ExprKind.TypeAssociatedCall(_) => panic("infer_profiles: unexpected TypeAssociatedCall"),
+            E.ExprKind.UnresolvedLambda(_, _) => panic("infer_profiles: unexpected UnresolvedLambda"),
+            E.ExprKind.ResolvedLambda(_, _, _) => panic("infer_profiles: unexpected ResolvedLambda"),
+            kind => flow(kind, ctx),
+        }
+    }
+}
+
+instance Flow[S.Statement] {
+    fn flow(stmt: S.Statement, ctx: FlowCtx) {
+        match stmt {
+            S.Let(info) => {
+                flow(info.rhs, ctx);
+                let bind_vars = match info.ty {
+                    Some(t) => ty_vars(t),
+                    None => evars(info.rhs),
+                };
+                ctx.unify(ctx.nodes(evars(info.rhs)), ctx.nodes(bind_vars.clone()));
+                ctx.env.insert(info.name, bind_vars);
+            }
+            S.Declare(info) => {
+                ctx.env.insert(info.name, opt_ty_vars(info.ty));
+            }
+            S.Assign(lhs, rhs) => {
+                flow(lhs, ctx);
+                flow(rhs, ctx);
+                ctx.unify(ctx.nodes(evars(rhs)), ctx.nodes(evars(lhs)));
+            }
+            S.Expr(e) => flow(e, ctx),
+            S.TrailingExpr(e) => flow(e, ctx),
+            S.Loop(stmts) => flow(stmts, ctx),
+            S.ForLoop(pat, iter, stmts) => {
+                flow(iter, ctx);
+                flow(pat, ctx);
+                // element extraction goes through the iterator protocol; be
+                // conservative about what reaches the loop variable
+                ctx.unify(ctx.nodes(evars(iter)), ctx.nodes(opt_ty_vars(pat.ty)));
+                flow(stmts, ctx);
+            }
+            S.WhileLoop(cond, stmts) => {
+                flow(cond, ctx);
+                flow(stmts, ctx);
+            }
+            S.UnresolvedLet(_, _, _) => panic("infer_profiles: unexpected UnresolvedLet"),
+        }
+    }
+}
+
+instance Flow[Pattern] {
+    fn flow(pat: Pattern, ctx: FlowCtx) {
+        let pvars = opt_ty_vars(pat.ty.clone());
+        match pat.kind {
+            PatternKind.Binding(v) => {
+                ctx.env.insert(v, pvars);
+            }
+            PatternKind.Tuple(pats) => {
+                match pat.ty {
+                    Some(TypeDef.Tuple(elems)) if elems.len() == pats.len() => {
+                        for (i, sub) in pats.iter().enumerate() {
+                            ctx.unify(ctx.nodes(ty_vars(elems[i].clone())), ctx.nodes(opt_ty_vars(sub.ty.clone())));
+                            flow(sub.clone(), ctx);
+                        }
+                    }
+                    _ => flow(pats, ctx),
+                }
+            }
+            PatternKind.Named(info) => {
+                named_pattern_edges(ctx, pat.ty, info);
+            }
+            PatternKind.Guard(inner, cond, else_branch) => {
+                ctx.unify(ctx.nodes(pvars), ctx.nodes(opt_ty_vars(inner.ty.clone())));
+                flow(inner, ctx);
+                flow(cond, ctx);
+                flow(else_branch, ctx);
+            }
+            PatternKind.Typed(inner, _) => {
+                ctx.unify(ctx.nodes(pvars), ctx.nodes(opt_ty_vars(inner.ty.clone())));
+                flow(inner, ctx);
+            }
+            PatternKind.Wildcard => {}
+            PatternKind.StringLiteral(_) => {}
+            PatternKind.IntLiteral(_) => {}
+            PatternKind.CharLiteral(_) => {}
+        }
+    }
+}
+
+// ── Per-construct rules ──────────────────────────────────────────────────────
+
+// s.f — relate the receiver's type args (the datatype pool) to the field's
+// own vars via the slot table.
+fn field_access_edges(ctx: FlowCtx, recv: E.Expr, fname: I.String, out: Vec[FlowNode]) {
+    let fallback = || ctx.unify(ctx.nodes(evars(recv)), out.clone());
+    match peel_named(recv.ty.clone().unwrap()) {
+        Some(NamedInfo(name, targs)) => {
+            let dq = name.resolved();
+            match (ctx.tables.struct_field_index.get(dq), ctx.tables.struct_fields.get(dq)) {
+                (Some(index), Some(fields)) => {
+                    match index.get(fname) {
+                        Some(idx) => {
+                            let src_vars: Vec[TypeVar] = Vec.new();
+                            for p in fields[idx].iter() {
+                                src_vars.extend(ty_vars(targs[p].clone()));
+                            }
+                            ctx.unify(ctx.nodes(src_vars), out);
+                        }
+                        None => fallback(),
+                    }
+                }
+                _ => fallback(),
+            }
+        }
+        None => fallback(),
+    }
+}
+
+// Variant/struct destructuring: scrutinee type args → sub-pattern vars via
+// the slot table.
+fn named_pattern_edges(ctx: FlowCtx, pat_ty: Option[TypeDef], info: NamedPatternInfo) {
+    let positions = {
+        let owner = info.name.resolved();
+        match ctx.tables.variant_items.get(owner) {
+            Some(items) => Some(items),
+            None => ctx.tables.struct_fields.get(owner),
+        }
+    };
+    let targs = match pat_ty {
+        Some(t) => match peel_named(t) {
+            Some(NamedInfo(_, targs)) => targs,
+            None => Vec.new(),
+        },
+        None => Vec.new(),
+    };
+    for (i, sub) in info.args.iter().enumerate() {
+        match positions {
+            Some(items) if i < items.len() => {
+                let src_vars: Vec[TypeVar] = Vec.new();
+                for p in items[i].iter() {
+                    if p < targs.len() {
+                        src_vars.extend(ty_vars(targs[p].clone()));
+                    }
+                }
+                ctx.unify(ctx.nodes(src_vars), ctx.nodes(opt_ty_vars(sub.ty.clone())));
+            }
+            _ => {}
+        }
+        flow(sub.clone(), ctx);
+    }
+}
+
+// A static call. Constructors zip into the datatype pool; user-defined
+// callees are wired directly when they're in the current SCC (introducing
+// the cycles the union-find closes) or by instantiating their finished
+// profile when they're not; extern/builtin callees get a conservative
+// everything-connects model.
+fn function_call_edges(ctx: FlowCtx, info: E.FunctionCallInfo, expr_ty: Option[TypeDef], out: Vec[FlowNode]) {
+    flow(info.args, ctx);
+    match info.kind {
+        E.FunctionKind.StructCtor => ctor_edges(ctx, info.qname, info.args, expr_ty),
+        E.FunctionKind.VariantCtor => ctor_edges(ctx, info.qname, info.args, expr_ty),
+        E.FunctionKind.Extern(_) => conservative_call(ctx, info.args, out),
+        E.FunctionKind.Builtin => {
+            if info.qname.base() == B.get_resume_qn().base() {
+                resume_edges(ctx, info.args, expr_ty, out);
+            } else {
+                conservative_call(ctx, info.args, out);
+            }
+        }
+        E.FunctionKind.UserDefined => {
+            match ctx.program.functions.get(info.qname) {
+                None => conservative_call(ctx, info.args, out),
+                Some(callee) => {
+                    // output correspondence: plain calls map the callee's
+                    // result type onto the call expr; co-create calls map
+                    // yield/result onto the two halves of the Co type
+                    let out_pairs: Vec[(Vec[TypeVar], Vec[FlowNode])] = Vec.new();
+                    let co_ty = match expr_ty {
+                        Some(TypeDef.Co(CoroutineInfo(y, r))) if info.is_coroutine_create => Some((y, r)),
+                        _ => None,
+                    };
+                    match co_ty {
+                        Some((y, r)) => {
+                            out_pairs.push((opt_ty_vars(callee.yield_type.clone()), ctx.nodes(ty_vars(y))));
+                            out_pairs.push((opt_ty_vars(callee.result_type.clone()), ctx.nodes(ty_vars(r))));
+                        }
+                        None => {
+                            out_pairs.push((opt_ty_vars(callee.result_type.clone()), out.clone()));
+                        }
+                    }
+
+                    if ctx.scc_members.contains(info.qname) {
+                        // direct wiring onto the callee's real signature vars
+                        for (i, arg) in info.args.iter().enumerate() {
+                            if i < callee.args.len() {
+                                ctx.unify(ctx.nodes(evars(arg)), ctx.nodes_for(info.qname, ty_vars(callee.args[i].type_def.clone())));
+                            }
+                        }
+                        for (callee_vars, caller_nodes) in out_pairs {
+                            ctx.unify(ctx.nodes_for(info.qname, callee_vars), caller_nodes);
+                        }
+                    } else {
+                        match ctx.profiles.get(info.qname) {
+                            Some(profile) => instantiate_profile(ctx, profile, callee, info.args, out_pairs),
+                            None => conservative_call(ctx, info.args, out),
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn conservative_call(ctx: FlowCtx, args: Vec[E.Expr], out: Vec[FlowNode]) {
+    let arg_vars: Vec[TypeVar] = Vec.new();
+    for a in args.iter() {
+        arg_vars.extend(evars(a));
+    }
+    ctx.unify(ctx.nodes(arg_vars), out);
+}
+
+fn ctor_edges(ctx: FlowCtx, owner: QualifiedName, args: Vec[E.Expr], expr_ty: Option[TypeDef]) {
+    let positions = match ctx.tables.struct_fields.get(owner) {
+        Some(fields) => Some(fields),
+        None => ctx.tables.variant_items.get(owner),
+    };
+    let targs = match expr_ty {
+        Some(t) => match peel_named(t) {
+            Some(NamedInfo(_, targs)) => targs,
+            None => Vec.new(),
+        },
+        None => Vec.new(),
+    };
+    for (i, arg) in args.iter().enumerate() {
+        match positions {
+            Some(items) if i < items.len() => {
+                let dst_vars: Vec[TypeVar] = Vec.new();
+                for p in items[i].iter() {
+                    if p < targs.len() {
+                        dst_vars.extend(ty_vars(targs[p].clone()));
+                    }
+                }
+                ctx.unify(ctx.nodes(evars(arg)), ctx.nodes(dst_vars));
+            }
+            _ => {}
+        }
+    }
+}
+
+// resume(co: co(Y) -> R) -> CoResult[Y, R] is, from a data-flow standpoint,
+// a constructor: the CoResult's Yielded payload is the Co's yield half and
+// its Returned payload is the return half. Wiring the two halves through
+// the variant slot table keeps yield-content and return-content separate —
+// no conservative merging.
+fn resume_edges(ctx: FlowCtx, args: Vec[E.Expr], expr_ty: Option[TypeDef], out: Vec[FlowNode]) {
+    let co_info = if args.is_empty() {
+        None
+    } else {
+        match args[0].ty.clone() {
+            Some(TypeDef.Co(info)) => Some(info),
+            _ => None,
+        }
+    };
+    let named = match expr_ty {
+        Some(t) => peel_named(t),
+        None => None,
+    };
+    match (co_info, named) {
+        (Some(CoroutineInfo(y, r)), Some(NamedInfo(name, targs))) => {
+            match ctx.program.enums.get(name.resolved()) {
+                Some(edef) => {
+                    for variant in edef.variants.iter() {
+                        let vq = variant.qualified_name.unwrap();
+                        let half = if vq.base() == B.get_co_result_yielded_qn().base() {
+                            Some(y.clone())
+                        } else if vq.base() == B.get_co_result_returned_qn().base() {
+                            Some(r.clone())
+                        } else {
+                            None
+                        };
+                        if let Some(half_ty) = half {
+                            match ctx.tables.variant_items.get(vq) {
+                                Some(items) if !items.is_empty() => {
+                                    let dst_vars: Vec[TypeVar] = Vec.new();
+                                    for p in items[0].iter() {
+                                        if p < targs.len() {
+                                            dst_vars.extend(ty_vars(targs[p].clone()));
+                                        }
+                                    }
+                                    ctx.unify(ctx.nodes(ty_vars(half_ty)), ctx.nodes(dst_vars));
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+                None => conservative_call(ctx, args, out),
+            }
+        }
+        _ => conservative_call(ctx, args, out),
+    }
+}
+
+// Instantiate a finished (cross-SCC) profile at a call site: build the
+// substitution from the callee's boundary vars to the caller-side nodes
+// they correspond to, then replay the profile's equivalence groups through
+// it — unify the caller nodes of each group and seed its lambdas. This is
+// what keeps unrelated call sites of the same callee separated.
+fn instantiate_profile(ctx: FlowCtx, profile: Profile, callee: FunctionDef, args: Vec[E.Expr], out_pairs: Vec[(Vec[TypeVar], Vec[FlowNode])]) {
+    let subst: Map[TypeVar, FlowNode] = Map.new();
+    for (i, arg) in args.iter().enumerate() {
+        if i < callee.args.len() {
+            fill_subst(subst, ty_vars(callee.args[i].type_def.clone()), ctx.nodes(evars(arg)));
+        }
+    }
+    for (callee_vars, caller_nodes) in out_pairs {
+        fill_subst(subst, callee_vars, caller_nodes);
+    }
+    for group in profile.groups.iter() {
+        let caller_nodes: Vec[FlowNode] = group.vars.iter().filter_map(|v| subst.get(v)).collect();
+        if caller_nodes.is_empty() {
+            continue;
+        }
+        let first = caller_nodes[0].clone();
+        for i in 1..caller_nodes.len() {
+            ctx.uf.union(first.clone(), caller_nodes[i].clone());
+        }
+        for l in group.lambdas.iter() {
+            ctx.add_seed(first.clone(), l);
+        }
+    }
+    // residual applies/creations of the callee are not yet re-instantiated
+    // at call sites; concrete resolution (Phase C) is responsible for them
+}
+
+fn fill_subst(subst: Map[TypeVar, FlowNode], callee_vars: Vec[TypeVar], caller_nodes: Vec[FlowNode]) {
+    let n = callee_vars.len().min(caller_nodes.len());
+    for i in 0..n {
+        subst.insert(callee_vars[i].clone(), caller_nodes[i].clone());
+    }
+}
+
+// ── @closure_alias ───────────────────────────────────────────────────────────
+// Signature types that are structurally identical (compared with closure
+// vars erased) alias each other's closure content. For functions whose
+// bodies launder pointers through integers (offset_of), where the flow is
+// uninferable because the intermediate type has no closure slots to carry
+// the sets.
+
+trait EraseVars[T] {
+    fn erase_vars(t: T) -> T
+}
+
+instance EraseVars[Bool]          = auto(Map, =)
+instance EraseVars[Int]           = auto(Map, =)
+instance EraseVars[Name]          = auto(Map, =)
+instance EraseVars[NamedInfo]     = auto(Map)
+instance EraseVars[CoroutineInfo] = auto(Map)
+instance EraseVars[TypeDef]       = auto(Map)
+
+instance EraseVars[TypeVar] {
+    fn erase_vars(v: TypeVar) -> TypeVar {
+        TypeVar.Var(0)
+    }
+}
+
+instance EraseVars[ClosureInfo] {
+    fn erase_vars(info: ClosureInfo) -> ClosureInfo {
+        ClosureInfo(info.args, info.return_ty, None)
+    }
+}
+
+instance[T: EraseVars[T]] EraseVars[Vec[T]] {
+    fn erase_vars(vec: Vec[T]) -> Vec[T] {
+        vec.into_iter().map(|t| erase_vars(t)).collect()
+    }
+}
+
+pub fn apply_closure_alias(ctx: FlowCtx, func: FunctionDef) {
+    let sig_types: Vec[TypeDef] = func.args.iter().map(|a| a.type_def.clone()).collect();
+    if let Some(t) = func.result_type {
+        sig_types.push(t);
+    }
+    let shape_groups: Map[TypeDef, Vec[TypeDef]] = Map.new();
+    for t in sig_types {
+        let key = erase_vars(t.clone());
+        let group = shape_groups.get(key).unwrap_or(Vec.new());
+        group.push(t);
+        shape_groups.insert(key, group);
+    }
+    for (_, group) in shape_groups {
+        if group.len() < 2 {
+            continue;
+        }
+        let first = ctx.nodes(ty_vars(group[0].clone()));
+        for i in 1..group.len() {
+            ctx.unify(first.clone(), ctx.nodes(ty_vars(group[i].clone())));
+        }
+    }
+}
+
+}

@@ -55,13 +55,18 @@ pub fn gc_allocate_atomic[T](count: Int) -> *T {
     transmute(gc_malloc_atomic(count.as_u64() * sizeof(T)))
 }
 
+// closure_alias: the pointer round-trips through U64, which has no closure
+// slots, so closure flow analysis cannot see that the result aliases ptr
 @unsafe
+@closure_alias
 pub fn offset_of[T](ptr: *T, offset: Int) -> *T {
     let base: U64 = transmute(ptr);
     transmute(base + offset.as_u64() * sizeof(T))
 }
 
+// closure_alias: the write into dest happens inside memmove via void*
 @unsafe
+@closure_alias
 pub fn copy[T](dest: *T, src: *T, src_index: Int, dest_index: Int, size: Int) {
     let d = offset_of(dest, dest_index);
     let s = offset_of(src, src_index);

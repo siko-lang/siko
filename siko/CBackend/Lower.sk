@@ -100,8 +100,8 @@ struct Lowerer {
             ExprKind.StringLiteral(s) => {
                 let cname = mangle(I.resolve(B.get_string_type_qn().name()));
                 let fields: Vec[C.CFieldInit] = Vec.new();
-                fields.push(C.CFieldInit("value", C.CExpr.Cast(C.CType.Ptr(C.CType.Char), C.CExpr.StringLiteral(s))));
-                fields.push(C.CFieldInit("len", C.CExpr.IntLiteral("${s.len()}")));
+                fields.push(C.CFieldInit(struct_field_name(I.intern("value")), C.CExpr.Cast(C.CType.Ptr(C.CType.Char), C.CExpr.StringLiteral(s))));
+                fields.push(C.CFieldInit(struct_field_name(I.intern("len")), C.CExpr.IntLiteral("${s.len()}")));
                 C.CExpr.CompoundLiteral(cname, fields)
             }
             ExprKind.Var(name) => C.CExpr.Var(var_name(name)),
@@ -116,7 +116,7 @@ struct Lowerer {
             }
             ExprKind.FieldAccess(receiver, field) => {
                 let recv = l.lower_expr(receiver);
-                let fname = I.resolve(field.name());
+                let fname = struct_field_name(field.name());
                 if l.is_value_type_ty(receiver.ty.unwrap()) {
                     C.CExpr.FieldDot(recv, fname)
                 } else {
@@ -474,7 +474,7 @@ struct Lowerer {
             for (i, sub_pat) in sub_pats.iter().enumerate() {
                 if let PatternKind.Binding(var) = sub_pat.kind {
                     let field_ty = l.lower_type(sdef.fields[i].ty);
-                    let fname = I.resolve(sdef.fields[i].name.name());
+                    let fname = struct_field_name(sdef.fields[i].name.name());
                     body.push(C.CStmt.Decl(field_ty, var_name(var)));
                     body.push(C.CStmt.Assign(C.CExpr.Var(var_name(var)), C.CExpr.FieldArrow(l.lower_expr(scrutinee), fname)));
                 }
@@ -505,7 +505,7 @@ struct Lowerer {
             }
             let fields: Vec[C.CField] = Vec.new();
             for field in sdef.fields.iter() {
-                fields.push(C.CField(l.lower_type(field.ty), I.resolve(field.name.name())));
+                fields.push(C.CField(l.lower_type(field.ty), struct_field_name(field.name.name())));
             }
             defs.push(C.CStructDef(mangle(qname.hashed()), fields, sdef.is_packed(), Some(I.resolve(qname.name()))));
         }
@@ -572,25 +572,25 @@ struct Lowerer {
         let is_vt = l.is_value_type(sdef.qualified_name.unwrap());
         let params: Vec[C.CFnParam] = Vec.new();
         for field in sdef.fields.iter() {
-            params.push(C.CFnParam(l.lower_type(field.ty), I.resolve(field.name.name())));
+            params.push(C.CFnParam(l.lower_type(field.ty), struct_field_name(field.name.name())));
         }
         let body: Vec[C.CStmt] = Vec.new();
         if is_vt {
-            // struct cname result; result.f = f; ...; return result;
+            // struct cname result; result.f_x = f_x; ...; return result;
             body.push(C.CStmt.Decl(C.CType.Named(cname), "result"));
             for field in sdef.fields.iter() {
-                let fname = I.resolve(field.name.name());
+                let fname = struct_field_name(field.name.name());
                 body.push(C.CStmt.Assign(C.CExpr.FieldDot(C.CExpr.Var("result"), fname), C.CExpr.Var(fname)));
             }
             body.push(C.CStmt.Return(C.CExpr.Var("result")));
             C.CFnDef(C.CFnSig(C.CType.Named(cname), "ctor_${cname}", params, False, False), body, Some(I.resolve(sdef.qualified_name.unwrap().name())))
         } else {
             // struct cname* result = siko_malloc(sizeof(struct cname));
-            // result->f = f; ...; return result;
+            // result->f_x = f_x; ...; return result;
             body.push(C.CStmt.Decl(C.CType.Ptr(C.CType.Named(cname)), "result"));
             body.push(l.malloc_assign("result", cname));
             for field in sdef.fields.iter() {
-                let fname = I.resolve(field.name.name());
+                let fname = struct_field_name(field.name.name());
                 body.push(C.CStmt.Assign(C.CExpr.FieldArrow(C.CExpr.Var("result"), fname), C.CExpr.Var(fname)));
             }
             body.push(C.CStmt.Return(C.CExpr.Var("result")));

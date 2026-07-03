@@ -1,0 +1,175 @@
+module Siko.ClosureMerge.GeneralizeFunctions {
+
+import Std.Map
+import Siko.AST.Annotations
+import Siko.AST.Expr
+import Siko.AST.Function
+import Siko.AST.Generics
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.Pattern
+import Siko.AST.QualifiedName
+import Siko.AST.Statement as S
+import Siko.AST.Type
+import Siko.HIR.Program
+import Siko.Interner as I
+import Siko.Location
+import Siko.Package.Collector as PC
+import Siko.Utils.TypeVarAllocator
+import Siko.Utils.VarAllocator
+
+// Variable numbering is scoped per function, like ordinary generics: two
+// functions both using ?0 refer to different variables. `arities` records
+// how many closure infer vars each datatype was given by
+// GeneralizeDataTypes, so datatype references in function-land types can be
+// instantiated with the matching number of fresh vars.
+struct Generalizer {
+    alloc: TypeVarAllocator,
+    arities: Map[QualifiedName, Int],
+
+    fn allocate_var(g: Generalizer) -> TypeVar {
+        TypeVar.Named(g.alloc.allocate_name())
+    }
+}
+
+// ── Generalize trait ────────────────────────────────────────────────────────
+// Runs after GeneralizeDataTypes: every type occurrence in a function —
+// argument types, result/yield types, and the types annotated on every
+// expression and pattern in the body — gets its closure slots tagged with
+// fresh vars. The same two interceptions as the datatype pass:
+//   - ClosureInfo: tags a fresh closure infer variable into
+//     closure_infer_var, without recursing into args/return_ty (those
+//     describe the closure's call signature, not separate slots).
+//   - NamedInfo: a bare reference to a generalized datatype is instantiated
+//     with fresh vars matching that datatype's arity.
+// Everything else recurses structurally via the derive; identity instances
+// mark the node types that carry no types to generalize.
+
+trait Generalize[T] {
+    fn generalize(t: T, ctx: Generalizer) -> T
+}
+
+instance Generalize[Bool]                = auto(Map, =)
+instance Generalize[Int]                 = auto(Map, =)
+instance Generalize[U8]                  = auto(Map, =)
+instance Generalize[String]              = auto(Map, =)
+instance Generalize[I.String]            = auto(Map, =)
+instance Generalize[Location]            = auto(Map, =)
+instance Generalize[Name]                = auto(Map, =)
+instance Generalize[TypeVar]             = auto(Map, =)
+instance Generalize[Identifier]          = auto(Map, =)
+instance Generalize[QualifiedName]       = auto(Map, =)
+instance Generalize[VariableName]        = auto(Map, =)
+instance Generalize[FunctionKind]        = auto(Map, =)
+instance Generalize[FunctionDefKind]     = auto(Map, =)
+instance Generalize[BinaryOp]            = auto(Map, =)
+instance Generalize[UnaryOp]             = auto(Map, =)
+instance Generalize[WitnessInfo]         = auto(Map, =)
+instance Generalize[HandlerSelection]    = auto(Map, =)
+instance Generalize[ImplicitRefInfo]     = auto(Map, =)
+instance Generalize[CreateClosureInfo]   = auto(Map, =)
+instance Generalize[FunctionPtrInfo]     = auto(Map, =)
+instance Generalize[LambdaArg]           = auto(Map, =)
+instance Generalize[NamedArgument]       = auto(Map, =)
+instance Generalize[NamedPatternArg]     = auto(Map, =)
+instance Generalize[Annotation]          = auto(Map, =)
+instance Generalize[TypeArgDefs]         = auto(Map, =)
+instance Generalize[DefaultValueInfo]    = auto(Map, =)
+instance Generalize[VarAllocator]        = auto(Map, =)
+instance Generalize[PC.SourcePackage]    = auto(Map, =)
+instance Generalize[TypeAssociatedCallInfo] = auto(Map, !)
+
+instance Generalize[CoroutineInfo]       = auto(Map)
+instance Generalize[TypeDef]             = auto(Map)
+instance Generalize[FunctionArg]         = auto(Map)
+instance Generalize[FunctionDef]         = auto(Map)
+instance Generalize[Expr]                = auto(Map)
+instance Generalize[ExprKind]            = auto(Map)
+instance Generalize[Pattern]             = auto(Map)
+instance Generalize[PatternKind]         = auto(Map)
+instance Generalize[NamedPatternInfo]    = auto(Map)
+instance Generalize[S.Statement]         = auto(Map)
+instance Generalize[S.LetInfo]           = auto(Map)
+instance Generalize[S.DeclareInfo]       = auto(Map)
+instance Generalize[BlockInfo]           = auto(Map)
+instance Generalize[MatchInfo]           = auto(Map)
+instance Generalize[MatchArm]            = auto(Map)
+instance Generalize[YieldInfo]           = auto(Map)
+instance Generalize[FunctionCallInfo]    = auto(Map)
+instance Generalize[CallInfo]            = auto(Map)
+instance Generalize[MethodCallInfo]      = auto(Map)
+instance Generalize[WithInfo]            = auto(Map)
+
+instance Generalize[ClosureInfo] {
+    fn generalize(info: ClosureInfo, ctx: Generalizer) -> ClosureInfo {
+        let ClosureInfo(args, ret, existing_var) = info;
+        if existing_var.is_some() {
+            return ClosureInfo(args, ret, existing_var);
+        }
+        ClosureInfo(args, ret, Some(ctx.allocate_var()))
+    }
+}
+
+instance Generalize[NamedInfo] {
+    fn generalize(info: NamedInfo, ctx: Generalizer) -> NamedInfo {
+        let NamedInfo(name, args) = info;
+        if !args.is_empty() {
+            return NamedInfo(name, args);
+        }
+        let arity = ctx.arities.get(name.resolved()).unwrap_or(0);
+        let fresh: Vec[TypeDef] = Vec.new();
+        for _ in 0..arity {
+            fresh.push(TypeDef.Var(ctx.allocate_var()));
+        }
+        NamedInfo(name, fresh)
+    }
+}
+
+instance[T: Generalize[T]] Generalize[Vec[T]] {
+    fn generalize(vec: Vec[T], ctx: Generalizer) -> Vec[T] {
+        vec.into_iter().map(|t| generalize(t, ctx)).collect()
+    }
+}
+
+instance[T: Generalize[T]] Generalize[Option[T]] {
+    fn generalize(opt: Option[T], ctx: Generalizer) -> Option[T] {
+        opt.map(|t| generalize(t, ctx))
+    }
+}
+
+// Number of closure infer vars each generalized datatype carries, read back
+// from the type_arg_defs that GeneralizeDataTypes published.
+pub fn datatype_arities(program: Program) -> Map[QualifiedName, Int] {
+    let arities: Map[QualifiedName, Int] = Map.new();
+    for (qname, sdef) in program.structs.iter() {
+        let n = match sdef.type_arg_defs {
+            Some(tad) => tad.type_args.len(),
+            None => 0,
+        };
+        arities.insert(qname, n);
+    }
+    for (qname, edef) in program.enums.iter() {
+        let n = match edef.type_arg_defs {
+            Some(tad) => tad.type_args.len(),
+            None => 0,
+        };
+        arities.insert(qname, n);
+    }
+    arities
+}
+
+// Tag every closure slot in every function's signature and body types with a
+// fresh closure infer variable. Runs after generalize_datatypes on the same
+// program. Mutates `program` in place.
+pub fn generalize_functions(program: Program) {
+    let ctx = Generalizer(TypeVarAllocator.new(), datatype_arities(program));
+
+    let keys: Vec[QualifiedName] = program.functions.keys().cloned().collect();
+    for key in keys {
+        let func = program.functions.remove(key).unwrap();
+        ctx.alloc = TypeVarAllocator.new();
+        program.functions.insert(key, generalize(func, ctx));
+    }
+}
+
+}

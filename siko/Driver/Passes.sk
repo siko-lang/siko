@@ -21,6 +21,9 @@ import Siko.LowerTuples
 import Siko.LowerBuiltins
 import Siko.ClosureLowering
 import Siko.ClosureMerge.GeneralizeDataTypes as ClosureMergeGeneralizeDataTypes
+import Siko.ClosureMerge.GeneralizeFunctions as ClosureMergeGeneralizeFunctions
+import Siko.ClosureMerge.InferProfiles as ClosureMergeInferProfiles
+import Siko.ClosureMerge.InferProfiles.Debug as ClosureMergeDebug
 import Siko.CoroutineLowering
 import Siko.CBackend.Lower as CBackend
 import Siko.CBackend.MiniC.Format as MiniC
@@ -258,12 +261,15 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
     if !config.check_only && config.debug_closure {
         lowering_passes.insert(4, Pass(
             name: "closure-merge-debug",
-            label: "Closure merge (Phase A: datatype variablization)...",
+            label: "Closure merge (debug)...",
             run: |driver| {
                 let cloned = driver.program.clone();
                 ClosureMergeGeneralizeDataTypes.generalize_datatypes(cloned);
-                println("=== ClosureMerge Phase A: generalized program ===");
+                ClosureMergeGeneralizeFunctions.generalize_functions(cloned);
+                println("=== ClosureMerge: generalized program ===");
                 println(cloned.format());
+                let profiles = ClosureMergeInferProfiles.infer_profiles(cloned);
+                ClosureMergeDebug.dump_profiles(cloned, profiles);
             },
             dump: Some(|driver| println(driver.program.format())),
         ));
