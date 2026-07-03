@@ -1,0 +1,247 @@
+module Siko.Monomorphizer.Statistics {
+
+import Siko.Config
+import Std.Time
+
+fn statistics_start(starts: Vec[Instant]) {
+    if get_config().debug_mono_stats {
+        starts.push(Instant.now());
+    }
+}
+
+fn statistics_elapsed(starts: Vec[Instant]) -> Option[Duration] {
+    if !get_config().debug_mono_stats {
+        return None;
+    }
+    match starts.pop() {
+        Some(start) => Some(start.elapsed()),
+        None => None,
+    }
+}
+
+fn format_microseconds_as_millis(us: I64) -> String {
+    let ms = us / 1000.as_i64();
+    let frac = (us % 1000.as_i64()).as_int().to_string();
+    while frac.len() < 3 {
+        frac = "0" + frac;
+    }
+    "${ms}.${frac}ms"
+}
+
+fn format_duration(total: Duration) -> String {
+    format_microseconds_as_millis(total.to_microseconds())
+}
+
+fn format_average_duration(total: Duration, count: Int) -> String {
+    if count == 0 {
+        return "0.000ms";
+    }
+    format_microseconds_as_millis(total.to_microseconds() / count.as_i64())
+}
+
+fn print_stat(name: String, count: Int, total: Duration) {
+    println("  ${name}: calls=${count}, exec_total=${format_duration(total)}, exec_avg=${format_average_duration(total, count)}");
+}
+
+pub struct Statistics {
+    pub fn_mono_key: Int,
+    pub fn_mono_key_exec_time: Duration,
+    fn_mono_key_starts: Vec[Instant],
+    pub data_mono_key: Int,
+    pub data_mono_key_exec_time: Duration,
+    data_mono_key_starts: Vec[Instant],
+    pub dispatch_trait_call: Int,
+    pub dispatch_trait_call_exec_time: Duration,
+    dispatch_trait_call_starts: Vec[Instant],
+    pub process_user_defined_fn: Int,
+    pub process_user_defined_fn_exec_time: Duration,
+    process_user_defined_fn_starts: Vec[Instant],
+    pub process_struct_ctor: Int,
+    pub process_struct_ctor_exec_time: Duration,
+    process_struct_ctor_starts: Vec[Instant],
+    pub process_variant_ctor: Int,
+    pub process_variant_ctor_exec_time: Duration,
+    process_variant_ctor_starts: Vec[Instant],
+    pub process_extern_fn: Int,
+    pub process_extern_fn_exec_time: Duration,
+    process_extern_fn_starts: Vec[Instant],
+    pub process_type_associated_call: Int,
+    pub process_type_associated_call_exec_time: Duration,
+    process_type_associated_call_starts: Vec[Instant],
+    pub process_builtin_fn: Int,
+    pub process_builtin_fn_exec_time: Duration,
+    process_builtin_fn_starts: Vec[Instant],
+
+    pub fn new() -> Statistics {
+        Statistics(
+            fn_mono_key: 0,
+            fn_mono_key_exec_time: Duration.zero(),
+            fn_mono_key_starts: Vec.new(),
+            data_mono_key: 0,
+            data_mono_key_exec_time: Duration.zero(),
+            data_mono_key_starts: Vec.new(),
+            dispatch_trait_call: 0,
+            dispatch_trait_call_exec_time: Duration.zero(),
+            dispatch_trait_call_starts: Vec.new(),
+            process_user_defined_fn: 0,
+            process_user_defined_fn_exec_time: Duration.zero(),
+            process_user_defined_fn_starts: Vec.new(),
+            process_struct_ctor: 0,
+            process_struct_ctor_exec_time: Duration.zero(),
+            process_struct_ctor_starts: Vec.new(),
+            process_variant_ctor: 0,
+            process_variant_ctor_exec_time: Duration.zero(),
+            process_variant_ctor_starts: Vec.new(),
+            process_extern_fn: 0,
+            process_extern_fn_exec_time: Duration.zero(),
+            process_extern_fn_starts: Vec.new(),
+            process_type_associated_call: 0,
+            process_type_associated_call_exec_time: Duration.zero(),
+            process_type_associated_call_starts: Vec.new(),
+            process_builtin_fn: 0,
+            process_builtin_fn_exec_time: Duration.zero(),
+            process_builtin_fn_starts: Vec.new(),
+        )
+    }
+
+    pub fn fn_mono_key_start(stats: Statistics) {
+        statistics_start(stats.fn_mono_key_starts);
+    }
+
+    pub fn fn_mono_key_end(stats: Statistics) {
+        match statistics_elapsed(stats.fn_mono_key_starts) {
+            Some(elapsed) => {
+                stats.fn_mono_key += 1;
+                stats.fn_mono_key_exec_time += elapsed;
+            }
+            None => {}
+        }
+    }
+
+    pub fn data_mono_key_start(stats: Statistics) {
+        statistics_start(stats.data_mono_key_starts);
+    }
+
+    pub fn data_mono_key_end(stats: Statistics) {
+        match statistics_elapsed(stats.data_mono_key_starts) {
+            Some(elapsed) => {
+                stats.data_mono_key += 1;
+                stats.data_mono_key_exec_time += elapsed;
+            }
+            None => {}
+        }
+    }
+
+    pub fn dispatch_trait_call_start(stats: Statistics) {
+        statistics_start(stats.dispatch_trait_call_starts);
+    }
+
+    pub fn dispatch_trait_call_end(stats: Statistics) {
+        match statistics_elapsed(stats.dispatch_trait_call_starts) {
+            Some(elapsed) => {
+                stats.dispatch_trait_call += 1;
+                stats.dispatch_trait_call_exec_time += elapsed;
+            }
+            None => {}
+        }
+    }
+
+    pub fn process_user_defined_fn_start(stats: Statistics) {
+        statistics_start(stats.process_user_defined_fn_starts);
+    }
+
+    pub fn process_user_defined_fn_end(stats: Statistics) {
+        match statistics_elapsed(stats.process_user_defined_fn_starts) {
+            Some(elapsed) => {
+                stats.process_user_defined_fn += 1;
+                stats.process_user_defined_fn_exec_time += elapsed;
+            }
+            None => {}
+        }
+    }
+
+    pub fn process_struct_ctor_start(stats: Statistics) {
+        statistics_start(stats.process_struct_ctor_starts);
+    }
+
+    pub fn process_struct_ctor_end(stats: Statistics) {
+        match statistics_elapsed(stats.process_struct_ctor_starts) {
+            Some(elapsed) => {
+                stats.process_struct_ctor += 1;
+                stats.process_struct_ctor_exec_time += elapsed;
+            }
+            None => {}
+        }
+    }
+
+    pub fn process_variant_ctor_start(stats: Statistics) {
+        statistics_start(stats.process_variant_ctor_starts);
+    }
+
+    pub fn process_variant_ctor_end(stats: Statistics) {
+        match statistics_elapsed(stats.process_variant_ctor_starts) {
+            Some(elapsed) => {
+                stats.process_variant_ctor += 1;
+                stats.process_variant_ctor_exec_time += elapsed;
+            }
+            None => {}
+        }
+    }
+
+    pub fn process_extern_fn_start(stats: Statistics) {
+        statistics_start(stats.process_extern_fn_starts);
+    }
+
+    pub fn process_extern_fn_end(stats: Statistics) {
+        match statistics_elapsed(stats.process_extern_fn_starts) {
+            Some(elapsed) => {
+                stats.process_extern_fn += 1;
+                stats.process_extern_fn_exec_time += elapsed;
+            }
+            None => {}
+        }
+    }
+
+    pub fn process_type_associated_call_start(stats: Statistics) {
+        statistics_start(stats.process_type_associated_call_starts);
+    }
+
+    pub fn process_type_associated_call_end(stats: Statistics) {
+        match statistics_elapsed(stats.process_type_associated_call_starts) {
+            Some(elapsed) => {
+                stats.process_type_associated_call += 1;
+                stats.process_type_associated_call_exec_time += elapsed;
+            }
+            None => {}
+        }
+    }
+
+    pub fn process_builtin_fn_start(stats: Statistics) {
+        statistics_start(stats.process_builtin_fn_starts);
+    }
+
+    pub fn process_builtin_fn_end(stats: Statistics) {
+        match statistics_elapsed(stats.process_builtin_fn_starts) {
+            Some(elapsed) => {
+                stats.process_builtin_fn += 1;
+                stats.process_builtin_fn_exec_time += elapsed;
+            }
+            None => {}
+        }
+    }
+
+    pub fn print(stats: Statistics) {
+        println("Monomorphizer statistics:");
+        print_stat("fn_mono_key", stats.fn_mono_key, stats.fn_mono_key_exec_time);
+        print_stat("data_mono_key", stats.data_mono_key, stats.data_mono_key_exec_time);
+        print_stat("dispatch_trait_call", stats.dispatch_trait_call, stats.dispatch_trait_call_exec_time);
+        print_stat("process_user_defined_fn", stats.process_user_defined_fn, stats.process_user_defined_fn_exec_time);
+        print_stat("process_struct_ctor", stats.process_struct_ctor, stats.process_struct_ctor_exec_time);
+        print_stat("process_variant_ctor", stats.process_variant_ctor, stats.process_variant_ctor_exec_time);
+        print_stat("process_extern_fn", stats.process_extern_fn, stats.process_extern_fn_exec_time);
+        print_stat("process_type_associated_call", stats.process_type_associated_call, stats.process_type_associated_call_exec_time);
+        print_stat("process_builtin_fn", stats.process_builtin_fn, stats.process_builtin_fn_exec_time);
+    }
+}
+
+}

@@ -16,6 +16,7 @@ pub fn dispatch_trait_call(
     result_type: Option[TypeDef],
     mono: Monomorphizer,
 ) -> (QualifiedName, Vec[TypeDef]) {
+    mono.statistics.dispatch_trait_call_start();
     let (
         generic_params,
         param_types,
@@ -83,7 +84,7 @@ pub fn dispatch_trait_call(
     };
     let concrete_method = QualifiedName.new_method(instance_qname.name(), method_name);
 
-    match mono.source.functions.get(concrete_method) {
+    let result = match mono.source.functions.get(concrete_method) {
         Some(mf) => {
             let method_type_args = match mf.type_arg_defs {
                 Some(method_tad) => {
@@ -120,8 +121,9 @@ pub fn dispatch_trait_call(
                 panic("mono: instance `${I.resolve(instance_qname.name())}` is missing required method `${method_name}` — should have been caught by instance checker")
             }
         }
-    }
+    };
+    mono.statistics.dispatch_trait_call_end();
+    result
 }
 
 }
-

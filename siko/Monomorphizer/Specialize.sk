@@ -136,6 +136,7 @@ instance Specialize[FunctionPtrInfo] {
         let implicit_ctx = if is_extern || is_c_callback { ImplicitCtx.new() } else { mono.current_implicit_ctx.clone() };
         let effect_associated_type_ctx = if is_extern { EffectAssociatedTypeCtx.new() } else { mono.current_effect_associated_type_ctx.clone() };
         let mono_key = fn_mono_key(
+            mono,
             info.name,
             callee_type_args,
             callee_witnesses,
@@ -169,6 +170,7 @@ instance Specialize[CreateClosureInfo] {
             .map(|w| mono.resolve_witness(w))
             .collect();
         let mono_callee = fn_mono_key(
+            mono,
             info.name,
             callee_type_args,
             callee_witnesses,

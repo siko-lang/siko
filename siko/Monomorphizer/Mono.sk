@@ -5,6 +5,7 @@ import Siko.Monomorphizer.Function
 import Siko.Monomorphizer.Data
 import Siko.Monomorphizer.Specialize
 import Siko.Monomorphizer.DataPreprocessor
+import Siko.Monomorphizer.Statistics
 import Siko.AST.Type
 import Siko.AST.QualifiedName
 import Siko.Constants.Builtins as B
@@ -15,6 +16,7 @@ import Siko.Instances.InstanceResolver
 import Siko.Instances.FunctionInstanceResolver
 import Siko.Unification.Sub
 import Siko.Unification.Apply
+import Siko.Config
 import Std.Map
 import Std.Set
 import Std.VecDeque
@@ -88,6 +90,7 @@ pub struct FnWork {
 }
 
 pub fn fn_mono_key(
+    mono: Monomorphizer,
     base: QualifiedName,
     type_args: Vec[TypeDef],
     witnesses: Vec[ResolvedWitness],
@@ -95,6 +98,7 @@ pub fn fn_mono_key(
     effect_associated_type_ctx: EffectAssociatedTypeCtx,
     implicit_ctx: ImplicitCtx,
 ) -> QualifiedName {
+    mono.statistics.fn_mono_key_start();
     for ty in type_args {
         if ty.is_mono(False) {
             println("Mono type in fn_mono_key args ${format_types(type_args)}");
@@ -108,10 +112,12 @@ pub fn fn_mono_key(
         effect_ctx.resolution.clone(),
         effect_associated_type_ctx.resolution.clone(),
         implicit_list);
-    base.as_mono(
+    let result = base.as_mono(
         type_args.clone(),
         ctx,
-    )
+    );
+    mono.statistics.fn_mono_key_end();
+    result
 }
 
 
@@ -136,6 +142,7 @@ pub struct Monomorphizer {
     pub current_location: Option[Location],
     pub current_expr_ty: Option[TypeDef],
     pub data_eat_deps: DataEATDeps,
+    pub statistics: Statistics,
 
     fn new(source: Program, instance_resolver: InstanceResolver) -> Monomorphizer {
         Monomorphizer(
@@ -159,10 +166,12 @@ pub struct Monomorphizer {
             current_location: None,
             current_expr_ty: None,
             data_eat_deps: DataEATDeps.new(),
+            statistics: Statistics.new(),
         )
     }
 
     pub fn data_mono_key(mono: Monomorphizer, base: QualifiedName, type_args: Vec[TypeDef], eat_ctx: EffectAssociatedTypeCtx) -> QualifiedName {
+        mono.statistics.data_mono_key_start();
         for ty in type_args {
             if ty.is_mono(False) {
                 println("Mono type in data_mono_key args ${format_types(type_args)}");
@@ -183,7 +192,9 @@ pub struct Monomorphizer {
             .map(|(k, v)| (k, v))
             .collect();
         let ctx = MonoContext([], Map.new(), filtered, []);
-        base.as_mono(type_args.clone(), ctx)
+        let result = base.as_mono(type_args.clone(), ctx);
+        mono.statistics.data_mono_key_end();
+        result
     }
 
     pub fn enqueue_named_types(mono: Monomorphizer, name: QualifiedName, args: Vec[TypeDef]) {
@@ -259,6 +270,7 @@ pub struct Monomorphizer {
         loop {
             if let Some(work) = mono.fn_queue.pop_front() {
                 let mono_name = fn_mono_key(
+                    mono,
                     work.qname,
                     work.type_args,
                     work.witnesses,
@@ -291,6 +303,9 @@ pub struct Monomorphizer {
             } else {
                 break;
             }
+        }
+        if get_config().debug_mono_stats {
+            mono.statistics.print();
         }
     }
 }
@@ -354,4 +369,3 @@ pub fn get_mono_variant_qn(enum_qn: QualifiedName, variant_qn: QualifiedName) ->
 }
 
 }
-
