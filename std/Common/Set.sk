@@ -73,6 +73,26 @@ instance[T: Ord[T]] Clone[Set[T]] {
     }
 }
 
+instance[T: Ord[T]] PartialEq[Set[T]] {
+    fn eq(a: Set[T], b: Set[T]) -> Bool {
+        a.values == b.values
+    }
+}
+
+instance[T: Ord[T]] Eq[Set[T]] {}
+
+instance[T: Ord[T]] PartialOrd[Set[T]] {
+    fn partial_cmp(a: Set[T], b: Set[T]) -> Option[Ordering] {
+        Some(a.cmp(b))
+    }
+}
+
+instance[T: Ord[T]] Ord[Set[T]] {
+    fn cmp(a: Set[T], b: Set[T]) -> Ordering {
+        a.values.cmp(b.values)
+    }
+}
+
 instance[T: Ord[T]] FromIterator[Set[T]] {
     type Item = T
     fn from_iter[I: Iterator[I, Item=T]](iter: I) -> Set[T] {
