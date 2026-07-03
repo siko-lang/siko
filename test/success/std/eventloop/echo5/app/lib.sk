@@ -3,6 +3,8 @@ module App {
 import Std.IO.Buffered as Buffered
 import Std.Effects.Network
 import Std.Effects.Spawn
+import Std.Effects.Sleep
+import Std.Time as Time
 
 pub fn handler(conn: Socket) {
     let reader = Buffered.Reader.new(conn, 1024);
@@ -45,11 +47,25 @@ pub fn server(port: U16) {
     spawn(|_| handler(conn));
 }
 
+fn connect_with_retry(host: String, port: U16) -> Socket {
+    let max_attempts = 100;
+    for attempt in 0..max_attempts {
+        match connect(host, port) {
+            Ok(s) => return s,
+            Err(e) => {
+                if e.is_econnrefused() {
+                    sleep(Time.milliseconds(10));
+                } else {
+                    panic("connect error: ${e}");
+                }
+            }
+        }
+    }
+    panic("connect failed after ${max_attempts} attempts: connection refused");
+}
+
 pub fn client(port: U16) {
-    let stream = match connect("127.0.0.1", port) {
-        Ok(s) => s,
-        Err(e) => panic("connect error: ${e}"),
-    };
+    let stream = connect_with_retry("127.0.0.1", port);
     let reader = Buffered.Reader.new(stream, 1024);
     let writer = Buffered.Writer.new(stream);
     for i in 0..3 {

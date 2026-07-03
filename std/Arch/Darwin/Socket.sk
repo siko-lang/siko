@@ -1,11 +1,15 @@
-module Std.Arch.SockaddrIn {
+module Std.Arch.Socket {
 
 import Std.Array
 import Std.Libc.Socket
 
+pub let SOL_SOCKET   : I32 = 0xffff.as_i32();
+pub let SO_REUSEADDR : I32 = 4.as_i32();
+
 @value_type
 pub struct SockaddrIn {
-    pub sin_family: U16,
+    pub sin_len: U8,
+    pub sin_family: U8,
     pub sin_port: U16,
     pub sin_addr: InAddr,
     pub sin_zero: [U8; 8],
@@ -14,7 +18,8 @@ pub struct SockaddrIn {
     pub fn new(family: Domain, port: U16, addr: U32) -> SockaddrIn {
         let sinPort = htons(port);
         let sockaddr_in = SockaddrIn(
-            sin_family: family.code().as_int().as_u16(),
+            sin_len: sizeof(SockaddrIn).as_int().as_u8(),
+            sin_family: family.code().as_int().as_u8(),
             sin_port: sinPort,
             sin_addr: InAddr(s_addr: addr),
             sin_zero: uninitialized(),
@@ -23,9 +28,8 @@ pub struct SockaddrIn {
         sockaddr_in
     }
 
-    @safe
     pub fn len(s: SockaddrIn) -> U32 {
-        sizeof(SockaddrIn).as_int().as_u32()
+        s.sin_len.as_int().as_u32()
     }
 }
 

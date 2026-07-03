@@ -3,11 +3,12 @@ module Main {
 import App
 import Std.Effects.Network
 import Std.Effects.Spawn
+import Std.Effects.Sleep
 import Std.IO.Async.Scheduler as Async
-import Std.Time
+import Std.Time as Time
 
 fn stopper() {
-    Async.sleep(seconds(2));
+    Async.sleep(Time.seconds(2));
     Async.stop();
 }
 
@@ -16,7 +17,8 @@ fn main() {
     let s = Async.Scheduler.new();
     with Async.current = s,
          TcpNetwork = AsyncTcp,
-         Spawn = AsyncSpawn {
+         Spawn = AsyncSpawn,
+         Sleep = AsyncSleep {
         spawn(|_| server(port));
         spawn(|_| client(port));
         spawn(|_| stopper());

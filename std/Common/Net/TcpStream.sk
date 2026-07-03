@@ -6,7 +6,7 @@ import Std.IO.Writer
 import Std.IO.Closer
 import Std.Libc.FileDescriptor
 import Std.Arch.Errno
-import Std.Arch.SockaddrIn
+import Std.Arch.Socket
 import Std.Libc.Socket
 import Std.Net.Utils
 import Std.Slice
@@ -29,10 +29,13 @@ pub struct TcpStream {
         if sock < 0.as_i32() {
             return Err(Error.new(Std.Arch.Errno.get_errno()));
         }
+        let fd = FileDescriptor.new(sock);
         let sockaddr = SockaddrIn.new(Domain.AF_INET, port, addr);
         let ret = Std.Libc.Socket.connect(sock, &sockaddr, sockaddr.len().as_int().as_i32());
         if ret < 0.as_i32() {
-            return Err(Error.new(Std.Arch.Errno.get_errno()));
+            let errno = Std.Arch.Errno.get_errno();
+            fd.close();
+            return Err(Error.new(errno));
         }
         Ok(TcpStream.new(sock))
     }
@@ -51,6 +54,7 @@ pub struct TcpStream {
         if ret < 0.as_i32() {
             let errno = Std.Arch.Errno.get_errno();
             if errno != Std.Arch.Errno.Errno.EINPROGRESS {
+                s.close();
                 return Err(Error.new(errno));
             }
         }
