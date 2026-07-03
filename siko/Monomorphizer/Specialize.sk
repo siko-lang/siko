@@ -75,6 +75,7 @@ instance Specialize[ImplicitRefInfo] {
         if !mono.current_implicit_ctx.contains(info.name) {
             mono.errors.push(MonoError.UnsetImplicit(info.name.name(), mono.current_location.unwrap()));
         }
+        mono.used_implicits.insert(info.name.clone());
         info
     }
 }
@@ -221,6 +222,7 @@ instance Specialize[WithInfo] {
                 }
                 HandlerSelection.Implicit(implicit_qn, var) => {
                     mono.current_implicit_ctx.insert(implicit_qn.clone());
+                    mono.used_implicits.insert(implicit_qn.clone());
                     implicit_selections.push(HandlerSelection.Implicit(implicit_qn.clone(), var.clone()));
                 }
                 HandlerSelection.TypeAssociation(assoc_qname, handler_type, _, witness_info) => {

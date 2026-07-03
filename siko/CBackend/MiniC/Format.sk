@@ -405,6 +405,12 @@ fn format_stmt(f: Formatter, stmt: CStmt) {
 
 // ─── Function signatures ─────────────────────────────────────────────────────
 
+fn format_fn_comment(f: Formatter, original_name: Option[String]) {
+    if let Some(name) = original_name {
+        f.push("// ${name}\n");
+    }
+}
+
 fn format_fn_sig(f: Formatter, sig: CFnSig) {
     if sig.is_noreturn {
         f.push("__attribute__((noreturn)) ");
@@ -475,6 +481,9 @@ fn format_structs(f: Formatter, structs: Vec[CStructDef]) {
     for scc in sccs {
         for name in scc {
             if let Some(sdef) = by_name.get(name) {
+                if let Some(original_name) = sdef.original_name {
+                    f.push("// ${original_name}\n");
+                }
                 f.push("struct ");
                 f.push(sdef.name);
                 f.push(" {\n");
@@ -548,6 +557,7 @@ pub fn format(program: CProgram) -> String {
     // Forward-declare all functions so mutual recursion is never a problem
     for fdef in program.functions {
         if !fdef.sig.is_static_inline {
+            format_fn_comment(f, fdef.original_name);
             format_fn_sig(f, fdef.sig);
             f.push(";\n\n");
         }
@@ -557,6 +567,7 @@ pub fn format(program: CProgram) -> String {
     // then all regular definitions
     for fdef in program.functions {
         if fdef.sig.is_static_inline {
+            format_fn_comment(f, fdef.original_name);
             format_fn_sig(f, fdef.sig);
             f.push(" {\n");
             f.indent = 1;
@@ -569,6 +580,7 @@ pub fn format(program: CProgram) -> String {
     }
     for fdef in program.functions {
         if !fdef.sig.is_static_inline {
+            format_fn_comment(f, fdef.original_name);
             format_fn_sig(f, fdef.sig);
             f.push(" {\n");
             f.indent = 1;

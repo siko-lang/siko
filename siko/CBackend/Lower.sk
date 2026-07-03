@@ -507,7 +507,7 @@ struct Lowerer {
             for field in sdef.fields.iter() {
                 fields.push(C.CField(l.lower_type(field.ty), I.resolve(field.name.name())));
             }
-            defs.push(C.CStructDef(mangle(qname.hashed()), fields, sdef.is_packed()));
+            defs.push(C.CStructDef(mangle(qname.hashed()), fields, sdef.is_packed(), Some(I.resolve(qname.name()))));
         }
         for edef in l.program.enums.values() {
             l.lower_enum(edef, defs);
@@ -524,7 +524,7 @@ struct Lowerer {
         };
         let fields: Vec[C.CField] = Vec.new();
         fields.push(C.CField(C.CType.Array(elem_ty, n), "data"));
-        C.CStructDef(mangle(qname.hashed()), fields, False)
+        C.CStructDef(mangle(qname.hashed()), fields, False, Some(I.resolve(qname.name())))
     }
 
     fn lower_enum(l: Lowerer, edef: EnumDef, defs: Vec[C.CStructDef]) {
@@ -540,14 +540,14 @@ struct Lowerer {
         let container_fields: Vec[C.CField] = Vec.new();
         container_fields.push(C.CField(C.CType.UInt32, "tag"));
         container_fields.push(C.CField(C.CType.Union(members), "payload"));
-        defs.push(C.CStructDef(enum_name, container_fields, False));
+        defs.push(C.CStructDef(enum_name, container_fields, False, Some(I.resolve(edef.qualified_name.unwrap().name()))));
         // Per-variant payload structs.
         for variant in edef.variants.iter() {
             let fields: Vec[C.CField] = Vec.new();
             for (index, item) in variant.items.iter().enumerate() {
                 fields.push(C.CField(l.lower_type(item.ty), variant_field_name(index)));
             }
-            defs.push(C.CStructDef(variant_struct_name(edef, variant), fields, False));
+            defs.push(C.CStructDef(variant_struct_name(edef, variant), fields, False, Some(I.resolve(variant.qualified_name.unwrap().name()))));
         }
     }
 
@@ -583,7 +583,7 @@ struct Lowerer {
                 body.push(C.CStmt.Assign(C.CExpr.FieldDot(C.CExpr.Var("result"), fname), C.CExpr.Var(fname)));
             }
             body.push(C.CStmt.Return(C.CExpr.Var("result")));
-            C.CFnDef(C.CFnSig(C.CType.Named(cname), "ctor_${cname}", params, False, False), body)
+            C.CFnDef(C.CFnSig(C.CType.Named(cname), "ctor_${cname}", params, False, False), body, Some(I.resolve(sdef.qualified_name.unwrap().name())))
         } else {
             // struct cname* result = siko_malloc(sizeof(struct cname));
             // result->f = f; ...; return result;
@@ -594,7 +594,7 @@ struct Lowerer {
                 body.push(C.CStmt.Assign(C.CExpr.FieldArrow(C.CExpr.Var("result"), fname), C.CExpr.Var(fname)));
             }
             body.push(C.CStmt.Return(C.CExpr.Var("result")));
-            C.CFnDef(C.CFnSig(C.CType.Ptr(C.CType.Named(cname)), "ctor_${cname}", params, False, False), body)
+            C.CFnDef(C.CFnSig(C.CType.Ptr(C.CType.Named(cname)), "ctor_${cname}", params, False, False), body, Some(I.resolve(sdef.qualified_name.unwrap().name())))
         }
     }
 
@@ -630,7 +630,7 @@ struct Lowerer {
             body.push(C.CStmt.Assign(C.CExpr.FieldDot(C.CExpr.FieldArrow(C.CExpr.Var("result"), "payload"), payload_field), C.CExpr.Var("variant")));
             body.push(C.CStmt.Return(C.CExpr.Var("result")));
         }
-        C.CFnDef(C.CFnSig(ret_ty, "ctor_${fn_name(variant.qualified_name.unwrap())}", params, False, False), body)
+        C.CFnDef(C.CFnSig(ret_ty, "ctor_${fn_name(variant.qualified_name.unwrap())}", params, False, False), body, Some(I.resolve(variant.qualified_name.unwrap().name())))
     }
 
     // `var = siko_malloc(sizeof(struct struct_name));`
@@ -661,7 +661,7 @@ struct Lowerer {
                 params.push(C.CFnParam(l.lower_type(arg.type_def), var_name(arg.name)));
             }
             let sig = C.CFnSig(l.lower_type(ret_ty), fn_name(fdef.qualified_name.unwrap()), params, is_noreturn, False);
-            fns.push(C.CFnDef(sig, l.lower_branch(body)));
+            fns.push(C.CFnDef(sig, l.lower_branch(body), Some(I.resolve(fdef.qualified_name.unwrap().name()))));
         }
     }
 }
@@ -710,7 +710,7 @@ fn build_globals() -> Vec[C.CGlobalVar] {
 
 // Helper that builds a `static inline` function definition.
 fn static_inline_fn(ret: C.CType, name: String, params: Vec[C.CFnParam], body: Vec[C.CStmt]) -> C.CFnDef {
-    C.CFnDef(C.CFnSig(ret, name, params, False, True), body)
+    C.CFnDef(C.CFnSig(ret, name, params, False, True), body, None)
 }
 
 fn build_runtime_helpers() -> Vec[C.CFnDef] {
@@ -793,7 +793,7 @@ fn build_main() -> C.CFnDef {
     body.push(C.CStmt.ExprStmt(C.CExpr.Call("GC_INIT", Vec.new())));
     body.push(C.CStmt.ExprStmt(C.CExpr.Call("Main_main", Vec.new())));
     body.push(C.CStmt.Return(C.CExpr.Var("_siko_result")));
-    C.CFnDef(C.CFnSig(C.CType.CInt, "main", params, False, False), body)
+    C.CFnDef(C.CFnSig(C.CType.CInt, "main", params, False, False), body, None)
 }
 
 // ─── Entry point ─────────────────────────────────────────────────────────────

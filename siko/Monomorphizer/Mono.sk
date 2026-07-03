@@ -125,6 +125,7 @@ pub struct Monomorphizer {
     pub fn_done: Set[QualifiedName],
     pub struct_done: Set[QualifiedName],
     pub enum_done: Set[QualifiedName],
+    pub used_implicits: Set[QualifiedName],
     pub current_module: I.String,
     pub current_fn_witnesses: Vec[ResolvedWitness],
     pub current_effect_ctx: EffectCtx,
@@ -138,25 +139,26 @@ pub struct Monomorphizer {
 
     fn new(source: Program, instance_resolver: InstanceResolver) -> Monomorphizer {
         Monomorphizer(
-            source,
-            instance_resolver,
-            Program.new(),
-            VecDeque.new(),
-            VecDeque.new(),
-            VecDeque.new(),
-            Set.new(),
-            Set.new(),
-            Set.new(),
-            I.intern(""),
-            [],
-            EffectCtx.new(),
-            EffectAssociatedTypeCtx.new(),
-            ImplicitCtx.new(),
-            [],
-            Substitution.new(),
-            None,
-            None,
-            DataEATDeps.new(),
+            source: source,
+            instance_resolver: instance_resolver,
+            output: Program.new(),
+            fn_queue: VecDeque.new(),
+            struct_queue: VecDeque.new(),
+            enum_queue: VecDeque.new(),
+            fn_done: Set.new(),
+            struct_done: Set.new(),
+            enum_done: Set.new(),
+            used_implicits: Set.new(),
+            current_module: I.intern(""),
+            current_fn_witnesses: [],
+            current_effect_ctx: EffectCtx.new(),
+            current_effect_associated_type_ctx: EffectAssociatedTypeCtx.new(),
+            current_implicit_ctx: ImplicitCtx.new(),
+            errors: [],
+            sub: Substitution.new(),
+            current_location: None,
+            current_expr_ty: None,
+            data_eat_deps: DataEATDeps.new(),
         )
     }
 
@@ -304,6 +306,7 @@ pub fn monomorphize(
     mono.output.implicits = source
         .implicits
         .iter()
+        .filter(|(k, _)| mono.used_implicits.contains(k))
         .map(|(k, v)| {
             let def = v.clone();
             def.ty = def.ty.specialize(mono);
