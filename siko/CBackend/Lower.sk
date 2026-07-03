@@ -97,13 +97,7 @@ struct Lowerer {
         match expr.kind {
             ExprKind.IntLiteral(v) => C.CExpr.Cast(C.CType.Int64, C.CExpr.IntLiteral(v)),
             ExprKind.CharLiteral(b) => C.CExpr.CharLiteral(b.as_int()),
-            ExprKind.StringLiteral(s) => {
-                let cname = mangle(I.resolve(B.get_string_type_qn().name()));
-                let fields: Vec[C.CFieldInit] = Vec.new();
-                fields.push(C.CFieldInit(struct_field_name(I.intern("value")), C.CExpr.Cast(C.CType.Ptr(C.CType.Char), C.CExpr.StringLiteral(s))));
-                fields.push(C.CFieldInit(struct_field_name(I.intern("len")), C.CExpr.IntLiteral("${s.len()}")));
-                C.CExpr.CompoundLiteral(cname, fields)
-            }
+            ExprKind.StringLiteral(s) => C.CExpr.Cast(l.lower_type(expr.ty.unwrap()), C.CExpr.StringLiteral(s)),
             ExprKind.Var(name) => C.CExpr.Var(var_name(name)),
             ExprKind.BinaryOp(op, lhs, rhs) => l.lower_binary_op(op, lhs, rhs),
             ExprKind.UnaryOp(op, operand) => {

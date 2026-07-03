@@ -19,6 +19,7 @@ import Siko.AST.Identifier
 import Siko.AST.Name
 import Siko.AST.QualifiedName
 import Siko.Location
+import Siko.Constants.Builtins as B
 import Siko.Interner as I
 import Siko.Format.Utils
 
@@ -324,6 +325,13 @@ instance Specialize[FunctionArg] {
     }
 }
 
+fn is_string_type(ty: TypeDef) -> Bool {
+    match ty {
+        TypeDef.Named(NamedInfo(name, _)) => name.resolved().base_name() == B.get_string_type_qn(),
+        _ => False,
+    }
+}
+
 instance Specialize[Expr] {
     fn specialize(expr: Expr, mono: Monomorphizer) -> Expr {
         mono.current_location = Some(expr.location.clone());
@@ -340,6 +348,27 @@ instance Specialize[Expr] {
             _ => {}
         }
         match expr.kind {
+            ExprKind.StringLiteral(s) => {
+                let result_ty = expr.ty.specialize(mono);
+                let concrete_ty = mono.current_expr_ty.apply(mono.sub).unwrap();
+                if !is_string_type(concrete_ty) {
+                    return Expr(ExprKind.StringLiteral(s), expr.location.clone(), result_ty);
+                }
+
+                let loc = expr.location.clone();
+                let ptr_i8_ty = TypeDef.Ptr(TypeDef.Named(NamedInfo(Name.inner(B.get_i8_type_qn()), [])));
+                let int_ty = TypeDef.Named(NamedInfo(Name.inner(B.get_int_type_qn()), []));
+                let literal = Expr(ExprKind.StringLiteral(s.clone()), loc.clone(), Some(ptr_i8_ty));
+                let size = Expr(ExprKind.IntLiteral("${s.len()}"), loc.clone(), Some(int_ty));
+                let fn_call_info = process_user_defined_fn(
+                    B.get_string_from_literal_qn(),
+                    [literal, size],
+                    mono,
+                    WitnessInfo.new(),
+                    False,
+                );
+                Expr(ExprKind.FunctionCall(fn_call_info), loc, result_ty)
+            }
             ExprKind.TypeAssociatedCall(info) => {
                 let fn_call_info = process_type_associated_call(info, mono);
                 Expr(ExprKind.FunctionCall(fn_call_info), expr.location.clone(), expr.ty.specialize(mono))

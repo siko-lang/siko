@@ -55,13 +55,6 @@ pub enum CUnaryOp {
     LogNot, // !
 }
 
-// A field initializer inside a compound literal: .name = expr
-@derive(Clone)
-pub struct CFieldInit {
-    pub name: String,
-    pub value: CExpr,
-}
-
 @derive(Clone)
 pub enum CExpr {
     // Bare numeric string, e.g. "42". Wrap in Cast when a specific type is needed.
@@ -69,8 +62,7 @@ pub enum CExpr {
     // uint8_t character byte value: emits ((uint8_t)N)
     CharLiteral(Int),
     // A C string literal. Holds the raw (unescaped) bytes; the printer escapes
-    // and wraps in quotes. Used for the String value-struct payload and for
-    // runtime format strings.
+    // and wraps in quotes.
     StringLiteral(String),
 
     Var(String),
@@ -111,8 +103,6 @@ pub enum CExpr {
     // arr[index]
     Index(CExpr, CExpr),
 
-    // Compound literal: ((struct NAME){ .f = v, ... })
-    CompoundLiteral(String, Vec[CFieldInit]),
 }
 
 // ─── Statements ──────────────────────────────────────────────────────────────
