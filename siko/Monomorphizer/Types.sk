@@ -9,7 +9,10 @@ import Siko.Monomorphizer.Specialize
 import Siko.Monomorphizer.Error
 
 pub fn specialize_type(ty: TypeDef, mono: Monomorphizer) -> TypeDef {
-    match ty {
+    if let Some(ty) = mono.ty_cache.get(ty) {
+        return ty;
+    }
+    let res_ty =  match ty {
         TypeDef.Var(TypeVar.Named(s)) => {
             let t = match mono.sub.lookup_named(s) {
                 Some(t) => t.clone(),
@@ -60,8 +63,10 @@ pub fn specialize_type(ty: TypeDef, mono: Monomorphizer) -> TypeDef {
         TypeDef.Void => TypeDef.Void,
         TypeDef.VoidPtr => TypeDef.VoidPtr,
         TypeDef.Co(CoroutineInfo(yield_ty, return_ty)) => TypeDef.Co(CoroutineInfo(yield_ty.specialize(mono), return_ty.specialize(mono))),
-        TypeDef.Wildcard => panic("Wildcard in specialize_type"),
-    }
+        TypeDef.Wildcard => panic("Wildcard in specialize_type")
+    };
+    mono.ty_cache.insert(ty, res_ty);
+    res_ty
 }
 
 pub fn eat_specialize_args(args: Vec[TypeDef], mono: Monomorphizer) -> Vec[TypeDef] {

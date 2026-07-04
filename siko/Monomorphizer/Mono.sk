@@ -177,6 +177,7 @@ pub struct Monomorphizer {
     pub data_eat_deps: DataEATDeps,
     pub fnmonokey_cache: Map[FnMonoKeyCacheKey, QualifiedName],
     pub datamonokey_cache: Map[MonoKeyCacheKey, QualifiedName],
+    pub ty_cache: Map[TypeDef, TypeDef],
     pub statistics: Statistics,
 
     fn new(source: Program, instance_resolver: InstanceResolver) -> Monomorphizer {
@@ -203,6 +204,7 @@ pub struct Monomorphizer {
             data_eat_deps: DataEATDeps.new(),
             fnmonokey_cache: Map.new(),
             datamonokey_cache: Map.new(),
+            ty_cache: Map.new(),
             statistics: Statistics.new(),
         )
     }
@@ -246,6 +248,10 @@ pub struct Monomorphizer {
         mono.datamonokey_cache.insert(cache_key, result.clone());
         mono.statistics.data_mono_key_end();
         result
+    }
+
+    pub fn clear_type_cache(mono: Monomorphizer) {
+        mono.ty_cache.clear();
     }
 
     pub fn enqueue_named_types(mono: Monomorphizer, name: QualifiedName, args: Vec[TypeDef]) {
@@ -319,6 +325,7 @@ pub struct Monomorphizer {
         ));
 
         loop {
+            mono.clear_type_cache();
             if let Some(work) = mono.fn_queue.pop_front() {
                 let mono_name = fn_mono_key(
                     mono,
