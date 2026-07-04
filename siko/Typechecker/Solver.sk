@@ -38,6 +38,13 @@ pub enum ProcessResult {
     Failed(TypeError),
 }
 
+fn is_unify_constraint(kind: C.ConstraintKind) -> Bool {
+    match kind {
+        C.ConstraintKind.Unify(_, _) => True,
+        _ => False,
+    }
+}
+
 fn freshen_effect_assoc(
     ty: TypeDef,
     fresh_map: Map[I.String, TypeDef],
@@ -899,6 +906,8 @@ pub struct Solver {
     pub sub: Substitution,
     pub allocator: TypeVarAllocator,
     pub registry: Map[Int, Vec[Int]],
+    pub active_unify: Vec[Int],
+    pub active_unify_start: Int,
     pub active: Vec[Int],
     pub active_start: Int,
     pub program: Program,
@@ -927,10 +936,15 @@ pub struct Solver {
         };
         let func_resolver = FunctionInstanceResolver.new(func.module_name, module_resolver, function_bounds, allocator, program);
 
+        let active_unify: Vec[Int] = Vec.new();
         let active: Vec[Int] = Vec.new();
         let i = 0;
         while i < constraints.len() {
-            active.push(i);
+            if is_unify_constraint(constraints[i].kind) {
+                active_unify.push(i);
+            } else {
+                active.push(i);
+            }
             i = i + 1;
         }
 
@@ -939,6 +953,8 @@ pub struct Solver {
             Substitution.new(),
             allocator,
             Map.new(),
+            active_unify,
+            0,
             active,
             0,
             program,
@@ -956,6 +972,28 @@ pub struct Solver {
         s
     }
 
+    fn next_active(s: Solver) -> Option[Int] {
+        if s.active_unify_start < s.active_unify.len() {
+            let id = s.active_unify[s.active_unify_start];
+            s.active_unify_start = s.active_unify_start + 1;
+            return Some(id);
+        }
+        if s.active_start < s.active.len() {
+            let id = s.active[s.active_start];
+            s.active_start = s.active_start + 1;
+            return Some(id);
+        }
+        None
+    }
+
+    fn activate(s: Solver, id: Int) {
+        if is_unify_constraint(s.constraints[id].kind) {
+            s.active_unify.push(id);
+        } else {
+            s.active.push(id);
+        }
+    }
+
     pub fn solve(s: Solver) -> Result[(), TypeError] {
         if s.enable_debug {
             let n = s.constraints.len();
@@ -966,9 +1004,11 @@ pub struct Solver {
             println("");
         }
 
-        while s.active_start < s.active.len() {
-            let id = s.active[s.active_start];
-            s.active_start = s.active_start + 1;
+        loop {
+            let id = match s.next_active() {
+                Some(id) => id,
+                None => break,
+            };
 
             if s.constraints[id].state == C.ConstraintState.Satisfied {
                 continue;
@@ -1022,7 +1062,7 @@ pub struct Solver {
                     for (spawn_kind, spawn_loc) in spawn {
                         let new_id = s.constraints.len();
                         s.constraints.push(C.Constraint.new(new_id, spawn_kind, spawn_loc));
-                        s.active.push(new_id);
+                        s.activate(new_id);
                     }
 
                     for var in newly_bound {
@@ -1034,7 +1074,7 @@ pub struct Solver {
                                 }
                                 for sub_id in subscribers {
                                     if s.constraints[sub_id].state != C.ConstraintState.Satisfied {
-                                        s.active.push(sub_id);
+                                        s.activate(sub_id);
                                     }
                                 }
                             }
