@@ -6,6 +6,7 @@ import Siko.AST.Generics
 import Siko.Format.Utils
 import Siko.Interner as I
 
+@derive(Clone)
 pub struct Substitution {
     pub bindings: Map[TypeVar, TypeDef],
 
@@ -33,6 +34,10 @@ pub struct Substitution {
 
     pub fn lookup_named(sub: Substitution, name: I.String) -> Option[TypeDef] {
         sub.bindings.get(TypeVar.Named(name))
+    }
+
+    pub fn is_empty(sub: Substitution) -> Bool {
+        sub.bindings.is_empty()
     }
 
     pub fn apply(sub: Substitution, ty: TypeDef) -> TypeDef {

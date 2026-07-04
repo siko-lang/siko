@@ -3,17 +3,55 @@ module Siko.Instances.ModuleInstanceResolver {
 import Std.Map
 import Siko.AST.Instances
 import Siko.AST.Type
+import Siko.Instances.FunctionInstanceResolver
 import Siko.Unification.Sub
 import Siko.Unification.Instantiate
 import Siko.Unification.Unify
 import Siko.Utils.TypeVarAllocator
 import Siko.Interner as I
 
-@derive(Clone)
+@derive(PartialEq, Eq, PartialOrd, Ord, Clone)
+pub struct BoundLookupKey {
+    pub trait_name: I.String,
+    pub query_args: Vec[TypeDef],
+}
+
+pub struct BoundLookupCache {
+    values: Map[BoundLookupKey, BoundResult],
+
+    pub fn new() -> BoundLookupCache {
+        BoundLookupCache(Map.new())
+    }
+
+    pub fn get(c: BoundLookupCache, key: BoundLookupKey) -> Option[BoundResult] {
+        c.values.get(key)
+    }
+
+    pub fn insert(c: BoundLookupCache, key: BoundLookupKey, result: BoundResult) {
+        c.values.insert(key, result);
+    }
+}
+
+instance Clone[BoundLookupCache] {
+    fn clone(c: BoundLookupCache) -> BoundLookupCache {
+        c
+    }
+}
+
+instance PartialEq[BoundLookupCache] {
+    fn eq(a: BoundLookupCache, b: BoundLookupCache) -> Bool {
+        True
+    }
+}
+
+instance Eq[BoundLookupCache] {}
+
+@derive(Clone, PartialEq, Eq)
 pub struct ModuleInstanceResolver {
     pub local: Map[I.String, Vec[InstanceDef]],
     pub imported: Map[I.String, Vec[InstanceDef]],
     pub canonical: Map[I.String, Vec[InstanceDef]],
+    pub bound_cache: BoundLookupCache,
 
     pub fn resolve_instance(r: ModuleInstanceResolver, trait_name: I.String, query_args: Vec[TypeDef], allocator: TypeVarAllocator) -> InstanceLookupResult {
         for tier in [r.local, r.imported, r.canonical] {

@@ -40,8 +40,17 @@ pub enum BoundWitness {
             BoundWitness.EffectAssociatedTypeBound(assoc_qname, index) => "eat:${assoc_qname.name()}#${index}",
         }
     }
+
+    pub fn is_shareable(w: BoundWitness) -> Bool {
+        match w {
+            BoundWitness.FunctionBound(_) => False,
+            BoundWitness.Instance(_, _, children) => children.iter().all(|c| c.is_shareable()),
+            BoundWitness.EffectAssociatedTypeBound(_, _) => True,
+        }
+    }
 }
 
+@derive(Clone)
 pub struct BoundResolution {
     pub witness: BoundWitness,
     pub assoc_types: Map[I.String, TypeDef],
@@ -64,16 +73,29 @@ pub struct BoundResolution {
     pub fn into_witness(r: BoundResolution) -> BoundWitness {
         r.witness
     }
+
+    pub fn is_shareable(r: BoundResolution) -> Bool {
+        r.type_witness.is_empty() && r.witness.is_shareable()
+    }
 }
 
 pub fn into_witnesses(resolutions: Vec[BoundResolution]) -> Vec[BoundWitness] {
     resolutions.iter().map(|r| r.witness).collect()
 }
 
+@derive(Clone)
 pub enum BoundResult {
     Satisfied(BoundResolution),
     NotFound,
     Ambiguous(Vec[I.String]),
+
+    pub fn is_shareable(r: BoundResult) -> Bool {
+        match r {
+            BoundResult.Satisfied(resolution) => resolution.is_shareable(),
+            BoundResult.NotFound => False,
+            BoundResult.Ambiguous(_) => False,
+        }
+    }
 }
 
 pub struct FunctionBoundEntry {
@@ -190,9 +212,18 @@ pub struct FunctionInstanceResolver {
             i += 1;
         }
 
+        let cache_key = BoundLookupKey(trait_name, query_args.clone());
+        if let Some(result) = r.module_resolver.bound_cache.get(cache_key.clone()) {
+            return result.clone();
+        }
+
         match r.module_resolver.resolve_instance(trait_name, query_args, r.allocator) {
             InstanceLookupResult.Found(instance_def, type_witness) => {
-                r.finish_instance(instance_def, type_witness, sub)
+                let result = r.finish_instance(instance_def, type_witness, sub);
+                if result.is_shareable() {
+                    r.module_resolver.bound_cache.insert(cache_key, result.clone());
+                }
+                result
             }
             InstanceLookupResult.NotFound => BoundResult.NotFound,
             InstanceLookupResult.Ambiguous(candidates) => {

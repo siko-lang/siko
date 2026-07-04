@@ -44,10 +44,31 @@ pub struct InstanceResolver {
                 }
             }
 
-            modules.insert(module_name, ModuleInstanceResolver(local, imported, canonical));
+            modules.insert(module_name, ModuleInstanceResolver(local, imported, canonical, BoundLookupCache.new()));
         }
 
-        InstanceResolver(modules)
+        let shared_modules: Map[I.String, ModuleInstanceResolver] = Map.new();
+        let previous_resolvers: Vec[ModuleInstanceResolver] = Vec.new();
+        for (module_name, resolver) in modules {
+            let existing: Option[ModuleInstanceResolver] = None;
+            for previous in previous_resolvers {
+                if previous == resolver {
+                    existing = Some(previous);
+                    break;
+                }
+            }
+            match existing {
+                Some(previous) => {
+                    shared_modules.insert(module_name, previous);
+                }
+                None => {
+                    previous_resolvers.push(resolver);
+                    shared_modules.insert(module_name, resolver);
+                }
+            }
+        }
+
+        InstanceResolver(shared_modules)
     }
 
     pub fn for_module(r: InstanceResolver, module_name: I.String) -> Option[ModuleInstanceResolver] {
