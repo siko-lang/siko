@@ -437,6 +437,8 @@ pub struct Collector {
                 ExprKind.TypeAssociatedCall(TypeAssociatedCallInfo(type_def, fn_name, new_args, witnesses, named_args))
             }
             ExprKind.Goto(_) | ExprKind.Label(_) => panic("collector: Goto/Label before coroutine lowering"),
+            ExprKind.EnumTag(_) | ExprKind.Switch(_, _) | ExprKind.ReadVariant(_, _) =>
+                panic("collector: basic block expression before lower-basic-block"),
         };
 
         (ty, Expr(new_kind, loc, Some(ty)))

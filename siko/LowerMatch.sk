@@ -187,6 +187,102 @@ pub struct MatchLowerer {
         result
     }
 
+    fn lower_integer_switch(
+        lowerer: MatchLowerer,
+        switch: T.SwitchNode,
+        path_env: Map[DataPath, VariableName],
+        path_ty_env: Map[DataPath, TypeDef],
+        arms: Vec[MatchArm],
+        loc: Location,
+    ) -> Expr {
+        let scrutinee_var = path_env.get(switch.data_path).unwrap();
+        let scrutinee_ty = path_ty_env.get(switch.data_path);
+        let scrutinee_expr = Expr(ExprKind.Var(scrutinee_var), loc.clone(), scrutinee_ty);
+
+        let int_ty = TypeDef.Named(NamedInfo(Name.inner(B.get_int_type_qn()), []));
+        let bool_ty = TypeDef.Named(NamedInfo(Name.inner(B.get_bool_type_qn()), []));
+
+        let int_cases: Vec[(I.String, Expr)] = [];
+        let default_body: Option[Expr] = None;
+
+        for (case, sub_node) in switch.cases.into_iter() {
+            let body = lowerer.stmt_block(lowerer.lower_node(sub_node, path_env, path_ty_env, arms, loc), loc);
+            match case {
+                T.Case.Integer(s) => int_cases.push((s, body)),
+                T.Case.Default    => { default_body = Some(body) }
+                _ => panic("unexpected case in integer switch"),
+            }
+        }
+
+        int_cases.reverse();
+        let result: Expr = match default_body {
+            Some(d) => d,
+            None    => Expr(ExprKind.Tuple([]), loc.clone(), unit_type()),
+        };
+        for (s, body) in int_cases {
+            let literal = Expr(ExprKind.IntLiteral(I.resolve(s)), loc.clone(), Some(int_ty.clone()));
+            let cond = Expr(
+                ExprKind.FunctionCall(FunctionCallInfo(
+                    qname: B.get_int_eq_qn(),
+                    kind: FunctionKind.Builtin,
+                    args: [scrutinee_expr.clone(), literal],
+                )),
+                loc.clone(),
+                Some(bool_ty.clone()),
+            );
+            result = Expr(ExprKind.If(cond, body, Some(lowerer.stmt_block(result, loc))), loc.clone(), unit_type());
+        }
+        result
+    }
+
+    fn lower_byte_switch(
+        lowerer: MatchLowerer,
+        switch: T.SwitchNode,
+        path_env: Map[DataPath, VariableName],
+        path_ty_env: Map[DataPath, TypeDef],
+        arms: Vec[MatchArm],
+        loc: Location,
+    ) -> Expr {
+        let scrutinee_var = path_env.get(switch.data_path).unwrap();
+        let scrutinee_ty = path_ty_env.get(switch.data_path);
+        let scrutinee_expr = Expr(ExprKind.Var(scrutinee_var), loc.clone(), scrutinee_ty);
+
+        let u8_ty = TypeDef.Named(NamedInfo(Name.inner(B.get_u8_type_qn()), []));
+        let bool_ty = TypeDef.Named(NamedInfo(Name.inner(B.get_bool_type_qn()), []));
+
+        let byte_cases: Vec[(Int, Expr)] = [];
+        let default_body: Option[Expr] = None;
+
+        for (case, sub_node) in switch.cases.into_iter() {
+            let body = lowerer.stmt_block(lowerer.lower_node(sub_node, path_env, path_ty_env, arms, loc), loc);
+            match case {
+                T.Case.Char(b) => byte_cases.push((b, body)),
+                T.Case.Default => { default_body = Some(body) }
+                _ => panic("unexpected case in byte switch"),
+            }
+        }
+
+        byte_cases.reverse();
+        let result: Expr = match default_body {
+            Some(d) => d,
+            None    => Expr(ExprKind.Tuple([]), loc.clone(), unit_type()),
+        };
+        for (b, body) in byte_cases {
+            let literal = Expr(ExprKind.CharLiteral(b.as_u8()), loc.clone(), Some(u8_ty.clone()));
+            let cond = Expr(
+                ExprKind.FunctionCall(FunctionCallInfo(
+                    qname: B.get_u8_eq_qn(),
+                    kind: FunctionKind.Builtin,
+                    args: [scrutinee_expr.clone(), literal],
+                )),
+                loc.clone(),
+                Some(bool_ty.clone()),
+            );
+            result = Expr(ExprKind.If(cond, body, Some(lowerer.stmt_block(result, loc))), loc.clone(), unit_type());
+        }
+        result
+    }
+
     pub fn lower_expr(lowerer: MatchLowerer, expr: Expr) -> Expr {
         let loc = expr.location.clone();
         let ty = expr.ty.clone();
@@ -276,6 +372,10 @@ pub struct MatchLowerer {
         match node {
             T.Node.Switch(switch) => if switch.kind == T.SwitchKind.StringKind {
                 lowerer.lower_string_switch(switch, path_env, path_ty_env, arms, loc)
+            } else if switch.kind == T.SwitchKind.Integer {
+                lowerer.lower_integer_switch(switch, path_env, path_ty_env, arms, loc)
+            } else if switch.kind == T.SwitchKind.Byte {
+                lowerer.lower_byte_switch(switch, path_env, path_ty_env, arms, loc)
             } else {
                 lowerer.lower_switch(switch, path_env, path_ty_env, arms, loc)
             },
@@ -357,19 +457,7 @@ pub struct MatchLowerer {
                     let body = lowerer.stmt_block(lowerer.lower_node(sub_node, new_env, new_ty_env, arms, loc), loc);
                     MatchArm(pattern, body)
                 }
-                (_, T.Case.Integer(s)) => MatchArm(
-                    Pattern(PatternKind.IntLiteral(s), loc.clone(), scrutinee_ty),
-                    lowerer.stmt_block(lowerer.lower_node(sub_node, path_env, path_ty_env, arms, loc), loc),
-                ),
-                (_, T.Case.Char(b)) => MatchArm(
-                    Pattern(PatternKind.CharLiteral(b.as_u8()), loc.clone(), scrutinee_ty),
-                    lowerer.stmt_block(lowerer.lower_node(sub_node, path_env, path_ty_env, arms, loc), loc),
-                ),
-                (_, T.Case.StringCase(s)) => MatchArm(
-                    Pattern(PatternKind.StringLiteral(s), loc.clone(), scrutinee_ty),
-                    lowerer.stmt_block(lowerer.lower_node(sub_node, path_env, path_ty_env, arms, loc), loc),
-                ),
-                (_, T.Case.Default) => MatchArm(
+                (T.SwitchKind.Enum(_), T.Case.Default) => MatchArm(
                     Pattern(PatternKind.Wildcard, loc.clone(), scrutinee_ty),
                     lowerer.stmt_block(lowerer.lower_node(sub_node, path_env, path_ty_env, arms, loc), loc),
                 ),

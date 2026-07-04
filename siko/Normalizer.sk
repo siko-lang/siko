@@ -283,6 +283,9 @@ struct Normalizer {
             // a label is just a marker; control flows past it, value is unit.
             ExprKind.Label(_) => Some(expr),
 
+            ExprKind.EnumTag(_) | ExprKind.Switch(_, _) | ExprKind.ReadVariant(_, _) =>
+                panic("normalizer: basic block expression reached normalizer"),
+
             ExprKind.BinaryOp(_, _, _) | ExprKind.UnaryOp(_, _) =>
                 panic("normalizer: BinaryOp/UnaryOp must be desugared"),
         }

@@ -163,6 +163,8 @@ struct Lowerer {
                 }
                 C.CExpr.FnPtrCall(l.lower_expr(callee), ret_ty, param_tys, l.lower_args(args))
             }
+            ExprKind.EnumTag(_) | ExprKind.Switch(_, _) | ExprKind.ReadVariant(_, _) =>
+                panic("lower_expr: basic block expression reached C backend before support was added"),
             _ => panic("lower_expr: unexpected expr kind in value position"),
         }
     }
@@ -290,6 +292,8 @@ struct Lowerer {
             ExprKind.Continue => out.push(C.CStmt.Goto("loop_${l.current_loop_id}_continue")),
             ExprKind.Goto(label) => out.push(C.CStmt.Goto(label)),
             ExprKind.Label(label) => out.push(C.CStmt.Label(label)),
+            ExprKind.EnumTag(_) | ExprKind.Switch(_, _) | ExprKind.ReadVariant(_, _) =>
+                panic("lower_stmt_expr: basic block expression reached C backend before support was added"),
             _ => out.push(C.CStmt.ExprStmt(l.lower_expr(expr))),
         }
         out
@@ -325,13 +329,10 @@ struct Lowerer {
     fn lower_match(l: Lowerer, scrutinee: Expr, arms: Vec[MatchArm]) -> Vec[C.CStmt] {
         let ty = scrutinee.ty.unwrap();
         let name = ty.name_opt().expect("lower_match: scrutinee has no named type");
-        if l.program.enums.contains_key(name) {
-            l.lower_match_enum(scrutinee, arms)
-        } else if l.builtin_int_types.contains_key(name) {
-            l.lower_match_int(scrutinee, arms)
-        } else {
-            l.lower_match_struct(scrutinee, arms)
+        if !l.program.enums.contains_key(name) {
+            panic("lower_match: non-enum match reached C backend: ${I.resolve(name.name())}");
         }
+        l.lower_match_enum(scrutinee, arms)
     }
 
     fn lower_match_enum(l: Lowerer, scrutinee: Expr, arms: Vec[MatchArm]) -> Vec[C.CStmt] {
@@ -355,7 +356,7 @@ struct Lowerer {
                         .variants
                         .iter()
                         .position(|v| v.qualified_name.unwrap() == qn)
-                        .unwrap();
+                        .expect("lower_match_enum: pattern ${I.resolve(qn.name())} is not a variant of ${I.resolve(enum_name.name())}");
                     Some(idx)
                 }
                 PatternKind.Wildcard => None,
@@ -412,73 +413,6 @@ struct Lowerer {
                 out.push(C.CStmt.Assign(C.CExpr.Var(var_name(var)), access));
             }
         }
-        out
-    }
-
-    // Integer/char match becomes an if/else-if chain.
-    fn lower_match_int(l: Lowerer, scrutinee: Expr, arms: Vec[MatchArm]) -> Vec[C.CStmt] {
-        l.lower_int_arms(scrutinee, arms, 0)
-    }
-
-    fn lower_int_arms(l: Lowerer, scrutinee: Expr, arms: Vec[MatchArm], index: Int) -> Vec[C.CStmt] {
-        let out: Vec[C.CStmt] = Vec.new();
-        if index >= arms.len() {
-            return out;
-        }
-        let arm = arms[index];
-        match arm.pattern.kind {
-            PatternKind.IntLiteral(n) => {
-                let cond = C.CExpr.BinaryOp(C.CBinOp.Eq, l.lower_expr(scrutinee), C.CExpr.IntLiteral(I.resolve(n)));
-                let rest = l.lower_int_arms(scrutinee, arms, index + 1);
-                let else_branch = if rest.is_empty() { None } else { Some(rest) };
-                out.push(C.CStmt.If(cond, l.lower_branch(arm.body), else_branch));
-            }
-            PatternKind.CharLiteral(b) => {
-                let cond = C.CExpr.BinaryOp(C.CBinOp.Eq, l.lower_expr(scrutinee), C.CExpr.CharLiteral(b.as_int()));
-                let rest = l.lower_int_arms(scrutinee, arms, index + 1);
-                let else_branch = if rest.is_empty() { None } else { Some(rest) };
-                out.push(C.CStmt.If(cond, l.lower_branch(arm.body), else_branch));
-            }
-            PatternKind.Wildcard | PatternKind.Binding(_) => {
-                // The final, unconditional arm.
-                for s in l.lower_branch(arm.body) {
-                    out.push(s);
-                }
-            }
-            _ => panic("unexpected pattern in int match"),
-        }
-        out
-    }
-
-    // Single-arm struct destructure.
-    fn lower_match_struct(l: Lowerer, scrutinee: Expr, arms: Vec[MatchArm]) -> Vec[C.CStmt] {
-        assert(arms.len() == 1);
-        let arm = arms[0];
-        let body: Vec[C.CStmt] = Vec.new();
-        if let PatternKind.Named(info) = arm.pattern.kind {
-            let struct_name = info.name.resolved().name();
-            let sub_pats = info.args;
-            let sdef = l
-                .program
-                .structs
-                .iter()
-                .find(|(k, _)| k.name() == struct_name)
-                .map(|(_, s)| s)
-                .unwrap();
-            for (i, sub_pat) in sub_pats.iter().enumerate() {
-                if let PatternKind.Binding(var) = sub_pat.kind {
-                    let field_ty = l.lower_type(sdef.fields[i].ty);
-                    let fname = struct_field_name(sdef.fields[i].name.name());
-                    body.push(C.CStmt.Decl(field_ty, var_name(var)));
-                    body.push(C.CStmt.Assign(C.CExpr.Var(var_name(var)), C.CExpr.FieldArrow(l.lower_expr(scrutinee), fname)));
-                }
-            }
-        }
-        for s in l.lower_branch(arm.body) {
-            body.push(s);
-        }
-        let out: Vec[C.CStmt] = Vec.new();
-        out.push(C.CStmt.Block(body));
         out
     }
 

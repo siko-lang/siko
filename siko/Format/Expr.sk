@@ -336,6 +336,32 @@ fn format_expr_inner(f: Formatter, expr: Expr) {
             }
             f.push(")");
         }
+        ExprKind.EnumTag(inner) => {
+            f.push("enum_tag!(");
+            format_expr(f, inner);
+            f.push(")");
+        }
+        ExprKind.Switch(scrutinee, arms) => {
+            f.push("switch ");
+            format_expr(f, scrutinee);
+            f.push(" [\n");
+            f.indent_up();
+            for arm in arms {
+                f.push_indent();
+                format_expr(f, arm);
+                f.push(",\n");
+            }
+            f.indent_down();
+            f.push_indent();
+            f.push("]");
+        }
+        ExprKind.ReadVariant(value, tag) => {
+            f.push("read_variant!(");
+            format_expr(f, value);
+            f.push(", ");
+            format_expr(f, tag);
+            f.push(")");
+        }
         ExprKind.Goto(label) => f.push("goto " + label),
         ExprKind.Label(label) => f.push(label + ":"),
     }
