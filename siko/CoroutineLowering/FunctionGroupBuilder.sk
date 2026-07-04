@@ -24,6 +24,7 @@ import Siko.Config
 pub struct CallCollector {
     pub deps: Set[QualifiedName],
     pub handler_deps: Set[QualifiedName],
+    pub co_create_targets: Set[QualifiedName],
     pub program: Program,
 }
 
@@ -97,9 +98,14 @@ instance[T: Collect[T]] Collect[Vec[T]] {
 
 instance Collect[E.FunctionCallInfo] {
     fn walk(info: E.FunctionCallInfo, c: CallCollector) {
-        // Exclude co-create calls: those only construct a coroutine object and
-        // do not cause the caller to become a coroutine.
-        if !info.is_coroutine_create {
+        // Exclude co-create calls from deps: those only construct a coroutine
+        // object and do not cause the caller to become a coroutine. The target
+        // is recorded instead — being co-created makes IT a coroutine by
+        // construction, even if it never yields (it merely runs to completion
+        // on the first resume).
+        if info.is_coroutine_create {
+            c.co_create_targets.insert(info.qname);
+        } else {
             c.deps.insert(info.qname);
         }
         walk(info.args, c);
@@ -115,7 +121,7 @@ instance Collect[E.FunctionCallInfo] {
 // intrinsic coroutine (has a yield type) or depends on a function already known
 // to be a coroutine.
 pub fn build_coroutine_map(program: Program) -> Map[QualifiedName, Bool] {
-    let (sccs, graph, _) = build_groups(program);
+    let (sccs, graph, _, co_create_targets) = build_groups(program);
 
     let is_coroutine: Map[QualifiedName, Bool] = Map.new();
     let co_reason: Map[QualifiedName, String] = Map.new();
@@ -128,6 +134,10 @@ pub fn build_coroutine_map(program: Program) -> Map[QualifiedName, Bool] {
             if func.yield_type.is_some() && func.body.is_some() {
                 group_is_co = True;
                 reason = "intrinsic yield";
+            }
+            if co_create_targets.contains(qname) && func.body.is_some() {
+                group_is_co = True;
+                reason = "co-create target";
             }
         }
         if !group_is_co {
@@ -180,12 +190,13 @@ fn print_dep_tree(qname: QualifiedName, graph: Map[QualifiedName, Vec[QualifiedN
     }
 }
 
-pub fn build_groups(program: Program) -> (Vec[Vec[QualifiedName]], Map[QualifiedName, Vec[QualifiedName]], Map[QualifiedName, Set[QualifiedName]]) {
+pub fn build_groups(program: Program) -> (Vec[Vec[QualifiedName]], Map[QualifiedName, Vec[QualifiedName]], Map[QualifiedName, Set[QualifiedName]], Set[QualifiedName]) {
     let graph: Map[QualifiedName, Vec[QualifiedName]] = Map.new();
     let handler_map: Map[QualifiedName, Set[QualifiedName]] = Map.new();
+    let co_create_targets: Set[QualifiedName] = Set.new();
 
     for (qname, func) in program.functions {
-        let collector = CallCollector(Set.new(), Set.new(), program);
+        let collector = CallCollector(Set.new(), Set.new(), Set.new(), program);
         walk(func, collector);
         let deps: Vec[QualifiedName] = collector.deps
             .into_iter()
@@ -194,6 +205,9 @@ pub fn build_groups(program: Program) -> (Vec[Vec[QualifiedName]], Map[Qualified
         graph.insert(qname, deps);
         if !collector.handler_deps.is_empty() {
             handler_map.insert(qname, collector.handler_deps);
+        }
+        for t in collector.co_create_targets {
+            co_create_targets.insert(t);
         }
     }
 
@@ -214,7 +228,7 @@ pub fn build_groups(program: Program) -> (Vec[Vec[QualifiedName]], Map[Qualified
         }
     }
 
-    (SCC.compute(graph), graph, handler_map)
+    (SCC.compute(graph), graph, handler_map, co_create_targets)
 }
 
 }

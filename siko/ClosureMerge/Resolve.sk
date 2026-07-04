@@ -207,11 +207,13 @@ pub struct Resolver {
             env: Map.new(),
             result_vars: opt_ty_vars(func.result_type.clone()),
             yield_vars: opt_ty_vars(func.yield_type.clone()),
+            alias_types: Vec.new(),
         );
         for arg in func.args.iter() {
             ctx.env.insert(arg.name.clone(), ty_vars(arg.type_def.clone()));
         }
         if func.is_closure_alias() {
+            ctx.alias_types = alias_sig_types(func.clone());
             apply_closure_alias(ctx, func.clone());
         }
         if let Some(body) = func.body {
@@ -375,10 +377,19 @@ fn process_instance(r: Resolver, iid: Int) {
                 for ns in cr.captures.iter() {
                     flat.extend(ns.clone());
                 }
-                // contents: capture classes feed the instance's capture sets
+                // contents: capture classes feed the instance's capture
+                // sets, and flow back — captures alias caller memory, so
+                // ids added by the lambda's execution (or by another
+                // creation site of this flavor) are visible through the
+                // caller's value too
                 for (si, n) in flat.iter().enumerate() {
                     let src = r.sorted_ids(r.node_set(iid, wd, n.clone()));
                     if r.add_all(r.flavors[fid].captures[si], src) {
+                        local_changed = True;
+                        r.changed = True;
+                    }
+                    let mine = r.node_set(iid, wd, n.clone());
+                    if r.add_all_set(mine, r.flavors[fid].captures[si]) {
                         local_changed = True;
                         r.changed = True;
                     }
@@ -396,13 +407,7 @@ fn process_instance(r: Resolver, iid: Int) {
 
         // 3. static calls: derive the callee's input tuple, couple both ways
         for call in wd.calls.iter() {
-            let callee = match r.program.functions.get(call.callee) {
-                Some(f) => f,
-                None => continue,
-            };
-            if callee.body.is_none() {
-                continue;
-            }
+            let callee = r.program.functions.get(call.callee).expect("closure resolve: callee not found");
             let callee_boundary = boundary_vars(callee);
             let child_inputs: Vec[Vec[Int]] = callee_boundary.iter().map(|v| {
                 match call.subst.get(v.clone()) {

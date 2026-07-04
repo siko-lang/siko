@@ -263,6 +263,10 @@ pub struct FlowCtx {
     pub env: Map[E.VariableName, Vec[TypeVar]],
     pub result_vars: Vec[TypeVar],
     pub yield_vars: Vec[TypeVar],
+    // signature types eligible for @closure_alias matching; non-empty only
+    // inside annotated functions (sizeof(T) in their bodies aliases the
+    // same-shaped signature type, e.g. allocate's T against its *T result)
+    pub alias_types: Vec[TypeDef],
 
     pub fn nodes(ctx: FlowCtx, vars: Vec[TypeVar]) -> Vec[FlowNode] {
         vars.iter().map(|v| FlowNode(ctx.current_fn.clone(), v.clone())).collect()
@@ -373,6 +377,9 @@ instance Flow[E.Expr] {
             }
             E.ExprKind.FunctionCall(info) => {
                 function_call_edges(ctx, info, expr.ty.clone(), out);
+            }
+            E.ExprKind.SizeOf(ty) => {
+                sizeof_alias_edges(ctx, ty);
             }
             E.ExprKind.DynamicCall(callee, args) => {
                 flow(callee, ctx);
@@ -645,27 +652,19 @@ fn named_pattern_edges(ctx: FlowCtx, pat_ty: Option[TypeDef], info: NamedPattern
     }
 }
 
-// A static call. Constructors zip into the datatype pool; user-defined
-// callees are wired directly when they're in the current SCC (introducing
-// the cycles the union-find closes) or by instantiating their finished
-// profile when they're not; extern/builtin callees get a conservative
-// everything-connects model.
+// A static call. Constructors zip into the datatype pool; every other
+// callee is wired directly when it's in the current SCC (introducing the
+// cycles the union-find closes) or by instantiating its finished profile
+// when it's not — bodyless (extern/builtin) callees carry synthesized
+// profiles, so they take the same path.
 fn function_call_edges(ctx: FlowCtx, info: E.FunctionCallInfo, expr_ty: Option[TypeDef], out: Vec[FlowNode]) {
     flow(info.args, ctx);
     match info.kind {
         E.FunctionKind.StructCtor => ctor_edges(ctx, info.qname, info.args, expr_ty),
         E.FunctionKind.VariantCtor => ctor_edges(ctx, info.qname, info.args, expr_ty),
-        E.FunctionKind.Extern(_) => conservative_call(ctx, info.args, out),
-        E.FunctionKind.Builtin => {
-            if info.qname.base() == B.get_resume_qn().base() {
-                resume_edges(ctx, info.args, expr_ty, out);
-            } else {
-                conservative_call(ctx, info.args, out);
-            }
-        }
-        E.FunctionKind.UserDefined => {
+        _ => {
             match ctx.program.functions.get(info.qname) {
-                None => conservative_call(ctx, info.args, out),
+                None => panic("closure lowering: callee ${I.resolve(info.qname.name())} not found"),
                 Some(callee) => {
                     // output correspondence: plain calls map the callee's
                     // result type onto the call expr; co-create calls map
@@ -703,10 +702,10 @@ fn function_call_edges(ctx: FlowCtx, info: E.FunctionCallInfo, expr_ty: Option[T
                             ctx.unify([FlowNode(info.qname.clone(), v)], [n]);
                         }
                     } else {
-                        match ctx.profiles.get(info.qname) {
-                            Some(profile) => instantiate_profile(ctx, profile, subst),
-                            None => conservative_call(ctx, info.args, out),
-                        }
+                        // SCC order guarantees cross-SCC callees are already
+                        // summarized (bodyless ones synthesized up front)
+                        let profile = ctx.profiles.get(info.qname).expect("closure lowering: callee has no profile");
+                        instantiate_profile(ctx, profile, subst);
                     }
                 }
             }
@@ -720,13 +719,7 @@ fn function_call_edges(ctx: FlowCtx, info: E.FunctionCallInfo, expr_ty: Option[T
 // concrete resolution, wired directly inside the SCC, or instantiated from
 // the target's finished profile.
 fn fn_ptr_edges(ctx: FlowCtx, info: E.FunctionPtrInfo, expr_ty: Option[TypeDef]) {
-    let target = match ctx.program.functions.get(info.name) {
-        Some(f) => f,
-        None => return,
-    };
-    if target.body.is_none() {
-        return;
-    }
+    let target = ctx.program.functions.get(info.name).expect("closure lowering: fn ptr target not found");
     let interior = match expr_ty {
         Some(t) => ctx.nodes(ty_vars(t)),
         None => Vec.new(),
@@ -739,19 +732,9 @@ fn fn_ptr_edges(ctx: FlowCtx, info: E.FunctionPtrInfo, expr_ty: Option[TypeDef])
             ctx.unify([FlowNode(info.name.clone(), v)], [n]);
         }
     } else {
-        match ctx.profiles.get(info.name) {
-            Some(profile) => instantiate_profile(ctx, profile, subst),
-            None => {}
-        }
+        let profile = ctx.profiles.get(info.name).expect("closure lowering: fn ptr target has no profile");
+        instantiate_profile(ctx, profile, subst);
     }
-}
-
-fn conservative_call(ctx: FlowCtx, args: Vec[E.Expr], out: Vec[FlowNode]) {
-    let arg_vars: Vec[TypeVar] = Vec.new();
-    for a in args.iter() {
-        arg_vars.extend(evars(a));
-    }
-    ctx.unify(ctx.nodes(arg_vars), out);
 }
 
 fn ctor_edges(ctx: FlowCtx, owner: QualifiedName, args: Vec[E.Expr], expr_ty: Option[TypeDef]) {
@@ -782,57 +765,71 @@ fn ctor_edges(ctx: FlowCtx, owner: QualifiedName, args: Vec[E.Expr], expr_ty: Op
     }
 }
 
+// Flow model of a bodyless function (extern/builtin), synthesized from its
+// signature alone since there is no body to walk. The default is the
+// conservative model: every boundary var lands in one class — whatever the
+// caller passes in may end up in any argument or the result. resume gets a
+// precise model instead. With these wired, bodyless functions carry
+// ordinary profiles and neither call sites nor concrete resolution need to
+// treat them specially.
+pub fn bodyless_signature_edges(ctx: FlowCtx, func: FunctionDef) {
+    if func.qualified_name.clone().unwrap().base() == B.get_resume_qn().base() {
+        resume_signature_edges(ctx, func);
+        return;
+    }
+    let ns = ctx.nodes(boundary_vars(func));
+    for i in 1..ns.len() {
+        ctx.uf.union(ns[0].clone(), ns[i].clone());
+    }
+}
+
 // resume(co: co(Y) -> R) -> CoResult[Y, R] is, from a data-flow standpoint,
 // a constructor: the CoResult's Yielded payload is the Co's yield half and
 // its Returned payload is the return half. Wiring the two halves through
 // the variant slot table keeps yield-content and return-content separate —
 // no conservative merging.
-fn resume_edges(ctx: FlowCtx, args: Vec[E.Expr], expr_ty: Option[TypeDef], out: Vec[FlowNode]) {
-    let co_info = if args.is_empty() {
+fn resume_signature_edges(ctx: FlowCtx, func: FunctionDef) {
+    let co_info = if func.args.is_empty() {
         None
     } else {
-        match args[0].ty.clone() {
-            Some(TypeDef.Co(info)) => Some(info),
+        match func.args[0].type_def.clone() {
+            TypeDef.Co(info) => Some(info),
             _ => None,
         }
     };
-    let named = match expr_ty {
+    let named = match func.result_type.clone() {
         Some(t) => peel_named(t),
         None => None,
     };
     match (co_info, named) {
         (Some(CoroutineInfo(y, r)), Some(NamedInfo(name, targs))) => {
-            match ctx.program.enums.get(name.resolved()) {
-                Some(edef) => {
-                    for variant in edef.variants.iter() {
-                        let vq = variant.qualified_name.unwrap();
-                        let half = if vq.base() == B.get_co_result_yielded_qn().base() {
-                            Some(y.clone())
-                        } else if vq.base() == B.get_co_result_returned_qn().base() {
-                            Some(r.clone())
-                        } else {
-                            None
-                        };
-                        if let Some(half_ty) = half {
-                            match ctx.tables.variant_items.get(vq) {
-                                Some(items) if !items.is_empty() => {
-                                    let dst_vars: Vec[TypeVar] = Vec.new();
-                                    for p in items[0].iter() {
-                                        if p < targs.len() {
-                                            dst_vars.extend(ty_vars(targs[p].clone()));
-                                        }
-                                    }
-                                    ctx.unify(ctx.nodes(ty_vars(half_ty)), ctx.nodes(dst_vars));
+            let edef = ctx.program.enums.get(name.resolved()).expect("closure lowering: resume result is not a known enum");
+            for variant in edef.variants.iter() {
+                let vq = variant.qualified_name.clone().unwrap();
+                let half = if vq.base() == B.get_co_result_yielded_qn().base() {
+                    Some(y.clone())
+                } else if vq.base() == B.get_co_result_returned_qn().base() {
+                    Some(r.clone())
+                } else {
+                    None
+                };
+                if let Some(half_ty) = half {
+                    match ctx.tables.variant_items.get(vq) {
+                        Some(items) if !items.is_empty() => {
+                            let dst_vars: Vec[TypeVar] = Vec.new();
+                            for p in items[0].iter() {
+                                if p < targs.len() {
+                                    dst_vars.extend(ty_vars(targs[p].clone()));
                                 }
-                                _ => {}
                             }
+                            ctx.unify(ctx.nodes(ty_vars(half_ty)), ctx.nodes(dst_vars));
                         }
+                        _ => {}
                     }
                 }
-                None => conservative_call(ctx, args, out),
             }
         }
-        _ => conservative_call(ctx, args, out),
+        _ => panic("closure lowering: unexpected resume signature"),
     }
 }
 
@@ -901,11 +898,38 @@ instance[T: EraseVars[T]] EraseVars[Vec[T]] {
     }
 }
 
-pub fn apply_closure_alias(ctx: FlowCtx, func: FunctionDef) {
+pub fn alias_sig_types(func: FunctionDef) -> Vec[TypeDef] {
     let sig_types: Vec[TypeDef] = func.args.iter().map(|a| a.type_def.clone()).collect();
     if let Some(t) = func.result_type {
         sig_types.push(t);
     }
+    sig_types
+}
+
+// The size of a type depends on which closure instances inhabit its slots,
+// but the flow can't see the connection (the size travels as a bare U64).
+// Inside a @closure_alias function, a sizeof(T) aliases the signature type
+// with the same pointer-peeled shape: allocate's sizeof(T) is the pointee
+// of its *T result.
+fn sizeof_alias_edges(ctx: FlowCtx, ty: TypeDef) {
+    let key = peel_ptrs(erase_vars(ty.clone()));
+    for s in ctx.alias_types.iter() {
+        if peel_ptrs(erase_vars(s.clone())) == key {
+            ctx.unify(ctx.nodes(ty_vars(ty.clone())), ctx.nodes(ty_vars(s.clone())));
+        }
+    }
+}
+
+fn peel_ptrs(ty: TypeDef) -> TypeDef {
+    match ty {
+        TypeDef.Ptr(inner) => peel_ptrs(inner),
+        TypeDef.Paren(inner) => peel_ptrs(inner),
+        t => t,
+    }
+}
+
+pub fn apply_closure_alias(ctx: FlowCtx, func: FunctionDef) {
+    let sig_types = alias_sig_types(func);
     let shape_groups: Map[TypeDef, Vec[TypeDef]] = Map.new();
     for t in sig_types {
         let key = erase_vars(t.clone());

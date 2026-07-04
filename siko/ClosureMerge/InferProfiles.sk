@@ -44,9 +44,6 @@ fn summarize(ctx: FlowCtx, scc: Vec[QualifiedName]) {
     // callers' point of view
     for q in scc.iter() {
         let func = ctx.program.functions.get(q).unwrap();
-        if func.body.is_none() {
-            continue;
-        }
 
         // partition this member's boundary vars by class
         let class_vars: Map[FlowNode, Vec[TypeVar]] = Map.new();
@@ -88,9 +85,10 @@ fn summarize(ctx: FlowCtx, scc: Vec[QualifiedName]) {
 
 // ── Entry point ──────────────────────────────────────────────────────────────
 
-// Compute a data-flow profile for every function with a body. Expects the
-// program to have been through generalize_datatypes and
-// generalize_functions already. Read-only on `program`.
+// Compute a data-flow profile for every function — bodyless ones get a
+// profile synthesized from their signature. Expects the program to have
+// been through generalize_datatypes and generalize_functions already.
+// Read-only on `program`.
 pub fn infer_profiles(program: Program) -> Map[QualifiedName, Profile] {
     let tables = build_tables(program);
     let sccs = build_groups(program);
@@ -108,6 +106,7 @@ pub fn infer_profiles(program: Program) -> Map[QualifiedName, Profile] {
         env: Map.new(),
         result_vars: Vec.new(),
         yield_vars: Vec.new(),
+        alias_types: Vec.new(),
     );
 
     for scc in sccs {
@@ -123,11 +122,16 @@ pub fn infer_profiles(program: Program) -> Map[QualifiedName, Profile] {
 
         for q in scc.iter() {
             let func = ctx.program.functions.get(q).unwrap();
+            ctx.current_fn = q.clone();
             let body = match func.body {
                 Some(b) => b,
-                None => continue,
+                None => {
+                    // bodyless (extern/builtin): flow model synthesized
+                    // from the signature, profile summarized like any other
+                    bodyless_signature_edges(ctx, func.clone());
+                    continue;
+                }
             };
-            ctx.current_fn = q.clone();
             ctx.env = Map.new();
             for arg in func.args.iter() {
                 ctx.env.insert(arg.name.clone(), ty_vars(arg.type_def.clone()));
@@ -136,7 +140,10 @@ pub fn infer_profiles(program: Program) -> Map[QualifiedName, Profile] {
             ctx.yield_vars = opt_ty_vars(func.yield_type.clone());
 
             if func.is_closure_alias() {
+                ctx.alias_types = alias_sig_types(func.clone());
                 apply_closure_alias(ctx, func.clone());
+            } else {
+                ctx.alias_types = Vec.new();
             }
 
             flow(body.clone(), ctx);

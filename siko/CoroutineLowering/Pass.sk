@@ -21,8 +21,6 @@ import Siko.CoroutineLowering.YieldCounter
 import Siko.CoroutineLowering.LocalCollect
 import Siko.CoroutineLowering.FunctionGroupBuilder as FGB
 import Siko.CoroutineLowering.TransitiveLower as TL
-import Siko.AST.Identifier
-import Siko.Utils.VarAllocator
 
 // ── CoroutineLowerer ─────────────────────────────────────────────────────────
 
@@ -207,6 +205,16 @@ pub fn lower_coroutines(program: Program) {
         program.functions.insert(key, new_func);
     }
 
+    // ── Step 2.5: resolve each co_enum's CoResult by content ──────────────────
+    // The def's name cannot be reconstructed from types (closure lowering v2
+    // duplicates datatypes and leaves the copies' mono name args stale), so
+    // it is found by variant payload shape — or synthesized if mono never
+    // emitted it.
+
+    for info in ctx.co_enums.iter() {
+        info.co_result = Some(resolve_co_result(program, info.yield_ty.clone(), info.return_ty.clone(), repr_loc.clone()));
+    }
+
     // ── Step 3: build handlers, fill yield_count, remove original fns ─────────
 
     let handlers: Vec[FunctionDef] = Vec.new();
@@ -266,41 +274,14 @@ pub fn lower_coroutines(program: Program) {
     }
 
     // ── Step 4.5: ensure every co_enum has a resume function ─────────────────
-    // Transitive coroutines drive loops call resume() on types that mono never
-    // saw an explicit resume() call for. Synthesize a minimal FunctionDef so
-    // that step 5 can fill in its body via generate_resume_body.
+    // Found by argument type (after step 2 every resume def's arg is a
+    // co_wrap struct), synthesized bodyless when missing, so step 5 can fill
+    // in bodies via generate_resume_body.
 
     for info in ctx.co_enums.iter() {
         let wrap_ty = TypeDef.Named(NamedInfo(Name.inner(info.wrap_qname.clone()), []));
-        // Use the same key format mono would produce: resume[yield_ty, return_ty].
-        let resume_key = B.get_resume_qn().as_mono([info.yield_ty.clone(), info.return_ty.clone()]);
-        if !program.functions.contains_key(resume_key) {
-            let co_result_ty = build_co_result_ty(info.clone());
-            let var_alloc = VarAllocator.new();
-            let co_arg_var = var_alloc.allocate_temp();
-            let synthetic = FunctionDef(
-                annotations: Vec.new(),
-                public: False,
-                name: Identifier.new(I.intern("resume"), repr_loc.clone()),
-                qualified_name: Some(resume_key.clone()),
-                kind: FunctionDefKind.Regular,
-                type_arg_defs: None,
-                args: [FunctionArg(
-                    name: co_arg_var,
-                    type_def: wrap_ty,
-                    default_value: None,
-                )],
-                yield_type: None,
-                result_type: Some(co_result_ty),
-                body: None,
-                module_name: I.intern("Std.Coroutine"),
-                var_allocator: var_alloc,
-                is_varargs: False,
-                default_value_names: Vec.new(),
-                source_package: None,
-            );
-            program.functions.insert(resume_key, synthetic);
-        }
+        let co_result_ty = build_co_result_ty(info.clone());
+        find_or_create_resume(program, wrap_ty, co_result_ty, info.yield_ty.clone(), info.return_ty.clone(), repr_loc.clone());
     }
 
     // ── Step 5: replace resume function bodies ────────────────────────────────

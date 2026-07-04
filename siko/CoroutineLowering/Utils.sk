@@ -1,6 +1,8 @@
 module Siko.CoroutineLowering.Utils {
 
+import Siko.AST.Data
 import Siko.AST.Expr
+import Siko.AST.Function
 import Siko.AST.Identifier
 import Siko.AST.Name
 import Siko.AST.Pattern
@@ -10,6 +12,7 @@ import Siko.HIR.Program
 import Siko.Location
 import Siko.Interner as I
 import Siko.Constants.Builtins as B
+import Siko.Utils.VarAllocator
 import Siko.CoroutineLowering.Data
 
 pub fn any_location(program: Program) -> Location {
@@ -80,8 +83,144 @@ pub fn field_access(recv: Expr, field_name: I.String, field_ty: TypeDef, loc: Lo
 }
 
 pub fn build_co_result_ty(info: CoEnumInfo) -> TypeDef {
-    let qn = B.get_co_result_type_qn().as_mono([info.yield_ty, info.return_ty]);
-    TypeDef.Named(NamedInfo(Name.inner(qn), []))
+    let crn = info.co_result.clone().expect("lower_coroutines: co_enum has no resolved CoResult");
+    TypeDef.Named(NamedInfo(Name.inner(crn.enum_qn), []))
+}
+
+// ── CoResult / resume resolution ──────────────────────────────────────────────
+// Names are never reconstructed from types: passes like closure lowering v2
+// duplicate datatypes and functions, and the surviving defs' mono name args
+// are stale. Defs are found by content instead, and names are fabricated
+// only when synthesizing a def that doesn't exist yet.
+
+// The CoResult enum for (yield_ty, return_ty): an enum with the CoResult
+// base name whose Yielded payload is yield_ty and Returned payload is
+// return_ty. Synthesized if the program has none (mono only emitted
+// instantiations it saw explicit resume calls for).
+pub fn resolve_co_result(program: Program, yield_ty: TypeDef, return_ty: TypeDef, loc: Location) -> CoResultNames {
+    let co_result_base = B.get_co_result_type_qn().base();
+    let yielded_base = B.get_co_result_yielded_qn().base();
+    let returned_base = B.get_co_result_returned_qn().base();
+    for (qn, edef) in program.enums.iter() {
+        if qn.base() != co_result_base {
+            continue;
+        }
+        let yielded_qn = None;
+        let returned_qn = None;
+        let completed_qn = None;
+        for v in edef.variants.iter() {
+            let vq = v.qualified_name.clone().unwrap();
+            if vq.base() == yielded_base {
+                if v.items.len() == 1 && v.items[0].ty == yield_ty {
+                    yielded_qn = Some(vq);
+                }
+            } else if vq.base() == returned_base {
+                if v.items.len() == 1 && v.items[0].ty == return_ty {
+                    returned_qn = Some(vq);
+                }
+            } else {
+                completed_qn = Some(vq);
+            }
+        }
+        match (yielded_qn, returned_qn, completed_qn) {
+            (Some(y), Some(r), Some(c)) => {
+                return CoResultNames(enum_qn: qn.clone(), yielded_qn: y, returned_qn: r, completed_qn: c);
+            }
+            _ => {}
+        }
+    }
+    synthesize_co_result(program, yield_ty, return_ty, loc)
+}
+
+fn synthesize_co_result(program: Program, yield_ty: TypeDef, return_ty: TypeDef, loc: Location) -> CoResultNames {
+    // fabricated mono name, uniquified: a differently-shaped instance may
+    // already sit on the key (its stale args formatting the same types)
+    let idx = 0;
+    while program.enums.contains_key(B.get_co_result_type_qn().as_mono([yield_ty.clone(), return_ty.clone()]).with_closure_instance(idx)) {
+        idx += 1;
+    }
+    let enum_qn = B.get_co_result_type_qn().as_mono([yield_ty.clone(), return_ty.clone()]).with_closure_instance(idx);
+    let yielded_qn = B.get_co_result_yielded_qn().as_mono([yield_ty.clone(), return_ty.clone()]).with_closure_instance(idx);
+    let returned_qn = B.get_co_result_returned_qn().as_mono([yield_ty.clone(), return_ty.clone()]).with_closure_instance(idx);
+    let completed_qn = B.get_co_result_completed_qn().as_mono([yield_ty.clone(), return_ty.clone()]).with_closure_instance(idx);
+
+    let yielded_v = VariantDef(
+        Identifier.new(B.get_co_result_yielded_qn().short_name(), loc.clone()),
+        Some(yielded_qn.clone()),
+        [ItemInfo(name: None, ty: yield_ty)],
+    );
+    let returned_v = VariantDef(
+        Identifier.new(B.get_co_result_returned_qn().short_name(), loc.clone()),
+        Some(returned_qn.clone()),
+        [ItemInfo(name: None, ty: return_ty)],
+    );
+    let completed_v = VariantDef(
+        Identifier.new(B.get_co_result_completed_qn().short_name(), loc.clone()),
+        Some(completed_qn.clone()),
+        [],
+    );
+
+    let enum_def = EnumDef(
+        annotations: [],
+        public: True,
+        name: Identifier.new(B.get_co_result_type_qn().short_name(), loc.clone()),
+        qualified_name: Some(enum_qn.clone()),
+        type_arg_defs: None,
+        variants: [yielded_v, returned_v, completed_v],
+        methods: Vec.new(),
+        method_map: MethodMap.new(),
+        module_name: I.intern("Std.Coroutine"),
+        value_type: False,
+    );
+
+    program.enums.insert(enum_qn.clone(), enum_def);
+    program.variant_enum_map.insert(yielded_qn.clone(), enum_qn.clone());
+    program.variant_enum_map.insert(returned_qn.clone(), enum_qn.clone());
+    program.variant_enum_map.insert(completed_qn.clone(), enum_qn.clone());
+    CoResultNames(enum_qn: enum_qn, yielded_qn: yielded_qn, returned_qn: returned_qn, completed_qn: completed_qn)
+}
+
+// The resume def for a coroutine, found by its argument type (the co(...)
+// type before step 2's type rewriting, the co_wrap struct after).
+// Synthesized bodyless when missing — step 5 of lower_coroutines fills
+// every resume body.
+pub fn find_or_create_resume(program: Program, arg_ty: TypeDef, co_result_ty: TypeDef, yield_ty: TypeDef, return_ty: TypeDef, loc: Location) -> QualifiedName {
+    let resume_base = B.get_resume_qn().base();
+    for (qn, func) in program.functions.iter() {
+        if qn.base() == resume_base && !func.args.is_empty() && func.args[0].type_def == arg_ty {
+            return qn.clone();
+        }
+    }
+    let idx = 0;
+    while program.functions.contains_key(B.get_resume_qn().as_mono([yield_ty.clone(), return_ty.clone()]).with_closure_instance(idx)) {
+        idx += 1;
+    }
+    let resume_qn = B.get_resume_qn().as_mono([yield_ty.clone(), return_ty.clone()]).with_closure_instance(idx);
+    let var_alloc = VarAllocator.new();
+    let co_arg_var = var_alloc.allocate_temp();
+    let synthetic = FunctionDef(
+        annotations: Vec.new(),
+        public: False,
+        name: Identifier.new(I.intern("resume"), loc.clone()),
+        qualified_name: Some(resume_qn.clone()),
+        kind: FunctionDefKind.Regular,
+        type_arg_defs: None,
+        args: [FunctionArg(
+            name: co_arg_var,
+            type_def: arg_ty,
+            default_value: None,
+        )],
+        yield_type: None,
+        result_type: Some(co_result_ty),
+        body: None,
+        module_name: I.intern("Std.Coroutine"),
+        var_allocator: var_alloc,
+        is_varargs: False,
+        default_value_names: Vec.new(),
+        source_package: None,
+    );
+    program.functions.insert(resume_qn.clone(), synthetic);
+    resume_qn
 }
 
 }

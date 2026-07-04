@@ -79,8 +79,10 @@ instance CollectDeps[FunctionDef]         = auto(Fold)
 
 instance CollectDeps[E.FunctionCallInfo] {
     fn collect_deps(info: E.FunctionCallInfo, c: DepCollector) {
-        if let E.FunctionKind.UserDefined = info.kind {
-            c.deps.insert(info.qname);
+        match info.kind {
+            E.FunctionKind.StructCtor => {}
+            E.FunctionKind.VariantCtor => {}
+            _ => { c.deps.insert(info.qname); }
         }
         collect_deps(info.args, c);
     }

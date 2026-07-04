@@ -4,7 +4,6 @@ import Std.Arch.Pthread
 import Std.Libc.Pthread
 import Std.Libc.Unistd
 import Std.Ptr
-import Std.Intrinsics
 
 @value_type
 struct Arg {
@@ -26,14 +25,21 @@ pub struct JoinHandle {
 
 @unsafe
 @c_callback
-fn entrypoint(arg: void*) -> void* {
-    let arg_ptr: *Arg = transmute(arg);
+fn entrypoint(arg_ptr: *Arg) -> void* {
     let arg = *arg_ptr;
     let f = arg.f;
     deallocate(arg_ptr);
     f();
     return get_null_voidptr();
 }
+
+// pthread_create with the payload spelled as *Arg instead of void*:
+// closure-content inference rides on types and a void* carries none, so the
+// typed binding is what lets the closure set flow from spawn's argument
+// through the C runtime into entrypoint. ABI-identical to the libc
+// prototype.
+@extern("C", "", "pthread_create")
+fn pthread_create_typed(thread: *PThread, attr: *PthreadAttr, start_routine: fn*(*Arg) -> void*, arg: *Arg) -> I32
 
 @safe
 pub fn spawn(f: fn() -> ()) -> JoinHandle {
@@ -43,7 +49,7 @@ pub fn spawn(f: fn() -> ()) -> JoinHandle {
     let arg_ptr: *Arg = allocate();
     *arg_ptr = arg;
     pthread_attr_init(&attr);
-    pthread_create(&thread, &attr, entrypoint, transmute(arg_ptr));
+    pthread_create_typed(&thread, &attr, entrypoint, arg_ptr);
     JoinHandle.new(thread)
 }
 

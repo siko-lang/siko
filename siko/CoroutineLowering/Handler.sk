@@ -9,7 +9,6 @@ import Siko.AST.QualifiedName
 import Siko.AST.Type
 import Siko.Location
 import Siko.Interner as I
-import Siko.Constants.Builtins as B
 import Siko.CoroutineLowering.Utils
 import Siko.CoroutineLowering.Data
 import Siko.CoroutineLowering.HandlerLower
@@ -40,7 +39,7 @@ fn build_dispatch(vi: CoVariantInfo, info: CoEnumInfo, frame_var: VariableName, 
     }
 
     let completed_qn = QualifiedName.new_coroutine_frame_state_variant(vi.co_index, vi.variant_index, vi.yield_count + 1).as_mono();
-    let completed_variant_qn = B.get_co_result_completed_qn().as_mono([info.yield_ty, info.return_ty]);
+    let completed_variant_qn = info.co_result.clone().expect("lower_coroutines: co_enum has no resolved CoResult").completed_qn;
     let co_result_completed = make_variant_call(completed_variant_qn, Vec.new(), co_result.clone(), loc.clone());
     arms.push(MatchArm(
         make_no_payload_pattern(completed_qn, frame_state_ty.clone(), loc.clone()),
@@ -67,8 +66,9 @@ pub fn build_handler(
     let frame_state_ty = TypeDef.Named(NamedInfo(Name.inner(frame_state_qn), []));
     let co_result      = build_co_result_ty(info);
 
-    let yielded_qn  = B.get_co_result_yielded_qn().as_mono([info.yield_ty, info.return_ty]);
-    let returned_qn = B.get_co_result_returned_qn().as_mono([info.yield_ty, info.return_ty]);
+    let crn = info.co_result.clone().expect("lower_coroutines: co_enum has no resolved CoResult");
+    let yielded_qn  = crn.yielded_qn;
+    let returned_qn = crn.returned_qn;
 
     // One pass: arg/local refs -> frame fields, lets -> assigns, yields/returns ->
     // state transitions + labelled returns. Yields are numbered in walk order, which

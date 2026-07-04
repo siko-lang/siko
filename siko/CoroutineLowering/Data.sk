@@ -19,6 +19,18 @@ pub struct CoVariantInfo {
     pub local_var_names: Vec[VariableName],
 }
 
+// The CoResult[yield_ty, return_ty] enum a co_enum reports through,
+// resolved by content: the def's name cannot be reconstructed from types,
+// because passes like closure lowering v2 duplicate datatypes and leave the
+// mono name args of the copies stale.
+@derive(Clone)
+pub struct CoResultNames {
+    pub enum_qn: QualifiedName,
+    pub yielded_qn: QualifiedName,
+    pub returned_qn: QualifiedName,
+    pub completed_qn: QualifiedName,
+}
+
 @derive(Clone)
 pub struct CoEnumInfo {
     pub co_index: Int,
@@ -27,6 +39,7 @@ pub struct CoEnumInfo {
     pub yield_ty: TypeDef,
     pub return_ty: TypeDef,
     pub variants: Vec[CoVariantInfo],
+    pub co_result: Option[CoResultNames] = None,
 }
 
 }

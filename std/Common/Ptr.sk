@@ -5,7 +5,11 @@ import Std.Libc.String
 import Std.GC
 import Std.Intrinsics
 
+// closure_alias: the size travels as a bare U64, so closure flow analysis
+// cannot see that sizeof(T) must be the same T instance as the result's
+// pointee (same for the other allocators below)
 @unsafe
+@closure_alias
 pub fn allocate[T]() -> *T {
     transmute(malloc(sizeof(T)))
 }
@@ -36,21 +40,25 @@ pub fn is_null_ptr[T](ptr: *T) -> Bool {
 }
 
 @unsafe
+@closure_alias
 pub fn allocate_array[T](count: Int) -> *T {
     transmute(malloc(count.as_u64() * sizeof(T)))
 }
 
 @unsafe
+@closure_alias
 pub fn gc_allocate[T]() -> *T {
     transmute(gc_malloc(sizeof(T)))
 }
 
 @unsafe
+@closure_alias
 pub fn gc_allocate_array[T](count: Int) -> *T {
     transmute(gc_malloc(count.as_u64() * sizeof(T)))
 }
 
 @unsafe
+@closure_alias
 pub fn gc_allocate_atomic[T](count: Int) -> *T {
     transmute(gc_malloc_atomic(count.as_u64() * sizeof(T)))
 }

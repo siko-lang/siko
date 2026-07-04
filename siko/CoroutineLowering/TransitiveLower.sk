@@ -1,7 +1,6 @@
 module Siko.CoroutineLowering.TransitiveLower {
 
 import Std.Map
-import Siko.AST.Data
 import Siko.AST.Expr
 import Siko.AST.Identifier
 import Siko.AST.Name
@@ -9,12 +8,13 @@ import Siko.AST.Pattern
 import Siko.AST.QualifiedName
 import Siko.AST.Statement as S
 import Siko.AST.Type
-import Siko.Constants.Builtins as B
 import Siko.HIR.Program
 import Siko.Interner as I
 import Siko.Location
 import Siko.Normalizer
 import Siko.Utils.VarAllocator
+import Siko.Format.Utils
+import Siko.CoroutineLowering.Data
 import Siko.CoroutineLowering.Utils
 import Siko.CoroutineLowering.CoResultCollect as CRC
 
@@ -22,6 +22,10 @@ pub struct TransitiveLowerer {
     pub program: Program,
     pub var_alloc: VarAllocator,
     pub is_co_map: Map[QualifiedName, Bool],
+    // per drive-loop return type (keyed by format_type): the CoResult enum
+    // and resume def resolved/synthesized in the pre-scan
+    pub co_results: Map[String, CoResultNames],
+    pub resumes: Map[String, QualifiedName],
 }
 
 pub trait TransitiveLower[T] {
@@ -99,7 +103,7 @@ instance TransitiveLower[S.Statement] {
                         let loc = rhs.location.clone();
                         let co_tmp = ctx.var_alloc.allocate_temp();
                         let result_lhs = Expr(ExprKind.Var(name.clone()), loc.clone(), ty.clone());
-                        let block = build_expansion_block(name, ty, co_tmp, rhs, co_ty, return_ty, result_lhs, ctx.var_alloc, loc);
+                        let block = build_expansion_block(name, ty, co_tmp, rhs, co_ty, return_ty, result_lhs, ctx, loc);
                         S.Statement.Expr(block)
                     }
                     None => S.Statement.Let(S.LetInfo(name, ty, lower_transitive(rhs, ctx))),
@@ -111,7 +115,7 @@ instance TransitiveLower[S.Statement] {
                     Some((co_ty, return_ty)) => {
                         let loc = rhs.location.clone();
                         let co_tmp = ctx.var_alloc.allocate_temp();
-                        let block = build_expansion_block_assign(co_tmp, rhs, co_ty, return_ty, lhs, ctx.var_alloc, loc);
+                        let block = build_expansion_block_assign(co_tmp, rhs, co_ty, return_ty, lhs, ctx, loc);
                         S.Statement.Expr(block)
                     }
                     None => S.Statement.Assign(lower_transitive(lhs, ctx), lower_transitive(rhs, ctx)),
@@ -126,7 +130,7 @@ instance TransitiveLower[S.Statement] {
                         let co_tmp = ctx.var_alloc.allocate_temp();
                         let result_var = ctx.var_alloc.allocate_temp();
                         let result_lhs = Expr(ExprKind.Var(result_var.clone()), loc.clone(), Some(return_ty.clone()));
-                        let block = build_expansion_block(result_var, Some(return_ty), co_tmp, e, co_ty, return_ty, result_lhs, ctx.var_alloc, loc);
+                        let block = build_expansion_block(result_var, Some(return_ty), co_tmp, e, co_ty, return_ty, result_lhs, ctx, loc);
                         S.Statement.Expr(block)
                     }
                     None => S.Statement.Expr(lower_transitive(e, ctx)),
@@ -160,9 +164,17 @@ pub fn transform_transitive(program: Program, is_co_map: Map[QualifiedName, Bool
         }
     }
 
-    // Register any CoResult enum instantiation that mono never saw.
-    for (_, return_ty) in needed {
-        ensure_co_result_enum(program, TypeDef.Tuple([]), return_ty, repr_loc.clone());
+    // Resolve (or synthesize) the CoResult enum and resume def each drive
+    // loop will use — by content, never by fabricated name.
+    let co_results: Map[String, CoResultNames] = Map.new();
+    let resumes: Map[String, QualifiedName] = Map.new();
+    for (k, return_ty) in needed {
+        let crn = resolve_co_result(program, TypeDef.Tuple([]), return_ty.clone(), repr_loc.clone());
+        let co_result_ty = TypeDef.Named(NamedInfo(Name.inner(crn.enum_qn.clone()), []));
+        let arg_ty = TypeDef.Co(CoroutineInfo(yield_ty: TypeDef.Tuple([]), return_ty: return_ty.clone()));
+        let resume_qn = find_or_create_resume(program, arg_ty, co_result_ty, TypeDef.Tuple([]), return_ty, repr_loc.clone());
+        co_results.insert(k.clone(), crn);
+        resumes.insert(k, resume_qn);
     }
 
     // Main pass: rewrite each transitive-coroutine function body.
@@ -173,7 +185,13 @@ pub fn transform_transitive(program: Program, is_co_map: Map[QualifiedName, Bool
         let func = program.functions.get(key).unwrap();
         let body = match func.body { None => continue, Some(b) => b };
 
-        let ctx = TransitiveLowerer(program: program, var_alloc: func.var_allocator, is_co_map: is_co_map);
+        let ctx = TransitiveLowerer(
+            program: program,
+            var_alloc: func.var_allocator,
+            is_co_map: is_co_map,
+            co_results: co_results,
+            resumes: resumes,
+        );
         let new_body = lower_transitive(body, ctx);
         func.body = Some(new_body);
         if func.yield_type.is_none() {
@@ -187,53 +205,6 @@ pub fn transform_transitive(program: Program, is_co_map: Map[QualifiedName, Bool
 
 // Scan a function body and collect all (return_ty) values for CoResult enums we will need.
 // Uses the same logic as classify_co_create to identify which calls will be expanded.
-
-// Register CoResult[unit_ty, return_ty] in program.enums and variant_enum_map if not present.
-// The mono pass never saw this instantiation (drive loops are generated post-mono), so we
-// must create the enum entry exactly as mono would.
-fn ensure_co_result_enum(program: Program, unit_ty: TypeDef, return_ty: TypeDef, loc: Location) {
-    let co_result_qn = B.get_co_result_type_qn().as_mono([unit_ty.clone(), return_ty.clone()]);
-    if program.enums.contains_key(co_result_qn) {
-        return;
-    }
-    let yielded_qn  = B.get_co_result_yielded_qn().as_mono([unit_ty.clone(), return_ty.clone()]);
-    let returned_qn = B.get_co_result_returned_qn().as_mono([unit_ty.clone(), return_ty.clone()]);
-    let completed_qn = B.get_co_result_completed_qn().as_mono([unit_ty.clone(), return_ty.clone()]);
-
-    let yielded_v = VariantDef(
-        Identifier.new(B.get_co_result_yielded_qn().short_name(), loc.clone()),
-        Some(yielded_qn.clone()),
-        [ItemInfo(name: None, ty: unit_ty)],
-    );
-    let returned_v = VariantDef(
-        Identifier.new(B.get_co_result_returned_qn().short_name(), loc.clone()),
-        Some(returned_qn.clone()),
-        [ItemInfo(name: None, ty: return_ty)],
-    );
-    let completed_v = VariantDef(
-        Identifier.new(B.get_co_result_completed_qn().short_name(), loc.clone()),
-        Some(completed_qn.clone()),
-        [],
-    );
-
-    let enum_def = EnumDef(
-        annotations: [],
-        public: True,
-        name: Identifier.new(B.get_co_result_type_qn().short_name(), loc.clone()),
-        qualified_name: Some(co_result_qn.clone()),
-        type_arg_defs: None,
-        variants: [yielded_v, returned_v, completed_v],
-        methods: Vec.new(),
-        method_map: MethodMap.new(),
-        module_name: I.intern("Std.Coroutine"),
-        value_type: False,
-    );
-
-    program.enums.insert(co_result_qn.clone(), enum_def);
-    program.variant_enum_map.insert(yielded_qn, co_result_qn.clone());
-    program.variant_enum_map.insert(returned_qn, co_result_qn.clone());
-    program.variant_enum_map.insert(completed_qn, co_result_qn.clone());
-}
 
 // A transitive coroutine call is a normal function call (is_coroutine_create=False)
 // whose callee is classified as a coroutine by the prepass.
@@ -266,11 +237,11 @@ fn build_expansion_block(
     co_ty: TypeDef,
     return_ty: TypeDef,
     result_lhs: Expr,
-    var_alloc: VarAllocator,
+    ctx: TransitiveLowerer,
     loc: Location,
 ) -> Expr {
     let decl_result = S.Statement.Declare(S.DeclareInfo(name, ty));
-    let rest = build_expansion_stmts(co_tmp, rhs, co_ty, return_ty, result_lhs, var_alloc, loc.clone());
+    let rest = build_expansion_stmts(co_tmp, rhs, co_ty, return_ty, result_lhs, ctx, loc.clone());
     let all_stmts: Vec[S.Statement] = Vec.new();
     all_stmts.push(decl_result);
     for s in rest { all_stmts.push(s); }
@@ -283,10 +254,10 @@ fn build_expansion_block_assign(
     co_ty: TypeDef,
     return_ty: TypeDef,
     result_lhs: Expr,
-    var_alloc: VarAllocator,
+    ctx: TransitiveLowerer,
     loc: Location,
 ) -> Expr {
-    let stmts = build_expansion_stmts(co_tmp, rhs, co_ty, return_ty, result_lhs, var_alloc, loc.clone());
+    let stmts = build_expansion_stmts(co_tmp, rhs, co_ty, return_ty, result_lhs, ctx, loc.clone());
     Expr(ExprKind.Block(BlockInfo(stmts)), loc, Some(TypeDef.Tuple([])))
 }
 
@@ -296,7 +267,7 @@ fn build_expansion_stmts(
     co_ty: TypeDef,
     return_ty: TypeDef,
     result_lhs: Expr,
-    var_alloc: VarAllocator,
+    ctx: TransitiveLowerer,
     loc: Location,
 ) -> Vec[S.Statement] {
     // Mark is_coroutine_create=True so step 2 of lower_coroutines calls lower_co_create
@@ -322,7 +293,7 @@ fn build_expansion_stmts(
     // than a stale C-local alias.
     let stmts: Vec[S.Statement] = Vec.new();
     stmts.push(S.Statement.Let(S.LetInfo(co_tmp, Some(co_ty), co_create_expr)));
-    stmts.push(S.Statement.Loop(build_drive_loop(co_tmp_expr, result_lhs, return_ty, var_alloc, loc)));
+    stmts.push(S.Statement.Loop(build_drive_loop(co_tmp_expr, result_lhs, return_ty, ctx, loc)));
     stmts
 }
 
@@ -330,18 +301,20 @@ fn build_drive_loop(
     co_tmp_expr: Expr,
     result_lhs: Expr,
     return_ty: TypeDef,
-    var_alloc: VarAllocator,
+    ctx: TransitiveLowerer,
     loc: Location,
 ) -> Vec[S.Statement] {
     let unit_ty = TypeDef.Tuple([]);
-    let co_result_qn = B.get_co_result_type_qn().as_mono([unit_ty.clone(), return_ty.clone()]);
-    let co_result_ty = TypeDef.Named(NamedInfo(Name.inner(co_result_qn), []));
+    let var_alloc = ctx.var_alloc;
+    // the CoResult enum and resume def resolved by the pre-scan
+    let k = format_type(return_ty.clone());
+    let crn = ctx.co_results.get(k.clone()).expect("TransitiveLower: CoResult not resolved for drive loop");
+    let resume_qn = ctx.resumes.get(k).expect("TransitiveLower: resume not resolved for drive loop");
+    let co_result_ty = TypeDef.Named(NamedInfo(Name.inner(crn.enum_qn.clone()), []));
 
-    // Use the same mono key that the mono pass would have produced for resume[Y, R].
-    let resume_mono_qn = B.get_resume_qn().as_mono([unit_ty.clone(), return_ty.clone()]);
     let resume_call = Expr(
         ExprKind.FunctionCall(FunctionCallInfo(
-            qname: resume_mono_qn,
+            qname: resume_qn,
             kind: FunctionKind.UserDefined,
             args: [co_tmp_expr],
         )),
@@ -350,10 +323,9 @@ fn build_drive_loop(
     );
 
     // Yielded(_) => { yield (); continue; }
-    let yielded_qn = B.get_co_result_yielded_qn().as_mono([unit_ty.clone(), return_ty.clone()]);
     let yielded_pat = Pattern(
         PatternKind.Named(NamedPatternInfo(
-            name: Name.inner(yielded_qn),
+            name: Name.inner(crn.yielded_qn.clone()),
             args: [Pattern(PatternKind.Wildcard, loc.clone(), Some(unit_ty.clone()))],
             named_args: Vec.new(),
             has_rest: False,
@@ -367,12 +339,11 @@ fn build_drive_loop(
     ])), loc.clone(), Some(unit_ty.clone()));
 
     // Returned(v) => { result_lhs = v; break; }
-    let returned_qn = B.get_co_result_returned_qn().as_mono([unit_ty.clone(), return_ty.clone()]);
     let v_var = var_alloc.allocate_temp();
     let v_expr = Expr(ExprKind.Var(v_var.clone()), loc.clone(), Some(return_ty.clone()));
     let returned_pat = Pattern(
         PatternKind.Named(NamedPatternInfo(
-            name: Name.inner(returned_qn),
+            name: Name.inner(crn.returned_qn.clone()),
             args: [Pattern(PatternKind.Binding(v_var), loc.clone(), Some(return_ty.clone()))],
             named_args: Vec.new(),
             has_rest: False,
@@ -386,10 +357,9 @@ fn build_drive_loop(
     ])), loc.clone(), Some(unit_ty.clone()));
 
     // Completed => abort()
-    let completed_qn = B.get_co_result_completed_qn().as_mono([unit_ty.clone(), return_ty]);
     let completed_pat = Pattern(
         PatternKind.Named(NamedPatternInfo(
-            name: Name.inner(completed_qn),
+            name: Name.inner(crn.completed_qn.clone()),
             args: Vec.new(),
             named_args: Vec.new(),
             has_rest: False,

@@ -484,13 +484,14 @@ instance Rw[E.Expr] {
             E.ExprKind.FunctionCall(info) => {
                 let new_qname = match info.kind {
                     E.FunctionKind.UserDefined => retarget_call(c, info, orig_ty.clone()),
+                    E.FunctionKind.Builtin => retarget_call(c, info, orig_ty.clone()),
+                    E.FunctionKind.Extern(_) => retarget_call(c, info, orig_ty.clone()),
                     E.FunctionKind.VariantCtor => match retarget_data_name(c, Name.inner(info.qname.clone()), orig_ty.clone()) {
                         n => n.resolved(),
                     },
                     E.FunctionKind.StructCtor => match retarget_data_name(c, Name.inner(info.qname.clone()), orig_ty.clone()) {
                         n => n.resolved(),
                     },
-                    _ => info.qname.clone(),
                 };
                 E.Expr(E.ExprKind.FunctionCall(E.FunctionCallInfo(
                     qname: new_qname,
@@ -509,13 +510,7 @@ instance Rw[E.Expr] {
 // which instance of the callee this call site reaches, derived exactly the
 // way the resolver derived it (via the callee-var -> caller-var subst)
 fn retarget_call(c: RwCtx, info: E.FunctionCallInfo, orig_ty: Option[TypeDef]) -> QualifiedName {
-    let callee = match c.l.r.program.functions.get(info.qname) {
-        Some(f) => f,
-        None => return info.qname,
-    };
-    if callee.body.is_none() {
-        return info.qname;
-    }
+    let callee = c.l.r.program.functions.get(info.qname).expect("closure lowering v2: callee not found");
     // callee var -> caller var
     let subst: Map[TypeVar, TypeVar] = Map.new();
     for (i, arg) in info.args.iter().enumerate() {
@@ -550,13 +545,7 @@ fn retarget_call(c: RwCtx, info: E.FunctionCallInfo, orig_ty: Option[TypeDef]) -
 // type's interior vars carry the sets, positionally aligned with the
 // target's boundary vars (mirrors fn_ptr_edges in the flow walk)
 fn retarget_fn_ptr(c: RwCtx, info: E.FunctionPtrInfo, orig_ty: Option[TypeDef]) -> QualifiedName {
-    let target = match c.l.r.program.functions.get(info.name) {
-        Some(f) => f,
-        None => return info.name,
-    };
-    if target.body.is_none() {
-        return info.name;
-    }
+    let target = c.l.r.program.functions.get(info.name).expect("closure lowering v2: fn ptr target not found");
     let subst: Map[TypeVar, TypeVar] = Map.new();
     fill_var_subst(subst, boundary_vars(target), opt_ty_vars(orig_ty));
     let inputs: Vec[Vec[Int]] = boundary_vars(target).iter().map(|v| {
@@ -764,14 +753,6 @@ fn rewrite_program(r: Resolver, program: Program) {
         let new_name = l.instance_names.get(iid).unwrap();
         new_func.qualified_name = Some(new_name.clone());
         new_functions.insert(new_name, new_func);
-    }
-
-    // bodyless externs/builtins are kept as-is (their defs are either
-    // skipped by the backend or re-synthesized by coroutine lowering)
-    for (q, func) in program.functions.iter() {
-        if func.body.is_none() {
-            new_functions.insert(q, func);
-        }
     }
 
     // handlers (generation computes payloads, which can intern further
