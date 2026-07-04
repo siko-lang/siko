@@ -1,0 +1,502 @@
+module Siko.SanityCheck {
+
+import Std.Map
+import Siko.AST.Data
+import Siko.AST.Expr
+import Siko.AST.Function
+import Siko.AST.Generics
+import Siko.AST.Name
+import Siko.AST.QualifiedName
+import Siko.AST.Statement as S
+import Siko.AST.Type
+import Siko.Constants.Builtins as B
+import Siko.Format.Utils
+import Siko.HIR.Program
+import Siko.Unification.Utils
+
+struct Checker {
+    program: Program,
+    func: FunctionDef,
+    locals: Map[VariableName, TypeDef],
+
+    fn fail(ctx: Checker, message: String) -> TypeDef {
+        println("Sanity check failed: " + message);
+        println("Offending function:");
+        println(format_fn(ctx.func));
+        panic("sanity check failed")
+    }
+
+    fn fail_type(ctx: Checker, message: String, expected: TypeDef, actual: TypeDef) -> TypeDef {
+        println("Sanity check failed: " + message);
+        println("Expected type: " + format_type(expected));
+        println("Actual type:   " + format_type(actual));
+        println("Offending function:");
+        println(format_fn(ctx.func));
+        panic("sanity check failed")
+    }
+
+    fn check_concrete_type(ctx: Checker, ty: TypeDef, where_: String) {
+        let has_vars = False;
+        for _ in collect_type_vars(ty) {
+            has_vars = True;
+        }
+        if has_vars {
+            println("Sanity check failed: non-concrete type in " + where_);
+            println("Type: " + format_type(ty));
+            println("Offending function:");
+            println(format_fn(ctx.func));
+            panic("sanity check failed");
+        }
+    }
+
+    fn unify(ctx: Checker, expected: TypeDef, actual: TypeDef) {
+        if expected != actual {
+            ctx.fail_type("unify failed", expected, actual);
+        }
+    }
+
+    fn expr_type(ctx: Checker, expr: Expr) -> TypeDef {
+        match expr.ty {
+            Some(ty) => {
+                ctx.check_concrete_type(ty, "expression");
+                ty
+            }
+            None => ctx.fail("expression has no type"),
+        }
+    }
+
+    fn check_expr(ctx: Checker, expr: Expr) -> TypeDef {
+        let ty = ctx.expr_type(expr);
+        match expr.kind {
+            ExprKind.IntLiteral(_) => {}
+            ExprKind.StringLiteral(_) => {}
+            ExprKind.CharLiteral(_) => {}
+            ExprKind.Var(name) => {
+                if let Some(local_ty) = ctx.locals.get(name) {
+                    ctx.unify(local_ty, ty);
+                }
+            }
+            ExprKind.Name(_) => {
+                ctx.fail("Name in sanity checker");
+            }
+            ExprKind.BinaryOp(_, lhs, rhs) => {
+                let lhs_ty = ctx.check_expr(lhs);
+                let rhs_ty = ctx.check_expr(rhs);
+                ctx.unify(lhs_ty, rhs_ty);
+            }
+            ExprKind.UnaryOp(_, operand) => {
+                ctx.check_expr(operand);
+            }
+            ExprKind.Call(info) => {
+                ctx.fail("call in sanity checker");
+            }
+            ExprKind.MethodCall(info) => {
+                ctx.fail("method call in sanity checker");
+            }
+            ExprKind.FieldAccess(receiver, field) => {
+                let receiver_ty = ctx.check_expr(receiver);
+                match receiver_ty {
+                    TypeDef.Named(NamedInfo(name, _)) => {
+                        let struct_qname = name.resolved();
+                        if let Some(def) = ctx.program.structs.get(struct_qname) {
+                            let found = False;
+                            let field_name = field.name();
+                            for f in def.fields {
+                                if f.name.name() == field_name {
+                                    ctx.unify(f.ty, ty);
+                                    found = True;
+                                }
+                            }
+                            if !found {
+                                ctx.fail("field access field not found");
+                            }
+                        } else {
+                            ctx.fail("field access receiver type is not a struct");
+                        }
+                    }
+                    _ => {
+                        ctx.fail("field access receiver has non-struct type");
+                    }
+                }
+            }
+            ExprKind.TupleIndex(receiver, index) => {
+                let receiver_ty = ctx.check_expr(receiver);
+                match receiver_ty {
+                    TypeDef.Tuple(item_types) => {
+                        if index < 0 || index >= item_types.len() {
+                            ctx.fail("tuple index out of bounds");
+                        }
+                        ctx.unify(item_types[index], ty);
+                    }
+                    _ => {
+                        ctx.fail("tuple index receiver has non-tuple type");
+                    }
+                }
+            }
+            ExprKind.FunctionCall(info) => {
+                ctx.check_function_call(info, ty);
+            }
+            ExprKind.DynamicCall(callee, args) => {
+                ctx.check_expr(callee);
+                for arg in args {
+                    ctx.check_expr(arg);
+                }
+            }
+            ExprKind.FunctionPtr(info) => {
+                if let Some(def) = ctx.program.functions.get(info.name) {
+                    ctx.check_function_signature(def);
+                }
+            }
+            ExprKind.FunctionPtrCall(callee, args) => {
+                ctx.check_expr(callee);
+                for arg in args {
+                    ctx.check_expr(arg);
+                }
+            }
+            ExprKind.If(cond, then_branch, else_branch) => {
+                ctx.check_expr(cond);
+                ctx.check_expr(then_branch);
+                if let Some(e) = else_branch {
+                    ctx.check_expr(e);
+                }
+            }
+            ExprKind.IfLet(_, cond, then_branch, else_branch) => {
+                ctx.fail("if let in sanity checker");
+            }
+            ExprKind.Range(lhs, rhs) => {
+                ctx.fail("range in sanity checker");
+            }
+            ExprKind.Block(info) => {
+                ctx.check_statements(info.stmts);
+            }
+            ExprKind.Tuple(items) => {
+                match ty.clone() {
+                    TypeDef.Tuple(item_types) => {
+                        if item_types.len() != items.len() {
+                            ctx.fail("tuple item count mismatch");
+                        }
+                        for (item, item_ty) in items.iter().zip(item_types) {
+                            let actual_ty = ctx.check_expr(item);
+                            ctx.unify(item_ty, actual_ty);
+                        }
+                    }
+                    _ => {
+                        ctx.fail("tuple expression has non-tuple type");
+                    }
+                }
+            }
+            ExprKind.Paren(inner) => {
+                let inner_ty = ctx.check_expr(inner);
+                ctx.unify(ty, inner_ty);
+            }
+            ExprKind.Return(inner) => {
+                let inner_ty = ctx.check_expr(inner);
+                match ctx.func.result_type {
+                    Some(return_ty) => ctx.unify(return_ty, inner_ty),
+                    None => { ctx.fail("function has no result type"); }
+                }
+            }
+            ExprKind.Break => {}
+            ExprKind.Continue => {}
+            ExprKind.Match(info) => {
+                ctx.check_expr(info.scrutinee);
+                for arm in info.arms {
+                    ctx.check_expr(arm.body);
+                }
+            }
+            ExprKind.With(info) => {
+                ctx.fail("with in sanity checker");
+            }
+            ExprKind.ImplicitRef(_) => {
+                ctx.fail("implicit reference in sanity checker");
+            }
+            ExprKind.UnresolvedLambda(_, _) => {
+                ctx.fail("unresolved lambda in sanity checker");
+            }
+            ExprKind.ResolvedLambda(args, body, _) => {
+                ctx.fail("resolved lambda in sanity checker");
+            }
+            ExprKind.CreateClosure(info) => {
+                if let Some(def) = ctx.program.functions.get(info.name) {
+                    ctx.check_function_signature(def);
+                }
+            }
+            ExprKind.List(items) => {
+                ctx.fail("list in sanity checker");
+            }
+            ExprKind.Index(base, index) => {
+                ctx.fail("inded in sanity checker");
+            }
+            ExprKind.Try(inner) => {
+                ctx.fail("try in sanity checker");
+            }
+            ExprKind.Transmute(inner) => {
+                ctx.check_expr(inner);
+            }
+            ExprKind.SizeOf(size_ty) => {
+                ctx.check_concrete_type(size_ty, "sizeof");
+            }
+            ExprKind.Discriminator(inner) => {
+                ctx.check_expr(inner);
+            }
+            ExprKind.Deref(inner) => {
+                ctx.check_expr(inner);
+                ctx.unify(TypeDef.Ptr(ty), ctx.expr_type(inner))
+            }
+            ExprKind.AddrOf(inner) => {
+                ctx.check_expr(inner);
+                ctx.unify(TypeDef.Ptr(ctx.expr_type(inner)), ty)
+            }
+            ExprKind.TypeAssociatedCall(info) => {
+                ctx.fail("TypeAssociatedCall in sanity checker");
+            }
+            ExprKind.Yield(info) => {
+                let arg_ty = ctx.check_expr(info.arg);
+                match ctx.func.yield_type {
+                    Some(yield_ty) => ctx.unify(yield_ty, arg_ty),
+                    None => { ctx.fail("yield in a non-coroutine function"); }
+                }
+            }
+            ExprKind.Goto(_) => {}
+            ExprKind.Label(_) => {}
+        }
+        ty
+    }
+
+    fn check_statement(ctx: Checker, stmt: S.Statement) {
+        match stmt {
+            S.Let(info) => {
+                let rhs_ty = ctx.check_expr(info.rhs);
+                match info.ty {
+                    Some(let_ty) => {
+                        ctx.unify(let_ty, rhs_ty);
+                        ctx.locals.insert(info.name, let_ty);
+                    }
+                    None => {
+                        ctx.locals.insert(info.name, rhs_ty);
+                    }
+                }
+            }
+            S.UnresolvedLet(_, _, _) => {
+                ctx.fail("unresolved let survived normalization");
+            }
+            S.Declare(info) => {
+                match info.ty {
+                    Some(declare_ty) => {
+                        ctx.check_concrete_type(declare_ty, "declare");
+                        ctx.locals.insert(info.name, declare_ty);
+                    }
+                    None => { ctx.fail("declaration has no type"); }
+                }
+            }
+            S.Assign(lhs, rhs) => {
+                let lhs_ty = ctx.check_expr(lhs);
+                let rhs_ty = ctx.check_expr(rhs);
+                ctx.unify(lhs_ty, rhs_ty);
+            }
+            S.Expr(expr) => {
+                ctx.check_expr(expr);
+            }
+            S.TrailingExpr(expr) => {
+                ctx.fail("trailing expression in sanity checker");
+            }
+            S.Loop(stmts) => {
+                ctx.check_statements(stmts);
+            }
+            S.ForLoop(_, iterable, body) => {
+                ctx.fail("for loop in sanity checker");
+            }
+            S.WhileLoop(cond, body) => {
+                ctx.fail("while loop in sanity checker");
+            }
+        }
+    }
+
+    fn check_statements(ctx: Checker, stmts: Vec[S.Statement]) {
+        for stmt in stmts {
+            ctx.check_statement(stmt);
+        }
+    }
+
+    fn check_function_signature(ctx: Checker, def: FunctionDef) {
+        check_type_arg_defs(def.type_arg_defs, "function");
+        for arg in def.args {
+            ctx.check_concrete_type(arg.type_def, "function argument");
+            if let Some(default_value) = arg.default_value {
+                ctx.check_expr(default_value);
+            }
+        }
+        if let Some(result_ty) = def.result_type {
+            ctx.check_concrete_type(result_ty, "function result");
+        } else {
+            ctx.fail("function has no result type");
+        }
+        if let Some(yield_ty) = def.yield_type {
+            ctx.check_concrete_type(yield_ty, "function yield");
+        }
+    }
+
+    fn check_function_call(ctx: Checker, info: FunctionCallInfo, expr_ty: TypeDef) {
+        match info.kind {
+            FunctionKind.StructCtor => ctx.check_struct_ctor_call(info, expr_ty),
+            FunctionKind.VariantCtor => ctx.check_variant_ctor_call(info, expr_ty),
+            FunctionKind.Builtin => {
+                if !ctx.program.functions.contains_key(info.qname) && info.qname.base_name() == B.get_util_uninitialized_qn() {
+                    if !info.args.is_empty() {
+                        ctx.fail("uninitialized argument count mismatch");
+                    }
+                    ctx.check_concrete_type(expr_ty, "uninitialized result");
+                } else {
+                    ctx.check_named_function_call(info.qname, info.args, expr_ty, info.is_coroutine_create);
+                }
+            }
+            _ => {
+                ctx.check_named_function_call(info.qname, info.args, expr_ty, info.is_coroutine_create);
+            }
+        }
+    }
+
+    fn check_named_function_call(ctx: Checker, name: QualifiedName, args: Vec[Expr], expr_ty: TypeDef, is_coroutine_create: Bool) {
+        if let Some(def) = ctx.program.functions.get(name) {
+            ctx.check_function_signature(def);
+            if !def.is_varargs && def.args.len() != args.len() {
+                ctx.fail("function argument count mismatch");
+            }
+            if def.args.len() > args.len() {
+                ctx.fail("function argument count mismatch");
+            }
+            for (arg, param) in args.iter().zip(def.args) {
+                let arg_ty = ctx.check_expr(arg);
+                ctx.unify(param.type_def, arg_ty);
+            }
+            if !is_coroutine_create {
+                match def.result_type {
+                    Some(return_ty) => ctx.unify(return_ty, expr_ty),
+                    None => { ctx.fail("function has no result type"); }
+                }
+            }
+        } else {
+            ctx.fail("function call target not found");
+        }
+    }
+
+    fn check_struct_ctor_call(ctx: Checker, info: FunctionCallInfo, expr_ty: TypeDef) {
+        if let Some(def) = ctx.program.structs.get(info.qname) {
+            check_type_arg_defs(def.type_arg_defs, "struct");
+            if def.fields.len() != info.args.len() {
+                ctx.fail("struct constructor argument count mismatch");
+            }
+            let field_types: Vec[TypeDef] = def.fields.iter().map(|f| f.ty).collect();
+            for (arg, field_ty) in info.args.iter().zip(field_types) {
+                let arg_ty = ctx.check_expr(arg);
+                ctx.unify(field_ty, arg_ty);
+            }
+            let expected = TypeDef.Named(NamedInfo(Name.inner(info.qname), Vec.new()));
+            ctx.unify(expected, expr_ty);
+        } else {
+            ctx.fail("struct constructor target not found");
+        }
+    }
+
+    fn check_variant_ctor_call(ctx: Checker, info: FunctionCallInfo, expr_ty: TypeDef) {
+        if let Some(enum_qname) = ctx.program.variant_enum_map.get(info.qname) {
+            let enum_def = ctx.program.enums.get(enum_qname).expect("enum not found");
+            check_type_arg_defs(enum_def.type_arg_defs, "enum");
+            let variant = ctx.program.variant(info.qname);
+            if variant.items.len() != info.args.len() {
+                ctx.fail("variant constructor argument count mismatch");
+            }
+            let item_types: Vec[TypeDef] = variant.items.iter().map(|item| item.ty).collect();
+            for (arg, item_ty) in info.args.iter().zip(item_types) {
+                let arg_ty = ctx.check_expr(arg);
+                ctx.unify(item_ty, arg_ty);
+            }
+            let expected = TypeDef.Named(NamedInfo(Name.inner(enum_qname), Vec.new()));
+            ctx.unify(expected, expr_ty);
+        } else {
+            ctx.fail("variant constructor target not found");
+        }
+    }
+}
+
+fn fail_program(message: String) -> TypeDef {
+    println("Sanity check failed: " + message);
+    panic("sanity check failed")
+}
+
+fn check_type_arg_defs(type_arg_defs: Option[TypeArgDefs], what: String) {
+    if let Some(tad) = type_arg_defs {
+        if !tad.type_params().is_empty() {
+            fail_program(what + " is still generic after monomorphization");
+        }
+    }
+}
+
+fn check_struct_def(def: StructDef) {
+    check_type_arg_defs(def.type_arg_defs, "struct");
+    for field in def.fields {
+        let has_vars = False;
+        for _ in collect_type_vars(field.ty) {
+            has_vars = True;
+        }
+        if has_vars {
+            println("Sanity check failed: non-concrete struct field type");
+            println("Type: " + format_type(field.ty));
+            println(format_struct(def));
+            panic("sanity check failed");
+        }
+    }
+}
+
+fn check_enum_def(def: EnumDef) {
+    check_type_arg_defs(def.type_arg_defs, "enum");
+    for variant in def.variants {
+        for item in variant.items {
+            let has_vars = False;
+            for _ in collect_type_vars(item.ty) {
+                has_vars = True;
+            }
+            if has_vars {
+                println("Sanity check failed: non-concrete enum item type");
+                println("Type: " + format_type(item.ty));
+                println(format_enum(def));
+                panic("sanity check failed");
+            }
+        }
+    }
+}
+
+fn check_function(program: Program, func: FunctionDef) {
+    check_type_arg_defs(func.type_arg_defs, "function");
+    let locals: Map[VariableName, TypeDef] = Map.new();
+    let ctx = Checker(program, func, locals);
+    for arg in func.args {
+        ctx.check_concrete_type(arg.type_def, "function argument");
+        ctx.locals.insert(arg.name, arg.type_def);
+    }
+    if let Some(result_ty) = func.result_type {
+        ctx.check_concrete_type(result_ty, "function result");
+    } else {
+        ctx.fail("function has no result type");
+    }
+    if let Some(yield_ty) = func.yield_type {
+        ctx.check_concrete_type(yield_ty, "function yield");
+    }
+    if let Some(body) = func.body {
+        ctx.check_expr(body);
+    }
+}
+
+pub fn check_program(program: Program) {
+    for def in program.structs.values() {
+        check_struct_def(def);
+    }
+    for def in program.enums.values() {
+        check_enum_def(def);
+    }
+    for func in program.functions.values() {
+        check_function(program, func);
+    }
+}
+
+}

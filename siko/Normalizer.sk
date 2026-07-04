@@ -52,8 +52,9 @@ struct Normalizer {
     fn wrap_branch(norm: Normalizer, stmts: Vec[S.Statement], val: Option[Expr], assign_to: Option[VariableName], loc: Location) -> Expr {
         if let Some(atom) = val {
             if let Some(tmp) = assign_to {
+                let tmp_ty = atom.ty;
                 stmts.push(S.Statement.Assign(
-                    Expr(ExprKind.Var(tmp), loc, None),
+                    Expr(ExprKind.Var(tmp), loc, tmp_ty),
                     atom,
                 ));
             }
@@ -573,7 +574,7 @@ struct Normalizer {
         out.push(S.Statement.Expr(Expr(
             ExprKind.Match(MatchInfo(scrutinee_atom, final_arms)),
             loc,
-            None,
+            ty,
         )));
 
         if all_diverge {

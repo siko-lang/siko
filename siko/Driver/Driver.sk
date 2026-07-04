@@ -9,6 +9,7 @@ import Std.Sys.Process as Sys
 import Std.Sys.Command
 import Siko.Config
 import Siko.HIR.Program
+import Siko.SanityCheck as SanityCheck
 import Std.Time
 import Std.Map
 import Std.Set
@@ -36,6 +37,9 @@ pub struct Driver {
             let start = Instant.now();
             (pass.run)(d);
             if trace { println("${pass.label} (${start.elapsed().to_millis()}ms)"); }
+            if pass.run_sanity_check {
+                SanityCheck.check_program(d.program);
+            }
             if d.pass == Some(pass.name) {
                 match pass.dump {
                     Some(dump_fn) => (dump_fn)(d),

@@ -42,6 +42,7 @@ pub struct Pass {
     pub label: String,
     pub run: fn(Driver) -> (),
     pub dump: Option[fn(Driver) -> ()],
+    pub run_sanity_check: Bool = False,
 }
 
 pub fn build_passes(driver: Driver) -> Vec[Pass] {
@@ -195,6 +196,7 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
                 label: "Propagating implicit arguments...",
                 run: |driver| { IP.propagate_implicits(driver.program); },
                 dump: Some(|driver| println(driver.program.format())),
+                run_sanity_check: True,
             ),
             Pass(
                 name: "lower-closures",
@@ -207,24 +209,28 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
                     }
                 },
                 dump: Some(|driver| println(driver.program.format())),
+                run_sanity_check: True,
             ),
             Pass(
                 name: "lower-coroutines",
                 label: "Lowering coroutines...",
                 run: |driver| { lower_coroutines(driver.program); },
                 dump: Some(|driver| println(driver.program.format())),
+                run_sanity_check: True,
             ),
             Pass(
                 name: "lower-tuples",
                 label: "Lowering tuples...",
                 run: |driver| { lower_tuples(driver.program); },
                 dump: Some(|driver| println(driver.program.format())),
+                run_sanity_check: True,
             ),
             Pass(
                 name: "lower-builtins",
                 label: "Lowering builtins...",
                 run: |driver| { lower_builtins(driver.program); },
                 dump: Some(|driver| println(driver.program.format())),
+                run_sanity_check: True,
             ),
             Pass(
                 name: "value-types",
