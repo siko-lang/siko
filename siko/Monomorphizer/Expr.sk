@@ -19,16 +19,9 @@ import Siko.Interner as I
 pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monomorphizer, witness_info: WitnessInfo, is_co: Bool) -> FunctionCallInfo {
     mono.statistics.process_user_defined_fn_start();
     let concrete_result_ty: TypeDef = mono.current_expr_ty.apply(mono.sub).expect("process_user_defined_fn: current_expr_ty is None for ${name.name()}");
-    let witness_info = witness_info.clone();
 
-    let func_kind = mono
-        .source
-        .functions
-        .get(name)
-        .map(|f| f.kind.clone())
-        .unwrap_or(FunctionDefKind.Regular);
-
-    if func_kind == FunctionDefKind.EffectMethod {
+    let func = mono.source.functions.get(name).expect("function not found in mono");
+    if func.kind == FunctionDefKind.EffectMethod {
         let handler_info = match mono.current_effect_ctx.get(name) {
             Some(hi) => hi.clone(),
             None => {
@@ -48,7 +41,6 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
         let handler_witnesses: Vec[ResolvedWitness] = handler_info.witnesses.clone();
         let spec_args: Vec[Expr] = args.specialize(mono);
         let arg_types: Vec[TypeDef] = args.iter().map(|a| Monomorphizer.expr_ty(mono, a)).collect();
-        let concrete_result_ty: TypeDef = mono.current_expr_ty.apply(mono.sub).expect("process_user_defined_fn: current_expr_ty is None for ${name.name()}");
         let handler_type_args = {
             let hf = mono.source.functions.get(handler_name).expect("process_user_defined_fn: handler function ${handler_name.name()} not found in program");
             let generic_params = hf.type_arg_defs.type_params();
@@ -305,15 +297,26 @@ pub fn process_extern_fn(name: QualifiedName, args: Vec[Expr], kind: FunctionKin
         arg_types.push(concrete_result_ty);
     }
     let ct = Monomorphizer.extract_type_args(param_types, arg_types, generic_params);
-    let mono_callee = mono.data_mono_key(name, ct, mono.current_effect_associated_type_ctx);
+    let effect_ctx = EffectCtx.new();
+    let eat_ctx = EffectAssociatedTypeCtx.new();
+    let implicit_ctx = ImplicitCtx.new();
+    let mono_callee = fn_mono_key(
+        mono,
+        name.clone(),
+        ct,
+        [],
+        effect_ctx.clone(),
+        eat_ctx.clone(),
+        implicit_ctx.clone(),
+        );
     if !mono.fn_done.contains(mono_callee) {
         mono.fn_queue.push_back(FnWork(
             name.clone(),
             ct,
             [],
-            EffectCtx.new(),
-            EffectAssociatedTypeCtx.new(),
-            ImplicitCtx.new()
+            effect_ctx,
+            eat_ctx,
+            implicit_ctx
         ));
     }
     let result = FunctionCallInfo(
